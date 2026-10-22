@@ -43,6 +43,38 @@ def _standing_dict(standings_map: dict, roster_id) -> dict:
     return val if isinstance(val, dict) else {}
 
 
+def _record_win_pct(wins: float, losses: float, ties: float) -> float:
+    """Win percentage with ties counting half a win: (W + 0.5T) / (W+L+T).
+
+    The old denominators in this module used W+L only, so a tied team was
+    scored as if the tie were a loss (5-1-1 read .714 instead of .786).
+    """
+    games = (wins or 0) + (losses or 0) + (ties or 0)
+    if games <= 0:
+        return 0.0
+    return ((wins or 0) + 0.5 * (ties or 0)) / games
+
+
+def _ppg_games(wins: float, losses: float, ties: float, *,
+               median_match: bool = False,
+               weeks_played: float | None = None) -> float:
+    """Actual games a team's PF was scored over, for a PPG denominator.
+
+    PF accumulates once per week, but the record counts results: in a
+    median league (Sleeper ``league_average_match``) each week produces TWO
+    record results (head-to-head + median game), so dividing PF by W+L+T
+    halves PPG. Prefer a counted ``weeks_played`` when the caller has the
+    weekly scores; otherwise derive weeks from the record, halving the
+    record-game count in median leagues.
+    """
+    if weeks_played:
+        return float(weeks_played)
+    games = (wins or 0) + (losses or 0) + (ties or 0)
+    if median_match and games > 0:
+        return games / 2.0
+    return float(games)
+
+
 def _roster_map_owner(roster_map: dict, roster_id) -> Any:
     if not roster_map:
         return None
@@ -1389,16 +1421,19 @@ def build_trade_suggestions_context(
         s = _standing_dict(_standings_map, rid)
         w = _safe_float(s.get("wins") or s.get("W") or s.get("Wins") or 0)
         l = _safe_float(s.get("losses") or s.get("L") or s.get("Losses") or 0)
-        if (w + l) <= 0:
+        t = _safe_float(s.get("ties") or s.get("T") or s.get("Ties") or 0)
+        if (w + l + t) <= 0:
             # Production standings_map is seed ints -- fall back to roster settings.
             rec, _, _ = _record_pf_pa_for_roster(ctx, str(rid))
             parts = str(rec or "").replace("–", "-").split("-")
             try:
                 w = float(parts[0]) if parts else 0.0
                 l = float(parts[1]) if len(parts) > 1 else 0.0
+                t = float(parts[2]) if len(parts) > 2 else 0.0
             except (TypeError, ValueError):
-                w = l = 0.0
-        return w / (w + l) if (w + l) > 0 else 0.5
+                w = l = t = 0.0
+        # Ties count half a win; the old W/(W+L) read a tie as a loss.
+        return _record_win_pct(w, l, t) if (w + l + t) > 0 else 0.5
 
     # Group all picks (across all rosters) by season+round to assign slots
     _all_picks_flat: list[dict] = []
@@ -2238,6 +2273,12 @@ def build_power_rankings_context(ctx: dict) -> dict:
     _momentum: dict[str, float] = {}
     _consistency: dict[str, float] = {}
     _sos: dict[str, float] = {}
+    _weeks_played_by_rid: dict[str, int] = {}
+    try:
+        from utils.standings import median_match_enabled as _mme
+        _is_median_league = bool(_mme(ctx.get("league_settings") or {}))
+    except Exception:
+        _is_median_league = False
     try:
         _dfw = ctx.get("df_weekly")
         if _dfw is not None and getattr(_dfw, "empty", True) is False and "roster_id" in _dfw.columns:
@@ -2282,6 +2323,12 @@ def build_power_rankings_context(ctx: dict) -> dict:
             for _wk_scores in _weekly_scores.values():
                 for _rid_s, _pts in _wk_scores.items():
                     _pts_by_rid.setdefault(_rid_s, []).append(_pts)
+            # Actual weeks each roster posted a score — the honest PPG
+            # denominator (record W+L+T double-counts weeks in median
+            # leagues, where each week yields two record results).
+            _weeks_played_by_rid = {
+                _rid_s: len(_arr) for _rid_s, _arr in _pts_by_rid.items()
+            }
             for _rid_s, _arr in _pts_by_rid.items():
                 if len(_arr) >= 2:
                     _m = sum(_arr) / len(_arr)
@@ -2349,13 +2396,22 @@ def build_power_rankings_context(ctx: dict) -> dict:
         settings = roster.get("settings") or {}
         wins = _safe_int(settings.get("wins"))
         losses = _safe_int(settings.get("losses"))
-        total_games = wins + losses
-        win_pct = wins / total_games if total_games > 0 else 0.0
+        ties = _safe_int(settings.get("ties"))
+        # Ties count half a win and are real games: W+L alone read a tie as
+        # a loss in win% and dropped it from the PPG denominator entirely.
+        win_pct = _record_win_pct(wins, losses, ties)
 
         fpts = _safe_float(settings.get("fpts")) + _safe_float(settings.get("fpts_decimal")) / 100.0
         standing = _standing_dict(standings_map, rid)
         pf = _safe_float(standing.get("PF") or fpts)
-        avg_ppg = (pf / total_games) if total_games > 0 else pf
+        # PPG divides by actual weeks played, not record results: in median
+        # leagues W+L+T is twice the weeks, which halved PPG.
+        ppg_games = _ppg_games(
+            wins, losses, ties,
+            median_match=_is_median_league,
+            weeks_played=_weeks_played_by_rid.get(rid),
+        )
+        avg_ppg = (pf / ppg_games) if ppg_games > 0 else pf
 
         # Record term for PowerScore: all-play when weekly scores exist.
         # Mixing in actual win% made the live rank worse than raw all-play at
@@ -2454,6 +2510,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "team_name": roster_map.get(rid) or f"Team {rid}",
             "wins": wins,
             "losses": losses,
+            "ties": ties,
             "win_pct": win_pct,
             "playoff_pct": round(playoff_pct, 1) if playoff_pct is not None else None,
             "playoff_status": playoff_status,

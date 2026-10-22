@@ -212,11 +212,13 @@
         var tep = teBonus >= 0.25;
         var six = passTd >= 5.5;
         var base = rec >= 1 ? 'ppr' : rec >= 0.4 ? 'half_ppr' : 'std';
-        if (six && tep && base === 'ppr') return '6pt_tep';
-        if (six && base === 'ppr') return '6pt_ppr';
-        if (six && base === 'half_ppr') return '6pt_half';
-        if (tep && base === 'ppr') return 'tep';
-        return base;
+        // Full cross of base x TE premium x 6pt, mirroring the Python picker:
+        // TEP and 6pt layer onto half/std bases too, not just full PPR.
+        var name = base;
+        if (tep) name = base === 'ppr' ? 'tep' : (base === 'half_ppr' ? 'tep_half' : 'tep_std');
+        if (six) name = ({ppr: '6pt_ppr', half_ppr: '6pt_half', std: '6pt_std',
+            tep: '6pt_tep', tep_half: '6pt_tep_half', tep_std: '6pt_tep_std'})[name];
+        return name;
     }
 
     // Projected PPG for the given scoring. `proj_ppg` is Sleeper's upcoming-season

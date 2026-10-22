@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-from math import erf, sqrt
+from math import sqrt
 
 import pandas as pd
 
@@ -545,27 +545,30 @@ def _all_play_strength(df_weekly: pd.DataFrame, upto_week: int) -> dict:
 
 
 def _proj_win_prob(starters_a: list, starters_b: list, proj_by_pid: dict) -> float:
-    """Team A's win probability from projections alone, modeling each starter as
-    normal(proj, sigma). For an upcoming week every starter is pending, so this is
-    a pure projection-based read of how close the game projects."""
-    def _stats(starters):
-        total = var = 0.0
-        for p in (starters or []):
-            if not p:
-                continue  # empty slot placeholder
-            proj = float(proj_by_pid.get(str(p.get("pid") or ""), 0.0) or 0.0)
-            total += proj
-            sigma = max(0.4 * proj, 4.0)
-            var += sigma * sigma
-        return total, var
+    """Team A's win probability from projections alone.
 
-    ta, va = _stats(starters_a)
-    tb, vb = _stats(starters_b)
-    cv = va + vb
-    if cv < 1e-6:
-        return 0.5 if abs(ta - tb) < 1e-9 else (1.0 if ta > tb else 0.0)
-    z = (ta - tb) / (sqrt(cv) * sqrt(2.0))
-    return max(0.01, min(0.99, 0.5 * (1.0 + erf(z))))
+    Delegates to the matchup page's ``compute_win_prob``
+    (``dashboard_services/matchups.py``) — the per-position sigma model fit
+    2026-09-29 plus the team CV floor. This used to be a private copy with
+    a flat ``sigma = max(0.4 * proj, 4.0)`` and no floor, which read the
+    same 120 vs 110 game at ~67% where the matchup page says ~62%, so the
+    recap's GOTW closeness signal disagreed with the page by ~5 points.
+
+    A faithful call is possible with what the recap already has: starters
+    carry ``pid``/``pos``, ``proj_by_pid`` is exactly the projection map,
+    and for an upcoming week every starter is not-yet-started — which is
+    ``compute_win_prob``'s default for pids missing from the status map,
+    so an empty status map invents nothing.
+    """
+    from dashboard_services.matchups import compute_win_prob
+
+    prob = compute_win_prob(
+        {"starters": starters_a or []},
+        {"starters": starters_b or []},
+        {},
+        proj_by_pid or {},
+    )
+    return 0.5 if prob is None else float(prob)
 
 
 def _team_proj_total(starters: list, proj_by_pid: dict) -> float:

@@ -57,7 +57,7 @@ falls back to a standard PPR-ish default when the league omits it.
 
 _DEFAULT_RATES = {
     "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
-    "rush_yd": 0.1, "rush_td": 6.0, "rec": 0.0,
+    "rush_yd": 0.1, "rush_td": 6.0, "rec": 1.0,
     "rec_yd": 0.1, "rec_td": 6.0, "fum_lost": -2.0,
 }
 
@@ -326,12 +326,33 @@ set that matches its scoring — reception points, TE premium, and passing-TD va
 def pick_proj_variant(raw_sleeper_settings: dict) -> str:
     """
     Return the projection variant key that matches a league's scoring settings.
-    Keys: ppr | half_ppr | std | tep | 6pt_ppr | 6pt_half | 6pt_tep
+
+    Variants are the full cross of reception base (ppr | half_ppr | std),
+    the TE-premium layer (canonical +0.5/rec for TEs) and 6-pt passing TDs:
+    ppr | half_ppr | std | tep | tep_half | tep_std |
+    6pt_ppr | 6pt_half | 6pt_std | 6pt_tep | 6pt_tep_half | 6pt_tep_std
+    (``tep`` is the PPR-base TE-premium variant, kept for cache compatibility.)
+
+    A missing ``rec`` defaults to 1.0 (PPR) — the same default used by
+    ``score_stats``, ``normalize_league_scoring`` and
+    ``scoring_format_from_settings``. An explicit 0.0 is respected.
     """
     s = raw_sleeper_settings or {}
-    rec      = float(s.get("rec", 1.0))
-    te_bonus = float(s.get("bonus_rec_te", 0.0))
-    pass_td  = float(s.get("pass_td", 4.0))
+
+    def _rate_or(key, default, *aliases):
+        for k in (key, *aliases):
+            v = s.get(k)
+            if v is None:
+                continue
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+        return default
+
+    rec      = _rate_or("rec", 1.0, "pointsPerReception")
+    te_bonus = _rate_or("bonus_rec_te", 0.0)
+    pass_td  = _rate_or("pass_td", 4.0)
 
     tep   = te_bonus >= 0.25
     six   = pass_td >= 5.5
@@ -343,15 +364,17 @@ def pick_proj_variant(raw_sleeper_settings: dict) -> str:
     else:
         base = "std"
 
-    if six and tep and base == "ppr":
-        return "6pt_tep"
-    if six and base == "ppr":
-        return "6pt_ppr"
-    if six and base == "half_ppr":
-        return "6pt_half"
-    if tep and base == "ppr":
-        return "tep"
-    return base
+    if tep:
+        name = {"ppr": "tep", "half_ppr": "tep_half", "std": "tep_std"}[base]
+    else:
+        name = base
+    if six:
+        # Legacy 6pt keys shorten half_ppr -> half (6pt_half, not 6pt_half_ppr).
+        name = {
+            "ppr": "6pt_ppr", "half_ppr": "6pt_half", "std": "6pt_std",
+            "tep": "6pt_tep", "tep_half": "6pt_tep_half", "tep_std": "6pt_tep_std",
+        }[name]
+    return name
 
 
 def pick_proj_variant_from_draft_scoring(scoring: dict | None) -> str:
@@ -1092,7 +1115,7 @@ def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = 
     Sleeper's projections endpoint returns projected stat lines
     (pass_yd, pass_td, rec, rec_yd, ...) — not pre-computed pts_ppr.
     When raw_scoring_settings is supplied the league-specific values are
-    used, otherwise standard defaults apply. All seven variants are
+    used, otherwise standard defaults apply. All twelve variants are
     computed so pick_proj_variant() can select the right one later.
     """
     ss = raw_scoring_settings or {}
@@ -1150,9 +1173,14 @@ def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = 
     half = base + rec * 0.5
     std  = base
 
-    # TE premium: use league's bonus_rec_te if set, else standard 0.5
+    # TE premium: use league's bonus_rec_te if set, else standard 0.5.
+    # The premium layers onto EVERY reception base, not just full PPR:
+    # a half-PPR or standard TEP league's TE keeps the whole premium.
     tep_rate = te_bonus_rate if te_bonus_rate > 0 else TEP_BONUS
-    tep = ppr + (rec * tep_rate if pos == "TE" else 0.0)
+    te_rec = rec * tep_rate if pos == "TE" else 0.0
+    tep      = ppr  + te_rec
+    tep_half = half + te_rec
+    tep_std  = std  + te_rec
 
     # 6pt passing TD: difference vs the league's actual pass_td rate
     td6 = pass_td * max(0.0, 6.0 - pass_td_rate)
@@ -1162,13 +1190,18 @@ def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = 
         # apply its complete scoring settings at read time without cache pollution
         # from whichever league happened to fetch this week first.
         "raw_stats": dict(st),
-        "ppr":      round(ppr, 2),
-        "half_ppr": round(half, 2),
-        "std":      round(std, 2),
-        "tep":      round(tep, 2),
-        "6pt_ppr":  round(ppr  + td6, 2),
-        "6pt_half": round(half + td6, 2),
-        "6pt_tep":  round(tep  + td6, 2),
+        "ppr":          round(ppr, 2),
+        "half_ppr":     round(half, 2),
+        "std":          round(std, 2),
+        "tep":          round(tep, 2),
+        "tep_half":     round(tep_half, 2),
+        "tep_std":      round(tep_std, 2),
+        "6pt_ppr":      round(ppr      + td6, 2),
+        "6pt_half":     round(half     + td6, 2),
+        "6pt_std":      round(std      + td6, 2),
+        "6pt_tep":      round(tep      + td6, 2),
+        "6pt_tep_half": round(tep_half + td6, 2),
+        "6pt_tep_std":  round(tep_std  + td6, 2),
     }
 
 # --- utils/utils.py L1129 ---
@@ -1240,17 +1273,12 @@ def map_weekly_projections_to_sleeper(
 ) -> dict:
     """
     Convert Tank01 rows -> multi-variant projection dict.
-    { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z,
-                   "tep": A, "6pt_ppr": B, "6pt_half": C, "6pt_tep": D} }
+    { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z, "tep": A, ...} }
 
-    Variants:
-      ppr       — 1pt/rec, 4pt passing TD
-      half_ppr  — 0.5pt/rec, 4pt passing TD
-      std       — 0pt/rec, 4pt passing TD
-      tep       — PPR + 0.5pt/rec bonus for TEs, 4pt passing TD
-      6pt_ppr   — PPR, 6pt passing TD
-      6pt_half  — half-PPR, 6pt passing TD
-      6pt_tep   — PPR + TEP, 6pt passing TD
+    Variants (full cross of reception base x TE premium x passing-TD value):
+      ppr / half_ppr / std          — 1 / 0.5 / 0 pt/rec, 4pt passing TD
+      tep / tep_half / tep_std      — base + 0.5pt/rec bonus for TEs, 4pt TD
+      6pt_*                         — the same six with a 6pt passing TD
     """
     from utils.data_cache import load_teams_index
     from utils.data_cache import load_players_index
@@ -1284,7 +1312,9 @@ def map_weekly_projections_to_sleeper(
                     v = float(proj)
                     out[str(team_key)] = {
                         "ppr": v, "half_ppr": v, "std": v,
-                        "tep": v, "6pt_ppr": v, "6pt_half": v, "6pt_tep": v,
+                        "tep": v, "tep_half": v, "tep_std": v,
+                        "6pt_ppr": v, "6pt_half": v, "6pt_std": v,
+                        "6pt_tep": v, "6pt_tep_half": v, "6pt_tep_std": v,
                     }
 
             elif tank_id:
@@ -1321,13 +1351,18 @@ def map_weekly_projections_to_sleeper(
                     tep_bonus = proj_rec * TEP_BONUS
 
                 out[str(pid)] = {
-                    "ppr":      round(ppr, 2),
-                    "half_ppr": round(half, 2),
-                    "std":      round(std, 2),
-                    "tep":      round(ppr + tep_bonus, 2),
-                    "6pt_ppr":  round(ppr + td_bonus, 2),
-                    "6pt_half": round(half + td_bonus, 2),
-                    "6pt_tep":  round(ppr + tep_bonus + td_bonus, 2),
+                    "ppr":          round(ppr, 2),
+                    "half_ppr":     round(half, 2),
+                    "std":          round(std, 2),
+                    "tep":          round(ppr + tep_bonus, 2),
+                    "tep_half":     round(half + tep_bonus, 2),
+                    "tep_std":      round(std + tep_bonus, 2),
+                    "6pt_ppr":      round(ppr + td_bonus, 2),
+                    "6pt_half":     round(half + td_bonus, 2),
+                    "6pt_std":      round(std + td_bonus, 2),
+                    "6pt_tep":      round(ppr + tep_bonus + td_bonus, 2),
+                    "6pt_tep_half": round(half + tep_bonus + td_bonus, 2),
+                    "6pt_tep_std":  round(std + tep_bonus + td_bonus, 2),
                 }
 
     return out

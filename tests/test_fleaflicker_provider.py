@@ -992,7 +992,9 @@ def test_fleaflicker_threshold_bonuses_are_not_per_stat_rates():
     assert out["rush_yd"] == 0.1
     assert out["rec_yd"] == 0.1
     assert out["rec_td"] == 6.0
-    assert "rec" not in out
+    # No reception rule on Fleaflicker = standard league, stated explicitly
+    # (a *missing* rec now defaults to PPR in normalize_league_scoring).
+    assert out["rec"] == 0.0
     assert out.get("def_int") == 2.0
 
 

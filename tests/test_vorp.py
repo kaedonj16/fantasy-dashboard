@@ -4,7 +4,10 @@ The draft/rankings overlay used to stamp last-completed-season PPR totals as
 VORP next to upcoming-season proj PPG. An injured high-PPG TE (Tucker Kraft,
 8 games in 2025) then showed ~−44 VORP while ranking TE10 in projections.
 """
+import math
 from pathlib import Path
+
+import pytest
 
 from utils.vorp import (
     PROJ_SEASON_GAMES,
@@ -103,3 +106,35 @@ def test_sf_qb_vorp_uses_deeper_replacement():
     assert sf["qb15"] > 0
     assert sf["qb1"] > one_qb["qb1"]
 
+
+
+# --- WAR scale (formula audit 2026-10-21, §5.2) -------------------------------
+# WAR divides a SEASON-total VORP. The old divisor was the weekly
+# points-per-win (28), which reported a 140-point season VORP as WAR 5.0.
+# On the code's own meaning of 28 (a weekly team-score SD), the season-scale
+# divisor is 28 * 2*sqrt(pi) ~= 99.3, so 140 VORP ~= 1.4 WAR.
+
+def test_season_points_per_win_is_season_scale():
+    from utils.vorp import season_points_per_win
+    assert 98.0 < season_points_per_win() < 101.0
+    # An explicit weekly value converts on the same factor.
+    assert season_points_per_win(35.0) == pytest.approx(35.0 * 2 * math.sqrt(math.pi))
+
+
+def test_war_140_vorp_is_about_one_and_a_half_wins():
+    pts = [340, 300, 290, 280, 270, 260, 250, 240, 230, 220, 210, 205, 200,
+           190, 180, 170, 160, 150, 140, 130]
+    recs = [{"player_id": f"te{i+1}", "position": "TE", "pts": p}
+            for i, p in enumerate(pts)]
+    stamp_value_metrics(recs, num_teams=12)
+    top = next(r for r in recs if r["player_id"] == "te1")
+    # Replacement is TE13 (200 pts), so te1's VORP is exactly 140.
+    assert top["vorp"] == pytest.approx(140.0)
+    assert 1.4 <= top["war"] <= 2.0
+    assert top["war"] != pytest.approx(5.0)
+
+
+def test_war_env_override_stays_on_weekly_scale(monkeypatch):
+    from utils.vorp import season_points_per_win
+    monkeypatch.setenv("POINTS_PER_WIN", "35")
+    assert season_points_per_win() == pytest.approx(35.0 * 2 * math.sqrt(math.pi))

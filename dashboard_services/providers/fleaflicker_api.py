@@ -2006,6 +2006,14 @@ class FleaflickerProvider(ProviderAdapter):
             te_rate = rec_by_pos.get("TE")
             if te_rate is not None and te_rate > rec:
                 out["bonus_rec_te"] = te_rate - rec
+        else:
+            # Fleaflicker publishes one rule per scoring category, so NO
+            # reception rule is an authoritative standard (0 PPR) league —
+            # state it explicitly. normalize_league_scoring defaults a
+            # *missing* rec to PPR for providers whose settings are merely
+            # partial; relying on absence here would flip every standard
+            # Fleaflicker league to PPR.
+            out["rec"] = 0.0
         return out
 
     def get_league_globals(self, league_id, season, *, token: Optional[str] = None):

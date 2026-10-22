@@ -184,31 +184,86 @@ def _safe_float(value, default: float) -> float:
 
 
 def _n_byes(playoff_teams: int) -> int:
-    """
-    Number of first-round byes implied by the bracket size.
+    """Number of first-round byes implied by the bracket size.
 
-    Even playoff sizes use a "half-bracket" model (Sleeper standard):
-      byes = playoff_teams - largest_power_of_2_≤_playoff_teams
-      4  → 0 byes  (4 = 2^2, full bracket)
-      6  → 2 byes  (6 - 4 = 2; top 2 skip R1)
-      8  → 0 byes  (8 = 2^3, full bracket)
-      10 → 2 byes  (10 - 8 = 2)
-      12 → 4 byes  (12 - 8 = 4)
-
-    Odd playoff sizes use a standard single-elimination bracket
-    (next power of 2 fills the empty slots with byes):
-      5  → 3 byes  (8 - 5 = 3; top 3 skip R1, teams 4 & 5 play)
-      7  → 1 bye   (8 - 7 = 1; top seed skips R1, teams 2-7 play)
+    One shared implementation with the standings Playoff Picture
+    (``utils.standings.bye_count``): a standard single-elimination bracket
+    pads the field up to the next power of two, and those empty slots are
+    the byes — ``next_pow2(field) - field``. 4 → 0, 6 → 2, 8 → 0,
+    10 → 6, 14 → 2. The sim previously used the inverse formula for even
+    fields (10 → 2, 14 → 6), so the sim and the Playoff Picture quoted
+    different bye counts for the same league.
     """
-    if playoff_teams < 2:
+    try:
+        playoff_teams = int(playoff_teams)
+    except (TypeError, ValueError):
         return 0
-    if playoff_teams % 2 == 0:
-        largest_pow2 = 1 << (playoff_teams.bit_length() - 1)
-        return playoff_teams - largest_pow2
-    # Odd: next power of 2 ≥ playoff_teams
-    import math as _math
-    next_pow2 = 1 << _math.ceil(_math.log2(playoff_teams))
-    return next_pow2 - playoff_teams
+    try:
+        from utils.standings import bye_count
+        return bye_count(playoff_teams)
+    except Exception:
+        if playoff_teams < 2:
+            return 0
+        nxt = 1 << (playoff_teams - 1).bit_length()  # smallest power of 2 ≥ field
+        return nxt - playoff_teams
+
+
+def _initial_standings_value(team: dict) -> float:
+    """Standings value of games already played: wins + 0.5 per tie.
+
+    Ties already on the books must count from the first simulated week on;
+    seeding the Monte Carlo from raw wins alone silently taxed every tied
+    team half a win in every simulated future.
+    """
+    try:
+        wins = float(team.get("wins") or 0)
+    except (TypeError, ValueError):
+        wins = 0.0
+    try:
+        ties = float(team.get("ties") or 0)
+    except (TypeError, ValueError):
+        ties = 0.0
+    return wins + 0.5 * ties
+
+
+# Far above any achievable rank key (wins * 1e6 + PF ≲ 1.7e7), so adding it
+# to a division winner's key moves every winner ahead of every wild card
+# while preserving wins→PF order inside each group.
+_DIVISION_SEED_BONUS = 1e12
+
+
+def _division_adjusted_seed_key(rank_key, teams, division_map):
+    """Seed key that mirrors ``utils.standings.playoff_seed_order``.
+
+    With 2+ divisions (and a division for every team), each division's best
+    team by the plain wins→PF key is seeded ahead of all wild cards —
+    division winners first, sorted among themselves by wins→PF, then wild
+    cards by wins→PF. Vectorised over sims: exactly one winner per division
+    per sim row gets the bonus (argmax takes the first maximum, matching
+    the standings helper's stable tie-break). Non-division leagues and
+    partially-mapped leagues return the plain key unchanged.
+    """
+    if not division_map or rank_key.shape[1] != len(teams):
+        return rank_key
+    div_of: list = []
+    for t in teams:
+        rid = t.get("roster_id")
+        d = division_map.get(rid)
+        if d is None and rid is not None:
+            d = division_map.get(str(rid))
+        if d is None:
+            d = t.get("division")
+        div_of.append(d)
+    distinct = {d for d in div_of if d}
+    if len(distinct) < 2 or any(not d for d in div_of):
+        return rank_key
+    is_winner = np.zeros(rank_key.shape, dtype=bool)
+    rows = np.arange(rank_key.shape[0])
+    for d in distinct:
+        members = [i for i, dd in enumerate(div_of) if dd == d]
+        best = np.argmax(rank_key[:, members], axis=1)
+        is_winner[rows, [members[int(b)] for b in best]] = True
+    return rank_key + is_winner.astype(np.float64) * _DIVISION_SEED_BONUS
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +480,7 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
         "teams":            teams,
         "matchups":         matchups,
         "playoff_teams":    playoff_teams,
+        "division_map":     division_map,
         "median_match":     median_match,
         "seed":             seed,
         "ppg_map":          season_ppg_map,
@@ -827,7 +883,7 @@ def simulate_playoff_odds(
             hist_avg, hist_std, pos_map, season_ppg_map, roster_positions,
         )
         result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed,
-                        median_match=median_match)
+                        median_match=median_match, division_map=division_map)
         for r in result:
             r["is_projected"] = True
         return result
@@ -842,7 +898,7 @@ def simulate_playoff_odds(
         teams, playoff_week_start, current_week=current_week,
     )
     if not remaining_weeks and completed_weeks:
-        return _actual_results(teams, playoff_teams)
+        return _actual_results(teams, playoff_teams, division_map=division_map)
     _log_schedule_progress(teams, playoff_week_start, completed_weeks, remaining_weeks)
     matchups_by_week = _resolve_schedule(
         platform, league_id, season, remaining_weeks, teams, division_map
@@ -861,7 +917,7 @@ def simulate_playoff_odds(
     )
 
     result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed,
-                        median_match=median_match)
+                        median_match=median_match, division_map=division_map)
     for r in result:
         r["is_projected"] = False
         logger.debug(
@@ -1680,9 +1736,24 @@ def _build_teams(team_stats, roster_map: Optional[dict] = None) -> list[dict]:
 # Completed-season result (100 % / 0 %)
 # ---------------------------------------------------------------------------
 
-def _actual_results(teams: list[dict], playoff_teams: int) -> list[dict]:
+def _actual_results(teams: list[dict], playoff_teams: int,
+                    division_map: Optional[dict] = None) -> list[dict]:
     n_byes   = _n_byes(playoff_teams)
-    ranked   = sorted(teams, key=lambda t: (-t["wins"], -t["pf"]))
+    # Final seeding is the standings surface's own order: wins with ties at
+    # 0.5, division winners ahead of wild cards, then PF. Sorting on raw
+    # wins here dropped ties (and ignored divisions) on the completed path.
+    seed_rows = [{
+        "wins": t["wins"], "ties": t.get("ties", 0), "pf": t["pf"],
+        "division": (division_map or {}).get(t.get("roster_id"), t.get("division") or 0),
+    } for t in teams]
+    try:
+        from utils.standings import playoff_seed_order
+        ranked = [teams[i] for i in playoff_seed_order(seed_rows)]
+    except Exception:
+        ranked = sorted(
+            teams,
+            key=lambda t: (-_initial_standings_value(t), -t["pf"]),
+        )
     made     = {t["roster_id"] for t in ranked[:playoff_teams]}
     bye_set  = {t["roster_id"] for t in ranked[:n_byes]}
     top_seed = ranked[0]["roster_id"] if ranked else None
@@ -2164,6 +2235,7 @@ def _pack_mc_results(
     games_per_team: "np.ndarray",
     playoff_teams: int,
     n_sims: int,
+    division_map: Optional[dict] = None,
 ) -> list[dict]:
     n = len(teams)
     n_byes = _n_byes(playoff_teams)
@@ -2171,8 +2243,13 @@ def _pack_mc_results(
     # reaches ~1.3e7 in a full season, past float32's exact-integer range
     # (2^24 ≈ 1.68e7, ULP ≥ 1.0 above ~8.4e6), which silently collapses the PF
     # tiebreaker for teams within ~1 pt — flipping seeding in tight bubble races.
+    # ``wins`` here is the standings value (initial ties already credited at
+    # 0.5 by _standings_from_score_map). In division leagues the seed key
+    # additionally lifts each division winner ahead of the wild cards, the
+    # way the standings surface seeds (utils.standings.playoff_seed_order).
     rank_key  = wins.astype(np.float64) * 1e6 + pf.astype(np.float64)
-    team_rank = np.argsort(np.argsort(-rank_key, axis=1), axis=1)  # 0 = best
+    seed_key  = _division_adjusted_seed_key(rank_key, teams, division_map)
+    team_rank = np.argsort(np.argsort(-seed_key, axis=1), axis=1)  # 0 = best
 
     in_playoffs = (team_rank < playoff_teams).mean(axis=0) * 100
     got_bye     = (team_rank < n_byes).mean(axis=0) * 100 if n_byes else np.zeros(n)
@@ -2190,17 +2267,23 @@ def _pack_mc_results(
     init_wins   = np.array([t["wins"]   for t in teams], dtype=np.float32)
     init_losses = np.array([t["losses"] for t in teams], dtype=np.float32)
     init_ties   = np.array([t["ties"]   for t in teams], dtype=np.float32)
+    # Standings value of the games already played (ties at 0.5). The wins
+    # matrix is seeded with this, so clinch bounds and record outputs must
+    # be expressed against it — not raw wins — or every existing tie is
+    # dropped a second time here.
+    init_value  = init_wins + 0.5 * init_ties
     avg_wins    = wins.mean(axis=0)
     avg_ties_gained = ties_gained.mean(axis=0)
     avg_final_ties  = init_ties + avg_ties_gained
-    # ``wins`` is the standings value and credits half a win per tie.  Projected
-    # record output is conventional W-L-T, so remove that half-credit there.
-    avg_record_wins = avg_wins - 0.5 * avg_ties_gained
+    # ``wins`` is the standings value and credits half a win per tie — both
+    # the ties already played and the ones gained in the sim. Projected
+    # record output is conventional W-L-T, so remove both half-credits there.
+    avg_record_wins = avg_wins - 0.5 * init_ties - 0.5 * avg_ties_gained
     # Use per-team games scheduled so bye weeks don't inflate projected losses.
     # `wins` already credits 0.5 per tie, so subtract that half back out — a tie is
     # a tie, not half a loss.
     avg_losses  = (init_losses + games_per_team
-                   - (avg_wins - init_wins) - 0.5 * avg_ties_gained)
+                   - (avg_wins - init_value) - 0.5 * avg_ties_gained)
 
     # Mathematical clinch / elimination (consistent with the sim's top-N-by-record
     # seeding). A team has CLINCHED a berth if, even losing out while everyone who
@@ -2209,16 +2292,34 @@ def _pack_mc_results(
     # if it wins out. Bounds are conservative (ignore the joint schedule and
     # tiebreakers) so they never falsely declare certainty.
     rem      = games_per_team               # remaining games per team
-    t_min    = init_wins                    # worst case: lose out
-    t_max    = init_wins + rem              # best case: win out
-    opp_max  = init_wins + rem
+    t_min    = init_value                   # worst case: lose out
+    t_max    = init_value + rem             # best case: win out
+    opp_max  = init_value + rem
     clinched   = np.zeros(n, dtype=bool)
     eliminated = np.zeros(n, dtype=bool)
-    for i in range(n):
-        can_be_ahead     = int(np.sum(opp_max >= t_min[i])) - 1   # exclude self
-        guaranteed_ahead = int(np.sum(init_wins > t_max[i]))
-        clinched[i]   = can_be_ahead < playoff_teams
-        eliminated[i] = guaranteed_ahead >= playoff_teams
+    # No games left and a deterministic table (every sim row identical):
+    # the seed order IS the final result, so berths are exact, not clamped
+    # 99.9 / 0.1 — e.g. a 5-1-1 team ahead of a 5-2-0 team on equal PF is
+    # in at 100%, not 99.9%.
+    _deterministic = (
+        float(np.sum(rem)) == 0.0 and n_sims > 0
+        and bool(np.all(wins == wins[0])) and bool(np.all(pf == pf[0]))
+    )
+    if _deterministic:
+        clinched   = in_playoffs >= 100.0
+        eliminated = in_playoffs <= 0.0
+    elif division_map and len({d for d in division_map.values() if d}) >= 2:
+        # Division-winner seeding makes the value-only bounds unsound (a
+        # lower-value division winner still seeds ahead of a wild card), so
+        # in division leagues with games left we declare no mathematical
+        # certainty rather than risk a false clinch/elimination.
+        pass
+    else:
+        for i in range(n):
+            can_be_ahead     = int(np.sum(opp_max >= t_min[i])) - 1   # exclude self
+            guaranteed_ahead = int(np.sum(init_value > t_max[i]))
+            clinched[i]   = can_be_ahead < playoff_teams
+            eliminated[i] = guaranteed_ahead >= playoff_teams
 
     # A projection should never read a literal 100% or 0% unless the spot is
     # mathematically settled: with finite sims a saturated outcome just means the
@@ -2260,6 +2361,7 @@ def _standings_from_score_map(
     games_per_team: "np.ndarray",
     overlays: Optional[dict[int, dict[int, "np.ndarray"]]] = None,
     median_match: bool = False,
+    division_map: Optional[dict] = None,
 ) -> list[dict]:
     """Resolve the remaining schedule from frozen (optionally overlaid) scores.
 
@@ -2268,7 +2370,11 @@ def _standings_from_score_map(
     """
     n = len(teams)
     idx = {t["roster_id"]: i for i, t in enumerate(teams)}
-    wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
+    # Seed with the standings value (wins + 0.5 per tie already played);
+    # seeding raw wins dropped every existing tie for the whole sim.
+    wins = np.tile(
+        [_initial_standings_value(t) for t in teams], (n_sims, 1),
+    ).astype(np.float32)
     pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
     ties_gained = np.zeros((n_sims, n), dtype=np.float32)
 
@@ -2323,6 +2429,7 @@ def _standings_from_score_map(
 
     return _pack_mc_results(
         teams, wins, pf, ties_gained, games_per_team, playoff_teams, n_sims,
+        division_map=division_map,
     )
 
 
@@ -2357,6 +2464,7 @@ def _ensure_freeze(sim_state: dict, n_sims: int) -> dict:
             n_sims,
             games,
             median_match=median,
+            division_map=sim_state.get("division_map"),
         )
         freeze = {
             "n_sims": n_sims,
@@ -2407,6 +2515,7 @@ def _standings_with_overrides(
         freeze["games_per_team"],
         overlays=overlays,
         median_match=bool(sim_state.get("median_match", False)),
+        division_map=sim_state.get("division_map"),
     )
 
 
@@ -2418,6 +2527,7 @@ def _run_mc(
     n_sims: int,
     seed: Optional[int],
     median_match: bool = False,
+    division_map: Optional[dict] = None,
 ) -> list[dict]:
     """Monte Carlo over the remaining schedule.
 
@@ -2434,5 +2544,5 @@ def _run_mc(
     )
     return _standings_from_score_map(
         teams, matchups_by_week, score_map, playoff_teams, n_sims, games,
-        median_match=median_match,
+        median_match=median_match, division_map=division_map,
     )

@@ -10,8 +10,14 @@ from typing import Optional
 _CACHE_DIR = Path(__file__).parent.parent / "cache"
 
 # Matches utils.proj_variant.pick_proj_variant keys and the weekly projection
-# payload (ppr / half_ppr / std plus TE-premium and 6-point passing-TD layers).
-PROJ_VARIANTS = ("ppr", "half_ppr", "std", "tep", "6pt_ppr", "6pt_half", "6pt_tep")
+# payload: the full cross of reception base (ppr / half_ppr / std), the
+# TE-premium layer and the 6-point passing-TD layer.
+PROJ_VARIANTS = (
+    "ppr", "half_ppr", "std",
+    "tep", "tep_half", "tep_std",
+    "6pt_ppr", "6pt_half", "6pt_std",
+    "6pt_tep", "6pt_tep_half", "6pt_tep_std",
+)
 
 # Sleeper drops the weekly stat line (proj PPG 0) once a player is out for the
 # year. Displayed point projections must not refill those players from any
@@ -66,7 +72,7 @@ def weekly_variant_values(weekly_maps) -> dict[str, dict[str, list[float]]]:
     """Collect positive weekly projection values per player and scoring variant.
 
     ``weekly_maps`` is an iterable of week dicts as stored on disk:
-    ``{pid: {ppr, half_ppr, std, tep, 6pt_ppr, 6pt_half, 6pt_tep, raw_stats}}``.
+    ``{pid: {ppr, half_ppr, std, tep, tep_half, tep_std, 6pt_*, raw_stats}}``.
     When the cached row preserved the raw stat line, Sleeper's own published
     pts_ppr/pts_half_ppr/pts_std are used for the plain PPR/half/std variants so
     the season PPG matches the Sleeper app. A missing variant falls back to that
@@ -360,8 +366,39 @@ def _sleeper_proj_cache_path(year: int, week: int) -> Path:
     return _CACHE_DIR / f"sleeper_proj_{year}_w{week:02d}.json"
 
 
-def _raw_to_pts(st: dict, pos: str, scoring: str) -> float:
-    """Compute fantasy points for one player from Sleeper raw projected stats."""
+# Variant name -> (reception points, has TE-premium layer, has 6pt pass TD).
+# Mirrors utils.proj_variant.pick_proj_variant's full 3 x 2 x 2 cross.
+_VARIANT_PARTS = {
+    "ppr":          (1.0, False, False),
+    "half_ppr":     (0.5, False, False),
+    "std":          (0.0, False, False),
+    "tep":          (1.0, True,  False),
+    "tep_half":     (0.5, True,  False),
+    "tep_std":      (0.0, True,  False),
+    "6pt_ppr":      (1.0, False, True),
+    "6pt_half":     (0.5, False, True),
+    "6pt_std":      (0.0, False, True),
+    "6pt_tep":      (1.0, True,  True),
+    "6pt_tep_half": (0.5, True,  True),
+    "6pt_tep_std":  (0.0, True,  True),
+}
+
+# The canonical variant TE premium; a league's actual bonus_rec_te wins
+# whenever the caller supplies the league's settings.
+_CANONICAL_TEP = 0.5
+
+
+def _raw_to_pts(st: dict, pos: str, scoring: str,
+                scoring_settings: dict | None = None,
+                tep_bonus: float | None = None) -> float:
+    """Compute fantasy points for one player from Sleeper raw projected stats.
+
+    ``scoring`` is a projection variant name (see ``PROJ_VARIANTS``). The
+    TE-premium layer is priced at the league's actual ``bonus_rec_te`` when
+    ``scoring_settings`` (or an explicit ``tep_bonus``) is supplied; only a
+    bare variant call falls back to the canonical 0.5 premium the variant
+    itself is defined with.
+    """
     pass_yd  = float(st.get("pass_yd")  or 0)
     pass_td  = float(st.get("pass_td")  or 0)
     pass_int = float(st.get("pass_int") or 0)
@@ -381,8 +418,20 @@ def _raw_to_pts(st: dict, pos: str, scoring: str) -> float:
         + rec_yd  * 0.1  + rec_td   * 6.0
         + fum_lost * -2.0
     )
-    rec_pts  = 1.0 if scoring in ("ppr", "tep", "6pt_ppr", "6pt_tep") else (
-        0.5 if scoring in ("half_ppr", "6pt_half") else 0.0)
-    tep_pts  = 0.5 if (scoring in ("tep", "6pt_tep") and pos == "TE") else 0.0
-    td6_pts  = pass_td * 2.0 if scoring in ("6pt_ppr", "6pt_half", "6pt_tep") else 0.0
+    rec_pts, has_tep, has_td6 = _VARIANT_PARTS.get(scoring, (1.0, False, False))
+    tep_rate = _CANONICAL_TEP
+    if tep_bonus is not None:
+        try:
+            tep_rate = float(tep_bonus)
+        except (TypeError, ValueError):
+            pass
+    elif scoring_settings:
+        raw_tep = scoring_settings.get("bonus_rec_te")
+        if raw_tep is not None:
+            try:
+                tep_rate = float(raw_tep)
+            except (TypeError, ValueError):
+                pass
+    tep_pts  = tep_rate if (has_tep and pos == "TE") else 0.0
+    td6_pts  = pass_td * 2.0 if has_td6 else 0.0
     return round(base + rec * rec_pts + rec * tep_pts + td6_pts, 2)

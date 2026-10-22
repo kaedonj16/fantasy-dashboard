@@ -108,9 +108,10 @@ def upsert_season(season: int, players_index: dict, purge_pff: bool = True,
     overlapping shared columns so the free nflverse values fully replace them.
 
     xfp_by_pid, when supplied, is the season Expected Fantasy Points map
-    ({sleeper_id: {expected_*_per_game, *_over_expected_per_game}}) built once by
+    ({sleeper_id: {expected_*, *_over_expected}} season totals) built once by
     the caller; its columns are merged into each player's snapshot row so xFP
     lands on the same coalesced season row as the other nflverse metrics.
+    Per-game values are derived at serve time by dividing by games played.
     """
     by_pid = build_nflverse_metrics_for_season(season)
     if not by_pid:
@@ -277,7 +278,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     for season in seasons:
         print(f"=== Season {season} ===")
         # Expected Fantasy Points: one play-by-play pass yields both the season
-        # (per-game) and weekly (per-week total) maps, so we build it once here
+        # (totals) and weekly (per-week total) maps, so we build it once here
         # and hand each map to the matching upsert.
         xfp_season, xfp_weekly = {}, {}
         try:

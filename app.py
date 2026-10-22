@@ -20280,11 +20280,20 @@ _MATCHUP_RATINGS_TTL = 3600  # 1 hour
 
 
 def _scoring_format_from_settings(scoring_settings) -> str:
-    """Map league reception points onto ppr / half / std for fpts-against etc."""
+    """Map league reception points onto ppr / half / std for fpts-against etc.
+
+    A missing reception rate defaults to PPR, matching
+    ``scoring_format_from_settings`` / ``score_stats`` / ``pick_proj_variant``;
+    an explicit 0.0 stays standard.
+    """
+    ss = scoring_settings or {}
+    raw_rec = ss.get("rec")
+    if raw_rec is None:
+        raw_rec = ss.get("pointsPerReception")
     try:
-        rec = float((scoring_settings or {}).get("rec") or 0)
+        rec = float(raw_rec) if raw_rec is not None else 1.0
     except (TypeError, ValueError):
-        rec = 0.0
+        rec = 1.0
     if rec >= 1.0:
         return "ppr"
     if rec >= 0.5:
@@ -22353,7 +22362,15 @@ def api_refresh_page():
             season_safe = int(ctx.get("season") or season or datetime.now().year)
             num_teams = ctx.get("total_rosters") or None
             _ss = ctx.get("scoring_settings") or {}
-            rec = float(_ss.get("rec") or 0)
+            # Missing reception rate defaults to PPR (the unified default);
+            # an explicit 0.0 stays standard.
+            _raw_rec = _ss.get("rec")
+            if _raw_rec is None:
+                _raw_rec = _ss.get("pointsPerReception")
+            try:
+                rec = float(_raw_rec) if _raw_rec is not None else 1.0
+            except (TypeError, ValueError):
+                rec = 1.0
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
             te_premium = float(_ss.get("bonus_rec_te") or 0)
             scoring_type = "redraft" if _league_is_redraft(ctx) else "dynasty"
@@ -24070,45 +24087,62 @@ def api_trade_eval():
 
     players_by_id = _trade_eval_id_map(value_table, _idmap_src, _idmap_ts)
 
-    pick_values = load_pick_value_table(is_sf=(league_type == "sf"))
+    pick_values = load_pick_value_table(is_sf=(league_type == "sf")) or {}
 
-    def value_pick(pk: str) -> float:
+    def value_pick(pk: str):
+        """Calibrated pick value, or None when the table can't price it.
+
+        Mirrors the outcome analyzer (api_trade_outcome): an unpriceable
+        pick is UNVALUED, never silently priced at 0.0. Lookup uses the
+        shared calibrated hierarchy (exact slot -> bucket -> round
+        average, for this pick's own season) from
+        dashboard_services.trade_hub.
+        """
         try:
-            yr_str, rnd_str, slot_str = pk.split("_")
+            yr_str, rnd_str, slot_str = str(pk).split("_")
             year = int(yr_str)
             rnd = int(rnd_str)
         except Exception:
-            return 0.0
+            return None
+        from dashboard_services.trade_hub import calibrated_pick_value
+        slot = int(slot_str) if slot_str.isdigit() else None
+        bucket = slot_str.lower() if slot_str.lower() in ("early", "mid", "late") else None
+        # nearest_season=False: a verdict surface never borrows another
+        # season's prices - a pick this table doesn't cover for its own
+        # season is UNVALUED, matching the outcome analyzer.
+        val = calibrated_pick_value(
+            pick_values, year, rnd, slot=slot, bucket=bucket,
+            num_teams=league_size, nearest_season=False,
+        )
+        return float(val) if val and float(val) > 0 else None
 
-        key = f"{year}_{rnd}_{slot_str}"
-
-        val = pick_values.get(key)
-        if val is not None:
-            return float(val)
-
-        generic_key = f"any_{rnd}_{slot_str}"
-        if generic_key in pick_values:
-            return float(pick_values[generic_key])
-
-        return 0.0
-
-    def build_side(players_ids, picks_ids):
+    def build_side(players_ids, picks_ids, side_label):
         raw_players_total = 0.0
         raw_picks_total = 0.0
         player_values = []
         breakdown = []
         assets = []
+        unvalued_assets = []
 
         for pid in players_ids:
             pid_str = str(pid)
             player = players_by_id.get(pid_str)
 
             if not player:
+                # Unknown pid: UNVALUED (same convention as the outcome
+                # analyzer). It contributes nothing to the totals and the
+                # verdict is suppressed below, never priced as worthless.
+                unvalued_assets.append({
+                    "id": pid_str,
+                    "name": f"Player {pid_str}",
+                    "side": side_label,
+                })
                 breakdown.append({
                     "type": "player",
                     "id": pid_str,
                     "name": f"Player {pid_str}",
                     "value": 0.0,
+                    "unvalued": True,
                     "position": None,
                     "team": None,
                 })
@@ -24116,6 +24150,7 @@ def api_trade_eval():
                     "id": pid_str,
                     "name": f"Player {pid_str}",
                     "value": 0.0,
+                    "unvalued": True,
                     "position": None,
                     "team": None,
                     "age": None,
@@ -24136,6 +24171,37 @@ def api_trade_eval():
             )
             team = player.get("team")
             age = player.get("age")
+
+            # A row that prices at (or below) zero on the selected basis is
+            # UNVALUED too, same as the outcome analyzer: never a silent 0
+            # feeding the verdict.
+            if not val or float(val) <= 0:
+                unvalued_assets.append({
+                    "id": pid_str,
+                    "name": name or f"Player {pid_str}",
+                    "side": side_label,
+                })
+                breakdown.append({
+                    "type": "player",
+                    "id": pid_str,
+                    "name": name,
+                    "value": 0.0,
+                    "unvalued": True,
+                    "position": pos,
+                    "team": team,
+                })
+                assets.append({
+                    "id": pid_str,
+                    "name": name,
+                    "value": 0.0,
+                    "unvalued": True,
+                    "position": pos,
+                    "team": team,
+                    "age": age,
+                    "pos_rank_label": player.get("pos_rank_label") or "",
+                    "rank_change_7d": player.get("rank_change_7d"),
+                })
+                continue
 
             breakdown.append({
                 "type": "player",
@@ -24161,7 +24227,31 @@ def api_trade_eval():
 
         for pk in picks_ids:
             pk_str = str(pk)
-            val = float(value_pick(pk_str))
+            val = value_pick(pk_str)
+            if val is None:
+                # Pick missing from the calibrated table: UNVALUED, not 0.0.
+                unvalued_assets.append({
+                    "id": pk_str,
+                    "name": pk_str,
+                    "side": side_label,
+                })
+                breakdown.append({
+                    "type": "pick",
+                    "id": pk_str,
+                    "value": 0.0,
+                    "unvalued": True,
+                })
+                assets.append({
+                    "id": pk_str,
+                    "name": pk_str,
+                    "position": "PICK",
+                    "team": "",
+                    "age": None,
+                    "value": 0.0,
+                    "unvalued": True,
+                })
+                continue
+            val = float(val)
             breakdown.append({
                 "type": "pick",
                 "id": pk_str,
@@ -24190,10 +24280,19 @@ def api_trade_eval():
             "pick_ids": [str(pk) for pk in picks_ids],
             "effective_total": raw_total,
             "adjustment": 0.0,
+            "unvalued_assets": unvalued_assets,
         }
 
-    side_a = build_side(side_a_players, side_a_picks)
-    side_b = build_side(side_b_players, side_b_picks)
+    side_a = build_side(side_a_players, side_a_picks, "a")
+    side_b = build_side(side_b_players, side_b_picks, "b")
+
+    # UNGRADED convention (mirrors api_trade_outcome): any unvalued asset on
+    # either side means no fairness verdict - the totals only cover the
+    # valued assets, so a "favored / fair" call would treat a real asset
+    # as worthless.
+    unvalued_assets = list(side_a.get("unvalued_assets") or []) + \
+        list(side_b.get("unvalued_assets") or [])
+    graded = not unvalued_assets
 
     # Tiers come from the same cached value source as `value_table` (both the DB
     # current values), memoized on the model-cache timestamp so a burst of trade
@@ -24231,7 +24330,15 @@ def api_trade_eval():
     _t1_label = (str(payload.get("t1_team_name") or "").strip() if _rf_on else "") or "Team 1"
     _t2_label = (str(payload.get("t2_team_name") or "").strip() if _rf_on else "") or "Team 2"
 
-    if abs_diff <= fair_band:
+    if not graded:
+        _unvalued_names = ", ".join(
+            str(a.get("name") or a.get("id") or "") for a in unvalued_assets
+        )
+        verdict = (
+            f"Can't grade this trade - no current value for: "
+            f"{_unvalued_names}."
+        )
+    elif abs_diff <= fair_band:
         pct = (abs_diff / baseline) * 100.0
         verdict = f"This trade looks very fair (about {pct:.1f}% apart)."
     elif diff > 0:
@@ -24250,7 +24357,7 @@ def api_trade_eval():
         _user_id, session.get("viewer_user_id"), league_id, platform, season
     ) if league_id else False
 
-    if league_id and viewer_roster_id and _has_premium:
+    if graded and league_id and viewer_roster_id and _has_premium:
         try:
             from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup, \
                 _ctx_is_sf
@@ -24376,9 +24483,19 @@ def api_trade_eval():
         props={"platform": platform, "league_id": league_id, "scoring_type": scoring_type},
     )
 
-    # Veto risk: lopsided deals (30%+ gap or 150+ raw) get vetoed in real leagues.
-    _veto_baseline = max(side_a.get("total_value", 0), side_b.get("total_value", 0))
-    veto_risk = abs_diff > max(_veto_baseline * 0.30, 150) if _veto_baseline else False
+    # Veto risk: lopsided deals (30%+ gap or 150+ raw) get vetoed in real
+    # leagues. Baseline is the larger side's effective_total - the total
+    # build_side actually sets (it has never set a "total_value" key, so
+    # reading that made this flag permanently False). An ungraded trade
+    # has incomplete totals, so it never reports veto risk.
+    _veto_baseline = max(
+        float(side_a.get("effective_total") or 0),
+        float(side_b.get("effective_total") or 0),
+    )
+    veto_risk = bool(
+        graded and _veto_baseline
+        and abs_diff > max(_veto_baseline * 0.30, 150)
+    )
 
     return jsonify({
         "side_a": side_a,
@@ -24388,6 +24505,8 @@ def api_trade_eval():
         "fair_threshold": fair_band,
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
+        "graded": graded,
+        "unvalued_assets": unvalued_assets,
         "veto_risk": veto_risk,
         "analysis_html": analysis_html,
         "analysis_error": analysis_error,
@@ -35503,10 +35622,22 @@ def api_trade_targets():
         if p in values_by_id and values_by_id[p].get("age") is not None
         and values_by_id[p]["position"] in POSITIONS
     ]
+    # Package-ceiling pick estimate from the calibrated pick table (exact
+    # slot -> bucket -> round average -> nearest season), not flat
+    # per-round constants: a flat 650 for every 1st overstates a
+    # late/future 1st by up to ~3x against the table.
+    from dashboard_services.trade_hub import calibrated_pick_value as _cal_pick_val
+    _targets_pick_table = load_pick_value_table(is_sf=(league_type == "sf")) or {}
     _pick_val_est = sum(
-        650 if p.get("round") == 1 else 220 if p.get("round") == 2 else 80
+        _cal_pick_val(
+            _targets_pick_table,
+            p.get("season"),
+            p.get("round"),
+            slot=p.get("slot"),
+            num_teams=league_size,
+        )
         for p in picks_by_roster.get(viewer_roster_id, [])
-        if int(p.get("season", 0)) <= _cur_yr + 1
+        if int(p.get("season", 0) or 0) <= _cur_yr + 1
     )
     _realistic_max = package_ceiling(viewer_player_vals, _pick_val_est)
 

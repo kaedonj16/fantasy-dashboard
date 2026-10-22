@@ -189,3 +189,60 @@ def test_column_name_list_lines_up_across_formats():
     assert "expected_tds" in xp.XFP_COLS
     assert "td_over_expected" in xp.XFP_COLS
     assert len(xp.XFP_COLS) == 2 * len(xp.FORMATS) + 2
+
+
+# --- sacks / spikes are not pass attempts (formula audit 2026-10-21, §1.2) ----
+
+def _pbp_play(**kw):
+    base = {
+        "play_type": "pass", "week": 1, "yardline_100": 50.0, "air_yards": None,
+        "cp": None, "xyac_mean_yardage": None,
+        "pass_attempt": 0, "rush_attempt": 0, "complete_pass": 0,
+        "interception": 0, "yards_gained": -7, "passing_yards": 0,
+        "rushing_yards": 0, "receiving_yards": 0,
+        "pass_touchdown": 0, "rush_touchdown": 0,
+        "passer_player_id": "QB1", "rusher_player_id": None,
+        "receiver_player_id": None,
+        "sack": 0, "qb_dropback": 1, "qb_spike": 0,
+    }
+    base.update(kw)
+    return base
+
+
+def test_sack_adds_no_expected_passing_points():
+    """A midfield sack used to add ~+0.283 expected PPR points (the null
+    cp/xyac/air-yards fell back to the short-target tables). It must add 0."""
+    pd = pytest.importorskip("pandas")
+    pbp = pd.DataFrame([_pbp_play(sack=1)])
+    by_player = xp._accumulate_player_weeks(pbp, _tables())
+    # No opportunity bucket is even created for the passer on a sack.
+    assert "QB1" not in by_player
+
+
+def test_spike_adds_no_expected_passing_points():
+    pd = pytest.importorskip("pandas")
+    pbp = pd.DataFrame([_pbp_play(qb_spike=1, pass_attempt=1, yards_gained=0)])
+    by_player = xp._accumulate_player_weeks(pbp, _tables())
+    assert "QB1" not in by_player
+
+
+def test_sack_does_not_dilute_pass_td_or_int_tables():
+    """build_tables_from_pbp prices QB TD/INT equity over genuine attempts
+    only: 1 attempt (a TD) + 1 sack at the same yardline must give a pass-TD
+    rate of 1.0, not 0.5, and an INT denominator of 1, not 2."""
+    pd = pytest.importorskip("pandas")
+    attempt = _pbp_play(
+        pass_attempt=1, complete_pass=1, pass_touchdown=1, air_yards=7.0,
+        yardline_100=3.0, passing_yards=3, yards_gained=3,
+        receiver_player_id="WR1", receiving_yards=3,
+    )
+    sack = _pbp_play(sack=1, yardline_100=3.0)
+    tables = xp.build_tables_from_pbp(pd.DataFrame([attempt, sack]))
+    # yardline 3 -> bucket 1
+    assert tables.pass_td_prob_for(3.0) == pytest.approx(1.0)
+    assert tables.int_rate == pytest.approx(0.0)
+    # The genuine attempt is still accumulated normally.
+    by_player = xp._accumulate_player_weeks(pd.DataFrame([attempt, sack]), tables)
+    qb = by_player["QB1"][1]
+    assert qb["x_pass_att"] == pytest.approx(1.0)
+    assert qb["a_pass_att"] == pytest.approx(1.0)

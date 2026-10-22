@@ -55,10 +55,13 @@ def test_default_ppr_passing_line():
 
 
 def test_default_rushing_and_receiving():
-    # rush: 100*.1 + 1*6 = 16 ; rec: 5 rec (0 pts default) + 80*.1 + 1*6 = 14
+    # rush: 100*.1 + 1*6 = 16 ; rec: 5 rec (1.0 PPR default — a missing rec
+    # rate defaults to PPR everywhere) + 80*.1 + 1*6 = 19
     s = {"rush_yd": 100, "rush_td": 1, "rec": 5, "rec_yd": 80, "rec_td": 1}
     # 100-yard rush bonus is 0 unless defined; 100-yard rec bonus 0 unless defined.
-    assert score_stats(s, {}) == pytest.approx(30.0)
+    assert score_stats(s, {}) == pytest.approx(35.0)
+    # An explicit rec=0 still scores as standard.
+    assert score_stats(s, {"rec": 0.0}) == pytest.approx(30.0)
 
 
 def test_custom_reception_scoring_is_applied():
@@ -175,10 +178,13 @@ def test_custom_interception_rate_ignores_standard_precomputed_total():
     assert projection_points(entry, settings, "QB") == pytest.approx(17.0)
 
 
-def test_missing_rec_does_not_assume_ppr_precomputed_total():
+def test_missing_rec_recomputes_at_ppr_default_not_precomputed_total():
     entry = {"raw_stats": {"rec": 8, "rec_yd": 100, "pts_ppr": 26.0, "pts_std": 18.0}}
-    # Missing rec used to default to PPR and show 26. Recompute with rec=0.
-    assert projection_points(entry, {"rec_yd": 0.1}, "WR") == 10.0
+    # Missing rec defaults to PPR (1.0) in every scoring path, but a partial
+    # settings dict still cannot claim Sleeper's precomputed total (the
+    # league's other rates are unverified), so it recomputes from the raw
+    # line at the PPR default: 8 x 1.0 + 100 x 0.1 = 18.0, not the canned 26.
+    assert projection_points(entry, {"rec_yd": 0.1}, "WR") == 18.0
 
 
 def test_settings_wide_custom_rate_recomputes_for_skill_players():

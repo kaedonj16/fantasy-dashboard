@@ -291,13 +291,13 @@ def test_build_writes_bundles_for_all_variants(tmp_path, monkeypatch):
     summary = ssb.build_start_score_bundles()
     assert summary["ok"], summary
     assert summary["players"] == 2
-    assert summary["variants"] == 7
-    assert summary["rows"] == 14
+    assert summary["variants"] == 12
+    assert summary["rows"] == 24
 
     writer = conns[-1]
     assert any("PRUNE" in s.upper() or "DELETE FROM start_score_bundle" in s
                for s in writer.statements)
-    assert len(writer.written) == 14
+    assert len(writer.written) == 24
     by_key = {(r[2], r[3]): json.loads(r[4]) for r in writer.written}
     ppr = by_key[("1", "ppr")]
     assert ppr["pos"] == "RB"
