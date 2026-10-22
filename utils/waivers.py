@@ -2521,6 +2521,17 @@ def _counts_to_positions(counts: Dict[str, int]) -> List[str]:
     return out
 
 
+# Bounded memo for optimal_starters_and_points: pickup evaluation re-solves
+# the same lineups constantly (the roster-only "before" lineup for every
+# candidate, the same week-0 drop trials in both the week evaluation and the
+# horizon drop costing). The solver is a pure function of the key below, so
+# caching changes speed only, never results. Cleared wholesale at the cap
+# rather than LRU-tracked: entries are cheap to recompute and a request's
+# working set is a few thousand solves at most.
+_OPTIMAL_SOLVE_CACHE: dict = {}
+_OPTIMAL_SOLVE_CACHE_CAP = 8192
+
+
 def optimal_starters_and_points(pts_map: Dict[str, float],
                                 positions: Dict[str, str],
                                 roster_positions: Iterable,
@@ -2530,6 +2541,39 @@ def optimal_starters_and_points(pts_map: Dict[str, float],
     """Best legal lineup over ``pids`` and its total. Locked starters (already
     played / lineup-locked) are forced into the lineup first so the optimizer
     can't bench them; the rest fill the remaining slots optimally."""
+    pids = [str(p) for p in pids]
+    try:
+        _rp_key = tuple(str(s) for s in (roster_positions or []))
+        _key = (
+            _rp_key,
+            tuple(pids),
+            tuple((p, (pts_map or {}).get(p)) for p in pids),
+            tuple((p, (positions or {}).get(p)) for p in pids),
+            tuple(str(p) for p in (locked_starter_pids or [])),
+        )
+        _hit = _OPTIMAL_SOLVE_CACHE.get(_key)
+    except TypeError:
+        # Unhashable input (never seen from real callers): solve uncached.
+        _key = None
+        _hit = None
+    if _hit is not None:
+        return set(_hit[0]), _hit[1]
+    starters, total = _optimal_starters_and_points_uncached(
+        pts_map, positions, list(_rp_key) if _key is not None else roster_positions,
+        pids, locked_starter_pids)
+    if _key is not None:
+        if len(_OPTIMAL_SOLVE_CACHE) >= _OPTIMAL_SOLVE_CACHE_CAP:
+            _OPTIMAL_SOLVE_CACHE.clear()
+        _OPTIMAL_SOLVE_CACHE[_key] = (frozenset(starters), total)
+    return set(starters), total
+
+
+def _optimal_starters_and_points_uncached(pts_map: Dict[str, float],
+                                          positions: Dict[str, str],
+                                          roster_positions: Iterable,
+                                          pids: Iterable,
+                                          locked_starter_pids: Optional[Iterable] = None
+                                          ) -> "tuple[set, float]":
     pids = [str(p) for p in pids]
     locked = [str(p) for p in (locked_starter_pids or []) if str(p) in pids]
     if not locked:
@@ -2591,15 +2635,22 @@ def evaluate_pickup_week(candidate_pid: str,
     starters_before, before = optimal_starters_and_points(
         pts_map, positions, roster_positions, roster_pids, locked_starter_pids)
 
+    # The unconstrained add (candidate in, nobody out) is solved either way:
+    # it IS the after_add answer when a slot is open, and when the roster is
+    # full it prices every drop trial below without a fresh solve per drop.
+    starters_add, _after_any = optimal_starters_and_points(
+        pts_map, positions, roster_positions, roster_pids + [candidate_pid],
+        locked_starter_pids)
+
     # Add without dropping (only legal when the roster isn't full).
     after_add = None
-    starters_add: set = set()
     if not roster_full:
-        starters_add, after_add = optimal_starters_and_points(
-            pts_map, positions, roster_positions, roster_pids + [candidate_pid],
-            locked_starter_pids)
+        after_add = _after_any
 
-    # Best add-with-drop over the eligible drop pool.
+    # Best add-with-drop over the eligible drop pool. Only runs when a drop
+    # is actually required: with an open slot the representative result is
+    # the plain add and the drop trial outcomes are discarded by the caller
+    # branch below, so solving them was pure waste.
     drop_pids = [str(p) for p in (droppable_pids
                                   if droppable_pids is not None else roster_pids)]
     locked = {str(p) for p in (locked_starter_pids or [])}
@@ -2608,18 +2659,39 @@ def evaluate_pickup_week(candidate_pid: str,
     best_drop = None
     best_after_drop = None
     best_starters_drop: set = set()
-    for d in drop_pids:
-        post = [p for p in roster_pids if p != d] + [candidate_pid]
-        s_after, pts_after = optimal_starters_and_points(
-            pts_map, positions, roster_positions, post,
-            [p for p in (locked_starter_pids or []) if p != d])
-        # Prefer the highest resulting lineup; tie-break by cutting the least
-        # productive player (lowest own projected points).
-        key = (pts_after, -float(pts_map.get(d) or 0))
-        if best_after_drop is None or key > (best_after_drop, -float(pts_map.get(best_drop) or 0)):
-            best_after_drop = pts_after
-            best_drop = d
-            best_starters_drop = s_after
+    if roster_full:
+        for d in drop_pids:
+            if d in starters_add:
+                post = [p for p in roster_pids if p != d] + [candidate_pid]
+                s_after, pts_after = optimal_starters_and_points(
+                    pts_map, positions, roster_positions, post,
+                    [p for p in (locked_starter_pids or []) if p != d])
+            else:
+                # Dropping a player outside the post-add lineup cannot
+                # change that lineup: it stays legal (same locks, the
+                # dropped player is not in it) and no post-drop lineup can
+                # beat it (every post-drop lineup was available pre-drop).
+                # The same shortcut _horizon_drop_costing already relies on.
+                s_after, pts_after = starters_add, _after_any
+            # Prefer the highest resulting lineup; tie-break by cutting the least
+            # productive player (lowest own projected points).
+            key = (pts_after, -float(pts_map.get(d) or 0))
+            if best_after_drop is None or key > (best_after_drop, -float(pts_map.get(best_drop) or 0)):
+                best_after_drop = pts_after
+                best_drop = d
+                best_starters_drop = s_after
+        if best_drop is not None and best_drop not in starters_add:
+            # The winning drop was priced analytically above; its total is
+            # exact, but among tied optimal lineups the solver's starter
+            # SET can depend on the pid list (a dropped bench player can
+            # change which tied lineup is found first), and replaces_pid
+            # reads that set. Re-solve just the winner so the returned
+            # starters are exactly what a per-drop solve produces.
+            _post = [p for p in roster_pids if p != best_drop] + [candidate_pid]
+            best_starters_drop, _re_pts = optimal_starters_and_points(
+                pts_map, positions, roster_positions, _post,
+                [p for p in (locked_starter_pids or []) if p != best_drop])
+            best_after_drop = _re_pts
 
     # Choose the representative "after" lineup for who-starts / who's-replaced.
     if not roster_full and after_add is not None:
