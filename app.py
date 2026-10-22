@@ -9435,7 +9435,9 @@ def render_standings(team_stats, length, all_play: dict = None,
 
         Returns the inner HTML for the cell; the wrapping <td> carries the
         .pp-status-cell + modifier classes. Bubble teams inside the field
-        read "Bubble"; bubble teams outside it read their games back.
+        read "Bubble"; bubble teams outside it read their games back,
+        except a team level with the cut on record (0 GB, out only on the
+        PF tiebreak), which reads "Bubble" too.
         """
         if not p:
             return "pp-status-none", "<span class='muted'>&ndash;</span>"
@@ -9450,7 +9452,8 @@ def render_standings(team_stats, length, all_play: dict = None,
             mod, word = "pp-status-out", "Out"
         else:  # bubble
             mod = "pp-status-bub"
-            word = (f"{p['games_back']:g} GB" if p["seed"] > (_spots or 0)
+            word = (f"{p['games_back']:g} GB"
+                    if p["seed"] > (_spots or 0) and p["games_back"] > 0
                     else "Bubble")
         return mod, f"<i class='pp-sdot'></i>{word}"
 
