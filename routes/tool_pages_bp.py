@@ -5,6 +5,7 @@ Routes:
     /draft[, /<platform>/<season>/<league_id>/draft]           (Draft Room)
     /keeper[, /<platform>/<season>/<league_id>/keeper]         (Keeper Assistant)
     /draft/history[, /<platform>/<season>/<league_id>/draft/history]
+    /draft/recap[, /<platform>/<season>/<league_id>/draft/recap] (Draft Recap)
 
 Extracted from app.py to reduce monolith size. Each renders via app.render_page
 and delegates its body to a dashboard_services.pages.* builder.
@@ -343,4 +344,19 @@ def page_draft_history(platform: str = None, season: int = None, league_id: str 
     return render_page(
         "Draft History | BR Fantasy", league_id, "draft-history", body, platform, season,
         description="Review your league's past and live fantasy football drafts pick-by-pick.",
+    )
+
+
+@tool_pages_bp.route("/draft/recap")
+@tool_pages_bp.route("/<platform>/<int:season>/<league_id>/draft/recap")
+def page_draft_recap(platform: str = None, season: int = None, league_id: str = None):
+    """Draft Recap: grade the league's draft by how each pick actually performed."""
+    from dashboard_services.pages.draft_recap_page import build_draft_recap_body
+    body = build_draft_recap_body(league_id, season, platform)
+    return render_page(
+        "Draft Recap | BR Fantasy", league_id, "draft-recap", body, platform, season,
+        description=(
+            "Fantasy football draft recap: every pick graded by actual performance "
+            "against its draft position and ADP, with steals, busts, and a team leaderboard."
+        ),
     )

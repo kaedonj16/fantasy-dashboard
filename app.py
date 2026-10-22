@@ -3810,6 +3810,7 @@ _NAV_PAGE_META = {
     "breakouts": ("radar", "page_breakouts", ""),
     "prospects": ("award", "page_prospects", ""),
     "draft-history": ("history", "tool_pages.page_draft_history", ""),
+    "draft-recap": ("history", "tool_pages.page_draft_recap", ""),
     "awards": ("award", "page_awards", ""),
     "graphs": ("bars2", "league_pages.page_graphs", ""),
     "history": ("history", "league_pages.page_history", ""),
@@ -3824,6 +3825,7 @@ _DOCK_LABELS = {
     "trade-suggestions": "Trades", "trade-database": "Trades",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
     "nfl-teams": "NFL Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
+    "draft-recap": "Recap",
     "draft-cheat-sheet": "Cheat",
     "awards": "Awards", "graphs": "Graphs", "history": "Seasons",
 }
@@ -4135,7 +4137,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "lineup-lab", "schedule", "scorezone"},
         "League": {"standings", "teams", "activity", "league_health"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
-        "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history"},
+        "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history", "draft-recap"},
         "Stats": {"awards", "graphs", "history"},
     }
     def _category_row(label):
@@ -4233,6 +4235,7 @@ _GUEST_ACTIVE_PARENT = {
     "players": "players", "compare": "players", "top-movers": "players",
     "advanced-metrics": "players", "nfl-teams": "players", "breakouts": "players", "prospects": "players",
     "draft": "draft", "draft-history": "draft", "draft-cheat-sheet": "draft",
+    "draft-recap": "draft",
     "guides": "home", "glossary": "home", "faq": "home", "about": "home",
 }
 
@@ -4344,7 +4347,7 @@ def _mobile_nav_guest(active: str) -> str:
     guest_groups = {
         "Trades": {"trade", "trade-suggestions", "trade-database"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
-        "Draft": {"draft", "draft-cheat-sheet", "draft-history"},
+        "Draft": {"draft", "draft-cheat-sheet", "draft-history", "draft-recap"},
         "Learn": {"guides", "glossary", "faq", "about", "contact"},
     }
     def _guest_category(label):
@@ -34220,6 +34223,511 @@ def api_draft_grades():
     except Exception:
         logger.exception("[draft-grades] Unexpected error")
         return jsonify({"error": "Internal error"}), 500
+
+
+# ── Draft Recap ──────────────────────────────────────────────────────────────
+# Performance-graded draft recap: every pick of a completed draft graded by
+# how the player actually played (the league's own scoring) versus (1) his
+# draft position in this league and (2) his market ADP. Distinct from
+# /api/draft-grades above, which grades the pick AT draft time (ADP value /
+# BPA / need) with no performance component. Pure rank/verdict/leaderboard
+# math lives in utils/draft_recap.py.
+
+_DRAFT_RECAP_CACHE: dict = {}
+_DRAFT_RECAP_CACHE_TTL = 300  # 5 minutes, same pattern as draft-grades
+_DRAFT_RECAP_CACHE_MAX = 200
+
+
+def _draft_recap_scoring(platform, league_id, season, league):
+    """(scoring_settings, label) for the recap's performance scoring.
+
+    The league's own settings when the league loads (Sleeper: SCORING_DEFAULTS
+    merged with the league's scoring_settings, like build_league_context;
+    other providers: their synced global settings), normalized the same way.
+    Fails open to standard PPR defaults only when the league cannot be
+    loaded, and the label says so."""
+    try:
+        if league:
+            if platform == "sleeper":
+                from dashboard_services.api import SCORING_DEFAULTS as _SD
+                _raw = (league or {}).get("scoring_settings") or {}
+                _settings = {**_SD, **_raw}
+            else:
+                from dashboard_services.api import get_provider_scoring_settings
+                from dashboard_services.platform_api import sync_league_globals
+                sync_league_globals(platform, league_id, season)
+                _settings = get_provider_scoring_settings()
+            if _settings:
+                try:
+                    from utils.league_scoring import normalize_league_scoring
+                    _settings = normalize_league_scoring(
+                        platform, _settings, league_id=league_id, season=season)
+                except Exception:
+                    logger.debug("[draft-recap] scoring normalize skipped", exc_info=True)
+                return _settings, "League scoring"
+    except Exception:
+        logger.debug("[draft-recap] league scoring load failed", exc_info=True)
+    try:
+        return get_normalized_scoring_settings("sleeper"), "Standard PPR"
+    except Exception:
+        return {}, "Standard PPR"
+
+
+def _draft_recap_is_sf(league) -> bool:
+    """Superflex derivation from the league itself (a SUPER_FLEX roster slot),
+    the same signal the tool pages use."""
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        return bool(is_superflex_lineup((league or {}).get("roster_positions") or []))
+    except Exception:
+        _rp = [str(x).upper() for x in ((league or {}).get("roster_positions") or [])]
+        return "SUPER_FLEX" in _rp or "SFLEX" in _rp
+
+
+def _draft_recap_adp_map(season, is_sf, mode, drafted_ids, num_teams):
+    """{player_id: avg_pick} market ADP for the drafted pool.
+
+    Rookie drafts grade against the BR Fantasy crawler's rookie market (real
+    Sleeper rookie drafts, draft_adp draft_type='rookie'). The resolver's
+    consensus on the rookie axis blends that crawler with Sleeper's overall
+    dynasty ADP -- a different scale (Jeremiyah Love: crawler 1.1 vs Sleeper
+    dynasty ~17 for the 2026 class, whose adp_rookie is a 999 sentinel) -- so
+    the rookie axis reads the crawler source directly, then the league-ADP
+    path draft-grades uses (the same draft_adp aggregate, local snapshot
+    first), then consensus as a last resort. Redraft uses the resolver's
+    consensus across Sleeper/ESPN/Yahoo/MFL/BR Fantasy."""
+    from dashboard_services.adp_service import resolve_market_adp
+
+    _ids = {str(p) for p in drafted_ids if str(p or "")}
+
+    def _clip(m):
+        out = {}
+        for k, v in (m or {}).items():
+            try:
+                if str(k) in _ids and v is not None:
+                    out[str(k)] = float(v)
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    try:
+        if mode == "rookie":
+            _m = _clip(resolve_market_adp(
+                int(season), bool(is_sf), scoring_type="rookie",
+                source="brfantasy", fallback=False, restrict_ids=_ids))
+            if not _m:
+                _league_adp = _fetch_league_adp_from_db(
+                    bool(is_sf), int(season), "rookie", num_teams) or {}
+                _m = _clip({pid: (info or {}).get("avg_pick")
+                            for pid, info in _league_adp.items()
+                            if isinstance(info, dict)})
+            if _m:
+                return _m
+        return _clip(resolve_market_adp(
+            int(season), bool(is_sf),
+            scoring_type="rookie" if mode == "rookie" else "redraft",
+            source="consensus", restrict_ids=_ids))
+    except Exception:
+        logger.debug("[draft-recap] ADP lookup failed", exc_info=True)
+        return {}
+
+
+def _draft_recap_players_feed():
+    """The full Sleeper players feed via the app's cached accessor -- the
+    same map start/sit reads injury_status / injury_body_part / gsis_id
+    from. {} on any failure (the current-designation arm then no-ops)."""
+    try:
+        return get_players_global() or {}
+    except Exception:
+        logger.debug("[draft-recap] players feed unavailable", exc_info=True)
+        return {}
+
+
+def _draft_recap_injury_history(season):
+    """nflverse Out / reserve history for the recap's injury exemption, or
+    None when the history files are unavailable at runtime (the history arm
+    then no-ops; it is never read as proof a player was healthy)."""
+    try:
+        from dashboard_services.nfl_game_data import nflverse_injury_history
+        return nflverse_injury_history(int(season))
+    except Exception:
+        logger.debug("[draft-recap] injury history unavailable", exc_info=True)
+        return None
+
+
+def _draft_recap_payload(platform, league_id, season):
+    """JSON-able Draft Recap payload for one league/season. Never raises.
+
+    Status states: "ok" (graded board), "no_draft" (no completed draft or no
+    picks for the season), "unsupported" (auction draft). Rows carry raw
+    (unrounded) ppg/total for ranking plus display-ready fields; the verdict
+    and deltas are computed on unrounded values with competition ranks."""
+    from utils.draft_recap import (
+        CORE_POSITIONS as _CORE,
+        injury_exemption as _injury_exemption,
+        injury_span_exemption as _injury_span_exemption,
+        rank_values as _rank_values,
+        team_leaderboard as _team_leaderboard,
+        pick_superlatives as _pick_superlatives,
+        story_lists as _story_lists,
+        verdict_for as _verdict_for,
+    )
+
+    platform = (platform or "sleeper").strip().lower()
+    try:
+        season = int(season)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    base = {"platform": platform, "league_id": str(league_id), "season": season,
+            "supported": False}
+
+    drafts = get_drafts(platform, league_id, season) or []
+    draft = get_most_recent_valid_draft_for_season(drafts, season)
+    if not draft:
+        return {**base, "status": "no_draft",
+                "reason": "No completed draft found for this season"}
+    draft_id = draft.get("draft_id") or draft.get("id")
+    if not draft_id:
+        return {**base, "status": "no_draft", "reason": "Draft has no ID"}
+    if str(draft.get("type") or "").strip().lower() == "auction":
+        return {**base, "status": "unsupported", "draft_id": str(draft_id),
+                "reason": "Auction drafts are not supported yet"}
+    picks_raw = get_draft_picks(platform, league_id, season, draft_id=draft_id) or []
+    if not isinstance(picks_raw, list) or not picks_raw:
+        return {**base, "status": "no_draft", "reason": "Draft has no picks yet"}
+
+    league = {}
+    try:
+        league = get_league(platform, league_id, season) or {}
+    except Exception:
+        league = {}
+    rosters = []
+    users = []
+    try:
+        rosters = get_rosters(platform, league_id, season) or []
+        users = get_users(platform, league_id, season) or []
+    except Exception:
+        rosters, users = [], []
+    roster_map = _build_roster_map(users, rosters)
+    players_index = load_players_index() or {}
+
+    slot_to_roster: dict = {}
+    for _k, _v in (draft.get("slot_to_roster_id") or {}).items():
+        try:
+            slot_to_roster[int(_k)] = int(_v)
+        except (TypeError, ValueError):
+            continue
+    num_teams = len(rosters) or len(slot_to_roster) or int(
+        (draft.get("settings") or {}).get("teams") or 0) or 12
+
+    rounds = 0
+    try:
+        rounds = int((draft.get("settings") or {}).get("rounds") or 0)
+    except (TypeError, ValueError):
+        rounds = 0
+    if not rounds:
+        rounds = max((int(p.get("round") or 0) for p in picks_raw
+                      if isinstance(p, dict)), default=0)
+    _dtype = _live_draft_type(rounds, platform, league_id, season)
+    mode = "rookie" if _dtype == "rookie" else "redraft"
+    order_type = str(draft.get("type") or "").strip().lower()
+
+    scoring_settings, scoring_label = _draft_recap_scoring(
+        platform, league_id, season, league)
+    weekly = _load_season_weekly_points(season, scoring_settings) or {}
+    try:
+        from utils.season_qualification import qualification_policy
+        _completed_weeks = {int(w) for w in
+                            qualification_policy(season).completed_weeks or ()}
+        through_week = len(_completed_weeks)
+    except Exception:
+        _completed_weeks = set()
+        through_week = 0
+
+    # ── Performance pool: core positions with at least one played game ──────
+    _perf: dict = {}
+    for _pid, _pts in weekly.items():
+        if not _pts:
+            continue
+        _pos = str((players_index.get(str(_pid)) or {}).get("pos") or "").upper()
+        if _pos not in _CORE:
+            continue
+        _tot = float(sum(_pts))
+        _perf[str(_pid)] = {"pos": _pos, "g": len(_pts),
+                            "total": _tot, "ppg": _tot / len(_pts)}
+    _finish_all = _rank_values({pid: d["ppg"] for pid, d in _perf.items()})
+    _finish_pos = {
+        pos: _rank_values({pid: d["ppg"] for pid, d in _perf.items()
+                           if d["pos"] == pos})
+        for pos in _CORE
+    }
+
+    def _slot_of(p, pick_no):
+        try:
+            _s = int(p.get("draft_slot") or 0)
+        except (TypeError, ValueError):
+            _s = 0
+        if _s:
+            return _s
+        if not pick_no or not num_teams:
+            return 0
+        _pos_in_round = (pick_no - 1) % num_teams + 1
+        _rnd = int(p.get("round") or 0)
+        if order_type == "snake" and _rnd and _rnd % 2 == 0:
+            return num_teams - _pos_in_round + 1
+        return _pos_in_round
+
+    # ── Pick rows ────────────────────────────────────────────────────────────
+    _sorted_picks = sorted(
+        (p for p in picks_raw if isinstance(p, dict)),
+        key=lambda p: (int(p.get("pick_no") or 0), int(p.get("round") or 0)))
+    rows: list = []
+    _draft_counter: dict = {}
+    for p in _sorted_picks:
+        pid = str(p.get("player_id") or "")
+        meta = players_index.get(pid) or {}
+        pmeta = p.get("metadata") or {}
+        pos = str(meta.get("pos") or pmeta.get("position") or "").upper()
+        _draft_counter[pos] = _draft_counter.get(pos, 0) + 1
+        pick_no = int(p.get("pick_no") or 0)
+        rnd = int(p.get("round") or 0)
+        slot = _slot_of(p, pick_no)
+        name = str(meta.get("name") or "").strip()
+        if not name:
+            name = (f"{pmeta.get('first_name', '')} {pmeta.get('last_name', '')}"
+                    .strip() or "Unknown")
+        espn_id = str(meta.get("espnID") or meta.get("espn_id") or "")
+        headshot = _hires_headshot_url(str(meta.get("espnHeadshot") or ""), 160)
+        if not headshot and espn_id:
+            headshot = (f"https://a.espncdn.com/i/headshots/nfl/players/full/"
+                        f"{espn_id}.png")
+        if not headshot and pid:
+            headshot = f"https://sleepercdn.com/content/nfl/players/thumb/{pid}.jpg"
+        rid = p.get("roster_id")
+        perf = _perf.get(pid)
+        rows.append({
+            "pick_no": pick_no,
+            "round": rnd,
+            "draft_slot": slot,
+            "label": f"{rnd}.{slot:02d}" if rnd and slot else "",
+            "roster_id": rid,
+            "team": (roster_map.get(str(rid)) or f"Roster {rid}").strip(),
+            "player_id": pid,
+            "name": name,
+            "pos": pos,
+            "nfl": str(meta.get("team") or pmeta.get("team") or ""),
+            "espn_id": espn_id,
+            "headshot": headshot,
+            "g": perf["g"] if perf else 0,
+            "total": round(perf["total"], 1) if perf else 0.0,
+            "ppg": round(perf["ppg"], 1) if perf else 0.0,
+            "ppg_raw": perf["ppg"] if perf else None,
+            "draft_pos_rank": _draft_counter[pos],
+            "finish_ppg": _finish_pos.get(pos, {}).get(pid) if perf else None,
+            "overall_finish": _finish_all.get(pid) if perf else None,
+            "class_finish": None,
+            "adp": None,
+            "adp_pos_rank": None,
+            "delta_pick": None,
+            "delta_adp": None,
+            "verdict": None,
+            "graded": False,
+            "injury_exempt": False,
+            "injury_evidence": None,
+        })
+
+    # Class finish: positional PPG rank among the DRAFTED players at the
+    # position with at least one game (rookie mode's finish basis).
+    for pos in _CORE:
+        _class_ranks = _rank_values({
+            r["player_id"]: r["ppg_raw"] for r in rows
+            if r["pos"] == pos and r["ppg_raw"] is not None})
+        for r in rows:
+            if r["pos"] == pos:
+                r["class_finish"] = _class_ranks.get(r["player_id"])
+
+    # ── ADP: market avg pick over the drafted pool ───────────────────────────
+    adp_map = _draft_recap_adp_map(
+        season, _draft_recap_is_sf(league), mode,
+        [r["player_id"] for r in rows], num_teams)
+    for pos in _CORE:
+        _adp_ranks = _rank_values({
+            r["player_id"]: -adp_map[r["player_id"]] for r in rows
+            if r["pos"] == pos and r["player_id"] in adp_map})
+        for r in rows:
+            if r["pos"] == pos and r["player_id"] in adp_map:
+                r["adp"] = round(adp_map[r["player_id"]], 1)
+                r["adp_pos_rank"] = _adp_ranks.get(r["player_id"])
+
+    # ── Scoreless picks: injury exemption, else a bottom grade ───────────
+    # A pick who missed the whole stretch hurt is unfortunate, not a bust.
+    # Zero appearances: exempt when his current Sleeper designation is
+    # IR/PUP, or the official record (nflverse weekly injury reports /
+    # weekly rosters) had him Out or on reserve for essentially every
+    # completed week. A healthy scratch instead grades at the bottom of the
+    # same pool everyone else is ranked in (all healthy scratches at a
+    # position share that rank). A pick who DID appear but never scored
+    # (0 total points) is tested on duration alone: exempt only when his
+    # Out/reserve span covers at least completed_weeks - 1 weeks -- how
+    # long he was hurt is the whole question for a player who dressed,
+    # produced nothing, and then lost the season. Picks with any points
+    # are never tested: they grade on what they did. History is consulted
+    # lazily and fails open: unavailable history disables the span arm and
+    # is flagged in the payload meta, never faked.
+    _history_available = True
+    if through_week >= 1:
+        _zero = [r for r in rows if r["pos"] in _CORE and not r["g"]]
+        _scoreless_played = [
+            r for r in rows if r["pos"] in _CORE and r["g"]
+            and r["ppg_raw"] is not None and r["ppg_raw"] == 0.0]
+        if _zero or _scoreless_played:
+            _feed = _draft_recap_players_feed()
+            _history = None
+            _history_loaded = False
+
+            def _span_sets(r, _rec):
+                """(out weeks or None, reserve weeks) for one row from the
+                lazily loaded history, cut to the completed weeks. The out
+                set stays None when the player has no gsis id (unknown,
+                never read as healthy); the history itself being
+                unavailable yields (None, empty set)."""
+                nonlocal _history, _history_loaded, _history_available
+                if not _history_loaded:
+                    _history_loaded = True
+                    _history = _draft_recap_injury_history(season)
+                    if _history is None:
+                        _history_available = False
+                if _history is None:
+                    return None, set()
+                _gsis = str(_rec.get("gsis_id") or "").strip()
+                _out = ((_history.get("out") or {}).get(_gsis)
+                        if _gsis else None)
+                if _out is not None:
+                    _out = _out & _completed_weeks
+                _res = set()
+                for _key in ({_gsis, r["player_id"]} - {""}):
+                    _res |= (_history.get("res") or {}).get(_key) or set()
+                _res &= _completed_weeks
+                return _out, _res
+
+            for r in _zero:
+                _rec = _feed.get(r["player_id"]) or {}
+                _evidence = _injury_exemption(
+                    _rec.get("injury_status"), _rec.get("injury_body_part"),
+                    None, None, through_week)
+                if _evidence is None and through_week >= 2:
+                    _out, _res = _span_sets(r, _rec)
+                    if _history is not None:
+                        _evidence = _injury_exemption(
+                            None, None, _out, _res, through_week)
+                if _evidence is not None:
+                    r["injury_exempt"] = True
+                    r["injury_evidence"] = _evidence
+                    r["verdict"] = "Injured"
+                else:
+                    r["class_finish"] = (
+                        sum(1 for x in rows
+                            if x["pos"] == r["pos"] and x["g"]) + 1)
+                    r["finish_ppg"] = len(_finish_pos.get(r["pos"], {})) + 1
+                    r["overall_finish"] = len(_finish_all) + 1
+            for r in _scoreless_played:
+                if through_week < 2:
+                    break
+                _rec = _feed.get(r["player_id"]) or {}
+                _out, _res = _span_sets(r, _rec)
+                if _history is None:
+                    break
+                _evidence = _injury_span_exemption(
+                    _out, _res, through_week,
+                    _rec.get("injury_body_part"))
+                if _evidence is not None:
+                    r["injury_exempt"] = True
+                    r["injury_evidence"] = _evidence
+                    r["verdict"] = "Injured"
+
+    # ── Deltas + verdicts ────────────────────────────────────────────────────
+    for r in rows:
+        if r["pos"] not in _CORE:
+            continue  # K/DEF and others are never graded (board gaps)
+        if r.get("injury_exempt"):
+            r["verdict"] = "Injured"
+            continue
+        _finish = r["class_finish"] if mode == "rookie" else r["finish_ppg"]
+        if _finish is None:
+            r["verdict"] = "No stats"
+            continue
+        r["delta_pick"] = r["draft_pos_rank"] - _finish
+        r["graded"] = True
+        r["verdict"] = _verdict_for(r["delta_pick"])[0]
+        if r["adp_pos_rank"] is not None:
+            r["delta_adp"] = r["adp_pos_rank"] - _finish
+
+    teams = _team_leaderboard(rows)
+    total_picks = len(picks_raw)
+    payload = {
+        **base,
+        "status": "ok",
+        "supported": True,
+        "draft_id": str(draft_id),
+        "mode": mode,
+        "draft_type": _dtype,
+        "draft_order": order_type,
+        "league_name": str(league.get("name") or league_id),
+        "draft_label": f"{season} {'rookie' if mode == 'rookie' else 'redraft'} draft",
+        "through_week": through_week,
+        "injury_history_available": _history_available,
+        "scoring_label": scoring_label,
+        "num_teams": num_teams,
+        "rounds": rounds,
+        "picks_total": total_picks,
+        "picks_graded": sum(1 for r in rows if r["graded"]),
+        "slot_to_roster_id": {str(k): v for k, v in slot_to_roster.items()},
+        "slot_teams": {str(k): (roster_map.get(str(v)) or f"Roster {v}").strip()
+                       for k, v in slot_to_roster.items()},
+        "picks": rows,
+        "teams": teams,
+        "superlatives": _pick_superlatives(rows, total_picks, teams),
+        "lists": _story_lists(rows, mode, total_picks),
+    }
+    return payload
+
+
+@app.route("/api/draft-recap")
+def api_draft_recap():
+    """Draft Recap: grade every pick by actual performance vs draft position
+    and ADP. Query params: platform, league_id, season (mirrors
+    /api/draft-grades). No completed draft -> 404; auction -> honest
+    unsupported payload, not a 500."""
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    nfl_state = get_nfl_state() or {}
+    try:
+        season = int(request.args.get("season") or nfl_state.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        season = datetime.now().year
+
+    _rc_key = (platform, league_id, season)
+    _rc_hit = _DRAFT_RECAP_CACHE.get(_rc_key)
+    if _rc_hit and (time.time() - _rc_hit[0]) < _DRAFT_RECAP_CACHE_TTL:
+        _payload = _rc_hit[1]
+    else:
+        try:
+            _payload = _draft_recap_payload(platform, league_id, season)
+        except Exception:
+            logger.exception("[draft-recap] Unexpected error")
+            return jsonify({"error": "Internal error"}), 500
+        if len(_DRAFT_RECAP_CACHE) > 256:  # bound memory; entries are small
+            _DRAFT_RECAP_CACHE.clear()
+        _prune_ttl_cache(_DRAFT_RECAP_CACHE, _DRAFT_RECAP_CACHE_MAX)
+        _DRAFT_RECAP_CACHE[_rc_key] = (time.time(), _payload)
+
+    if _payload.get("status") == "no_draft":
+        return jsonify({"error": _payload.get("reason") or "No draft found",
+                        "status": "no_draft"}), 404
+    return jsonify(_payload)
 
 
 # ---------------------------------------------------------------------------
