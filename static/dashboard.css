@@ -14554,7 +14554,10 @@ a.signed-home-league:hover {
 }
 
 .reconnect-home-espn {
-    flex: 0 0 auto
+    flex: 0 0 auto;
+    /* .home-card button forces width:100%, which squeezed the league name
+       and its attention note out of the row entirely. */
+    width: auto !important
 }
 
 /* Per-league provider connection banner (reauth_required). Rendered at the
@@ -14693,6 +14696,16 @@ a.signed-home-league:hover {
 }
 
 #connectLeagueFlow[hidden] {
+    display: none !important
+}
+
+/* Same enforcement for the card's other state regions: their author
+   display rules (flex) beat the UA [hidden] style, so without this the
+   signed-in block and the guest account entry stayed visible in every
+   card state and the states stacked instead of switching. */
+#signedInHome[hidden],
+.home-account-entry[hidden],
+.saved-viewer-cta[hidden] {
     display: none !important
 }
 
@@ -52445,6 +52458,26 @@ html:not([data-theme="dark"]) .home-card .error-message { background: #fef2f2; c
 html:not([data-theme="dark"]) .home-card .home-account-lead { color: #64748b !important; }
 html:not([data-theme="dark"]) .home-card .google-continue-btn { color: #122d4b !important; }
 html:not([data-theme="dark"]) #signedInHome { background: #fff; border: 1px solid #e8eef4; border-radius: 18px; box-shadow: 0 14px 30px rgba(18,45,75,.08); padding: 22px; }
+/* Signed-in home contents were never re-skinned with the white card: the
+   base rules below still carry the old dark-card palette (near-white text
+   and borders), which rendered the greeting, league rows and pagination
+   invisible on white. Re-skin them in the card's own light grammar. */
+html:not([data-theme="dark"]) .home-card .signed-in-home-greeting { color: #64748b; }
+html:not([data-theme="dark"]) .home-card .signed-home-league { background: #f1f5f9; border-color: #e2e8f0; color: #122d4b; }
+html:not([data-theme="dark"]) .home-card a.signed-home-league:hover { background: #e8eef5; border-color: #cbd5e1; }
+html:not([data-theme="dark"]) .home-card .signed-home-league-open { color: #2563eb; }
+html:not([data-theme="dark"]) .home-card .connection-attention { color: #dc2626; }
+html:not([data-theme="dark"]) .home-card .home-reset-user { color: #64748b; }
+html:not([data-theme="dark"]) .home-card .home-reset-user:hover { color: #122d4b; }
+html:not([data-theme="dark"]) .home-card #signedInAddLeague { background: #122d4b; border-color: #122d4b; color: #fff; }
+html:not([data-theme="dark"]) .home-card #signedInAddLeague:hover { background: #1b3a5c; border-color: #1b3a5c; }
+html:not([data-theme="dark"]) .home-card .signed-home-pagination { color: #64748b; }
+html:not([data-theme="dark"]) .home-card .signed-home-pagination button { background: #f1f5f9; border-color: #e2e8f0; color: #122d4b; }
+html:not([data-theme="dark"]) .home-card .home-connect-back { color: #2563eb; }
+html:not([data-theme="dark"]) .home-card .home-connect-back:hover { color: #122d4b; }
+html:not([data-theme="dark"]) .saved-viewer-label { color: #64748b; }
+html:not([data-theme="dark"]) .saved-viewer-reset { color: #64748b; }
+html:not([data-theme="dark"]) .saved-viewer-connect { color: #2563eb; }
 .home-account-top { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 12px; text-align: left; margin-bottom: 18px; }
 .home-account-top .home-account-lead { flex: 1 1 240px; margin-bottom: 0 !important; }
 .home-account-top .google-continue-btn { flex: 0 1 auto; width: auto; }
