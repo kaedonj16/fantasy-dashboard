@@ -1929,9 +1929,11 @@ def playoff_bracket(
                 if parts:
                     sub = (f"<div class='pb-tsub'>"
                            f"{' &middot; '.join(parts)}</div>")
+            tseed = (f"<span class='pb-tseed'>{s}</span>"
+                     if s is not None else "")
             cls = "pb-trow pb-trow--winner" if is_win else "pb-trow"
             return (f"<div class='{cls}'>{pill}{av}<div class='pb-tmain'>"
-                    f"<div class='pb-tname'>{click}</div>{sub}</div>"
+                    f"<div class='pb-tname'>{tseed}{click}</div>{sub}</div>"
                     f"<span class='pb-tscore'>{score_text(match, side)}</span>"
                     f"</div>")
 
