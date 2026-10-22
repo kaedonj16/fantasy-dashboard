@@ -28,10 +28,12 @@ class _FakeDateTime(datetime):
 
 
 class _FakeConn:
-    """Serves push_subscriptions rows; app_state goes through pn patches."""
+    """Serves push_subscriptions rows (and user_leagues binding rows for
+    Yahoo); app_state goes through pn patches."""
 
-    def __init__(self, rows):
+    def __init__(self, rows, bindings=None):
         self._rows = rows
+        self._bindings = bindings or {}
 
     def __enter__(self):
         return self
@@ -41,6 +43,15 @@ class _FakeConn:
 
     def execute(self, *a, **k):
         query = str(a[0]) if a else ""
+        if "user_leagues" in query:
+            params = a[1] if len(a) > 1 else ()
+            bound = self._bindings.get((str(params[0]), str(params[1])), [])
+
+            class _RB:
+                def fetchall(inner):
+                    return list(bound)
+
+            return _RB()
         assert "push_subscriptions" in query, f"unexpected query: {query[:60]}"
 
         class _R:
@@ -54,7 +65,8 @@ class _FakeConn:
 
 
 def _setup(monkeypatch, *, espn_rows, schedule, last_seen, sub_rows,
-           rosters=None, league_name="Blackedraw", now_utc=None, leagues=None):
+           rosters=None, league_name="Blackedraw", now_utc=None, leagues=None,
+           bindings=None):
     import json as _json
 
     import dashboard_services.api as api
@@ -91,7 +103,7 @@ def _setup(monkeypatch, *, espn_rows, schedule, last_seen, sub_rows,
         pn, "_get_subscribed_leagues",
         lambda: leagues if leagues is not None else [("L1", "sleeper")],
     )
-    monkeypatch.setattr(db, "get_conn", lambda: _FakeConn(sub_rows))
+    monkeypatch.setattr(db, "get_conn", lambda: _FakeConn(sub_rows, bindings))
     pn._league_name_cache.clear()
 
     def _get(conn, key):
@@ -118,9 +130,9 @@ def _games(kickoff):
     return [{"home": "DET", "away": "KC", "gameTime_epoch": kickoff}]
 
 
-def _sub_row(owner_id="o1"):
+def _sub_row(owner_id="o1", account_key="acct"):
     return {"endpoint": "ep1", "p256dh": "k1", "auth": "a1", "prefs": {},
-            "owner_id": owner_id, "account_key": "acct"}
+            "owner_id": owner_id, "account_key": account_key}
 
 
 def test_flip_to_out_alerts_before_kickoff(monkeypatch):
@@ -324,8 +336,11 @@ def test_espn_team_id_subscription_matches_via_alias(monkeypatch):
 def test_co_owner_subscriptions_match_on_every_platform(monkeypatch):
     # A co-manager's device subscribes under their own id, which is NOT
     # the roster owner_id on any platform. Rosters that surface
-    # co_owners (Sleeper natively; ESPN/Yahoo via their adapters) must
-    # still route the flip to that device.
+    # co_owners (Sleeper natively; ESPN via their adapters) must still
+    # route the flip to that device. Yahoo is the exception by design:
+    # its payload owner ids are the fetching caller's guid on every
+    # roster, so Yahoo flips route through the saved team binding
+    # (covered by the two tests after this one) instead of guid matching.
     cases = [
         ("sleeper", {"owner_id": "u-primary", "roster_id": 1,
                      "co_owners": ["u-co"],
@@ -333,9 +348,6 @@ def test_co_owner_subscriptions_match_on_every_platform(monkeypatch):
         ("espn", {"owner_id": "{OWN-1}", "roster_id": 3,
                   "co_owners": ["{CO-2}"],
                   "starters": ["12518"], "players": ["12518"]}, "{CO-2}"),
-        ("yahoo", {"owner_id": "guid-first", "roster_id": 7,
-                   "co_owners": ["guid-second"],
-                   "starters": ["12518"], "players": ["12518"]}, "guid-second"),
     ]
     for platform, roster, stored in cases:
         n, sent = _platform_case(
@@ -346,11 +358,33 @@ def test_co_owner_subscriptions_match_on_every_platform(monkeypatch):
         assert len(sent) == 1
 
 
-def test_yahoo_second_manager_without_co_owners_misses(monkeypatch):
-    # Documents the pre-fix adapter gap: Yahoo rosters used to hardcode
-    # co_owners=None, discarding every manager after the first, so a
-    # second manager's subscription could not match. (The adapter now
-    # populates co_owners -- see test_yahoo_co_owner_ids.py.)
+def test_yahoo_co_manager_flip_routes_via_binding(monkeypatch):
+    # A Yahoo co-manager is reached through their OWN account's saved
+    # team binding (their subscription's account_key), never by matching
+    # payload guids: the roster's owner_id here is the fetching caller's
+    # guid, which appears on every roster in the league.
+    rosters = [{"owner_id": "guid-caller", "roster_id": 7,
+                "co_owners": ["guid-second"],
+                "starters": ["12518"], "players": ["12518"]}]
+    sent, _ = _setup(
+        monkeypatch,
+        espn_rows=_CANON_FEED,
+        schedule=_games(KICKOFF_FUTURE),
+        last_seen={"L1:12518": ""},
+        sub_rows=[_sub_row(owner_id="guid-second", account_key="42")],
+        rosters=rosters,
+        leagues=[("L1", "yahoo")],
+        bindings={("L1", "7"): [{"account_id": 42, "season": 2026}]},
+    )
+    assert pn.notify_injury_flip() == 1
+    assert len(sent) == 1
+
+
+def test_yahoo_flip_without_binding_goes_to_nobody(monkeypatch):
+    # The binding contract: with no user_leagues binding for the roster's
+    # team, a Yahoo flip alerts nobody -- even when a subscription's
+    # owner_id equals a guid on the roster, because Yahoo payload guids
+    # identify the fetching caller, not the team's manager.
     rosters = [{"owner_id": "guid-first", "roster_id": 7, "co_owners": None,
                 "starters": ["12518"], "players": ["12518"]}]
     n, sent = _platform_case(
