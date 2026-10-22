@@ -628,18 +628,100 @@ class MFLProvider(ProviderAdapter):
                             "custom_points": None})
         return out
 
+    @staticmethod
+    def _parse_mfl_gave_up(gave_up, giver, receiver, season, xwalk):
+        """Parse one side's ``franchiseN_gave_up`` string into unified assets.
+
+        Tokens are comma-separated (trailing comma): numeric MFL player ids,
+        ``FP_<origFranchise>_<year>_<round>`` future picks (actual round),
+        ``DP_<rr>_<pp>`` current-year picks (round/pick one LESS than actual),
+        ``BB_<amount>`` blind-bid dollars (skipped: no money asset type).
+        A player given up by ``giver`` is received by ``receiver``:
+        adds[canon]=receiver, drops[canon]=giver. Unmapped MFL player ids are
+        skipped -- raw provider ids are never stored as canonical ids.
+        Returns (adds, drops, draft_picks).
+        """
+        adds: dict = {}
+        drops: dict = {}
+        draft_picks: list = []
+        for token in str(gave_up or "").split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if token.startswith("FP_"):
+                parts = token.split("_")
+                if len(parts) >= 4 and parts[2].isdigit() and parts[3].isdigit():
+                    draft_picks.append({
+                        "season": int(parts[2]),
+                        "round": int(parts[3]),
+                        "roster_id": parts[1],
+                        "owner_id": receiver,
+                        "previous_owner_id": parts[1],
+                    })
+                continue
+            if token.startswith("DP_"):
+                parts = token.split("_")
+                if len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+                    draft_picks.append({
+                        "season": int(season),
+                        "round": int(parts[1]) + 1,
+                        "order": int(parts[2]) + 1,
+                        "roster_id": giver,
+                        "owner_id": receiver,
+                        "previous_owner_id": giver,
+                    })
+                continue
+            if token.startswith("BB_"):
+                continue
+            canon = (xwalk or {}).get(token)
+            if canon:
+                adds[canon] = receiver
+                drops[canon] = giver
+        return adds, drops, draft_picks
+
     def get_transactions(self, league_id, season, week):
         raw = self._export("transactions", league_id, season, ttl=300)
         txs = _items((raw.get("transactions") or {}).get("transaction", []), "transaction")
         out = []
+        xwalk = None  # lazy: only fetched when a trade lists player tokens
         for i, tx in enumerate(txs):
             kind = str(tx.get("type") or "").upper()
             normalized = "trade" if "TRADE" in kind else ("waiver" if "WAIVER" in kind else "free_agent")
-            out.append({"transaction_id": str(tx.get("id") or f"mfl-{season}-{i}"),
-                        "type": normalized, "status": "complete", "created": _int(tx.get("timestamp")),
-                        "roster_ids": [str(x) for x in str(tx.get("franchise") or "").split(",") if x],
-                        "adds": {}, "drops": {}, "draft_picks": [],
-                        "metadata": {"provider_type": kind, "provider_data": tx.get("transaction")}})
+            # MFL timestamps are epoch SECONDS; every other adapter emits ms.
+            ts_s = _int(tx.get("timestamp"))
+            created = ts_s * 1000 if ts_s else 0
+            # ``franchise`` is side 1 (older fakes join both parties into it);
+            # ``franchise2`` is side 2 in the real export shape.
+            franchise_parts = [p.strip() for p in str(tx.get("franchise") or "").split(",") if p.strip()]
+            side1 = franchise_parts[0] if franchise_parts else ""
+            side2 = str(tx.get("franchise2") or "").strip() or (
+                franchise_parts[1] if len(franchise_parts) > 1 else ""
+            )
+            roster_ids = list(dict.fromkeys(
+                [p for p in franchise_parts + ([side2] if side2 else []) if p]
+            ))
+            adds: dict = {}
+            drops: dict = {}
+            draft_picks: list = []
+            gave1 = tx.get("franchise1_gave_up") or ""
+            gave2 = tx.get("franchise2_gave_up") or ""
+            if normalized == "trade" and (gave1 or gave2) and side1 and side2:
+                if xwalk is None:
+                    try:
+                        xwalk = self._canonical_map(league_id, season) or {}
+                    except Exception:
+                        xwalk = {}
+                a1, d1, p1 = self._parse_mfl_gave_up(gave1, side1, side2, season, xwalk)
+                a2, d2, p2 = self._parse_mfl_gave_up(gave2, side2, side1, season, xwalk)
+                adds = {**a1, **a2}
+                drops = {**d1, **d2}
+                draft_picks = p1 + p2
+            out.append({"transaction_id": str(tx.get("id") or f"mfl-{season}-{ts_s}-{i}"),
+                        "type": normalized, "status": "complete", "created": created,
+                        "roster_ids": roster_ids,
+                        "adds": adds, "drops": drops, "draft_picks": draft_picks,
+                        "metadata": {"provider_type": kind, "provider_data": tx.get("transaction"),
+                                     "franchise1_gave_up": gave1, "franchise2_gave_up": gave2}})
         return out
 
     def get_drafts(self, league_id, season):
