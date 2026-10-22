@@ -1393,26 +1393,12 @@ Promise.all([
       const birthDate = new Date(year, month - 1, day);
       const today = new Date();
       
-      // Calculate precise age including partial years
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const monthDiff = today.getMonth() - birthDate.getMonth();
-      const dayDiff = today.getDate() - birthDate.getDate();
-      
-      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
-        age--;
-      }
-      
-      // Calculate partial year as decimal
-      const lastBirthday = new Date(
-        today.getFullYear() - (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? 1 : 0),
-        birthDate.getMonth(),
-        birthDate.getDate()
-      );
-      const daysSinceBirthday = (today - lastBirthday) / (1000 * 60 * 60 * 24);
-      const daysInYear = (today.getFullYear() % 4 === 0 && (today.getFullYear() % 100 !== 0 || today.getFullYear() % 400 === 0)) ? 366 : 365;
-      
-      age += daysSinceBirthday / daysInYear;
-      return Math.round(age * 10) / 10; // Round to 1 decimal place
+      // Match the server's age_from_bday exactly - the age the player
+      // modal shows: total days / 365.25, floor-truncated to 1 decimal.
+      // The old round-to-nearest here made the board read 31.1 where the
+      // modal read 31.0 for the same birthday (Mahomes, 2026-10-22).
+      const days = Math.floor((today - birthDate) / (1000 * 60 * 60 * 24));
+      return Math.floor((days / 365.25) * 10) / 10;
     } catch (e) {
       return null;
     }
@@ -1423,7 +1409,8 @@ Promise.all([
   const _ppgHead = document.getElementById('prPpgHeader');
   if (_ppgHead) {
     const _ppgSeason = (rawPlayers.find(p => p && p.ppg_season) || {}).ppg_season;
-    _ppgHead.title = _ppgSeason ? (_ppgSeason + ' season PPG (full PPR)') : 'Season PPG (full PPR)';
+    const _ppgBasis = (!Array.isArray(resp) && resp.ppg_scoring === 'league') ? 'league scoring' : 'full PPR';
+    _ppgHead.title = _ppgSeason ? (_ppgSeason + ' season PPG (' + _ppgBasis + ')') : ('Season PPG (' + _ppgBasis + ')');
   }
 
   prAllPlayers = rawPlayers

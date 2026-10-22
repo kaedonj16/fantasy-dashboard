@@ -388,4 +388,4 @@ def test_availability_css_present():
 
 def test_service_worker_bumped():
     sw = _read("static/sw.js")
-    assert "br-fantasy-v82" in sw
+    assert "br-fantasy-v83" in sw

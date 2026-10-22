@@ -25295,15 +25295,26 @@ def _ppg_map_with_ranks(entries: dict) -> dict:
     return out
 
 
-def _current_season_ppg_map(season: int, positions: dict) -> dict:
+def _current_season_ppg_map(season: int, positions: dict,
+                            scoring_settings: dict = None) -> dict:
     """PPG / total points from the CURRENT season's completed weeks, per player.
 
-    Each player's PPG uses their OWN completed weeks (via
-    bulk_player_completed_weeks) instead of league-wide completed weeks, so a
-    finished Sunday game counts for that player even before the rest of the
-    slate (e.g. tonight's MNF) is final. Same source the player modal hero
-    uses: weekly stat files scored full-PPR via _load_season_weekly_points
-    (which backfills missing week files on demand). The prebuilt
+    The pool is the league-wide completed-weeks build - the exact pool the
+    player modal ranks over in _season_rank_rows (every QB/RB/WR/TE with a
+    scored appearance in a completed round) - scored with ONE scoring basis
+    for both surfaces. ``scoring_settings`` defaults to standard full PPR
+    (``{"rec": 1.0}``) for the public / no-league board; a league context
+    passes the league's own settings (see _apply_league_ppg_overlay), so a player
+    shows the same PPG and the same ranks on the rankings board and in the
+    modal. The old per-player completed-weeks gate (bulk_player_completed_
+    weeks, driven by the server's team-history maps) silently dropped
+    players from this pool who ARE in the modal's pool - the board's
+    overall PPG rank ran 2 spots high for Mahomes and Lawrence on
+    2026-10-22 - and the hard-coded PPR basis hid league milestone bonuses
+    and 2pt conversions the modal counts (Tyler Shough's 400-yard bonus
+    game is what made Mahomes QB11 in the modal but QB10 on the board).
+    The per-player Sunday-final-before-MNF nuance survives where it always
+    lived: the modal's deferred _hero_scoring_correction. The prebuilt
     usage_rows_<season>.json only exists for finished seasons, so pointing
     the rankings payload at the newest usage file silently served last
     season's numbers once the new season kicked off. Returns {} when no
@@ -25314,31 +25325,13 @@ def _current_season_ppg_map(season: int, positions: dict) -> dict:
     the site. Never raises.
     """
     try:
-        from utils.season_qualification import (
-            bulk_player_completed_weeks,
-            qualification_policy,
-        )
+        from utils.season_qualification import qualification_policy
         _policy = qualification_policy(int(season))
         if not _policy.completed_weeks:
             return {}
-        # Player IDs with any weekly stat lines (league-wide weeks just to
-        # get the candidate set; per-player filtering happens below).
-        _weekly_all = _load_season_weekly_points(int(season), {"rec": 1.0}) or {}
-        if not _weekly_all:
-            return {}
-        # Per-player completed weeks, computed in bulk (hoisted schedule
-        # loads). Group players by their weeks tuple so the
-        # _load_season_weekly_points cache is shared per distinct tuple
-        # (in practice just a handful: e.g. (1,2,3,4) vs (1,2,3)).
-        _weeks_by_pid = bulk_player_completed_weeks(
-            [str(_pid) for _pid in _weekly_all.keys()], int(season))
-        _by_weeks: dict = {}
-        for _pid in _weekly_all.keys():
-            _w = tuple(_weeks_by_pid.get(str(_pid)) or ())
-            if not _w:
-                continue  # no finished game yet (e.g. MNF player pre-game)
-            _by_weeks.setdefault(_w, []).append(str(_pid))
-        if not _by_weeks:
+        _scoring = scoring_settings if isinstance(scoring_settings, dict) and scoring_settings else {"rec": 1.0}
+        _weekly = _load_season_weekly_points(int(season), _scoring) or {}
+        if not _weekly:
             return {}
         from utils.fantasy_scoring import completed_points_summary
         try:
@@ -25347,27 +25340,146 @@ def _current_season_ppg_map(season: int, positions: dict) -> dict:
         except Exception:
             _index_pos = {}
         _entries = {}
-        for _w, _pids in _by_weeks.items():
-            _weekly = _load_season_weekly_points(
-                int(season), {"rec": 1.0}, weeks=_w) or {}
-            for _pid in _pids:
-                _pts = _weekly.get(_pid)
-                _summary = completed_points_summary(_pts) if _pts else None
-                if not _summary:
-                    continue
-                _entries[_pid] = {
-                    "ppg": round(float(_summary["ppg"]), 1),
-                    "total_pts": round(float(_summary["total"]), 1),
-                    "ppg_raw": float(_summary["ppg"]),
-                    "total_pts_raw": float(_summary["total"]),
-                    "games": int(_summary["games"]),
-                    "season": int(season),
-                    "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),
-                }
+        for _pid, _pts in _weekly.items():
+            _summary = completed_points_summary(_pts) if _pts else None
+            if not _summary:
+                continue
+            _pid = str(_pid)
+            _entries[_pid] = {
+                "ppg": round(float(_summary["ppg"]), 1),
+                "total_pts": round(float(_summary["total"]), 1),
+                "ppg_raw": float(_summary["ppg"]),
+                "total_pts_raw": float(_summary["total"]),
+                "games": int(_summary["games"]),
+                "season": int(season),
+                "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),
+            }
         return _ppg_map_with_ranks(_entries)
     except Exception:
         logger.debug("[league-players] current-season PPG map failed", exc_info=True)
         return {}
+
+
+_LEAGUE_PPG_MAP_CACHE: dict = {}  # (season, scoring_sig) -> (ts, newest_week_mtime, map)
+_LEAGUE_PPG_MAP_MAX = 8
+
+
+def _league_ppg_map_cached(season: int, positions: dict, scoring_settings: dict) -> dict:
+    """_current_season_ppg_map for one league scoring basis, cached per
+    (season, scoring signature) on the weekly-points TTL and invalidated
+    when a weekly stat file changes - the same freshness the modal's
+    _SEASON_RANK_CACHE runs on. Returns {} when the build is unavailable;
+    callers then keep the payload's standard-PPR PPG fields rather than
+    blanking them. Never raises."""
+    try:
+        sig = hashlib.md5(
+            json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
+        ).hexdigest()[:10]
+        key = (int(season), sig)
+        pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")
+        newest = max((os.path.getmtime(p) for p in glob.glob(pattern)), default=0.0)
+        now = time.time()
+        hit = _LEAGUE_PPG_MAP_CACHE.get(key)
+        if hit and now - hit[0] < _WEEKLY_PTS_TTL and newest <= hit[0]:
+            _LEAGUE_PPG_MAP_CACHE[key] = _LEAGUE_PPG_MAP_CACHE.pop(key)  # LRU refresh
+            return hit[2]
+        result = _current_season_ppg_map(int(season), positions, scoring_settings)
+        if result:
+            _lru_cache_put(_LEAGUE_PPG_MAP_CACHE, key, (now, newest, result), _LEAGUE_PPG_MAP_MAX)
+        return result
+    except Exception:
+        logger.debug("[league-players] league PPG map failed", exc_info=True)
+        return {}
+
+
+def _league_scoring_for_ppg(platform: str, league_id: str, season: int):
+    """The league's normalized scoring settings for the PPG overlay, or None.
+
+    Mirrors how the player modal resolves scoring: the league context's
+    scoring_settings when a context is already cached (never a cold build -
+    the rankings payload must not pay one), else, for Sleeper, the league
+    object itself merged over SCORING_DEFAULTS and normalized, which is
+    exactly the Sleeper branch of the context build. Never raises.
+    """
+    try:
+        if not league_id:
+            return None
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, int(season), allow_build=False)
+            ss = (ctx or {}).get("scoring_settings")
+            if isinstance(ss, dict) and ss:
+                return dict(ss)
+        except Exception:
+            logger.debug("[league-players] PPG scoring ctx lookup failed", exc_info=True)
+        if str(platform or "").strip().lower() == "sleeper":
+            from dashboard_services.api import SCORING_DEFAULTS, get_league as _get_sleeper_league
+            league = _get_sleeper_league(str(league_id)) or {}
+            raw = league.get("scoring_settings") or {}
+            if isinstance(raw, dict) and raw:
+                ss = {**SCORING_DEFAULTS, **raw}
+                try:
+                    from utils.league_scoring import normalize_league_scoring
+                    ss = normalize_league_scoring("sleeper", ss, league_id=str(league_id), season=int(season))
+                except Exception:
+                    logger.debug("[league-players] PPG scoring normalize failed", exc_info=True)
+                return ss
+    except Exception:
+        logger.debug("[league-players] PPG scoring resolution failed", exc_info=True)
+    return None
+
+
+_PPG_OVERLAY_FIELDS = (
+    "ppg", "total_pts", "ppg_raw", "total_pts_raw", "ppg_games", "ppg_season",
+    "ppg_rank", "total_pts_rank", "ppg_ovr_rank", "total_pts_ovr_rank",
+)
+
+
+def _apply_league_ppg_overlay(payload: dict, platform: str, league_id: str, season: int):
+    """Re-score the payload's PPG / total-points fields with the league's
+    scoring, on a copy - the rankings board in a league context must show
+    the same PPG values and ranks as the player modal for that league.
+
+    Players are shallow-copied before any field is touched so the shared
+    memoized base payload (standard PPR) is never mutated. Players with no
+    league-scored entry have their PPG fields cleared, matching the modal
+    (no appearances under this scoring = no PPG, never a stale standard-
+    PPR number). Sets payload["ppg_scoring"] = "league" so the client can
+    label the column honestly. Returns (payload, applied): when the league
+    or its scoring can't be resolved, or the league build is unavailable,
+    returns the original payload with applied=False so the caller keeps
+    the standard-PPR fields (and ETag caching) rather than blanking them.
+    Never raises.
+    """
+    try:
+        scoring = _league_scoring_for_ppg(platform, league_id, season)
+        if not scoring:
+            return payload, False
+        players = (payload or {}).get("players") or []
+        if not players:
+            return payload, False
+        positions = {str(p.get("id") or ""): str(p.get("position") or "")
+                     for p in players if p.get("id")}
+        league_map = _league_ppg_map_cached(int(season), positions, scoring)
+        if not league_map:
+            return payload, False
+        new_players = []
+        for p in players:
+            q = dict(p)
+            entry = league_map.get(str(p.get("id") or ""))
+            if entry:
+                q.update(entry)
+            else:
+                for f in _PPG_OVERLAY_FIELDS:
+                    if f in q:
+                        q[f] = None
+            new_players.append(q)
+        out = dict(payload)
+        out["players"] = new_players
+        out["ppg_scoring"] = "league"
+        return out, True
+    except Exception:
+        logger.debug("[league-players] league PPG overlay failed", exc_info=True)
+        return payload, False
 
 
 def _build_league_players_payload(kdef: bool = False) -> dict:
@@ -26714,9 +26826,22 @@ def api_league_players():
                 payload["adp_columns"] = _rest + _yahoo + _cons
                 return _finish(payload, board_cacheable=False)
 
+    # League-context PPG overlay: in a league, the board's PPG / total
+    # points and their ranks are scored with the league's own settings -
+    # the same numbers the player modal shows for that league - instead of
+    # the shared payload's standard-PPR basis. Applied on a copy; the
+    # response is no-store (not ETag-cacheable) because the shared version
+    # key does not identify a league.
+    _ppg_lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
+    _ppg_plat = (request.args.get("platform") or session.get("last_platform") or "sleeper").strip().lower()
+    _ppg_overlaid = False
+    if _ppg_lg:
+        payload, _ppg_overlaid = _apply_league_ppg_overlay(
+            payload, _ppg_plat, _ppg_lg, _cur_season)
+
     # Projection rows vary by scoring fingerprint and schema version. Do not let
     # a CDN/browser retain a pre-contract or differently scored player payload.
-    return _finish(payload)
+    return _finish(payload, board_cacheable=not _ppg_overlaid)
     # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),
     # not today's. We overlay onto a COPY so the shared memoized payload -- which
     # carries current-season ADP -- is never mutated. Player value stays current
