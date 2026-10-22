@@ -13,6 +13,11 @@ footer inside the card and all footers line up in a flat row. Implemented as:
 grid stretch (no `align-items: start`) + `.tdb-card` as a column flexbox +
 `margin-top: auto` on `.tdb-card-foot`.
 
+Revision (2026-10-21, side-by-side card rework): the footer is gone; the
+card's bottom action is now the Analyze bar (`.tdb-analyze`), and the same
+pinning invariant applies to it — margin-top: auto pins the bar to the card
+bottom so bars line up in a flat row across equal-height cards.
+
 These tests read the page's inline CSS from the route source (no Flask app
 import, no live database).
 """
@@ -49,10 +54,11 @@ def test_tdb_card_is_column_flex():
 
 
 def test_tdb_card_foot_pinned_to_bottom():
-    rule = _rule(".tdb-card-foot")
-    assert re.search(r"margin-top\s*:\s*auto", rule), (
-        "tdb-card-foot must use margin-top: auto so the footer pins to the "
-        "card bottom and leftover space sits above the footer, not below it"
+    rule = _rule(".tdb-analyze")
+    assert re.search(r"margin\s*:\s*auto", rule), (
+        "tdb-analyze must use margin-top: auto (via the margin shorthand) so "
+        "the Analyze bar pins to the card bottom and leftover space sits "
+        "above the bar, not below it"
     )
 
 

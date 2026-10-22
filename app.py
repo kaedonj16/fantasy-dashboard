@@ -34254,6 +34254,7 @@ def api_trade_database():
     ?q=<player name>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
     &league_format=<all|dynasty|redraft|keeper>
     &sort=<date_desc|date_asc|value_desc|value_asc>
+    &range=<all|7d|30d|90d>  (trade-age cutoff on created_at; all = whole season)
     """
     try:
         q = (request.args.get("q") or "").strip().lower()
@@ -34265,6 +34266,9 @@ def api_trade_database():
         sort = (request.args.get("sort") or "date_desc").strip().lower()
         if sort not in ("date_desc", "date_asc", "value_desc", "value_asc"):
             sort = "date_desc"
+        range_days = {"7d": 7, "30d": 30, "90d": 90}.get(
+            (request.args.get("range") or "all").strip().lower()
+        )  # None = all season (no cutoff)
 
         # ID-based filters (comma-separated player IDs)
         _pa_raw = (request.args.get("player_a") or "").strip()
@@ -34299,6 +34303,14 @@ def api_trade_database():
         from data_building.trade_intel.league_types import league_format_sql_param
         lf_param = league_format_sql_param(league_format)
         lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
+
+        # Time-range filter: cutoff on the trade timestamp. Its placeholder
+        # sits after the league-format placeholder in both queries, so
+        # range_p joins both param lists at that same position.
+        range_clause = (
+            "AND t.created_at >= NOW() - (%s * INTERVAL '1 day') " if range_days else ""
+        )
+        range_p = [range_days] if range_days else []
 
         # Build player filter clauses.
         # Use uncorrelated IN-subqueries and joins instead of correlated
@@ -34360,14 +34372,14 @@ def api_trade_database():
         with get_conn() as conn:
             # JOIN placeholders come textually before WHERE placeholders, so
             # join_params leads.
-            count_params = join_params + [season] + sf_p + lf_p + filter_params
+            count_params = join_params + [season] + sf_p + lf_p + range_p + filter_params
             # Cache the total: the COUNT(DISTINCT) scans all matching trades
             # (~500k unfiltered) and dominates response time. Key on the filter
             # fingerprint; bounded to avoid unbounded growth from ad-hoc searches.
             import time as _tdb_time
             _tdb_now = _tdb_time.time()
             _tdb_key = (
-                season, sf_param, lf_param,
+                season, sf_param, lf_param, range_days,
                 tuple(sorted(player_a_ids)), tuple(sorted(player_b_ids)),
                 tuple(sorted(match_ids)),
             )
@@ -34380,7 +34392,7 @@ def api_trade_database():
                     SELECT COUNT(DISTINCT t.id) AS n
                     FROM trade_intel_trades t
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
-                    WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
+                    WHERE t.season = %s {sf_clause}{lf_clause}{range_clause}{filter_sql}
                     """,
                     count_params,
                 ).fetchone()
@@ -34425,14 +34437,14 @@ def api_trade_database():
 
             # The value-join placeholder sits textually between the JOIN
             # placeholders and the WHERE placeholders.
-            row_params = join_params + _value_params + [season] + sf_p + lf_p + filter_params + [limit + 1, page * limit]
+            row_params = join_params + _value_params + [season] + sf_p + lf_p + range_p + filter_params + [limit + 1, page * limit]
             trade_rows = conn.execute(
                 f"""
                 SELECT DISTINCT t.id, t.transaction_id, t.season, t.week, t.created_at,
                        l.scoring_type, l.is_superflex, l.num_teams{_value_select}
                 FROM trade_intel_trades t
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
-                {_value_join}WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
+                {_value_join}WHERE t.season = %s {sf_clause}{lf_clause}{range_clause}{filter_sql}
                 {_order_by}
                 LIMIT %s OFFSET %s
                 """,
@@ -34470,7 +34482,8 @@ def api_trade_database():
                 info = players_map.get(pid) or {}
                 return {"type": "player", "player_id": pid,
                         "name": info.get("name") or pid,
-                        "position": info.get("pos") or "?"}
+                        "position": info.get("pos") or "?",
+                        "team": info.get("team") or ""}
             s = str(a["pick_season"]) if a["pick_season"] else "?"
             r = str(a["pick_round"]) if a["pick_round"] else "?"
             slot = a["pick_slot"]
@@ -34479,7 +34492,9 @@ def api_trade_database():
             else:
                 order = a["pick_order"] or ""
                 name = f"{s} Round {r}" + (f" ({order})" if order else "")
-            return {"type": "pick", "name": name}
+            return {"type": "pick", "name": name,
+                    "pick_season": a["pick_season"], "pick_round": a["pick_round"],
+                    "pick_slot": slot}
 
         result = []
         for r in trade_rows:
@@ -34498,6 +34513,8 @@ def api_trade_database():
             result.append({
                 "trade_id": r["transaction_id"],
                 "date": trade_date,
+                "created_at": r["created_at"].isoformat()
+                if hasattr(r["created_at"], "isoformat") else None,
                 "season": r["season"],
                 "week": r["week"],
                 "scoring_type": r["scoring_type"],
