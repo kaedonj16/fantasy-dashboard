@@ -70,6 +70,71 @@ def test_pool_below_min_bundles_falls_back_to_projections(monkeypatch):
     appmod._SS_POOL_CACHE.clear()
 
 
+def test_pool_exotic_scoring_ranks_on_full_start_score(monkeypatch):
+    """Stroud-shaped regression (2026-10-22): a league whose scoring is
+    not a canonical variant (milestone bonuses) used to get a PROJECTION
+    pool, so its index ranked players by projection while its own modal
+    showed the factor-adjusted start score — Stroud printed QB7/89 off
+    his projection rank when his start score ranked QB5. The pool must
+    rank on the full start score for every scoring the bundles can be
+    re-derived under."""
+    import app as appmod
+    import data_building.start_score_bundle as bundle_mod
+    import utils.fantasy_scoring as fs_mod
+    import utils.utils as uu_mod
+
+    exotic = {"rec": 1.0, "bonus_rush_yd_200": 5.0}
+    # rbA projects BELOW rbB but out-scores him: strong positive form
+    # (+10 PPG last-3 over season) and a rising role vs rbB's fade.
+    proj = {"rbA": 11.5, "rbB": 12.0}
+    pids = ["rbA", "rbB"] + [f"rb{i}" for i in range(43)]
+    for i, pid in enumerate(pids[2:]):
+        proj[pid] = 9.0 - 0.1 * i
+    base = {pid: {"pos": "RB", "proj_pts": 5.0} for pid in pids}
+    derived = {
+        "rbA": {"recent_ppg": 20.0, "season_ppg": 10.0,
+                "usage_delta": 3.0, "usage_season_avg": 20.0,
+                "played_games": 6},
+        "rbB": {"recent_ppg": 8.0, "season_ppg": 16.0,
+                "usage_delta": -3.0, "usage_season_avg": 20.0,
+                "played_games": 6},
+    }
+    for pid in pids[2:]:
+        derived[pid] = {"recent_ppg": proj[pid], "season_ppg": proj[pid],
+                        "usage_delta": None, "usage_season_avg": None,
+                        "played_games": 6}
+    monkeypatch.setattr(bundle_mod, "variant_for_exact_scoring",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(bundle_mod, "load_start_score_bundles",
+                        lambda *a, **k: dict(base))
+    monkeypatch.setattr(bundle_mod, "derive_start_sit_inputs",
+                        lambda *a, **k: dict(derived))
+    monkeypatch.setattr(bundle_mod, "_variant_week_points",
+                        lambda *a, **k: ({}, {}))
+    monkeypatch.setattr(uu_mod, "load_week_projection",
+                        lambda *a, **k: {pid: {} for pid in pids})
+    monkeypatch.setattr(fs_mod, "weekly_projection_points",
+                        lambda m, pid, s, pos: proj.get(str(pid)))
+    monkeypatch.setattr(appmod, "get_players_index_global",
+                        lambda *a, **k: {pid: {} for pid in pids})
+    appmod._SS_POOL_CACHE.clear()
+
+    pool = appmod.start_score_pool_scores(2026, 6, exotic)
+    assert pool["kind"] == "score"
+    scores = pool["by_pos"]["RB"]
+    assert len(scores) == 45
+    # Score order flips the projection order at the top.
+    assert scores[0] == pytest.approx(12.41, abs=0.05)   # rbA
+    assert scores[1] == pytest.approx(11.08, abs=0.05)   # rbB
+    idx_a = appmod.start_score_league_index(
+        2026, 6, exotic, "RB", scores[0], proj["rbA"])
+    idx_b = appmod.start_score_league_index(
+        2026, 6, exotic, "RB", scores[1], proj["rbB"])
+    assert idx_a == appmod.start_score_tier_index("RB", 1) == 100
+    assert idx_b == appmod.start_score_tier_index("RB", 2) == 99
+    appmod._SS_POOL_CACHE.clear()
+
+
 # ── League index (rank -> tier band) ──────────────────────────────────────
 
 def _pool(monkeypatch, kind, by_pos):

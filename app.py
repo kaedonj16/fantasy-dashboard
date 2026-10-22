@@ -3184,13 +3184,14 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
 
     * ``kind == "score"``: values are full ``compute_start_score`` outputs
       for the whole player universe, rebuilt from the daily start-score
-      bundles. Only available when the scoring exactly matches a canonical
-      variant (the bundles' exactness contract).
-    * ``kind == "proj"``: fallback for custom scoring the bundles do not
-      cover. Values are raw weekly projections for the whole pool, from the
-      same scan ``start_score_pos_anchors`` uses. Ranks are then taken on
-      projection, which tracks the start score closely (its multipliers
-      are small capped residuals).
+      bundles with the scoring-dependent fields exact under the requested
+      scoring (``load_start_score_bundles_for_scoring``: canonical variant
+      bundles directly, any other scoring re-derived under the league's
+      own settings). This is the ranked pool whenever bundles exist.
+    * ``kind == "proj"``: last-resort fallback for when no bundles exist
+      at all (batch not run / DB unreachable). Values are raw weekly
+      projections for the whole pool, from the same scan
+      ``start_score_pos_anchors`` uses, and ranks are taken on projection.
     * ``kind is None``: no pool could be built; callers keep whatever
       index they already had instead of inventing one.
 
@@ -3204,74 +3205,77 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
         return cached
     pool: dict = {"kind": None, "by_pos": {}}
     # Primary: rebuild league-wide start scores from the daily bundles.
+    # The for-scoring loader keeps the bundles' scoring-dependent fields
+    # exact under the requested scoring, so a league whose scoring is not
+    # a canonical variant (milestone bonuses, 2pt conversions, ...) still
+    # ranks this pool on the FULL start score — the same number the modal
+    # and Start/Sit page compute for the player — never on raw projection.
     try:
         from data_building.start_score_bundle import (
-            load_start_score_bundles as _pool_load,
-            variant_for_exact_scoring as _pool_variant_for,
+            load_start_score_bundles_for_scoring as _pool_load,
         )
         from utils.start_sit_score import compute_start_score as _pool_score
 
-        variant = _pool_variant_for(scoring_settings)
-        if variant:
-            index = get_players_index_global() or {}
-            bundles = _pool_load(
-                int(season), int(week), variant, list(index.keys())) or {}
-            if len(bundles) >= _SS_POOL_MIN_BUNDLES:
-                from utils.start_sit_score import (
-                    start_sit_pool_excluded as _pool_excluded,
+        index = get_players_index_global() or {}
+        bundles = _pool_load(
+            int(season), int(week), scoring_settings,
+            list(index.keys())) or {}
+        if len(bundles) >= _SS_POOL_MIN_BUNDLES:
+            from utils.start_sit_score import (
+                start_sit_pool_excluded as _pool_excluded,
+            )
+            by_pos: dict = {}
+            for _pid, bundle in bundles.items():
+                if not isinstance(bundle, dict):
+                    continue
+                pos = str(bundle.get("pos") or "").upper()
+                if pos not in _SS_TIER_BANDS:
+                    continue
+                # Pool-level exclusion (2026-10 rating rework): IR / Out
+                # / PUP / NFI players are removed before ranking and the
+                # pool backfills, instead of sitting at the bottom with a
+                # zeroed score. Live status wins over the batch-time one.
+                _live_status = (
+                    (index.get(str(_pid)) or {}).get("injury_status")
+                    if isinstance(index.get(str(_pid)), dict) else None
                 )
-                by_pos: dict = {}
-                for _pid, bundle in bundles.items():
-                    if not isinstance(bundle, dict):
-                        continue
-                    pos = str(bundle.get("pos") or "").upper()
-                    if pos not in _SS_TIER_BANDS:
-                        continue
-                    # Pool-level exclusion (2026-10 rating rework): IR / Out
-                    # / PUP / NFI players are removed before ranking and the
-                    # pool backfills, instead of sitting at the bottom with a
-                    # zeroed score. Live status wins over the batch-time one.
-                    _live_status = (
-                        (index.get(str(_pid)) or {}).get("injury_status")
-                        if isinstance(index.get(str(_pid)), dict) else None
+                if _pool_excluded(_live_status or bundle.get("injury_status")):
+                    continue
+                try:
+                    score, _, _ = _pool_score(
+                        bundle.get("proj_pts") or 0.0,
+                        on_bye=bool(bundle.get("on_bye")),
+                        recent_ppg=bundle.get("recent_ppg") or 0.0,
+                        season_ppg=bundle.get("season_ppg") or 0.0,
+                        usage_delta=bundle.get("usage_delta"),
+                        usage_season_avg=bundle.get("usage_season_avg"),
+                        injury_status=bundle.get("injury_status"),
+                        played_games=bundle.get("played_games"),
+                        implied_total=bundle.get("implied_total"),
+                        bust_rate=bundle.get("bust_rate"),
+                        weather_kind=bundle.get("weather_kind"),
+                        position=pos,
+                        oline_index=bundle.get("oline_index"),
+                        expected_team_plays=bundle.get(
+                            "expected_team_plays"),
+                        league_average_plays=bundle.get(
+                            "league_average_plays"),
+                        role_confidence=bundle.get("role_confidence"),
+                        low_total_team=bool(
+                            bundle.get("low_total_team")),
                     )
-                    if _pool_excluded(_live_status or bundle.get("injury_status")):
-                        continue
-                    try:
-                        score, _, _ = _pool_score(
-                            bundle.get("proj_pts") or 0.0,
-                            on_bye=bool(bundle.get("on_bye")),
-                            recent_ppg=bundle.get("recent_ppg") or 0.0,
-                            season_ppg=bundle.get("season_ppg") or 0.0,
-                            usage_delta=bundle.get("usage_delta"),
-                            usage_season_avg=bundle.get("usage_season_avg"),
-                            injury_status=bundle.get("injury_status"),
-                            played_games=bundle.get("played_games"),
-                            implied_total=bundle.get("implied_total"),
-                            bust_rate=bundle.get("bust_rate"),
-                            weather_kind=bundle.get("weather_kind"),
-                            position=pos,
-                            oline_index=bundle.get("oline_index"),
-                            expected_team_plays=bundle.get(
-                                "expected_team_plays"),
-                            league_average_plays=bundle.get(
-                                "league_average_plays"),
-                            role_confidence=bundle.get("role_confidence"),
-                            low_total_team=bool(
-                                bundle.get("low_total_team")),
-                        )
-                    except Exception:
-                        continue
-                    if score and score > 0:
-                        by_pos.setdefault(pos, []).append(float(score))
-                if by_pos:
-                    for vals in by_pos.values():
-                        vals.sort(reverse=True)
-                    pool = {"kind": "score", "by_pos": by_pos}
+                except Exception:
+                    continue
+                if score and score > 0:
+                    by_pos.setdefault(pos, []).append(float(score))
+            if by_pos:
+                for vals in by_pos.values():
+                    vals.sort(reverse=True)
+                pool = {"kind": "score", "by_pos": by_pos}
     except Exception:
         logger.debug("[start_score_pool] bundle pool failed", exc_info=True)
         pool = {"kind": None, "by_pos": {}}
-    # Fallback: rank on the full projection pool (custom scoring).
+    # Fallback: rank on the full projection pool (no bundles exist at all).
     if pool["kind"] is None:
         try:
             from utils.utils import load_week_projection as _pool_swp
