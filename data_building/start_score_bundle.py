@@ -705,6 +705,115 @@ def load_start_score_bundles(season: int, week: int, variant: str,
         return {}
 
 
+def load_start_score_bundles_for_scoring(
+        season: int, week: int, scoring_settings: Optional[dict],
+        player_ids: list) -> Dict[str, dict]:
+    """{player_id: bundle} exact under ``scoring_settings``. Never raises.
+
+    When the scoring is exactly one canonical variant these are that
+    variant's bundles untouched. For any other scoring (milestone
+    bonuses, 2pt conversions, fractional rates, ...) the nearest
+    variant's bundles supply the league-independent inputs (Vegas,
+    weather, O-line, pace, role confidence, bye, batch injury status)
+    while the scoring-dependent fields — proj_pts, recent/season PPG,
+    usage, played games, bust rate — are re-derived under the league's
+    own settings with the same derivations the Start/Sit page's live
+    path and the batch build share (``weekly_projection_points``,
+    ``derive_start_sit_inputs``, blended consistency over weekly points
+    scored with the league's settings, including the prior-season
+    crossfade). Returns {} when no bundles exist at all, so callers keep
+    their no-bundle fallback instead of inventing numbers.
+
+    This is what lets league-wide start/sit ranking (the pool behind
+    ``start_score_league_index``) rank on the full start score for
+    every league: previously a non-canonical league's pool silently
+    fell back to raw projections, so its printed rank/index ignored
+    the factor-adjusted score its own modal displays.
+    """
+    if not player_ids:
+        return {}
+    try:
+        variant = variant_for_exact_scoring(scoring_settings)
+        if variant:
+            return load_start_score_bundles(season, week, variant, player_ids)
+        from utils.proj_variant import pick_proj_variant
+
+        base_variant = pick_proj_variant(scoring_settings or {})
+        if not base_variant:
+            return {}
+        base = load_start_score_bundles(season, week, base_variant, player_ids)
+        if not base:
+            return {}
+        from utils.consistency import blended_consistency_profile
+        from utils.fantasy_scoring import weekly_projection_points
+        from utils.utils import load_week_projection
+
+        scoring = scoring_settings or {}
+        season = int(season)
+        try:
+            week_proj_map = load_week_projection(season, int(week)) or {}
+        except Exception:
+            week_proj_map = {}
+        derived = derive_start_sit_inputs(season, scoring)
+        _, weekly = _variant_week_points(season, scoring)
+        # Prior-season crossfade for consistency, mirroring the batch
+        # build: first of season-1 / season-2 with a real sample.
+        prior_weekly: Dict[str, list] = {}
+        try:
+            if weekly:
+                for py in (season - 1, season - 2):
+                    _, pweekly = _variant_week_points(py, scoring)
+                    if pweekly and max(
+                            (len(v) for v in pweekly.values()), default=0) >= 3:
+                        prior_weekly = pweekly
+                        break
+        except Exception:
+            prior_weekly = {}
+        out: Dict[str, dict] = {}
+        for pid, bundle in base.items():
+            if not isinstance(bundle, dict):
+                continue
+            pid = str(pid)
+            nb = dict(bundle)
+            pos = str(nb.get("pos") or "").upper()
+            proj_pts = 0.0
+            try:
+                _wk_pts = weekly_projection_points(
+                    week_proj_map, pid, scoring, pos)
+                if _wk_pts is not None:
+                    proj_pts = float(_wk_pts)
+            except Exception:
+                proj_pts = 0.0
+            nb["proj_pts"] = round(proj_pts, 1)
+            _inp = derived.get(pid) or {}
+            nb["recent_ppg"] = round(float(_inp.get("recent_ppg") or 0.0), 1)
+            nb["season_ppg"] = round(float(_inp.get("season_ppg") or 0.0), 1)
+            nb["usage_delta"] = (
+                round(float(_inp["usage_delta"]), 1)
+                if _inp.get("usage_delta") is not None else None)
+            nb["usage_season_avg"] = (
+                round(float(_inp["usage_season_avg"]), 1)
+                if _inp.get("usage_season_avg") is not None else None)
+            nb["played_games"] = int(_inp.get("played_games") or 0)
+            bust_rate = None
+            try:
+                cur = weekly.get(pid) or []
+                prior = prior_weekly.get(pid) or []
+                if cur or prior:
+                    cons = blended_consistency_profile(cur, prior, pos)
+                    if cons and not cons.get("small_sample"):
+                        bust_rate = cons.get("bust_rate")
+            except Exception:
+                bust_rate = None
+            nb["bust_rate"] = bust_rate
+            out[pid] = nb
+        return out
+    except Exception:
+        logger.debug("load_start_score_bundles_for_scoring failed",
+                     exc_info=True)
+        return {}
+
+
 def start_score_bundles_ready(season: int, week: int, variant: str,
                               player_ids: list) -> bool:
     """True when every requested player has a bundle for (season, week, variant)."""
