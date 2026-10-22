@@ -337,6 +337,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
     _tdb_all = " active" if _tdb_fmt == "all" else ""
     _tdb_dyn = " active" if _tdb_fmt == "dynasty" else ""
     _tdb_rd = " active" if _tdb_fmt == "redraft" else ""
+    _tdb_lid = league_id or ""
     body_html = f"""
     <div class="card central tdb-page-card">
       <div class="card-header tdb-page-header">
@@ -378,6 +379,12 @@ def page_trade_database(platform: str, season: int, league_id: str):
               <button class="otc-day-filter tdb-lf{_tdb_dyn}" data-lf="dynasty" onclick="tdbFormatFilter('dynasty')">Dynasty</button>
               <button class="otc-day-filter tdb-lf{_tdb_rd}" data-lf="redraft" onclick="tdbFormatFilter('redraft')">Redraft</button>
               <button class="otc-day-filter tdb-lf" data-lf="keeper" onclick="tdbFormatFilter('keeper')">Keeper</button>
+            </div>
+            <div class="otc-day-filters tdb-tr-filters">
+              <button class="otc-day-filter tdb-tr active" data-tr="all" onclick="tdbRangeFilter('all')">All season</button>
+              <button class="otc-day-filter tdb-tr" data-tr="7d" onclick="tdbRangeFilter('7d')">7D</button>
+              <button class="otc-day-filter tdb-tr" data-tr="30d" onclick="tdbRangeFilter('30d')">30D</button>
+              <button class="otc-day-filter tdb-tr" data-tr="90d" onclick="tdbRangeFilter('90d')">90D</button>
             </div>
             <div class="tdb-sort-wrap">
               <label class="tdb-sort-label" for="tdbSort">Sort</label>
@@ -441,7 +448,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         height: 34px; border-bottom: 1px solid var(--border);
         background: var(--bg-alt, rgba(0,0,0,.03));
       }}
-      .tdb-skeleton-body {{ display: grid; grid-template-columns: 1fr 1px 1fr; min-height: 96px; }}
+      .tdb-skeleton-body {{ display: grid; grid-template-columns: 1fr 28px 1fr; min-height: 96px; }}
       .tdb-skeleton-col {{ padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }}
       .tdb-skeleton-line {{
         height: 14px; border-radius: 4px;
@@ -519,7 +526,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-chip-x:hover {{ opacity: 1; }}
         .tdb-filter-col {{ display: flex; flex-direction: column; gap: 6px; align-self: flex-end; padding-bottom: 1px; }}
-        .tdb-lt-filters, .tdb-lf-filters {{ display: flex; gap: 6px; }}
+        .tdb-lt-filters, .tdb-lf-filters, .tdb-tr-filters {{ display: flex; gap: 6px; }}
       .tdb-sort-wrap {{ display: flex; align-items: center; gap: 8px; }}
       .tdb-sort-label {{ font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }}
       .tdb-sort {{
@@ -532,62 +539,73 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
       @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
       .tdb-card {{
-        border: 1px solid var(--border); border-radius: 12px;
+        border: 1px solid var(--border); border-radius: 14px;
         overflow: hidden; background: var(--card);
         display: flex; flex-direction: column;
+        box-shadow: 0 1px 3px rgba(18,45,75,.05);
       }}
+      /* Meta line: relative date (bold) then league context, dot-separated.
+         No badges, no Team A/B labels, no footer (approved side-by-side mock). */
       .tdb-card-head {{
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 8px 14px; border-bottom: 1px solid var(--border);
-        background: var(--bg-alt, rgba(0,0,0,.03));
+        padding: 10px 14px 8px;
+        border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
       }}
-      .tdb-card-date {{ font-size: 11px; color: var(--text-muted); font-weight: 500; }}
-      .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
-      .tdb-card-body {{ display: grid; grid-template-columns: 1fr 1px 1fr; }}
-      .tdb-col {{ padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }}
-      .tdb-col-divider {{ background: var(--border); }}
-      .tdb-side-label {{
-        font-size: 10px; font-weight: 800; letter-spacing: .06em;
-        color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px;
+      .tdb-meta {{
+        display: block; font-size: 12px; color: var(--text-muted);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }}
-      .tdb-asset {{
-        font-size: 15px; color: var(--text); font-weight: 500;
-        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      .tdb-when {{ color: var(--text); font-weight: 700; }}
+      .tdb-dot {{ margin: 0 5px; opacity: .5; }}
+      /* Two asset columns at EVERY width (the old <=480px stacking is gone):
+         a circled swap badge sits in the fixed middle track. */
+      .tdb-card-body {{ display: grid; grid-template-columns: 1fr 28px 1fr; padding: 11px 14px 12px; align-items: start; }}
+      .tdb-col {{ display: flex; flex-direction: column; gap: 10px; min-width: 0; }}
+      .tdb-swap {{
+        align-self: center; justify-self: center;
+        width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 50%;
+        background: var(--bg-alt, rgba(0,0,0,.03)); color: var(--text-muted);
+        font-size: 12px; display: flex; align-items: center; justify-content: center;
       }}
-      .tdb-asset.tdb-match {{ font-weight: 800; color: var(--accent, #3b82f6); }}
-      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 15px; font-weight: 500; }}
-      .tdb-pos {{
-        font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 5px;
-        background: var(--row); color: var(--text-muted); flex-shrink: 0; letter-spacing: .02em;
+      .tdb-asset {{ display: flex; gap: 8px; align-items: center; min-width: 0; }}
+      .tdb-hs {{
+        position: relative; width: 31px; height: 31px; border-radius: 50%;
+        background: #dce7f2; flex-shrink: 0; overflow: hidden;
+        box-shadow: inset 0 0 0 1px rgba(18,45,75,.07);
       }}
-      /* Position colours (match the roster badges site-wide) */
-      .tdb-pos.pos-QB {{ background: color-mix(in srgb, #3b82f6 16%, transparent); color: #3b82f6; }}
-      .tdb-pos.pos-RB {{ background: color-mix(in srgb, #22c55e 16%, transparent); color: #16a34a; }}
-      .tdb-pos.pos-WR {{ background: color-mix(in srgb, #f59e0b 18%, transparent); color: #d97706; }}
-      .tdb-pos.pos-TE {{ background: color-mix(in srgb, #8b5cf6 16%, transparent); color: #8b5cf6; }}
-      [data-theme="dark"] .tdb-pos.pos-RB {{ color: #22c55e; }}
-      [data-theme="dark"] .tdb-pos.pos-WR {{ color: #f59e0b; }}
-      /* Card footer: pinned to the card bottom via margin-top:auto so footers
-         align in a flat row across equal-height cards; leftover space sits
-         above the footer inside the card. */
-      .tdb-card-foot {{
-        margin-top: auto;
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 10px 14px; border-top: 1px solid var(--border);
-        background: var(--bg-alt, rgba(0,0,0,.02));
+      [data-theme="dark"] .tdb-hs {{ background: #1e3a52; }}
+      .tdb-hs-init {{
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-size: 10px; font-weight: 800; color: #33526f;
       }}
-      .tdb-delta {{ font-size: 13px; font-weight: 700; color: #16a34a; }}
-      .tdb-delta-fair {{ color: var(--text-muted); font-weight: 600; }}
-      .tdb-league-info {{ font-size: 12px; color: var(--text-muted); }}
-      .chip--fair {{
-        background: color-mix(in srgb, #22c55e 14%, transparent);
-        color: #16a34a; border: 1px solid color-mix(in srgb, #22c55e 30%, transparent);
+      [data-theme="dark"] .tdb-hs-init {{ color: #9fc3e8; }}
+      .tdb-hs img {{ position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }}
+      .tdb-a-main {{ display: flex; flex-direction: column; min-width: 0; }}
+      .tdb-a-name {{
+        font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.15;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }}
-      [data-theme="dark"] .chip--fair {{ color: #22c55e; }}
-      @media(max-width: 480px) {{
-        .tdb-card-body {{ grid-template-columns: 1fr; }}
-        .tdb-col-divider {{ height: 1px; width: auto; }}
+      .tdb-asset.tdb-match .tdb-a-name {{ color: var(--accent, #3b82f6); font-weight: 800; }}
+      .tdb-a-sub {{ font-size: 11px; color: var(--text-muted); margin-top: 1px; letter-spacing: .02em; }}
+      .tdb-pick-ic {{
+        width: 31px; height: 31px; border-radius: 50%; background: #3c4f63; color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 13px; font-weight: 800; flex-shrink: 0;
       }}
+      .tdb-pick-ic.r1 {{ background: linear-gradient(145deg, #a8842a, #8a6d1f); color: #fde68a; }}
+      /* Analyze bar: pinned to the card bottom via margin-top:auto so bars
+         align in a flat row across equal-height cards (the 2026-10-08
+         footer-pinning rule, carried over to the new action bar). Opens the
+         trade calculator preloaded with both sides (?a=&b=&ap=&bp=). */
+      .tdb-analyze {{
+        margin: auto 12px 12px;
+        background: #122d4b; color: #fff; border-radius: 9px;
+        padding: 9px; font-size: 13px; font-weight: 700; letter-spacing: .01em;
+        display: flex; align-items: center; justify-content: center; gap: 7px;
+        text-decoration: none;
+      }}
+      .tdb-analyze:hover {{ background: #1a3d63; color: #fff; }}
+      [data-theme="dark"] .tdb-analyze {{ background: #1e3a56; }}
+      [data-theme="dark"] .tdb-analyze:hover {{ background: #274b70; }}
       @media(max-width: 600px) {{
         .tdb-toolbar {{ flex-direction: column; gap: 10px; margin-bottom: 12px; }}
         .tdb-sides-row {{ flex-direction: column; gap: 10px; width: 100%; }}
@@ -599,8 +617,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
         .tdb-filter-col {{ width: 100%; }}
         .tdb-sort-wrap {{ width: 100%; }}
         .tdb-sort {{ flex: 1; min-width: 0; }}
-        .tdb-lt-filters, .tdb-lf-filters {{ width: 100%; display: flex; }}
-        .tdb-lt, .tdb-lf {{ flex: 1; text-align: center; }}
+        .tdb-lt-filters, .tdb-lf-filters, .tdb-tr-filters {{ width: 100%; display: flex; }}
+        .tdb-lt, .tdb-lf, .tdb-tr {{ flex: 1; text-align: center; white-space: nowrap; }}
       }}
       /* ── Pagination (matches site-wide style) ── */
       .ti-pagination {{
@@ -634,10 +652,12 @@ def page_trade_database(platform: str, season: int, league_id: str):
     (function() {{
       const TDB_SEASON = {season};
       const TDB_PLATFORM = '{platform}';
+      const TDB_LEAGUE_ID = '{_tdb_lid}';
       let currentPage = 1;
       let paginationData = null;
       let leagueType = 'all';
       let leagueFormat = '{_tdb_fmt}';
+      let timeRange = 'all'; // all | 7d | 30d | 90d
       let tdbSort = 'date_desc'; // date_desc | date_asc | value_desc | value_asc
       // Latest-wins request handling: a new filter change aborts the in-flight
       // trade search instead of being silently dropped (the old `loading`
@@ -797,7 +817,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
                 <div class="tdb-skeleton-line short"></div>
                 <div class="tdb-skeleton-line"></div>
               </div>
-              <div class="tdb-col-divider"></div>
+              <div></div>
               <div class="tdb-skeleton-col">
                 <div class="tdb-skeleton-line short"></div>
                 <div class="tdb-skeleton-line"></div>
@@ -823,7 +843,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         listEl.style.display = 'none';
         document.getElementById('tdbLoading').style.display = '';
         document.getElementById('tdbPagination').style.display = 'none';
-        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: leagueFormat, sort: tdbSort }});
+        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: leagueFormat, sort: tdbSort, range: timeRange }});
         if (selectedA.length) params.set('player_a', selectedA.map(p => p.id).join(','));
         if (selectedB.length) params.set('player_b', selectedB.map(p => p.id).join(','));
         fetch('/api/trade-database?' + params, {{ signal: tdbSignal }})
@@ -877,55 +897,102 @@ def page_trade_database(platform: str, season: int, league_id: str):
         document.getElementById('tdbPagination').style.display = 'flex';
       }}
 
+      function tdbEsc(s) {{
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }}
+      function tdbShortName(name) {{
+        const parts = String(name || '').trim().split(/\\s+/);
+        if (parts.length < 2) return name || '';
+        return parts[0].charAt(0) + '. ' + parts.slice(1).join(' ');
+      }}
+      function tdbInitials(name) {{
+        const parts = String(name || '').trim().split(/\\s+/).filter(Boolean);
+        if (!parts.length) return '?';
+        return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
+      }}
+      function tdbWhen(t) {{
+        if (t.created_at) {{
+          const d = new Date(t.created_at);
+          if (!isNaN(d)) {{
+            const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+            if (days <= 0) return 'Today';
+            if (days < 30) return days + 'd ago';
+          }}
+        }}
+        return t.date || '-';
+      }}
+      function tdbPickId(a) {{
+        // Calculator pick-id convention: YYYY_R_SS for slotted picks,
+        // YYYY_R_mid for a generic round pick (the site's own default bucket).
+        if (!a.pick_season || !a.pick_round) return '';
+        const third = a.pick_slot ? String(a.pick_slot).padStart(2, '0') : 'mid';
+        return `${{a.pick_season}}_${{a.pick_round}}_${{third}}`;
+      }}
+      function tdbPickLabel(a) {{
+        const rnd = parseInt(a.pick_round, 10);
+        if (!a.pick_season || !rnd) return a.name || '';
+        if (a.pick_slot) return `${{a.pick_season}} ${{rnd}}.${{String(a.pick_slot).padStart(2, '0')}}`;
+        const ord = ({{ 1: '1st', 2: '2nd', 3: '3rd' }})[rnd] || (rnd + 'th');
+        return `${{a.pick_season}} ${{ord}}`;
+      }}
+
       function renderTDBTrades(trades) {{
         const matchIdsA = new Set(selectedA.map(p => p.id));
         const matchIdsB = new Set(selectedB.map(p => p.id));
+        const calcBase = TDB_LEAGUE_ID
+          ? `/${{TDB_PLATFORM}}/${{TDB_SEASON}}/${{TDB_LEAGUE_ID}}/trade`
+          : '/trade';
         listEl.innerHTML = '';
         trades.forEach(t => {{
-          const sfBadge    = t.is_superflex === true  ? '<span class="chip chip--sm chip--accent">SF</span>'
-                           : t.is_superflex === false ? '<span class="chip chip--sm">1QB</span>' : '';
-          const teamsBadge = t.num_teams    ? `<span class="chip chip--sm">${{t.num_teams}} Teams</span>` : '';
-          const scoreBadge = t.scoring_type ? `<span class="chip chip--sm">${{t.scoring_type.toUpperCase()}}</span>` : '';
-          const weekBadge  = t.week ? `<span class="chip chip--sm">Wk ${{t.week}}</span>` : '';
           function renderAsset(a) {{
+            if (a.type === 'pick') {{
+              const rnd = parseInt(a.pick_round, 10);
+              return `<div class="tdb-asset"><span class="tdb-pick-ic${{rnd === 1 ? ' r1' : ''}}">${{rnd || '?'}}</span><span class="tdb-a-name">${{tdbEsc(tdbPickLabel(a))}}</span></div>`;
+            }}
             const pid   = a.player_id ? String(a.player_id) : '';
             const match = pid && (matchIdsA.has(pid) || matchIdsB.has(pid));
-            const cls = 'tdb-asset' + (a.type === 'pick' ? ' tdb-pick' : '') + (match ? ' tdb-match' : '');
-            const pos = a.position && a.type === 'player' ? `<span class="tdb-pos pos-${{a.position}}">${{a.position}}</span>` : '';
-            return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
+            const sub = [a.position, a.team].filter(Boolean).join(' · ');
+            const hs = pid
+              ? `<span class="tdb-hs"><span class="tdb-hs-init">${{tdbInitials(a.name)}}</span><img loading="lazy" alt="" src="https://sleepercdn.com/content/nfl/players/thumb/${{encodeURIComponent(pid)}}.jpg" onerror="this.remove()"></span>`
+              : `<span class="tdb-hs"><span class="tdb-hs-init">${{tdbInitials(a.name)}}</span></span>`;
+            return `<div class="tdb-asset${{match ? ' tdb-match' : ''}}" title="${{tdbEsc(a.name)}}">${{hs}}<span class="tdb-a-main"><span class="tdb-a-name">${{tdbEsc(tdbShortName(a.name))}}</span>${{sub ? `<span class="tdb-a-sub">${{tdbEsc(sub)}}</span>` : ''}}</span></div>`;
           }}
           const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
           const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
-          // Value delta footer + Fair badge (mock-approved)
-          const valA = parseFloat(t.side_a_value) || 0;
-          const valB = parseFloat(t.side_b_value) || 0;
-          const valDelta = valA - valB;
-          const valMax = Math.max(valA, valB, 1);
-          const isFair = Math.abs(valDelta) <= Math.max(25, 0.1 * valMax);
-          const fairBadge = isFair ? '<span class="chip chip--sm chip--fair">Fair</span>' : '';
-          let deltaText = '';
-          if (isFair) {{
-            deltaText = '<span class="tdb-delta tdb-delta-fair">Fair deal</span>';
-          }} else if (valDelta > 0) {{
-            deltaText = `<span class="tdb-delta">+${{valDelta.toFixed(1)}} value to A</span>`;
-          }} else {{
-            deltaText = `<span class="tdb-delta">+${{Math.abs(valDelta).toFixed(1)}} value to B</span>`;
-          }}
-          const leagueInfo = [t.num_teams ? t.num_teams + '-team' : '', t.scoring_type ? t.scoring_type.toUpperCase() : '']
-            .filter(Boolean).join(' ');
+          // Meta line: when · teams · SF/1QB · scoring · week (fields the API
+          // actually has; no TEP exists in the trade DB, so none is shown).
+          const scoreLabel = ({{ ppr: 'PPR', half: 'Half PPR', std: 'Standard' }})[String(t.scoring_type || '').toLowerCase()]
+            || (t.scoring_type ? String(t.scoring_type).toUpperCase() : '');
+          const metaSegs = [
+            t.num_teams ? t.num_teams + '-team' : '',
+            t.is_superflex === true ? 'SF' : t.is_superflex === false ? '1QB' : '',
+            scoreLabel,
+            t.week ? 'Wk ' + t.week : '',
+          ].filter(Boolean);
+          const meta = `<span class="tdb-when">${{tdbEsc(tdbWhen(t))}}</span>`
+            + metaSegs.map(s => `<span class="tdb-dot">·</span>${{tdbEsc(s)}}`).join('');
+          // Analyze: open the calculator preloaded with this exact trade.
+          const idsOf = assets => assets.filter(a => a.type === 'player' && a.player_id).map(a => a.player_id).join(',');
+          const picksOf = assets => assets.filter(a => a.type === 'pick').map(tdbPickId).filter(Boolean).join(',');
+          const qs = new URLSearchParams();
+          const aIds = idsOf(t.side_a || []), bIds = idsOf(t.side_b || []);
+          const apIds = picksOf(t.side_a || []), bpIds = picksOf(t.side_b || []);
+          if (aIds) qs.set('a', aIds);
+          if (bIds) qs.set('b', bIds);
+          if (apIds) qs.set('ap', apIds);
+          if (bpIds) qs.set('bp', bpIds);
+          const analyzeUrl = calcBase + (qs.toString() ? '?' + qs.toString() : '');
           const card = document.createElement('div');
           card.className = 'tdb-card';
           card.innerHTML = `
-            <div class="tdb-card-head">
-              <span class="tdb-card-date">${{t.date || '-'}}</span>
-              <div class="tdb-badges">${{weekBadge}}${{sfBadge}}${{fairBadge}}</div>
-            </div>
+            <div class="tdb-card-head"><span class="tdb-meta">${{meta}}</span></div>
             <div class="tdb-card-body">
-              <div class="tdb-col"><div class="tdb-side-label">Team A got</div>${{sideA}}</div>
-              <div class="tdb-col-divider"></div>
-              <div class="tdb-col"><div class="tdb-side-label">Team B got</div>${{sideB}}</div>
+              <div class="tdb-col">${{sideA}}</div>
+              <div class="tdb-swap"><span>&#8646;</span></div>
+              <div class="tdb-col">${{sideB}}</div>
             </div>
-            <div class="tdb-card-foot">${{deltaText}}${{leagueInfo ? `<span class="tdb-league-info">${{leagueInfo}}</span>` : ''}}</div>
+            <a class="tdb-analyze" href="${{analyzeUrl}}"><i class="fa-solid fa-chart-simple"></i>Analyze</a>
 `;
           listEl.appendChild(card);
         }});
@@ -940,6 +1007,12 @@ def page_trade_database(platform: str, season: int, league_id: str):
       window.tdbFormatFilter = function(lf) {{
         leagueFormat = lf;
         document.querySelectorAll('.tdb-lf').forEach(b => b.classList.toggle('active', b.dataset.lf === lf));
+        loadTDBPage(1);
+      }};
+
+      window.tdbRangeFilter = function(r) {{
+        timeRange = r;
+        document.querySelectorAll('.tdb-tr').forEach(b => b.classList.toggle('active', b.dataset.tr === r));
         loadTDBPage(1);
       }};
 
