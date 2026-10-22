@@ -51510,6 +51510,13 @@ em.gneg { background: var(--loss); }
     background: var(--text-muted);
     animation: br-asst-typing-dot 1.2s ease-in-out infinite;
 }
+/* Slow note inside the typing bubble (past ~12s of waiting), appended
+   by setBusy; the dots alone read as a hang on a slow answer. */
+.br-asst-typing-note {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-left: 6px;
+}
 .br-asst-dot-anim:nth-child(2) {
     animation-delay: .15s;
 }

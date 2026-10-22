@@ -270,3 +270,97 @@ def test_model_player_intent_corrected_to_open_compare(monkeypatch):
 
 def test_router_prompt_names_compare_as_open():
     assert "is open, never player" in router.SYSTEM
+
+
+# -- live-audit regressions (2026-10-22): season drop + inventory routing ----
+#
+# Both questions were correct on the keyword fallback and in the frozen
+# eval (hs6 / mt1 use the exact phrasings), but live they traverse the
+# MODEL path, which returned season=None for "last season" (the schema's
+# season is a plain year; there is no encoding for the relative phrase)
+# and routed the missed-tackle inventory ask to the player builder,
+# whose pack dead-ends at "no resolved player". The deterministic
+# corrections in classify() are what these tests pin.
+
+def _model_fake(monkeypatch, **fields):
+    def _fake(system, payload, schema, name):
+        base = {"intent": "player", "player_names": [],
+                "give_player_names": [], "receive_player_names": [],
+                "picks": [], "give_picks": [], "receive_picks": [],
+                "other_team_hint": None, "metric_hint": None,
+                "position_hint": None, "teams_mode": None, "week": None,
+                "season": None, "preference_text": None}
+        base.update(fields)
+        return base
+    monkeypatch.setattr(router, "call_model_json", _fake)
+
+
+def test_model_last_season_gets_the_sentinel(monkeypatch):
+    _model_fake(monkeypatch, intent="leaderboard", board_kind="finishes",
+                finish_n=5)
+    out = router.classify("Who had the most top-5 weeks last season?",
+                          {"season": 2026, "week": 7}, None)
+    assert out["intent"] == "leaderboard"
+    assert out["entities"]["season"] == -1
+
+
+def test_model_explicit_year_overrides_wrong_entity(monkeypatch):
+    _model_fake(monkeypatch, intent="leaderboard", board_kind="board",
+                metric_hint="fantasy points", season=2026)
+    out = router.classify("Who was the top scorer in 2024?",
+                          {"season": 2026, "week": 7}, None)
+    assert out["entities"]["season"] == 2024
+
+
+def test_model_no_season_named_keeps_model_entity(monkeypatch):
+    _model_fake(monkeypatch, intent="player",
+                player_names=["Jahmyr Gibbs"], season=None)
+    out = router.classify("What is Jahmyr Gibbs doing this year?",
+                          {"season": 2026, "week": 7}, None)
+    assert out["intent"] == "player"
+    assert out["entities"]["season"] is None
+
+
+def test_model_missed_tackle_inventory_routes_to_metric(monkeypatch):
+    _model_fake(monkeypatch, intent="player")
+    out = router.classify("what missed tackle metrics do I have?",
+                          {"season": 2026, "week": 7}, None)
+    assert out["intent"] == "metric"
+    assert out["entities"]["metric_hint"] == "missed tackle"
+
+
+def test_keyword_missed_tackle_inventory_agrees(keyword):
+    out = _intent(keyword, "what missed tackle metrics do I have?")
+    assert out["intent"] == "metric"
+    assert out["entities"]["metric_hint"] == "missed tackle"
+
+
+def test_inventory_shape_does_not_steal_leaderboard_or_definition(keyword):
+    # "who leads" is a board, "what is X" a definition: neither carries
+    # the inventory frame, so the helper stays out of both.
+    assert router._inventory_metric_hint("who leads in target share?") is None
+    assert router._inventory_metric_hint("what is target share?") is None
+    assert router._inventory_metric_hint(
+        "how many missed tackles did Jahmyr Gibbs force?") is None
+
+
+# -- playoffs historical-season decline (2026-10-22 audit fold-in) -----------
+#
+# Both routing paths must deliver the named season to build_playoffs,
+# whose builder-level guard turns it into the current-season-only
+# decline (pinned in test_assistant_league_context.py). Before the
+# guard, the season entity was extracted and then ignored, so the
+# current sim answered a past-season ask.
+
+def test_model_playoffs_last_season_carries_the_sentinel(monkeypatch):
+    _model_fake(monkeypatch, intent="playoffs", season=None)
+    out = router.classify("What were my playoff odds last season?",
+                          {"season": 2026, "week": 7}, None)
+    assert out["intent"] == "playoffs"
+    assert out["entities"]["season"] == -1
+
+
+def test_keyword_playoffs_last_season_carries_the_sentinel(keyword):
+    out = _intent(keyword, "What were my playoff odds last season?")
+    assert out["intent"] == "playoffs"
+    assert out["entities"]["season"] == -1

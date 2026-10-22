@@ -337,3 +337,45 @@ def test_grounding_gate_still_strips_invented_float_artifacts():
     out = compose_mod._enforce_grounding(
         answer, "player", _player_pack(), "tell me about garrett wilson")
     assert "99.123456789" not in out["text"]
+
+
+# -- Decimal-shaped rows (live regression, 2026-10-22) ----------------------------
+#
+# Real rows come back from psycopg with NUMERIC columns as Decimal.
+# _metrics_for's presentation block guarded on isinstance(int/float), so
+# a Decimal snap_share skipped BOTH the percent scaling and the rounding
+# and compare tables printed the raw fraction as "0.8%" while every
+# fixture above, faking plain floats, passed. These tests fake the real
+# driver shape.
+
+from decimal import Decimal
+
+
+def test_metrics_for_decimal_row_scales_snap_share(world):
+    world["wilson"] = {"snap_share": Decimal("0.82"),
+                       "target_share": Decimal("18.1"),
+                       "expected_ppr": Decimal("130.5"),
+                       "ppr_over_expected": Decimal("20.5"),
+                       "games": 5, "total_touches": 132}
+    m, _tools = ev._metrics_for("wilson", 2026)
+    assert m["snap_share"] == 82        # 0.82 fraction -> percent, not 0.8
+    assert m["target_share"] == 18.1    # already a percent, unchanged
+    assert not isinstance(m["snap_share"], Decimal)
+    assert not isinstance(m["target_share"], Decimal)
+
+
+def test_compare_table_decimal_row_shows_percent(world):
+    world["wilson"] = {"snap_share": Decimal("0.82"),
+                       "target_share": Decimal("18.1"),
+                       "expected_ppr": Decimal("130.5"),
+                       "ppr_over_expected": Decimal("20.5"),
+                       "games": 5, "total_touches": 132}
+    out = tools_mod._tool_compare_players(
+        _bundle(), {"player_a": "Garrett Wilson", "player_b": "Nico Collins"})
+    assert out["players_detail"][0]["snap_share"] == 82
+    table = ct_mod.build_compare_table(out["players_detail"])
+    opp = next(g for g in table["groups"] if g["label"] == "OPPORTUNITY")
+    snap_row = next(r for r in opp["rows"] if r["key"] == "snap_share")
+    assert snap_row["a"] == "82%"
+    tgt_row = next(r for r in opp["rows"] if r["key"] == "target_share")
+    assert tgt_row["a"] == "18.1%"
