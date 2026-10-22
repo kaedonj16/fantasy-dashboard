@@ -39,6 +39,22 @@ def test_header_composition_rules_in_both_sheets():
         assert ".home-account-text { flex: none; }" in css
 
 
+def test_get_started_is_one_card_in_light_mode():
+    """The approved mock has the header INSIDE one card with the columns;
+    a light-mode override used to make .home-card transparent and leave
+    the surface on the columns grid alone, splitting the section in two.
+    In light mode .home-card carries the surface and the grid drops to a
+    divider-topped inner grid; dark mode keeps its slab + panel."""
+    for css in (LITE, DASH):
+        assert ('html:not([data-theme="dark"]) .home-card { background: var(--card);'
+                ' color: #122d4b; border: 1px solid var(--border);') in css
+        assert ('html:not([data-theme="dark"]) .ld-connect-grid { background: transparent;'
+                ' border: none; border-top: 1px solid var(--border);') in css
+        assert ('html:not([data-theme="dark"]) .home-account-top { margin-bottom: 0;'
+                ' padding: 20px 22px 16px; border-bottom: none; }') in css
+        assert 'html:not([data-theme="dark"]) .home-card { background: transparent' not in css
+
+
 def test_orphan_trust_row_rule_is_gone():
     for css in (LITE, DASH):
         assert ".home-account-top .home-hero-trust { flex-basis: 100%" not in css

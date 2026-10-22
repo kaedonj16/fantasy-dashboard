@@ -52464,7 +52464,7 @@ html[data-theme="dark"] .hp-mb-strip-wk { background: rgba(37, 99, 235, .18); bo
 .home-page .ld-sec-title { scroll-margin-top: 76px !important; }
 .home-hero-right { grid-column: auto; grid-row: auto; align-items: stretch; animation: none; margin-top: 8px; }
 .home-page .home-card { max-width: none; width: 100%; }
-html:not([data-theme="dark"]) .home-card { background: transparent; color: #122d4b; border: none; box-shadow: none; padding: 0; }
+html:not([data-theme="dark"]) .home-card { background: var(--card); color: #122d4b; border: 1px solid var(--border); box-shadow: 0 14px 30px rgba(18,45,75,.08); padding: 0; }
 html:not([data-theme="dark"]) .home-card label { color: #122d4b; }
 html:not([data-theme="dark"]) .home-card .hint,
 html:not([data-theme="dark"]) .home-card .espn-home-description { color: #64748b; }
@@ -52521,6 +52521,14 @@ html[data-theme="dark"] .home-card .url-paste-error { color: #fecaca; }
 .plat-desc { display: block; font-size: 12px; font-weight: 500; opacity: .72; margin-top: 2px; line-height: 1.35; }
 .ld-connect-grid { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); background: var(--card); border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 14px 30px rgba(18,45,75,.08); overflow: hidden; }
 .ld-connect-grid::before { content: ""; position: absolute; top: 0; left: 16px; right: 16px; height: 2px; background: linear-gradient(90deg, transparent, #3b82f6 30%, #38bdf8 70%, transparent); z-index: 2; }
+/* Get started is ONE card in light mode (the approved mock's structure):
+   header and signed-in block sit inside .home-card above the columns,
+   and the grid drops its own surface for a divider line. */
+html:not([data-theme="dark"]) .home-account-top { margin-bottom: 0; padding: 20px 22px 16px; border-bottom: none; }
+html:not([data-theme="dark"]) .signed-in-home { margin-bottom: 0; padding: 20px 22px 16px; border-bottom: none; }
+html:not([data-theme="dark"]) .ld-connect-grid { background: transparent; border: none; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; overflow: visible; }
+html:not([data-theme="dark"]) .ld-connect-grid::before { display: none; }
+@media (max-width: 640px) { html:not([data-theme="dark"]) .home-account-top, html:not([data-theme="dark"]) .signed-in-home { padding: 16px 18px 12px; } }
 .ld-connect-col { display: flex; flex-direction: column; min-width: 0; padding: 24px 22px 20px; }
 .ld-col-flow, .ld-col-finish { border-left: 1px solid var(--border); }
 .ld-col-head { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; text-align: left; gap: 9px; font-size: 13px; font-weight: 800; color: #94a3b8; margin: 0 0 8px; }
