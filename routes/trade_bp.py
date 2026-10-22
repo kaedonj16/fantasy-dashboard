@@ -368,32 +368,43 @@ def page_trade_database(platform: str, season: int, league_id: str):
               <div id="tdbSideBChip" class="tdb-chip-area" style="display:none;"></div>
             </div>
           </div>
-          <div class="tdb-filter-col">
-            <div class="otc-day-filters tdb-lt-filters">
-              <button class="otc-day-filter tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
-              <button class="otc-day-filter tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
-              <button class="otc-day-filter tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
+          <div class="tdb-filter-row">
+            <div class="tdb-fgroup">
+              <div class="tdb-fgroup-label">Format</div>
+              <div class="otc-day-filters tdb-lt-filters">
+                <button class="otc-day-filter tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
+                <button class="otc-day-filter tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
+                <button class="otc-day-filter tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
+              </div>
             </div>
-            <div class="otc-day-filters tdb-lf-filters">
-              <button class="otc-day-filter tdb-lf{_tdb_all}" data-lf="all" onclick="tdbFormatFilter('all')">All</button>
-              <button class="otc-day-filter tdb-lf{_tdb_dyn}" data-lf="dynasty" onclick="tdbFormatFilter('dynasty')">Dynasty</button>
-              <button class="otc-day-filter tdb-lf{_tdb_rd}" data-lf="redraft" onclick="tdbFormatFilter('redraft')">Redraft</button>
-              <button class="otc-day-filter tdb-lf" data-lf="keeper" onclick="tdbFormatFilter('keeper')">Keeper</button>
+            <div class="tdb-fgroup">
+              <div class="tdb-fgroup-label">League type</div>
+              <div class="otc-day-filters tdb-lf-filters">
+                <button class="otc-day-filter tdb-lf{_tdb_all}" data-lf="all" onclick="tdbFormatFilter('all')">All</button>
+                <button class="otc-day-filter tdb-lf{_tdb_dyn}" data-lf="dynasty" onclick="tdbFormatFilter('dynasty')">Dynasty</button>
+                <button class="otc-day-filter tdb-lf{_tdb_rd}" data-lf="redraft" onclick="tdbFormatFilter('redraft')">Redraft</button>
+                <button class="otc-day-filter tdb-lf" data-lf="keeper" onclick="tdbFormatFilter('keeper')">Keeper</button>
+              </div>
             </div>
-            <div class="otc-day-filters tdb-tr-filters">
-              <button class="otc-day-filter tdb-tr active" data-tr="all" onclick="tdbRangeFilter('all')">All season</button>
-              <button class="otc-day-filter tdb-tr" data-tr="7d" onclick="tdbRangeFilter('7d')">7D</button>
-              <button class="otc-day-filter tdb-tr" data-tr="30d" onclick="tdbRangeFilter('30d')">30D</button>
-              <button class="otc-day-filter tdb-tr" data-tr="90d" onclick="tdbRangeFilter('90d')">90D</button>
+            <div class="tdb-fgroup">
+              <div class="tdb-fgroup-label">Trades within</div>
+              <div class="otc-day-filters tdb-tr-filters">
+                <button class="otc-day-filter tdb-tr active" data-tr="all" onclick="tdbRangeFilter('all')">All season</button>
+                <button class="otc-day-filter tdb-tr" data-tr="7d" onclick="tdbRangeFilter('7d')">7D</button>
+                <button class="otc-day-filter tdb-tr" data-tr="30d" onclick="tdbRangeFilter('30d')">30D</button>
+                <button class="otc-day-filter tdb-tr" data-tr="90d" onclick="tdbRangeFilter('90d')">90D</button>
+              </div>
             </div>
-            <div class="tdb-sort-wrap">
-              <label class="tdb-sort-label" for="tdbSort">Sort</label>
-              <select id="tdbSort" class="tdb-sort" onchange="tdbSortChange(this.value)">
-                <option value="date_desc">Newest first</option>
-                <option value="date_asc">Oldest first</option>
-                <option value="value_desc">Value: high to low</option>
-                <option value="value_asc">Value: low to high</option>
-              </select>
+            <div class="tdb-fgroup tdb-fgroup-sort">
+              <label class="tdb-fgroup-label" for="tdbSort">Sort</label>
+              <div class="tdb-sort-wrap">
+                <select id="tdbSort" class="tdb-sort" onchange="tdbSortChange(this.value)">
+                  <option value="date_desc">Newest first</option>
+                  <option value="date_asc">Oldest first</option>
+                  <option value="value_desc">Value: high to low</option>
+                  <option value="value_asc">Value: low to high</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -461,18 +472,25 @@ def page_trade_database(platform: str, season: int, league_id: str):
         0% {{ background-position: 200% 0; }}
         100% {{ background-position: -200% 0; }}
       }}
+      /* One unified toolbar card: search row on top, a hairline divider,
+         then one row of labeled filter groups with Sort pinned right.
+         (Replaces the old two-block layout: a flex:1 search card beside a
+         bottom-aligned filter column of ragged, unlabeled chip rows.) */
       .tdb-toolbar {{
-        display: flex; gap: 12px; margin-bottom: 16px;
-        flex-wrap: wrap; align-items: flex-start;
+        display: block; margin-bottom: 16px;
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 14px; padding: 14px;
+        box-shadow: 0 1px 3px rgba(18,45,75,.05);
       }}
       .tdb-sides-row {{
         display: flex; gap: 12px; flex: 1; min-width: 0; flex-wrap: wrap;
         align-items: flex-start;
       }}
-      /* Unified two-sided search card (matches approved mock) */
+      /* Two-sided search row: lives inside the toolbar card, so it carries
+         no card chrome of its own. */
       .tdb-sides-row.tdb-search-card {{
-        background: var(--card); border: 1px solid var(--border);
-        border-radius: 14px; padding: 14px; align-items: stretch;
+        background: transparent; border: none;
+        border-radius: 0; padding: 0; align-items: stretch;
       }}
       .tdb-side-wrap {{
         flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 6px;
@@ -525,14 +543,23 @@ def page_trade_database(platform: str, season: int, league_id: str):
         padding: 0; opacity: .7;
       }}
       .tdb-chip-x:hover {{ opacity: 1; }}
-        .tdb-filter-col {{ display: flex; flex-direction: column; gap: 6px; align-self: flex-end; padding-bottom: 1px; }}
+      .tdb-filter-row {{
+        display: flex; gap: 28px; align-items: flex-end; flex-wrap: wrap;
+        margin-top: 13px; padding-top: 13px;
+        border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+      }}
+      .tdb-fgroup {{ display: flex; flex-direction: column; gap: 6px; }}
+      .tdb-fgroup-label {{
+        font-size: 11px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .05em; color: var(--text-muted);
+      }}
+      .tdb-fgroup-sort {{ margin-left: auto; }}
         .tdb-lt-filters, .tdb-lf-filters, .tdb-tr-filters {{ display: flex; gap: 6px; }}
       .tdb-sort-wrap {{ display: flex; align-items: center; gap: 8px; }}
-      .tdb-sort-label {{ font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }}
       .tdb-sort {{
         padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
         background: var(--card); color: var(--text); font-size: 13px; font-weight: 600;
-        cursor: pointer; outline: none; min-height: 34px;
+        cursor: pointer; outline: none; min-height: 32px;
       }}
       .tdb-sort:hover {{ border-color: var(--accent, #3b82f6); }}
       .tdb-status {{ font-size: 13px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
@@ -607,14 +634,16 @@ def page_trade_database(platform: str, season: int, league_id: str):
       [data-theme="dark"] .tdb-analyze {{ background: #1e3a56; }}
       [data-theme="dark"] .tdb-analyze:hover {{ background: #274b70; }}
       @media(max-width: 600px) {{
-        .tdb-toolbar {{ flex-direction: column; gap: 10px; margin-bottom: 12px; }}
+        .tdb-toolbar {{ padding: 12px; margin-bottom: 12px; }}
         .tdb-sides-row {{ flex-direction: column; gap: 10px; width: 100%; }}
         .tdb-sides-row.tdb-search-card .tdb-side-sep {{ transform: rotate(90deg); }}
         .tdb-side-wrap {{ min-width: 0; width: 100%; flex: none; }}
         .tdb-search-outer {{ width: 100%; box-sizing: border-box; }}
         .tdb-chip-area {{ flex-wrap: wrap; gap: 6px; min-height: 0; }}
         .tdb-side-sep {{ align-self: flex-start; padding-top: 0; font-size: 13px; }}
-        .tdb-filter-col {{ width: 100%; }}
+        .tdb-filter-row {{ gap: 14px; margin-top: 12px; padding-top: 12px; }}
+        .tdb-fgroup {{ width: 100%; }}
+        .tdb-fgroup-sort {{ margin-left: 0; }}
         .tdb-sort-wrap {{ width: 100%; }}
         .tdb-sort {{ flex: 1; min-width: 0; }}
         .tdb-lt-filters, .tdb-lf-filters, .tdb-tr-filters {{ width: 100%; display: flex; }}
@@ -911,6 +940,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
         if (!parts.length) return '?';
         return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
       }}
+      // Headshots render WITHOUT initials layered behind the photo; the
+      // monogram is only the fallback when the photo itself fails to load.
+      function tdbHsFallback(img) {{
+        const s = document.createElement('span');
+        s.className = 'tdb-hs-init';
+        s.textContent = img.dataset.init || '';
+        img.replaceWith(s);
+      }}
       function tdbWhen(t) {{
         if (t.created_at) {{
           const d = new Date(t.created_at);
@@ -954,7 +991,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
             const match = pid && (matchIdsA.has(pid) || matchIdsB.has(pid));
             const sub = [a.position, a.team].filter(Boolean).join(' · ');
             const hs = pid
-              ? `<span class="tdb-hs"><span class="tdb-hs-init">${{tdbInitials(a.name)}}</span><img loading="lazy" alt="" src="https://sleepercdn.com/content/nfl/players/thumb/${{encodeURIComponent(pid)}}.jpg" onerror="this.remove()"></span>`
+              ? `<span class="tdb-hs"><img loading="lazy" alt="" src="https://sleepercdn.com/content/nfl/players/thumb/${{encodeURIComponent(pid)}}.jpg" data-init="${{tdbInitials(a.name)}}" onerror="tdbHsFallback(this)"></span>`
               : `<span class="tdb-hs"><span class="tdb-hs-init">${{tdbInitials(a.name)}}</span></span>`;
             return `<div class="tdb-asset${{match ? ' tdb-match' : ''}}" title="${{tdbEsc(a.name)}}">${{hs}}<span class="tdb-a-main"><span class="tdb-a-name">${{tdbEsc(tdbShortName(a.name))}}</span>${{sub ? `<span class="tdb-a-sub">${{tdbEsc(sub)}}</span>` : ''}}</span></div>`;
           }}
