@@ -9,11 +9,16 @@ def test_home_yahoo_offers_google_and_guest_like_other_platforms():
     yahoo_flow = markup[markup.index('id="yahooFlow"'):markup.index('id="mflFlow"')]
     assert 'id="yahooSubmitRow"' in yahoo_flow
     assert 'id="yahooConnectBtn"' in yahoo_flow
-    assert 'id="yahooPrivateGoogle" class="google-continue-btn"' in yahoo_flow
-    assert 'id="yahooPrivateGuest" class="continue-without-account-btn"' in yahoo_flow
-    assert "Continue with Google" in yahoo_flow
-    assert "Continue without account" in yahoo_flow
-    assert "Save your leagues &amp; settings, synced across devices" in yahoo_flow
+    # The Google/guest choice lives in the card's Choose-team column with the
+    # other platforms' choice blocks, not inside the Yahoo flow itself.
+    choice = markup[markup.index('id="yahooAccountChoice"'):]
+    choice = choice[:choice.index('id="yahooPrivateGuest"')]
+    assert 'id="yahooPrivateGoogle" class="google-continue-btn"' in choice
+    assert "Continue with Google" in choice
+    assert "Save your leagues &amp; settings, synced across devices" in choice
+    guest = markup[markup.index('id="yahooPrivateGuest"'):]
+    assert 'class="continue-without-account-btn"' in guest[:200]
+    assert "Continue without account" in guest[:600]
 
 
 def test_home_yahoo_google_path_stages_pending_link_before_yahoo_oauth():

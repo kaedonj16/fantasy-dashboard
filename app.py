@@ -1737,12 +1737,9 @@ FORM_BODY = """
        order so crawlers meet hero/editorial content before account machinery.
        Grid placement in dashboard.css keeps it visually beside the hero. -->
     <div class="home-hero-right">
-      <div class="ld-connect-head">
-        <h2>Connect your league</h2>
-        <p>Three steps: pick your platform, connect, choose your team.</p>
-      </div>
+
+      <h2 class="home-card-title ld-sec-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
       <div class="home-card">
-        <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
 
         {% if not session.get('account_id') %}
         <div class="home-account-entry home-account-top">
@@ -1760,25 +1757,14 @@ FORM_BODY = """
 
         <div id="connectLeagueFlow"{% if session.get('account_id') %} hidden{% endif %}>
         <button type="button" id="homeConnectBack" class="home-connect-back"{% if not session.get('account_id') %} hidden{% endif %}>← Back</button>
-        <div class="home-steps-hint">
-          <div class="home-step-item" id="hintStep1">
+        <div class="ld-connect-grid">
+        <div class="ld-connect-col ld-col-platform">
+          <div class="home-step-item ld-col-head" id="hintStep1">
             <span class="home-step-num">1</span>
             <span class="home-step-label">Platform</span>
           </div>
-          <div class="home-step-connector"></div>
-          <div class="home-step-item" id="hintStep2">
-            <span class="home-step-num">2</span>
-            <span class="home-step-label">Connect</span>
-          </div>
-          <div class="home-step-connector"></div>
-          <div class="home-step-item" id="hintStep3">
-            <span class="home-step-num">3</span>
-            <span class="home-step-label">Choose team</span>
-          </div>
-        </div>
-
-        <div class="row">
-          <label for="platformSelect">Platform</label>
+          <p class="ld-col-sub">Where does your league live?</p>
+          <div class="row">
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper"><span class="plat-name">Sleeper</span><span class="plat-desc">Paste a link or use your username</span></button>
             <button type="button" class="platform-btn" data-platform="espn"><span class="plat-name">ESPN</span><span class="plat-desc">Link or league ID, public or private</span></button>
@@ -1787,7 +1773,14 @@ FORM_BODY = """
             <button type="button" class="platform-btn" data-platform="fleaflicker"><span class="plat-name">Fleaflicker</span><span class="plat-desc">Link or league ID and season</span></button>
           </div>
         </div>
-
+          <div class="ld-cardfoot">Read-only · Free for your first league · Redraft and dynasty</div>
+        </div>
+        <div class="ld-connect-col ld-col-flow">
+          <div class="home-step-item ld-col-head" id="hintStep2">
+            <span class="home-step-num">2</span>
+            <span class="home-step-label">Connect</span>
+          </div>
+          <p class="ld-col-sub" id="ldP2Sub">Sleeper: paste your league link, or enter your username.</p>
         <!-- Sleeper Flow -->
         <div id="sleeperFlow">
           <div class="row url-paste-row">
@@ -1862,22 +1855,8 @@ FORM_BODY = """
             <button type="button" id="espnSubmitBtn">Connect League</button>
           </div>
           <div id="espnError" class="error-message" style="display:none;"></div>
-          <div class="row" id="espnTeamPickWrap" style="display:none;">
-            <label for="espnTeamSelect">Your team</label>
-            <select id="espnTeamSelect"></select>
-          </div>
-          <div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="espnPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
+          
+          
         </div>
 
         <!-- Yahoo Flow -->
@@ -1899,18 +1878,7 @@ FORM_BODY = """
             <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
           </div>
           <div id="yahooError" class="error-message" style="display:none;"></div>
-          <div id="yahooAccountChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="yahooPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="yahooPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
+          
           <p class="hint" style="margin-top:6px;">
             You'll be redirected to Yahoo to authorize access, then returned here.
           </p>
@@ -1961,18 +1929,7 @@ FORM_BODY = """
             <button type="button" id="mflSubmitBtn">Connect League</button>
           </div>
           <div id="mflError" class="error-message" style="display:none;"></div>
-          <div id="mflPrivateChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="mflPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="mflPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
+          
         </div>
 
         <!-- Fleaflicker Flow -->
@@ -2016,11 +1973,61 @@ FORM_BODY = """
             <button type="button" id="fleaSubmitBtn">Connect League</button>
           </div>
           <div id="fleaError" class="error-message" style="display:none;"></div>
-          <div class="row" id="fleaTeamPickWrap" style="display:none;">
+        </div>
+          <div class="ld-cardfoot">Nothing changes on your host site. We only read your league.</div>
+        </div>
+        <div class="ld-connect-col ld-col-finish">
+          <div class="home-step-item ld-col-head" id="hintStep3">
+            <span class="home-step-num">3</span>
+            <span class="home-step-label">Choose team</span>
+          </div>
+          <p class="ld-col-sub" id="ldP3Sub">Pick your team, so every tool is about your roster.</p>
+          <p class="ld-finish-note">Your league and team pick land here.</p>
+<div class="row" id="espnTeamPickWrap" style="display:none;">
+            <label for="espnTeamSelect">Your team</label>
+            <select id="espnTeamSelect"></select>
+          </div>
+<div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="espnPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+<div id="yahooAccountChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="yahooPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="yahooPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+<div id="mflPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="mflPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="mflPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+<div class="row" id="fleaTeamPickWrap" style="display:none;">
             <label for="fleaTeamSelect">Your team</label>
             <select id="fleaTeamSelect"></select>
           </div>
-          <div id="fleaPrivateChoice" class="provider-account-choice" style="display:none;">
+<div id="fleaPrivateChoice" class="provider-account-choice" style="display:none;">
             <button type="button" id="fleaPrivateGoogle" class="google-continue-btn">
               <span class="google-button-title">Continue with Google</span>
               <span>Save your leagues &amp; settings, synced across devices</span>
@@ -2032,8 +2039,6 @@ FORM_BODY = """
               <span>Quick view on this device &middot; nothing saved</span>
             </button>
           </div>
-        </div>
-
 <form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
@@ -2069,10 +2074,12 @@ FORM_BODY = """
           <div class="error-message">{{ error }}</div>
           {% endif %}
         </form>
-
-        <p class="hint" id="sleeperHint">
+<p class="hint" id="sleeperHint">
           Pick a league, then <strong>Continue with Google</strong> to save it across devices, or continue without an account for a quick look.
         </p>
+          <div class="ld-cardfoot">Read-only either way. BR Fantasy never touches your lineups, rosters or waivers.</div>
+        </div>
+        </div>
         </div>
       </div>
     </div>

@@ -18318,6 +18318,91 @@ if (document.readyState === 'loading') {
     const raw = document.getElementById("ldDemoData");
     if (raw) data = JSON.parse(raw.textContent || "{}");
   } catch (e) { data = null; }
+  // The lite shell scrolls inside body, so plain #homeCardTitle fragment
+  // jumps never move the page, and a global mobile reset zeroes every
+  // scroll-margin. Intercept the Connect CTAs and scroll with an explicit
+  // header offset instead.
+  const cardTitle = document.getElementById("homeCardTitle");
+  if (cardTitle) {
+    document.querySelectorAll('a[href="#homeCardTitle"]').forEach((a) => {
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        const off = Math.max(document.body.scrollTop || 0,
+          document.documentElement.scrollTop || 0, window.scrollY || 0);
+        const top = cardTitle.getBoundingClientRect().top + off - 76;
+        document.body.scrollTo({ top, behavior: "smooth" });
+        document.documentElement.scrollTo({ top, behavior: "smooth" });
+      });
+    });
+  }
+  // Connect column subtitles, mirroring the approved mock: the Connect
+  // header names the active platform; Choose team names the picked league.
+  const p2sub = document.getElementById("ldP2Sub");
+  if (p2sub) {
+    const PLAT_SUB = {
+      sleeper: "Sleeper: paste your league link, or enter your username.",
+      espn: "ESPN: paste your league link, or enter the League ID.",
+      yahoo: "Yahoo: paste your league link, or enter the League ID.",
+      mfl: "MFL: paste your league link, or enter the League ID.",
+      fleaflicker: "Fleaflicker: paste your league link, or enter the League ID."
+    };
+    document.querySelectorAll(".platform-btn[data-platform]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const t = PLAT_SUB[b.dataset.platform];
+        if (t) p2sub.textContent = t;
+      });
+    });
+  }
+  // The finish column's placeholder lines step aside once any real
+  // finish content (league select, team pick, account choice) lands.
+  const finishNotes = document.querySelectorAll(".ld-finish-note");
+  if (finishNotes.length) {
+    const finishWraps = ["leagueSelectWrap", "generateWrap",
+      "espnTeamPickWrap", "espnPrivateChoice", "yahooTeamPickWrap",
+      "yahooPrivateChoice", "mflTeamPickWrap", "mflPrivateChoice",
+      "fleaTeamPickWrap", "fleaPrivateChoice"]
+      .map((id) => document.getElementById(id)).filter(Boolean);
+    const syncNotes = () => {
+      const any = finishWraps.some((w) => w.style.display && w.style.display !== "none");
+      finishNotes.forEach((n) => { n.style.display = any ? "none" : ""; });
+      if (any) {
+        // The Sleeper guidance line is redundant once the finish is
+        // populated; switchPlatform restores it on the next switch.
+        const sh = document.getElementById("sleeperHint");
+        if (sh) sh.style.display = "none";
+      }
+    };
+    const noteObs = new MutationObserver(syncNotes);
+    finishWraps.forEach((w) => noteObs.observe(w, { attributes: true, attributeFilter: ["style"] }));
+    syncNotes();
+  }
+  // On stacked (mobile) layouts the Connect column sits below the
+  // platform list, so a platform tap scrolls it into view.
+  const step2Head = document.getElementById("hintStep2");
+  if (step2Head) {
+    document.querySelectorAll(".platform-btn[data-platform]").forEach((b) => {
+      b.addEventListener("click", () => {
+        if (!window.matchMedia || !window.matchMedia("(max-width: 1024px)").matches) return;
+        const off = Math.max(document.body.scrollTop || 0,
+          document.documentElement.scrollTop || 0, window.scrollY || 0);
+        const top = step2Head.getBoundingClientRect().top + off - 76;
+        document.body.scrollTo({ top, behavior: "smooth" });
+        document.documentElement.scrollTo({ top, behavior: "smooth" });
+      });
+    });
+  }
+  const p3sub = document.getElementById("ldP3Sub");
+  const leagueSel = document.getElementById("league");
+  if (p3sub && leagueSel) {
+    leagueSel.addEventListener("change", () => {
+      const opt = leagueSel.options[leagueSel.selectedIndex];
+      const name = opt ? opt.textContent.trim() : "";
+      if (name && leagueSel.value) {
+        p3sub.innerHTML = "Your team in <strong></strong>, so every tool is about your roster.";
+        p3sub.querySelector("strong").textContent = name;
+      }
+    });
+  }
   const shuffle = (arr) => {
     const a = (arr || []).slice();
     for (let i = a.length - 1; i > 0; i--) {
@@ -27269,11 +27354,11 @@ function setupFunAwardsGrid() {
       else if (i + 1 === n) el.classList.add('active');
     });
     card.setAttribute('data-onb-step', String(n));
-    if (n === 1) flows.forEach(function (f) { f.style.display = 'none'; });
   }
 
-  // Start on step 1: only the platform picker + step bar; hide the default
-  // (Sleeper) credential fields until the user explicitly picks a platform.
+  // Start on step 1 (platform). The three-column card shows the active
+  // platform's fields from the start (the switchPlatform state), so nothing
+  // is hidden here; the step pills still advance as the user works.
   setStep(1);
 
   // Choosing a platform reveals just that platform's fields (step 2). Run after
