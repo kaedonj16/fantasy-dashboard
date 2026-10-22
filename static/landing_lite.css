@@ -4649,6 +4649,17 @@ html:not([data-theme="dark"]) .home-card #generateWrap button:hover { background
 #leagueSelectWrap, #espnTeamPickWrap, #yahooTeamPickWrap, #mflTeamPickWrap, #fleaTeamPickWrap { margin-bottom: 16px; }
 .home-page .home-content-wrapper { margin-top: 30px; }
 @media (max-width: 1024px) {
+    /* Landing stacking (restored): the hero, PRO, free-tools and demo
+       grids collapse to one column on phones. The hero line carries the
+       .home-hero scope because the desktop rule is .home-hero.ld-hero;
+       a plain .ld-hero override loses to it at every order. */
+    .home-hero.ld-hero { grid-template-columns: 1fr; }
+    .ld-pro { grid-template-columns: 1fr; }
+    .ld-pro-grid { grid-template-columns: 1fr; }
+    .ld-free-grid { grid-template-columns: 1fr; }
+    .ld-demo-opts { grid-template-columns: 1fr 1fr; }
+    .ld-hero-card { padding: 24px 22px; }
+    .ld-card { padding: 22px 20px; }
     .ld-connect-grid { grid-template-columns: 1fr; }
     .ld-col-flow, .ld-col-finish { border-left: none; border-top: 1px solid var(--border); }
     .ld-sec-title { margin-top: 22px; }
