@@ -15761,6 +15761,27 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     except Exception:
         logger.debug("[start-sit] league index skipped", exc_info=True)
 
+    # ── Start/Sit tracking snapshot ─────────────────────────────────────
+    # Persist the advice exactly as shown (roster rows only, no guests) so
+    # it can be graded against actuals once the week finals. Best-effort:
+    # a tracking failure never breaks the page. Snapshots refresh on each
+    # view until a grade locks them (see start_sit_tracking.save_snapshot).
+    if not guest_pids and _has_roster_rows and current_week:
+        try:
+            from dashboard_services.start_sit_tracking import (
+                build_snapshot_payload as _ss_build_snapshot,
+                save_snapshot as _ss_save_snapshot,
+            )
+            _ss_save_snapshot(_ss_build_snapshot(
+                season=season, week=current_week, platform=platform,
+                league_id=league_id, roster_id=viewer_roster_id,
+                positions=positions_out, lineup_advice=lineup_advice,
+                roster_positions=roster_positions,
+                current_starters=sorted(_current_skill),
+            ), source="page_view")
+        except Exception:
+            logger.debug("[start-sit] tracking snapshot skipped", exc_info=True)
+
     has_eligible = _has_roster_rows
     return {
         "state": "loaded" if has_eligible else "empty_roster",
@@ -15772,6 +15793,52 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         "lineup_advice": lineup_advice,
         "guests": guests_out,
     }, 200
+
+
+@app.route("/api/start-sit-tracking")
+def api_start_sit_tracking():
+    """Graded history of the Start/Sit advice for the viewer's team.
+
+    Lazily grades any completed weeks for this league first (the daily cron
+    also grades pending snapshots), then returns the season summary built by
+    ``start_sit_tracking.summarize_tracking``. States mirror the options
+    endpoint: sign_in_required / team_not_linked / loaded.
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+    if not _session_signed_in():
+        return jsonify({"state": "sign_in_required"}), 401
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        return jsonify({"state": "temporarily_unavailable",
+                        "retryable": True}), 503
+    viewer_roster_id = ((ctx.get("viewer") or {}).get("viewer_roster_id"))
+    if not viewer_roster_id:
+        return jsonify({"state": "team_not_linked"}), 409
+    current_week = int(ctx.get("current_week") or 1)
+    try:
+        from dashboard_services.start_sit_tracking import (
+            get_tracking_summary as _ss_tracking_summary,
+            grade_pending_for_league as _ss_grade_pending,
+        )
+        if current_week > 1:
+            try:
+                _ss_grade_pending(platform, league_id, season, current_week)
+            except Exception:
+                logger.debug("[start-sit] lazy grading skipped", exc_info=True)
+        payload = _ss_tracking_summary(
+            platform, league_id, season, viewer_roster_id)
+        payload["state"] = payload.get("state") or "no_snapshots"
+        payload["current_week"] = current_week
+        return jsonify(payload), 200
+    except Exception:
+        logger.warning("start/sit tracking unavailable", exc_info=True)
+        return jsonify({"state": "temporarily_unavailable",
+                        "retryable": True}), 503
 
 
 # ── Player-modal Start/Sit strip ─────────────────────────────────────────

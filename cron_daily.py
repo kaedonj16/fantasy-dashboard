@@ -35,6 +35,7 @@ CRON_STEPS = (
     "trade_intel_crawl",
     "trade_intel_analytics",
     "build_start_score_bundles",
+    "grade_start_sit_snapshots",
     "notify_rival_trades",
     "trade_time_value_backfill",
     "espn_injury_return_dates",
@@ -1159,6 +1160,21 @@ print(f"[cron] Start-score bundles: {{summary}}")
 if not summary.get("ok"):
     raise RuntimeError(f"start-score bundles failed: {{summary.get('error')}}")
 """, "build_start_score_bundles", timeout=1800)
+
+    # ------------------------------------------------------------------ #
+    # Step 4f: Grade Start/Sit snapshots from completed weeks.            #
+    # Snapshots are captured when a viewer loads the Start/Sit page; this  #
+    # step grades every still-ungraded snapshot from a week before the   #
+    # current one against the provider matchup actuals (league scoring). #
+    # Incomplete matchup data leaves a snapshot pending for the next run.#
+    # ------------------------------------------------------------------ #
+    if in_season:
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from dashboard_services.start_sit_tracking import grade_pending
+res = grade_pending({season!r}, {week!r})
+print(f"[cron] Start/sit grading: {{res}}")
+""", "grade_start_sit_snapshots", timeout=900)
 
     # ------------------------------------------------------------------ #
     # Step 5: Model values                                                #

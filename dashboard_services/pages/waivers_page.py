@@ -425,6 +425,16 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-swap-slot { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
 .wv-ss-swap-gain { margin-left: auto; font-weight: 800; font-size: 13px; color: var(--win); font-variant-numeric: tabular-nums; }
 .wv-ss-swap-gain.wv-ss-swap-gain-neg { color: var(--loss); }
+/* Start/Sit tracking: graded history of past advice */
+.wv-ss-track { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-top: 16px; background: var(--card); }
+.wv-ss-track-head { font-size: 14px; font-weight: 700; color: var(--text); }
+.wv-ss-track-head i { color: var(--accent); margin-right: 6px; }
+.wv-ss-track-sub { font-size: 12px; color: var(--text-muted); margin: 3px 0 8px; }
+.wv-ss-track-week { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 6px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.wv-ss-track-week b { color: var(--text); }
+.wv-ss-track-delta { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--win); }
+.wv-ss-track-delta.neg { color: var(--loss); }
+.wv-ss-track-note { font-size: 12px; color: var(--text-muted); padding: 6px 0; border-top: 1px solid var(--border); }
 .wv-ss-winprob { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .wv-ss-winprob strong { color: var(--win); font-variant-numeric: tabular-nums; }
 .wv-ss-demote { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); margin-left: 6px; }
@@ -762,6 +772,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       <div id="wvStartSit">
         {wv_skel}
       </div>
+      <div id="wvSsTracking"></div>
     </div>
   </div>
 </div>
@@ -2596,6 +2607,7 @@ function wvFetchStartSit() {{
       wvPrefetchLab();
       wvSyncPosPills();
       wvRenderStartSit();
+      wvLoadTracking();
     }})
     .catch(() => {{
       ssShowError();
@@ -3558,6 +3570,60 @@ function wvLineupAdvice() {{
     <div class="wv-ss-advice-sub">${{a.optimal_pts}} optimal vs ${{a.current_pts}} current lineup</div>
     ${{swaps}}
   </div>`;
+}}
+
+// ── Start/Sit tracking: how past advice graded out ─────────────────────────
+// The snapshot for the current week is saved server-side when the options
+// payload is built; past weeks grade against actuals. This panel stays
+// hidden until at least one snapshot exists, and never blocks the board.
+var wvTrackingLoaded = false;
+function wvLoadTracking() {{
+  if (wvTrackingLoaded) return;
+  wvTrackingLoaded = true;
+  fetch(`/api/start-sit-tracking?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+    .then(r => r.json())
+    .then(d => wvRenderTracking(d))
+    .catch(() => {{}});
+}}
+function wvRenderTracking(d) {{
+  const el = document.getElementById('wvSsTracking');
+  if (!el || !d || d.state === 'sign_in_required' || d.state === 'team_not_linked'
+      || d.state === 'temporarily_unavailable' || d.state === 'no_snapshots') {{
+    if (el) el.innerHTML = '';
+    return;
+  }}
+  const esc = s => (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const fmt = v => (v == null ? 'n/a' : Number(v).toFixed(1));
+  const s = d.season || {{}};
+  let head = '';
+  if (d.state === 'graded') {{
+    const delta = s.advice_delta;
+    const deltaTxt = delta == null ? '' :
+      ` Advice vs the lineup you had set: <b>${{delta > 0 ? '+' : ''}}${{fmt(delta)}}</b> points over ${{s.weeks_graded}} week${{s.weeks_graded === 1 ? '' : 's'}}.`;
+    head = `<div class="wv-ss-track-sub">Recommended lineups scored ${{fmt(s.recommended_actual)}} of ${{fmt(s.optimal_actual)}} optimal (${{fmt(s.efficiency)}}% efficiency).${{deltaTxt}}` +
+      ` Swaps ${{s.swap_record.hits}} of ${{s.swap_record.total}} hit. Close calls ${{s.close_record.hits}} of ${{s.close_record.total}} hit.</div>`;
+  }} else {{
+    head = `<div class="wv-ss-track-sub">Your Week ${{(d.pending_weeks || [])[0] || ''}} advice is saved. Grades land here after the week finals.</div>`;
+  }}
+  const calib = (d.calibration || []).filter(c => c.n >= 2).map(c =>
+    `<div class="wv-ss-track-note">Close calls with a ${{esc(c.band)}} start score: starter won ${{c.hits}} of ${{c.n}} (${{fmt(c.hit_rate)}}%)</div>`).join('');
+  const weeks = (d.weeks || []).map(w => {{
+    if (!w.graded) {{
+      return `<div class="wv-ss-track-week"><b>Week ${{w.week}}</b><span>Snapshot saved. Awaiting finals.</span></div>`;
+    }}
+    const delta = w.advice_delta;
+    const dCls = (delta != null && delta < 0) ? ' neg' : '';
+    const dTxt = delta == null ? '' : `${{delta > 0 ? '+' : ''}}${{fmt(delta)}} vs your set lineup`;
+    const swaps = (w.swaps || []).slice(0, 3).map(sw => {{
+      const sd = Number(sw.delta) || 0;
+      return `<div class="wv-ss-track-note">${{esc(sw.start_name)}} ${{fmt(sw.actual_start)}} over ${{esc(sw.sit_name)}} ${{fmt(sw.actual_sit)}}: <b>${{sd > 0 ? '+' : ''}}${{fmt(sd)}}</b></div>`;
+    }}).join('');
+    return `<div class="wv-ss-track-week"><b>Week ${{w.week}}</b>` +
+      `<span>Recommended ${{fmt(w.recommended_actual)}}</span>` +
+      `<span>Optimal ${{fmt(w.optimal_actual)}}</span>` +
+      `<span class="wv-ss-track-delta${{dCls}}">${{dTxt}}</span></div>${{swaps}}`;
+  }}).join('');
+  el.innerHTML = `<div class="wv-ss-track"><div class="wv-ss-track-head"><i class="fa-solid fa-chart-line" aria-hidden="true"></i>How the advice has done</div>${{head}}${{weeks}}${{calib}}</div>`;
 }}
 
 // Deep link: ?tab=startsit opens the Start/Sit Advisor (switches the mobile
