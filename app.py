@@ -1531,6 +1531,7 @@ FORM_BODY = """
     </div>
     <div class="ld-board-wrap">
       <div class="hp-mb">
+          <div class="hp-mb-strip"><span class="hp-mb-strip-t">This week&#x27;s matchup</span>{% if current_week %}<span class="hp-mb-strip-wk">Week {{ current_week }}</span>{% endif %}</div>
           <div class="hp-mb-head">
             <div><div class="hp-mb-team">Caleb&#x27;s Casting Couch</div><div class="hp-mb-score" data-count="132.4">132.4</div></div>
             <div class="is-right"><div class="hp-mb-team">Pittsburgh Pilots</div><div class="hp-mb-score" data-count="128.9">128.9</div></div>
@@ -21938,6 +21939,7 @@ def index():
                 FORM_BODY,
                 username=username,
                 viewed_season=viewed_season,
+                current_week=int(nfl_state.get("week") or 0),
                 error=err,
                 recent_updates=generate_recent_updates_html(),
                 yahoo_enabled=_yahoo_ui_enabled(),
@@ -21967,6 +21969,7 @@ def index():
                         FORM_BODY,
                         username=username,
                         viewed_season=viewed_season,
+                        current_week=int(nfl_state.get("week") or 0),
                         error="Could not match that username to a team in this league.",
                         recent_updates=generate_recent_updates_html(),
                         yahoo_enabled=_yahoo_ui_enabled(),
@@ -22039,6 +22042,7 @@ def index():
         FORM_BODY,
         username="",
         viewed_season=viewed_season,
+        current_week=int(nfl_state.get("week") or 0),
         error=None,
         next_url=next_url,
         recent_updates=generate_recent_updates_html(),

@@ -52356,12 +52356,28 @@ html:not([data-theme="dark"]) body:has(.home-page) {
 .ld-board-wrap { min-width: 0; display: flex; }
 .ld-board-wrap .hp-mb { flex: 1; display: flex; flex-direction: column; justify-content: center; }
 .ld-board-wrap .mb-row { opacity: 0; animation: ldRow .45s ease forwards; }
-.ld-board-wrap .mb-row:nth-child(3) { animation-delay: .5s; }
-.ld-board-wrap .mb-row:nth-child(4) { animation-delay: .62s; }
-.ld-board-wrap .mb-row:nth-child(5) { animation-delay: .74s; }
-.ld-board-wrap .mb-row:nth-child(6) { animation-delay: .86s; }
-.ld-board-wrap .mb-row:nth-child(7) { animation-delay: .98s; }
+.ld-board-wrap .mb-row:nth-child(4) { animation-delay: .5s; }
+.ld-board-wrap .mb-row:nth-child(5) { animation-delay: .62s; }
+.ld-board-wrap .mb-row:nth-child(6) { animation-delay: .74s; }
+.ld-board-wrap .mb-row:nth-child(7) { animation-delay: .86s; }
+.ld-board-wrap .mb-row:nth-child(8) { animation-delay: .98s; }
 @keyframes ldRow { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* Board header strip (desktop only; the board markup carries it at every
+   width but phones keep the compact borderless board). On desktop the
+   board stretches to the hero card's height: top-align it and let the
+   player rows share the leftover height instead of centering the whole
+   board in dead space. */
+.hp-mb-strip { display: none; }
+.hp-mb-strip-t { font-size: 11px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: var(--text-muted); }
+.hp-mb-strip-wk { font-size: 11px; font-weight: 800; color: #2563eb; background: #eef4fb; border: 1px solid #dbe7f5; padding: 3px 8px; border-radius: 8px; }
+html[data-theme="dark"] .hp-mb-strip-wk { background: rgba(37, 99, 235, .18); border-color: rgba(37, 99, 235, .35); color: #7dd3fc; }
+@media (min-width: 1025px) {
+    .ld-board-wrap .hp-mb { justify-content: flex-start; }
+    .hp-mb-strip { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 0; }
+    .hp-mb .mb-row { flex: 1 1 0; }
+    .hp-mb-score { font-size: 36px; }
+    .hp-mb .mb-nameline .pname { font-size: 14px; }
+}
 
 /* sections + cards */
 .ld-sec { margin-top: 22px; }
