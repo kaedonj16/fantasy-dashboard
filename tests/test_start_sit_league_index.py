@@ -135,6 +135,144 @@ def test_pool_exotic_scoring_ranks_on_full_start_score(monkeypatch):
     appmod._SS_POOL_CACHE.clear()
 
 
+# ── One-computation pool (by_pid) ─────────────────────────────────────────
+# Regression 2026-10-22 (94/94): after #2783 made the pool rank on full
+# start scores, the modal kept ranking its own LIVE-computed score
+# against the bundle-built pool. The two assemblies of "the same" score
+# differ (live pace/role/Vegas stores, unrounded inputs, a different
+# season-PPG source), and in a dense QB top band both Maye's and
+# Stroud's live values landed in the same pocket of the pool — exactly
+# three pool values above each — so both printed rank 4 / index 94,
+# a rank neither computation earned. The index must rank the pool's
+# OWN value for the player, on every surface.
+
+def test_pool_by_pid_carries_the_ranked_values(monkeypatch):
+    import app as appmod
+
+    bundles = {}
+    for i in range(45):
+        bundles[f"rb{i}"] = {"pos": "RB", "proj_pts": 30.0 - 0.5 * i}
+    for i in range(5):
+        bundles[f"wr{i}"] = {"pos": "WR", "proj_pts": 25.0 - i}
+    _fake_bundles(monkeypatch, bundles)
+
+    pool = appmod.start_score_pool_scores(2026, 6, {"rec": 1.0})
+    assert pool["kind"] == "score"
+    assert pool["by_pid"]["rb0"] == 30.0
+    assert len(pool["by_pid"]) == 50
+    for pos in ("RB", "WR"):
+        from_pid = sorted(
+            (v for pid, v in pool["by_pid"].items()
+             if bundles[pid]["pos"] == pos), reverse=True)
+        assert from_pid == pool["by_pos"][pos]
+    appmod._SS_POOL_CACHE.clear()
+
+
+def test_pool_live_injury_status_overlays_bundle_status(monkeypatch):
+    """The pool scores a player with the LIVE injury status, like every
+    surface that scores him directly: a bundle written while he was on
+    IR must not zero him once he is active again."""
+    import app as appmod
+
+    bundles = {}
+    for i in range(44):
+        bundles[f"rb{i}"] = {"pos": "RB", "proj_pts": 30.0 - 0.5 * i}
+    bundles["rbBack"] = {"pos": "RB", "proj_pts": 25.0,
+                         "injury_status": "IR"}
+    _fake_bundles(monkeypatch, bundles)
+    index = {pid: {} for pid in bundles}
+    index["rbBack"] = {"injury_status": "Active"}
+    monkeypatch.setattr(appmod, "get_players_index_global",
+                        lambda *a, **k: index)
+
+    pool = appmod.start_score_pool_scores(2026, 6, {"rec": 1.0})
+    assert pool["by_pid"]["rbBack"] == pytest.approx(25.0)
+    appmod._SS_POOL_CACHE.clear()
+
+
+def _qb_pool_94_94(monkeypatch):
+    """Fake score pool carrying the verified Week 7 QB values."""
+    import app as appmod
+
+    by_pid = {"maye": 21.88, "burrow": 21.82, "purdy": 21.10,
+              "lamar": 21.08, "stroud": 20.86, "goff": 20.04,
+              "love": 20.01, "williams": 19.43}
+    pool = {"kind": "score",
+            "by_pos": {"QB": sorted(by_pid.values(), reverse=True)},
+            "by_pid": dict(by_pid)}
+    monkeypatch.setattr(appmod, "start_score_pool_scores",
+                        lambda *a, **k: pool)
+    return appmod
+
+
+def test_league_index_ranks_pool_value_not_caller_score(monkeypatch):
+    appmod = _qb_pool_94_94(monkeypatch)
+
+    # The 94/94 inputs: both callers' live scores sit at 21.09, in the
+    # pocket of the pool with exactly three values above. Ranked on the
+    # pool's own values, Maye is QB1 and Stroud QB5 — the caller's
+    # foreign score must not move either index.
+    assert appmod.start_score_league_index(
+        2026, 7, {}, "QB", 21.09, 20.3, player_id="maye") == 100
+    assert appmod.start_score_league_index(
+        2026, 7, {}, "QB", 21.09, 18.6, player_id="stroud") == 92
+    # A player with no pool value gets no index, never a ranked guess.
+    assert appmod.start_score_league_index(
+        2026, 7, {}, "QB", 21.09, 18.6, player_id="ghost") is None
+
+
+def test_league_index_proj_kind_ranks_pool_projection(monkeypatch):
+    import app as appmod
+
+    pool = {"kind": "proj",
+            "by_pos": {"RB": [30.0, 25.0, 20.0]},
+            "by_pid": {"rbA": 25.0}}
+    monkeypatch.setattr(appmod, "start_score_pool_scores",
+                        lambda *a, **k: pool)
+    # Caller score says elite; the pool's projection for rbA is RB2.
+    assert appmod.start_score_league_index(
+        2026, 6, {}, "RB", 99.0, 25.0, player_id="rbA") == \
+        appmod.start_score_tier_index("RB", 2)
+
+
+def test_qb_acceptance_maye_100_stroud_92_from_pool(monkeypatch):
+    """End to end through the real pool builder, engineered to the
+    verified Week 7 QB score set: with foreign live scores supplied by
+    the caller, the indexes still come out Maye 100 / Stroud 92."""
+    import app as appmod
+
+    def qb(proj, recent, season, bust, oline):
+        return {"pos": "QB", "proj_pts": proj, "recent_ppg": recent,
+                "season_ppg": season, "bust_rate": bust,
+                "oline_index": oline, "played_games": 6}
+
+    bundles = {
+        "maye": qb(20.27, 25.0, 19.5, 0.39, 33.75),
+        "burrow": qb(19.33, 22.0, 18.45, 0.27, 53.75),
+        "purdy": qb(19.31, 14.0, 18.58, 0.25, 93.75),
+        "lamar": qb(20.02, 17.0, 18.49, 0.35, 57.5),
+        "stroud": qb(18.61, 22.67, 18.86, 0.29, 52.5),
+    }
+    for i in range(40):
+        p = 19.9 - 0.3 * i
+        bundles[f"qb{i}"] = qb(p, p, p, None, None)
+    _fake_bundles(monkeypatch, bundles)
+
+    pool = appmod.start_score_pool_scores(2026, 7, {"rec": 1.0})
+    assert pool["kind"] == "score"
+    top5 = sorted(pool["by_pid"].items(), key=lambda kv: -kv[1])[:5]
+    assert [pid for pid, _ in top5] == \
+        ["maye", "burrow", "purdy", "lamar", "stroud"]
+    # Foreign caller scores (the 94/94 pocket) cannot move the indexes.
+    assert appmod.start_score_league_index(
+        2026, 7, {"rec": 1.0}, "QB", 21.09, 20.3,
+        player_id="maye") == 100
+    assert appmod.start_score_league_index(
+        2026, 7, {"rec": 1.0}, "QB", 21.09, 18.6,
+        player_id="stroud") == 92
+    appmod._SS_POOL_CACHE.clear()
+
+
 # ── League index (rank -> tier band) ──────────────────────────────────────
 
 def _pool(monkeypatch, kind, by_pos):

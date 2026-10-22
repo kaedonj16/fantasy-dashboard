@@ -3180,7 +3180,8 @@ _SS_POOL_MIN_BUNDLES = 40
 def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
     """League-wide start/sit pool for one week under one scoring config.
 
-    Returns ``{"kind": ..., "by_pos": {pos: [values, desc]}}``:
+    Returns ``{"kind": ..., "by_pos": {pos: [values, desc]},
+    "by_pid": {pid: value}}``:
 
     * ``kind == "score"``: values are full ``compute_start_score`` outputs
       for the whole player universe, rebuilt from the daily start-score
@@ -3195,15 +3196,22 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
     * ``kind is None``: no pool could be built; callers keep whatever
       index they already had instead of inventing one.
 
+    ``by_pid`` carries the SAME value that went into ``by_pos`` for each
+    player, from this one computation. It is the only value an index may
+    rank for that player (see ``start_score_league_index``): ranking a
+    caller's separately-computed score against this pool mixes two
+    computations of the same rating and manufactures ranks neither one
+    earned (2026-10-22: Maye and Stroud both printed 94).
+
     Cached per (season, week, scoring) like the position anchors.
     """
     if not season or not week:
-        return {"kind": None, "by_pos": {}}
+        return {"kind": None, "by_pos": {}, "by_pid": {}}
     key = (int(season), int(week), _ss_scoring_sig(scoring_settings))
     cached = _SS_POOL_CACHE.get(key)
     if cached is not None:
         return cached
-    pool: dict = {"kind": None, "by_pos": {}}
+    pool: dict = {"kind": None, "by_pos": {}, "by_pid": {}}
     # Primary: rebuild league-wide start scores from the daily bundles.
     # The for-scoring loader keeps the bundles' scoring-dependent fields
     # exact under the requested scoring, so a league whose scoring is not
@@ -3225,6 +3233,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 start_sit_pool_excluded as _pool_excluded,
             )
             by_pos: dict = {}
+            by_pid: dict = {}
             for _pid, bundle in bundles.items():
                 if not isinstance(bundle, dict):
                     continue
@@ -3249,7 +3258,12 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                         season_ppg=bundle.get("season_ppg") or 0.0,
                         usage_delta=bundle.get("usage_delta"),
                         usage_season_avg=bundle.get("usage_season_avg"),
-                        injury_status=bundle.get("injury_status"),
+                        # Live status overlays the batch-time one here
+                        # too, exactly as every surface that scores the
+                        # player directly does; the pool is one
+                        # computation, not a second opinion.
+                        injury_status=(_live_status
+                                       or bundle.get("injury_status")),
                         played_games=bundle.get("played_games"),
                         implied_total=bundle.get("implied_total"),
                         bust_rate=bundle.get("bust_rate"),
@@ -3268,13 +3282,14 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                     continue
                 if score and score > 0:
                     by_pos.setdefault(pos, []).append(float(score))
+                    by_pid[str(_pid)] = float(score)
             if by_pos:
                 for vals in by_pos.values():
                     vals.sort(reverse=True)
-                pool = {"kind": "score", "by_pos": by_pos}
+                pool = {"kind": "score", "by_pos": by_pos, "by_pid": by_pid}
     except Exception:
         logger.debug("[start_score_pool] bundle pool failed", exc_info=True)
-        pool = {"kind": None, "by_pos": {}}
+        pool = {"kind": None, "by_pos": {}, "by_pid": {}}
     # Fallback: rank on the full projection pool (no bundles exist at all).
     if pool["kind"] is None:
         try:
@@ -3290,6 +3305,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 start_sit_pool_excluded as _pool_excluded_fb,
             )
             by_pos = {}
+            by_pid = {}
             for pid in proj_map.keys():
                 meta = index.get(str(pid)) or index.get(pid) or {}
                 pos = _pool_ssp(
@@ -3307,13 +3323,14 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                     pts = None
                 if pts and pts > 0:
                     by_pos.setdefault(pos, []).append(float(pts))
+                    by_pid[str(pid)] = float(pts)
             if by_pos:
                 for vals in by_pos.values():
                     vals.sort(reverse=True)
-                pool = {"kind": "proj", "by_pos": by_pos}
+                pool = {"kind": "proj", "by_pos": by_pos, "by_pid": by_pid}
         except Exception:
             logger.debug("[start_score_pool] proj pool failed", exc_info=True)
-            pool = {"kind": None, "by_pos": {}}
+            pool = {"kind": None, "by_pos": {}, "by_pid": {}}
     with _SS_POOL_LOCK:
         if len(_SS_POOL_CACHE) > 64:
             _SS_POOL_CACHE.clear()
@@ -3322,7 +3339,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
 
 
 def start_score_league_index(season, week, scoring_settings, pos,
-                             score, proj_pts):
+                             score, proj_pts, player_id=None):
     """Tier-anchored index for one player from their LEAGUE-WIDE rank.
 
     ``score`` is the player's start score, ``proj_pts`` their raw weekly
@@ -3331,6 +3348,19 @@ def start_score_league_index(season, week, scoring_settings, pos,
     Competition ranking: tied values share a rank. Returns None when no
     league-wide pool exists for the position, so callers can fall back
     to the anchor pct instead of showing a roster-relative number.
+
+    When ``player_id`` is given, the value ranked is the POOL's own
+    value for that player (``by_pid``) — the index is then a pure
+    function of the one pool computation, identical on every surface.
+    The caller's ``score``/``proj_pts`` are ignored for ranking: they
+    come from per-request assemblies (live stores, unrounded inputs,
+    a different season-PPG source) that are NOT the computation that
+    built the pool, and ranking one against the other manufactures
+    ranks neither computation earned (2026-10-22: two QBs whose live
+    scores both landed in the same pocket of the bundle pool printed
+    the same rank-4 index, 94). A player with no pool value gets None,
+    never a rank for a foreign number. Without ``player_id`` the
+    historical float-ranking behavior is kept for ad-hoc callers.
     """
     pos = str(pos or "").upper()
     if pos not in _SS_TIER_BANDS:
@@ -3339,7 +3369,19 @@ def start_score_league_index(season, week, scoring_settings, pos,
     vals = (pool.get("by_pos") or {}).get(pos) or []
     if not vals:
         return None
-    value = score if pool.get("kind") == "score" else proj_pts
+    if player_id is not None:
+        by_pid = pool.get("by_pid") or {}
+        if by_pid:
+            value = by_pid.get(str(player_id))
+            if value is None:
+                return None
+        else:
+            # A pool without per-player values (an ad-hoc pool from a
+            # caller that predates by_pid) cannot certify a rank for a
+            # specific player; rank the caller's value as before.
+            value = score if pool.get("kind") == "score" else proj_pts
+    else:
+        value = score if pool.get("kind") == "score" else proj_pts
     try:
         value = float(value or 0)
     except (TypeError, ValueError):
@@ -15712,7 +15754,8 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                     season, current_week,
                     ctx.get("raw_scoring_settings")
                     or ctx.get("scoring_settings"),
-                    _pos, _p.get("start_score"), _p.get("proj_pts"))
+                    _pos, _p.get("start_score"), _p.get("proj_pts"),
+                    player_id=_p.get("player_id"))
                 if _idx is not None:
                     _p["start_score_pct"] = _idx
     except Exception:
@@ -28766,7 +28809,8 @@ def api_player_details(player_id: str):
                     try:
                         _start_score_pct = start_score_league_index(
                             int(season), _ss_week, scoring_settings,
-                            _start_sit_pos(_ss_pos), _ss_val, _ss_proj)
+                            _start_sit_pos(_ss_pos), _ss_val, _ss_proj,
+                            player_id=player_id)
                         if _start_score_pct is None:
                             _ss_anchor = (start_score_pos_anchors(
                                 int(season), _ss_week, scoring_settings
