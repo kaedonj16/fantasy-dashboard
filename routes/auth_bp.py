@@ -896,7 +896,7 @@ def yahoo_auth_callback():
     if league_id:
         from datetime import datetime
         from dashboard_services.api import get_nfl_state
-        from dashboard_services.providers.yahoo_api import resolve_league_key, get_league, get_users
+        from dashboard_services.providers.yahoo_api import resolve_league_key, get_league, get_login_team_id
         nfl_state  = get_nfl_state() or {}
         season     = int(nfl_state.get("season") or datetime.now().year)
 
@@ -933,12 +933,12 @@ def yahoo_auth_callback():
         if session.get("account_id"):
             team_id = None
             try:
-                users = get_users(season, league_id, access_token) or []
-                team_id = next((
-                    str(user.get("roster_id")) for user in users
-                    if str(user.get("user_id") or "") == str(guid)
-                    and user.get("roster_id") is not None
-                ), None)
+                # Yahoo stamps the fetching caller's guid on every team's
+                # manager entry, so guid-matching get_users can only ever
+                # return another team's roster id. The login user's own
+                # teams are the only trustworthy capture; None means the
+                # binding stores no team (never a first-team guess).
+                team_id = get_login_team_id(access_token, league_id, season)
                 from dashboard_services.accounts import add_user_league, link_platform_identity
                 link_platform_identity(session["account_id"], "yahoo", guid, team_name or None)
                 add_user_league(
@@ -960,7 +960,7 @@ def yahoo_auth_callback():
     if pending_link_league and session.get("account_id"):
         from datetime import datetime
         from dashboard_services.api import get_nfl_state
-        from dashboard_services.providers.yahoo_api import resolve_league_key, get_users
+        from dashboard_services.providers.yahoo_api import resolve_league_key, get_login_team_id
         resume_id = str(pending_link_league)
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get("season") or datetime.now().year)
@@ -972,12 +972,9 @@ def yahoo_auth_callback():
         except Exception:
             logger.warning("[yahoo_auth] save_league_owner failed", exc_info=True)
         try:
-            users = get_users(season, resume_id, access_token) or []
-            team_id = next((
-                str(user.get("roster_id")) for user in users
-                if str(user.get("user_id") or "") == str(guid)
-                and user.get("roster_id") is not None
-            ), None)
+            # Same capture rule as the league-context branch above: login
+            # user's own teams only, None when indeterminate.
+            team_id = get_login_team_id(access_token, resume_id, season)
             from dashboard_services.accounts import add_user_league, link_platform_identity
             link_platform_identity(session["account_id"], "yahoo", guid, team_name or None)
             add_user_league(

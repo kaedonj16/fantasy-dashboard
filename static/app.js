@@ -15344,6 +15344,11 @@ if (!platformBtns.length) return;
     option.value = parsed.league_id;
     option.textContent = "League " + parsed.league_id;
     leagueSelect.appendChild(option);
+    leagueSelect.dataset.mode = "link";
+    delete leagueSelect.dataset.username;
+    // The pasted league lands pre-selected, so nothing else fires the
+    // picker's change event step 3's copy listens for.
+    leagueSelect.dispatchEvent(new Event("change"));
     if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
     if (generateWrap) generateWrap.style.display = "block";
     if (errorBox) errorBox.style.display = "none";
@@ -15554,6 +15559,10 @@ if (!platformBtns.length) return;
           throw new Error(data.error || "Unable to load leagues.");
         }
         sleeperLookupUser = data.user || null;
+        // Step 3 reads this back: username results are leagues, and the
+        // username identifies the team in whichever league gets picked.
+        leagueSelect.dataset.mode = "username";
+        leagueSelect.dataset.username = (data.user && data.user.username) || username;
 
         leagueSelect.innerHTML = `<option value="">Select a league</option>`;
 
@@ -18392,17 +18401,97 @@ if (document.readyState === 'loading') {
       });
     });
   }
+  // Step 3 names what is actually being picked. Sleeper's picker holds
+  // leagues (username results, or the single pasted league) and the
+  // username already chose the team, so it reads "Choose league" and the
+  // subtitle names the team once it resolves. Every other platform's
+  // third step is a genuine team pick: "Choose team".
   const p3sub = document.getElementById("ldP3Sub");
+  const p3label = document.querySelector("#hintStep3 .home-step-label");
   const leagueSel = document.getElementById("league");
+  const P3_DEFAULT_SUB = "Pick your team, so every tool is about your roster.";
+  const step3TeamCache = {};
+  function setStep3Label(mode) {
+    if (p3label) p3label.textContent = mode === "league" ? "Choose league" : "Choose team";
+  }
+  function setStep3Sub(lead, leagueName, tail) {
+    if (!p3sub) return;
+    p3sub.textContent = "";
+    p3sub.append(document.createTextNode(lead + " "));
+    const strong = document.createElement("strong");
+    strong.textContent = leagueName;
+    p3sub.append(strong);
+    p3sub.append(document.createTextNode(tail));
+  }
+  function applyStep3ForLeague() {
+    if (!p3sub || !leagueSel) return;
+    const mode = leagueSel.dataset.mode || "";
+    const opt = leagueSel.options[leagueSel.selectedIndex];
+    const name = opt ? opt.textContent.trim() : "";
+    if (!name || !leagueSel.value) {
+      setStep3Label(mode === "username" || mode === "link" ? "league" : "team");
+      return;
+    }
+    if (mode === "link") {
+      setStep3Label("league");
+      setStep3Sub("Your league in", name, ", so every tool is about your roster.");
+      return;
+    }
+    if (mode !== "username") {
+      setStep3Label("team");
+      setStep3Sub("Your team in", name, ", so every tool is about your roster.");
+      return;
+    }
+    setStep3Label("league");
+    setStep3Sub("Your league in", name, ", so every tool is about your roster.");
+    const leagueId = leagueSel.value;
+    const username = leagueSel.dataset.username || "";
+    if (!username) return;
+    if (step3TeamCache[leagueId]) {
+      setStep3Sub("Your league in", name, ", with team " + step3TeamCache[leagueId] + ".");
+      return;
+    }
+    const season = document.querySelector('#leagueSelectForm input[name="season"]')?.value || "";
+    fetch(`/api/teams?league_id=${encodeURIComponent(leagueId)}&platform=sleeper&season=${encodeURIComponent(season)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((teams) => {
+        if (!Array.isArray(teams) || leagueSel.value !== leagueId) return;
+        const mine = teams.find((t) => String(t.username || "").toLowerCase() === username.toLowerCase());
+        if (mine && mine.team_name) {
+          step3TeamCache[leagueId] = mine.team_name;
+          setStep3Sub("Your league in", name, ", with team " + mine.team_name + ".");
+        }
+      })
+      .catch(() => {});
+  }
   if (p3sub && leagueSel) {
-    leagueSel.addEventListener("change", () => {
-      const opt = leagueSel.options[leagueSel.selectedIndex];
-      const name = opt ? opt.textContent.trim() : "";
-      if (name && leagueSel.value) {
-        p3sub.innerHTML = "Your team in <strong></strong>, so every tool is about your roster.";
-        p3sub.querySelector("strong").textContent = name;
+    leagueSel.addEventListener("change", applyStep3ForLeague);
+  }
+  // Platform switches reset the finish step; Sleeper restores whichever
+  // league state its picker is holding.
+  document.querySelectorAll(".platform-btn[data-platform]").forEach((b) => {
+    b.addEventListener("click", () => {
+      if (b.dataset.platform === "sleeper" && leagueSel &&
+          (leagueSel.dataset.mode === "username" || leagueSel.dataset.mode === "link")) {
+        applyStep3ForLeague();
+      } else {
+        setStep3Label("team");
+        if (p3sub) p3sub.textContent = P3_DEFAULT_SUB;
       }
     });
+  });
+  // Programmatic flows (the ESPN reconnect deep link calls switchPlatform
+  // directly) show a team-pick wrap without a platform tap: the step is a
+  // team pick again whenever one of those wraps is on screen.
+  const step3TeamWraps = ["espnTeamPickWrap", "espnPrivateChoice", "yahooTeamPickWrap",
+    "yahooPrivateChoice", "mflTeamPickWrap", "mflPrivateChoice",
+    "fleaTeamPickWrap", "fleaPrivateChoice"]
+    .map((id) => document.getElementById(id)).filter(Boolean);
+  if (step3TeamWraps.length) {
+    const step3TeamObs = new MutationObserver(() => {
+      if (step3TeamWraps.some((w) => w.style.display && w.style.display !== "none")) setStep3Label("team");
+    });
+    step3TeamWraps.forEach((w) => step3TeamObs.observe(w, { attributes: true, attributeFilter: ["style"] }));
   }
   const shuffle = (arr) => {
     const a = (arr || []).slice();

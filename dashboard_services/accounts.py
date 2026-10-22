@@ -1358,6 +1358,37 @@ def resolve_my_leagues(viewer_user_id, account_id, current_season, *, enrich_liv
     return list(by_key.values()), season
 
 
+def _yahoo_login_team_id(identities: dict, league_id: str, season: int) -> Optional[str]:
+    """The account's own Yahoo team in a league, via its linked Yahoo token.
+
+    Yahoo payloads stamp the fetching caller's guid on every roster, so no
+    league payload can identify the account's team. The login user's own
+    teams (fetched with the account's own stored token) can. Returns None
+    when no linked identity has a usable token or the account has no team
+    in the league.
+    """
+    try:
+        from dashboard_services.providers.yahoo_api import (
+            get_login_team_id, get_valid_access_token,
+        )
+    except Exception:
+        return None
+    for platform_user_id in identities:
+        try:
+            token = get_valid_access_token(platform_user_id)
+        except Exception:
+            token = None
+        if not token:
+            continue
+        try:
+            team_id = get_login_team_id(token, str(league_id), int(season))
+        except Exception:
+            team_id = None
+        if team_id:
+            return str(team_id)
+    return None
+
+
 def resolve_account_viewer_for_league(
     account_id: int, platform: str, league_id: str, season: int,
     users: list[dict], rosters: list[dict],
@@ -1417,9 +1448,33 @@ def resolve_account_viewer_for_league(
     ident_ids = []
     for pid in identities:
         ident_ids.extend(owner_id_variants(pid))
-    roster = match_viewer_roster(
-        rosters, team_id=stored_team_id, owner_ids=ident_ids,
-    )
+    if platform == "yahoo":
+        # Yahoo serves the fetching caller's guid as every roster's owner_id,
+        # so owner matching can only ever return the first roster in the list
+        # (or another member's, when their token fetched the rosters). The
+        # saved team_id pointer IS the binding: honor it by roster_id only.
+        # With no pointer, resolve from the account's own Yahoo token via the
+        # login user's own teams; the persistence below then stores that team
+        # so later loads take the pointer path. Never owner-match for Yahoo.
+        roster = None
+        if stored_team_id:
+            roster = next(
+                (r for r in rosters or []
+                 if str(r.get("roster_id") or "") == stored_team_id),
+                None,
+            )
+        if roster is None:
+            login_team_id = _yahoo_login_team_id(identities, league_id, season)
+            if login_team_id:
+                roster = next(
+                    (r for r in rosters or []
+                     if str(r.get("roster_id") or "") == login_team_id),
+                    None,
+                )
+    else:
+        roster = match_viewer_roster(
+            rosters, team_id=stored_team_id, owner_ids=ident_ids,
+        )
     if roster is None and platform == "espn":
         creds = get_espn_league_credentials(account_id, league_id, int(season)) or {}
         roster = match_viewer_roster(rosters, owner_ids=list(owner_id_variants(creds.get("swid"))))
@@ -1453,6 +1508,14 @@ def resolve_account_viewer_for_league(
     owner_id = str(roster.get("owner_id") or "")
     user = next((u for u in users or []
                  if str(u.get("user_id") or "") == owner_id), None) or {}
+    if platform == "yahoo" and roster_id:
+        # Every Yahoo user row carries the same (caller-stamped) user_id, so
+        # the owner match above lands on an arbitrary manager. The user row
+        # carrying this roster_id is the roster's actual manager.
+        by_roster = next((u for u in users or []
+                          if str(u.get("roster_id") or "") == roster_id), None)
+        if by_roster:
+            user = by_roster
     user_meta, roster_meta = user.get("metadata") or {}, roster.get("metadata") or {}
     username = (
         user.get("username")

@@ -1193,6 +1193,21 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
     if not resolved_user_id:
         return None
 
+    # A user row that carries its own roster_id (Yahoo/MFL/Fleaflicker user
+    # payloads do) names that user's roster directly. Prefer it over the
+    # owner_id scan: Yahoo stamps the fetching caller's guid as EVERY
+    # roster's owner_id, so the scan below can only ever return the first
+    # roster for a Yahoo league -- the poisoning that wrote the wrong team
+    # into saved bindings. Platforms whose user rows carry no roster_id
+    # (Sleeper, ESPN) are unaffected.
+    if not matched_roster:
+        user_roster_id = str(matched_user.get("roster_id") or "")
+        if user_roster_id:
+            for r in rosters or []:
+                if str(r.get("roster_id") or "") == user_roster_id:
+                    matched_roster = r
+                    break
+
     if not matched_roster:
         for r in rosters or []:
             owner_id = str(r.get("owner_id") or "")

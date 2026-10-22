@@ -96,8 +96,6 @@ def test_landing_lite_carries_teaser_rules():
         ".br-asst-bubble-signin {",
         "#brAsstGuestIntro {",
         "#brAsstGuestIntro.br-asst-bubble-in {",
-        # Desktop parking spot: left of the Get Started card.
-        "right: calc(50vw - 140px);",
         # Mobile dock-stack slot, same as the signed-in bubble.
         "bottom: calc(var(--dock-safe-bottom) + 14px + 56px + 14px);",
         # Tokens the launcher references that the lite sheet lacked.
@@ -143,4 +141,11 @@ def test_guest_seo_page_stays_modal_free(offline_client):
 
 
 def test_sw_bumped_for_guest_teaser():
-    assert "br-fantasy-v82" in SW
+    assert "br-fantasy-v83" in SW
+
+
+def test_guest_bubble_has_no_center_park_override():
+    """The desktop park is the base .br-asst-bubble spot: bottom-right,
+    directly above the launcher. A pre-rebuild override dragged the
+    bubble to bottom-center over the hero cards; it must not come back."""
+    assert "calc(50vw - 140px)" not in LANDING_LITE

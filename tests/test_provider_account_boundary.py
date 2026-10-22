@@ -67,8 +67,8 @@ def _mock_yahoo(monkeypatch, attached):
         lambda *args: {"status": "found", "season": 2026, "name": "Yahoo League"},
     )
     monkeypatch.setattr(
-        "dashboard_services.providers.yahoo_api.get_users",
-        lambda *args: [{"user_id": "yahoo-guid", "roster_id": "team-8"}],
+        "dashboard_services.providers.yahoo_api.get_login_team_id",
+        lambda *args: "team-8",
     )
     monkeypatch.setattr("dashboard_services.api.get_nfl_state", lambda: {"season": 2026})
     monkeypatch.setattr(
