@@ -164,3 +164,55 @@ def test_kicker_and_defense_aliases_are_legal_and_zero_is_authoritative():
     assert result["complete"] is True
     assert result["actual"] == result["optimal"] == 12.0
     assert result["missing_scores"] == []
+
+
+def test_solver_matches_brute_force_on_random_small_cases():
+    # The DP solver was rewritten to carry backpointers instead of copying
+    # the full assignment tuple per transition (waiver evaluation calls it
+    # thousands of times per request). Pin it against an exhaustive search
+    # over every legal slot assignment on deterministic random cases,
+    # including tied scores and missing-score players.
+    import itertools
+    import random
+
+    from utils.lineups import assign_optimal_lineup
+    from utils.lineup_slots import slot_eligible_positions
+
+    rng = random.Random(20261022)
+    pos_pool = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    slot_sets = [
+        ["QB", "RB", "WR", "TE", "FLEX"],
+        ["QB", "RB", "RB", "WR", "TE", "SUPER_FLEX"],
+        ["RB", "WR", "FLEX", "K", "DEF"],
+    ]
+    for _ in range(120):
+        n = rng.randint(3, 8)
+        pids = [f"p{i}" for i in range(n)]
+        positions = {p: rng.choice(pos_pool) for p in pids}
+        pts = {}
+        for p in pids:
+            if rng.random() < 0.15:
+                continue
+            pts[p] = rng.choice([0, 5, 10, 10, 12.5, -2, 20])
+        slots = rng.choice(slot_sets)
+        got = assign_optimal_lineup(pts, positions, slots, pids)
+        # Brute force: choose an ordered assignment of distinct scored
+        # players to slots (or leave a slot empty), maximise filled count,
+        # then total.
+        scored = [p for p in pids if p in pts]
+        best = None
+        for combo in itertools.product([None] + scored, repeat=len(slots)):
+            chosen = [c for c in combo if c is not None]
+            if len(set(chosen)) != len(chosen):
+                continue
+            if any(c is not None and positions[c] not in slot_eligible_positions(s)
+                   for c, s in zip(combo, slots)):
+                continue
+            key = (len(chosen), sum(pts[c] for c in chosen))
+            if best is None or key > best:
+                best = key
+        assert got["filled"] == best[0]
+        assert got["total"] == round(best[1], 2)
+        assert got["starters"] <= set(scored)
+        assert len(got["starters"]) == got["filled"]
+        assert sum(pts[p] for p in got["starters"]) == got["total"]

@@ -186,3 +186,33 @@ def test_locked_starter_stays_in_lineup():
 def test_cannot_evaluate_without_week0_projection():
     res = evaluate_pickup("WR3", "WR", _ROSTER, [_wk({})], dict(_POS), _1QB_SLOTS)
     assert res.outcome == "cannot_evaluate"
+
+
+def test_full_roster_best_drop_can_be_a_bench_player():
+    # Full roster (9 players, 7 starters + 2 bench): the cheapest drop is a
+    # bench player who is not in the post-add lineup. His price is the
+    # unconstrained add total (dropping him cannot change that lineup), and
+    # the tie-break cuts the least productive eligible player.
+    pos = dict(_POS)
+    roster = _ROSTER + ["WR3", "RBscrub"]  # 9 = full
+    pts = {**_PTS, "WR3": 8, "RBscrub": 1, "WRnew": 13}
+    pos["WRnew"] = "WR"
+    res = evaluate_pickup_week("WRnew", "WR", roster, pts, pos, _1QB_SLOTS,
+                               droppable_pids=roster)
+    assert res["roster_full"] is True
+    assert res["drop_pid"] == "RBscrub"
+    _starters, add_total = optimal_starters_and_points(
+        pts, pos, _1QB_SLOTS, roster + ["WRnew"])
+    assert res["best_after"] == add_total
+    assert res["starts_now"] is True
+
+
+def test_optimal_solve_cache_returns_fresh_sets():
+    # The solve cache must never hand out a set a caller can mutate to
+    # poison later calls with the same inputs.
+    pts = dict(_PTS)
+    pos = dict(_POS)
+    s1, t1 = optimal_starters_and_points(pts, pos, _1QB_SLOTS, _ROSTER)
+    s1.clear()
+    s2, t2 = optimal_starters_and_points(pts, pos, _1QB_SLOTS, _ROSTER)
+    assert s2 and t1 == t2
