@@ -24,9 +24,10 @@ logger = logging.getLogger(__name__)
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 
-# Pick value estimates mirror api_trade_targets' _pick_val_est so the shop
-# repricer prices picks the same way the rest of the trade suite does.
-PICK_VALUE_BY_ROUND = {1: 650.0, 2: 220.0, 3: 80.0}
+# Pick values come from the calibrated table (dashboard_services.picks
+# .load_pick_value_table), never flat per-round constants: a flat 650 for
+# every 1st overstates a late/future 1st by up to ~3x against the table
+# (2026 1sts actually run 213.2-685.5 by slot). See calibrated_pick_value.
 
 
 def _safe_float(v: Any, default: float = 0.0) -> float:
@@ -196,8 +197,108 @@ def values_by_id(
     return out
 
 
-def pick_value_for(pick_id: str) -> float:
-    """Value estimate for a draft-pick asset id."""
+def calibrated_pick_value(
+    table: Optional[Dict[str, Any]],
+    season: Any,
+    rnd: Any,
+    slot: Any = None,
+    bucket: Optional[str] = None,
+    num_teams: Optional[int] = None,
+    nearest_season: bool = True,
+) -> float:
+    """Resolve a pick's value from a calibrated pick-value table.
+
+    Lookup hierarchy (the one utils.draft.pick_value_from_table implements,
+    extended with an explicit-bucket step and a nearest-season step):
+    exact slot key ("2026_1_01") -> explicit bucket key ("2028_1_mid") ->
+    bucket derived from the slot -> round average (mean of the round's slot
+    keys, then the mid bucket, then the bare round key) -> optionally, the
+    nearest season that prices this round, at that season's round average.
+
+    The nearest-season step is for estimate surfaces (shop repricer,
+    package ceilings) where a beyond-table season still needs a sane
+    estimate. Verdict surfaces pass ``nearest_season=False`` so a pick the
+    table doesn't cover for its own season stays unpriced, exactly like
+    the trade outcome analyzer.
+
+    Returns 0.0 when the table prices this round in no season at all: the
+    pick is unpriced, never a flat invented constant.
+    """
+    try:
+        year = int(season)
+        rnd_i = int(rnd)
+    except (TypeError, ValueError):
+        return 0.0
+    if not table or rnd_i <= 0:
+        return 0.0
+
+    def _pos(v: Any) -> float:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return 0.0
+        return f if f > 0 else 0.0
+
+    slot_i: Optional[int] = None
+    if slot is not None:
+        try:
+            slot_i = int(slot)
+        except (TypeError, ValueError):
+            slot_i = None
+    if slot_i:
+        for key in (f"{year}_{rnd_i}_{slot_i:02d}", f"{year}_{rnd_i}_{slot_i}"):
+            v = _pos(table.get(key))
+            if v:
+                return v
+    if bucket:
+        v = _pos(table.get(f"{year}_{rnd_i}_{str(bucket).strip().lower()}"))
+        if v:
+            return v
+
+    from utils.draft import pick_value_from_table
+
+    v = pick_value_from_table(table, year, rnd_i, slot_i, num_teams=num_teams)
+    if v:
+        return float(v)
+
+    if not nearest_season:
+        return 0.0
+
+    # Nearest season that prices this round, at its round average (no slot:
+    # a slot in one draft says nothing about another draft's order).
+    years = set()
+    for key in table:
+        parts = str(key).split("_")
+        if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit() \
+                and int(parts[1]) == rnd_i:
+            years.add(int(parts[0]))
+    for cand in sorted(years, key=lambda y: (abs(y - year), y)):
+        if cand == year:
+            continue
+        v = pick_value_from_table(table, cand, rnd_i)
+        if v:
+            return float(v)
+    return 0.0
+
+
+def _load_pick_table(is_sf: bool = False) -> Dict[str, float]:
+    try:
+        from dashboard_services.picks import load_pick_value_table
+        return load_pick_value_table(is_sf=is_sf) or {}
+    except Exception:
+        logger.debug("trade_hub: pick table load failed", exc_info=True)
+        return {}
+
+
+def pick_value_for(pick_id: str, table: Optional[Dict[str, Any]] = None,
+                   *, is_sf: bool = False,
+                   num_teams: Optional[int] = None) -> float:
+    """Calibrated value for a draft-pick asset id (0.0 when unpriced).
+
+    ``table`` lets a caller that prices many picks load the table once;
+    without one it is loaded here. A missing/empty table yields 0.0 (the
+    asset is unpriced), never a flat per-round fallback.
+    """
     try:
         from utils.pick_slots import parse_pick_asset
     except Exception:
@@ -205,7 +306,17 @@ def pick_value_for(pick_id: str) -> float:
     parsed = parse_pick_asset(pick_id)
     if not parsed:
         return 0.0
-    return PICK_VALUE_BY_ROUND.get(int(parsed.get("round") or 0), 40.0)
+    if table is None:
+        table = _load_pick_table(is_sf=is_sf)
+    bucket = parsed.get("bucket")
+    return calibrated_pick_value(
+        table,
+        parsed.get("season"),
+        parsed.get("round"),
+        slot=parsed.get("slot"),
+        bucket=str(bucket).lower() if bucket else None,
+        num_teams=num_teams,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -246,11 +357,13 @@ def _roster_needs(
     }
 
 
-def _asset_value(asset_id: str, values: Dict[str, Dict[str, Any]]) -> float:
+def _asset_value(asset_id: str, values: Dict[str, Dict[str, Any]],
+                 pick_table: Optional[Dict[str, Any]] = None,
+                 num_teams: Optional[int] = None) -> float:
     info = values.get(str(asset_id))
     if info:
         return _safe_float(info.get("value"))
-    return pick_value_for(str(asset_id))
+    return pick_value_for(str(asset_id), pick_table, num_teams=num_teams)
 
 
 def _cheapest_fair_return(
@@ -345,15 +458,18 @@ def shop_package(
     needs_by_roster = _roster_needs(roster_vals, rp_list, num_teams, slot_counts, is_sf)
     viewer_needs = set(needs_by_roster.get(viewer_roster_id, []))
 
+    # One calibrated pick table for the whole repricing pass.
+    pick_table: Dict[str, Any] = {} if is_redraft else _load_pick_table(is_sf=is_sf)
+
     send_assets: List[Dict[str, Any]] = []
     send_value = 0.0
     for aid in send_ids:
-        v = _asset_value(aid, values)
+        v = _asset_value(aid, values, pick_table, num_teams=league_size)
         info = values.get(aid, {})
         send_assets.append({
             "id": aid,
             "name": info.get("name") or aid,
-            "position": info.get("position") or ("PICK" if pick_value_for(aid) else "?"),
+            "position": info.get("position") or ("PICK" if pick_value_for(aid, pick_table, num_teams=league_size) else "?"),
             "value": round(v, 1),
         })
         send_value += v
@@ -392,7 +508,8 @@ def shop_package(
             season = pk.get("season")
             slot = pk.get("slot")
             pid = f"{season}_{rnd}_{int(slot):02d}" if slot else f"{season}_{rnd}"
-            pv = PICK_VALUE_BY_ROUND.get(rnd, 0.0)
+            pv = calibrated_pick_value(pick_table, season, rnd, slot=slot,
+                                       num_teams=league_size)
             candidates.append({
                 "id": pid,
                 "name": f"{season} {rnd}{'st' if rnd == 1 else 'nd'} pick",

@@ -1705,7 +1705,15 @@ import os
 VALUE_STARTERS = {"QB": 1.0, "RB": 2.0, "WR": 3.0, "TE": 1.0}
 VALUE_FLEX_ALLOC = {"RB": 0.45, "WR": 0.45, "TE": 0.10}
 # Marginal PPR points worth one head-to-head win (≈ weekly team-score stdev).
+# This is a WEEKLY value: a ~28-point edge in one week is worth roughly a win.
 POINTS_PER_WIN_DEFAULT = 28.0
+# WAR divides a SEASON-total VORP, so it needs the season-scale conversion of
+# the weekly value above. A per-week edge Δ converts to wins at the normal
+# density over the head-to-head margin SD (σ√2 for two independent team
+# scores): wins ≈ Σ_weeks [Φ(Δ_w/(σ√2)) − ½] ≈ season_vorp · φ(0)/(σ√2).
+# The season points-per-win divisor is therefore σ · √2/φ(0) = σ · 2√π
+# ≈ 28 · 3.545 ≈ 99.3 — a 140-point season VORP is ≈ 1.4 WAR, not 140/28 = 5.0.
+_WAR_SEASON_FACTOR = 2.0 * math.sqrt(math.pi)
 PROJ_SEASON_GAMES = 17.0
 
 _POS_NORM = {"HB": "RB", "FB": "RB", "SE": "WR", "FL": "WR"}
@@ -1720,11 +1728,24 @@ def normalize_position(pos: Optional[str]) -> Optional[str]:
 
 
 def points_per_win() -> float:
+    """Weekly points-per-win (team-score SD scale). See season_points_per_win
+    for the divisor WAR actually uses against season-total VORP."""
     try:
         v = float(os.getenv("POINTS_PER_WIN", "").strip())
         return v if v > 0 else POINTS_PER_WIN_DEFAULT
     except (TypeError, ValueError):
         return POINTS_PER_WIN_DEFAULT
+
+
+def season_points_per_win(weekly_ppw: Optional[float] = None) -> float:
+    """Season-scale points-per-win divisor for season-total VORP.
+
+    Converts the weekly points-per-win (default / POINTS_PER_WIN env /
+    explicit value, all on the weekly scale) to the season scale WAR needs:
+    weekly × 2√π ≈ weekly × 3.545 (≈ 99.3 at the 28.0 default).
+    """
+    ppw = weekly_ppw if (weekly_ppw and weekly_ppw > 0) else points_per_win()
+    return ppw * _WAR_SEASON_FACTOR
 
 
 def stamp_value_metrics(
@@ -1740,11 +1761,10 @@ def stamp_value_metrics(
     """
     teams = int(num_teams) if num_teams and num_teams > 0 else 12
     start_slots = {**VALUE_STARTERS, **(starters or {})}
-    ppw = (
-        points_per_win_value
-        if (points_per_win_value and points_per_win_value > 0)
-        else points_per_win()
-    )
+    # recs' pts are season totals (historical totals or full-season
+    # projections), so WAR uses the season-scale divisor derived from the
+    # weekly points-per-win the caller/env supplies.
+    ppw_season = season_points_per_win(points_per_win_value)
 
     pool_by_pos: Dict[str, List[float]] = {}
     for rec in recs:
@@ -1770,7 +1790,7 @@ def stamp_value_metrics(
             continue
         vorp = float(rec.get("pts") or 0.0) - repl_pts.get(pos, 0.0)
         rec["vorp"] = round(vorp, 3)
-        rec["war"] = round(vorp / ppw, 3)
+        rec["war"] = round(vorp / ppw_season, 3)
 
     for pos in start_slots:
         pos_recs = [r for r in recs if r.get("position") == pos]

@@ -878,11 +878,28 @@ def use_role_score_v2() -> bool:
     return os.getenv("ROLE_SCORE_V2", "1").strip().lower() not in ("0", "false", "no", "")
 
 
+def _usage_season_total(usage: Dict[str, Any], total_key: str, avg_key: str) -> float:
+    """Season total for a volume key: the explicit total when the usage dict
+    carries one, else per-game average × games played."""
+    total = usage.get(total_key)
+    if total is not None:
+        return _safe(total)
+    return _safe(usage.get(avg_key)) * _safe(usage.get("games"))
+
+
 def build_team_opportunity_context(usage_table: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
     """
-    Sum per-game opportunities by team so each player's share can be derived.
-    usage_table entries are {id, team, position, usage:{...}}; only players with
-    games > 0 contribute. Returns {team: {targets, carries, rz_tgt, rz_rush}}.
+    Sum season-total opportunities by team so each player's share can be
+    derived totals-first: share = player season total ÷ team season total.
+    usage_table entries are {id, team, position, usage:{...}}; only players
+    with games > 0 contribute. Returns {team: {targets, carries, rz_tgt,
+    rz_rush}} as season totals.
+
+    This used to sum per-game averages, which double-counts rotation
+    players: a backup who played only the 5 weeks the starter missed added
+    his full per-game average on top of the starter's, inflating the team
+    denominator and deflating every share on that team (RZ shares most,
+    since they had no totals-first escape).
     """
     ctx: Dict[str, Dict[str, float]] = {}
     for p in usage_table:
@@ -891,10 +908,10 @@ def build_team_opportunity_context(usage_table: List[Dict[str, Any]]) -> Dict[st
         if not team or (usage.get("games") or 0) <= 0:
             continue
         agg = ctx.setdefault(team, {"targets": 0.0, "carries": 0.0, "rz_tgt": 0.0, "rz_rush": 0.0})
-        agg["targets"] += _safe(usage.get("avg_targets"))
-        agg["carries"] += _safe(usage.get("avg_carries"))
-        agg["rz_tgt"]  += _safe(usage.get("rec_rz_tgt_pg"))
-        agg["rz_rush"] += _safe(usage.get("rush_rz_att_pg"))
+        agg["targets"] += _usage_season_total(usage, "total_targets", "avg_targets")
+        agg["carries"] += _usage_season_total(usage, "total_carries", "avg_carries")
+        agg["rz_tgt"]  += _usage_season_total(usage, "total_rec_rz_tgt", "rec_rz_tgt_pg")
+        agg["rz_rush"] += _usage_season_total(usage, "total_rush_rz_att", "rush_rz_att_pg")
     return ctx
 
 
@@ -923,14 +940,25 @@ def role_opportunity_index(
         return None
 
     # Receiving share: prefer Footballguys target_share (true team share);
-    # fall back to deriving it from the team aggregate.
+    # fall back to deriving it totals-first from the team aggregate
+    # (player season total ÷ team season total — team_ctx now holds season
+    # totals, so the per-game averages must be scaled by games first).
     tshare = _safe(usage.get("target_share"))
     if tshare <= 0:
-        tshare = _share(_safe(usage.get("avg_targets")), _safe(team_ctx.get("targets")))
+        tshare = _share(
+            _usage_season_total(usage, "total_targets", "avg_targets"),
+            _safe(team_ctx.get("targets")),
+        )
     tshare = _clip(tshare, 0.0, 1.0)
 
-    rz_tgt_share  = _share(_safe(usage.get("rec_rz_tgt_pg")),  _safe(team_ctx.get("rz_tgt")))
-    rz_rush_share = _share(_safe(usage.get("rush_rz_att_pg")), _safe(team_ctx.get("rz_rush")))
+    rz_tgt_share  = _share(
+        _usage_season_total(usage, "total_rec_rz_tgt", "rec_rz_tgt_pg"),
+        _safe(team_ctx.get("rz_tgt")),
+    )
+    rz_rush_share = _share(
+        _usage_season_total(usage, "total_rush_rz_att", "rush_rz_att_pg"),
+        _safe(team_ctx.get("rz_rush")),
+    )
 
     # No snap term (see the snap-free note above the anchors): snap share isn't
     # in this data source, and estimating it from touches would re-bias against
@@ -947,7 +975,10 @@ def role_opportunity_index(
     elif position == "RB":
         # PPR-weighted dual role: the 1.7x target premium lets pass-catching
         # backs register, while rush + goal-line share reward early-down bellcows.
-        rshare = _share(_safe(usage.get("avg_carries")), _safe(team_ctx.get("carries")))
+        rshare = _share(
+            _usage_season_total(usage, "total_carries", "avg_carries"),
+            _safe(team_ctx.get("carries")),
+        )
         core   = _clip(rshare + 1.7 * tshare, 0.0, 1.0)
         comps = [(core, 0.56, False), (rz_rush_share, 0.24, True), (rz_tgt_share, 0.20, True)]
 
@@ -2874,12 +2905,12 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # canonical form in every reception format (season totals are just per-game
     # x games and mislead across different games played). A week range shows
     # the range per-game rate. See data_building/external_data/expected_points.py.
-    "expected_ppr_per_game": {"basic": True, "label": "Expected FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected full-PPR fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "ppr_over_expected_per_game": {"basic": True, "label": "FPOE/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected full-PPR points per matched covered game. Positive = converted opportunity into more than expected (often TD-driven, prone to regression); NEGATIVE = fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal. It is not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "expected_half_ppr_per_game": {"label": "Expected FPTS/G (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected half-PPR fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_half_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_half_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "half_ppr_over_expected_per_game": {"label": "FPOE/G (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected half-PPR points per matched covered game. NEGATIVE = fantasy points left on the board.", "computed_sql": "m.half_ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.half_ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "expected_standard_per_game": {"label": "Expected FPTS/G (Std)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected standard (non-PPR) fantasy points per covered game. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_standard::float / NULLIF(m.games, 0)", "computed_null": "m.expected_standard IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "standard_over_expected_per_game": {"label": "FPOE/G (Std)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected standard (non-PPR) points per matched covered game. NEGATIVE = fantasy points left on the board.", "computed_sql": "m.standard_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.standard_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "expected_ppr_per_game": {"basic": True, "label": "Expected FPTS/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected full-PPR fantasy points per game played. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "ppr_over_expected_per_game": {"basic": True, "label": "FPOE/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected full-PPR points per game played. Positive = converted opportunity into more than expected (often TD-driven, prone to regression); NEGATIVE = fantasy points left on the board (elite usage not yet cashed in), historically a positive-regression signal. It is not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "expected_half_ppr_per_game": {"label": "Expected FPTS/G (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected half-PPR fantasy points per game played. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_half_ppr::float / NULLIF(m.games, 0)", "computed_null": "m.expected_half_ppr IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "half_ppr_over_expected_per_game": {"label": "FPOE/G (Half)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected half-PPR points per game played. NEGATIVE = fantasy points left on the board.", "computed_sql": "m.half_ppr_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.half_ppr_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "expected_standard_per_game": {"label": "Expected FPTS/G (Std)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Opportunity-based expected standard (non-PPR) fantasy points per game played. This is an expectation, not guaranteed future scoring or an unrealized-points balance.", "computed_sql": "m.expected_standard::float / NULLIF(m.games, 0)", "computed_null": "m.expected_standard IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "standard_over_expected_per_game": {"label": "FPOE/G (Std)", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual minus opportunity-based expected standard (non-PPR) points per game played. NEGATIVE = fantasy points left on the board.", "computed_sql": "m.standard_over_expected::float / NULLIF(m.games, 0)", "computed_null": "m.standard_over_expected IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "expected_tds":         {"label": "Expected TDs", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected touchdowns from the player's own opportunities: receiving TD equity on targets plus rushing TD equity on carries plus receiving TD equity on throws for passers (nflverse play-by-play, same model as Expected FPTS). A season total."},
     "xtd_per_game":         {"basic": True, "label": "xTD/G", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Expected touchdowns per game: the TD slice of the expected points model, from targets, carries, and throws (nflverse play-by-play).", "computed_sql": "m.expected_tds::float / NULLIF(m.games, 0)", "computed_null": "m.expected_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "td_over_expected":     {"basic": True, "label": "TD vs xTD", "category": "Expected Pts", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Actual touchdowns (rushing + receiving + passing) minus expected touchdowns. Positive = outscored the TD expectation (regression risk); negative = TDs left on the board. Two decimals, not a percentage."},
@@ -3566,40 +3597,63 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
 }
 
 # Per-game Expected-vs-Actual views are derived from the same weekly PBP rows.
+# Each entry is (season/range TOTAL numerator SQL, coverage predicate). The
+# per-game denominator is applied by get_adv_weekly_range_leaderboard as
+# GAMES PLAYED in the range (rows in player_weekly_metrics — the same basis
+# PPG uses everywhere else), NOT the count of weekly-advanced rows: an xFP
+# row exists only for weeks with a PBP opportunity, so dividing by that
+# count (the old behaviour) inflated xFP/G for any player with a
+# zero-opportunity game (60 xFP over 6 played games, one of them 0-target,
+# read 12.0/G on the board vs 10.0/G in the modal, which divides the same
+# total by games). The xFP-row count is still returned, explicitly named
+# xfp_covered_weeks, for coverage display only.
 _ADV_WEEKLY_DERIVED_METRICS = {
     "expected_ppr_per_game": (
-        "(SUM(expected_ppr) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
+        "(SUM(expected_ppr) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float",
         "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
     ),
     "ppr_over_expected_per_game": (
-        "(SUM(ppr_over_expected) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL), 0)",
+        "(SUM(ppr_over_expected) FILTER (WHERE expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL))::float",
         "expected_ppr IS NOT NULL AND ppr_over_expected IS NOT NULL",
     ),
     "expected_half_ppr_per_game": (
-        "(SUM(expected_half_ppr) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL), 0)",
+        "(SUM(expected_half_ppr) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL))::float",
         "expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL",
     ),
     "half_ppr_over_expected_per_game": (
-        "(SUM(half_ppr_over_expected) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL), 0)",
+        "(SUM(half_ppr_over_expected) FILTER (WHERE expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL))::float",
         "expected_half_ppr IS NOT NULL AND half_ppr_over_expected IS NOT NULL",
     ),
     "expected_standard_per_game": (
-        "(SUM(expected_standard) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL), 0)",
+        "(SUM(expected_standard) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL))::float",
         "expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL",
     ),
     "standard_over_expected_per_game": (
-        "(SUM(standard_over_expected) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL), 0)",
+        "(SUM(standard_over_expected) FILTER (WHERE expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL))::float",
         "expected_standard IS NOT NULL AND standard_over_expected IS NOT NULL",
     ),
     "xtd_per_game": (
-        "(SUM(expected_tds) FILTER (WHERE expected_tds IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE expected_tds IS NOT NULL), 0)",
+        "(SUM(expected_tds) FILTER (WHERE expected_tds IS NOT NULL))::float",
         "expected_tds IS NOT NULL",
     ),
     "first_downs_per_game": (
-        "(SUM(first_downs) FILTER (WHERE first_downs IS NOT NULL))::float / NULLIF(COUNT(*) FILTER (WHERE first_downs IS NOT NULL), 0)",
+        "(SUM(first_downs) FILTER (WHERE first_downs IS NOT NULL))::float",
         "first_downs IS NOT NULL",
     ),
 }
+
+
+def _per_game_value(total: Optional[float], games_played: Optional[float]) -> Optional[float]:
+    """Per-game rate on the games-played basis: total ÷ games played.
+
+    This is the single denominator rule for xFP/FPOE per-game values on
+    every surface (leaderboard, snapshot computed_sql, assistant/modal):
+    games played, never xFP covered weeks. Returns None when the total or
+    a positive games count is unavailable.
+    """
+    if total is None or not games_played:
+        return None
+    return float(total) / float(games_played)
 
 
 # All metrics that support week-range filtering via the weekly advanced table.
@@ -3650,6 +3704,134 @@ def adv_weekly_metric_supported(metric: str) -> bool:
             or metric in _ADV_WEEKLY_DERIVED_METRICS)
 
 
+def _get_derived_per_game_leaderboard(
+    metric: str,
+    position: Optional[str] = None,
+    season: Optional[int] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    """Per-game derived metrics (xFP/G, FPOE/G, xTD/G, first downs/G).
+
+    The numerator is the SUM of the weekly totals over the range; the
+    denominator is GAMES PLAYED in the range — rows in
+    player_weekly_metrics, the same basis PPG leaderboards use and the
+    same basis the season snapshot's computed_sql divides by (m.games).
+    The count of weekly-advanced rows with the metric present is returned
+    separately as xfp_covered_weeks and is used as the denominator ONLY as
+    an explicit fallback for players with no weekly-metrics rows at all
+    (their games-played count is unknown, not zero).
+    """
+    if metric not in LEADERBOARD_METRICS:
+        return []
+    numerator_sql, coverage_pred = _ADV_WEEKLY_DERIVED_METRICS[metric]
+    lower_better = bool(LEADERBOARD_METRICS[metric].get("lower_better"))
+    pos = (position or "").upper().strip() or None
+
+    a_parts: list = []
+    a_params: list = []
+    g_parts: list = []
+    g_params: list = []
+    if season:
+        a_parts.append("a.season = %s"); a_params.append(int(season))
+        g_parts.append("season = %s"); g_params.append(int(season))
+    if week_start:
+        a_parts.append("a.week >= %s"); a_params.append(int(week_start))
+        g_parts.append("week >= %s"); g_params.append(int(week_start))
+    if week_end:
+        a_parts.append("a.week <= %s"); a_params.append(int(week_end))
+        g_parts.append("week <= %s"); g_params.append(int(week_end))
+    if pos:
+        a_parts.append("a.position = %s"); a_params.append(pos)
+    a_where = ("WHERE " + " AND ".join(a_parts)) if a_parts else ""
+    g_where = ("WHERE " + " AND ".join(g_parts)) if g_parts else ""
+
+    covered = f"COUNT(*) FILTER (WHERE {coverage_pred})"
+    denom = f"COALESCE(g.games_played, {covered})"
+    coverage_sql = (
+        f", SUM(CASE WHEN {coverage_pred} THEN w_dropbacks END) AS ctx_dropbacks"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_pass_att END) AS ctx_attempts"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_carries END) AS ctx_carries"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_targets END) AS ctx_targets"
+        f", SUM(CASE WHEN {coverage_pred} THEN w_receptions END) AS ctx_receptions"
+    )
+    order = "ASC" if lower_better else "DESC"
+    params = tuple(g_params + a_params + [int(limit)])
+
+    init_weekly_advanced_metrics_db()
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT t.player_id, t.position, t.games_played, t.xfp_covered_weeks,
+                   t.value, t.ctx_dropbacks, t.ctx_attempts, t.ctx_carries,
+                   t.ctx_targets, t.ctx_receptions
+            FROM (
+                SELECT a.player_id, a.position,
+                       {covered} AS xfp_covered_weeks,
+                       {denom} AS games_played,
+                       ({numerator_sql})::float / NULLIF({denom}, 0) AS value
+                       {coverage_sql}
+                FROM player_weekly_advanced_metrics a
+                LEFT JOIN (
+                    SELECT player_id, COUNT(*) AS games_played
+                    FROM player_weekly_metrics
+                    {g_where}
+                    GROUP BY player_id
+                ) g ON g.player_id = a.player_id
+                {a_where}
+                GROUP BY a.player_id, a.position, g.games_played
+            ) t
+            WHERE t.value IS NOT NULL
+            ORDER BY t.value {order} NULLS LAST
+            LIMIT %s
+            """,
+            params,
+        ).fetchall()
+
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+    except Exception:
+        idx = {}
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        pid = str(r["player_id"])
+        meta = idx.get(pid) or {}
+        rd = dict(r)
+        games = int(rd["games_played"]) if rd.get("games_played") is not None else None
+        covered_weeks = (
+            int(rd["xfp_covered_weeks"]) if rd.get("xfp_covered_weeks") is not None else None
+        )
+        def _ci(k):
+            v = rd.get(k)
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+        out.append({
+            "player_id": pid,
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "position": rd["position"],
+            "value": float(rd["value"]) if rd.get("value") is not None else None,
+            # games = games played in range (the per-game denominator used).
+            "games": games,
+            "vol": games,
+            "weeks": games,
+            # Weeks with an xFP row (PBP opportunity weeks) — coverage only,
+            # never the denominator when games played is known.
+            "xfp_covered_weeks": covered_weeks,
+            "rec": _ci("ctx_receptions"),
+            "tgt": _ci("ctx_targets"),
+            "car": _ci("ctx_carries"),
+            "att": _ci("ctx_attempts"),
+            "db": _ci("ctx_dropbacks"),
+        })
+    return out
+
+
 def get_adv_weekly_range_leaderboard(
     metric: str,
     position: Optional[str] = None,
@@ -3669,6 +3851,11 @@ def get_adv_weekly_range_leaderboard(
         return get_sep_score_range_leaderboard(
             position=position, season=season, week_start=week_start,
             week_end=week_end, min_vol=min_vol, limit=limit,
+        )
+    if metric in _ADV_WEEKLY_DERIVED_METRICS:
+        return _get_derived_per_game_leaderboard(
+            metric, position=position, season=season, week_start=week_start,
+            week_end=week_end, limit=limit,
         )
     agg = _adv_weekly_agg_sql(metric)
     if not agg or metric not in LEADERBOARD_METRICS:
@@ -4255,7 +4442,10 @@ def get_value_leaderboard(
 
     VORP = season PPR points − replacement-level points at the same position,
     where the replacement player is the one ranked at (starters×teams + flex
-    share) within that position. WAR = VORP ÷ points-per-win. Output shape
+    share) within that position. WAR = VORP ÷ season-scale points-per-win
+    (the weekly points-per-win converted by utils.trade.season_points_per_win,
+    ≈ 99 at the default — VORP is a season total, so the weekly divisor
+    overstated WAR ~3x). Output shape
     matches get_metric_leaderboard: [{player_id, name, team, position, value,
     games, vol, age}].
     """

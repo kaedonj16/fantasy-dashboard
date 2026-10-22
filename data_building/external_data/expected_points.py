@@ -212,7 +212,12 @@ def add_pass_attempt(comp: Dict[str, float], tables: ExpectedPointsTables,
                      air_yards: Optional[float], yardline_100: Optional[float],
                      *, cp: Optional[float] = None,
                      xyac: Optional[float] = None) -> None:
-    """Accumulate one dropback's expected passing value (for the QB)."""
+    """Accumulate one genuine pass attempt's expected passing value (for the QB).
+
+    Callers must not pass sacks or spikes here: those are dropbacks, not
+    attempts, and pricing them through the fallback tables manufactures
+    phantom expected points for being sacked (see _is_sack_or_spike).
+    """
     catch = cp if cp is not None else tables.comp_prob_for(air_yards)
     yac = xyac if xyac is not None else tables.yac_mean_for(air_yards)
     ay = float(air_yards) if air_yards is not None else 0.0
@@ -299,6 +304,10 @@ _PBP_COLUMNS = [
     "game_id", "play_id", "week", "season_type", "play_type", "yardline_100",
     "air_yards", "cp", "xyac_mean_yardage",
     "pass_attempt", "rush_attempt", "complete_pass", "interception",
+    # Sack / spike flags: a sack is play_type == "pass" with pass_attempt == 0
+    # and cp/xyac/air_yards all null, so without these columns a sack is
+    # indistinguishable from a genuine attempt and used to be priced as one.
+    "sack", "qb_dropback", "qb_spike",
     "yards_gained", "passing_yards", "rushing_yards", "receiving_yards",
     "pass_touchdown", "rush_touchdown",
     "passer_player_id", "rusher_player_id", "receiver_player_id",
@@ -327,6 +336,19 @@ def _num(v) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return None if f != f else f  # drop NaN
+
+
+def _is_sack_or_spike(d: Dict[str, Any]) -> bool:
+    """True for dropbacks that are not pass attempts (sack taken, clock spike).
+
+    nflverse codes a sack as play_type == "pass" with pass_attempt == 0 and
+    cp / xyac / air_yards all null; the old code's ``play_type == "pass"``
+    test therefore routed every sack into add_pass_attempt, where the null
+    fields fell back to the short-target tables and a midfield sack added
+    ~+0.28 expected points. Missing columns (older frames) read as False,
+    preserving the previous play_type fallback for those rows.
+    """
+    return bool(_num(d.get("sack"))) or bool(_num(d.get("qb_spike")))
 
 
 def build_tables_from_pbp(pbp) -> ExpectedPointsTables:
@@ -364,8 +386,9 @@ def build_tables_from_pbp(pbp) -> ExpectedPointsTables:
 
         is_pass = bool(_num(d.get("pass_attempt")) or 0) or ptype == "pass"
         is_rush = bool(_num(d.get("rush_attempt")) or 0) or ptype == "run"
+        non_attempt = _is_sack_or_spike(d)
 
-        if is_pass and d.get("receiver_player_id") is not None:
+        if is_pass and not non_attempt and d.get("receiver_player_id") is not None:
             yb = yardline_bucket(yl)
             deep = is_deep(ay)
             rec_td_n[(yb, deep)] += 1.0
@@ -392,7 +415,10 @@ def build_tables_from_pbp(pbp) -> ExpectedPointsTables:
                     yac_total += yac_obs
                     yac_ct += 1.0
 
-        if is_pass and d.get("passer_player_id") is not None:
+        # Passing-TD / INT tables are built over genuine attempts only:
+        # counting sacks and spikes in the denominator diluted both rates
+        # by the sack share (~7% of dropbacks can never be a passing TD).
+        if is_pass and not non_attempt and d.get("passer_player_id") is not None:
             pb = yardline_bucket(yl)
             pass_td_n[pb] += 1.0
             pass_td_ct += 1.0
@@ -439,8 +465,12 @@ def build_tables_from_pbp(pbp) -> ExpectedPointsTables:
 def _accumulate_player_weeks(pbp, tables: ExpectedPointsTables):
     """Return {gsis_id: {week: components}} accumulating expected + actual.
 
-    A player appears under a week only for the weeks they had an opportunity, so
-    the number of weeks is the games-played denominator for per-game columns.
+    A player appears under a week only for the weeks they had an opportunity,
+    so the number of weeks here is the player's xFP *covered* weeks — NOT
+    games played. Per-game surfaces divide the season totals by Sleeper
+    games played (the same denominator PPG uses); covered weeks are kept
+    as a separate, explicitly named count and must never be silently
+    reused as the per-game denominator.
     """
     from collections import defaultdict
 
@@ -468,9 +498,10 @@ def _accumulate_player_weeks(pbp, tables: ExpectedPointsTables):
         xyac = _num(d.get("xyac_mean_yardage"))
         is_pass = bool(_num(d.get("pass_attempt")) or 0) or ptype == "pass"
         is_rush = bool(_num(d.get("rush_attempt")) or 0) or ptype == "run"
+        non_attempt = _is_sack_or_spike(d)
 
         rec_id = d.get("receiver_player_id")
-        if is_pass and rec_id is not None:
+        if is_pass and not non_attempt and rec_id is not None:
             comp = _bucket(rec_id, week)
             if comp is not None:
                 add_target(comp, tables, ay, yl, cp=cp, xyac=xyac)
@@ -484,7 +515,10 @@ def _accumulate_player_weeks(pbp, tables: ExpectedPointsTables):
                     comp["a_rec_td"] += _num(d.get("pass_touchdown")) or 0.0
 
         pas_id = d.get("passer_player_id")
-        if is_pass and pas_id is not None:
+        # Sacks and spikes are dropbacks, not attempts: they add no expected
+        # passing points and no TD equity (the actual side adds nothing for
+        # them either — pass_attempt / passing_yards are 0 on a sack).
+        if is_pass and not non_attempt and pas_id is not None:
             comp = _bucket(pas_id, week)
             if comp is not None:
                 add_pass_attempt(comp, tables, ay, yl, cp=cp, xyac=xyac)
@@ -519,7 +553,11 @@ def _merge_components(weeks: Dict[int, Dict[str, float]]) -> Dict[str, float]:
 
 
 def build_expected_points_for_season(season: int) -> Dict[str, Dict[str, float]]:
-    """Return {sleeper_id: {season per-game xFP columns}} for a season."""
+    """Return {sleeper_id: {season-total xFP columns}} for a season.
+
+    These are season totals, not per-game values; per-game surfaces divide
+    by games played at serve time.
+    """
     return build_expected_points_both(season)[0]
 
 
@@ -534,7 +572,7 @@ def build_expected_points_both(
     season: int,
 ) -> Tuple[Dict[str, Dict[str, float]],
            Dict[Tuple[str, int], Dict[str, float]]]:
-    """Build season (per-game) and weekly (per-week totals) maps in one PBP pass.
+    """Build season (totals) and weekly (per-week totals) maps in one PBP pass.
 
     Returns ``(season_map, weekly_map)``. The sync script uses this so a season's
     ~50k play rows are loaded, table-fit, and accumulated once rather than twice.

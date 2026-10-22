@@ -5,8 +5,9 @@ inputs that are almost entirely league-independent: weekly projection, recent
 and season form, usage trend, Vegas implied total, weather, O-line quality,
 expected plays, role confidence, and consistency. Only the *fantasy-point
 scoring* of projections and actuals varies by league, and that collapses to one
-of the seven canonical projection variants (``ppr | half_ppr | std | tep |
-6pt_ppr | 6pt_half | 6pt_tep``) already used by the projection cache
+of the twelve canonical projection variants (``ppr | half_ppr | std | tep |
+tep_half | tep_std | 6pt_ppr | 6pt_half | 6pt_std | 6pt_tep | 6pt_tep_half |
+6pt_tep_std``) already used by the projection cache
 (``data_building.fetch_projections.PROJ_VARIANTS``,
 ``utils.proj_variant.pick_proj_variant``).
 
@@ -54,13 +55,18 @@ logger = logging.getLogger(__name__)
 # variant dimensions (rec / pass_td / bonus_rec_te) and are otherwise standard.
 # ---------------------------------------------------------------------------
 VARIANT_SCORING: Dict[str, Dict[str, float]] = {
-    "ppr":      {"rec": 1.0, "pass_td": 4.0, "bonus_rec_te": 0.0},
-    "half_ppr": {"rec": 0.5, "pass_td": 4.0, "bonus_rec_te": 0.0},
-    "std":      {"rec": 0.0, "pass_td": 4.0, "bonus_rec_te": 0.0},
-    "tep":      {"rec": 1.0, "pass_td": 4.0, "bonus_rec_te": 0.5},
-    "6pt_ppr":  {"rec": 1.0, "pass_td": 6.0, "bonus_rec_te": 0.0},
-    "6pt_half": {"rec": 0.5, "pass_td": 6.0, "bonus_rec_te": 0.0},
-    "6pt_tep":  {"rec": 1.0, "pass_td": 6.0, "bonus_rec_te": 0.5},
+    "ppr":          {"rec": 1.0, "pass_td": 4.0, "bonus_rec_te": 0.0},
+    "half_ppr":     {"rec": 0.5, "pass_td": 4.0, "bonus_rec_te": 0.0},
+    "std":          {"rec": 0.0, "pass_td": 4.0, "bonus_rec_te": 0.0},
+    "tep":          {"rec": 1.0, "pass_td": 4.0, "bonus_rec_te": 0.5},
+    "tep_half":     {"rec": 0.5, "pass_td": 4.0, "bonus_rec_te": 0.5},
+    "tep_std":      {"rec": 0.0, "pass_td": 4.0, "bonus_rec_te": 0.5},
+    "6pt_ppr":      {"rec": 1.0, "pass_td": 6.0, "bonus_rec_te": 0.0},
+    "6pt_half":     {"rec": 0.5, "pass_td": 6.0, "bonus_rec_te": 0.0},
+    "6pt_std":      {"rec": 0.0, "pass_td": 6.0, "bonus_rec_te": 0.0},
+    "6pt_tep":      {"rec": 1.0, "pass_td": 6.0, "bonus_rec_te": 0.5},
+    "6pt_tep_half": {"rec": 0.5, "pass_td": 6.0, "bonus_rec_te": 0.5},
+    "6pt_tep_std":  {"rec": 0.0, "pass_td": 6.0, "bonus_rec_te": 0.5},
 }
 
 # Fantasy positions the Start/Sit advisor ranks.
@@ -79,7 +85,7 @@ def _num(value: Any, default: float) -> float:
 def variant_for_exact_scoring(scoring_settings: Optional[dict]) -> Optional[str]:
     """Return the precompute variant covering this league's scoring, or None.
 
-    None means the league's scoring is exotic relative to the seven canonical
+    None means the league's scoring is exotic relative to the twelve canonical
     variants (fractional reception points, non-4/6 pass-TD value, a TE premium
     other than 0.5, custom yardage rates, milestone/first-down bonuses, ...).
     Callers must fall back to live per-request scoring for those leagues so
@@ -89,8 +95,10 @@ def variant_for_exact_scoring(scoring_settings: Optional[dict]) -> Optional[str]
     from utils.proj_variant import pick_proj_variant
 
     s = scoring_settings or {}
-    # "rec" has inconsistent defaults between the variant picker (1.0) and the
-    # stat scorer (0.0), so require it explicitly rather than guessing.
+    # The exactness gate still requires "rec" explicitly: a missing rate now
+    # defaults to PPR (1.0) consistently across the picker and the stat
+    # scorer, but an exact-match fast path must not guess which canonical
+    # variant a partial settings dict meant.
     if "rec" not in s:
         return None
     variant = pick_proj_variant(s)
