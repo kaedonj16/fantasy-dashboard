@@ -76,10 +76,22 @@ def test_no_team_labels_footer_or_fair_verdict():
 def test_renderer_uses_headshots_short_names_and_pick_circles():
     assert "sleepercdn.com/content/nfl/players/thumb/" in PAGE_SRC
     assert "tdbShortName" in PAGE_SRC
-    assert "tdb-hs-init" in PAGE_SRC  # initials fallback behind the photo
-    assert 'onerror="this.remove()"' in PAGE_SRC
     assert "tdb-pick-ic" in PAGE_SRC
     assert "tdbPickLabel" in PAGE_SRC
+
+
+def test_headshot_has_no_initials_layered_behind_the_photo():
+    # Kaedon (2026-10-22): no initials behind headshots in the trade rows.
+    # The photo branch renders the img alone; the monogram survives only
+    # as the no-photo render and as the swap-in when the photo 404s.
+    assert '<span class="tdb-hs-init">${{tdbInitials(a.name)}}</span><img' not in PAGE_SRC
+    assert 'onerror="this.remove()"' not in PAGE_SRC
+    assert 'onerror="tdbHsFallback(this)"' in PAGE_SRC
+    assert "data-init=" in PAGE_SRC
+    assert "function tdbHsFallback" in PAGE_SRC
+    assert "img.replaceWith(s)" in PAGE_SRC
+    # No-photo players still get the monogram as their avatar.
+    assert '<span class="tdb-hs"><span class="tdb-hs-init">' in PAGE_SRC
 
 
 def test_analyze_link_preloads_calculator_with_both_sides():
