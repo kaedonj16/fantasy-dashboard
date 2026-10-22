@@ -214,6 +214,11 @@ PUSH_TYPE_BUCKETS = [
 # Live, time-critical alerts stay immediate even in digest mode: a ScoreZone TD
 # an hour late is useless, and top_movers is a weekly global announcement that
 # is never league-duplicated.
+#
+# Quiet hours: the digest never flushes before 9am Eastern. The daily job
+# (08:00 UTC = 4am ET) buffers value drops and the hourly runner used to flush
+# them at 5:05am ET; held items simply stay in the buffer and the first flush
+# at/after 9am ET (the 9:05am hourly run) delivers them as one combined push.
 
 _DIGEST_ELIGIBLE_TYPES = frozenset({
     "lineup_lock", "transaction", "close_game",
@@ -288,9 +293,8 @@ def _digest_buffer(endpoint, p256dh, auth, notif_type, title, body, url, tag,
                    league_id=None, platform=None, account_key=None):
     """Buffer one notification for the next digest flush (digest opt-in devices).
 
-    account_key groups the flush per account (all of a user's devices share one
-    per-hour batch); rows without one (legacy / signed-out) fall back to
-    per-endpoint grouping.
+    The flush groups per device (endpoint); account_key is kept on the row
+    for provenance but does not split a device's items into separate digests.
     """
     _init_digest_table()
     hour_bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H")
@@ -350,13 +354,42 @@ def _digest_summary(items, season):
     return "BR Fantasy digest", body
 
 
-def _flush_digest():
+_DIGEST_EARLIEST_ET_HOUR = 9
+
+
+def _digest_flush_due(now=None):
+    """True at/after 9am Eastern -- the digest's quiet-hours gate.
+
+    ``now`` may be naive (assumed Eastern), aware in any zone (converted to
+    Eastern), or None (the real current time). Mirrors the injected-clock
+    shape of _breakout_weekly_due so tests can pin the boundary.
+    """
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    now = now or datetime.now(et)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=et)
+    else:
+        now = now.astimezone(et)
+    return now.hour >= _DIGEST_EARLIEST_ET_HOUR
+
+
+def _flush_digest(now=None):
     """Send one combined push per device for everything buffered since the last
-    flush. Items are batched per account per hour (account_key), with rows that
-    have no account key (legacy / signed-out) falling back to per-endpoint
-    grouping. Each device receives one digest of its own items -- type prefs
-    were already applied per device at buffer time. Called at the end of
-    run_hourly()/run_all_daily() and as the final cron_daily.py step."""
+    due flush. Grouping is per device (endpoint): a device's subscription rows
+    can carry different account_keys (one league subscribed signed-in, another
+    legacy signed-out), and grouping by account split one device's digest
+    into two pushes. Each device receives one digest of its own items -- type
+    prefs were already applied per device at buffer time. Called at the end of
+    run_hourly()/run_all_daily() and as the final cron_daily.py step.
+
+    Before 9am Eastern this is a no-op: buffered items stay in the table and
+    the first flush at/after 9am ET delivers them (see quiet-hours note at
+    _DIGEST_ELIGIBLE_TYPES)."""
+    if not _digest_flush_due(now):
+        logger.info("[push] digest flush held: before %d:00 ET",
+                    _DIGEST_EARLIEST_ET_HOUR)
+        return 0
     _init_digest_table()
     try:
         from dashboard_services.db import get_conn
@@ -371,13 +404,12 @@ def _flush_digest():
         return 0
     if not rows:
         return 0
-    # Per-account, per-hour batch: the group key is the account key when the
-    # subscription has one, else the endpoint (legacy / signed-out rows).
-    by_group: dict = {}
+    # One batch per device (endpoint), regardless of which account_key each
+    # buffered row carries -- the buffer and the send are both per-endpoint,
+    # so the account key must not split a device's items into two digests.
+    by_endpoint: dict = {}
     for r in rows:
-        gkey = ("acct:" + r["account_key"]) if r.get("account_key") else ("ep:" + r["endpoint"])
-        group = by_group.setdefault(gkey, {})
-        entry = group.setdefault(
+        entry = by_endpoint.setdefault(
             r["endpoint"],
             {"p256dh": r["p256dh"], "auth": r["auth"], "items": [], "ids": []},
         )
@@ -390,14 +422,13 @@ def _flush_digest():
         season = None
     sent = 0
     flushed_ids = []
-    for _gkey, group in by_group.items():
-        for endpoint, entry in group.items():
-            title, body = _digest_summary(entry["items"], season)
-            sent += _send_to_endpoints(
-                [(endpoint, entry["p256dh"], entry["auth"])],
-                title, body, "/portfolio", "push-digest",
-            )
-            flushed_ids.extend(entry["ids"])
+    for endpoint, entry in by_endpoint.items():
+        title, body = _digest_summary(entry["items"], season)
+        sent += _send_to_endpoints(
+            [(endpoint, entry["p256dh"], entry["auth"])],
+            title, body, "/portfolio", "push-digest",
+        )
+        flushed_ids.extend(entry["ids"])
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -407,9 +438,8 @@ def _flush_digest():
             conn.commit()
     except Exception as exc:
         logger.warning("[push] digest flush cleanup failed: %s", exc)
-    n_devices = sum(len(g) for g in by_group.values())
-    logger.info("[push] digest flush: groups=%d devices=%d sent=%d",
-                len(by_group), n_devices, sent)
+    logger.info("[push] digest flush: devices=%d sent=%d",
+                len(by_endpoint), sent)
     return sent
 
 
