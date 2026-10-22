@@ -1531,6 +1531,7 @@ FORM_BODY = """
     </div>
     <div class="ld-board-wrap">
       <div class="hp-mb">
+          <div class="hp-mb-strip"><span class="hp-mb-strip-t">This week&#x27;s matchup</span>{% if current_week %}<span class="hp-mb-strip-wk">Week {{ current_week }}</span>{% endif %}</div>
           <div class="hp-mb-head">
             <div><div class="hp-mb-team">Caleb&#x27;s Casting Couch</div><div class="hp-mb-score" data-count="132.4">132.4</div></div>
             <div class="is-right"><div class="hp-mb-team">Pittsburgh Pilots</div><div class="hp-mb-score" data-count="128.9">128.9</div></div>
@@ -14770,7 +14771,9 @@ def _apply_q_flex_safeguard(positions_out: dict, flex_slots: int) -> int:
             if trade is None:
                 continue
             p["flex_start"] = True
+            p["flex_slot"] = trade.get("flex_slot")
             trade["flex_start"] = False
+            trade["flex_slot"] = None
             p["flex_safeguard"] = {"from_pos": pos, "via": trade.get("name")}
             swaps += 1
     return swaps
@@ -15462,6 +15465,12 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         for i, p in enumerate(positions_out[pos]):
             p["start"] = i < n_start and not p["on_bye"]
             p["flex_start"] = False
+            # Which flex-type slot a flex starter actually occupies:
+            # "FLEX" or "SUPER_FLEX" (None when not a flex starter). The two
+            # are NOT interchangeable -- a QB can only ever hold SUPER_FLEX --
+            # so guest verdicts and slot labels must read this, never guess
+            # the slot from the player's position.
+            p["flex_slot"] = None
             p["flex_eligible"] = eligible_for_flex and i >= n_start and not p["on_bye"]
 
     if flex_slots:
@@ -15472,6 +15481,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         for p in all_flex[:flex_slots]:
             p["start"] = True
             p["flex_start"] = True
+            p["flex_slot"] = "FLEX"
 
     if sflex_slots:
         sflex_cands = sorted(
@@ -15482,6 +15492,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         for p in sflex_cands[:sflex_slots]:
             p["start"] = True
             p["flex_start"] = True
+            p["flex_slot"] = "SUPER_FLEX"
 
     _apply_q_flex_safeguard(positions_out, flex_slots)
 
@@ -15567,14 +15578,21 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     # are inserted by score without disturbing roster order or flags.
     guests_out: list = []
     if guest_pids:
-        _flex_floor_row = None
+        # Floor (weakest starter) per flex-slot kind, kept separate: FLEX
+        # and SUPER_FLEX are not interchangeable. A QB can displace only a
+        # SUPER_FLEX starter; pooling the floors invented a SUPER_FLEX start
+        # for QB guests in ordinary 1QB leagues whose weakest flex starter
+        # happened to score less than the guest.
+        _flex_floors: dict = {}
         for _pos in positions_out:
             for _p in positions_out[_pos]:
-                if _p.get("flex_start") and (
-                        _flex_floor_row is None
-                        or (_p.get("start_score") or 0.0)
-                        < (_flex_floor_row.get("start_score") or 0.0)):
-                    _flex_floor_row = _p
+                if not _p.get("flex_start"):
+                    continue
+                _kind = _p.get("flex_slot") or "FLEX"
+                _cur = _flex_floors.get(_kind)
+                if _cur is None or (_p.get("start_score") or 0.0) < (
+                        _cur.get("start_score") or 0.0):
+                    _flex_floors[_kind] = _p
         for _gpos, _grow in guest_rows:
             _roster_pos = [p for p in positions_out[_gpos]
                            if not p.get("on_bye") and not p.get("guest")]
@@ -15585,6 +15603,25 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             _pos_starters = [p for p in _roster_pos
                              if p.get("start") and not p.get("flex_start")]
             _grow["guest_rank"] = _rank
+            # Flex-type displacement: the weakest starter among the slot
+            # kinds this guest's position can actually fill, and only when
+            # the guest out-scores him. The displaced row decides the slot
+            # label, so an RB taking the SUPER_FLEX seat is named as such.
+            _disp_row = None
+            _disp_slot = ""
+            _eligible_kinds = (
+                ("SUPER_FLEX",) if _gpos == "QB"
+                else ("FLEX", "SUPER_FLEX") if _gpos in ("RB", "WR", "TE")
+                else ())
+            for _kind in _eligible_kinds:
+                _floor = _flex_floors.get(_kind)
+                if _floor is None or _gscore <= (
+                        _floor.get("start_score") or 0.0):
+                    continue
+                if _disp_row is None or (_floor.get("start_score") or 0.0) < (
+                        _disp_row.get("start_score") or 0.0):
+                    _disp_row = _floor
+                    _disp_slot = "SUPER FLEX" if _kind == "SUPER_FLEX" else "FLEX"
             if _grow.get("on_bye"):
                 _grow["would_start"] = False
                 _grow["guest_slot"] = f"{_gpos}{_rank}"
@@ -15597,15 +15634,12 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                 _grow["guest_vs_name"] = _disp["name"]
                 _grow["guest_vs_proj"] = _disp.get("proj_pts")
                 _grow["guest_note"] = f"Starts over your {_slot} · {_disp['name']}"
-            elif (_flex_floor_row is not None
-                    and _gpos in ("RB", "WR", "TE", "QB")
-                    and _gscore > (_flex_floor_row.get("start_score") or 0.0)):
-                _slot = "SUPER FLEX" if _gpos == "QB" else "FLEX"
+            elif _disp_row is not None:
                 _grow["would_start"] = True
-                _grow["guest_slot"] = _slot
-                _grow["guest_vs_name"] = _flex_floor_row["name"]
-                _grow["guest_vs_proj"] = _flex_floor_row.get("proj_pts")
-                _grow["guest_note"] = f"Starts at {_slot} over {_flex_floor_row['name']}"
+                _grow["guest_slot"] = _disp_slot
+                _grow["guest_vs_name"] = _disp_row["name"]
+                _grow["guest_vs_proj"] = _disp_row.get("proj_pts")
+                _grow["guest_note"] = f"Starts at {_disp_slot} over {_disp_row['name']}"
             elif not _roster_pos:
                 _grow["would_start"] = False
                 _grow["guest_slot"] = f"{_gpos}{_rank}"
@@ -15818,7 +15852,14 @@ def api_player_startsit_strip():
                           if str(p.get("player_id")) == player_id), None)
             if row.get("start") or row.get("flex_start"):
                 if row.get("flex_start"):
-                    _slot = "SUPER FLEX" if row_pos == "QB" else "FLEX"
+                    # The slot the builder actually seated him in; guessing
+                    # from position mislabels an RB/WR/TE SUPER_FLEX starter
+                    # as FLEX. Position inference stays only as a fallback
+                    # for rows built without the field.
+                    _slot = {"SUPER_FLEX": "SUPER FLEX",
+                             "FLEX": "FLEX"}.get(
+                                 row.get("flex_slot") or "",
+                                 "SUPER FLEX" if row_pos == "QB" else "FLEX")
                 else:
                     _slot = f"{row_pos}{_rank}" if _rank else row_pos
                 _parts = [f"Projects {proj}"]
@@ -21936,6 +21977,7 @@ def index():
                 FORM_BODY,
                 username=username,
                 viewed_season=viewed_season,
+                current_week=int(nfl_state.get("week") or 0),
                 error=err,
                 recent_updates=generate_recent_updates_html(),
                 yahoo_enabled=_yahoo_ui_enabled(),
@@ -21965,6 +22007,7 @@ def index():
                         FORM_BODY,
                         username=username,
                         viewed_season=viewed_season,
+                        current_week=int(nfl_state.get("week") or 0),
                         error="Could not match that username to a team in this league.",
                         recent_updates=generate_recent_updates_html(),
                         yahoo_enabled=_yahoo_ui_enabled(),
@@ -22037,6 +22080,7 @@ def index():
         FORM_BODY,
         username="",
         viewed_season=viewed_season,
+        current_week=int(nfl_state.get("week") or 0),
         error=None,
         next_url=next_url,
         recent_updates=generate_recent_updates_html(),
@@ -25295,15 +25339,26 @@ def _ppg_map_with_ranks(entries: dict) -> dict:
     return out
 
 
-def _current_season_ppg_map(season: int, positions: dict) -> dict:
+def _current_season_ppg_map(season: int, positions: dict,
+                            scoring_settings: dict = None) -> dict:
     """PPG / total points from the CURRENT season's completed weeks, per player.
 
-    Each player's PPG uses their OWN completed weeks (via
-    bulk_player_completed_weeks) instead of league-wide completed weeks, so a
-    finished Sunday game counts for that player even before the rest of the
-    slate (e.g. tonight's MNF) is final. Same source the player modal hero
-    uses: weekly stat files scored full-PPR via _load_season_weekly_points
-    (which backfills missing week files on demand). The prebuilt
+    The pool is the league-wide completed-weeks build - the exact pool the
+    player modal ranks over in _season_rank_rows (every QB/RB/WR/TE with a
+    scored appearance in a completed round) - scored with ONE scoring basis
+    for both surfaces. ``scoring_settings`` defaults to standard full PPR
+    (``{"rec": 1.0}``) for the public / no-league board; a league context
+    passes the league's own settings (see _apply_league_ppg_overlay), so a player
+    shows the same PPG and the same ranks on the rankings board and in the
+    modal. The old per-player completed-weeks gate (bulk_player_completed_
+    weeks, driven by the server's team-history maps) silently dropped
+    players from this pool who ARE in the modal's pool - the board's
+    overall PPG rank ran 2 spots high for Mahomes and Lawrence on
+    2026-10-22 - and the hard-coded PPR basis hid league milestone bonuses
+    and 2pt conversions the modal counts (Tyler Shough's 400-yard bonus
+    game is what made Mahomes QB11 in the modal but QB10 on the board).
+    The per-player Sunday-final-before-MNF nuance survives where it always
+    lived: the modal's deferred _hero_scoring_correction. The prebuilt
     usage_rows_<season>.json only exists for finished seasons, so pointing
     the rankings payload at the newest usage file silently served last
     season's numbers once the new season kicked off. Returns {} when no
@@ -25314,31 +25369,13 @@ def _current_season_ppg_map(season: int, positions: dict) -> dict:
     the site. Never raises.
     """
     try:
-        from utils.season_qualification import (
-            bulk_player_completed_weeks,
-            qualification_policy,
-        )
+        from utils.season_qualification import qualification_policy
         _policy = qualification_policy(int(season))
         if not _policy.completed_weeks:
             return {}
-        # Player IDs with any weekly stat lines (league-wide weeks just to
-        # get the candidate set; per-player filtering happens below).
-        _weekly_all = _load_season_weekly_points(int(season), {"rec": 1.0}) or {}
-        if not _weekly_all:
-            return {}
-        # Per-player completed weeks, computed in bulk (hoisted schedule
-        # loads). Group players by their weeks tuple so the
-        # _load_season_weekly_points cache is shared per distinct tuple
-        # (in practice just a handful: e.g. (1,2,3,4) vs (1,2,3)).
-        _weeks_by_pid = bulk_player_completed_weeks(
-            [str(_pid) for _pid in _weekly_all.keys()], int(season))
-        _by_weeks: dict = {}
-        for _pid in _weekly_all.keys():
-            _w = tuple(_weeks_by_pid.get(str(_pid)) or ())
-            if not _w:
-                continue  # no finished game yet (e.g. MNF player pre-game)
-            _by_weeks.setdefault(_w, []).append(str(_pid))
-        if not _by_weeks:
+        _scoring = scoring_settings if isinstance(scoring_settings, dict) and scoring_settings else {"rec": 1.0}
+        _weekly = _load_season_weekly_points(int(season), _scoring) or {}
+        if not _weekly:
             return {}
         from utils.fantasy_scoring import completed_points_summary
         try:
@@ -25347,27 +25384,146 @@ def _current_season_ppg_map(season: int, positions: dict) -> dict:
         except Exception:
             _index_pos = {}
         _entries = {}
-        for _w, _pids in _by_weeks.items():
-            _weekly = _load_season_weekly_points(
-                int(season), {"rec": 1.0}, weeks=_w) or {}
-            for _pid in _pids:
-                _pts = _weekly.get(_pid)
-                _summary = completed_points_summary(_pts) if _pts else None
-                if not _summary:
-                    continue
-                _entries[_pid] = {
-                    "ppg": round(float(_summary["ppg"]), 1),
-                    "total_pts": round(float(_summary["total"]), 1),
-                    "ppg_raw": float(_summary["ppg"]),
-                    "total_pts_raw": float(_summary["total"]),
-                    "games": int(_summary["games"]),
-                    "season": int(season),
-                    "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),
-                }
+        for _pid, _pts in _weekly.items():
+            _summary = completed_points_summary(_pts) if _pts else None
+            if not _summary:
+                continue
+            _pid = str(_pid)
+            _entries[_pid] = {
+                "ppg": round(float(_summary["ppg"]), 1),
+                "total_pts": round(float(_summary["total"]), 1),
+                "ppg_raw": float(_summary["ppg"]),
+                "total_pts_raw": float(_summary["total"]),
+                "games": int(_summary["games"]),
+                "season": int(season),
+                "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),
+            }
         return _ppg_map_with_ranks(_entries)
     except Exception:
         logger.debug("[league-players] current-season PPG map failed", exc_info=True)
         return {}
+
+
+_LEAGUE_PPG_MAP_CACHE: dict = {}  # (season, scoring_sig) -> (ts, newest_week_mtime, map)
+_LEAGUE_PPG_MAP_MAX = 8
+
+
+def _league_ppg_map_cached(season: int, positions: dict, scoring_settings: dict) -> dict:
+    """_current_season_ppg_map for one league scoring basis, cached per
+    (season, scoring signature) on the weekly-points TTL and invalidated
+    when a weekly stat file changes - the same freshness the modal's
+    _SEASON_RANK_CACHE runs on. Returns {} when the build is unavailable;
+    callers then keep the payload's standard-PPR PPG fields rather than
+    blanking them. Never raises."""
+    try:
+        sig = hashlib.md5(
+            json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
+        ).hexdigest()[:10]
+        key = (int(season), sig)
+        pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season)}_w*.json")
+        newest = max((os.path.getmtime(p) for p in glob.glob(pattern)), default=0.0)
+        now = time.time()
+        hit = _LEAGUE_PPG_MAP_CACHE.get(key)
+        if hit and now - hit[0] < _WEEKLY_PTS_TTL and newest <= hit[0]:
+            _LEAGUE_PPG_MAP_CACHE[key] = _LEAGUE_PPG_MAP_CACHE.pop(key)  # LRU refresh
+            return hit[2]
+        result = _current_season_ppg_map(int(season), positions, scoring_settings)
+        if result:
+            _lru_cache_put(_LEAGUE_PPG_MAP_CACHE, key, (now, newest, result), _LEAGUE_PPG_MAP_MAX)
+        return result
+    except Exception:
+        logger.debug("[league-players] league PPG map failed", exc_info=True)
+        return {}
+
+
+def _league_scoring_for_ppg(platform: str, league_id: str, season: int):
+    """The league's normalized scoring settings for the PPG overlay, or None.
+
+    Mirrors how the player modal resolves scoring: the league context's
+    scoring_settings when a context is already cached (never a cold build -
+    the rankings payload must not pay one), else, for Sleeper, the league
+    object itself merged over SCORING_DEFAULTS and normalized, which is
+    exactly the Sleeper branch of the context build. Never raises.
+    """
+    try:
+        if not league_id:
+            return None
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, int(season), allow_build=False)
+            ss = (ctx or {}).get("scoring_settings")
+            if isinstance(ss, dict) and ss:
+                return dict(ss)
+        except Exception:
+            logger.debug("[league-players] PPG scoring ctx lookup failed", exc_info=True)
+        if str(platform or "").strip().lower() == "sleeper":
+            from dashboard_services.api import SCORING_DEFAULTS, get_league as _get_sleeper_league
+            league = _get_sleeper_league(str(league_id)) or {}
+            raw = league.get("scoring_settings") or {}
+            if isinstance(raw, dict) and raw:
+                ss = {**SCORING_DEFAULTS, **raw}
+                try:
+                    from utils.league_scoring import normalize_league_scoring
+                    ss = normalize_league_scoring("sleeper", ss, league_id=str(league_id), season=int(season))
+                except Exception:
+                    logger.debug("[league-players] PPG scoring normalize failed", exc_info=True)
+                return ss
+    except Exception:
+        logger.debug("[league-players] PPG scoring resolution failed", exc_info=True)
+    return None
+
+
+_PPG_OVERLAY_FIELDS = (
+    "ppg", "total_pts", "ppg_raw", "total_pts_raw", "ppg_games", "ppg_season",
+    "ppg_rank", "total_pts_rank", "ppg_ovr_rank", "total_pts_ovr_rank",
+)
+
+
+def _apply_league_ppg_overlay(payload: dict, platform: str, league_id: str, season: int):
+    """Re-score the payload's PPG / total-points fields with the league's
+    scoring, on a copy - the rankings board in a league context must show
+    the same PPG values and ranks as the player modal for that league.
+
+    Players are shallow-copied before any field is touched so the shared
+    memoized base payload (standard PPR) is never mutated. Players with no
+    league-scored entry have their PPG fields cleared, matching the modal
+    (no appearances under this scoring = no PPG, never a stale standard-
+    PPR number). Sets payload["ppg_scoring"] = "league" so the client can
+    label the column honestly. Returns (payload, applied): when the league
+    or its scoring can't be resolved, or the league build is unavailable,
+    returns the original payload with applied=False so the caller keeps
+    the standard-PPR fields (and ETag caching) rather than blanking them.
+    Never raises.
+    """
+    try:
+        scoring = _league_scoring_for_ppg(platform, league_id, season)
+        if not scoring:
+            return payload, False
+        players = (payload or {}).get("players") or []
+        if not players:
+            return payload, False
+        positions = {str(p.get("id") or ""): str(p.get("position") or "")
+                     for p in players if p.get("id")}
+        league_map = _league_ppg_map_cached(int(season), positions, scoring)
+        if not league_map:
+            return payload, False
+        new_players = []
+        for p in players:
+            q = dict(p)
+            entry = league_map.get(str(p.get("id") or ""))
+            if entry:
+                q.update(entry)
+            else:
+                for f in _PPG_OVERLAY_FIELDS:
+                    if f in q:
+                        q[f] = None
+            new_players.append(q)
+        out = dict(payload)
+        out["players"] = new_players
+        out["ppg_scoring"] = "league"
+        return out, True
+    except Exception:
+        logger.debug("[league-players] league PPG overlay failed", exc_info=True)
+        return payload, False
 
 
 def _build_league_players_payload(kdef: bool = False) -> dict:
@@ -26714,9 +26870,22 @@ def api_league_players():
                 payload["adp_columns"] = _rest + _yahoo + _cons
                 return _finish(payload, board_cacheable=False)
 
+    # League-context PPG overlay: in a league, the board's PPG / total
+    # points and their ranks are scored with the league's own settings -
+    # the same numbers the player modal shows for that league - instead of
+    # the shared payload's standard-PPR basis. Applied on a copy; the
+    # response is no-store (not ETag-cacheable) because the shared version
+    # key does not identify a league.
+    _ppg_lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
+    _ppg_plat = (request.args.get("platform") or session.get("last_platform") or "sleeper").strip().lower()
+    _ppg_overlaid = False
+    if _ppg_lg:
+        payload, _ppg_overlaid = _apply_league_ppg_overlay(
+            payload, _ppg_plat, _ppg_lg, _cur_season)
+
     # Projection rows vary by scoring fingerprint and schema version. Do not let
     # a CDN/browser retain a pre-contract or differently scored player payload.
-    return _finish(payload)
+    return _finish(payload, board_cacheable=not _ppg_overlaid)
     # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),
     # not today's. We overlay onto a COPY so the shared memoized payload -- which
     # carries current-season ADP -- is never mutated. Player value stays current

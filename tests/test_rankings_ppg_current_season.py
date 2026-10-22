@@ -135,6 +135,137 @@ def test_current_season_ppg_is_scored_full_ppr(monkeypatch):
     assert seen == {"season": 2026, "scoring": {"rec": 1.0}}
 
 
+def test_current_season_ppg_uses_passed_league_scoring(monkeypatch):
+    # A league basis flows straight to the weekly loader - this is the
+    # overlay path that makes the board match the modal in a league whose
+    # settings pay milestone bonuses / 2pt conversions standard PPR omits.
+    seen = {}
+
+    def _loader(season, scoring, weeks=None):
+        seen["scoring"] = scoring
+        return {"100": [10.0]}
+
+    monkeypatch.setattr(
+        "utils.season_qualification.qualification_policy",
+        _fake_policy((1,), 1),
+    )
+    monkeypatch.setattr(app, "_load_season_weekly_points", _loader)
+    monkeypatch.setattr(app, "load_players_index", dict)
+
+    league_scoring = {"rec": 1.0, "bonus_pass_yd_400": 3.0, "pass_2pt": 2.0}
+    app._current_season_ppg_map(2026, {"100": "QB"}, league_scoring)
+
+    assert seen["scoring"] == league_scoring
+
+
+def test_ppg_pool_includes_players_with_no_per_player_completed_weeks(monkeypatch):
+    # Regression for 2026-10-22: the board's overall PPG rank ran 2 spots
+    # high (Mahomes #25 vs the modal's pool) because entries were gated on
+    # bulk_player_completed_weeks - players the team-history maps had no
+    # completed weeks for vanished from the pool entirely. The pool is the
+    # league-wide weekly build, exactly like the modal's _season_rank_rows:
+    # a scored appearance is enough, per-player week data is not consulted.
+    weekly = {"100": [30.0, 20.0], "200": [12.0, 8.0], "300": [40.0]}
+    _patch_season(monkeypatch, weekly)
+    monkeypatch.setattr(
+        "utils.season_qualification.bulk_player_completed_weeks",
+        lambda pids, season: {},
+    )
+    positions = {"100": "RB", "200": "RB", "300": "WR"}
+
+    result = app._current_season_ppg_map(2026, positions)
+
+    assert set(result) == {"100", "200", "300"}
+    assert result["300"]["ppg_ovr_rank"] == 1
+    assert result["100"]["ppg_ovr_rank"] == 2
+    assert result["200"]["ppg_ovr_rank"] == 3
+
+
+def test_ppg_ranks_match_modal_rank_rows_pool(monkeypatch):
+    # Board ranks and modal ranks are the same computation over the same
+    # pool: competition rank (1 + # strictly greater) on raw PPG over every
+    # scored appearance in league-wide completed weeks.
+    weekly = {
+        "1": [26.0, 24.0],   # QB 25.0
+        "2": [19.0, 18.0],   # QB 18.5
+        "3": [30.0],         # RB 30.0
+        "4": [10.0, 12.0],   # QB 11.0
+    }
+    _patch_season(monkeypatch, weekly)
+    positions = {"1": "QB", "2": "QB", "3": "RB", "4": "QB"}
+
+    result = app._current_season_ppg_map(2026, positions)
+
+    assert result["1"]["ppg_rank"] == 1
+    assert result["2"]["ppg_rank"] == 2
+    assert result["4"]["ppg_rank"] == 3
+    assert result["3"]["ppg_ovr_rank"] == 1
+    assert result["1"]["ppg_ovr_rank"] == 2
+    assert result["2"]["ppg_ovr_rank"] == 3
+
+
+def test_league_ppg_overlay_rescores_and_clears_on_a_copy(monkeypatch):
+    # The Mahomes case in miniature: under league scoring the board must
+    # carry the modal's ranks (QB11, not the standard-PPR QB10), a player
+    # with no league-scored entry is cleared rather than left on standard
+    # numbers, and the shared base payload is never mutated.
+    base_players = [
+        {"id": "4046", "position": "QB", "ppg": 18.8, "ppg_rank": 10,
+         "ppg_ovr_rank": 25, "total_pts": 94.1},
+        {"id": "9999", "position": "WR", "ppg": 12.0, "ppg_rank": 40,
+         "ppg_ovr_rank": 90, "total_pts": 60.0},
+    ]
+    payload = {"players": base_players}
+    league_map = {
+        "4046": {"ppg": 18.8, "total_pts": 94.1, "ppg_raw": 18.812,
+                 "total_pts_raw": 94.06, "ppg_games": 5, "ppg_season": 2026,
+                 "ppg_rank": 11, "total_pts_rank": 15,
+                 "ppg_ovr_rank": 28, "total_pts_ovr_rank": 40},
+    }
+    monkeypatch.setattr(app, "_league_scoring_for_ppg",
+                        lambda platform, league_id, season: {"rec": 1.0, "bonus_pass_yd_400": 3.0})
+    monkeypatch.setattr(app, "_league_ppg_map_cached",
+                        lambda season, positions, scoring: league_map)
+
+    out, applied = app._apply_league_ppg_overlay(payload, "sleeper", "1312", 2026)
+
+    assert applied is True
+    assert out["ppg_scoring"] == "league"
+    mahomes = out["players"][0]
+    assert mahomes["ppg_rank"] == 11
+    assert mahomes["ppg_ovr_rank"] == 28
+    assert mahomes["ppg_games"] == 5
+    cleared = out["players"][1]
+    assert cleared["ppg"] is None
+    assert cleared["ppg_rank"] is None
+    # Base payload untouched (it is the shared memoized pool).
+    assert base_players[0]["ppg_rank"] == 10
+    assert "ppg_scoring" not in payload
+
+
+def test_league_ppg_overlay_without_league_scoring_is_a_noop(monkeypatch):
+    payload = {"players": [{"id": "1", "position": "QB", "ppg": 20.0}]}
+    monkeypatch.setattr(app, "_league_scoring_for_ppg",
+                        lambda platform, league_id, season: None)
+
+    out, applied = app._apply_league_ppg_overlay(payload, "sleeper", "1312", 2026)
+
+    assert applied is False
+    assert out is payload
+
+
+def test_rankings_age_matches_server_floor_convention():
+    js = (ROOT / "static" / "rankings.js").read_text(encoding="utf-8")
+    # Board age must be the modal's age: total days / 365.25, floor to 1
+    # decimal (age_from_bday). The old JS rounded to nearest, so Mahomes
+    # read 31.1 on the board vs 31.0 in the modal on 2026-10-22
+    # (true decimal age 31.097: floor 31.0, round 31.1).
+    assert "Math.floor((days / 365.25) * 10) / 10" in js
+    assert "Math.round(age * 10) / 10" not in js
+    # The PPG column label follows the payload's scoring basis.
+    assert "resp.ppg_scoring === 'league'" in js
+
+
 def test_ppg_map_with_ranks_shares_better_rank_on_ties():
     entries = {
         "1": {"ppg": 20.0, "total_pts": 80.0, "games": 4, "season": 2026, "position": "QB"},

@@ -712,13 +712,17 @@ def _yahoo_preview_payload(league_id: str, season: int, access_token: str, guid:
         if resolved_guid:
             my_guid = resolved_guid
             session["yahoo_guid"] = resolved_guid
-    teams, my_team_id = [], None
+    teams = []
     for u in users:
         tid = str(u.get("roster_id") or "")
         nm = (u.get("metadata") or {}).get("team_name") or u.get("display_name") or f"Team {tid}"
         teams.append({"team_id": tid, "name": nm})
-        if my_guid and str(u.get("user_id")) == str(my_guid):
-            my_team_id = tid
+    # Yahoo stamps the caller's guid on every user row, so guid-matching
+    # get_users preselects another manager's team. The login user's own
+    # teams are the only trustworthy "my team" signal; None leaves the
+    # picker unpreselected rather than pointing at the wrong team.
+    from dashboard_services.providers.yahoo_api import get_login_team_id
+    my_team_id = get_login_team_id(access_token, league_id, season)
     return jsonify({
         "ok": True,
         "platform": "yahoo",

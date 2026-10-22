@@ -38,6 +38,10 @@ def test_yahoo_preview_uses_db_token_when_session_access_token_missing(link_app,
         lambda *args: [{"user_id": "yahoo-guid", "roster_id": 3, "display_name": "Mine"}],
     )
     monkeypatch.setattr(
+        "dashboard_services.providers.yahoo_api.get_login_team_id",
+        lambda *args: "3",
+    )
+    monkeypatch.setattr(
         "dashboard_services.providers.yahoo_api.get_login_guid",
         lambda *args: "yahoo-guid",
     )

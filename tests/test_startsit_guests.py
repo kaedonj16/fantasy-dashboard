@@ -18,15 +18,19 @@ pytest.importorskip("pandas")
 
 WEEK = 5
 PROJ = {"rb1": 20.0, "rb2": 14.0, "rb3": 11.0, "rb4": 8.0, "qb1": 22.0,
-        "rbR": 17.0, "rbF": 9.0, "rbBye": 25.0, "k1": 7.0}
+        "rbR": 17.0, "rbF": 9.0, "rbBye": 25.0, "k1": 7.0,
+        "qbR": 15.0, "rbX": 12.0, "rbSF": 10.0}
 NAMES = {"rb1": "Runner One", "rb2": "Runner Two", "rb3": "Runner Three",
          "rb4": "Runner Four", "qb1": "Quarter Back", "rbR": "Rival Runner",
          "rbF": "Free Runner", "rbBye": "Bye Runner",
-         "rbNoProj": "Ghost Runner", "k1": "Kicker One"}
+         "rbNoProj": "Ghost Runner", "k1": "Kicker One",
+         "qbR": "Rival Quarterback", "rbX": "Flex Runner",
+         "rbSF": "Sflex Runner"}
 TEAMS = {"rb1": "KC", "rb2": "BUF", "rb3": "MIA", "rb4": "DEN", "qb1": "KC",
          "rbR": "DAL", "rbF": "NYJ", "rbBye": "SEA", "rbNoProj": "GB",
-         "k1": "KC"}
-POS = {p: ("QB" if p == "qb1" else "K" if p == "k1" else "RB") for p in NAMES}
+         "k1": "KC", "qbR": "DAL", "rbX": "NYJ", "rbSF": "DAL"}
+POS = {p: ("QB" if p in ("qb1", "qbR") else "K" if p == "k1" else "RB")
+       for p in NAMES}
 SCHED = [{"home": "KC", "away": "BUF"}, {"home": "MIA", "away": "DEN"},
          {"home": "DAL", "away": "NYJ"}, {"home": "GB", "away": "CHI"}]
 
@@ -106,6 +110,24 @@ def _rb_rows(payload):
     return {p["player_id"]: p for p in payload["positions"]["RB"]}
 
 
+def _qb_rows(payload):
+    return {p["player_id"]: p for p in payload["positions"]["QB"]}
+
+
+def _ss_ctx_sf():
+    ctx = _ss_ctx()
+    ctx["roster_positions"] = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX",
+                               "SUPER_FLEX", "BN", "BN", "BN"]
+    return ctx
+
+
+def _use_sf_ctx(ss_client, monkeypatch):
+    import app as appmod
+    monkeypatch.setattr(appmod, "get_league_ctx_from_cache",
+                        lambda *a, **k: _ss_ctx_sf())
+    appmod._SS_STRIP_CACHE.clear()
+
+
 # ── Advice guests ─────────────────────────────────────────────────────────
 
 def test_guest_joins_position_group_with_owner_tag(ss_client):
@@ -138,6 +160,56 @@ def test_guest_bench_note_names_players_ahead(ss_client):
     assert g["would_start"] is False
     assert g["guest_rank"] == 4
     assert g["guest_note"] == "Behind your RB2 and RB3"
+
+
+def test_guest_rb_takes_real_flex(ss_client):
+    # An RB guest who only clears the FLEX floor starts at FLEX.
+    d = ss_client.get(BASE + "&guests=rbX").get_json()
+    g = _rb_rows(d)["rbX"]
+    assert g["would_start"] is True
+    assert g["guest_slot"] == "FLEX"
+    assert g["guest_vs_name"] == "Runner Three"
+    assert g["guest_vs_proj"] == 11.0
+    assert g["guest_note"] == "Starts at FLEX over Runner Three"
+
+
+def test_guest_qb_cannot_take_flex_without_superflex(ss_client):
+    # The base league starts QB/RB/RB/WR/WR/TE/FLEX: there is no SUPER_FLEX
+    # slot and a QB is not FLEX-eligible, so a QB guest who only out-projects
+    # the flex starter (15.0 vs 11.0) but trails QB1 must NOT be told he
+    # would start at a phantom SUPER FLEX.
+    d = ss_client.get(BASE + "&guests=qbR").get_json()
+    g = _qb_rows(d)["qbR"]
+    assert g["would_start"] is False
+    assert g["guest_slot"] == "QB2"
+    assert g["guest_note"] == "Behind your QB1 · Quarter Back"
+
+
+def test_guest_qb_takes_superflex_when_league_has_one(ss_client, monkeypatch):
+    _use_sf_ctx(ss_client, monkeypatch)
+    d = ss_client.get(BASE + "&guests=qbR").get_json()
+    g = _qb_rows(d)["qbR"]
+    assert g["would_start"] is True
+    assert g["guest_slot"] == "SUPER FLEX"
+    # The SUPER_FLEX starter here is rb4 (8.0), the weakest SF-eligible
+    # starter; the RB in the regular FLEX (11.0) is not QB-displaceable.
+    assert g["guest_vs_name"] == "Runner Four"
+    assert g["guest_vs_proj"] == 8.0
+    assert g["guest_note"] == "Starts at SUPER FLEX over Runner Four"
+
+
+def test_guest_rb_displacing_superflex_starter_is_labeled_superflex(
+        ss_client, monkeypatch):
+    # An RB guest at 10.0 does not clear the FLEX floor (11.0) but does
+    # clear the SUPER_FLEX starter (8.0): the slot he takes is SUPER_FLEX,
+    # not FLEX.
+    _use_sf_ctx(ss_client, monkeypatch)
+    d = ss_client.get(BASE + "&guests=rbSF").get_json()
+    g = _rb_rows(d)["rbSF"]
+    assert g["would_start"] is True
+    assert g["guest_slot"] == "SUPER FLEX"
+    assert g["guest_vs_name"] == "Runner Four"
+    assert g["guest_vs_proj"] == 8.0
 
 
 def test_guests_never_take_roster_flags_or_advice(ss_client):
@@ -228,6 +300,37 @@ def test_strip_guest_bench(ss_client):
     assert d["tone"] == "bench"
     assert d["slot"] == "RB4"
     assert "Behind your RB2 and RB3" in d["reason"]
+
+
+def test_strip_qb_guest_in_1qb_league_is_bench_not_superflex(ss_client):
+    # The reported bug: the modal told the viewer a rival QB "Would start
+    # for you" at SUPER FLEX in a league with no SUPER_FLEX slot.
+    d = ss_client.get(STRIP + "qbR").get_json()
+    assert d["state"] == "ok"
+    assert d["verdict"] == "Bench for you"
+    assert d["tone"] == "bench"
+    assert d["slot"] == "QB2"
+    assert "Behind your QB1" in d["reason"]
+
+
+def test_strip_qb_guest_in_superflex_league_would_start(ss_client, monkeypatch):
+    _use_sf_ctx(ss_client, monkeypatch)
+    d = ss_client.get(STRIP + "qbR").get_json()
+    assert d["state"] == "ok"
+    assert d["verdict"] == "Would start for you"
+    assert d["tone"] == "start"
+    assert d["slot"] == "SUPER FLEX"
+    assert "15.0" in d["reason"] and "8.0" in d["reason"]
+
+
+def test_strip_rostered_superflex_starter_slot_label(ss_client, monkeypatch):
+    # rb4 starts only because the league has a SUPER_FLEX slot; his own
+    # strip must name that slot, not FLEX.
+    _use_sf_ctx(ss_client, monkeypatch)
+    d = ss_client.get(STRIP + "rb4").get_json()
+    assert d["state"] == "ok"
+    assert d["verdict"] == "Start"
+    assert d["slot"] == "SUPER FLEX"
 
 
 def test_strip_roster_starter_and_bench(ss_client):

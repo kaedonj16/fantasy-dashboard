@@ -297,6 +297,68 @@ def get_login_guid(access_token: str, league_id: str = "") -> str:
     return ""
 
 
+def _collect_team_keys(node: Any, out: List[str]) -> None:
+    """Recursively collect every ``team_key`` string in a Yahoo payload."""
+    if isinstance(node, dict):
+        team_key = node.get("team_key")
+        if isinstance(team_key, str) and team_key:
+            out.append(team_key)
+        for value in node.values():
+            _collect_team_keys(value, out)
+    elif isinstance(node, list):
+        for value in node:
+            _collect_team_keys(value, out)
+
+
+def get_login_team_id(access_token: str, league_id: str, season: int = 0) -> Optional[str]:
+    """The login user's own team (roster) id in one league, or None.
+
+    Yahoo serves the API caller's guid as the manager guid on EVERY team of a
+    league (verified live 2026-10-22: a league's teams, its users, and the
+    per-team resources all stamp the fetching token holder's guid on all ten
+    rosters), and the payload carries no ``is_current_login`` flag to key on.
+    A league payload can therefore never say which team is the caller's. The
+    login user's own teams resource (``users;use_login=1/games/.../teams``)
+    only ever lists the caller's own teams, so a team_key found there that
+    belongs to this league identifies the caller's roster: its ``.t.<id>``
+    suffix is the roster id ``get_rosters`` reports.
+
+    Returns None when the lookup fails or the caller has no team in the
+    league. Callers must treat None as "unknown" and store no team binding --
+    never fall back to a first-team guess.
+    """
+    lid = _bare_yahoo_id(league_id)
+    if not lid or not access_token:
+        return None
+    try:
+        game_keys = _nfl_game_keys(access_token)
+    except Exception as exc:
+        logger.warning("[yahoo] get_login_team_id game keys failed: %s", exc)
+        return None
+    if season:
+        game_keys = sorted(
+            game_keys, key=lambda item: 0 if int(item[0]) == int(season) else 1,
+        )
+    marker = f".l.{lid}.t."
+    for _season, game_key in game_keys:
+        try:
+            raw = _yahoo_get(
+                access_token,
+                f"users;use_login=1/games;game_keys={game_key}/teams",
+            )
+        except Exception as exc:
+            logger.warning("[yahoo] get_login_team_id teams fetch failed: %s", exc)
+            continue
+        team_keys: List[str] = []
+        _collect_team_keys(raw, team_keys)
+        for team_key in team_keys:
+            if marker in team_key:
+                suffix = team_key.rsplit(".t.", 1)[-1]
+                if suffix.isdigit():
+                    return suffix
+    return None
+
+
 def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
     """Refresh an expired access token using the stored refresh token."""
     client_id     = _env_clean("YAHOO_CLIENT_ID")

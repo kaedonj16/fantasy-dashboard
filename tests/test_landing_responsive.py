@@ -93,3 +93,29 @@ def test_home_card_state_regions_hide_when_hidden(sheet):
     assert css.count("display: none !important") >= 2, (
         f"{sheet} lost a display:none !important hidden enforcement"
     )
+
+
+# The hero board stretches to the text card's height on desktop; centered
+# in that height it was mostly dead space. Pin the top-aligned fill, the
+# header strip, and the shifted row-animation delays (the strip is the
+# board's new first child, so the first row is now :nth-child(4)).
+BOARD_DESKTOP_RULES = [
+    ".hp-mb-strip { display: none; }",
+    ".ld-board-wrap .hp-mb { justify-content: flex-start; }",
+    ".hp-mb-strip { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 0; }",
+    ".hp-mb .mb-row { flex: 1 1 0; }",
+    ".hp-mb-score { font-size: 36px; }",
+    ".ld-board-wrap .mb-row:nth-child(4) { animation-delay: .5s; }",
+    ".ld-board-wrap .mb-row:nth-child(8) { animation-delay: .98s; }",
+]
+
+
+@pytest.mark.parametrize("sheet", ["static/landing_lite.css", "static/dashboard.css"])
+def test_desktop_board_fills_hero_height(sheet):
+    css = (ROOT / sheet).read_text()
+    for rule in BOARD_DESKTOP_RULES:
+        assert rule in css, f"{sheet} lost its desktop board rule: {rule}"
+    assert ".mb-row:nth-child(3)" not in css, (
+        f"{sheet}: a row delay still targets :nth-child(3), which is the "
+        "win bar now that the strip leads the board"
+    )
