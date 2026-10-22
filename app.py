@@ -1516,7 +1516,7 @@ FORM_BODY = """
         <a href="/dynasty-trade-value-chart">trade value chart</a>.
       </p>
       <div class="ld-hero-ctas">
-        <a class="ld-btn ld-btn-navy" href="#homeCardTitle">Connect your league</a>
+        <a class="ld-btn ld-btn-navy" href="#homeCardTitle" onclick="var t=document.getElementById('homeCardTitle');if(t){t.scrollIntoView();return false;}">Connect your league</a>
         <a class="ld-btn ld-btn-royal" href="/players">Player rankings</a>
         <a class="ld-btn ld-btn-sky" href="/trade">Trade calculator</a>
       </div>
@@ -1630,112 +1630,6 @@ FORM_BODY = """
     </div>
   </section>
 
-  {% if not session.get('account_id') %}
-<section class="ld-sec">
-  <div class="ld-card ld-rv">
-    <h2 class="ld-sec-h">Built for the whole week</h2>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#ef4444"></span><div class="ld-strip-main"><strong>ScoreZone</strong><span>Every NFL game and your players&#x27; points, live on one screen.</span></div><span class="ld-strip-stat" style="color:#ef4444">13 games</span></div>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#16a34a"></span><div class="ld-strip-main"><strong>Start / Sit</strong><span>A verdict, a projection and the matchup case for every starter.</span></div><span class="ld-strip-stat" style="color:#16a34a">Start Gibbs</span></div>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#4f46e5"></span><div class="ld-strip-main"><strong>Trade Strategy</strong><span>See how a trade moves your playoff odds before you send it. <em class="ld-pro-tag">PRO</em></span></div><span class="ld-strip-stat" style="color:#4f46e5">+6.2% odds</span></div>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#ca8a04"></span><div class="ld-strip-main"><strong>Weekly Wrapped</strong><span>Your week, told back as a story with the receipts. Only the AI storyline is PRO; the rest stays free.</span></div><span class="ld-strip-stat" style="color:#ca8a04">New</span></div>
-  </div>
-</section>
-
-<section class="ld-sec">
-  <div class="ld-card ld-rv">
-    <div class="ld-demo-head"><h2 class="ld-sec-h">Try a start/sit call</h2><span class="ld-demo-tag">LIVE DEMO</span></div>
-    <p class="ld-demo-q" id="ldSsQ"></p>
-    <div class="ld-demo-opts" id="ldSsOpts"></div>
-    <div class="ld-demo-verdict" id="ldSsVerdict" hidden></div>
-    <div class="ld-demo-foot"><button type="button" class="ld-mini-btn" id="ldSsNext" hidden>Try another</button><span class="ld-demo-note">Projections from our start/sit board, matchup ratings from our ratings model. The full tool makes this call for your whole lineup.</span></div>
-  </div>
-</section>
-
-<section class="ld-sec">
-  <div class="ld-card ld-rv">
-    <div class="ld-demo-head"><h2 class="ld-sec-h">Who&#x27;s more valuable?</h2><span class="ld-demo-tag">LIVE DEMO</span></div>
-    <p class="ld-demo-q" id="ldValQ"></p>
-    <div class="ld-demo-opts" id="ldValOpts"></div>
-    <div class="ld-demo-verdict" id="ldValVerdict" hidden></div>
-    <div class="ld-demo-foot"><button type="button" class="ld-mini-btn" id="ldValNext" hidden>Try another</button><span class="ld-demo-note">Dynasty superflex values from our values board, the same numbers as the ticker up top.</span></div>
-  </div>
-</section>
-<script type="application/json" id="ldDemoData">{{ landing_demo_json | safe }}</script>
-
-<section class="ld-sec">
-  <figure class="ld-quote ld-rv">
-    <blockquote>&ldquo;THATS ACTUALLY <span>SO SICK</span> BRO&rdquo;</blockquote>
-    <figcaption><strong>Jayden Waddell</strong> &middot; Pittsburgh Pilots, on the weekly recap</figcaption>
-  </figure>
-</section>
-
-  {% endif %}
-
-  <section class="home-pro ld-pro" id="homeProSignup" aria-labelledby="homeProTitle">
-    <div class="ld-pro-main">
-      <span class="ld-pro-kicker">BR FANTASY PRO</span>
-      <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
-      <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice.</p>
-      <ul class="ld-pro-grid">
-      <li><span class="ld-pro-dot" style="--d:#4f46e5"></span><div><strong>Trade Strategy</strong><span>See exactly how each trade shifts your playoff odds before you send it</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#0284c7"></span><div><strong>Trade Intelligence</strong><span>Buy low and sell high on live market values from real trades</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#ea580c"></span><div><strong>Breakout Engine</strong><span>Next week&#x27;s breakouts, flagged before your league notices</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#ca8a04"></span><div><strong>Playoff Impact</strong><span>Week-by-week simulations of your path to the playoffs</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#122d4b"></span><div><strong>Front Office Report</strong><span>A weekly GM memo on your roster needs and next moves</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#8b5cf6"></span><div><strong>Draft Grades</strong><span>Grade every pick and see how the class actually landed</span></div></li>
-      </ul>
-    </div>
-    <div class="ld-pro-side">
-      <div class="ld-pro-price">$10</div>
-      <p>per year &middot; all PRO tools, every league</p>
-      <button type="button" class="ld-btn ld-btn-navy" data-home-pro-open>Get PRO</button>
-      <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
-    </div>
-  </section>
-
-  {% if not session.get('account_id') %}
-
-
-<section class="freeband ld-free">
-  <div class="ld-card ld-rv">
-    <h2 class="ld-sec-h">Free, no league required</h2>
-    <div class="ld-free-grid">
-      <a class="ld-free-row" href="/rankings/dynasty"><strong>Dynasty rankings</strong><span class="ld-arrow" style="color:#3b82f6">&rarr;</span></a>
-      <a class="ld-free-row" href="/dynasty-trade-value-chart"><strong>Trade value chart</strong><span class="ld-arrow" style="color:#14b8a6">&rarr;</span></a>
-      <a class="ld-free-row" href="/guides"><strong>Strategy guides</strong><span class="ld-arrow" style="color:#8b5cf6">&rarr;</span></a>
-      <a class="ld-free-row" href="/nfl-teams"><strong>NFL Teams</strong><span class="ld-arrow" style="color:#ea580c">&rarr;</span></a>
-    </div>
-  </div>
-</section>
-
-
-
-<section class="faq">
-  <div style="text-align:center; margin-bottom: 12px;">
-    <span class="section-kicker">FAQ</span>
-    <h2 class="section-title">Common questions</h2>
-  </div>
-  <details class="faq-item">
-    <summary><h4>Is it really free?</h4><span class="faq-plus">+</span></summary>
-    <p>Looking around is free, no account needed. PRO adds roster-aware tools like trade strategy and the breakout engine, from $10/year.</p>
-  </details>
-  <details class="faq-item">
-    <summary><h4>Will it mess with my league?</h4><span class="faq-plus">+</span></summary>
-    <p>No. The connection is read-only. It cannot change lineups, rosters, waivers, or settings anywhere.</p>
-  </details>
-  <details class="faq-item">
-    <summary><h4>Which platforms work?</h4><span class="faq-plus">+</span></summary>
-    <p>Sleeper, ESPN, Yahoo, MFL, and Fleaflicker. Both redraft and dynasty leagues work.</p>
-  </details>
-  <details class="faq-item">
-    <summary><h4>Do my leaguemates need accounts?</h4><span class="faq-plus">+</span></summary>
-    <p>No. Connect once and share links to recaps, Wrapped, and matchup pages. They just open them.</p>
-  </details>
-</section>
-
-  <!-- AdSense Tier 2: the connect card sits after the editorial sections in DOM
-       order so crawlers meet hero/editorial content before account machinery.
-       Grid placement in dashboard.css keeps it visually beside the hero. -->
     <div class="home-hero-right">
 
       <h2 class="home-card-title ld-sec-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
@@ -2083,6 +1977,114 @@ FORM_BODY = """
         </div>
       </div>
     </div>
+
+  {% if not session.get('account_id') %}
+<section class="ld-sec">
+  <div class="ld-card ld-rv">
+    <h2 class="ld-sec-h">Built for the whole week</h2>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#ef4444"></span><div class="ld-strip-main"><strong>ScoreZone</strong><span>Every NFL game and your players&#x27; points, live on one screen.</span></div><span class="ld-strip-stat" style="color:#ef4444">13 games</span></div>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#16a34a"></span><div class="ld-strip-main"><strong>Start / Sit</strong><span>A verdict, a projection and the matchup case for every starter.</span></div><span class="ld-strip-stat" style="color:#16a34a">Start Gibbs</span></div>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#4f46e5"></span><div class="ld-strip-main"><strong>Trade Strategy</strong><span>See how a trade moves your playoff odds before you send it. <em class="ld-pro-tag">PRO</em></span></div><span class="ld-strip-stat" style="color:#4f46e5">+6.2% odds</span></div>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#ca8a04"></span><div class="ld-strip-main"><strong>Weekly Wrapped</strong><span>Your week, told back as a story with the receipts. Only the AI storyline is PRO; the rest stays free.</span></div><span class="ld-strip-stat" style="color:#ca8a04">New</span></div>
+  </div>
+</section>
+
+<section class="ld-sec">
+  <div class="ld-card ld-rv">
+    <div class="ld-demo-head"><h2 class="ld-sec-h">Try a start/sit call</h2><span class="ld-demo-tag">LIVE DEMO</span></div>
+    <p class="ld-demo-q" id="ldSsQ"></p>
+    <div class="ld-demo-opts" id="ldSsOpts"></div>
+    <div class="ld-demo-verdict" id="ldSsVerdict" hidden></div>
+    <div class="ld-demo-foot"><button type="button" class="ld-mini-btn" id="ldSsNext" hidden>Try another</button><span class="ld-demo-note">Projections from our start/sit board, matchup ratings from our ratings model. The full tool makes this call for your whole lineup.</span></div>
+  </div>
+</section>
+
+<section class="ld-sec">
+  <div class="ld-card ld-rv">
+    <div class="ld-demo-head"><h2 class="ld-sec-h">Who&#x27;s more valuable?</h2><span class="ld-demo-tag">LIVE DEMO</span></div>
+    <p class="ld-demo-q" id="ldValQ"></p>
+    <div class="ld-demo-opts" id="ldValOpts"></div>
+    <div class="ld-demo-verdict" id="ldValVerdict" hidden></div>
+    <div class="ld-demo-foot"><button type="button" class="ld-mini-btn" id="ldValNext" hidden>Try another</button><span class="ld-demo-note">Dynasty superflex values from our values board, the same numbers as the ticker up top.</span></div>
+  </div>
+</section>
+<script type="application/json" id="ldDemoData">{{ landing_demo_json | safe }}</script>
+
+<section class="ld-sec">
+  <figure class="ld-quote ld-rv">
+    <blockquote>&ldquo;THATS ACTUALLY <span>SO SICK</span> BRO&rdquo;</blockquote>
+    <figcaption><strong>Jayden Waddell</strong> &middot; Pittsburgh Pilots, on the weekly recap</figcaption>
+  </figure>
+</section>
+
+  {% endif %}
+
+  <section class="home-pro ld-pro" id="homeProSignup" aria-labelledby="homeProTitle">
+    <div class="ld-pro-main">
+      <span class="ld-pro-kicker">BR FANTASY PRO</span>
+      <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
+      <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice.</p>
+      <ul class="ld-pro-grid">
+      <li><span class="ld-pro-dot" style="--d:#4f46e5"></span><div><strong>Trade Strategy</strong><span>See exactly how each trade shifts your playoff odds before you send it</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#0284c7"></span><div><strong>Trade Intelligence</strong><span>Buy low and sell high on live market values from real trades</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#ea580c"></span><div><strong>Breakout Engine</strong><span>Next week&#x27;s breakouts, flagged before your league notices</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#ca8a04"></span><div><strong>Playoff Impact</strong><span>Week-by-week simulations of your path to the playoffs</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#122d4b"></span><div><strong>Front Office Report</strong><span>A weekly GM memo on your roster needs and next moves</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#8b5cf6"></span><div><strong>Draft Grades</strong><span>Grade every pick and see how the class actually landed</span></div></li>
+      </ul>
+    </div>
+    <div class="ld-pro-side">
+      <div class="ld-pro-price">$10</div>
+      <p>per year &middot; all PRO tools, every league</p>
+      <button type="button" class="ld-btn ld-btn-navy" data-home-pro-open>Get PRO</button>
+      <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
+    </div>
+  </section>
+
+  {% if not session.get('account_id') %}
+
+
+<section class="freeband ld-free">
+  <div class="ld-card ld-rv">
+    <h2 class="ld-sec-h">Free, no league required</h2>
+    <div class="ld-free-grid">
+      <a class="ld-free-row" href="/rankings/dynasty"><strong>Dynasty rankings</strong><span class="ld-arrow" style="color:#3b82f6">&rarr;</span></a>
+      <a class="ld-free-row" href="/dynasty-trade-value-chart"><strong>Trade value chart</strong><span class="ld-arrow" style="color:#14b8a6">&rarr;</span></a>
+      <a class="ld-free-row" href="/guides"><strong>Strategy guides</strong><span class="ld-arrow" style="color:#8b5cf6">&rarr;</span></a>
+      <a class="ld-free-row" href="/nfl-teams"><strong>NFL Teams</strong><span class="ld-arrow" style="color:#ea580c">&rarr;</span></a>
+    </div>
+  </div>
+</section>
+
+
+
+<section class="faq">
+  <div style="text-align:center; margin-bottom: 12px;">
+    <span class="section-kicker">FAQ</span>
+    <h2 class="section-title">Common questions</h2>
+  </div>
+  <details class="faq-item">
+    <summary><h4>Is it really free?</h4><span class="faq-plus">+</span></summary>
+    <p>Looking around is free, no account needed. PRO adds roster-aware tools like trade strategy and the breakout engine, from $10/year.</p>
+  </details>
+  <details class="faq-item">
+    <summary><h4>Will it mess with my league?</h4><span class="faq-plus">+</span></summary>
+    <p>No. The connection is read-only. It cannot change lineups, rosters, waivers, or settings anywhere.</p>
+  </details>
+  <details class="faq-item">
+    <summary><h4>Which platforms work?</h4><span class="faq-plus">+</span></summary>
+    <p>Sleeper, ESPN, Yahoo, MFL, and Fleaflicker. Both redraft and dynasty leagues work.</p>
+  </details>
+  <details class="faq-item">
+    <summary><h4>Do my leaguemates need accounts?</h4><span class="faq-plus">+</span></summary>
+    <p>No. Connect once and share links to recaps, Wrapped, and matchup pages. They just open them.</p>
+  </details>
+</section>
+
+  <!-- AdSense Tier 2: the connect card sits after the editorial sections in DOM
+       order so crawlers meet hero/editorial content before account machinery.
+       Grid placement in dashboard.css keeps it visually beside the hero. -->
+
   
 {% endif %}
 

@@ -47,15 +47,18 @@ def _plain(text: str) -> str:
 # ── Hero funnel order: free path (Get started) before the PRO CTA ────────────
 
 def test_get_started_card_comes_before_pro_cta():
-    # A+ funnel: editorial sections, the quote, and the PRO pitch all precede
-    # the connect card in DOM order; the card itself leads with Get started.
+    # The connect card follows the hero directly (the approved mock's
+    # order): a scrolling visitor reaches Get started before the tools
+    # strip, the quote, the PRO pitch, the freeband and the FAQ. It used
+    # to sit after the FAQ, ~5,000px down the phone page, and was
+    # effectively unfindable without the hero CTA.
     hero = _hero()
     assert "Get started" in hero
     body = APP_PY[APP_PY.index("FORM_BODY"):]
     order = [body.index(marker) for marker in (
-        "Built for the whole week", "ld-quote", 'id="homeProSignup"',
-        '<section class="freeband', '<section class="faq">',
-        '<div class="home-hero-right">')]
+        '<div class="home-hero-right">', "Built for the whole week",
+        "ld-quote", 'id="homeProSignup"', '<section class="freeband',
+        '<section class="faq">')]
     assert order == sorted(order)
 
 

@@ -4577,6 +4577,10 @@ html:not([data-theme="dark"]) body:has(.home-page) {
    columns, per-column step headers with subtitles, footers pinned to
    the column bottoms, navy actions, gradient hairline on top. */
 .ld-sec-title { text-align: center; font-size: clamp(26px, 3.4vw, 36px); font-weight: 800; letter-spacing: -.02em; color: var(--text); margin: 30px 0 14px; }
+/* scrollIntoView / anchor landings stop below the sticky header; the
+   !important outranks the global <=1280px scroll-margin reset in
+   dashboard.css. */
+.home-page .ld-sec-title { scroll-margin-top: 76px !important; }
 .home-hero-right { grid-column: auto; grid-row: auto; align-items: stretch; animation: none; margin-top: 8px; }
 .home-page .home-card { max-width: none; width: 100%; }
 html:not([data-theme="dark"]) .home-card { background: transparent; color: #122d4b; border: none; box-shadow: none; padding: 0; }
