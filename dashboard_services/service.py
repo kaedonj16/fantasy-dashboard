@@ -1647,6 +1647,7 @@ def playoff_bracket(
         losers_bracket=None,
         team_meta=None,
         playoff_week_start=None,
+        loser_advances=False,
 ):
     """Render the Playoff Picture bracket as a true tree.
 
@@ -1660,6 +1661,11 @@ def playoff_bracket(
     team_meta: {roster_id: {"record": "5-1", "pf": 998.9}} for row sub-lines.
     playoff_week_start: first playoff week; round r shows
     start + (r - first round of that bracket).
+    loser_advances: the losers bracket advances the LOSER of each match
+    (Sleeper's toilet-bowl recording: its "w" is the points-loser who
+    moves on). Slot labels then read "Loser of ..." on winner links and
+    "Winner of ..." on loser links; the advancing team itself is still
+    resolved from the recorded w/l fields.
     """
     if not winners_bracket:
         return "<div class='po-empty'>No playoff bracket available.</div>"
@@ -1765,6 +1771,13 @@ def playoff_bracket(
             return ""
         by_id = {k: m for k, m in entries}
         order_index = {k: i for i, (k, _) in enumerate(entries)}
+        # In a loser-advances losers bracket the words swap: a winner link
+        # carries the match's loser, a loser link its winner.
+        invert_words = bool(losers and loser_advances)
+
+        def kind_word(fs_kind):
+            is_winner_link = (fs_kind == "w") != invert_words
+            return "Winner" if is_winner_link else "Loser"
 
         # Round labels adapt to the bracket's own span (as the old renderer).
         total_rounds = max(m.get("r") for _, m in entries)
@@ -1979,14 +1992,13 @@ def playoff_bracket(
                 return team_row(match, side, rid)
             fs = from_spec(match, side)
             if fs:
-                kind = "Winner" if fs[0] == "w" else "Loser"
                 src_m = by_id.get(fs[1])
                 if src_m is not None:
                     decided = (winner_rid_of(src_m) if fs[0] == "w"
                                else loser_rid_of(src_m))
                     if decided is not None:
                         return team_row(match, side, decided)
-                return tbd_row(match, side, kind)
+                return tbd_row(match, side, kind_word(fs[0]))
             return tbd_row(match, side, None)
 
         def slot_side_text(match, side):
@@ -2001,8 +2013,7 @@ def playoff_bracket(
                                else loser_rid_of(src_m))
                     if decided is not None:
                         return name_of(decided)
-                kind = "Winner" if fs[0] == "w" else "Loser"
-                return f"{kind} of {names.get(fs[1], 'TBD')}"
+                return f"{kind_word(fs[0])} of {names.get(fs[1], 'TBD')}"
             return "TBD"
 
         # --- match cards --------------------------------------------------

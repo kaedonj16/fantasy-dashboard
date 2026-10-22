@@ -9436,7 +9436,9 @@ def render_standings(team_stats, length, all_play: dict = None,
 
         Returns the inner HTML for the cell; the wrapping <td> carries the
         .pp-status-cell + modifier classes. Bubble teams inside the field
-        read "Bubble"; bubble teams outside it read their games back.
+        read "Bubble"; bubble teams outside it read their games back,
+        except a team level with the cut on record (0 GB, out only on the
+        PF tiebreak), which reads "Bubble" too.
         """
         if not p:
             return "pp-status-none", "<span class='muted'>&ndash;</span>"
@@ -9451,7 +9453,8 @@ def render_standings(team_stats, length, all_play: dict = None,
             mod, word = "pp-status-out", "Out"
         else:  # bubble
             mod = "pp-status-bub"
-            word = (f"{p['games_back']:g} GB" if p["seed"] > (_spots or 0)
+            word = (f"{p['games_back']:g} GB"
+                    if p["seed"] > (_spots or 0) and p["games_back"] > 0
                     else "Bubble")
         return mod, f"<i class='pp-sdot'></i>{word}"
 
@@ -10493,19 +10496,9 @@ def render_power_and_playoffs(
             _order_rows.sort(key=lambda x: (-x[1], -x[2]))
             _full_order = [_r for _r, _w, _p in _order_rows]
 
-            # Projection state (no winners-bracket match decided yet) and
-            # the platform exposed no losers bracket: project one from the
-            # teams outside the winners field, in standings order.
-            if not lb and not any(m.get("w") is not None for m in wb):
-                _winners_field = {
-                    str(m.get(k)) for m in wb for k in ("t1", "t2")
-                    if m.get(k) is not None
-                }
-                _losers_rids = [r for r in _full_order
-                                 if r not in _winners_field]
-                if len(_losers_rids) >= 2:
-                    from utils.standings import build_full_bracket
-                    lb = build_full_bracket(_losers_rids)
+            # The losers tree renders ONLY when the platform serves a
+            # losers bracket for this league. No seed projection: a league
+            # without a consolation/toilet bracket shows none.
             if lb:
                 losers_bracket = lb
                 # Seed pills for the losers tree come from the full
@@ -10520,7 +10513,7 @@ def render_power_and_playoffs(
                         bracket_seed_map.setdefault(_rid, _i + 1)
         except Exception:
             logger.debug(
-                "losers bracket projection failed platform=%s league=%s",
+                "losers bracket prep failed platform=%s league=%s",
                 platform, league_id, exc_info=True,
             )
             losers_bracket = None
@@ -10535,6 +10528,9 @@ def render_power_and_playoffs(
         losers_bracket=losers_bracket,
         team_meta=team_meta,
         playoff_week_start=playoff_week_start,
+        # Sleeper records its losers bracket loser-advances (the recorded
+        # "winner" is the points-loser who moves on toward last place).
+        loser_advances=(platform == "sleeper"),
     )
 
     # Check if playoff bracket is available
