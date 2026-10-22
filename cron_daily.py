@@ -14,7 +14,7 @@ load_dotenv()
 
 from dashboard_services.api import get_nfl_state
 from utils.nfl_context import calendar_nfl_season
-from utils.paths import DATA_DIR, CACHE_DIR
+from utils.paths import DATA_DIR, CACHE_DIR, ROOT_DIR
 
 # Named cron steps recorded in pipeline_health.json. Intentional skips use
 # status "skipped"; WLS failures must surface as "error" via _run_step.
@@ -29,6 +29,7 @@ CRON_STEPS = (
     "notify_top_movers",
     "build_weekly_rookie_data",
     "build_prospect_targets",
+    "derive_v4_reference",
     "trade_intel_discovery",
     "trade_intel_crawl",
     "trade_intel_analytics",
@@ -326,6 +327,151 @@ def _report_step_failures(season, week) -> None:
         )
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# v4 reference derive (Step 6c) - resumable across daily runs
+# ---------------------------------------------------------------------------
+# scripts/derive_v4_reference.py (v1.5) caches each drafted class
+# (2016-2024) into Postgres (prospect_v4_derive_cache, per-class commits)
+# and stores the finished artifact in prospect_v4_reference_artifact.
+# Manual shell runs kept dying on Render (memory + shell recycling), so
+# the daily job drives it instead: each run banks the classes it can in
+# isolated subprocesses and the assembly fires only once all nine are
+# cached. The reference population is fixed history - once the artifact
+# is stored the step skips forever (DERIVE_V4_FORCE=1 re-derives).
+
+DERIVE_V4_STEP = "derive_v4_reference"
+DERIVE_V4_CLASSES = tuple(range(2016, 2025))
+DERIVE_V4_CACHE_VERSION = 2  # scripts/derive_v4_reference.py CACHE_VERSION
+
+
+def _derive_v4_state():
+    """(artifact_stored, banked_years) from Postgres, or None when the
+    DB or the v1.5 tables are unavailable (e.g. a pre-v1.5 database)."""
+    try:
+        import psycopg
+
+        with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM prospect_v4_reference_artifact WHERE id = 1"
+                )
+                artifact_stored = cur.fetchone() is not None
+                cur.execute(
+                    "SELECT class_year FROM prospect_v4_derive_cache "
+                    "WHERE cache_version = %s AND games_played = true",
+                    (DERIVE_V4_CACHE_VERSION,),
+                )
+                banked = {row[0] for row in cur.fetchall()}
+        return artifact_stored, banked
+    except Exception as e:
+        print(f"[cron] v4 derive: state check unavailable ({e})")
+        return None
+
+
+def _derive_v4_run(args, label: str, timeout: int = 3600) -> bool:
+    """Run scripts/derive_v4_reference.py in a subprocess, mirroring
+    _run_step's isolation (the process exits and frees its memory) but
+    with the script file and repo-root cwd the derive expects."""
+    print(f"[cron] -> {label}")
+    try:
+        result = subprocess.run(
+            [sys.executable, "scripts/derive_v4_reference.py", *args],
+            cwd=str(ROOT_DIR),
+            env=os.environ.copy(),
+            timeout=timeout,
+        )
+        if result.returncode != 0:
+            print(f"[cron] {label} exited with code {result.returncode}")
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        print(f"[cron] {label} timed out after {timeout}s")
+        return False
+    except Exception as e:
+        print(f"[cron] {label} failed to launch: {e}")
+        return False
+
+
+def run_derive_v4_reference() -> dict:
+    """Drive the v4 reference derive toward completion, fail-soft.
+
+    Returns a summary dict and never raises, so the daily job can never
+    fail because of this step. The caller records pipeline health from
+    summary["status"]: "ok" once the artifact is stored, "skipped" for
+    intentional skips, "error" when a run attempted work but the
+    artifact is still missing (a later run resumes from the banked
+    classes; _FAILED_STEPS is deliberately left alone so a self-healing
+    CFBD hiccup does not email as a job failure).
+    """
+    summary = {
+        "status": "skipped",
+        "chunks_run": [],
+        "chunks_failed": [],
+        "artifact_stored": False,
+    }
+    try:
+        enabled = (os.environ.get("DERIVE_V4_ENABLED") or "1").strip().lower() not in (
+            "0", "false", "no", "off",
+        )
+        if not enabled:
+            print("[cron] v4 derive skipped - DERIVE_V4_ENABLED=0")
+            return summary
+        if not os.environ.get("DATABASE_URL"):
+            print("[cron] v4 derive skipped - DATABASE_URL unset")
+            return summary
+        force = (os.environ.get("DERIVE_V4_FORCE") or "0").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        state = _derive_v4_state()
+        if state is None:
+            print("[cron] v4 derive skipped - derive tables unavailable")
+            return summary
+        artifact_stored, banked = state
+        summary["artifact_stored"] = artifact_stored
+        if artifact_stored and not force:
+            print("[cron] v4 reference artifact already stored - derive skipped")
+            return summary
+        if force and artifact_stored:
+            print("[cron] DERIVE_V4_FORCE set - re-deriving v4 reference")
+
+        missing = [y for y in DERIVE_V4_CLASSES if y not in banked]
+        for year in missing:
+            # A zero exit does not prove the class banked (the derive
+            # refuses to cache sub-coverage classes); the re-query
+            # below is the source of truth.
+            if _derive_v4_run(["--classes", str(year)],
+                              f"{DERIVE_V4_STEP} class {year}"):
+                summary["chunks_run"].append(year)
+            else:
+                summary["chunks_failed"].append(year)
+        if missing:
+            state = _derive_v4_state()
+            if state is None:
+                summary["status"] = "error"
+                print("[cron] v4 derive: state re-check unavailable")
+                return summary
+            summary["artifact_stored"], banked = state
+
+        if all(y in banked for y in DERIVE_V4_CLASSES):
+            if _derive_v4_run([], f"{DERIVE_V4_STEP} assembly"):
+                state = _derive_v4_state()
+                if state is not None:
+                    summary["artifact_stored"] = state[0]
+            else:
+                summary["chunks_failed"].append("assembly")
+        summary["status"] = "ok" if summary["artifact_stored"] else "error"
+        print(
+            f"[cron] v4 derive: chunks ok={summary['chunks_run']} "
+            f"failed={summary['chunks_failed']} "
+            f"artifact_stored={summary['artifact_stored']}"
+        )
+        return summary
+    except Exception as e:
+        print(f"[cron] v4 derive failed (non-fatal): {e}")
+        summary["status"] = "error"
+        return summary
 
 
 def main():
@@ -1033,6 +1179,17 @@ print(f"[cron] Prospect accuracy: {stats}")
     else:
         print(f"[cron] Prospect accuracy report skipped - month={today_month} (runs in February)")
         record_pipeline_health("prospect_accuracy_report", "skipped")
+
+    # ------------------------------------------------------------------ #
+    # Step 6c: v4 reference derive (every run until artifact stored)     #
+    # ------------------------------------------------------------------ #
+    # Resumable by design (classes bank in Postgres per run), so there
+    # is no weekday gate: the first runs do the heavy CFBD lifting one
+    # class subprocess at a time, the assembly stores the artifact, and
+    # every later run is a one-query skip. Fail-soft: the step never
+    # raises and never touches _FAILED_STEPS - health carries the state.
+    _derive_v4_summary = run_derive_v4_reference()
+    record_pipeline_health("derive_v4_reference", _derive_v4_summary["status"])
 
     # ------------------------------------------------------------------ #
     # Step 7: Trade intel discovery + crawl + analytics                  #
