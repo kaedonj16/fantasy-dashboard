@@ -13006,6 +13006,15 @@ select:focus {
 
 .pb-col--champ { flex: .78 1 0; justify-content: center; }
 
+/* Matches share the column height at every width: wrapped team names can
+   grow one card without moving its connector center off the formula. */
+.pb-col .pb-match {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
 .pb-conn { flex: 0 0 30px; position: relative; }
 
 .pb-conn svg {
@@ -13121,9 +13130,10 @@ select:focus {
     font-size: 12.5px;
     font-weight: 700;
     color: var(--accent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.25;
     letter-spacing: -.01em;
 }
 
@@ -13271,12 +13281,6 @@ select:focus {
     .pb-tname { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
     .pb-tsub { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
     .pb-ctx-seg { white-space: nowrap; }
-    .pb-col .pb-match {
-        flex: 1 1 0;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
 
     /* Faded right edge: the sideways scroll reads as intentional, not cut off. */
     .pb-scroll {
