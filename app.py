@@ -14770,7 +14770,9 @@ def _apply_q_flex_safeguard(positions_out: dict, flex_slots: int) -> int:
             if trade is None:
                 continue
             p["flex_start"] = True
+            p["flex_slot"] = trade.get("flex_slot")
             trade["flex_start"] = False
+            trade["flex_slot"] = None
             p["flex_safeguard"] = {"from_pos": pos, "via": trade.get("name")}
             swaps += 1
     return swaps
@@ -15462,6 +15464,12 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         for i, p in enumerate(positions_out[pos]):
             p["start"] = i < n_start and not p["on_bye"]
             p["flex_start"] = False
+            # Which flex-type slot a flex starter actually occupies:
+            # "FLEX" or "SUPER_FLEX" (None when not a flex starter). The two
+            # are NOT interchangeable -- a QB can only ever hold SUPER_FLEX --
+            # so guest verdicts and slot labels must read this, never guess
+            # the slot from the player's position.
+            p["flex_slot"] = None
             p["flex_eligible"] = eligible_for_flex and i >= n_start and not p["on_bye"]
 
     if flex_slots:
@@ -15472,6 +15480,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         for p in all_flex[:flex_slots]:
             p["start"] = True
             p["flex_start"] = True
+            p["flex_slot"] = "FLEX"
 
     if sflex_slots:
         sflex_cands = sorted(
@@ -15482,6 +15491,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         for p in sflex_cands[:sflex_slots]:
             p["start"] = True
             p["flex_start"] = True
+            p["flex_slot"] = "SUPER_FLEX"
 
     _apply_q_flex_safeguard(positions_out, flex_slots)
 
@@ -15567,14 +15577,21 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     # are inserted by score without disturbing roster order or flags.
     guests_out: list = []
     if guest_pids:
-        _flex_floor_row = None
+        # Floor (weakest starter) per flex-slot kind, kept separate: FLEX
+        # and SUPER_FLEX are not interchangeable. A QB can displace only a
+        # SUPER_FLEX starter; pooling the floors invented a SUPER_FLEX start
+        # for QB guests in ordinary 1QB leagues whose weakest flex starter
+        # happened to score less than the guest.
+        _flex_floors: dict = {}
         for _pos in positions_out:
             for _p in positions_out[_pos]:
-                if _p.get("flex_start") and (
-                        _flex_floor_row is None
-                        or (_p.get("start_score") or 0.0)
-                        < (_flex_floor_row.get("start_score") or 0.0)):
-                    _flex_floor_row = _p
+                if not _p.get("flex_start"):
+                    continue
+                _kind = _p.get("flex_slot") or "FLEX"
+                _cur = _flex_floors.get(_kind)
+                if _cur is None or (_p.get("start_score") or 0.0) < (
+                        _cur.get("start_score") or 0.0):
+                    _flex_floors[_kind] = _p
         for _gpos, _grow in guest_rows:
             _roster_pos = [p for p in positions_out[_gpos]
                            if not p.get("on_bye") and not p.get("guest")]
@@ -15585,6 +15602,25 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             _pos_starters = [p for p in _roster_pos
                              if p.get("start") and not p.get("flex_start")]
             _grow["guest_rank"] = _rank
+            # Flex-type displacement: the weakest starter among the slot
+            # kinds this guest's position can actually fill, and only when
+            # the guest out-scores him. The displaced row decides the slot
+            # label, so an RB taking the SUPER_FLEX seat is named as such.
+            _disp_row = None
+            _disp_slot = ""
+            _eligible_kinds = (
+                ("SUPER_FLEX",) if _gpos == "QB"
+                else ("FLEX", "SUPER_FLEX") if _gpos in ("RB", "WR", "TE")
+                else ())
+            for _kind in _eligible_kinds:
+                _floor = _flex_floors.get(_kind)
+                if _floor is None or _gscore <= (
+                        _floor.get("start_score") or 0.0):
+                    continue
+                if _disp_row is None or (_floor.get("start_score") or 0.0) < (
+                        _disp_row.get("start_score") or 0.0):
+                    _disp_row = _floor
+                    _disp_slot = "SUPER FLEX" if _kind == "SUPER_FLEX" else "FLEX"
             if _grow.get("on_bye"):
                 _grow["would_start"] = False
                 _grow["guest_slot"] = f"{_gpos}{_rank}"
@@ -15597,15 +15633,12 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                 _grow["guest_vs_name"] = _disp["name"]
                 _grow["guest_vs_proj"] = _disp.get("proj_pts")
                 _grow["guest_note"] = f"Starts over your {_slot} · {_disp['name']}"
-            elif (_flex_floor_row is not None
-                    and _gpos in ("RB", "WR", "TE", "QB")
-                    and _gscore > (_flex_floor_row.get("start_score") or 0.0)):
-                _slot = "SUPER FLEX" if _gpos == "QB" else "FLEX"
+            elif _disp_row is not None:
                 _grow["would_start"] = True
-                _grow["guest_slot"] = _slot
-                _grow["guest_vs_name"] = _flex_floor_row["name"]
-                _grow["guest_vs_proj"] = _flex_floor_row.get("proj_pts")
-                _grow["guest_note"] = f"Starts at {_slot} over {_flex_floor_row['name']}"
+                _grow["guest_slot"] = _disp_slot
+                _grow["guest_vs_name"] = _disp_row["name"]
+                _grow["guest_vs_proj"] = _disp_row.get("proj_pts")
+                _grow["guest_note"] = f"Starts at {_disp_slot} over {_disp_row['name']}"
             elif not _roster_pos:
                 _grow["would_start"] = False
                 _grow["guest_slot"] = f"{_gpos}{_rank}"
@@ -15818,7 +15851,14 @@ def api_player_startsit_strip():
                           if str(p.get("player_id")) == player_id), None)
             if row.get("start") or row.get("flex_start"):
                 if row.get("flex_start"):
-                    _slot = "SUPER FLEX" if row_pos == "QB" else "FLEX"
+                    # The slot the builder actually seated him in; guessing
+                    # from position mislabels an RB/WR/TE SUPER_FLEX starter
+                    # as FLEX. Position inference stays only as a fallback
+                    # for rows built without the field.
+                    _slot = {"SUPER_FLEX": "SUPER FLEX",
+                             "FLEX": "FLEX"}.get(
+                                 row.get("flex_slot") or "",
+                                 "SUPER FLEX" if row_pos == "QB" else "FLEX")
                 else:
                     _slot = f"{row_pos}{_rank}" if _rank else row_pos
                 _parts = [f"Projects {proj}"]
