@@ -8,9 +8,11 @@ start/sit call) with the site's own numbers:
   ``data/model_values.json``. Pairs are picked algorithmically (closest
   superflex values among the stars) so the demo tracks the board as values
   move; nothing is hand-picked.
-* Start/sit verdicts pair the guest preview board's projections with the
-  site's matchup ratings (``cache/matchup_ratings_s<season>.json``): the
-  reasoning line is computed from the ratings file, never hand-written.
+* Start/sit verdicts pair the site's own upcoming-week projections (the
+  cached Sleeper stat lines priced by the site's variant converter, PPR)
+  with the site's matchup ratings (``cache/matchup_ratings_s<season>.json``):
+  the reasoning line is computed from the ratings file, never hand-written.
+  No projections, no demo: the pairs are never backfilled from a snapshot.
 
 Stdlib-only imports so this module (and its tests) run anywhere. Every
 loader fails soft: missing data yields empty lists, never an exception.
@@ -179,20 +181,122 @@ def _ordinal(n: int) -> str:
     return f"{n}{suf}"
 
 
-# The guest preview board's own five matchups (projections as published on
-# the landing hero board). loc is "vs" (home) or "@" (away) per player.
-_BOARD = [
-    ("QB", "Josh Allen", "BUF", "MIA", 31.2, "vs", "Lamar Jackson", "BAL", "KC", 29.4, "@"),
-    ("RB", "Jahmyr Gibbs", "DET", "CLE", 19.8, "vs", "Derrick Henry", "BAL", "KC", 17.6, "@"),
-    ("WR", "Drake London", "ATL", "WAS", 17.4, "vs", "Ja'Marr Chase", "CIN", "PIT", 19.1, "vs"),
-    ("TE", "Sam LaPorta", "DET", "CLE", 12.6, "vs", "Mark Andrews", "BAL", "KC", 11.4, "@"),
-    ("SF", "Justin Herbert", "LAC", "DEN", 20.1, "vs", "Joe Burrow", "CIN", "PIT", 21.0, "vs"),
-]
+def _demo_season_week():
+    """(season, week) the demo should price, from the site's NFL state.
+
+    Regular season only; anything else yields (None, None) and the
+    start/sit demo stays hidden rather than showing a stale week.
+    """
+    try:
+        from dashboard_services.api import get_nfl_state
+
+        state = get_nfl_state() or {}
+    except Exception:
+        return None, None
+    try:
+        season = int(state.get("season") or 0)
+        week = int(state.get("week") or 0)
+    except (TypeError, ValueError):
+        return None, None
+    phase = str(state.get("season_type") or "").strip().lower()
+    if season >= 2020 and week >= 1 and phase not in ("post", "off", "pre"):
+        return season, week
+    return None, None
 
 
-def _start_sit_pairs(ratings: dict, week_label: str) -> list:
+def _live_projection_rows(season: int, week: int) -> dict:
+    """Upcoming-week starters from the site's own projection path.
+
+    Reads the same cached weekly projections every league page uses
+    (Sleeper stat lines priced by the site's variant converter), joined
+    to the players index for name/team/position and to the week schedule
+    for opponent and home/away. Returns {pos: [(name, team, opp, loc,
+    ppr_pts), ...]} sorted by projection, best first. Players on a bye
+    have no schedule entry and drop out; unprojected players (0 pts)
+    drop out. Any failure yields empty pools.
+    """
+    rows = {pos: [] for pos in _POSITIONS}
+    try:
+        from utils.data_cache import (
+            get_week_projections_cached,
+            load_players_index,
+            load_week_schedule,
+        )
+        from utils.projections import fetch_week_projections
+
+        proj = get_week_projections_cached(season, week, fetch_week_projections) or {}
+        players = load_players_index() or {}
+        schedule = load_week_schedule(season, week) or []
+    except Exception:
+        return rows
+    opp_map = {}
+    for game in schedule:
+        if not isinstance(game, dict):
+            continue
+        home, away = game.get("home"), game.get("away")
+        if home and away:
+            opp_map[home] = (away, "vs")
+            opp_map[away] = (home, "@")
+    for pid, variants in proj.items():
+        if not isinstance(variants, dict):
+            continue
+        info = players.get(str(pid)) or {}
+        pos = str(info.get("pos") or "").strip().upper()
+        if pos not in rows:
+            continue
+        try:
+            pts = float(variants.get("ppr") or 0)
+        except (TypeError, ValueError):
+            continue
+        name = str(info.get("name") or "").strip()
+        team = str(info.get("team") or "").strip()
+        opp_loc = opp_map.get(team)
+        if pts <= 0 or not name or not team or not opp_loc:
+            continue
+        rows[pos].append((name, team, opp_loc[0], opp_loc[1], pts))
+    for pos in rows:
+        rows[pos].sort(key=lambda r: -r[4])
+    return rows
+
+
+def _closest_pair(pool: list, used: set):
+    """The most debatable pair in a projection-sorted pool.
+
+    Considers the top 8 unused players and returns the (hi, lo) pair
+    with the smallest projection gap inside [0.2, 4.0] points: wide
+    enough to have a verdict, tight enough to be a real question.
+    Returns None when no pair qualifies.
+    """
+    cand = [r for r in pool[:8] if r[0] not in used]
+    best = None
+    for i in range(len(cand)):
+        for j in range(i + 1, len(cand)):
+            gap = round(cand[i][4] - cand[j][4], 2)
+            if gap < 0.2:
+                continue
+            if gap > 4.0:
+                break
+            if best is None or gap < best[0]:
+                best = (gap, cand[i], cand[j])
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
+def _start_sit_pairs(ratings: dict, week_label: str, season: int, week: int) -> list:
+    rows = _live_projection_rows(season, week)
     pairs = []
-    for pos, na, ta, oa, pa, la, nb, tb, ob, pb, lb in _BOARD:
+    used: set = set()
+    plan = [("QB", rows.get("QB") or []), ("RB", rows.get("RB") or []),
+            ("WR", rows.get("WR") or []), ("TE", rows.get("TE") or []),
+            ("SF", rows.get("QB") or [])]
+    for pos, pool in plan:
+        picked = _closest_pair(pool, used)
+        if picked is None:
+            continue
+        (na, ta, oa, la, pa), (nb, tb, ob, lb, pb) = picked
+        used.add(na)
+        used.add(nb)
         pick = 0 if pa >= pb else 1
         win, lose = ((na, oa, pa), (nb, ob, pb)) if pick == 0 else ((nb, ob, pb), (na, oa, pa))
         rpos = "QB" if pos == "SF" else pos
@@ -265,15 +369,18 @@ def build_landing_demo_data() -> dict:
     except Exception:
         value_pairs = []
     ratings_doc = _load_ratings_doc()
-    week_label = _week_label(ratings_doc)
+    season, week = _demo_season_week()
     start_sit_pairs = []
-    if ratings_doc:
+    if ratings_doc and season and week:
         try:
             start_sit_pairs = _start_sit_pairs(
-                ratings_doc.get("ratings") or {}, week_label
+                ratings_doc.get("ratings") or {}, f"Week {week}", season, week
             )
         except Exception:
             start_sit_pairs = []
+    # The label names the week the pairs are priced for; only when no
+    # live pairs exist does it fall back to the ratings/NFL-state label.
+    week_label = f"Week {week}" if start_sit_pairs else _week_label(ratings_doc)
     return {
         "value_pairs": value_pairs,
         "start_sit_pairs": start_sit_pairs,
