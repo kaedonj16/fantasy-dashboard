@@ -1,15 +1,21 @@
 """Push preferences picker, digest mode, and re-prompt persistence.
 
-Digest mode: per-account, per-hour batching of eligible notification types into
-one combined push per device. Existing subscribers with no stored preferences
-must behave exactly as before (immediate sends).
+Digest mode: per-device batching of eligible notification types into one
+combined push per device, held until 9am ET. Existing subscribers with no
+stored preferences must behave exactly as before (immediate sends).
 """
 import json
 import os
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import utils.push_notifications as pn
+
+ET = ZoneInfo("America/New_York")
+# A flush time safely past the 9am ET quiet-hours gate.
+DAYTIME_ET = datetime(2026, 10, 22, 10, 0, tzinfo=ET)
 
 
 # ── Fake digest-table DB ──────────────────────────────────────────────────────
@@ -193,7 +199,7 @@ def test_live_types_stay_immediate_in_digest_mode(digest_db, fake_sends):
     assert digest_db == []
 
 
-# ── Flush: per-account grouping ───────────────────────────────────────────────
+# ── Flush: per-device grouping + 9am ET quiet hours ───────────────────────────
 
 def test_flush_groups_per_account_and_cleans_up(digest_db, fake_sends,
                                                 fake_season):
@@ -212,7 +218,7 @@ def test_flush_groups_per_account_and_cleans_up(digest_db, fake_sends,
     pn._digest_buffer("ep4", "k", "a", "watchlist", "T5", "B5",
                       "/w", "t", league_id="L7", platform="sleeper")  # legacy
 
-    sent = pn._flush_digest()
+    sent = pn._flush_digest(now=DAYTIME_ET)
 
     # One combined push per device; nothing left buffered.
     assert sent == 4
@@ -228,8 +234,64 @@ def test_flush_groups_per_account_and_cleans_up(digest_db, fake_sends,
 
 
 def test_flush_empty_buffer_sends_nothing(digest_db, fake_sends, fake_season):
-    assert pn._flush_digest() == 0
+    assert pn._flush_digest(now=DAYTIME_ET) == 0
     assert fake_sends == []
+
+
+def test_digest_flush_due_boundary_is_9am_et():
+    assert pn._digest_flush_due(datetime(2026, 10, 22, 5, 5, tzinfo=ET)) is False
+    assert pn._digest_flush_due(datetime(2026, 10, 22, 8, 59, tzinfo=ET)) is False
+    assert pn._digest_flush_due(datetime(2026, 10, 22, 9, 0, tzinfo=ET)) is True
+    assert pn._digest_flush_due(datetime(2026, 10, 22, 21, 30, tzinfo=ET)) is True
+    # Aware times in other zones convert: 12:05 UTC is 8:05am EDT, 13:05 UTC
+    # is 9:05am EDT.
+    assert pn._digest_flush_due(datetime(2026, 10, 22, 12, 5,
+                                         tzinfo=timezone.utc)) is False
+    assert pn._digest_flush_due(datetime(2026, 10, 22, 13, 5,
+                                         tzinfo=timezone.utc)) is True
+    # Naive times are read as Eastern.
+    assert pn._digest_flush_due(datetime(2026, 10, 22, 5, 5)) is False
+    assert pn._digest_flush_due(datetime(2026, 10, 22, 9, 5)) is True
+
+
+def test_flush_held_before_9am_then_delivered(digest_db, fake_sends,
+                                              fake_season):
+    # The 5:05am scenario: the daily job buffered a value drop at ~4am and
+    # the hourly runner must NOT flush it before 9am ET.
+    pn._digest_buffer("ep1", "k", "a", "value_drops", "T1", "B1",
+                      "/w", "t", league_id="L1", platform="sleeper",
+                      account_key="acctA")
+
+    sent = pn._flush_digest(now=datetime(2026, 10, 22, 5, 5, tzinfo=ET))
+    assert sent == 0
+    assert fake_sends == []
+    assert len(digest_db) == 1  # still buffered, not dropped
+
+    # The 9:05am hourly run delivers it as the one combined push.
+    sent = pn._flush_digest(now=datetime(2026, 10, 22, 9, 5, tzinfo=ET))
+    assert sent == 1
+    assert [s["endpoint"] for s in fake_sends] == ["ep1"]
+    assert "1 alert in Blackedraw: 1 value drop." in fake_sends[0]["body"]
+    assert digest_db == []
+
+
+def test_flush_combines_same_device_across_account_keys(digest_db, fake_sends,
+                                                        fake_season):
+    # One league subscribed signed-in (account_key set), another legacy
+    # (no account_key): same device must still get ONE combined digest,
+    # not the two separate pushes Kaedon screenshotted.
+    pn._digest_buffer("ep1", "k", "a", "value_drops", "T1", "B1",
+                      "/w", "t", league_id="L1", platform="espn",
+                      account_key="acctA")
+    pn._digest_buffer("ep1", "k", "a", "value_drops", "T2", "B2",
+                      "/w", "t", league_id="L2", platform="yahoo")
+
+    sent = pn._flush_digest(now=DAYTIME_ET)
+
+    assert sent == 1
+    assert len(fake_sends) == 1
+    assert "2 alerts across 2 leagues: 2 value drops." in fake_sends[0]["body"]
+    assert digest_db == []
 
 
 def test_digest_summary_counts_and_leagues(fake_season):
