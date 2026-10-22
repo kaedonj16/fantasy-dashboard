@@ -51,6 +51,18 @@ def _losers():
     ]
 
 
+def _sleeper_losers():
+    """Sleeper's real losers shape (Blackedraw): the final is fed by
+    winner links, and a placement game by loser links. Sleeper records
+    the advancing team (the points-loser) in w."""
+    return [
+        {"r": 1, "m": 1, "t1": 7, "t2": 10, "t1_from": None, "t2_from": None, "w": None, "l": None},
+        {"r": 1, "m": 2, "t1": 8, "t2": 9, "t1_from": None, "t2_from": None, "w": None, "l": None},
+        {"r": 2, "m": 3, "t1": None, "t2": None, "t1_from": {"w": 1}, "t2_from": {"w": 2}, "w": None, "l": None, "p": 1},
+        {"r": 2, "m": 4, "t1": None, "t2": None, "t1_from": {"l": 1}, "t2_from": {"l": 2}, "w": None, "l": None, "p": 3},
+    ]
+
+
 def _render(**kw):
     kw.setdefault("seed_map", SEEDS)
     kw.setdefault("team_meta", META)
@@ -207,6 +219,40 @@ def test_build_full_bracket_field5():
 def test_build_full_bracket_too_small():
     assert build_full_bracket([]) == []
     assert build_full_bracket([1]) == []
+
+
+def test_sleeper_losers_verbiage_loser_advances():
+    # Sleeper records the points-loser as the advancer: winner-link slots
+    # in the toilet tree must read "Loser of", and the loser-fed
+    # placement game reads "Winner of".
+    html = _render(losers_bracket=_sleeper_losers(), loser_advances=True)
+    assert "Loser of Game 1" in html
+    assert "Loser of Game 2" in html
+    strip = html.split("pb-places", 1)[1]
+    assert "Winner of Game 1" in strip
+    assert "Winner of Game 2" in strip
+
+
+def test_losers_verbiage_default_winner_advances():
+    html = _render(losers_bracket=_sleeper_losers())
+    toilet = html.split("Toilet Bowl", 1)[1]
+    assert "Winner of Game 1" in toilet.split("pb-places")[0]
+    strip = toilet.split("pb-places", 1)[1]
+    assert "Loser of Game 1" in strip
+
+
+def test_desktop_names_wrap_not_truncate():
+    import pathlib
+    import re
+    css = pathlib.Path(__file__).resolve().parent.parent.joinpath(
+        "static", "dashboard.css").read_text()
+    base = re.search(r"\.pb-tname \{([^}]*)\}", css).group(1)
+    assert "white-space: normal" in base
+    assert "nowrap" not in base
+    assert "text-overflow: ellipsis" not in base
+    # Equal-height matches are a base rule now, not phone-only, so a
+    # wrapped name never shifts a connector center.
+    assert css.count(".pb-col .pb-match {") == 1
 
 
 def test_tiles_gate_by_round_count():
