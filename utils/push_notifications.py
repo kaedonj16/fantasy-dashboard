@@ -525,15 +525,22 @@ def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update", no
         return 0
 
 
-def _yahoo_binding_account_ids(league_id, season, roster_id):
+def _is_yahoo(platform):
+    return str(platform or "").strip().lower() == "yahoo"
+
+
+def yahoo_roster_account_ids(league_id, season, roster_id):
     """Account ids whose saved Yahoo team binding owns ``roster_id``.
 
-    user_leagues is the only trustworthy Yahoo ownership record: the Yahoo
-    API stamps the fetching caller's guid on every roster's owner_id, so the
-    payload itself can never say whose team a roster is. When the caller
-    knows the season, bindings saved for that season win; otherwise the
-    newest season's binding for the league+team is used, so a stale
-    prior-season row cannot outrank the current one.
+    THE shared Yahoo ownership resolver for every owner-targeted push:
+    user_leagues is the only trustworthy Yahoo ownership record, because the
+    Yahoo API stamps the fetching caller's guid on every roster's owner_id,
+    so the payload itself can never say whose team a roster is. When the
+    caller knows the season, bindings saved for that season win; otherwise
+    the newest season's binding for the league+team is used, so a stale
+    prior-season row cannot outrank the current one. No binding -> empty
+    list -> the caller must send to nobody (never a guid match, never a
+    league broadcast: both hand the alert to the wrong subscriber).
     """
     from dashboard_services.db import get_conn
     with get_conn() as conn:
@@ -575,7 +582,7 @@ def _broadcast_yahoo_roster(league_id, season, roster_id, title, body, url="/", 
     if not roster_id:
         return 0
     try:
-        account_ids = _yahoo_binding_account_ids(league_id, season, roster_id)
+        account_ids = yahoo_roster_account_ids(league_id, season, roster_id)
         if not account_ids:
             return 0
         from dashboard_services.db import get_conn
@@ -592,6 +599,30 @@ def _broadcast_yahoo_roster(league_id, season, roster_id, title, body, url="/", 
     except Exception as exc:
         logger.warning("[push] broadcast_yahoo_roster failed: %s", exc)
         return 0
+
+
+# Original spelling from the ScoreZone TD fix; the generalized resolver
+# above is the one implementation every owner-targeted sender now shares.
+_yahoo_binding_account_ids = yahoo_roster_account_ids
+
+
+def _broadcast_owner_for_roster(platform, league_id, season, roster_id, owner_id,
+                                title, body, url="/", tag="update", notif_type=None):
+    """Owner-targeted send for ONE roster, resolved the platform-correct way.
+
+    Yahoo: ownership comes from the saved user_leagues team binding via
+    ``yahoo_roster_account_ids`` -- the payload owner_id is the fetching
+    caller's guid on every roster, so _broadcast_owner's guid match would
+    hand the alert to whichever subscriber's token fetched the rosters
+    (and an empty owner_id would fall back to a league-wide broadcast).
+    No binding -> nobody is sent to. Every other platform: the roster
+    owner_id match in _broadcast_owner, unchanged.
+    """
+    if _is_yahoo(platform):
+        return _broadcast_yahoo_roster(league_id, season, roster_id, title, body,
+                                       url=url, tag=tag, notif_type=notif_type)
+    return _broadcast_owner(league_id, owner_id, title, body,
+                            url=url, tag=tag, notif_type=notif_type)
 
 
 def _app_state_get(conn, key):
@@ -716,7 +747,7 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
         return 0
 
     sent = 0
-    is_yahoo = str(platform or "").lower() == "yahoo"
+    is_yahoo = _is_yahoo(platform)
     league_name = _league_display_name(platform, league_id, season)
     for gid, plays in (pbp_by_game or {}).items():
         # Group scoring contributions by canonical NFL play, then by owner.
@@ -1210,6 +1241,7 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
         sent = 0
         for league_id, platform in _get_subscribed_leagues():
             league_name = _league_display_name(platform, league_id, season)
+            is_yahoo = _is_yahoo(platform)
 
             issue_summary_by_owner: dict = {}
             bench_summary_by_owner: dict = {}
@@ -1232,8 +1264,19 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
                 for roster in _ll_rosters:
                     owner_id = roster.get("owner_id") or ""
                     starters = [str(p) for p in (roster.get("starters") or [])]
-                    if not owner_id or not starters:
-                        continue
+                    # Summaries key by the roster's targeting key: owner id on
+                    # every platform except Yahoo, where payload owner ids are
+                    # the fetching caller's guid on all rosters -- there the
+                    # roster itself is the key and devices resolve through
+                    # the saved team binding at send time below.
+                    if is_yahoo:
+                        if not roster.get("roster_id") or not starters:
+                            continue
+                        scan_key = str(roster.get("roster_id"))
+                    else:
+                        if not owner_id or not starters:
+                            continue
+                        scan_key = str(owner_id)
                     player_info = {}
                     for pid in starters:
                         pl = nfl_players.get(pid) or {}
@@ -1244,7 +1287,7 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
                         }
                     issues = find_lineup_issues(starters, player_info, teams_playing)
                     if issues:
-                        issue_summary_by_owner[str(owner_id)] = summarize_issues(issues)
+                        issue_summary_by_owner[scan_key] = summarize_issues(issues)
                     # Always scan for material bench upgrades (even when there is
                     # a hard issue). Injured/bye starters still benefit from a
                     # concrete Sit X for Y line; R06.2 caps at two swaps.
@@ -1278,7 +1321,7 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
                                             or _pl.get("last_name")
                                             or ""
                                         )
-                                bench_summary_by_owner[str(owner_id)] = format_lineup_lock_swaps(
+                                bench_summary_by_owner[scan_key] = format_lineup_lock_swaps(
                                     swaps, _names,
                                 )
                         except Exception as se:
@@ -1301,12 +1344,32 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
             # already-optimal lineups. Prefs still gate the sends below.
             flagged_by_owner: dict = {}
             bench_by_owner: dict = {}
-            for r in rows:
-                oid = _owner_alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or ""))
-                if oid in issue_summary_by_owner:
-                    flagged_by_owner.setdefault(oid, []).append(r)
-                elif oid in bench_summary_by_owner:
-                    bench_by_owner.setdefault(oid, []).append(r)
+            if is_yahoo:
+                # Summaries are keyed by roster_id; a roster's devices are
+                # the subscriptions of the account(s) whose saved
+                # user_leagues binding owns that team. No binding -> the
+                # roster's alerts go to nobody.
+                for key in issue_summary_by_owner:
+                    _acct = set(yahoo_roster_account_ids(league_id, season, key))
+                    orows = [r for r in rows
+                             if str(r["account_key"] or "") in _acct]
+                    if orows:
+                        flagged_by_owner[key] = orows
+                for key in bench_summary_by_owner:
+                    if key in issue_summary_by_owner:
+                        continue
+                    _acct = set(yahoo_roster_account_ids(league_id, season, key))
+                    orows = [r for r in rows
+                             if str(r["account_key"] or "") in _acct]
+                    if orows:
+                        bench_by_owner[key] = orows
+            else:
+                for r in rows:
+                    oid = _owner_alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or ""))
+                    if oid in issue_summary_by_owner:
+                        flagged_by_owner.setdefault(oid, []).append(r)
+                    elif oid in bench_summary_by_owner:
+                        bench_by_owner.setdefault(oid, []).append(r)
             for oid, orows in flagged_by_owner.items():
                 body = f"{kickoff_line} {issue_summary_by_owner[oid]}."
                 swap_line = bench_summary_by_owner.get(oid)
@@ -1555,20 +1618,36 @@ def notify_injury_flip():
                     str(c).strip() for c in (roster.get("co_owners") or [])
                     if str(c or "").strip()
                 ]
-                if not owner_id and not co_owner_ids:
-                    continue
-                # Alertable stored owner_ids for this roster: the primary
-                # owner plus any co-owners the adapter surfaced (Sleeper
-                # rosters carry co_owners natively; ESPN/Yahoo adapters now
-                # populate them from their secondary owners/managers). ESPN
-                # SWIDs may be persisted with or without braces, so match
-                # spelling variants like _broadcast_owner does -- the old
-                # verbatim-only match silently missed those devices.
-                target_ids = set()
-                for oid in [owner_id, *co_owner_ids]:
-                    if oid:
-                        target_ids.add(oid)
-                        target_ids |= set(owner_id_variants(oid))
+                if _is_yahoo(platform):
+                    # Yahoo payload owner ids are the fetching caller's guid
+                    # on EVERY roster, so owner matching would alert that one
+                    # subscriber about every team's injuries. Route by the
+                    # saved team binding instead: the target devices are the
+                    # subscriptions of the account(s) bound to this roster.
+                    _acct_ids = set(yahoo_roster_account_ids(
+                        league_id, season, roster.get("roster_id")))
+                    roster_rows = [
+                        r for r in rows
+                        if str(r["account_key"] or "") in _acct_ids
+                    ]
+                    target_ids = None
+                else:
+                    roster_rows = None
+                    if not owner_id and not co_owner_ids:
+                        continue
+                    # Alertable stored owner_ids for this roster: the primary
+                    # owner plus any co-owners the adapter surfaced (Sleeper
+                    # rosters carry co_owners natively; ESPN/Yahoo adapters
+                    # now populate them from their secondary owners/managers).
+                    # ESPN SWIDs may be persisted with or without braces, so
+                    # match spelling variants like _broadcast_owner does --
+                    # the old verbatim-only match silently missed those
+                    # devices.
+                    target_ids = set()
+                    for oid in [owner_id, *co_owner_ids]:
+                        if oid:
+                            target_ids.add(oid)
+                            target_ids |= set(owner_id_variants(oid))
                 starters = {str(p) for p in (roster.get("starters") or [])}
                 players = [
                     str(p) for p in (roster.get("players") or [])
@@ -1598,11 +1677,14 @@ def notify_injury_flip():
                         body = f"{body} in {league_name}"
                     body = f"{body}."
                     url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
-                    orows = [
-                        r for r in rows
-                        if str(r["owner_id"] or "") in target_ids
-                        or alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or "")) in target_ids
-                    ]
+                    if target_ids is None:
+                        orows = roster_rows
+                    else:
+                        orows = [
+                            r for r in rows
+                            if str(r["owner_id"] or "") in target_ids
+                            or alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or "")) in target_ids
+                        ]
                     if not orows:
                         continue
                     sent += _send_with_digest(
@@ -1675,8 +1757,8 @@ def notify_value_drops():
                         continue
                     top  = drops[0]
                     name = top.get("name") or "A player on your roster"
-                    _broadcast_owner(
-                        league_id, owner_id,
+                    _broadcast_owner_for_roster(
+                        platform, league_id, season, roster.get("roster_id"), owner_id,
                         title="Dynasty value dropping",
                         body=(
                             f"{name} is losing dynasty value this week. "
@@ -1908,8 +1990,8 @@ def notify_playoff_odds():
                         continue
                     owner_id  = roster_to_owner.get(roster_id) or ""
                     direction = "up" if shift > 0 else "down"
-                    _broadcast_owner(
-                        league_id, owner_id,
+                    _broadcast_owner_for_roster(
+                        platform, league_id, season, roster_id, owner_id,
                         title="Playoff picture update",
                         body=(
                             f"Your playoff odds moved {direction} to {curr:.0f}% "
@@ -1983,8 +2065,8 @@ def notify_breakout_roster():
                         f"{name} ({pos}, {team}) is flagged as a breakout candidate"
                         f"{' on your ' + league_name + ' roster' if league_name else ''}."
                     )
-                    _broadcast_owner(
-                        league_id, owner_id,
+                    _broadcast_owner_for_roster(
+                        platform, league_id, season, roster.get("roster_id"), owner_id,
                         title="Breakout candidate on your roster",
                         body=breakout_body,
                         url=f"/{platform}/{season}/{league_id}/breakouts",
@@ -2258,6 +2340,13 @@ def notify_matchup_preview():
                     u.get("user_id"): (u.get("display_name") or u.get("username") or "Your opponent")
                     for u in users
                 }
+                # Yahoo user rows carry the caller's guid as every user_id, so
+                # names must be keyed by the row's own roster_id there.
+                user_name_by_roster = {
+                    u.get("roster_id"): (u.get("display_name") or u.get("username") or "Your opponent")
+                    for u in users
+                    if u.get("roster_id") is not None
+                }
 
                 by_matchup = {}
                 for m in matchups:
@@ -2272,11 +2361,14 @@ def notify_matchup_preview():
                     for team, opp in [(a, b), (b, a)]:
                         owner_id     = roster_owner.get(team.get("roster_id"))
                         opp_owner_id = roster_owner.get(opp.get("roster_id"))
-                        if not owner_id:
+                        if not owner_id and not _is_yahoo(platform):
                             continue
-                        opp_name = user_name.get(opp_owner_id) if opp_owner_id else "Your opponent"
-                        _broadcast_owner(
-                            league_id, owner_id,
+                        if _is_yahoo(platform):
+                            opp_name = user_name_by_roster.get(opp.get("roster_id")) or "Your opponent"
+                        else:
+                            opp_name = user_name.get(opp_owner_id) if opp_owner_id else "Your opponent"
+                        _broadcast_owner_for_roster(
+                            platform, league_id, season, team.get("roster_id"), owner_id,
                             title=f"Week {week} matchup preview",
                             body=(
                                 f"You're facing {opp_name} this week. "
@@ -2375,8 +2467,8 @@ def notify_standings_update():
                     curr_in = cp <= playoff_teams
                     prev_in = pp <= playoff_teams
                     if curr_in and not prev_in:
-                        _broadcast_owner(
-                            league_id, owner_id,
+                        _broadcast_owner_for_roster(
+                            platform, league_id, season, roster.get("roster_id"), owner_id,
                             title="You moved into a playoff spot",
                             body=(
                                 f"You're {cp}{_ordinal_suffix(cp)} "
@@ -2387,8 +2479,8 @@ def notify_standings_update():
                             notif_type="standings_update",
                         )
                     elif not curr_in and prev_in:
-                        _broadcast_owner(
-                            league_id, owner_id,
+                        _broadcast_owner_for_roster(
+                            platform, league_id, season, roster.get("roster_id"), owner_id,
                             title="You dropped out of playoff position",
                             body=(
                                 f"You're {cp}{_ordinal_suffix(cp)} "
@@ -2462,6 +2554,13 @@ def notify_close_game():
                     u.get("user_id"): (u.get("display_name") or u.get("username") or "Your opponent")
                     for u in users
                 }
+                # Yahoo: every user_id is the caller's guid; key names by the
+                # user row's own roster_id instead.
+                user_name_by_roster = {
+                    u.get("roster_id"): (u.get("display_name") or u.get("username") or "Your opponent")
+                    for u in users
+                    if u.get("roster_id") is not None
+                }
 
                 by_matchup = {}
                 for m in matchups:
@@ -2485,9 +2584,12 @@ def notify_close_game():
                     for team, opp in [(a, b), (b, a)]:
                         owner_id     = roster_owner.get(team.get("roster_id"))
                         opp_owner_id = roster_owner.get(opp.get("roster_id"))
-                        if not owner_id:
+                        if not owner_id and not _is_yahoo(platform):
                             continue
-                        opp_name = user_name.get(opp_owner_id) if opp_owner_id else "Your opponent"
+                        if _is_yahoo(platform):
+                            opp_name = user_name_by_roster.get(opp.get("roster_id")) or "Your opponent"
+                        else:
+                            opp_name = user_name.get(opp_owner_id) if opp_owner_id else "Your opponent"
                         my_pts   = float(team.get("points") or 0)
                         opp_pts  = float(opp.get("points") or 0)
                         gap      = round(abs(my_pts - opp_pts), 1)
@@ -2496,8 +2598,8 @@ def notify_close_game():
                             body = f"You're up {gap} pts over {opp_name}{mnf_league}. Hold on tonight."
                         else:
                             body = f"You're down {gap} pts to {opp_name}{mnf_league}. You can still take this."
-                        sent += _broadcast_owner(
-                            league_id, owner_id,
+                        sent += _broadcast_owner_for_roster(
+                            platform, league_id, season, team.get("roster_id"), owner_id,
                             title="Close matchup tonight",
                             body=body,
                             url=f"/{platform}/{season}/{league_id}/matchups",
