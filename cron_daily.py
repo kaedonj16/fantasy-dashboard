@@ -346,24 +346,57 @@ DERIVE_V4_CLASSES = tuple(range(2016, 2025))
 DERIVE_V4_CACHE_VERSION = 2  # scripts/derive_v4_reference.py CACHE_VERSION
 
 
+def _is_undefined_table(e) -> bool:
+    """True only for Postgres' undefined-table error (sqlstate 42P01)."""
+    if getattr(e, "sqlstate", None) == "42P01":
+        return True
+    try:
+        import psycopg
+
+        return isinstance(e, psycopg.errors.UndefinedTable)
+    except Exception:
+        return False
+
+
 def _derive_v4_state():
     """(artifact_stored, banked_years) from Postgres, or None when the
-    DB or the v1.5 tables are unavailable (e.g. a pre-v1.5 database)."""
+    DB itself is unavailable.
+
+    Absent v1.5 tables are EMPTY state, not unavailable state: on a
+    database where the derive has never run, neither table exists yet
+    (the derive script creates them on first DB use), so an
+    undefined-table error for one side reads as artifact_stored=False
+    or banked=set() for that side, and the step proceeds to launch the
+    derive subprocess that creates the tables. Any other failure
+    (connection, auth, other SQL errors) returns None as before.
+    """
     try:
         import psycopg
 
         with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM prospect_v4_reference_artifact WHERE id = 1"
-                )
-                artifact_stored = cur.fetchone() is not None
-                cur.execute(
-                    "SELECT class_year FROM prospect_v4_derive_cache "
-                    "WHERE cache_version = %s AND games_played = true",
-                    (DERIVE_V4_CACHE_VERSION,),
-                )
-                banked = {row[0] for row in cur.fetchall()}
+                try:
+                    cur.execute(
+                        "SELECT 1 FROM prospect_v4_reference_artifact WHERE id = 1"
+                    )
+                    artifact_stored = cur.fetchone() is not None
+                except Exception as e:
+                    if not _is_undefined_table(e):
+                        raise
+                    conn.rollback()
+                    artifact_stored = False
+                try:
+                    cur.execute(
+                        "SELECT class_year FROM prospect_v4_derive_cache "
+                        "WHERE cache_version = %s AND games_played = true",
+                        (DERIVE_V4_CACHE_VERSION,),
+                    )
+                    banked = {row[0] for row in cur.fetchall()}
+                except Exception as e:
+                    if not _is_undefined_table(e):
+                        raise
+                    conn.rollback()
+                    banked = set()
         return artifact_stored, banked
     except Exception as e:
         print(f"[cron] v4 derive: state check unavailable ({e})")
