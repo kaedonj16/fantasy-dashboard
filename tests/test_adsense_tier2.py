@@ -46,8 +46,11 @@ def test_homepage_editorial_precedes_connect_card_in_dom():
     previews = source.index("Built for the whole week")
     faq = source.index('<section class="faq">')
     card = source.index('<div class="home-hero-right">')
-    # Hero intro first, then editorial sections, then the account machinery.
-    assert hero < previews < faq < card
+    # Hero intro first, then the connect card directly (owner's call: the
+    # card must be findable in the first scroll; it previously sat after
+    # the FAQ and signed-in visitors never received it at all), then the
+    # editorial sections and the FAQ.
+    assert hero < card < previews < faq
 
 
 def test_player_trade_value_page_is_noindex():

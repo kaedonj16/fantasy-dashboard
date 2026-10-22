@@ -18326,12 +18326,13 @@ if (document.readyState === 'loading') {
   if (cardTitle) {
     document.querySelectorAll('a[href="#homeCardTitle"]').forEach((a) => {
       a.addEventListener("click", (e) => {
+        // scrollIntoView lets the browser pick the element that actually
+        // scrolls (the lite shell scrolls body, not the window); the
+        // title's scroll-margin-top leaves room for the sticky header.
+        // The hero anchor also carries this inline as a fallback for
+        // clients running a stale or blocked copy of this script.
         e.preventDefault();
-        const off = Math.max(document.body.scrollTop || 0,
-          document.documentElement.scrollTop || 0, window.scrollY || 0);
-        const top = cardTitle.getBoundingClientRect().top + off - 76;
-        document.body.scrollTo({ top, behavior: "smooth" });
-        document.documentElement.scrollTo({ top, behavior: "smooth" });
+        cardTitle.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
   }
