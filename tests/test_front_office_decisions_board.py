@@ -213,6 +213,127 @@ def test_questionable_starter_alone_makes_no_lineup_move():
     assert moves == []
 
 
+def test_stash_only_waiver_target_never_becomes_a_board_move():
+    # The Alec Pierce regression (2026-10-23): the only waiver target
+    # was an IR stash, pairs were empty because stashes never pair, and
+    # the board's fallback still made him Move 1 with a named drop.
+    pierce = {"id": "ap", "name": "Alec Pierce", "position": "WR", "team": "IND",
+              "value": 199.6, "pos_rank_label": "WR38", "injury": "IR",
+              "age": 25, "stash_only": True,
+              "claim_guidance": "IR stash only."}
+    waller = {"id": "dw", "name": "Darren Waller", "position": "TE", "value": 6.7}
+    moves = _build(_scenario(), trade_targets=[], drop_add_pairs=[],
+                   waiver_targets=[pierce], cut_candidates=[waller],
+                   injury_rows=[], roster={}, roster_rows=[])
+    assert moves == []
+
+
+def test_waiver_fallback_skips_stash_for_the_first_real_add():
+    stash = {"id": "ap", "name": "Alec Pierce", "position": "WR", "team": "IND",
+             "value": 199.6, "pos_rank_label": "WR38", "injury": "IR",
+             "age": 25, "stash_only": True}
+    real_add = {"id": "ra", "name": "Real Add", "position": "RB", "team": "FA",
+                "value": 420, "pos_rank_label": "RB30", "injury": "", "age": 24}
+    drop = {"id": "dw", "name": "Darren Waller", "position": "TE", "value": 6.7}
+    moves = _build(_scenario(), trade_targets=[], drop_add_pairs=[],
+                   waiver_targets=[stash, real_add], cut_candidates=[drop],
+                   injury_rows=[], roster={}, roster_rows=[])
+    waiver = [m for m in moves if m["kind"] == "waiver"]
+    assert len(waiver) == 1
+    assert waiver[0]["line"] == "Add Real Add"
+
+
+def test_pair_selection_skips_a_stash_add_for_the_next_pair():
+    stash_pair = {"drop": {"name": "Worst RB", "position": "RB", "value": 200},
+                  "add": {"name": "Alec Pierce", "position": "WR", "value": 199.6}}
+    real_pair = {"drop": {"name": "Worst RB", "position": "RB", "value": 200},
+                 "add": {"name": "Add RB", "position": "RB", "value": 640}}
+    targets = [
+        {"id": "ap", "name": "Alec Pierce", "position": "WR", "team": "IND",
+         "value": 199.6, "pos_rank_label": "WR38", "injury": "IR",
+         "stash_only": True},
+        {"id": "a1", "name": "Add RB", "position": "RB", "team": "FA",
+         "value": 640, "pos_rank_label": "RB24", "injury": ""},
+    ]
+    moves = _build(_scenario(), trade_targets=[],
+                   drop_add_pairs=[stash_pair, real_pair], waiver_targets=targets)
+    waiver = [m for m in moves if m["kind"] == "waiver"]
+    assert len(waiver) == 1
+    assert waiver[0]["line"] == "Add Add RB"
+
+
+def test_rebuilding_never_gets_a_30_plus_acquisition():
+    sc = _scenario()
+    sc["trade_targets"][0]["gets"][0].update(
+        {"name": "Old TE", "position": "TE", "age": 33})
+    sc["trade_targets"][1]["gets"][0]["age"] = 26
+    moves = _build(sc, direction="rebuild")
+    trade = [m for m in moves if m["kind"] == "trade"][0]
+    assert trade["target_index"] == 1
+    assert trade["plan_b_index"] is None
+    assert "Plan B RB" in trade["line"]
+    assert "Old TE" not in trade["line"]
+
+    top = fmod._build_top_moves(
+        trade_targets=sc["trade_targets"], drop_add_pairs=[], qb={},
+        injury_rows=[], roster={}, ctx={}, grades=sc["grades"], holes=[],
+        qb_needy_count=0, direction="rebuild",
+    )
+    assert all("Old TE" not in m["line"] for m in top)
+
+    pairs = [
+        {"drop": {"name": "Worst RB", "position": "RB", "value": 200},
+         "add": {"name": "Old TE", "position": "TE", "value": 640, "age": 33}},
+        {"drop": {"name": "Worst RB", "position": "RB", "value": 200},
+         "add": {"name": "Young RB", "position": "RB", "value": 620, "age": 24}},
+    ]
+    top = fmod._build_top_moves(
+        trade_targets=[], drop_add_pairs=pairs, qb={},
+        injury_rows=[], roster={}, ctx={}, grades=sc["grades"], holes=[],
+        qb_needy_count=0, direction="rebuild",
+    )
+    assert [m["line"] for m in top] == ["Drop Worst RB, add Young RB"]
+
+
+def test_rebuilding_skips_30_plus_waiver_and_potential_adds():
+    old_pair = {"drop": {"name": "Worst RB", "position": "RB", "value": 200},
+                "add": {"name": "Old TE", "position": "TE", "value": 640}}
+    young_pair = {"drop": {"name": "Worst RB", "position": "RB", "value": 200},
+                  "add": {"name": "Young RB", "position": "RB", "value": 620}}
+    targets = [
+        {"id": "ot", "name": "Old TE", "position": "TE", "team": "FA",
+         "value": 640, "pos_rank_label": "TE8", "injury": "", "age": 33},
+        {"id": "yr", "name": "Young RB", "position": "RB", "team": "FA",
+         "value": 620, "pos_rank_label": "RB26", "injury": "", "age": 24},
+    ]
+    moves = _build(_scenario(), trade_targets=[], direction="rebuild",
+                   drop_add_pairs=[old_pair, young_pair], waiver_targets=targets)
+    waiver = [m for m in moves if m["kind"] == "waiver"][0]
+    assert waiver["line"] == "Add Young RB"
+
+    pot = [
+        {"id": "p0", "name": "Old TE", "position": "TE", "value": 900,
+         "partner": "Partner A", "gap_pct": 88, "age": 33},
+        {"id": "p1", "name": "Young RB", "position": "RB", "value": 860,
+         "partner": "Partner A", "gap_pct": 85, "age": 24},
+    ]
+    moves = _build(_scenario(), trade_targets=[], potential_targets=pot,
+                   drop_add_pairs=[], waiver_targets=[], direction="retool")
+    potential = [m for m in moves if m["kind"] == "potential"][0]
+    assert potential["potential_indices"] == [1]
+    assert potential["line"] == "Target Young RB (RB)"
+
+
+def test_contender_can_still_acquire_a_30_plus_player():
+    sc = _scenario()
+    sc["trade_targets"][0]["gets"][0].update(
+        {"name": "Old TE", "position": "TE", "age": 33})
+    moves = _build(sc, direction="contender")
+    trade = [m for m in moves if m["kind"] == "trade"][0]
+    assert trade["target_index"] == 0
+    assert "Old TE" in trade["line"]
+
+
 def test_potential_targets_become_the_trade_move_when_nothing_priced():
     sc = _scenario()
     pot = [{"id": "p1", "name": "Gettable RB", "position": "RB", "value": 860,
@@ -283,6 +404,26 @@ def test_board_layout_folds_sections_and_orders_decisions_first():
     assert "Nothing to decide" in out
     # Opponent line lives in the lineup evidence, inside the board.
     assert out.index("Opponent missing") < out.index("for-jumpbar")
+
+
+def test_waiver_evidence_labels_a_stash_add_if_one_is_ever_rendered():
+    move = {"kind": "waiver",
+            "add": {"id": "ap", "name": "Alec Pierce", "position": "WR",
+                    "team": "IND", "value": 199.6, "pos_rank_label": "WR38",
+                    "injury": "IR", "stash_only": True},
+            "drop": {"name": "Darren Waller", "position": "TE", "value": 6.7}}
+    out = fmod._move_evidence_html(move, {}, {"waiver_notes": {}})
+    assert "IR stash only" in out
+
+
+def test_jumpbar_is_not_sticky():
+    from pathlib import Path
+    css = Path("static/dashboard.css").read_text()
+    rule = next(
+        line for line in css.splitlines() if line.startswith(".for-jumpbar {")
+    )
+    assert "position: sticky" not in rule
+    assert "display: flex" in rule
 
 
 def test_legacy_layout_when_no_decision_moves():
