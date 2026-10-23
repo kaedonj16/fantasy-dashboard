@@ -53,7 +53,7 @@ from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-CACHE_VERSION = "v5"
+CACHE_VERSION = "v6"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
 
 
@@ -1044,6 +1044,251 @@ def _build_top_moves(*, trade_targets: list[dict], drop_add_pairs: list[dict],
     return out
 
 
+def _build_decision_moves(*, trade_targets: list[dict],
+                          potential_targets: list[dict],
+                          drop_add_pairs: list[dict],
+                          waiver_targets: list[dict],
+                          cut_candidates: list[dict],
+                          injury_rows: list[dict], roster: dict,
+                          roster_rows: list[dict], ctx: dict,
+                          grades: list[dict], holes: list[str]) -> list[dict]:
+    """The modal's decision board (v3, approved 2026-10-23): moves in
+    deadline sequence, not score order, because some moves unlock the
+    next one. IR first (frees the spot), then the waiver add that uses
+    it, then the trade, then the lineup fix for Sunday. Every move is
+    assembled from the same gated candidates as Top Moves; the model
+    never chooses these either. Each move carries the ids / indices its
+    in-place evidence renders from, plus a deterministic After line
+    describing the post-move state from data the report already has."""
+    moves: list[dict] = []
+    worst = max(grades, key=lambda g: g["rank"]) if grades else None
+
+    # 1. IR move: a seriously-hurt player not already on reserve, when
+    # the league has an IR slot. Same gate as Top Moves.
+    ir_move: dict | None = None
+    rp = [str(p or "").upper() for p in (ctx.get("roster_positions") or [])]
+    if "IR" in rp:
+        reserve_ids = {str(pid) for pid in (roster or {}).get("reserve") or []}
+        for r in injury_rows or []:
+            canon = _inj_canonical(str(r.get("injury") or ""))
+            if canon in ("IR", "PUP", "NFI", "OUT") and str(r.get("id")) not in reserve_ids:
+                if r.get("return_label") and r.get("body"):
+                    lead = f"{r.get('name')} is {r['return_label']} ({r['body']}). "
+                elif r.get("return_label"):
+                    lead = f"{r.get('name')} is {r['return_label']}. "
+                elif r.get("body"):
+                    lead = f"{r.get('name')} is out ({r['body']}). "
+                else:
+                    lead = ""
+                why = lead + "The IR slot holds him without costing you a bench spot."
+                ir_move = {
+                    "kind": "ir", "type": "Roster", "timing": "Do now",
+                    "line": f"Move {r.get('name')} to the IR slot",
+                    "why": why,
+                    "after": "One open bench spot, nobody dropped.",
+                    "dep": None, "injury_id": str(r.get("id") or ""),
+                }
+                break
+    if ir_move:
+        moves.append(ir_move)
+
+    # 2. Waiver move: the top drop/add pair. The pair's add snapshot is
+    # thin (name/position/value), so enrich it from the full waiver row.
+    if drop_add_pairs:
+        pair = drop_add_pairs[0]
+        p_add, p_drop = pair.get("add") or {}, pair.get("drop") or {}
+        full_add = next(
+            (w for w in waiver_targets or []
+             if str(w.get("name")) == str(p_add.get("name"))),
+            {},
+        )
+        full_drop = next(
+            (c for c in cut_candidates or []
+             if str(c.get("name")) == str(p_drop.get("name"))),
+            {},
+        )
+        add = {
+            "id": str(full_add.get("id") or ""), "name": p_add.get("name"),
+            "position": p_add.get("position"), "team": full_add.get("team") or "",
+            "value": p_add.get("value"),
+            "pos_rank_label": full_add.get("pos_rank_label") or "",
+            "injury": full_add.get("injury") or "",
+            "claim_guidance": p_add.get("claim_guidance") or full_add.get("claim_guidance") or "",
+        }
+        drop = {
+            "id": str(full_drop.get("id") or ""), "name": p_drop.get("name"),
+            "position": p_drop.get("position"), "value": p_drop.get("value"),
+        }
+        pos = str(add.get("position") or "").upper()
+        why_bits = [
+            f"{add.get('name')} beats {drop.get('name')} on value "
+            f"({safe_float(add.get('value')):g} vs {safe_float(drop.get('value')):g}) "
+            "and is startable this week."
+        ]
+        if worst and pos == worst.get("pos"):
+            why_bits.append(
+                f"Your {pos} room ranks {worst['rank']} of {worst['of']}, your worst room."
+            )
+        elif pos in (holes or []):
+            why_bits.append(f"Fills your {pos} hole.")
+        before = sum(
+            1 for r in roster_rows or []
+            if str(r.get("position") or "").upper() == pos and r.get("role") == "Starter"
+        )
+        clears = safe_float(add.get("value")) >= STARTER_THRESHOLD.get(pos, 350)
+        after_n = before + (1 if clears else 0)
+        if clears and before:
+            after = f"{after_n} startable {pos}s, up from {before}."
+        elif clears:
+            after = f"{add.get('name')} gives you a startable {pos}."
+        else:
+            after = f"{add.get('name')} joins your {pos} room as depth."
+        if ir_move:
+            after += (
+                f" No drop needed with Move {len(moves)} done. "
+                f"Without it, drop {drop.get('name')}."
+            )
+        else:
+            after += f" You drop {drop.get('name')}."
+        moves.append({
+            "kind": "waiver", "type": "Waiver", "timing": "Before waivers",
+            "line": f"Add {add.get('name')}",
+            "why": " ".join(why_bits), "after": after, "dep": None,
+            "add": add, "drop": drop,
+        })
+    elif waiver_targets:
+        w = waiver_targets[0]
+        drop = (cut_candidates or [{}])[0]
+        moves.append({
+            "kind": "waiver", "type": "Waiver", "timing": "Before waivers",
+            "line": f"Add {w.get('name')}",
+            "why": (
+                f"Top available {w.get('position')} on waivers"
+                + (f", {w.get('pos_rank_label')}" if w.get("pos_rank_label") else "")
+                + "."
+            ),
+            "after": (
+                f"You drop {drop.get('name')}." if drop.get("name") else ""
+            ),
+            "dep": None,
+            "add": {
+                "id": str(w.get("id") or ""), "name": w.get("name"),
+                "position": w.get("position"), "team": w.get("team") or "",
+                "value": w.get("value"),
+                "pos_rank_label": w.get("pos_rank_label") or "",
+                "injury": w.get("injury") or "",
+                "claim_guidance": w.get("claim_guidance") or "",
+            },
+            "drop": {
+                "id": str(drop.get("id") or ""), "name": drop.get("name"),
+                "position": drop.get("position"), "value": drop.get("value"),
+            } if drop.get("name") else None,
+        })
+
+    # 3. Trade move: the top priced deal, or the top potential target
+    # when the engine priced nothing.
+    if trade_targets:
+        t = trade_targets[0]
+        get = (t.get("gets") or [{}])[0]
+        give_names = " + ".join(
+            str(g.get("name") or "") for g in (t.get("gives") or [])
+        )
+        why_bits = []
+        if t.get("fairness_label") and t.get("acceptance_label"):
+            why_bits.append(f"{t['fairness_label']}. {t['acceptance_label']}.")
+        if worst and str(get.get("position") or "").upper() == worst.get("pos"):
+            why_bits.append(
+                f"Fixes your {worst['pos']} room, ranked {worst['rank']} of {worst['of']}."
+            )
+        if t.get("why_they_say_yes"):
+            why_bits.append(str(t["why_they_say_yes"]))
+        after = ""
+        if t.get("depth_warnings"):
+            after = str(t["depth_warnings"][0])
+        elif t.get("depth_checked"):
+            after = "No new hole created after the trade."
+        moves.append({
+            "kind": "trade", "type": "Trade", "timing": "This week",
+            "line": f"Offer {give_names} for {get.get('name')}" if give_names
+                    else f"Trade for {get.get('name')}",
+            "why": " ".join(why_bits), "after": after, "dep": None,
+            "target_index": 0,
+            "plan_b_index": 1 if len(trade_targets) > 1 else None,
+        })
+    elif potential_targets:
+        p = potential_targets[0]
+        gap = int(p.get("gap_pct") or 0)
+        why_bits = ["Top gettable target at a position you need."]
+        if gap:
+            why_bits.append(f"Your surplus package reaches about {gap}% of his value.")
+        moves.append({
+            "kind": "potential", "type": "Trade", "timing": "This week",
+            "line": f"Target {p.get('name')} ({p.get('position')})",
+            "why": " ".join(why_bits), "after": "", "dep": None,
+            "potential_indices": [0, 1] if len(potential_targets) > 1 else [0],
+        })
+
+    # 4. Lineup move: a lineup starter who cannot play (OUT or worse)
+    # with a healthy same-position bench player to step in. Questionable
+    # starters are game-time calls and live in Hold / Watch instead.
+    starter_ids = {str(pid) for pid in (roster or {}).get("starters") or []}
+    if starter_ids:
+        bench = [r for r in roster_rows or [] if str(r.get("id")) not in starter_ids]
+        for r in injury_rows or []:
+            if str(r.get("id")) not in starter_ids:
+                continue
+            canon = _inj_canonical(str(r.get("injury") or ""))
+            if canon not in ("OUT", "DOUBTFUL", "IR", "PUP", "NFI"):
+                continue
+            pos = str(r.get("position") or "").upper()
+            fills = [
+                b for b in bench
+                if str(b.get("position") or "").upper() == pos
+                and not _is_serious_designation(b.get("injury"))
+                and _inj_canonical(str(b.get("injury") or "")) != "QUESTIONABLE"
+            ]
+            if not fills:
+                continue
+            fill = max(fills, key=lambda b: safe_float(b.get("value")))
+            bits = [b for b in (r.get("body"), r.get("return_label")) if b]
+            why = (
+                f"{r.get('name')} is {canon}"
+                + (f" ({', '.join(bits)})" if bits else "")
+                + f". {fill.get('name')} is already on your bench and is the fill-in."
+            )
+            others = [
+                o for o in injury_rows or []
+                if str(o.get("id")) in starter_ids
+                and str(o.get("id")) != str(r.get("id"))
+                and _inj_canonical(str(o.get("injury") or "")) == "QUESTIONABLE"
+            ]
+            after = "No zero in the lineup."
+            if others:
+                names = " or ".join(str(o.get("name")) for o in others[:2])
+                verb = "is" if len(others) == 1 else "are"
+                after += f" Nothing else changes unless {names} {verb} ruled out."
+            moves.append({
+                "kind": "lineup", "type": "Lineup", "timing": "Before Sunday",
+                "line": f"Bench {r.get('name')}, start {fill.get('name')}",
+                "why": why, "after": after, "dep": None,
+                "injury_id": str(r.get("id") or ""),
+                "detail_injury_ids": [str(r.get("id") or "")]
+                + [str(o.get("id") or "") for o in others[:2]],
+            })
+            break
+
+    # Dependency tags name the actual board positions, so they are only
+    # assigned once the sequence is final.
+    for i, m in enumerate(moves, start=1):
+        m["rank"] = i
+    if ir_move is not None:
+        for m in moves:
+            if m["kind"] == "waiver":
+                ir_move["dep"] = f"Unlocks Move {m['rank']}"
+                m["dep"] = f"Needs Move {ir_move['rank']}"
+    return moves
+
+
 def _qb_note(qb: dict) -> dict | None:
     """The explicit QB line under Top Moves. When the room is covered it
     says so (and why no QB add appears); when there is a genuine hole it
@@ -1705,6 +1950,19 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         holes=hole_positions,
         qb_needy_count=_qb_needy_team_count(ctx, viewer_roster_id, model_value_lookup),
     )
+    decision_moves = _build_decision_moves(
+        trade_targets=trade_targets,
+        potential_targets=potential_targets,
+        drop_add_pairs=drop_add_pairs,
+        waiver_targets=waiver_targets,
+        cut_candidates=cut_candidates,
+        injury_rows=injury_rows,
+        roster=roster,
+        roster_rows=roster_rows,
+        ctx=ctx,
+        grades=grades,
+        holes=hole_positions,
+    )
     data = {
         "team_name": team_ctx.get("team_name"),
         "record": team_ctx.get("record"),
@@ -1731,6 +1989,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         "cut_candidates": cut_candidates,
         "drop_add_pairs": drop_add_pairs,
         "top_moves": top_moves,
+        "decision_moves": decision_moves,
         "qb_note": _qb_note(qb_ctx),
         "qb_context": qb_ctx,
         "urgent_needs": urgent_needs,
@@ -1886,40 +2145,47 @@ def _fmt_trend(trend) -> str:
     return ""
 
 
-def _injury_section_html(rows: list[dict]) -> str:
+def _injury_row_html(r: dict) -> str:
+    # The designation pill rides the meta line, not the name line: in
+    # the two-column grid the name line wraps badly when the pill,
+    # position, and team all compete for the same narrow row.
+    meta_bits = [p for p in (r.get("body"), r.get("return_label")) if p]
+    pill = (
+        f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
+        if r.get("injury") else ""
+    )
+    meta_inner = " ".join(x for x in (pill, html.escape(" · ".join(meta_bits))) if x)
+    meta = f"<div class='for-inj-meta'>{meta_inner}</div>" if meta_inner else ""
+    action = (
+        f"<div class='for-inj-action'>{html.escape(r['action'])}</div>"
+        if r.get("action") else ""
+    )
+    return (
+        "<li class='for-inj-row'>"
+        f"<div><span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span> "
+        f"<span class='for-muted'>{html.escape(str(r.get('position') or ''))}"
+        f" · {html.escape(str(r.get('team') or ''))}</span>{meta}</div>"
+        f"{action}</li>"
+    )
+
+
+def _injury_section_html(rows: list[dict], *, title: bool = True) -> str:
     """Full injury report section for the modal. Deterministic: renders from
     computed data with no AI dependency."""
     if not rows:
+        if not title:
+            return "<div class='for-muted'>No rostered players carry an injury designation.</div>"
         return (
             "<div class='for-sec'><div class='for-sec-title'>Injury report</div>"
             "<div class='for-muted'>No rostered players carry an injury designation.</div></div>"
         )
-    items = []
-    for r in rows:
-        # The designation pill rides the meta line, not the name line: in
-        # the two-column grid the name line wraps badly when the pill,
-        # position, and team all compete for the same narrow row.
-        meta_bits = [p for p in (r.get("body"), r.get("return_label")) if p]
-        pill = (
-            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
-            if r.get("injury") else ""
-        )
-        meta_inner = " ".join(x for x in (pill, html.escape(" · ".join(meta_bits))) if x)
-        meta = f"<div class='for-inj-meta'>{meta_inner}</div>" if meta_inner else ""
-        action = (
-            f"<div class='for-inj-action'>{html.escape(r['action'])}</div>"
-            if r.get("action") else ""
-        )
-        items.append(
-            "<li class='for-inj-row'>"
-            f"<div><span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span> "
-            f"<span class='for-muted'>{html.escape(str(r.get('position') or ''))}"
-            f" · {html.escape(str(r.get('team') or ''))}</span>{meta}</div>"
-            f"{action}</li>"
-        )
+    items = [_injury_row_html(r) for r in rows]
+    grid = f"<ul class='for-inj-list for-inj-grid'>{''.join(items)}</ul>"
+    if not title:
+        return grid
     return (
         "<div class='for-sec'><div class='for-sec-title'>Injury report</div>"
-        f"<ul class='for-inj-list for-inj-grid'>{''.join(items)}</ul></div>"
+        f"{grid}</div>"
     )
 
 
@@ -2231,68 +2497,70 @@ def _swap_player_row(p: dict) -> str:
     )
 
 
+def _trade_card_html(t: dict, trade_notes: dict) -> str:
+    """One priced deal as a Swap card (the design Kaedon picked): the
+    trade itself is the visual, Get and Give boxes with a swap arrow
+    between them, then one footer line carrying fairness, the why, and
+    the post-trade depth result. No label-row walls."""
+    get = t["gets"][0]
+    note = str(trade_notes.get(get["id"]) or "")
+    why = note or str(t.get("why_they_say_yes") or "")
+    if t.get("urgent") and t.get("urgent_reason"):
+        why = f"Urgent: {t['urgent_reason']}. {why}".strip()
+    alt = t.get("waiver_alternative") or {}
+    if alt.get("name"):
+        why = (why + f" Free alternative: {alt['name']} is on waivers.").strip()
+    meta_bits = [
+        str(x) for x in (t.get("partner_record"), t.get("partner_direction")) if x
+    ]
+    meta_html = (
+        f" <span class='for-muted'>({html.escape(' · '.join(meta_bits))})</span>"
+        if meta_bits else ""
+    )
+    tier = str(get.get("tier") or "")
+    tier_html = ""
+    if tier == "buy_low":
+        tier_html = " <span class='for-tier-tag'>Buy-low</span>"
+    elif tier == "elite":
+        tier_html = " <span class='for-tier-tag'>Elite</span>"
+    depth_html = ""
+    if t.get("depth_warnings"):
+        depth_html = (
+            "<div class='for-swap-depth'>"
+            f"{html.escape(str(t['depth_warnings'][0]))}</div>"
+        )
+    elif t.get("depth_checked"):
+        depth_html = (
+            "<div class='for-swap-depth'>After the trade: no new hole created.</div>"
+        )
+    get_rows = "".join(_swap_player_row(g) for g in t["gets"])
+    give_rows = "".join(_swap_player_row(g) for g in t["gives"])
+    return (
+        "<div class='for-swap-card'>"
+        "<div class='for-swap-head'>"
+        f"<div class='for-swap-who'>With <strong>{html.escape(str(t.get('partner') or ''))}</strong>"
+        f"{meta_html}{tier_html}</div>"
+        f"{_dot_pill(str(t.get('acceptance_label') or ''), amber=(str(t.get('acceptance_label') or '') == 'Long shot'))}"
+        "</div>"
+        "<div class='for-swap-grid'>"
+        f"<div class='for-swap-side for-swap-get'><div class='for-swap-lbl'>You get</div>{get_rows}</div>"
+        "<div class='for-swap-arrow'><span>&#8596;</span></div>"
+        f"<div class='for-swap-side for-swap-give'><div class='for-swap-lbl'>You give</div>{give_rows}</div>"
+        "</div>"
+        "<div class='for-swap-foot'>"
+        f"{_dot_pill(str(t.get('fairness_label') or ''))}"
+        f"<span class='for-swap-why'>{html.escape(why)}</span>"
+        f"<a class='for-analyze-lite' href='{html.escape(str(t.get('analyzer_url') or ''), quote=True)}'>Analyze &rarr;</a>"
+        "</div>"
+        f"{depth_html}"
+        "</div>"
+    )
+
+
 def _trade_targets_html(targets: list[dict], trade_notes: dict) -> str:
-    """Priced deals as Swap cards (the design Kaedon picked): the trade
-    itself is the visual, Get and Give boxes with a swap arrow between
-    them, then one footer line carrying fairness, the why, and the
-    post-trade depth result. No label-row walls."""
     if not targets:
         return ""
-    cards = []
-    for t in targets:
-        get = t["gets"][0]
-        note = str(trade_notes.get(get["id"]) or "")
-        why = note or str(t.get("why_they_say_yes") or "")
-        if t.get("urgent") and t.get("urgent_reason"):
-            why = f"Urgent: {t['urgent_reason']}. {why}".strip()
-        alt = t.get("waiver_alternative") or {}
-        if alt.get("name"):
-            why = (why + f" Free alternative: {alt['name']} is on waivers.").strip()
-        meta_bits = [
-            str(x) for x in (t.get("partner_record"), t.get("partner_direction")) if x
-        ]
-        meta_html = (
-            f" <span class='for-muted'>({html.escape(' · '.join(meta_bits))})</span>"
-            if meta_bits else ""
-        )
-        tier = str(get.get("tier") or "")
-        tier_html = ""
-        if tier == "buy_low":
-            tier_html = " <span class='for-tier-tag'>Buy-low</span>"
-        elif tier == "elite":
-            tier_html = " <span class='for-tier-tag'>Elite</span>"
-        depth_html = ""
-        if t.get("depth_warnings"):
-            depth_html = (
-                "<div class='for-swap-depth'>"
-                f"{html.escape(str(t['depth_warnings'][0]))}</div>"
-            )
-        elif t.get("depth_checked"):
-            depth_html = (
-                "<div class='for-swap-depth'>After the trade: no new hole created.</div>"
-            )
-        get_rows = "".join(_swap_player_row(g) for g in t["gets"])
-        give_rows = "".join(_swap_player_row(g) for g in t["gives"])
-        cards.append(
-            "<div class='for-swap-card'>"
-            "<div class='for-swap-head'>"
-            f"<div class='for-swap-who'>With <strong>{html.escape(str(t.get('partner') or ''))}</strong>"
-            f"{meta_html}{tier_html}</div>"
-            f"{_dot_pill(str(t.get('acceptance_label') or ''), amber=(str(t.get('acceptance_label') or '') == 'Long shot'))}"
-            "</div>"
-            "<div class='for-swap-grid'>"
-            f"<div class='for-swap-side for-swap-get'><div class='for-swap-lbl'>You get</div>{get_rows}</div>"
-            "<div class='for-swap-arrow'><span>&#8596;</span></div>"
-            f"<div class='for-swap-side for-swap-give'><div class='for-swap-lbl'>You give</div>{give_rows}</div>"
-            "</div>"
-            "<div class='for-swap-foot'>"
-            f"{_dot_pill(str(t.get('fairness_label') or ''))}"
-            f"<span class='for-swap-why'>{html.escape(why)}</span>"
-            f"<a class='for-analyze-lite' href='{html.escape(str(t.get('analyzer_url') or ''), quote=True)}'>Analyze &rarr;</a>"
-            "</div>"
-            f"{depth_html}"
-            "</div>"
-        )
+    cards = [_trade_card_html(t, trade_notes) for t in targets]
     return (
         "<div class='for-sec'><div class='for-sec-title'>Trade targets</div>"
         "<div class='for-sec-sub'>Ranked by fairness and how likely they are to say yes, "
@@ -2313,83 +2581,85 @@ def _potential_trade_targets_html(potential: list[dict]) -> str:
             "<div class='for-muted'>No clear trade targets right now. "
             "No leaguemate surplus matches your needs at a fair price.</div></div>"
         )
-    cards = []
-    for p in potential:
-        inj = (
-            f" <span class='for-inj'>{html.escape(str(p['injury']))}</span>"
-            if p.get("injury") else ""
-        )
-        pos = str(p.get("position") or "")
-        rank = int(p.get("depth_rank") or 0)
-        flex_n = int(p.get("flex_slots") or 0)
-        flex_txt = f"{flex_n} flex spot{'s' if flex_n != 1 else ''}"
-        if p.get("sole_starter"):
-            why = (
-                f"He is their only startable {pos}, so he does not move "
-                f"without a {pos} going back."
-            )
-        elif p.get("is_surplus"):
-            if flex_n:
-                why = (
-                    f"{pos}{rank} on their team, outside their starting group "
-                    f"even with {flex_txt} filled. Startable depth at a position you need."
-                )
-            else:
-                why = (
-                    f"{pos}{rank} on their team, behind their starters. "
-                    "Startable depth at a position you need."
-                )
-        elif rank:
-            if flex_n and pos in ("RB", "WR", "TE"):
-                why = (
-                    f"{pos}{rank} on their team. With {flex_txt}, he is in their "
-                    "starting group, so this takes a real package."
-                )
-            else:
-                why = f"{pos}{rank} on their team. He starts for them, so this takes a real package."
-        else:
-            why = "Startable depth at a position you need."
-        gap = int(p.get("gap_pct") or 0)
-        gap_txt = ""
-        if gap > 0:
-            gap_txt = f" Your surplus package reaches about {gap}% of his value."
-            if gap >= 75:
-                gap_txt += " Close."
-            elif gap < 65:
-                gap_txt += " Not close enough to lead with."
-        start = p.get("starting_point") or {}
-        start_txt = ""
-        if start.get("name") and gap > 0:
-            start_txt = f" Start with {start['name']}"
-            holes = p.get("partner_holes") or []
-            if start.get("position") in holes:
-                start_txt += f", where they are thin at {start['position']}"
-            start_txt += "."
-        attn = str(p.get("attainability") or "")
-        build_btn = ""
-        if p.get("build_url"):
-            build_btn = (
-                f"<a class='for-analyze for-prow-btn' "
-                f"href='{html.escape(str(p['build_url']), quote=True)}'>Build around</a>"
-            )
-        cards.append(
-            "<div class='for-prow'>"
-            f"{_pos_avatar(pos)}"
-            "<div class='for-prow-main'>"
-            f"<div class='for-prow-top'><span class='for-prow-name'>{html.escape(str(p.get('name') or ''))}</span>{inj} "
-            f"{_pos_chip(pos)}"
-            f"<span class='for-muted'>{safe_float(p.get('value')):g} · {html.escape(str(p.get('partner') or ''))}</span></div>"
-            f"<div class='for-prow-sub'>{html.escape(why)}"
-            f"<span class='for-muted'>{html.escape(gap_txt + start_txt)}</span></div>"
-            "</div>"
-            f"<div class='for-prow-side'>{_dot_pill(attn, amber=(attn == 'Reach'))}{build_btn}</div>"
-            "</div>"
-        )
+    cards = [_potential_row_html(p) for p in potential]
     return (
         "<div class='for-sec'><div class='for-sec-title'>Potential trade targets</div>"
         "<div class='for-sec-sub'>No fair priced deal yet. Ranked by how gettable they are, "
         "with the honest gap to fair.</div>"
         f"<div class='for-targets'>{''.join(cards)}</div></div>"
+    )
+
+
+def _potential_row_html(p: dict) -> str:
+    inj = (
+        f" <span class='for-inj'>{html.escape(str(p['injury']))}</span>"
+        if p.get("injury") else ""
+    )
+    pos = str(p.get("position") or "")
+    rank = int(p.get("depth_rank") or 0)
+    flex_n = int(p.get("flex_slots") or 0)
+    flex_txt = f"{flex_n} flex spot{'s' if flex_n != 1 else ''}"
+    if p.get("sole_starter"):
+        why = (
+            f"He is their only startable {pos}, so he does not move "
+            f"without a {pos} going back."
+        )
+    elif p.get("is_surplus"):
+        if flex_n:
+            why = (
+                f"{pos}{rank} on their team, outside their starting group "
+                f"even with {flex_txt} filled. Startable depth at a position you need."
+            )
+        else:
+            why = (
+                f"{pos}{rank} on their team, behind their starters. "
+                "Startable depth at a position you need."
+            )
+    elif rank:
+        if flex_n and pos in ("RB", "WR", "TE"):
+            why = (
+                f"{pos}{rank} on their team. With {flex_txt}, he is in their "
+                "starting group, so this takes a real package."
+            )
+        else:
+            why = f"{pos}{rank} on their team. He starts for them, so this takes a real package."
+    else:
+        why = "Startable depth at a position you need."
+    gap = int(p.get("gap_pct") or 0)
+    gap_txt = ""
+    if gap > 0:
+        gap_txt = f" Your surplus package reaches about {gap}% of his value."
+        if gap >= 75:
+            gap_txt += " Close."
+        elif gap < 65:
+            gap_txt += " Not close enough to lead with."
+    start = p.get("starting_point") or {}
+    start_txt = ""
+    if start.get("name") and gap > 0:
+        start_txt = f" Start with {start['name']}"
+        holes = p.get("partner_holes") or []
+        if start.get("position") in holes:
+            start_txt += f", where they are thin at {start['position']}"
+        start_txt += "."
+    attn = str(p.get("attainability") or "")
+    build_btn = ""
+    if p.get("build_url"):
+        build_btn = (
+            f"<a class='for-analyze for-prow-btn' "
+            f"href='{html.escape(str(p['build_url']), quote=True)}'>Build around</a>"
+        )
+    return (
+        "<div class='for-prow'>"
+        f"{_pos_avatar(pos)}"
+        "<div class='for-prow-main'>"
+        f"<div class='for-prow-top'><span class='for-prow-name'>{html.escape(str(p.get('name') or ''))}</span>{inj} "
+        f"{_pos_chip(pos)}"
+        f"<span class='for-muted'>{safe_float(p.get('value')):g} · {html.escape(str(p.get('partner') or ''))}</span></div>"
+        f"<div class='for-prow-sub'>{html.escape(why)}"
+        f"<span class='for-muted'>{html.escape(gap_txt + start_txt)}</span></div>"
+        "</div>"
+        f"<div class='for-prow-side'>{_dot_pill(attn, amber=(attn == 'Reach'))}{build_btn}</div>"
+        "</div>"
     )
 
 
@@ -2460,6 +2730,262 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
     return out + "</div>"
 
 
+def _watch_text(data: dict) -> str:
+    """The Watch line for the board's hold box: a questionable starter
+    (value-based Starter role) at a non-QB position. QB questionables are
+    already covered by the QB note; a questionable starter needs no move
+    unless he is ruled out, and the fill-in is the best healthy bench
+    player at the position."""
+    roster_rows = data.get("roster_rows") or []
+    for r in data.get("injury_rows") or []:
+        if _inj_canonical(str(r.get("injury") or "")) != "QUESTIONABLE":
+            continue
+        pos = str(r.get("position") or "").upper()
+        if not pos or pos == "QB" or r.get("role") != "Starter":
+            continue
+        fills = [
+            b for b in roster_rows
+            if str(b.get("position") or "").upper() == pos
+            and str(b.get("id")) != str(r.get("id"))
+            and not _is_serious_designation(b.get("injury"))
+            and _inj_canonical(str(b.get("injury") or "")) != "QUESTIONABLE"
+        ]
+        fill_txt = ""
+        if fills:
+            fill = max(fills, key=lambda b: safe_float(b.get("value")))
+            fill_txt = f" Your {fill.get('name')} is the fill-in if he sits."
+        return (
+            f"<strong>{html.escape(str(r.get('name') or ''))} ({pos}) questionable.</strong> "
+            f"No {pos} move unless he is ruled out.{fill_txt}"
+        )
+    return ""
+
+
+def _hold_watch_html(data: dict, ai: dict) -> str:
+    """Hold / Watch / Alert rows under the decision board. The QB note
+    renders as Hold when the room is covered and as an Alert when there
+    is a real hole; the model's GM alert only appears here when it has
+    something to say (it used to sit at the very bottom of the modal)."""
+    rows = []
+    note = data.get("qb_note") or {}
+    if note.get("lead"):
+        tag = "Hold" if note.get("covered") else "Alert"
+        rows.append(
+            "<div class='for-holdrow'>"
+            f"<span class='for-holdtag'>{tag}</span>"
+            f"<span><strong>{html.escape(str(note['lead']))}</strong> "
+            f"{html.escape(str(note.get('text') or ''))}</span></div>"
+        )
+    watch = _watch_text(data)
+    if watch:
+        rows.append(
+            "<div class='for-holdrow'>"
+            f"<span class='for-holdtag'>Watch</span><span>{watch}</span></div>"
+        )
+    gm_alert = str(ai.get("gm_alert") or "")
+    if gm_alert:
+        rows.append(
+            "<div class='for-holdrow'>"
+            "<span class='for-holdtag'>Alert</span>"
+            f"<span>{html.escape(gm_alert)}</span></div>"
+        )
+    if not rows:
+        return ""
+    return f"<div class='for-holdbox'>{''.join(rows)}</div>"
+
+
+def _move_evidence_html(move: dict, data: dict, ai: dict) -> str:
+    """The evidence that lives inside a board move (v3): each move
+    carries the rows or cards its call rests on, so nothing below the
+    board has to be re-read to act on it."""
+    kind = move.get("kind")
+    rows_by_id = {
+        str(r.get("id") or ""): r for r in data.get("injury_rows") or []
+    }
+    if kind == "ir":
+        r = rows_by_id.get(str(move.get("injury_id") or ""))
+        if not r:
+            return ""
+        return f"<ul class='for-inj-list'>{_injury_row_html(r)}</ul>"
+    if kind == "waiver":
+        add, drop = move.get("add") or {}, move.get("drop") or {}
+        notes = ai.get("waiver_notes") or {}
+        note = str(notes.get(str(add.get("id") or "")) or "") or str(add.get("claim_guidance") or "")
+        rank = f" · {html.escape(str(add['pos_rank_label']))}" if add.get("pos_rank_label") else ""
+        team = f", {html.escape(str(add['team']))}" if add.get("team") else ""
+        a_inj = (
+            f" <span class='for-inj'>{html.escape(str(add['injury']))}</span>"
+            if add.get("injury") else ""
+        )
+        note_html = f"<div class='for-pick-note'>{html.escape(note)}</div>" if note else ""
+        items = [
+            "<li class='for-pick'>"
+            "<span class='for-pick-badge for-add'>+</span>"
+            f"<div class='for-pick-body'><strong>{html.escape(str(add.get('name') or ''))}</strong>{a_inj} "
+            f"<span class='for-muted'>{html.escape(str(add.get('position') or ''))}{team} · value {safe_float(add.get('value')):g}{rank}</span>"
+            f"{note_html}</div></li>"
+        ]
+        if drop.get("name"):
+            label = "Fallback drop" if move.get("dep") else "Drop"
+            d_note = (
+                "<div class='for-pick-note'>Only if the IR move is skipped "
+                "and no bench spot is open.</div>" if move.get("dep") else ""
+            )
+            items.append(
+                "<li class='for-pick'>"
+                "<span class='for-pick-badge for-cut'>&minus;</span>"
+                f"<div class='for-pick-body'><strong>{label}: {html.escape(str(drop.get('name') or ''))}</strong> "
+                f"<span class='for-muted'>{html.escape(str(drop.get('position') or ''))} · value {safe_float(drop.get('value')):g}</span>"
+                f"{d_note}</div></li>"
+            )
+        return f"<ul class='for-picklist'>{''.join(items)}</ul>"
+    if kind == "trade":
+        targets = data.get("trade_targets") or []
+        idx = int(move.get("target_index") or 0)
+        if idx >= len(targets):
+            return ""
+        out = _trade_card_html(targets[idx], ai.get("trade_notes") or {})
+        pb = move.get("plan_b_index")
+        if pb is not None and int(pb) < len(targets):
+            t2 = targets[int(pb)]
+            get2 = (t2.get("gets") or [{}])[0]
+            pos2 = str(get2.get("position") or "")
+            out += (
+                "<div class='for-prow' style='margin-top:10px'>"
+                f"{_pos_avatar(pos2)}"
+                "<div class='for-prow-main'>"
+                f"<div class='for-prow-top'><span class='for-prow-name'>Plan B: {html.escape(str(get2.get('name') or ''))}</span> "
+                f"{_pos_chip(pos2)}"
+                f"<span class='for-muted'>{safe_float(get2.get('value')):g} · {html.escape(str(t2.get('partner') or ''))}</span></div>"
+                "<div class='for-prow-sub'>If the offer above is declined. "
+                f"<span class='for-muted'>{html.escape(str(t2.get('why_they_say_yes') or ''))}</span></div>"
+                "</div>"
+                f"<div class='for-prow-side'>{_dot_pill(str(t2.get('acceptance_label') or ''), amber=(str(t2.get('acceptance_label') or '') == 'Long shot'))}"
+                f"{_dot_pill(str(t2.get('fairness_label') or ''))}</div>"
+                "</div>"
+            )
+        return out
+    if kind == "potential":
+        potential = data.get("potential_trade_targets") or []
+        rows = [
+            _potential_row_html(potential[i])
+            for i in (move.get("potential_indices") or [0])
+            if int(i) < len(potential)
+        ]
+        return f"<div class='for-targets'>{''.join(rows)}</div>" if rows else ""
+    if kind == "lineup":
+        ids = move.get("detail_injury_ids") or [move.get("injury_id")]
+        items = [
+            _injury_row_html(rows_by_id[str(i)])
+            for i in ids if str(i) in rows_by_id
+        ]
+        if not items:
+            return ""
+        out = f"<ul class='for-inj-list for-inj-grid'>{''.join(items)}</ul>"
+        opp = data.get("opponent_injuries") or {}
+        if opp.get("entries"):
+            out += (
+                "<div class='for-opp-inj'><span class='for-lbl-inline'>Opponent missing</span> "
+                f"{html.escape(str(opp.get('line') or ''))}</div>"
+            )
+        return out
+    return ""
+
+
+def _decision_board_html(data: dict, ai: dict) -> str:
+    """The 'Do this first' board at the top of the modal (v3, approved
+    2026-10-23): sequenced decision moves with timing pills, dependency
+    tags, After lines, and their evidence in place. Returns '' when
+    there are no decision moves, and the caller falls back to the
+    legacy report layout."""
+    moves = data.get("decision_moves") or []
+    if not moves:
+        return ""
+    cards = []
+    for m in moves:
+        dep = (
+            f"<span class='for-dep'>{html.escape(str(m['dep']))}</span>"
+            if m.get("dep") else ""
+        )
+        why = (
+            f"<div class='for-decide-why'>{html.escape(str(m['why']))}</div>"
+            if m.get("why") else ""
+        )
+        after = (
+            f"<div class='for-after'><strong>After this:</strong> "
+            f"{html.escape(str(m['after']))}</div>"
+            if m.get("after") else ""
+        )
+        timing = str(m.get("timing") or "")
+        when_cls = "for-when" if timing in ("Before waivers", "Before Sunday") else "for-when soon"
+        evidence = _move_evidence_html(m, data, ai)
+        detail = ""
+        if evidence:
+            detail = (
+                "<details class='for-detail' open>"
+                "<summary><span>Evidence</span></summary>"
+                f"<div class='for-detail-body'>{evidence}</div></details>"
+            )
+        cards.append(
+            "<div class='for-decide-row'>"
+            f"<div class='for-decide-rank'>{int(m.get('rank') or 0)}</div>"
+            "<div class='for-decide-main'>"
+            f"<div class='for-decide-line'>{html.escape(str(m.get('line') or ''))}{dep}</div>"
+            f"{why}{after}</div>"
+            "<div class='for-decide-side'>"
+            f"<span class='{when_cls}'>{html.escape(timing)}</span>"
+            "</div>"
+            f"{detail}"
+            "</div>"
+        )
+    n = len(cards)
+    return (
+        "<div class='for-decide' id='forBoard'>"
+        "<div class='for-decide-head'><div class='for-decide-title'>Do this first</div>"
+        f"<span class='for-pill'><span class='for-dot'></span>{n} move{'s' if n != 1 else ''}, in order</span></div>"
+        "<div class='for-decide-sub'>In deadline order. The evidence for each move is inside it. "
+        "Nothing below this board asks you to decide anything.</div>"
+        f"<div class='for-decide-list'>{''.join(cards)}</div>"
+        f"{_hold_watch_html(data, ai)}"
+        "</div>"
+    )
+
+
+def _reference_html(data: dict, grades_html: str, roster_html: str,
+                    injury_grid_html: str, opp_html: str) -> str:
+    """The Reference section under the board (v3): grades in the open,
+    the full injury report and roster behind collapsed bars. Nothing
+    here asks for a decision."""
+    inj_rows = data.get("injury_rows") or []
+    roster_rows = data.get("roster_rows") or []
+    starters_flagged = sum(1 for r in inj_rows if r.get("role") == "Starter")
+    inj_summary = (
+        f"{len(inj_rows)} player{'s' if len(inj_rows) != 1 else ''}"
+        + (f", {starters_flagged} starter{'s' if starters_flagged != 1 else ''} flagged"
+           if inj_rows else "")
+        + ". The rows behind the board moves are inside those moves."
+    )
+    bars = (
+        "<details class='for-collapse-wrap'>"
+        "<summary class='for-collapse'><span><strong>Injury report</strong> "
+        f"<span class='for-muted'>· {html.escape(inj_summary)}</span></span>"
+        "<span class='for-act'>Show all</span></summary>"
+        f"<div class='for-collapse-body'>{opp_html}{injury_grid_html}</div></details>"
+        "<details class='for-collapse-wrap'>"
+        "<summary class='for-collapse'><span><strong>Roster</strong> "
+        f"<span class='for-muted'>· {len(roster_rows)} players</span></span>"
+        "<span class='for-act'>Show table</span></summary>"
+        f"<div class='for-collapse-body'>{roster_html}</div></details>"
+    )
+    return (
+        "<div class='for-sec' id='forReference'>"
+        "<div class='for-sec-head'><div class='for-sec-title'>Reference</div>"
+        "<span class='for-xref soft'>Nothing to decide</span></div>"
+        f"{grades_html}{bars}"
+        "</div>"
+    )
+
+
 def render_front_office_report_html(data: dict, ai: dict) -> str:
     """Full modal report."""
     verdict = ai.get("verdict")
@@ -2498,6 +3024,43 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     top_move_html = _top_moves_html(data, ai)
     stamp = _verdict_stamp(verdict)
     chips_html = _hero_chips_html(week, rec, pct, data.get("trade_deadline"))
+
+    # Decisions-first layout (v3, approved 2026-10-23): when the board
+    # has moves, it leads the modal and carries its own evidence; the
+    # standalone trade / waiver / injury sections and the bottom GM
+    # alert are folded into it, and grades + roster drop to Reference.
+    board_html = _decision_board_html(data, ai)
+    if board_html:
+        jump_html = (
+            "<div class='for-jumpbar'><a href='#forBoard'>Do this first</a>"
+            "<a href='#forLastWeek'>Since last week</a>"
+            "<a href='#forReference'>Reference</a></div>"
+        )
+        changes_wrapped = (
+            f"<div id='forLastWeek'>{changes_html}</div>" if changes_html else ""
+        )
+        reference_html = _reference_html(
+            data, grades_html, roster_html,
+            _injury_section_html(data.get("injury_rows") or [], title=False),
+            opp_html,
+        )
+        return f"""
+    <div class='for-report'>
+      <div class='for-hero'>
+        {stamp}
+        <div class='for-hero-main'>
+          <div class='for-hero-team'>{team}</div>
+          {chips_html}
+        </div>
+      </div>
+      <h3 class='for-headline'>{headline}</h3>
+      {posture_html}
+      {board_html}
+      {jump_html}
+      {changes_wrapped}
+      {reference_html}
+    </div>
+    """
 
     return f"""
     <div class='for-report'>
