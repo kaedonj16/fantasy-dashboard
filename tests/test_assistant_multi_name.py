@@ -24,11 +24,14 @@ INDEX = {
 }
 VALUES = [{"id": "w1", "value": 316.5}, {"id": "w2", "value": 305.0},
           {"id": "h1", "value": 298.0}, {"id": "h2", "value": 89.0}]
-# Raw division output and a 0-1 snap fraction, exactly what the
-# un-normalized _metrics_for hands back on main: the lite profile must
-# normalize both (1-decimal PPG, snap share as a percent).
+# Raw division output for PPG / target share (the lite profile rounds
+# those itself), and snap_share ALREADY on the percent scale: that is
+# the real _metrics_for output contract since the 2026-10-16 share fix.
+# The stub used to fake the pre-fix 0-1 fraction here, which kept a
+# stale second rescale alive in _lite_named that printed a genuine
+# 1.2% snap player as 120 (2026-10-22 audit).
 RAW_METRICS = {"ppg": 17.279999999999998, "target_share": 30.24,
-               "snap_share": 0.9, "games": 6}
+               "snap_share": 90, "games": 6}
 
 CTX = {
     "rosters": [
@@ -287,3 +290,16 @@ def test_compose_lines_unanswered_pointer():
     lines = compose_mod._multi_name_lines("handcuff", pack, "Spears", "Spears is next up.")
     assert lines == ["That covers Garrett Wilson; ask about Nico Collins "
                      "for the same check on him."]
+
+
+def test_lite_named_low_snap_share_is_not_rescaled(base, monkeypatch):
+    # A genuine 1.2% snap share (percent scale, as _metrics_for ships)
+    # must stay 1.2 in the lite row: the pre-fix _lite_named rescaled
+    # anything <= 1.5 as if it were a 0-1 fraction and printed 120.
+    monkeypatch.setattr(
+        evidence, "_metrics_for",
+        lambda pid, season=None: ({"ppg": 2.0, "target_share": 3.0,
+                                   "snap_share": 1.2, "games": 6}, ["stub"]))
+    rows = evidence._lite_named(["w1", "w2"], INDEX,
+                                evidence._value_rows(), 2026)
+    assert rows[0]["snap_share"] == 1.2

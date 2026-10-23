@@ -119,7 +119,8 @@ SYSTEM = (
     "top N, position when a position is stated). A top-N question about ONE "
     "named metric stays board_kind board. Detailed boards: players ranked by trade "
     "value (board_kind value); who has the most top-N weekly finishes at a position "
-    "(board_kind finishes, finish_n is the finish line, 12 when unstated); the "
+    "(board_kind finishes, finish_n is the finish line, 12 when unstated; season is "
+    "the 4-digit year when the question names one, for every detailed board); the "
     "highest floor or ceiling from weekly game logs (board_kind floor or ceiling); "
     "a metric's leaders re-ranked by the easiest upcoming schedule (board_kind "
     "slate); who beats his own team's number 2 option by the most in a metric "
@@ -260,6 +261,32 @@ def _season_in(m: str):
         if m[match.end():match.end() + 6].strip().startswith("class"):
             continue
         return int(match.group(1))
+    return None
+
+
+def _inventory_metric_hint(message: str):
+    """The catalog-metric phrase a metric-INVENTORY ask names, if any.
+
+    "What missed tackle metrics do I have?" asks what the site tracks,
+    not anything about a player. The shape is deterministic: an
+    inventory frame (what/which metrics ... do I have, metrics that are
+    tracked) plus a phrase the alias map resolves to a catalog metric.
+    The keyword fallback reads this shape in its metric branch; the
+    model path needs the same precedence, because the model has routed
+    the shape to the player builder, whose pack dead-ends at "no
+    resolved player" (live 2026-10-22, the mt1 regression)."""
+    m = (message or "").lower()
+    if not re.search(r"\bmetrics?\b", m):
+        return None
+    if not re.search(
+            r"\bdo i have\b|\bwhat\b[^?]{0,60}\bmetrics?\b"
+            r"|\bwhich\b[^?]{0,60}\bmetrics?\b"
+            r"|\bmetrics?\b[^?]{0,40}\b(?:tracked|available|exist)\b", m):
+        return None
+    from dashboard_services.assistant import aliases
+    resolved = aliases.resolve_phrase(m)
+    if resolved and resolved.get("kind") == "metric":
+        return resolved["phrase"]
     return None
 
 
@@ -1492,6 +1519,26 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             entities["player_names"] = list(shape["names"])
             entities["rank_key"] = shape["key"]
             entities["rank_key_unsupported"] = shape.get("unsupported_key")
+        # A named season is deterministic text, and the model has no
+        # encoding for the relative phrases: the schema's season is a
+        # plain year, so "last season" comes back null and the board
+        # silently serves the CURRENT season (live 2026-10-22: "most
+        # top-5 weeks last season" answered with the 2026 finishes
+        # board, the hs6 regression; the keyword fallback's -1 sentinel
+        # never runs because the model succeeded). When the message
+        # names a season deterministically, that reading wins over the
+        # model's entity, like the corrections above. Only the board
+        # and metric builders consume the season entity, so the
+        # override cannot move any other intent's pack.
+        season_named = _season_in((question or "").lower())
+        if season_named is not None:
+            entities["season"] = season_named
+        # Metric-inventory asks name a metric family, not a player:
+        # precedence to the metric path, per _inventory_metric_hint.
+        inv_hint = _inventory_metric_hint(question)
+        if inv_hint:
+            intent = "metric"
+            entities["metric_hint"] = inv_hint
         return {"intent": intent, "entities": entities, "preference_text": data.get("preference_text"), "router_model": "model", "prompt_version": ROUTER_PROMPT_VERSION}
     except Exception as exc:  # model down (rate limit / unavailable): keyword fallback
         logger.debug("[assistant] router model failed, keyword fallback: %s", exc)

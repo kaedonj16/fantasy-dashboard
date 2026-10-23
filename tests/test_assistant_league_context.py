@@ -149,6 +149,51 @@ def test_playoffs_no_odds_is_no_data(monkeypatch):
     assert pack["available"] is False
 
 
+def _sim_must_not_run(ctx, platform):
+    raise AssertionError("the current-season sim must not run for a declined season")
+
+
+def test_playoffs_last_season_declines_without_running_the_sim(monkeypatch):
+    # 2026-10-22 audit fold-in: the playoffs branch extracted the season
+    # but build_playoffs never resolved it, so "last season" silently
+    # served the CURRENT sim. The keyword router's -1 sentinel (and the
+    # model path's corrected year) must decline at the builder instead.
+    _stub_sim_modules(monkeypatch)
+    monkeypatch.setattr(evidence, "playoff_sim_cached", _sim_must_not_run)
+    pack, tools = evidence.build_playoffs(
+        _bundle(_playoff_ctx()), {"season": -1}, [])
+    assert pack["available"] is False
+    assert pack["missing"] == ("playoff odds are only tracked for the current season, "
+                               "so past-season odds are not available")
+    assert pack["requested_season"] == 2025
+    assert pack["historical"] is True
+    assert tools == []
+    ans = compose_mod.compose_answer(
+        "playoffs", "What were my playoff odds last season?", pack)
+    assert "Playoff odds are only tracked for the current season" in ans["text"]
+    assert "71.5" not in ans["text"]
+
+
+@pytest.mark.parametrize("season", [2024, 2027])
+def test_playoffs_non_current_explicit_season_declines(monkeypatch, season):
+    _stub_sim_modules(monkeypatch)
+    monkeypatch.setattr(evidence, "playoff_sim_cached", _sim_must_not_run)
+    pack, _tools = evidence.build_playoffs(
+        _bundle(_playoff_ctx()), {"season": season}, [])
+    assert pack["available"] is False
+    assert pack["requested_season"] == season
+    assert pack["historical"] is (season < 2026)
+
+
+def test_playoffs_current_season_entity_still_builds(monkeypatch):
+    _stub_sim_modules(monkeypatch, weeks=7)
+    monkeypatch.setattr(evidence, "playoff_sim_cached", lambda ctx, platform: list(_ODDS))
+    pack, _tools = evidence.build_playoffs(
+        _bundle(_playoff_ctx()), {"season": 2026}, [])
+    assert pack["available"] is True
+    assert pack["me"]["playoff_pct"] == 71.5
+
+
 # -- power rankings -----------------------------------------------------------------
 
 def _pr_teams(rank_shift=0):

@@ -586,6 +586,26 @@ def test_launcher_typing_state_follows_in_flight_ask():
     assert "launcherTyping.hidden = true;" in opened
 
 
+def test_chat_send_slow_note_and_hard_timeout():
+    # 2026-10-22 audit fold-in: a hung chat request used to strand the
+    # typing dots forever (bare fetch, no timeout, and Retry only exists
+    # after a failure resolves). The send path now mirrors the portfolio
+    # loading pattern: a slow note inside the typing bubble past ~12s,
+    # and a hard timeout on the chat call that lands in the existing
+    # appendSystem Retry path with a timeout-specific message.
+    busy = _slice("function setBusy(on)", "function appendUser")
+    assert "br-asst-typing-note" in busy
+    assert "Still working" in busy
+    assert "12000" in busy
+    assert "typingSlowTimer" in busy
+    assert ".br-asst-typing-note" in ASSISTANT_CSS
+    send = _slice("function sendMessage(", "function submitComposer")
+    assert "brFetchWithTimeout('/api/assistant/chat'" in send
+    assert "75000" in send
+    assert "TimeoutError" in send
+    assert "That is taking too long. Try again." in send
+
+
 def test_dot_on_completion_while_minimized_cleared_on_open():
     handler = _slice("if (res.status === 200 && data.answer) {", "showPlans();")
     assert "if (popup.hidden) { dot.hidden = false; } else { markSeen(data.log_id); }" in handler

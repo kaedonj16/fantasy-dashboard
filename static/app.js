@@ -5418,6 +5418,7 @@ function showLoginGate(target, opts) {
       // thread itself while an answer loads and is removed the moment
       // the answer (or an error) lands.
       var typingEl = null;
+      var typingSlowTimer = null;
 
       // Usage meter + plans panel. The caps payload (context + every chat
       // response) carries used/limit/tier/exempt plus the full tier ladder,
@@ -5500,6 +5501,7 @@ function showLoginGate(target, opts) {
         state.busy = on;
         sendBtn.disabled = on;
         inputEl.disabled = on;
+        if (typingSlowTimer) { clearTimeout(typingSlowTimer); typingSlowTimer = null; }
         if (on) {
           if (!typingEl) {
             typingEl = el('div', 'br-asst-typing');
@@ -5508,6 +5510,17 @@ function showLoginGate(target, opts) {
             for (var d = 0; d < 3; d++) typingEl.appendChild(el('span', 'br-asst-dot-anim'));
             threadEl.appendChild(typingEl);
           }
+          // Slow note, mirroring the portfolio loading pattern
+          // (window.brLoadingEscape): past ~12s the bubble says it is
+          // still working instead of leaving bare dots that read as a
+          // hang. The fetch itself is hard-timed-out in sendMessage and
+          // lands in the existing Retry path.
+          typingSlowTimer = setTimeout(function () {
+            typingSlowTimer = null;
+            if (!typingEl) return;
+            typingEl.appendChild(el('span', 'br-asst-typing-note', 'Still working…'));
+            scrollThread();
+          }, 12000);
           scrollThread();
         } else if (typingEl) {
           typingEl.remove();
@@ -5864,10 +5877,16 @@ function showLoginGate(target, opts) {
           payload.season = params.season;
         }
         if (playerId) payload.player_id = playerId;
-        apiJson('/api/assistant/chat', {
-          method: 'POST',
-          body: JSON.stringify(payload)
-        }).then(function (resp) {
+        // Hard timeout on the chat call only (75s): a hung request used
+        // to strand the typing bubble forever, because Retry only exists
+        // after a failure resolves. brFetchWithTimeout aborts with a
+        // TimeoutError, which lands in the catch below and its Retry.
+        var chatInit = { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', body: JSON.stringify(payload) };
+        var chatReq = (typeof window !== 'undefined' && window.brFetchWithTimeout)
+          ? window.brFetchWithTimeout('/api/assistant/chat', chatInit, 75000)
+          : apiJson('/api/assistant/chat', { method: 'POST', body: JSON.stringify(payload) });
+        chatReq.then(function (resp) {
           return resp.json().then(function (data) { return { status: resp.status, data: data }; })
             .catch(function () { return { status: resp.status, data: null }; });
         }).then(function (res) {
@@ -5897,10 +5916,13 @@ function showLoginGate(target, opts) {
               sendMessage(msg, playerId, true);
             });
           }
-        }).catch(function () {
+        }).catch(function (err) {
           if (gen !== state.gen) return; // conversation was closed mid-flight
           setBusy(false);
-          appendSystem('Could not reach the assistant. Check your connection and try again.', function () {
+          var timedOut = !!(err && (err.name === 'TimeoutError' || err.name === 'AbortError'));
+          appendSystem(timedOut
+            ? 'That is taking too long. Try again.'
+            : 'Could not reach the assistant. Check your connection and try again.', function () {
             sendMessage(msg, playerId, true);
           });
         });

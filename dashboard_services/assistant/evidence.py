@@ -183,6 +183,7 @@ Reality notes vs the workshop tool map (verified in this repo):
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 from dashboard_services.assistant import aliases
 
@@ -610,6 +611,19 @@ def _metrics_for(pid, season=None):
             # percent. Round every numeric to the house 1-decimal form
             # and put snap_share on the percent scale so the two shares
             # read alike everywhere a pack cites them.
+            #
+            # Type normalization runs FIRST: real rows come back from
+            # psycopg with NUMERIC columns as Decimal, and an
+            # isinstance(int/float) guard silently skips Decimals, so
+            # snap_share shipped as the raw 0.8 fraction and compare
+            # tables printed "0.8%" (live, 2026-10-22) while the unit
+            # fixtures, which fake float rows, all passed. Coerce every
+            # stored numeric through _fnum so the scaling and rounding
+            # below see the same types whatever the driver returned.
+            for key, val in list(keep.items()):
+                if isinstance(val, (int, float, Decimal)) \
+                        and not isinstance(val, bool):
+                    keep[key] = _fnum(val)
             snap = keep.get("snap_share")
             if isinstance(snap, (int, float)) and not isinstance(snap, bool) \
                     and 0 < snap <= 1:
@@ -2788,9 +2802,15 @@ def _lite_named(player_ids, index, values, season):
     family). The lite rows carry the subject's headline numbers (value,
     PPG, shares) so the composer can answer for every named player.
     Numbers are normalized here to the house one-decimal form, with
-    snap_share as a percent: _metrics_for reports it as a 0-1 fraction
-    beside target_share as a percent, and the verbatim-citation rule
-    would print the raw mix."""
+    snap_share as a percent: _metrics_for ships it on the percent
+    scale beside target_share, and the verbatim-citation rule would
+    print any raw mix that survived. There is deliberately NO rescale
+    here: an earlier version re-multiplied any snap_share <= 1.5 on
+    the stale assumption that _metrics_for still handed back the 0-1
+    fraction, which printed a genuine 1.2% snap player as 120 once
+    _metrics_for started shipping percent (2026-10-22 audit). The
+    percent contract lives in _metrics_for alone; this layer only
+    coerces (Decimal rows included) and rounds."""
     out = []
     for pid in (player_ids or [])[1:4]:
         pid = str(pid)
@@ -2804,13 +2824,11 @@ def _lite_named(player_ids, index, values, season):
             metrics = {}
         for key in ("ppg", "target_share"):
             v = (metrics or {}).get(key)
-            if isinstance(v, (int, float)):
+            if isinstance(v, (int, float, Decimal)):
                 row[key] = round(float(v), 1)
-        snap = (metrics or {}).get("snap_share")
-        if isinstance(snap, (int, float)):
-            snap = float(snap)
-            row["snap_share"] = (round(snap * 100.0, 1) if snap <= 1.5
-                                 else round(snap, 1))
+        snap = _fnum((metrics or {}).get("snap_share"))
+        if snap is not None:
+            row["snap_share"] = round(snap, 1)
         out.append(row)
     return out
 
@@ -6277,6 +6295,27 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
     """
     pack = _base_pack("playoffs", bundle)
     tools: list[str] = []
+    # Playoff odds are a current-season simulation only: the sim runs on
+    # this season's standings and remaining schedule, and no historical
+    # (or future) sim is recorded. A season named in the ask (the keyword
+    # router's -1 sentinel, or the model router's year as corrected in
+    # classify from the question text) must decline honestly instead of
+    # silently dressing the current sim up as that season's odds
+    # (2026-10-22 audit). The guard lives here, in the builder, so every
+    # routing path that can deliver a season entity is covered.
+    season, _historical = _target_season(bundle, entities)
+    try:
+        _current_season = int(bundle.get("season") or 0)
+    except (TypeError, ValueError):
+        _current_season = 0
+    if season and _current_season and int(season) != _current_season:
+        pack["available"] = False
+        pack["missing"] = ("playoff odds are only tracked for the current season, "
+                           "so past-season odds are not available")
+        pack["requested_season"] = int(season)
+        pack["target_season"] = int(season)
+        pack["historical"] = bool(int(season) < _current_season)
+        return pack, tools
     ctx = bundle.get("ctx") or {}
     if not ctx:
         pack["available"] = False
