@@ -26171,6 +26171,8 @@ a.pm-avail-row:hover { background: var(--row); }
 .tm3-fin-wk { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-top: 2px; }
 
 /* Trades */
+.tm3-season-head { font-size: 13px; font-weight: 800; color: var(--text); margin: 16px 0 9px; }
+.tm3-season-head:first-child { margin-top: 0; }
 .tm3-trade-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; margin-bottom: 12px; }
 .tm3-trade-head { display: flex; align-items: center; gap: 9px; }
 .tm3-trade-head .tm-sched-avatar { width: 24px; height: 24px; font-size: 11px; flex: none; }
