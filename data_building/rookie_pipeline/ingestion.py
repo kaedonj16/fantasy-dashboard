@@ -44,6 +44,7 @@ import csv
 import datetime
 import hashlib
 import io
+import json
 import os
 import re
 import time
@@ -465,27 +466,217 @@ def _is_cache_valid(timestamp: float) -> bool:
     """Check if cached data is still valid based on TTL."""
     return time.time() - timestamp < _CFBD_CACHE_TTL
 
+
+# ─────────────────────────────────────────────────────────────────────
+# Persistent CFBD response store (opt-in: CFBD_PERSIST_STORE=1)
+#
+# The in-memory cache above lives for one process and one hour, so
+# every retry of the derive / reference-population build / backtest
+# re-bought the same historical responses until the monthly CFBD
+# allowance was gone. Past-season CFBD data is immutable: with
+# CFBD_PERSIST_STORE=1, _cfbd_get consults a Postgres store
+# (cfbd_response_cache) before any network call and writes every
+# successful, NON-EMPTY response back to it, so a given endpoint +
+# params is fetched exactly once, ever, across all processes and runs.
+# Failures and empty responses are never stored (no poisoning), and
+# any store error degrades to a normal live fetch - a fetch must never
+# crash over the store. With the flag off, _cfbd_get behaves exactly
+# as it always has; the live pipeline is untouched.
+#
+# CFBD_CALL_BUDGET (integer, unset = unlimited) caps the actual
+# network calls this process may make while the flag is on; the call
+# that would exceed it raises CfbdBudgetExhausted BEFORE fetching, so
+# a budgeted run stops cleanly with all progress already durable. The
+# retry ladder also collapses under the flag (max 2 attempts, short
+# sleeps): a quota wall must stop a run fast, not burn minutes of
+# back-off per endpoint.
+# ─────────────────────────────────────────────────────────────────────
+
+class CfbdBudgetExhausted(Exception):
+    """The next CFBD network call would exceed CFBD_CALL_BUDGET."""
+
+
+CFBD_NETWORK_CALLS = 0  # actual HTTP calls made by this process
+CFBD_STORE_HITS = 0     # responses served from the persistent store
+
+_PERSIST_MAX_ATTEMPTS = 2     # retry cap while the store flag is on
+_PERSIST_MAX_SLEEP_S = 5      # back-off cap while the store flag is on
+_PERSIST_TABLE_READY = False  # cfbd_response_cache ensured in-process
+_PERSIST_NO_DB_WARNED = False
+
+
+def _persist_store_enabled() -> bool:
+    """True when CFBD_PERSIST_STORE=1 AND DATABASE_URL is set. Checked
+    at call time so the env can be toggled without a reimport. Flag on
+    but no DATABASE_URL: warn once, behave as flag-off."""
+    global _PERSIST_NO_DB_WARNED
+    if (os.environ.get("CFBD_PERSIST_STORE") or "").strip() != "1":
+        return False
+    if os.environ.get("DATABASE_URL"):
+        return True
+    if not _PERSIST_NO_DB_WARNED:
+        _PERSIST_NO_DB_WARNED = True
+        print("[cfbd] CFBD_PERSIST_STORE=1 but DATABASE_URL is unset - "
+              "persistent store disabled (fetching live)")
+    return False
+
+
+def _cfbd_store_key(path: str, params: Optional[Dict[str, Any]] = None) -> str:
+    """Store key: endpoint + canonical (sorted) params, so the same
+    request always maps to the same row regardless of dict order."""
+    canonical = json.dumps(params or {}, sort_keys=True, default=str,
+                           separators=(",", ":"))
+    return f"{path}|{canonical}"
+
+
+def _persist_connect():
+    import psycopg
+
+    return psycopg.connect(os.environ["DATABASE_URL"])
+
+
+def _persist_ensure_table(cur) -> None:
+    global _PERSIST_TABLE_READY
+    if _PERSIST_TABLE_READY:
+        return
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS cfbd_response_cache ("
+        "cache_key text PRIMARY KEY, "
+        "response jsonb, "
+        "fetched_at timestamptz DEFAULT now())"
+    )
+    _PERSIST_TABLE_READY = True
+
+
+_STORE_MISS = object()
+
+
+def _persist_lookup(store_key: str):
+    """The stored response for store_key, or _STORE_MISS. Any store
+    error degrades to a miss; the live fetch then proceeds as normal."""
+    try:
+        with _persist_connect() as conn:
+            with conn.cursor() as cur:
+                _persist_ensure_table(cur)
+                cur.execute(
+                    "SELECT response FROM cfbd_response_cache "
+                    "WHERE cache_key = %s",
+                    (store_key,),
+                )
+                row = cur.fetchone()
+        return _STORE_MISS if row is None else row[0]
+    except Exception as exc:
+        print(f"[cfbd] persistent store lookup failed "
+              f"({type(exc).__name__}: {exc}) - fetching live")
+        return _STORE_MISS
+
+
+def _persist_save(store_key: str, data: Any) -> None:
+    """Store a successful, non-empty response. A store failure is a
+    warning only; the fetched data still returns to the caller."""
+    try:
+        with _persist_connect() as conn:
+            with conn.cursor() as cur:
+                _persist_ensure_table(cur)
+                cur.execute(
+                    "INSERT INTO cfbd_response_cache (cache_key, response) "
+                    "VALUES (%s, %s) ON CONFLICT (cache_key) DO NOTHING",
+                    (store_key, json.dumps(data)),
+                )
+    except Exception as exc:
+        print(f"[cfbd] WARNING: persistent store save failed "
+              f"({type(exc).__name__}: {exc}) - response not stored")
+
+
+def _cfbd_call_budget() -> Optional[int]:
+    raw = (os.environ.get("CFBD_CALL_BUDGET") or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"[cfbd] CFBD_CALL_BUDGET={raw!r} is not an integer - ignoring")
+        return None
+
+
+def _note_store_hit() -> None:
+    global CFBD_STORE_HITS
+    CFBD_STORE_HITS += 1
+
+
+def _note_network_call(path: str) -> None:
+    """Count one actual network call. Under CFBD_CALL_BUDGET, the call
+    that would exceed the budget raises CfbdBudgetExhausted BEFORE
+    any request is made."""
+    global CFBD_NETWORK_CALLS
+    budget = _cfbd_call_budget()
+    if budget is not None and CFBD_NETWORK_CALLS >= budget:
+        raise CfbdBudgetExhausted(
+            f"CFBD call budget exhausted ({CFBD_NETWORK_CALLS}/{budget} "
+            f"network calls) before {path}"
+        )
+    CFBD_NETWORK_CALLS += 1
+
+
+def _response_storable(data: Any) -> bool:
+    """Only successful, NON-EMPTY responses are stored: an empty
+    payload from a starved or partial window must never poison the
+    store the way empty TTL-cache entries did."""
+    if data is None:
+        return False
+    if isinstance(data, (list, dict, str)) and len(data) == 0:
+        return False
+    return True
+
+
 def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Optional[Any]:
+    persist = _persist_store_enabled()
+    store_key = None
+    if persist:
+        store_key = _cfbd_store_key(path, params)
+        stored = _persist_lookup(store_key)
+        if stored is not _STORE_MISS:
+            _note_store_hit()
+            print(f"[cfbd] {path} STORE HIT")
+            return stored
+
     # Check cache first
     cache_key = _get_cache_key(path, params)
     cached_entry = _CFBD_CACHE.get(cache_key)
-    
+
     if cached_entry and _is_cache_valid(cached_entry["timestamp"]):
         print(f"[cfbd] {path} CACHE HIT")
         return cached_entry["data"]
-    
+
     url = f"{CFBD_BASE}{path}"
     headers = {"Accept": "application/json", "Authorization": f"Bearer {CFBD_KEY}"}
 
     time.sleep(_CFBD_THROTTLE_S)  # global throttle before every call
 
+    # Under the persistent-store flag the retry ladder collapses: a
+    # quota wall must stop the run fast, not burn minutes per endpoint.
+    max_attempts = min(retries, _PERSIST_MAX_ATTEMPTS) if persist else retries
+
+    def _sleep(wait):
+        if persist:
+            wait = min(wait, _PERSIST_MAX_SLEEP_S)
+        time.sleep(wait)
+
     last_error = None
-    for attempt in range(retries):
+    for attempt in range(max_attempts):
+        if persist:
+            _note_network_call(path)  # may raise CfbdBudgetExhausted
         try:
             resp = requests.get(url, headers=headers, params=params or {}, timeout=15)
             resp.raise_for_status()
             data = resp.json()
-            
+
+            # Persist successful, non-empty responses so this exact
+            # request is never bought again (flag-gated; failures and
+            # empties are never stored).
+            if persist and _response_storable(data):
+                _persist_save(store_key, data)
+
             # Cache the successful response
             _CFBD_CACHE[cache_key] = {
                 "data": data,
@@ -496,7 +687,7 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
         except requests.Timeout:
             last_error = "Timeout after 15s"
             wait = 2 ** attempt
-            time.sleep(wait)
+            _sleep(wait)
         except requests.HTTPError as exc:
             last_error = f"HTTP {exc.response.status_code}: {exc.response.reason}"
             if exc.response.status_code == 401:
@@ -521,23 +712,25 @@ def _cfbd_get(path: str, params: Dict[str, Any] = None, retries: int = 5) -> Opt
                         wait = 15 * (2 ** attempt)
                 else:
                     wait = 15 * (2 ** attempt)   # 15s, 30s, 60s, 120s, 240s
-                print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: RATE LIMITED (429) - backing off {wait}s")
-                time.sleep(wait)
+                if persist:
+                    wait = min(wait, _PERSIST_MAX_SLEEP_S)
+                print(f"[cfbd] {path} attempt {attempt + 1}/{max_attempts}: RATE LIMITED (429) - backing off {wait}s")
+                _sleep(wait)
             else:
                 wait = 2 ** attempt
-                print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: HTTP {exc.response.status_code} - retrying in {wait}s")
-                time.sleep(wait)
+                print(f"[cfbd] {path} attempt {attempt + 1}/{max_attempts}: HTTP {exc.response.status_code} - retrying in {wait}s")
+                _sleep(wait)
         except requests.RequestException as exc:
             last_error = f"Request failed: {type(exc).__name__}"
             wait = 2 ** attempt
-            print(f"[cfbd] {path} attempt {attempt + 1}/{retries}: {type(exc).__name__} - retrying in {wait}s")
-            time.sleep(wait)
+            print(f"[cfbd] {path} attempt {attempt + 1}/{max_attempts}: {type(exc).__name__} - retrying in {wait}s")
+            _sleep(wait)
         except Exception as exc:
             last_error = f"Unexpected error: {type(exc).__name__}: {exc}"
             print(f"[cfbd] {path} FAILED: UNEXPECTED ERROR - {last_error}")
             return None
-    
-    print(f"[cfbd] {path} FAILED after {retries} attempts - Last error: {last_error}")
+
+    print(f"[cfbd] {path} FAILED after {max_attempts} attempts - Last error: {last_error}")
     return None
 
 def _compute_depth_ranks(by_name: Dict[int, Dict[str, List]], years: List[int]) -> Dict:
