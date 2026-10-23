@@ -15207,15 +15207,18 @@ a.signed-home-league:hover {
 .home-publisher {
     position: relative;
     z-index: 1;
-    margin-top: 12px;
-    padding-top: 40px;
-    border-top: 1px solid var(--border);
+    margin-top: 28px;
 }
 
 .home-publisher-inner {
     display: flex;
     flex-direction: column;
     gap: 28px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 30px 32px;
+    box-shadow: 0 16px 40px rgba(2, 6, 23, .07);
 }
 
 .home-publisher-head {
@@ -19138,7 +19141,11 @@ img, svg, canvas {
     }
 
     .home-publisher {
-        padding-top: 28px;
+        margin-top: 20px;
+    }
+
+    .home-publisher-inner {
+        padding: 22px 20px;
     }
 
     .home-publisher-grid {
@@ -52336,10 +52343,11 @@ html:not([data-theme="dark"]) body:has(.home-page) {
     background-image: linear-gradient(#eef2f6 1px, transparent 1px), linear-gradient(90deg, #eef2f6 1px, transparent 1px);
     background-size: 56px 56px;
 }
-.home-page { display: block; max-width: 1180px; padding: 28px 20px 72px; position: relative; }
-.ld-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; z-index: -1; pointer-events: none; }
-.ld-line1 { stroke-dasharray: 100; stroke-dashoffset: 0; animation: ldDraw 2.1s ease-out .05s backwards; }
-.ld-line2 { stroke-dasharray: 100; stroke-dashoffset: 0; animation: ldDraw 2.4s ease-out .35s backwards; }
+.home-page { display: block; max-width: 1180px; padding: 28px 20px 72px; position: relative; z-index: 0; }
+.ld-bg { position: fixed; top: 84px; left: 0; width: 100%; height: calc(100vh - 84px); z-index: -1; pointer-events: none; }
+.ld-line1 { stroke-dasharray: 100; stroke-dashoffset: 0; stroke-width: 4.25; opacity: .55; animation: ldDraw 2.1s ease-out .05s backwards; }
+.ld-line2 { stroke-dasharray: 100; stroke-dashoffset: 0; stroke-width: 2.75; opacity: .30; animation: ldDraw 2.4s ease-out .35s backwards; }
+#ldAfill stop:first-child { stop-opacity: .17; }
 @keyframes ldDraw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
 .ld-bar { transform-box: fill-box; transform-origin: bottom; animation: ldBar .8s cubic-bezier(.2,.7,.3,1) backwards; }
 @keyframes ldBar { from { transform: scaleY(0); } to { transform: scaleY(1); } }
