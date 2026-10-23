@@ -53,7 +53,7 @@ from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-CACHE_VERSION = "v6"
+CACHE_VERSION = "v7"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
 
 
@@ -949,15 +949,24 @@ def _waiver_bar_filter(waiver_targets: list[dict], roster_rows: list[dict],
 def _build_top_moves(*, trade_targets: list[dict], drop_add_pairs: list[dict],
                      qb: dict, injury_rows: list[dict], roster: dict,
                      ctx: dict, grades: list[dict], holes: list[str],
-                     qb_needy_count: int) -> list[dict]:
+                     qb_needy_count: int,
+                     direction: str | None = None) -> list[dict]:
     """The report's Top Moves, computed and ranked in code. The model
     never chooses these; it only narrates around them. Every candidate
     has already passed the hard gates (QB coverage, injury, drop pairing)
     before it can be scored here."""
     moves: list[dict] = []
     worst = max(grades, key=lambda g: g["rank"]) if grades else None
-    if trade_targets:
-        t = trade_targets[0]
+    rebuilding = str(direction or "").strip().lower() in _REBUILD_DIRECTIONS
+    top_trade = None
+    for cand_t in trade_targets or []:
+        cand_get = (cand_t.get("gets") or [{}])[0]
+        if _rebuild_age_block(cand_get.get("age"), rebuilding):
+            continue
+        top_trade = cand_t
+        break
+    if top_trade:
+        t = top_trade
         get = (t.get("gets") or [{}])[0]
         give_names = ", ".join(
             str(g.get("name") or "") for g in (t.get("gives") or [])
@@ -982,8 +991,15 @@ def _build_top_moves(*, trade_targets: list[dict], drop_add_pairs: list[dict],
             "why": (f"You give {give_names}. " if give_names else "") + " ".join(why_bits),
             "_score": score,
         })
-    if drop_add_pairs:
-        p = drop_add_pairs[0]
+    top_pair = None
+    for cand_p in drop_add_pairs or []:
+        cand_add = cand_p.get("add") or {}
+        if _rebuild_age_block(cand_add.get("age"), rebuilding):
+            continue
+        top_pair = cand_p
+        break
+    if top_pair:
+        p = top_pair
         drop, add = p.get("drop") or {}, p.get("add") or {}
         delta = safe_float(add.get("value")) - safe_float(drop.get("value"))
         why_bits = [
@@ -1044,6 +1060,22 @@ def _build_top_moves(*, trade_targets: list[dict], drop_add_pairs: list[dict],
     return out
 
 
+_REBUILD_DIRECTIONS = ("rebuild", "retool")
+_REBUILD_AGE_CAP = 30.0
+
+
+def _rebuild_age_block(age, rebuilding: bool) -> bool:
+    """A rebuilding / retooling team is never told to acquire a 30+
+    veteran (Kaedon, 2026-10-23: "if I am rebuilding, I shouldnt be
+    told to go get a 30+ yr old TE"). Unknown age never blocks."""
+    if not rebuilding or age in (None, ""):
+        return False
+    try:
+        return float(age) >= _REBUILD_AGE_CAP
+    except (TypeError, ValueError):
+        return False
+
+
 def _build_decision_moves(*, trade_targets: list[dict],
                           potential_targets: list[dict],
                           drop_add_pairs: list[dict],
@@ -1051,7 +1083,8 @@ def _build_decision_moves(*, trade_targets: list[dict],
                           cut_candidates: list[dict],
                           injury_rows: list[dict], roster: dict,
                           roster_rows: list[dict], ctx: dict,
-                          grades: list[dict], holes: list[str]) -> list[dict]:
+                          grades: list[dict], holes: list[str],
+                          direction: str | None = None) -> list[dict]:
     """The modal's decision board (v3, approved 2026-10-23): moves in
     deadline sequence, not score order, because some moves unlock the
     next one. IR first (frees the spot), then the waiver add that uses
@@ -1062,6 +1095,7 @@ def _build_decision_moves(*, trade_targets: list[dict],
     describing the post-move state from data the report already has."""
     moves: list[dict] = []
     worst = max(grades, key=lambda g: g["rank"]) if grades else None
+    rebuilding = str(direction or "").strip().lower() in _REBUILD_DIRECTIONS
 
     # 1. IR move: a seriously-hurt player not already on reserve, when
     # the league has an IR slot. Same gate as Top Moves.
@@ -1094,8 +1128,31 @@ def _build_decision_moves(*, trade_targets: list[dict],
 
     # 2. Waiver move: the top drop/add pair. The pair's add snapshot is
     # thin (name/position/value), so enrich it from the full waiver row.
-    if drop_add_pairs:
-        pair = drop_add_pairs[0]
+    # Hard gate, held here as well as upstream: an IR stash is a hold,
+    # never an immediate add, so a stash-only target can never become a
+    # board move or be paired with a drop (the Pierce bug, 2026-10-23:
+    # pairs were empty precisely because the only target was a stash,
+    # and an unfiltered fallback resurrected him as Move 1).
+    stash_names = {
+        str(w.get("name")) for w in waiver_targets or [] if w.get("stash_only")
+    }
+    pair = None
+    for cand in drop_add_pairs or []:
+        cand_add = cand.get("add") or {}
+        if str(cand_add.get("name")) in stash_names:
+            continue
+        cand_full = next(
+            (w for w in waiver_targets or []
+             if str(w.get("name")) == str(cand_add.get("name"))),
+            {},
+        )
+        if _rebuild_age_block(
+            cand_full.get("age", cand_add.get("age")), rebuilding,
+        ):
+            continue
+        pair = cand
+        break
+    if pair:
         p_add, p_drop = pair.get("add") or {}, pair.get("drop") or {}
         full_add = next(
             (w for w in waiver_targets or []
@@ -1114,6 +1171,7 @@ def _build_decision_moves(*, trade_targets: list[dict],
             "pos_rank_label": full_add.get("pos_rank_label") or "",
             "injury": full_add.get("injury") or "",
             "claim_guidance": p_add.get("claim_guidance") or full_add.get("claim_guidance") or "",
+            "stash_only": bool(full_add.get("stash_only")),
         }
         drop = {
             "id": str(full_drop.get("id") or ""), "name": p_drop.get("name"),
@@ -1157,9 +1215,15 @@ def _build_decision_moves(*, trade_targets: list[dict],
             "add": add, "drop": drop,
         })
     elif waiver_targets:
-        w = waiver_targets[0]
+        w = next(
+            (cand_w for cand_w in waiver_targets
+             if not cand_w.get("stash_only")
+             and not _rebuild_age_block(cand_w.get("age"), rebuilding)),
+            None,
+        )
         drop = (cut_candidates or [{}])[0]
-        moves.append({
+        if w is not None:
+            moves.append({
             "kind": "waiver", "type": "Waiver", "timing": "Before waivers",
             "line": f"Add {w.get('name')}",
             "why": (
@@ -1178,6 +1242,7 @@ def _build_decision_moves(*, trade_targets: list[dict],
                 "pos_rank_label": w.get("pos_rank_label") or "",
                 "injury": w.get("injury") or "",
                 "claim_guidance": w.get("claim_guidance") or "",
+                "stash_only": bool(w.get("stash_only")),
             },
             "drop": {
                 "id": str(drop.get("id") or ""), "name": drop.get("name"),
@@ -1186,9 +1251,22 @@ def _build_decision_moves(*, trade_targets: list[dict],
         })
 
     # 3. Trade move: the top priced deal, or the top potential target
-    # when the engine priced nothing.
-    if trade_targets:
-        t = trade_targets[0]
+    # when the engine priced nothing. When rebuilding, deals whose
+    # headline get is a 30+ veteran are skipped for the next deal
+    # that fits the timeline.
+    trade_idx = None
+    plan_b_idx = None
+    for i, cand_t in enumerate(trade_targets or []):
+        cand_get = (cand_t.get("gets") or [{}])[0]
+        if _rebuild_age_block(cand_get.get("age"), rebuilding):
+            continue
+        if trade_idx is None:
+            trade_idx = i
+        else:
+            plan_b_idx = i
+            break
+    if trade_idx is not None:
+        t = trade_targets[trade_idx]
         get = (t.get("gets") or [{}])[0]
         give_names = " + ".join(
             str(g.get("name") or "") for g in (t.get("gives") or [])
@@ -1212,21 +1290,26 @@ def _build_decision_moves(*, trade_targets: list[dict],
             "line": f"Offer {give_names} for {get.get('name')}" if give_names
                     else f"Trade for {get.get('name')}",
             "why": " ".join(why_bits), "after": after, "dep": None,
-            "target_index": 0,
-            "plan_b_index": 1 if len(trade_targets) > 1 else None,
+            "target_index": trade_idx,
+            "plan_b_index": plan_b_idx,
         })
     elif potential_targets:
-        p = potential_targets[0]
-        gap = int(p.get("gap_pct") or 0)
-        why_bits = ["Top gettable target at a position you need."]
-        if gap:
-            why_bits.append(f"Your surplus package reaches about {gap}% of his value.")
-        moves.append({
-            "kind": "potential", "type": "Trade", "timing": "This week",
-            "line": f"Target {p.get('name')} ({p.get('position')})",
-            "why": " ".join(why_bits), "after": "", "dep": None,
-            "potential_indices": [0, 1] if len(potential_targets) > 1 else [0],
-        })
+        pot_idx = [
+            i for i, cand_p in enumerate(potential_targets)
+            if not _rebuild_age_block(cand_p.get("age"), rebuilding)
+        ][:2]
+        if pot_idx:
+            p = potential_targets[pot_idx[0]]
+            gap = int(p.get("gap_pct") or 0)
+            why_bits = ["Top gettable target at a position you need."]
+            if gap:
+                why_bits.append(f"Your surplus package reaches about {gap}% of his value.")
+            moves.append({
+                "kind": "potential", "type": "Trade", "timing": "This week",
+                "line": f"Target {p.get('name')} ({p.get('position')})",
+                "why": " ".join(why_bits), "after": "", "dep": None,
+                "potential_indices": pot_idx,
+            })
 
     # 4. Lineup move: a lineup starter who cannot play (OUT or worse)
     # with a healthy same-position bench player to step in. Questionable
@@ -1803,6 +1886,7 @@ def _drop_add_pairs(cut_candidates: list[dict],
                 "name": _safe_str(w.get("name")),
                 "position": _safe_str(w.get("position")),
                 "value": w.get("value"),
+                "age": w.get("age"),
                 "claim_guidance": w.get("claim_guidance"),
                 "faab": w.get("faab"),
                 "horizon": w.get("horizon"),
@@ -1949,6 +2033,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         grades=grades,
         holes=hole_positions,
         qb_needy_count=_qb_needy_team_count(ctx, viewer_roster_id, model_value_lookup),
+        direction=team_ctx.get("direction"),
     )
     decision_moves = _build_decision_moves(
         trade_targets=trade_targets,
@@ -1962,6 +2047,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         ctx=ctx,
         grades=grades,
         holes=hole_positions,
+        direction=team_ctx.get("direction"),
     )
     data = {
         "team_name": team_ctx.get("team_name"),
@@ -2817,11 +2903,15 @@ def _move_evidence_html(move: dict, data: dict, ai: dict) -> str:
             f" <span class='for-inj'>{html.escape(str(add['injury']))}</span>"
             if add.get("injury") else ""
         )
+        a_stash = (
+            " <span class='for-lbl-inline'>IR stash only</span>"
+            if add.get("stash_only") else ""
+        )
         note_html = f"<div class='for-pick-note'>{html.escape(note)}</div>" if note else ""
         items = [
             "<li class='for-pick'>"
             "<span class='for-pick-badge for-add'>+</span>"
-            f"<div class='for-pick-body'><strong>{html.escape(str(add.get('name') or ''))}</strong>{a_inj} "
+            f"<div class='for-pick-body'><strong>{html.escape(str(add.get('name') or ''))}</strong>{a_inj}{a_stash} "
             f"<span class='for-muted'>{html.escape(str(add.get('position') or ''))}{team} · value {safe_float(add.get('value')):g}{rank}</span>"
             f"{note_html}</div></li>"
         ]
