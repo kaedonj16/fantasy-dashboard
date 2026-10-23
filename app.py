@@ -3063,6 +3063,86 @@ def get_usage_table_global():
         return _USAGE_TABLE_GLOBAL or {}
 
 
+_USAGE_TABLE_SEASON_CACHE: dict = {}
+_USAGE_TABLE_SEASON_CACHE_TS: dict = {}
+_USAGE_TABLE_SEASON_TTL = 6 * 3600
+_usage_table_season_lock = threading.Lock()
+
+
+def _current_usage_season() -> int:
+    """The NFL season the live (daily-file / in-memory) usage table is for."""
+    try:
+        from dashboard_services.api import get_nfl_state
+
+        state = get_nfl_state() or {}
+        season = int(state.get("season") or 0)
+        if season:
+            return season
+    except Exception:
+        pass
+    return datetime.now().year
+
+
+def get_usage_table_for_season(season):
+    """Return (usage_table, actual_season) for a requested payload season.
+
+    Depth-chart shares, PPG and snap % must all describe the season being
+    viewed. The old Team-tab code always used the season-less global table
+    and then labeled it with the PFR snap season (which falls back to the
+    latest stats CSV on disk), so a room card could show one season's
+    shares under another season's label. The current season uses the
+    global table, whose actual season is the live NFL season. Other
+    seasons prefer the stored season snapshot, then a Sleeper build via
+    build_usage_map_for_season, cached per season. When neither is
+    available the global table is an honest fallback and actual_season
+    reports ITS season, so usage_timeframe always describes the data
+    actually shown.
+    """
+    try:
+        season = int(season)
+    except (TypeError, ValueError):
+        season = _current_usage_season()
+    current = _current_usage_season()
+    if season == current:
+        return get_usage_table_global(), current
+    now = time.time()
+    hit = _USAGE_TABLE_SEASON_CACHE.get(season)
+    if hit is not None and now - _USAGE_TABLE_SEASON_CACHE_TS.get(season, 0) < _USAGE_TABLE_SEASON_TTL:
+        return hit, season
+    with _usage_table_season_lock:
+        now = time.time()
+        hit = _USAGE_TABLE_SEASON_CACHE.get(season)
+        if hit is not None and now - _USAGE_TABLE_SEASON_CACHE_TS.get(season, 0) < _USAGE_TABLE_SEASON_TTL:
+            return hit, season
+        table = None
+        try:
+            from data_building.populate_roster_changes import (
+                load_usage_table_for_season,
+            )
+
+            table = load_usage_table_for_season(season) or None
+        except Exception:
+            table = None
+        if not table:
+            try:
+                from data_building.external_data.sleeper_usage import (
+                    build_usage_map_for_season,
+                )
+
+                built = build_usage_map_for_season(season, range(1, 19))
+                if built:
+                    table = built
+            except Exception:
+                logger.warning(
+                    "season usage table build failed for %s", season, exc_info=True
+                )
+        if table:
+            _USAGE_TABLE_SEASON_CACHE[season] = table
+            _USAGE_TABLE_SEASON_CACHE_TS[season] = time.time()
+            return table, season
+    return get_usage_table_global(), current
+
+
 # Per-position "elite starter" projection anchors, one set per (season, week,
 # scoring). The raw start/sit score is projected points scaled by capped
 # multipliers, so it is unbounded and position-relative -- a QB 20 and a WR 20
@@ -30670,6 +30750,7 @@ def _build_player_team_depth_chart(
         except (TypeError, ValueError):
             targets_val = None
         rec_val = rec_yd_val = rec_td_val = None
+        carries_val = touches_val = None
         try:
             _g = float(games) if games is not None else 0.0
         except (TypeError, ValueError):
@@ -30684,6 +30765,12 @@ def _build_player_team_depth_chart(
             rec_val = _season_total("avg_receptions")
             rec_yd_val = _season_total("avg_rec_yards")
             rec_td_val = _season_total("avg_rec_tds")
+            carries_val = _season_total("avg_carries")
+            # Touches are carries + receptions everywhere else on the tab
+            # (weekly series, situational bars); the room row uses the same
+            # definition, never the usage table's carries + targets share.
+            if carries_val is not None and rec_val is not None:
+                touches_val = carries_val + rec_val
         inj = str(p.get("injury_status") or "").strip()
         if inj.lower() in ("", "active", "act"):
             inj = ""
@@ -30703,6 +30790,9 @@ def _build_player_team_depth_chart(
             "avg_targets": round(float(avg_targets), 1) if avg_targets is not None else None,
             "ppg": ppg_val,
             "targets": targets_val,
+            "carries": carries_val,
+            "receptions": rec_val,
+            "touches": touches_val,
             "rec": rec_val,
             "rec_yd": rec_yd_val,
             "rec_td": rec_td_val,
@@ -30860,12 +30950,13 @@ def api_player_team(player_id: str):
         except Exception:
             logger.debug("get_players_global failed for team tab", exc_info=True)
 
-        usage_table = get_usage_table_global()
-        # Snap counts only exist for completed seasons; for in-progress or
-        # projection seasons fall back to the latest actual CSV year so
-        # depth-chart snap % still populates.
-        snap_season = stats_season if _has_stats_reg_csv(stats_season) else _resolve_stats_reg_season(season)
-        pfr_snaps = _get_pfr_snap_counts_cached(snap_season)
+        # Depth-chart usage is pinned to the payload's stats season. The
+        # accessor reports the season the returned table was actually built
+        # for; the PFR snap fallback and the usage_timeframe label both
+        # follow THAT season, so the room card never shows one season's
+        # shares under another season's label.
+        usage_table, usage_season = get_usage_table_for_season(int(stats_season))
+        pfr_snaps = _get_pfr_snap_counts_cached(usage_season)
         depth_chart = _build_player_team_depth_chart(
             str(player_id), team, full_players, usage_index, usage_table,
             teams_index, pfr_snaps,
@@ -30967,9 +31058,9 @@ def api_player_team(player_id: str):
             },
             "injuries_timeframe": {"as_of": datetime.now().date().isoformat(), "is_current": True},
             "usage_timeframe": {
-                "season": int(snap_season),
+                "season": int(usage_season),
                 "mode": "actual",
-                "is_prior_season": data_mode == "projection" and int(snap_season) != int(season),
+                "is_prior_season": int(usage_season) != int(season),
             },
             "scoring_label": "PPR PPG",
             "available_seasons": available_seasons,

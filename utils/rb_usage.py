@@ -16,6 +16,7 @@ so we never fetch per-request).
 
 from __future__ import annotations
 
+import colorsys
 import logging
 import threading
 import time
@@ -90,22 +91,69 @@ def _is_light_color(hex_color: str) -> bool:
         return False
 
 
-def _build_player_color_map(team: str, player_totals: Dict[str, int]) -> Dict[str, Dict[str, Any]]:
-    """Assign a fixed team color to each player, ranked by total usage.
+def _hls_shade(hex_color: str, lightness: float) -> str:
+    """Return hex_color re-rendered at a fixed HLS lightness (same hue/sat)."""
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    hue, _light, sat = colorsys.rgb_to_hls(r, g, b)
+    r2, g2, b2 = colorsys.hls_to_rgb(hue, lightness, max(sat, 0.35))
+    return "#%02X%02X%02X" % (round(r2 * 255), round(g2 * 255), round(b2 * 255))
 
-    Uses the full team palette (including white for more variety). Each
-    player keeps the same color in every situation. Light colors are flagged
-    so the frontend can render a visible border around the segment.
+
+def _build_player_color_map(team: str, player_totals: Dict[str, int]) -> Dict[str, Dict[str, Any]]:
+    """Assign a fixed, distinct team color to each player, ranked by usage.
+
+    Every player gets a DISTINCT color: cycling the team's 3-color palette
+    (the old behavior) gave two players the same color and left one player
+    with white, whose segment and number are invisible on the light card.
+    When more players need colors than the palette's usable (non-light)
+    colors, too-light palette entries are dropped and the palette is
+    extended with deterministic HLS shades of the usable base colors. The
+    top player keeps the primary color and the second the secondary, as
+    before. Each player keeps the same color in every situation.
 
     Returns: {gsis_id: {"color": str, "light": bool}}
     """
     colors = TEAM_COLORS.get(team, ["#3B82F6", "#1E40AF", "#93C5F6"])
     if not colors:
         colors = ["#3B82F6"]
-    ranked_pids = sorted(player_totals.keys(), key=lambda pid: -player_totals[pid])
+    ranked_pids = sorted(
+        player_totals.keys(), key=lambda pid: (-player_totals[pid], str(pid))
+    )
+    usable = [c for c in colors if not _is_light_color(c)] or list(colors)
+    assigned = list(usable)
+    if len(ranked_pids) > len(assigned):
+        def _rgb(hex_color: str):
+            h = hex_color.lstrip("#")
+            return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+        def _too_close(cand: str) -> bool:
+            # A shade at a lightness near a base color's own lightness can
+            # land within a step or two of that base color: a different hex
+            # string, but the same color to a reader. Require real distance.
+            cr, cg, cb = _rgb(cand)
+            for other in assigned:
+                orr, og, ob = _rgb(other)
+                if (cr - orr) ** 2 + (cg - og) ** 2 + (cb - ob) ** 2 < 40 ** 2:
+                    return True
+            return False
+
+        for lightness in (0.28, 0.42, 0.18, 0.55, 0.65, 0.36, 0.48):
+            for base in usable:
+                if len(assigned) >= len(ranked_pids):
+                    break
+                try:
+                    cand = _hls_shade(base, lightness)
+                except (ValueError, TypeError):
+                    continue
+                if _is_light_color(cand) or _too_close(cand):
+                    continue
+                assigned.append(cand)
+            if len(assigned) >= len(ranked_pids):
+                break
     color_map: Dict[str, Dict[str, Any]] = {}
     for i, pid in enumerate(ranked_pids):
-        color = colors[i % len(colors)]
+        color = assigned[i % len(assigned)]
         color_map[pid] = {"color": color, "light": _is_light_color(color)}
     return color_map
 
@@ -575,12 +623,14 @@ def get_team_rb_usage(team: str, season: int, week: Optional[int] = None) -> Dic
         if not any(buckets[k] for k, _ in SITUATIONS):
             return {"team": team, "season": season, "week": week, "situations": []}
 
-    # Get fixed per-player team colors, ranked by total usage across situations.
-    # Each player keeps the same color in every situation.
-    player_totals: Dict[str, int] = {}
-    for key, _ in SITUATIONS:
-        for pid, p in buckets[key].items():
-            player_totals[pid] = player_totals.get(pid, 0) + p["touches"]
+    # Get fixed per-player team colors, ranked by All Plays touches only.
+    # Summing every situation bucket would count each play several times
+    # (the buckets overlap), which can rank a situational player above the
+    # back he trails on total touches. Each player keeps the same color in
+    # every situation.
+    player_totals: Dict[str, int] = {
+        pid: p["touches"] for pid, p in buckets.get("all", {}).items()
+    }
     color_map = _build_player_color_map(team, player_totals)
 
     situations = []
@@ -718,12 +768,12 @@ def get_team_receiving_usage(team: str, season: int, week: Optional[int] = None)
         if not any(buckets[k] for k, _ in SITUATIONS):
             return {"team": team, "season": season, "week": week, "situations": []}
 
-    # Get fixed per-player team colors, ranked by total targets across situations.
+    # Get fixed per-player team colors, ranked by All Plays targets only
+    # (the situation buckets overlap, so summing them double-counts plays).
     # Each player keeps the same color in every situation.
-    player_totals: Dict[str, int] = {}
-    for key, _ in SITUATIONS:
-        for pid, p in buckets[key].items():
-            player_totals[pid] = player_totals.get(pid, 0) + p["targets"]
+    player_totals: Dict[str, int] = {
+        pid: p["targets"] for pid, p in buckets.get("all", {}).items()
+    }
     color_map = _build_player_color_map(team, player_totals)
 
     situations = []

@@ -70,11 +70,13 @@ def test_player_modal_team_tab_ui_wiring():
     assert "${profile}${olineRows}" not in js
     assert "${profile}" in js
     assert "${olineSec}" in js
-    # Schedule accordion has a compact preview and remains collapsed initially.
+    # Schedule accordion is a clean single header row (the always-visible
+    # Next/Latest preview line and the Current week shortcut were removed;
+    # every game stays in the collapsible body) and remains collapsed.
     assert "_pmBuildScheduleHTML" in js
     assert "Schedule &amp; Results" in js
-    assert "pm-schedule-preview" in js
-    assert "Current week" in js
+    assert "pm-schedule-preview" not in js
+    assert "pm-current-week" not in js
     assert "pm-team-schedule" in js
     assert "pm-team-sched-toggle" in js
     assert "pm-team-sched-body" in js
@@ -234,9 +236,13 @@ def test_api_player_team_known_qb(flask_client, monkeypatch):
     assert any(r["injury"] for r in inj_rows)
 
     for row in qb_rows:
-        assert row.get("snap_pct_source") in ("pfr", "derived", None)
+        assert row.get("snap_pct_source") in ("usage", "pfr", "derived", None)
         if row["id"] == "4046" and row.get("snap_pct") is not None:
-            assert row["snap_pct_source"] == "derived"
+            # The depth chart is built from the season-pinned 2025 usage
+            # table, which carries Mahomes' real snap share; the old code
+            # labeled him "derived" because the season-less global table
+            # missed him in this test environment.
+            assert row["snap_pct_source"] == "usage"
 
 
 def test_api_player_team_projection_season(flask_client, monkeypatch):
@@ -282,6 +288,12 @@ def test_api_player_team_projection_season(flask_client, monkeypatch):
         "app._list_team_tab_seasons",
         lambda current: [int(current), int(current) - 1],
     )
+    # Preseason: no 2026 usage exists yet, so the season accessor serves
+    # the prior season's table and reports 2025 as the season actually
+    # used; usage_timeframe must label THAT season, not the PFR snap one.
+    monkeypatch.setattr(
+        "app.get_usage_table_for_season", lambda season: ({}, 2025)
+    )
     from app import _TEAM_PAYLOAD_CACHE, _TEAM_OFFENSE_RANKS_CACHE
     _TEAM_PAYLOAD_CACHE.clear()
     _TEAM_OFFENSE_RANKS_CACHE.clear()
@@ -292,6 +304,7 @@ def test_api_player_team_projection_season(flask_client, monkeypatch):
     assert data["available"] is True
     assert data["data_mode"] == "projection"
     assert data["offense_timeframe"]["mode"] == "projection"
+    assert data["usage_timeframe"]["season"] == 2025
     assert data["usage_timeframe"]["is_prior_season"] is True
     assert data["stats_season"] == 2026
     assert data["season"] == 2026
@@ -301,6 +314,37 @@ def test_api_player_team_projection_season(flask_client, monkeypatch):
     assert data["ranks"]["pass_yds"]["value"] >= 4400 / 17
     assert data["ranks_more"]["pass_rate"] is not None
     assert data.get("schedule") == []
+
+
+def test_api_player_team_usage_label_follows_table_actually_used(
+    flask_client, monkeypatch
+):
+    """usage_timeframe.season is the season of the table the accessor
+    served, even when that is neither the requested season nor the PFR
+    snap season (the old label came from the snap CSV and could name a
+    season whose data was never shown)."""
+    monkeypatch.setattr("app.get_players_global", lambda: _mock_sleeper_players())
+    monkeypatch.setattr("app._get_pfr_snap_counts_cached", lambda season: {})
+    monkeypatch.setattr(
+        "utils.player_team_schedule.build_team_schedule", lambda *a, **k: []
+    )
+    seen = {}
+
+    def fake_accessor(season):
+        seen["requested"] = season
+        return {}, 2024  # fallback: only a 2024 table could be served
+
+    monkeypatch.setattr("app.get_usage_table_for_season", fake_accessor)
+    from app import _TEAM_PAYLOAD_CACHE, _TEAM_OFFENSE_RANKS_CACHE
+    _TEAM_PAYLOAD_CACHE.clear()
+    _TEAM_OFFENSE_RANKS_CACHE.clear()
+
+    resp = flask_client.get("/api/player-team/4046?season=2025")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert seen["requested"] == 2025
+    assert data["usage_timeframe"]["season"] == 2024
+    assert data["usage_timeframe"]["is_prior_season"] is True
 
 
 def test_api_player_team_wsh_was_not_double_counted(flask_client, monkeypatch):

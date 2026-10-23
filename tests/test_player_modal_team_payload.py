@@ -76,18 +76,19 @@ def _dal_players():
 
 
 def _dal_usage():
-    def u(tgt, games=5, rec=0.0, yd=0.0, td=0.0, ppg=None, team="DAL"):
+    def u(tgt, games=5, rec=0.0, yd=0.0, td=0.0, ppg=None, team="DAL", car=0.0):
         return {"games": games, "total_targets": float(tgt),
                 "target_share": tgt / 186.0, "avg_targets": tgt / games,
                 "avg_receptions": rec, "avg_rec_yards": yd,
-                "avg_rec_tds": td, "ppr_ppg": ppg,
+                "avg_rec_tds": td, "ppr_ppg": ppg, "avg_carries": car,
                 "avg_off_snap_pct": 0.761, "season_team": team}
     return {
-        # Lamb: 51 targets, 39 / 507 / 4 receiving over 5 games.
-        "6786": u(51, rec=7.8, yd=101.4, td=0.8, ppg=23.0),
+        # Lamb: 51 targets, 39 / 507 / 4 receiving, 6 carries over 5 games.
+        "6786": u(51, rec=7.8, yd=101.4, td=0.8, ppg=23.0, car=1.2),
         "9002": u(41, rec=6.0, yd=80.0, td=0.6),
         "9003": u(27), "9004": u(7), "9005": u(7),
-        "9006": u(21), "9007": u(20),
+        # Javonte Williams: 60 carries + 10 receptions over 5 games.
+        "9006": u(21), "9007": u(20, rec=2.0, car=12.0),
         # A DAL player with targets but no depth-chart row still counts
         # toward the team total (12 more -> 186).
         "9999": u(12),
@@ -104,6 +105,10 @@ def _patch_team_route(monkeypatch):
     # from the real relevant index.
     monkeypatch.setattr("utils.utils.load_relevant_index", lambda: {})
     monkeypatch.setattr("app.get_usage_table_global", _dal_usage)
+    # The route reads depth-chart usage through the season accessor;
+    # serve the DAL fixture as the 2025 table actually used.
+    monkeypatch.setattr(
+        "app.get_usage_table_for_season", lambda season: (_dal_usage(), 2025))
     monkeypatch.setattr("app._get_pfr_snap_counts_cached", lambda season: {})
     monkeypatch.setattr(
         "utils.player_team_schedule.build_team_schedule", lambda *a, **k: [])
@@ -143,6 +148,18 @@ def test_player_team_payload_counts_receiving_and_rank(flask_client, monkeypatch
     assert focus["rec_yd"] == 507
     assert focus["rec_td"] == 4
     assert focus["ppg_rank"] == 2
+    # Season counts on depth rows derive from the same usage block
+    # (avg x games); touches = carries + receptions, the definition the
+    # weekly and situational cards already use.
+    assert focus["carries"] == 6
+    assert focus["receptions"] == 39
+    assert focus["touches"] == 45
+    assert data["usage_timeframe"]["season"] == 2025
+
+    javonte = next(r for r in data["depth_chart"]["RB"] if r["id"] == "9007")
+    assert javonte["carries"] == 60
+    assert javonte["receptions"] == 10
+    assert javonte["touches"] == 70
 
     pickens = next(r for r in wr_room if r["id"] == "9002")
     assert pickens["targets"] == 41
@@ -158,6 +175,8 @@ def test_player_team_payload_counts_receiving_and_rank(flask_client, monkeypatch
 def test_player_team_payload_without_usage_stays_empty(flask_client, monkeypatch):
     _patch_team_route(monkeypatch)
     monkeypatch.setattr("app.get_usage_table_global", lambda: {})
+    monkeypatch.setattr(
+        "app.get_usage_table_for_season", lambda season: ({}, 2025))
     monkeypatch.setattr("app._load_season_weekly_points",
                         lambda s, st, weeks=None: {})
     from app import _TEAM_PAYLOAD_CACHE
@@ -172,4 +191,7 @@ def test_player_team_payload_without_usage_stays_empty(flask_client, monkeypatch
     assert focus["rec"] is None
     assert focus["rec_yd"] is None
     assert focus["rec_td"] is None
+    assert focus["carries"] is None
+    assert focus["receptions"] is None
+    assert focus["touches"] is None
     assert focus["ppg_rank"] is None

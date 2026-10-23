@@ -37,23 +37,22 @@ def test_rb_room_columns_are_fixed_tracks():
     )
     assert "repeat(" not in body
     tracks = _template_tracks(body)
-    # slot, name, snap, target share, carry share, touch share, PPR PPG
-    assert len(tracks) == 7
+    # slot, name, snap, touches (season count), PPR PPG
+    assert len(tracks) == 5
     for track in tracks[2:]:
         assert re.fullmatch(r"\d+px", track), f"metric track {track!r} must be fixed px"
 
 
 def test_rb_room_tracks_fit_header_labels():
-    # Header labels render at 9px/800 uppercase with 0.04em letter-spacing;
-    # TARGET SHARE is the widest at ~74px. Each share column must clear its
-    # label or the header text wraps/spills instead of aligning.
+    # Header labels render at 9px/800 uppercase with 0.04em letter-spacing.
+    # The RB room shows Snap % / Touch / PPR PPG since the Team tab cleanup
+    # (shares moved to the per-row details line); each metric column must
+    # clear its label or the header text wraps/spills instead of aligning.
     tracks = _template_tracks(_rule_body(r"\.pm-room-rb \.pm-troom-row"))
     widths = [int(t[:-2]) for t in tracks[2:]]
     assert widths[0] >= 88  # snap cell: bar + bold % (base table uses 92px)
-    assert widths[1] >= 78  # TARGET SHARE
-    assert widths[2] >= 72  # CARRY SHARE
-    assert widths[3] >= 74  # TOUCH SHARE
-    assert widths[4] >= 50  # PPR PPG
+    assert widths[1] >= 44  # TOUCH label + up to a 3-digit season count
+    assert widths[2] >= 50  # PPR PPG
 
 
 def test_other_room_columns_stay_fixed():
@@ -65,10 +64,12 @@ def test_other_room_columns_stay_fixed():
         assert "auto" not in body
 
 
-def test_mobile_rb_room_layout_unchanged():
-    # Phones hide the three share columns and show the stacked details line;
-    # that 4-track template is fixed already and must keep its shape.
+def test_mobile_rb_room_layout():
+    # Phones show the same three metrics as desktop (snap, touches, PPG)
+    # in a tighter 5-track template, plus the stacked details line; the
+    # template is fixed-track like every other room rule.
     bodies = re.findall(r"\.pm-room-rb \.pm-troom-row\s*\{([^}]*)\}", CSS)
     mobile = [b for b in bodies if "grid-template-columns:18px" in b]
     assert mobile, "mobile RB room rule missing"
-    assert len(_template_tracks(mobile[0])) == 4
+    assert len(_template_tracks(mobile[0])) == 5
+    assert "auto" not in mobile[0]
