@@ -24003,7 +24003,7 @@ async function tmLoadTrades(rosterId) {
 
     const trades = data.trades || [];
     if (!trades.length) {
-      panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No trades found for this team this season.</div></div>';
+      panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No trades found for this team.</div></div>';
       return;
     }
 
@@ -24030,7 +24030,9 @@ async function tmLoadTrades(rosterId) {
       return parts.length ? parts.join('') : '<div class="tm3-asset-none">Nothing</div>';
     };
 
-    const cards = trades.map(tr => {
+    const cards = trades.map((tr, idx) => {
+      const seasonHead = (tr.season && (idx === 0 || !trades[idx - 1] || trades[idx - 1].season !== tr.season))
+        ? `<div class="tm3-season-head">${esc(tr.season)}</div>` : '';
       const partner = tr.partner || null;
       const headLeft = partner
         ? `${_tmAvatar({ team_name: partner.team_name, avatar: partner.avatar })}<span class="tm3-trade-with">with <b>${esc(partner.team_name)}</b></span>`
@@ -24038,10 +24040,10 @@ async function tmLoadTrades(rosterId) {
       const hasPlayers = (tr.my_gets || []).length + (tr.my_sends || []).length > 0;
       const netChip = hasPlayers
         ? `<span class="tm3-net-chip ${tr.players_net >= 0 ? 'tm3-net-pos' : 'tm3-net-neg'}">${signed(tr.players_net)}</span>` : '';
-      const when = [tr.week ? `Week ${tr.week}` : '', tr.date || ''].filter(Boolean).join(' · ');
+      const when = [tr.season || '', tr.week === 0 ? 'Offseason' : (tr.week ? `Week ${tr.week}` : ''), tr.date || ''].filter(Boolean).join(' · ');
       const foot = hasPlayers
         ? `<div class="tm3-trade-foot">Players at today's values: <b class="${tr.players_net >= 0 ? 'tm3-net-pos-t' : 'tm3-net-neg-t'}">${signed(tr.players_net)}</b></div>` : '';
-      return `<div class="tm3-trade-card">
+      return seasonHead + `<div class="tm3-trade-card">
         <div class="tm3-trade-head">${headLeft}${netChip}<span class="tm3-trade-when">${esc(when)}</span></div>
         <div class="tm3-trade-cols">
           <div class="tm3-col tm3-col-got"><div class="tm3-col-label">Received</div>${renderSide(tr.my_gets, tr.my_pick_gets, tr.faab_gets, '+')}</div>
@@ -24052,11 +24054,11 @@ async function tmLoadTrades(rosterId) {
     }).join('');
 
     // Summary strip + partner ledger + what stuck, from the endpoint's
-    // season summary. Every block hides when its data is absent.
+    // all-time summary. Every block hides when its data is absent.
     const S = data.summary || null;
     let strip = '', extras = '';
     if (S) {
-      const items = [`<div class="tm3-sum-item"><div class="tm3-sum-v">${S.total}</div><div class="tm3-sum-l">Trades this season</div></div>`];
+      const items = [`<div class="tm3-sum-item"><div class="tm3-sum-v">${S.total}</div><div class="tm3-sum-l">Trades all time</div></div>`];
       items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${signed(S.players_net)}</div><div class="tm3-sum-l">Players net · today's values</div></div>`);
       if (S.top_partner) items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v tm3-sum-name">${esc(S.top_partner.team_name)}</div><div class="tm3-sum-l">Most frequent partner · ${S.top_partner.trades} trade${S.top_partner.trades === 1 ? '' : 's'}</div></div>`);
       items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${S.picks_in} in · ${S.picks_out} out</div><div class="tm3-sum-l">Draft picks moved</div></div>`);

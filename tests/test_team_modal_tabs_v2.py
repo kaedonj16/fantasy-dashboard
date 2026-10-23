@@ -190,6 +190,170 @@ def test_team_trades_route_shapes_partner_values_and_summary(monkeypatch):
     assert stuck["picks_held"] == ["2027 R1"]
 
 
+def _patch_all(module_name, attr, value, monkeypatch):
+    """Patch an attribute on every distinct module object a from-import in
+    app.py can resolve to (same hazard as in the trades test above)."""
+    import importlib
+    import sys as _sys
+    objs = []
+    for cand in (_sys.modules.get(module_name),
+                 getattr(_sys.modules.get(module_name.rpartition(".")[0]),
+                         module_name.rpartition(".")[2], None)):
+        if cand is not None and all(cand is not o for o in objs):
+            objs.append(cand)
+    try:
+        resolved = importlib.import_module(module_name)
+    except Exception:
+        resolved = None
+    if resolved is not None and all(resolved is not o for o in objs):
+        objs.append(resolved)
+    for obj in objs:
+        monkeypatch.setattr(obj, attr, value, raising=False)
+
+
+def test_team_trades_walks_full_history_chain_by_owner(monkeypatch):
+    """All-history: trades come from every season in the league chain.
+
+    The team is matched per season by owner (its 2025 slot was 5, not the
+    current 1); a 2024 season the owner was not in contributes nothing even
+    though slot 1 traded; week-0 offseason trades and partner names resolve
+    against each season's own rosters/users; the ledger aggregates a
+    partner by owner across their slot change.
+    """
+    pytest.importorskip("flask")
+    pytest.importorskip("pandas")
+    import app as appmod
+
+    if hasattr(appmod, "_PLAYER_TRADES_CACHE"):
+        appmod._PLAYER_TRADES_CACHE.clear()
+
+    league = {"settings": {"type": 2}, "scoring_settings": {},
+              "roster_positions": ["QB", "RB", "WR", "TE", "FLEX", "BN"]}
+    rosters_by_league = {
+        "L26": [{"roster_id": 1, "owner_id": "u1", "players": ["100"]},
+                {"roster_id": 2, "owner_id": "u2", "players": ["200"]},
+                {"roster_id": 3, "owner_id": "u3", "players": []}],
+        "L25": [{"roster_id": 5, "owner_id": "u1", "players": []},
+                {"roster_id": 1, "owner_id": "u2", "players": []},
+                {"roster_id": 2, "owner_id": "u3", "players": []}],
+        "L24": [{"roster_id": 1, "owner_id": "u9", "players": []},
+                {"roster_id": 2, "owner_id": "u8", "players": []}],
+    }
+    users_by_league = {
+        "L26": [{"user_id": "u1", "display_name": "kj", "metadata": {"team_name": "Caleb's Casting Couch"}},
+                {"user_id": "u2", "display_name": "jw", "metadata": {"team_name": "Nunky Figgas"}},
+                {"user_id": "u3", "display_name": "ab", "metadata": {"team_name": "Third Team"}}],
+        "L25": [{"user_id": "u1", "display_name": "kj", "metadata": {"team_name": "Caleb's Casting Couch"}},
+                {"user_id": "u2", "display_name": "jw", "metadata": {"team_name": "Nunky 2025"}},
+                {"user_id": "u3", "display_name": "ab", "metadata": {"team_name": "Third Team"}}],
+        "L24": [{"user_id": "u9", "display_name": "zz", "metadata": {"team_name": "Old Owner"}},
+                {"user_id": "u8", "display_name": "yy", "metadata": {"team_name": "Other Old"}}],
+    }
+
+    monkeypatch.setattr(appmod, "get_league", lambda *a, **k: league)
+    monkeypatch.setattr(appmod, "get_rosters",
+                        lambda platform, league_id, season: rosters_by_league[league_id])
+    monkeypatch.setattr(appmod, "get_users",
+                        lambda platform, league_id, season: users_by_league[league_id])
+    monkeypatch.setattr(appmod, "get_model_value_table_cached",
+                        lambda: [{"id": "100", "value": 457}, {"id": "200", "value": 312},
+                                 {"id": "300", "value": 500}, {"id": "400", "value": 100},
+                                 {"id": "500", "value": 50}])
+    _patch_all("utils.utils", "load_players_index",
+               lambda: {"100": {"name": "Emeka Egbuka", "pos": "WR"},
+                        "200": {"name": "Michael Wilson", "pos": "WR"},
+                        "300": {"name": "Jaxon Smith-Njigba", "pos": "WR"},
+                        "400": {"name": "Quentin Johnston", "pos": "WR"},
+                        "500": {"name": "Ricky Pearsall", "pos": "WR"}}, monkeypatch)
+    _patch_all("dashboard_services.api", "build_league_history_map",
+               lambda platform, league_id, season: {2026: "L26", 2025: "L25", 2024: "L24"},
+               monkeypatch)
+
+    trade_a = {  # 2026, week 4, with u2 (slot 2 this season)
+        "type": "trade", "roster_ids": [1, 2], "transaction_id": "a26",
+        "status_updated": 1791417600000,
+        "adds": {"300": 1}, "drops": {"200": 1}, "draft_picks": [], "waiver_budget": [],
+    }
+    trade_b = {  # 2025 offseason (week 0), my slot was 5, partner u2 was slot 1
+        "type": "trade", "roster_ids": [5, 1], "transaction_id": "b25",
+        "status_updated": 1739145600000,
+        "adds": {"100": 5}, "drops": {"400": 5},
+        "draft_picks": [{"season": 2026, "round": 1, "roster_id": 1,
+                         "previous_owner_id": 1, "owner_id": 5}],
+        "waiver_budget": [],
+    }
+    trade_c = {  # 2025, week 9, with u3 (slot 2 that season)
+        "type": "trade", "roster_ids": [5, 2], "transaction_id": "c25",
+        "status_updated": 1762387200000,
+        "adds": {"500": 5}, "drops": {}, "draft_picks": [], "waiver_budget": [],
+    }
+    trade_failed = {  # failed trades never happened; must not appear
+        "type": "trade", "status": "failed", "roster_ids": [5, 1],
+        "transaction_id": "f25", "status_updated": 1740000000000,
+        "adds": {"200": 5}, "drops": {}, "draft_picks": [], "waiver_budget": [],
+    }
+    trade_d = {  # 2024 slot-1 trade, but slot 1 was a different owner then
+        "type": "trade", "roster_ids": [1, 2], "transaction_id": "d24",
+        "status_updated": 1727740800000,
+        "adds": {"300": 1}, "drops": {"200": 1}, "draft_picks": [], "waiver_budget": [],
+    }
+    tx_by_league = {
+        "L26": {4: [trade_a]},
+        "L25": {0: [trade_b], 9: [trade_c], 3: [trade_failed]},
+        "L24": {2: [trade_d]},
+    }
+    _patch_all("dashboard_services.service", "get_transactions_by_week",
+               lambda league_id, weeks, platform=None, season=None: tx_by_league[league_id],
+               monkeypatch)
+    _patch_all("dashboard_services.player_league_trades", "build_draft_resolution_map",
+               lambda platform, league_id, seasons=None: {}, monkeypatch)
+
+    client = appmod.app.test_client()
+    resp = client.get("/api/team-trades/1?league_id=L26&platform=sleeper&season=2026")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+
+    # Exactly the three real trades across 2026 + 2025, newest first.
+    assert payload["total"] == 3
+    assert [t["season"] for t in payload["trades"]] == [2026, 2025, 2025]
+    by_season_week = {(t["season"], t["week"]): t for t in payload["trades"]}
+    assert (2025, 0) in by_season_week  # offseason week-0 trade included
+
+    offseason = by_season_week[(2025, 0)]
+    assert offseason["my_gets"][0]["name"] == "Emeka Egbuka"
+    assert offseason["my_sends"][0]["name"] == "Quentin Johnston"
+    # Partner named from the 2025 season's own users, not the current ones.
+    assert offseason["partner"]["team_name"] == "Nunky 2025"
+    assert offseason["partner"]["roster_id"] == "1"
+
+    summary = payload["summary"]
+    assert summary["seasons"] == [2026, 2025]
+    assert summary["players_net"] == 595  # 188 (A) + 357 (B) + 50 (C)
+    # u2 was slot 2 in 2026 and slot 1 in 2025: one ledger row, most
+    # recent team name, both trades counted.
+    (u2_row,) = [row for row in summary["ledger"] if row["owner_id"] == "u2"]
+    assert u2_row["trades"] == 2 and u2_row["players_net"] == 545
+    assert u2_row["team_name"] == "Nunky Figgas"
+    assert summary["top_partner"] == {"team_name": "Nunky Figgas", "trades": 2}
+    assert summary["picks_in"] == 1 and summary["picks_out"] == 0
+    stuck = summary["stuck"]
+    assert stuck["still_rostered"] == ["Emeka Egbuka"]  # on the current roster
+    assert "Jaxon Smith-Njigba" in stuck["gone"]
+    assert stuck["picks_held"] == ["2026 R1"]
+
+
+def test_team_trades_frontend_is_all_time():
+    body = _handler_body("/api/team-trades/<roster_id>", "/api/beat-the-market")
+    assert "build_league_history_map" in body
+    assert "range(0, 19)" in body  # week 0 (offseason) is scanned
+    js = _APP_JS
+    assert "No trades found for this team this season" not in js
+    assert "No trades found for this team." in js
+    assert "Trades all time" in js and "Trades this season" not in js
+    assert "tm3-season-head" in js and "'Offseason'" in js
+    assert ".tm3-season-head" in _CSS
+
+
 # ── Source contracts: ages / graphs backend, all frontends ────────────────
 
 def _handler_body(route: str, next_route: str) -> str:

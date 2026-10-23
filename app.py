@@ -32800,14 +32800,27 @@ def api_team_schedule_week(roster_id: str, week: int):
 
 @app.route("/api/team-trades/<roster_id>")
 def api_team_trades(roster_id: str):
-    """Return all trades for a specific team in the current league season.
+    """Return all trades for a specific team across the league's full history.
 
-    Each trade names its counterparty, carries current model values on the
-    players, resolves traded picks to the player they became when that
-    draft is complete, and the response adds a season summary (net player
-    value at today's prices, partner ledger, what is still on the roster).
+    Walks the league history chain (build_league_history_map: Sleeper
+    previous_league_id links, same-id probing elsewhere) and collects this
+    team's trades from every season, not just the current one. A roster_id
+    is only a per-season slot, so the team is matched inside each historical
+    season by its current owner_id; non-Sleeper providers, whose owner ids
+    are not stable across seasons, also fall back to the same roster slot.
+
+    Each trade names its counterparty (resolved against that season's own
+    rosters/users), carries current model values on the players, resolves
+    traded picks to the player they became when that draft is complete, and
+    the response adds an all-time summary (net player value at today's
+    prices, partner ledger keyed by partner owner so a partner whose slot
+    changed between seasons still aggregates, and what is still on the
+    current roster).
     """
     try:
+        from concurrent.futures import ThreadPoolExecutor
+
+        from dashboard_services.api import build_league_history_map
         from dashboard_services.service import get_transactions_by_week
         from utils.utils import load_players_index
 
@@ -32818,15 +32831,32 @@ def api_team_trades(roster_id: str):
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
 
+        _lt = str(request.args.get("league_type") or "").strip().lower()
+        # The chain rescan below is the same expensive shape the player
+        # league-trades cache exists for, so reuse it: league trade history
+        # changes rarely and the payload carries no per-user content.
+        cache_key = ("team-trades", platform, str(league_id), season,
+                     str(roster_id), _lt)
+        cached = _player_trades_cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
         players_index = load_players_index() or {}
         league = get_league(platform, league_id, season) or {}
         rosters = get_rosters(platform, league_id, season) or []
         users = get_users(platform, league_id, season) or []
 
+        # No 404 when the current roster row is missing: the original route
+        # still served trades matched by roster slot alone, and history
+        # matching below falls back to the slot when there is no owner.
+        my_roster_cur = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None) or {}
+        _owner_raw = my_roster_cur.get("owner_id")
+        my_owner_id = str(_owner_raw) if _owner_raw not in (None, "") else None
+
         # Value basis matches /api/team-details: redraft leagues use the
         # redraft columns, dynasty the dynasty columns, SF per the query or
         # a SUPER_FLEX roster slot, TE premium from the league's scoring.
-        _lt = str(request.args.get("league_type") or "").strip().lower()
         is_redraft = _league_is_redraft({
             "platform": platform,
             "league": league,
@@ -32855,16 +32885,6 @@ def api_team_trades(roster_id: str):
                 raw = 0.0
             return round(apply_te_premium(raw, pos, _tep), 1)
 
-        _user_by_owner = {str(u.get("user_id")): u for u in users}
-        _roster_by_id = {str(r.get("roster_id")): r for r in rosters}
-
-        def _team_name(rid):
-            r = _roster_by_id.get(str(rid))
-            if not r:
-                return f"Team {rid}"
-            u = _user_by_owner.get(str(r.get("owner_id")))
-            return team_label_from_user(u, r, fallback="") or f"Team {rid}"
-
         def _pinfo(pid):
             meta = players_index.get(str(pid)) or {}
             pos = meta.get("pos") or ""
@@ -32879,41 +32899,138 @@ def api_team_trades(roster_id: str):
                 "value": _value_of(pid, pos),
             }
 
-        weeks = list(range(1, 19))
-        tx_by_week = get_transactions_by_week(league_id, weeks, platform=platform, season=season) or {}
+        def _team_name(rid, roster_by_id_h, user_by_owner_h):
+            r = roster_by_id_h.get(str(rid))
+            if not r:
+                return f"Team {rid}"
+            u = user_by_owner_h.get(str(r.get("owner_id")))
+            return team_label_from_user(u, r, fallback="") or f"Team {rid}"
+
+        # ── League history chain: {season: league_id} ─────────────────────
+        try:
+            _raw_map = build_league_history_map(platform, league_id, season) or {}
+        except Exception:
+            logger.debug("[api_team_trades] history map failed", exc_info=True)
+            _raw_map = {}
+        season_map: dict = {}
+        for _s, _l in _raw_map.items():
+            try:
+                season_map[int(_s)] = str(_l)
+            except (TypeError, ValueError):
+                continue
+        season_map.setdefault(int(season), str(league_id))
+
+        # Week 0 is where Sleeper stores the entire offseason, and dynasty
+        # trades cluster there; the player-modal league view already scans
+        # it, so the team view must too or offseason deals never appear.
+        _TX_WEEKS = list(range(0, 19))
+
+        def _season_bundle(item):
+            hist_season, hist_lid = item
+            if hist_season == int(season) and hist_lid == str(league_id):
+                h_rosters, h_users = rosters, users
+            else:
+                h_rosters = get_rosters(platform, hist_lid, hist_season) or []
+                h_users = get_users(platform, hist_lid, hist_season) or []
+            h_my = None
+            if my_owner_id is not None:
+                h_my = next((r for r in h_rosters
+                             if str(r.get("owner_id")) == my_owner_id), None)
+            if h_my is None and (platform != "sleeper" or my_owner_id is None):
+                # Owner ids are stable on Sleeper, so a miss there means the
+                # owner was not in the league that season and the slot's
+                # trades are not theirs. Elsewhere owner ids can change
+                # shape between seasons, so the slot is the fallback.
+                h_my = next((r for r in h_rosters
+                             if str(r.get("roster_id")) == str(roster_id)), None)
+            if h_my is None:
+                return (hist_season, hist_lid, h_rosters, h_users, None, {})
+            try:
+                h_tx = get_transactions_by_week(
+                    hist_lid, _TX_WEEKS, platform=platform, season=hist_season) or {}
+            except Exception:
+                logger.debug("[api_team_trades] tx fetch failed %s %s",
+                             hist_lid, hist_season, exc_info=True)
+                h_tx = {}
+            return (hist_season, hist_lid, h_rosters, h_users,
+                    str(h_my.get("roster_id")), h_tx)
+
+        _items = sorted(season_map.items())
+        if len(_items) == 1:
+            bundles = [_season_bundle(_items[0])]
+        else:
+            with ThreadPoolExecutor(max_workers=4) as _pool:
+                bundles = list(_pool.map(_season_bundle, _items))
 
         raw_trades = []
         pick_seasons = set()
-        for week in sorted(tx_by_week):
-            for t in (tx_by_week[week] or []):
-                if t.get("type") != "trade":
-                    continue
-                adds = t.get("adds") or {}
-                drops = t.get("drops") or {}
-                draft_picks = t.get("draft_picks") or []
-                base_rids = set(str(r) for r in (t.get("roster_ids") or []))
-                all_rids = base_rids | {str(v) for v in adds.values()} | {str(v) for v in drops.values()}
-                if str(roster_id) not in all_rids:
-                    continue
-                raw_trades.append((week, t, adds, drops, draft_picks, all_rids))
-                for p in draft_picks:
-                    try:
-                        pick_seasons.add(int(p.get("season")))
-                    except (TypeError, ValueError):
-                        pass
+        seen_txn: set = set()
+        for hist_season, hist_lid, h_rosters, h_users, h_my_rid, tx_by_week in bundles:
+            if h_my_rid is None:
+                continue
+            roster_by_id_h = {str(r.get("roster_id")): r for r in h_rosters}
+            user_by_owner_h = {str(u.get("user_id")): u for u in h_users}
+            for week in sorted(tx_by_week):
+                for t in (tx_by_week[week] or []):
+                    if t.get("type") != "trade":
+                        continue
+                    status = str(t.get("status") or "complete").lower()
+                    if status in ("failed", "cancelled", "canceled", "rejected"):
+                        continue
+                    txn_id = str(t.get("transaction_id") or "").strip()
+                    if txn_id:
+                        dedupe_key = (hist_lid, txn_id)
+                        if dedupe_key in seen_txn:
+                            continue
+                        seen_txn.add(dedupe_key)
+                    adds = t.get("adds") or {}
+                    drops = t.get("drops") or {}
+                    draft_picks = t.get("draft_picks") or []
+                    base_rids = set(str(r) for r in (t.get("roster_ids") or []))
+                    all_rids = base_rids | {str(v) for v in adds.values()} | {str(v) for v in drops.values()}
+                    if h_my_rid not in all_rids:
+                        continue
+                    raw_trades.append({
+                        "season": hist_season, "week": week, "txn": t,
+                        "adds": adds, "drops": drops,
+                        "draft_picks": draft_picks, "all_rids": all_rids,
+                        "my_rid": h_my_rid,
+                        "roster_by_id": roster_by_id_h,
+                        "user_by_owner": user_by_owner_h,
+                        "users": h_users,
+                    })
+                    for p in draft_picks:
+                        try:
+                            pick_seasons.add(int(p.get("season")))
+                        except (TypeError, ValueError):
+                            pass
 
         # Draft resolution (who each traded pick became) reuses the
-        # player-modal's verified map; Sleeper-only, empty elsewhere.
+        # player-modal's verified map; Sleeper-only, empty elsewhere. A
+        # pick traded in one season often resolves in a later season's
+        # league, so build the map for every league in the chain and merge.
         resolution_map = {}
         if pick_seasons:
             try:
                 from dashboard_services.player_league_trades import build_draft_resolution_map
-                resolution_map = build_draft_resolution_map(platform, league_id, seasons=pick_seasons) or {}
+                _chain_lids: list = []
+                for _s, _l in sorted(season_map.items()):
+                    if _l not in _chain_lids:
+                        _chain_lids.append(_l)
+                if str(league_id) not in _chain_lids:
+                    _chain_lids.append(str(league_id))
+                for _lid in _chain_lids:
+                    try:
+                        _part = build_draft_resolution_map(
+                            platform, _lid, seasons=pick_seasons) or {}
+                    except Exception:
+                        _part = {}
+                    resolution_map.update(_part)
             except Exception:
                 logger.debug("[api_team_trades] draft resolution skipped", exc_info=True)
                 resolution_map = {}
 
-        def _pick_out(p):
+        def _pick_out(p, roster_by_id_h, user_by_owner_h):
             orig = str(p.get("roster_id")) if p.get("roster_id") is not None else None
             became = None
             if orig is not None and resolution_map:
@@ -32930,24 +33047,34 @@ def api_team_trades(roster_id: str):
                 "roster_id": orig,
                 "owner_id": str(p.get("owner_id")) if p.get("owner_id") is not None else None,
                 "previous_owner_id": str(p.get("previous_owner_id")) if p.get("previous_owner_id") is not None else None,
-                "owner_name": _team_name(orig) if orig is not None else None,
+                "owner_name": _team_name(orig, roster_by_id_h, user_by_owner_h) if orig is not None else None,
                 "became": became,
             }
 
-        my_roster = _roster_by_id.get(str(roster_id)) or {}
-        my_player_ids = {str(p) for p in (my_roster.get("players") or [])}
+        my_player_ids = {str(p) for p in (my_roster_cur.get("players") or [])}
 
         trades = []
         sent_pick_keys = set()
-        for week, t, adds, drops, draft_picks, all_rids in raw_trades:
-            for p in draft_picks:
-                if str(p.get("previous_owner_id")) == str(roster_id):
+        for entry in raw_trades:
+            my_rid = entry["my_rid"]
+            for p in entry["draft_picks"]:
+                if str(p.get("previous_owner_id")) == my_rid:
                     try:
                         sent_pick_keys.add((int(p.get("season")), int(p.get("round")), str(p.get("roster_id"))))
                     except (TypeError, ValueError):
                         pass
 
-        for week, t, adds, drops, draft_picks, all_rids in raw_trades:
+        for entry in raw_trades:
+            t = entry["txn"]
+            week = entry["week"]
+            adds = entry["adds"]
+            drops = entry["drops"]
+            draft_picks = entry["draft_picks"]
+            all_rids = entry["all_rids"]
+            my_rid = entry["my_rid"]
+            roster_by_id_h = entry["roster_by_id"]
+            user_by_owner_h = entry["user_by_owner"]
+
             ts_raw = t.get("status_updated") or t.get("created")
             date_str = ""
             date_iso = ""
@@ -32957,15 +33084,15 @@ def api_team_trades(roster_id: str):
                 date_str = f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}"
                 date_iso = _dt.strftime("%Y-%m-%d")
 
-            my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
-            my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
-            my_pick_gets = [_pick_out(p) for p in draft_picks if str(p.get("owner_id")) == str(roster_id)]
-            my_pick_sends = [_pick_out(p) for p in draft_picks if str(p.get("previous_owner_id")) == str(roster_id)]
+            my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == my_rid]
+            my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == my_rid]
+            my_pick_gets = [_pick_out(p, roster_by_id_h, user_by_owner_h) for p in draft_picks if str(p.get("owner_id")) == my_rid]
+            my_pick_sends = [_pick_out(p, roster_by_id_h, user_by_owner_h) for p in draft_picks if str(p.get("previous_owner_id")) == my_rid]
 
             # Counterparty: the other roster with the most assets in this
             # trade (multi-team trades resolve to the principal partner).
             partner = None
-            others = [r for r in all_rids if r != str(roster_id)]
+            others = [r for r in all_rids if r != my_rid]
             if others:
                 def _involvement(rid):
                     n = sum(1 for v in adds.values() if str(v) == rid)
@@ -32974,11 +33101,13 @@ def api_team_trades(roster_id: str):
                              if str(p.get("owner_id")) == rid or str(p.get("previous_owner_id")) == rid)
                     return n
                 partner_rid = max(others, key=_involvement)
-                partner_roster = _roster_by_id.get(partner_rid) or {}
+                partner_roster = roster_by_id_h.get(partner_rid) or {}
+                _p_owner = partner_roster.get("owner_id")
                 partner = {
                     "roster_id": partner_rid,
-                    "team_name": _team_name(partner_rid),
-                    "avatar": team_avatar(platform, partner_roster, users) or "",
+                    "owner_id": str(_p_owner) if _p_owner not in (None, "") else None,
+                    "team_name": _team_name(partner_rid, roster_by_id_h, user_by_owner_h),
+                    "avatar": team_avatar(platform, partner_roster, entry["users"]) or "",
                 }
 
             faab_gets = 0
@@ -32988,15 +33117,16 @@ def api_team_trades(roster_id: str):
                     amount = int(move.get("amount") or 0)
                 except (TypeError, ValueError):
                     amount = 0
-                if str(move.get("receiver")) == str(roster_id):
+                if str(move.get("receiver")) == my_rid:
                     faab_gets += amount
-                if str(move.get("sender")) == str(roster_id):
+                if str(move.get("sender")) == my_rid:
                     faab_sends += amount
 
             players_net = round(
                 sum(p["value"] for p in my_gets) - sum(p["value"] for p in my_sends), 1)
 
             trades.append({
+                "season": entry["season"],
                 "week": week,
                 "date": date_str,
                 "date_iso": date_iso,
@@ -33010,16 +33140,21 @@ def api_team_trades(roster_id: str):
                 "players_net": players_net,
             })
 
-        trades.sort(key=lambda x: (x["date_iso"] or "", x["week"]), reverse=True)
+        trades.sort(key=lambda x: (x["date_iso"] or "", x["season"], x["week"] or 0), reverse=True)
 
-        # Season summary: totals, partner ledger, and what stuck.
+        # All-time summary: totals, partner ledger, and what stuck. The
+        # ledger is built from the newest-first list and keyed by partner
+        # owner, so a partner keeps one row (under their most recent team
+        # name) even when their roster slot changed between seasons.
         ledger_by_partner: dict = {}
         for tr in trades:
             if not tr["partner"]:
                 continue
-            key = tr["partner"]["roster_id"]
+            key = tr["partner"].get("owner_id") or tr["partner"]["roster_id"]
             entry = ledger_by_partner.setdefault(key, {
-                "roster_id": key, "team_name": tr["partner"]["team_name"],
+                "roster_id": tr["partner"]["roster_id"],
+                "owner_id": tr["partner"].get("owner_id"),
+                "team_name": tr["partner"]["team_name"],
                 "trades": 0, "players_net": 0.0, "picks_in": 0, "picks_out": 0,
             })
             entry["trades"] += 1
@@ -33051,6 +33186,7 @@ def api_team_trades(roster_id: str):
 
         summary = {
             "total": len(trades),
+            "seasons": sorted({tr["season"] for tr in trades}, reverse=True),
             "players_net": round(sum(tr["players_net"] for tr in trades), 1),
             "picks_in": sum(len(tr["my_pick_gets"]) for tr in trades),
             "picks_out": sum(len(tr["my_pick_sends"]) for tr in trades),
@@ -33063,10 +33199,12 @@ def api_team_trades(roster_id: str):
                 "picks_held": picks_held,
             },
         }
-        return jsonify({"trades": trades, "total": len(trades), "summary": summary})
+        payload = {"trades": trades, "total": len(trades), "summary": summary}
+        _player_trades_cache_put(cache_key, payload)
+        return jsonify(payload)
 
     except Exception as e:
-        import traceback;
+        import traceback
         traceback.print_exc()
         return _api_err("Request failed", e)
 
