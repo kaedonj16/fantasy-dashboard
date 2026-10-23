@@ -62,10 +62,11 @@ def test_team_strip_has_margin_around_it():
 
 
 def test_right_column_is_a_stack_not_one_stretched_card():
-    # Usage + situational (RB) + week-by-week cards stack on the right;
-    # the pair no longer stretches them to the room card's height, which
-    # left a large blank area under Usage by Week.
-    assert '<div class="pm-team-stack">${usageCard}${_sitCard}${detailCard}</div>' in JS
+    # Usage + situational (RB) cards stack on the right; the pair no
+    # longer stretches them to the room card's height, which left a large
+    # blank area under Usage by Week. The old third Week-by-week card is
+    # gone: its per-week detail now lives in the usage card's grid.
+    assert '<div class="pm-team-stack">${usageCard}${_sitCard}</div>' in JS
     pair_rule = CSS[CSS.find(".pm-team-pair { display: grid;"):]
     pair_rule = pair_rule[:pair_rule.find("}")]
     assert "align-items: start" in pair_rule
@@ -84,11 +85,22 @@ def test_situational_card_lives_in_stack_and_stays_hidden_without_data():
     assert "card.hidden = false" in JS
 
 
-def test_week_by_week_detail_card_is_position_shaped():
-    assert '<span class="pm-section-label">Week by week</span>' in JS
-    assert '`${p.carries} car`' in JS and '`${p.touches} touch`' in JS  # RB line
-    assert '`${p.pass_att} att`' in JS and '`${p.carries} rush`' in JS  # QB line
-    assert "pm-pair-weekly" in JS
+def test_weekly_grid_replaces_week_by_week_card():
+    # The standalone Week-by-week card is removed; its per-week
+    # composition folds into the Usage by week card as a compact grid,
+    # position-shaped: RB Car/Tgt/Snap %, QB Att/Rush/Snap %, WR/TE
+    # Tgt/Snap % (Car only when a week actually has carries).
+    assert "Week by week" not in JS
+    assert "pm-pair-weekly" not in JS
+    assert "pm-wk-grid" in JS and ".pm-wk-grid {" in CSS
+    assert "{ label: 'Car', key: 'carries' }, { label: 'Tgt', key: 'targets' }" in JS
+    assert "{ label: 'Att', key: 'pass_att' }, { label: 'Rush', key: 'carries' }" in JS
+    assert "{ label: 'Snap %', key: 'snap_share', dim: true, fmt: _snapFmt }" in JS
+    assert "_fw.some(p => Number(p.carries) > 0)" in JS
+    # The dotted snap summary row is gone from the card (snap lives in
+    # the grid now); the breakout tab's own snap chart is untouched.
+    assert "<span>Snap share by week</span>" not in JS
+    assert "'Snap share by week'" in JS
 
 
 def test_weekly_series_payload_includes_pos_metrics(monkeypatch):

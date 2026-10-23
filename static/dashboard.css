@@ -46022,13 +46022,13 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-team-note b { font-style: normal; font-weight: 700; }
 
 /* offense profile -- one shared-scale dot plot */
-.pm-tp-axis { display: grid; grid-template-columns: 88px 1fr 66px; align-items: center; margin-bottom: 9px; }
+.pm-tp-axis { display: grid; grid-template-columns: 124px 1fr 96px; align-items: center; margin-bottom: 9px; }
 .pm-tp-ends { position: relative; height: 12px; }
 .pm-tp-ends span { position: absolute; top: 0; font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.03em; }
 .pm-tp-ends .l { left: 0; }
 .pm-tp-ends .m { left: 50%; transform: translateX(-50%); }
 .pm-tp-ends .r { right: 0; }
-.pm-tp-row { display: grid; grid-template-columns: 88px 1fr 66px; align-items: center; padding: 7px 0; }
+.pm-tp-row { display: grid; grid-template-columns: 124px 1fr 96px; align-items: center; padding: 7px 0; }
 .pm-tp-row + .pm-tp-row { border-top: 1px solid var(--grid); }
 .pm-tp-label { font-size: 11px; font-weight: 600; color: var(--text); }
 .pm-tp-track { position: relative; height: 16px; }
@@ -46077,7 +46077,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* Fixed tracks, never content-sized: every row is its own grid, so auto
    tracks resolve per row and the header labels (wide) drift from the data
    values (narrow). Widths fit the 9px header labels (TARGET SHARE etc.). */
-.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 92px 82px 76px 78px 54px; }
+.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 92px 54px 54px; }
 .pm-room-qb .pm-troom-row,
 .pm-room-wr .pm-troom-row,
 .pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 76px 70px 58px; }
@@ -46133,12 +46133,23 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-qb .pm-troom-row,
 .pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-wr .pm-troom-row,
 .pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(96px,1fr) 70px 64px 52px; }
-.pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(100px,1fr) 92px 54px; }
-.pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-rb .pm-col-tgt_share,
-.pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-rb .pm-col-carry_share,
-.pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-rb .pm-col-touch_share { display: none; }
+.pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(100px,1fr) 92px 54px 54px; }
 .pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-rb .pm-rb-mobile-details { display: block; grid-column: 2 / -1; color: var(--text-muted); font-size: 11px; line-height: 1.35; }
 .pm-team-pair:not(.pm-team-pair-solo) .pm-pair-room .pm-room-rb .pm-troom-head .pm-rb-mobile-details { display: none; }
+/* merged per-week grid inside the usage card (the old Week by week card) */
+.pm-wk-grid { margin-top: 10px; border-top: 1px solid var(--grid); padding-top: 8px; display: grid; row-gap: 4px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.pm-wk-grid .h { font-weight: 800; color: var(--text-muted); text-align: right; letter-spacing: .03em; }
+.pm-wk-grid .lab { font-weight: 700; color: var(--text-muted); }
+.pm-wk-grid .v { text-align: right; font-weight: 600; color: var(--text); }
+.pm-wk-grid .v.dim { color: var(--text-muted); font-weight: 600; }
+/* situational bars: a light segment's number renders dark to stay visible */
+.pm-usage-bar i span.dark { color: #231303; }
+/* one disclosure style in the lower sections: label left, hint pushed
+   right, instead of space-between spreading the header pieces apart */
+.pm-team-sec .pm-section-collapsible { justify-content: flex-start; }
+.pm-team-sec .pm-section-collapsible .pm-collapse-hint { margin-left: auto; }
+/* o-line: methodology note sits directly under the three rows */
+.pm-oline-sec .pm-team-note { margin-top: 10px; }
 @media (max-width: 768px) {
   .pm-team-pair { grid-template-columns: 1fr; padding: 14px; }
 }
@@ -46553,13 +46564,14 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-tp-row.pm-tp-primary:hover,
 .pm-tp-row.pm-tp-primary:focus-visible { background: var(--accent-soft); filter: brightness(0.97); }
 .pm-tp-for {
-  display: block;
+  display: inline-block;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--accent);
-  margin-top: 1px;
+  margin: 0 0 0 6px;
+  vertical-align: 1px;
   line-height: 1.1;
 }
 .pm-oline-link {
@@ -46585,9 +46597,9 @@ a, button, [role="button"], [role="tab"], summary, label,
     .pm-team-season-pill { font-size: 11px; padding: 3px 7px; }
     /* room table: hide the snap bar and tighten columns/gaps for name room */
     .pm-team-usage { overflow:hidden; }
-    .pm-room-rb .pm-troom-row { grid-template-columns:18px minmax(0,1fr) 58px 60px; gap:6px; padding:8px 9px; }
-    .pm-room-rb .pm-col-tgt_share,.pm-room-rb .pm-col-carry_share,.pm-room-rb .pm-col-touch_share { display:none; }
+    .pm-room-rb .pm-troom-row { grid-template-columns:18px minmax(0,1fr) 58px 44px 48px; gap:6px; padding:8px 9px; }
     .pm-room-rb .pm-rb-mobile-details { display:block; grid-column:2 / -1; color:var(--text-muted); font-size: 11px; line-height:1.35; }
+    .pm-tp-for { display: none; }
     .pm-room-rb .pm-troom-head .pm-rb-mobile-details { display:none; }
     .pm-room-qb .pm-troom-row,.pm-room-wr .pm-troom-row,.pm-room-te .pm-troom-row { grid-template-columns:18px minmax(110px,1fr) 54px 44px 54px; gap:6px; padding:8px 9px; }
     .pm-troom-bar { display: none; }

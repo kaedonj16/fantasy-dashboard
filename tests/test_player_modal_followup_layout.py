@@ -83,8 +83,10 @@ def test_team_pair_structure_and_usage_card():
     # WR/TE targets), so the header and last-3 label render the picked noun.
     assert "Usage by week · ${_metric.low}" in JS
     assert "data.focus_weekly" in JS
-    # Pair rows from the mock: dotted snap list, last-3 per-game, season high.
-    assert "Snap share by week" in JS
+    # Pair rows from the mock: last-3 per-game and season high stay; the
+    # dotted snap list became the per-week grid inside the usage card.
+    assert "<span>Snap share by week</span>" not in JS
+    assert "pm-wk-grid" in JS
     assert "${_metric.noun}, last " in JS
     assert "Season high" in JS
     # The pair no longer stretches to equal height (that left a large

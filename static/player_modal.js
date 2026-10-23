@@ -587,7 +587,7 @@ function openPlayerModal(playerId, playerName, opts) {
   opts = opts || {};
   if (!opts.teamNavigation) {
     _pmTeamNavHistory = [];
-    _pmTeamAdvOpen = false; _pmTeamSchedOpen = false; _pmTeamOtherOpen = false; _pmTeamOlineOpen = false;
+    _pmTeamAdvOpen = false; _pmTeamSchedOpen = false; _pmTeamOtherOpen = false;
   }
   _pmTeamRestore = opts.restoreTeam || null;
 
@@ -3456,7 +3456,6 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 let _pmTeamAdvOpen = false;
 let _pmTeamSchedOpen = false;
 let _pmTeamOtherOpen = false;
-let _pmTeamOlineOpen = false;
 let _pmTeamRequestSeq = 0;
 let _pmTeamNavHistory = [];
 let _pmModalOriginalFocus = null;
@@ -3531,16 +3530,15 @@ function _pmBuildScheduleHTML(data) {
   const schedOpen = _pmTeamSchedOpen;
   const schedChev = schedOpen ? '&#9662;' : '&#9656;';
   const schedHint = schedOpen ? 'Hide details' : 'Show details';
-  const previewGame = games.find(g => g.status === 'live') || games.find(g => !g.bye && g.status !== 'final') || games.filter(g => !g.bye).slice(-1)[0];
-  const preview = previewGame ? `<div class="pm-schedule-preview"><b>${previewGame.status === 'final' ? 'Latest:' : 'Next:'}</b><span>${previewGame.ha === '@' ? '@ ' : 'vs '}${_pmEsc(previewGame.opponent_name || previewGame.opponent || '')}</span><span>${_pmScheduleResultHtml(previewGame)}</span></div>` : '';
-  const currentShortcut = Number(viewSeason) === new Date().getFullYear() && games.some(g => g.status === 'live' || (!g.bye && g.status !== 'final'))
-    ? '<button type="button" class="pm-current-week">Current week</button>' : '';
+  // Clean single header row: no always-visible Next/Latest preview line
+  // (it duplicated the header's own Next game line) and no Current week
+  // shortcut button. Every game stays in the collapsible body.
   const header = `<button type="button" class="pm-section-header pm-section-collapsible pm-team-sched-toggle" aria-expanded="${schedOpen ? 'true' : 'false'}" aria-controls="pmTeamSchedBody">
       <span class="pm-collapse-chevron" aria-hidden="true">${schedChev}</span>
       <span class="pm-section-label">Schedule &amp; Results</span>
       <span class="pm-team-secnote">${_pmEsc(note)}</span>
       <span class="pm-collapse-hint">${schedHint}</span>
-    </button>${preview}${currentShortcut}`;
+    </button>`;
   if (!games.length) {
     return `<div class="pm-team-sec pm-team-schedule">
       ${header}
@@ -3942,7 +3940,11 @@ function _pmTeamUsageBars(usageData, focusName) {
     const segs = sit.segments.map(function (s) {
       const isMe = focus && String(s.name || '').toLowerCase() === focus;
       const tip = `${s.name}: ${s.touches} touches (${s.pct}%)`;
-      const label = s.touches >= 1 ? `<span>${s.touches}</span>` : '';
+      // A number only fits (and only reads) on a segment with real width;
+      // below 9% it overflows the segment. On a light segment the number
+      // renders dark so it stays visible against the pale fill.
+      const label = (s.pct != null && Number(s.pct) >= 9 && s.touches >= 1)
+        ? `<span${s.light ? ' class="dark"' : ''}>${s.touches}</span>` : '';
       return `<i class="${isMe ? 'me' : ''}" style="width:${s.pct}%;background:${s.color}" title="${tip.replace(/"/g, '&quot;')}">${label}</i>`;
     }).join('');
     return `<div class="pm-usage-row">
@@ -3991,11 +3993,15 @@ function _pmTeamRoomColumns(pos, room) {
   room = room || [];
   const supported = key => room.some(row => row[key] != null);
   if (pos === 'QB') return [{ key: 'snap_pct', label: 'Snap %' }, { key: 'games', label: 'Games' }, { key: 'ppg', label: 'PPR PPG' }];
-  if (pos === 'RB') return [{ key: 'snap_pct', label: 'Snap %' }, { key: 'tgt_share', label: 'Target share' }, { key: 'carry_share', label: 'Carry share' }, { key: 'touch_share', label: 'Touch share' }, { key: 'ppg', label: 'PPR PPG' }].filter(col => col.key === 'snap_pct' || col.key === 'ppg' || supported(col.key));
+  // RB room headline number is real touches (carries + receptions), the
+  // same count the weekly bars and situational cards use. The old
+  // target/carry/touch share trio mixed definitions (touch share was
+  // carries + targets) and disagreed with the facing cards.
+  if (pos === 'RB') return [{ key: 'snap_pct', label: 'Snap %' }, { key: 'touches', label: 'Touch' }, { key: 'ppg', label: 'PPR PPG' }];
   return [{ key: 'tgt_share', label: 'Tgt %' }, { key: 'snap_pct', label: 'Snap %' }, { key: 'ppg', label: 'PPR PPG' }];
 }
 
-function _pmTeamRoomRow(row, i, pos, columns) {
+function _pmTeamRoomRow(row, i, pos, columns, roomTouchTotal) {
   const clickable = !row.is_focus && !!row.id;
   const cls = 'pm-troom-row' + (row.is_focus ? ' pm-troom-focus' : (clickable ? ' pm-troom-click pm-player-link' : '')) + (row.order === 1 ? ' pm-troom-starter' : '');
   const attrs = clickable
@@ -4013,9 +4019,10 @@ function _pmTeamRoomRow(row, i, pos, columns) {
     return `<span class="pm-troom-num pm-col-${col.key}${value == null ? ' mut' : ''}">${value == null ? '--' : value + suffix}</span>`;
   }).join('');
   const rbDetails = pos === 'RB' ? `<span class="pm-rb-mobile-details">${[
-    row.tgt_share != null ? 'Target ' + row.tgt_share + '%' : '',
-    row.carry_share != null ? 'Carry ' + row.carry_share + '%' : '',
-    row.touch_share != null ? 'Touch ' + row.touch_share + '%' : ''
+    row.carries != null ? row.carries + ' car' : '',
+    row.targets != null ? row.targets + ' tgt' : '',
+    (row.touches != null && roomTouchTotal > 0)
+      ? Math.round(100 * Number(row.touches) / roomTouchTotal) + '% of RB touches' : ''
   ].filter(Boolean).join(' · ')}</span>` : '';
   return `<div class="${cls}"${attrs}>
     <span class="pm-troom-slot">${i + 1}</span>
@@ -4140,14 +4147,16 @@ function _pmBuildTeamHTML(data) {
 
   const room = (data.depth_chart && data.depth_chart[pos]) || [];
   const roomCols = _pmTeamRoomColumns(pos, room);
-  // Room list: a copy sorted by target share descending (nulls last; depth
-  // order, then original order, breaks ties). Only the top 3 render up front,
-  // unless the focus player sits deeper, in which case his row takes the
-  // third slot (e.g. WR1 / WR2 / WR5). The rest sit behind a Show all toggle.
-  // Slot numbers follow the sorted order.
+  // Room list: RB rooms sort by touches descending (the column the card
+  // now headlines); other positions keep the target-share sort (nulls
+  // last; depth order, then original order, breaks ties). Only the top 3
+  // render up front, unless the focus player sits deeper, in which case
+  // his row takes the third slot (e.g. WR1 / WR2 / WR5). The rest sit
+  // behind a Show all toggle. Slot numbers follow the sorted order.
+  const _roomSortKey = pos === 'RB' ? 'touches' : 'tgt_share';
   const _roomSorted = room.map((r, i) => ({ r: r, i: i })).sort((a, b) => {
-    const av = a.r.tgt_share != null ? Number(a.r.tgt_share) : null;
-    const bv = b.r.tgt_share != null ? Number(b.r.tgt_share) : null;
+    const av = a.r[_roomSortKey] != null ? Number(a.r[_roomSortKey]) : null;
+    const bv = b.r[_roomSortKey] != null ? Number(b.r[_roomSortKey]) : null;
     if (av != null && bv != null && av !== bv) return bv - av;
     if (av != null && bv == null) return -1;
     if (av == null && bv != null) return 1;
@@ -4156,11 +4165,16 @@ function _pmBuildTeamHTML(data) {
     if (ao !== bo) return ao - bo;
     return a.i - b.i;
   });
+  // Share-of-room touches for the RB details line: over EVERY room row,
+  // including the ones behind the Show all toggle.
+  const _roomTouchTotal = pos === 'RB'
+    ? room.reduce((sum, r) => sum + (r.touches != null && isFinite(Number(r.touches)) ? Number(r.touches) : 0), 0)
+    : 0;
   const _roomFocusIdx = _roomSorted.findIndex(x => x.r.is_focus);
   const _roomVisibleIdx = _roomSorted.length <= 3
     ? _roomSorted.map((_, i) => i)
     : (_roomFocusIdx > 2 ? [0, 1, _roomFocusIdx] : [0, 1, 2]);
-  const _roomRowAt = (si) => _pmTeamRoomRow(_roomSorted[si].r, si, pos, roomCols);
+  const _roomRowAt = (si) => _pmTeamRoomRow(_roomSorted[si].r, si, pos, roomCols, _roomTouchTotal);
   const _roomHiddenIdx = _roomSorted.map((_, i) => i).filter(i => !_roomVisibleIdx.includes(i));
   const roomRows = room.length
     ? _roomVisibleIdx.map(_roomRowAt).join('')
@@ -4294,22 +4308,25 @@ function _pmBuildTeamHTML(data) {
         tip_extra: tipExtra,
       });
     };
-    // Primary metric first so the position-relevant signal is at the top,
-    // then the other half and overall for context.
-    let olineRows = '', olineMore = '';
+    // All three rows render directly (primary first, then the other half
+    // and overall for context): the section is three rows tall, so a
+    // Show/Hide disclosure and a repeated axis only added taps and noise.
+    // The methodology note sits under the rows as a plain note.
+    let olineRows = '';
     if (primaryKey === 'run_block') {
-      olineRows = mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank);
-      olineMore = mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank) + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
+      olineRows = mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank)
+        + mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank)
+        + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
     } else {
-      olineRows = mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank);
-      olineMore = mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank) + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
+      olineRows = mkOl('Pass Block', 'pass_block', ol.pass_block, ol.pass_block_rank)
+        + mkOl('Run Block', 'run_block', ol.run_block, ol.run_block_rank)
+        + mkOl('Overall', 'composite', ol.composite, ol.composite_rank);
     }
     if (olineRows) {
       olineSec = `<div class="pm-team-sec pm-oline-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offensive Line</span><span class="pm-team-secnote">${rankNote}</span></div>
-      ${_pmTeamProfileAxis()}${olineRows}
-      <button type="button" class="pm-subdisclosure pm-oline-toggle" aria-expanded="${_pmTeamOlineOpen ? 'true' : 'false'}">${_pmTeamOlineOpen ? 'Hide' : 'Show'} line metrics &amp; methodology <span aria-hidden="true">${_pmTeamOlineOpen ? '&#9662;' : '&#9656;'}</span></button>
-      <div class="pm-oline-more"${_pmTeamOlineOpen ? '' : ' hidden'}>${olineMore}<div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play -- not a commercial blocker grade. Dot = league rank (right = 1st).${ctx ? ' ' + ctx + '.' : ''}${seasonBit} <a class="pm-oline-link" href="/oline-rankings${ol.season ? '/' + ol.season : ''}" target="_blank" rel="noopener">Full rankings</a></div></div>
+      ${olineRows}
+      <div class="pm-team-note">0&ndash;100 unit rating (100 = best), from public play-by-play, not a commercial blocker grade. Dot = league rank (right = 1st).${ctx ? ' ' + ctx + '.' : ''}${seasonBit} <a class="pm-oline-link" href="/oline-rankings${ol.season ? '/' + ol.season : ''}" target="_blank" rel="noopener">Full rankings</a></div>
     </div>`;
     }
   }
@@ -4392,10 +4409,6 @@ function _pmBuildTeamHTML(data) {
       }).join('') + '</div>';
     }
     const _urows = [];
-    const _snaps = _fw.map(p => p.snap_share).filter(v => v != null && isFinite(Number(v)));
-    if (_snaps.length) {
-      _urows.push(`<div class="pm-ov-kv"><span>Snap share by week</span><b>${_snaps.map(v => (Math.round(Number(v) * 10) / 10).toFixed(1)).join(' · ')}</b></div>`);
-    }
     if (_hasMetric) {
       const _last3 = _mvals.filter(v => v != null).slice(-3);
       if (_last3.length) {
@@ -4406,41 +4419,42 @@ function _pmBuildTeamHTML(data) {
       _fw.forEach((p, i) => { if (_mvals[i] != null && (_hi == null || _mvals[i] > _hi.v)) _hi = { v: _mvals[i], w: p.week }; });
       if (_hi) _urows.push(`<div class="pm-ov-kv"><span>Season high</span><b>${_hi.v} ${_metric.sing}${_hi.v === 1 ? '' : 's'} · Week ${_hi.w}</b></div>`);
     }
-    if (_bars || _urows.length) {
+    // Per-week composition grid under the summary rows: the old separate
+    // Week-by-week card folded into this card as a compact grid (one
+    // column per played week), position-shaped like the chart: RB
+    // car/tgt/snap, QB att/rush/snap, WR/TE tgt/snap (plus carries when
+    // any week actually has one). Snap % lives here now, not in a
+    // dotted summary row.
+    let _wkGrid = '';
+    {
+      const _snapFmt = v => (Math.round(Number(v) * 10) / 10).toFixed(1);
+      const _gridRows = [];
+      if (pos === 'RB') {
+        _gridRows.push({ label: 'Car', key: 'carries' }, { label: 'Tgt', key: 'targets' });
+      } else if (pos === 'QB') {
+        _gridRows.push({ label: 'Att', key: 'pass_att' }, { label: 'Rush', key: 'carries' });
+      } else {
+        _gridRows.push({ label: 'Tgt', key: 'targets' });
+        if (_fw.some(p => Number(p.carries) > 0)) _gridRows.push({ label: 'Car', key: 'carries' });
+      }
+      _gridRows.push({ label: 'Snap %', key: 'snap_share', dim: true, fmt: _snapFmt });
+      const _gridHasData = _gridRows.some(r => _fw.some(p => p[r.key] != null && isFinite(Number(p[r.key]))));
+      if (_gridHasData) {
+        const _cells = ['<span class="lab"></span>'].concat(_fw.map(p => `<span class="h">W${p.week}</span>`));
+        _gridRows.forEach(r => {
+          _cells.push(`<span class="lab">${r.label}</span>`);
+          _fw.forEach(p => {
+            const v = p[r.key];
+            _cells.push(`<span class="v${r.dim ? ' dim' : ''}">${v != null && isFinite(Number(v)) ? (r.fmt ? r.fmt(v) : v) : '--'}</span>`);
+          });
+        });
+        _wkGrid = `<div class="pm-wk-grid" style="grid-template-columns: 44px repeat(${_fw.length}, 1fr)">${_cells.join('')}</div>`;
+      }
+    }
+    if (_bars || _urows.length || _wkGrid) {
       usageCard = `<div class="pm-team-pair-card pm-pair-usage">
         <div class="pm-section-header"><span class="pm-section-label">Usage by week · ${_metric.low}</span></div>
-        ${_bars}${_urows.join('')}
-      </div>`;
-    }
-  }
-
-  // Week-by-week detail card: the per-week composition behind the usage
-  // chart (same focus_weekly series), position-shaped like the chart:
-  // RB car/tgt/touch, QB att/rush, WR/TE tgt (plus carries when real).
-  let detailCard = '';
-  if (_fw.length) {
-    const _drows = _fw.map(p => {
-      const parts = [];
-      if (pos === 'QB') {
-        if (p.pass_att != null) parts.push(`${p.pass_att} att`);
-        if (p.carries != null) parts.push(`${p.carries} rush`);
-      } else if (pos === 'RB') {
-        if (p.carries != null) parts.push(`${p.carries} car`);
-        if (p.targets != null) parts.push(`${p.targets} tgt`);
-        if (p.touches != null) parts.push(`${p.touches} touch`);
-      } else {
-        if (p.targets != null) parts.push(`${p.targets} tgt`);
-        if (p.carries != null && Number(p.carries) > 0) parts.push(`${p.carries} car`);
-      }
-      if (p.snap_share != null && isFinite(Number(p.snap_share))) {
-        parts.push(`${(Math.round(Number(p.snap_share) * 10) / 10).toFixed(1)}% snap`);
-      }
-      return parts.length ? `<div class="pm-ov-kv"><span>Week ${p.week}</span><b>${parts.join(' · ')}</b></div>` : '';
-    }).join('');
-    if (_drows) {
-      detailCard = `<div class="pm-team-pair-card pm-pair-weekly">
-        <div class="pm-section-header"><span class="pm-section-label">Week by week</span></div>
-        ${_drows}
+        ${_bars}${_urows.join('')}${_wkGrid}
       </div>`;
     }
   }
@@ -4452,9 +4466,19 @@ function _pmBuildTeamHTML(data) {
   const _sitCard = pos === 'RB'
     ? `<div class="pm-team-pair-card pm-pair-situational" hidden><div class="pm-usage-bars-wrap" data-team="${_pmEsc(team)}" data-season="${summarySeason}" data-focus="${_pmEsc(data.player_name || '')}"></div></div>`
     : '';
-  const _stackHtml = (usageCard || detailCard || _sitCard)
-    ? `<div class="pm-team-stack">${usageCard}${_sitCard}${detailCard}</div>`
+  const _stackHtml = (usageCard || _sitCard)
+    ? `<div class="pm-team-stack">${usageCard}${_sitCard}</div>`
     : '';
+
+  // Room footnote: names the season the usage actually came from (the
+  // backend pins it via usage_timeframe) and how far the weekly series
+  // runs, so the card's basis reads true next to every other card.
+  const _usageSeason = data.usage_timeframe ? data.usage_timeframe.season : null;
+  const _maxFwWeek = _fw.length ? Math.max.apply(null, _fw.map(p => p.week)) : null;
+  const _touchDef = pos === 'RB' ? ' Touch = carries + receptions.' : '';
+  const roomNote = data.roster_timeframe && data.roster_timeframe.historical_unavailable
+    ? `Historical depth charts are unavailable. This is the current roster; injuries are current, while usage is from ${_usageSeason != null ? _usageSeason : 'the latest available season'}.${_touchDef} PPR PPG uses PPR scoring. Tap any teammate to open their card.`
+    : `Current Sleeper depth order and injuries.${_usageSeason != null ? ` All usage is ${_usageSeason}${_maxFwWeek ? ` through Week ${_maxFwWeek}` : ''}.` : ''}${_touchDef} PPR PPG uses PPR scoring. Tap any teammate to open their card.`;
 
   return `<div class="pm-team-wrap">
     ${teamStrip}
@@ -4481,7 +4505,7 @@ function _pmBuildTeamHTML(data) {
           ${roomRows}
         </div>
         ${competingHTML}
-        <div class="pm-team-note">${data.roster_timeframe && data.roster_timeframe.historical_unavailable ? `Historical depth charts are unavailable. This is the current roster; injuries are current, while usage is from ${data.usage_timeframe ? data.usage_timeframe.season : 'the latest available season'}.` : `Current Sleeper depth order and injuries. Usage is from ${data.usage_timeframe ? data.usage_timeframe.season : seasonNote}.`} PPR PPG uses PPR scoring. Tap any teammate to open their card.</div>
+        <div class="pm-team-note">${roomNote}</div>
       </div>
       ${_stackHtml}
     </div>
@@ -4502,7 +4526,7 @@ function _pmBuildTeamHTML(data) {
     ${scheduleSec}
     <div class="pm-team-sec pm-other-sec">
       <button type="button" class="pm-section-header pm-section-collapsible pm-other-toggle" aria-expanded="${_pmTeamOtherOpen ? 'true' : 'false'}" aria-controls="pmTeamRosterBody">
-        <span class="pm-collapse-chevron" aria-hidden="true">${_pmTeamOtherOpen ? '&#9662;' : '&#9656;'}</span><span class="pm-section-label">Full Roster / Reference</span><span class="pm-team-secnote">${otherPos.map(p => ((data.depth_chart || {})[p] || [])[0]).filter(Boolean).map(r => r.name).slice(0, 2).join(' · ') || 'Current roster'}</span>
+        <span class="pm-collapse-chevron" aria-hidden="true">${_pmTeamOtherOpen ? '&#9662;' : '&#9656;'}</span><span class="pm-section-label">Full Roster / Reference</span><span class="pm-team-secnote">QB · RB · WR · TE</span>
       </button>
       <div class="pm-team-depth pm-other-body" id="pmTeamRosterBody"${_pmTeamOtherOpen ? '' : ' hidden'}><div class="pm-mini-grid">${miniCols}</div></div>
     </div>
@@ -4518,7 +4542,6 @@ function _pmSyncDisclosure(button, body, open) {
   if (chev) chev.innerHTML = open ? '&#9662;' : '&#9656;';
   const hint = button.querySelector('.pm-collapse-hint');
   if (hint) hint.textContent = open ? 'Hide details' : 'Show details';
-  if (button.classList.contains('pm-oline-toggle')) button.firstChild.nodeValue = (open ? 'Hide' : 'Show') + ' line metrics & methodology ';
 }
 
 function _pmWireTeamPanel(panel, playerId) {
@@ -4549,7 +4572,6 @@ function _pmWireTeamPanel(panel, playerId) {
       advOpen: _pmTeamAdvOpen,
       scheduleOpen: _pmTeamSchedOpen,
       otherOpen: _pmTeamOtherOpen,
-      olineOpen: _pmTeamOlineOpen,
       gameId: openItem ? (openItem.querySelector('.pm-schedule-toggle') || {}).dataset.gameId : ''
     });
     _pmStopBoxLiveRefresh();
@@ -4570,7 +4592,7 @@ function _pmWireTeamPanel(panel, playerId) {
     if (back) {
       const prev = _pmTeamNavHistory.pop();
       if (!prev) return;
-      _pmTeamAdvOpen = prev.advOpen; _pmTeamSchedOpen = prev.scheduleOpen; _pmTeamOtherOpen = prev.otherOpen; _pmTeamOlineOpen = prev.olineOpen;
+      _pmTeamAdvOpen = prev.advOpen; _pmTeamSchedOpen = prev.scheduleOpen; _pmTeamOtherOpen = prev.otherOpen;
       openPlayerModal(prev.playerId, prev.playerName, { force: true, tab: 'team', teamSeason: prev.season, teamNavigation: true,
         restoreTeam: prev });
       return;
@@ -4590,12 +4612,8 @@ function _pmWireTeamPanel(panel, playerId) {
     if (adv) { _pmTeamAdvOpen = !_pmTeamAdvOpen; _pmSyncDisclosure(adv, panel.querySelector('.pm-team-adv-body'), _pmTeamAdvOpen); return; }
     const sched = target.closest && target.closest('.pm-team-sched-toggle');
     if (sched) { _pmTeamSchedOpen=!_pmTeamSchedOpen; const body=panel.querySelector('.pm-team-sched-body'); sched.setAttribute('aria-expanded',String(_pmTeamSchedOpen)); if(body) body.hidden=!_pmTeamSchedOpen; if(!_pmTeamSchedOpen)_pmCollapseAllSchedule(panel); return; }
-    const current = target.closest && target.closest('.pm-current-week');
-    if (current) { if(!_pmTeamSchedOpen){ const t=panel.querySelector('.pm-team-sched-toggle'); if(t)t.click(); } const row=panel.querySelector('.pm-schedule-toggle[data-status="live"], .pm-schedule-item:not([data-final="1"]) .pm-schedule-toggle'); if(row)row.focus(); return; }
     const other=target.closest && target.closest('.pm-other-toggle');
     if(other){ _pmTeamOtherOpen=!_pmTeamOtherOpen; _pmSyncDisclosure(other, panel.querySelector('.pm-other-body'), _pmTeamOtherOpen); return; }
-    const olt=target.closest && target.closest('.pm-oline-toggle');
-    if(olt){ _pmTeamOlineOpen=!_pmTeamOlineOpen; _pmSyncDisclosure(olt, panel.querySelector('.pm-oline-more'), _pmTeamOlineOpen); return; }
     const game=target.closest && target.closest('.pm-schedule-toggle');
     if(game){ const item=game.closest('.pm-schedule-item'); if(item)_pmExpandScheduleGame(panel,item); return; }
     const pill=target.closest && target.closest('.pm-boxscore-team-pill');

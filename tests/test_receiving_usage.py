@@ -58,13 +58,15 @@ class TestLightColorFilter:
         assert _is_light_color("#000000") is False
         assert _is_light_color("#C60C30") is False
 
-    def test_bills_full_palette_used_with_light_flag(self):
-        # BUF white is now usable; it must be flagged so the frontend
-        # renders a visible border
+    def test_bills_third_player_gets_distinct_non_light_shade(self):
+        # BUF white is too light to read on the card; with only 2 usable
+        # palette colors the third player gets a distinct HLS shade.
         cmap = _build_player_color_map("BUF", {"wr1": 30, "wr2": 20, "wr3": 10})
-        assert cmap["wr3"]["color"] == "#FFFFFF"
-        assert cmap["wr3"]["light"] is True
+        assert cmap["wr1"]["color"] == "#00338D"
         assert cmap["wr1"]["light"] is False
+        assert cmap["wr3"]["color"] != "#FFFFFF"
+        assert _is_light_color(cmap["wr3"]["color"]) is False
+        assert len({v["color"] for v in cmap.values()}) == 3
 
     def test_invalid_hex_not_light(self):
         assert _is_light_color("not-a-color") is False

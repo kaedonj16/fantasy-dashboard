@@ -109,18 +109,34 @@ class TestBuildPlayerColorMap:
         assert cmap["rb2"]["color"] == "#C60C30"  # BUF secondary
         assert cmap["rb1"]["light"] is False
 
-    def test_white_flagged_as_light(self):
-        # BUF tertiary is white; third-ranked player gets it with light flag
+    def test_no_player_gets_a_too_light_color(self):
+        # BUF tertiary is white: with 3 players and only 2 usable palette
+        # colors, white is dropped and the third player gets an HLS shade
+        # instead of an invisible white segment.
         cmap = _build_player_color_map("BUF", {"rb1": 50, "rb2": 30, "rb3": 10})
-        assert cmap["rb3"]["color"] == "#FFFFFF"
-        assert cmap["rb3"]["light"] is True
+        assert cmap["rb3"]["color"] != "#FFFFFF"
+        assert not any(_is_light_color(v["color"]) for v in cmap.values())
+        assert len({v["color"] for v in cmap.values()}) == 3
 
-    def test_colors_cycle_when_more_players_than_colors(self):
+    def test_colors_stay_distinct_when_more_players_than_colors(self):
         totals = {f"rb{i}": 50 - i for i in range(5)}
         cmap = _build_player_color_map("BUF", totals)
-        # 4th player cycles back to primary
-        assert cmap["rb3"]["color"] == "#00338D"
-        assert cmap["rb4"]["color"] == "#C60C30"
+        colors = [cmap[f"rb{i}"]["color"] for i in range(5)]
+        assert len(set(colors)) == 5
+        assert colors[0] == "#00338D"  # top player keeps primary
+        assert colors[1] == "#C60C30"  # second keeps secondary
+
+    def test_cle_five_rbs_get_five_distinct_visible_colors(self):
+        # The Judkins room case: CLE's palette is brown / orange / white,
+        # cycled across 5 backs that produced duplicate colors and an
+        # invisible white segment.
+        totals = {"judkins": 91, "rb2": 20, "rb3": 10, "rb4": 9, "rb5": 6}
+        cmap = _build_player_color_map("CLE", totals)
+        colors = [cmap[pid]["color"] for pid in totals]
+        assert len(set(colors)) == 5
+        assert not any(_is_light_color(c) for c in colors)
+        assert cmap["judkins"]["color"] == "#311D00"  # CLE primary
+        assert cmap["rb2"]["color"] == "#FF3C00"  # CLE secondary
 
     def test_same_player_same_color_regardless_of_call_order(self):
         cmap1 = _build_player_color_map("BUF", {"a": 10, "b": 20})
