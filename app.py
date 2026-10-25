@@ -40624,8 +40624,10 @@ def build_portfolio_body(
         ".pf-live-unavailable button{font:inherit;font-size:11px;font-weight:700;cursor:pointer;"
         "background:none;border:none;color:var(--accent);padding:0;}"
         "@media(max-width:640px){"
-        ".pf-lg-grid{grid-template-columns:minmax(0,1fr);gap:7px;}"
-        ".pf-lg-card{padding:9px 10px;gap:6px;}"
+        # Phone: the league grid becomes a horizontal snap-scroll row so 11
+        # cards no longer stack into one long column.
+        ".pf-lg-grid{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:7px;padding-bottom:8px;}"
+        ".pf-lg-card{flex:0 0 85%;scroll-snap-align:start;padding:9px 10px;gap:6px;}"
         ".pf-lg-top{gap:7px;}"
         ".pf-lg-mid{gap:4px 12px;}"
         ".pf-lg-stats .pf-lg-stat+.pf-lg-stat{padding-left:8px;margin-left:8px;}"
@@ -40778,7 +40780,7 @@ def build_portfolio_body(
     holdings_html = ""
     if holdings:
         h_rows = ""
-        for p in holdings:
+        for _hi, p in enumerate(holdings):
             pos = p.get("position") or ""
             pc = _POS_CLS_MAP.get(pos, "K")
             name_e = html.escape(p.get("name") or "")
@@ -40813,8 +40815,13 @@ def build_portfolio_body(
                 trend_s = "<span class='pf-trend flat'>=</span>"
             conc_s = (f"<span class='pf-conc'>{cnt} leagues</span>"
                       if cnt and int(cnt) >= 3 else "")
+            # Rows past the first 25 start hidden behind a Show all button
+            # (holdings arrive value-ordered); the filter script below can
+            # still surface an extra row when it matches a search/filter.
+            _row_extra = " pf-row-extra" if _hi >= 25 else ""
+            _row_hidden = " hidden" if _hi >= 25 else ""
             h_rows += (
-                f"<tr class='pf-row' data-pos='{pos}' data-name='{name_e.lower()}' data-value='{val}'>"
+                f"<tr class='pf-row{_row_extra}'{_row_hidden} data-pos='{pos}' data-name='{name_e.lower()}' data-value='{val}'>"
                 f"<td><span class='pos-badge {pc}'>{pos}</span></td>"
                 f"<td class='team'>"
                 f"<div class='player-clickable' data-player-id='{pid}' data-player-name='{name_e}' style='cursor:pointer;font-weight:600;'>{name_e}{conc_s}</div>"
@@ -40849,10 +40856,14 @@ def build_portfolio_body(
             f"<tbody id='pfBody'>{h_rows}</tbody>"
             f"</table>"
             f"</div>"
-            f"</div></div>"
+            + (f"<button type='button' class='pf-pill' id='pfShowAll' "
+               f"style='margin-top:10px;'>Show all {len(holdings)} players</button>"
+               if len(holdings) > 25 else "")
+            + f"</div></div>"
             f"<script>(function(){{"
-            # v25: no holdings pager; every row renders (filters still slice).
-            f"var PAGE=100000,fp='ALL',fn='',pg=1,filtered=[];"
+            # v25: no holdings pager; rows past 25 start hidden behind the
+            # Show all button (filters/search still slice every row).
+            f"var PAGE=100000,fp='ALL',fn='',pg=1,filtered=[],expanded=false;"
             f"function applyFilters(){{"
             f"var rows=Array.from(document.querySelectorAll('.pf-row'));"
             f"filtered=rows.filter(function(r){{return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));}});"
@@ -40862,7 +40873,9 @@ def build_portfolio_body(
             f"if(pg>pages)pg=pages;"
             f"var start=(pg-1)*PAGE,end=start+PAGE;"
             f"document.querySelectorAll('.pf-row').forEach(function(r){{r.style.display='none';}});"
-            f"filtered.slice(start,end).forEach(function(r){{r.style.display='';}});"
+            f"filtered.slice(start,end).forEach(function(r){{r.style.display='';"
+            f"if(expanded||fp!=='ALL'||fn||!r.classList.contains('pf-row-extra')){{r.removeAttribute('hidden');}}"
+            f"else{{r.setAttribute('hidden','');}}}});"
             f"var c=document.getElementById('pfCount');if(c)c.textContent=total+' players';"
             f"var pi=document.getElementById('pfPageInfo');if(pi)pi.textContent='Page '+pg+' of '+pages;"
             f"var prev=document.getElementById('pfPrev'),next=document.getElementById('pfNext');"
@@ -40873,6 +40886,8 @@ def build_portfolio_body(
             f"b.classList.add('on');fp=b.dataset.pos;applyFilters();}});}}); "
             f"var s=document.getElementById('pfSearch');"
             f"if(s)s.addEventListener('input',function(){{fn=this.value.toLowerCase();applyFilters();}});"
+            f"var sa=document.getElementById('pfShowAll');"
+            f"if(sa)sa.addEventListener('click',function(){{expanded=true;sa.style.display='none';applyFilters();}});"
             f"var prev=document.getElementById('pfPrev'),next=document.getElementById('pfNext');"
             f"if(prev)prev.addEventListener('click',function(){{if(pg>1){{pg--;render();}}}}); "
             f"if(next)next.addEventListener('click',function(){{var pages=Math.ceil(filtered.length/PAGE);if(pg<pages){{pg++;render();}}}}); "
