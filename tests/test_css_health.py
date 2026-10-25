@@ -146,6 +146,37 @@ def test_rz_boxscore_sheet_clears_mobile_dock():
         ".rz-bs-body bottom padding must clear the home indicator"
 
 
+def test_drive_bar_dark_chrome_scoped_to_dark_theme():
+    """Regression (Kaedon, 2026-10-25): the matchup drive bar painted its
+    near-black dark track on LIGHT pages. The shell only ever sets
+    data-theme="dark"; light mode removes the attribute, so the old
+    :root:not([data-theme="light"]) branch matched light pages too. The dark
+    track / red-zone values must be reachable ONLY under [data-theme="dark"],
+    the light track is the approved slate #edf1f5, and the fill is the flat
+    team color (treatment B) -- no gradient into a black color-mix, no dark
+    drop shadow."""
+    css = _css()
+    assert ':root:not([data-theme="light"]) .mb-fld-track' not in css
+    assert ':root:not([data-theme="light"]) .mb-fld-rz' not in css
+    dark_track = re.search(
+        r':root\[data-theme="dark"\]\s+\.mb-fld-track\s*\{([^}]+)\}', css)
+    assert dark_track, "dark drive-bar track rule missing"
+    assert "#1e293b" in dark_track.group(1)
+    dark_rz = re.search(
+        r':root\[data-theme="dark"\]\s+\.mb-fld-rz\s*\{([^}]+)\}', css)
+    assert dark_rz, "dark drive-bar red-zone rule missing"
+    assert "rgba(248, 113, 113, .16)" in dark_rz.group(1)
+    track = re.search(r"\.mb-fld-track\s*\{([^}]+)\}", css)
+    assert track, ".mb-fld-track rule missing"
+    assert "background: #edf1f5" in track.group(1)
+    fill = re.search(r"\.mb-fld-fill\s*\{([^}]+)\}", css)
+    assert fill, ".mb-fld-fill rule missing"
+    assert "background: var(--mb-tc" in fill.group(1)
+    assert "linear-gradient" not in fill.group(1)
+    assert "#000000" not in fill.group(1)
+    assert "box-shadow" not in fill.group(1)
+
+
 def test_rz_sync_bar_styles_exist():
     """Regression: the visit-reconcile "updating" bar must exist as a fixed
     top bar with an .on state, an indeterminate creep animation, and a

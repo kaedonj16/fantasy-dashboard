@@ -28098,6 +28098,20 @@ window._rzStubPbpEvents = function(pid, state) {
     return null;
   }
 
+  // Deep link into ScoreZone focused on this game. The payload's game rows
+  // carry the same game_id ScoreZone keys its game filter by (state.games is
+  // keyed by it server-side), and ScoreZone reads ?game= on load. The path
+  // reuses the league scope parsed from the current URL -- the same parse the
+  // getState fetch uses -- so the link lands in this matchup's league.
+  function scorezoneGameUrl(game) {
+    var gid = game && game.game_id ? String(game.game_id) : '';
+    if (!gid) return '';
+    var parts = window.location.pathname.split('/');
+    if (parts.length < 4) return '';
+    return '/' + parts[1] + '/' + parts[2] + '/' + parts[3]
+      + '/scorezone?game=' + encodeURIComponent(gid);
+  }
+
   // Build the drive-bar markup for a team in a live game. Returns '' when the
   // game is not live or field position is not yet reliable -- the mount then
   // clears. When the team is on defense, renders a compact "{TEAM} on Defense"
@@ -28110,7 +28124,11 @@ window._rzStubPbpEvents = function(pid, state) {
     var poss = norm(game.possession);
     var tn = norm(team);
     if (!poss || (tn !== norm(game.home) && tn !== norm(game.away))) return '';
-    if (poss !== tn) return '<div class="mb-fld-def">' + esc(tn) + ' on Defense</div>';
+    var href = scorezoneGameUrl(game);
+    if (poss !== tn) {
+      var def = '<div class="mb-fld-def">' + esc(tn) + ' on Defense</div>';
+      return href ? '<a class="mb-fld-link" href="' + esc(href) + '" aria-label="Open this game in ScoreZone">' + def + '</a>' : def;
+    }
     var fp = window._rzFieldPosition(game);
     if (!fp || fp.spot == null) return '';
     var atkAway = fp.side === 'away';
@@ -28126,12 +28144,21 @@ window._rzStubPbpEvents = function(pid, state) {
       dd = dl + (dist ? (' & ' + dist) : '');
     }
     var tc = TEAM_COLORS[norm(team)] || '#334155';
-    return '<div class="mb-fld-in"><div class="mb-fld-head"><span>' + esc(dd) + '</span>'
+    var bar = '<div class="mb-fld-in"><div class="mb-fld-head"><span>' + esc(dd) + '</span>'
       + '<span class="mb-fld-spot">' + esc(fp.label || '') + '</span></div>'
       + '<div class="mb-fld-track" style="--mb-tc:' + tc + '">' + rz + ticks
       + '<span class="mb-fld-fill ' + (atkAway ? 'mb-away' : 'mb-home') + '" style="width:' + fillW + '"></span>' + fd
       + '<span class="mb-fld-mark" style="left:' + markPos + '%"></span></div></div>';
+    return href ? '<a class="mb-fld-link" href="' + esc(href) + '" aria-label="Open this game in ScoreZone">' + bar + '</a>' : bar;
   }
+
+  // The bar is a real anchor into ScoreZone, but it sits inside the matchup
+  // row's click surface: keep a tap on it from also firing the row's own
+  // handlers (player modal / carousel). Capture phase + stopPropagation --
+  // navigation itself is left alone (no preventDefault).
+  document.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && e.target.closest('.mb-fld-link')) e.stopPropagation();
+  }, true);
 
   function paint(slide, state) {
     if (!slide || !state) return;

@@ -41704,6 +41704,13 @@ a.rz-demo-link:hover {
 /* yard-line flag above the ball */
 .rz-field-flag { position: absolute; top: -18px; transform: translateX(-50%); background: var(--rz-text, var(--text)); color: var(--rz-card, var(--card)); font-size: 11px; font-weight: 800; letter-spacing: .02em; padding: 2px 6px; border-radius: var(--radius-sm); white-space: nowrap; transition: left .4s ease; }
 .rz-field-flag::after { content: ""; position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%); border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 3px solid var(--rz-text, var(--text)); }
+/* Light pages: the inverted near-black pill is the same black accent Kaedon
+   rejected on the matchup drive bar -- swap to the light chrome (card-white
+   pill, navy text, hairline outline). Scoped :not([data-theme="dark"])
+   because light mode carries NO data-theme attribute. Dark keeps the
+   inverted pill, which is correct on the dark card. */
+:root:not([data-theme="dark"]) .rz-field-flag { background: var(--rz-card, var(--card)); color: var(--rz-text, var(--text)); box-shadow: inset 0 0 0 1px var(--rz-border, var(--border)); }
+:root:not([data-theme="dark"]) .rz-field-flag::after { border-top-color: var(--rz-card, var(--card)); }
 /* yard labels 20/40/50/40/20 below the track */
 .rz-field-scale { position: relative; height: 12px; margin-top: 3px; }
 .rz-field-scale span { position: absolute; transform: translateX(-50%); font-size: 11px; font-weight: 700; color: var(--rz-muted, var(--text-muted)); font-variant-numeric: tabular-nums; }
@@ -47757,19 +47764,32 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-fld-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .mb-cell-r .mb-fld-head { flex-direction: row-reverse; }
 .mb-fld-head .mb-fld-spot { color: var(--text-subtle); }
-.mb-fld-track { position: relative; height: 12px; border-radius: 6px; background: #f1f5f9; box-shadow: inset 0 1px 3px rgba(15, 23, 42, .08); }
-:root[data-theme="dark"] .mb-fld-track, :root:not([data-theme="light"]) .mb-fld-track { background: #1e293b; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .30); }
+/* Drive-bar chrome (treatment B, Kaedon 2026-10-25): light slate track and a
+   FLAT team-color fill in both themes. The dark track / RZ values must stay
+   scoped to [data-theme="dark"] ONLY -- the shell never sets
+   data-theme="light" (light = attribute absent), so a
+   :not([data-theme="light"]) branch matches light pages too and painted the
+   near-black #1e293b track on them. */
+.mb-fld-track { position: relative; height: 12px; border-radius: 6px; background: #edf1f5; box-shadow: inset 0 1px 3px rgba(15, 23, 42, .08); }
+:root[data-theme="dark"] .mb-fld-track { background: #1e293b; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .30); }
 .mb-fld-rz { position: absolute; top: 0; bottom: 0; width: 20%; background: rgba(220, 38, 38, .12); }
-:root[data-theme="dark"] .mb-fld-rz, :root:not([data-theme="light"]) .mb-fld-rz { background: rgba(248, 113, 113, .16); }
+:root[data-theme="dark"] .mb-fld-rz { background: rgba(248, 113, 113, .16); }
 .mb-fld-tick { position: absolute; top: 2px; bottom: 2px; width: 1px; background: color-mix(in srgb, var(--text-muted) 22%, transparent); }
-.mb-fld-fill { position: absolute; top: 2px; bottom: 2px; background: linear-gradient(180deg, color-mix(in srgb, var(--mb-tc, #1e3a5f) 78%, #ffffff) 0%, var(--mb-tc, #1e3a5f) 55%, color-mix(in srgb, var(--mb-tc, #0d2137) 88%, #000000) 100%); box-shadow: 0 1px 4px rgba(13, 33, 55, .30); border-radius: 4px; }
+.mb-fld-fill { position: absolute; top: 2px; bottom: 2px; background: var(--mb-tc, #1e3a5f); border-radius: 4px; }
 .mb-fld-fill.mb-away { left: 0; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%); }
 .mb-fld-fill.mb-home { right: 0; clip-path: polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%); }
 .mb-fld-fd { position: absolute; top: -2px; bottom: -2px; width: 2px; transform: translateX(-50%); background: #eab308; border-radius: 1px; z-index: 3; }
-.mb-fld-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; transform: translateX(-50%); background: var(--accent); border-radius: var(--radius-sm); z-index: 4; }
+.mb-fld-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; transform: translateX(-50%); background: #fff; box-shadow: 0 0 0 1.5px #122d4b; border-radius: 1px; z-index: 4; }
 @media (prefers-reduced-motion: reduce) { .mb-fld-fill { transition: none; } }
 .mb-fld-def { font-size: 11px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 0 1px; }
 .mb-cell-r .mb-fld-def { text-align: right; }
+/* The live bar links into ScoreZone focused on its game (Kaedon 2026-10-25).
+   Resting look is exactly treatment B: the anchor only resets link chrome,
+   adds the pointer, and grows the tap target with an invisible ::after --
+   the track itself is only 12px tall. No visual change at rest. */
+.mb-fld-link { display: block; position: relative; color: inherit; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.mb-fld-link::after { content: ""; position: absolute; inset: -6px 0; }
+.mb-fld-link:focus-visible { outline: 2px solid var(--accent, #122d4b); outline-offset: 2px; border-radius: 6px; }
 
 /* ---- Compact matchup rows (Kaedon's call): tighter rows, smaller text,
    thinner drive bars, stat line under the drive bar, never truncated. ---- */
