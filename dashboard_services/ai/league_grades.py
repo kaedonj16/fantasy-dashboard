@@ -5,7 +5,7 @@ percentiles vs the league, positional ranks, dynasty/redraft ratio) via
 ``calculate_roster_grade``. The dashboard hero previously used
 ``get_roster_grade`` from the AI renderer, which calls the same function
 WITHOUT league context and falls back to a different blend, so the two
-surfaces could disagree (e.g. "B+ Holding Pattern" vs "A+ Contender").
+surfaces could disagree (e.g. "B+ Crossroads" vs "A+ Contender").
 
 This module mirrors the Teams page computation exactly so both surfaces
 always show the same grade and window label.
@@ -38,6 +38,7 @@ def viewer_league_context_grade(ctx: dict, viewer_roster_id) -> dict:
 
 def _compute(ctx: dict, viewer_roster_id) -> dict:
     from dashboard_services.ai.context_builders import (
+        _team_value_axes,
         calculate_roster_grade,
         ctx_scoring_type,
         league_format_value_lookup,
@@ -111,7 +112,7 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
         team_pos_values, slot_counts, positions=_POS_ORDER
     )
 
-    # Dynasty/redraft totals per team (top-8 by dynasty value), then percentiles.
+    # Dynasty/redraft totals per team (each axis sums its own top 8), then percentiles.
     team_dynasty_total: dict[int, float] = {}
     team_redraft_total: dict[int, float] = {}
     team_dr_ratio: dict[int, float] = {}
@@ -140,11 +141,10 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
             except (TypeError, ValueError):
                 rval = 0.0
             pairs.append((dval, rval))
-        pairs.sort(reverse=True)
-        team_dynasty_total[rid_i] = sum(d for d, _ in pairs[:8])
-        team_redraft_total[rid_i] = sum(rv for _, rv in pairs[:8])
-        ratios = [d / max(rv, 1) for d, rv in pairs[:10] if d > 50 or rv > 50]
-        team_dr_ratio[rid_i] = round(sum(ratios) / len(ratios), 3) if ratios else 1.0
+        _dtot, _rtot, _drr = _team_value_axes(pairs)
+        team_dynasty_total[rid_i] = _dtot
+        team_redraft_total[rid_i] = _rtot
+        team_dr_ratio[rid_i] = _drr
 
     def _make_pct_fn(totals: dict[int, float]):
         _sorted = sorted(totals.values())

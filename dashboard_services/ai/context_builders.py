@@ -809,12 +809,97 @@ _GRADE_THRESHOLDS = [
     (0, "D"),
 ]
 
+def _team_value_axes(pairs) -> tuple[float, float, float]:
+    """(dynasty_total, redraft_total, dr_ratio) for one roster's value pairs.
+
+    ``pairs`` is a list of (dynasty_value, redraft_value) for the roster's
+    core-position players. Each axis total sums its OWN top 8: the redraft
+    total is the top 8 by redraft value, not the redraft values of the
+    dynasty top 8 (that understated redraft percentile for veteran
+    win-now rosters, whose best scorers carry low dynasty value).
+
+    dr_ratio is the MEDIAN of the per-player dynasty/redraft ratios over
+    the top 10 by dynasty value (players with either value > 50), each
+    ratio capped to [0.25, 3.0]. The old uncapped MEAN let one deep stash
+    (e.g. 300 dynasty / 20 redraft = 15x) drag a whole roster's ratio and
+    flip its window classification.
+    """
+    pairs = [(float(d or 0), float(r or 0)) for d, r in pairs]
+    by_dynasty = sorted(pairs, reverse=True)
+    by_redraft = sorted(pairs, key=lambda p: p[1], reverse=True)
+    dynasty_total = sum(d for d, _ in by_dynasty[:8])
+    redraft_total = sum(r for _, r in by_redraft[:8])
+    ratios = []
+    for d, r in by_dynasty[:10]:
+        if d > 50 or r > 50:
+            ratios.append(min(3.0, max(0.25, d / max(r, 1))))
+    if ratios:
+        ratios.sort()
+        mid = len(ratios) // 2
+        dr = ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2.0
+    else:
+        dr = 1.0
+    return dynasty_total, redraft_total, round(dr, 3)
+
+
+_AGE_SCORE_ANCHORS = [(23, 95), (25, 85), (27, 70), (28.5, 55), (30, 38), (32, 22)]
+
+
+def _age_score_for(avg_age: float) -> float:
+    """Smooth age score: linear interpolation through _AGE_SCORE_ANCHORS.
+
+    Replaces the old step function, where an average age of 27.0 scored 70
+    and 27.1 scored 55: a 2+ point grade swing on a birthday at 15%
+    weight. Scores at the anchor ages equal the old step values exactly.
+    """
+    pts = _AGE_SCORE_ANCHORS
+    if avg_age <= pts[0][0]:
+        return float(pts[0][1])
+    if avg_age >= pts[-1][0]:
+        return float(pts[-1][1])
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if x0 <= avg_age <= x1:
+            return round(y0 + (y1 - y0) * (avg_age - x0) / (x1 - x0), 1)
+    return float(pts[-1][1])
+
+
+def _powerhouse_rooms_ok(
+    position_ranks: dict | None,
+    num_teams: int,
+    elite_count: int,
+) -> bool:
+    """Weakest-room gate for Powerhouse: no core room in the bottom half.
+
+    Every core position (QB/RB/WR/TE) must rank in the league's top half.
+    Without positional ranks, only a very deep elite core (5+) passes;
+    anything else fails closed, because Powerhouse is meant to be rare.
+    """
+    if not position_ranks:
+        return elite_count >= 5
+    try:
+        n = int(num_teams or 12)
+    except (TypeError, ValueError):
+        n = 12
+    gate = (n + 1) // 2  # ceil(n / 2)
+    for pos in ("QB", "RB", "WR", "TE"):
+        rank = position_ranks.get(pos)
+        if rank is None or rank > gate:
+            return False
+    return True
+
+
 def _compute_win_window(
     avg_age: float,
     firsts: int,
     dynasty_pct: float,
     redraft_pct: float,
     dr_ratio: float,
+    *,
+    elite_count: int = 0,
+    capital_score: float = 0,
+    cliff_share: float = 0.0,
+    position_ranks: dict | None = None,
+    num_teams: int = 12,
 ) -> str:
     """
     Classify a team's competitive window purely from roster construction.
@@ -824,79 +909,92 @@ def _compute_win_window(
 
     dynasty_pct  – 0-1 percentile of total dynasty value vs league (long-term strength)
     redraft_pct  – 0-1 percentile of total redraft value vs league (scoring projection NOW)
-    dr_ratio     – avg(dynasty / redraft) for top starters
-                   >1.2 = future-heavy (young, upside not yet realized)
-                   <0.9 = win-now (aging/peaking, redraft ≥ dynasty)
+    dr_ratio     – median(dynasty / redraft) for top starters, capped [0.25, 3.0]
+                   >=1.2 = future-heavy (young, upside not yet realized)
+                   <=0.9 = win-now (aging/peaking, redraft ≥ dynasty)
     avg_age      – top-2-weighted average age of top-8 players
     firsts       – future 1st round picks owned
+    elite_count  – players worth >= 700
+    capital_score – 0-100 draft-capital score from the grade (pick depth, not just 1sts)
+    cliff_share  – share of top-8 value held by players aged 29+
+
+    Exactly 10 labels, decided in order (first match wins): Full Rebuild,
+    Retooling, Rebuilding, Powerhouse, Win-Now, Contender, Contender
+    Window, Rising, Treadmill, Crossroads (the fallback).
     """
     young  = avg_age <= 26.5
     prime  = 26.5 < avg_age <= 28.5
     aging  = avg_age > 28.5
 
-    win_now_roster = dr_ratio <= 0.90   # players more valuable now than long-term
-    future_roster  = dr_ratio >= 1.20   # players more valuable long-term than now
-
-    # Value tier flags
-    dynasty_elite  = dynasty_pct >= 0.70   # top 30% of league
-    dynasty_strong = dynasty_pct >= 0.55   # top 45%
-    dynasty_avg    = dynasty_pct >= 0.40   # above average
-
-    redraft_elite  = redraft_pct >= 0.70   # projecting to score in top 30%
-    redraft_strong = redraft_pct >= 0.55   # top 45%
-    redraft_avg    = redraft_pct >= 0.42   # above average
-
     # ── Transitional / negative ───────────────────────────────────────────────
 
-    # Full Rebuild - deliberate asset accumulation: many 1sts + weak current roster
-    if firsts >= 3 and dynasty_pct <= 0.45:
+    # Full Rebuild - deliberate asset accumulation: pick capital + weak current roster
+    if dynasty_pct <= 0.45 and (firsts >= 3 or capital_score >= 80):
         return "Full Rebuild"
 
     # Retooling - have picks AND aging/declining profile (trading away the peak)
-    if firsts >= 2 and (aging or (prime and win_now_roster)):
+    if (firsts >= 2 or capital_score >= 50) and (aging or (prime and dr_ratio <= 0.90)):
         return "Retooling"
 
     # Rebuilding - weak on both dynasty and projected scoring, no tank capital
     if dynasty_pct <= 0.35 and redraft_pct <= 0.40:
         return "Rebuilding"
 
+    # ── The ceiling ───────────────────────────────────────────────────────────
+
+    # Powerhouse - the league's clear top team on BOTH axes, with stars, a
+    # young-enough core, no age cliff, and no weak room. Deliberately super
+    # hard to get: most leagues have zero.
+    if (
+        dynasty_pct >= 0.92
+        and redraft_pct >= 0.88
+        and elite_count >= 4
+        and avg_age <= 27.5
+        and cliff_share < 0.25
+        and _powerhouse_rooms_ok(position_ranks, num_teams, elite_count)
+    ):
+        return "Powerhouse"
+
     # ── Win-now tier (projecting well NOW, window is short) ───────────────────
 
-    # Win-Now - elite projected scoring + aging/peaking roster + decent dynasty
-    # These teams need to capitalize immediately; their window is closing
-    if redraft_elite and dynasty_strong and (aging or win_now_roster):
+    # Win-Now - strong-to-elite scoring on a short clock (aging profile,
+    # win-now value mix, or a real age cliff in the core)
+    if dynasty_pct >= 0.40 and (aging or dr_ratio <= 0.90 or cliff_share >= 0.40) and (
+        redraft_pct >= 0.70 or (redraft_pct >= 0.55 and cliff_share >= 0.40)
+    ):
         return "Win-Now"
-
-    # Aging Contender - strong projected scoring but aging roster, dynasty declining
-    if redraft_strong and aging and dynasty_avg:
-        return "Aging Contender"
 
     # ── Prime contender tier (strong on both axes) ────────────────────────────
 
     # Contender - elite dynasty AND strong projected scoring (best of both worlds)
-    if dynasty_elite and redraft_strong:
+    if dynasty_pct >= 0.70 and redraft_pct >= 0.55:
         return "Contender"
 
     # ── Building toward peak (dynasty strong, scoring still developing) ───────
 
-    # Contender Window - elite dynasty + young profile; peak scoring is coming
-    # These rosters have everything, they just haven't hit their ceiling yet
-    if dynasty_elite and (young or prime) and not win_now_roster:
+    # Contender Window - elite dynasty + young/prime core that is not already
+    # priced as win-now; peak scoring is coming
+    if (dynasty_pct >= 0.70 and (young or prime) and dr_ratio > 0.90) or (
+        dynasty_pct >= 0.55 and redraft_pct >= 0.42 and young
+    ):
         return "Contender Window"
 
-    # Also Contender Window for strong dynasty + above-avg projected scoring + young
-    if dynasty_strong and redraft_avg and young:
-        return "Contender Window"
-
-    # 2-3 Year Window - solid dynasty + future-heavy (upside not yet realized)
-    if dynasty_strong and (future_roster or young):
-        return "2-3 Year Window"
-
-    # Rising - decent dynasty + very young + future-heavy roster
-    if dynasty_avg and young and future_roster:
+    # Rising - solid dynasty base, future-heavy or young, still accumulating
+    if (dynasty_pct >= 0.55 and (dr_ratio >= 1.20 or young)) or (
+        dynasty_pct >= 0.40 and young and dr_ratio >= 1.20
+    ):
         return "Rising"
 
-    return "Holding Pattern"
+    # ── The middle, split by whether the team has a way out ───────────────────
+
+    # Treadmill - aging, no elite core, no pick capital, not good enough:
+    # stuck in the middle with no clear way up
+    if aging and elite_count == 0 and capital_score < 34 and dynasty_pct < 0.55:
+        return "Treadmill"
+
+    # Crossroads - everything else: average across the board, but holding a
+    # lever (pick capital or a young core) to pick a direction
+    return "Crossroads"
 
 
 def calculate_roster_grade(
@@ -907,7 +1005,7 @@ def calculate_roster_grade(
     # League-context signals - passed from the team page when available
     dynasty_pct_val: float = -1.0,   # 0-1 percentile of team's dynasty value (-1 = not provided)
     redraft_pct_val: float = 0.5,    # 0-1 percentile of team's redraft value (scoring projection)
-    dr_ratio: float = 1.0,           # avg(dynasty/redraft) for top starters
+    dr_ratio: float = 1.0,           # median(dynasty/redraft) for top starters
     # Deprecated season-result params kept for call-site compatibility but not used in window logic
     pf_pct_val: float = 0.5,
     win_rate: float | None = None,
@@ -949,18 +1047,7 @@ def calculate_roster_grade(
         avg_age = sum(a * w for a, w in zip(ages_all, weights)) / sum(weights)
     else:
         avg_age = 28.0
-    if avg_age <= 23:
-        age_score = 95
-    elif avg_age <= 25:
-        age_score = 85
-    elif avg_age <= 27:
-        age_score = 70
-    elif avg_age <= 28.5:
-        age_score = 55
-    elif avg_age <= 30:
-        age_score = 38
-    else:
-        age_score = 22
+    age_score = _age_score_for(avg_age)
 
     # Depth Score - positions with 2+ players worth ≥350
     pos_counts: dict[str, int] = {}
@@ -995,6 +1082,32 @@ def calculate_roster_grade(
     # Elite Core Score - players above 700
     elite_count = sum(1 for p in players if _safe_float(p.get("value")) >= 700)
     elite_score = min(elite_count * 33, 100)
+
+    # Cliff share + top-3 concentration over the top 8 (by value, as the
+    # callers sort): how much of the core's value is aged 29+, and how much
+    # sits in the top 3 players. Feed the window classifier (Powerhouse
+    # gate, Win-Now cliff test, Treadmill) and the roster shape tag.
+    _top8_vals = [(_safe_float(p.get("value")), _safe_float(p.get("age"))) for p in top8]
+    _top8_total = sum(v for v, _a in _top8_vals)
+    if _top8_total > 0:
+        cliff_share = sum(v for v, a in _top8_vals if a >= 29) / _top8_total
+        top3_share = sum(sorted((v for v, _a in _top8_vals), reverse=True)[:3]) / _top8_total
+    else:
+        cliff_share = 0.0
+        top3_share = 0.0
+
+    # Roster shape tag - at most one, first match wins. Descriptive only;
+    # it does not feed the grade or the window.
+    if capital_score >= 67:
+        roster_shape = "PICK-LOADED"
+    elif cliff_share >= 0.40:
+        roster_shape = "CLIFF RISK"
+    elif top3_share >= 0.55:
+        roster_shape = "TOP-HEAVY"
+    elif deep_positions >= 3 and top3_share < 0.45:
+        roster_shape = "DEEP"
+    else:
+        roster_shape = ""
 
     # Rank Score (used only in fallback grade when no league context)
     rank_score = 50.0
@@ -1084,6 +1197,11 @@ def calculate_roster_grade(
             dynasty_pct=dynasty_pct_val,
             redraft_pct=redraft_pct_val,
             dr_ratio=dr_ratio,
+            elite_count=elite_count,
+            capital_score=capital_score,
+            cliff_share=cliff_share,
+            position_ranks=position_ranks,
+            num_teams=num_teams,
         )
     else:
         # Fallback for callers without league context (AI renderer, trade strategy)
@@ -1100,12 +1218,18 @@ def calculate_roster_grade(
             dynasty_pct=_rank_pct,    # positional rank as dynasty proxy
             redraft_pct=_rank_pct,    # same proxy for both axes in fallback
             dr_ratio=_dr,
+            elite_count=elite_count,
+            capital_score=capital_score,
+            cliff_share=cliff_share,
+            position_ranks=position_ranks,
+            num_teams=num_teams,
         )
 
     return {
         "score": total,
         "grade": grade,
         "win_window": win_window,
+        "roster_shape": roster_shape,
         "formula_id": formula_id,
         "formula_weights": dict(formula_weights),
         "breakdown": {
@@ -1116,6 +1240,9 @@ def calculate_roster_grade(
             "rank_score": rank_score,
             "avg_age": round(avg_age, 1),
             "elite_count": elite_count,
+            "cliff_share": round(cliff_share, 3),
+            "top3_share": round(top3_share, 3),
+            "roster_shape": roster_shape,
             "deep_positions": deep_positions,
             "dynasty_pct": round(dynasty_pct_val, 3) if has_league_ctx else None,
             "redraft_pct": round(redraft_pct_val, 3) if has_league_ctx else None,
@@ -2244,11 +2371,10 @@ def build_power_rankings_context(ctx: dict) -> dict:
             dval = _safe_float(row.get("value") or 0)
             rval = _safe_float(row.get(redraft_key) or 0)
             _pairs.append((dval, rval))
-        _pairs.sort(reverse=True)
-        _team_dynasty_total[rid_int] = sum(d for d, _ in _pairs[:8])
-        _team_redraft_total[rid_int] = sum(r for _, r in _pairs[:8])
-        _ratios = [d / max(r, 1) for d, r in _pairs[:10] if d > 50 or r > 50]
-        _team_dr_ratio[rid_int] = round(sum(_ratios) / len(_ratios), 3) if _ratios else 1.0
+        _dtot, _rtot, _drr = _team_value_axes(_pairs)
+        _team_dynasty_total[rid_int] = _dtot
+        _team_redraft_total[rid_int] = _rtot
+        _team_dr_ratio[rid_int] = _drr
 
     def _make_pct_fn(totals: dict):
         _sorted = sorted(totals.values())

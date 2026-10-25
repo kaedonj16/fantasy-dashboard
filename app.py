@@ -37616,7 +37616,7 @@ def api_trade_intel_player_packages(player_id: str):
                     # Map Teams-page labels to rebuild / win_now / competitive
                     if win_window in ("Full Rebuild", "Retooling"):
                         window = "rebuild"
-                    elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
+                    elif win_window in ("Powerhouse", "Contender", "Win-Now", "Contender Window"):
                         window = "win_now"
                     else:
                         window = "competitive"
@@ -38889,7 +38889,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                     _ww = _grade.get("win_window", "")
                     if _ww in ("Full Rebuild", "Retooling", "Rebuilding"):
                         _window = "rebuild"
-                    elif _ww in ("Win-Now", "Aging Contender", "Contender"):
+                    elif _ww in ("Powerhouse", "Win-Now", "Contender"):
                         _window = "win_now"
                     else:
                         _window = "competitive"
@@ -41528,10 +41528,11 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         # ── Window badge colour ──────────────────────────────────────────────
         _window_color_map = {
             "Contend": "#4ade80", "Bubble": "#fbbf24", "Long Shot": "#94a3b8",
+            "Powerhouse": "#facc15",
             "Contender": "#4ade80", "Win-Now": "#4ade80",
-            "Contender Window": "#86efac", "Aging Contender": "#fbbf24",
-            "2-3 Year Window": "#60a5fa", "Rising": "#60a5fa",
-            "Holding Pattern": "#94a3b8", "Retooling": "#f97316",
+            "Contender Window": "#86efac",
+            "Rising": "#60a5fa",
+            "Crossroads": "#94a3b8", "Treadmill": "#a8a29e", "Retooling": "#f97316",
             "Rebuilding": "#f87171", "Full Rebuild": "#f87171",
         }
         _wc = _window_color_map.get(win_window, "#94a3b8")

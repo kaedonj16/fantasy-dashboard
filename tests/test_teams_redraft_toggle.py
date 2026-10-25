@@ -226,6 +226,43 @@ def test_redraft_league_has_no_toggle(app_stub):
     assert season["2"]["window"] == "Contend"
 
 
+def test_teams_shell_merged_rows(app_stub):
+    """Option B header: row 1 = page tabs + mode toggle, row 2 = sort
+    chips + Legend. The "Sort by:" label and the sliding-tab treatment
+    are gone; the sort buttons keep their data-sort chip contract."""
+    from dashboard_services.pages.teams_page import build_teams_body
+
+    html_out = build_teams_body(_fixture_ctx(league_type=2))
+    i_row1 = html_out.index('<div class="teams-head-row1">')
+    i_ptabs = html_out.index('<nav class="teams-ptabs"')
+    i_toggle = html_out.index('<div class="teams-mode-toggle"')
+    i_row2 = html_out.index('<div class="teams-head-row2">')
+    i_sort = html_out.index('<div class="teams-sort-tabs">')
+    i_legend = html_out.index('id="windowLegendWrap"')
+    # Row 1 holds the tabs, then the toggle; row 2 holds sort, then Legend.
+    assert i_row1 < i_ptabs < i_toggle < i_row2
+    assert i_row2 < i_sort < i_legend
+    # No text label, but the script's status span stays in the DOM.
+    assert "Sort by:" not in html_out
+    assert 'id="teamsSortLabel"' in html_out
+    # Chips are plain buttons: no slide-tabs hook, no otc-main-tab class.
+    assert "data-br-slide-tabs" not in html_out
+    assert "otc-main-tab" not in html_out
+    assert '<div class="teams-topbar">' not in html_out
+    assert 'class="teams-sort-btn" data-sort="posindex"' in html_out
+    assert 'class="teams-sort-btn" data-sort="grade"' in html_out
+    assert 'class="teams-sort-btn" data-sort="archetype">Archetype</button>' in html_out
+    # Styles for both rows ship in the stylesheet.
+    assert ".teams-head-row1" in CSS
+    assert ".teams-head-row2" in CSS
+
+    # Redraft league: row 1 is tabs only, sort label reads "Odds".
+    html_out = build_teams_body(_fixture_ctx(league_type=0))
+    assert '<div class="teams-head-row1">' in html_out
+    assert '<div class="teams-head-row2">' in html_out
+    assert 'class="teams-sort-btn" data-sort="archetype">Odds</button>' in html_out
+
+
 def test_drawer_position_totals_use_mode_values(app_stub):
     """Drawer position totals are summed from the active mode's values:
     Team 1's QBs are 820 + 480 dynasty but 420 + 260 this season."""

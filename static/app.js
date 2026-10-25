@@ -11241,15 +11241,23 @@ window.initTradePage = function initTradePage(root = document) {
 
       // ── "Based on real trades" section ─────────────────────────────────────────
       const _windowColors = {
-        'Full Rebuild':      '#6366f1',
-        'Retooling':         '#a78bfa',
+        'Powerhouse':        '#ca8a04',
+        'Contender':         '#22c55e',
+        'Win-Now':           '#f59e0b',
+        'Contender Window':  '#3b82f6',
+        'Rising':            '#8b5cf6',
+        'Crossroads':        '#64748b',
+        'Treadmill':         '#78716c',
+        'Retooling':         '#f97316',
+        'Rebuilding':        '#ef4444',
+        'Full Rebuild':      '#b91c1c',
+        // Legacy labels (stale cached payloads): nearest new color
         'Building':          '#a78bfa',
-        'Holding Pattern':   '#94a3b8',
-        'Rising Contender':  '#f59e0b',
-        '2-3 Year Window':   '#f59e0b',
-        'Contender Window':  '#10b981',
-        'Win-Now Window':    '#10b981',
-        'Aging Contender':   '#ef4444',
+        'Holding Pattern':   '#64748b',
+        'Rising Contender':  '#8b5cf6',
+        '2-3 Year Window':   '#8b5cf6',
+        'Win-Now Window':    '#f59e0b',
+        'Aging Contender':   '#f59e0b',
       };
       const _windowBadge = '';
 

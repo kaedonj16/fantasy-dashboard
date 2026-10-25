@@ -545,13 +545,13 @@
         'Contend': 'td-win-contend',
         'Bubble': 'td-win-bubble',
         'Long Shot': 'td-win-long-shot',
+        'Powerhouse': 'td-win-powerhouse',
         'Contender': 'td-win-contender',
         'Win-Now': 'td-win-win-now',
-        'Aging Contender': 'td-win-aging-contender',
         'Contender Window': 'td-win-contender-window',
-        '2-3 Year Window': 'td-win-2yr',
         'Rising': 'td-win-rising',
-        'Holding Pattern': 'td-win-holding',
+        'Crossroads': 'td-win-crossroads',
+        'Treadmill': 'td-win-treadmill',
         'Retooling': 'td-win-retooling',
         'Rebuilding': 'td-win-rebuilding',
         'Full Rebuild': 'td-win-full-rebuild'
@@ -562,7 +562,7 @@
             '<div class="td-head-id">' +
             '<div class="td-name">' + _tdEsc(t.name) + (t.is_viewer ? '<span class="tsc-you">YOU</span>' : '') + '</div>';
         if (t.window) {
-            head += '<div class="td-contend ' + (_TD_WIN_CLS[t.window] || 'td-win-holding') + '"><span class="td-dot" style="background:' + _tdEsc(t.win_color || '#94a3b8') + ';"></span>' + _tdEsc(t.window) + '</div>';
+            head += '<div class="td-contend ' + (_TD_WIN_CLS[t.window] || 'td-win-crossroads') + '"><span class="td-dot" style="background:' + _tdEsc(t.win_color || '#94a3b8') + ';"></span>' + _tdEsc(t.window) + '</div>';
         }
         head += '</div>';
         if (t.grade && t.grade !== '?') {
