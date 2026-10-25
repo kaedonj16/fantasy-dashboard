@@ -502,13 +502,13 @@ def test_sleeper_style_situation_strip_and_yardage_chip():
 
 
 def test_running_cumulative_stat_line_rendered():
-    """Sleeper-style running stat line ('QB · 2/3 CMP, 13 YD') at each play."""
+    """Sleeper-style running stat line ('QB · 2/3 cmp, 13 yd') at each play."""
     src = _sz()
     css = (_ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     assert "function _cumeLine(" in src
     assert "cume: play.cume" in src
     assert "rz-event-cume" in src and ".rz-event-cume" in css
-    assert "' CMP'" in src
+    assert "' cmp'" in src
 
 
 def test_scoring_honors_distance_fg_and_te_premium():

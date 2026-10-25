@@ -134,7 +134,8 @@ def test_scorezone_boundary_restamps_normalized_league_scoring_and_renders_conte
     app = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "normalize_league_scoring(" in app[app.index("def _scorezone_collect"):app.index("def _scorezone_fetch")]
     assert "function _secondaryContributors(ev)" in RZ
-    assert "rz-event-contributors" in RZ
+    # v3 look: contributors fold into the meta block as .rz-event-cume2.
+    assert "rz-event-cume2" in RZ
     # Canonical groups continue to own the single top-level event identity.
     grouped = _js_between("function _eventsFromPbp", "function _detectChanges")
     assert "contributionsByKey" in grouped

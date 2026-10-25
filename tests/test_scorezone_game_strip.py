@@ -174,10 +174,10 @@ def test_players_to_play_excludes_live_players():
         ".rz-game-pill.is-final",
         ".rz-gp-status",
         ".rz-mc-center",
-        ".rz-mc-state",
-        ".rz-mc-to-play-counts",
-        ".rz-mc-to-play-divider",
-        ".rz-mc-playing-counts",
+        # v3 look: the center status stack (.rz-mc-state / counts / substate)
+        # was replaced by one muted line with a live dot.
+        ".rz-mc-line",
+        ".rz-mc-dot",
         ".rz-nfl-live-dot",
     ],
 )

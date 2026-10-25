@@ -38,11 +38,13 @@ const DEADLINE = constant('_RZ_FETCH_DEADLINE_MS');
 const STREAM_DEADLINE = constant('_RZ_STREAM_DEADLINE_MS');
 const STREAM_IDLE = constant('_RZ_STREAM_IDLE_MS');
 const VISIT_STALE = constant('_VISIT_RECONCILE_STALE_MS');
+const STALE_BADGE = constant('_STALE_BADGE_MS');
 
 const REAL = [
   '_rzLog', '_ownsScreen', '_cancelInflight', '_recoverScopeLoad', '_manualRefresh',
   '_refresh', '_refreshUserStream', '_tick', '_emptyUserState', '_mergeLeagueSlice',
   '_hasViewerIdentityFields', '_snapshotAgeMs', '_visitReconcile',
+  '_noteCollectAt', '_dataIsStale', '_syncStaleBadge', '_syncHeaderStuck',
 ].map(extract).join('\n');
 
 // ── Fake infrastructure ─────────────────────────────────────────────────────
@@ -161,9 +163,11 @@ function build(opts) {
     var _RZ_STREAM_DEADLINE_MS = ${STREAM_DEADLINE};
     var _RZ_STREAM_IDLE_MS = ${STREAM_IDLE};
     var _VISIT_RECONCILE_STALE_MS = ${VISIT_STALE};
+    var _STALE_BADGE_MS = ${STALE_BADGE};
     // ── mutable module state ──
     var _scope = D.scope, _streaming = false, _streamGen = 0, _reqSeq = 0, _inflight = null;
     var _scopeJustSwitched = false, _lastDataAt = null, _lastSuccessAt = null;
+    var _lastCollectAt = null;
     var _lastPollFailed = false, _scopeLoadError = null;
     var _loadingScope = D.loadingScope, _loadingPlays = false, _countdown = 15;
     var _state = D.state, _scopeCache = D.scopeCache, _scopeRuntime = { league: null, user: null };
@@ -195,7 +199,8 @@ function build(opts) {
       state: function () { return {
         streaming: _streaming, inflight: _inflight, scope: _scope, reqSeq: _reqSeq, streamGen: _streamGen,
         loadingScope: _loadingScope, loadingPlays: _loadingPlays, lastPollFailed: _lastPollFailed,
-        lastDataAt: _lastDataAt, lastSuccessAt: _lastSuccessAt, countdown: _countdown,
+        lastDataAt: _lastDataAt, lastCollectAt: _lastCollectAt, dataStale: _dataIsStale(),
+        lastSuccessAt: _lastSuccessAt, countdown: _countdown,
         scopeCache: _scopeCache, state: _state, scopeLoadError: _scopeLoadError,
       }; },
     };
