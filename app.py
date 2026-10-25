@@ -42698,12 +42698,23 @@ def _changelog_entry_key(entry):
     return "entry-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
+# How long a changelog-push claim (see _notify_changelog_on_startup)
+# blocks other workers before it is treated as abandoned and can be
+# taken over. A broadcast takes seconds; 10 minutes is generous cover
+# for a worker that dies mid-send.
+_CHANGELOG_CLAIM_TTL_S = 600
+
+
 def _notify_changelog_on_startup():
     """Send a push notification when a new changelog entry is deployed.
 
     Stores the last-notified entry's content key (see
     _changelog_entry_key) in the DB so this fires at most once per
-    changelog entry, even across restarts on the same deploy.
+    changelog entry, even across restarts on the same deploy. The
+    broadcast itself is claimed atomically before sending (the
+    changelog_push_claim app_state row), so workers booting at the
+    same time cannot each send a copy while the settled marker is
+    still unwritten.
     """
     try:
         from dashboard_services.changelog import CHANGELOG
@@ -42749,6 +42760,81 @@ def _notify_changelog_on_startup():
                 last_pushed, latest_date, latest_key,
             )
 
+        # Claim the broadcast before sending it. Every gunicorn worker
+        # runs this function at import time, and the settled marker is
+        # only written after the (slow) broadcast, so without a claim
+        # every worker that boots during the send window passes the
+        # check above and sends a duplicate. The claim is one
+        # INSERT ... ON CONFLICT DO NOTHING on a second app_state key:
+        # exactly one worker wins it. A claim older than
+        # _CHANGELOG_CLAIM_TTL_S (its worker died mid-send) or one for
+        # a different entry can be taken over via a conditional delete
+        # plus one claim retry.
+        import time
+
+        claim_value = f"{latest_key}|{int(time.time())}"
+
+        def _claim_insert(value):
+            with get_conn() as conn:
+                cur = conn.execute(
+                    "INSERT INTO app_state (key, value) "
+                    "VALUES ('changelog_push_claim', %s) "
+                    "ON CONFLICT (key) DO NOTHING",
+                    (value,),
+                )
+                won = cur.rowcount == 1
+                conn.commit()
+            return won
+
+        def _claim_read():
+            with get_conn() as conn:
+                row = conn.execute(
+                    "SELECT value FROM app_state "
+                    "WHERE key = 'changelog_push_claim'"
+                ).fetchone()
+            return row["value"] if row else None
+
+        def _claim_delete(value):
+            # Conditional on the exact value, so a worker never
+            # deletes a claim another worker has since taken.
+            with get_conn() as conn:
+                conn.execute(
+                    "DELETE FROM app_state "
+                    "WHERE key = 'changelog_push_claim' AND value = %s",
+                    (value,),
+                )
+                conn.commit()
+
+        def _claim_is_fresh(value):
+            if not value:
+                return False
+            held_key, sep, held_ts = value.rpartition("|")
+            if not sep or held_key != latest_key:
+                return False
+            try:
+                return (time.time() - int(held_ts)) < _CHANGELOG_CLAIM_TTL_S
+            except ValueError:
+                return False
+
+        if not _claim_insert(claim_value):
+            held_claim = _claim_read()
+            if _claim_is_fresh(held_claim):
+                logger.info(
+                    "[changelog-push] claim held by another worker for "
+                    "entry %s (%s); skipping",
+                    latest_date, latest_key,
+                )
+                return
+            if held_claim is not None:
+                _claim_delete(held_claim)
+            if not _claim_insert(claim_value):
+                logger.info(
+                    "[changelog-push] claim for entry %s (%s) lost to "
+                    "another worker on retry; skipping",
+                    latest_date, latest_key,
+                )
+                return
+
         tag = latest.get("tag", "update")
         text = latest.get("text", "")
         link = latest.get("link", "/")
@@ -42781,6 +42867,9 @@ def _notify_changelog_on_startup():
             # Do NOT burn the marker on a failed broadcast: the next
             # boot retries this entry. (The old code marked the date
             # regardless, so one bad boot silenced an entry forever.)
+            # Release the claim too, so the retry is not blocked until
+            # the claim TTL expires.
+            _claim_delete(claim_value)
             logger.warning(
                 "[changelog-push] broadcast failed for entry %s (%s): %s; "
                 "marker not written, will retry on next boot",
@@ -42791,20 +42880,29 @@ def _notify_changelog_on_startup():
         logger.info("[changelog-push] sent %d notifications for entry %s (%s)", sent, latest_date, latest_key)
 
         # Mark this entry as notified. A broadcast that reached zero
-        # subscribers without erroring still counts as fired.
+        # subscribers without erroring still counts as fired. The
+        # claim is released in the same commit, now that the settled
+        # marker makes it redundant.
         with get_conn() as conn:
             conn.execute(
                 "INSERT INTO app_state (key, value) VALUES ('changelog_last_pushed', %s) "
                 "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
                 (latest_key,),
             )
+            conn.execute(
+                "DELETE FROM app_state "
+                "WHERE key = 'changelog_push_claim' AND value = %s",
+                (claim_value,),
+            )
             conn.commit()
     except Exception as exc:
         logger.warning("[changelog-push] startup notification failed: %s", exc)
 
 
-# Run once at import time (gunicorn workers each run this, but the DB dedup prevents
-# duplicate sends -- only the first worker to run wins the upsert race).
+# Run once at import time. Every gunicorn worker runs this; the settled
+# marker dedupes entries already pushed, and the atomic pre-broadcast
+# claim (INSERT ... ON CONFLICT DO NOTHING) ensures only one worker
+# sends per entry even when several boot at the same time.
 _notify_changelog_on_startup()
 
 

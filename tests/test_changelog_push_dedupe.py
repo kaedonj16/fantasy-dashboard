@@ -7,6 +7,15 @@ first entry deployed on a calendar date could ever push -- the
 entry burned the date first -- and the marker was written even when
 the broadcast errored and sent 0, silencing the entry forever.
 
+Second regression (2026-10-25): the settled marker is written only
+after the slow broadcast, and the notifier runs at import time in
+every gunicorn worker, so on the #2801 deploy every worker that
+booted inside the send window passed the marker check and sent a
+duplicate (five copies of the windows entry). The notifier now
+claims the broadcast first via a changelog_push_claim app_state row
+(INSERT ... ON CONFLICT DO NOTHING); these tests cover the claim
+handshake too.
+
 The store (app_state via dashboard_services.db.get_conn) and the
 broadcast (routes.push_bp._push_broadcast) are faked; CHANGELOG is
 swapped per test. The function reads all three lazily, so patching
@@ -15,6 +24,8 @@ the source modules is enough.
 from __future__ import annotations
 
 import logging
+import re
+import time
 
 import pytest
 
@@ -38,25 +49,53 @@ FIX_ENTRY = {
 
 
 class _FakeResult:
-    def __init__(self, row):
+    def __init__(self, row, rowcount=0):
         self._row = row
+        self.rowcount = rowcount
 
     def fetchone(self):
         return self._row
 
 
+_KEY_EQ_RE = re.compile(r"key\s*=\s*'([^']+)'")
+_VALUES_KEY_RE = re.compile(r"VALUES\s*\(\s*'([^']+)'")
+
+
 class _FakeConn:
-    """Just the app_state slice of the DB the notifier touches."""
+    """Just the app_state slice of the DB the notifier touches.
+
+    The store is a plain dict keyed by app_state key, mirroring the
+    real table: the app_state key is parsed out of each statement's
+    SQL literal, INSERT ... ON CONFLICT DO NOTHING reports rowcount
+    0 without overwriting when the key is already present, and
+    DELETE only removes a row whose value matches the parameter
+    (the notifier's conditional claim deletes).
+    """
 
     def __init__(self, store):
         self.store = store
 
     def execute(self, sql, params=None):
+        params = params or ()
         if "SELECT value FROM app_state" in sql:
-            value = self.store.get("changelog_last_pushed")
+            m = _KEY_EQ_RE.search(sql)
+            key = m.group(1) if m else "changelog_last_pushed"
+            value = self.store.get(key)
             return _FakeResult({"value": value} if value is not None else None)
         if "INSERT INTO app_state" in sql:
-            self.store["changelog_last_pushed"] = params[0]
+            m = _VALUES_KEY_RE.search(sql)
+            key = m.group(1) if m else "changelog_last_pushed"
+            if "DO NOTHING" in sql and key in self.store:
+                return _FakeResult(None, rowcount=0)
+            self.store[key] = params[0]
+            return _FakeResult(None, rowcount=1)
+        if "DELETE FROM app_state" in sql:
+            m = _KEY_EQ_RE.search(sql)
+            key = m.group(1) if m else None
+            if key is not None and params and self.store.get(key) == params[0]:
+                del self.store[key]
+                return _FakeResult(None, rowcount=1)
+            return _FakeResult(None, rowcount=0)
         return _FakeResult(None)
 
     def commit(self):
@@ -203,3 +242,63 @@ def test_zero_subscriber_success_still_counts_as_fired(notify):
     assert len(notify["calls"]) == 1
     assert notify["store"]["changelog_last_pushed"] == \
         app._changelog_entry_key(ASSISTANT_ENTRY)
+
+
+def test_fresh_claim_by_another_worker_suppresses_broadcast(notify, caplog):
+    # Another worker won the claim moments ago and is mid-broadcast:
+    # this boot must not send a duplicate, and must not write the
+    # settled marker (the claim holder does that when its send lands).
+    app = notify["app"]
+    key = app._changelog_entry_key(ASSISTANT_ENTRY)
+    notify["store"]["changelog_push_claim"] = f"{key}|{int(time.time())}"
+    with caplog.at_level(logging.INFO):
+        app._notify_changelog_on_startup()
+    assert notify["calls"] == []
+    assert "changelog_last_pushed" not in notify["store"]
+    assert any("[changelog-push]" in r.message and "claim held" in r.message
+               for r in caplog.records)
+
+
+def test_stale_claim_is_taken_over(notify):
+    # The claim holder died mid-send: once the claim is older than
+    # the TTL, the next boot re-claims, broadcasts once, settles the
+    # marker, and leaves no claim row behind.
+    app = notify["app"]
+    key = app._changelog_entry_key(ASSISTANT_ENTRY)
+    stale_ts = int(time.time()) - app._CHANGELOG_CLAIM_TTL_S - 1
+    notify["store"]["changelog_push_claim"] = f"{key}|{stale_ts}"
+    app._notify_changelog_on_startup()
+    assert len(notify["calls"]) == 1
+    assert notify["store"]["changelog_last_pushed"] == key
+    assert "changelog_push_claim" not in notify["store"]
+
+
+def test_broadcast_error_releases_the_claim(notify):
+    # A failed broadcast releases the claim without settling, so the
+    # next boot retries at once instead of waiting out the claim TTL.
+    notify["outcome"]["result"] = ({"error": "Push not configured"}, 503)
+    app = notify["app"]
+    app._notify_changelog_on_startup()
+    assert len(notify["calls"]) == 1
+    assert "changelog_last_pushed" not in notify["store"]
+    assert "changelog_push_claim" not in notify["store"]
+    notify["outcome"]["result"] = ({"ok": True, "sent": 2, "failed": 0}, 200)
+    app._notify_changelog_on_startup()
+    assert len(notify["calls"]) == 2  # two attempts across the two boots
+    assert notify["store"]["changelog_last_pushed"] == \
+        app._changelog_entry_key(ASSISTANT_ENTRY)
+    assert "changelog_push_claim" not in notify["store"]
+
+
+def test_claim_for_a_different_entry_does_not_block(notify):
+    # A leftover claim for some other entry (its deploy was replaced
+    # before it ever settled) is claimable: delete, claim, broadcast.
+    app = notify["app"]
+    other_key = app._changelog_entry_key(FIX_ENTRY)
+    notify["store"]["changelog_push_claim"] = \
+        f"{other_key}|{int(time.time())}"
+    app._notify_changelog_on_startup()
+    assert len(notify["calls"]) == 1
+    assert notify["store"]["changelog_last_pushed"] == \
+        app._changelog_entry_key(ASSISTANT_ENTRY)
+    assert "changelog_push_claim" not in notify["store"]
