@@ -154,6 +154,14 @@ def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
     game as started/final even if Tank01 still reports code 0. Matchup rows
     already date-correct the game line to "Final"; without this exception the
     box-score line stays blank after Thursday night while the schedule lags.
+
+    Same-day exception (2026-10-25): a game dated TODAY whose kickoff is
+    already in the past has also started, even when the feed still reports
+    code 0. The 9:30am international game lagged as "scheduled" for hours
+    after it ended, so every PIT starter (Warren, Bernard) rendered a
+    pregame kickoff line with no box score beside real Sleeper points. The
+    stale-epoch guard above is about a *different* week's game object; a
+    game dated today with a past kickoff is this week's game by definition.
     """
     if not game or not isinstance(game, dict):
         return False
@@ -173,8 +181,46 @@ def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
             )
             if game_date < today_str:
                 return True
+            if game_date == today_str and _kickoff_has_passed(game, now):
+                return True
         return False
     return normalize_game_status_from_tank01(game, now=now) in ("in", "post")
+
+
+def _kickoff_has_passed(game: dict, now: datetime) -> bool:
+    """True when a game's kickoff moment is in the past.
+
+    Prefers ``gameTime_epoch``; falls back to ``gameDate`` + ``gameTime``
+    (Tank01 style "9:30a", read as Eastern). Any unparseable shape returns
+    False so a malformed schedule row never invents a started game.
+    """
+    if getattr(now, "tzinfo", None) is None:
+        now = now.replace(tzinfo=timezone.utc)
+    try:
+        raw = game.get("gameTime_epoch")
+        if raw not in (None, ""):
+            kickoff = datetime.fromtimestamp(float(raw), tz=timezone.utc)
+            return kickoff <= now
+    except Exception:
+        pass
+    game_date = str(game.get("gameDate") or "")[:8]
+    game_time = str(game.get("gameTime") or "").strip()
+    if len(game_date) != 8 or not game_date.isdigit() or not game_time:
+        return False
+    try:
+        from zoneinfo import ZoneInfo
+
+        if "T" in game_time:  # ISO kickoff
+            dt_utc = datetime.fromisoformat(game_time.replace("Z", "+00:00"))
+            return dt_utc <= now
+        t = game_time.lower().replace(" ", "")
+        if t.endswith("a") or t.endswith("p"):
+            t += "m"
+        naive = datetime.strptime(game_date + " " + t, "%Y%m%d %I:%M%p")
+        kickoff = naive.replace(tzinfo=ZoneInfo("America/New_York"))
+        return kickoff <= now
+    except Exception:
+        return False
 
 # --- utils/utils.py L1468 ---
 def finished_game_ids_for_week(season: int, week: int) -> list[str]:
