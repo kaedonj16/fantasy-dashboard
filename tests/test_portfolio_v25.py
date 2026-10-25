@@ -61,6 +61,16 @@ def test_cards_render_all_leagues_without_pager():
     assert "Urgency" in html and "Playoff odds" in html
 
 
+def test_leagues_header_and_sort_share_one_line():
+    html = _render([_league()])
+    # Title and sort live in the same header row, not stacked rows.
+    assert "card-header pf-leagues-head'><h2>My Leagues</h2>" in html
+    assert "<div class='pf-sortbar'><label for='pfSortSel'>Sort</label>" in html
+    assert ".pf-leagues-head{flex-wrap:nowrap;}" in html
+    assert ".pf-sortbar{display:flex;align-items:center;gap:8px;flex:0 0 auto;}" in html
+    assert "justify-content:flex-end;padding:10px 2px 0" not in html
+
+
 def test_card_shows_odds_delta_weakest_and_posture():
     lg = _league(playoff_odds_pct=74.0, playoff_odds_delta=9.0,
                  posture="Contend", posture_cls="contend")
