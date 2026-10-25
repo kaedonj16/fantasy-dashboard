@@ -277,6 +277,45 @@
   function _setState(data) {
     _state = data || {};
     _myRids = _myRidSet(_state, _scope);
+    // typeof-guard: always defined in production, but _setState is also
+    // exercised standalone by node harnesses that extract it in isolation.
+    if (typeof _applyGameLink === 'function') _applyGameLink();
+  }
+
+  // Deep link from the matchup drive bar (and any future surface):
+  // /<platform>/<season>/<league>/scorezone?game=<game_id> lands focused on
+  // that NFL game -- the same selection a tap on its game pill makes
+  // (_filters.nfl: the game's board opens, the feed filters to it, the pill
+  // renders selected and is scrolled into view by _wireGameStrip). The param
+  // is read LAZILY, not at script eval: a soft-nav swap re-runs this script
+  // before history.pushState publishes the new URL, so the param is only
+  // reliable once data starts landing. One-shot: the first state that
+  // actually carries games consumes it (hit or miss), so later polls and
+  // scope switches never re-force the filter over the viewer.
+  var _gameLinkDone = false;
+  function _applyGameLink() {
+    if (_gameLinkDone) return;
+    var want = null;
+    try { want = new URLSearchParams(window.location.search).get('game'); } catch (_) {}
+    if (!want) return;
+    var opts = _nflMatchupOptions();
+    if (!opts.length) return; // games not loaded yet; a later state retries
+    _gameLinkDone = true;
+    var hit = null;
+    for (var i = 0; i < opts.length; i++) { if (opts[i].id === want) { hit = opts[i]; break; } }
+    if (!hit) {
+      // The same matchup can arrive under two game_ids (e.g. a live "WSH @
+      // PHI" and a pregame "WAS @ PHI"); the pill list collapses them to one
+      // canonical row, so fall back to matching the canonical team pair.
+      var info = _nflGameInfo(want) || (_state.games || {})[want] || null;
+      if (info && info.away && info.home) {
+        var key = [_canonTeam(info.away), _canonTeam(info.home)].sort().join('@');
+        for (var j = 0; j < opts.length; j++) {
+          if ([_canonTeam(opts[j].away), _canonTeam(opts[j].home)].sort().join('@') === key) { hit = opts[j]; break; }
+        }
+      }
+    }
+    if (hit) _filters.nfl = hit.id;
   }
 
   // A poll without the identity fields is incomplete, not evidence that the
@@ -5226,6 +5265,7 @@
     _lastCollectAt = _bootCollect > 0 ? _bootCollect * 1000 : _lastDataAt;
   }
 
+  _applyGameLink();          // ?game= deep link: focus that NFL game (no-op without one)
   _render();
   _refreshPushState();       // resolve real device-push readiness for the CTA
   // First load paints the server-injected snapshot immediately (never a blank
