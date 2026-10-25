@@ -1514,14 +1514,17 @@ _INJURY_FLIP_STATE_CAP = 5000
 
 
 def notify_injury_flip():
-    """Alert owners when a rostered player's status flips to a serious injury
+    """Alert owners when a STARTING player's status flips to a serious injury
     designation while his game hasn't kicked off yet. All platforms.
 
     Transition-based: the live status (ESPN intraday feed) is compared against
     the last-seen status in app_state, so a player who was already Out does not
     re-alert. Only runs on NFL game days (America/New_York); flips for teams
     already kicked off or on bye are suppressed because the slot is locked.
-    Questionable flips never alert. Delivered immediately, never digest-
+    Questionable flips never alert. Bench flips never alert (Kaedon,
+    2026-10-25: starters only). All starter flips for one roster in one run
+    are batched into ONE push per league, listing every flipped starter,
+    instead of one push per player. Delivered immediately, never digest-
     buffered: a pre-kickoff alert an hour late is useless.
     """
     import json as _json
@@ -1653,11 +1656,14 @@ def notify_injury_flip():
                     str(p) for p in (roster.get("players") or [])
                     if str(p) not in ("0", "", "None")
                 ]
+                flips = []
                 for pid in players:
                     key = f"{league_id}:{pid}"
                     row = by_pid.get(pid) or {}
                     curr = str(row.get("status") or "")
                     new_seen[key] = curr
+                    if pid not in starters:
+                        continue  # starters only; bench flips never alert
                     if first_run or last_seen.get(key) is None:
                         continue  # seed silently; never alert on first sight
                     if str(last_seen.get(key) or "").upper() in SERIOUS_INJURY_STATUSES:
@@ -1669,30 +1675,36 @@ def notify_injury_flip():
                     kickoff = kickoff_by_team.get(team)
                     if not kickoff or kickoff <= now_ts:
                         continue
-                    name = row.get("name") or "A player on your roster"
-                    is_starter = pid in starters
-                    title = "Starter injury alert" if is_starter else "Bench injury alert"
-                    body = f"{name} is now listed {curr}. Check your lineup"
-                    if league_name:
-                        body = f"{body} in {league_name}"
-                    body = f"{body}."
-                    url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
-                    if target_ids is None:
-                        orows = roster_rows
-                    else:
-                        orows = [
-                            r for r in rows
-                            if str(r["owner_id"] or "") in target_ids
-                            or alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or "")) in target_ids
-                        ]
-                    if not orows:
-                        continue
-                    sent += _send_with_digest(
-                        orows, title, body, url,
-                        f"injury-flip-{league_id}-{pid}-{week}",
-                        notif_type="injury", league_id=str(league_id),
-                        platform=platform,
-                    )
+                    flips.append((pid, row.get("name") or "A player on your roster", curr))
+                if not flips:
+                    continue
+                # One push per league for this roster, however many starters
+                # flipped in this run: list them all in a single body.
+                if target_ids is None:
+                    orows = roster_rows
+                else:
+                    orows = [
+                        r for r in rows
+                        if str(r["owner_id"] or "") in target_ids
+                        or alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or "")) in target_ids
+                    ]
+                if not orows:
+                    continue
+                listing = "; ".join(
+                    f"{name} is now listed {curr}" for _pid, name, curr in flips
+                )
+                body = f"{listing}. Check your lineup"
+                if league_name:
+                    body = f"{body} in {league_name}"
+                body = f"{body}."
+                url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
+                tag_pids = "-".join(pid for pid, _name, _curr in flips)
+                sent += _send_with_digest(
+                    orows, "Starter injury alert", body, url,
+                    f"injury-flip-{league_id}-{tag_pids}-{week}",
+                    notif_type="injury", league_id=str(league_id),
+                    platform=platform,
+                )
         if len(new_seen) > _INJURY_FLIP_STATE_CAP:
             for k in list(new_seen)[:len(new_seen) - _INJURY_FLIP_STATE_CAP]:
                 del new_seen[k]

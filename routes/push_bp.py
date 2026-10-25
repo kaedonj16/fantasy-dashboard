@@ -541,7 +541,7 @@ def api_cron_notifications():
 
     Pass type='hourly' (lineup lock / close games / drops),
     type='daily', type='scorezone' (server-side TD poll),
-    type='injury' (starter/bench injury flips, every 15 min on game days),
+    type='injury' (starter injury flips, batched one per league, every 15 min on game days),
     type='weekly' (email digest), or type='recap' (Tuesday recap push).
     Auth is X-Admin-Secret or CRON_SECRET
     (header X-Cron-Secret or JSON ``secret``, same as /api/flush-value-cache).
