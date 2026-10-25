@@ -286,6 +286,7 @@ def build_teams_body(ctx: dict) -> str:
         ctx.get("roster_positions") or get_roster_positions() or []
     )
     # Pre-compute roster grades for all teams
+    from dashboard_services.ai.context_builders import _team_value_axes
     from dashboard_services.ai.context_builders import calculate_roster_grade as _calc_grade
 
     _n_teams = len(team_meta)
@@ -314,12 +315,10 @@ def build_teams_body(ctx: dict) -> str:
             _dval = float(_row.get("value") or 0)
             _rval = float(_row.get(_redraft_key) or 0)
             _pairs.append((_dval, _rval))
-        # Sort by dynasty value to get consistent top-8
-        _pairs.sort(reverse=True)
-        _team_dynasty_total[_rid] = sum(d for d, _ in _pairs[:8])
-        _team_redraft_total[_rid] = sum(rv for _, rv in _pairs[:8])
-        _ratios = [d / max(rv, 1) for d, rv in _pairs[:10] if d > 50 or rv > 50]
-        _team_dr_ratio[_rid] = round(sum(_ratios) / len(_ratios), 3) if _ratios else 1.0
+        # Each axis sums its own top 8; dr_ratio is the capped median ratio
+        _team_dynasty_total[_rid], _team_redraft_total[_rid], _team_dr_ratio[_rid] = (
+            _team_value_axes(_pairs)
+        )
 
     # ── Percentile helpers ──
     def _make_pct_fn(totals: Dict[int, float]):
@@ -599,10 +598,10 @@ def build_teams_body(ctx: dict) -> str:
         _WINDOW_COLORS = {
             "Contend": "#22c55e", "Bubble": "#f59e0b", "Out": "#94a3b8",
             "Long Shot": "#94a3b8",
-            "Contender": "#22c55e", "Win-Now": "#f59e0b", "Aging Contender": "#84cc16",
-            "Contender Window": "#3b82f6", "2-3 Year Window": "#6366f1", "Rising": "#8b5cf6",
-            "Holding Pattern": "#94a3b8", "Retooling": "#f97316", "Rebuilding": "#ef4444",
-            "Full Rebuild": "#b91c1c",
+            "Powerhouse": "#ca8a04", "Contender": "#22c55e", "Win-Now": "#f59e0b",
+            "Contender Window": "#3b82f6", "Rising": "#8b5cf6",
+            "Crossroads": "#64748b", "Treadmill": "#78716c", "Retooling": "#f97316",
+            "Rebuilding": "#ef4444", "Full Rebuild": "#b91c1c",
         }
         _POS_CHIP = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
 
@@ -694,6 +693,7 @@ def build_teams_body(ctx: dict) -> str:
             _gdata = team_grades.get(rid, {})
             _grade = _gdata.get("grade", "?")
             _win_window = _gdata.get("win_window", "")
+            _shape = _gdata.get("roster_shape", "")
             _grade_cls = "grade-a" if _grade.startswith("A") else "grade-b" if _grade.startswith("B") else "grade-c" if _grade.startswith("C") else "grade-d"
             _grade_chip = (
                 f"<span class='tsc-grade {_grade_cls}' title='{html.escape(_win_window)}'>{_grade}</span>"
@@ -706,32 +706,32 @@ def build_teams_body(ctx: dict) -> str:
                 "Contend":          1,
                 "Bubble":           2,
                 "Long Shot":        3,
-                "Contender":        1,
-                "Win-Now":          2,
-                "Aging Contender":  3,
+                "Powerhouse":       1,
+                "Contender":        2,
+                "Win-Now":          3,
                 "Contender Window": 4,
-                "2-3 Year Window":  5,
-                "Rising":           6,
-                "Holding Pattern":  7,
+                "Rising":           5,
+                "Crossroads":       6,
+                "Treadmill":        7,
                 "Retooling":        8,
                 "Rebuilding":       9,
                 "Full Rebuild":     10,
-            }.get(_win_window, 7)
+            }.get(_win_window, 6)
             _window_cls = {
                 "Contend":          "wt-contend",
                 "Bubble":           "wt-bubble",
                 "Long Shot":        "wt-long-shot",
+                "Powerhouse":       "wt-powerhouse",
                 "Contender":        "wt-contender",
                 "Win-Now":          "wt-win-now",
-                "Aging Contender":  "wt-aging-contender",
                 "Contender Window": "wt-contender-window",
-                "2-3 Year Window":  "wt-2yr",
                 "Rising":           "wt-rising",
-                "Holding Pattern":  "wt-holding",
+                "Crossroads":       "wt-crossroads",
+                "Treadmill":        "wt-treadmill",
                 "Retooling":        "wt-retooling",
                 "Rebuilding":       "wt-rebuilding",
                 "Full Rebuild":     "wt-full-rebuild",
-            }.get(_win_window, "wt-holding")
+            }.get(_win_window, "wt-crossroads")
             _pos_idx = team_pos_index[rid]
             _is_viewer = str(rid) == str(viewer_roster_id or "")
 
@@ -751,6 +751,9 @@ def build_teams_body(ctx: dict) -> str:
                 )
             _you_pill = "<span class='tsc-you'>YOU</span>" if _is_viewer else ""
             _status_label = html.escape(_win_window) if _win_window else "Unranked"
+            _shape_tag = (
+                f" <span class='tsc-shape'>{html.escape(_shape)}</span>" if _shape else ""
+            )
 
             # Positional Index: diverging bar around the league average (z = 0).
             # Capped at +/-2 sigma, which fills a full half-track (Mock 4 style).
@@ -777,7 +780,7 @@ def build_teams_body(ctx: dict) -> str:
                 f"    {_avatar_html}"
                 "    <div class='tsc-idtext'>"
                 f"      <div class='tsc-namerow'><span class='tsc-name'>{html.escape(str(name))}</span>{_you_pill}</div>"
-                f"      <div class='tsc-status'><span class='tsc-dot' style='background:{_win_color};'></span>{_status_label}</div>"
+                f"      <div class='tsc-status'><span class='tsc-dot' style='background:{_win_color};'></span>{_status_label}{_shape_tag}</div>"
                 "    </div>"
                 f"    {_grade_chip}"
                 "  </div>"
@@ -798,6 +801,7 @@ def build_teams_body(ctx: dict) -> str:
                 "grade": _grade,
                 "grade_cls": _grade_cls,
                 "window": _win_window,
+                "shape": _shape,
                 "win_color": _win_color,
                 "pos_index": f"{_pos_idx:+.2f}",
                 "pos_index_dir": _pi_dir,
@@ -881,19 +885,23 @@ def build_teams_body(ctx: dict) -> str:
         else:
             _window_section = """
               <div class="wl-section-label" style="margin-top:10px;">Competitive Windows</div>
+              <div class="wl-section-label" style="border-bottom:none; padding-bottom:0;">Win now</div>
+              <div class="wl-row"><span class="wl-dot" style="background:#ca8a04;"></span><strong class="wl-label">Powerhouse</strong><span class="wl-desc">Top of the league on both axes: elite dynasty value and elite scoring, multiple stars, and young enough to stay there</span></div>
               <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contender</strong><span class="wl-desc">Elite dynasty + strong scoring projection, premier roster right now</span></div>
-              <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Win-Now</strong><span class="wl-desc">Elite scoring with aging stars, peak years are here and window is open</span></div>
-              <div class="wl-row"><span class="wl-dot" style="background:#84cc16;"></span><strong class="wl-label">Aging Contender</strong><span class="wl-desc">Strong roster projecting well, but franchise age is trending up</span></div>
+              <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Win-Now</strong><span class="wl-desc">Elite or strong scoring on a short clock: aging stars, peak years are here and window is open</span></div>
+              <div class="wl-section-label" style="border-bottom:none; padding-bottom:0;">Opening</div>
               <div class="wl-row"><span class="wl-dot" style="background:#3b82f6;"></span><strong class="wl-label">Contender Window</strong><span class="wl-desc">Elite dynasty value with young or prime core, window opening soon</span></div>
-              <div class="wl-row"><span class="wl-dot" style="background:#6366f1;"></span><strong class="wl-label">2-3 Year Window</strong><span class="wl-desc">Strong future value building toward contention over the next few seasons</span></div>
-              <div class="wl-row"><span class="wl-dot" style="background:#8b5cf6;"></span><strong class="wl-label">Rising</strong><span class="wl-desc">Young, future-heavy roster beginning to accumulate dynasty value</span></div>
-              <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Holding Pattern</strong><span class="wl-desc">Average across all metrics, direction not yet clear</span></div>
+              <div class="wl-row"><span class="wl-dot" style="background:#8b5cf6;"></span><strong class="wl-label">Rising</strong><span class="wl-desc">Young, future-heavy roster building toward contention, peak a few seasons out</span></div>
+              <div class="wl-section-label" style="border-bottom:none; padding-bottom:0;">Middle</div>
+              <div class="wl-row"><span class="wl-dot" style="background:#64748b;"></span><strong class="wl-label">Crossroads</strong><span class="wl-desc">Average across the board, but holds a lever: pick capital or a young core to pick a direction</span></div>
+              <div class="wl-row"><span class="wl-dot" style="background:#78716c;"></span><strong class="wl-label">Treadmill</strong><span class="wl-desc">Average or below, aging, no pick capital and no elite core. Stuck in the middle with no clear way up</span></div>
+              <div class="wl-section-label" style="border-bottom:none; padding-bottom:0;">Rebuilding</div>
               <div class="wl-row"><span class="wl-dot" style="background:#f97316;"></span><strong class="wl-label">Retooling</strong><span class="wl-desc">Selling aging core, accumulating capital to reset for the future</span></div>
               <div class="wl-row"><span class="wl-dot" style="background:#ef4444;"></span><strong class="wl-label">Rebuilding</strong><span class="wl-desc">Below-average dynasty + redraft, active rebuild in progress</span></div>
               <div class="wl-row"><span class="wl-dot" style="background:#dc2626;"></span><strong class="wl-label">Full Rebuild</strong><span class="wl-desc">Stacked with picks, very low current value, all-in on the future</span></div>
             """
             _grade_note = "Grade factors: dynasty value (40%) &middot; projected scoring (25%) &middot; age profile (15%) &middot; elite players (12%) &middot; draft capital (8%)"
-            _grade_a_desc = "Elite roster: top dynasty value, strong depth, elite core players"
+            _grade_a_desc = "Elite roster: top dynasty value, strong scoring projection, elite core players"
             _grade_d_desc = "Weak roster: low dynasty value and scoring projection league-wide"
             _sort_archetype_label = "Archetype"
         _wrap_style = ' style="display:none"' if suffix else ""
@@ -914,8 +922,12 @@ def build_teams_body(ctx: dict) -> str:
               <div class="wl-grade-note">{_grade_note}</div>
               {_window_section}
               <div class="wl-section-label" style="margin-top:10px;">Roster Shapes</div>
-              <div class="wl-grade-note" style="margin-top:0;">How a roster's value is built by position &mdash; descriptive, not part of the grade.</div>
-              <div class="wl-row"><span class="wl-shape">CAP</span><span class="wl-desc">Draft capital &mdash; the trade value of the team's draft picks</span></div>
+              <div class="wl-grade-note" style="margin-top:0;">How a roster's value is built, shown as a tag beside the window on the team card. Descriptive, not part of the grade.</div>
+              <div class="wl-row"><span class="wl-shape">DEEP</span><span class="wl-desc">Value spread across rooms, no single point of failure</span></div>
+              <div class="wl-row"><span class="wl-shape">TOP-HEAVY</span><span class="wl-desc">Most value concentrated in the top three players</span></div>
+              <div class="wl-row"><span class="wl-shape">CLIFF RISK</span><span class="wl-desc">A large share of core value is 29 or older</span></div>
+              <div class="wl-row"><span class="wl-shape">PICK-LOADED</span><span class="wl-desc">Draft capital is a major share of total team value</span></div>
+              <div class="wl-row"><span class="wl-shape">CAP</span><span class="wl-desc">Draft capital: the trade value of the team's draft picks</span></div>
               <div class="wl-row"><span class="wl-shape">WR Factory</span><span class="wl-desc">Value concentrated at WR &mdash; a deep, WR-dominant roster</span></div>
               <div class="wl-row"><span class="wl-shape">Robust RB</span><span class="wl-desc">RB-heavy build with a strong, deep backfield</span></div>
               <div class="wl-row"><span class="wl-shape">Hero RB</span><span class="wl-desc">One elite back anchoring a thin RB room, with a WR-forward rest</span></div>
@@ -959,25 +971,30 @@ def build_teams_body(ctx: dict) -> str:
     # at the top; each section is a full-width view. Roster Intel lives in the
     # team detail drawer, not as a page tab. See teams.js (tab wiring) and
     # dashboard.css (.teams-ptabs / .teams-pview).
+    # Merged-rows header: row 1 pairs the tab strip with the Dynasty /
+    # This Season toggle (CSS hides the toggle on the VALUE / SCHEDULE
+    # views via [data-active-tab]); row 2 pairs the sort chips with the
+    # Legend pinned right, inside the TEAMS view.
     return f"""
     <div class="teams-page" id="teamsPageLayout" data-active-tab="teams">
-      <nav class="teams-ptabs" role="tablist" aria-label="Teams views">
-        <button class="on" data-ptab="teams" role="tab" aria-selected="true">TEAMS</button>
-        <button data-ptab="value" role="tab" aria-selected="false">VALUE</button>
-        <button data-ptab="sched" role="tab" aria-selected="false" id="schedPtabBtn" style="display:none">SCHEDULE</button>
-      </nav>
+      <div class="teams-head-row1">
+        <nav class="teams-ptabs" role="tablist" aria-label="Teams views">
+          <button class="on" data-ptab="teams" role="tab" aria-selected="true">TEAMS</button>
+          <button data-ptab="value" role="tab" aria-selected="false">VALUE</button>
+          <button data-ptab="sched" role="tab" aria-selected="false" id="schedPtabBtn" style="display:none">SCHEDULE</button>
+        </nav>
+        {_mode_toggle_html}
+      </div>
       <section class="teams-pview on" id="v-teams" role="tabpanel">
-        <div class="teams-topbar">
+        <div class="teams-head-row2">
           <div class="teams-sort-bar">
-            <span style="font-size:13px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
-            <div class="otc-main-tabs br-slide-tabs teams-sort-tabs" data-br-slide-tabs>
-              <button class="teams-sort-btn otc-main-tab" data-sort="posindex">Positional Index</button>
-              <button class="teams-sort-btn otc-main-tab" data-sort="grade">Team Grade</button>
-              <button class="teams-sort-btn otc-main-tab" data-sort="archetype">{_sort_archetype_label}</button>
+            <div class="teams-sort-tabs">
+              <button class="teams-sort-btn" data-sort="posindex">Positional Index</button>
+              <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
+              <button class="teams-sort-btn" data-sort="archetype">{_sort_archetype_label}</button>
             </div>
             <span id="teamsSortLabel" style="font-size:11px;color:var(--text-muted);margin-left:10px;opacity:0;transition:opacity .2s;"></span>
           </div>
-          {_mode_toggle_html}
           {_window_legend_html}
           {_redraft_legend_html}
         </div>
@@ -1098,7 +1115,6 @@ def build_teams_body(ctx: dict) -> str:
           floatViewer();
         }});
         document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{ btn.classList.remove('active'); }});
-        var _st0 = document.querySelector('.teams-sort-tabs'); if (_st0) _st0.classList.remove('has-active');
         _sortKey = '';
         _setSortLabel('');
       }}
@@ -1125,7 +1141,6 @@ def build_teams_body(ctx: dict) -> str:
         document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
           btn.classList.toggle('active', btn.dataset.sort === key);
         }});
-        var _st1 = document.querySelector('.teams-sort-tabs'); if (_st1) _st1.classList.add('has-active');
         var _lbl = _sortKeyLabels[key] || key;
         if (key === 'archetype' && _valueMode === 'redraft') _lbl = 'Odds';
         _setSortLabel(_lbl);

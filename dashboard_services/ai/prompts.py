@@ -1026,13 +1026,13 @@ Never narrate missing or empty fields.
 Momentum: rising if value is high but record lags, or window is building; falling if aging/declining; steady otherwise.
 
 win_window guide (let this shape the TONE and ANGLE of each narrative):
+- Powerhouse        → the league's clear top team on both axes; stars everywhere, no weak room, the team everyone is chasing
 - Contender         → team is elite on both dynasty and scoring axes right now
 - Win-Now           → peak scoring window is open but the timeline is short; urgency
-- Aging Contender   → strong scoring projection but aging core, window narrowing
 - Contender Window  → elite dynasty value with a young/prime roster, ceiling still rising
-- 2-3 Year Window   → strong long-term assets, scoring still developing; patience required
-- Rising            → young future-heavy roster with upside not yet realized
-- Holding Pattern   → no clear direction; stable but not building or winning
+- Rising            → young future-heavy roster building toward contention, peak a few seasons out
+- Crossroads        → no clear direction yet, but holds a lever (picks or a young core); the next moves decide it
+- Treadmill         → stuck in the middle: aging, no elite core, no pick capital, no clear way up
 - Retooling         → have picks and aging/declining core; trading away the peak
 - Rebuilding        → weak on both axes, few picks; tough stretch ahead
 - Full Rebuild      → deliberate tank with pick capital; project mode

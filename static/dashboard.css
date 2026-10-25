@@ -18202,11 +18202,16 @@ h2.static-section-title:first-child {
     border-color: var(--accent);
 }
 
-/* "Sort by" rendered as the otc-main-tabs sliding-tab control. Neutralize the
-   old pill borders/fills inside the track so the sliding indicator carries the
-   active state, and hide the indicator until a sort is actually chosen (the
-   default is no sort -- the viewer's card just floats to the top). */
+/* Sort control: plain chips in a horizontally scrollable row. The active
+   chip is the base .teams-sort-btn.active accent fill; overflow scrolls so
+   the last chip stays reachable instead of clipping the page. There is no
+   sliding indicator (the default is no sort -- the viewer's card just
+   floats to the top). */
 .teams-sort-bar .teams-sort-tabs {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
     margin-bottom: 0;
     max-width: 100%;
     overflow-x: auto;
@@ -18217,32 +18222,13 @@ h2.static-section-title:first-child {
     height: 0;
 }
 
-.teams-sort-bar .teams-sort-btn.otc-main-tab {
-    border: none;
-    background: transparent;
+.teams-sort-bar .teams-sort-tabs .teams-sort-btn {
     border-radius: var(--radius-pill);
-    padding: 7px 13px;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    font-weight: 700;
     white-space: nowrap;
-}
-
-.teams-sort-bar .teams-sort-btn.otc-main-tab:hover {
-    background: transparent;
-    color: var(--text);
-}
-
-.teams-sort-bar .teams-sort-btn.otc-main-tab.active {
-    background: transparent;
-    color: var(--text);
-    border-color: transparent;
-}
-
-.teams-sort-tabs .br-slide-ind {
-    opacity: 0;
-    transition: opacity .15s ease, left .2s cubic-bezier(.4, 0, .2, 1), width .2s cubic-bezier(.4, 0, .2, 1);
-}
-
-.teams-sort-tabs.has-active .br-slide-ind {
-    opacity: 1;
+    flex: none;
 }
 
 .teams-grid {
@@ -36296,7 +36282,9 @@ button:disabled {
 /* ============================================
    WINDOW LEGEND
    ============================================ */
-/* Teams topbar: sort filters + window guide on same row */
+/* Teams topbar: sort filters + window guide on same row. The .teams-topbar
+   rules now serve only the app.py loading skeleton; the built page uses
+   the merged-rows header below. */
 .teams-topbar {
     display: flex;
     align-items: center;
@@ -36320,6 +36308,81 @@ button:disabled {
     .teams-topbar {
         flex-direction: column;
         align-items: stretch;
+    }
+}
+
+/* Merged-rows header (Option B): row 1 pairs the page tabs with the
+   Dynasty / This Season toggle; row 2 pairs the sort chips with the
+   Legend pinned right. position:relative on row 2 anchors the desktop
+   legend panel (absolute, top: 100%) exactly as .teams-topbar did. The
+   mode toggle only applies to the Teams view, so it hides while another
+   page tab is active (teams.js keeps [data-active-tab] current). */
+.teams-head-row1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 18px 0 10px;
+}
+
+.teams-head-row1 .teams-ptabs {
+    margin: 0;
+}
+
+.teams-head-row1 .teams-mode-toggle {
+    align-self: center;
+}
+
+.teams-page[data-active-tab="value"] .teams-head-row1 .teams-mode-toggle,
+.teams-page[data-active-tab="sched"] .teams-head-row1 .teams-mode-toggle {
+    display: none;
+}
+
+.teams-head-row2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    position: relative;
+}
+
+.teams-head-row2 .teams-sort-bar {
+    flex: 1;
+    margin-bottom: 0;
+    min-width: 0;
+    flex-wrap: nowrap;
+}
+
+.teams-head-row2 .window-legend-wrap {
+    flex: none;
+    margin-left: auto;
+    margin-bottom: 0;
+}
+
+/* Phones: row 1 goes text-style so the tabs and the full "This Season"
+   label fit side by side at 390px. */
+@media (max-width: 640px) {
+    .teams-head-row1 .teams-ptabs {
+        background: transparent;
+        border: none;
+        padding: 0;
+        gap: 6px;
+    }
+
+    .teams-head-row1 .teams-ptabs button {
+        padding: 6px 2px;
+        font-size: 11.5px;
+    }
+
+    .teams-head-row1 .teams-ptabs button.on {
+        background: var(--accent-soft);
+        box-shadow: none;
+        padding: 6px 7px;
+    }
+
+    .teams-head-row1 .teams-mode-toggle button {
+        padding: 5px 7px;
+        font-size: 10.5px;
     }
 }
 
@@ -36526,6 +36589,10 @@ button:disabled {
     border-left-color: #94a3b8;
 }
 
+.wt-powerhouse {
+    border-left-color: #ca8a04;
+}
+
 .wt-contender {
     border-left-color: #22c55e;
 }
@@ -36534,24 +36601,20 @@ button:disabled {
     border-left-color: #f59e0b;
 }
 
-.wt-aging-contender {
-    border-left-color: #84cc16;
-}
-
 .wt-contender-window {
     border-left-color: var(--brand-blue);
-}
-
-.wt-2yr {
-    border-left-color: #6366f1;
 }
 
 .wt-rising {
     border-left-color: #8b5cf6;
 }
 
-.wt-holding {
-    border-left-color: var(--text-subtle);
+.wt-crossroads {
+    border-left-color: #64748b;
+}
+
+.wt-treadmill {
+    border-left-color: #78716c;
 }
 
 .wt-retooling {
@@ -36629,6 +36692,10 @@ button:disabled {
     color: #64748b;
 }
 
+.wt-powerhouse .grade-window-label {
+    color: #a16207;
+}
+
 .wt-contender .grade-window-label {
     color: #16a34a;
 }
@@ -36637,24 +36704,20 @@ button:disabled {
     color: #d97706;
 }
 
-.wt-aging-contender .grade-window-label {
-    color: #65a30d;
-}
-
 .wt-contender-window .grade-window-label {
     color: #2563eb;
-}
-
-.wt-2yr .grade-window-label {
-    color: #4f46e5;
 }
 
 .wt-rising .grade-window-label {
     color: #7c3aed;
 }
 
-.wt-holding .grade-window-label {
+.wt-crossroads .grade-window-label {
     color: #64748b;
+}
+
+.wt-treadmill .grade-window-label {
+    color: #78716c;
 }
 
 .wt-retooling .grade-window-label {
@@ -49394,11 +49457,11 @@ table.rz-bs-table thead th:not(:first-child) {
 [data-theme="dark"] .wt-contender .grade-window-label { color: #4ade80; }
 [data-theme="dark"] .wt-bubble .grade-window-label,
 [data-theme="dark"] .wt-win-now .grade-window-label { color: #fbbf24; }
-[data-theme="dark"] .wt-long-shot .grade-window-label,
-[data-theme="dark"] .wt-holding .grade-window-label { color: #94a3b8; }
-[data-theme="dark"] .wt-aging-contender .grade-window-label { color: #a3e635; }
+[data-theme="dark"] .wt-long-shot .grade-window-label { color: #94a3b8; }
+[data-theme="dark"] .wt-powerhouse .grade-window-label { color: #facc15; }
 [data-theme="dark"] .wt-contender-window .grade-window-label { color: #60a5fa; }
-[data-theme="dark"] .wt-2yr .grade-window-label { color: #818cf8; }
+[data-theme="dark"] .wt-crossroads .grade-window-label { color: #94a3b8; }
+[data-theme="dark"] .wt-treadmill .grade-window-label { color: #a8a29e; }
 [data-theme="dark"] .wt-rising .grade-window-label { color: #a78bfa; }
 [data-theme="dark"] .wt-retooling .grade-window-label { color: #fb923c; }
 [data-theme="dark"] .wt-rebuilding .grade-window-label { color: #f87171; }
@@ -49728,6 +49791,18 @@ table.rz-bs-table thead th:not(:first-child) {
     border-radius: 50%;
     margin-right: 6px;
     flex: none;
+}
+.tsc-shape {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    padding: 2px 7px;
+    margin-left: 7px;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    background: rgba(148, 163, 184, 0.16);
+    border: 1px solid var(--border);
+    white-space: nowrap;
 }
 .tsc-grade {
     margin-left: auto;
@@ -50110,20 +50185,22 @@ em.gneg { background: var(--loss); }
    Rebuilding red. */
 .td-win-contend, .td-win-contender { background: color-mix(in srgb, #22c55e 12%, transparent); color: #16a34a; }
 .td-win-bubble, .td-win-win-now { background: color-mix(in srgb, #f59e0b 14%, transparent); color: #d97706; }
-.td-win-long-shot, .td-win-holding { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #64748b; }
-.td-win-aging-contender { background: color-mix(in srgb, #84cc16 14%, transparent); color: #65a30d; }
+.td-win-long-shot { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #64748b; }
+.td-win-powerhouse { background: color-mix(in srgb, #ca8a04 16%, transparent); color: #a16207; }
 .td-win-contender-window { background: color-mix(in srgb, #3b82f6 12%, transparent); color: #2563eb; }
-.td-win-2yr { background: color-mix(in srgb, #6366f1 12%, transparent); color: #4f46e5; }
+.td-win-crossroads { background: color-mix(in srgb, #64748b 14%, transparent); color: #64748b; }
+.td-win-treadmill { background: color-mix(in srgb, #78716c 14%, transparent); color: #78716c; }
 .td-win-rising { background: color-mix(in srgb, #8b5cf6 12%, transparent); color: #7c3aed; }
 .td-win-retooling { background: color-mix(in srgb, #f97316 13%, transparent); color: #ea580c; }
 .td-win-rebuilding { background: color-mix(in srgb, #ef4444 12%, transparent); color: #dc2626; }
 .td-win-full-rebuild { background: color-mix(in srgb, #b91c1c 12%, transparent); color: #b91c1c; }
 [data-theme="dark"] .td-win-contend, [data-theme="dark"] .td-win-contender { color: #4ade80; }
 [data-theme="dark"] .td-win-bubble, [data-theme="dark"] .td-win-win-now { color: #fbbf24; }
-[data-theme="dark"] .td-win-long-shot, [data-theme="dark"] .td-win-holding { color: #94a3b8; }
-[data-theme="dark"] .td-win-aging-contender { color: #a3e635; }
+[data-theme="dark"] .td-win-long-shot { color: #94a3b8; }
+[data-theme="dark"] .td-win-powerhouse { color: #facc15; }
 [data-theme="dark"] .td-win-contender-window { color: #60a5fa; }
-[data-theme="dark"] .td-win-2yr { color: #818cf8; }
+[data-theme="dark"] .td-win-crossroads { color: #94a3b8; }
+[data-theme="dark"] .td-win-treadmill { color: #a8a29e; }
 [data-theme="dark"] .td-win-rising { color: #a78bfa; }
 [data-theme="dark"] .td-win-retooling { color: #fb923c; }
 [data-theme="dark"] .td-win-rebuilding { color: #f87171; }

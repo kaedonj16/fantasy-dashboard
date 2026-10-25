@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-24",
+        "tag": "new",
+        "text": "Teams: competitive windows rebuilt. A new Powerhouse tier sits above Contender for the league's clear top team, Holding Pattern splits into Crossroads and Treadmill, and team cards can carry a roster shape tag: Deep, Top-Heavy, Cliff Risk or Pick-Loaded. Roster grades are steadier too: age scores on a smooth curve instead of steps, and scoring percentiles use each format's own top players.",
+        "link": "/teams"
+    },
+    {
         "date": "2026-10-19",
         "tag": "fix",
         "text": "My Leagues This week's moves now checks all of your linked leagues, not just the first eight, and My Leagues live matchup scores now refresh in the background instead of making your cards wait on a rebuild.",

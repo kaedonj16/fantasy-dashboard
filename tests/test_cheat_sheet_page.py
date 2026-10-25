@@ -955,7 +955,7 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
 def test_changelog_announces_portfolio_positional_percentiles():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = next(e for e in CHANGELOG if "percentile" in e.get("text", "").lower())
+    entry = next(e for e in CHANGELOG if "percentile" in e.get("text", "").lower() and e.get("link") == "/portfolio")
     assert entry["date"] == "2026-08-28"
     assert entry["tag"] == "fix"
     assert entry["link"] == "/portfolio"
