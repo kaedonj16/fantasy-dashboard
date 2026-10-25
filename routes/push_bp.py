@@ -701,6 +701,62 @@ def _resolve_broadcast_url(url, platform, season, league_id):
     return "/"
 
 
+def _broadcast_person_keys(row):
+    """Identity keys under which a subscription row's PERSON can be known.
+
+    owner_id on a push row is a PER-PLATFORM id (Sleeper user id, ESPN
+    SWID, Yahoo guid, ...), not the site account: one person holds a
+    different spelling per platform, and bulk subscribe has also stored
+    small numeric team ids under it for some platforms. The site
+    account_key is the only cross-platform identity a row carries.
+    A short all-digit owner_id is a team-id spelling (unique only
+    inside one league), so it is never used as a person key: keying on
+    it would collapse different managers who share a team number.
+    """
+    keys = []
+    acct = str(row.get("account_key") or "").strip()
+    if acct:
+        keys.append(("acct", acct))
+    owner = str(row.get("owner_id") or "").strip()
+    if owner and not (owner.isdigit() and len(owner) <= 6):
+        platform = str(row.get("platform") or "").strip().lower()
+        keys.append(("owner", platform, owner.strip("{}").lower()))
+    return keys
+
+
+def _dedupe_broadcast_rows(rows):
+    """Collapse subscription rows to ONE send per person per broadcast.
+
+    Rows must arrive newest first (id DESC). A row is kept only when
+    neither its endpoint nor any of its person keys has been seen;
+    keys from skipped rows are still recorded, so a person's other
+    rows are recognised transitively (device B is theirs because an
+    earlier skipped row linked it to a seen identity).
+
+    This replaces the old SQL DISTINCT ON (owner_id): owner_id is a
+    per-platform spelling, so the same phone endpoint stored once per
+    league under several owner spellings survived that dedupe once
+    per spelling and got one copy of every broadcast per spelling
+    (five identical changelog pushes on 2026-10-25, both before and
+    after the startup-claim fix in #2803, which only stopped
+    worker-vs-worker resends, not duplicates inside one broadcast).
+    """
+    seen_endpoints = set()
+    seen_keys = set()
+    kept = []
+    for row in rows:
+        ep = str(row.get("endpoint") or "")
+        keys = _broadcast_person_keys(row)
+        if ep in seen_endpoints or any(k in seen_keys for k in keys):
+            seen_endpoints.add(ep)
+            seen_keys.update(keys)
+            continue
+        kept.append(row)
+        seen_endpoints.add(ep)
+        seen_keys.update(keys)
+    return kept
+
+
 def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
     """Send a push to every subscribed device. Returns a (body_dict, status)
     tuple - deliberately NOT a Flask response, so it is safe to call outside a
@@ -717,20 +773,17 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         with get_conn() as _pconn:
             # One send per person, not per subscription row. A user accumulates
             # several endpoints on the same phone (Safari vs installed PWA,
-            # re-granting notifications, etc.) plus a row per league -- all of
-            # which would each receive a copy. Collapse by owner_id (the
-            # signed-in user) so a global broadcast lands once; anonymous rows
-            # with no owner still de-dupe per endpoint. Newest row (id DESC) wins,
-            # so we send to the user's most recent subscription -- and its
-            # league context is what league-scoped broadcast URLs resolve
-            # against.
-            rows = _pconn.execute(
-                "SELECT DISTINCT ON (dedupe_key) endpoint, p256dh, auth, league_id, platform FROM ("
-                "  SELECT endpoint, p256dh, auth, league_id, platform, id, "
-                "         COALESCE(NULLIF(owner_id, ''), 'ep:' || endpoint) AS dedupe_key "
-                "  FROM push_subscriptions"
-                ") s ORDER BY dedupe_key, id DESC"
-            ).fetchall()
+            # re-granting notifications, etc.) plus a row per league, and the
+            # same endpoint is re-stored under a different per-platform
+            # owner_id spelling for each of them. Fetch newest first and
+            # collapse in Python (see _dedupe_broadcast_rows): the newest
+            # surviving row wins, and its league context is what
+            # league-scoped broadcast URLs resolve against.
+            rows = _dedupe_broadcast_rows(_pconn.execute(
+                "SELECT endpoint, p256dh, auth, league_id, platform, "
+                "owner_id, account_key FROM push_subscriptions "
+                "ORDER BY id DESC"
+            ).fetchall())
     except Exception as exc:
         logger.warning("[push] broadcast query failed: %s", exc)
         return {"error": "DB error"}, 500
