@@ -85,7 +85,10 @@ def test_my_leagues_cards_do_not_overflow_on_mobile():
     fn = _portfolio_fn()
     assert "min-width:0" in fn
     assert "max-width:100%" in fn
-    assert "grid-template-columns:minmax(0,1fr)" in fn
+    # Phone grid is a horizontal snap-scroll row (speed fold-in), so cards
+    # scroll sideways instead of stacking into one tall column.
+    assert "scroll-snap-type:x mandatory" in fn
+    assert ".pf-lg-card{flex:0 0 85%;scroll-snap-align:start" in fn
     assert ".pf-lg-foot .pf-arch" in fn
     assert "flex-shrink:0" in fn
     assert ".pf-lg-open" in fn

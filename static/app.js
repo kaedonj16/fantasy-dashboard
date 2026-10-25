@@ -29670,29 +29670,57 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   }
   function loadInsights() {
     var rb = document.getElementById('pfRootingBody');
-    var bb = document.getElementById('pfByeBody');
-    if (!rb && !bb) return;
+    if (!rb) return;
     var fetcher = window.brFetchWithTimeout || window.fetch;
     fetcher('/api/portfolio-insights', { cache: 'no-store', credentials: 'same-origin' }, 20000)
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.updated) {
           var label = 'Updated ' + timeLabel(d.updated);
-          document.querySelectorAll('[data-rooting-upd],[data-bye-upd]').forEach(function (el) {
+          document.querySelectorAll('[data-rooting-upd]').forEach(function (el) {
             el.textContent = label;
           });
         }
         if (d && d.season) SEASON = Number(d.season) || SEASON;
         renderRooting(d && d.rooting && d.rooting.windows);
+      })
+      .catch(function () {
+        rb.innerHTML = '<div class="pf-ins-empty">Could not load your games right now.</div>';
+      });
+  }
+  function loadBye() {
+    var bb = document.getElementById('pfByeBody');
+    if (!bb) return;
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    fetcher('/api/portfolio-bye', { cache: 'no-store', credentials: 'same-origin' }, 20000)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.updated) {
+          var label = 'Updated ' + timeLabel(d.updated);
+          document.querySelectorAll('[data-bye-upd]').forEach(function (el) {
+            el.textContent = label;
+          });
+        }
         renderBye(d && d.bye);
       })
       .catch(function () {
-        if (rb) rb.innerHTML = '<div class="pf-ins-empty">Could not load your games right now.</div>';
-        if (bb) bb.innerHTML = '<div class="pf-ins-empty">Could not check byes right now.</div>';
+        bb.innerHTML = '<div class="pf-ins-empty">Could not check byes right now.</div>';
       });
   }
-  if (document.readyState !== 'loading') loadInsights();
-  else document.addEventListener('DOMContentLoaded', loadInsights);
+  // Bye Watch is cache-only data on its own endpoint: load it immediately.
+  // The Rooting Guide scan waits until the league cards settle (or a
+  // bounded fallback when the card lifecycle never runs) so it never
+  // competes with the card and board loads.
+  var insightsKicked = false;
+  function kickInsights() {
+    if (insightsKicked) return;
+    insightsKicked = true;
+    loadInsights();
+  }
+  window.addEventListener('br:portfolio-primary-settled', kickInsights, { once: true });
+  setTimeout(kickInsights, 6000);
+  if (document.readyState !== 'loading') loadBye();
+  else document.addEventListener('DOMContentLoaded', loadBye);
 })();
 
 /* Weekly hub: League Scores tab (My Matchup | League Scores).

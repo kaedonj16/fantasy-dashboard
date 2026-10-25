@@ -1593,35 +1593,63 @@ def api_portfolio_deep_dive():
     })
 
 
-@user_pages_bp.route("/api/portfolio-insights")
-def api_portfolio_insights():
-    """Rooting Guide + Bye Watch data for My Leagues (v25 insights band).
+# ── Portfolio insights: Rooting Guide + Bye Watch ────────────────────────────
+# Two endpoints share one preamble (identity, NFL state, the viewer's league
+# list, players + model values) and one per-league resolver (cache-only ctx +
+# viewer roster):
+#
+# - /api/portfolio-bye serves Bye Watch alone. Bye needs NO provider matchup
+#   data -- only cached contexts, the viewer's starters and bye weeks -- so it
+#   answers immediately instead of waiting behind the rooting scan.
+# - /api/portfolio-insights serves the Rooting Guide. Its per-league work
+#   (a provider matchup fetch per league) runs on a thread pool, and the
+#   assembled response is cached per viewer/season/week for a short TTL so
+#   repeat loads in the window are free. The payload keeps an empty bye
+#   block for shape compatibility; the client reads byes from the bye
+#   endpoint now.
+_INSIGHTS_CACHE: dict = {}
+_INSIGHTS_CACHE_LOCK = threading.Lock()
+_INSIGHTS_TTL = 60.0  # seconds
 
-    Cache-only like the actions scan: cold leagues are skipped and reported
-    in the scan block, never built inline. Not PRO-gated, matching the
-    other insight cards on the page."""
-    from dashboard_services import portfolio_insights as _pins
+
+def _insights_cache_get(key):
+    with _INSIGHTS_CACHE_LOCK:
+        ent = _INSIGHTS_CACHE.get(key)
+        if ent and time.monotonic() - ent[0] < _INSIGHTS_TTL:
+            return ent[1]
+    return None
+
+
+def _insights_cache_put(key, payload):
+    with _INSIGHTS_CACHE_LOCK:
+        _INSIGHTS_CACHE[key] = (time.monotonic(), payload)
+        if len(_INSIGHTS_CACHE) > 64:
+            oldest = min(_INSIGHTS_CACHE.items(), key=lambda kv: kv[1][0])[0]
+            _INSIGHTS_CACHE.pop(oldest, None)
+
+
+def _pf_viewer_leagues():
+    """Shared preamble for the insights/bye endpoints.
+
+    Returns a context dict, or None when the caller should answer with its
+    empty payload (signed out, no current week, league resolution failed).
+    """
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
     account_id = session.get("account_id")
-    empty = {"ok": True, "rooting": {"windows": []},
-             "bye": {"week": 0, "rows": [], "total_out": 0},
-             "scan": {"total": 0, "scanned": 0, "incomplete": True}}
     if (not viewer_username or not viewer_user_id) and not account_id:
-        return jsonify(empty)
+        return None
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
     week = int(nfl_state.get("week") or 0)
     if not week or nfl_state.get("season_type") not in ("reg", "post"):
-        return jsonify(empty)
+        return None
     try:
         from dashboard_services.accounts import resolve_my_leagues
         league_inputs, season = resolve_my_leagues(
             viewer_user_id, account_id, season)
     except Exception:
-        return jsonify(empty)
-    from utils.scorezone_user import match_viewer_roster
-    from utils.utils import load_week_schedule
+        return None
     try:
         from dashboard_services.api import get_nfl_players
         nfl_players = get_nfl_players() or {}
@@ -1638,7 +1666,260 @@ def api_portfolio_insights():
                 value_by_pid[str(r["id"])] = float(r.get("value") or 0)
             except (TypeError, ValueError):
                 pass
+    return {
+        "viewer_user_id": viewer_user_id,
+        "account_id": account_id,
+        "season": season,
+        "week": week,
+        "league_inputs": league_inputs or [],
+        "nfl_players": nfl_players,
+        "model_rows": model_rows,
+        "value_by_pid": value_by_pid,
+        "cache_key": (account_id or f"viewer:{viewer_user_id}", season, week),
+    }
 
+
+def _pf_scan_total(league_inputs):
+    return sum(1 for lg in league_inputs if str(lg.get("league_id") or ""))
+
+
+def _pf_resolve_league(lg, base):
+    """Cache-only ctx + viewer roster for one league input.
+
+    Returns a resolved-league dict, or None when the league is cold or the
+    viewer's roster cannot be matched (the caller counts it unscanned).
+    """
+    from utils.scorezone_user import match_viewer_roster
+
+    lid = str(lg.get("league_id") or "")
+    if not lid:
+        return None
+    plat = str(lg.get("platform") or "sleeper").lower()
+    lg_season = int(lg.get("season") or base["season"])
+    try:
+        lctx = get_league_ctx_from_cache(plat, lid, lg_season,
+                                         allow_build=False) or {}
+    except Exception:
+        return None
+    if not lctx:
+        return None
+    rosters = lctx.get("rosters") or []
+    account_id = base["account_id"]
+    viewer_roster = None
+    if account_id:
+        try:
+            from dashboard_services.accounts import resolve_account_viewer_for_league
+            av = resolve_account_viewer_for_league(
+                account_id, plat, lid, lg_season,
+                lctx.get("users") or [], rosters)
+            rid = str((av or {}).get("viewer_roster_id") or "")
+            if rid:
+                viewer_roster = next(
+                    (r for r in rosters
+                     if str(r.get("roster_id") or "") == rid), None)
+        except Exception:
+            viewer_roster = None
+    if viewer_roster is None:
+        viewer_roster = match_viewer_roster(
+            rosters, team_id=lg.get("team_id"),
+            owner_id=sleeper_owner_id_for_account(
+                account_id, base["viewer_user_id"], plat))
+    if not viewer_roster:
+        return None
+    return {
+        "plat": plat,
+        "lid": lid,
+        "lg_season": lg_season,
+        "lctx": lctx,
+        "rosters": rosters,
+        "viewer_roster": viewer_roster,
+        "league_name": (lctx.get("league") or {}).get("name")
+                       or lg.get("name") or lid,
+        "league_key": f"{plat}|{lid}",
+        "starters": [str(p) for p in (viewer_roster.get("starters") or []) if p],
+        "roster_positions": lctx.get("roster_positions") or [],
+    }
+
+
+def _pf_bye_row_for(res, next_week, base):
+    """Bye Watch row for one resolved league: (row, out_count) or None.
+
+    Moved verbatim from the old insights loop; a failure here never kills
+    the league's scanned count -- the caller still counts it scanned.
+    """
+    from dashboard_services import portfolio_insights as _pins
+
+    nfl_players = base["nfl_players"]
+    try:
+        out = []
+        for i, pid in enumerate(res["starters"]):
+            pl = nfl_players.get(pid) or {}
+            bw = pl.get("bye_week")
+            try:
+                bw = int(bw) if bw is not None else None
+            except (TypeError, ValueError):
+                bw = None
+            if bw == next_week:
+                out.append({
+                    "pid": pid,
+                    "name": pl.get("full_name") or pl.get("last_name") or pid,
+                    "pos": pl.get("position") or "",
+                    "slot": res["roster_positions"][i]
+                            if i < len(res["roster_positions"]) else "",
+                })
+        starter_set = set(res["starters"])
+        reserve_set = {str(p) for p in (res["viewer_roster"].get("reserve") or []) if p}
+        taxi_set = {str(p) for p in (res["viewer_roster"].get("taxi") or []) if p}
+        bench = []
+        for pid in (res["viewer_roster"].get("players") or []):
+            spid = str(pid)
+            if spid in starter_set or spid in reserve_set or spid in taxi_set:
+                continue
+            pl = nfl_players.get(spid) or {}
+            bench.append({
+                "pid": spid,
+                "name": pl.get("full_name") or pl.get("last_name") or spid,
+                "pos": pl.get("position") or "",
+                "value": base["value_by_pid"].get(spid, 0.0),
+            })
+        row_in = {"name": res["league_name"], "platform": res["plat"],
+                  "league_id": res["lid"], "season": res["lg_season"],
+                  "out": out, "bench": bench, "top_fa": {}}
+        row = _pins.bye_row(row_in)
+        if row.get("hole_pos"):
+            rostered = {str(p) for r in res["rosters"]
+                        for p in (r.get("players") or [])}
+            best = None
+            for r in base["model_rows"]:
+                if not isinstance(r, dict):
+                    continue
+                if str(r.get("position") or "").upper() != row["hole_pos"]:
+                    continue
+                rpid = str(r.get("id") or "")
+                if not rpid or rpid in rostered:
+                    continue
+                try:
+                    rv = float(r.get("value") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if best is None or rv > best["value"]:
+                    pl = nfl_players.get(rpid) or {}
+                    best = {"pid": rpid, "value": rv,
+                            "name": pl.get("full_name") or r.get("name") or rpid}
+            if best:
+                row_in["top_fa"] = {row["hole_pos"]: best}
+                row = _pins.bye_row(row_in)
+        return row, row.get("out_count") or 0
+    except Exception:
+        logger.debug("[portfolio-bye] bye row failed", exc_info=True)
+        return None
+
+
+def _pf_rooting_for(res, base):
+    """Rooting inputs for one resolved league: (starters, margin or None)."""
+    nfl_players = base["nfl_players"]
+    week = base["week"]
+    starters = res["starters"]
+    # Live points per starter from the provider matchup rows.
+    points_by_pid = {}
+    opp_points = None
+    my_points = None
+    try:
+        from dashboard_services.platform_api import get_matchups
+        rows = get_matchups(res["plat"], res["lid"], week,
+                            res["lg_season"]) or []
+        mine = next((r for r in rows
+                     if str(r.get("roster_id")) == str(res["viewer_roster"].get("roster_id"))),
+                    None)
+        if mine:
+            points_by_pid = {str(k): v for k, v in
+                             (mine.get("players_points") or {}).items()}
+            my_points = sum(float(points_by_pid.get(p) or 0) for p in starters)
+            mid = mine.get("matchup_id")
+            opp = next((r for r in rows
+                        if r is not mine and mid is not None
+                        and r.get("matchup_id") == mid), None)
+            if opp:
+                opp_points = sum(
+                    float(v or 0)
+                    for v in (opp.get("players_points") or {}).values())
+    except Exception:
+        points_by_pid = {}
+    proj_map = {}
+    try:
+        pbw = res["lctx"].get("proj_by_week") or {}
+        wk = pbw.get(week) or pbw.get(str(week)) or {}
+        if isinstance(wk, dict):
+            proj_map = {str(k): v for k, v in (wk.get("projections") or {}).items()}
+    except Exception:
+        proj_map = {}
+    starters_out = []
+    for pid in starters:
+        pl = nfl_players.get(pid) or {}
+        starters_out.append({
+            "pid": pid,
+            "name": pl.get("full_name") or pl.get("last_name") or pid,
+            "pos": pl.get("position") or "",
+            "team": str(pl.get("team") or "").upper(),
+            "league_key": res["league_key"],
+            "league_name": res["league_name"],
+            "points": points_by_pid.get(pid),
+            "proj": proj_map.get(pid),
+        })
+    margin = None
+    if my_points is not None and opp_points is not None:
+        margin = {
+            "league_name": res["league_name"],
+            "my_score": my_points, "opp_score": opp_points,
+            "remaining_names": [], "final": False,
+        }
+    return starters_out, margin
+
+
+@user_pages_bp.route("/api/portfolio-bye")
+def api_portfolio_bye():
+    """Bye Watch data for My Leagues (v25 insights band, split out).
+
+    Cache-only league contexts, never a provider matchup call: cold leagues
+    are skipped and reported in the scan block. Not PRO-gated, matching the
+    other insight cards on the page."""
+    empty = {"ok": True, "bye": {"week": 0, "rows": [], "total_out": 0},
+             "scan": {"total": 0, "scanned": 0, "incomplete": True}}
+    base = _pf_viewer_leagues()
+    if base is None:
+        return jsonify(empty)
+    next_week = base["week"] + 1
+    total = _pf_scan_total(base["league_inputs"])
+    bye_rows = []
+    total_out = 0
+    scanned = 0
+    for lg in base["league_inputs"][:12]:
+        res = _pf_resolve_league(lg, base)
+        if res is None:
+            continue
+        scanned += 1
+        got = _pf_bye_row_for(res, next_week, base)
+        if got:
+            bye_rows.append(got[0])
+            total_out += got[1]
+    return jsonify({
+        "ok": True,
+        "week": next_week,
+        "season": base["season"],
+        "bye": {"week": next_week, "rows": bye_rows, "total_out": total_out},
+        "scan": {"total": total, "scanned": scanned,
+                 "incomplete": scanned < total},
+        "updated": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+def _compute_portfolio_insights(base):
+    """Assemble the Rooting Guide payload (see api_portfolio_insights)."""
+    from dashboard_services import portfolio_insights as _pins
+    from utils.utils import load_week_schedule
+
+    season = base["season"]
+    week = base["week"]
     # Normalized week games (schedule + live overlay from the scores feed).
     games_norm = []
     try:
@@ -1682,165 +1963,34 @@ def api_portfolio_insights():
                 "epoch": float(ep) if ep else None,
             })
 
-    next_week = week + 1
+    # Per-league rooting work in parallel; results are assembled in the
+    # original league order so windows/margins stay deterministic.
+    leagues = list(base["league_inputs"][:12])
+    total = _pf_scan_total(base["league_inputs"])
+
+    def _work(lg):
+        res = _pf_resolve_league(lg, base)
+        if res is None:
+            return None
+        starters_out, margin = _pf_rooting_for(res, base)
+        return res, starters_out, margin
+
+    results = []
+    if leagues:
+        with ThreadPoolExecutor(max_workers=6,
+                                thread_name_prefix="pf-insights") as pool:
+            results = list(pool.map(_work, leagues))
     all_starters = []
     margins = {}
-    bye_rows = []
-    total_out = 0
     scanned = 0
-    total = sum(1 for lg in (league_inputs or []) if str(lg.get("league_id") or ""))
-    for lg in (league_inputs or [])[:12]:
-        lid = str(lg.get("league_id") or "")
-        plat = str(lg.get("platform") or "sleeper").lower()
-        lg_season = int(lg.get("season") or season)
-        if not lid:
+    for out in results:
+        if out is None:
             continue
-        try:
-            lctx = get_league_ctx_from_cache(plat, lid, lg_season,
-                                             allow_build=False) or {}
-        except Exception:
-            continue
-        if not lctx:
-            continue
-        rosters = lctx.get("rosters") or []
-        viewer_roster = None
-        if account_id:
-            try:
-                from dashboard_services.accounts import resolve_account_viewer_for_league
-                av = resolve_account_viewer_for_league(
-                    account_id, plat, lid, lg_season,
-                    lctx.get("users") or [], rosters)
-                rid = str((av or {}).get("viewer_roster_id") or "")
-                if rid:
-                    viewer_roster = next(
-                        (r for r in rosters
-                         if str(r.get("roster_id") or "") == rid), None)
-            except Exception:
-                viewer_roster = None
-        if viewer_roster is None:
-            viewer_roster = match_viewer_roster(
-                rosters, team_id=lg.get("team_id"),
-                owner_id=sleeper_owner_id_for_account(
-                    account_id, viewer_user_id, plat))
-        if not viewer_roster:
-            continue
+        res, starters_out, margin = out
         scanned += 1
-        league_name = (lctx.get("league") or {}).get("name") or lg.get("name") or lid
-        league_key = f"{plat}|{lid}"
-        starters = [str(p) for p in (viewer_roster.get("starters") or []) if p]
-        roster_positions = lctx.get("roster_positions") or []
-        # Live points per starter from the provider matchup rows.
-        points_by_pid = {}
-        opp_points = None
-        my_points = None
-        try:
-            from dashboard_services.platform_api import get_matchups
-            rows = get_matchups(plat, lid, week, lg_season) or []
-            mine = next((r for r in rows
-                         if str(r.get("roster_id")) == str(viewer_roster.get("roster_id"))),
-                        None)
-            if mine:
-                points_by_pid = {str(k): v for k, v in
-                                 (mine.get("players_points") or {}).items()}
-                my_points = sum(float(points_by_pid.get(p) or 0) for p in starters)
-                mid = mine.get("matchup_id")
-                opp = next((r for r in rows
-                            if r is not mine and mid is not None
-                            and r.get("matchup_id") == mid), None)
-                if opp:
-                    opp_points = sum(
-                        float(v or 0)
-                        for v in (opp.get("players_points") or {}).values())
-        except Exception:
-            points_by_pid = {}
-        proj_map = {}
-        try:
-            pbw = lctx.get("proj_by_week") or {}
-            wk = pbw.get(week) or pbw.get(str(week)) or {}
-            if isinstance(wk, dict):
-                proj_map = {str(k): v for k, v in (wk.get("projections") or {}).items()}
-        except Exception:
-            proj_map = {}
-        for pid in starters:
-            pl = nfl_players.get(pid) or {}
-            all_starters.append({
-                "pid": pid,
-                "name": pl.get("full_name") or pl.get("last_name") or pid,
-                "pos": pl.get("position") or "",
-                "team": str(pl.get("team") or "").upper(),
-                "league_key": league_key,
-                "league_name": league_name,
-                "points": points_by_pid.get(pid),
-                "proj": proj_map.get(pid),
-            })
-        if my_points is not None and opp_points is not None:
-            margins[league_key] = {
-                "league_name": league_name,
-                "my_score": my_points, "opp_score": opp_points,
-                "remaining_names": [], "final": False,
-            }
-        # Bye Watch for next week.
-        try:
-            out = []
-            for i, pid in enumerate(starters):
-                pl = nfl_players.get(pid) or {}
-                bw = pl.get("bye_week")
-                try:
-                    bw = int(bw) if bw is not None else None
-                except (TypeError, ValueError):
-                    bw = None
-                if bw == next_week:
-                    out.append({
-                        "pid": pid,
-                        "name": pl.get("full_name") or pl.get("last_name") or pid,
-                        "pos": pl.get("position") or "",
-                        "slot": roster_positions[i] if i < len(roster_positions) else "",
-                    })
-            starter_set = set(starters)
-            reserve_set = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
-            taxi_set = {str(p) for p in (viewer_roster.get("taxi") or []) if p}
-            bench = []
-            for pid in (viewer_roster.get("players") or []):
-                spid = str(pid)
-                if spid in starter_set or spid in reserve_set or spid in taxi_set:
-                    continue
-                pl = nfl_players.get(spid) or {}
-                bench.append({
-                    "pid": spid,
-                    "name": pl.get("full_name") or pl.get("last_name") or spid,
-                    "pos": pl.get("position") or "",
-                    "value": value_by_pid.get(spid, 0.0),
-                })
-            row_in = {"name": league_name, "platform": plat, "league_id": lid,
-                      "season": lg_season,
-                      "out": out, "bench": bench, "top_fa": {}}
-            row = _pins.bye_row(row_in)
-            if row.get("hole_pos"):
-                rostered = {str(p) for r in rosters for p in (r.get("players") or [])}
-                best = None
-                for r in model_rows:
-                    if not isinstance(r, dict):
-                        continue
-                    if str(r.get("position") or "").upper() != row["hole_pos"]:
-                        continue
-                    rpid = str(r.get("id") or "")
-                    if not rpid or rpid in rostered:
-                        continue
-                    try:
-                        rv = float(r.get("value") or 0)
-                    except (TypeError, ValueError):
-                        continue
-                    if best is None or rv > best["value"]:
-                        pl = nfl_players.get(rpid) or {}
-                        best = {"pid": rpid, "value": rv,
-                                "name": pl.get("full_name") or r.get("name") or rpid}
-                if best:
-                    row_in["top_fa"] = {row["hole_pos"]: best}
-                    row = _pins.bye_row(row_in)
-            bye_rows.append(row)
-            total_out += row.get("out_count") or 0
-        except Exception:
-            logger.debug("[portfolio-insights] bye row failed", exc_info=True)
+        all_starters.extend(starters_out)
+        if margin is not None:
+            margins[res["league_key"]] = margin
 
     try:
         from app import _NFL_COLORS as _team_colors
@@ -1863,16 +2013,41 @@ def api_portfolio_insights():
         # Need lines only while the final window can still change outcomes.
         final_window["need_lines"] = (
             _pins.need_lines(margins) if any_live_left else [])
-    return jsonify({
+    return {
         "ok": True,
         "week": week,
         "season": season,
         "rooting": {"windows": windows},
-        "bye": {"week": next_week, "rows": bye_rows, "total_out": total_out},
+        # Bye Watch lives on /api/portfolio-bye now; the empty block keeps
+        # the response shape older clients were built against.
+        "bye": {"week": week + 1, "rows": [], "total_out": 0},
         "scan": {"total": total, "scanned": scanned,
                  "incomplete": scanned < total},
         "updated": datetime.now(timezone.utc).isoformat(),
-    })
+    }
+
+
+@user_pages_bp.route("/api/portfolio-insights")
+def api_portfolio_insights():
+    """Rooting Guide data for My Leagues (v25 insights band).
+
+    Cache-only like the actions scan: cold leagues are skipped and reported
+    in the scan block, never built inline. Not PRO-gated, matching the
+    other insight cards on the page. Responses are cached per viewer for
+    _INSIGHTS_TTL seconds; the payload's ``updated`` stays the time the
+    data was actually computed."""
+    empty = {"ok": True, "rooting": {"windows": []},
+             "bye": {"week": 0, "rows": [], "total_out": 0},
+             "scan": {"total": 0, "scanned": 0, "incomplete": True}}
+    base = _pf_viewer_leagues()
+    if base is None:
+        return jsonify(empty)
+    cached = _insights_cache_get(base["cache_key"])
+    if cached is not None:
+        return jsonify(cached)
+    payload = _compute_portfolio_insights(base)
+    _insights_cache_put(base["cache_key"], payload)
+    return jsonify(payload)
 
 
 # ── Live matchup score for a My Leagues card ──────────────────────────────────
