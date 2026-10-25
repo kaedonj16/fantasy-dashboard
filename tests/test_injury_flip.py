@@ -2,7 +2,9 @@
 
 Covers: transition detection (no re-alert for already-Out players),
 kickoff gating (suppressed once the game starts), Questionable exclusion,
-bench players, the Yahoo team_id owner alias, and fail-open behavior.
+starters-only alerting (bench flips never alert), one batched alert per
+league when several starters flip in the same run, the Yahoo team_id
+owner alias, and fail-open behavior.
 """
 from datetime import datetime, timezone
 
@@ -243,17 +245,74 @@ def test_questionable_flip_never_alerts(monkeypatch):
     assert sent == []
 
 
-def test_bench_flip_uses_bench_title(monkeypatch):
-    sent, _ = _setup(
+def test_bench_flip_never_alerts(monkeypatch):
+    # Kaedon 2026-10-25: starters only. A bench flip (the default roster's
+    # p2 is on the bench) sends nothing, but last-seen still records it so
+    # a later promotion to the starting lineup does not re-alert as new.
+    sent, store = _setup(
         monkeypatch,
         espn_rows={"p2": {"status": "IR", "team": "DET", "name": "Jameson Williams"}},
         schedule=_games(KICKOFF_FUTURE),
         last_seen={"L1:p1": "", "L1:p2": ""},
         sub_rows=[_sub_row()],
     )
+    assert pn.notify_injury_flip() == 0
+    assert sent == []
+    import json as _json
+    saved = _json.loads(store["injury_last_seen_2026_4"])
+    assert saved["L1:p2"] == "IR"
+
+
+def test_multiple_starters_flip_is_one_alert_per_league(monkeypatch):
+    # Two starters on the same roster flip in the same run: exactly ONE
+    # push for the league, listing both, not one push per player.
+    rosters = [{"owner_id": "o1", "roster_id": 1,
+                "starters": ["p1", "p2"], "players": ["p1", "p2", "p3"]}]
+    sent, _ = _setup(
+        monkeypatch,
+        espn_rows={
+            "p1": {"status": "Out", "team": "DET", "name": "Jahmyr Gibbs"},
+            "p2": {"status": "IR", "team": "DET", "name": "Jameson Williams"},
+            "p3": {"status": "Out", "team": "DET", "name": "Bench Guy"},
+        },
+        schedule=_games(KICKOFF_FUTURE),
+        last_seen={"L1:p1": "", "L1:p2": "", "L1:p3": ""},
+        sub_rows=[_sub_row()],
+        rosters=rosters,
+    )
     assert pn.notify_injury_flip() == 1
-    assert sent[0]["title"] == "Bench injury alert"
-    assert "Jameson Williams is now listed IR." in sent[0]["body"]
+    assert len(sent) == 1
+    assert sent[0]["title"] == "Starter injury alert"
+    assert sent[0]["body"] == (
+        "Jahmyr Gibbs is now listed Out; Jameson Williams is now listed IR. "
+        "Check your lineup in Blackedraw."
+    )
+    # The bench player's flip is not in the batched alert.
+    assert "Bench Guy" not in sent[0]["body"]
+
+
+def test_same_starters_in_two_leagues_get_one_alert_each(monkeypatch):
+    # One per league, not one globally: the same roster flipping in two
+    # subscribed leagues produces one batched push per league.
+    rosters = [{"owner_id": "o1", "roster_id": 1,
+                "starters": ["p1", "p2"], "players": ["p1", "p2"]}]
+    sent, _ = _setup(
+        monkeypatch,
+        espn_rows={
+            "p1": {"status": "Out", "team": "DET", "name": "Jahmyr Gibbs"},
+            "p2": {"status": "Out", "team": "DET", "name": "Jameson Williams"},
+        },
+        schedule=_games(KICKOFF_FUTURE),
+        last_seen={"L1:p1": "", "L1:p2": "", "L2:p1": "", "L2:p2": ""},
+        sub_rows=[_sub_row()],
+        rosters=rosters,
+        leagues=[("L1", "sleeper"), ("L2", "sleeper")],
+    )
+    assert pn.notify_injury_flip() == 2
+    assert len(sent) == 2
+    for s in sent:
+        assert s["title"] == "Starter injury alert"
+        assert "Jahmyr Gibbs" in s["body"] and "Jameson Williams" in s["body"]
 
 
 def test_yahoo_team_id_owner_alias(monkeypatch):
