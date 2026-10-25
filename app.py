@@ -17896,6 +17896,21 @@ def api_scorezone_data(platform: str, season: int, league_id: str):
         except Exception as _e:
             logger.warning("[scorezone] user-scope stream failed, using aggregate: %s", _e)
     try:
+        # Bounded poller fallback: if the play store has gone stale while
+        # games are live (store-poll cron down), one throttled, leader-locked
+        # collect is triggered from the read path. Self-gating and fail-soft;
+        # the response below is served from the store either way.
+        try:
+            from utils.scorezone_store import maybe_fallback_collect
+
+            _fb_week = None
+            try:
+                _fb_week = int(week) if week else int((get_nfl_state() or {}).get("week") or 0) or None
+            except Exception:
+                _fb_week = None
+            maybe_fallback_collect(season, _fb_week)
+        except Exception:
+            pass
         data = _scorezone_fetch(platform, league_id, season, week=week, scope=scope)
         # Conditional polls: when the client already holds this exact payload
         # (ETag = content hash of the shared collect + viewer id), answer 304

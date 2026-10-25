@@ -2314,6 +2314,7 @@ def extract_espn_pbp_plays(
     *,
     name_to_pid: dict[str, str] | None = None,
     player_meta_by_pid: dict[str, dict] | None = None,
+    team_to_def_pid: dict[str, str] | None = None,
 ) -> list[dict]:
     """Flatten ESPN ``gamepackageJSON.drives`` into ScoreZone play rows."""
     if not isinstance(espn_payload, dict):
@@ -2330,6 +2331,7 @@ def extract_espn_pbp_plays(
         drives = drives_block
 
     full_idx, abbrev_idx = build_name_indexes(name_to_pid)
+    _date_part, _away_team, _home_team = parse_tank_game_id(game_id)
     out: list[dict] = []
     seq = 0
     # ESPN's gamepackage lists the in-progress drive under BOTH
@@ -2455,6 +2457,35 @@ def extract_espn_pbp_plays(
                 # still resolve via heuristics; otherwise filtered server-side.
                 if is_td or play.get("scoringPlay"):
                     out.append({**base, "pid": "", "name": "", "team": drive_team})
+            # DST association: a defensive score / takeaway belongs to the
+            # DEFENDING team's fantasy DST, but the rows above only carry
+            # individual pids, so a DST starter never matched them (a
+            # pick-six surfaced for the CB, not for the GB DST slot). Emit
+            # one extra row keyed by the DST pid, the same way the Tank01
+            # path tags teamStats deltas, so store readers and Moments can
+            # match DST starters like any other starter.
+            if team_to_def_pid and drive_team in (_away_team, _home_team):
+                _def_team = _home_team if drive_team == _away_team else _away_team
+                _def_pid = team_to_def_pid.get(_def_team) or ""
+                if _def_pid:
+                    _td_low = _td_text.lower()
+                    _dst_stat = None
+                    _dst_td = False
+                    if is_td and (
+                        "intercepted by" in _td_low
+                        or ("fumble" in _td_low and "recovered by" in _td_low)
+                    ):
+                        _dst_stat = {"def_td": 1}
+                        _dst_td = True
+                    elif "intercepted by" in parse_text.lower():
+                        _dst_stat = {"def_int": 1}
+                    if _dst_stat:
+                        out.append({
+                            **base, "pid": _def_pid,
+                            "name": (_def_team + " DEF") if _def_team else "Defense",
+                            "team": _def_team, "stat_line": _dst_stat,
+                            "is_td": _dst_td,
+                        })
     return attach_cumulative(out)
 
 
@@ -2623,7 +2654,7 @@ def fetch_alt_pbp_plays(
     season: int | str,
     week: int | str,
     name_to_pid: dict[str, str] | None = None,
-    team_to_def_pid: dict[str, str] | None = None,  # reserved
+    team_to_def_pid: dict[str, str] | None = None,
     player_meta_by_pid: dict[str, dict] | None = None,
     live: bool = False,
     final: bool = False,
@@ -2640,7 +2671,6 @@ def fetch_alt_pbp_plays(
     long final TTL, so its ESPN PBP is force-refreshed until ESPN's own
     gamepackage reports the game completed -- then it's immutable and cached.
     """
-    del team_to_def_pid  # reserved for future DEF tagging
     date_part, away, home = parse_tank_game_id(tank_game_id)
     if not away or not home:
         return []
@@ -2662,6 +2692,7 @@ def fetch_alt_pbp_plays(
                 plays = extract_espn_pbp_plays(
                     payload, tank_game_id, name_to_pid=name_to_pid,
                     player_meta_by_pid=player_meta_by_pid,
+                    team_to_def_pid=team_to_def_pid,
                 )
                 if plays:
                     logger.debug(

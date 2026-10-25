@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-25",
+        "tag": "fix",
+        "text": "ScoreZone: defensive touchdowns and interceptions now credit your DST, matchup names no longer cut off on phone hero cards, and live plays keep flowing if the play collector stalls: the page now detects a stale feed and restarts collection on its own. The TD alerts bar can be dismissed for the day (with undo) instead of forever, and dark mode greens match the rest of the site.",
+        "link": "/scorezone"
+    },
+    {
         "date": "2026-10-24",
         "tag": "new",
         "text": "Teams: competitive windows rebuilt. A new Powerhouse tier sits above Contender for the league's clear top team, Holding Pattern splits into Crossroads and Treadmill, and team cards can carry a roster shape tag: Deep, Top-Heavy, Cliff Risk or Pick-Loaded. Roster grades are steadier too: age scores on a smooth curve instead of steps, and scoring percentiles use each format's own top players.",

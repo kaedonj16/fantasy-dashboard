@@ -3006,6 +3006,21 @@ def api_scorezone_moments():
     # across both teams' starters. live == False means no new moments can
     # arrive (beyond final plays still landing in the store).
     status_label = _matchup_status_label(status_by_pid, list(pid_to_side.keys()))
+    # Poller health surface: while the matchup is live, a store whose newest
+    # play is minutes old means collection is broken (cron down), not that
+    # nothing happened. Say so on the payload and kick one bounded fallback
+    # collect (throttled, leader-locked in the store module) so a dead cron
+    # cannot silently freeze Moments until someone reads Render logs.
+    store_stale = False
+    if status_label == "in":
+        try:
+            from utils.scorezone_store import maybe_fallback_collect, store_is_stale
+
+            store_stale = store_is_stale(season, week)
+            if store_stale:
+                maybe_fallback_collect(season, week)
+        except Exception:
+            logger.debug("[scorezone-moments] stale check failed", exc_info=True)
     return jsonify({
         "plays": moments,
         "td_count": td_count,
@@ -3015,6 +3030,7 @@ def api_scorezone_moments():
         },
         "status": status_label,
         "live": status_label == "in",
+        "store_stale": store_stale,
     })
 
 

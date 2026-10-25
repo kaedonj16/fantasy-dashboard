@@ -53,6 +53,14 @@ def test_waiver_row_hover_is_a_plain_tint():
 
 
 def test_redzone_event_hover_does_not_slide():
+    # ScoreZone fix-all (#2804) removed the .rz-event hover rule entirely:
+    # play rows are not interactive (click handler and cursor:pointer are
+    # gone), so there is no hover state left to slide. If a hover rule ever
+    # returns, it must stay a non-moving treatment.
+    if ".rz-event:hover" not in _CSS:
+        base = _rule_body(_CSS, ".rz-event {").lower()
+        assert "cursor: pointer" not in base
+        return
     body = _rule_body(_CSS, ".rz-event:hover").lower()
     assert "transform" not in body and "box-shadow" not in body
 
