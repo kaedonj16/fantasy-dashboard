@@ -45,7 +45,9 @@ def test_account_portfolio_renders_complete_cross_league_data(offline_client, mo
     assert b"Fast League" in response.data
     assert b"7-4" in response.data
     assert b"Player Holdings" in response.data and b"Player One" in response.data
-    assert b"NFL Exposure" in response.data
+    # v25: NFL Exposure is replaced by the Rooting Guide.
+    assert b"Rooting Guide" in response.data
+    assert b"NFL Exposure" not in response.data
     assert b"Positional Strength" in response.data
     assert b"Record loading" not in response.data
     assert seen["kwargs"]["enrich_live"] is False
@@ -89,7 +91,7 @@ def test_summary_endpoint_rechecks_membership_and_season(offline_client, monkeyp
     assert response.status_code == 403
 
 
-def test_fast_shell_keeps_card_seasons_in_navigation_and_pagination(offline_client, monkeypatch):
+def test_fast_shell_keeps_card_seasons_in_navigation_without_pager(offline_client, monkeypatch):
     import routes.user_pages_bp as pages
     monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026})
     leagues = [{"league_id": f"L{i}", "platform": "yahoo", "season": 2025,
@@ -105,8 +107,11 @@ def test_fast_shell_keeps_card_seasons_in_navigation_and_pagination(offline_clie
     response = offline_client.get("/portfolio")
     assert response.status_code == 200
     assert b"data-lg-key='yahoo:L1'" in response.data
-    assert b"Page '+(page+1)+' of '+pages" in response.data
-    assert b"pager.hidden=ord.length<=PAGE" in response.data
+    # All five leagues render (no pager in v25); card seasons stay on the
+    # cards for navigation/hydration, and the sort control is present.
+    assert response.data.count(b"data-summary-card") >= 5
+    assert b"pfLgPager" not in response.data
+    assert b"pfSortSel" in response.data
 
 
 def test_fast_shell_renders_all_cards_in_durable_order(offline_client, monkeypatch):
@@ -216,11 +221,11 @@ def test_summary_endpoint_returns_pending_without_running_provider_work(offline_
     assert body["retry_after_ms"] == 3000
 
 
-def test_fast_shell_pager_queue_visible_defines_its_own_ord(offline_client, monkeypatch):
-    """Regression: queueVisible() referenced `ord`, which was local to
-    render(), so every Prev/Next click threw `ReferenceError: ord is not
-    defined` and newly visible cards were never queued for hydration.
-    queueVisible must compute its own ordered list."""
+def test_fast_shell_queue_all_defines_its_own_order(offline_client, monkeypatch):
+    """Regression (carried from the pager era): the queue function must
+    compute its own ordered list rather than referencing a variable local
+    to render(); in v25 that is queueAll(), exposed as __pfQueueVisible,
+    and it queues every card since there is no pager."""
     import routes.user_pages_bp as pages
     monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026})
     leagues = [{"league_id": f"L{i}", "platform": "espn", "season": 2026,
@@ -235,4 +240,5 @@ def test_fast_shell_pager_queue_visible_defines_its_own_ord(offline_client, monk
         sess["account_id"] = 12
     response = offline_client.get("/portfolio")
     assert response.status_code == 200
-    assert b"function queueVisible(){if(!window.__pfQueueCard)return;var ord=ordered();" in response.data
+    assert b"function queueAll(){if(!window.__pfQueueCard)return;ordered().forEach" in response.data
+    assert b"window.__pfQueueVisible=queueAll;" in response.data

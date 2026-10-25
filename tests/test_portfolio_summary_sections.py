@@ -52,22 +52,21 @@ def test_render_summary_reapplies_server_side_styling_after_async_refresh():
     assert 'title="Regular-season standings: wins, then points for"' in render
 
 
-def test_render_summary_rebuilds_position_strength_strip():
-    """The position-strength strip (.pf-lg-strength / .pf-strbar / .pf-pos-chip)
-    is only present in the server's initial markup for cards that already had
-    data. Cards that start in the 'loading' skeleton state never get it added
-    once the async summary resolves unless renderSummary rebuilds it too."""
+def test_render_summary_rebuilds_weakest_room_line():
+    """v25: the card's position data is one weakest-room line (the full rank
+    grid lives in the insights heatmap). Cards that start in the 'loading'
+    skeleton state only get the line once renderSummary rebuilds it."""
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
-    assert "function renderStrength(card, data, totalN)" in source
-    strength = source[source.index("function renderStrength(card, data, totalN)"):source.index("function renderSummary(card, data)")]
-    assert "pos_user_rank" in strength
-    assert "pf-lg-strength" in strength
-    assert "pf-strbar" in strength
-    assert "pf-pos-chip q-" in strength
+    assert "function renderWeakest(card, data, totalN)" in source
+    seg = source[source.index("function renderWeakest(card, data, totalN)"):source.index("function renderSummary(card, data)")]
+    assert "pos_user_rank" in seg
+    assert "data-weakest" in seg
+    assert "Weakest room:" in seg
     render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
-    assert "renderStrength(card, data, totalN)" in render
+    assert "renderWeakest(card, data, totalN)" in render
+    assert "playoff_odds_pct" in render
 
 
 def test_cached_stale_summary_preserves_underlying_sync_timestamp(monkeypatch):

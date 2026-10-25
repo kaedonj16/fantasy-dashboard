@@ -28472,30 +28472,36 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     el.innerHTML = html;
     return true;
   }
-  function renderStrength(card, data, totalN) {
+  function ordSuffix(n) {
+    var mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 13) return 'th';
+    switch (n % 10) { case 1: return 'st'; case 2: return 'nd'; case 3: return 'rd'; default: return 'th'; }
+  }
+  // v25: the card carries its weakest room as one line (the full rank grid
+  // lives in the Positional Strength heatmap below).
+  function renderWeakest(card, data, totalN) {
     var stats = card.querySelector('[data-summary-stats]');
     if (!stats) return;
     var posRanks = data.pos_user_rank || {};
-    var chips = ['QB', 'RB', 'WR', 'TE'].map(function (pos) {
-      var pr = posRanks[pos];
-      if (pr == null) return '';
-      var tier = posTier(pr, totalN);
-      var ord = (function (n) {
-        var mod100 = n % 100;
-        if (mod100 >= 11 && mod100 <= 13) return 'th';
-        switch (n % 10) { case 1: return 'st'; case 2: return 'nd'; case 3: return 'rd'; default: return 'th'; }
-      })(pr);
-      return '<div class="pf-pos-chip q-' + tier + '"><span class="pos-badge ' + pos + '">' + pos + '</span>' +
-        '<span class="pc-rank">' + pr + '<sup>' + ord + '</sup></span></div>';
-    }).join('');
-    var existing = card.querySelector('.pf-lg-strength');
-    if (!chips) { if (existing) existing.remove(); card._pfStrengthHtml = null; return; }
-    var html = '<div class="pf-lg-strength"><div class="pf-lg-strength-head">' +
-      '<span class="pf-lg-l">Position strength</span><span class="pf-lg-l pf-lg-l--muted">rank in league</span></div>' +
-      '<div class="pf-strbar">' + chips + '</div></div>';
-    // outerHTML replaces the node, so the change cache lives on the card.
-    if (card._pfStrengthHtml === html) return;
-    card._pfStrengthHtml = html;
+    var worst = null;
+    ['QB', 'RB', 'WR', 'TE'].forEach(function (pos, idx) {
+      var pr = Number(posRanks[pos]);
+      if (!Number.isFinite(pr) || pr <= 0) return;
+      if (!worst || pr > worst.rank || (pr === worst.rank && idx > worst.idx)) {
+        worst = { pos: pos, rank: pr, idx: idx };
+      }
+    });
+    var existing = card.querySelector('[data-weakest]');
+    if (!worst || !Number.isFinite(totalN) || totalN <= 0) {
+      if (existing) existing.remove();
+      card._pfWeakHtml = null;
+      return;
+    }
+    var tier = posTier(worst.rank, totalN);
+    var html = '<div class="pf-lg-weak" data-weakest>Weakest room: <strong class="q-' + tier + '">' +
+      worst.pos + ' · ' + worst.rank + ordSuffix(worst.rank) + ' of ' + totalN + '</strong></div>';
+    if (card._pfWeakHtml === html) return;
+    card._pfWeakHtml = html;
     if (existing) { existing.outerHTML = html; } else { stats.insertAdjacentHTML('afterend', html); }
   }
   function renderSummary(card, data) {
@@ -28525,11 +28531,31 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
             return '<span class="pf-s-pill ' + cls + '">' + (r === 'W' ? 'W' : 'L') + '</span>';
           }).join('') + '</span>'
         : '<span class="pf-streak-empty">-</span>';
+      var oddsHtml;
+      if (data.playoff_odds_pct == null) {
+        oddsHtml = '<span class="pf-lg-v" data-odds-val>—</span>';
+      } else {
+        oddsHtml = '<span class="pf-lg-v" data-odds-val>' + Math.round(Number(data.playoff_odds_pct)) + '%</span>';
+        var oddsDelta = Number(data.playoff_odds_delta);
+        if (Number.isFinite(oddsDelta) && Math.abs(oddsDelta) >= 0.05) {
+          oddsHtml += '<span class="pf-odds-delta ' + (oddsDelta > 0 ? 'up' : 'down') + '" data-odds-delta>' +
+            (oddsDelta > 0 ? '▲' : '▼') + Math.abs(Math.round(oddsDelta)) + '</span>';
+        } else {
+          oddsHtml += '<span class="pf-odds-delta" data-odds-delta hidden></span>';
+        }
+      }
       var statsHtml = '<span class="pf-lg-stat"><span class="pf-lg-v ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span><span class="pf-lg-l">Record</span></span>' +
         '<span class="pf-lg-stat" title="Regular-season standings: wins, then points for"><span class="pf-lg-v' + weakCls + '">' + escapeHtml(rank) + ' <small>/ ' + escapeHtml(teams) + '</small></span><span class="pf-lg-l">Standing</span></span>' +
+        '<span class="pf-lg-stat"><span class="pf-lg-vrow">' + oddsHtml + '</span><span class="pf-lg-l">Playoff odds</span></span>' +
         '<span class="pf-lg-stat pf-lg-stat--streak">' + streakHtml + '<span class="pf-lg-l">Streak</span></span>';
       setHtmlIfChanged(stats, statsHtml);
-      renderStrength(card, data, totalN);
+      renderWeakest(card, data, totalN);
+      if (data.playoff_odds_pct != null) card.dataset.odds = String(Number(data.playoff_odds_pct));
+      var postureEl = card.querySelector('[data-posture]');
+      if (postureEl && data.posture) {
+        postureEl.textContent = data.posture;
+        postureEl.className = 'pf-posture ' + (data.posture_cls || '');
+      }
       var stamp = data.last_successful_sync_at || data.refreshed_at;
       if (updated && stamp) {
         var stampTxt = (data.stale ? 'Last good data · ' : 'Updated ') + new Date(stamp).toLocaleString();
@@ -28713,6 +28739,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var summaryOK = payload.summary ? renderSummary(card, payload.summary) : false;
     var slot = card.querySelector('[data-lg-live]');
     var matchupOK = slot ? renderMatchup(slot, payload.matchup || (payload.pending ? { pending: true } : { failed: true })) : true;
+    // Feed the summary receipts panel (v25): each hydrated card contributes
+    // its projected final; the panel + projected tile render from these.
+    if (payload.matchup && payload.matchup.you && payload.matchup.opp && window.__pfReceiptPush) {
+      window.__pfReceiptPush({
+        key: card.dataset.platform + '|' + card.dataset.leagueId + '|' + card.dataset.season,
+        name: (payload.summary && payload.summary.name) || card.dataset.leagueId || '',
+        opp: payload.matchup.opp.name || '',
+        status: payload.matchup.status || 'pre',
+        youScore: payload.matchup.you.score, oppScore: payload.matchup.opp.score,
+        youProj: payload.matchup.you.proj, oppProj: payload.matchup.opp.proj
+      });
+    }
     return { summary: summaryOK, matchup: matchupOK, pending: !!(payload.pending || payload.matchup && payload.matchup.pending) };
   }
   function requestCard(owner, item) {
@@ -28875,6 +28913,778 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     owner.cards(false).forEach(function (card) { schedule(owner, card); });
   };
   window.__brPortfolioCardsTest = { renderSummary: renderSummary, renderMatchup: renderMatchup, identity: identity };
+})();
+
+// ── Portfolio Front Office board + insights (v25) ───────────────────────────
+// The grouped cross-league board that replaces the moves digest: league
+// groups with global ranks, verified/marked Done states persisted per
+// account, kickoff locks, a self-grade line, and a Generate deep dive.
+// Plus the summary receipts panel and the Rooting Guide / Bye Watch
+// hydration for the insights band.
+(function () {
+  'use strict';
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function kindKey(k) { return String(k || '').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'action'; }
+  function kindLabel(k) {
+    var m = { lineup: 'Lineup', injury: 'Injury', roster: 'Roster', waiver: 'Waiver', calendar: 'Calendar', trade: 'Trade' };
+    return m[kindKey(k)] || String(k || 'Action');
+  }
+  function pfHash(s) {
+    var h = 0;
+    for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+    return (h >>> 0).toString(36);
+  }
+  function pfKey(a) {
+    if (a.dismiss_key) return a.dismiss_key;
+    return 'pf:' + kindKey(a.kind) + ':' + pfHash((a.kind || '') + '|' + (a.title || ''));
+  }
+  function pfScope(a) { return [a.platform || 'sleeper', a.league_id || '', a.season || ''].join('|'); }
+  function fmt1(v) { var n = Number(v); return Number.isFinite(n) ? n.toFixed(1) : '—'; }
+  function timeLabel(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  var CREST_HUES = ['#6C4BF0', '#12A4A0', '#D33A46', '#2563eb', '#7C5CFC', '#0E7A5F', '#B45309', '#334155', '#9333EA', '#0F766E', '#BE3455'];
+  function crestFor(name) {
+    var words = String(name || '?').replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+    var ini = words.slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || '?';
+    var h = 0;
+    var s = String(name || '');
+    for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+    return { ini: ini, hue: CREST_HUES[Math.abs(h) % CREST_HUES.length] };
+  }
+
+  // ── Receipts (summary projected tile) ──────────────────────────────────
+  var receipts = {};
+  function receiptTag(you, opp) {
+    if (you == null || opp == null) return null;
+    var d = Number(you) - Number(opp);
+    if (Math.abs(d) <= 3) return 'Toss-up';
+    return d > 0 ? 'W' : 'L';
+  }
+  function renderReceipts() {
+    var tile = document.querySelector('[data-portfolio-proj-record]');
+    var box = document.querySelector('[data-receipts-rows]');
+    if (!tile && !box) return;
+    var rows = Object.keys(receipts).map(function (k) { return receipts[k]; })
+      .filter(function (r) { return r.youProj != null && r.oppProj != null; });
+    var w = 0, l = 0;
+    rows.forEach(function (r) {
+      r._tag = receiptTag(r.youProj, r.oppProj);
+      if (r._tag === 'W') w++; else if (r._tag === 'L') l++;
+    });
+    if (tile) tile.textContent = rows.length ? (w + '-' + l) : '—';
+    if (box) {
+      box.innerHTML = rows.length ? rows.map(function (r) {
+        var now = (r.status && r.status !== 'pre' && r.youScore != null)
+          ? '<span class="pf-rc-now">' + fmt1(r.youScore) + ' · ' + fmt1(r.oppScore) + '</span>'
+          : '<span class="pf-rc-now"></span>';
+        var tag = r._tag
+          ? '<span class="pf-rc-tag ' + (r._tag === 'W' ? 'w' : r._tag === 'L' ? 'l' : 't') + '">' + r._tag + '</span>'
+          : '';
+        return '<div class="pf-rc-row"><span class="pf-rc-lg">' + esc(r.name) + '</span>' +
+          '<span class="pf-rc-opp">vs ' + esc(r.opp) + '</span>' + now +
+          '<span class="pf-rc-proj">' + fmt1(r.youProj) + ' · ' + fmt1(r.oppProj) + '</span>' + tag + '</div>';
+      }).join('') : '<div class="pf-receipts-empty">Scores are still loading.</div>';
+    }
+  }
+  window.__pfReceiptPush = function (row) {
+    if (!row || !row.key) return;
+    receipts[row.key] = row;
+    renderReceipts();
+  };
+  (function wireReceiptTile() {
+    function wire() {
+      var tileBtn = document.getElementById('pfProjTile');
+      var panel = document.getElementById('pfReceipts');
+      if (!tileBtn || !panel || tileBtn._pfWired) return;
+      tileBtn._pfWired = true;
+      tileBtn.addEventListener('click', function () {
+        var open = panel.hidden;
+        panel.hidden = !open;
+        tileBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    }
+    if (document.readyState !== 'loading') wire();
+    else document.addEventListener('DOMContentLoaded', wire);
+  })();
+
+  // ── Board state ─────────────────────────────────────────────────────────
+  var WEEK = Number(window.__pfBoardWeek || 0);
+  var SEASON = 0;
+  var BOARD = null;
+  var DISMISSED = {};      // scope -> {moveKey: true} (server-synced for accounts)
+  var DONE_STATE = {};     // scope|moveKey -> {verified, label, time_label}
+  var CLEARED_DONE = {};   // groupKey|moveKey -> true (undone this session)
+  var HIDDEN_GROUPS = {};  // groupKey -> true
+  var COLLAPSED = {};      // groupKey -> true
+  var started = false;
+
+  function byeMoves() {
+    try { return JSON.parse(localStorage.getItem('pfByeMoves') || '[]'); } catch (e) { return []; }
+  }
+  function saveByeMoves(list) {
+    try { localStorage.setItem('pfByeMoves', JSON.stringify(list)); } catch (e) {}
+  }
+  window.__pfMakeByeMove = function (mv) {
+    if (!mv || !mv.league_id) return;
+    var list = byeMoves();
+    var key = 'bye:' + (mv.pid || '');
+    if (!list.some(function (m) { return m.dismiss_key === key; })) {
+      list.push({
+        platform: mv.platform || 'sleeper', league_id: mv.league_id,
+        season: SEASON || undefined, league_name: mv.league_name || '',
+        kind: 'waiver', title: 'Add ' + (mv.name || 'free agent') + ' (' + (mv.pos || '') + ')',
+        detail: 'Bye coverage for next week, from Bye Watch.',
+        href: '/' + (mv.platform || 'sleeper') + '/' + (mv.season || SEASON || '') + '/' + mv.league_id + '/waivers',
+        dismiss_key: key, verify: { type: 'claim', pid: mv.pid || '' }
+      });
+      saveByeMoves(list);
+    }
+    if (window.brToast) window.brToast('Added to the board under ' + (mv.league_name || 'its league') + '.');
+    if (BOARD) renderBoard();
+    var card = document.getElementById('pfMovesCard');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  function mergedGroups() {
+    var groups = ((BOARD && BOARD.board && BOARD.board.groups) || []).map(function (g) {
+      return { key: g.key, platform: g.platform, league_id: g.league_id, season: g.season,
+               league_name: g.league_name, meta: g.meta || {}, moves: (g.moves || []).slice() };
+    });
+    var byKey = {};
+    groups.forEach(function (g) { byKey[g.key] = g; });
+    var maxRank = 0;
+    groups.forEach(function (g) { g.moves.forEach(function (m) { if (m.rank > maxRank) maxRank = m.rank; }); });
+    byeMoves().forEach(function (bm) {
+      var key = (bm.platform || 'sleeper') + '|' + (bm.league_id || '');
+      var g = byKey[key];
+      if (!g) {
+        g = { key: key, platform: bm.platform || 'sleeper', league_id: bm.league_id || '',
+              season: bm.season, league_name: bm.league_name || bm.league_id || '',
+              meta: {}, moves: [] };
+        byKey[key] = g;
+        groups.push(g);
+      }
+      if (!g.moves.some(function (m) { return pfKey(m) === pfKey(bm); })) {
+        var copy = Object.assign({}, bm);
+        copy.rank = ++maxRank;
+        copy.move_key = pfKey(bm);
+        g.moves.push(copy);
+      }
+    });
+    return groups;
+  }
+
+  function moveDoneState(g, mv) {
+    if (CLEARED_DONE[g.key + '|' + mv.move_key]) return null;
+    var st = DONE_STATE[g.key + '|' + mv.move_key];
+    if (st) return st;
+    if (mv.done) {
+      return { verified: !!mv.done.verified, label: mv.done.label || '',
+               time_label: timeLabel(mv.done.done_at) };
+    }
+    return null;
+  }
+
+  function evidenceHtml(mv) {
+    var rows = (mv.evidence || []).filter(function (r) { return r && r.v; });
+    if (!rows.length && mv.detail) rows = [{ k: 'Detail', v: mv.detail }];
+    if (!rows.length) return '';
+    return '<div class="pf-evidence" hidden>' + rows.map(function (r) {
+      return '<div class="pf-ev-row"><span class="pf-ev-k">' + esc(r.k) + '</span><span>' + esc(r.v) + '</span></div>';
+    }).join('') + '</div>';
+  }
+
+  function moveHtml(g, mv) {
+    var key = mv.move_key || pfKey(mv);
+    var timing = mv.timing || { label: '', locked: false, lock_label: '' };
+    var done = moveDoneState(g, mv);
+    var locked = !!timing.locked;
+    var cls = 'pf-move' + (locked ? ' locked' : '') + (done ? (done.verified ? ' done-v' : ' done-m') : '');
+    var h = '<div class="' + cls + '" data-move="' + esc(key) + '">';
+    h += '<div class="pf-move-top"><span class="pf-rank' + (done && !done.verified ? ' marked' : '') + '">' + (mv.rank || '') + '</span>';
+    h += '<div class="pf-move-main"><div class="pf-move-title">' + esc(mv.title) + '</div>';
+    if (mv.detail && !done) h += '<div class="pf-move-why">' + esc(mv.detail) + '</div>';
+    if (mv.after) h += '<div class="pf-move-after">After this: <strong>' + esc(mv.after) + '</strong></div>';
+    h += '</div>';
+    if (!done && !locked) h += '<button type="button" class="pf-move-x" data-act="dismiss" title="Dismiss" aria-label="Dismiss">×</button>';
+    h += '</div>';
+    h += '<div class="pf-move-meta"><span class="pf-kind ' + esc(kindKey(mv.kind)) + '">' + esc(kindLabel(mv.kind)) + '</span>';
+    if (mv.depends) h += '<span class="pf-dep">' + esc(mv.depends) + '</span>';
+    if (locked) h += '<span class="pf-timing lock">' + esc(timing.lock_label || 'Locked') + '</span>';
+    else if (timing.label) h += '<span class="pf-timing">' + esc(timing.label) + '</span>';
+    if (done) {
+      h += '<span class="pf-done-tag' + (done.verified ? '' : ' marked') + '">' + (done.verified ? 'DONE' : 'MARKED DONE') + '</span>';
+      h += '<span class="pf-move-btns"><button type="button" class="pf-undo-btn" data-act="undone">Undo</button></span>';
+    } else if (!locked) {
+      h += '<span class="pf-move-btns">' +
+        '<button type="button" class="pf-ev-btn" data-act="evidence">Evidence</button>' +
+        (mv.href ? '<a class="pf-open-btn" href="' + esc(mv.href) + '">Open</a>' : '') +
+        '<button type="button" class="pf-done-btn" data-act="done">Done</button></span>';
+    }
+    h += '</div>';
+    if (done) {
+      h += '<div class="pf-done-line">' + (done.verified ? 'Done ' : 'Marked done ') +
+        esc(done.time_label || '') + ' · ' + (done.verified ? 'Verified' : 'Not verified') +
+        (done.label ? ' · ' + esc(done.label) : '') + '</div>';
+    }
+    if (!locked) h += evidenceHtml(mv);
+    h += '</div>';
+    return h;
+  }
+
+  function groupHtml(g) {
+    var key = g.key;
+    if (HIDDEN_GROUPS[key]) {
+      return '<div class="pf-group-strip" data-group="' + esc(key) + '">' +
+        '<strong>' + esc(g.league_name) + '</strong><span>moves hidden</span>' +
+        '<button type="button" class="pf-strip-undo" data-gact="unhide">Undo</button></div>';
+    }
+    var meta = g.meta || {};
+    var crest = crestFor(meta.crest_name || g.league_name);
+    var visible = g.moves.filter(function (mv) {
+      return !(DISMISSED[pfScope(mv)] || {})[mv.move_key || pfKey(mv)];
+    });
+    var doneCount = visible.filter(function (mv) { return !!moveDoneState(g, mv); }).length;
+    var bits = [];
+    if (meta.record_line) bits.push(meta.record_line);
+    if (meta.odds_pct != null) {
+      var ob = Math.round(Number(meta.odds_pct)) + '% odds';
+      var d = Number(meta.odds_delta);
+      if (Number.isFinite(d) && Math.abs(d) >= 0.05) {
+        ob += ' <span class="pf-delta ' + (d > 0 ? 'up' : 'down') + '">' + (d > 0 ? '▲' : '▼') + Math.abs(Math.round(d)) + '</span>';
+      }
+      bits.push(ob);
+    }
+    if (meta.posture) bits.push(meta.posture);
+    var h = '<div class="pf-group" data-group="' + esc(key) + '">';
+    h += '<div class="pf-group-h" data-gact="collapse">' +
+      '<span class="pf-group-crest" style="background:' + crest.hue + ';">' + crest.ini + '</span>' +
+      '<div style="min-width:0;"><div class="pf-group-name">' + esc(g.league_name) + '</div>' +
+      (bits.length ? '<div class="pf-group-meta">' + bits.join(' · ') + '</div>' : '') + '</div>' +
+      '<span class="pf-lgcount">' + doneCount + ' of ' + visible.length + ' done</span>' +
+      '<span class="pf-chev">' + (COLLAPSED[key] ? '▸' : '▾') + '</span>' +
+      '<button type="button" class="pf-group-x" data-gact="hide" title="Hide this league" aria-label="Hide league">×</button></div>';
+    if (!COLLAPSED[key]) {
+      h += '<div class="pf-group-moves">' + visible.map(function (mv) { return moveHtml(g, mv); }).join('') + '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  function hiddenCount(groups) {
+    var n = 0;
+    groups.forEach(function (g) {
+      if (HIDDEN_GROUPS[g.key]) { n += 1; return; }
+      g.moves.forEach(function (mv) {
+        if ((DISMISSED[pfScope(mv)] || {})[mv.move_key || pfKey(mv)]) n += 1;
+      });
+    });
+    return n;
+  }
+
+  function paintCardFlags(groups) {
+    groups.forEach(function (g) {
+      var card = document.querySelector('.pf-lg-card[data-lg-key="' + g.platform + ':' + g.league_id + '"]');
+      if (!card) return;
+      var flag = card.querySelector('[data-moves-flag]');
+      if (!flag) return;
+      var n = g.moves.length;
+      flag.hidden = !n;
+      flag.textContent = n ? (n + (n === 1 ? ' move' : ' moves')) : '';
+    });
+  }
+
+  function renderBoard() {
+    var body = document.getElementById('pfMovesBody');
+    if (!body || !BOARD) return;
+    var groups = mergedGroups();
+    var scan = BOARD.scan || {};
+    var scanEl = document.getElementById('pfScanLine');
+    if (scanEl) {
+      scanEl.hidden = false;
+      var when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      scanEl.innerHTML = '<span class="pf-scan-dot"></span><span>Scanned ' + (scan.scanned || 0) +
+        ' of ' + (scan.total || 0) + ' leagues</span>' +
+        '<span class="pf-scan-r">Week ' + (BOARD.week || WEEK) + ' · ' + when + '</span>';
+    }
+    var totalMoves = 0, totalDone = 0;
+    groups.forEach(function (g) {
+      g.moves.forEach(function (mv) {
+        if ((DISMISSED[pfScope(mv)] || {})[mv.move_key || pfKey(mv)]) return;
+        totalMoves += 1;
+        if (moveDoneState(g, mv)) totalDone += 1;
+      });
+    });
+    var pill = document.getElementById('pfDonePill');
+    if (pill) {
+      pill.hidden = !totalMoves;
+      pill.textContent = totalMoves ? (totalDone + ' of ' + totalMoves + ' done') : '';
+    }
+    var genBtn = document.getElementById('pfGenBtn');
+    if (genBtn) genBtn.hidden = !groups.length;
+    if (!groups.length) {
+      if (scan.incomplete) {
+        body.innerHTML = pfIncompleteHtml(scan);
+      } else {
+        body.innerHTML = '<div class="pf-moves-empty"><strong>You\'re all caught up.</strong> ' +
+          'No lineup, waiver, roster, or deadline moves need your attention across your leagues right now. ' +
+          'Check back after games and waivers process.</div>';
+      }
+    } else {
+      var html = groups.map(groupHtml).join('');
+      var hold = [], watch = [];
+      groups.forEach(function (g) {
+        g.moves.forEach(function (mv) {
+          if (mv.hold) hold.push({ g: g, mv: mv });
+          if (mv.watch) watch.push({ g: g, mv: mv });
+        });
+      });
+      if (hold.length || watch.length) {
+        html += '<div class="pf-holdwatch">';
+        if (hold.length) {
+          html += '<div class="pf-hw-h">Hold</div>' + hold.map(function (x) {
+            return '<div class="pf-hw-row"><strong>' + esc(x.g.league_name) + ':</strong><span>' + esc(x.mv.title) + '</span></div>';
+          }).join('');
+        }
+        if (watch.length) {
+          html += '<div class="pf-hw-h">Watch</div>' + watch.map(function (x) {
+            return '<div class="pf-hw-row"><strong>' + esc(x.g.league_name) + ':</strong><span>' + esc(x.mv.title) + '</span></div>';
+          }).join('');
+        }
+        html += '</div>';
+      }
+      if (scan.incomplete) {
+        var missed = Math.max(0, (scan.total || 0) - (scan.scanned || 0));
+        html += '<div class="pf-moves-empty" style="margin-top:8px;">Could not check ' + missed +
+          ' of ' + (scan.total || 0) + ' leagues yet, so some moves may be missing. ' +
+          'Those leagues are still loading.</div>';
+      }
+      body.innerHTML = html;
+    }
+    var gradeEl = document.getElementById('pfGradeLine');
+    if (gradeEl) {
+      gradeEl.hidden = !BOARD.grade_line;
+      gradeEl.textContent = BOARD.grade_line || '';
+    }
+    var hf = document.getElementById('pfHiddenFooter');
+    if (hf) {
+      var n = hiddenCount(groups);
+      hf.hidden = !n;
+      hf.innerHTML = n ? ('<span>' + n + ' item' + (n === 1 ? '' : 's') + ' hidden</span>' +
+        '<button type="button" class="pf-strip-undo" id="pfUnhideAll">Undo</button>') : '';
+      var ub = document.getElementById('pfUnhideAll');
+      if (ub) ub.addEventListener('click', unhideAll);
+    }
+    paintCardFlags(groups);
+  }
+
+  function pfIncompleteHtml(scan) {
+    scan = scan || {};
+    var missed = Math.max(0, (scan.total || 0) - (scan.scanned || 0));
+    return '<div class="pf-moves-empty"><strong>Could not check ' + missed + ' of ' +
+      (scan.total || 0) + ' leagues yet.</strong> Your leagues are still loading - check back in a moment.</div>';
+  }
+
+  function paywallHtml(msg, btn) {
+    return '<div class="pf-moves-paywall">' +
+      '<div class="pf-moves-paywall-title">Cross-league Front Office</div>' +
+      '<div class="pf-moves-paywall-copy">' + esc(msg) + '</div>' +
+      '<button type="button" class="pf-moves-paywall-btn" onclick="if(typeof showPaywall===\'function\')showPaywall(\'gm-memo\')">' +
+      esc(btn || 'Get PRO') + '</button></div>';
+  }
+
+  function todayET() {
+    try {
+      var parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+      var m = {};
+      parts.forEach(function (p) { m[p.type] = p.value; });
+      return m.year + '-' + m.month + '-' + m.day;
+    } catch (e) {
+      return new Date().toISOString().slice(0, 10);
+    }
+  }
+
+  function loadDismissed() {
+    return window.brFetchWithTimeout('/api/action-dismissals?week=' + WEEK,
+      { cache: 'no-store', credentials: 'same-origin' }, 10000)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        DISMISSED = {};
+        ((d && d.dismissed) || []).forEach(function (row) {
+          var scope = [row.platform, row.league_id, row.season].join('|');
+          (DISMISSED[scope] = DISMISSED[scope] || {})[row.item_key] = true;
+        });
+      })
+      .catch(function () {});
+  }
+
+  function postDismissal(mv, undo) {
+    var scope = pfScope(mv);
+    var parts = scope.split('|');
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    return fetcher('/api/action-dismissals', {
+      method: undo ? 'DELETE' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        platform: parts[0], league_id: parts[1], season: Number(parts[2]) || undefined,
+        week: WEEK, day: todayET(), item_key: mv.move_key || pfKey(mv)
+      })
+    }, 10000).catch(function () {});
+  }
+
+  function dismissMove(g, mv) {
+    var scope = pfScope(mv);
+    var key = mv.move_key || pfKey(mv);
+    (DISMISSED[scope] = DISMISSED[scope] || {})[key] = true;
+    renderBoard();
+    postDismissal(mv, false);
+    if (window.brUndoToast) {
+      window.brUndoToast('Move hidden', function () {
+        if (DISMISSED[scope]) delete DISMISSED[scope][key];
+        renderBoard();
+        postDismissal(mv, true);
+      });
+    }
+  }
+
+  function setDone(g, mv) {
+    var key = mv.move_key || pfKey(mv);
+    delete CLEARED_DONE[g.key + '|' + key];
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    fetcher('/api/portfolio-move-done', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        platform: g.platform, league_id: g.league_id, season: g.season || SEASON,
+        week: WEEK, move_key: key,
+        action: { kind: mv.kind, verify: mv.verify || {} }
+      })
+    }, 12000).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.synced) {
+        DONE_STATE[g.key + '|' + key] = {
+          verified: !!d.verified, label: d.label || '', time_label: d.time_label || ''
+        };
+      } else {
+        // Guests: local-only, always honestly marked (no server read-back).
+        DONE_STATE[g.key + '|' + key] = {
+          verified: false, label: 'Saved on this device only',
+          time_label: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        };
+      }
+      renderBoard();
+    }).catch(function () {
+      DONE_STATE[g.key + '|' + key] = {
+        verified: false, label: 'Could not verify right now',
+        time_label: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      };
+      renderBoard();
+    });
+  }
+
+  function clearDone(g, mv) {
+    var key = mv.move_key || pfKey(mv);
+    delete DONE_STATE[g.key + '|' + key];
+    CLEARED_DONE[g.key + '|' + key] = true;
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    fetcher('/api/portfolio-move-done', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        platform: g.platform, league_id: g.league_id, season: g.season || SEASON,
+        week: WEEK, move_key: key
+      })
+    }, 10000).catch(function () {});
+    renderBoard();
+  }
+
+  function unhideAll() {
+    Object.keys(HIDDEN_GROUPS).forEach(function (k) { delete HIDDEN_GROUPS[k]; });
+    Object.keys(DISMISSED).forEach(function (scope) {
+      Object.keys(DISMISSED[scope]).forEach(function (key) {
+        var parts = scope.split('|');
+        postDismissal({ platform: parts[0], league_id: parts[1], season: parts[2], move_key: key }, true);
+      });
+    });
+    DISMISSED = {};
+    renderBoard();
+  }
+
+  function findMove(groupKey, moveKey) {
+    var groups = mergedGroups();
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].key !== groupKey) continue;
+      var moves = groups[i].moves;
+      for (var j = 0; j < moves.length; j++) {
+        if ((moves[j].move_key || pfKey(moves[j])) === moveKey) return { g: groups[i], mv: moves[j] };
+      }
+    }
+    return null;
+  }
+
+  function wireBoard() {
+    var card = document.getElementById('pfMovesCard');
+    if (!card || card._pfWired) return;
+    card._pfWired = true;
+    card.addEventListener('click', function (e) {
+      var gact = e.target.closest('[data-gact]');
+      if (gact) {
+        var gel = gact.closest('[data-group]');
+        var gkey = gel && gel.getAttribute('data-group');
+        if (!gkey) return;
+        var act = gact.getAttribute('data-gact');
+        if (act === 'hide') { HIDDEN_GROUPS[gkey] = true; renderBoard(); }
+        else if (act === 'unhide') { delete HIDDEN_GROUPS[gkey]; renderBoard(); }
+        else if (act === 'collapse' && !e.target.closest('[data-gact="hide"]')) {
+          COLLAPSED[gkey] = !COLLAPSED[gkey];
+          renderBoard();
+        }
+        return;
+      }
+      var btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      var moveEl = btn.closest('[data-move]');
+      var groupEl = btn.closest('[data-group]');
+      if (!moveEl || !groupEl) return;
+      var found = findMove(groupEl.getAttribute('data-group'), moveEl.getAttribute('data-move'));
+      if (!found) return;
+      var act2 = btn.getAttribute('data-act');
+      if (act2 === 'dismiss') dismissMove(found.g, found.mv);
+      else if (act2 === 'done') setDone(found.g, found.mv);
+      else if (act2 === 'undone') clearDone(found.g, found.mv);
+      else if (act2 === 'evidence') {
+        var ev = moveEl.querySelector('.pf-evidence');
+        if (ev) ev.hidden = !ev.hidden;
+      }
+    });
+    var genBtn = document.getElementById('pfGenBtn');
+    if (genBtn) {
+      genBtn.addEventListener('click', function () {
+        var dd = document.getElementById('pfDeepDive');
+        if (!dd) return;
+        if (!dd.hidden && genBtn.textContent === 'Hide report') {
+          dd.hidden = true;
+          genBtn.textContent = 'Generate full report';
+          return;
+        }
+        genBtn.disabled = true;
+        genBtn.textContent = 'Generating…';
+        var fetcher = window.brFetchWithTimeout || window.fetch;
+        fetcher('/api/portfolio-deep-dive', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin', body: '{}'
+        }, 30000).then(function (r) { return r.json(); }).then(function (d) {
+          genBtn.disabled = false;
+          if (d && d.ok) {
+            dd.innerHTML = '<div class="pf-dd-h">' + esc(d.headline) + '</div>' +
+              (d.bullets || []).map(function (b) {
+                return '<div class="pf-dd-b">' + esc(b) + '</div>';
+              }).join('');
+            dd.hidden = false;
+            genBtn.textContent = 'Hide report';
+          } else {
+            dd.innerHTML = '<div class="pf-dd-b">Could not build the deep dive. The board above is current.</div>';
+            dd.hidden = false;
+            genBtn.textContent = 'Generate full report';
+          }
+        }).catch(function () {
+          genBtn.disabled = false;
+          genBtn.textContent = 'Generate full report';
+          dd.innerHTML = '<div class="pf-dd-b">Could not build the deep dive. The board above is current.</div>';
+          dd.hidden = false;
+        });
+      });
+    }
+  }
+
+  function __pfMovesGo(attempt) {
+    var card = document.getElementById('pfMovesCard');
+    var body = document.getElementById('pfMovesBody');
+    if (!card || !body) return;
+    window.brFetchWithTimeout('/api/portfolio-actions', { cache: 'no-store', credentials: 'same-origin' }, 15000)
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d || {} }; }); })
+      .then(function (res) {
+        if (res.status === 403 && res.d.paywall) {
+          card.hidden = false;
+          body.innerHTML = paywallHtml('Cross-league moves are a PRO feature.', 'Upgrade to PRO');
+          return;
+        }
+        var scan = (res.d && res.d.scan) || null;
+        var PF_RETRY = [6000, 15000, 30000];
+        attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
+        if (scan && scan.incomplete && attempt < PF_RETRY.length) {
+          setTimeout(function () { __pfMovesGo(attempt + 1); }, PF_RETRY[attempt]);
+          return;
+        }
+        BOARD = res.d || {};
+        if (BOARD.week) WEEK = Number(BOARD.week) || WEEK;
+        if (BOARD.season) SEASON = Number(BOARD.season) || SEASON;
+        loadDismissed().then(function () { wireBoard(); renderBoard(); });
+      })
+      .catch(function () {
+        body.innerHTML = '<div class="pf-moves-empty"><strong>Could not load your moves.</strong> ' +
+          'Check your connection and refresh.</div>';
+      });
+  }
+
+  window.__pfBoardInit = function () {
+    var card = document.getElementById('pfMovesCard');
+    var body = document.getElementById('pfMovesBody');
+    if (!card || !body || started) return;
+    var prem = (window.__brctx && window.__brctx.isPremium) ||
+      (document.getElementById('page-root') &&
+        document.getElementById('page-root').getAttribute('data-premium') === 'true');
+    if (!prem) {
+      card.hidden = false;
+      body.innerHTML = paywallHtml('PRO surfaces your top lineup, waiver, roster, and deadline moves across every linked league.');
+      return;
+    }
+    started = true;
+    card.hidden = false;
+    // Lazy: start after the league cards settle, or after a bounded wait,
+    // so this best-effort scan never competes with the initial render.
+    var kicked = false;
+    function kick() {
+      if (kicked) return;
+      kicked = true;
+      __pfMovesGo(0);
+    }
+    document.addEventListener('br:portfolio-primary-settled', kick, { once: true });
+    setTimeout(kick, 8000);
+  };
+
+  // ── Insights: Rooting Guide + Bye Watch ────────────────────────────────
+  function rgBadge(team, color) {
+    return '<span class="pf-rg-badge" style="background:' + esc(color || '#475569') + '">' + esc(team) + '</span>';
+  }
+  function rgSide(starters) {
+    return (starters || []).map(function (s) {
+      var crest = crestFor(s.league_name || '');
+      var right = '';
+      if (s.points != null) right = '<span class="pf-rg-pts">' + fmt1(s.points) + '</span>';
+      else if (s.proj != null) right = '<span class="pf-rg-pts" style="color:var(--text-subtle)">' + fmt1(s.proj) + '</span>';
+      return '<div class="pf-rg-p"><span class="pos-badge ' + esc(s.pos || '') + '">' + esc(s.pos || '') + '</span>' +
+        '<span class="pf-rg-pname">' + esc(s.name) + '</span>' +
+        '<span class="pf-rg-lg" style="background:' + crest.hue + '" title="' + esc(s.league_name || '') + '">' + crest.ini + '</span>' +
+        right + '</div>';
+    }).join('');
+  }
+  function renderRooting(windows) {
+    var body = document.getElementById('pfRootingBody');
+    if (!body) return;
+    if (!windows || !windows.length) {
+      body.innerHTML = '<div class="pf-ins-empty">No starters in action this week.</div>';
+      return;
+    }
+    body.innerHTML = windows.map(function (w) {
+      var h = '<div class="pf-rg-win"><div class="pf-rg-winh">' +
+        '<span class="pf-rg-winname">' + esc(w.label) + '</span>' +
+        '<span class="pf-rg-stakes">' + esc(w.stakes || '') + '</span></div>';
+      h += (w.games || []).map(function (g) {
+        var live = g.status === 'in';
+        var status = (live ? '<span class="dot"></span>' : '') + esc(g.status_line || '');
+        var scores = g.status !== 'pre'
+          ? '<span class="pf-rg-score">' + esc(g.away_pts == null ? '' : g.away_pts) + '</span>'
+          : '';
+        var scoresH = g.status !== 'pre'
+          ? '<span class="pf-rg-score">' + esc(g.home_pts == null ? '' : g.home_pts) + '</span>'
+          : '';
+        var card = '<div class="pf-rg-game"><div class="pf-rg-teams">' +
+          rgBadge(g.away, g.away_color) +
+          '<span class="pf-rg-team">' + esc(g.away) + '</span>' +
+          (g.away_rec ? '<span class="pf-rg-rec">' + esc(g.away_rec) + '</span>' : '') +
+          scores +
+          '<span class="pf-rg-status">' + status + '</span>' +
+          scoresH +
+          '<span class="pf-rg-team">' + esc(g.home) + '</span>' +
+          (g.home_rec ? '<span class="pf-rg-rec">' + esc(g.home_rec) + '</span>' : '') +
+          rgBadge(g.home, g.home_color) +
+          '</div>';
+        if ((g.sides.away || []).length) card += '<div class="pf-rg-side">' + rgSide(g.sides.away) + '</div>';
+        if ((g.sides.home || []).length) card += '<div class="pf-rg-side">' + rgSide(g.sides.home) + '</div>';
+        card += '</div>';
+        return card;
+      }).join('');
+      (w.need_lines || []).forEach(function (line) {
+        h += '<div class="pf-rg-need">' + esc(line) + '</div>';
+      });
+      h += '</div>';
+      return h;
+    }).join('');
+  }
+  function renderBye(bye) {
+    var body = document.getElementById('pfByeBody');
+    if (!body) return;
+    var sub = document.querySelector('[data-bye-sub]');
+    if (sub && bye) {
+      sub.textContent = 'Week ' + (bye.week || '') + ' · ' + (bye.total_out || 0) + ' starters out';
+    }
+    var rows = (bye && bye.rows) || [];
+    if (!rows.length) {
+      body.innerHTML = '<div class="pf-ins-empty">No leagues to check yet.</div>';
+      return;
+    }
+    body.innerHTML = rows.map(function (r) {
+      var hole = (r.verdict || '').indexOf('Hole') === 0;
+      var outTxt = r.out_count
+        ? (r.out_count + ' out' + (r.out && r.out.length
+            ? ': ' + r.out.map(function (o) { return esc(o.name); }).join(', ') : ''))
+        : 'Full strength';
+      var h = '<div class="pf-bye-row"><span class="pf-bye-name">' + esc(r.name) + '</span>' +
+        '<span class="pf-bye-out">' + outTxt + '</span>' +
+        '<span class="pf-bye-verdict ' + (hole ? 'hole' : 'ok') + '">' + esc(r.verdict) + '</span>';
+      if (r.cover_note) h += '<span class="pf-bye-fix">' + esc(r.cover_note) + '</span>';
+      if (r.fix) {
+        h += '<span class="pf-bye-fix">' + esc(r.fix.text);
+        if (r.fix.move) {
+          h += ' <button type="button" class="pf-bye-make" data-bye-move="' +
+            esc(JSON.stringify(Object.assign({}, r.fix.move, { league_name: r.name }))) +
+            '">Make it a move</button>';
+        }
+        h += '</span>';
+      }
+      h += '</div>';
+      return h;
+    }).join('');
+    body.querySelectorAll('[data-bye-move]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        try { window.__pfMakeByeMove(JSON.parse(btn.getAttribute('data-bye-move'))); } catch (e) {}
+      });
+    });
+  }
+  function loadInsights() {
+    var rb = document.getElementById('pfRootingBody');
+    var bb = document.getElementById('pfByeBody');
+    if (!rb && !bb) return;
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    fetcher('/api/portfolio-insights', { cache: 'no-store', credentials: 'same-origin' }, 20000)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.updated) {
+          var label = 'Updated ' + timeLabel(d.updated);
+          document.querySelectorAll('[data-rooting-upd],[data-bye-upd]').forEach(function (el) {
+            el.textContent = label;
+          });
+        }
+        if (d && d.season) SEASON = Number(d.season) || SEASON;
+        renderRooting(d && d.rooting && d.rooting.windows);
+        renderBye(d && d.bye);
+      })
+      .catch(function () {
+        if (rb) rb.innerHTML = '<div class="pf-ins-empty">Could not load your games right now.</div>';
+        if (bb) bb.innerHTML = '<div class="pf-ins-empty">Could not check byes right now.</div>';
+      });
+  }
+  if (document.readyState !== 'loading') loadInsights();
+  else document.addEventListener('DOMContentLoaded', loadInsights);
 })();
 
 /* Weekly hub: League Scores tab (My Matchup | League Scores).

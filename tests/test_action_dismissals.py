@@ -228,10 +228,14 @@ def test_dashboard_dismiss_script_syncs_with_server():
 
 
 def test_portfolio_moves_card_has_dismiss_wiring():
+    # v25: the board (and its dismissal wiring) lives in static/app.js;
+    # dismissals still persist through /api/action-dismissals with an Undo.
     src = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert ".pf-move-dismiss{" in src
-    moves = src.split("id='pfMovesBody'")[1].split("refresh_handler_script")[0]
-    assert "/api/action-dismissals" in moves
-    assert "pfPersist" in moves and "pfVisible" in moves
+    assert ".pf-move-x{" in src
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    board = js[js.index("Portfolio Front Office board + insights"):]
+    assert "/api/action-dismissals" in board
+    assert "postDismissal" in board and "dismissMove" in board
+    assert "brUndoToast" in board
     endpoint = (ROOT / "routes" / "user_pages_bp.py").read_text(encoding="utf-8")
     assert 'player_id=str(hit.get("player_id") or "")' in endpoint

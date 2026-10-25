@@ -76,38 +76,40 @@ def test_portfolio_actions_api_wired():
 
 
 def test_portfolio_body_moves_card_pro_gated():
-    source = (ROOT / "app.py").read_text()
-    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    assert "showPaywall" in fn
-    assert "__brctx.isPremium" in fn or "isPremium" in fn
+    # v25: the board lives in static/app.js (__pfBoardInit); the PRO gate
+    # and paywall live there too, driven by the same premium signals.
+    js = (ROOT / "static" / "app.js").read_text()
+    assert "showPaywall" in js
+    assert "__brctx.isPremium" in js or "isPremium" in js
+    assert "pf-moves-paywall" in js
 
 
 def test_portfolio_body_includes_moves_card():
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
     assert "pfMovesCard" in fn
-    assert "/api/portfolio-actions" in fn
     assert "moves_card" in fn
     assert "top_strip + moves_card + league_card" in fn
-    assert "pf-move-row" in fn
-    assert "pf-moves-list" in fn
-    # The digest is lazy-loaded after page load (idle), not fetched inline, so it
-    # never competes with the initial render.
-    assert "__pfMovesGo" in fn
-    assert "requestIdleCallback" in fn
-    assert "addEventListener('load'" in fn
+    # The board bootstrap hands off to app.js; the fetch itself is lazy
+    # (after the league cards settle), never inline in the page render.
+    assert "__pfBoardInit" in fn
+    js = (ROOT / "static" / "app.js").read_text()
+    assert "/api/portfolio-actions" in js
+    assert "br:portfolio-primary-settled" in js
+    assert "pf-group" in js
+    assert "data-move" in js
 
 
 def test_portfolio_empty_digest_shows_all_caught_up_not_hidden():
     """A PRO user whose leagues have nothing to do must still see the card with
     an all-caught-up note, not have it vanish (which reads as 'missing')."""
+    js = (ROOT / "static" / "app.js").read_text()
     source = (ROOT / "app.py").read_text()
-    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
     # The old behavior hid the card on an empty digest; that must be gone.
-    assert "if(!acts.length){card.hidden=true;return;}" not in fn
+    assert "if(!acts.length){card.hidden=true;return;}" not in js
     # New empty state renders inside a visible card.
-    assert "pf-moves-empty" in fn
-    assert "all caught up" in fn.lower()
+    assert "pf-moves-empty" in js
+    assert "all caught up" in js.lower()
     assert ".pf-moves-empty{" in source  # style is defined
 
 
@@ -415,27 +417,25 @@ def test_portfolio_actions_leagues_past_slice_count_toward_total(monkeypatch):
 
 
 def test_portfolio_moves_card_retries_on_ladder_and_shows_incomplete_state():
-    source = (ROOT / "app.py").read_text()
-    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    # Bounded retry ladder while the scan reports incomplete: cold league
-    # builds take far longer than one short retry. (No "},5000);" literal:
-    # test_portfolio_leagues pins it out of this function to keep the old
-    # 5s poll-and-reload pattern from returning.)
-    assert "__pfMovesGo(attempt)" in fn
-    assert "scan.incomplete" in fn
-    assert "var PF_RETRY=[6000,15000,30000];" in fn
-    assert "attempt<PF_RETRY.length" in fn
-    assert "__pfMovesGo(attempt+1)" in fn
-    assert "PF_RETRY[attempt]" in fn
+    # v25: the board loader lives in static/app.js; the retry ladder and
+    # honest incomplete states move with it, unchanged in shape.
+    js = (ROOT / "static" / "app.js").read_text()
+    board = js[js.index("Portfolio Front Office board + insights"):]
+    assert "__pfMovesGo(attempt)" in board
+    assert "scan.incomplete" in board
+    assert "var PF_RETRY = [6000, 15000, 30000];" in board
+    assert "attempt < PF_RETRY.length" in board
+    assert "__pfMovesGo(attempt + 1)" in board
+    assert "PF_RETRY[attempt]" in board
     # The single-retry shape from #2739 is gone.
-    assert "__pfMovesGo(1)" not in fn
+    assert "__pfMovesGo(1)" not in board
     # Honest incomplete states: under the list and instead of all-caught-up.
-    assert "Could not check" in fn
-    assert "some moves may be missing" in fn
-    assert "still loading" in fn
+    assert "Could not check" in board
+    assert "some moves may be missing" in board
+    assert "still loading" in board
     # The true-empty state keeps its exact prior copy.
-    assert "all caught up" in fn.lower()
-    assert "No lineup, waiver, roster, or deadline moves need your attention" in fn
+    assert "all caught up" in board.lower()
+    assert "No lineup, waiver, roster, or deadline moves need your attention" in board
 
 
 def test_changelog_announces_moves_scan_honesty():

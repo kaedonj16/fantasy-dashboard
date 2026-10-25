@@ -78,7 +78,7 @@ def test_portfolio_renders_for_account_without_sleeper_viewer(offline_client, mo
     assert "My Leagues" in html
 
 
-def test_positional_strength_card_html_uses_ordinal_percentiles(offline_client):
+def test_positional_strength_card_html_is_rank_heatmap(offline_client):
     from app import build_portfolio_body
 
     league = {
@@ -109,11 +109,16 @@ def test_positional_strength_card_html_uses_ordinal_percentiles(offline_client):
             total_losses=5,
             total_ties=0,
         )
-    assert "avg percentile across your leagues" in html
-    assert "100th" in html
-    assert "50th" in html
-    assert "80th" in html
-    assert "10th" in html
+    # v25 heatmap: in-league ranks from pos_user_rank (QB 1st, RB 6th,
+    # WR 3rd, TE 12th of 12), not cross-league percentile bars.
+    assert "Positional Strength" in html
+    assert "in-league rank by position" in html
+    assert "pf-hm-chip" in html
+    assert "1st" in html
+    assert "6th" in html
+    assert "3rd" in html
+    assert "12th" in html
+    assert "avg percentile across your leagues" not in html
     assert "vs. league averages" not in html
     assert "+12%" not in html
 

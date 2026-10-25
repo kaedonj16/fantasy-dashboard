@@ -39824,7 +39824,25 @@ def build_portfolio_body(
         f"<div class='pf-stat'><div class='pf-stat-val {_lw_cls}' data-portfolio-lw-record>{_lw_str}</div>"
         f"<div class='pf-stat-label'>Last Week</div></div>"
     ) if _show_lw else ""
-    _bar_cls = "pf-stat-bar pf-stat-bar--4" if _show_lw else "pf-stat-bar"
+    _bar_cls = "pf-stat-bar pf-stat-bar--5" if _show_lw else "pf-stat-bar pf-stat-bar--4"
+    # Next deadline: the week's next kickoff, from the schedule. Honest
+    # fallback is a dash when no future kickoff is known.
+    _next_deadline = "—"
+    try:
+        from utils.utils import load_week_schedule as _lws_dl
+        from zoneinfo import ZoneInfo as _ZI_dl
+        _now_ts = time.time()
+        _future_kickoffs = sorted(
+            float(g.get("gameTime_epoch"))
+            for g in (_lws_dl(season, current_week) or [])
+            if g.get("gameTime_epoch") and float(g.get("gameTime_epoch")) > _now_ts
+        )
+        if _future_kickoffs:
+            _next_deadline = datetime.fromtimestamp(
+                _future_kickoffs[0], _ZI_dl("America/New_York")
+            ).strftime("%a %-I:%M %p")
+    except Exception:
+        _next_deadline = "—"
     _who = html.escape(username or "your account")
     top_strip = (
         f"<div class='card' style='margin-bottom:14px;'>"
@@ -39842,157 +39860,197 @@ def build_portfolio_body(
         f"<div class='pf-stat'><div class='pf-stat-val' data-portfolio-league-count>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
         f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}' data-portfolio-agg-record data-wins='{total_wins}' data-losses='{total_losses}' data-ties='{total_ties}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
         f"{_lw_cell}"
-        f"<div class='pf-stat'><div class='pf-stat-val'>{season}</div><div class='pf-stat-label'>Season</div></div>"
+        f"<button type='button' class='pf-stat pf-stat-btn' id='pfProjTile' aria-expanded='false' title='Show the projected finals behind this record'>"
+        f"<span class='pf-stat-val' data-portfolio-proj-record>—</span><span class='pf-stat-label'>This week (proj)</span></button>"
+        f"<div class='pf-stat'><div class='pf-stat-val pf-stat-val--sm' data-portfolio-next-deadline>{_next_deadline}</div><div class='pf-stat-label'>Next deadline</div></div>"
+        f"</div>"
+        f"<div class='pf-receipts' id='pfReceipts' hidden>"
+        f"<div class='pf-receipts-head'>Projected finals · Toss-up = within 3 pts</div>"
+        f"<div data-receipts-rows><div class='pf-receipts-empty'>Scores are still loading.</div></div>"
         f"</div>"
         f"</div>"
         f"</div>"
     )
 
     # Cross-league action digest (R04) -- PRO-gated; filled async from /api/portfolio-actions.
-    moves_card = (
+    # ── v25 styles: board, receipts, compact cards, heatmap, rooting, byes ──
+    v25_css = (
+        "<style>"
+        ".pf-stat-bar--5{grid-template-columns:repeat(5,1fr);}"
+        ".pf-stat-bar--4{grid-template-columns:repeat(4,1fr);}"
+        ".pf-stat-btn{background:none;border:0;padding:0;cursor:pointer;text-align:center;font:inherit;color:inherit;display:flex;flex-direction:column;align-items:center;gap:0;}"
+        ".pf-stat-btn .pf-stat-val{color:var(--accent);}"
+        ".pf-stat-val--sm{font-size:15px;}"
+        ".pf-receipts{border-top:1px solid var(--grid);margin-top:10px;padding-top:10px;}"
+        ".pf-receipts-head{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-subtle);margin-bottom:6px;}"
+        ".pf-rc-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--grid);font-size:12px;}"
+        ".pf-rc-row:first-child{border-top:0;}"
+        ".pf-rc-lg{font-weight:800;flex:0 1 22%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-rc-opp{color:var(--text-muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-rc-now{color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap;}"
+        ".pf-rc-proj{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}"
+        ".pf-rc-tag{flex:0 0 auto;font-size:10px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:999px;}"
+        ".pf-rc-tag.w{background:#dcf2e4;color:#15803d;}.pf-rc-tag.l{background:#fbe0e0;color:#b91c1c;}"
+        ".pf-rc-tag.t{background:#fbeecd;color:#92400e;}"
+        ".pf-receipts-empty{font-size:12px;color:var(--text-subtle);padding:4px 0;}"
+        ".pf-scanline{display:flex;align-items:center;gap:7px;padding:8px 16px;border-top:1px solid var(--grid);font-size:12px;color:var(--text-muted);}"
+        ".pf-scan-dot{width:7px;height:7px;border-radius:50%;background:var(--win);flex:0 0 auto;}"
+        ".pf-scan-r{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap;}"
+        ".pf-done-pill{font-size:11px;font-weight:800;background:var(--grid);border-radius:999px;padding:3px 9px;}"
+        ".pf-gen-btn{border:1px solid var(--grid);background:var(--card);color:var(--text);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;}"
+        ".pf-gen-btn:disabled{opacity:.55;cursor:default;}"
+        ".pf-moves-head-r{display:flex;align-items:center;gap:8px;}"
+        ".pf-group{border:1px solid var(--grid);border-radius:12px;margin-bottom:10px;overflow:hidden;}"
+        ".pf-group-h{display:flex;align-items:center;gap:9px;padding:9px 12px;background:color-mix(in srgb,var(--text-subtle) 6%,transparent);cursor:pointer;}"
+        ".pf-group-crest{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:800;flex:0 0 auto;}"
+        ".pf-group-name{font-weight:800;font-size:13px;}"
+        ".pf-group-meta{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".pf-delta.up{color:var(--win);}.pf-delta.down{color:var(--loss);}"
+        ".pf-lgcount{margin-left:auto;font-size:11px;font-weight:700;color:var(--text-muted);white-space:nowrap;}"
+        ".pf-chev{color:var(--text-subtle);font-weight:800;}"
+        ".pf-group-x{border:0;background:none;font-size:15px;font-weight:700;color:var(--text);cursor:pointer;padding:2px 4px;line-height:1;}"
+        ".pf-group-strip{display:flex;align-items:center;gap:9px;border:1px dashed var(--grid);border-radius:12px;padding:9px 12px;margin-bottom:10px;font-size:12px;color:var(--text-muted);}"
+        ".pf-strip-undo{margin-left:auto;border:0;background:none;color:var(--accent);font-weight:800;font-size:12px;cursor:pointer;}"
+        ".pf-move{padding:10px 12px;border-top:1px solid var(--grid);}"
+        ".pf-move.locked{opacity:.55;}"
+        ".pf-move.done-v{background:color-mix(in srgb,var(--win) 6%,transparent);}"
+        ".pf-move.done-m{background:color-mix(in srgb,#f59e0b 7%,transparent);}"
+        ".pf-move-top{display:flex;align-items:flex-start;gap:9px;}"
+        ".pf-rank{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center;margin-top:1px;}"
+        ".pf-rank.marked{background:#f59e0b;}"
+        ".pf-move-main{flex:1;min-width:0;}"
+        ".pf-move-title{font-size:13px;font-weight:700;line-height:1.35;}"
+        ".pf-move-why{font-size:12px;color:var(--text-muted);line-height:1.45;margin-top:2px;}"
+        ".pf-move-after{font-size:12px;color:var(--text-muted);margin-top:2px;}"
+        ".pf-move-after strong{color:var(--text);font-weight:700;}"
+        ".pf-move-x{border:0;background:none;font-size:15px;font-weight:700;color:var(--text);cursor:pointer;padding:0 2px;line-height:1;flex:0 0 auto;}"
+        ".pf-move-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;}"
+        ".pf-kind{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;}"
+        ".pf-kind.lineup{background:#e3ecfd;color:#2456a6;}.pf-kind.waiver{background:#dcf2e4;color:#15803d;}"
+        ".pf-kind.injury{background:#fde3e3;color:#b91c1c;}.pf-kind.roster{background:#efe9fd;color:#6d28d9;}"
+        ".pf-kind.calendar,.pf-kind.trade{background:#fdeeda;color:#92400e;}"
+        ".pf-dep{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--grid);color:var(--text-muted);}"
+        ".pf-timing{font-size:11px;font-weight:700;color:var(--text-muted);}"
+        ".pf-timing.lock{color:var(--loss);}"
+        ".pf-done-tag{font-size:10px;font-weight:800;letter-spacing:.05em;padding:2px 7px;border-radius:999px;background:#dcf2e4;color:#15803d;}"
+        ".pf-done-tag.marked{background:#fbeecd;color:#92400e;}"
+        ".pf-move-btns{margin-left:auto;display:flex;gap:6px;align-items:center;}"
+        ".pf-ev-btn,.pf-open-btn{border:1px solid var(--grid);background:var(--card);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;}"
+        ".pf-done-btn{border:0;background:var(--text);color:var(--card);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:800;cursor:pointer;}"
+        ".pf-undo-btn{border:0;background:none;color:var(--accent);font-size:12px;font-weight:800;cursor:pointer;}"
+        ".pf-done-line{font-size:11px;color:var(--text-muted);margin-top:6px;}"
+        ".pf-evidence{margin-top:8px;border:1px solid var(--grid);border-radius:10px;padding:8px 10px;}"
+        ".pf-ev-row{display:flex;gap:8px;font-size:12px;padding:3px 0;}"
+        ".pf-ev-k{flex:0 0 86px;font-weight:700;color:var(--text-muted);}"
+        ".pf-holdwatch{border-top:1px solid var(--grid);margin-top:4px;padding-top:8px;}"
+        ".pf-hw-h{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);margin-bottom:4px;}"
+        ".pf-hw-row{display:flex;gap:8px;font-size:12px;padding:3px 0;color:var(--text-muted);}"
+        ".pf-hw-row strong{color:var(--text);}"
+        ".pf-deepdive{border-top:1px solid var(--grid);padding:12px 16px;}"
+        ".pf-dd-h{font-size:13px;font-weight:800;margin-bottom:6px;}"
+        ".pf-dd-b{font-size:12px;color:var(--text-muted);line-height:1.5;padding:2px 0 2px 14px;position:relative;}"
+        ".pf-dd-b::before{content:'\\2022';position:absolute;left:2px;}"
+        ".pf-grade-line{border-top:1px solid var(--grid);padding:9px 16px;font-size:12px;color:var(--text-muted);}"
+        ".pf-hidden-footer{border-top:1px solid var(--grid);padding:9px 16px;font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px;}"
+        ".pf-sortbar{display:flex;align-items:center;gap:8px;justify-content:flex-end;padding:10px 2px 0;}"
+        ".pf-sortbar label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-subtle);}"
+        ".pf-sort-sel{border:1px solid var(--grid);background:var(--card);color:var(--text);border-radius:8px;padding:5px 8px;font-size:12px;font-weight:700;}"
+        ".pf-lg-card[data-href]{cursor:pointer;}"
+        ".pf-lg-vrow{display:inline-flex;align-items:baseline;gap:5px;}"
+        ".pf-odds-delta{font-size:11px;font-weight:800;}"
+        ".pf-odds-delta.up{color:var(--win);}.pf-odds-delta.down{color:var(--loss);}"
+        ".pf-lg-weak{font-size:11px;color:var(--text-muted);}"
+        ".pf-lg-weak strong{color:var(--q-ink,var(--text));}"
+        ".pf-posture{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--grid);color:var(--text-muted);flex:0 0 auto;}"
+        ".pf-posture.contend{background:#dcf2e4;color:#15803d;}"
+        ".pf-posture.fringe{background:#fbeecd;color:#92400e;}"
+        ".pf-posture.rebuild{background:#fbe0e0;color:#b91c1c;}"
+        ".pf-lg-moves-flag{font-size:11px;font-weight:800;color:var(--accent);white-space:nowrap;}"
+        ".pf-lg-fo{font-weight:700;font-size:12px;color:var(--text-muted);text-decoration:none;white-space:nowrap;}"
+        ".pf-upd{font-size:11px;color:var(--text-subtle);margin-left:auto;white-space:nowrap;}"
+        ".pf-ins-stack{display:flex;flex-direction:column;gap:14px;}"
+        ".pf-hm{overflow-y:auto;max-height:470px;}"
+        ".pf-hm-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--grid);}"
+        ".pf-hm-row:first-child{border-top:0;}"
+        ".pf-hm-headrow{position:sticky;top:0;background:var(--card);font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);z-index:1;}"
+        ".pf-hm-name{flex:1;min-width:0;font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-hm-h{flex:0 0 46px;text-align:center;}"
+        ".pf-hm-chip{flex:0 0 46px;text-align:center;font-size:12px;font-weight:800;padding:4px 0;border-radius:8px;background:var(--q-fill,transparent);color:var(--q-ink,var(--text-muted));}"
+        ".pf-rg-win{margin-bottom:14px;}"
+        ".pf-rg-win:last-child{margin-bottom:0;}"
+        ".pf-rg-winh{display:flex;align-items:baseline;gap:8px;margin-bottom:7px;}"
+        ".pf-rg-winname{font-size:13px;font-weight:800;}"
+        ".pf-rg-stakes{font-size:11px;color:var(--text-muted);}"
+        ".pf-rg-need{font-size:12px;color:var(--text-muted);line-height:1.5;margin-top:6px;}"
+        ".pf-rg-game{border:1px solid var(--grid);border-radius:12px;padding:10px 12px;margin-bottom:8px;}"
+        ".pf-rg-teams{display:flex;align-items:center;gap:8px;}"
+        ".pf-rg-badge{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:9px;font-weight:800;flex:0 0 auto;}"
+        ".pf-rg-team{font-size:13px;font-weight:800;}"
+        ".pf-rg-rec{font-size:11px;color:var(--text-subtle);font-weight:600;}"
+        ".pf-rg-score{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}"
+        ".pf-rg-status{flex:1;text-align:center;font-size:11px;font-weight:700;color:var(--text-muted);white-space:nowrap;}"
+        ".pf-rg-status .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--win);margin-right:4px;}"
+        ".pf-rg-side{margin:6px 0 0 14px;display:flex;flex-direction:column;gap:3px;}"
+        ".pf-rg-p{display:flex;align-items:center;gap:7px;font-size:12px;}"
+        ".pf-rg-pname{font-weight:600;}"
+        ".pf-rg-pts{margin-left:auto;font-weight:800;font-variant-numeric:tabular-nums;}"
+        ".pf-rg-lg{width:17px;height:17px;border-radius:5px;display:inline-grid;place-items:center;color:#fff;font-size:8px;font-weight:800;}"
+        ".pf-bye-row{display:flex;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--grid);font-size:12px;flex-wrap:wrap;}"
+        ".pf-bye-row:first-child{border-top:0;}"
+        ".pf-bye-name{font-weight:800;flex:0 1 24%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-bye-out{color:var(--text-muted);white-space:nowrap;}"
+        ".pf-bye-verdict{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap;}"
+        ".pf-bye-verdict.ok{background:#dcf2e4;color:#15803d;}"
+        ".pf-bye-verdict.hole{background:#fbe0e0;color:#b91c1c;}"
+        ".pf-bye-fix{flex:1 1 100%;color:var(--text-muted);font-size:12px;}"
+        ".pf-bye-make{border:0;background:none;color:var(--accent);font-weight:800;font-size:12px;cursor:pointer;padding:0;}"
+        ".pf-ins-loading,.pf-ins-empty{font-size:12px;color:var(--text-subtle);padding:6px 0;}"
+        ".pf-conc{display:inline-block;margin-left:7px;font-size:9px;font-weight:800;letter-spacing:.05em;background:#fbeecd;color:#92400e;border-radius:999px;padding:1px 6px;vertical-align:1px;}"
+        ".pf-hstatus{font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;}"
+        ".pf-hstatus.warn{background:#fbeecd;color:#92400e;}"
+        ".pf-hstatus.bad{background:#fbe0e0;color:#b91c1c;}"
+        ".pf-trend{font-weight:800;font-size:12px;}"
+        ".pf-trend.up{color:var(--win);}.pf-trend.down{color:var(--loss);}.pf-trend.flat{color:var(--text-subtle);}"
+        ".pf-phonetabs{display:none;}"
+        "@media(max-width:700px){"
+        ".pf-stat-bar--5,.pf-stat-bar--4{display:grid;grid-template-columns:repeat(6,1fr);gap:8px 4px;}"
+        ".pf-stat-bar--5 .pf-stat:nth-child(1),.pf-stat-bar--5 .pf-stat:nth-child(2),.pf-stat-bar--5 .pf-stat:nth-child(3){grid-column:span 2;}"
+        ".pf-stat-bar--5 .pf-stat:nth-child(4),.pf-stat-bar--5 .pf-stat:nth-child(5){grid-column:span 3;}"
+        ".pf-stat-bar--4 .pf-stat{grid-column:span 3;}"
+        ".pf-stat-btn .pf-stat-val{font-size:19px;}"
+        ".pf-phonetabs{display:flex;gap:6px;position:sticky;top:52px;z-index:30;background:var(--bg);padding:8px 0;margin-bottom:10px;overflow-x:auto;}"
+        ".pf-phonetabs button{flex:1;border:1px solid var(--grid);background:var(--card);color:var(--text-muted);border-radius:999px;padding:7px 4px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}"
+        ".pf-phonetabs button.on{background:var(--text);color:var(--card);border-color:var(--text);}"
+        ".pf-rc-lg{flex-basis:30%;}"
+        ".pf-rc-now{display:none;}"
+        "}"
+        "</style>"
+    )
+
+    # ── Board card (v25): grouped Front Office board, filled async from
+    # /api/portfolio-actions by __pfBoardInit in static/app.js. The card
+    # renders its deterministic board first; the deep dive is additive.
+    moves_card = v25_css + (
         "<div class='card pf-moves-card' id='pfMovesCard' style='margin-bottom:14px;' hidden>"
         "<div class='card-header pf-moves-head'>"
-        "<div><h2>This week’s moves</h2>"
-        "<span class='pf-moves-sub'>Prioritized across your linked leagues</span></div>"
-        "</div>"
+        "<div><h2>Front Office</h2>"
+        "<span class='pf-moves-sub'>Do this first, across your leagues</span></div>"
+        "<div class='pf-moves-head-r'>"
+        "<span class='pf-done-pill' id='pfDonePill' hidden></span>"
+        "<button type='button' class='pf-gen-btn' id='pfGenBtn' hidden>Generate full report</button>"
+        "</div></div>"
+        "<div class='pf-scanline' id='pfScanLine' hidden></div>"
         "<div class='card-body' id='pfMovesBody'>"
         "<div class='pf-moves-loading'>Checking lineups…</div>"
-        "</div></div>"
-        "<script>(function(){"
-        "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){"
-        "return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];});}"
-        "function kindKey(k){return String(k||'').toLowerCase().replace(/[^a-z0-9_-]/g,'')||'action';}"
-        "function kindLabel(k){"
-        "var m={lineup:'Lineup',injury:'Injury',roster:'Roster',waiver:'Waiver',calendar:'Calendar',trade:'Trade'};"
-        "return m[kindKey(k)]||String(k||'Action');"
-        "}"
-        "function paywallHtml(msg,btn){"
-        "return '<div class=\"pf-moves-paywall\">'"
-        "+'<div class=\"pf-moves-paywall-title\">Cross-league Front Office</div>'"
-        "+'<div class=\"pf-moves-paywall-copy\">'+esc(msg)+'</div>'"
-        "+'<button type=\"button\" class=\"pf-moves-paywall-btn\" "
-        "onclick=\"if(typeof showPaywall===\\'function\\')showPaywall(\\'gm-memo\\')\">'"
-        "+esc(btn||'Get PRO')+'</button></div>';"
-        "}"
-        "var card=document.getElementById('pfMovesCard');"
-        "var body=document.getElementById('pfMovesBody');"
-        f"var PF_WEEK={int(current_week or 0)};"
-        "if(!card||!body)return;"
-        "var prem=(window.__brctx&&window.__brctx.isPremium)||"
-        "(document.getElementById('page-root')&&document.getElementById('page-root').getAttribute('data-premium')==='true');"
-        "if(!prem){"
-        "card.hidden=false;"
-        "body.innerHTML=paywallHtml('PRO surfaces your top lineup, waiver, roster, and deadline moves across every linked league.');"
-        "return;}"
-        # Show the card (and its loading line) up front so a PRO user always sees
-        # the section, even before the digest resolves or when it comes back empty.
-        "card.hidden=false;"
-        # Lazy-load the cross-league digest only after the page has finished
-        # loading (and the browser is idle) so this best-effort, sometimes slow
-        # request never competes with the initial dashboard render.
-        "function __pfMovesGo(attempt){"
-        "window.brFetchWithTimeout('/api/portfolio-actions',{cache:'no-store',credentials:'same-origin'},15000).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
-        ".then(function(res){"
-        "if(res.status===403&&res.d.paywall){"
-        "card.hidden=false;"
-        "body.innerHTML=paywallHtml('Cross-league moves are a PRO feature.','Upgrade to PRO');return;}"
-        # Honest scan status: an incomplete scan means some leagues
-        # could not be checked (cold caches on the first pass). Cold league
-        # builds take 7-28s each and run at most 2 at a time per worker, so
-        # one short retry is not enough: retry on a bounded ladder while the
-        # scan stays incomplete (the first request kicked the background
-        # warms), then render the honest final state - and never paint
-        # all-caught-up for a scan that did not finish.
-        "var scan=(res.d&&res.d.scan)||null;"
-        "var PF_RETRY=[6000,15000,30000];"
-        "attempt=(typeof attempt==='number'&&attempt>0)?Math.floor(attempt):0;"
-        "if(scan&&scan.incomplete&&attempt<PF_RETRY.length){"
-        "setTimeout(function(){__pfMovesGo(attempt+1);},PF_RETRY[attempt]);return;}"
-        "function pfIncompleteHtml(){"
-        "var missed=Math.max(0,(scan.total||0)-(scan.scanned||0));"
-        "return \"<div class='pf-moves-empty'><strong>Could not check \"+missed+\" of \"+(scan.total||0)+\" leagues yet.</strong> \""
-        "+\"Your leagues are still loading - check back in a moment.</div>\";}"
-        "var acts=(res.d&&res.d.actions)||[];"
-        "if(!acts.length){card.hidden=false;"
-        "if(scan&&scan.incomplete){body.innerHTML=pfIncompleteHtml();return;}"
-        "body.innerHTML='<div class=\"pf-moves-empty\"><strong>You\\'re all caught up.</strong> "
-        "No lineup, waiver, roster, or deadline moves need your attention across your leagues right now. "
-        "Check back after games and waivers process.</div>';return;}"
-        "card.hidden=false;"
-        # Dismissals: the account store (/api/action-dismissals) is shared
-        # with the league dashboards, so a move dismissed here stays hidden
-        # there and the reverse. Keys come from the API (dismiss_key); kinds
-        # without one (injury, calendar) fall back to a stable kind+title
-        # hash, the same derivation the header My Actions drawer uses.
-        "var pfDismissed={};"
-        "function pfDay(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}"
-        "function pfHash(s){var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return (h>>>0).toString(36);}"
-        "function pfKey(a){return a.dismiss_key||('pf:'+kindKey(a.kind)+':'+pfHash((a.kind||'')+'|'+(a.title||'')));}"
-        "function pfScope(a){return String(a.platform||'sleeper')+'|'+String(a.league_id||'')+'|'+String(a.season||'');}"
-        "function pfVisible(){return acts.filter(function(a){var s=pfDismissed[pfScope(a)];return !(s&&s[pfKey(a)]);});}"
-        "function pfRender(){"
-        "var vis=pfVisible();"
-        "if(!vis.length){"
-        "if(scan&&scan.incomplete){body.innerHTML=pfIncompleteHtml();return;}"
-        "body.innerHTML='<div class=\"pf-moves-empty\"><strong>You\\'re all caught up.</strong> "
-        "No lineup, waiver, roster, or deadline moves need your attention across your leagues right now. "
-        "Check back after games and waivers process.</div>';return;}"
-        "var pfListHtml='<div class=\"pf-moves-list\">'+vis.map(function(a,idx){"
-        "var k=kindKey(a.kind);"
-        "var urg=String(a.urgency||'').toLowerCase();"
-        "var urgCls=urg==='high'?'high':(urg==='medium'?'medium':'low');"
-        "var urgLabel=urg==='high'?'High priority':(urg==='medium'?'Medium':'Low');"
-        "return '<a class=\"pf-move-row pf-move-row--'+esc(k)+'\" href=\"'+esc(a.href)+'\">'"
-        "+'<span class=\"pf-move-accent\" aria-hidden=\"true\"></span>'"
-        "+'<span class=\"pf-move-body\">'"
-        "+'<div class=\"pf-move-title\">'+esc(a.title)+'</div>'"
-        "+(a.detail?'<div class=\"pf-move-detail\">'+esc(a.detail)+'</div>':'')"
-        "+'<div class=\"pf-move-meta\">'"
-        "+'<span class=\"pf-move-league-tag\">'+esc(a.league_name)+'</span>'"
-        "+'<span class=\"pf-move-kind\">'+esc(kindLabel(a.kind))+'</span>'"
-        "+'<span class=\"pf-move-urgency pf-move-urgency--'+urgCls+'\">'+esc(urgLabel)+'</span>'"
-        "+'</div>'"
-        "+'</span>'"
-        "+'<button type=\"button\" class=\"pf-move-dismiss\" data-pf-idx=\"'+idx+'\" aria-label=\"Dismiss action\">&times;</button>'"
-        "+'<span class=\"pf-move-chevron\" aria-hidden=\"true\">›</span>'"
-        "+'</a>';"
-        "}).join('')+'</div>';"
-        "if(scan&&scan.incomplete){var missed2=Math.max(0,(scan.total||0)-(scan.scanned||0));pfListHtml+=\"<div class='pf-moves-empty'>Could not check \"+missed2+\" of \"+(scan.total||0)+\" leagues yet - some moves may be missing.</div>\";}"
-        "body.innerHTML=pfListHtml;"
-        "}"
-        "function pfPersist(a,method){"
-        "try{fetch('/api/action-dismissals',{method:method,headers:{'Content-Type':'application/json'},credentials:'same-origin',"
-        "body:JSON.stringify({platform:a.platform||'sleeper',league_id:String(a.league_id||''),season:a.season||0,week:PF_WEEK,day:pfDay(),item_key:pfKey(a)})}).catch(function(){});}catch(e){}"
-        "}"
-        "body.addEventListener('click',function(e){"
-        "var btn=e.target&&e.target.closest?e.target.closest('.pf-move-dismiss'):null;"
-        "if(!btn)return;"
-        "e.preventDefault();e.stopPropagation();"
-        "var a=pfVisible()[parseInt(btn.getAttribute('data-pf-idx'),10)];"
-        "if(!a)return;"
-        "var sk=pfScope(a);if(!pfDismissed[sk])pfDismissed[sk]={};"
-        "pfDismissed[sk][pfKey(a)]=true;"
-        "pfPersist(a,'POST');pfRender();"
-        "if(window.brUndoToast){window.brUndoToast('Action dismissed.',function(){"
-        "if(pfDismissed[sk])delete pfDismissed[sk][pfKey(a)];"
-        "pfPersist(a,'DELETE');pfRender();});}"
-        "});"
-        "var pfScopes={};acts.forEach(function(a){pfScopes[pfScope(a)]=a;});"
-        "Promise.all(Object.keys(pfScopes).map(function(sk){"
-        "var a=pfScopes[sk];"
-        "var qs='?platform='+encodeURIComponent(a.platform||'sleeper')+'&league_id='+encodeURIComponent(a.league_id||'')+'&season='+encodeURIComponent(a.season||'')+'&week='+PF_WEEK+'&day='+encodeURIComponent(pfDay());"
-        "return fetch('/api/action-dismissals'+qs,{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){"
-        "var m={};if(d&&d.dismissed){d.dismissed.forEach(function(k){m[k]=true;});}"
-        "pfDismissed[sk]=m;"
-        "}).catch(function(){pfDismissed[sk]={};});"
-        "})).then(pfRender);"
-        "}).catch(function(){body.innerHTML='<div class=\"pf-moves-empty\">Actions temporarily unavailable.</div>';});}"
-        "var __pfIdle=window.requestIdleCallback||function(f){return setTimeout(f,200);};"
-        "var __pfMovesStarted=false;function __pfMovesStart(){if(__pfMovesStarted)return;__pfMovesStarted=true;__pfIdle(__pfMovesGo);}"
-        "window.addEventListener('br:portfolio-primary-settled',__pfMovesStart,{once:true});"
-        "if(document.readyState==='complete')setTimeout(__pfMovesStart,8000);"
-        "else window.addEventListener('load',function(){setTimeout(__pfMovesStart,8000);},{once:true});"
-        "})();</script>"
+        "</div>"
+        "<div class='pf-deepdive' id='pfDeepDive' hidden></div>"
+        "<div class='pf-grade-line' id='pfGradeLine' hidden></div>"
+        "<div class='pf-hidden-footer' id='pfHiddenFooter' hidden></div>"
+        "</div>"
+        f"<script>window.__pfBoardWeek={int(current_week or 0)};"
+        "(function(){function go(){if(window.__pfBoardInit)window.__pfBoardInit();}"
+        "if(document.readyState!=='loading')go();"
+        "else document.addEventListener('DOMContentLoaded',go);})();</script>"
     )
 
     # Page-level Refresh handler consumed by app.js's doRefresh(). Warm cards
@@ -40302,32 +40360,50 @@ def build_portfolio_body(
 
         off_note = "<span class='pf-lg-off'>(Off)</span>" if lg.get("offseason") else ""
 
-        # Position strength strip: the signature data of this app, promoted from
-        # a grey footer line to four equal, quality-tinted chips. Rank quality
-        # carries in the tint alone -- no "best" crown.
+        # v25 compact card: the position-strength strip moves to the
+        # insights heatmap; the card carries only its weakest room, its
+        # playoff odds (cache-only, from the summary) with a 7-day trend
+        # delta, and its posture.
         pos_ranks = lg.get("pos_user_rank") or {}
-        strength_chips = ""
-        for _pos in ["QB", "RB", "WR", "TE"]:
-            _pr = pos_ranks.get(_pos)
-            if not _pr:
-                continue
-            _tier = _pos_tier(_pr, _total_i)
-            _pc = _POS_CLS_MAP.get(_pos, "K")
-            strength_chips += (
-                f"<div class='pf-pos-chip q-{_tier}'>"
-                f"<span class='pos-badge {_pc}'>{_pos}</span>"
-                f"<span class='pc-rank'>{_pr}<sup>{ord_suffix(_pr)}</sup></span>"
-                f"</div>"
+        _odds_pct = lg.get("playoff_odds_pct")
+        _odds_delta = lg.get("playoff_odds_delta")
+        if _odds_pct is None:
+            odds_html = "<span class='pf-lg-v' data-odds-val>—</span>"
+            _odds_attr = -1
+        else:
+            _odds_attr = float(_odds_pct)
+            odds_html = f"<span class='pf-lg-v' data-odds-val>{float(_odds_pct):.0f}%</span>"
+            if _odds_delta is not None and abs(float(_odds_delta)) >= 0.05:
+                _dv = float(_odds_delta)
+                _arrow = "\u25B2" if _dv > 0 else "\u25BC"
+                _dcls = "up" if _dv > 0 else "down"
+                odds_html += (f"<span class='pf-odds-delta {_dcls}' data-odds-delta>"
+                              f"{_arrow}{abs(_dv):.0f}</span>")
+            else:
+                odds_html += "<span class='pf-odds-delta' data-odds-delta hidden></span>"
+        weakest_html = ""
+        try:
+            from dashboard_services.portfolio_board import (
+                tier_for_rank as _tier_fn,
+                weakest_room as _wr_fn,
             )
-        strength_html = (
-            "<div class='pf-lg-strength'>"
-            "<div class='pf-lg-strength-head'>"
-            "<span class='pf-lg-l'>Position strength</span>"
-            "<span class='pf-lg-l pf-lg-l--muted'>rank in league</span>"
-            "</div>"
-            f"<div class='pf-strbar'>{strength_chips}</div>"
-            "</div>"
-        ) if strength_chips else ""
+            _wr = _wr_fn(pos_ranks, _total_i)
+        except Exception:
+            _wr = None
+        if _wr:
+            _wtotal = _wr.get("total") or _total_i
+            _wtier = _tier_fn(_wr["rank"], _wtotal)
+            weakest_html = (
+                f"<div class='pf-lg-weak' data-weakest>Weakest room: "
+                f"<strong class='q-{_wtier}'>{_wr['pos']} · {_wr['rank']}"
+                f"{ord_suffix(_wr['rank'])} of {_wtotal}</strong></div>"
+            )
+        _posture = lg.get("posture")
+        posture_html = (
+            f"<span class='pf-posture {lg.get('posture_cls') or ''}' data-posture>"
+            f"{html.escape(str(_posture))}</span>"
+            if _posture else arch_badge
+        )
 
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
         # in-season during game weeks. Starts as a content-shaped skeleton so the
@@ -40364,7 +40440,7 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-href='{html.escape(str(href), quote=True)}' data-odds='{_odds_attr}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
@@ -40376,18 +40452,25 @@ def build_portfolio_body(
             f"<span class='pf-lg-l'>Record</span></span>"
             f"<span class='pf-lg-stat' title='Regular-season standings: wins, then points for'>"
             f"{standing_html}<span class='pf-lg-l'>Standing</span></span>"
+            f"<span class='pf-lg-stat'><span class='pf-lg-vrow'>{odds_html}</span>"
+            f"<span class='pf-lg-l'>Playoff odds</span></span>"
             f"<span class='pf-lg-stat pf-lg-stat--streak'>{streak_html}"
             f"<span class='pf-lg-l'>Streak</span></span>"
             f"</div>"
-            f"{strength_html}"
-            f"<div class='pf-lg-foot'>{arch_badge}<span class='pf-lg-l' data-summary-updated></span>"
-            f"<button type='button' data-summary-retry hidden>Retry</button><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
+            f"{weakest_html}"
+            f"<div class='pf-lg-foot'>{posture_html}"
+            f"<span class='pf-lg-moves-flag' data-moves-flag hidden></span>"
+            f"<span class='pf-lg-l' data-summary-updated></span>"
+            f"<button type='button' data-summary-retry hidden>Retry</button>"
+            f"<a href='{href}' class='pf-lg-fo'>Front Office</a>"
+            f"<a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
             f"</div>"
         )
 
     league_card = (
         "<style>"
-        ".pf-lg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px;}"
+        ".pf-lg-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;}"
+        "@media(max-width:980px){.pf-lg-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}"
         ".pf-lg-card{background:var(--card);border:1px solid var(--grid);border-radius:10px;"
         "padding:10px 12px;display:flex;flex-direction:column;gap:7px;min-width:0;max-width:100%;"
         "overflow:hidden;box-sizing:border-box;}"
@@ -40554,151 +40637,142 @@ def build_portfolio_body(
         "</style>"
         f"<div class='card'>"
         f"<div class='card-header'><h2>My Leagues</h2></div>"
+        "<div class='pf-sortbar'><label for='pfSortSel'>Sort</label>"
+        "<select id='pfSortSel' class='pf-sort-sel'>"
+        "<option value='urgency'>Urgency</option>"
+        "<option value='record'>Record</option>"
+        "<option value='odds'>Playoff odds</option>"
+        "</select></div>"
         f"<div class='pf-lg-grid'>{league_rows}</div>"
-        "<div class='pf-lg-pager' id='pfLgPager' hidden>"
-        "<button type='button' id='pfLgPrev'>&larr; Prev</button>"
-        "<span class='pf-lg-pager-lbl' id='pfLgPageLbl'></span>"
-        "<button type='button' id='pfLgNext'>Next &rarr;</button>"
         "</div>"
-        "</div>"
-        # Account favorites are database-backed; provider-only sessions retain
-        # the existing local fallback. The list still paginates 4 at a time.
+        # All leagues render (v25): no pager. Favorites stay pinned first,
+        # the sort control reorders, and the whole card except its buttons
+        # and links navigates to the league.
         "<script>(function(){"
         "var grid=document.querySelector('.pf-lg-grid');if(!grid)return;"
-        "var pager=document.getElementById('pfLgPager'),prev=document.getElementById('pfLgPrev'),"
-        "next=document.getElementById('pfLgNext'),lbl=document.getElementById('pfLgPageLbl');"
-        f"var PAGE=4,KEY='pfFavLeagues',ACCOUNT={'true' if _can_unlink else 'false'};"
+        "var sel=document.getElementById('pfSortSel');"
+        f"var KEY='pfFavLeagues',ACCOUNT={'true' if _can_unlink else 'false'};"
         "var cards=[].slice.call(grid.querySelectorAll('.pf-lg-card'));"
         "cards.forEach(function(c,i){c._ord=i;});"
-        "var page=0;"
+        "var sortMode='urgency';"
+        "function keyOf(c){return c.getAttribute('data-lg-key')||'';}"
         "function favs(){if(ACCOUNT)return cards.filter(function(c){return c.getAttribute('data-favorite')==='true';}).map(keyOf);"
         "try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return [];}}"
         "function saveFavs(a){try{localStorage.setItem(KEY,JSON.stringify(a));}catch(e){}}"
-        "function keyOf(c){return c.getAttribute('data-lg-key')||'';}"
         "function ordered(){var f=favs();return cards.slice().sort(function(a,b){"
         "var ia=f.indexOf(keyOf(a)),ib=f.indexOf(keyOf(b));ia=ia<0?1e9:ia;ib=ib<0?1e9:ib;"
-        "return (ia-ib)||(a._ord-b._ord);});}"
-        "function render(){var ord=ordered(),f=favs();var pages=Math.max(1,Math.ceil(ord.length/PAGE));"
-        "if(page>=pages)page=pages-1;if(page<0)page=0;"
-        "ord.forEach(function(c,i){grid.appendChild(c);"
-        "c.style.display=(i>=page*PAGE&&i<(page+1)*PAGE)?'':'none';"
+        "if(ia!==ib)return ia-ib;"
+        "if(sortMode==='record'){var dw=(+b.getAttribute('data-wins')||0)-(+a.getAttribute('data-wins')||0);if(dw)return dw;"
+        "var dl=(+a.getAttribute('data-losses')||0)-(+b.getAttribute('data-losses')||0);if(dl)return dl;}"
+        "if(sortMode==='odds'){var dq=(+b.getAttribute('data-odds')||-1)-(+a.getAttribute('data-odds')||-1);if(dq)return dq;}"
+        "return a._ord-b._ord;});}"
+        "function render(){var ord=ordered(),f=favs();"
+        "ord.forEach(function(c){grid.appendChild(c);c.style.display='';"
         "var s=c.querySelector('.pf-lg-fav');if(s){var on=f.indexOf(keyOf(c))>=0;"
         "s.classList.toggle('on',on);s.setAttribute('aria-pressed',on?'true':'false');"
-        "s.setAttribute('title',on?'Remove favorite':'Favorite');}});"
-        "if(pager){pager.hidden=ord.length<=PAGE;if(lbl)lbl.textContent='Page '+(page+1)+' of '+pages;"
-        "if(prev)prev.disabled=page<=0;if(next)next.disabled=page>=pages-1;}}"
-        "grid.addEventListener('click',function(e){var s=e.target.closest('.pf-lg-fav');if(!s)return;"
-        "e.preventDefault();e.stopPropagation();var c=s.closest('.pf-lg-card');if(!c)return;"
+        "s.setAttribute('title',on?'Remove favorite':'Favorite');}});}"
+        "function queueAll(){if(!window.__pfQueueCard)return;ordered().forEach(function(c){"
+        "var slot=c.querySelector('[data-lg-live]');"
+        "var hydrated=c.dataset.summaryGood==='true'&&(!slot||slot.dataset.matchupGood==='true');"
+        "if(!hydrated)window.__pfQueueCard(c);});}"
+        "window.__pfQueueVisible=queueAll;"
+        "grid.addEventListener('click',function(e){var s=e.target.closest('.pf-lg-fav');"
+        "if(s){e.preventDefault();e.stopPropagation();var c=s.closest('.pf-lg-card');if(!c)return;"
         "var k=keyOf(c);if(!k)return;var f=favs(),idx=f.indexOf(k);"
         "var on=idx<0;if(idx>=0)f.splice(idx,1);else f.unshift(k);"
-        "c.setAttribute('data-favorite',on?'true':'false');if(!ACCOUNT)saveFavs(f);page=0;render();"
+        "c.setAttribute('data-favorite',on?'true':'false');if(!ACCOUNT)saveFavs(f);render();"
         "if(ACCOUNT){var parts=k.split(':');fetch('/api/my-leagues/favorite',{method:'POST',headers:{'Content-Type':'application/json'},"
         "body:JSON.stringify({platform:parts.shift(),league_id:parts.join(':'),favorite:on})})"
         ".then(function(r){if(!r.ok)throw new Error('favorite save failed');return r.json();}).then(function(d){if(window.brGetMyLeagues)window.brGetMyLeagues({force:true});return d;})"
-        ".catch(function(){c.setAttribute('data-favorite',on?'false':'true');render();});}});"
-        "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();queueVisible();}});"
-        "if(next)next.addEventListener('click',function(){page++;render();queueVisible();});"
-        "function queueVisible(){if(!window.__pfQueueCard)return;var ord=ordered();"
-        "ord.forEach(function(c,i){if(i>=page*PAGE&&i<(page+1)*PAGE){"
-        "var slot=c.querySelector('[data-lg-live]');"
-        "var hydrated=c.dataset.summaryGood==='true'&&(!slot||slot.dataset.matchupGood==='true');"
-        "if(!hydrated)window.__pfQueueCard(c);}});}"
+        ".catch(function(){c.setAttribute('data-favorite',on?'false':'true');render();});}return;}"
+        "if(e.target.closest('a,button,input,select,textarea'))return;"
+        "var card=e.target.closest('.pf-lg-card');if(!card)return;"
+        "var href=card.getAttribute('data-href');if(href)window.location.href=href;});"
+        "if(sel)sel.addEventListener('change',function(){sortMode=sel.value;render();});"
         "render();})();</script>"
         # One page-scoped owner manages hydration, refresh, polling and cleanup.
         "<script>/* Portfolio cards are started by initPageRoot after deferred helpers load. */</script>"
         # Matchup hydration is part of the consolidated card lifecycle above.
     )
 
-    # ── Positional strength ───────────────────────────────────────────────
-    # cross_pos is mean in-league percentile (0-100) per position. A typical
-    # team sits at ~50th; stacked finishes in some leagues can no longer be
-    # dragged negative by a thin league the way signed % vs median was.
+    # ── Positional Strength heatmap (v25) ─────────────────────────────────
+    # Leagues x positions in-league ranks, from the same summary data the
+    # cards carry. Height caps with internal scroll past ~11 rows.
     pos_card = ""
-    if cross_pos:
-        from utils.format import ordinal
-        pos_rows = ""
-        for pos in ["QB", "RB", "WR", "TE"]:
-            pct = max(0.0, min(100.0, float(cross_pos.get(pos, 50.0) or 50.0)))
-            color = _POS_COLORS.get(pos, "#6b7280")
-            bar_w = int(round(pct))
-            pct_i = max(0, min(100, int(pct + 0.5)))
-            if pct >= 67:
-                d_color = "var(--win)"
-            elif pct <= 33:
-                d_color = "var(--loss)"
-            else:
-                d_color = "var(--text-muted)"
-            d_str = ordinal(pct_i)
-            _pos_cls = _POS_CLS_MAP.get(pos, "pos-k")
-            pos_rows += (
-                f"<div class='pf-pos-row'>"
-                f"<span style='min-width:32px;'><span class='pos-badge {_pos_cls}'>{pos}</span></span>"
-                f"<div class='pf-pos-bar-wrap'>"
-                f"<div class='pf-pos-bar' style='width:{bar_w}%;background:{color};'></div>"
-                f"<div class='pf-pos-avg-tick' style='left:50%;' title='50th percentile'></div>"
-                f"</div>"
-                f"<span class='pf-pos-delta' style='color:{d_color};' "
-                f"title='Average of your in-league percentile at {pos}. 50th is a typical team.'>{d_str}</span>"
-                f"</div>"
+    try:
+        from dashboard_services.portfolio_board import heatmap_rows as _hm_rows_fn
+        from utils.format import ord_suffix as _ord_suffix_hm
+        _hm_rows = _hm_rows_fn(valid_leagues)
+    except Exception:
+        _hm_rows = []
+        _ord_suffix_hm = lambda n: ""  # noqa: E731
+    if _hm_rows:
+        _hm_stamp = ""
+        try:
+            _stamps = [
+                str(_lg.get("refreshed_at") or _lg.get("last_successful_sync_at") or "")
+                for _lg in (valid_leagues or [])
+            ]
+            _stamps = [s for s in _stamps if s]
+            if _stamps:
+                from zoneinfo import ZoneInfo as _ZI_hm
+                _dt_hm = datetime.fromisoformat(max(_stamps).replace("Z", "+00:00"))
+                if _dt_hm.tzinfo is None:
+                    _dt_hm = _dt_hm.replace(tzinfo=timezone.utc)
+                _hm_stamp = (f"<span class='pf-upd'>Updated "
+                             f"{_dt_hm.astimezone(_ZI_hm('America/New_York')).strftime('%-I:%M %p')}</span>")
+        except Exception:
+            _hm_stamp = ""
+        _hm_head = "".join(
+            f"<span class='pf-hm-h'>{_p}</span>" for _p in ["QB", "RB", "WR", "TE"]
+        )
+        _hm_body = ""
+        for _row in _hm_rows:
+            _cells = ""
+            for _p in ["QB", "RB", "WR", "TE"]:
+                _c = _row["cells"].get(_p)
+                if _c:
+                    _cells += (f"<span class='pf-hm-chip q-{_c['tier']}'>"
+                               f"{_c['rank']}{_ord_suffix_hm(_c['rank'])}</span>")
+                else:
+                    _cells += "<span class='pf-hm-chip q-none'>—</span>"
+            _hm_body += (
+                f"<div class='pf-hm-row'><span class='pf-hm-name'>"
+                f"{html.escape(str(_row.get('name') or ''))}</span>{_cells}</div>"
             )
         pos_card = (
-            f"<div class='card' style='display:flex;flex-direction:column;'>"
-            f"<div class='card-header'>"
-            f"<h2>Positional Strength</h2>"
-            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>avg percentile across your leagues</span>"
-            f"</div>"
-            f"<div class='card-body' style='flex:1;display:flex;flex-direction:column;justify-content:space-evenly;'>{pos_rows}</div>"
-            f"</div>"
+            f"<div class='card' id='pfSecHeat'>"
+            f"<div class='card-header'><h2>Positional Strength</h2>"
+            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>in-league rank by position</span>"
+            f"{_hm_stamp}</div>"
+            f"<div class='card-body'>"
+            f"<div class='pf-hm'><div class='pf-hm-row pf-hm-headrow'>"
+            f"<span class='pf-hm-name'>League</span>{_hm_head}</div>"
+            f"{_hm_body}</div>"
+            f"</div></div>"
         )
 
-    # ── NFL Exposure ──────────────────────────────────────────────────────
-    nfl_html = ""
-    if nfl_exposure:
-        max_cnt = max(t["count"] for t in nfl_exposure) or 1
-        nfl_rows = ""
-        for idx, t in enumerate(nfl_exposure):
-            bw = int((t["count"] / max_cnt) * 100)
-            team_color = _NFL_COLORS.get(t["team"], "var(--accent)")
-            dd_id = f"nflDd{idx}"
-            pl_rows = ""
-            for pl in (t.get("players") or []):
-                pl_pos = pl.get("position") or ""
-                pl_pc = _POS_CLS_MAP.get(pl_pos, "K")
-                pl_name = html.escape(pl.get("name") or "")
-                pl_pid = pl.get("pid") or ""
-                pl_lg = html.escape(pl.get("league") or "")
-                pl_val = pl.get("value") or 0
-                pl_pr = html.escape(pl.get("pos_rank") or "")
-                pl_rows += (
-                    f"<tr>"
-                    f"<td><span class='pos-badge {pl_pc}' style='font-size:0.7em;height:18px;width:28px;'>{pl_pos}</span></td>"
-                    f"<td class='team'><span class='player-clickable' data-player-id='{pl_pid}' data-player-name='{pl_name}' style='cursor:pointer;font-weight:500;'>{pl_name}</span></td>"
-                    f"<td style='color:var(--text-muted);font-size:13px;'>{pl_pr}</td>"
-                    f"<td style='color:var(--text-muted);font-size:13px;white-space:nowrap;'>{pl_lg}</td>"
-                    f"<td style='font-weight:700;color:var(--accent);text-align:right;'>{pl_val:.0f}</td>"
-                    f"</tr>"
-                )
-            pl_table = f"<table class='standings-table' style='margin:4px 0 4px 36px;width:calc(100% - 36px);'><tbody>{pl_rows}</tbody></table>" if pl_rows else ""
-            nfl_rows += (
-                f"<div class='nfl-row' onclick=\"var d=document.getElementById('{dd_id}');d.style.display=d.style.display==='none'?'block':'none';\">"
-                f"<div class='nfl-row-main'>"
-                f"<span class='nfl-abbr' style='color:{team_color};'>{html.escape(t['team'])}</span>"
-                f"<div class='nfl-bar-wrap'><div class='nfl-bar' style='width:{bw}%;background:{team_color};'></div></div>"
-                f"<span class='nfl-cnt'>{t['count']}</span>"
-                f"<span class='nfl-note'>{t['leagues']}L</span>"
-                f"<span style='font-size:11px;color:var(--text-subtle);'>&#9660;</span>"
-                f"</div>"
-                f"<div id='{dd_id}' style='display:none;'>{pl_table}</div>"
-                f"</div>"
-            )
-        nfl_html = (
-            f"<div class='card'>"
-            f"<div class='card-header'><h2>NFL Exposure</h2>"
-            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>which games affect your whole portfolio</span>"
-            f"</div>"
-            f"<div class='card-body'>{nfl_rows}</div>"
-            f"</div>"
-        )
+    # ── Rooting Guide + Bye Watch (v25) ───────────────────────────────────
+    # Shells hydrated lazily from /api/portfolio-insights by app.js: the
+    # page request itself never scans leagues for these.
+    nfl_html = (
+        "<div class='card' id='pfSecRooting'>"
+        "<div class='card-header'><h2>Rooting Guide</h2>"
+        "<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>your starters, game by game</span>"
+        "<span class='pf-upd' data-rooting-upd></span></div>"
+        "<div class='card-body' id='pfRootingBody'>"
+        "<div class='pf-ins-loading'>Loading your games…</div>"
+        "</div></div>"
+    )
+    bye_html = (
+        "<div class='card' id='pfSecBye'>"
+        "<div class='card-header'><h2>Bye Watch</h2>"
+        "<span style='font-size:13px;color:var(--text-muted);font-weight:400;' data-bye-sub>next week</span>"
+        "<span class='pf-upd' data-bye-upd></span></div>"
+        "<div class='card-body' id='pfByeBody'>"
+        "<div class='pf-ins-loading'>Checking next week's byes…</div>"
+        "</div></div>"
+    )
 
     # ── Player Holdings ───────────────────────────────────────────────────
     holdings_html = ""
@@ -40713,20 +40787,49 @@ def build_portfolio_body(
             cnt = p.get("shares") or 1
             pr = html.escape(p.get("pos_rank") or "")
             lgs_str = html.escape(", ".join(p.get("in_leagues") or []))
+            _bw = p.get("bye_week")
+            try:
+                _bw_i = int(_bw) if _bw is not None else None
+            except (TypeError, ValueError):
+                _bw_i = None
+            bye_s = f"Wk {_bw_i}" if _bw_i else "—"
+            _status = str(p.get("status") or "").strip()
+            if _status:
+                _st_cls = ("bad" if _status.lower() in ("out", "ir", "pup", "sus")
+                           else "warn")
+                status_s = f"<span class='pf-hstatus {_st_cls}'>{html.escape(_status)}</span>"
+            else:
+                status_s = "<span style='color:var(--text-subtle);'>—</span>"
+            _rc7 = p.get("rank_change_7d")
+            try:
+                _rc7_i = int(_rc7) if _rc7 is not None else 0
+            except (TypeError, ValueError):
+                _rc7_i = 0
+            if _rc7_i > 0:
+                trend_s = f"<span class='pf-trend up'>\u25B2{_rc7_i}</span>"
+            elif _rc7_i < 0:
+                trend_s = f"<span class='pf-trend down'>\u25BC{abs(_rc7_i)}</span>"
+            else:
+                trend_s = "<span class='pf-trend flat'>=</span>"
+            conc_s = (f"<span class='pf-conc'>{cnt} leagues</span>"
+                      if cnt and int(cnt) >= 3 else "")
             h_rows += (
-                f"<tr class='pf-row' data-pos='{pos}' data-name='{name_e.lower()}'>"
+                f"<tr class='pf-row' data-pos='{pos}' data-name='{name_e.lower()}' data-value='{val}'>"
                 f"<td><span class='pos-badge {pc}'>{pos}</span></td>"
                 f"<td class='team'>"
-                f"<div class='player-clickable' data-player-id='{pid}' data-player-name='{name_e}' style='cursor:pointer;font-weight:600;'>{name_e}</div>"
+                f"<div class='player-clickable' data-player-id='{pid}' data-player-name='{name_e}' style='cursor:pointer;font-weight:600;'>{name_e}{conc_s}</div>"
                 f"<div style='font-size:11px;color:var(--text-subtle);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;'>{lgs_str}</div>"
                 f"</td>"
                 f"<td>{pr}</td>"
                 f"<td>{cnt}<span style='color:var(--text-muted);font-weight:400;'>/{num_leagues}</span></td>"
+                f"<td>{bye_s}</td>"
+                f"<td>{status_s}</td>"
+                f"<td>{trend_s}</td>"
                 f"<td style='font-weight:700;color:var(--accent);'>{val:.0f}</td>"
                 f"</tr>"
             )
         holdings_html = (
-            f"<div class='card'>"
+            f"<div class='card' id='pfSecHoldings'>"
             f"<div class='card-header'><h2>Player Holdings</h2>"
             f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>ownership across your leagues</span>"
             f"</div>"
@@ -40742,18 +40845,14 @@ def build_portfolio_body(
             f"</div>"
             f"<div style='overflow-x:auto;'>"
             f"<table class='standings-table' id='pfTable'>"
-            f"<thead><tr><th></th><th style='text-align:left;'>Player</th><th>Rank</th><th>Shares</th><th>Value</th></tr></thead>"
+            f"<thead><tr><th></th><th style='text-align:left;'>Player</th><th>Rank</th><th>Shares</th><th>Bye</th><th>Status</th><th>7d</th><th>Value</th></tr></thead>"
             f"<tbody id='pfBody'>{h_rows}</tbody>"
             f"</table>"
             f"</div>"
-            f"<div style='display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;'>"
-            f"<button class='pf-pill' id='pfPrev'>&#8592; Prev</button>"
-            f"<span style='font-size:13px;color:var(--text-muted);' id='pfPageInfo'></span>"
-            f"<button class='pf-pill' id='pfNext'>Next &#8594;</button>"
-            f"</div>"
             f"</div></div>"
             f"<script>(function(){{"
-            f"var PAGE=5,fp='ALL',fn='',pg=1,filtered=[];"
+            # v25: no holdings pager; every row renders (filters still slice).
+            f"var PAGE=100000,fp='ALL',fn='',pg=1,filtered=[];"
             f"function applyFilters(){{"
             f"var rows=Array.from(document.querySelectorAll('.pf-row'));"
             f"filtered=rows.filter(function(r){{return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));}});"
@@ -40781,28 +40880,53 @@ def build_portfolio_body(
             f"}})();</script>"
         )
 
-    movers_html = _portfolio_movers_card(holdings, _POS_COLORS)
-
-    if nfl_html and holdings_html:
-        bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
-    else:
-        bottom_row = nfl_html + holdings_html
-
-    # Leagues lead the page full-width; the exposure/strength/holdings analytics
-    # move into a "Portfolio insights" band beneath (same cards, reordered).
-    insight_top = (f"<div class='pf-grid-2'>{pos_card}{movers_html}</div>"
-                   if (pos_card and movers_html) else (pos_card + movers_html))
+    # Portfolio Movers is removed in v25 (holdings carries the 7d trend).
+    # Insights stack full-width: heatmap, Rooting Guide, Bye Watch, Holdings,
+    # with a sticky phone tab bar (Strength / Rooting guide / Byes / Holdings).
+    _tab_defs = []
+    if pos_card:
+        _tab_defs.append(("pfSecHeat", "Strength"))
+    _tab_defs.append(("pfSecRooting", "Rooting guide"))
+    _tab_defs.append(("pfSecBye", "Byes"))
+    if holdings_html:
+        _tab_defs.append(("pfSecHoldings", "Holdings"))
+    _tab_on = ' class="on"'
+    phonetabs = (
+        "<div class='pf-phonetabs' id='pfPhoneTabs'>"
+        + "".join(
+            f"<button type='button' data-t='{_tid}'{_tab_on if i == 0 else ''}>{_lbl}</button>"
+            for i, (_tid, _lbl) in enumerate(_tab_defs)
+        )
+        + "</div>"
+        "<script>(function(){"
+        "var bar=document.getElementById('pfPhoneTabs');if(!bar)return;"
+        "var btns=[].slice.call(bar.querySelectorAll('button[data-t]'));"
+        "btns.forEach(function(b){b.addEventListener('click',function(){"
+        "btns.forEach(function(x){x.classList.remove('on');});b.classList.add('on');"
+        "var el=document.getElementById(b.getAttribute('data-t'));"
+        "if(el)el.scrollIntoView({behavior:'smooth',block:'start'});});});"
+        "if('IntersectionObserver' in window){"
+        "var io=new IntersectionObserver(function(es){es.forEach(function(en){"
+        "if(en.isIntersecting){btns.forEach(function(x){"
+        "x.classList.toggle('on',x.getAttribute('data-t')===en.target.id);});}});},"
+        "{rootMargin:'-40% 0px -55% 0px'});"
+        "btns.forEach(function(b){var el=document.getElementById(b.getAttribute('data-t'));"
+        "if(el)io.observe(el);});}"
+        "})();</script>"
+    )
     insights_label = (
         "<div style='font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;"
         "color:var(--text-subtle);margin:22px 2px 12px;'>Portfolio insights</div>"
-        if (pos_card or movers_html or nfl_html or holdings_html) else ""
+        if (pos_card or nfl_html or bye_html or holdings_html) else ""
     )
     # Constrain to a centered column so the page doesn't stretch edge-to-edge on
     # wide monitors (matches the League Health treatment).
     insights = ""
-    if insights_label or insight_top or bottom_row:
+    if insights_label:
         insights = ("<section data-portfolio-cross-league>" + insights_label
-                    + insight_top + bottom_row + "</section>")
+                    + phonetabs
+                    + "<div class='pf-ins-stack'>" + pos_card + nfl_html
+                    + bye_html + holdings_html + "</div></section>")
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
             + top_strip + moves_card + league_card + insights + '</div>'
             + refresh_handler_script)

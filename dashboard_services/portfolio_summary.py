@@ -273,6 +273,22 @@ def build_league_summary(account_id, membership, context_loader):
         _cache_stale=bool(ctx.get("_cache_stale")),
         partial=result["state"] == "partial",
     )
+    # Playoff odds + posture for the v25 portfolio cards and board headers.
+    # Cache-only: odds_for_ctx never runs the sim inline; a cold sim
+    # backgrounds and the fields stay None until a later summary build.
+    try:
+        from dashboard_services.portfolio_board import odds_for_ctx, posture_for
+        _odds = odds_for_ctx(ctx, platform, rid)
+        _posture_label, _posture_cls = posture_for(
+            _odds.get("pct"), result.get("wins"), result.get("losses"))
+        result.update(
+            playoff_odds_pct=_odds.get("pct"),
+            playoff_odds_delta=_odds.get("delta"),
+            posture=_posture_label,
+            posture_cls=_posture_cls,
+        )
+    except Exception:
+        logger.debug("[portfolio] odds attach failed", exc_info=True)
     # Don't cache partial summaries: a transient record failure would otherwise
     # persist in the cache and keep serving a record-less card with no retry.
     if result["state"] == "ready":

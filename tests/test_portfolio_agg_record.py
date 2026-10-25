@@ -67,8 +67,10 @@ def test_summary_bar_carries_aggregate_hook():
 
 def test_league_cards_carry_per_card_record():
     html = _render(5, 3, 1)
-    assert "data-lg-key='sleeper:1' data-favorite='false' data-platform='sleeper' data-league-id='1' data-season='2026' data-wins='3' data-losses='1' data-ties='0'" in html
-    assert "data-lg-key='sleeper:2' data-favorite='false' data-platform='sleeper' data-league-id='2' data-season='2026' data-wins='2' data-losses='2' data-ties='1'" in html
+    # v25 cards add data-href (whole-card nav) + data-odds (sort) up front;
+    # the per-card record attributes stay in place for the aggregate hooks.
+    assert "data-lg-key='sleeper:1' data-href='/sleeper/2026/1/dashboard' data-odds='-1' data-favorite='false' data-platform='sleeper' data-league-id='1' data-season='2026' data-wins='3' data-losses='1' data-ties='0'" in html
+    assert "data-lg-key='sleeper:2' data-href='/sleeper/2026/2/dashboard' data-odds='-1' data-favorite='false' data-platform='sleeper' data-league-id='2' data-season='2026' data-wins='2' data-losses='2' data-ties='1'" in html
 
 
 def test_js_aggregate_recompute_wired_to_hook():
