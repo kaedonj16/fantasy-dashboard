@@ -153,4 +153,4 @@ def test_weekly_hub_week_change_times_out_and_rolls_back():
 # ── Service worker ───────────────────────────────────────────────────────────
 
 def test_service_worker_cache_bumped():
-    assert "br-fantasy-v94" in _read("static/sw.js")
+    assert "br-fantasy-v95" in _read("static/sw.js")
