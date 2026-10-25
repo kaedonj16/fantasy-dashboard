@@ -149,7 +149,9 @@ def test_last_week_cell_shown_after_week_1():
     leagues = [_league("1", "Alpha", 3, 1, lw_result="W"),
                _league("2", "Beta", 2, 2, lw_result="L")]
     html = _render(leagues, current_week=3)
-    assert "pf-stat-bar pf-stat-bar--4" in html
+    # v25 stat bar: Leagues / Record / Last Week / This week (proj) /
+    # Next deadline = 5 cells when the Last Week cell renders.
+    assert "pf-stat-bar pf-stat-bar--5" in html
     m = re.search(r"data-portfolio-lw-record[^>]*>([^<]*)<", html)
     assert m and m.group(1) == "1-1"
     assert html.count("data-lw-result=") == 2
@@ -161,7 +163,7 @@ def test_last_week_cell_hidden_in_week_1_and_preseason():
     for week in (0, 1):
         html = _render(leagues, current_week=week)
         assert "data-portfolio-lw-record" not in html
-        assert "class='pf-stat-bar pf-stat-bar--4'" not in html
+        assert "class='pf-stat-bar pf-stat-bar--5'" not in html
         assert "Last Week" not in html
 
 
@@ -171,7 +173,7 @@ def test_last_week_cell_shown_with_placeholder_when_no_results():
     # Cell renders from week 2 so cold cards can hydrate it client-side;
     # shows a placeholder until results arrive.
     assert "data-portfolio-lw-record" in html
-    assert "class='pf-stat-bar pf-stat-bar--4'" in html
+    assert "class='pf-stat-bar pf-stat-bar--5'" in html
     m = re.search(r"data-portfolio-lw-record[^>]*>([^<]*)<", html)
     assert m and m.group(1) == "-"
 
@@ -198,7 +200,7 @@ def test_refresh_repaint_guards_present():
     src = (ROOT / "static" / "app.js").read_text()
     assert "function setHtmlIfChanged(el, html)" in src
     assert "setHtmlIfChanged(stats, statsHtml)" in src
-    assert "card._pfStrengthHtml" in src
+    assert "card._pfWeakHtml" in src
     assert "agg._pfRec" in src
     assert "function updateLastWeekRecord()" in src
     assert 'data-lw-result' in src or "dataset.lwResult" in src

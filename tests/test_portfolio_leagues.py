@@ -50,15 +50,15 @@ def test_unlinked_team_cards_offer_link_my_team_for_every_platform():
     assert "linkFleaConnect" in js
 
 
-def test_positional_strength_card_renders_percentiles_not_signed_deltas():
+def test_positional_strength_card_is_rank_heatmap_not_signed_deltas():
+    # v25: Positional Strength is a leagues x positions rank heatmap built
+    # from the summaries' in-league ranks, not percentile bars.
     fn = _portfolio_fn()
-    assert "avg percentile across your leagues" in fn
+    assert "heatmap_rows" in fn
+    assert "pf-hm-chip" in fn
+    assert "in-league rank by position" in fn
+    assert "avg percentile across your leagues" not in fn
     assert "vs. league averages" not in fn
-    assert "from utils.format import ordinal" in fn
-    assert "d_str = ordinal(pct_i)" in fn
-    assert "left:50%" in fn
-    assert "pct >= 67" in fn
-    assert "pct <= 33" in fn
     # Old signed % vs median must not come back — that is what painted
     # mixed portfolios all-negative.
     assert "(ratio - 1.0) * 100" not in fn
@@ -109,29 +109,34 @@ def test_my_leagues_fav_and_arch_share_a_tools_group():
     assert "pf-lg-fav' aria-label='Favorite league'" not in fn.split("def _lg_tools")[0]
 
 
-def test_my_leagues_favorites_are_server_backed_and_sorted_before_pagination():
+def test_my_leagues_favorites_are_server_backed_and_pinned_without_pager():
     fn = _portfolio_fn()
     assert "data-favorite=" in fn
     assert "all_rows.sort(key=lambda lg: not bool(lg.get(\"is_favorite\")))" in fn
     assert "/api/my-leagues/favorite" in fn
-    assert "var PAGE=4" in fn
     assert "data-favorite',on?'true':'false'" in fn
+    # v25: the 4-per-page pager is gone; every league renders and the sort
+    # control (Urgency / Record / Playoff odds) drives the order instead.
+    assert "pfLgPager" not in fn
+    assert "var PAGE=4" not in fn
+    assert "pfSortSel" in fn
+    assert "data-odds" in fn
 
 
-def test_my_leagues_cards_promote_position_strength_strip():
-    """Positional rank is the signature data: a quality-tinted strength strip,
-    not a grey footer line. Rank quality carries in the tint alone."""
+def test_my_leagues_cards_carry_weakest_room_and_heatmap_ranks():
+    """v25: cards slim down to a weakest-room line; the full rank grid moves
+    to the Positional Strength heatmap in the insights band."""
     fn = _portfolio_fn()
     assert "def _pos_tier(" in fn
-    assert "class='pf-lg-strength'" in fn
-    assert "Position strength" in fn
-    assert "class='pf-strbar'" in fn
-    assert "pf-pos-chip q-" in fn
+    assert "data-weakest" in fn
+    assert "Weakest room: " in fn
+    assert "pf-hm-chip q-" in fn
     assert ".q-good{" in fn and ".q-mid{" in fn and ".q-weak{" in fn
     # No "best" crown — it misread as a #1 badge on merely top-third positions.
     assert "pc-crown" not in fn
     assert "&#9650; best" not in fn
-    # Old grey inline footer chips must not come back.
+    # The old per-card strength strip must not come back on cards.
+    assert "class='pf-lg-strength'" not in fn.split("league_rows += (")[-1]
     assert "class='pf-pos-chips'" not in fn.split("league_rows += (")[-1]
 
 

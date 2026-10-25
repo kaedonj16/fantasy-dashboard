@@ -442,7 +442,7 @@ def page_portfolio():
             logger.debug("suppressed exception", exc_info=True)
         # Urgency score: lower = needs more attention
         urgency = wins - losses + (rank if isinstance(rank, int) else 0) * -0.1
-        return {
+        summary = {
             "league_id": lid,
             "name": league_obj.get("name") or lg.get("name") or "Unknown",
             "platform": lg_platform,
@@ -463,6 +463,22 @@ def page_portfolio():
             "team_name": team_name,
             "is_favorite": bool(lg.get("is_favorite")),
         }
+        # Playoff odds + posture (v25 cards/board), cache-only like
+        # build_league_summary: never run the sim inline here.
+        try:
+            from dashboard_services.portfolio_board import odds_for_ctx, posture_for
+            _odds = odds_for_ctx(lctx, lg_platform, rid)
+            _posture_label, _posture_cls = posture_for(
+                _odds.get("pct"), wins, losses)
+            summary.update(
+                playoff_odds_pct=_odds.get("pct"),
+                playoff_odds_delta=_odds.get("delta"),
+                posture=_posture_label,
+                posture_cls=_posture_cls,
+            )
+        except Exception:
+            logger.debug("portfolio inline odds attach failed", exc_info=True)
+        return summary
 
     # Stale-while-revalidate: serve each league's card from the Postgres
     # portfolio summary cache -- 15 minutes fresh on game days (scores move
@@ -623,10 +639,11 @@ def page_portfolio():
                 "shares": len(pid_leagues.get(pid, [])),
                 "in_leagues": pid_leagues.get(pid, []),
             })
-    holdings.sort(key=lambda x: (-x["shares"], -x["value"]))
+    # v25: holdings sort strictly by value desc (shares break ties only).
+    holdings.sort(key=lambda x: (-x["value"], -x["shares"]))
 
     # Join 7-day value-rank movement from the in-memory value table (no DB round
-    # trip) so the Portfolio Movers digest works even when the per-league player
+    # trip) so the holdings trend column works even when the per-league player
     # blobs don't carry it. Only fill when missing so a real per-league value wins.
     try:
         _pf_rc = {str(r.get("id")): r.get("rank_change_7d")
@@ -639,6 +656,21 @@ def page_portfolio():
                     _h["rank_change_7d"] = _rc
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
+
+    # Bye week + injury status for the holdings columns (v25), from the
+    # shared NFL players index. Best-effort: missing data renders a dash.
+    try:
+        from dashboard_services.api import get_nfl_players as _gnp_hold
+        _nfl_hold = _gnp_hold() or {}
+        for _h in holdings:
+            _pl = _nfl_hold.get(str(_h.get("pid"))) or {}
+            if _pl.get("bye_week") is not None:
+                _h["bye_week"] = _pl.get("bye_week")
+            _st = str(_pl.get("injury_status") or "").strip()
+            if _st and _st.lower() not in ("active", "act"):
+                _h["status"] = _st
+    except Exception:
+        logger.debug("holdings bye/status enrich failed", exc_info=True)
 
     body = build_portfolio_body(
         portfolio_signed_in_label(),
@@ -781,6 +813,7 @@ def api_portfolio_actions():
         return jsonify({"paywall": True, "error": "Premium required", "actions": []}), 403
 
     actions: list = []
+    board_meta: dict = {}
     week = 0
     in_season = False
     week_games: list = []
@@ -876,6 +909,43 @@ def api_portfolio_actions():
         # Roster matched: the scans below actually run for this league.
         # Mid-scan sub-scan failures are best-effort and do not un-count it.
         scan_scanned += 1
+        # Board group header meta (v25): record line, cache-only playoff
+        # odds, posture. Best-effort; the header degrades to the name.
+        try:
+            from dashboard_services import portfolio_board as _pb_meta
+            _vs = viewer_roster.get("settings") or {}
+            _mw = int(_vs.get("wins") or 0)
+            _ml = int(_vs.get("losses") or 0)
+            _mt = int(_vs.get("ties") or 0)
+            _ranked = sorted(
+                rosters,
+                key=lambda r: (
+                    -int((r.get("settings") or {}).get("wins") or 0),
+                    -float((r.get("settings") or {}).get("fpts") or 0),
+                ),
+            )
+            _rk = next(
+                (i + 1 for i, r in enumerate(_ranked)
+                 if str(r.get("roster_id")) == str(viewer_roster.get("roster_id"))),
+                None,
+            )
+            _odds = _pb_meta.odds_for_ctx(lctx, plat, viewer_roster.get("roster_id"))
+            _posture = _pb_meta.posture_for(_odds.get("pct"), _mw, _ml)
+            _rec = f"{_mw}-{_ml}" + (f"-{_mt}" if _mt else "")
+            if _rk:
+                _suf = ("th" if 10 <= _rk % 100 <= 20 else
+                        {1: "st", 2: "nd", 3: "rd"}.get(_rk % 10, "th"))
+                _rec += f" · {_rk}{_suf} of {len(rosters)}"
+            board_meta[f"{plat}|{lid}"] = {
+                "league_name": league_name,
+                "record_line": _rec,
+                "odds_pct": _odds.get("pct"),
+                "odds_delta": _odds.get("delta"),
+                "posture": _posture[0],
+                "roster_id": str(viewer_roster.get("roster_id") or ""),
+            }
+        except Exception:
+            logger.debug("[portfolio-actions] board meta failed", exc_info=True)
         starters = [str(p) for p in (viewer_roster.get("starters") or [])]
         if starters and nfl_players:
             info = {}
@@ -981,7 +1051,7 @@ def api_portfolio_actions():
                         # Severity: a 2pt gain is a real but modest nudge
                         # (0.7); a 5pt+ gain is top priority (1.0).
                         _sev = min(1.0, 0.5 + _gain / 10.0)
-                        actions.append(make_action(
+                        _act = make_action(
                             kind="lineup",
                             platform=plat, season=lg_season, league_id=lid,
                             league_name=league_name,
@@ -996,7 +1066,28 @@ def api_portfolio_actions():
                             ),
                             severity=_sev,
                             dismiss_key=f"swap:{_out}>{_in}",
-                        ))
+                        )
+                        # Board (v25): Done verification reads the lineup
+                        # back; evidence carries the projection rows.
+                        _act["verify"] = {"type": "swap", "in": _in, "out": _out}
+                        _act["evidence"] = [
+                            {"k": "Start", "v": f"{_in_name} · proj {_in_proj:.1f}"},
+                            {"k": "Bench", "v": f"{_out_name} · proj {_out_proj:.1f}"},
+                            {"k": "Gain", "v": f"+{_gain:.1f} projected pts"},
+                        ]
+                        _teams = {
+                            str((nfl_players.get(_p) or {}).get("team") or "").upper()
+                            for _p in (_in, _out)
+                        }
+                        _lock = None
+                        for _g in week_games:
+                            if {_g.get("home"), _g.get("away")} & _teams:
+                                _ep = _g.get("gameTime_epoch")
+                                if _ep and (_lock is None or float(_ep) < _lock):
+                                    _lock = float(_ep)
+                        if _lock:
+                            _act["lock_epoch"] = _lock
+                        actions.append(_act)
             except Exception:
                 logger.debug("[portfolio-actions] swap scan failed", exc_info=True)
         # One injury stash/drop hint per league (active-roster candidates only;
@@ -1038,6 +1129,18 @@ def api_portfolio_actions():
                     ir_used=capacity["ir_used"], ir_slots=capacity["ir_slots"],
                 )
                 if act:
+                    # Board (v25): an IR move verifies against the reserve
+                    # list; a drop verifies against the roster itself.
+                    act["verify"] = {
+                        "type": "ir" if plan["verdict"] == "Move to IR" else "drop",
+                        "pid": pid,
+                    }
+                    act["evidence"] = [
+                        {"k": "Status", "v": st},
+                        {"k": "Time out", "v": plan.get("weeks_label") or ""},
+                        {"k": "IR room",
+                         "v": f"{capacity['ir_used']} of {capacity['ir_slots']} slots used"},
+                    ]
                     actions.append(act)
                     break
         except Exception:
@@ -1145,7 +1248,7 @@ def api_portfolio_actions():
                     forward_pts_by_pid=_opp.get("forward_pts_by_pid") or None,
                 )
                 if hit:
-                    actions.append(waiver_pickup_action(
+                    _wact = waiver_pickup_action(
                         platform=plat, season=lg_season, league_id=lid,
                         league_name=league_name,
                         player_name=hit["name"],
@@ -1160,7 +1263,20 @@ def api_portfolio_actions():
                         is_sf=is_sf,
                         n_teams=len(rosters) or 12,
                         player_id=str(hit.get("player_id") or ""),
-                    ))
+                    )
+                    if _wact:
+                        # Board (v25): a claim cannot verify at click time
+                        # (claims process later), so Done lands as marked.
+                        _wact["verify"] = {
+                            "type": "claim",
+                            "pid": str(hit.get("player_id") or ""),
+                        }
+                        _wact["evidence"] = [
+                            {"k": "Add",
+                             "v": f"{hit['name']} · value {float(hit.get('value') or 0):,.0f}"},
+                            {"k": "Why", "v": hit.get("reason") or ""},
+                        ]
+                        actions.append(_wact)
         except Exception:
             logger.debug("[portfolio-actions] waiver pickup failed", exc_info=True)
 
@@ -1229,9 +1345,533 @@ def api_portfolio_actions():
             except Exception:
                 logger.debug("[portfolio-actions] calendar nudge failed", exc_info=True)
 
-    return jsonify({
+    payload = {
         "actions": rank_cross_league_actions(actions, limit=8),
         "scan": _scan_payload(),
+    }
+    # ── Board (v25): the same scan, grouped by league with global ranks,
+    # done states, lock timing, a served-board snapshot for self-grading,
+    # and last week's grade line. Best-effort: the digest above stands
+    # even if board assembly fails.
+    try:
+        from dashboard_services import portfolio_board as _pb
+        _groups = _pb.group_actions(
+            rank_cross_league_actions(actions, limit=24), board_meta)
+        _now = time.time()
+        _ukey = _user_key()
+        _done = (_pb.load_done_states(_ukey, season, week)
+                 if _ukey and week else {})
+        # Conservative lock fallback for lineup moves without a player
+        # kickoff: the week's first Sunday kickoff, game day only.
+        _fall_lock = None
+        try:
+            from zoneinfo import ZoneInfo as _ZI
+            for _g in week_games:
+                _ep = _g.get("gameTime_epoch")
+                if _ep and datetime.fromtimestamp(
+                        float(_ep), _ZI("America/New_York")).weekday() == 6:
+                    if _fall_lock is None or float(_ep) < _fall_lock:
+                        _fall_lock = float(_ep)
+        except Exception:
+            _fall_lock = None
+        for _grp in _groups:
+            _dc = 0
+            for _mv in _grp["moves"]:
+                if (not _mv.get("lock_epoch") and _fall_lock
+                        and _mv.get("kind") == "lineup"):
+                    _mv["lock_epoch"] = _fall_lock
+                _mv["timing"] = _pb.timing_for(_mv, _now)
+                _st = _done.get((_grp["platform"], _grp["league_id"],
+                                 _mv["move_key"]))
+                _mv["done"] = _st
+                if _st:
+                    _dc += 1
+            _grp["meta"]["moves_count"] = len(_grp["moves"])
+            _grp["meta"]["done_count"] = _dc
+        payload["board"] = {"groups": _groups, "week": week}
+        payload["week"] = week
+        payload["season"] = season
+        if _ukey and week and _groups:
+            _pb.save_board_snapshot(_ukey, season, week, _groups)
+        _grade_line = ""
+        if _ukey and week and week > 1:
+            try:
+                _pb.grade_board_week(_ukey, season, week - 1)
+            except Exception:
+                logger.debug("[portfolio-actions] lazy grade failed",
+                             exc_info=True)
+            _grade_line = _pb.grade_line(
+                _pb.load_board_grade(_ukey, season, week - 1))
+        payload["grade_line"] = _grade_line
+    except Exception:
+        logger.debug("[portfolio-actions] board assembly failed", exc_info=True)
+    return jsonify(payload)
+
+
+# ── Board Done states (v25) ──────────────────────────────────────────────────
+# Same family as /api/action-dismissals: account users persist server-side
+# per (platform, league, season, week, move_key); guests get synced: False
+# and keep local-only behavior. A Done POST verifies against the league's
+# cached roster read-back where the move carries a checkable spec.
+
+def _move_done_scope(body):
+    """Validate a move-done scope with the dismissal validator (which
+    returns a tuple); normalize to a dict or None."""
+    cleaned = _clean_dismissal_scope({
+        "platform": (body or {}).get("platform"),
+        "league_id": (body or {}).get("league_id"),
+        "season": (body or {}).get("season"),
+        "week": (body or {}).get("week"),
+        "day": (body or {}).get("day") or "2026-01-01",
+        "item_key": (body or {}).get("move_key"),
+    })
+    if cleaned is None or len(cleaned) != 6:
+        return None
+    platform, league_id, season, week, _day, item_key = cleaned
+    return {"platform": platform, "league_id": league_id, "season": season,
+            "week": week, "item_key": item_key}
+
+
+def _done_time_label(iso_text):
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromisoformat(str(iso_text))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo("America/New_York")).strftime("%-I:%M %p")
+    except Exception:
+        return ""
+
+
+@user_pages_bp.route("/api/portfolio-move-done", methods=["GET", "POST", "DELETE"])
+@limiter.limit("120/minute")
+def api_portfolio_move_done():
+    from dashboard_services import portfolio_board as _pb
+    user_key = _user_key()
+    if request.method == "GET":
+        if not user_key:
+            return jsonify({"ok": True, "synced": False, "states": []})
+        try:
+            season = int(request.args.get("season") or 0)
+            week = int(request.args.get("week") or 0)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "invalid_scope"}), 400
+        states = _pb.load_done_states(user_key, season, week)
+        out = []
+        for (plat, lid, mk), st in states.items():
+            out.append({
+                "platform": plat, "league_id": lid, "move_key": mk,
+                "verified": st.get("verified"), "label": st.get("label"),
+                "done_at": st.get("done_at"),
+                "time_label": _done_time_label(st.get("done_at")),
+            })
+        return jsonify({"ok": True, "synced": True, "states": out})
+    if not user_key:
+        # Guests keep local-only behavior, like the dismissal store.
+        return jsonify({"ok": True, "synced": False})
+    body = request.get_json(silent=True) or {}
+    scope = _move_done_scope(body)
+    if scope is None:
+        return jsonify({"ok": False, "error": "invalid_scope"}), 400
+    plat = scope["platform"]
+    lid = scope["league_id"]
+    season = scope["season"]
+    week = scope["week"]
+    move_key_v = scope["item_key"]
+    if request.method == "DELETE":
+        ok = _pb.clear_done(user_key, plat, lid, season, week, move_key_v)
+        return jsonify({"ok": ok, "synced": True})
+    # POST: verify the claim against the cached roster read-back, then store.
+    action = body.get("action") or {}
+    roster_view = None
+    try:
+        lctx = get_league_ctx_from_cache(plat, lid, season, allow_build=False) or {}
+        rosters = lctx.get("rosters") or []
+        viewer_roster = None
+        account_id = session.get("account_id")
+        if account_id:
+            try:
+                from dashboard_services.accounts import resolve_account_viewer_for_league
+                av = resolve_account_viewer_for_league(
+                    account_id, plat, lid, season,
+                    lctx.get("users") or [], rosters,
+                )
+                rid = str((av or {}).get("viewer_roster_id") or "")
+                if rid:
+                    viewer_roster = next(
+                        (r for r in rosters
+                         if str(r.get("roster_id") or "") == rid), None)
+            except Exception:
+                viewer_roster = None
+        if viewer_roster is None:
+            from utils.scorezone_user import match_viewer_roster
+            viewer_roster = match_viewer_roster(
+                rosters,
+                owner_id=sleeper_owner_id_for_account(
+                    account_id, session.get("viewer_user_id"), plat),
+            )
+        if viewer_roster:
+            roster_view = {
+                "players": [str(p) for p in (viewer_roster.get("players") or []) if p],
+                "starters": [str(p) for p in (viewer_roster.get("starters") or []) if p],
+                "reserve": [str(p) for p in (viewer_roster.get("reserve") or []) if p],
+            }
+    except Exception:
+        logger.debug("[portfolio-move-done] roster read-back failed", exc_info=True)
+    result = _pb.verify_done(
+        {"platform": plat, "verify": (action or {}).get("verify") or {}},
+        roster_view,
+    )
+    ok = _pb.set_done(user_key, plat, lid, season, week, move_key_v,
+                      bool(result["verified"]), str(result["label"]))
+    return jsonify({
+        "ok": ok, "synced": True,
+        "verified": bool(result["verified"]),
+        "label": str(result["label"]),
+        "time_label": _done_time_label(datetime.now(timezone.utc).isoformat()),
+    })
+
+
+@user_pages_bp.route("/api/portfolio-deep-dive", methods=["POST"])
+@limiter.limit("30/minute")
+def api_portfolio_deep_dive():
+    """Cross-league deep dive for the board: a deterministic narrative
+    composed from the same scan the board renders (the Front Office
+    convention: the basic board is already live and stays live whether
+    this succeeds or fails)."""
+    resp = api_portfolio_actions()
+    if getattr(resp, "status_code", 200) != 200:
+        return resp
+    data = resp.get_json() or {}
+    groups = ((data.get("board") or {}).get("groups")) or []
+    if not groups:
+        return jsonify({"ok": False, "error": "no_board"})
+    total_moves = sum(len(g.get("moves") or []) for g in groups)
+    posture_counts = {"Contend": 0, "Fringe": 0, "Rebuild": 0}
+    moves_by_posture = {"Contend": 0, "Fringe": 0, "Rebuild": 0}
+    locked = 0
+    top_move = None
+    claim_move = None
+    for g in groups:
+        posture = (g.get("meta") or {}).get("posture")
+        if posture in posture_counts:
+            posture_counts[posture] += 1
+        for mv in g.get("moves") or []:
+            if posture in moves_by_posture:
+                moves_by_posture[posture] += 1
+            if (mv.get("timing") or {}).get("locked"):
+                locked += 1
+            if top_move is None or (mv.get("rank") or 99) < (top_move.get("rank") or 99):
+                top_move = dict(mv, _league=g.get("league_name"))
+            if claim_move is None and mv.get("kind") == "waiver":
+                claim_move = dict(mv, _league=g.get("league_name"))
+    bullets = []
+    if top_move:
+        bullets.append(
+            f"Start with Move {top_move.get('rank')}: {top_move.get('title')} "
+            f"({top_move.get('_league')}). {top_move.get('detail') or ''}".strip())
+    bullets.append(
+        f"{posture_counts['Contend']} contending · {posture_counts['Fringe']} fringe · "
+        f"{posture_counts['Rebuild']} rebuilding across {len(groups)} leagues "
+        f"with moves this week.")
+    if moves_by_posture["Contend"]:
+        bullets.append(
+            f"{moves_by_posture['Contend']} of the {total_moves} moves sit in "
+            "contending leagues. Protect those first.")
+    if claim_move:
+        bullets.append(
+            f"One add covers {claim_move.get('_league')}: {claim_move.get('title')}.")
+    if locked:
+        bullets.append(
+            f"{locked} move{'s are' if locked != 1 else ' is'} already locked "
+            "by kickoff. What is left is below.")
+    headline = (f"{total_moves} moves across {len(groups)} leagues. "
+                "Here is the order that protects your contenders.")
+    return jsonify({
+        "ok": True, "headline": headline, "bullets": bullets,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+@user_pages_bp.route("/api/portfolio-insights")
+def api_portfolio_insights():
+    """Rooting Guide + Bye Watch data for My Leagues (v25 insights band).
+
+    Cache-only like the actions scan: cold leagues are skipped and reported
+    in the scan block, never built inline. Not PRO-gated, matching the
+    other insight cards on the page."""
+    from dashboard_services import portfolio_insights as _pins
+    viewer_username = session.get("viewer_username")
+    viewer_user_id = session.get("viewer_user_id")
+    account_id = session.get("account_id")
+    empty = {"ok": True, "rooting": {"windows": []},
+             "bye": {"week": 0, "rows": [], "total_out": 0},
+             "scan": {"total": 0, "scanned": 0, "incomplete": True}}
+    if (not viewer_username or not viewer_user_id) and not account_id:
+        return jsonify(empty)
+    nfl_state = get_nfl_state() or {}
+    season = int(nfl_state.get("season") or datetime.now().year)
+    week = int(nfl_state.get("week") or 0)
+    if not week or nfl_state.get("season_type") not in ("reg", "post"):
+        return jsonify(empty)
+    try:
+        from dashboard_services.accounts import resolve_my_leagues
+        league_inputs, season = resolve_my_leagues(
+            viewer_user_id, account_id, season)
+    except Exception:
+        return jsonify(empty)
+    from utils.scorezone_user import match_viewer_roster
+    from utils.utils import load_week_schedule
+    try:
+        from dashboard_services.api import get_nfl_players
+        nfl_players = get_nfl_players() or {}
+    except Exception:
+        nfl_players = {}
+    try:
+        model_rows = list(get_model_value_table_cached() or [])
+    except Exception:
+        model_rows = []
+    value_by_pid = {}
+    for r in model_rows:
+        if isinstance(r, dict) and r.get("id"):
+            try:
+                value_by_pid[str(r["id"])] = float(r.get("value") or 0)
+            except (TypeError, ValueError):
+                pass
+
+    # Normalized week games (schedule + live overlay from the scores feed).
+    games_norm = []
+    try:
+        sched = list(load_week_schedule(season, week) or [])
+    except Exception:
+        sched = []
+    team_game = {}
+    try:
+        from dashboard_services.api import build_team_game_lookup, get_nfl_scores_for_date
+        from zoneinfo import ZoneInfo as _ZI
+        dates = set()
+        for g in sched:
+            ep = g.get("gameTime_epoch")
+            if ep:
+                dates.add(datetime.fromtimestamp(
+                    float(ep), _ZI("America/New_York")).strftime("%Y%m%d"))
+        for d in dates:
+            try:
+                body = get_nfl_scores_for_date(d) or {}
+                team_game.update(build_team_game_lookup(body))
+            except Exception:
+                continue
+    except Exception:
+        team_game = {}
+    for g in sched:
+        home = str(g.get("home") or "")
+        away = str(g.get("away") or "")
+        gd = None
+        for key in (home, away):
+            if team_game.get(key):
+                gd = team_game[key]
+                break
+        if gd:
+            games_norm.append(_pins.normalize_game(gd))
+        else:
+            ep = g.get("gameTime_epoch")
+            games_norm.append({
+                "home": home, "away": away, "home_pts": None, "away_pts": None,
+                "status": "pre", "game_status": "", "game_quarter": "",
+                "game_clock": "",
+                "epoch": float(ep) if ep else None,
+            })
+
+    next_week = week + 1
+    all_starters = []
+    margins = {}
+    bye_rows = []
+    total_out = 0
+    scanned = 0
+    total = sum(1 for lg in (league_inputs or []) if str(lg.get("league_id") or ""))
+    for lg in (league_inputs or [])[:12]:
+        lid = str(lg.get("league_id") or "")
+        plat = str(lg.get("platform") or "sleeper").lower()
+        lg_season = int(lg.get("season") or season)
+        if not lid:
+            continue
+        try:
+            lctx = get_league_ctx_from_cache(plat, lid, lg_season,
+                                             allow_build=False) or {}
+        except Exception:
+            continue
+        if not lctx:
+            continue
+        rosters = lctx.get("rosters") or []
+        viewer_roster = None
+        if account_id:
+            try:
+                from dashboard_services.accounts import resolve_account_viewer_for_league
+                av = resolve_account_viewer_for_league(
+                    account_id, plat, lid, lg_season,
+                    lctx.get("users") or [], rosters)
+                rid = str((av or {}).get("viewer_roster_id") or "")
+                if rid:
+                    viewer_roster = next(
+                        (r for r in rosters
+                         if str(r.get("roster_id") or "") == rid), None)
+            except Exception:
+                viewer_roster = None
+        if viewer_roster is None:
+            viewer_roster = match_viewer_roster(
+                rosters, team_id=lg.get("team_id"),
+                owner_id=sleeper_owner_id_for_account(
+                    account_id, viewer_user_id, plat))
+        if not viewer_roster:
+            continue
+        scanned += 1
+        league_name = (lctx.get("league") or {}).get("name") or lg.get("name") or lid
+        league_key = f"{plat}|{lid}"
+        starters = [str(p) for p in (viewer_roster.get("starters") or []) if p]
+        roster_positions = lctx.get("roster_positions") or []
+        # Live points per starter from the provider matchup rows.
+        points_by_pid = {}
+        opp_points = None
+        my_points = None
+        try:
+            from dashboard_services.platform_api import get_matchups
+            rows = get_matchups(plat, lid, week, lg_season) or []
+            mine = next((r for r in rows
+                         if str(r.get("roster_id")) == str(viewer_roster.get("roster_id"))),
+                        None)
+            if mine:
+                points_by_pid = {str(k): v for k, v in
+                                 (mine.get("players_points") or {}).items()}
+                my_points = sum(float(points_by_pid.get(p) or 0) for p in starters)
+                mid = mine.get("matchup_id")
+                opp = next((r for r in rows
+                            if r is not mine and mid is not None
+                            and r.get("matchup_id") == mid), None)
+                if opp:
+                    opp_points = sum(
+                        float(v or 0)
+                        for v in (opp.get("players_points") or {}).values())
+        except Exception:
+            points_by_pid = {}
+        proj_map = {}
+        try:
+            pbw = lctx.get("proj_by_week") or {}
+            wk = pbw.get(week) or pbw.get(str(week)) or {}
+            if isinstance(wk, dict):
+                proj_map = {str(k): v for k, v in (wk.get("projections") or {}).items()}
+        except Exception:
+            proj_map = {}
+        for pid in starters:
+            pl = nfl_players.get(pid) or {}
+            all_starters.append({
+                "pid": pid,
+                "name": pl.get("full_name") or pl.get("last_name") or pid,
+                "pos": pl.get("position") or "",
+                "team": str(pl.get("team") or "").upper(),
+                "league_key": league_key,
+                "league_name": league_name,
+                "points": points_by_pid.get(pid),
+                "proj": proj_map.get(pid),
+            })
+        if my_points is not None and opp_points is not None:
+            margins[league_key] = {
+                "league_name": league_name,
+                "my_score": my_points, "opp_score": opp_points,
+                "remaining_names": [], "final": False,
+            }
+        # Bye Watch for next week.
+        try:
+            out = []
+            for i, pid in enumerate(starters):
+                pl = nfl_players.get(pid) or {}
+                bw = pl.get("bye_week")
+                try:
+                    bw = int(bw) if bw is not None else None
+                except (TypeError, ValueError):
+                    bw = None
+                if bw == next_week:
+                    out.append({
+                        "pid": pid,
+                        "name": pl.get("full_name") or pl.get("last_name") or pid,
+                        "pos": pl.get("position") or "",
+                        "slot": roster_positions[i] if i < len(roster_positions) else "",
+                    })
+            starter_set = set(starters)
+            reserve_set = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
+            taxi_set = {str(p) for p in (viewer_roster.get("taxi") or []) if p}
+            bench = []
+            for pid in (viewer_roster.get("players") or []):
+                spid = str(pid)
+                if spid in starter_set or spid in reserve_set or spid in taxi_set:
+                    continue
+                pl = nfl_players.get(spid) or {}
+                bench.append({
+                    "pid": spid,
+                    "name": pl.get("full_name") or pl.get("last_name") or spid,
+                    "pos": pl.get("position") or "",
+                    "value": value_by_pid.get(spid, 0.0),
+                })
+            row_in = {"name": league_name, "platform": plat, "league_id": lid,
+                      "season": lg_season,
+                      "out": out, "bench": bench, "top_fa": {}}
+            row = _pins.bye_row(row_in)
+            if row.get("hole_pos"):
+                rostered = {str(p) for r in rosters for p in (r.get("players") or [])}
+                best = None
+                for r in model_rows:
+                    if not isinstance(r, dict):
+                        continue
+                    if str(r.get("position") or "").upper() != row["hole_pos"]:
+                        continue
+                    rpid = str(r.get("id") or "")
+                    if not rpid or rpid in rostered:
+                        continue
+                    try:
+                        rv = float(r.get("value") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if best is None or rv > best["value"]:
+                        pl = nfl_players.get(rpid) or {}
+                        best = {"pid": rpid, "value": rv,
+                                "name": pl.get("full_name") or r.get("name") or rpid}
+                if best:
+                    row_in["top_fa"] = {row["hole_pos"]: best}
+                    row = _pins.bye_row(row_in)
+            bye_rows.append(row)
+            total_out += row.get("out_count") or 0
+        except Exception:
+            logger.debug("[portfolio-insights] bye row failed", exc_info=True)
+
+    try:
+        from app import _NFL_COLORS as _team_colors
+    except Exception:
+        _team_colors = {}
+    windows = _pins.group_rooting(games_norm, all_starters,
+                                  team_colors=_team_colors)
+    if windows:
+        final_window = windows[-1]
+        final_teams = set()
+        any_live_left = False
+        for card in final_window.get("games") or []:
+            final_teams.add(card.get("away"))
+            final_teams.add(card.get("home"))
+            if card.get("status") != "final":
+                any_live_left = True
+        for s in all_starters:
+            if s.get("team") in final_teams and s.get("league_key") in margins:
+                margins[s["league_key"]]["remaining_names"].append(s.get("name"))
+        # Need lines only while the final window can still change outcomes.
+        final_window["need_lines"] = (
+            _pins.need_lines(margins) if any_live_left else [])
+    return jsonify({
+        "ok": True,
+        "week": week,
+        "season": season,
+        "rooting": {"windows": windows},
+        "bye": {"week": next_week, "rows": bye_rows, "total_out": total_out},
+        "scan": {"total": total, "scanned": scanned,
+                 "incomplete": scanned < total},
+        "updated": datetime.now(timezone.utc).isoformat(),
     })
 
 
