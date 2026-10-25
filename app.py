@@ -41492,6 +41492,15 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             redraft_pct = _sc_pct(_team_rdraft, _rid_int)
             dr_ratio = _team_dratio.get(_rid_int, 1.0)
 
+            # League-relative draft capital (percentile + surplus 1sts),
+            # matching the Teams page grade inputs.
+            _cap_pct_map, _cap_surplus_map = {}, {}
+            if not is_redraft:
+                from dashboard_services.ai.context_builders import (
+                    league_capital_context as _league_capital_context,
+                )
+                _cap_pct_map, _cap_surplus_map = _league_capital_context(picks_by_roster)
+
             grade_data = _calc_grade(
                 flat_players, future_picks,
                 position_ranks=pos_ranks,
@@ -41499,6 +41508,8 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 dynasty_pct_val=dynasty_pct,
                 redraft_pct_val=redraft_pct,
                 dr_ratio=dr_ratio,
+                capital_pct_val=_cap_pct_map.get(str(roster_id)),
+                surplus_firsts_val=_cap_surplus_map.get(str(roster_id)),
                 scoring_type="redraft" if is_redraft else "dynasty",
             )
             grade_label = grade_data.get("grade", "–")

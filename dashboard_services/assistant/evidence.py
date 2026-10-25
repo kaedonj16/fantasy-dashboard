@@ -1235,17 +1235,24 @@ def _roster_grades(ctx, rosters, by_id, flat_by_roster, ranks, mode, num_teams):
 
     picks_by_roster = (ctx or {}).get("picks_by_roster") or {}
     league_redraft = _league_is_redraft(ctx)
+    # League-relative draft capital, mirroring the Teams page inputs;
+    # only dynasty-mode grades carry picks, so only they get capital.
+    from dashboard_services.ai.context_builders import league_capital_context
+    _cap_pct, _cap_surplus = league_capital_context(picks_by_roster)
+    _no_capital = mode == "this_season" or league_redraft
     grades: dict[str, dict] = {}
     for r in rosters:
         rid = str(r.get("roster_id"))
-        picks = [] if (mode == "this_season" or league_redraft) else picks_by_roster.get(rid, [])
+        picks = [] if _no_capital else picks_by_roster.get(rid, [])
         p_ranks = {pos: (ranks.get(pos) or {}).get(rid, num_teams) for pos in CORE_POS}
         g = roster_grade(
             flat_by_roster.get(rid, []), picks,
             position_ranks=p_ranks, num_teams=num_teams,
             dynasty_pct_val=_pct(dyn_totals, rid), redraft_pct_val=_pct(red_totals, rid),
             dr_ratio=dr_ratios.get(rid, 1.0),
-            scoring_type="redraft" if (mode == "this_season" or league_redraft) else "dynasty",
+            capital_pct_val=None if _no_capital else _cap_pct.get(rid),
+            surplus_firsts_val=None if _no_capital else _cap_surplus.get(rid),
+            scoring_type="redraft" if _no_capital else "dynasty",
         )
         if isinstance(g, dict) and g.get("grade") is not None:
             grades[rid] = {"grade": g.get("grade"),
