@@ -47833,6 +47833,46 @@ a, button, [role="button"], [role="tab"], summary, label,
     .mb-stat-row .mb-stat { font-size: 11.5px; }
 }
 
+/* ---- One width per side (Kaedon's screenshot, 2026-10-25): the drive bar
+   spans the player cell PLUS the score column (grid cols 1-2 / 4-5), but
+   the name / team / game text lived only inside the cell column, so the
+   bar stuck out past the text on the outer edge (the cell's 8-12px
+   padding) and the game line ellipsized a full score-column early
+   ("Q4 11:30 14-2..." beside a bar with room for the whole line, G.
+   Bernard's pregame line cut to "Sun 9:30 am @ ..."). Everything on a
+   side now shares the drive bar's box: text insets match the bar's 1px
+   inset, the game line extends across the score column (36px column +
+   7px grid gap = 43px; the space under the score is empty by the time
+   the game line renders), and the stat row takes the bar's inset instead
+   of its old 9px, so a line like "PASS 15/20 189 yds, 1 INT" fits on one
+   line at the same width as the bar above it. ---- */
+.m-combo .mb-cell { padding-inline: 1px; }
+.m-combo .mb-stat-row { padding-inline: 1px; }
+/* max-width:none lifts the legacy .p-game-line cap (100% of the info
+   column) that would otherwise keep the line at cell width despite the
+   negative margin. */
+.m-combo .mb-cell-l .mb-game { margin-right: -43px; max-width: none; }
+/* The right cell's game line is end-aligned (align-self / width:100%),
+   where a negative margin alone only moves the margin box, not the
+   border box: it needs the explicit wider width as well. */
+.m-combo .mb-cell-r .mb-game { margin-left: -43px; max-width: none; width: calc(100% + 43px); }
+
+/* The live dot's pulse ring (.live-dot::after, scale 2.6 on an 8px dot)
+   reaches ~6.4px past the dot on every side, and .mb-game's
+   overflow:hidden sliced it flat on the left and bottom. Live game lines
+   carry their own headroom INSIDE the clipping box: the padding grows
+   the box, the matching negative margins keep the layout -- and the
+   dot's position -- exactly where it was. (On the right cell the
+   headroom is the padding alone: its box already extends 43px left, and
+   shifting its margin would unpin the right edge from the bar's.) */
+.m-combo .mb-game:has(.live-dot) {
+    padding-block: 5px;
+    margin-block: -5px;
+    padding-left: 8px;
+    margin-left: -8px;
+}
+.m-combo .mb-cell-r .mb-game:has(.live-dot) { margin-left: -43px; }
+
 /* ---- Matchup Moments strip (client-injected into .mb-moments) ------------ */
 .mb-moments { margin: 10px 12px 4px; }
 .mb-moments[hidden] { display: none; }

@@ -4,7 +4,7 @@ import logging
 import html
 import json
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from itertools import zip_longest
 from pathlib import Path
@@ -2292,6 +2292,15 @@ def render_matchup_slide(
                 if kickoff > now_dt:
                     # future kick within same date – treat as scheduled
                     status_code = "0"
+                elif status_code == "0":
+                    # Kickoff today is already past but the feed still
+                    # reports scheduled: the game has started. The 9:30am
+                    # international game sat in this state for hours
+                    # (2026-10-25: PIT starters showed a pregame line and
+                    # no stats beside real points). Inside the ~3h game
+                    # window call it live; past it, final -- the final
+                    # branch reads the real score from the scores API.
+                    status_code = "2" if now_dt - kickoff >= timedelta(hours=3) else "1"
             except ValueError:
                 logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
@@ -2516,7 +2525,16 @@ def render_matchup_slide(
         if is_bye:
             stats = None
         elif game is not None:
-            if not game_has_started(game):
+            # The pid status is Sleeper's verdict on THIS player and it wins
+            # over a lagging schedule row: when it says the game is live or
+            # final, a schedule game that still reads "not started" (the
+            # 9:30am PIT game, 2026-10-25) must not suppress the box score --
+            # the trust gate below still vets the line itself, and the
+            # Sleeper gap fill underneath can rebuild it from the pid.
+            _game_started = game_has_started(game) or status in (
+                STATUS_FINAL, STATUS_IN_PROGRESS,
+            )
+            if not _game_started:
                 stats = None
             elif not past_week and not box_score_line_is_trusted(game, raw_stat_entry):
                 # Tank01's cached schedule can lag "Final" for a game that has
@@ -2584,9 +2602,8 @@ def render_matchup_slide(
         # (Footballguys missed them, or a stale leftover was just dropped) still
         # gets a box score from the Sleeper per-player feed, keyed by their pid.
         if stats is None and not is_bye and pid and nfl and pos in ("QB", "RB", "WR", "TE", "K", "DEF"):
-            _played = (
-                game_has_started(game) if game is not None
-                else status in (STATUS_FINAL, STATUS_IN_PROGRESS)
+            _played = game_has_started(game) or status in (
+                STATUS_FINAL, STATUS_IN_PROGRESS,
             )
             if _played:
                 stats = _sleeper_skill_stat_line(
