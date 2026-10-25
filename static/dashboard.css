@@ -38172,19 +38172,53 @@ button:disabled {
     --rz-card-soft: var(--card-soft);
     --rz-fg: var(--text);
     --rz-chip-bg: rgba(120, 120, 140, 0.18);
-    --rz-nav-h: 62px;
+    /* Sticky offset for .rz-header = the .top-nav's real height, measured in
+       a Playwright harness with the real nav markup + this stylesheet
+       (Chromium, safe-area insets 0): 99px desktop (>=1025px, 180px logo),
+       67px at 769-1024px (102px logo), 59px at <=768px (92px logo, pills and
+       utilities hidden). The old flat 62px matched NONE of them: on phones it
+       left a slit under the nav that scrolled feed content showed through,
+       and on desktop the stuck header slid 37px up behind the nav. Each
+       value is (measured height - nav top padding) + that same padding
+       written as max(padding, env(safe-area-inset-top)) -- the exact formula
+       the nav's own padding-top uses -- so in a standalone PWA, where the
+       inset grows the nav, the offset grows with it 1:1. */
+    --rz-nav-h: calc(87px + max(12px, env(safe-area-inset-top)));
     /* Live green for ScoreZone live states (pill status, live dot, impact
        lines). One token instead of hard-coded #16a34a copies, so dark mode
        brightens it in exactly one place below. */
     --rz-live: #16a34a;
 }
+
+/* --rz-nav-h per nav breakpoint (see the token comment above): the nav
+   shrinks its logo at 1024px and again at 768px, so the sticky offset must
+   step with it or the header is off by the difference at every width. */
+@media (max-width: 1024px) {
+    :root,
+    .rz-page {
+        --rz-nav-h: calc(55px + max(12px, env(safe-area-inset-top)));
+    }
+}
+
+@media (max-width: 768px) {
+    :root,
+    .rz-page {
+        --rz-nav-h: calc(49px + max(10px, env(safe-area-inset-top)));
+    }
+}
+
 .rz-page {
     background: var(--rz-bg);
     min-height: calc(100vh - 56px);
     min-height: calc(100dvh - 56px);
     /* Bottom space clears the fixed mobile dock via the shared token
-       (0 on desktop, so the old 80px hard-code stays as the floor). */
-    padding: 0 0 max(80px, var(--dock-safe-bottom));
+       (0 on desktop, so the hard-code stays as the floor). v3 look: the
+       last feed card and the scorebar must also clear the assistant FAB,
+       which floats 14px above the dock at 46px tall -- hence dock-safe
+       + 66px (14 gap + 46 FAB + a breath) whenever the dock token is the
+       larger term; the 110px floor covers the desktop FAB (66px bottom
+       offset + 46px). */
+    padding: 0 0 max(110px, calc(var(--dock-safe-bottom) + 66px));
     font-family: inherit;
     color: var(--rz-text);
     width: 100%;
@@ -38292,8 +38326,10 @@ button:disabled {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: 8px;
     position: sticky;
-    top: var(--rz-nav-h, 62px);
+    top: var(--rz-nav-h, 99px);
     z-index: var(--z-sticky);
 }
 
@@ -38303,8 +38339,19 @@ button:disabled {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--rz-red), rgba(248, 113, 113, .4));
+    height: 1px;
+    background: var(--rz-border);
+}
+
+/* Soft shadow only while the header is actually stuck under the nav
+   (.is-stuck is toggled from scorezone.js by scroll position); at rest the
+   header is finished by the hairline above alone. */
+.rz-header {
+    transition: box-shadow .18s ease;
+}
+
+.rz-header.is-stuck {
+    box-shadow: 0 10px 22px -12px rgba(15, 23, 42, .28);
 }
 
 /* Full-bleed the alert + header bars to the viewport edges (flush), regardless
@@ -38319,6 +38366,10 @@ button:disabled {
     display: flex;
     align-items: center;
     gap: 9px;
+    /* The brand is the page identity: it never shrinks or ellipsizes to make
+       room for status chips. When the header runs out of room the right-hand
+       group wraps below instead (see .rz-header-right). */
+    flex: 0 0 auto;
 }
 
 /* The identity dot is static/muted by default and only "lives" (red + pulse)
@@ -38343,6 +38394,7 @@ button:disabled {
     letter-spacing: .12em;
     text-transform: uppercase;
     color: var(--rz-text);
+    white-space: nowrap;
 }
 
 .rz-brand-week {
@@ -38355,20 +38407,32 @@ button:disabled {
     background: var(--rz-surface);
     border: 1px solid var(--rz-border);
     border-radius: var(--radius-sm);
+    white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 .rz-header-right {
     display: flex;
     align-items: center;
     gap: 8px;
+    /* Grows to fill its line, and when brand + chips no longer fit (the
+       stale badge appearing at 390px used to squeeze the brand to "BR ..."
+       and wrap the week pill) the whole group wraps onto its own full-width
+       line under the brand instead of compressing it. */
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    justify-content: flex-end;
+    min-width: 0;
 }
 
 .rz-live-chip {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    background: var(--rz-red-soft);
-    border: 1px solid rgba(220, 38, 38, .30);
+    /* v3 look: no pink pill -- the pulsing dot + red text carry LIVE alone. */
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: var(--radius-pill);
     padding: 3px 11px;
     font-size: 11px;
@@ -38789,7 +38853,11 @@ button:disabled {
 .rz-mc-hero {
     flex: 0 0 auto;
     min-width: 190px;
-    max-width: 240px;
+    /* v3 look: the cap matches the phone rule (300px). The one-line center
+       status ("3 playing · 2 for them") is wider than the old stack, and at
+       the old 240px cap it squeezed the side columns until the scores
+       themselves clipped. */
+    max-width: 300px;
     width: 62vw;
     background: var(--rz-card);
     border: 1px solid var(--rz-border);
@@ -38842,42 +38910,30 @@ button:disabled {
     min-width: 52px;
     padding: 0 2px;
 }
-.rz-mc-state {
-    font-size: 11px;
-    font-weight: 900;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: var(--rz-muted);
-    line-height: 1;
-}
-.rz-mc-state.live { color: var(--rz-red); }
-.rz-mc-state.toplay { color: var(--rz-muted); }
-.rz-mc-state.final { color: var(--rz-muted); }
-.rz-mc-state.neutral { color: var(--rz-muted); opacity: .6; }
-.rz-mc-to-play-counts,
-.rz-mc-playing-counts {
-    font-size: 13px;
-    font-weight: 800;
-    color: var(--rz-text);
-    font-variant-numeric: tabular-nums;
-    line-height: 1.1;
+/* v3 look: the center status is one muted line ("3 playing · 2 for them")
+   instead of the LIVE / counts / PLAYING stack. */
+.rz-mc-line {
     display: flex;
     align-items: center;
-    gap: 3px;
-}
-.rz-mc-playing-counts { color: var(--rz-red); }
-.rz-mc-to-play-divider {
+    justify-content: center;
+    gap: 5px;
+    font-size: 10.5px;
+    font-weight: 700;
     color: var(--rz-muted);
-    opacity: .55;
-    font-weight: 400;
+    letter-spacing: -.01em;
+    white-space: nowrap;
+    line-height: 1.2;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
 }
-.rz-mc-substate {
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: var(--rz-muted);
-    line-height: 1;
+
+.rz-mc-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--rz-red);
+    flex-shrink: 0;
+    animation: rz-pulse 1.6s ease-in-out infinite;
 }
 
 .rz-mch-league {
@@ -38903,7 +38959,7 @@ button:disabled {
 .rz-mch-owner {
     font-size: 11px;
     font-weight: 700;
-    color: var(--rz-muted);
+    color: var(--rz-text);
     /* Wrap to a second line: ellipsizing cut the viewer's own team name
        inside its card at phone widths ("Caleb's Ca..."). */
     white-space: normal;
@@ -38913,20 +38969,24 @@ button:disabled {
 }
 
 .rz-mch-owner.viewer {
-    color: var(--rz-green);
+    /* v3 look: the viewer's name is ink like every other owner -- green is
+       data (a positive delta), not an identity color. */
+    color: var(--rz-text);
     font-weight: 800;
 }
 
 .rz-mch-score {
     font-size: 22px;
-    font-weight: 900;
-    color: var(--rz-muted);
+    font-weight: 800;
+    color: var(--rz-text);
     font-variant-numeric: tabular-nums;
     line-height: 1;
 }
 
+/* The lead is weight only, never a color. */
 .rz-mch-score.lead {
     color: var(--rz-text);
+    font-weight: 900;
 }
 
 .rz-mch-vs {
@@ -39341,8 +39401,9 @@ button:disabled {
 
 .rz-tab-btn.active {
     background: var(--rz-card);
-    color: var(--rz-red);
-    box-shadow: var(--shadow-sm);
+    /* v3 look: active tab is ink + a navy inset underline, not red text. */
+    color: var(--rz-text);
+    box-shadow: var(--shadow-sm), inset 0 -2px 0 var(--accent);
 }
 
 .rz-tab-btn:hover:not(.active) {
@@ -39498,6 +39559,16 @@ button:disabled {
     display: flex;
     align-items: center;
     gap: 5px;
+}
+
+.rz-player-stats {
+    font-size: 11px;
+    color: var(--rz-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+    font-variant-numeric: tabular-nums;
 }
 
 .rz-live-dot-sm {
@@ -40013,7 +40084,6 @@ button:disabled {
     padding: 9px 12px 9px 10px;
     background: var(--rz-card);
     border: 1px solid var(--rz-border);
-    border-left: 4px solid var(--rz-muted);
     border-radius: var(--radius);
     transition: background .14s, transform .1s, box-shadow .14s;
     animation: none;
@@ -40024,22 +40094,10 @@ button:disabled {
     animation: none;
 }
 
-/* Event type left-border colors */
-.rz-event.gain {
-    border-left-color: var(--rz-green);
-}
-
-.rz-event.target {
-    border-left-color: #a855f7;
-}
-
-.rz-event.neg {
-    border-left-color: var(--rz-red);
-}
-
+/* v3 look: no colored left bar and no TD amber wash -- the card's own 1px
+   border is the only frame, and green/red appear only as data (deltas). */
 .rz-event.td {
-    border-left-color: var(--rz-amber);
-    background: linear-gradient(100deg, rgba(245, 158, 11, .09) 0%, transparent 60%);
+    background: var(--rz-card);
 }
 
 /* MY TEAM events get a subtle green left tint */
@@ -40076,19 +40134,22 @@ button:disabled {
 }
 
 /* ── Avatar ──────────────────────────── */
+/* v3 look: one neutral tile behind every headshot (and behind the initials
+   fallback), no per-position tints. */
 .rz-event-avatar {
     width: 38px;
     height: 38px;
     border-radius: var(--radius);
     overflow: hidden;
     flex-shrink: 0;
-    background: var(--rz-surface);
+    background: var(--rz-card-soft);
+    color: var(--rz-muted);
     position: relative;
     box-shadow: inset 0 0 0 1px var(--rz-border);
 }
 
 .rz-event.is-mine .rz-event-avatar {
-    box-shadow: inset 0 0 0 1.5px rgba(22, 163, 74, .5);
+    box-shadow: inset 0 0 0 1px var(--rz-border);
 }
 
 .rz-headshot {
@@ -40125,31 +40186,8 @@ button:disabled {
     letter-spacing: .02em;
 }
 
-/* Position-keyed avatar background colors */
-.rz-av-qb {
-    background: rgba(59, 130, 246, .15);
-    color: #2563eb;
-}
-
-.rz-av-rb {
-    background: rgba(22, 163, 74, .15);
-    color: var(--rz-live);
-}
-
-.rz-av-wr {
-    background: rgba(147, 51, 234, .15);
-    color: #7c3aed;
-}
-
-.rz-av-te {
-    background: rgba(245, 158, 11, .15);
-    color: #d97706;
-}
-
-.rz-av-k, .rz-av-def {
-    background: var(--rz-surface);
-    color: var(--rz-muted);
-}
+/* The rz-av-* classes remain in the markup for identity, but the tile is
+   the single neutral .rz-event-avatar treatment above for every position. */
 
 /* ── Body ─────────────────────────────── */
 .rz-event-body {
@@ -40181,7 +40219,8 @@ button:disabled {
 }
 
 .rz-event.td .rz-event-desc {
-    color: #d97706;
+    /* v3 look: TD descriptions are ink, not amber -- color is data only. */
+    color: var(--rz-text);
     font-weight: 700;
     opacity: 1;
 }
@@ -40217,8 +40256,9 @@ button:disabled {
 }
 
 .rz-event-tag.mine {
-    background: rgba(22, 163, 74, .14);
-    color: var(--rz-live);
+    /* v3 look: MY TEAM is the site navy pill, not green -- green is data. */
+    background: var(--accent);
+    color: var(--on-accent);
 }
 
 .rz-event-tag.opp {
@@ -40227,6 +40267,8 @@ button:disabled {
 }
 
 /* ── Points ───────────────────────────── */
+/* v3 look: no box inside the card -- the delta column is borderless and
+   separated from the play body by one hairline divider. */
 .rz-event-delta {
     display: flex;
     flex-direction: column;
@@ -40234,9 +40276,10 @@ button:disabled {
     gap: 3px;
     min-width: 66px;
     padding: 6px 8px;
-    border: 1px solid var(--rz-border);
-    border-radius: var(--radius);
-    background: var(--rz-surface);
+    border: none;
+    border-left: 1px solid var(--rz-border);
+    border-radius: 0;
+    background: transparent;
     font-size: 15px;
     font-weight: 900;
     flex-shrink: 0;
@@ -40288,13 +40331,17 @@ button:disabled {
 }
 
 /* Zero-value play (sack, incompletion, unscored stat): muted, not green. */
+.rz-event-delta.zero {
+    color: var(--rz-muted);
+}
+
 .rz-event-delta.zero .rz-event-delta-pts {
     color: var(--rz-muted);
 }
 
+/* TD deltas take the same sign colors as every other play (no amber). */
 .rz-event.td .rz-event-delta {
     font-size: var(--text-md);
-    color: #d97706;
 }
 
 /* ── Sleeper-style situation strip (down/dist @ spot · Q clock · score) ── */
@@ -40331,8 +40378,9 @@ button:disabled {
     color: var(--rz-fg, inherit);
 }
 .rz-event-rz {
-    background: var(--rz-red);
-    color: #fff;
+    /* v3 look: the RZ tag is game context, not data -- navy, not red fill. */
+    background: var(--accent);
+    color: var(--on-accent);
     font-weight: 800;
     font-size: 11px;
     line-height: 1;
@@ -40348,22 +40396,23 @@ button:disabled {
 .rz-event-yd.pos { color: var(--rz-green); }
 .rz-event-yd.neg { color: var(--rz-red); }
 .rz-event-yd.zero { color: var(--rz-muted); }
-/* Running per-player stat line through the play (e.g. "QB · 2/3 CMP, 13 YD"). */
+/* Running per-player stat line through the play (e.g. "QB · 2/3 cmp, 13 yd").
+   v3 look: shortened lowercase format at 10.5px, single line. */
 .rz-event-cume {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 600;
     color: var(--rz-muted);
     margin-top: 1px;
+    letter-spacing: -.01em;
     font-variant-numeric: tabular-nums;
 }
-.rz-event-contributors {
+/* Secondary contributors fold into the meta block as its second line, in
+   the same muted style/size as the cume line itself. */
+.rz-event-cume2 {
     display: flex;
     flex-wrap: wrap;
     gap: 3px 10px;
-    margin-top: 3px;
-    color: var(--rz-muted);
-    font-size: 11px;
-    font-weight: 700;
+    margin-top: 1px;
 }
 .rz-event-contributor {
     display: inline-flex;
@@ -40372,6 +40421,7 @@ button:disabled {
     white-space: nowrap;
 }
 .rz-event-contributor strong { font-variant-numeric: tabular-nums; }
+.rz-event-cume2 .rz-event-contributor strong { font-weight: 700; }
 .rz-event-contributor strong.pos { color: var(--rz-green); }
 .rz-event-contributor strong.neg { color: var(--rz-red); }
 /* Two-point conversion tag on a secondary contributor (e.g. "Wentz 2PT +2.0"). */
@@ -41833,13 +41883,17 @@ a.rz-demo-link:hover {
     outline: 2px solid var(--rz-accent, #6366f1);
     outline-offset: 2px;
 }
+/* v3 look: selected = navy fill + white text, the site's selected language
+   (same as the nav and scope toggle) -- no red ring, no pink fill. */
 .rz-game-pill.is-selected {
-    border-color: var(--rz-red);
-    background: var(--rz-red-soft);
-    box-shadow: 0 0 0 1px var(--rz-red);
+    border-color: var(--accent);
+    background: var(--accent);
+    box-shadow: none;
+    color: var(--on-accent);
 }
 .rz-game-pill-all {
-    min-width: 52px;
+    /* Regularized into the game-pill family (was a 52px sliver). */
+    min-width: 68px;
     align-items: center;
     justify-content: center;
 }
@@ -41849,7 +41903,7 @@ a.rz-demo-link:hover {
     letter-spacing: .08em;
     color: var(--rz-muted);
 }
-.rz-game-pill-all.is-selected .rz-gp-all { color: var(--rz-red); }
+.rz-game-pill-all.is-selected .rz-gp-all { color: var(--on-accent); }
 .rz-gp-team {
     display: flex;
     align-items: center;
@@ -41895,6 +41949,13 @@ a.rz-demo-link:hover {
 .rz-game-pill.is-live .rz-gp-status { color: var(--rz-live); }
 .rz-game-pill.is-final .rz-gp-abv,
 .rz-game-pill.is-final .rz-gp-score { color: var(--rz-muted); }
+/* Selected pill children sit on navy: names/scores go on-accent white, the
+   team text label stays a quieter white, and the live status reads in the
+   light green the dark nav uses (after the rules above so it wins ties). */
+.rz-game-pill.is-selected .rz-gp-abv,
+.rz-game-pill.is-selected .rz-gp-score { color: var(--on-accent); }
+.rz-game-pill.is-selected .rz-gp-logo-txt { color: var(--on-accent); opacity: .75; }
+.rz-game-pill.is-selected .rz-gp-status { color: #86efac; }
 /* ── Box score button + sheet (filtered-game board) ── */
 /* The button lives inside the filtered-game board, so it only exists when the
    user is filtered to one NFL game. The sheet mounts on document.body. */
@@ -51310,6 +51371,18 @@ em.gneg { background: var(--loss); }
     height: 22px;
     object-fit: contain;
     display: block;
+}
+/* ScoreZone only (v3 look): the assistant FAB shrinks to a 46px BR-mark
+   tile so it stops covering feed cards on the live page. Scoped through
+   the page shell's data-page hook that app.py already emits for this
+   route; the launcher stays 56px on every other page. */
+body:has(.page-shell[data-page="scorezone"]) .br-asst-launcher {
+    width: 46px;
+    height: 46px;
+}
+body:has(.page-shell[data-page="scorezone"]) .br-asst-launcher img {
+    width: 36px;
+    height: 18px;
 }
 .br-asst-dot {
     position: absolute;

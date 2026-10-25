@@ -55,6 +55,14 @@ def test_clock_freshness_behavioral_harness():
     _run_harness("scorezone_clock_harness.mjs")
 
 
+def test_stale_badge_behavioral_harness():
+    """Covers the stale-badge contract: young data + one failed poll raises
+    no badge, >180s-old data does (even while polls succeed with 304s), a
+    latched badge element is cleared by the 304 path itself, and the first
+    fresh payload clears it with the collect clock as its "updated" time."""
+    _run_harness("scorezone_stale_harness.mjs")
+
+
 # ── First-load freshness ─────────────────────────────────────────────────────
 def test_first_load_kicks_off_immediate_catchup_on_game_day():
     """On a live game day the boot must not wait out the first poll interval --

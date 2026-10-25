@@ -114,6 +114,10 @@
   var _lastDataAt = null;    // wall-clock of the last APPLIED upstream snapshot (true data
                              // freshness) -- distinct from _lastSuccessAt (a poll that merely
                              // completed, which may carry an error payload or restore last-good).
+  var _lastCollectAt = null; // the DATA's own clock: the server collect time (payload
+                             // updated_at) of the last applied snapshot. The stale badge
+                             // ages THIS, never the poll's completion time, and a 304
+                             // (content unchanged) must not advance it.
   var _visListenersWired = false; // guard so resume-on-visible listeners are wired only once
   // Every network request is bounded. The server's live budget is roughly a
   // ~12s scoreboard fetch plus a couple of short box-score calls, so the client
@@ -122,6 +126,13 @@
   // was cleared the moment fetch() returned headers). A stream additionally has
   // an inactivity timeout so a feed that stalls between chunks cannot pin
   // _streaming true and disable refresh/polling indefinitely.
+  // Stale-badge threshold: the badge means the DATA path is behind, not that
+  // one poll hiccuped. The server collect cache rebuilds every ~60s and the
+  // store poller collects every ~60s, so healthy data is never older than
+  // ~2 minutes; 180s sits comfortably above that cadence and matches the
+  // server-side store_stale threshold (STALE_THRESHOLD_S in
+  // utils/scorezone_store.py), so client and server agree on "stale".
+  var _STALE_BADGE_MS = 180000;
   var _RZ_FETCH_DEADLINE_MS  = 25000; // single league / aggregate user fetch
   var _RZ_STREAM_DEADLINE_MS = 90000; // whole My Leagues portfolio stream (up to 12 leagues)
   var _RZ_STREAM_IDLE_MS     = 20000; // no stream chunk for this long -> treat as stalled
@@ -565,21 +576,22 @@
   }
 
   // Center status column shared by every fantasy matchup card / row.
+  // v3 look: one muted line instead of the LIVE / counts / PLAYING stack --
+  // "3 playing · 2 for them" with a small live dot, "4 to play · 3 for
+  // them", or "Final". Counts and wording still come from _matchupState,
+  // and _matchupAria keeps the full screen-reader summary.
   function _matchupCenterHtml(a, b) {
     var ms = _matchupState(a, b);
     if (ms.state === 'live') {
-      return '<div class="rz-mc-state live">LIVE</div>'
-        + '<div class="rz-mc-playing-counts">' + ms.liveA
-        + '<span class="rz-mc-to-play-divider">|</span>' + ms.liveB + '</div>'
-        + '<div class="rz-mc-substate">PLAYING</div>';
+      return '<div class="rz-mc-line"><span class="rz-mc-dot"></span>'
+        + ms.liveA + ' playing · ' + ms.liveB + ' for them</div>';
     }
     if (ms.state === 'toplay') {
-      return '<div class="rz-mc-state toplay">TO PLAY</div>'
-        + '<div class="rz-mc-to-play-counts">' + ms.toPlayA
-        + '<span class="rz-mc-to-play-divider">|</span>' + ms.toPlayB + '</div>';
+      return '<div class="rz-mc-line">'
+        + ms.toPlayA + ' to play · ' + ms.toPlayB + ' for them</div>';
     }
-    if (ms.state === 'final') return '<div class="rz-mc-state final">FINAL</div>';
-    return '<div class="rz-mc-state neutral">–</div>';
+    if (ms.state === 'final') return '<div class="rz-mc-line">Final</div>';
+    return '<div class="rz-mc-line">–</div>';
   }
 
   // Minimal HTML-attribute escape for aria-label text.
@@ -1062,28 +1074,96 @@
   function _cumeLine(pos, c) {
     if (!c) return '';
     var p = [];
-    var yd = function(n) { return _n(n) + ' YD'; };
+    var yd = function(n) { return _n(n) + ' yd'; };
     if (_n(c.pass_att)) {
-      p.push(_n(c.pass_cmp) + '/' + _n(c.pass_att) + ' CMP');
+      p.push(_n(c.pass_cmp) + '/' + _n(c.pass_att) + ' cmp');
       p.push(yd(c.pass_yds));
-      if (_n(c.pass_td)) p.push(_n(c.pass_td) + ' TD');
-      if (_n(c.int)) p.push(_n(c.int) + ' INT');
-      if (_n(c.carries)) p.push(_n(c.rush_yds) + ' RUSH');
+      if (_n(c.pass_td)) p.push(_n(c.pass_td) + ' td');
+      if (_n(c.int)) p.push(_n(c.int) + ' int');
+      if (_n(c.carries)) p.push(_n(c.rush_yds) + ' rush yd');
     } else if (_n(c.carries)) {
-      p.push(_n(c.carries) + ' CAR');
+      p.push(_n(c.carries) + ' car');
       p.push(yd(c.rush_yds));
-      if (_n(c.rush_td)) p.push(_n(c.rush_td) + ' TD');
-      if (_n(c.rec)) { p.push(_n(c.rec) + ' REC'); p.push(yd(c.rec_yds)); }
-      if (_n(c.rec_td)) p.push(_n(c.rec_td) + ' REC TD');
+      if (_n(c.rush_td)) p.push(_n(c.rush_td) + ' td');
+      if (_n(c.rec)) { p.push(_n(c.rec) + ' rec'); p.push(yd(c.rec_yds)); }
+      if (_n(c.rec_td)) p.push(_n(c.rec_td) + ' rec td');
     } else if (_n(c.rec) || _n(c.targets)) {
-      p.push(_n(c.rec) + '/' + _n(c.targets) + ' REC');
+      p.push(_n(c.rec) + '/' + _n(c.targets) + ' rec');
       p.push(yd(c.rec_yds));
-      if (_n(c.rec_td)) p.push(_n(c.rec_td) + ' TD');
+      if (_n(c.rec_td)) p.push(_n(c.rec_td) + ' td');
     } else if (_n(c.fgm) || _n(c.xpm)) {
-      if (_n(c.fgm)) p.push(_n(c.fgm) + ' FG');
-      if (_n(c.xpm)) p.push(_n(c.xpm) + ' XP');
+      if (_n(c.fgm)) p.push(_n(c.fgm) + ' fg');
+      if (_n(c.xpm)) p.push(_n(c.xpm) + ' xp');
     }
     return p.join(', ');
+  }
+  // Points allowed for a DEF row: the opponent's current score, which the
+  // payload already carries on player_info (home_pts / away_pts). Only for a
+  // game that has started (live/final); null when it can't be established.
+  function _defPtsAllowed(pid) {
+    var p = (_state.player_info || {})[pid] || {};
+    var code = String(p.game_code || '');
+    if (code !== '1' && code !== '2') return null;
+    var team = String(p.team || '').toUpperCase();
+    var raw = null;
+    if (team && team === String(p.home || '').toUpperCase()) raw = p.away_pts;
+    else if (team && team === String(p.away || '').toUpperCase()) raw = p.home_pts;
+    if (raw === '' || raw == null) return null;
+    var n = parseFloat(raw);
+    return isNaN(n) ? null : n;
+  }
+  // Cumulative stat line for a My Team / Opp roster row, built from the
+  // player's box-score stat_line in player_info -- the same cumulative line
+  // the row's points are computed from, so the evidence sits under the name.
+  // Same lowercase grammar as _cumeLine, shaped per position for a full-game
+  // line (attempts for QB/K, targets for pass catchers, points allowed for
+  // DEF). Only stat groups the data actually has are shown; a player with no
+  // stat_line yet (game not started) or a genuinely empty line gets '' and
+  // the row renders no stat line at all -- never an all-zeros placeholder.
+  function _rowStatLine(pid) {
+    var c = _statLine(pid);
+    if (!c) return '';
+    var pos = _pos(pid);
+    var yd = function(n) { return _n(n) + ' yd'; };
+    if (pos === 'DEF') {
+      var d = [];
+      if (_n(c.sacks)) d.push(_n(c.sacks) + (_n(c.sacks) === 1 ? ' sack' : ' sacks'));
+      if (_n(c.def_int)) d.push(_n(c.def_int) + ' int');
+      if (_n(c.fum_rec)) d.push(_n(c.fum_rec) + ' fum rec');
+      if (_n(c.def_td)) d.push(_n(c.def_td) + ' def td');
+      var pa = _defPtsAllowed(pid);
+      if (pa != null) d.push(pa + ' pts allowed');
+      return d.join(', ');
+    }
+    if (pos === 'K') {
+      var k = [];
+      if (_n(c.fgm) || _n(c.fga)) k.push(_n(c.fga) ? (_n(c.fgm) + '/' + _n(c.fga) + ' fg') : (_n(c.fgm) + ' fg'));
+      if (_n(c.xpm) || _n(c.xpa)) k.push(_n(c.xpa) ? (_n(c.xpm) + '/' + _n(c.xpa) + ' xp') : (_n(c.xpm) + ' xp'));
+      return k.join(', ');
+    }
+    var groups = [];
+    if (_n(c.pass_att) || _n(c.pass_yds) || _n(c.pass_td) || _n(c.int)) {
+      var p = [];
+      if (_n(c.pass_att)) p.push(_n(c.pass_cmp) + '/' + _n(c.pass_att) + ' cmp');
+      p.push(yd(c.pass_yds));
+      if (_n(c.pass_td)) p.push(_n(c.pass_td) + ' td');
+      if (_n(c.int)) p.push(_n(c.int) + ' int');
+      groups.push(p.join(', '));
+    }
+    if (_n(c.carries)) {
+      var r = [_n(c.carries) + ' car', yd(c.rush_yds)];
+      if (_n(c.rush_td)) r.push(_n(c.rush_td) + ' td');
+      groups.push(r.join(', '));
+    }
+    if (_n(c.rec) || _n(c.rec_yds) || _n(c.rec_td)) {
+      var v = [_n(c.rec) + ' rec', yd(c.rec_yds)];
+      if (_n(c.rec_td)) v.push(_n(c.rec_td) + ' td');
+      groups.push(v.join(', '));
+    }
+    var line = groups.join(' · ');
+    if (_n(c.targets)) line = line ? (line + ' · ' + _n(c.targets) + ' tgt') : (_n(c.targets) + ' tgt');
+    if (_n(c.fum_lost)) line = line ? (line + ' · ' + _n(c.fum_lost) + ' fum lost') : (_n(c.fum_lost) + ' fum lost');
+    return line;
   }
   // Red zone = the ball is inside the *opponent's* 20. yardLine reads like
   // "SEA 16"; it's the red zone only when that team is not the offense's own.
@@ -1703,6 +1783,11 @@
           kickoffEpoch: _kickoffEpoch(gid, newData, pid),
           cume: play.cume || null,
           cumeStatLine: play.cume || null,
+          // Provider-stamped score after this play (ESPN homeScore/awayScore
+          // carried through by the extractor); null when the source did not
+          // send one, in which case _scoreStrForEvent derives it.
+          scoreHome: (play.score_home != null ? play.score_home : null),
+          scoreAway: (play.score_away != null ? play.score_away : null),
           totalPts: totalPts,
           scoring: scoring,
           playState: playState,
@@ -1783,7 +1868,17 @@
       
       // Filter out invalid contributions for primary selection
       var validContribs = contribs.filter(function(c) { return !c.isInvalid; });
-      
+
+      // Provider-stamped score after this play, from any of its rows (all
+      // rows of one play share the extractor's base stamp).
+      var stamped = null;
+      for (var _ci = 0; _ci < contribs.length; _ci++) {
+        if (contribs[_ci].scoreHome != null && contribs[_ci].scoreAway != null) {
+          stamped = contribs[_ci];
+          break;
+        }
+      }
+
       // If all contributions are invalid, mark play as nullified
       var playState = group.playState || 'VALID';
       var isNullified = playState !== 'VALID' || validContribs.length === 0;
@@ -1829,6 +1924,8 @@
           statLine: {},
           cume: null,
           cumeStatLine: null,
+          scoreHome: stamped ? stamped.scoreHome : null,
+          scoreAway: stamped ? stamped.scoreAway : null,
           totalPts: recalcTotal !== null ? recalcTotal : 0,
           playId: playKey,
           fromPbp: true,
@@ -1885,6 +1982,8 @@
         statLine: primary.line,
         cume: primary.cume,
         cumeStatLine: primary.cumeStatLine,
+        scoreHome: stamped ? stamped.scoreHome : null,
+        scoreAway: stamped ? stamped.scoreAway : null,
         totalPts: primary.totalPts,
         playId: playKey,
         fromPbp: true,
@@ -2739,10 +2838,12 @@
     var gs = _gameStatus(pid), line = _gameLine(pid), isLive = gs.type === 'live';
     var dot = isLive ? '<span class="rz-live-dot-sm"></span>' : '';
     var meta = '<span class="rz-meta-game ' + gs.type + '">' + (line || gs.label || '') + '</span>';
+    var stats = _rowStatLine(pid);
     return (
       '<div class="rz-player-row' + (isBench ? ' bench-row' : '') + '" data-pid="' + pid + '">'
       + _posHtml(_pos(pid))
       + '<div class="rz-player-info"><div class="rz-player-name">' + _name(pid) + _injuryDot(pid) + '</div>'
+      + (stats ? '<div class="rz-player-stats">' + stats + '</div>' : '')
       + '<div class="rz-player-meta">' + dot + meta + '</div></div>'
       + '<div class="rz-player-pts' + (isLive ? ' live-pts' : '') + '" data-pid="' + pid + '">'
       + (pts != null ? _fmt(pts) : '–') + '</div></div>'
@@ -3273,6 +3374,96 @@
     });
   }
 
+  // ── Score as of the play ─────────────────────────────────────────────────
+  // A play card shows the game score AS OF that play -- the score resulting
+  // after the play, the standard play-by-play convention -- never the game's
+  // current score repeated on every card. Sources, in order:
+  //   1. The provider stamp on the play's own rows (score_home / score_away,
+  //      carried through additively by the extractors; ESPN gamepackage
+  //      plays send homeScore / awayScore per play).
+  //   2. Derivation: walk the game's play rows in seq order, accumulating
+  //      NFL scoring per team (TD 6, FG 3, PAT 1, successful 2PT 2) from the
+  //      modeled stat lines. The walk is trusted ONLY when its final totals
+  //      reconcile exactly with the game's known current score: a scoring
+  //      play the stat model cannot see (a safety is not modeled) breaks the
+  //      reconciliation, and that game's cards fall back to stamped-only
+  //      rather than printing a wrong running score.
+  //   3. Neither available: no score line on the card. Silent beats wrong.
+  var _asOfCache = {}; // gid -> {sig, map|null}
+  function _playNflPoints(rows) {
+    var pts = {};
+    var td = {}, fg = {}, xp = {}, conv = {};
+    (rows || []).forEach(function(r) {
+      if (!r) return;
+      var st = r.play_state || 'VALID';
+      if (st === 'NO_PLAY' || st === 'NULLIFIED' || st === 'OVERTURNED') return;
+      var t = String(r.team || '').toUpperCase();
+      if (!t) return;
+      var line = r.stat_line || {};
+      if (r.is_td || _n(line.pass_td) || _n(line.rush_td) || _n(line.rec_td) || _n(line.def_td)) td[t] = true;
+      if (_n(line.fgm)) fg[t] = true;
+      if (_n(line.xpm)) xp[t] = true;
+      if (_n(line.pass_2pt) || _n(line.rush_2pt) || _n(line.rec_2pt)) conv[t] = true;
+    });
+    [td, fg, xp, conv].forEach(function(set, i) {
+      var val = [6, 3, 1, 2][i];
+      Object.keys(set).forEach(function(t) { pts[t] = (pts[t] || 0) + val; });
+    });
+    return pts;
+  }
+  function _asOfScoreMap(gid) {
+    if (!gid) return null;
+    var info = _nflGameInfo(gid);
+    if (!info || !info.away || !info.home) return null;
+    var anchorA = parseFloat(info.away_pts);
+    var anchorH = parseFloat(info.home_pts);
+    if (!isFinite(anchorA) || !isFinite(anchorH)) return null;
+    var rows = (_state.pbp_by_game || {})[gid] || [];
+    var sig = rows.length + '|' + anchorA + '|' + anchorH;
+    var cached = _asOfCache[gid];
+    if (cached && cached.sig === sig) return cached.map;
+    var byKey = {};
+    var keys = [];
+    rows.forEach(function(r, i) {
+      if (!r) return;
+      var key = _nflPlayKey(r, gid);
+      if (!byKey[key]) {
+        var s = parseFloat(r.seq);
+        byKey[key] = { rows: [], seq: isFinite(s) ? s : i, idx: i };
+        keys.push(key);
+      }
+      byKey[key].rows.push(r);
+    });
+    keys.sort(function(a, b) {
+      return (byKey[a].seq - byKey[b].seq) || (byKey[a].idx - byKey[b].idx);
+    });
+    var runA = 0, runH = 0;
+    var map = {};
+    keys.forEach(function(key) {
+      var pts = _playNflPoints(byKey[key].rows);
+      runA += pts[info.away] || 0;
+      runH += pts[info.home] || 0;
+      map[key] = { away: runA, home: runH };
+    });
+    var result = (runA === anchorA && runH === anchorH) ? map : null;
+    _asOfCache[gid] = { sig: sig, map: result };
+    return result;
+  }
+  function _scoreStrForEvent(ev, pi) {
+    if (!pi || !pi.away || !pi.home) return '';
+    // A nullified play never scored: its stamp (if any) can reflect the
+    // pre-review ruling, so nullified cards use derivation only.
+    if (!ev.isNullified && ev.scoreAway != null && ev.scoreHome != null) {
+      return pi.away + ' ' + ev.scoreAway + '–' + ev.scoreHome + ' ' + pi.home;
+    }
+    var map = _asOfScoreMap(ev.gameId);
+    if (map && ev.playId && map[ev.playId]) {
+      var s = map[ev.playId];
+      return pi.away + ' ' + s.away + '–' + s.home + ' ' + pi.home;
+    }
+    return '';
+  }
+
   function _eventHtml(ev, animate) {
     var tagLabel = ev.mine ? (_scope === 'user' && ev.league ? ev.league : 'MY TEAM')
                  : ev.opp  ? (_scope === 'user' && ev.league ? ('OPP · ' + ev.league) : 'OPP')
@@ -3299,10 +3490,9 @@
     var rzBadge = _isInRedZone(ev.yardLine, ev.nflTeam)
       ? '<span class="rz-event-rz">RZ</span>' : '';
     var pi = (_state.player_info || {})[ev.pid] || {};
-    var scoreStr = '';
-    if (pi.away && pi.home && !(pi.away_pts === '' && pi.home_pts === '')) {
-      scoreStr = pi.away + ' ' + (pi.away_pts || '0') + '–' + (pi.home_pts || '0') + ' ' + pi.home;
-    }
+    // Score as of THIS play (see _scoreStrForEvent) -- not the game's
+    // current score, which made every card in a game read identically.
+    var scoreStr = _scoreStrForEvent(ev, pi);
     var situationHtml = (situation || rzBadge)
       ? '<div class="rz-event-meta">'
         + '<span class="rz-event-situation">' + situation + rzBadge + '</span>'
@@ -3316,16 +3506,15 @@
     else if ('pass_yds' in sl && !_n(sl.int)) ydVal = _n(sl.pass_yds);
     var ydChip = (ydVal != null)
       ? ' <span class="rz-event-yd ' + (ydVal > 0 ? 'pos' : (ydVal < 0 ? 'neg' : 'zero')) + '">'
-        + (ydVal > 0 ? '+' : '') + ydVal + ' YD</span>'
+        + (ydVal > 0 ? '+' : '') + ydVal + ' yd</span>'
       : '';
     // Running per-player stat line through this play (Sleeper-style context).
+    // v3 look: secondary contributors fold into the meta block as its second
+    // line (.rz-event-cume2, same muted style/size) instead of their own row.
     var cumeStr = _cumeLine(ev.pos, ev.cume);
-    var cumeHtml = cumeStr
-      ? '<div class="rz-event-cume">' + ev.pos + ' · ' + cumeStr + '</div>'
-      : '';
     var secondary = _secondaryContributors(ev);
     var secondaryHtml = secondary.length
-      ? '<div class="rz-event-contributors">' + secondary.map(function(c) {
+      ? '<div class="rz-event-cume2">' + secondary.map(function(c) {
           var pts = _n(c.pts);
           // A conversion contributor is tagged 2PT so the extra points read as a
           // two-point conversion rather than an unexplained bump on a TD card.
@@ -3334,6 +3523,12 @@
             + '<strong class="' + (pts > 0 ? 'pos' : (pts < 0 ? 'neg' : 'zero')) + '">'
             + (pts > 0 ? '+' : '') + _fmtFantasyDelta(pts) + '</strong></span>';
         }).join('') + '</div>'
+      : '';
+    var cumeHtml = (cumeStr || secondaryHtml)
+      ? '<div class="rz-event-cume">'
+        + (cumeStr ? ev.pos + ' · ' + cumeStr : '')
+        + secondaryHtml
+        + '</div>'
       : '';
     var isDef = String(ev.pos || '').toUpperCase() === 'DEF';
     var defTeam = ev.nflTeam || (isDef ? ev.pid : '') || '';
@@ -3367,7 +3562,6 @@
       + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + ydChip + '</div>'
       + cumeHtml
-      + secondaryHtml
       + '</div>'
       + '<div class="rz-event-delta ' + deltaCls + '">'
       + ((scoreStr || clockStr) ? '<div class="rz-event-delta-game">'
@@ -3886,6 +4080,42 @@
       + '</div>';
   }
 
+  // ── Stale badge ────────────────────────────────────────────────────────────
+  // The badge derives from the DATA's age (server collect clock), never from
+  // whether the last poll happened to fail: one dropped request on a phone
+  // must not brand healthy data stale, and a dead server collect must read
+  // stale even while every poll "succeeds" with a 304. It is re-synced on
+  // every poll resolution (200, 304, failure) and on every 1s tick, so it
+  // appears the moment the data crosses the threshold and clears on the
+  // first poll whose snapshot is fresh again.
+  function _noteCollectAt(data) {
+    var t = data && parseFloat(data.updated_at || 0);
+    _lastCollectAt = (t > 0) ? t * 1000 : Date.now();
+  }
+
+  function _dataIsStale() {
+    return _lastCollectAt != null && (Date.now() - _lastCollectAt) > _STALE_BADGE_MS;
+  }
+
+  function _syncStaleBadge() {
+    if (!root || !root.querySelector) return;
+    var headerRight = root.querySelector('.rz-header-right');
+    if (!headerRight) return;
+    var badge = headerRight.querySelector('.rz-data-stale');
+    if (_dataIsStale()) {
+      var staleText = 'Stale' + (_lastCollectAt ? ' · updated ' + new Date(_lastCollectAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'rz-stale-badge rz-data-stale';
+        var timerEl = document.getElementById('rz-timer');
+        headerRight.insertBefore(badge, (timerEl && timerEl.parentNode === headerRight) ? timerEl : null);
+      }
+      if (badge.textContent !== staleText) badge.textContent = staleText;
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+
   // Patch a mounted panel without replacing the panel itself. Hidden panels are
   // deliberately refreshed too, so opening a tab never reveals stale scores.
   function _patchPanel(selector, html) {
@@ -3915,12 +4145,11 @@
       if (liveChipEl && nextChip && liveChipEl.outerHTML !== nextChip.outerHTML) liveChipEl.replaceWith(nextChip);
       else if (!liveChipEl && nextChip) headerRight.insertBefore(nextChip, timerEl);
       else if (liveChipEl && !nextChip) liveChipEl.remove();
-      var stale = headerRight.querySelector('.rz-stale-badge');
-      if (_lastPollFailed) {
-        var staleText = 'Stale' + (_lastDataAt ? ' · updated ' + new Date(_lastDataAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '');
-        if (!stale) { stale=document.createElement('span'); stale.className='rz-stale-badge'; headerRight.insertBefore(stale, timerEl); }
-        if (stale.textContent !== staleText) stale.textContent = staleText;
-      } else if (stale) stale.remove();
+      // The stale badge follows the data's age, not the last poll's fate;
+      // _syncStaleBadge targets .rz-data-stale specifically so it can never
+      // rewrite or remove the separate "Scores delayed" scoreboard chip,
+      // which shares the .rz-stale-badge styling.
+      _syncStaleBadge();
       timerEl = document.getElementById('rz-timer');
       if (timerEl) { timerEl.textContent = _lastPollFailed ? '↻' : _fmtTimer(_countdown); timerEl.setAttribute('aria-label', 'Refresh ScoreZone data'); }
     }
@@ -4127,7 +4356,7 @@
     // so it stays discoverable without occupying a permanent nav slot.
     var demoLink = (idle && !_isDemo)
       ? '<a class="rz-demo-link" href="' + location.pathname + '?demo=1">Try the demo</a>' : '';
-    var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">Stale' + (_lastDataAt ? ' · updated ' + new Date(_lastDataAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '') + '</span>' : '';
+    var staleChip = _dataIsStale() ? '<span class="rz-stale-badge rz-data-stale">Stale' + (_lastCollectAt ? ' · updated ' + new Date(_lastCollectAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '') + '</span>' : '';
     // ESPN scoreboard degradation surfaced by the server (scoreboard_status:
     // "stale"/"failed"). Some games may be missing live scores; say so in the
     // header instead of degrading silently.
@@ -4520,6 +4749,13 @@
         _lastSuccessAt = Date.now();
         _lastDataAt = Date.now();
         _countdown = _pollInterval();
+        // A 304 proves our snapshot is byte-identical to the server's, so
+        // _lastCollectAt deliberately does NOT advance: if the server collect
+        // itself has stalled, the data keeps aging and the badge must say so.
+        // But the badge DOM must still be re-synced here -- this path returns
+        // without _partialUpdate(), which is exactly how a badge raised by
+        // one failed poll used to latch on through endless healthy 304s.
+        _syncStaleBadge();
         _rzLog('refresh-304', { scope: myScope, ms: Date.now() - startedAt });
         return;
       }
@@ -4563,6 +4799,7 @@
       _scopeLoadError = null;
       _lastSuccessAt = Date.now();
       _lastDataAt = Date.now(); // real upstream data applied
+      _noteCollectAt(newData); // the badge ages the payload's collect clock
       _loadingScope = false;
       _loadingPlays = false;
       // Apply state before detect so owner/league labels read the new payload.
@@ -4804,6 +5041,7 @@
     _scopeLoadError = null;
     _lastSuccessAt = Date.now();
     _lastDataAt = Date.now();
+    _noteCollectAt(base);
     _loadingScope = false;
     _loadingPlays = false;
     _scopeJustSwitched = false;
@@ -4920,6 +5158,8 @@
     _countdown--;
     var el = document.getElementById('rz-timer');
     if (el) el.textContent = _fmtTimer(_countdown);
+    _syncStaleBadge(); // data can cross the stale threshold between polls
+    _syncHeaderStuck(); // shadow tracks the sticky header even without scroll events
     if (_countdown <= 0) {
       // Never let an automatic poll pile onto an in-flight request; retry shortly.
       if (_inflight) { _countdown = 1; }
@@ -4981,6 +5221,9 @@
     var _bootSnapAge = _snapshotAgeMs();
     _lastDataAt = _bootSnapAge >= 0 ? Date.now() - _bootSnapAge : Date.now();
     _lastSuccessAt = _lastDataAt;
+    // Same clock for the stale badge: the snapshot's server collect time.
+    var _bootCollect = parseFloat(_state.updated_at || 0);
+    _lastCollectAt = _bootCollect > 0 ? _bootCollect * 1000 : _lastDataAt;
   }
 
   _render();
@@ -5219,6 +5462,21 @@
   }
 
   // ── End game box score sheet ──
+
+  // Stuck-header shadow (v3 look): the sticky ScoreZone header carries a
+  // soft shadow only while it is actually stuck under the nav. The header is
+  // stuck once its viewport top reaches its sticky top offset (the computed
+  // `top`, i.e. --rz-nav-h resolved); the listener re-queries the header on
+  // every scroll because _render() rebuilds it.
+  function _syncHeaderStuck() {
+    if (!root || !root.querySelector) return;
+    var header = root.querySelector('.rz-header');
+    if (!header) return;
+    var stuckTop = parseFloat(window.getComputedStyle(header).top) || 0;
+    var stuck = header.getBoundingClientRect().top <= stuckTop + 1;
+    header.classList.toggle('is-stuck', stuck);
+  }
+  window.addEventListener('scroll', _syncHeaderStuck, { passive: true });
 
   window.addEventListener('resize', _updateHeroArrows);
 })();

@@ -39,6 +39,9 @@ Output shape (one entry per fantasy-relevant player on the play)::
       "team": str,
       "stat_line": dict,    # same keys as rz_stat_line_from_ps
       "is_td": bool,
+      # Optional, only when the provider sends a per-play score:
+      "score_home": int,    # game score AFTER this play
+      "score_away": int,
     }
 """
 
@@ -51,6 +54,21 @@ def _s(v: Any) -> str:
     if v is None:
         return ""
     return str(v).strip()
+
+
+def _play_score_val(v: Any) -> int | None:
+    """Parse a provider's per-play score field (ESPN gamepackage plays carry
+    ``homeScore`` / ``awayScore``: the game score AFTER that play). Returns
+    None when the provider did not send a usable value, so callers can omit
+    the stamp instead of inventing one."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return int(v)
+    s = _s(v)
+    if s.lstrip("-").isdigit():
+        return int(s)
+    return None
 
 
 def _normalize_name(name: str) -> str:
@@ -643,6 +661,14 @@ def extract_pbp_plays(
             "is_no_play": is_no_play,
             "play_state": play_state,
         }
+        # Per-play score stamp, when the provider sends one (the score AFTER
+        # this play). Additive and optional: play cards fall back to a
+        # reconciled derivation when no stamp exists.
+        _sh = _play_score_val(_first(play, "homeScore", "home_score"))
+        _sa = _play_score_val(_first(play, "awayScore", "away_score"))
+        if _sh is not None and _sa is not None:
+            base["score_home"] = _sh
+            base["score_away"] = _sa
 
         emitted = 0
         pstats = play.get("playerStats") or play.get("player_stats") or {}
@@ -2400,6 +2426,15 @@ def extract_espn_pbp_plays(
                 "is_td": is_td,
                 "source": "espn",
             }
+            # Per-play score stamp: ESPN's play objects carry the game score
+            # AFTER the play (homeScore / awayScore). Carry it through
+            # additively so play cards can show the score as of the play
+            # instead of the game's current score; omitted when absent.
+            _sh = _play_score_val(play.get("homeScore"))
+            _sa = _play_score_val(play.get("awayScore"))
+            if _sh is not None and _sa is not None:
+                base["score_home"] = _sh
+                base["score_away"] = _sa
             seq += 1
             is_no_play = bool(re.search(r"\bno play\b", parse_text, re.IGNORECASE))
             if is_no_play:
@@ -2801,6 +2836,11 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
         ),
         "pass_td":  nest_or_flat(passing, "passTD", "pass_td", "passingTD", "passTd"),
         "int":      nest_or_flat(passing, "int", "interceptions", "passInterceptions", "ints"),
+        # Attempts/completions: recorded by the box score but unscored, so
+        # _lineToPts ignores them; they exist so roster rows can show the
+        # full cumulative line ("19/28 cmp, 212 yd") the points came from.
+        "pass_att": nest_or_flat(passing, "passAttempts", "passAtt", "attempts", "pass_att"),
+        "pass_cmp": nest_or_flat(passing, "passCompletions", "passCmp", "completions", "pass_cmp"),
         "carries":  nest_or_flat(rushing, "carries", "rushAttempts", "rushAtt"),
         "rush_yds": nest_or_flat(
             rushing, "rushYds", "rushYards", "rush_yds", "rushingYards"
@@ -2817,9 +2857,11 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
         "fum_lost": fum_lost,
         # Kicker fields
         "fgm":      fgm,
+        "fga":      nest_or_flat(kicking, "fgAttempted", "fga", "fieldGoalsAttempted", "fgAtt"),
         "fg_yds":   fg_yds,
         "fg_long":  fg_long,
         "xpm":      nest_or_flat(kicking, "xpm", "xpMade", "extraPointsMade"),
+        "xpa":      nest_or_flat(kicking, "xpAttempted", "xpa", "extraPointsAttempted", "xpAtt"),
     }
 
 
