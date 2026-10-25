@@ -888,6 +888,117 @@ def _powerhouse_rooms_ok(
     return True
 
 
+def _pick_round(pk: dict) -> int:
+    """Round of a future pick, parsed exactly as the grade always has:
+    from the pick id ("2027_1_03" -> parts[1]), with the display string
+    ("2027 1st" / "2027 1.01") as fallback. Unparseable -> 3."""
+    display = str(pk.get("display") or pk.get("id") or "")
+    raw = str(pk.get("id") or "")
+    parts = raw.split("_") if "_" in raw else []
+    try:
+        return int(parts[1]) if len(parts) >= 2 else (
+            1 if "1st" in display or "1." in display else 2
+        )
+    except Exception:
+        return 3
+
+
+def _pick_capital_total(future_picks: list[dict]) -> tuple[int, int]:
+    """(weighted capital total, firsts) for one team's future picks.
+
+    Weights: 1st = 100, 2nd = 40, later rounds = 10. This is the single
+    source for both capital_score (total / 3, capped at 100) and the
+    league-wide capital percentile, so the two can never drift apart.
+    """
+    capital = 0
+    firsts = 0
+    for pk in future_picks:
+        rnd = _pick_round(pk)
+        if rnd == 1:
+            capital += 100
+            firsts += 1
+        elif rnd == 2:
+            capital += 40
+        else:
+            capital += 10
+    return capital, firsts
+
+
+def _pick_season(pk: dict) -> int | None:
+    """Future season a pick belongs to: the explicit ``season`` field
+    (provider rows), else the pick id's first segment ("2027_1_03"),
+    else a 4-digit year in the display string. None when unknown."""
+    season = pk.get("season")
+    if season not in (None, ""):
+        try:
+            return int(season)
+        except (TypeError, ValueError):
+            pass
+    raw = str(pk.get("id") or "")
+    parts = raw.split("_") if "_" in raw else []
+    if parts:
+        try:
+            return int(parts[0])
+        except (TypeError, ValueError):
+            pass
+    display = str(pk.get("display") or "").replace(".", " ").replace("_", " ")
+    for tok in display.split():
+        if len(tok) == 4 and tok.isdigit() and tok[:2] in ("19", "20"):
+            return int(tok)
+    return None
+
+
+def _pick_is_first(pk: dict) -> bool:
+    """True for a 1st-round pick. The explicit ``round`` field (provider
+    rows) wins; otherwise the id/display parse the grade has always used."""
+    rnd = pk.get("round")
+    if rnd not in (None, ""):
+        try:
+            return int(rnd) == 1
+        except (TypeError, ValueError):
+            pass
+    return _pick_round(pk) == 1
+
+
+def league_pick_baseline(picks_by_roster: dict) -> int:
+    """Baseline future 1sts every team starts with: one per distinct
+    future season present anywhere in the league's pick map."""
+    seasons: set[int] = set()
+    for picks in (picks_by_roster or {}).values():
+        for pk in picks or []:
+            season = _pick_season(pk)
+            if season is not None:
+                seasons.add(season)
+    return len(seasons)
+
+
+def league_capital_context(picks_by_roster: dict) -> tuple[dict, dict]:
+    """League-relative capital inputs for calculate_roster_grade.
+
+    Returns (capital_pct_by_key, surplus_firsts_by_key), keyed like
+    picks_by_roster. capital_pct is the fraction of teams with a strictly
+    smaller weighted capital total (n-1 denominator), the same formula as
+    the dynasty/redraft percentiles. surplus_firsts is a team's 1sts
+    minus the league baseline (one per future season), so a team holding
+    only its own untouched picks has surplus 0 no matter how many
+    seasons of picks it holds.
+    """
+    totals: dict = {}
+    surplus: dict = {}
+    baseline = league_pick_baseline(picks_by_roster)
+    for key, picks in (picks_by_roster or {}).items():
+        picks = picks or []
+        totals[key] = _pick_capital_total(picks)[0]
+        surplus[key] = sum(1 for pk in picks if _pick_is_first(pk)) - baseline
+    ordered = sorted(totals.values())
+    n = max(len(ordered) - 1, 1)
+    pct = {
+        key: sum(1 for v in ordered if v < total) / n
+        for key, total in totals.items()
+    }
+    return pct, surplus
+
+
 def _compute_win_window(
     avg_age: float,
     firsts: int,
@@ -900,6 +1011,8 @@ def _compute_win_window(
     cliff_share: float = 0.0,
     position_ranks: dict | None = None,
     num_teams: int = 12,
+    capital_pct: float | None = None,
+    surplus_firsts: int | None = None,
 ) -> str:
     """
     Classify a team's competitive window purely from roster construction.
@@ -917,6 +1030,10 @@ def _compute_win_window(
     elite_count  – players worth >= 700
     capital_score – 0-100 draft-capital score from the grade (pick depth, not just 1sts)
     cliff_share  – share of top-8 value held by players aged 29+
+    capital_pct  – 0-1 percentile of weighted pick capital vs the league
+                   (None = no league capital context)
+    surplus_firsts – future 1sts beyond the one-per-future-season baseline
+                   every team starts with (None = not provided)
 
     Exactly 10 labels, decided in order (first match wins): Full Rebuild,
     Retooling, Rebuilding, Powerhouse, Win-Now, Contender, Contender
@@ -926,14 +1043,31 @@ def _compute_win_window(
     prime  = 26.5 < avg_age <= 28.5
     aging  = avg_age > 28.5
 
+    # Capital tests. With league context (capital_pct given) they are
+    # LEAGUE-RELATIVE: raw totals inflate every team that simply kept its
+    # own picks (one untouched season of picks already scores 53, three
+    # max the absolute score), so "loaded" has to mean surplus vs the
+    # league. Without league context the original absolute branches apply
+    # verbatim - fallback parity for the AI renderer / trade surfaces is
+    # a settled carve-out, do not "fix" it here.
+    if capital_pct is not None:
+        _surplus = surplus_firsts if surplus_firsts is not None else 0
+        _full_rebuild_capital = _surplus >= 2 or capital_pct >= 0.85
+        _retooling_capital = _surplus >= 1 or capital_pct >= 0.65
+        _treadmill_no_capital = capital_pct < 0.40
+    else:
+        _full_rebuild_capital = firsts >= 3 or capital_score >= 80
+        _retooling_capital = firsts >= 2 or capital_score >= 50
+        _treadmill_no_capital = capital_score < 34
+
     # ── Transitional / negative ───────────────────────────────────────────────
 
     # Full Rebuild - deliberate asset accumulation: pick capital + weak current roster
-    if dynasty_pct <= 0.45 and (firsts >= 3 or capital_score >= 80):
+    if dynasty_pct <= 0.45 and _full_rebuild_capital:
         return "Full Rebuild"
 
     # Retooling - have picks AND aging/declining profile (trading away the peak)
-    if (firsts >= 2 or capital_score >= 50) and (aging or (prime and dr_ratio <= 0.90)):
+    if _retooling_capital and (aging or (prime and dr_ratio <= 0.90)):
         return "Retooling"
 
     # Rebuilding - weak on both dynasty and projected scoring, no tank capital
@@ -989,7 +1123,7 @@ def _compute_win_window(
 
     # Treadmill - aging, no elite core, no pick capital, not good enough:
     # stuck in the middle with no clear way up
-    if aging and elite_count == 0 and capital_score < 34 and dynasty_pct < 0.55:
+    if aging and elite_count == 0 and _treadmill_no_capital and dynasty_pct < 0.55:
         return "Treadmill"
 
     # Crossroads - everything else: average across the board, but holding a
@@ -1006,6 +1140,8 @@ def calculate_roster_grade(
     dynasty_pct_val: float = -1.0,   # 0-1 percentile of team's dynasty value (-1 = not provided)
     redraft_pct_val: float = 0.5,    # 0-1 percentile of team's redraft value (scoring projection)
     dr_ratio: float = 1.0,           # median(dynasty/redraft) for top starters
+    capital_pct_val: float | None = None,   # 0-1 percentile of weighted pick capital vs league (None = no league capital context)
+    surplus_firsts_val: int | None = None,  # future 1sts beyond the one-per-season baseline (None = not provided)
     # Deprecated season-result params kept for call-site compatibility but not used in window logic
     pf_pct_val: float = 0.5,
     win_rate: float | None = None,
@@ -1059,24 +1195,9 @@ def calculate_roster_grade(
     deep_positions = sum(1 for cnt in pos_counts.values() if cnt >= 2)
     depth_score = min(deep_positions * 25, 100)
 
-    # Capital Score - future picks weighted
-    capital = 0
-    firsts = 0
-    for pk in future_picks:
-        display = str(pk.get("display") or pk.get("id") or "")
-        raw = str(pk.get("id") or "")
-        parts = raw.split("_") if "_" in raw else []
-        try:
-            rnd = int(parts[1]) if len(parts) >= 2 else (1 if "1st" in display or "1." in display else 2)
-        except Exception:
-            rnd = 3
-        if rnd == 1:
-            capital += 100
-            firsts += 1
-        elif rnd == 2:
-            capital += 40
-        else:
-            capital += 10
+    # Capital Score - future picks weighted (single source: the helper
+    # also feeds the league capital percentile, so they cannot drift)
+    capital, firsts = _pick_capital_total(future_picks)
     capital_score = min(int(capital / 3), 100)
 
     # Elite Core Score - players above 700
@@ -1097,8 +1218,17 @@ def calculate_roster_grade(
         top3_share = 0.0
 
     # Roster shape tag - at most one, first match wins. Descriptive only;
-    # it does not feed the grade or the window.
-    if capital_score >= 67:
+    # it does not feed the grade or the window. PICK-LOADED follows the
+    # same split as the window's capital tests: with league context it
+    # needs a top-quartile capital percentile AND at least one surplus
+    # 1st (raw totals tag every team that kept its own picks); without
+    # league context the legacy absolute rule applies verbatim.
+    if capital_pct_val is not None:
+        _surplus_firsts = surplus_firsts_val if surplus_firsts_val is not None else 0
+        _pick_loaded = capital_pct_val >= 0.75 and _surplus_firsts >= 1
+    else:
+        _pick_loaded = capital_score >= 67
+    if _pick_loaded:
         roster_shape = "PICK-LOADED"
     elif cliff_share >= 0.40:
         roster_shape = "CLIFF RISK"
@@ -1202,6 +1332,8 @@ def calculate_roster_grade(
             cliff_share=cliff_share,
             position_ranks=position_ranks,
             num_teams=num_teams,
+            capital_pct=capital_pct_val,
+            surplus_firsts=surplus_firsts_val,
         )
     else:
         # Fallback for callers without league context (AI renderer, trade strategy)
@@ -1236,6 +1368,8 @@ def calculate_roster_grade(
             "age_score": age_score,
             "depth_score": depth_score,
             "capital_score": capital_score,
+            "capital_pct": round(capital_pct_val, 3) if capital_pct_val is not None else None,
+            "surplus_firsts": surplus_firsts_val,
             "elite_score": elite_score,
             "rank_score": rank_score,
             "avg_age": round(avg_age, 1),
@@ -2387,6 +2521,12 @@ def build_power_rankings_context(ctx: dict) -> dict:
     _dynasty_pct_fn = _make_pct_fn(_team_dynasty_total)
     _redraft_pct_fn = _make_pct_fn(_team_redraft_total)
 
+    # League-relative draft capital for the window classifier (see
+    # league_capital_context). Redraft leagues carry no tradeable picks.
+    _cap_pct_by_roster, _surplus_by_roster = league_capital_context(
+        {} if is_redraft else (ctx.get("picks_by_roster") or {})
+    )
+
     # ── All-play win % per roster (the in-season rank signal) ──────────────────
     # Actual record is heavily schedule-luck-driven. All-play -- how you'd fare
     # against every other team each week -- is the live ranking. Falls back to
@@ -2611,6 +2751,8 @@ def build_power_rankings_context(ctx: dict) -> dict:
                 dynasty_pct_val=_dynasty_pct_fn(rid_int),
                 redraft_pct_val=_redraft_pct_fn(rid_int),
                 dr_ratio=_team_dr_ratio.get(rid_int, 1.0),
+                capital_pct_val=_cap_pct_by_roster.get(rid),
+                surplus_firsts_val=_surplus_by_roster.get(rid),
                 num_teams=len(rosters),
                 scoring_type=scoring_type,
             )

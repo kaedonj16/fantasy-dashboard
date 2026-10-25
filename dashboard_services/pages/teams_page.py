@@ -332,6 +332,13 @@ def build_teams_body(ctx: dict) -> str:
     _dynasty_pct = _make_pct_fn(_team_dynasty_total)
     _redraft_pct = _make_pct_fn(_team_redraft_total)
 
+    # League-relative draft capital (percentile + surplus 1sts vs the
+    # one-per-season baseline), computed once for every roster. Empty
+    # for redraft leagues (picks_by_roster was zeroed above), which
+    # leaves the grades on the legacy capital rules there.
+    from dashboard_services.ai.context_builders import league_capital_context
+    _capital_pct, _surplus_firsts = league_capital_context(picks_by_roster)
+
     def _build_mode_assets(by_id_m, rank_label_key_m, scoring_m, is_redraft_m):
         """Cards HTML + drawer payload for one grading mode.
 
@@ -574,6 +581,8 @@ def build_teams_body(ctx: dict) -> str:
                 dynasty_pct_val=_dynasty_pct(r_id),
                 redraft_pct_val=_redraft_pct(r_id),
                 dr_ratio=_team_dr_ratio.get(r_id, 1.0),
+                capital_pct_val=None if is_redraft_m else _capital_pct.get(str(r_id)),
+                surplus_firsts_val=None if is_redraft_m else _surplus_firsts.get(str(r_id)),
                 scoring_type=scoring_m,
             )
 

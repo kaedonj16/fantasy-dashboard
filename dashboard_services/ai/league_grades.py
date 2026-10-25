@@ -41,6 +41,7 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
         _team_value_axes,
         calculate_roster_grade,
         ctx_scoring_type,
+        league_capital_context,
         league_format_value_lookup,
         redraft_window_label,
     )
@@ -184,6 +185,10 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
     picks_by_roster = ctx.get("picks_by_roster") or {}
     picks = picks_by_roster.get(str(_vid), [])
     p_ranks = {pos: pos_rank[pos].get(_vid, n_teams) for pos in _POS_ORDER}
+    # League-relative draft capital (percentile + surplus 1sts) so the
+    # window/shape capital tests measure hoarding vs the league, not raw
+    # totals. Redraft grades carry no capital, like the Teams page.
+    _cap_pct_by_roster, _surplus_by_roster = league_capital_context(picks_by_roster)
 
     grade = calculate_roster_grade(
         flat_players,
@@ -193,6 +198,8 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
         dynasty_pct_val=dynasty_pct(_vid),
         redraft_pct_val=redraft_pct(_vid),
         dr_ratio=team_dr_ratio.get(_vid, 1.0),
+        capital_pct_val=None if _is_redraft else _cap_pct_by_roster.get(str(_vid)),
+        surplus_firsts_val=None if _is_redraft else _surplus_by_roster.get(str(_vid)),
         scoring_type=scoring,
     )
 
