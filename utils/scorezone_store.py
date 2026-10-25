@@ -531,6 +531,27 @@ def _build_name_maps(nfl_players: dict, teams: set[str]):
     return name_to_pid, player_meta_by_pid
 
 
+def _build_def_pid_map(nfl_players: dict) -> dict[str, str]:
+    """Team abbreviation -> fantasy DST pid from the global player index.
+
+    Sleeper-style DEF entries carry position "DEF" and their pid IS the
+    starter pid roster slots use, so DST rows emitted by the PBP extractors
+    can be keyed exactly like any other starter's rows.
+    """
+    from utils.nfl import canon_team
+
+    out: dict[str, str] = {}
+    for pid, p in (nfl_players or {}).items():
+        if not isinstance(p, dict):
+            continue
+        if str(p.get("position") or "") != "DEF":
+            continue
+        team = canon_team(p.get("team")) or ""
+        if team:
+            out[str(team).upper()] = str(pid)
+    return out
+
+
 def _in_nfl_game_window(now=None) -> bool:
     """True when NFL games should be live or just final (US/Eastern).
 
@@ -635,6 +656,7 @@ def poll_once() -> dict:
                 season=season,
                 week=week,
                 name_to_pid=name_to_pid,
+                team_to_def_pid=_build_def_pid_map(nfl_players),
                 player_meta_by_pid=meta,
                 live=g["live"],
                 final=g["final"],
@@ -720,6 +742,142 @@ def _leader_loop(poll_interval: float = 15.0, idle_interval: float = 60.0) -> No
             except Exception:
                 pass
             time.sleep(30)
+
+
+# ---------------------------------------------------------------------------
+# Store freshness + bounded web-tier fallback (item: poller SPOF)
+#
+# Collection normally belongs to the scorezone-store-poll cron / the elected
+# in-app leader. If that poller dies (cron failure, deploy orphan), every
+# reader of the store silently serves stale plays. Readers can ask for a
+# fallback collect: it only fires while games are actually live AND the
+# store is stale beyond the threshold, it is throttled per process, and the
+# collect itself runs under the SAME advisory leader lock the real poller
+# holds, so a fallback can never run concurrently with (or stampede
+# alongside) the cron. This does not fix the poller or Render OOM; it keeps
+# one dead cron from freezing ScoreZone until someone notices.
+# ---------------------------------------------------------------------------
+
+STALE_THRESHOLD_S = 180.0
+_FALLBACK_THROTTLE_S = 120.0
+_fallback_attempts: dict = {}
+
+
+def latest_observed_ts(season: int, week: int | None = None) -> float:
+    """Newest observed_at (epoch) in the store for a season/week, 0 if none."""
+    from dashboard_services.db import get_conn
+
+    try:
+        with get_conn() as conn:
+            _ensure_table(conn)
+            if week is not None:
+                row = conn.execute(
+                    "SELECT EXTRACT(EPOCH FROM MAX(observed_at)) AS ts "
+                    "FROM redzone_plays WHERE season = %s AND week = %s",
+                    (int(season), int(week)),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT EXTRACT(EPOCH FROM MAX(observed_at)) AS ts "
+                    "FROM redzone_plays WHERE season = %s",
+                    (int(season),),
+                ).fetchone()
+    except Exception as exc:
+        logger.warning("[scorezone-store] freshness read failed: %s", exc)
+        return 0.0
+    if not row:
+        return 0.0
+    ts = row["ts"] if isinstance(row, dict) else row[0]
+    try:
+        return float(ts or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def store_is_stale(
+    season: int,
+    week: int | None = None,
+    *,
+    now: float | None = None,
+    threshold: float = STALE_THRESHOLD_S,
+) -> bool:
+    """True when the newest stored play is older than ``threshold`` seconds."""
+    latest = latest_observed_ts(season, week)
+    if latest <= 0:
+        return True
+    return (time.time() if now is None else now) - latest > threshold
+
+
+def _fallback_collect_once() -> None:
+    """One collect under the poller leader lock; a no-op if a poller holds it."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from dashboard_services.db import get_database_url
+
+    conn = None
+    try:
+        conn = psycopg.connect(get_database_url(), row_factory=dict_row)
+        conn.autocommit = True
+        row = conn.execute(
+            "SELECT pg_try_advisory_lock(%s)", (_LEADER_LOCK_KEY,)
+        ).fetchone()
+        if not row or not row.get("pg_try_advisory_lock"):
+            return  # The real poller is alive and holding the lock.
+        try:
+            stats = poll_once()
+            logger.info("[scorezone-store] fallback collect ran: %s", stats)
+        finally:
+            try:
+                conn.execute("SELECT pg_advisory_unlock(%s)", (_LEADER_LOCK_KEY,))
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.warning("[scorezone-store] fallback collect failed: %s", exc)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def maybe_fallback_collect(
+    season: int,
+    week: int | None = None,
+    *,
+    now: float | None = None,
+) -> bool:
+    """Trigger one bounded fallback collect if live games + a stale store.
+
+    Returns True when a collect was triggered. Cheap on the hot path: the
+    per-process throttle short-circuits repeat calls, and the live/stale
+    checks only run once per throttle window per (season, week).
+    """
+    if not season:
+        return False
+    key = (int(season), int(week) if week is not None else None)
+    ts_now = time.time() if now is None else now
+    last = _fallback_attempts.get(key) or 0.0
+    if ts_now - last < _FALLBACK_THROTTLE_S:
+        return False
+    try:
+        if not store_is_stale(season, week, now=ts_now):
+            return False
+        games = discover_live_games(current_week=week)
+        if not any(g.get("live") for g in games or []):
+            return False
+    except Exception as exc:
+        logger.warning("[scorezone-store] fallback gate failed: %s", exc)
+        return False
+    _fallback_attempts[key] = ts_now
+    import threading
+
+    threading.Thread(
+        target=_fallback_collect_once, name="scorezone-fallback-collect",
+        daemon=True,
+    ).start()
+    return True
 
 
 def start_scorezone_store_thread() -> None:

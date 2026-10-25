@@ -45,7 +45,17 @@
   var _flashRids  = new Set();
   var _lastPollFailed = false;
   var _hadInteraction = false;
-  var _notifDismissed = !!(localStorage && localStorage.getItem('rz-notif-dismissed'));
+  // TD-alerts CTA dismissal is scoped per league + day (via _prefsKey) and
+  // expires overnight: the old 'rz-notif-dismissed' flag was permanent and
+  // global, so one tap years ago silenced the bar in every league forever.
+  function _notifDismissKey() {
+    var d = new Date();
+    var day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    return _prefsKey('notif-dismissed') + ':' + day;
+  }
+  function _notifDismissed() {
+    try { return !!(localStorage && localStorage.getItem(_notifDismissKey())); } catch (_) { return false; }
+  }
   // Real device-push readiness (async): 'granted' (permission + live
   // PushSubscription), 'granted-unsubscribed' (permission but no subscription
   // yet), 'default' (undecided), 'denied', 'unsupported', or null (unknown).
@@ -4132,14 +4142,14 @@
     if (!('Notification' in window)) {
       notifCta = '';
     } else if (_ps === 'denied') {
-      notifCta = !_notifDismissed
+      notifCta = !_notifDismissed()
         ? '<div class="rz-notif-cta is-blocked" id="rz-notif-cta"><span>TD alerts are blocked. Enable notifications for this site in your browser settings.</span><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
         : '';
     } else if (_ps === 'granted') {
       notifCta = '';  // permission + live subscription: alerts enabled
     } else if (_ps === 'default' || _ps === 'granted-unsubscribed'
                || (_ps === null && Notification.permission === 'default')) {
-      notifCta = !_notifDismissed
+      notifCta = !_notifDismissed()
         ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
         : '';
     }
@@ -4333,9 +4343,15 @@
     });
     var notifDismiss = root.querySelector('#rz-notif-dismiss');
     if (notifDismiss) notifDismiss.addEventListener('click', function() {
-      _notifDismissed = true;
-      try { localStorage && localStorage.setItem('rz-notif-dismissed', '1'); } catch (_) {}
+      var key = _notifDismissKey();
+      try { localStorage && localStorage.setItem(key, '1'); } catch (_) {}
       _render();
+      if (typeof window.brUndoToast === 'function') {
+        window.brUndoToast('TD alerts bar hidden for today.', function() {
+          try { localStorage && localStorage.removeItem(key); } catch (_) {}
+          _render();
+        });
+      }
     });
 
     var histBtn = root.querySelector('#rz-hist-btn');

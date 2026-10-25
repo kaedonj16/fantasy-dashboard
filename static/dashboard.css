@@ -261,6 +261,7 @@
      needs in-browser stacking verification, so it is deliberately not done
      here -- new code should still reference these tokens rather than invent
      new magic numbers. */
+    --z-sticky: 99; /* sticky in-page headers (e.g. .rz-header), below all banners/chrome */
     --z-toast-legacy: 9000; /* .toast-container (legacy host) */
     --z-banner-push: 9989; /* #push-notif-banner */
     --z-banner-pwa: 9990; /* #pwa-install-banner */
@@ -38165,28 +38166,45 @@ button:disabled {
     --rz-muted: var(--text-muted);
     --rz-hover: var(--accent-soft);
     --rz-content-gutter: 14px;
+    /* Tokens previously used with inline fallbacks but never defined; the
+       values are exactly those fallbacks, so defining them changes nothing
+       rendered, it just gives them one home. */
+    --rz-card-soft: var(--card-soft);
+    --rz-fg: var(--text);
+    --rz-chip-bg: rgba(120, 120, 140, 0.18);
+    --rz-nav-h: 62px;
+    /* Live green for ScoreZone live states (pill status, live dot, impact
+       lines). One token instead of hard-coded #16a34a copies, so dark mode
+       brightens it in exactly one place below. */
+    --rz-live: #16a34a;
 }
 .rz-page {
     background: var(--rz-bg);
     min-height: calc(100vh - 56px);
-    padding: 0 0 80px;
+    min-height: calc(100dvh - 56px);
+    /* Bottom space clears the fixed mobile dock via the shared token
+       (0 on desktop, so the old 80px hard-code stays as the floor). */
+    padding: 0 0 max(80px, var(--dock-safe-bottom));
     font-family: inherit;
     color: var(--rz-text);
-    /* Break out of overview-layout's 10px margin to go edge-to-edge */
-    margin-left: -10px;
-    margin-right: -10px;
-    width: calc(100% + 20px);
+    width: 100%;
 }
 
 /* ScoreZone is a full-bleed live page: drop the top ad banner and zero the
-   layout's top margin so the sticky header sits flush beneath the nav. */
+   layout's margins so the sticky header sits flush beneath the nav and
+   .rz-page can be a plain width:100% block (it used to break out of
+   .overview-layout's 10px margin with negative margins and a +20px width). */
 #app-scale:has(.page-shell[data-page="scorezone"]) .ad-top-banner {
     display: none;
 }
 
 #app-scale:has(.page-shell[data-page="scorezone"]) #page-root {
-    margin-top: 0;
+    margin: 0;
     padding-top: 0;
+    /* The global #page-root side padding is !important; the players page
+       overrides it the same way for its full-bleed layout. */
+    padding-left: 0 !important;
+    padding-right: 0 !important;
 }
 
 /* Content container: max-width centering for comfortable desktop reading */
@@ -38198,6 +38216,16 @@ button:disabled {
 :root[data-theme="dark"] {
     --rz-red: #f04545;
     --rz-red-soft: rgba(240, 69, 69, .14);
+    --rz-live: #4ade80;
+}
+
+/* The token block also sets these on .rz-page itself, which would shadow
+   the :root dark values for everything inside the page; restate the dark
+   values on the page element so dark mode actually reaches it. */
+:root[data-theme="dark"] .rz-page {
+    --rz-red: #f04545;
+    --rz-red-soft: rgba(240, 69, 69, .14);
+    --rz-live: #4ade80;
 }
 
 .rz-boot-spinner {
@@ -38266,7 +38294,7 @@ button:disabled {
     justify-content: space-between;
     position: sticky;
     top: var(--rz-nav-h, 62px);
-    z-index: 99;
+    z-index: var(--z-sticky);
 }
 
 .rz-header::after {
@@ -38876,9 +38904,11 @@ button:disabled {
     font-size: 11px;
     font-weight: 700;
     color: var(--rz-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* Wrap to a second line: ellipsizing cut the viewer's own team name
+       inside its card at phone widths ("Caleb's Ca..."). */
+    white-space: normal;
+    overflow-wrap: break-word;
+    line-height: 1.25;
     margin-bottom: 3px;
 }
 
@@ -39359,7 +39389,7 @@ button:disabled {
 
 .rz-pos-RB {
     background: rgba(34, 197, 94, .14);
-    color: #16a34a;
+    color: var(--rz-live);
 }
 
 .rz-pos-WR {
@@ -39976,13 +40006,6 @@ button:disabled {
 }
 
 /* ── Feed list ────────────────────────── */
-#rz-feed-list {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    padding: 0 var(--rz-content-gutter) 8px;
-}
-
 .rz-event {
     display: flex;
     align-items: center;
@@ -39992,14 +40015,9 @@ button:disabled {
     border: 1px solid var(--rz-border);
     border-left: 4px solid var(--rz-muted);
     border-radius: var(--radius);
-    cursor: pointer;
     transition: background .14s, transform .1s, box-shadow .14s;
     animation: none;
     will-change: transform, opacity;
-}
-
-.rz-event:hover {
-    background: var(--rz-hover);
 }
 
 .rz-event.rz-event-old {
@@ -40115,7 +40133,7 @@ button:disabled {
 
 .rz-av-rb {
     background: rgba(22, 163, 74, .15);
-    color: #16a34a;
+    color: var(--rz-live);
 }
 
 .rz-av-wr {
@@ -40200,7 +40218,7 @@ button:disabled {
 
 .rz-event-tag.mine {
     background: rgba(22, 163, 74, .14);
-    color: #16a34a;
+    color: var(--rz-live);
 }
 
 .rz-event-tag.opp {
@@ -40518,20 +40536,6 @@ button:disabled {
     flex: 1;
 }
 
-@media (max-width: 640px) {
-    .rz-hero-pts {
-        font-size: 46px;
-    }
-
-    .rz-player-pts {
-        font-size: 15px;
-    }
-
-    .rz-mc-score {
-        font-size: 18px;
-    }
-}
-
 /* ── TD celebration flash ─────────────── */
 @keyframes rz-td-flash {
     0% {
@@ -40618,7 +40622,7 @@ button:disabled {
 .rz-myteam-btn.active {
     background: rgba(22, 163, 74, .12);
     border-color: rgba(22, 163, 74, .45);
-    color: #16a34a;
+    color: var(--rz-live);
 }
 
 .rz-myteam-btn:hover:not(.active) {
@@ -40657,7 +40661,7 @@ button:disabled {
     margin-top: 2px;
 }
 .rz-event.is-mine .rz-event-impact {
-    color: #16a34a;
+    color: var(--rz-live);
 }
 .rz-event-down,
 .rz-event-yardline {
@@ -41166,6 +41170,7 @@ a.rz-demo-link:hover {
 
 .rz-hist-body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 6px 0 16px;
 }
@@ -41664,7 +41669,7 @@ a.rz-demo-link:hover {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #16a34a;
+    background: var(--rz-live);
     animation: rz-nfl-pulse 1.6s ease-in-out infinite;
 }
 @keyframes rz-nfl-pulse {
@@ -41710,6 +41715,7 @@ a.rz-demo-link:hover {
     color: var(--rz-text);
     white-space: nowrap;
     min-width: 0;
+    flex: 0 0 auto;
 }
 /* Possession indicator: a small amber dot sitting just past the score on the
    centre-facing side (toward the clock). It is the last flex child of the team
@@ -41730,6 +41736,7 @@ a.rz-demo-link:hover {
     font-variant-numeric: tabular-nums;
     min-width: 1.2ch;
     text-align: center;
+    flex: 0 0 auto;
 }
 
 /* Middle column carries game state. */
@@ -41768,7 +41775,7 @@ a.rz-demo-link:hover {
     gap: 5px;
     font-size: 13px;
     font-weight: 800;
-    color: #16a34a;
+    color: var(--rz-live);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
@@ -41777,22 +41784,6 @@ a.rz-demo-link:hover {
     font-weight: 600;
     color: var(--rz-muted);
 }
-@media (max-width: 640px) {
-    .rz-nfl-board {
-        margin: 0 10px 10px;
-        padding: 10px 12px;
-        gap: 6px;
-    }
-    .rz-nfl-score-row { gap: 6px; }
-    .rz-field { margin-top: 8px; }
-    .rz-field-track { height: 16px; margin-top: 17px; } /* keep flag headroom */
-    .rz-field-flag { font-size: 11px; padding: 1.5px 5px; }
-    .rz-nfl-badge { width: 28px; height: 28px; }
-    .rz-nfl-abv { font-size: 13px; }
-    .rz-nfl-score { font-size: 22px; }
-    .rz-nfl-kick-time { font-size: 13px; }
-}
-
 /* ── NFL game pill strip (ESPN-style fast game selector, §4/§6) ──────────────
    A horizontal, single-row, snap-scrolling set of compact game pills that sits
    directly below .rz-chip-bar and above the selected-game scoreboard. Bound to
@@ -41901,14 +41892,9 @@ a.rz-demo-link:hover {
     line-height: 1;
     padding: 1px 0;
 }
-.rz-game-pill.is-live .rz-gp-status { color: #16a34a; }
+.rz-game-pill.is-live .rz-gp-status { color: var(--rz-live); }
 .rz-game-pill.is-final .rz-gp-abv,
 .rz-game-pill.is-final .rz-gp-score { color: var(--rz-muted); }
-@media (max-width: 640px) {
-    .rz-page { --rz-content-gutter: 10px; }
-    .rz-game-pill { min-width: 100px; }
-}
-
 /* ── Box score button + sheet (filtered-game board) ── */
 /* The button lives inside the filtered-game board, so it only exists when the
    user is filtered to one NFL game. The sheet mounts on document.body. */
@@ -42252,6 +42238,41 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
    before it pushes the status cluster off-screen, and keep the functional
    right-hand controls intact. */
 @media (max-width: 640px) {
+    /* Consolidated ScoreZone phone block: the hero/board/gutter groups used
+       to live in three separate @media blocks scattered through this file.
+       Group order matches their original relative order; the Playwright
+       computed-style check in tests/test_scorezone_fixall.py's harness notes
+       (PR body) verifies no rendered change at 390px. */
+    .rz-hero-pts {
+        font-size: 46px;
+    }
+
+    .rz-player-pts {
+        font-size: 15px;
+    }
+
+    .rz-mc-score {
+        font-size: 18px;
+    }
+
+    .rz-nfl-board {
+        margin: 0 10px 10px;
+        padding: 10px 12px;
+        gap: 6px;
+    }
+    .rz-nfl-score-row { gap: 6px; }
+    .rz-field { margin-top: 8px; }
+    .rz-field-track { height: 16px; margin-top: 17px; } /* keep flag headroom */
+    .rz-field-flag { font-size: 11px; padding: 1.5px 5px; }
+    .rz-nfl-badge { width: 28px; height: 28px; }
+    .rz-nfl-abv { font-size: 13px; }
+    .rz-nfl-score { font-size: 22px; }
+    .rz-nfl-kick-time { font-size: 13px; }
+
+    .rz-page { --rz-content-gutter: 10px; }
+    .rz-game-pill { min-width: 100px; }
+    .rz-mc-hero { width: 74vw; max-width: 300px; }
+
     .rz-header {
         padding: 11px 12px;
         gap: 8px;
@@ -48466,31 +48487,31 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 /* ScoreZone: .rz-* from static/scorezone.js (_renderGameStrip, _playerRowHtml) */
 .hp-rz { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: 0 18px 44px rgba(2, 6, 23, 0.16); --rz-card: var(--card); --rz-text: var(--text); --rz-muted: var(--text-muted); --rz-border: var(--border); --rz-red: #dc2626; }
 :root[data-theme="dark"] .hp-rz { --rz-red: #f04545; }
-.rz-game-strip { margin: 0 0 6px; }
-.rz-game-strip-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 12px 12px 6px; scrollbar-width: none; }
-.rz-game-strip-scroll::-webkit-scrollbar { display: none; }
-.rz-game-pill { flex: 0 0 auto; min-width: 108px; max-width: 150px; min-height: 46px; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; padding: 7px 10px; background: var(--rz-card); border: 1px solid var(--rz-border); border-radius: var(--radius); cursor: pointer; font: inherit; color: var(--rz-text); text-align: left; }
-.rz-game-pill.is-selected { border-color: var(--rz-red); background: var(--rz-red-soft); box-shadow: 0 0 0 1px var(--rz-red); }
-.rz-gp-team { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.rz-gp-logo-txt { font-size: 11px; font-weight: 800; color: var(--rz-muted); }
-.rz-gp-abv { font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--rz-text); }
-.rz-gp-score { margin-left: auto; font-size: 13px; font-weight: 900; color: var(--rz-text); font-variant-numeric: tabular-nums; }
-.rz-gp-status { text-align: center; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--rz-muted); line-height: 1; padding: 1px 0; }
-.rz-game-pill.is-live .rz-gp-status { color: #16a34a; }
-.rz-game-pill.is-final .rz-gp-abv, .rz-game-pill.is-final .rz-gp-score { color: var(--rz-muted); }
-.rz-player-row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--rz-border); }
-.rz-player-row:last-child { border-bottom: none; }
-.rz-pos-badge { font-size: 11px; font-weight: 800; letter-spacing: .04em; padding: 3px 6px; border-radius: var(--radius-sm); min-width: 28px; text-align: center; flex-shrink: 0; }
-.rz-pos-QB { background: rgba(59, 130, 246, .14); color: #3b82f6; }
-.rz-pos-RB { background: rgba(34, 197, 94, .14); color: #16a34a; }
-.rz-pos-WR { background: rgba(245, 158, 11, .16); color: #d97706; }
-.rz-player-info { flex: 1; min-width: 0; }
-.rz-player-name { font-size: 13px; font-weight: 700; color: var(--rz-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
-.rz-player-meta { font-size: 11px; color: var(--rz-muted); display: flex; align-items: center; gap: 5px; }
-.rz-live-dot-sm { width: 5px; height: 5px; border-radius: 50%; background: var(--rz-red); flex-shrink: 0; }
-.rz-meta-game.live { color: var(--rz-red); font-weight: 700; }
-.rz-player-pts { font-size: 18px; font-weight: 900; color: var(--rz-text); min-width: 46px; text-align: right; flex-shrink: 0; line-height: 1; font-variant-numeric: tabular-nums; }
-.rz-player-pts.live-pts { color: var(--rz-red); }
+.hp-rz .rz-game-strip { margin: 0 0 6px; }
+.hp-rz .rz-game-strip-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 12px 12px 6px; scrollbar-width: none; }
+.hp-rz .rz-game-strip-scroll::-webkit-scrollbar { display: none; }
+.hp-rz .rz-game-pill { flex: 0 0 auto; min-width: 108px; max-width: 150px; min-height: 46px; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; padding: 7px 10px; background: var(--rz-card); border: 1px solid var(--rz-border); border-radius: var(--radius); cursor: pointer; font: inherit; color: var(--rz-text); text-align: left; }
+.hp-rz .rz-game-pill.is-selected { border-color: var(--rz-red); background: var(--rz-red-soft); box-shadow: 0 0 0 1px var(--rz-red); }
+.hp-rz .rz-gp-team { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.hp-rz .rz-gp-logo-txt { font-size: 11px; font-weight: 800; color: var(--rz-muted); }
+.hp-rz .rz-gp-abv { font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--rz-text); }
+.hp-rz .rz-gp-score { margin-left: auto; font-size: 13px; font-weight: 900; color: var(--rz-text); font-variant-numeric: tabular-nums; }
+.hp-rz .rz-gp-status { text-align: center; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--rz-muted); line-height: 1; padding: 1px 0; }
+.hp-rz .rz-game-pill.is-live .rz-gp-status { color: var(--rz-live); }
+.hp-rz .rz-game-pill.is-final .rz-gp-abv, .hp-rz .rz-game-pill.is-final .rz-gp-score { color: var(--rz-muted); }
+.hp-rz .rz-player-row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--rz-border); }
+.hp-rz .rz-player-row:last-child { border-bottom: none; }
+.hp-rz .rz-pos-badge { font-size: 11px; font-weight: 800; letter-spacing: .04em; padding: 3px 6px; border-radius: var(--radius-sm); min-width: 28px; text-align: center; flex-shrink: 0; }
+.hp-rz .rz-pos-QB { background: rgba(59, 130, 246, .14); color: #3b82f6; }
+.hp-rz .rz-pos-RB { background: rgba(34, 197, 94, .14); color: #16a34a; }
+.hp-rz .rz-pos-WR { background: rgba(245, 158, 11, .16); color: #d97706; }
+.hp-rz .rz-player-info { flex: 1; min-width: 0; }
+.hp-rz .rz-player-name { font-size: 13px; font-weight: 700; color: var(--rz-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.hp-rz .rz-player-meta { font-size: 11px; color: var(--rz-muted); display: flex; align-items: center; gap: 5px; }
+.hp-rz .rz-live-dot-sm { width: 5px; height: 5px; border-radius: 50%; background: var(--rz-red); flex-shrink: 0; }
+.hp-rz .rz-meta-game.live { color: var(--rz-red); font-weight: 700; }
+.hp-rz .rz-player-pts { font-size: 18px; font-weight: 900; color: var(--rz-text); min-width: 46px; text-align: right; flex-shrink: 0; line-height: 1; font-variant-numeric: tabular-nums; }
+.hp-rz .rz-player-pts.live-pts { color: var(--rz-red); }
 /* Start/Sit: .wv-cx-* compact rows from dashboard_services/pages/waivers_page.py */
 .wv-cx-group-head { padding: 6px 4px 10px; }
 .wv-cx-group-title { font-size: 18px; font-weight: 800; letter-spacing: -0.2px; color: var(--text); }
