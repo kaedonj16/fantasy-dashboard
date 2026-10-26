@@ -73,4 +73,4 @@ def test_export_csv_lives_on_the_count_row():
 
 
 def test_service_worker_bumped_for_the_new_css():
-    assert "br-fantasy-v99" in SW
+    assert "br-fantasy-v100" in SW

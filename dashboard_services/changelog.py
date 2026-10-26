@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-26",
         "tag": "update",
+        "text": "Player game log: the ScoreZone tab in a player's card is now a timeline. Stat tiles up top, a chart of how the points built up play by play, and every play in game order with a running total. An intercepted pass now reads as an interception instead of an extra incomplete target, so the plays in the log match the targets in the stat line.",
+        "link": "/scorezone"
+    },
+    {
+        "date": "2026-10-26",
+        "tag": "update",
         "text": "Schedule Rankings: the Schedule Assistant page is now a straight rankings table. Compare every team's remaining schedule in the League view, or switch to My Team to see your players in the same ranking order, with an All view for your full roster at once. Ease, Next 3 and Playoff ranks are side by side for every player.",
         "link": "/schedule"
     },
