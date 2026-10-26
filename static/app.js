@@ -28671,23 +28671,30 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
 
   // Score/result band only: status line, your score vs opponent (with
   // projected finals while the week is open), the win-probability bar, and
-  // the WON/LOST BY result once final. No My Matchup / League Scores tabs
-  // and no ScoreZone Moments here -- those live on the matchup page.
+  // once final a solid verdict banner (WON/LOST BY in white on green/red)
+  // on top of the band with the winner's score full-strength and the
+  // loser's muted. No My Matchup / League Scores tabs and no ScoreZone
+  // Moments here -- those live on the matchup page.
   function matchupHtml(data) {
     var you = data.you, opp = data.opp, status = data.status || 'pre';
     var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
-    function side(team, name, opposite) {
-      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
+    function side(team, name, opposite, isWin) {
+      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + (isWin ? ' win' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
     }
-    var extra = '';
     if (status === 'final' && opp) {
       var result = data.result || 'T', margin = number(data.margin, 2);
-      extra = '<div class="pf-live-result">' + escapeHtml(result === 'W' ? 'WON BY ' + margin : (result === 'L' ? 'LOST BY ' + margin : 'TIED')) + '</div>';
-    } else if (opp && data.win_prob != null) {
+      var verdict = result === 'W' ? 'WON BY ' + margin : (result === 'L' ? 'LOST BY ' + margin : 'TIED');
+      var bannerCls = result === 'W' ? ' is-win' : (result === 'L' ? ' is-loss' : ' is-tie');
+      var banner = '<div class="pf-live-banner' + bannerCls + '"><span class="pf-live-banner-fin"><span class="pf-live-dot"></span>' + label + '</span><span class="pf-live-banner-verdict">' + escapeHtml(verdict) + '</span></div>';
+      var youWin = result === 'W' || result === 'T', oppWin = result === 'L' || result === 'T';
+      return banner + '<div class="pf-live-grid is-final' + (result === 'T' ? ' is-tie' : '') + '">' + side(you, 'You', false, youWin) + side(opp, opp.name || 'Opp', true, oppWin) + '</div>';
+    }
+    var extra = '';
+    if (opp && data.win_prob != null) {
       var chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
       extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span class="pf-live-wp-you">' + chance + '% to win</span><span class="pf-live-wp-opp">' + (100 - chance) + '%</span></div></div>';
     }
-    return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra;
+    return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false, false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true, false) + '</div>' + extra;
   }
   function renderMatchup(slot, data) {
     if (!slot || !data) return false;

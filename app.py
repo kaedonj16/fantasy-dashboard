@@ -40661,8 +40661,25 @@ def build_portfolio_body(
         "font-variant-numeric:tabular-nums;letter-spacing:.02em;}"
         ".pf-live-wp-you{color:var(--win);}"
         ".pf-live-wp-opp{color:var(--loss);}"
-        ".pf-live-result{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
-        "text-align:center;color:var(--text);margin-top:4px;}"
+        # Final verdict banner: solid green/red strip bleeding to the band's
+        # top edges, FINAL + week on the left, the margin verdict in 15px
+        # white on the right -- the result reads from color alone when
+        # scanning the league grid. Tie gets a neutral slate strip.
+        ".pf-live-banner{margin:-7px -9px 0;padding:8px 11px;display:flex;align-items:center;"
+        "justify-content:space-between;gap:8px;border-radius:8px 8px 0 0;color:#fff;}"
+        ".pf-live-banner.is-win{background:#15803d;}"
+        ".pf-live-banner.is-loss{background:#b91c1c;}"
+        ".pf-live-banner.is-tie{background:#64748b;}"
+        ".pf-live-banner .pf-live-dot{background:#fff;opacity:.85;}"
+        ".pf-live-banner-fin{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;"
+        "display:flex;align-items:center;gap:5px;white-space:nowrap;}"
+        ".pf-live-banner-verdict{font-size:15px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;"
+        "white-space:nowrap;font-variant-numeric:tabular-nums;}"
+        # Final score treatment: winner full-strength and larger, loser
+        # stays at the base muted size; a tie lifts both equally.
+        ".pf-live-side.win .pf-live-lbl{color:var(--text);font-weight:800;}"
+        ".pf-live-grid.is-final .pf-live-side.win .pf-live-score{font-size:26px;}"
+        ".pf-live-grid.is-final.is-tie .pf-live-side.win .pf-live-score{font-size:24px;}"
         ".pf-live-unavailable{font-size:11px;color:var(--text-muted);}"
         ".pf-live-unavailable button{font:inherit;font-size:11px;font-weight:700;cursor:pointer;"
         "background:none;border:none;color:var(--accent);padding:0;}"
