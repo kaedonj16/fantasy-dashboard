@@ -260,6 +260,10 @@ def _pf_client(monkeypatch, ctx_by_lid, leagues=None, *, locked_teams=(),
     monkeypatch.setattr(subs, "has_premium_for_viewer", lambda *a, **k: True)
     monkeypatch.setattr(ds_api, "get_nfl_players", lambda *a, **k: dict(_PF_PLAYERS))
     monkeypatch.setattr(uu, "load_week_schedule", lambda season, week: games)
+    # The actions endpoint caches complete scans per viewer (60s); each
+    # test here is a fresh viewer scenario, so start from a cold cache.
+    bp_mod._ACTIONS_CACHE.clear()
+    bp_mod._ACTIONS_INFLIGHT.clear()
 
     app = Flask(__name__)
     app.secret_key = "test"

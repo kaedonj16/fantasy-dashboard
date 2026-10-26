@@ -30,7 +30,9 @@ def _clean_gunicorn_env(monkeypatch):
 
 def test_gunicorn_defaults_to_four_threads(monkeypatch):
     _clean_gunicorn_env(monkeypatch)
-    assert resolve_gunicorn_config() == (5000, 2, 4)
+    # One worker: the 2GB/1-CPU box cannot afford two fully-warmed worker
+    # footprints (see resolve_gunicorn_config); threads carry concurrency.
+    assert resolve_gunicorn_config() == (5000, 1, 4)
 
 
 def test_gunicorn_honors_env_overrides(monkeypatch):
