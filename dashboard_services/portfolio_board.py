@@ -81,18 +81,36 @@ def tile_str(tile: Dict[str, int]) -> str:
 
 # ── League card helpers ──────────────────────────────────────────────────────
 
-def posture_for(odds_pct=None, wins=None, losses=None):
-    """(label, css-class) posture for a league: Contend / Fringe / Rebuild.
+def posture_for(odds_pct=None, wins=None, losses=None, is_redraft=False):
+    """(label, css-class) DEGRADED fallback posture, used only when the
+    Teams-parity window inputs (league value table) are unavailable.
 
-    Playoff odds drive it when known; otherwise the win rate stands in. The
-    thresholds are the mock's: a coin-flip-or-better team contends, a team
-    with a real but minority path is fringe, the rest are rebuilding."""
+    Dynasty: Contend / Fringe / Rebuild on playoff odds, else win rate.
+    Redraft: the Teams redraft labels (Contend / Bubble / Long Shot) on
+    the same inputs -- a one-year league can never be labelled Rebuild,
+    on any path."""
     pct = None
     try:
         if odds_pct is not None:
             pct = float(odds_pct)
     except (TypeError, ValueError):
         pct = None
+    if is_redraft:
+        from dashboard_services.ai.context_builders import redraft_window_label
+        if pct is not None:
+            label = redraft_window_label(playoff_pct=pct)
+        else:
+            try:
+                w = float(wins or 0)
+                l = float(losses or 0)
+            except (TypeError, ValueError):
+                return (None, "")
+            if w + l <= 0:
+                return (None, "")
+            label = redraft_window_label(playoff_pct=(w / (w + l)) * 100.0)
+        if not label:
+            return (None, "")
+        return (label, _REDRAFT_POSTURE_CLS.get(label, ""))
     if pct is not None:
         if pct >= 55:
             return ("Contend", "contend")
@@ -112,6 +130,212 @@ def posture_for(odds_pct=None, wins=None, losses=None):
     if rate >= 0.40:
         return ("Fringe", "fringe")
     return ("Rebuild", "rebuild")
+
+
+# ── Teams-parity window posture ─────────────────────────────────────────────
+# The Teams page's window accent colors (teams_page._WINDOW_COLORS), keyed
+# by the exact classifier labels. Keep in step with that map.
+WINDOW_COLORS = {
+    "Contend": "#22c55e", "Bubble": "#f59e0b", "Out": "#94a3b8",
+    "Long Shot": "#94a3b8",
+    "Powerhouse": "#ca8a04", "Contender": "#22c55e", "Win-Now": "#f59e0b",
+    "Contender Window": "#3b82f6", "Rising": "#8b5cf6",
+    "Crossroads": "#64748b", "Treadmill": "#78716c", "Retooling": "#f97316",
+    "Rebuilding": "#ef4444", "Full Rebuild": "#b91c1c",
+}
+
+_REDRAFT_POSTURE_CLS = {
+    "Contend": "contend", "Bubble": "bubble", "Long Shot": "longshot",
+}
+
+_WINDOW_CORE_POS = ("QB", "RB", "WR", "TE")
+
+
+def _window_float(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def window_posture_for(ctx, rosters, values, viewer_roster_id, odds_pct=None):
+    """Teams-page window posture for the viewer's roster.
+
+    Returns {"label", "cls", "color", "shape"} or None when the window
+    inputs are unavailable (no value table, viewer roster missing, or no
+    valued players), leaving the caller on the degraded fallback.
+
+    Dynasty/keeper-as-dynasty leagues get the win-window classifier's
+    label via calculate_roster_grade with league context, computed from
+    the same per-league pass the summary already runs (league-wide value
+    axes, percentiles, capital context, positional ranks) -- the full
+    Teams-page grader is never invoked per league. Redraft leagues (and
+    keepers, which the Teams page also grades as redraft) get the Teams
+    redraft label set: Contend / Bubble / Long Shot, playoff odds first,
+    exactly like teams_page. Shape is the grade's roster_shape tag.
+    """
+    if not ctx or not values or viewer_roster_id in (None, ""):
+        return None
+    try:
+        from dashboard_services.ai.context_builders import (
+            _team_value_axes, calculate_roster_grade, ctx_scoring_type,
+            league_capital_context, redraft_window_label,
+        )
+        from utils.lineup_slots import is_superflex_lineup
+
+        vid = str(viewer_roster_id)
+        scoring = ctx_scoring_type(ctx)
+        is_redraft = scoring == "redraft"
+        roster_positions = (
+            ctx.get("roster_positions")
+            or (ctx.get("league") or {}).get("roster_positions")
+            or []
+        )
+        is_sf = is_superflex_lineup(roster_positions)
+        redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+
+        name_to_age = {}
+        for row in ctx.get("model_value_table") or []:
+            if not isinstance(row, dict):
+                continue
+            age = row.get("age")
+            if age is None:
+                continue
+            for key in (row.get("search_name"), row.get("name")):
+                name = str(key or "").strip().lower()
+                if name and name not in name_to_age:
+                    try:
+                        name_to_age[name] = float(age)
+                    except (TypeError, ValueError):
+                        pass
+
+        def _age_for(row):
+            for key in (row.get("search_name"), row.get("name")):
+                age = name_to_age.get(str(key or "").strip().lower())
+                if age is not None:
+                    return age
+            raw = row.get("age")
+            try:
+                return float(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        dynasty_totals: Dict[str, float] = {}
+        redraft_totals: Dict[str, float] = {}
+        dr_ratios: Dict[str, float] = {}
+        viewer_roster = None
+        for roster in rosters or []:
+            rid_raw = roster.get("roster_id")
+            if rid_raw is None:
+                continue
+            rid = str(rid_raw)
+            if rid == vid:
+                viewer_roster = roster
+            pairs = []
+            for pid in roster.get("players") or []:
+                row = values.get(str(pid)) or {}
+                pos = str(row.get("position") or row.get("pos") or "").upper()
+                if pos not in _WINDOW_CORE_POS:
+                    continue
+                pairs.append((_window_float(row.get("value")),
+                              _window_float(row.get(redraft_key))))
+            d_total, r_total, dr = _team_value_axes(pairs)
+            dynasty_totals[rid] = d_total
+            redraft_totals[rid] = r_total
+            dr_ratios[rid] = dr
+        if viewer_roster is None:
+            return None
+
+        def _pct_fn(totals):
+            ordered = sorted(totals.values())
+            n = max(len(ordered) - 1, 1)
+
+            def _pct(rid):
+                total = totals.get(rid, 0.0)
+                return sum(1 for v in ordered if v < total) / n
+            return _pct
+
+        dynasty_pct = _pct_fn(dynasty_totals)(vid)
+        redraft_pct = _pct_fn(redraft_totals)(vid)
+
+        flat_players = []
+        for pid in viewer_roster.get("players") or []:
+            row = values.get(str(pid)) or {}
+            pos = str(row.get("position") or row.get("pos") or "").upper()
+            if pos not in _WINDOW_CORE_POS:
+                continue
+            flat_players.append({
+                "position": pos,
+                "value": _window_float(row.get("value")),
+                "age": _age_for(row),
+            })
+        flat_players.sort(key=lambda p: p["value"], reverse=True)
+        if not flat_players or sum(p["value"] for p in flat_players) <= 0:
+            return None
+
+        # Positional ranks for the viewer, same helper + slots the Teams
+        # page and the summary's strength section use.
+        position_ranks = None
+        try:
+            from utils.roster_strength import (
+                rank_rosters_by_position, roster_pos_value_lists,
+            )
+            try:
+                from app import count_roster_positions
+                slots = count_roster_positions(roster_positions)
+            except Exception:
+                slots = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
+            pos_values = roster_pos_value_lists(
+                rosters, values,
+                players_index=ctx.get("players_index") or {}, rid_cast=str,
+            )
+            _strengths, _ranks = rank_rosters_by_position(pos_values, slots)
+            ranks = {
+                pos: (_ranks.get(pos) or {}).get(vid)
+                for pos in _WINDOW_CORE_POS
+            }
+            if any(v is not None for v in ranks.values()):
+                position_ranks = ranks
+        except Exception:
+            position_ranks = None
+
+        picks_by_roster = (
+            {} if is_redraft or not ctx.get("draft_capital_available", True)
+            else (ctx.get("picks_by_roster") or {})
+        )
+        capital_pct, surplus_firsts = league_capital_context(picks_by_roster)
+        num_teams = int(ctx.get("total_rosters") or len(rosters or []) or 12)
+        grade = calculate_roster_grade(
+            flat_players,
+            [] if is_redraft else picks_by_roster.get(vid, []),
+            position_ranks=position_ranks,
+            num_teams=num_teams,
+            dynasty_pct_val=dynasty_pct,
+            redraft_pct_val=redraft_pct,
+            dr_ratio=dr_ratios.get(vid, 1.0),
+            capital_pct_val=None if is_redraft else capital_pct.get(vid),
+            surplus_firsts_val=None if is_redraft else surplus_firsts.get(vid),
+            scoring_type=scoring,
+        )
+        if is_redraft:
+            label = redraft_window_label(
+                playoff_pct=odds_pct, redraft_pct=redraft_pct,
+            ) or grade.get("win_window") or ""
+            cls = _REDRAFT_POSTURE_CLS.get(label, "")
+        else:
+            label = grade.get("win_window") or ""
+            cls = "win" if label else ""
+        if not label:
+            return None
+        return {
+            "label": label,
+            "cls": cls,
+            "color": WINDOW_COLORS.get(label, "#94a3b8"),
+            "shape": grade.get("roster_shape") or "",
+        }
+    except Exception:
+        logger.debug("window_posture_for failed", exc_info=True)
+        return None
 
 
 def weakest_room(pos_ranks: dict, total_teams) -> Optional[dict]:

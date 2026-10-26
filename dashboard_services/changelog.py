@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-26",
+        "tag": "update",
+        "text": "My Leagues: the tag on each league card now matches your Teams page. Dynasty leagues show their competitive window (Powerhouse, Contender, Win-Now, Crossroads and the rest, with a roster shape tag when one applies), and redraft leagues show Contend, Bubble or Long Shot, so a one-year league is never called a rebuild.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-10-25",
         "tag": "fix",
         "text": "ScoreZone: defensive touchdowns and interceptions now credit your DST, matchup names no longer cut off on phone hero cards, and live plays keep flowing if the play collector stalls: the page now detects a stale feed and restarts collection on its own. The TD alerts bar can be dismissed for the day (with undo) instead of forever, and dark mode greens match the rest of the site.",

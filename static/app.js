@@ -28590,6 +28590,21 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       if (postureEl && data.posture) {
         postureEl.textContent = data.posture;
         postureEl.className = 'pf-posture ' + (data.posture_cls || '');
+        if (data.posture_color) postureEl.style.setProperty('--wc', data.posture_color);
+        else postureEl.style.removeProperty('--wc');
+        var shapeEl = card.querySelector('[data-posture-shape]');
+        if (data.posture_shape) {
+          if (!shapeEl) {
+            shapeEl = document.createElement('span');
+            shapeEl.className = 'pf-shape';
+            shapeEl.setAttribute('data-posture-shape', '');
+            postureEl.after(shapeEl);
+          }
+          shapeEl.textContent = data.posture_shape;
+          shapeEl.hidden = false;
+        } else if (shapeEl) {
+          shapeEl.hidden = true;
+        }
       }
       var stamp = data.last_successful_sync_at || data.refreshed_at;
       if (updated && stamp) {

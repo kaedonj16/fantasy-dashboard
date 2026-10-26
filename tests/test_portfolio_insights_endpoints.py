@@ -70,6 +70,15 @@ def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None):
         accounts, "resolve_my_leagues",
         lambda uid, aid, season: (leagues or _LEAGUES, 2026))
     monkeypatch.setattr(ds_api, "get_nfl_players", lambda *a, **k: dict(_PLAYERS))
+    # The insights compute overlays the week's games with the LIVE ESPN
+    # scoreboard for the schedule's dates (get_nfl_scores_for_date /
+    # build_team_game_lookup, imported from ds_api at call time). Left
+    # unstubbed, the order test below passes or fails with whatever the
+    # real scoreboard says for 2026-10-25 -- green while the real slate
+    # was upcoming/live, red (windows == 0) once it went final. Pin the
+    # overlay to empty so the stubbed schedule drives the games.
+    monkeypatch.setattr(ds_api, "get_nfl_scores_for_date", lambda d: {})
+    monkeypatch.setattr(ds_api, "build_team_game_lookup", lambda body: {})
     monkeypatch.setattr(uu, "load_week_schedule",
                         lambda season, week: sched or [])
     app = Flask(__name__)

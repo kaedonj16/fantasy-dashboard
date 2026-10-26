@@ -466,15 +466,30 @@ def page_portfolio():
         # Playoff odds + posture (v25 cards/board), cache-only like
         # build_league_summary: never run the sim inline here.
         try:
-            from dashboard_services.portfolio_board import odds_for_ctx, posture_for
+            from dashboard_services.portfolio_board import (
+                odds_for_ctx, posture_for, window_posture_for,
+            )
             _odds = odds_for_ctx(lctx, lg_platform, rid)
-            _posture_label, _posture_cls = posture_for(
-                _odds.get("pct"), wins, losses)
+            _win = window_posture_for(
+                lctx, rosters, values_by_id, rid, odds_pct=_odds.get("pct"))
+            if _win:
+                _posture_label, _posture_cls = _win["label"], _win["cls"]
+                _posture_color, _posture_shape = _win["color"], _win["shape"]
+            else:
+                from dashboard_services.ai.context_builders import (
+                    ctx_scoring_type as _ctx_scoring_type,
+                )
+                _posture_label, _posture_cls = posture_for(
+                    _odds.get("pct"), wins, losses,
+                    is_redraft=_ctx_scoring_type(lctx) == "redraft")
+                _posture_color, _posture_shape = "", ""
             summary.update(
                 playoff_odds_pct=_odds.get("pct"),
                 playoff_odds_delta=_odds.get("delta"),
                 posture=_posture_label,
                 posture_cls=_posture_cls,
+                posture_color=_posture_color,
+                posture_shape=_posture_shape,
             )
         except Exception:
             logger.debug("portfolio inline odds attach failed", exc_info=True)
@@ -814,6 +829,9 @@ def api_portfolio_actions():
 
     actions: list = []
     board_meta: dict = {}
+    # Memoized league value lookups for board-header window posture, so
+    # same-format leagues share one value-table walk across the scan.
+    _board_value_cache: dict = {}
     week = 0
     in_season = False
     week_games: list = []
@@ -930,7 +948,22 @@ def api_portfolio_actions():
                 None,
             )
             _odds = _pb_meta.odds_for_ctx(lctx, plat, viewer_roster.get("roster_id"))
-            _posture = _pb_meta.posture_for(_odds.get("pct"), _mw, _ml)
+            # Same Teams-parity window posture the league cards carry, so
+            # a board group header can never disagree with its card.
+            from dashboard_services.ai.context_builders import (
+                ctx_scoring_type as _ctx_scoring_type,
+                league_format_value_lookup as _lg_value_lookup,
+            )
+            _win = _pb_meta.window_posture_for(
+                lctx, rosters,
+                _lg_value_lookup(lctx, _cache=_board_value_cache),
+                viewer_roster.get("roster_id"), odds_pct=_odds.get("pct"))
+            if _win:
+                _posture = (_win["label"], _win["cls"])
+            else:
+                _posture = _pb_meta.posture_for(
+                    _odds.get("pct"), _mw, _ml,
+                    is_redraft=_ctx_scoring_type(lctx) == "redraft")
             _rec = f"{_mw}-{_ml}" + (f"-{_mt}" if _mt else "")
             if _rk:
                 _suf = ("th" if 10 <= _rk % 100 <= 20 else
@@ -1547,13 +1580,31 @@ def api_portfolio_deep_dive():
     if not groups:
         return jsonify({"ok": False, "error": "no_board"})
     total_moves = sum(len(g.get("moves") or []) for g in groups)
+    # Deep-dive prose buckets over the Teams window / redraft labels the
+    # cards and board headers now carry (legacy Contend/Fringe/Rebuild
+    # from stale caches still bucket the same way).
+    _CONTENDING = {"Contend", "Powerhouse", "Contender", "Win-Now",
+                   "Contender Window"}
+    _MIDDLE = {"Bubble", "Rising", "Crossroads", "Treadmill", "Fringe"}
+    _REBUILDING = {"Long Shot", "Retooling", "Rebuilding", "Full Rebuild",
+                   "Rebuild"}
+
+    def _posture_bucket(label):
+        if label in _CONTENDING:
+            return "Contend"
+        if label in _REBUILDING:
+            return "Rebuild"
+        if label in _MIDDLE:
+            return "Fringe"
+        return None
+
     posture_counts = {"Contend": 0, "Fringe": 0, "Rebuild": 0}
     moves_by_posture = {"Contend": 0, "Fringe": 0, "Rebuild": 0}
     locked = 0
     top_move = None
     claim_move = None
     for g in groups:
-        posture = (g.get("meta") or {}).get("posture")
+        posture = _posture_bucket((g.get("meta") or {}).get("posture"))
         if posture in posture_counts:
             posture_counts[posture] += 1
         for mv in g.get("moves") or []:
