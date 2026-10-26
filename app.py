@@ -41198,6 +41198,26 @@ _MODAL_WARM_STARTED = False
 _MODAL_LEAGUE_WARMED: set = set()
 _MODAL_LEAGUE_WARM_LOCK = threading.Lock()
 
+# Per-worker cap on concurrent modal league warms. One warm runs the modal's
+# full-season cache builds (weekly points for two seasons, rank rows, four
+# weekstat pools, trade-history inputs for every season in the league chain)
+# -- the work a first modal open used to pay inline, serially. The kick is
+# per league and fires from get_league_ctx_from_cache every time a league
+# context lands, so a cold My Leagues load (11 linked leagues) used to start
+# 11 of these heavy threads at once, on top of the separately capped sim /
+# context-build / refresh work -- the uncapped remainder behind the
+# 2026-10-26 OOM restarts that followed #2812/#2814 capping the other kicks.
+# Two at a time matches the other background caps. A kick that cannot get a
+# slot is DROPPED, not queued, and its dedupe mark is cleared so the next
+# context read for that league re-kicks it; dropping is safe because every
+# warmed payload is a cache the modal handler rebuilds inline on demand.
+try:
+    _MODAL_WARM_SEM = threading.BoundedSemaphore(
+        max(1, int(os.getenv("MODAL_WARM_CONCURRENCY", "2")))
+    )
+except (TypeError, ValueError):
+    _MODAL_WARM_SEM = threading.BoundedSemaphore(2)
+
 
 def _kick_modal_league_warm(platform: str, league_id: str, season: int, ctx) -> None:
     """Background-fill the player modal's league-scoped caches for one league.
@@ -41234,11 +41254,19 @@ def _kick_modal_league_warm(platform: str, league_id: str, season: int, ctx) -> 
                 _MODAL_LEAGUE_WARMED.clear()
             _MODAL_LEAGUE_WARMED.add(key)
 
+        if not _MODAL_WARM_SEM.acquire(blocking=False):
+            # Warm slots are full: drop this kick (see the cap note at
+            # _MODAL_WARM_SEM). Un-mark the key so a later context read can
+            # re-kick once a running warm finishes.
+            with _MODAL_LEAGUE_WARM_LOCK:
+                _MODAL_LEAGUE_WARMED.discard(key)
+            return
+
         plat = str(platform)
         lid = str(league_id)
         yr = int(season)
 
-        def _run() -> None:
+        def _run_warm() -> None:
             # The handler normalizes the RAW league scoring (read back through
             # the synced provider globals); the ctx carries an enriched
             # variant whose signature matches nothing the handler builds.
@@ -41307,7 +41335,19 @@ def _kick_modal_league_warm(platform: str, league_id: str, season: int, ctx) -> 
             except Exception:
                 logger.debug("modal league warm: trades failed", exc_info=True)
 
-        threading.Thread(target=_run, daemon=True, name="modal-league-warm").start()
+        def _run() -> None:
+            try:
+                _run_warm()
+            finally:
+                _MODAL_WARM_SEM.release()
+
+        try:
+            threading.Thread(target=_run, daemon=True, name="modal-league-warm").start()
+        except Exception:
+            _MODAL_WARM_SEM.release()
+            with _MODAL_LEAGUE_WARM_LOCK:
+                _MODAL_LEAGUE_WARMED.discard(key)
+            raise
     except Exception:
         logger.debug("modal league warm kick failed", exc_info=True)
 
