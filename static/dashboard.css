@@ -35721,9 +35721,16 @@ button:disabled {
     border-right: 1px solid var(--border);
 }
 
+/* Flat full cell like every other week cell: no pill, no border, no radius. */
 .sched-bye {
+    background: var(--card-soft);
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-align: center;
+    border: 0;
+    border-radius: 0;
 }
 
 .sched-opp {
@@ -36276,6 +36283,242 @@ button:disabled {
     font-size: 11px;
     font-weight: 700;
     text-align: right;
+}
+
+/* ── Schedule Rankings (srk-) ────────────────────────────────────────────── */
+.srk-scope-note {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 3px;
+}
+
+/* Band header row above the column headers (Regular season / Playoffs). */
+.srk-band th {
+    padding: 10px 6px 0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--text-muted);
+    background: transparent;
+    border-bottom: none;
+}
+
+.srk-band .srk-band-po {
+    color: var(--accent);
+}
+
+/* Rank and Player columns both stick on horizontal scroll; the player
+   column shifts right by the rank column's fixed width. */
+.srk-th-rank {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    min-width: 54px;
+}
+
+.srk-td-rank {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--card);
+    font-size: 14px;
+    font-weight: 800;
+    text-align: center;
+    min-width: 54px;
+}
+
+.schedule-card .sched-th-player {
+    left: 54px;
+}
+
+.schedule-card .sched-td-player {
+    left: 54px;
+}
+
+.srk-now {
+    display: block;
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    color: var(--accent);
+}
+
+.srk-po-start {
+    border-left: 2px solid var(--border);
+}
+
+.srk-group td {
+    background: var(--accent-soft);
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+}
+
+.srk-group-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.srk-group-note {
+    color: var(--text-muted);
+    margin-left: 10px;
+    font-size: 11.5px;
+}
+
+.srk-badge-yours {
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.srk-badge-added {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.srk-badge-fa {
+    background: transparent;
+    color: var(--text-muted);
+}
+
+.srk-ease-cell {
+    white-space: nowrap;
+    text-align: left;
+    min-width: 118px;
+}
+
+.srk-ease-bar {
+    display: inline-block;
+    width: 92px;
+    height: 7px;
+    border-radius: 99px;
+    background: var(--border);
+    overflow: hidden;
+    vertical-align: middle;
+}
+
+.srk-ease-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 99px;
+}
+
+.srk-ease-num {
+    font-size: 13px;
+    font-weight: 700;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.srk-aux {
+    font-size: 13.5px;
+    font-weight: 800;
+}
+
+.srk-rank-na {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.srk-remove {
+    margin-left: 6px;
+}
+
+/* Phone cards replace the table below 900px. */
+.srk-cards {
+    display: none;
+}
+
+.srk-mgroup {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: var(--radius-sm);
+    padding: 7px 10px;
+    margin: 14px 0 8px;
+}
+
+.srk-mcard {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: var(--card);
+}
+
+.srk-mtop {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.srk-mrank {
+    font-size: 15px;
+    font-weight: 800;
+    margin-right: 8px;
+}
+
+.srk-msums {
+    display: flex;
+    gap: 12px;
+    margin-top: 7px;
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+}
+
+.srk-mrow {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.srk-mlabel {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    color: var(--text-muted);
+    width: 52px;
+    text-transform: uppercase;
+}
+
+.srk-mpill {
+    font-size: 11px;
+    border-radius: 6px;
+    padding: 3px 7px;
+    color: var(--text);
+}
+
+.srk-mpill i {
+    font-style: normal;
+    font-weight: 700;
+}
+
+.srk-mpill-bye {
+    background: var(--card-soft);
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+@media (max-width: 768px) {
+    .schedule-card .sched-grid-wrap {
+        display: none;
+    }
+
+    .schedule-card .srk-cards {
+        display: block;
+        margin-top: 12px;
+    }
 }
 
 /* ============================================

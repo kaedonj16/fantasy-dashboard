@@ -1,4 +1,4 @@
-"""Schedule assistant HTML builder.
+"""Schedule rankings HTML builder.
 
 Moved from app.py so the Flask monolith can keep shrinking. Helpers that still
 live in app.py are lazy-imported inside the builder (request time).
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 def build_schedule_body(ctx):
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
-        _team_bye_map, datetime, get_players_index_global, logger,
+        datetime, logger,
     )
 
     import json as _json
@@ -16,19 +16,14 @@ def build_schedule_body(ctx):
     platform = ctx.get("platform") or "sleeper"
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     rosters = ctx.get("rosters") or []
-    try:
-        players_idx = get_players_index_global() or {}
-    except Exception:
-        logger.debug("[schedule] players index unavailable", exc_info=True)
-        players_idx = {}
 
     current_week = int(ctx.get("current_week") or 0)
     max_week = 18
     start_week = current_week if current_week >= 1 else 1
     def_start = start_week
-    def_end = max_week
     playoff_start = int((ctx.get("league_settings") or {}).get("playoff_week_start") or 15)
     playoff_end = min(max_week, playoff_start + 2)
+    def_end = playoff_end
     from utils.defensive_matchup_ratings import season_weights
     from utils.season_qualification import qualification_policy
     active_season = int(ctx.get("current_season") or season)
@@ -37,18 +32,6 @@ def build_schedule_body(ctx):
 
     viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
     roster_pids = [str(p) for p in (viewer_roster.get("players") if viewer_roster else []) or []]
-    roster_positions = ctx.get("roster_positions") or []
-    _idp_slots = any(
-        str(p).upper() in ("DL", "LB", "DB", "IDP", "IDP_FLEX", "DE", "DT", "CB", "S")
-        for p in roster_positions
-    )
-    _skill_pos = {"QB", "RB", "WR", "TE", "K", "DEF"}
-    if _idp_slots:
-        _skill_pos |= {"DL", "LB", "DB", "IDP", "DE", "DT", "CB", "S"}
-    init_pids = [
-        pid for pid in roster_pids
-        if ((players_idx.get(pid) or {}).get("pos") or "").upper() in _skill_pos
-    ]
 
     cfg = _json.dumps({
         "season": season, "leagueId": league_id, "platform": platform,
@@ -57,27 +40,26 @@ def build_schedule_body(ctx):
         "playoffStart": playoff_start, "playoffEnd": playoff_end,
         "completedWeek": completed_week, "activeSeason": active_season,
         "previousWeight": previous_weight, "currentWeight": current_weight,
-        "initPids": init_pids,
+        "myPids": roster_pids,
     })
 
     shell = """
     <div class="card central schedule-card">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
         <div>
-          <h2>Schedule Assistant</h2>
+          <h2>Schedule Rankings</h2>
           <div style="font-size:15px;color:var(--text-muted);margin-top:4px;">
-            Matchup difficulty by week. Ratings rebuild on Wednesdays in-season. Add or remove players and pick a single week or a range.
+            Remaining schedules ranked easiest to hardest, adjusted for opponent strength. Ratings rebuild on Wednesdays in-season.
           </div>
+          <div class="srk-scope-note" id="srkScopeNote">Every NFL team at the position, with the player who holds the schedule in this league.</div>
         </div>
         <div class="sched-view-toggle" id="schedViewToggle">
-          <button class="sched-view-btn active" data-view="my-players">My Players</button>
-          <button class="sched-view-btn" data-view="rankings">Schedule Rankings</button>
+          <button class="sched-view-btn active" data-view="league">League</button>
+          <button class="sched-view-btn" data-view="myteam">My Team</button>
         </div>
       </div>
 
-      __BYE_BANNER__
-
-      <!-- Shared controls: week range always; player search vs. rank controls flip per tab -->
+      <!-- Shared controls: week range, position pills and sort order -->
       <div class="sched-controls sched-shared-controls">
         <div class="sched-week-range">
           <span class="sched-ctrl-label">Weeks</span>
@@ -86,7 +68,7 @@ def build_schedule_body(ctx):
           <select id="schedWkEnd" class="sched-select"></select>
           <div class="sched-presets" role="group" aria-label="Schedule range presets">
             <button type="button" class="sched-preset-btn" id="schedRosPreset"
-              title="Current NFL week through Week 18">ROS</button>
+              title="Current NFL week through the last playoff week">ROS</button>
             <button type="button" class="sched-preset-btn" id="schedFullPreset"
               title="Show Weeks 1 through 18">Full Season</button>
             <button type="button" class="sched-preset-btn" id="schedPlayoffPreset"
@@ -94,28 +76,13 @@ def build_schedule_body(ctx):
           </div>
         </div>
 
-        <!-- My Players: player search -->
-        <div class="sched-add" id="schedAddWrap">
-          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
-          <input id="schedAddInput" type="text" placeholder="Add a player..." autocomplete="off"
-            style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
-                   border:1px solid var(--border);background:var(--card-bg);
-                   color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
-          <button id="schedAddClear" type="button"
-            style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
-                   background:none;border:none;cursor:pointer;color:var(--text-muted);
-                   font-size:15px;line-height:1;padding:2px;" aria-label="Clear search">&#x2715;</button>
-          <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
-        </div>
-
-        <!-- Schedule Rankings: position pills + sort -->
-        <div class="sched-rank-controls" id="schedRankControls" style="display:none;">
+        <div class="sched-rank-controls" id="schedRankControls">
           <div class="otc-day-filters sched-pos-pills" id="schedRankPosPills">
+            <button class="otc-day-filter sched-rank-pos" data-pos="all">All</button>
             <button class="otc-day-filter sched-rank-pos active" data-pos="QB">QB</button>
             <button class="otc-day-filter sched-rank-pos" data-pos="RB">RB</button>
             <button class="otc-day-filter sched-rank-pos" data-pos="WR">WR</button>
             <button class="otc-day-filter sched-rank-pos" data-pos="TE">TE</button>
-            <button class="otc-day-filter sched-rank-pos" data-pos="K">K</button>
           </div>
           <button class="sched-sort-btn" id="schedRankSort">
             Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
@@ -123,36 +90,20 @@ def build_schedule_body(ctx):
         </div>
       </div>
 
-      <!-- My Players view -->
-      <div id="schedMyPlayersSection">
-        <div class="sched-legend">
-          <span><span class="sched-chip" style="background:#22c55e;"></span>Elite (top 25%)</span>
-          <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
-          <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
-          <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal (bottom 25%)</span>
-          <span class="sched-legend-note">Adjusted matchup ratings compare what a defense allowed with what its opponents were expected to score.</span>
-          <button type="button" class="sched-info" aria-label="Seasonal rating data source" title="__SOURCE_COPY__"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
-        </div>
-
-        <div id="schedGrid" class="sched-grid-wrap">
-          <div class="sched-empty">Loading schedule&#8230;</div>
-        </div>
+      <div class="sched-legend">
+        <span><span class="sched-chip" style="background:#22c55e;"></span>Elite (top 25%)</span>
+        <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
+        <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
+        <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal (bottom 25%)</span>
+        <span class="sched-legend-note">Ease is the 0 to 100 score for the selected range. Adj Avg is the average adjusted % across those weeks, byes excluded.</span>
+        <button type="button" class="sched-info" aria-label="About ease" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+        <button type="button" class="sched-info" aria-label="Seasonal rating data source" title="__SOURCE_COPY__"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
       </div>
 
-      <!-- Schedule Rankings view -->
-      <div id="schedRankingsSection" style="display:none;">
-        <div class="sched-legend" style="padding-top:0;">
-          <span><span class="sched-chip" style="background:#22c55e;"></span>Elite</span>
-          <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
-          <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
-          <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal</span>
-          <span class="sched-legend-note">Adjusted matchup ratings compare what a defense allowed with what its opponents were expected to score.</span>
-          <button type="button" class="sched-info" aria-label="About adjusted ratings" title="Raw points allowed can be misleading because defenses face opponents of different quality. Adjusted value measures how much a defense increased or suppressed fantasy production compared with each opponent’s pregame baseline. Positive values are easier; negative values are harder."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
-        </div>
-        <div id="schedRankingsGrid" class="sched-grid-wrap">
-          <div class="sched-empty">Loading&#8230;</div>
-        </div>
+      <div id="schedRankingsGrid" class="sched-grid-wrap">
+        <div class="sched-empty">Loading schedule&#8230;</div>
       </div>
+      <div id="schedRankingsCards" class="srk-cards"></div>
     </div>
     """
 
@@ -160,21 +111,49 @@ def build_schedule_body(ctx):
     <script>
     (function() {
       var CFG = __CFG__;
-      var LS_PIDS = 'sched_pids_' + CFG.leagueId;
-      var LS_WKS  = 'sched_wks_'  + CFG.leagueId + '_' + CFG.season;
+      var LS_WKS   = 'sched_wks_'   + CFG.leagueId + '_' + CFG.season;
+      var LS_ADDED = 'sched_added_' + CFG.leagueId;
+      var POSITIONS = ['QB', 'RB', 'WR', 'TE'];
 
-      var selPids = [];
-      try { selPids = JSON.parse(localStorage.getItem(LS_PIDS) || 'null'); } catch (e) {}
-      if (!Array.isArray(selPids) || !selPids.length) selPids = CFG.initPids.slice();
+      var mySet = {};
+      (CFG.myPids || []).forEach(function(p) { mySet[String(p)] = 1; });
+
+      // Players staged onto this page (deep links, assistant links) live in
+      // their own saved list, separate from the viewer's roster.
+      var addedPids = [];
+      try {
+        var savedAdded = JSON.parse(localStorage.getItem(LS_ADDED) || '[]');
+        if (Array.isArray(savedAdded)) {
+          savedAdded.forEach(function(p) {
+            p = String(p);
+            if (!mySet[p] && addedPids.indexOf(p) === -1) addedPids.push(p);
+          });
+        }
+      } catch (e) {}
+      function persistAdded() {
+        try { localStorage.setItem(LS_ADDED, JSON.stringify(addedPids)); } catch (e) {}
+      }
+      var addedSet = {};
+      function syncAddedSet() {
+        addedSet = {};
+        addedPids.forEach(function(p) { addedSet[p] = 1; });
+      }
+      syncAddedSet();
+
+      var hasAddParam = false;
       try {
         var addPid = new URLSearchParams(window.location.search).get('add');
-        if (addPid && selPids.indexOf(addPid) === -1) {
-          selPids.unshift(addPid);
-          // An interactive add persist()s the list; a URL-staged add must
-          // land in the same saved list or it silently vanishes on the
-          // next visit without the ?add= param. Only the pid list is
-          // written here: the week range is not initialized yet.
-          try { localStorage.setItem(LS_PIDS, JSON.stringify(selPids)); } catch (e2) {}
+        if (addPid) {
+          addPid = String(addPid);
+          hasAddParam = true;
+          if (!mySet[addPid] && addedPids.indexOf(addPid) === -1) {
+            addedPids.unshift(addPid);
+            // A URL-staged add must land in the same saved list the remove
+            // button writes, or it silently vanishes on the next visit
+            // without the ?add= param.
+            persistAdded();
+            syncAddedSet();
+          }
         }
       } catch (e) {}
 
@@ -187,23 +166,334 @@ def build_schedule_body(ctx):
       if (wkEnd > CFG.maxWeek) wkEnd = CFG.maxWeek;
       if (wkEnd < wkStart) wkEnd = wkStart;
 
-      var currentView  = 'my-players';
-      var rankPos      = 'QB';
-      var rankHardFirst = false;
-      var rankingsCache = null;   // last fetched rankings data
-      var _myKey   = null;        // week range My Players last rendered at
-      var _rankKey = null;        // week range Rankings last rendered at
+      var currentView = hasAddParam ? 'myteam' : 'league';
+      var rankPos     = 'QB';
+      var hardFirst   = false;
 
-      var pool      = [];
-      var poolReady = false;
+      // Fetch-promise caches, keyed by position. Main and Next 3 depend on
+      // the selected range and are dropped when it changes; the playoff
+      // range never changes within a session, so its cache survives.
+      var mainCache = {}, next3Cache = {}, poCache = {};
 
-      var startSel   = document.getElementById('schedWkStart');
-      var endSel     = document.getElementById('schedWkEnd');
-      var addInput   = document.getElementById('schedAddInput');
-      var addResults = document.getElementById('schedAddResults');
-      var addClear   = document.getElementById('schedAddClear');
-      var gridEl     = document.getElementById('schedGrid');
+      var startSel = document.getElementById('schedWkStart');
+      var endSel   = document.getElementById('schedWkEnd');
+      var gridEl   = document.getElementById('schedRankingsGrid');
+      var cardsEl  = document.getElementById('schedRankingsCards');
+      var sortBtn  = document.getElementById('schedRankSort');
 
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
+          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+        });
+      }
+
+      function fmtPct(v) {
+        if (v == null || isNaN(v)) return 'N/A';
+        return (v > 0 ? '+' : '') + Number(v).toFixed(1) + '%';
+      }
+
+      function tierColor(rank, total) {
+        if (rank == null) return '#94a3b8';
+        var f = rank / (total || 32);
+        return f <= 0.25 ? '#22c55e' : f <= 0.50 ? '#84cc16' : f <= 0.75 ? '#f59e0b' : '#ef4444';
+      }
+
+      function byPid(data) {
+        var m = {};
+        ((data && data.rankings) || []).forEach(function(r) { m[String(r.pid)] = r; });
+        return m;
+      }
+
+      // ── Data layer ──────────────────────────────────────────────────────
+      function fetchRange(cache, pos, s, e) {
+        if (!cache[pos]) {
+          var url = '/api/schedule-rankings?season=' + CFG.season +
+                    '&week_start=' + s + '&week_end=' + e +
+                    '&position=' + pos +
+                    '&league_id=' + encodeURIComponent(CFG.leagueId) +
+                    '&platform='  + encodeURIComponent(CFG.platform);
+          cache[pos] = fetch(url).then(function(r) { return r.json(); });
+          // A failed fetch must not poison the cache for the next render.
+          cache[pos].catch(function() { delete cache[pos]; });
+        }
+        return cache[pos];
+      }
+
+      function posData(pos) {
+        var n3End = Math.min(wkEnd, wkStart + 2);
+        var mainP = fetchRange(mainCache, pos, wkStart, wkEnd);
+        var n3P = n3End === wkEnd ? mainP : fetchRange(next3Cache, pos, wkStart, n3End);
+        var poP;
+        if (CFG.playoffStart === wkStart && CFG.playoffEnd === wkEnd) poP = mainP;
+        else if (CFG.playoffStart === wkStart && CFG.playoffEnd === n3End) poP = n3P;
+        else poP = fetchRange(poCache, pos, CFG.playoffStart, CFG.playoffEnd);
+        return Promise.all([mainP, n3P, poP]).then(function(ds) {
+          return { main: ds[0], n3: byPid(ds[1]), po: byPid(ds[2]) };
+        });
+      }
+
+      // ── Row models ──────────────────────────────────────────────────────
+      function makeModel(r, pd) {
+        var pid = String(r.pid);
+        var n3 = pd.n3[pid], po = pd.po[pid];
+        return {
+          r: r, pid: pid,
+          n3Rank: n3 && n3.sos_rank != null ? n3.sos_rank : null,
+          n3Total: n3 ? n3.sos_total : null,
+          poRank: po && po.sos_rank != null ? po.sos_rank : null,
+          poTotal: po ? po.sos_total : null,
+          added: !!addedSet[pid]
+        };
+      }
+
+      function sortModels(models) {
+        var dir = hardFirst ? -1 : 1;
+        return models.slice().sort(function(a, b) {
+          var ra = a.r.sos_rank == null ? 999 : a.r.sos_rank;
+          var rb = b.r.sos_rank == null ? 999 : b.r.sos_rank;
+          return (ra - rb) * dir;
+        });
+      }
+
+      // League scope: one row per NFL team. Payload order is ease order, so
+      // the first row seen for a team is its representative.
+      function leagueModels(pd) {
+        var seen = {}, out = [];
+        sortModels((pd.main.rankings || []).map(function(r) { return makeModel(r, pd); }))
+          .forEach(function(m) {
+            if (!seen[m.r.team]) { seen[m.r.team] = 1; out.push(m); }
+          });
+        return out;
+      }
+
+      // My Team scope for one position: staged players pin above roster rows.
+      function myModels(pd) {
+        var added = [], mine = [];
+        (pd.main.rankings || []).forEach(function(r) {
+          var pid = String(r.pid);
+          if (addedSet[pid]) added.push(makeModel(r, pd));
+          else if (mySet[pid]) mine.push(makeModel(r, pd));
+        });
+        var order = {};
+        addedPids.forEach(function(p, i) { order[p] = i; });
+        added.sort(function(a, b) { return order[a.pid] - order[b.pid]; });
+        return { added: added, mine: sortModels(mine) };
+      }
+
+      // ── Shared cell fragments ───────────────────────────────────────────
+      function badgeHtml(m) {
+        if (m.added) return '<span class="sched-roster-badge srk-badge-added">Added</span>';
+        if (mySet[m.pid]) return '<span class="sched-roster-badge srk-badge-yours">Yours</span>';
+        if (m.r.on_roster && m.r.owner) return '<span class="sched-roster-badge sched-roster-badge--owner">' + esc(m.r.owner) + '</span>';
+        if (m.r.on_roster) return '<span class="sched-roster-badge">Rostered</span>';
+        return '<span class="sched-roster-badge srk-badge-fa">Available</span>';
+      }
+
+      function removeHtml(m) {
+        return m.added
+          ? '<button class="sched-remove srk-remove" data-remove-pid="' + esc(m.pid) + '" title="Remove">&times;</button>'
+          : '';
+      }
+
+      function playerInner(m) {
+        var r = m.r;
+        return '<span class="sched-pos" style="background:' + r.color + '22;color:' + r.color + ';">' + esc(r.pos) + '</span>' +
+               '<span class="player-clickable sched-pname" data-player-id="' + esc(m.pid) + '">' + esc(r.name) + '</span>' +
+               '<span class="sched-nfl">' + esc(r.team) + '</span>' + badgeHtml(m) + removeHtml(m);
+      }
+
+      function auxRankHtml(rank, total) {
+        if (rank == null) return '<span class="srk-rank-na">n/a</span>';
+        return '<span style="color:' + tierColor(rank, total) + '">#' + rank + '</span>';
+      }
+
+      // ── Desktop table ───────────────────────────────────────────────────
+      function poColIndex(weeks) {
+        for (var i = 0; i < weeks.length; i++) if (weeks[i] >= CFG.playoffStart) return i;
+        return -1;
+      }
+
+      function bandRow(weeks) {
+        var reg = 0, po = 0;
+        weeks.forEach(function(w) { if (w >= CFG.playoffStart) po++; else reg++; });
+        var h = '<tr class="srk-band"><th colspan="6"></th>';
+        if (reg) h += '<th colspan="' + reg + '">Regular season</th>';
+        if (po) h += '<th colspan="' + po + '" class="srk-band-po">Playoffs</th>';
+        return h + '</tr>';
+      }
+
+      function tableRow(m, poIdx) {
+        var r = m.r;
+        var tc = tierColor(r.sos_rank, r.sos_total);
+        var rankHtml = r.sos_rank != null
+          ? '<span style="color:' + tc + '">#' + r.sos_rank + '</span>'
+          : '<span class="srk-rank-na">n/a</span>';
+        var easeHtml;
+        if (r.ease_score != null) {
+          var ease = Math.round(r.ease_score);
+          easeHtml = '<span class="srk-ease-bar"><span style="width:' + ease + '%;background:' + tc + '"></span></span>' +
+                     '<span class="srk-ease-num" style="color:' + tc + '">' + ease + '</span>';
+        } else {
+          easeHtml = '<span class="srk-rank-na">n/a</span>';
+        }
+        var avgHtml = r.adjusted_avg_percent != null
+          ? '<span style="color:' + tc + '">' + fmtPct(r.adjusted_avg_percent) + '</span>'
+          : '<span class="srk-rank-na">N/A</span>';
+
+        var cells = '';
+        (r.cells || []).forEach(function(c, i) {
+          var cls = 'sched-td' + (i === poIdx && i > 0 ? ' srk-po-start' : '');
+          if (c.bye) { cells += '<td class="' + cls + ' sched-bye">BYE</td>'; return; }
+          var effect = c.adjusted_percent != null ? fmtPct(c.adjusted_percent) : 'N/A';
+          var meaning = c.opp + ' is #' + (c.rank || 'N/A') + ' of ' + (c.total || 32) + ' vs ' + r.pos + ', ' + effect + ' adjusted. This is not ' + r.name + '’s projected score.';
+          cells += '<td class="' + cls + '" title="' + esc(meaning) + '" style="background:' + (c.bg || 'transparent') + '">' +
+                     '<div class="sched-opp">' + esc((c.at || '') + (c.opp || '')) + '</div>' +
+                     '<div class="sched-fpts" style="color:' + (c.txt || 'inherit') + ';">' + effect + '</div>' +
+                   '</td>';
+        });
+
+        return '<tr>' +
+          '<td class="sched-td srk-td-rank">' + rankHtml + '</td>' +
+          '<td class="sched-td sched-td-player">' + playerInner(m) + '</td>' +
+          '<td class="sched-td srk-ease-cell">' + easeHtml + '</td>' +
+          '<td class="sched-td srk-aux">' + avgHtml + '</td>' +
+          '<td class="sched-td srk-aux">' + auxRankHtml(m.n3Rank, m.n3Total) + '</td>' +
+          '<td class="sched-td srk-aux">' + auxRankHtml(m.poRank, m.poTotal) + '</td>' +
+          cells + '</tr>';
+      }
+
+      function buildTable(sections, weeks) {
+        var poIdx = poColIndex(weeks);
+        var head = '<th class="sched-th srk-th-rank">Rank</th>' +
+                   '<th class="sched-th sched-th-player">Player</th>' +
+                   '<th class="sched-th">Ease</th>' +
+                   '<th class="sched-th">Adj Avg</th>' +
+                   '<th class="sched-th">Next 3</th>' +
+                   '<th class="sched-th">Playoffs</th>';
+        weeks.forEach(function(w, i) {
+          head += '<th class="sched-th' + (i === poIdx && i > 0 ? ' srk-po-start' : '') + '">Wk ' + w +
+                    (w === CFG.startWeek ? '<span class="srk-now">Now</span>' : '') + '</th>';
+        });
+        var totalCols = 6 + weeks.length;
+        var body = '';
+        sections.forEach(function(sec) {
+          if (sec.label) {
+            body += '<tr class="srk-group"><td colspan="' + totalCols + '">' +
+                      '<span class="srk-group-label">' + esc(sec.label) + '</span>' +
+                      '<span class="srk-group-note">' + esc(sec.note) + '</span></td></tr>';
+          }
+          sec.models.forEach(function(m) { body += tableRow(m, poIdx); });
+        });
+        return '<table class="sched-table"><thead>' + bandRow(weeks) + '<tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
+      }
+
+      // ── Phone cards ─────────────────────────────────────────────────────
+      function pillHtml(r, w) {
+        var cell = null;
+        (r.cells || []).forEach(function(c) { if (c.week === w) cell = c; });
+        if (!cell) return '';
+        if (cell.bye) return '<span class="srk-mpill srk-mpill-bye">Wk ' + w + ' BYE</span>';
+        var effect = cell.adjusted_percent != null ? fmtPct(cell.adjusted_percent) : 'N/A';
+        return '<span class="srk-mpill" style="background:' + (cell.bg || 'transparent') + '"><b>' + w + '</b> ' +
+                 esc((cell.at || '') + (cell.opp || '')) +
+                 ' <i style="color:' + (cell.txt || 'inherit') + ';">' + effect + '</i></span>';
+      }
+
+      function phoneCard(m, weeks) {
+        var r = m.r;
+        var tc = tierColor(r.sos_rank, r.sos_total);
+        var rankTxt = r.sos_rank != null ? '#' + r.sos_rank : 'n/a';
+        var easeTxt = r.ease_score != null ? String(Math.round(r.ease_score)) : 'n/a';
+        var avgTxt = r.adjusted_avg_percent != null ? fmtPct(r.adjusted_avg_percent) : 'N/A';
+        var n3Txt = m.n3Rank != null ? '#' + m.n3Rank : 'n/a';
+        var poTxt = m.poRank != null ? '#' + m.poRank : 'n/a';
+        var nextPills = weeks.slice(0, 3).map(function(w) { return pillHtml(r, w); }).join('');
+        var poWeeks = weeks.filter(function(w) { return w >= CFG.playoffStart; });
+        var poPills = poWeeks.map(function(w) { return pillHtml(r, w); }).join('');
+        return '<div class="srk-mcard">' +
+          '<div class="srk-mtop"><span class="srk-mrank" style="color:' + tc + '">' + rankTxt + '</span>' + playerInner(m) + '</div>' +
+          '<div class="srk-msums">' +
+            '<span>Ease <b style="color:' + tc + '">' + easeTxt + '</b></span>' +
+            '<span>Adj avg <b>' + avgTxt + '</b></span>' +
+            '<span>Next 3 <b style="color:' + tierColor(m.n3Rank, m.n3Total) + '">' + n3Txt + '</b></span>' +
+            '<span>Playoffs <b style="color:' + tierColor(m.poRank, m.poTotal) + '">' + poTxt + '</b></span>' +
+          '</div>' +
+          '<div class="srk-mrow"><span class="srk-mlabel">Next</span>' + nextPills + '</div>' +
+          (poPills ? '<div class="srk-mrow"><span class="srk-mlabel">Playoffs</span>' + poPills + '</div>' : '') +
+        '</div>';
+      }
+
+      function buildCards(sections, weeks) {
+        var out = '';
+        sections.forEach(function(sec) {
+          if (sec.label) out += '<div class="srk-mgroup">' + esc(sec.label) + '</div>';
+          sec.models.forEach(function(m) { out += phoneCard(m, weeks); });
+        });
+        return out;
+      }
+
+      // ── View assembly ───────────────────────────────────────────────────
+      function buildView(results) {
+        var weeks = (results[0].pd.main.weeks) || [];
+        var sections = [];
+        if (currentView === 'league') {
+          sections = [{ label: null, note: '', models: leagueModels(results[0].pd) }];
+        } else if (rankPos === 'all') {
+          var order = {};
+          addedPids.forEach(function(p, i) { order[p] = i; });
+          var addedAll = [];
+          results.forEach(function(res) { addedAll = addedAll.concat(myModels(res.pd).added); });
+          addedAll.sort(function(a, b) { return order[a.pid] - order[b.pid]; });
+          if (addedAll.length) {
+            sections.push({ label: 'Added', note: addedAll.length + (addedAll.length === 1 ? ' player' : ' players'), models: addedAll });
+          }
+          results.forEach(function(res) {
+            var mine = myModels(res.pd).mine;
+            if (mine.length) {
+              sections.push({ label: res.pos, note: mine.length + (mine.length === 1 ? ' player' : ' players') + ', in ranking order', models: mine });
+            }
+          });
+        } else {
+          var mm = myModels(results[0].pd);
+          sections = [{ label: null, note: '', models: mm.added.concat(mm.mine) }];
+        }
+        var total = 0;
+        sections.forEach(function(sec) { total += sec.models.length; });
+        if (!total) {
+          gridEl.innerHTML = currentView === 'league'
+            ? '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No data</strong>Nothing for this position or week range.</div>'
+            : '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No players to show</strong>No one on your roster lands in this view.</div>';
+          cardsEl.innerHTML = '';
+          return;
+        }
+        gridEl.innerHTML = buildTable(sections, weeks);
+        cardsEl.innerHTML = buildCards(sections, weeks);
+      }
+
+      var renderSeq = 0;
+      function render() {
+        syncChrome();
+        var seq = ++renderSeq;
+        var loading = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading rankings…</span></div>';
+        gridEl.innerHTML = loading;
+        cardsEl.innerHTML = loading;
+        var positions = (currentView === 'myteam' && rankPos === 'all')
+          ? POSITIONS
+          : [rankPos === 'all' ? 'QB' : rankPos];
+        Promise.all(positions.map(function(pos) {
+          return posData(pos).then(function(pd) { return { pos: pos, pd: pd }; });
+        })).then(function(results) {
+          if (seq !== renderSeq) return;
+          buildView(results);
+        }).catch(function() {
+          if (seq !== renderSeq) return;
+          var err = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load rankings</strong>Refresh and try again.</div>';
+          gridEl.innerHTML = err;
+          cardsEl.innerHTML = err;
+        });
+      }
+
+      // ── Controls ────────────────────────────────────────────────────────
       function fillWeekSelects() {
         var optsS = '', optsE = '';
         for (var w = 1; w <= CFG.maxWeek; w++) {
@@ -214,275 +504,34 @@ def build_schedule_body(ctx):
         endSel.innerHTML   = optsE;
       }
 
-      function persist() {
-        try { localStorage.setItem(LS_PIDS, JSON.stringify(selPids)); } catch (e) {}
-        try { localStorage.setItem(LS_WKS,  JSON.stringify({s: wkStart, e: wkEnd})); } catch (e) {}
+      function persistWks() {
+        try { localStorage.setItem(LS_WKS, JSON.stringify({s: wkStart, e: wkEnd})); } catch (e) {}
       }
 
-      function esc(s) {
-        return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
-          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
-        });
-      }
-
-      // ── My Players view ─────────────────────────────────────────────────────
-      function renderGrid() {
-        _myKey = wkStart + '-' + wkEnd;
-        if (!selPids.length) {
-          gridEl.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No players yet</strong>Use the search above to add players.</div>';
-          return;
-        }
-        gridEl.innerHTML = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading schedule…</span></div>';
-        var url = '/api/schedule?season=' + CFG.season +
-                  '&week_start=' + wkStart + '&week_end=' + wkEnd +
-                  '&pids=' + encodeURIComponent(selPids.join(',')) +
-                  '&league_id=' + encodeURIComponent(CFG.leagueId) + '&platform=' + encodeURIComponent(CFG.platform);
-        fetch(url).then(function(r) { return r.json(); }).then(function(data) {
-          var weeks   = data.weeks   || [];
-          var players = data.players || [];
-          if (!players.length) {
-            gridEl.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No matchup data</strong>Nothing to show for this selection.</div>';
-            return;
-          }
-          var head = '<th class="sched-th sched-th-player" data-sort-disabled>Player</th>' +
-                     '<th class="sched-th sched-th-sos" data-sort-type="number">SOS <button type="button" class="sched-info" aria-label="About strength of schedule" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></th>';
-          for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th" data-sort-disabled>WK ' + weeks[i] + '</th>';
-          var rows = '';
-          players.forEach(function(p) {
-            var cells = '';
-            (p.cells || []).forEach(function(c) {
-              if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
-              var rankLabel = c.rank ? ('#' + c.rank) : 'N/A';
-              var fptsLabel = c.adjusted_percent != null ? ((c.adjusted_percent > 0 ? '+' : '') + c.adjusted_percent + '%') : 'N/A';
-              var meaning = c.opp + ' is matchup #' + (c.rank || 'N/A') + ' among defenses after adjusting for opponent quality. Defense effect: ' + fptsLabel + '. This is not ' + p.name + '’s projected score.';
-              cells += '<td class="sched-td" title="' + esc(meaning) + '" aria-label="' + esc(meaning) + '" style="background:' + c.bg + ';">' +
-                         '<div class="sched-opp">'  + esc(c.at + c.opp) + '</div>' +
-                         '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
-                         '<div class="sched-fpts">' + esc(fptsLabel) + '</div>' +
-                       '</td>';
-            });
-            var sosCell;
-            if (p.sos_rank) {
-              var sosFrac = p.sos_rank / (p.sos_total || 32);
-              var sc = sosFrac <= 0.25 ? '#22c55e' : sosFrac <= 0.50 ? '#84cc16' : sosFrac <= 0.75 ? '#f59e0b' : '#ef4444';
-              sosCell = '<td class="sched-td sched-sos-td" data-sort-value="' + p.sos_rank + '" style="color:' + sc + ';">#' + p.sos_rank +
-                        '<span class="sched-sos-total">/' + (p.sos_total || 32) + '</span></td>';
-            } else {
-              sosCell = '<td class="sched-td sched-sos-td">–</td>';
-            }
-            rows += '<tr>' +
-              '<td class="sched-td sched-td-player">' +
-                '<button class="sched-remove" data-pid="' + esc(p.pid) + '" title="Remove">&times;</button>' +
-                '<span class="sched-pos" style="background:' + p.color + '22;color:' + p.color + ';">' + esc(p.pos) + '</span>' +
-                '<span class="player-clickable sched-pname" data-player-id="' + esc(p.pid) + '">' + esc(p.name) + '</span>' +
-                '<span class="sched-nfl">' + esc(p.nfl) + '</span>' +
-              '</td>' + sosCell + cells + '</tr>';
-          });
-          gridEl.innerHTML =
-            '<table class="sched-table" data-sortable><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
-          if (typeof initGenericTableSort === 'function') initGenericTableSort(gridEl);
-          // The SOS info button lives inside the sortable header: keep its
-          // click from also toggling the sort.
-          var sosInfo = gridEl.querySelector('.sched-info');
-          if (sosInfo) sosInfo.addEventListener('click', function(e) { e.stopPropagation(); });
-        }).catch(function() {
-          gridEl.innerHTML = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load schedule</strong>Refresh and try again.</div>';
-        });
-      }
-
-      // ── Schedule Rankings view ────────────────────────────────────────────────────
-      function switchView(v) {
-        currentView = v;
-        document.getElementById('schedMyPlayersSection').style.display  = v === 'my-players' ? '' : 'none';
-        document.getElementById('schedRankingsSection').style.display   = v === 'rankings'   ? '' : 'none';
-        // Flip the shared controls to match the active tab
-        document.getElementById('schedAddWrap').style.display      = v === 'my-players' ? '' : 'none';
-        document.getElementById('schedRankControls').style.display = v === 'rankings'   ? '' : 'none';
+      function syncChrome() {
         document.querySelectorAll('.sched-view-btn').forEach(function(b) {
-          b.classList.toggle('active', b.getAttribute('data-view') === v);
+          b.classList.toggle('active', b.getAttribute('data-view') === currentView);
         });
-        // Re-render the target view if the (shared) week range changed since it
-        // last rendered, so switching tabs always reflects the current weeks.
-        var key = wkStart + '-' + wkEnd;
-        if (v === 'rankings') {
-          if (_rankKey !== key) { rankPage = 0; rankingsCache = null; renderRankings(); }
-        } else {
-          if (_myKey !== key) renderGrid();
-        }
-      }
-
-      function renderRankings() {
-        _rankKey = wkStart + '-' + wkEnd;
-        rankingsCache = null;
-        var rankGrid = document.getElementById('schedRankingsGrid');
-        rankGrid.innerHTML = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading rankings…</span></div>';
-        var url = '/api/schedule-rankings?season=' + CFG.season +
-                  '&week_start=' + wkStart + '&week_end=' + wkEnd +
-                  '&position=' + rankPos +
-                  '&league_id=' + encodeURIComponent(CFG.leagueId) +
-                  '&platform='  + encodeURIComponent(CFG.platform);
-        fetch(url).then(function(r) { return r.json(); }).then(function(data) {
-          rankingsCache = data;
-          buildRankingsTable(data);
-        }).catch(function() {
-          rankGrid.innerHTML = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load rankings</strong>Refresh and try again.</div>';
+        document.querySelectorAll('.sched-rank-pos').forEach(function(b) {
+          b.classList.toggle('active', b.getAttribute('data-pos') === rankPos);
         });
+        sortBtn.innerHTML = hardFirst
+          ? 'Hardest First <i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>'
+          : 'Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>';
+        var note = document.getElementById('srkScopeNote');
+        if (note) note.textContent = currentView === 'league'
+          ? 'Every NFL team at the position, with the player who holds the schedule in this league.'
+          : (rankPos === 'all'
+              ? 'Your full team at once, grouped by position, each group in ranking order.'
+              : 'Your players only, same ranking order.');
       }
 
-      var rankPage = 0;
-
-      function buildRankingsTable(data) {
-        var rankGrid  = document.getElementById('schedRankingsGrid');
-        var weeks     = data.weeks    || [];
-        var total     = data.total_teams || 32;
-        var rankings  = (data.rankings || []).slice();
-        if (rankHardFirst) rankings.reverse();
-
-        if (!rankings.length) {
-          rankGrid.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No data</strong>Nothing for this position or week range.</div>';
-          return;
-        }
-
-        // Group players from the same NFL team into one row - their schedule,
-        // avg rank and ease are identical, so separate rows just repeat values.
-        var groups = [];
-        var byTeam = {};
-        rankings.forEach(function(p) {
-          var g = byTeam[p.team];
-          if (!g) { g = { team: p.team, rep: p, players: [] }; byTeam[p.team] = g; groups.push(g); }
-          g.players.push(p);
-        });
-
-        var head = '<th class="sched-th sched-th-player">Team</th>' +
-                   '<th class="sched-th sched-th-ease">Ease <button type="button" class="sched-info" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. The 0–100 score summarizes the strength of the selected schedule.">ⓘ</button></th>' +
-                   '<th class="sched-th sched-th-sos">Adj Avg <button type="button" class="sched-info" title="Average percentage by which the selected defenses increase or suppress expected production at this position.">ⓘ</button></th>';
-        for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
-
-        var rows = '';
-        groups.forEach(function(g, idx) {
-          var p = g.rep;
-          var rank = idx + 1;
-          var medalHtml;
-          if (rank === 1)      medalHtml = '<span class="sched-rank-medal sched-rank-medal-1">1</span>';
-          else if (rank === 2) medalHtml = '<span class="sched-rank-medal sched-rank-medal-2">2</span>';
-          else if (rank === 3) medalHtml = '<span class="sched-rank-medal sched-rank-medal-3">3</span>';
-          else                 medalHtml = '<span class="sched-rank-num">' + rank + '</span>';
-
-          var namesHtml = g.players.map(function(pl) {
-            var badge = pl.owner
-              ? '<span class="sched-roster-badge sched-roster-badge--owner">' + esc(pl.owner) + '</span>'
-              : (pl.on_roster ? '<span class="sched-roster-badge">Rostered</span>' : '');
-            return '<div class="sched-rank-player-line">' +
-                     '<span class="player-clickable sched-pname" data-player-id="' + esc(pl.pid) + '">' + esc(pl.name) + '</span>' +
-                     badge +
-                   '</div>';
-          }).join('');
-
-          var cells = '';
-          (p.cells || []).forEach(function(c) {
-            if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
-            var rankLabel = c.rank ? ('#' + c.rank) : 'N/A';
-            var effect = c.adjusted_percent != null ? ((c.adjusted_percent > 0 ? '+' : '') + c.adjusted_percent + '%') : 'N/A';
-            var detail = 'Raw points allowed: ' + (c.fpts != null ? c.fpts : 'N/A') + ' · Opponent expected points: ' + (c.expected_points != null ? c.expected_points : 'N/A') + ' · Adjusted difference: ' + (c.adjusted_difference != null ? c.adjusted_difference : 'N/A') + ' · Adjusted percentage: ' + effect + ' · Sample: ' + (c.sample_size || 'N/A') + ' · Confidence: ' + (c.confidence || 'N/A') + ' · Through week: ' + (c.completed_through_week || 'N/A');
-            cells += '<td class="sched-td" title="' + esc(detail) + '" style="background:' + c.bg + ';">' +
-                       '<div class="sched-opp">'  + esc((c.at || '') + c.opp) + '</div>' +
-                       '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
-                       '<div class="sched-fpts">' + esc(effect) + '</div>' +
-                     '</td>';
-          });
-
-          var ar = p.sos_rank || 999;
-          var avgTxt   = p.adjusted_avg_percent != null ? ((p.adjusted_avg_percent > 0 ? '+' : '') + p.adjusted_avg_percent + '%') : 'N/A';
-          var avgColor = ar <= total * 0.25 ? '#22c55e'
-                       : ar <= total * 0.50 ? '#84cc16'
-                       : ar <= total * 0.75 ? '#f59e0b' : '#ef4444';
-
-          var ease      = p.ease_score || 0;
-          var easeColor = ease >= 75 ? '#22c55e'
-                        : ease >= 50 ? '#84cc16'
-                        : ease >= 25 ? '#f59e0b' : '#ef4444';
-          var easeBar = '<div class="sched-ease-wrap">' +
-                          '<div class="sched-ease-bar" style="width:' + Math.round(ease) + '%;background:' + easeColor + ';"></div>' +
-                        '</div>' +
-                        '<div class="sched-ease-num" style="color:' + easeColor + ';">' + Math.round(ease) + '</div>';
-
-          rows += '<tr>' +
-            '<td class="sched-td sched-td-player">' +
-              '<div class="sched-rank-player-cell sched-rank-player-cell--group">' +
-                medalHtml +
-                '<span class="sched-pos" style="background:' + p.color + '22;color:' + p.color + ';">' + esc(p.pos) + '</span>' +
-                '<div class="sched-rank-name-wrap">' + namesHtml + '</div>' +
-                '<span class="sched-nfl">' + esc(g.team) + '</span>' +
-              '</div>' +
-            '</td>' +
-            '<td class="sched-td sched-ease-td"><strong>#' + (p.sos_rank || 'N/A') + '</strong>' + easeBar + '</td>' +
-            '<td class="sched-td sched-sos-td" style="color:' + avgColor + ';">' + avgTxt + '</td>' +
-            cells +
-          '</tr>';
-        });
-
-        rankGrid.innerHTML =
-          '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
-      }
-
-      // ── Player search / pool ────────────────────────────────────────────────────────────────
-      function loadPool() {
-        fetch('/api/league-players').then(function(r) { return r.json(); }).then(function(resp) {
-          var arr = Array.isArray(resp) ? resp : (resp.players || []);
-          pool = arr.filter(function(p) {
-            var pos = String(p.position || '').toUpperCase();
-            return ['QB','RB','WR','TE','K','DEF'].indexOf(pos) !== -1 && p.team && p.team !== 'FA';
-          }).map(function(p) {
-            return {id: String(p.id), name: p.name || '', pos: String(p.position || '').toUpperCase(), team: p.team || ''};
-          });
-          poolReady = true;
-        }).catch(function() {});
-      }
-
-      function showAddResults(q) {
-        if (!poolReady || !q) { addResults.style.display = 'none'; return; }
-        var ql  = q.toLowerCase();
-        var sel = {};
-        selPids.forEach(function(id) { sel[id] = 1; });
-        var matches = pool.filter(function(p) {
-          return !sel[p.id] && p.name.toLowerCase().indexOf(ql) !== -1;
-        }).slice(0, 8);
-        if (!matches.length) { addResults.style.display = 'none'; return; }
-        addResults.innerHTML = matches.map(function(p) {
-          var col = ({QB:'#3b82f6',RB:'#22c55e',WR:'#f59e0b',TE:'#8b5cf6'})[p.pos] || '#6b7280';
-          return '<div class="sched-add-row" data-pid="' + esc(p.id) + '">' +
-                   '<span class="sched-pos" style="background:' + col + '22;color:' + col + ';">' + esc(p.pos) + '</span>' +
-                   '<span>' + esc(p.name) + '</span>' +
-                   '<span class="sched-nfl">' + esc(p.team) + '</span>' +
-                 '</div>';
-        }).join('');
-        addResults.style.display = 'block';
-      }
-
-      // ── Wire up controls ──────────────────────────────────────────────────────────────────
-      fillWeekSelects();
-
-      startSel.addEventListener('change', function() {
-        wkStart = parseInt(this.value, 10);
-        if (wkEnd < wkStart) wkEnd = wkStart;
-        fillWeekSelects(); persist(); syncPresetBtns();
-        if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
-      });
-      endSel.addEventListener('change', function() {
-        wkEnd = parseInt(this.value, 10);
-        if (wkStart > wkEnd) wkStart = wkEnd;
-        fillWeekSelects(); persist(); syncPresetBtns();
-        if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
-      });
-
-      // One-click range presets: Full Season (every remaining week) and
-      // Playoffs (weeks 15-17), each clamped to what's still selectable.
       var rosBtn     = document.getElementById('schedRosPreset');
       var fullBtn    = document.getElementById('schedFullPreset');
       var playoffBtn = document.getElementById('schedPlayoffPreset');
       function syncPresetBtns() {
         var ps = CFG.playoffStart, pe = CFG.playoffEnd;
-        if (rosBtn) rosBtn.classList.toggle('active', wkStart === CFG.startWeek && wkEnd === CFG.maxWeek);
+        if (rosBtn) rosBtn.classList.toggle('active', wkStart === CFG.startWeek && wkEnd === CFG.playoffEnd);
         if (fullBtn) fullBtn.classList.toggle('active', wkStart === 1 && wkEnd === CFG.maxWeek);
         if (playoffBtn) {
           playoffBtn.classList.toggle('active', wkStart === ps && wkEnd === pe);
@@ -492,88 +541,68 @@ def build_schedule_body(ctx):
       function applyPreset(s, e) {
         wkStart = s; wkEnd = e;
         if (wkEnd < wkStart) wkEnd = wkStart;
-        fillWeekSelects(); persist(); syncPresetBtns();
-        if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
+        onRangeChange();
       }
-      if (rosBtn) rosBtn.addEventListener('click', function() { applyPreset(CFG.startWeek, CFG.maxWeek); });
-      if (fullBtn) {
-        fullBtn.addEventListener('click', function() { applyPreset(1, CFG.maxWeek); });
+      function onRangeChange() {
+        fillWeekSelects(); persistWks(); syncPresetBtns();
+        mainCache = {}; next3Cache = {};
+        render();
       }
-      if (playoffBtn) {
-        playoffBtn.addEventListener('click', function() {
-          applyPreset(CFG.playoffStart, CFG.playoffEnd);
-        });
-      }
-      syncPresetBtns();
+      if (rosBtn) rosBtn.addEventListener('click', function() { applyPreset(CFG.startWeek, CFG.playoffEnd); });
+      if (fullBtn) fullBtn.addEventListener('click', function() { applyPreset(1, CFG.maxWeek); });
+      if (playoffBtn) playoffBtn.addEventListener('click', function() { applyPreset(CFG.playoffStart, CFG.playoffEnd); });
 
-      addInput.addEventListener('input', function() {
-        showAddResults(this.value.trim());
-        if (addClear) addClear.style.display = this.value ? '' : 'none';
+      startSel.addEventListener('change', function() {
+        wkStart = parseInt(this.value, 10);
+        if (wkEnd < wkStart) wkEnd = wkStart;
+        onRangeChange();
       });
-      addInput.addEventListener('focus', function() { showAddResults(this.value.trim()); });
-      if (addClear) {
-        addClear.addEventListener('click', function() {
-          addInput.value = '';
-          addResults.style.display = 'none';
-          addClear.style.display = 'none';
-          addInput.focus();
-        });
-      }
-
-      document.addEventListener('click', function(e) {
-        var row = e.target.closest ? e.target.closest('.sched-add-row') : null;
-        if (row && addResults.contains(row)) {
-          var pid = row.getAttribute('data-pid');
-          if (pid && selPids.indexOf(pid) === -1) { selPids.push(pid); persist(); renderGrid(); }
-          addInput.value = '';
-          addResults.style.display = 'none';
-          if (addClear) addClear.style.display = 'none';
-          return;
-        }
-        if (!addResults.contains(e.target) && e.target !== addInput) {
-          addResults.style.display = 'none';
-        }
+      endSel.addEventListener('change', function() {
+        wkEnd = parseInt(this.value, 10);
+        if (wkStart > wkEnd) wkStart = wkEnd;
+        onRangeChange();
       });
 
-      gridEl.addEventListener('click', function(e) {
-        var btn = e.target.closest ? e.target.closest('.sched-remove') : null;
-        if (btn) {
-          e.stopPropagation();
-          var pid = btn.getAttribute('data-pid');
-          selPids = selPids.filter(function(id) { return id !== pid; });
-          persist(); renderGrid();
-        }
-      });
-
-      // View toggle
+      // View toggle: League resets an All selection back to a single position.
       document.getElementById('schedViewToggle').addEventListener('click', function(e) {
         var btn = e.target.closest ? e.target.closest('.sched-view-btn') : null;
-        if (btn) switchView(btn.getAttribute('data-view'));
+        if (!btn) return;
+        currentView = btn.getAttribute('data-view');
+        if (currentView === 'league' && rankPos === 'all') rankPos = 'QB';
+        render();
       });
 
-      // Rankings position filter
+      // Position pills: All only exists for My Team, so it flips scope too.
       document.getElementById('schedRankPosPills').addEventListener('click', function(e) {
         var btn = e.target.closest ? e.target.closest('.sched-rank-pos') : null;
         if (!btn) return;
         rankPos = btn.getAttribute('data-pos');
-        rankPage = 0;
-        document.querySelectorAll('.sched-rank-pos').forEach(function(b) { b.classList.remove('active'); });
-        btn.classList.add('active');
-        renderRankings();
+        if (rankPos === 'all') currentView = 'myteam';
+        render();
       });
 
-      // Sort toggle
-      document.getElementById('schedRankSort').addEventListener('click', function() {
-        rankHardFirst = !rankHardFirst;
-        this.innerHTML = rankHardFirst
-          ? 'Hardest First <i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>'
-          : 'Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>';
-        rankPage = 0;
-        if (rankingsCache) buildRankingsTable(rankingsCache);
+      // Sort toggle re-renders from the cached fetch promises (no refetch).
+      sortBtn.addEventListener('click', function() {
+        hardFirst = !hardFirst;
+        render();
       });
 
-      loadPool();
-      renderGrid();
+      // Remove a staged player (table cell and phone card both carry it).
+      function onRemoveClick(e) {
+        var btn = e.target.closest ? e.target.closest('[data-remove-pid]') : null;
+        if (!btn) return;
+        e.stopPropagation();
+        var pid = btn.getAttribute('data-remove-pid');
+        addedPids = addedPids.filter(function(id) { return id !== pid; });
+        syncAddedSet();
+        persistAdded(); render();
+      }
+      gridEl.addEventListener('click', onRemoveClick);
+      cardsEl.addEventListener('click', onRemoveClick);
+
+      fillWeekSelects();
+      syncPresetBtns();
+      render();
     })();
     </script>
     """.replace("__CFG__", cfg)
@@ -589,61 +618,4 @@ def build_schedule_body(ctx):
                        f"Through Week {completed_week}: {current_weight:.0%} {season} data and {previous_weight:.0%} {season - 1} data.")
     shell = shell.replace("__SOURCE_COPY__", source_copy)
 
-    # ── Bye-week outlook strip: upcoming weeks where the viewer's roster has
-    # multiple players sharing a bye, so waiver moves can be planned ahead. ──
-    bye_banner = ""
-    try:
-        from utils.bye_outlook import build_bye_outlook as _bbo
-        _byes = _team_bye_map(season)
-        if _byes and roster_pids:
-            _reqs = dict(ctx.get("lineup_requirements") or {})
-            if not _reqs:
-                for _slot in (ctx.get("roster_positions") or []):
-                    _s = str(_slot).upper()
-                    if _s in {"QB", "RB", "WR", "TE", "K", "DEF"}:
-                        _reqs[_s] = _reqs.get(_s, 0) + 1
-            _roster = [
-                {"pos": (players_idx.get(pid) or {}).get("pos"),
-                 "team": (players_idx.get(pid) or {}).get("team")}
-                for pid in roster_pids
-            ]
-            _from = current_week if current_week and current_week >= 1 else 1
-            _outlook = _bbo(_byes, _roster, _reqs, from_week=_from)
-            if _outlook:
-                def _short(bp):
-                    order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
-                    items = sorted(bp.items(), key=lambda kv: (-kv[1], order.get(kv[0], 9)))
-                    return " ".join(
-                        f'<span class="sbo-tag">{n} {p}</span>' for p, n in items
-                    )
-
-                _warn = ('<i class="fa-solid fa-triangle-exclamation sbo-warn" '
-                         'aria-hidden="true"></i>')
-
-                def _chip(w):
-                    cr = w["crunch"]
-                    return (
-                        f'<div class="sbo-week{" is-crunch" if cr else ""}">'
-                        f'<span class="sbo-wk">{_warn if cr else ""}Wk {w["week"]}</span>'
-                        f'<span class="sbo-pos">{_short(w["by_pos"])}</span>'
-                        '</div>'
-                    )
-
-                _chips = "".join(_chip(w) for w in _outlook[:8])
-                _has_crunch = any(w["crunch"] for w in _outlook)
-                _note = ("Amber = multiple starters share a bye"
-                         if _has_crunch else "Upcoming byes on your roster")
-                bye_banner = (
-                    '<div class="sched-bye-outlook" role="group" aria-label="Bye week outlook">'
-                    '<div class="sbo-header">'
-                    '<span class="sbo-label">Bye Outlook</span>'
-                    f'<span class="sbo-note">{_note}</span>'
-                    '</div>'
-                    f'<div class="sbo-weeks">{_chips}</div>'
-                    '</div>'
-                )
-    except Exception:
-        logger.debug("[schedule] bye outlook skipped", exc_info=True)
-
-    shell = shell.replace("__BYE_BANNER__", bye_banner)
     return shell + script

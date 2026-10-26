@@ -23,7 +23,6 @@ def test_prospects_paused_banner_with_rows():
 def test_schedule_idp_and_wednesday_copy():
     sched = (ROOT / "dashboard_services" / "pages" / "schedule_page.py").read_text(encoding="utf-8")
     assert "Ratings rebuild on Wednesdays in-season" in sched
-    assert '_idp_slots' in sched
 
 
 def test_keeper_mfl_banner():

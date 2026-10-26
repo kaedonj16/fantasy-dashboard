@@ -231,10 +231,12 @@ def test_schedule_url_add_persists_like_interactive_add():
     src = _read("dashboard_services/pages/schedule_page.py")
     start = src.index("var addPid = new URLSearchParams")
     block = src[start:src.index("} catch (e) {}", start)]
-    assert "selPids.unshift(addPid)" in block
-    assert "localStorage.setItem(LS_PIDS, JSON.stringify(selPids))" in block
-    # The interactive path it must match:
-    assert "selPids.push(pid); persist(); renderGrid();" in src
+    assert "addedPids.unshift(addPid)" in block
+    assert "persistAdded();" in block
+    # The saved list both paths share, written by persistAdded():
+    assert "localStorage.setItem(LS_ADDED, JSON.stringify(addedPids))" in src
+    # The interactive path it must match (removing a staged player):
+    assert "persistAdded(); render();" in src
 
 
 # ── Trade Database ───────────────────────────────────────────────────────────
