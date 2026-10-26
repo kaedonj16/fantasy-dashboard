@@ -387,3 +387,110 @@ def test_modal_history_comes_from_uncapped_latest_play_groups():
     assert "_feed.filter(function(ev) { return !ev.fromPbp; })" in scorezone
     live = SCOREZONE_JS.split("window.__rzGetPlayerLive = function(pid)", 1)[1][:180]
     assert "_modalPlayHistory()" in live
+
+
+def _extract_js_function(source: str, start_marker: str) -> str:
+    """Slice one top-level function out of a JS file by brace counting."""
+    i = source.index(start_marker)
+    j = source.index("{", i)
+    depth = 0
+    for k in range(j, len(source)):
+        if source[k] == "{":
+            depth += 1
+        elif source[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[i : k + 1]
+    raise AssertionError("unbalanced braces extracting " + start_marker)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_feed_desc_calls_an_intercepted_target_a_pick_not_an_incompletion():
+    fn = _extract_js_function(SCOREZONE_JS, "function _improvePlayDesc(")
+    script = f"""
+var _improvePlayDesc = {fn};
+var wr = {{pid:'9', name:'Jaxon Smith-Njigba', pos:'WR', line:{{targets:1, rec:0, rec_yds:0, rush_yds:0, pass_yds:0}}}};
+var qb = {{pid:'1', name:'Sam Darnold', pos:'QB', line:{{int:1, pass_yds:0}}}};
+var def = {{pid:'d', name:'KC DEF', pos:'DEF', line:{{def_int:1}}}};
+var qbClean = {{pid:'1', name:'Sam Darnold', pos:'QB', line:{{pass_yds:0}}}};
+console.log(JSON.stringify({{
+  picked: _improvePlayDesc(wr, [wr, qb, def], ''),
+  plain: _improvePlayDesc(wr, [wr, qbClean], '')
+}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    assert out["picked"] == "Target from Sam Darnold · intercepted"
+    assert out["plain"] == "Target from Sam Darnold · incomplete"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_player_modal_timeline_labels_pick_and_reconciles_targets_at_final():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    helpers = app_js[
+        app_js.index("window._rzPlayerLogEvents") : app_js.index(
+            "window._rzSyncTabLive"
+        )
+    ]
+    script = f"""
+var window = {{ location: {{ pathname: '/sleeper/2026/123/scorezone' }} }};
+var document = {{ getElementById: function() {{ return {{}}; }} }};
+{helpers}
+window._rzRenderGameBoard = function() {{ return ''; }};
+var QB = '1', WR = '9';
+function ev(playId, seq, ts, q, clock, desc, contribs) {{
+  return {{ playId: playId, gameId: 'g1', seq: seq, playSortTs: ts,
+    gameQuarter: q, gameClock: clock, desc: desc, playState: 'VALID',
+    contributions: contribs }};
+}}
+var events = [
+  ev('p1', 1, 100, 'Q1', '10:00', '10-yard reception from Sam Darnold', [
+    {{pid: QB, name: 'Sam Darnold', pos: 'QB', line: {{pass_yds: 10}}, pts: 0.4, kind: 'gain'}},
+    {{pid: WR, name: 'Jaxon Smith-Njigba', pos: 'WR', line: {{targets: 1, rec: 1, rec_yds: 10}}, pts: 2, kind: 'gain'}}
+  ]),
+  ev('p2', 2, 200, 'Q1', '9:00', 'Target from Sam Darnold · incomplete', [
+    {{pid: QB, name: 'Sam Darnold', pos: 'QB', line: {{pass_yds: 0}}, pts: 0, kind: 'gain'}},
+    {{pid: WR, name: 'Jaxon Smith-Njigba', pos: 'WR', line: {{targets: 1}}, pts: 0, kind: 'target'}}
+  ]),
+  // The bug: PBP names JSN on Darnold's end-zone pick, so the group desc
+  // (built from the primary actor) calls it an incomplete target, and the
+  // log sums 3 targets against the box score's 2.
+  ev('p3', 3, 300, 'Q2', '0:23', 'Target from Sam Darnold · incomplete', [
+    {{pid: QB, name: 'Sam Darnold', pos: 'QB', line: {{int: 1}}, pts: -2, kind: 'neg'}},
+    {{pid: WR, name: 'Jaxon Smith-Njigba', pos: 'WR', line: {{targets: 1}}, pts: 0, kind: 'target'}},
+    {{pid: 'dkc', name: 'KC DEF', pos: 'DEF', line: {{def_int: 1}}, pts: 2, kind: 'gain'}}
+  ])
+];
+var wrRows = window._rzPlayerLogEvents(WR, events);
+var qbRows = window._rzPlayerLogEvents(QB, events);
+var state = {{
+  player_info: {{ '9': {{ name: 'Jaxon Smith-Njigba', pos: 'WR', team: 'SEA',
+    home: 'SEA', away: 'KC', away_pts: '3', home_pts: '20', game_id: 'g1',
+    game_code: '2', game_status: 'Final',
+    stat_line: {{ carries: 0, rush_yds: 0, rush_td: 0, targets: 2, rec: 1, rec_yds: 10, rec_td: 0 }} }} }},
+  scoring: {{ rec: 1, rec_yd: 0.1, rec_td: 6, rush_yd: 0.1, rush_td: 6 }},
+  matchups: [], games: {{}}
+}};
+var html = window._rzBuildLiveHtml(WR, state, events);
+console.log(JSON.stringify({{ wr: wrRows, qb: qbRows, html: html }}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    wr = {row["playId"]: row for row in out["wr"]}
+    qb = {row["playId"]: row for row in out["qb"]}
+    # The pick is labeled as a pick in both players' logs, never an incompletion.
+    assert wr["p3"]["kind"] == "int" and wr["p3"]["isIntPlay"] is True
+    assert "intercepted" in wr["p3"]["desc"] and "incomplete" not in wr["p3"]["desc"]
+    assert "intercepted" in qb["p3"]["desc"]
+    assert "intended for Jaxon Smith-Njigba" in qb["p3"]["desc"]
+    # Ordinary incompletions stay ordinary.
+    assert wr["p2"]["kind"] == "target" and wr["p2"]["isIntPlay"] is False
+    html = out["html"]
+    # Timeline design: stat tiles, build-up chart, chronological timeline.
+    assert "rz-pm-tiles" in html and "Fantasy Pts" in html
+    # Hero tiles break out receiving and rushing yards separately.
+    assert "Receiving Yards" in html and "Rushing Yards" in html
+    assert "Points build-up" in html and "<svg" in html
+    assert "rz-pm-tl" in html
+    # At final the phantom target is demoted so the log matches the box (2).
+    assert "No target credited" in html and "not counted" in html
+    # Chronological order: Q1 reception renders before the Q2 pick.
+    assert html.index("10-yard reception") < html.index("intercepted")

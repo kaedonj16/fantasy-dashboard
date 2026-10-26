@@ -41742,6 +41742,196 @@ a.rz-demo-link:hover {
     color: var(--rz-red);
 }
 
+.rz-pm-lpts.zero {
+    color: var(--rz-muted);
+}
+
+/* ── Player modal ScoreZone tab: Timeline design (tiles, build-up chart,
+   chronological play timeline) */
+.rz-pm-tiles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding: 12px 12px 2px;
+}
+
+.rz-pm-tile {
+    background: var(--card-soft, rgba(0, 0, 0, .03));
+    border-radius: 12px;
+    padding: 10px 11px;
+}
+
+.rz-pm-tile-k {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--rz-muted);
+}
+
+.rz-pm-tile-v {
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    color: var(--rz-text);
+    margin-top: 2px;
+}
+
+.rz-pm-tile-v small {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--rz-muted);
+}
+
+.rz-pm-chart {
+    padding: 12px 12px 2px;
+}
+
+.rz-pm-chart-cap {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--rz-muted);
+    margin-bottom: 2px;
+}
+
+.rz-pm-tl {
+    padding: 6px 12px 4px;
+}
+
+.rz-pm-tl-q {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--rz-muted);
+    margin: 12px 0 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rz-pm-tl-q::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.rz-pm-tl-q:first-child {
+    margin-top: 4px;
+}
+
+.rz-pm-trow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 6px 8px 2px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+
+.rz-pm-trow:last-child {
+    border-bottom: none;
+}
+
+.rz-pm-trow.int {
+    background: rgba(220, 38, 38, .05);
+    border-radius: 8px;
+    border-bottom-color: transparent;
+    padding-left: 6px;
+    padding-right: 8px;
+}
+
+.rz-pm-trow.nullified {
+    opacity: .55;
+}
+
+.rz-pm-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 2px solid var(--accent, #122d4b);
+    background: var(--card);
+    flex-shrink: 0;
+    margin-left: 1px;
+}
+
+.rz-pm-dot.td {
+    background: var(--rz-red);
+    border-color: var(--rz-red);
+}
+
+.rz-pm-dot.rush {
+    border-color: #ea580c;
+}
+
+.rz-pm-dot.inc {
+    border-color: var(--grid, #cbd5e1);
+}
+
+.rz-pm-dot.int {
+    border-color: var(--rz-red);
+    background: rgba(220, 38, 38, .35);
+}
+
+.rz-pm-tl .rz-pm-lclock {
+    min-width: 36px;
+    padding-top: 0;
+}
+
+.rz-pm-tright {
+    flex-shrink: 0;
+    text-align: right;
+    min-width: 62px;
+    line-height: 1.25;
+}
+
+.rz-pm-cume {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--rz-muted);
+}
+
+.rz-pm-chip-notcounted {
+    display: inline-block;
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--rz-red);
+    background: rgba(220, 38, 38, .1);
+    border-radius: 5px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    vertical-align: 1px;
+    white-space: nowrap;
+}
+
+.rz-pm-tiles.n6 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 640px) {
+    .rz-pm-tiles,
+    .rz-pm-tiles.n6 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+:root[data-theme="dark"] .rz-pm-tile {
+    background: rgba(255, 255, 255, .05);
+}
+
+:root[data-theme="dark"] .rz-pm-trow {
+    border-bottom-color: rgba(255, 255, 255, .07);
+}
+
+:root[data-theme="dark"] .rz-pm-tl-q::after {
+    background: rgba(255, 255, 255, .08);
+}
+
 /* ── Dark mode overrides (new components) */
 :root[data-theme="dark"] .rz-page .rz-hist-panel,
 :root[data-theme="dark"] .rz-hist-panel {

@@ -27789,6 +27789,37 @@ window._rzPlayerLogEvents = function(pid, events) {
         desc = yards + '-yard completion to ' + (receiver.name || 'receiver');
       }
     }
+    // Interception plays: the group desc is built from the primary actor,
+    // which ranks a target over the QB's pick, so an intercepted pass used to
+    // read as a plain "Target · incomplete" in the intended receiver's log.
+    // Flag the play and name the pick; the renderer reconciles its target
+    // against the box score at final (official scorers credit no target
+    // when the throw had no clear intended receiver).
+    var isIntPlay = !invalid && (!!contributions.find(function(c) {
+      var l = (c && (c.line || c.statLine)) || {};
+      return c && (Number(l.int || 0) > 0 || Number(l.def_int || 0) > 0);
+    }) || !!ev.isIntPlay || !!contribution.isIntPlay);
+    var iAmTarget = Number(line.targets || 0) > 0 && !(Number(line.rec || 0) > 0);
+    var iAmQb = Number(line.int || 0) > 0;
+    if (isIntPlay && (iAmTarget || iAmQb)) {
+      var qbC = contributions.find(function(c) {
+        var l = (c && (c.line || c.statLine)) || {};
+        return c && String(c.pos || '').toUpperCase() === 'QB' && Number(l.int || 0) > 0;
+      });
+      var qbSurname = '';
+      if (qbC && qbC.name) {
+        var _np = String(qbC.name).trim().split(/\s+/);
+        qbSurname = _np.length > 1 ? _np[_np.length - 1] : _np[0];
+      }
+      desc = (qbSurname || 'Pass') + ' intercepted';
+      if (iAmQb) {
+        var tgtC = contributions.find(function(c) {
+          var l = (c && (c.line || c.statLine)) || {};
+          return c && String(c.pid) !== wanted && Number(l.targets || 0) > 0 && !(Number(l.rec || 0) > 0);
+        });
+        if (tgtC && tgtC.name) desc += ' · intended for ' + tgtC.name;
+      }
+    }
     var row = {
       pid: wanted,
       playId: playKey,
@@ -27797,11 +27828,12 @@ window._rzPlayerLogEvents = function(pid, events) {
       playSortTs: ev.playSortTs != null ? ev.playSortTs : contribution.playSortTs,
       gameQuarter: ev.gameQuarter || contribution.quarter || '',
       gameClock: ev.gameClock || contribution.clock || '',
-      kind: invalid ? 'nullified' : (contribution.kind || ev.kind || 'gain'),
+      kind: invalid ? 'nullified' : (isIntPlay && (iAmTarget || iAmQb) ? 'int' : (contribution.kind || ev.kind || 'gain')),
       desc: invalid ? (ev.desc || 'Play nullified') : desc,
       statLine: invalid ? {} : line,
       pts: invalid ? 0 : Number(contribution.pts || 0),
-      isNullified: invalid
+      isNullified: invalid,
+      isIntPlay: isIntPlay
     };
     var previous = latest[playKey];
     var rowOrder = Number(row.playSortTs || 0), previousOrder = Number(previous && previous.playSortTs || 0);
@@ -27859,99 +27891,185 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
   var game = (state.games || {})[info.game_id] || Object.assign({}, info, { status: gsType === 'pre' ? 'pregame' : gsType });
   var gameHdr = (gsLabel || gameLine) ? window._rzRenderGameBoard(game, { modal:true }) + (injBadge ? '<div class="rz-pm-injury-row">'+injBadge+'</div>' : '') : '';
 
-  var sl = info.stat_line, statBlock = '';
+  var sl = info.stat_line, pos = info.pos || '';
+  // Box-score total under this player's league scoring. This is the old stat
+  // block's math, unchanged; the Timeline tiles read from the same box line
+  // so the header numbers and the log below can be reconciled against it.
+  var boxTotal = null;
   if (sl) {
-    var pos = info.pos || '', rows = [], total = 0;
-    var addRow = function(label, val, key, showZero) {
-      var rate = parseFloat(sc[key] || 0);
-      if ((val == null || (!showZero && Number(val) === 0)) || !rate) return;
-      var pts = parseFloat((val * rate).toFixed(2));
-      total += pts;
-      rows.push({ label: label, val: val, pts: pts });
-    };
+    var _bt = 0, _rate = function(key) { return parseFloat(sc[key] || 0); };
     if (pos === 'QB') {
-      addRow('Pass Yds', sl.pass_yds, 'pass_yd', true);
-      addRow('Pass TDs', sl.pass_td, 'pass_td', true);
-      addRow('INTs', sl.int, 'pass_int', true);
-      addRow('Rush Yds', sl.rush_yds, 'rush_yd', true);
-      addRow('Rush TDs', sl.rush_td, 'rush_td', true);
-    } else if (pos === 'DEF') {
-      // DEF scoring varies per league; show raw stats, use players_points for total
-      var defStats = [['Sacks', sl.sacks||0], ['INTs', sl.def_int||0],
-                      ['Fum Rec', sl.fum_rec||0], ['DEF TDs', sl.def_td||0]];
-      defStats.forEach(function(r) { if (r[1] > 0) rows.push({ label: r[0], val: r[1], pts: null }); });
+      _bt += (sl.pass_yds || 0) * _rate('pass_yd') + (sl.pass_td || 0) * _rate('pass_td')
+           + (sl.int || 0) * _rate('pass_int') + (sl.rush_yds || 0) * _rate('rush_yd')
+           + (sl.rush_td || 0) * _rate('rush_td');
     } else if (pos === 'K') {
       // FGs are distance-/per-yard-scored in most Sleeper leagues, so score the
       // whole made-FG line rather than a flat per-make rate (which is 0 there).
-      var fgPts = parseFloat(_rzFgPts(sl, sc).toFixed(2));
-      if ((sl.fgm || 0) && fgPts) {
-        total += fgPts;
-        rows.push({ label: 'FGM', val: sl.fgm || 0, pts: fgPts });
-      }
-      addRow('XPM', sl.xpm||0, 'xpm');
-    } else {
-      // RB / WR / TE -- carries & targets shown as context (no points)
-      [['Carries', sl.carries||0, null], ['Rush Yds', sl.rush_yds||0, 'rush_yd'],
-       ['Rush TDs', sl.rush_td||0, 'rush_td'], ['Targets', sl.targets||0, null],
-       ['Rec', sl.rec||0, 'rec'], ['Rec Yds', sl.rec_yds||0, 'rec_yd'],
-       ['Rec TDs', sl.rec_td||0, 'rec_td']].forEach(function(r) {
-        var val = r[1];
-        if (!val) return;
-        if (r[2]) {
-          var pts = parseFloat((val * parseFloat(sc[r[2]] || 0)).toFixed(2));
-          total += pts;
-          rows.push({ label: r[0], val: val, pts: pts });
-        } else {
-          rows.push({ label: r[0], val: val, pts: null });
-        }
-      });
+      _bt += parseFloat(_rzFgPts(sl, sc).toFixed(2)) + (sl.xpm || 0) * _rate('xpm');
+    } else if (pos !== 'DEF') {
+      _bt += (sl.rush_yds || 0) * _rate('rush_yd') + (sl.rush_td || 0) * _rate('rush_td')
+           + (sl.rec || 0) * _rate('rec') + (sl.rec_yds || 0) * _rate('rec_yd')
+           + (sl.rec_td || 0) * _rate('rec_td');
     }
-    total = parseFloat(total.toFixed(2));
-    if (rows.length) {
-      statBlock = '<div class="rz-pm-stats">'
-        + rows.map(function(r) {
-          return '<div class="rz-pm-srow"><span class="rz-pm-slabel">' + r.label + '</span>'
-            + '<span class="rz-pm-sval">' + r.val + '</span>'
-            + (r.pts !== null ? '<span class="rz-pm-spts ' + (r.pts >= 0 ? 'pos' : 'neg') + '">' + (r.pts >= 0 ? '+' : '') + r.pts + '</span>' : '<span class="rz-pm-spts"></span>')
-            + '</div>';
-        }).join('')
-        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '-')) + ' pts</span></div>'
-        + '</div>';
-    }
+    boxTotal = parseFloat(_bt.toFixed(2));
   }
-  if (!statBlock) {
-    statBlock = '<div class="rz-pm-stats rz-pm-no-stats">'
+  // DEF scoring varies per league; its total comes from the matchup points.
+  var totalPts = null;
+  if (pos === 'DEF') {
+    totalPts = fantasyPts !== null ? parseFloat(fantasyPts) : null;
+  } else if (boxTotal != null && boxTotal > 0) {
+    totalPts = boxTotal;
+  } else if (fantasyPts !== null) {
+    totalPts = parseFloat(fantasyPts);
+  }
+
+  // ── Timeline design: stat tiles ──────────────────────────────────────────
+  var tilesHtml = '';
+  if (sl && totalPts != null) {
+    var N = function(v) { return v == null ? 0 : v; };
+    var tiles = [{ k: 'Fantasy Pts', v: fmt(totalPts), sub: '' }];
+    if (pos === 'QB') {
+      tiles.push({ k: 'Pass Yards', v: N(sl.pass_yds), sub: '' });
+      tiles.push({ k: 'Touchdowns', v: Number(N(sl.pass_td)) + Number(N(sl.rush_td)), sub: '' });
+      tiles.push({ k: 'Rush Yards', v: N(sl.rush_yds), sub: '' });
+    } else if (pos === 'DEF') {
+      tiles.push({ k: 'Sacks', v: N(sl.sacks), sub: '' });
+      tiles.push({ k: 'Interceptions', v: N(sl.def_int), sub: '' });
+      tiles.push({ k: 'Def TDs', v: N(sl.def_td), sub: '' });
+    } else if (pos === 'K') {
+      tiles.push({ k: 'FG Made', v: N(sl.fgm), sub: sl.fga ? '/ ' + sl.fga + ' att' : '' });
+      tiles.push({ k: 'XP Made', v: N(sl.xpm), sub: sl.xpa ? '/ ' + sl.xpa + ' att' : '' });
+      if (sl.fg_long) tiles.push({ k: 'FG Long', v: sl.fg_long, sub: '' });
+      else if (sl.fga) tiles.push({ k: 'FG Att', v: sl.fga, sub: '' });
+    } else {
+      tiles.push({ k: 'Receptions', v: N(sl.rec), sub: sl.targets ? '/ ' + sl.targets + ' tgt' : '' });
+      tiles.push({ k: 'Receiving Yards', v: N(sl.rec_yds), sub: '' });
+      tiles.push({ k: 'Rushing Yards', v: N(sl.rush_yds), sub: '' });
+      tiles.push({ k: 'Total Yards', v: Number(N(sl.rec_yds)) + Number(N(sl.rush_yds)), sub: '' });
+      tiles.push({ k: 'Touchdowns', v: Number(N(sl.rec_td)) + Number(N(sl.rush_td)), sub: '' });
+    }
+    tilesHtml = '<div class="rz-pm-tiles' + (tiles.length > 4 ? ' n' + tiles.length : '') + '">' + tiles.map(function(t) {
+      return '<div class="rz-pm-tile"><div class="rz-pm-tile-k">' + t.k + '</div>'
+        + '<div class="rz-pm-tile-v">' + t.v + (t.sub ? '<small> ' + t.sub + '</small>' : '') + '</div></div>';
+    }).join('') + '</div>';
+  }
+  if (!tilesHtml) {
+    tilesHtml = '<div class="rz-pm-stats rz-pm-no-stats">'
       + (fantasyPts !== null ? '<div class="rz-pm-pts-big">' + fantasyPts + ' pts</div>' : '')
       + '<div style="color:var(--text-muted);font-size:12px;">' + (gsType === 'pre' ? 'Stats will appear after kickoff.' : gsType === 'live' ? 'Live box-score stats are temporarily unavailable.' : 'Box-score stats are unavailable for this game.') + '</div>'
       + '</div>';
   }
 
   var playerEvs = window._rzPlayerLogEvents(pid, feed);
-  var logHtml = '<div class="rz-pm-log-title">Game Log'
-    + (playerEvs.length ? ' <span style="font-size:10px;font-weight:600;opacity:.55;">(' + playerEvs.length + ')</span>' : '')
-    + '</div>';
-  if (playerEvs.length) {
-    logHtml += '<div class="rz-pm-log">'
-      + playerEvs.map(function(ev) {
-        var clock = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
-        var ptStr = ev.pts > 0 ? '+' + fmt(ev.pts) : fmt(ev.pts);
-        return '<div class="rz-pm-log-row ' + ev.kind + '">'
-          + (clock ? '<span class="rz-pm-lclock">' + clock + '</span>' : '')
-          + '<span class="rz-pm-ldesc">' + ev.desc + '</span>'
-          + '<span class="rz-pm-lpts ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</span>'
-          + '</div>';
-      }).join('')
-      + '</div>';
+
+  // Box-score reconciliation at final. Play-by-play sometimes credits a
+  // target the official scorer did not: the classic case is an interception
+  // thrown between two receivers, where the PBP names an intended receiver
+  // but the box credits nobody, so the log summed one target more than the
+  // stat block above it. When the log's targets exceed the box's at final,
+  // demote interception-play target rows to not-counted so the tab agrees
+  // with itself. Live games are left alone; the box can lag the PBP.
+  if (gsType === 'final' && sl && sl.targets != null) {
+    var logTgt = 0, hasLines = false;
+    playerEvs.forEach(function(ev) {
+      if (ev.isNullified) return;
+      var l = ev.statLine || {};
+      if (l.targets != null) hasLines = true;
+      logTgt += Number(l.targets || 0);
+    });
+    var excess = hasLines ? logTgt - Number(sl.targets || 0) : 0;
+    if (excess > 0) {
+      playerEvs.forEach(function(ev) {
+        if (excess <= 0 || !ev.isIntPlay || ev.isNullified) return;
+        var t = Number((ev.statLine || {}).targets || 0);
+        if (t > 0) { ev.notCounted = true; excess -= t; }
+      });
+    }
+  }
+
+  // Chronological (game order) rows with running totals for the timeline
+  // and the build-up chart. _rzPlayerLogEvents returns newest first.
+  var chrono = playerEvs.slice().reverse();
+  var runTotal = 0;
+  chrono.forEach(function(ev) {
+    if (!ev.isNullified && !ev.notCounted) {
+      runTotal = Math.round((runTotal + Number(ev.pts || 0)) * 100) / 100;
+    }
+    ev.runTotal = runTotal;
+  });
+
+  // ── Timeline design: points build-up chart ───────────────────────────────
+  var chartHtml = '';
+  var counted = chrono.filter(function(ev) { return !ev.isNullified; });
+  if (counted.length >= 2) {
+    var W = 760, H = 150, PL = 8, PR = 44, PT = 24, PB = 18;
+    var maxV = Math.max(10, Math.ceil(runTotal / 10) * 10);
+    var stepX = (W - PL - PR) / (counted.length - 1);
+    var X = function(i) { return PL + i * stepX; };
+    var Y = function(v) { return PT + (maxV - v) / maxV * (H - PT - PB); };
+    var ptsAttr = counted.map(function(ev, i) { return X(i).toFixed(1) + ',' + Y(ev.runTotal).toFixed(1); }).join(' ');
+    var svg = '';
+    [0, 0.5, 1].forEach(function(f) {
+      var gv = Math.round(maxV * f);
+      svg += '<line x1="' + PL + '" y1="' + Y(gv) + '" x2="' + (W - PR) + '" y2="' + Y(gv) + '" stroke="var(--grid)" stroke-width="1"/>'
+        + '<text x="' + (W - PR + 6) + '" y="' + (Y(gv) + 3) + '" font-size="9" fill="var(--text-muted)" font-weight="600">' + gv + '</text>';
+    });
+    svg += '<polygon points="' + PL + ',' + Y(0) + ' ' + ptsAttr + ' ' + X(counted.length - 1) + ',' + Y(0) + '" fill="rgba(22,163,74,.08)"/>';
+    svg += '<polyline points="' + ptsAttr + '" fill="none" stroke="var(--win)" stroke-width="2.5" stroke-linejoin="round"/>';
+    counted.forEach(function(ev, i) {
+      var isTd = ev.kind === 'td';
+      svg += '<circle cx="' + X(i) + '" cy="' + Y(ev.runTotal) + '" r="' + (isTd ? 5 : 3.5) + '" fill="' + (isTd ? 'var(--rz-red)' : 'var(--card)') + '" stroke="' + (isTd ? 'var(--rz-red)' : 'var(--win)') + '" stroke-width="2"><title>' + ev.desc + ' · ' + fmt(ev.runTotal) + ' total</title></circle>';
+    });
+    svg += '<text x="' + (X(counted.length - 1) - 4) + '" y="' + (Y(runTotal) - 10) + '" font-size="13" font-weight="800" fill="var(--text)" text-anchor="end">' + fmt(runTotal) + '</text>';
+    chartHtml = '<div class="rz-pm-chart"><div class="rz-pm-chart-cap">Points build-up · by play</div>'
+      + '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="Cumulative fantasy points by play">' + svg + '</svg></div>';
+  }
+
+  // ── Timeline design: chronological play timeline ─────────────────────────
+  var tlHtml = '';
+  if (chrono.length) {
+    var lastQ = '__none__';
+    tlHtml = '<div class="rz-pm-tl">' + chrono.map(function(ev) {
+      var head = '';
+      var qRaw = String(ev.gameQuarter || '');
+      if (qRaw && qRaw !== lastQ) {
+        var qn = qRaw.replace(/^Q/i, '');
+        head = '<div class="rz-pm-tl-q">' + ((/^\d+$/.test(qn) && Number(qn) >= 5) || /OT/i.test(qRaw) ? 'Overtime' : 'Quarter ' + qn) + '</div>';
+      }
+      if (qRaw) lastQ = qRaw;
+      var l = ev.statLine || {};
+      var dot = 'inc';
+      if (ev.kind === 'td') dot = 'td';
+      else if (ev.kind === 'int') dot = 'int';
+      else if (Number(l.carries || 0) > 0 && !(Number(l.rec || 0) > 0)) dot = 'rush';
+      else if (Number(l.rec || 0) > 0 || Number(ev.pts || 0) > 0) dot = '';
+      var right;
+      if (ev.notCounted) {
+        right = '<span class="rz-pm-lpts zero">—</span><br><span class="rz-pm-cume">not counted</span>';
+      } else if (ev.isNullified) {
+        right = '<span class="rz-pm-lpts zero">' + fmt(0) + '</span><br><span class="rz-pm-cume">nullified</span>';
+      } else {
+        right = '<span class="rz-pm-lpts ' + (ev.pts > 0 ? 'pos' : ev.pts < 0 ? 'neg' : 'zero') + '">' + (ev.pts > 0 ? '+' : '') + fmt(ev.pts) + '</span>'
+          + '<br><span class="rz-pm-cume">' + fmt(ev.runTotal) + ' total</span>';
+      }
+      var chip = ev.notCounted ? ' <span class="rz-pm-chip-notcounted">No target credited</span>' : '';
+      return head + '<div class="rz-pm-trow' + (ev.kind === 'int' ? ' int' : '') + (ev.isNullified ? ' nullified' : '') + '">'
+        + '<span class="rz-pm-dot ' + dot + '"></span>'
+        + '<span class="rz-pm-lclock">' + (ev.gameClock || '') + '</span>'
+        + '<span class="rz-pm-ldesc">' + ev.desc + chip + '</span>'
+        + '<span class="rz-pm-tright">' + right + '</span></div>';
+    }).join('') + '</div>';
   } else {
-    logHtml += '<div style="font-size:12px;color:var(--text-muted);padding:10px 16px 6px;">No plays recorded yet.</div>';
+    tlHtml = '<div style="font-size:12px;color:var(--text-muted);padding:10px 16px 6px;">No plays recorded yet.</div>';
   }
   var parts = window.location.pathname.split('/');
   var hasCtx = parts[1] && parts[2] && parts[3];
   var rzLink = (!document.getElementById('rz-root') && hasCtx)
     ? '<div class="rz-pm-rzlink-row"><a href="/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone" class="rz-pm-rzlink">Open ScoreZone →</a></div>'
     : '';
-  return '<div class="rz-pm-live" data-gs="' + gsType + '">' + rzLink + gameHdr + statBlock + logHtml + '</div>';
+  return '<div class="rz-pm-live" data-gs="' + gsType + '">' + rzLink + gameHdr + tilesHtml + chartHtml + tlHtml + '</div>';
 };
+
 
 window._rzSyncTabLive = function(panel) {
   var inner = panel && panel.querySelector('[data-gs]');
@@ -28014,6 +28132,12 @@ window._rzStubPbpEvents = function(pid, state) {
       if (!play || _rzStubResolvePlayPid(play, info) !== want) return;
       var invalid = !!play.is_no_play || (!!play.play_state && play.play_state !== 'VALID');
       var seq = play.seq != null ? play.seq : idx;
+      var sline = play.stat_line || {};
+      // An intercepted pass shows up in the intended receiver's rows as a
+      // bare target; flag it so the log labels the pick instead of an
+      // incomplete target and the renderer can reconcile it at final.
+      var isIntPlay = !invalid && /intercept/i.test(play.play_text || '')
+        && Number(sline.targets || 0) > 0 && !(Number(sline.rec || 0) > 0);
       events.push({
         pid: want,
         playId: String(play.play_id || (gid + ':' + seq)),
@@ -28024,6 +28148,8 @@ window._rzStubPbpEvents = function(pid, state) {
         gameClock: play.clock || '',
         kind: invalid ? 'nullified' : (play.is_td ? 'td' : 'gain'),
         desc: invalid ? (play.play_text || 'Play nullified') : (play.play_text || 'Play'),
+        statLine: sline,
+        isIntPlay: isIntPlay,
         pts: invalid ? 0 : _rzStubLinePts(play.stat_line, sc),
         isNullified: invalid,
         playState: play.play_state || 'VALID'

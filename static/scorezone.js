@@ -1627,6 +1627,12 @@
     if (line.targets > 0 && !line.rec) {
       var qb3 = contributions.find(function(c) { return c.pos === 'QB' && c.pid !== primary.pid; });
       var qbName3 = qb3 ? qb3.name : '';
+      // An intercepted pass is not an ordinary incomplete target: the QB's
+      // pick (or the DEF's interception) is the play. Say so, or the
+      // intended receiver's log shows a phantom 4th incomplete target the
+      // box score never credited.
+      var picked = contributions.some(function(c) { return (c.line && (c.line.int > 0 || c.line.def_int > 0)); });
+      if (picked) return 'Target' + (qbName3 ? ' from ' + qbName3 : '') + ' · intercepted';
       return 'Target' + (qbName3 ? ' from ' + qbName3 : '') + ' · incomplete';
     }
     // Rushing TD
