@@ -79,4 +79,4 @@ def test_stat_row_still_renders_under_the_drive_bar():
 
 
 def test_service_worker_bumped_for_the_new_css():
-    assert "br-fantasy-v100" in SW
+    assert "br-fantasy-v101" in SW
