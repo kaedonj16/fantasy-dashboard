@@ -408,6 +408,18 @@ _PLAYOFF_SIM_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
 _PLAYOFF_SIM_BUILDING: set = set()
 _PLAYOFF_SIM_BUILDING_LOCK = threading.Lock()
 
+# Background sims are 10k-iteration Monte Carlo runs kicked on cache misses
+# by every odds consumer. Single-league surfaces kick one at a time, but My
+# Leagues fans out to every linked league at once -- one sim per league per
+# worker, from the summary builds, the per-league cards and the actions scan
+# in the same page load. Uncapped, that storm OOM-restarted the web instance
+# seconds after the first portfolio load on the v25 deploy (2026-10-25).
+# Cap concurrent background sims per process: a kick that cannot get a slot
+# is dropped, not queued, and a later odds read re-kicks it once a slot
+# frees (block=False semantics: the odds appear on a later load).
+_PLAYOFF_SIM_MAX_CONCURRENT = 2
+_PLAYOFF_SIM_SEM = threading.BoundedSemaphore(_PLAYOFF_SIM_MAX_CONCURRENT)
+
 
 def _roster_sig(ctx: dict) -> str:
     """A stable fingerprint of who's on each roster, so the playoff-odds sim
@@ -474,6 +486,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             except Exception:
                 logger.debug("background playoff sim failed", exc_info=True)
             finally:
+                _PLAYOFF_SIM_SEM.release()
                 with _PLAYOFF_SIM_BUILDING_LOCK:
                     _PLAYOFF_SIM_BUILDING.discard(key)
 
@@ -482,7 +495,20 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                 if key in _PLAYOFF_SIM_BUILDING:
                     return []
                 _PLAYOFF_SIM_BUILDING.add(key)
-            threading.Thread(target=_run, daemon=True).start()
+            if not _PLAYOFF_SIM_SEM.acquire(blocking=False):
+                # Sim slots are full: drop this kick (see the cap note at
+                # _PLAYOFF_SIM_SEM). Un-mark the key so a later read can
+                # re-kick once a running sim finishes.
+                with _PLAYOFF_SIM_BUILDING_LOCK:
+                    _PLAYOFF_SIM_BUILDING.discard(key)
+                return []
+            try:
+                threading.Thread(target=_run, daemon=True).start()
+            except Exception:
+                _PLAYOFF_SIM_SEM.release()
+                with _PLAYOFF_SIM_BUILDING_LOCK:
+                    _PLAYOFF_SIM_BUILDING.discard(key)
+                raise
             return []
 
         odds = simulate_playoff_odds(ctx, platform=platform) or []
