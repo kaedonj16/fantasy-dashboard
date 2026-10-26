@@ -279,4 +279,4 @@ def test_mobile_sheet_lineup_lab_row_under_waivers(nav_env):
             "href='/sleeper/2026/L/waivers?tab=lab'>") in sheet
     assert "<a class='br-sheet-link' href='/sleeper/2026/L/waivers'>" in sheet
     assert sheet.index("Waivers & Start/Sit") < sheet.index("Lineup Lab")
-    assert sheet.index("Lineup Lab") < sheet.index("Schedule Assistant")
+    assert sheet.index("Lineup Lab") < sheet.index("Schedule Rankings")

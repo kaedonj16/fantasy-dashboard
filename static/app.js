@@ -27044,7 +27044,7 @@ function setupFunAwardsGrid() {
     { label: 'Matchups', keywords: ['matchup', 'matchups'], path: '/weekly', icon: 'fa-swords', group: 'page' },
     { label: 'Standings', keywords: ['standings', 'standing', 'record'], path: '/standings', icon: 'fa-list-ol', group: 'page' },
     { label: 'Weekly Recap', keywords: ['recap', 'weekly', 'week'], path: '/recap', icon: 'fa-newspaper', group: 'page' },
-    { label: 'Schedule Assistant', keywords: ['schedule', 'assistant', 'sos'], path: '/schedule', icon: 'fa-calendar-days', group: 'page' },
+    { label: 'Schedule Rankings', keywords: ['schedule', 'assistant', 'sos'], path: '/schedule', icon: 'fa-calendar-days', group: 'page' },
     { label: 'ScoreZone', keywords: ['scorezone', 'red zone'], path: '/scorezone', icon: 'fa-bullseye', group: 'page' },
     { label: 'Activity', keywords: ['activity', 'transactions', 'moves'], path: '/activity', icon: 'fa-clock-rotate-left', group: 'page' },
     { label: 'League Health', keywords: ['league', 'health'], path: '/league_health', icon: 'fa-heart-pulse', group: 'page' },

@@ -4159,7 +4159,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("weekly", "Matchups"), _sl("recap", "Weekly Recap"),
             _sl("scout", "Opponent Scout"), _sl("optimal", "Lineup Efficiency"),
             _sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"),
-            _sl("schedule", "Schedule Assistant"),
+            _sl("schedule", "Schedule Rankings"),
         ]
         if not _bb_sheet:
             # The Lab is a Start/Sit mode: best-ball leagues have neither.
@@ -5581,7 +5581,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             # Roster/lineup tools live with the other weekly tools, not Players.
             # Best Ball has no weekly Start/Sit -- keep Waivers only.
             (_waiver_label, "league_pages.page_waivers", "waivers", False),
-            ("Schedule Assistant", "page_schedule", "schedule", False),
+            ("Schedule Rankings", "page_schedule", "schedule", False),
         ]
         if not _bb:
             # The Lab is a Start/Sit mode, directly under Waivers & Start/Sit.
@@ -21529,7 +21529,7 @@ from dashboard_services.pages.schedule_page import build_schedule_body  # noqa: 
 def page_schedule(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_schedule_body(ctx)
-    return render_page("Schedule Assistant", league_id, "schedule", body, platform, season)
+    return render_page("Schedule Rankings", league_id, "schedule", body, platform, season)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

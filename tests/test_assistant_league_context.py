@@ -380,7 +380,7 @@ def _frozen_pack(qid):
     ("pr1", "/sleeper/2026/blackedraw/standings", "View Power Rankings", ["78.4", "88.1"]),
     ("st1", "/sleeper/2026/blackedraw/standings", "View standings", ["812.4", "845.2"]),
     ("mu1", "/sleeper/2026/blackedraw/weekly", "View Matchups", ["46.2", "118.6", "121.3"]),
-    ("sc1", "/sleeper/2026/blackedraw/schedule", "Open in Schedule Assistant", ["99.8", "91.2"]),
+    ("sc1", "/sleeper/2026/blackedraw/schedule", "Open in Schedule Rankings", ["99.8", "91.2"]),
 ])
 def test_compose_league_context_contract(monkeypatch, qid, href_part, label, key_numbers):
     monkeypatch.setattr(compose_mod, "call_model_json", lambda *a, **k: {

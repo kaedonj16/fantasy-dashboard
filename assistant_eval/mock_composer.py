@@ -284,7 +284,7 @@ _LEAGUE_LINKS = {
     "power_rankings": ("standings", "View Power Rankings"),
     "standings": ("standings", "View standings"),
     "matchup": ("weekly", "View Matchups"),
-    "schedule": ("schedule", "Open in Schedule Assistant"),
+    "schedule": ("schedule", "Open in Schedule Rankings"),
     "activity": ("activity", "View Activity"),
     "front_office": ("dashboard", "View Front Office"),
     "live": ("scorezone", "Open ScoreZone"),

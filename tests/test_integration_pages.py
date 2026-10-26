@@ -69,7 +69,7 @@ def test_league_schedule_page_renders(offline_client):
     r = offline_client.get("/sleeper/2026/tourdemo/schedule?tour=1")
     assert r.status_code == 200, r.status_code
     html = r.get_data(as_text=True)
-    assert "Schedule Assistant" in html
+    assert "Schedule Rankings" in html
     assert "You're offline" not in html
     assert "Page not found" not in html
 

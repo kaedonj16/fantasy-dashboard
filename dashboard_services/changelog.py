@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-26",
         "tag": "update",
+        "text": "Schedule Rankings: the Schedule Assistant page is now a straight rankings table. Compare every team's remaining schedule in the League view, or switch to My Team to see your players in the same ranking order, with an All view for your full roster at once. Ease, Next 3 and Playoff ranks are side by side for every player.",
+        "link": "/schedule"
+    },
+    {
+        "date": "2026-10-26",
+        "tag": "update",
         "text": "My Leagues: the tag on each league card now matches your Teams page. Dynasty leagues show their competitive window (Powerhouse, Contender, Win-Now, Crossroads and the rest, with a roster shape tag when one applies), and redraft leagues show Contend, Bubble or Long Shot, so a one-year league is never called a rebuild.",
         "link": "/portfolio"
     },
