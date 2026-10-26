@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-10-26",
         "tag": "update",
-        "text": "My Leagues: finished matchups now lead with a verdict banner, green for a win and red for a loss with the margin right on it, and the winning score stands out, so you can read your week across every league card at a glance.",
+        "text": "My Leagues: the tag on each league card now matches your Teams page. Dynasty leagues show their competitive window (Powerhouse, Contender, Win-Now, Crossroads and the rest, with a roster shape tag when one applies), and redraft leagues show Contend, Bubble or Long Shot, so a one-year league is never called a rebuild.",
         "link": "/portfolio"
     },
     {

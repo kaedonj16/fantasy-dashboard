@@ -32,11 +32,31 @@ def test_receipts_tile_reconciles():
 # ── Posture / weakest room / heatmap ────────────────────────────────────────
 
 def test_posture_thresholds():
+    # posture_for is now only the degraded fallback (window inputs
+    # unavailable); dynasty semantics are unchanged. The card/board label
+    # itself comes from window_posture_for (Teams parity) -- see
+    # tests/test_portfolio_window_posture.py.
     assert pb.posture_for(74) == ("Contend", "contend")
     assert pb.posture_for(38) == ("Fringe", "fringe")
     assert pb.posture_for(18) == ("Rebuild", "rebuild")
     assert pb.posture_for(None, wins=5, losses=2) == ("Contend", "contend")
     assert pb.posture_for(None, wins=0, losses=0) == (None, "")
+
+
+def test_posture_fallback_redraft_never_rebuild():
+    # Even on the degraded path a redraft league gets the Teams redraft
+    # labels and can never land on a rebuild-family label.
+    assert pb.posture_for(74, is_redraft=True) == ("Contend", "contend")
+    assert pb.posture_for(50, is_redraft=True) == ("Bubble", "bubble")
+    assert pb.posture_for(18, is_redraft=True) == ("Long Shot", "longshot")
+    assert pb.posture_for(0, is_redraft=True) == ("Long Shot", "longshot")
+    assert pb.posture_for(None, wins=1, losses=9, is_redraft=True) == (
+        "Long Shot", "longshot")
+    assert pb.posture_for(None, wins=0, losses=0, is_redraft=True) == (None, "")
+    for odds in range(0, 101, 5):
+        label, _cls = pb.posture_for(odds, is_redraft=True)
+        assert label not in ("Rebuild", "Rebuilding", "Full Rebuild",
+                             "Retooling", "Fringe")
 
 
 def test_weakest_room_picks_worst_rank():

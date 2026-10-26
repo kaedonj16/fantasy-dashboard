@@ -277,15 +277,30 @@ def build_league_summary(account_id, membership, context_loader):
     # Cache-only: odds_for_ctx never runs the sim inline; a cold sim
     # backgrounds and the fields stay None until a later summary build.
     try:
-        from dashboard_services.portfolio_board import odds_for_ctx, posture_for
+        from dashboard_services.portfolio_board import (
+            odds_for_ctx, posture_for, window_posture_for,
+        )
         _odds = odds_for_ctx(ctx, platform, rid)
-        _posture_label, _posture_cls = posture_for(
-            _odds.get("pct"), result.get("wins"), result.get("losses"))
+        # Teams-parity window posture from this same pass's value table;
+        # the degraded odds fallback only when window inputs are missing.
+        _win = window_posture_for(
+            ctx, rosters, values, rid, odds_pct=_odds.get("pct"))
+        if _win:
+            _posture_label, _posture_cls = _win["label"], _win["cls"]
+            _posture_color, _posture_shape = _win["color"], _win["shape"]
+        else:
+            from dashboard_services.ai.context_builders import ctx_scoring_type
+            _posture_label, _posture_cls = posture_for(
+                _odds.get("pct"), result.get("wins"), result.get("losses"),
+                is_redraft=ctx_scoring_type(ctx) == "redraft")
+            _posture_color, _posture_shape = "", ""
         result.update(
             playoff_odds_pct=_odds.get("pct"),
             playoff_odds_delta=_odds.get("delta"),
             posture=_posture_label,
             posture_cls=_posture_cls,
+            posture_color=_posture_color,
+            posture_shape=_posture_shape,
         )
     except Exception:
         logger.debug("[portfolio] odds attach failed", exc_info=True)

@@ -40056,6 +40056,19 @@ def build_portfolio_body(
         ".pf-posture.contend{background:#dcf2e4;color:#15803d;}"
         ".pf-posture.fringe{background:#fbeecd;color:#92400e;}"
         ".pf-posture.rebuild{background:#fbe0e0;color:#b91c1c;}"
+        # Dynasty window chip: Teams window color (--wc, set inline from
+        # the same color map the Teams page uses) as text + dot on a soft
+        # tint of itself, plus the roster-shape tag after it.
+        ".pf-posture.win{background:color-mix(in srgb,var(--wc,#64748b) 13%,transparent);"
+        "color:var(--wc,#64748b);display:inline-flex;align-items:center;gap:6px;}"
+        ".pf-posture.win::before{content:'';width:6px;height:6px;border-radius:50%;"
+        "background:var(--wc,#64748b);flex:0 0 auto;}"
+        ".pf-posture.bubble{background:#fbeecd;color:#92400e;}"
+        ".pf-posture.longshot{background:var(--grid);color:var(--text-muted);}"
+        ".pf-shape{font-size:10px;font-weight:700;letter-spacing:.03em;padding:2px 7px;"
+        "border-radius:6px;color:var(--text);background:rgba(148,163,184,.16);"
+        "border:1px solid var(--border);white-space:nowrap;flex:0 0 auto;}"
+        ".pf-shape[hidden]{display:none;}"
         ".pf-lg-moves-flag{font-size:11px;font-weight:800;color:var(--accent);white-space:nowrap;}"
         ".pf-lg-fo{font-weight:700;font-size:12px;color:var(--text-muted);text-decoration:none;white-space:nowrap;}"
         ".pf-upd{font-size:11px;color:var(--text-subtle);margin-left:auto;white-space:nowrap;}"
@@ -40490,11 +40503,26 @@ def build_portfolio_body(
                 f"{ord_suffix(_wr['rank'])} of {_wtotal}</strong></div>"
             )
         _posture = lg.get("posture")
-        posture_html = (
-            f"<span class='pf-posture {lg.get('posture_cls') or ''}' data-posture>"
-            f"{html.escape(str(_posture))}</span>"
-            if _posture else arch_badge
-        )
+        if _posture:
+            _p_cls = str(lg.get("posture_cls") or "")
+            _p_color = str(lg.get("posture_color") or "")
+            _chip_style = (
+                f" style='--wc:{html.escape(_p_color, quote=True)}'"
+                if _p_cls == "win" and _p_color else ""
+            )
+            _p_shape = str(lg.get("posture_shape") or "")
+            _shape_html = (
+                f"<span class='pf-shape' data-posture-shape>"
+                f"{html.escape(_p_shape)}</span>"
+                if _p_shape else
+                "<span class='pf-shape' data-posture-shape hidden></span>"
+            )
+            posture_html = (
+                f"<span class='pf-posture {_p_cls}' data-posture{_chip_style}>"
+                f"{html.escape(str(_posture))}</span>{_shape_html}"
+            )
+        else:
+            posture_html = arch_badge
 
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
         # in-season during game weeks. Starts as a content-shaped skeleton so the
