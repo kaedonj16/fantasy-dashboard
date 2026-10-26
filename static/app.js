@@ -29575,7 +29575,16 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var card = document.getElementById('pfMovesCard');
     var body = document.getElementById('pfMovesBody');
     if (!card || !body) return;
-    window.brFetchWithTimeout('/api/portfolio-actions', { cache: 'no-store', credentials: 'same-origin' }, 15000)
+    var PF_RETRY = [6000, 15000, 30000];
+    attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
+    // The scan is the heaviest read on the page (13s for 4 leagues
+    // locally, more across every linked league), so the old 15s abort
+    // fired on essentially every cold load and the catch below showed
+    // "Could not load your moves" with no retry. The server now caches
+    // complete scans for 60s and single-flights the compute; this call
+    // gets a longer leash, and a timeout/network failure retries on
+    // the same ladder as an incomplete scan before giving up.
+    window.brFetchWithTimeout('/api/portfolio-actions', { cache: 'no-store', credentials: 'same-origin' }, 45000)
       .then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d || {} }; }); })
       .then(function (res) {
         if (res.status === 403 && res.d.paywall) {
@@ -29584,8 +29593,6 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           return;
         }
         var scan = (res.d && res.d.scan) || null;
-        var PF_RETRY = [6000, 15000, 30000];
-        attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
         if (scan && scan.incomplete && attempt < PF_RETRY.length) {
           setTimeout(function () { __pfMovesGo(attempt + 1); }, PF_RETRY[attempt]);
           return;
@@ -29596,6 +29603,10 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         loadDismissed().then(function () { wireBoard(); renderBoard(); });
       })
       .catch(function () {
+        if (attempt < PF_RETRY.length) {
+          setTimeout(function () { __pfMovesGo(attempt + 1); }, PF_RETRY[attempt]);
+          return;
+        }
         body.innerHTML = '<div class="pf-moves-empty"><strong>Could not load your moves.</strong> ' +
           'Check your connection and refresh.</div>';
       });

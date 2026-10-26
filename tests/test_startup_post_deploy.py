@@ -71,7 +71,7 @@ def test_post_deploy_puts_repo_root_on_sys_path():
         sys.path[:] = original
 
 
-def test_web_worker_default_is_two_and_post_deploy_omits_breakout_rebuild():
+def test_web_worker_default_is_one_and_post_deploy_omits_breakout_rebuild():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     startup = open(os.path.join(repo_root, "data_building", "updates", "startup.py"), encoding="utf-8").read()
     post_deploy = open(os.path.join(repo_root, "scripts", "post_deploy.py"), encoding="utf-8").read()
@@ -79,7 +79,9 @@ def test_web_worker_default_is_two_and_post_deploy_omits_breakout_rebuild():
     breakout = open(os.path.join(
         repo_root, "data_building", "breakout_engine", "calculate_breakouts_with_real_data.py"
     ), encoding="utf-8").read()
-    assert "os.environ.get('WEB_WORKERS', 2)" in startup
+    # One worker by default: two fully-warmed workers OOM the 2GB box on
+    # a My Leagues load (2026-10-25/26); see resolve_gunicorn_config.
+    assert "os.environ.get('WEB_WORKERS', 1)" in startup
     assert "build_historical_scores" not in post_deploy
     assert "run_breakouts()" in cron
     assert "stats_season = season - 1" in breakout
