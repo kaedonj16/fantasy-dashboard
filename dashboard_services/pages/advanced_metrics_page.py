@@ -1360,8 +1360,8 @@ def build_advanced_metrics_body(
       .am-graph-pos-ctrl { flex:1 1 250px !important; }
       .am-gctrl-sm { flex:0 1 96px !important; min-width:84px !important; }
       /* Zoom controls: overlay at the plot's top-right. Buttons step the
-         viewBox zoom, the wheel zooms toward the cursor, drag pans and two
-         fingers pinch (wired in _amWireGraphZoom). */
+         axis (domain) zoom, the wheel zooms toward the cursor, drag pans
+         and two fingers pinch (wired in _amWireGraphZoom). */
       .am-graph-zoom {
         position:absolute; top:10px; right:12px; z-index:7;
         display:flex; align-items:center; gap:2px;
@@ -4421,109 +4421,185 @@ _AM_JS = r"""
     _amAnimPending = 'quadrants';
     window.amRenderGraph();
   };
-  // ── Graph zoom ────────────────────────────────────────────────────────
-  // Scale + center kept as fractions of the base viewBox, so the zoom
-  // survives re-renders (theme/quadrant/label toggles rebuild the SVG) and
-  // the narrow/desktop layout switch. 1 = the full graph. Zoom via the
-  // overlay buttons, the mouse wheel (toward the cursor), drag to pan,
-  // or a two-finger pinch.
-  let _amZoomK = 1, _amZoomCX = 0.5, _amZoomCY = 0.5, _amPanMovedAt = 0;
-  function _amZoomBase(svg) {
-    const b = (svg.getAttribute('data-base-vb') || '0 0 720 600').split(/\s+/).map(Number);
-    return { w: b[2] || 720, h: b[3] || 600 };
+  // ── Graph zoom (axis zoom) ──────────────────────────────────────────
+  // Zoom state is a data-domain window, NOT a viewBox crop (Kaedon,
+  // 2026-10-26: "when I zoom on a graph, I want the axises to zoom, not
+  // the whole image to zoom"). Zooming re-renders the scatter with
+  // narrowed x/y domains, so the axes and ticks rescale to finer steps
+  // while the header, every font size and every dot radius stay at their
+  // base size. _amZoomWin is null at the full graph; otherwise it is
+  // {x0, x1, y0, y1} inside the full padded domain the builder stamps on
+  // the svg (data-full-domain). Interactions are wired once on the plot
+  // container so they survive the re-renders they trigger.
+  let _amZoomWin = null, _amPanMovedAt = 0;
+  let _amLastScatter = null;   // last built scatter inputs, for zoom re-renders
+  let _amZoomRaf = 0;
+  function _amFullDomainOf(svg) {
+    if (!svg) return null;
+    const f = (svg.getAttribute('data-full-domain') || '').split(',').map(Number);
+    return (f.length === 4 && f.every(isFinite)) ? { x0: f[0], y0: f[1], x1: f[2], y1: f[3] } : null;
   }
-  function _amApplyGraphZoom(svg) {
-    if (!svg) return;
-    const base = _amZoomBase(svg);
-    const w = base.w / _amZoomK, h = base.h / _amZoomK;
-    let x = _amZoomCX * base.w - w / 2, y = _amZoomCY * base.h - h / 2;
-    x = Math.min(Math.max(x, 0), Math.max(0, base.w - w));
-    y = Math.min(Math.max(y, 0), Math.max(0, base.h - h));
-    // Re-derive the center from the clamped origin so the state stays honest.
-    _amZoomCX = (x + w / 2) / base.w; _amZoomCY = (y + h / 2) / base.h;
-    svg.setAttribute('viewBox', x.toFixed(1) + ' ' + y.toFixed(1) + ' ' + w.toFixed(1) + ' ' + h.toFixed(1));
-    svg.classList.toggle('am-graph-zoomed', _amZoomK > 1.01);
+  function _amPlotRectOf(svg) {
+    if (!svg) return null;
+    const p = (svg.getAttribute('data-plot-rect') || '').split(',').map(Number);
+    return (p.length === 4 && p.every(isFinite)) ? { x: p[0], y: p[1], w: p[2], h: p[3] } : null;
+  }
+  function _amZoomK() {
+    if (!_amZoomWin || !_amLastScatter || !_amLastScatter.full) return 1;
+    return (_amLastScatter.full.x1 - _amLastScatter.full.x0) / (_amZoomWin.x1 - _amZoomWin.x0);
+  }
+  function _amClampWin(w, full) {
+    const spanX = Math.min(w.x1 - w.x0, full.x1 - full.x0);
+    const spanY = Math.min(w.y1 - w.y0, full.y1 - full.y0);
+    const x0 = Math.min(Math.max(w.x0, full.x0), full.x1 - spanX);
+    const y0 = Math.min(Math.max(w.y0, full.y0), full.y1 - spanY);
+    return { x0: x0, x1: x0 + spanX, y0: y0, y1: y0 + spanY };
+  }
+  // Pure window math (node-tested): zoom the current window to nk around
+  // the data anchor (ax, ay), K clamped to [1, 5], window clamped inside
+  // the full domain. Returns null at K=1: null IS the full graph.
+  function _amZoomWindowTo(cur, full, nk, ax, ay) {
+    const k = Math.min(5, Math.max(1, nk));
+    if (k <= 1.001) return null;
+    const spanX = (full.x1 - full.x0) / k, spanY = (full.y1 - full.y0) / k;
+    const fx = (ax - cur.x0) / (cur.x1 - cur.x0), fy = (ay - cur.y0) / (cur.y1 - cur.y0);
+    return _amClampWin({ x0: ax - fx * spanX, x1: ax - fx * spanX + spanX,
+                         y0: ay - fy * spanY, y1: ay - fy * spanY + spanY }, full);
+  }
+  // Pure window math (node-tested): pan by a data-space delta, clamped so
+  // the window never leaves the full domain.
+  function _amPanWindow(cur, full, dxData, dyData) {
+    return _amClampWin({ x0: cur.x0 + dxData, x1: cur.x1 + dxData,
+                         y0: cur.y0 + dyData, y1: cur.y1 + dyData }, full);
+  }
+  function _amSyncZoomPct() {
     const pct = document.getElementById('amGraphZoomPct');
-    if (pct) pct.textContent = Math.round(_amZoomK * 100) + '%';
+    if (pct) pct.textContent = Math.round(_amZoomK() * 100) + '%';
+    const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
+    if (svg) svg.classList.toggle('am-graph-zoomed', !!_amZoomWin);
   }
-  // Zoom to nk keeping the point at window fraction (fx, fy) stationary.
-  function _amZoomAt(svg, nk, fx, fy) {
-    const k0 = _amZoomK;
-    const bx = (_amZoomCX - 0.5 / k0) + fx / k0;
-    const by = (_amZoomCY - 0.5 / k0) + fy / k0;
-    _amZoomK = Math.min(5, Math.max(1, nk));
-    _amZoomCX = bx - fx / _amZoomK + 0.5 / _amZoomK;
-    _amZoomCY = by - fy / _amZoomK + 0.5 / _amZoomK;
-    _amApplyGraphZoom(svg);
+  function _amRerenderZoom() {
+    const plot = document.getElementById('amGraphPlot');
+    if (!plot || !_amLastScatter) return;
+    const c = _amLastScatter;
+    _amPinnedDot = null; _amHideHoverForce();
+    plot.innerHTML = _amBuildScatter(c.pts, c.xk, c.yk, c.zk, c.logo, c.trend, 'none');
+    _amSyncZoomPct();
+  }
+  function _amScheduleZoomRender() {
+    if (_amZoomRaf) return;
+    _amZoomRaf = requestAnimationFrame(function() { _amZoomRaf = 0; _amRerenderZoom(); });
+  }
+  // Data coordinates of a client point, via the live svg's stamped
+  // geometry (full domain + plot rect) and the current window.
+  function _amDataAt(svg, clientX, clientY) {
+    const full = _amFullDomainOf(svg), pr = _amPlotRectOf(svg);
+    if (!full || !pr) return null;
+    const r = svg.getBoundingClientRect();
+    const vb = (svg.getAttribute('data-base-vb') || '0 0 720 600').split(/\s+/).map(Number);
+    const sx = (clientX - r.left) / Math.max(1, r.width) * (vb[2] || 720);
+    const sy = (clientY - r.top) / Math.max(1, r.height) * (vb[3] || 600);
+    const w = _amZoomWin || full;
+    return { x: w.x0 + ((sx - pr.x) / pr.w) * (w.x1 - w.x0),
+             y: w.y0 + (1 - (sy - pr.y) / pr.h) * (w.y1 - w.y0) };
+  }
+  function _amSetZoomAt(svg, nk, clientX, clientY) {
+    const full = _amFullDomainOf(svg);
+    if (!full) return;
+    const at = _amDataAt(svg, clientX, clientY);
+    if (!at) return;
+    _amZoomWin = _amZoomWindowTo(_amZoomWin || full, full, nk, at.x, at.y);
+    _amScheduleZoomRender();
   }
   window.amZoomGraph = function(factor) {
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
-    if (svg) _amZoomAt(svg, _amZoomK * factor, 0.5, 0.5);
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    _amSetZoomAt(svg, _amZoomK() * factor, r.left + r.width / 2, r.top + r.height / 2);
   };
   window.amResetGraphZoom = function() {
-    _amZoomK = 1; _amZoomCX = 0.5; _amZoomCY = 0.5;
-    _amApplyGraphZoom(document.querySelector('#amGraphPlot svg.am-graph-svg'));
+    if (!_amZoomWin) { _amSyncZoomPct(); return; }
+    _amZoomWin = null;
+    _amRerenderZoom();
   };
-  function _amWireGraphZoom(svg) {
-    if (!svg) return;
-    _amApplyGraphZoom(svg);
-    function frac(e) {
-      const r = svg.getBoundingClientRect();
-      return { fx: (e.clientX - r.left) / Math.max(1, r.width), fy: (e.clientY - r.top) / Math.max(1, r.height) };
-    }
-    svg.addEventListener('wheel', function(e) {
+  function _amWireGraphZoom(plot) {
+    if (!plot || plot.dataset.zoomWired) return;
+    plot.dataset.zoomWired = '1';
+    function svgEl() { return plot.querySelector('svg.am-graph-svg'); }
+    plot.addEventListener('wheel', function(e) {
+      const svg = svgEl(); if (!svg) return;
       e.preventDefault();
-      const f = frac(e);
-      _amZoomAt(svg, _amZoomK * (e.deltaY < 0 ? 1.18 : 0.85), f.fx, f.fy);
+      _amSetZoomAt(svg, _amZoomK() * (e.deltaY < 0 ? 1.18 : 0.85), e.clientX, e.clientY);
     }, { passive: false });
     const ptrs = new Map();
-    let panStart = null, pinchD0 = 0, pinchK0 = 1;
-    svg.addEventListener('pointerdown', function(e) {
+    let panStart = null, pinchD0 = 0, pinchK0 = 1, pinchWin0 = null;
+    plot.addEventListener('pointerdown', function(e) {
+      const svg = svgEl(); if (!svg) return;
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      try { svg.setPointerCapture(e.pointerId); } catch (_) {}
       if (ptrs.size === 2) {
         const p = Array.from(ptrs.values());
         pinchD0 = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
-        pinchK0 = _amZoomK;
+        pinchK0 = _amZoomK();
+        const full = _amFullDomainOf(svg);
+        pinchWin0 = _amZoomWin ? { x0: _amZoomWin.x0, x1: _amZoomWin.x1, y0: _amZoomWin.y0, y1: _amZoomWin.y1 }
+                               : (full ? { x0: full.x0, x1: full.x1, y0: full.y0, y1: full.y1 } : null);
         panStart = null;
-      } else if (ptrs.size === 1) {
-        panStart = { x: e.clientX, y: e.clientY, cx: _amZoomCX, cy: _amZoomCY, moved: false };
+        try { plot.setPointerCapture(e.pointerId); } catch (_) {}
+      } else if (ptrs.size === 1 && _amZoomWin) {
+        panStart = { x: e.clientX, y: e.clientY,
+                     win: { x0: _amZoomWin.x0, x1: _amZoomWin.x1, y0: _amZoomWin.y0, y1: _amZoomWin.y1 },
+                     moved: false };
       }
     });
-    svg.addEventListener('pointermove', function(e) {
+    plot.addEventListener('pointermove', function(e) {
       if (!ptrs.has(e.pointerId)) return;
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (ptrs.size === 2) {
+      const svg = svgEl(); if (!svg) return;
+      const full = _amFullDomainOf(svg), pr = _amPlotRectOf(svg);
+      if (!full || !pr) return;
+      if (ptrs.size === 2 && pinchWin0) {
         const p = Array.from(ptrs.values());
         const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
-        const f = frac({ clientX: (p[0].x + p[1].x) / 2, clientY: (p[0].y + p[1].y) / 2 });
-        _amZoomAt(svg, pinchK0 * (d / pinchD0), f.fx, f.fy);
+        const r = svg.getBoundingClientRect();
+        const vb = (svg.getAttribute('data-base-vb') || '0 0 720 600').split(/\s+/).map(Number);
+        const sx = ((p[0].x + p[1].x) / 2 - r.left) / Math.max(1, r.width) * (vb[2] || 720);
+        const sy = ((p[0].y + p[1].y) / 2 - r.top) / Math.max(1, r.height) * (vb[3] || 600);
+        const ax = pinchWin0.x0 + ((sx - pr.x) / pr.w) * (pinchWin0.x1 - pinchWin0.x0);
+        const ay = pinchWin0.y0 + (1 - (sy - pr.y) / pr.h) * (pinchWin0.y1 - pinchWin0.y0);
+        _amZoomWin = _amZoomWindowTo(pinchWin0, full, pinchK0 * (d / pinchD0), ax, ay);
+        _amScheduleZoomRender();
         return;
       }
-      if (!panStart || _amZoomK <= 1.01) return;
+      if (!panStart) return;
       const r = svg.getBoundingClientRect();
-      const dx = (e.clientX - panStart.x) / Math.max(1, r.width) / _amZoomK;
-      const dy = (e.clientY - panStart.y) / Math.max(1, r.height) / _amZoomK;
+      const vb = (svg.getAttribute('data-base-vb') || '0 0 720 600').split(/\s+/).map(Number);
+      const dxSvg = (e.clientX - panStart.x) / Math.max(1, r.width) * (vb[2] || 720);
+      const dySvg = (e.clientY - panStart.y) / Math.max(1, r.height) * (vb[3] || 600);
       if (!panStart.moved && Math.abs(e.clientX - panStart.x) + Math.abs(e.clientY - panStart.y) > 6) {
         panStart.moved = true;
         svg.classList.add('am-graph-panning');
         _amPinnedDot = null; _amHideHoverForce();
+        try { plot.setPointerCapture(e.pointerId); } catch (_) {}
       }
       if (panStart.moved) {
         _amPanMovedAt = Date.now();
-        _amZoomCX = panStart.cx - dx; _amZoomCY = panStart.cy - dy;
-        _amApplyGraphZoom(svg);
+        const spanX = panStart.win.x1 - panStart.win.x0, spanY = panStart.win.y1 - panStart.win.y0;
+        _amZoomWin = _amPanWindow(panStart.win, full, -(dxSvg / pr.w) * spanX, (dySvg / pr.h) * spanY);
+        _amScheduleZoomRender();
       }
     });
     function ptrUp(e) {
       ptrs.delete(e.pointerId);
-      if (!ptrs.size) { panStart = null; svg.classList.remove('am-graph-panning'); }
+      if (!ptrs.size) {
+        panStart = null; pinchWin0 = null;
+        const svg = svgEl(); if (svg) svg.classList.remove('am-graph-panning');
+      }
     }
-    svg.addEventListener('pointerup', ptrUp);
-    svg.addEventListener('pointercancel', ptrUp);
+    plot.addEventListener('pointerup', ptrUp);
+    plot.addEventListener('pointercancel', ptrUp);
     // A pan drag ends in a click on whatever dot sits under the pointer;
     // swallow that one click so panning never pins a player card.
-    svg.addEventListener('click', function(e) {
+    plot.addEventListener('click', function(e) {
       if (Date.now() - _amPanMovedAt < 250) { e.stopPropagation(); e.preventDefault(); }
     }, true);
   }
@@ -4752,7 +4828,7 @@ _AM_JS = r"""
     _amSyncGraphModeCtrls();
     // A fresh open starts at the full graph, not wherever a previous
     // session's zoom/pan happened to leave the view.
-    _amZoomK = 1; _amZoomCX = 0.5; _amZoomCY = 0.5;
+    _amZoomWin = null;
     _amLoadLogo('light'); _amLoadLogo('dark');
     if (note) {
       const bits = [];
@@ -4871,7 +4947,10 @@ _AM_JS = r"""
         const _scope = _amAnimPending || 'all';
         _amAnimPending = null;
         plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, trend, _scope);
-        _amWireGraphZoom(plot.querySelector('svg.am-graph-svg'));
+        _amLastScatter = { pts: pts, xk: xk, yk: yk, zk: zk, logo: logo, trend: trend,
+                           full: _amFullDomainOf(plot.querySelector('svg.am-graph-svg')) };
+        _amWireGraphZoom(plot);
+        _amSyncZoomPct();
         const tipEl = document.getElementById('amGraphTip');
         if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Hover or tap a point for player details</span>';
         // Signal the social-preview renderer that the graph is fully drawn.
@@ -4930,8 +5009,26 @@ _AM_JS = r"""
     const _ylo = Math.min.apply(null, ys), _yhi = Math.max.apply(null, ys);
     const _xp = ((_xhi - _xlo) || dx.step) * _gpad;
     const _yp = ((_yhi - _ylo) || dy.step) * _gpad;
-    const xmin = Math.min(dx.lo, _xlo - _xp), xmax = Math.max(dx.hi, _xhi + _xp);
-    const ymin = Math.min(dy.lo, _ylo - _yp), ymax = Math.max(dy.hi, _yhi + _yp);
+    let xmin = Math.min(dx.lo, _xlo - _xp), xmax = Math.max(dx.hi, _xhi + _xp);
+    let ymin = Math.min(dy.lo, _ylo - _yp), ymax = Math.max(dy.hi, _yhi + _yp);
+    const _fullDom = { x0: xmin, y0: ymin, x1: xmax, y1: ymax };
+    let stepX = dx.step, stepY = dy.step;
+    // Axis zoom: narrow the *positioning* domain to the zoom window, so the
+    // axes, gridlines and ticks rescale while every font size and dot radius
+    // below stays at its base value. Ticks recompute on the window's span,
+    // which is what makes them land on finer steps (0.5s instead of 1s).
+    if (_amZoomWin) {
+      const zx0 = Math.max(xmin, Math.min(_amZoomWin.x0, _amZoomWin.x1));
+      const zx1 = Math.min(xmax, Math.max(_amZoomWin.x0, _amZoomWin.x1));
+      const zy0 = Math.max(ymin, Math.min(_amZoomWin.y0, _amZoomWin.y1));
+      const zy1 = Math.min(ymax, Math.max(_amZoomWin.y0, _amZoomWin.y1));
+      if (zx1 - zx0 > 1e-9 && zy1 - zy0 > 1e-9
+          && (zx0 > xmin || zx1 < xmax || zy0 > ymin || zy1 < ymax)) {
+        xmin = zx0; xmax = zx1; ymin = zy0; ymax = zy1;
+        stepX = niceStep(xmax - xmin, L.ntX);
+        stepY = niceStep(ymax - ymin, L.ntY);
+      }
+    }
     const px = function(v) { return padL + ((v - xmin) / (xmax - xmin)) * (W - padL - padR); };
     const py = function(v) { return H - padB - ((v - ymin) / (ymax - ymin)) * (H - padT - padB); };
     let rOf = function() { return isNarrow ? 6 : 5; };
@@ -5144,7 +5241,14 @@ _AM_JS = r"""
     })();
     padT += _hlLines.length ? _hlLines.length * _hlLH + 6 : 0;
     let s = '<svg class="am-graph-svg' + _animCls + '" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
-      + ' viewBox="0 0 ' + W + ' ' + H + '" data-base-vb="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
+      + ' viewBox="0 0 ' + W + ' ' + H + '" data-base-vb="0 0 ' + W + ' ' + H + '"'
+      + ' data-full-domain="' + _fullDom.x0 + ',' + _fullDom.y0 + ',' + _fullDom.x1 + ',' + _fullDom.y1 + '"'
+      + ' data-plot-rect="' + padL + ',' + padT + ',' + (W - padL - padR) + ',' + (H - padB - padT) + '"'
+      + ' preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
+    // Plot-area clip: with an axis-zoom window active, points, quadrant
+    // dividers and the trend line can land outside the frame; they clip at
+    // the plot edge instead of painting over the header and footer.
+    s += '<defs><clipPath id="amPlotClip"><rect x="' + padL + '" y="' + padT + '" width="' + (W - padL - padR) + '" height="' + (H - padB - padT) + '"/></clipPath></defs>';
     // Themed panel background.
     s += '<rect x="0.5" y="0.5" width="' + (W - 1) + '" height="' + (H - 1) + '" rx="14" fill="' + TH.bg + '" stroke="' + TH.border + '"/>';
     // Editorial header: accent kicker rule + label, left-aligned title + context.
@@ -5161,15 +5265,15 @@ _AM_JS = r"""
         + ' class="am-graph-headline">' + _amEsc(ln) + '</text>';
     });
     // Grid: hairlines at round ticks; a single baseline instead of a hard frame.
-    for (let xv = Math.ceil(xmin / dx.step - 1e-9) * dx.step; xv <= xmax + 1e-9; xv += dx.step) {
+    for (let xv = Math.ceil(xmin / stepX - 1e-9) * stepX; xv <= xmax + 1e-9; xv += stepX) {
       const xx = px(xv);
       s += '<line x1="' + xx.toFixed(1) + '" y1="' + padT + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + TH.grid + '"/>';
-      s += txt(xx.toFixed(1), (H - padB + 16), fmtTick(xv, dx.step), L.fTick, TH.muted, 600, 'middle');
+      s += txt(xx.toFixed(1), (H - padB + 16), fmtTick(xv, stepX), L.fTick, TH.muted, 600, 'middle');
     }
-    for (let yv = Math.ceil(ymin / dy.step - 1e-9) * dy.step; yv <= ymax + 1e-9; yv += dy.step) {
+    for (let yv = Math.ceil(ymin / stepY - 1e-9) * stepY; yv <= ymax + 1e-9; yv += stepY) {
       const yy = py(yv);
       s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="' + TH.grid + '"/>';
-      s += txt((padL - 8), (yy + 3.5).toFixed(1), fmtTick(yv, dy.step), L.fTick, TH.muted, 600, 'end');
+      s += txt((padL - 8), (yy + 3.5).toFixed(1), fmtTick(yv, stepY), L.fTick, TH.muted, 600, 'end');
     }
     s += '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '" stroke-width="1.2"/>';
     // Axis titles: small caps, letter-spaced.
@@ -5179,12 +5283,15 @@ _AM_JS = r"""
     // Quadrant dividers + labels (toggle). Split at the medians; each corner
     // names which side of each axis it sits on.
     if (_amGraphQuadrants && pts.length >= 4) {
-      s += '<g class="am-graph-quad">';
+      s += '<g class="am-graph-quad" clip-path="url(#amPlotClip)">';
 
       const _qx = pts.map(function(p) { return p.x; }).sort(function(a, b) { return a - b; });
       const _qy = pts.map(function(p) { return p.y; }).sort(function(a, b) { return a - b; });
       const _xmed = _qx[Math.floor(_qx.length / 2)], _ymed = _qy[Math.floor(_qy.length / 2)];
-      const _qxPx = px(_xmed), _qyPx = py(_ymed);
+      // Clamp the dividers into the plot: under an axis-zoom window the
+      // median can sit outside the visible domain, and the corner labels
+      // key off these pixels.
+      const _qxPx = Math.min(Math.max(px(_xmed), padL), W - padR), _qyPx = Math.min(Math.max(py(_ymed), padT), H - padB);
       const _qCol = TH.dark ? 'rgba(148,163,184,.45)' : '#9aa6b5';
       s += '<line x1="' + _qxPx.toFixed(1) + '" y1="' + padT + '" x2="' + _qxPx.toFixed(1) + '" y2="' + (H - padB)
         + '" stroke="' + _qCol + '" stroke-width="1.2" stroke-dasharray="5,4"/>';
@@ -5231,7 +5338,7 @@ _AM_JS = r"""
         x2 = x1 - 1;   // flat line outside the view: skip
       }
       if (x2 > x1) {
-        s += '<g class="am-graph-trend">';
+        s += '<g class="am-graph-trend" clip-path="url(#amPlotClip)">';
         const tx1 = px(x1), ty1 = py(yAt(x1)), tx2 = px(x2), ty2 = py(yAt(x2));
         s += '<line x1="' + tx1.toFixed(1) + '" y1="' + ty1.toFixed(1) + '" x2="' + tx2.toFixed(1) + '" y2="' + ty2.toFixed(1)
           + '" stroke="' + accent + '" stroke-width="1.6" stroke-dasharray="7 5" opacity="0.55" stroke-linecap="round"/>';
@@ -5278,13 +5385,13 @@ _AM_JS = r"""
     const fieldOp = TH.dark ? 0.42 : 0.36;
     ptData.filter(function(d) { return !d.star; }).sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
       s += '<circle class="am-graph-dot" cx="' + d.cx.toFixed(1) + '" cy="' + d.cy.toFixed(1) + '" r="' + d.r.toFixed(1)
-        + '" fill="' + d.col + '" fill-opacity="' + fieldOp + '" stroke="' + TH.bg + '" stroke-width="1.4"'
+        + '" fill="' + d.col + '" fill-opacity="' + fieldOp + '" stroke="' + TH.bg + '" stroke-width="1.4" clip-path="url(#amPlotClip)"'
         + ' style="animation-delay:' + Math.min(d.idx * 14, 480) + 'ms"'
         + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
     });
     ptData.filter(function(d) { return d.star; }).sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
       s += '<circle class="am-graph-dot" cx="' + d.cx.toFixed(1) + '" cy="' + d.cy.toFixed(1) + '" r="' + d.r.toFixed(1)
-        + '" fill="' + d.col + '" stroke="' + TH.bg + '" stroke-width="2"'
+        + '" fill="' + d.col + '" stroke="' + TH.bg + '" stroke-width="2" clip-path="url(#amPlotClip)"'
         + ' style="animation-delay:' + Math.min(d.idx * 14, 480) + 'ms"'
         + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
     });
@@ -5302,6 +5409,9 @@ _AM_JS = r"""
     let _li = 0;   // label entrance stagger index
     ptData.forEach(function(d) {
       if (d.idx >= showCut) return;
+      // Axis zoom: a point outside the visible window gets no label (its
+      // dot is clipped at the plot edge; a label would float free of it).
+      if (d.p.x < xmin || d.p.x > xmax || d.p.y < ymin || d.p.y > ymax) return;
       const _ld = 380 + Math.min(_li * 24, 420); _li++;
       const isStar = d.star;
       const nm = _amLastName(d.p.name);
@@ -5547,11 +5657,22 @@ _AM_JS = r"""
       setTimeout(function() { btn.innerHTML = prev; }, 2500);
     };
     const TH = _amGraphPalette();
-    // Export the FULL graph even when the on-screen view is zoomed in:
-    // size the clone from the stamped base viewBox, not the live one.
-    const vb = (svg.getAttribute('data-base-vb') || svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
+    // Export the FULL graph even when the on-screen view is axis-zoomed:
+    // the live svg renders the zoom window, so cloning it would export
+    // the crop. Rebuild a full-frame svg from the last scatter inputs
+    // with the window temporarily cleared, then size from its base viewBox.
+    let exportSvg = svg;
+    if (_amZoomWin && _amLastScatter) {
+      const c = _amLastScatter, savedWin = _amZoomWin;
+      _amZoomWin = null;
+      const holder = document.createElement('div');
+      holder.innerHTML = _amBuildScatter(c.pts, c.xk, c.yk, c.zk, c.logo, c.trend, 'none');
+      _amZoomWin = savedWin;
+      if (holder.querySelector('svg')) exportSvg = holder.querySelector('svg');
+    }
+    const vb = (exportSvg.getAttribute('data-base-vb') || exportSvg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
     const W = vb[2] || 720, H = vb[3] || 580, scale = 2;
-    const clone = svg.cloneNode(true);
+    const clone = exportSvg.cloneNode(true);
     clone.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     clone.removeAttribute('data-base-vb');
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');

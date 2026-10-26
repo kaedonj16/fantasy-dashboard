@@ -16,8 +16,12 @@ Root causes pinned here:
    or 12 (Detailed) on every modal open / mode switch, and the scatter
    builder capped the count at 8 in Simple mode regardless of the pick.
    Non-star labels that collided were also dropped outright.
-3. Zoom: none existed. The viewBox zoom (buttons / wheel / drag-pan /
-   pinch) is wired per render and exports stay full-frame.
+3. Zoom: none existed. The original fix added a viewBox zoom (buttons /
+   wheel / drag-pan / pinch); Kaedon rejected that on 2026-10-26 ("when I
+   zoom on a graph, I want the axises to zoom, not the whole image to
+   zoom"), so zoom is now a data-domain window: the scatter re-renders
+   with narrowed axes, ticks rescale to finer steps, fonts and dot radii
+   stay at base size, and exports stay full-frame.
 """
 import json
 import re
@@ -257,6 +261,7 @@ const cfg = { metrics: {
   xk: { label: 'Created Sep' }, yk: { label: 'Uncatchable Tgt %' },
   zk: { label: 'Targets' } } };
 let _amGraphSimple = false, _amGraphQuadrants = false, _amGraphLabelAxis = 'x';
+let _amZoomWin = null;
 function _amGraphPalette() { return { bg: '#ffffff', text: '#1e293b', muted: '#64748b',
   grid: 'rgba(100,116,139,.16)', axis: 'rgba(100,116,139,.40)', border: 'rgba(100,116,139,.20)' }; }
 function fmtVal(v) { return String(Math.round(v * 100) / 100); }
@@ -317,42 +322,93 @@ def test_zoom_controls_and_wiring_exist():
         assert m, f"#{el_id} missing"
         assert handler in m.group(0)
     assert 'id="amGraphZoomPct"' in html
-    # Wired per render; wheel + pointer (pan/pinch) handlers; base viewBox
-    # stamped on the svg and used for full-frame PNG export.
-    assert "_amWireGraphZoom(plot.querySelector('svg.am-graph-svg'))" in _AM_JS
+    # Axis zoom: interactions are wired ONCE on the plot container (they
+    # survive the re-renders zooming triggers); wheel + pointer (pan/pinch)
+    # handlers; the builder stamps the full domain + plot rect the zoom
+    # math maps through, and the viewBox is never mutated by zooming.
+    assert "_amWireGraphZoom(plot);" in _AM_JS
+    assert "plot.dataset.zoomWired" in _AM_JS
     assert "addEventListener('wheel'" in _AM_JS
     assert "addEventListener('pointerdown'" in _AM_JS
-    assert "data-base-vb=" in _AM_JS
-    assert "svg.getAttribute('data-base-vb')" in _AM_JS
+    assert "data-full-domain=" in _AM_JS
+    assert "data-plot-rect=" in _AM_JS
+    # PNG export rebuilds a full-frame svg instead of cloning the zoomed one.
+    assert "holder.innerHTML = _amBuildScatter(" in _AM_JS
+    assert "exportSvg.getAttribute('data-base-vb')" in _AM_JS
     # og social renders hide the zoom chrome.
     assert "html.og-render .am-graph-zoom" in _style(html)
 
 
 def _zoom_js():
-    start = _AM_JS.index("let _amZoomK")
+    start = _AM_JS.index("let _amZoomWin")
     end = _AM_JS.index("window.amZoomGraph")
     return _AM_JS[start:end]
 
 
-def test_zoom_math_scales_and_clamps():
-    fake_svg = """
-const svg = { attrs: { 'data-base-vb': '0 0 720 600', viewBox: '0 0 720 600' },
-  classList: { toggle: function() {} },
-  setAttribute: function(k, v) { this.attrs[k] = v; },
-  getAttribute: function(k) { return this.attrs[k]; } };
-"""
+def test_zoom_window_math_scales_and_clamps():
+    # The zoom slice declares _amZoomWin itself; drop the preamble's copy
+    # or node dies on the duplicate let.
     script = (
-        _NODE_PREAMBLE + fake_svg + _zoom_js()
-        + "\n_amApplyGraphZoom(svg); const full = svg.attrs.viewBox;"
-        + "\n_amZoomAt(svg, 2, 0.5, 0.5); const ctr = svg.attrs.viewBox;"
-        + "\n_amZoomAt(svg, 99, 0.5, 0.5); const maxed = svg.attrs.viewBox;"
-        + "\n_amZoomAt(svg, 0.01, 0.5, 0.5); const back = svg.attrs.viewBox;"
-        + "\nconsole.log(JSON.stringify({ full: full, ctr: ctr, maxed: maxed, back: back, k: _amZoomK }));"
+        _NODE_PREAMBLE.replace("let _amZoomWin = null;\n", "") + _zoom_js()
+        + "\nconst full = { x0: -1, y0: 3, x1: 3, y1: 7 };"
+        + "\nconst w2 = _amZoomWindowTo(full, full, 2, 1, 5);"
+        + "\nconst w5 = _amZoomWindowTo(w2, full, 99, 1, 5);"
+        + "\nconst back = _amZoomWindowTo(w5, full, 0.5, 1, 5);"
+        + "\nconst panR = _amPanWindow(w2, full, 10, 0);"
+        + "\nconst panL = _amPanWindow(w2, full, -10, -10);"
+        + "\nconst rnd = function(w) { if (!w) return null; const o = {};"
+        + " for (const k in w) o[k] = Math.round(w[k] * 10000) / 10000; return o; };"
+        + "\nconsole.log(JSON.stringify({ w2: rnd(w2), w5: rnd(w5), back: back,"
+        + " panR: rnd(panR), panL: rnd(panL) }));"
     )
     out = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
     res = json.loads(out.stdout.strip().splitlines()[-1])
-    assert res["full"] == "0.0 0.0 720.0 600.0"
-    assert res["ctr"] == "180.0 150.0 360.0 300.0", "2x zoom centers on the focal point"
-    # Clamped at 5x, and zooming back out restores the full frame.
-    assert res["maxed"] == "288.0 240.0 144.0 120.0"
-    assert res["back"] == "0.0 0.0 720.0 600.0" and res["k"] == 1
+    # 2x around the centre anchor halves both spans, anchor stays centred.
+    assert res["w2"] == {"x0": 0, "x1": 2, "y0": 4, "y1": 6}
+    # K clamps at 5x even when 99x is requested.
+    assert res["w5"] == {"x0": 0.6, "x1": 1.4, "y0": 4.6, "y1": 5.4}
+    # Zooming back out to K=1 is the full graph: null window.
+    assert res["back"] is None
+    # Pan clamps inside the full domain on both axes.
+    assert res["panR"] == {"x0": 1, "x1": 3, "y0": 4, "y1": 6}
+    assert res["panL"] == {"x0": -1, "x1": 1, "y0": 3, "y1": 5}
+
+
+def test_axis_zoom_rescales_ticks_not_type_or_dots():
+    pts = [
+        {"pid": "1", "name": "Ann Outcast", "position": "RB", "headshot": "", "x": 0, "y": 10, "z": None},
+        {"pid": "2", "name": "Bob Middle", "position": "RB", "headshot": "", "x": 1, "y": 20, "z": None},
+        {"pid": "3", "name": "Cat Middle", "position": "RB", "headshot": "", "x": 2, "y": 30, "z": None},
+        {"pid": "4", "name": "Dan Middle", "position": "RB", "headshot": "", "x": 3, "y": 40, "z": None},
+        {"pid": "5", "name": "Eve Topper", "position": "RB", "headshot": "", "x": 4, "y": 50, "z": None},
+    ]
+    script = (
+        _NODE_PREAMBLE + _scatter_js()
+        + "\nconst pts = " + json.dumps(pts) + ";"
+        + "\nconst fullSvg = _amBuildScatter(pts, 'xk', 'yk', '', '', null, 'none');"
+        + "\n_amZoomWin = { x0: 1, x1: 3, y0: 5, y1: 55 };"
+        + "\nconst winSvg = _amBuildScatter(pts, 'xk', 'yk', '', '', null, 'none');"
+        + "\nconst grab = function(svg, re) { const m = svg.match(re); return m ? m[0] : null; };"
+        + "\nconsole.log(JSON.stringify({"
+        + " vbFull: grab(fullSvg, /viewBox=\"[^\"]+\"/), vbWin: grab(winSvg, /viewBox=\"[^\"]+\"/),"
+        + " fdFull: grab(fullSvg, /data-full-domain=\"[^\"]+\"/), fdWin: grab(winSvg, /data-full-domain=\"[^\"]+\"/),"
+        + " fineTickFull: fullSvg.indexOf('>1.5<') !== -1, fineTickWin: winSvg.indexOf('>1.5<') !== -1,"
+        + " tickSizeFull: fullSvg.indexOf('font-size=\"10.5\"') !== -1, tickSizeWin: winSvg.indexOf('font-size=\"10.5\"') !== -1,"
+        + " dotsFull: (fullSvg.match(/am-graph-dot/g) || []).length, dotsWin: (winSvg.match(/am-graph-dot/g) || []).length,"
+        + " outFull: (fullSvg.match(/Outcast/g) || []).length, outWin: (winSvg.match(/Outcast/g) || []).length"
+        + " }));"
+    )
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    res = json.loads(out.stdout.strip().splitlines()[-1])
+    # The image itself never zooms: identical viewBox and stamped full domain.
+    assert res["vbFull"] == res["vbWin"] == 'viewBox="0 0 720 600"'
+    assert res["fdFull"] == res["fdWin"] and res["fdFull"] is not None
+    # The AXES zoom: the windowed render gains finer tick steps (1.5 appears
+    # on the x axis) while the full render's 1-step ticks never show it.
+    assert res["fineTickWin"] is True and res["fineTickFull"] is False
+    # Type and dots stay at base size in both renders.
+    assert res["tickSizeFull"] is True and res["tickSizeWin"] is True
+    assert res["dotsFull"] == res["dotsWin"] == 5
+    # A point outside the window loses its label (its name survives only in
+    # the clipped dot's data-info), while the full render labels it.
+    assert res["outFull"] >= 2 and res["outWin"] == 1

@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-26",
+        "tag": "fix",
+        "text": "Advanced Metrics graphs: zooming now zooms the axes instead of the whole picture. The ranges narrow and the tick marks step finer while titles, labels and dots stay the same size, so you can spread out a crowded cluster and read exactly where everyone sits. Drag to pan, Reset to return to the full graph, and downloads still export the full graph.",
+        "link": "/metrics"
+    },
+    {
+        "date": "2026-10-26",
         "tag": "update",
         "text": "Player game log: the ScoreZone tab in a player's card is now a timeline. Stat tiles up top, a chart of how the points built up play by play, and every play in game order with a running total. An intercepted pass now reads as an interception instead of an extra incomplete target, so the plays in the log match the targets in the stat line.",
         "link": "/scorezone"
