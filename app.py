@@ -40768,7 +40768,14 @@ def build_portfolio_body(
         ".pf-lg-mid{gap:4px 12px;}"
         ".pf-lg-stats .pf-lg-stat+.pf-lg-stat{padding-left:8px;margin-left:8px;}"
         ".pf-lg-strength{margin:0 -10px;padding:7px 10px 8px;}"
-        ".pf-lg-foot{gap:6px;padding-top:5px;}"
+        ".pf-lg-foot{gap:6px;padding-top:5px;flex-wrap:wrap;row-gap:5px;}"
+        # Phone: the nowrap footer fit when it held one posture chip, but
+        # the window chip + shape tag (#2816) beside the updated stamp and
+        # the Front Office / Open links overflow the card: the stamp was
+        # crushed into a ~70px multi-line column and the links clipped at
+        # the card edge. Wrap the row and give the stamp its own
+        # full-width line; pills stay on line one, links on the last.
+        ".pf-lg-foot [data-summary-updated]{flex:1 1 100%;}"
         ".pf-lg-foot .pf-pos-chips{gap:4px 7px;}"
         ".pf-lg-foot .pf-arch{font-size:11px;padding:1px 6px;}"
         "}"

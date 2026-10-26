@@ -62,7 +62,7 @@ def test_live_dot_pulse_gets_headroom_inside_the_clip_box():
 
 
 def test_service_worker_bumped():
-    assert "br-fantasy-v101" in SW
+    assert "br-fantasy-v102" in SW
 
 
 # ------------------------------------------------------- lagging schedule game
