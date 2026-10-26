@@ -95,6 +95,19 @@ def test_my_leagues_cards_do_not_overflow_on_mobile():
     assert "overflow:hidden;box-sizing:border-box;" in fn
 
 
+def test_my_leagues_card_footer_wraps_on_mobile():
+    """Footer regression (2026-10-26): the nowrap footer fit with one
+    posture chip, but the window chip + shape tag (#2816) beside the
+    updated stamp and the Front Office / Open links overflowed the card
+    at phone widths - the stamp crushed into a ~70px multi-line column
+    and the links clipped at the card edge. The phone block must wrap
+    the footer and give the stamp its own full-width line."""
+    fn = _portfolio_fn()
+    phone = fn.split("@media(max-width:640px){")[1].split('".pf-lg-foot .pf-arch')[0]
+    assert ".pf-lg-foot{gap:6px;padding-top:5px;flex-wrap:wrap;row-gap:5px;}" in phone
+    assert ".pf-lg-foot [data-summary-updated]{flex:1 1 100%;}" in phone
+
+
 def test_my_leagues_fav_and_arch_share_a_tools_group():
     """Favorite star stays in tools; archetype badge sits in the action row."""
     fn = _portfolio_fn()
