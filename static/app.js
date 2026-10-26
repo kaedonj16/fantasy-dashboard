@@ -29729,9 +29729,11 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     // locally, more across every linked league), so the old 15s abort
     // fired on essentially every cold load and the catch below showed
     // "Could not load your moves" with no retry. The server now caches
-    // complete scans for 60s and single-flights the compute; this call
-    // gets a longer leash, and a timeout/network failure retries on
-    // the same ladder as an incomplete scan before giving up.
+    // complete scans for 60s, single-flights the compute, and runs it
+    // in the background so a slow scan lands in the cache for this
+    // ladder instead of dying on one request's timeout; this call
+    // still gets a longer leash, and a timeout/network failure retries
+    // on the same ladder as an incomplete scan before giving up.
     window.brFetchWithTimeout('/api/portfolio-actions', { cache: 'no-store', credentials: 'same-origin' }, 45000)
       .then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d || {} }; }); })
       .then(function (res) {
@@ -29741,7 +29743,13 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           return;
         }
         var scan = (res.d && res.d.scan) || null;
-        if (scan && scan.incomplete && attempt < PF_RETRY.length) {
+        if (!scan) {
+          // No scan block means an error envelope (e.g. a 500), not a
+          // board. Route it through the retry ladder instead of
+          // rendering it as an empty "all caught up" board.
+          throw new Error('portfolio-actions: no scan payload (HTTP ' + res.status + ')');
+        }
+        if (scan.incomplete && attempt < PF_RETRY.length) {
           setTimeout(function () { __pfMovesGo(attempt + 1); }, PF_RETRY[attempt]);
           return;
         }

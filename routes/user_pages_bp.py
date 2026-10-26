@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 import logging
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -799,7 +800,8 @@ def api_portfolio_actions():
 
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
-    if (not viewer_username or not viewer_user_id) and not session.get("account_id"):
+    account_id = session.get("account_id")
+    if (not viewer_username or not viewer_user_id) and not account_id:
         # Nothing was scanned at all, so an empty list here is not "all
         # caught up" - report it as incomplete.
         return jsonify({"actions": [], "scan": _scan_payload(force_incomplete=True)})
@@ -880,604 +882,702 @@ def api_portfolio_actions():
         1 for lg in (league_inputs or []) if str(lg.get("league_id") or "")
     )
 
-    # Cache / single-flight gate (see _ACTIONS_CACHE above): serve a
-    # fresh complete scan, defer to an in-flight compute with the
-    # honest incomplete payload, or become the compute for this viewer.
+    # Cache / single-flight key (see _ACTIONS_CACHE above). The dispatch
+    # lives below _run_actions_compute: serve a fresh complete scan,
+    # join the in-flight background compute for a bounded grace, or
+    # start it and answer with the honest incomplete payload.
     _actions_key = None
     if season and week:
         _actions_key = (_user_key() or f"viewer:{viewer_user_id}",
                         season, week)
-    if _actions_key is not None:
-        _now_c = time.time()
-        with _ACTIONS_LOCK:
-            _hit = _ACTIONS_CACHE.get(_actions_key)
-            if _hit and _now_c - _hit[0] < _ACTIONS_TTL:
-                return jsonify(_hit[1])
-            _started = _ACTIONS_INFLIGHT.get(_actions_key)
-            if _started and _now_c - _started < 120.0:
-                return jsonify({
-                    "actions": [],
-                    "scan": {"total": scan_total, "scanned": 0,
-                             "skipped_cold": scan_total,
-                             "skipped_no_roster": 0, "incomplete": True},
-                    "week": week, "season": season,
-                    "board": {"groups": [], "week": week},
-                    "grade_line": "",
-                })
-            _ACTIONS_INFLIGHT[_actions_key] = _now_c
+    # Session-derived identity is captured here, on the request thread:
+    # the scan itself may run on a background thread with no request
+    # context (see the dispatch below _run_actions_compute).
+    _captured_ukey = _user_key()
 
-    for lg in (league_inputs or [])[:12]:
-        lid = str(lg.get("league_id") or "")
-        plat = str(lg.get("platform") or "sleeper").lower()
-        lg_season = int(lg.get("season") or season)
-        if not lid:
-            continue
-        try:
-            lctx = get_league_ctx_from_cache(plat, lid, lg_season, allow_build=False) or {}
-        except Exception:
-            scan_skipped_cold += 1
-            continue
-        if not lctx:
-            # Cold cache: a background warm was kicked. Skip this league for now so
-            # the digest returns promptly instead of blocking on a cold build (the
-            # old behavior serially built every league, taking 100s+ on a miss).
-            scan_skipped_cold += 1
-            continue
-        rosters = lctx.get("rosters") or []
-        league_obj = lctx.get("league") or {}
-        league_name = league_obj.get("name") or lg.get("name") or lid
-        viewer_roster = None
-        account_id = session.get("account_id")
-        if account_id:
-            try:
-                from dashboard_services.accounts import resolve_account_viewer_for_league
-                av = resolve_account_viewer_for_league(
-                    account_id, plat, lid, lg_season,
-                    lctx.get("users") or [], rosters,
-                )
-                rid = str((av or {}).get("viewer_roster_id") or "")
-                if rid:
-                    viewer_roster = next(
-                        (r for r in rosters if str(r.get("roster_id") or "") == rid), None
-                    )
-            except Exception:
-                viewer_roster = None
-        if viewer_roster is None:
-            viewer_roster = match_viewer_roster(
-                rosters,
-                team_id=lg.get("team_id"),
-                owner_id=sleeper_owner_id_for_account(
-                    account_id, viewer_user_id, plat,
-                ),
-            )
-        if not viewer_roster:
-            scan_skipped_no_roster += 1
-            continue
-        # Roster matched: the scans below actually run for this league.
-        # Mid-scan sub-scan failures are best-effort and do not un-count it.
-        scan_scanned += 1
-        # Board group header meta (v25): record line, cache-only playoff
-        # odds, posture. Best-effort; the header degrades to the name.
-        try:
-            from dashboard_services import portfolio_board as _pb_meta
-            _vs = viewer_roster.get("settings") or {}
-            _mw = int(_vs.get("wins") or 0)
-            _ml = int(_vs.get("losses") or 0)
-            _mt = int(_vs.get("ties") or 0)
-            _ranked = sorted(
-                rosters,
-                key=lambda r: (
-                    -int((r.get("settings") or {}).get("wins") or 0),
-                    -float((r.get("settings") or {}).get("fpts") or 0),
-                ),
-            )
-            _rk = next(
-                (i + 1 for i, r in enumerate(_ranked)
-                 if str(r.get("roster_id")) == str(viewer_roster.get("roster_id"))),
-                None,
-            )
-            _odds = _pb_meta.odds_for_ctx(lctx, plat, viewer_roster.get("roster_id"))
-            # Same Teams-parity window posture the league cards carry, so
-            # a board group header can never disagree with its card.
-            from dashboard_services.ai.context_builders import (
-                ctx_scoring_type as _ctx_scoring_type,
-                league_format_value_lookup as _lg_value_lookup,
-            )
-            _win = _pb_meta.window_posture_for(
-                lctx, rosters,
-                _lg_value_lookup(lctx, _cache=_board_value_cache),
-                viewer_roster.get("roster_id"), odds_pct=_odds.get("pct"))
-            if _win:
-                _posture = (_win["label"], _win["cls"])
-            else:
-                _posture = _pb_meta.posture_for(
-                    _odds.get("pct"), _mw, _ml,
-                    is_redraft=_ctx_scoring_type(lctx) == "redraft")
-            _rec = f"{_mw}-{_ml}" + (f"-{_mt}" if _mt else "")
-            if _rk:
-                _suf = ("th" if 10 <= _rk % 100 <= 20 else
-                        {1: "st", 2: "nd", 3: "rd"}.get(_rk % 10, "th"))
-                _rec += f" · {_rk}{_suf} of {len(rosters)}"
-            board_meta[f"{plat}|{lid}"] = {
-                "league_name": league_name,
-                "record_line": _rec,
-                "odds_pct": _odds.get("pct"),
-                "odds_delta": _odds.get("delta"),
-                "posture": _posture[0],
-                "roster_id": str(viewer_roster.get("roster_id") or ""),
-            }
-        except Exception:
-            logger.debug("[portfolio-actions] board meta failed", exc_info=True)
-        starters = [str(p) for p in (viewer_roster.get("starters") or [])]
-        if starters and nfl_players:
-            info = {}
-            for pid in starters:
-                pl = nfl_players.get(pid) or {}
-                info[pid] = {
-                    "name": pl.get("full_name") or pl.get("last_name") or "",
-                    "team": pl.get("team") or "",
-                    "injury_status": pl.get("injury_status") or "",
-                }
-            issues = find_lineup_issues(starters, info, teams_playing or None)
-            actions.extend(lineup_actions_from_issues(
-                issues, platform=plat, season=lg_season,
-                league_id=lid, league_name=league_name,
-            ))
-        # Bench-swap parity (Part C): the Start-X-over-Y alerts the push
-        # reminders and the league dashboard Next Steps produce. Same solver,
-        # same thresholds (min_gain 2.0, max 2 per league), locked players
-        # excluded from both sides. Best-effort like every other sub-scan.
-        if in_season and starters:
-            try:
-                proj_map = {}
-                pbw = lctx.get("proj_by_week") or {}
-                wk_proj = {}
-                if isinstance(pbw, dict):
-                    wk_proj = pbw.get(week) or pbw.get(str(week)) or {}
-                if isinstance(wk_proj, dict):
-                    proj_map = {
-                        str(k): v for k, v in (wk_proj.get("projections") or {}).items()
-                    }
-                if not proj_map:
-                    if not shared_proj_tried:
-                        shared_proj_tried = True
-                        try:
-                            _bpw = build_projections_by_week(season, week, None) or {}
-                            _wk = {}
-                            if isinstance(_bpw, dict):
-                                _wk = _bpw.get(week) or _bpw.get(str(week)) or {}
-                            if isinstance(_wk, dict):
-                                shared_proj_map = {
-                                    str(k): v
-                                    for k, v in (_wk.get("projections") or {}).items()
-                                } or None
-                        except Exception:
-                            shared_proj_map = None
-                    proj_map = dict(shared_proj_map or {})
-                if proj_map:
-                    from utils.lineups import locked_teams_from_games
-                    _reserve = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
-                    _taxi = {str(p) for p in (viewer_roster.get("taxi") or []) if p}
-                    eligible = [
-                        str(p) for p in (viewer_roster.get("players") or [])
-                        if str(p) not in _reserve and str(p) not in _taxi
-                    ]
-                    _pidx = lctx.get("players_index") or {}
-                    pos_map = {}
-                    name_map = {}
-                    inj_map_swap = {}
-                    for _pid in eligible:
-                        _pl = nfl_players.get(_pid) or {}
-                        _meta = _pidx.get(_pid) or {}
-                        pos_map[_pid] = str(
-                            _pl.get("position") or _meta.get("position")
-                            or _meta.get("pos") or ""
-                        )
-                        name_map[_pid] = (
-                            _pl.get("full_name") or _meta.get("full_name")
-                            or _meta.get("name") or _pl.get("last_name") or ""
-                        )
-                        inj_map_swap[_pid] = str(_pl.get("injury_status") or "")
-                    for _pid in starters:
-                        if _pid not in name_map:
-                            _pl = nfl_players.get(_pid) or {}
-                            name_map[_pid] = (
-                                _pl.get("full_name") or _pl.get("last_name") or ""
-                            )
-                    locked_teams = locked_teams_from_games(week_games)
-                    locked_pids = {
-                        _pid for _pid in eligible
-                        if str((nfl_players.get(_pid) or {}).get("team") or "").upper()
-                        in locked_teams
-                    }
-                    swaps = projection_upgrades(
-                        starters, eligible, proj_map, pos_map,
-                        lctx.get("roster_positions") or [],
-                        min_gain=2.0, max_swaps=2,
-                        injury_status=inj_map_swap,
-                        locked_pids=locked_pids,
-                    )
-                    for _sw in swaps[:2]:
-                        _in = str(_sw.get("in") or "")
-                        _out = str(_sw.get("out") or "")
-                        if not _in or not _out:
-                            continue
-                        _in_name = name_map.get(_in) or f"Player {_in}"
-                        _out_name = name_map.get(_out) or f"Player {_out}"
-                        try:
-                            _in_proj = float(proj_map.get(_in) or 0)
-                            _out_proj = float(proj_map.get(_out) or 0)
-                        except (TypeError, ValueError):
-                            _in_proj = _out_proj = 0.0
-                        _gain = float(_sw.get("gain") or (_in_proj - _out_proj))
-                        # Severity: a 2pt gain is a real but modest nudge
-                        # (0.7); a 5pt+ gain is top priority (1.0).
-                        _sev = min(1.0, 0.5 + _gain / 10.0)
-                        _act = make_action(
-                            kind="lineup",
-                            platform=plat, season=lg_season, league_id=lid,
-                            league_name=league_name,
-                            title=f"Start {_in_name} over {_out_name}",
-                            detail=(
-                                f"{_in_name} projects {_in_proj:.1f} "
-                                f"vs {_out_name}'s {_out_proj:.1f}"
-                            ),
-                            href=(
-                                f"/{plat}/{int(lg_season)}/{lid}"
-                                "/waivers?tab=startsit"
-                            ),
-                            severity=_sev,
-                            dismiss_key=f"swap:{_out}>{_in}",
-                        )
-                        # Board (v25): Done verification reads the lineup
-                        # back; evidence carries the projection rows.
-                        _act["verify"] = {"type": "swap", "in": _in, "out": _out}
-                        _act["evidence"] = [
-                            {"k": "Start", "v": f"{_in_name} · proj {_in_proj:.1f}"},
-                            {"k": "Bench", "v": f"{_out_name} · proj {_out_proj:.1f}"},
-                            {"k": "Gain", "v": f"+{_gain:.1f} projected pts"},
-                        ]
-                        _teams = {
-                            str((nfl_players.get(_p) or {}).get("team") or "").upper()
-                            for _p in (_in, _out)
-                        }
-                        _lock = None
-                        for _g in week_games:
-                            if {_g.get("home"), _g.get("away")} & _teams:
-                                _ep = _g.get("gameTime_epoch")
-                                if _ep and (_lock is None or float(_ep) < _lock):
-                                    _lock = float(_ep)
-                        if _lock:
-                            _act["lock_epoch"] = _lock
-                        actions.append(_act)
-            except Exception:
-                logger.debug("[portfolio-actions] swap scan failed", exc_info=True)
-        # One injury stash/drop hint per league (active-roster candidates only;
-        # players already in reserve/IR do not need a stash/move-to-IR tip).
-        try:
-            from utils.injury_plan import injury_plan, ir_capacity
-            from dashboard_services.injury_return import weeks_out_for_player
-            values_by_id = {
-                str(r.get("id") or ""): r
-                for r in (lctx.get("model_value_table") or [])
-                if r.get("id")
-            }
-            reserve_set = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
-            capacity = ir_capacity(
-                lctx.get("roster_positions") or [], viewer_roster.get("reserve") or [],
-                reserve_slots=(lctx.get("league") or {}).get("reserve_slots"),
-            )
-            for pid in [str(p) for p in (viewer_roster.get("players") or [])][:40]:
-                pl = nfl_players.get(pid) or {}
-                st = str(pl.get("injury_status") or "").strip()
-                if not st or st.lower() in ("active", "act"):
-                    continue
-                plan = injury_plan(
-                    status=st,
-                    espn_weeks=weeks_out_for_player(pid),
-                    player_value=float((values_by_id.get(pid) or {}).get("value") or 0) or None,
-                    has_open_ir_slot=capacity["has_open_ir_slot"],
-                    already_on_ir=pid in reserve_set,
-                )
-                if not plan or plan.get("verdict") not in ("Move to IR", "Drop candidate"):
-                    continue
-                act = injury_stash_action(
-                    platform=plat, season=lg_season, league_id=lid,
-                    league_name=league_name,
-                    player_name=pl.get("full_name") or pl.get("last_name") or "Player",
-                    verdict=plan["verdict"],
-                    weeks_label=plan.get("weeks_label") or "",
-                    already_on_ir=pid in reserve_set,
-                    ir_used=capacity["ir_used"], ir_slots=capacity["ir_slots"],
-                )
-                if act:
-                    # Board (v25): an IR move verifies against the reserve
-                    # list; a drop verifies against the roster itself.
-                    act["verify"] = {
-                        "type": "ir" if plan["verdict"] == "Move to IR" else "drop",
-                        "pid": pid,
-                    }
-                    act["evidence"] = [
-                        {"k": "Status", "v": st},
-                        {"k": "Time out", "v": plan.get("weeks_label") or ""},
-                        {"k": "IR room",
-                         "v": f"{capacity['ir_used']} of {capacity['ir_slots']} slots used"},
-                    ]
-                    actions.append(act)
-                    break
-        except Exception:
-            pass
+    def _deferred_payload():
+        return {
+            "actions": [],
+            "scan": {"total": scan_total, "scanned": 0,
+                     "skipped_cold": scan_total,
+                     "skipped_no_roster": 0, "incomplete": True},
+            "week": week, "season": season,
+            "board": {"groups": [], "week": week},
+            "grade_line": "",
+        }
 
-        # Waiver add only when the player clears the quality bar (startable
-        # rank / roster hole) -- not merely the highest leftover FA value.
-        try:
-            if model_value_table:
-                from app import (
-                    _league_is_redraft,
-                    _waiver_rank_label_key,
-                    _waiver_value_keys,
-                )
-                from utils.lineup_slots import is_superflex_lineup
-                from utils.value_helpers import format_rank_key
-                is_rd = _league_is_redraft(lctx)
-                rp = lctx.get("roster_positions") or []
-                is_sf = is_superflex_lineup(rp)
-                vf, vfb = _waiver_value_keys(lctx)
-                rank_label_key = _waiver_rank_label_key(lctx)
-                rank_key = format_rank_key(is_redraft=is_rd, is_sf=is_sf)
-                rostered_ids = {
-                    str(p) for r in rosters for p in (r.get("players") or [])
-                }
-                players_index = dict(lctx.get("players_index") or {})
-                for pid in (viewer_roster.get("players") or []):
-                    spid = str(pid)
-                    pl = nfl_players.get(spid) or {}
-                    prev = players_index.get(spid) or {}
-                    players_index[spid] = {
-                        **prev,
-                        "position": pl.get("position") or prev.get("position"),
-                        "team": pl.get("team") or prev.get("team"),
-                        "injury_status": pl.get("injury_status") or prev.get("injury_status") or "",
-                        "name": pl.get("full_name") or prev.get("name"),
-                    }
-                inj_by_pid = {
-                    str(k): str((v or {}).get("injury_status") or "")
-                    for k, v in (nfl_players or {}).items()
-                    if isinstance(v, dict) and v.get("injury_status")
-                }
-                # Selector opportunity inputs (item 2 parity): the same
-                # per-week maps + weekly availability the Waivers page path
-                # builds, from the one shared construction, so calendar
-                # need and the lineup-gain classification finally run on
-                # this path too.
-                _opp = {}
+    def _fallback_payload():
+        return {
+            "actions": [],
+            "scan": _scan_payload(force_incomplete=True),
+            "week": week, "season": season,
+            "board": {"groups": [], "week": week},
+            "grade_line": "",
+        }
+
+    def _run_actions_compute():
+        nonlocal scan_scanned, scan_skipped_cold, scan_skipped_no_roster
+        nonlocal shared_proj_map, shared_proj_tried
+        for lg in (league_inputs or [])[:12]:
+            lid = str(lg.get("league_id") or "")
+            plat = str(lg.get("platform") or "sleeper").lower()
+            lg_season = int(lg.get("season") or season)
+            if not lid:
+                continue
+            try:
+                lctx = get_league_ctx_from_cache(plat, lid, lg_season, allow_build=False) or {}
+            except Exception:
+                scan_skipped_cold += 1
+                continue
+            if not lctx:
+                # Cold cache: a background warm was kicked. Skip this league for now so
+                # the digest returns promptly instead of blocking on a cold build (the
+                # old behavior serially built every league, taking 100s+ on a miss).
+                scan_skipped_cold += 1
+                continue
+            rosters = lctx.get("rosters") or []
+            league_obj = lctx.get("league") or {}
+            league_name = league_obj.get("name") or lg.get("name") or lid
+            viewer_roster = None
+            if account_id:
                 try:
-                    from utils.waivers import selector_opportunity_inputs
-                    _pos_by_pid = {
-                        str(_k): str((_v or {}).get("position")
-                                     or (_v or {}).get("pos") or "").upper()
-                        for _k, _v in players_index.items()
-                    }
-                    _cand_rows = []
-                    for _row in model_value_table:
-                        if not isinstance(_row, dict):
-                            continue
-                        _cpid = str(_row.get("id") or "")
-                        _cpos = str(_row.get("position")
-                                    or _row.get("pos") or "").upper()
-                        if not _cpid or _cpid in rostered_ids:
-                            continue
-                        if _cpos not in {"QB", "RB", "WR", "TE"}:
-                            continue
-                        _pos_by_pid.setdefault(_cpid, _cpos)
-                        _cand_rows.append(_row)
-
-                    def _row_value(_r):
-                        try:
-                            return float(_r.get(vf) or _r.get(vfb) or 0.0)
-                        except (TypeError, ValueError):
-                            return 0.0
-
-                    _cand_rows.sort(key=lambda r: -_row_value(r))
-                    _opp = selector_opportunity_inputs(
-                        season=lg_season, week=week,
-                        roster_pids=[str(p) for p in
-                                     (viewer_roster.get("players") or [])],
-                        candidate_pids=[str(r.get("id") or "")
-                                        for r in _cand_rows[:96]],
-                        positions_by_pid=_pos_by_pid,
-                        players_index=players_index,
-                        raw_scoring_settings=lctx.get("raw_scoring_settings") or {},
+                    from dashboard_services.accounts import resolve_account_viewer_for_league
+                    av = resolve_account_viewer_for_league(
+                        account_id, plat, lid, lg_season,
+                        lctx.get("users") or [], rosters,
+                    )
+                    rid = str((av or {}).get("viewer_roster_id") or "")
+                    if rid:
+                        viewer_roster = next(
+                            (r for r in rosters if str(r.get("roster_id") or "") == rid), None
+                        )
+                except Exception:
+                    viewer_roster = None
+            if viewer_roster is None:
+                try:
+                    viewer_roster = match_viewer_roster(
+                        rosters,
+                        team_id=lg.get("team_id"),
+                        owner_id=sleeper_owner_id_for_account(
+                            account_id, viewer_user_id, plat,
+                        ),
                     )
                 except Exception:
-                    logger.debug("[portfolio-actions] waiver opportunity inputs failed",
+                    # One league's identity data must not abort the whole
+                    # scan (it previously escaped as a 500 and leaked the
+                    # single-flight mark): count it unresolved, move on.
+                    logger.debug("[portfolio-actions] roster match failed",
                                  exc_info=True)
-                    _opp = {}
-                hit = select_waiver_add(
-                    model_value_table, rostered_ids,
-                    value_key=vf, fallback_key=vfb,
-                    rank_key=rank_key, rank_label_key=rank_label_key,
-                    is_redraft=is_rd, is_sf=is_sf,
-                    n_teams=len(rosters) or 12,
-                    roster_players=list(viewer_roster.get("players") or []),
-                    roster_positions=rp,
-                    pidx=players_index,
-                    min_value=_waiver_base_min,
-                    injured_status_by_pid=inj_by_pid,
-                    weekly_availability=_opp.get("weekly_availability") or None,
-                    lineup_weekly=_opp.get("weekly_maps"),
-                    weekly_pts_by_pid=_opp.get("weekly_pts_by_pid"),
-                    forward_pts_by_pid=_opp.get("forward_pts_by_pid") or None,
+                    viewer_roster = None
+            if not viewer_roster:
+                scan_skipped_no_roster += 1
+                continue
+            # Roster matched: the scans below actually run for this league.
+            # Mid-scan sub-scan failures are best-effort and do not un-count it.
+            scan_scanned += 1
+            # Board group header meta (v25): record line, cache-only playoff
+            # odds, posture. Best-effort; the header degrades to the name.
+            try:
+                from dashboard_services import portfolio_board as _pb_meta
+                _vs = viewer_roster.get("settings") or {}
+                _mw = int(_vs.get("wins") or 0)
+                _ml = int(_vs.get("losses") or 0)
+                _mt = int(_vs.get("ties") or 0)
+                _ranked = sorted(
+                    rosters,
+                    key=lambda r: (
+                        -int((r.get("settings") or {}).get("wins") or 0),
+                        -float((r.get("settings") or {}).get("fpts") or 0),
+                    ),
                 )
-                if hit:
-                    _wact = waiver_pickup_action(
+                _rk = next(
+                    (i + 1 for i, r in enumerate(_ranked)
+                     if str(r.get("roster_id")) == str(viewer_roster.get("roster_id"))),
+                    None,
+                )
+                _odds = _pb_meta.odds_for_ctx(lctx, plat, viewer_roster.get("roster_id"))
+                # Same Teams-parity window posture the league cards carry, so
+                # a board group header can never disagree with its card.
+                from dashboard_services.ai.context_builders import (
+                    ctx_scoring_type as _ctx_scoring_type,
+                    league_format_value_lookup as _lg_value_lookup,
+                )
+                _win = _pb_meta.window_posture_for(
+                    lctx, rosters,
+                    _lg_value_lookup(lctx, _cache=_board_value_cache),
+                    viewer_roster.get("roster_id"), odds_pct=_odds.get("pct"))
+                if _win:
+                    _posture = (_win["label"], _win["cls"])
+                else:
+                    _posture = _pb_meta.posture_for(
+                        _odds.get("pct"), _mw, _ml,
+                        is_redraft=_ctx_scoring_type(lctx) == "redraft")
+                _rec = f"{_mw}-{_ml}" + (f"-{_mt}" if _mt else "")
+                if _rk:
+                    _suf = ("th" if 10 <= _rk % 100 <= 20 else
+                            {1: "st", 2: "nd", 3: "rd"}.get(_rk % 10, "th"))
+                    _rec += f" · {_rk}{_suf} of {len(rosters)}"
+                board_meta[f"{plat}|{lid}"] = {
+                    "league_name": league_name,
+                    "record_line": _rec,
+                    "odds_pct": _odds.get("pct"),
+                    "odds_delta": _odds.get("delta"),
+                    "posture": _posture[0],
+                    "roster_id": str(viewer_roster.get("roster_id") or ""),
+                }
+            except Exception:
+                logger.debug("[portfolio-actions] board meta failed", exc_info=True)
+            starters = [str(p) for p in (viewer_roster.get("starters") or [])]
+            if starters and nfl_players:
+                info = {}
+                for pid in starters:
+                    pl = nfl_players.get(pid) or {}
+                    info[pid] = {
+                        "name": pl.get("full_name") or pl.get("last_name") or "",
+                        "team": pl.get("team") or "",
+                        "injury_status": pl.get("injury_status") or "",
+                    }
+                try:
+                    issues = find_lineup_issues(
+                        starters, info, teams_playing or None)
+                    actions.extend(lineup_actions_from_issues(
+                        issues, platform=plat, season=lg_season,
+                        league_id=lid, league_name=league_name,
+                    ))
+                except Exception:
+                    logger.debug("[portfolio-actions] lineup scan failed",
+                                 exc_info=True)
+            # Bench-swap parity (Part C): the Start-X-over-Y alerts the push
+            # reminders and the league dashboard Next Steps produce. Same solver,
+            # same thresholds (min_gain 2.0, max 2 per league), locked players
+            # excluded from both sides. Best-effort like every other sub-scan.
+            if in_season and starters:
+                try:
+                    proj_map = {}
+                    pbw = lctx.get("proj_by_week") or {}
+                    wk_proj = {}
+                    if isinstance(pbw, dict):
+                        wk_proj = pbw.get(week) or pbw.get(str(week)) or {}
+                    if isinstance(wk_proj, dict):
+                        proj_map = {
+                            str(k): v for k, v in (wk_proj.get("projections") or {}).items()
+                        }
+                    if not proj_map:
+                        if not shared_proj_tried:
+                            shared_proj_tried = True
+                            try:
+                                _bpw = build_projections_by_week(season, week, None) or {}
+                                _wk = {}
+                                if isinstance(_bpw, dict):
+                                    _wk = _bpw.get(week) or _bpw.get(str(week)) or {}
+                                if isinstance(_wk, dict):
+                                    shared_proj_map = {
+                                        str(k): v
+                                        for k, v in (_wk.get("projections") or {}).items()
+                                    } or None
+                            except Exception:
+                                shared_proj_map = None
+                        proj_map = dict(shared_proj_map or {})
+                    if proj_map:
+                        from utils.lineups import locked_teams_from_games
+                        _reserve = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
+                        _taxi = {str(p) for p in (viewer_roster.get("taxi") or []) if p}
+                        eligible = [
+                            str(p) for p in (viewer_roster.get("players") or [])
+                            if str(p) not in _reserve and str(p) not in _taxi
+                        ]
+                        _pidx = lctx.get("players_index") or {}
+                        pos_map = {}
+                        name_map = {}
+                        inj_map_swap = {}
+                        for _pid in eligible:
+                            _pl = nfl_players.get(_pid) or {}
+                            _meta = _pidx.get(_pid) or {}
+                            pos_map[_pid] = str(
+                                _pl.get("position") or _meta.get("position")
+                                or _meta.get("pos") or ""
+                            )
+                            name_map[_pid] = (
+                                _pl.get("full_name") or _meta.get("full_name")
+                                or _meta.get("name") or _pl.get("last_name") or ""
+                            )
+                            inj_map_swap[_pid] = str(_pl.get("injury_status") or "")
+                        for _pid in starters:
+                            if _pid not in name_map:
+                                _pl = nfl_players.get(_pid) or {}
+                                name_map[_pid] = (
+                                    _pl.get("full_name") or _pl.get("last_name") or ""
+                                )
+                        locked_teams = locked_teams_from_games(week_games)
+                        locked_pids = {
+                            _pid for _pid in eligible
+                            if str((nfl_players.get(_pid) or {}).get("team") or "").upper()
+                            in locked_teams
+                        }
+                        swaps = projection_upgrades(
+                            starters, eligible, proj_map, pos_map,
+                            lctx.get("roster_positions") or [],
+                            min_gain=2.0, max_swaps=2,
+                            injury_status=inj_map_swap,
+                            locked_pids=locked_pids,
+                        )
+                        for _sw in swaps[:2]:
+                            _in = str(_sw.get("in") or "")
+                            _out = str(_sw.get("out") or "")
+                            if not _in or not _out:
+                                continue
+                            _in_name = name_map.get(_in) or f"Player {_in}"
+                            _out_name = name_map.get(_out) or f"Player {_out}"
+                            try:
+                                _in_proj = float(proj_map.get(_in) or 0)
+                                _out_proj = float(proj_map.get(_out) or 0)
+                            except (TypeError, ValueError):
+                                _in_proj = _out_proj = 0.0
+                            _gain = float(_sw.get("gain") or (_in_proj - _out_proj))
+                            # Severity: a 2pt gain is a real but modest nudge
+                            # (0.7); a 5pt+ gain is top priority (1.0).
+                            _sev = min(1.0, 0.5 + _gain / 10.0)
+                            _act = make_action(
+                                kind="lineup",
+                                platform=plat, season=lg_season, league_id=lid,
+                                league_name=league_name,
+                                title=f"Start {_in_name} over {_out_name}",
+                                detail=(
+                                    f"{_in_name} projects {_in_proj:.1f} "
+                                    f"vs {_out_name}'s {_out_proj:.1f}"
+                                ),
+                                href=(
+                                    f"/{plat}/{int(lg_season)}/{lid}"
+                                    "/waivers?tab=startsit"
+                                ),
+                                severity=_sev,
+                                dismiss_key=f"swap:{_out}>{_in}",
+                            )
+                            # Board (v25): Done verification reads the lineup
+                            # back; evidence carries the projection rows.
+                            _act["verify"] = {"type": "swap", "in": _in, "out": _out}
+                            _act["evidence"] = [
+                                {"k": "Start", "v": f"{_in_name} · proj {_in_proj:.1f}"},
+                                {"k": "Bench", "v": f"{_out_name} · proj {_out_proj:.1f}"},
+                                {"k": "Gain", "v": f"+{_gain:.1f} projected pts"},
+                            ]
+                            _teams = {
+                                str((nfl_players.get(_p) or {}).get("team") or "").upper()
+                                for _p in (_in, _out)
+                            }
+                            _lock = None
+                            for _g in week_games:
+                                if {_g.get("home"), _g.get("away")} & _teams:
+                                    _ep = _g.get("gameTime_epoch")
+                                    if _ep and (_lock is None or float(_ep) < _lock):
+                                        _lock = float(_ep)
+                            if _lock:
+                                _act["lock_epoch"] = _lock
+                            actions.append(_act)
+                except Exception:
+                    logger.debug("[portfolio-actions] swap scan failed", exc_info=True)
+            # One injury stash/drop hint per league (active-roster candidates only;
+            # players already in reserve/IR do not need a stash/move-to-IR tip).
+            try:
+                from utils.injury_plan import injury_plan, ir_capacity
+                from dashboard_services.injury_return import weeks_out_for_player
+                values_by_id = {
+                    str(r.get("id") or ""): r
+                    for r in (lctx.get("model_value_table") or [])
+                    if r.get("id")
+                }
+                reserve_set = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
+                capacity = ir_capacity(
+                    lctx.get("roster_positions") or [], viewer_roster.get("reserve") or [],
+                    reserve_slots=(lctx.get("league") or {}).get("reserve_slots"),
+                )
+                for pid in [str(p) for p in (viewer_roster.get("players") or [])][:40]:
+                    pl = nfl_players.get(pid) or {}
+                    st = str(pl.get("injury_status") or "").strip()
+                    if not st or st.lower() in ("active", "act"):
+                        continue
+                    plan = injury_plan(
+                        status=st,
+                        espn_weeks=weeks_out_for_player(pid),
+                        player_value=float((values_by_id.get(pid) or {}).get("value") or 0) or None,
+                        has_open_ir_slot=capacity["has_open_ir_slot"],
+                        already_on_ir=pid in reserve_set,
+                    )
+                    if not plan or plan.get("verdict") not in ("Move to IR", "Drop candidate"):
+                        continue
+                    act = injury_stash_action(
                         platform=plat, season=lg_season, league_id=lid,
                         league_name=league_name,
-                        player_name=hit["name"],
-                        position=hit.get("position") or "",
-                        is_redraft=is_rd,
-                        pos_rank_label=hit.get("pos_rank_label") or "",
-                        value=float(hit.get("value") or 0),
-                        reason=hit.get("reason") or "",
-                        severity=float(hit.get("severity") or 0),
-                        starter_gap=float(hit.get("starter_gap") or 0),
-                        pos_rank=hit.get("pos_rank"),
-                        is_sf=is_sf,
-                        n_teams=len(rosters) or 12,
-                        player_id=str(hit.get("player_id") or ""),
+                        player_name=pl.get("full_name") or pl.get("last_name") or "Player",
+                        verdict=plan["verdict"],
+                        weeks_label=plan.get("weeks_label") or "",
+                        already_on_ir=pid in reserve_set,
+                        ir_used=capacity["ir_used"], ir_slots=capacity["ir_slots"],
                     )
-                    if _wact:
-                        # Board (v25): a claim cannot verify at click time
-                        # (claims process later), so Done lands as marked.
-                        _wact["verify"] = {
-                            "type": "claim",
-                            "pid": str(hit.get("player_id") or ""),
+                    if act:
+                        # Board (v25): an IR move verifies against the reserve
+                        # list; a drop verifies against the roster itself.
+                        act["verify"] = {
+                            "type": "ir" if plan["verdict"] == "Move to IR" else "drop",
+                            "pid": pid,
                         }
-                        _wact["evidence"] = [
-                            {"k": "Add",
-                             "v": f"{hit['name']} · value {float(hit.get('value') or 0):,.0f}"},
-                            {"k": "Why", "v": hit.get("reason") or ""},
+                        act["evidence"] = [
+                            {"k": "Status", "v": st},
+                            {"k": "Time out", "v": plan.get("weeks_label") or ""},
+                            {"k": "IR room",
+                             "v": f"{capacity['ir_used']} of {capacity['ir_slots']} slots used"},
                         ]
-                        actions.append(_wact)
-        except Exception:
-            logger.debug("[portfolio-actions] waiver pickup failed", exc_info=True)
+                        actions.append(act)
+                        break
+            except Exception:
+                pass
 
-        # Wasted roster capacity: IR-eligible players in active spots, recovered
-        # players stuck on IR, open taxi slots (Sleeper IR/taxi; taxi is
-        # dynasty-only -- leftover taxi_slots on keeper/redraft are ignored).
-        try:
-            settings = (
-                league_obj.get("settings")
-                or lctx.get("league_settings")
-                or {}
-            )
-            from utils.roster_compliance import (
-                effective_taxi_slots,
-                roster_compliance_issues,
-            )
-            reserve_slots = int(settings.get("reserve_slots") or 0)
-            taxi_slots = effective_taxi_slots(
-                settings, league=league_obj, platform=plat,
-            )
-            if reserve_slots > 0 or taxi_slots > 0:
-                r_players = [str(p) for p in (viewer_roster.get("players") or [])]
-                r_info = {}
-                for pid in r_players:
-                    pl = nfl_players.get(pid) or {}
-                    r_info[pid] = {
-                        "name": pl.get("full_name") or pl.get("last_name") or "",
-                        "injury_status": pl.get("injury_status") or "",
-                        "years_exp": pl.get("years_exp"),
+            # Waiver add only when the player clears the quality bar (startable
+            # rank / roster hole) -- not merely the highest leftover FA value.
+            try:
+                if model_value_table:
+                    from app import (
+                        _league_is_redraft,
+                        _waiver_rank_label_key,
+                        _waiver_value_keys,
+                    )
+                    from utils.lineup_slots import is_superflex_lineup
+                    from utils.value_helpers import format_rank_key
+                    is_rd = _league_is_redraft(lctx)
+                    rp = lctx.get("roster_positions") or []
+                    is_sf = is_superflex_lineup(rp)
+                    vf, vfb = _waiver_value_keys(lctx)
+                    rank_label_key = _waiver_rank_label_key(lctx)
+                    rank_key = format_rank_key(is_redraft=is_rd, is_sf=is_sf)
+                    rostered_ids = {
+                        str(p) for r in rosters for p in (r.get("players") or [])
                     }
-                r_issues = roster_compliance_issues(
-                    players=r_players,
-                    starters=starters,
-                    reserve=[str(p) for p in (viewer_roster.get("reserve") or [])],
-                    taxi=[str(p) for p in (viewer_roster.get("taxi") or [])],
-                    player_info=r_info,
-                    reserve_slots=reserve_slots,
-                    taxi_slots=taxi_slots,
-                    current_week=week,
-                )
-                r_act = roster_slot_action(
-                    r_issues, platform=plat, season=lg_season,
-                    league_id=lid, league_name=league_name,
-                )
-                if r_act:
-                    actions.append(r_act)
-        except Exception:
-            logger.debug("[portfolio-actions] roster slot check failed", exc_info=True)
+                    players_index = dict(lctx.get("players_index") or {})
+                    for pid in (viewer_roster.get("players") or []):
+                        spid = str(pid)
+                        pl = nfl_players.get(spid) or {}
+                        prev = players_index.get(spid) or {}
+                        players_index[spid] = {
+                            **prev,
+                            "position": pl.get("position") or prev.get("position"),
+                            "team": pl.get("team") or prev.get("team"),
+                            "injury_status": pl.get("injury_status") or prev.get("injury_status") or "",
+                            "name": pl.get("full_name") or prev.get("name"),
+                        }
+                    inj_by_pid = {
+                        str(k): str((v or {}).get("injury_status") or "")
+                        for k, v in (nfl_players or {}).items()
+                        if isinstance(v, dict) and v.get("injury_status")
+                    }
+                    # Selector opportunity inputs (item 2 parity): the same
+                    # per-week maps + weekly availability the Waivers page path
+                    # builds, from the one shared construction, so calendar
+                    # need and the lineup-gain classification finally run on
+                    # this path too.
+                    _opp = {}
+                    try:
+                        from utils.waivers import selector_opportunity_inputs
+                        _pos_by_pid = {
+                            str(_k): str((_v or {}).get("position")
+                                         or (_v or {}).get("pos") or "").upper()
+                            for _k, _v in players_index.items()
+                        }
+                        _cand_rows = []
+                        for _row in model_value_table:
+                            if not isinstance(_row, dict):
+                                continue
+                            _cpid = str(_row.get("id") or "")
+                            _cpos = str(_row.get("position")
+                                        or _row.get("pos") or "").upper()
+                            if not _cpid or _cpid in rostered_ids:
+                                continue
+                            if _cpos not in {"QB", "RB", "WR", "TE"}:
+                                continue
+                            _pos_by_pid.setdefault(_cpid, _cpos)
+                            _cand_rows.append(_row)
 
-        # Calendar nudge: trade deadline / playoff countdown (in-season only).
-        if in_season:
+                        def _row_value(_r):
+                            try:
+                                return float(_r.get(vf) or _r.get(vfb) or 0.0)
+                            except (TypeError, ValueError):
+                                return 0.0
+
+                        _cand_rows.sort(key=lambda r: -_row_value(r))
+                        _opp = selector_opportunity_inputs(
+                            season=lg_season, week=week,
+                            roster_pids=[str(p) for p in
+                                         (viewer_roster.get("players") or [])],
+                            candidate_pids=[str(r.get("id") or "")
+                                            for r in _cand_rows[:96]],
+                            positions_by_pid=_pos_by_pid,
+                            players_index=players_index,
+                            raw_scoring_settings=lctx.get("raw_scoring_settings") or {},
+                        )
+                    except Exception:
+                        logger.debug("[portfolio-actions] waiver opportunity inputs failed",
+                                     exc_info=True)
+                        _opp = {}
+                    hit = select_waiver_add(
+                        model_value_table, rostered_ids,
+                        value_key=vf, fallback_key=vfb,
+                        rank_key=rank_key, rank_label_key=rank_label_key,
+                        is_redraft=is_rd, is_sf=is_sf,
+                        n_teams=len(rosters) or 12,
+                        roster_players=list(viewer_roster.get("players") or []),
+                        roster_positions=rp,
+                        pidx=players_index,
+                        min_value=_waiver_base_min,
+                        injured_status_by_pid=inj_by_pid,
+                        weekly_availability=_opp.get("weekly_availability") or None,
+                        lineup_weekly=_opp.get("weekly_maps"),
+                        weekly_pts_by_pid=_opp.get("weekly_pts_by_pid"),
+                        forward_pts_by_pid=_opp.get("forward_pts_by_pid") or None,
+                    )
+                    if hit:
+                        _wact = waiver_pickup_action(
+                            platform=plat, season=lg_season, league_id=lid,
+                            league_name=league_name,
+                            player_name=hit["name"],
+                            position=hit.get("position") or "",
+                            is_redraft=is_rd,
+                            pos_rank_label=hit.get("pos_rank_label") or "",
+                            value=float(hit.get("value") or 0),
+                            reason=hit.get("reason") or "",
+                            severity=float(hit.get("severity") or 0),
+                            starter_gap=float(hit.get("starter_gap") or 0),
+                            pos_rank=hit.get("pos_rank"),
+                            is_sf=is_sf,
+                            n_teams=len(rosters) or 12,
+                            player_id=str(hit.get("player_id") or ""),
+                        )
+                        if _wact:
+                            # Board (v25): a claim cannot verify at click time
+                            # (claims process later), so Done lands as marked.
+                            _wact["verify"] = {
+                                "type": "claim",
+                                "pid": str(hit.get("player_id") or ""),
+                            }
+                            _wact["evidence"] = [
+                                {"k": "Add",
+                                 "v": f"{hit['name']} · value {float(hit.get('value') or 0):,.0f}"},
+                                {"k": "Why", "v": hit.get("reason") or ""},
+                            ]
+                            actions.append(_wact)
+            except Exception:
+                logger.debug("[portfolio-actions] waiver pickup failed", exc_info=True)
+
+            # Wasted roster capacity: IR-eligible players in active spots, recovered
+            # players stuck on IR, open taxi slots (Sleeper IR/taxi; taxi is
+            # dynasty-only -- leftover taxi_slots on keeper/redraft are ignored).
             try:
                 settings = (
                     league_obj.get("settings")
                     or lctx.get("league_settings")
                     or {}
                 )
-                c_act = calendar_action(
-                    platform=plat, season=lg_season, league_id=lid,
-                    league_name=league_name, week=week,
-                    trade_deadline=int(settings.get("trade_deadline") or 0),
-                    playoff_week_start=int(settings.get("playoff_week_start") or 0),
+                from utils.roster_compliance import (
+                    effective_taxi_slots,
+                    roster_compliance_issues,
                 )
-                if c_act:
-                    actions.append(c_act)
+                reserve_slots = int(settings.get("reserve_slots") or 0)
+                taxi_slots = effective_taxi_slots(
+                    settings, league=league_obj, platform=plat,
+                )
+                if reserve_slots > 0 or taxi_slots > 0:
+                    r_players = [str(p) for p in (viewer_roster.get("players") or [])]
+                    r_info = {}
+                    for pid in r_players:
+                        pl = nfl_players.get(pid) or {}
+                        r_info[pid] = {
+                            "name": pl.get("full_name") or pl.get("last_name") or "",
+                            "injury_status": pl.get("injury_status") or "",
+                            "years_exp": pl.get("years_exp"),
+                        }
+                    r_issues = roster_compliance_issues(
+                        players=r_players,
+                        starters=starters,
+                        reserve=[str(p) for p in (viewer_roster.get("reserve") or [])],
+                        taxi=[str(p) for p in (viewer_roster.get("taxi") or [])],
+                        player_info=r_info,
+                        reserve_slots=reserve_slots,
+                        taxi_slots=taxi_slots,
+                        current_week=week,
+                    )
+                    r_act = roster_slot_action(
+                        r_issues, platform=plat, season=lg_season,
+                        league_id=lid, league_name=league_name,
+                    )
+                    if r_act:
+                        actions.append(r_act)
             except Exception:
-                logger.debug("[portfolio-actions] calendar nudge failed", exc_info=True)
+                logger.debug("[portfolio-actions] roster slot check failed", exc_info=True)
 
-    payload = {
-        "actions": rank_cross_league_actions(actions, limit=8),
-        "scan": _scan_payload(),
-    }
-    # ── Board (v25): the same scan, grouped by league with global ranks,
-    # done states, lock timing, a served-board snapshot for self-grading,
-    # and last week's grade line. Best-effort: the digest above stands
-    # even if board assembly fails.
-    try:
-        from dashboard_services import portfolio_board as _pb
-        _groups = _pb.group_actions(
-            rank_cross_league_actions(actions, limit=24), board_meta)
-        _now = time.time()
-        _ukey = _user_key()
-        _done = (_pb.load_done_states(_ukey, season, week)
-                 if _ukey and week else {})
-        # Conservative lock fallback for lineup moves without a player
-        # kickoff: the week's first Sunday kickoff, game day only.
-        _fall_lock = None
+            # Calendar nudge: trade deadline / playoff countdown (in-season only).
+            if in_season:
+                try:
+                    settings = (
+                        league_obj.get("settings")
+                        or lctx.get("league_settings")
+                        or {}
+                    )
+                    c_act = calendar_action(
+                        platform=plat, season=lg_season, league_id=lid,
+                        league_name=league_name, week=week,
+                        trade_deadline=int(settings.get("trade_deadline") or 0),
+                        playoff_week_start=int(settings.get("playoff_week_start") or 0),
+                    )
+                    if c_act:
+                        actions.append(c_act)
+                except Exception:
+                    logger.debug("[portfolio-actions] calendar nudge failed", exc_info=True)
+
         try:
-            from zoneinfo import ZoneInfo as _ZI
-            for _g in week_games:
-                _ep = _g.get("gameTime_epoch")
-                if _ep and datetime.fromtimestamp(
-                        float(_ep), _ZI("America/New_York")).weekday() == 6:
-                    if _fall_lock is None or float(_ep) < _fall_lock:
-                        _fall_lock = float(_ep)
+            _ranked_actions = rank_cross_league_actions(actions, limit=8)
         except Exception:
+            logger.debug("[portfolio-actions] action ranking failed",
+                         exc_info=True)
+            _ranked_actions = actions[:8]
+        payload = {
+            "actions": _ranked_actions,
+            "scan": _scan_payload(),
+        }
+        # ── Board (v25): the same scan, grouped by league with global ranks,
+        # done states, lock timing, a served-board snapshot for self-grading,
+        # and last week's grade line. Best-effort: the digest above stands
+        # even if board assembly fails.
+        try:
+            from dashboard_services import portfolio_board as _pb
+            _groups = _pb.group_actions(
+                rank_cross_league_actions(actions, limit=24), board_meta)
+            _now = time.time()
+            _ukey = _captured_ukey
+            _done = (_pb.load_done_states(_ukey, season, week)
+                     if _ukey and week else {})
+            # Conservative lock fallback for lineup moves without a player
+            # kickoff: the week's first Sunday kickoff, game day only.
             _fall_lock = None
-        for _grp in _groups:
-            _dc = 0
-            for _mv in _grp["moves"]:
-                if (not _mv.get("lock_epoch") and _fall_lock
-                        and _mv.get("kind") == "lineup"):
-                    _mv["lock_epoch"] = _fall_lock
-                _mv["timing"] = _pb.timing_for(_mv, _now)
-                _st = _done.get((_grp["platform"], _grp["league_id"],
-                                 _mv["move_key"]))
-                _mv["done"] = _st
-                if _st:
-                    _dc += 1
-            _grp["meta"]["moves_count"] = len(_grp["moves"])
-            _grp["meta"]["done_count"] = _dc
-        payload["board"] = {"groups": _groups, "week": week}
-        payload["week"] = week
-        payload["season"] = season
-        if _ukey and week and _groups:
-            _pb.save_board_snapshot(_ukey, season, week, _groups)
-        _grade_line = ""
-        if _ukey and week and week > 1:
             try:
-                _pb.grade_board_week(_ukey, season, week - 1)
+                from zoneinfo import ZoneInfo as _ZI
+                for _g in week_games:
+                    _ep = _g.get("gameTime_epoch")
+                    if _ep and datetime.fromtimestamp(
+                            float(_ep), _ZI("America/New_York")).weekday() == 6:
+                        if _fall_lock is None or float(_ep) < _fall_lock:
+                            _fall_lock = float(_ep)
             except Exception:
-                logger.debug("[portfolio-actions] lazy grade failed",
-                             exc_info=True)
-            _grade_line = _pb.grade_line(
-                _pb.load_board_grade(_ukey, season, week - 1))
-        payload["grade_line"] = _grade_line
-    except Exception:
-        logger.debug("[portfolio-actions] board assembly failed", exc_info=True)
-    if _actions_key is not None:
-        with _ACTIONS_LOCK:
-            _ACTIONS_INFLIGHT.pop(_actions_key, None)
-            if not (payload.get("scan") or {}).get("incomplete"):
-                _now_s = time.time()
-                _ACTIONS_CACHE[_actions_key] = (_now_s, payload)
-                for _k in [k for k, (ts, _p) in _ACTIONS_CACHE.items()
-                           if _now_s - ts >= _ACTIONS_TTL]:
-                    _ACTIONS_CACHE.pop(_k, None)
-    return jsonify(payload)
+                _fall_lock = None
+            for _grp in _groups:
+                _dc = 0
+                for _mv in _grp["moves"]:
+                    if (not _mv.get("lock_epoch") and _fall_lock
+                            and _mv.get("kind") == "lineup"):
+                        _mv["lock_epoch"] = _fall_lock
+                    _mv["timing"] = _pb.timing_for(_mv, _now)
+                    _st = _done.get((_grp["platform"], _grp["league_id"],
+                                     _mv["move_key"]))
+                    _mv["done"] = _st
+                    if _st:
+                        _dc += 1
+                _grp["meta"]["moves_count"] = len(_grp["moves"])
+                _grp["meta"]["done_count"] = _dc
+            payload["board"] = {"groups": _groups, "week": week}
+            payload["week"] = week
+            payload["season"] = season
+            if _ukey and week and _groups:
+                _pb.save_board_snapshot(_ukey, season, week, _groups)
+            _grade_line = ""
+            if _ukey and week and week > 1:
+                try:
+                    _pb.grade_board_week(_ukey, season, week - 1)
+                except Exception:
+                    logger.debug("[portfolio-actions] lazy grade failed",
+                                 exc_info=True)
+                _grade_line = _pb.grade_line(
+                    _pb.load_board_grade(_ukey, season, week - 1))
+            payload["grade_line"] = _grade_line
+        except Exception:
+            logger.debug("[portfolio-actions] board assembly failed", exc_info=True)
+        if _actions_key is not None:
+            with _ACTIONS_LOCK:
+                if not (payload.get("scan") or {}).get("incomplete"):
+                    _now_s = time.time()
+                    _ACTIONS_CACHE[_actions_key] = (_now_s, payload)
+                    for _k in [k for k, (ts, _p) in _ACTIONS_CACHE.items()
+                               if _now_s - ts >= _ACTIONS_TTL]:
+                        _ACTIONS_CACHE.pop(_k, None)
+        return payload
 
+
+    # Dispatch: the scan runs at most once per viewer (single-flight) on
+    # a background thread, so neither a client abort at 45s nor a
+    # saturated request thread can kill or starve it, and an unexpected
+    # failure answers with the honest incomplete payload instead of a
+    # 500 the client renders as a dead end (or, worse, an empty board).
+    # The in-flight mark is cleared in the worker's finally, so a failed
+    # scan can never poison later requests into deferring to a compute
+    # that is not running.
+    if _actions_key is None:
+        try:
+            return jsonify(_run_actions_compute())
+        except Exception:
+            logger.exception("[portfolio-actions] scan failed")
+            return jsonify(_fallback_payload())
+    _holder = None
+    _spawn = False
+    with _ACTIONS_LOCK:
+        _now_c = time.time()
+        _hit = _ACTIONS_CACHE.get(_actions_key)
+        if _hit and _now_c - _hit[0] < _ACTIONS_TTL:
+            return jsonify(_hit[1])
+        _started = _ACTIONS_INFLIGHT.get(_actions_key)
+        if _started and _now_c - _started < 120.0:
+            _holder = _ACTIONS_PENDING.get(_actions_key)
+            if _holder is None:
+                return jsonify(_deferred_payload())
+        else:
+            _ACTIONS_INFLIGHT[_actions_key] = _now_c
+            _holder = {"event": threading.Event(), "payload": None,
+                       "started": _now_c}
+            _ACTIONS_PENDING[_actions_key] = _holder
+            _spawn = True
+    if _spawn:
+        def _worker():
+            try:
+                if _ACTIONS_COMPUTE_SEM.acquire(blocking=False):
+                    try:
+                        _holder["payload"] = _run_actions_compute()
+                    except Exception:
+                        logger.exception(
+                            "[portfolio-actions] background scan failed")
+                    finally:
+                        _ACTIONS_COMPUTE_SEM.release()
+            finally:
+                _holder["event"].set()
+                with _ACTIONS_LOCK:
+                    if _ACTIONS_PENDING.get(_actions_key) is _holder:
+                        _ACTIONS_PENDING.pop(_actions_key, None)
+                    if (_ACTIONS_INFLIGHT.get(_actions_key)
+                            == _holder.get("started")):
+                        _ACTIONS_INFLIGHT.pop(_actions_key, None)
+
+        try:
+            threading.Thread(target=_worker, daemon=True).start()
+        except Exception:
+            with _ACTIONS_LOCK:
+                if _ACTIONS_PENDING.get(_actions_key) is _holder:
+                    _ACTIONS_PENDING.pop(_actions_key, None)
+                if (_ACTIONS_INFLIGHT.get(_actions_key)
+                        == _holder.get("started")):
+                    _ACTIONS_INFLIGHT.pop(_actions_key, None)
+            try:
+                return jsonify(_run_actions_compute())
+            except Exception:
+                logger.exception("[portfolio-actions] scan failed")
+                return jsonify(_fallback_payload())
+    _holder["event"].wait(_ACTIONS_SYNC_WAIT)
+    if _holder["payload"] is not None:
+        return jsonify(_holder["payload"])
+    return jsonify(_deferred_payload())
 
 # ── Board Done states (v25) ──────────────────────────────────────────────────
 # Same family as /api/action-dismissals: account users persist server-side
@@ -1715,6 +1815,23 @@ _ACTIONS_CACHE: dict = {}
 _ACTIONS_INFLIGHT: dict = {}
 _ACTIONS_LOCK = threading.Lock()
 _ACTIONS_TTL = 60.0  # seconds
+# Pending background scans, keyed like _ACTIONS_CACHE: {"event", "payload",
+# "started"}. The scan runs on a daemon thread (see api_portfolio_actions)
+# so a client-side abort or a saturated request thread can no longer kill
+# or starve it; the compute is single-flight per viewer and globally
+# capped, and an over-cap kick is dropped (marks cleared) so the client's
+# next retry re-kicks it.
+_ACTIONS_PENDING: dict = {}
+_ACTIONS_COMPUTE_SEM = threading.BoundedSemaphore(2)
+# Bounded grace a request waits for the background scan before answering
+# with the deferred incomplete payload. Fast scans still answer in-request;
+# slow ones land in the cache for the client's retry ladder to pick up.
+_ACTIONS_SYNC_WAIT = 8.0
+try:
+    _ACTIONS_SYNC_WAIT = float(
+        os.environ.get("PORTFOLIO_ACTIONS_SYNC_WAIT_SECONDS") or 8.0)
+except Exception:
+    pass
 
 
 def _insights_cache_get(key):
