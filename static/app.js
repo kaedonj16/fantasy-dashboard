@@ -24025,8 +24025,19 @@ async function tmLoadTrades(rosterId) {
       (p.value ? `<span class="tm3-asset-val">${fmtV(p.value)}</span>` : '') + '</div>';
     const assetPick = (p, sign) => {
       const via = p.owner_name ? ` <span class="tm3-pick-via">· via ${esc(p.owner_name)}</span>` : '';
-      const became = p.became && p.became.name ? `<span class="tm3-pick-became">became ${esc(p.became.name)}</span>` : '';
-      return `<div class="tm3-asset tm3-asset-pick"><span class="tm3-sign">${sign}</span><span class="tm3-pick-chip">${esc(p.season)} R${esc(p.round)}${via}</span>${became}</div>`;
+      if (p.became && p.became.name) {
+        // A resolved pick reads as the player it became, with the pick as
+        // the qualifier: "Luther Burden III via 2025 R2", valued like any
+        // other player asset on the card.
+        const b = p.became;
+        const bPos = b.position ? `<span class="pos-badge ${esc(b.position)}">${esc(b.position)}</span>` : '';
+        const bName = b.player_id
+          ? `<span class="tm3-asset-name player-clickable" data-player-id="${esc(b.player_id)}" data-player-name="${esc(b.name)}">${esc(b.name)}</span>`
+          : `<span class="tm3-asset-name">${esc(b.name)}</span>`;
+        const bVal = b.value ? `<span class="tm3-asset-val">${fmtV(b.value)}</span>` : '';
+        return `<div class="tm3-asset"><span class="tm3-sign">${sign}</span>${bPos}${bName}<span class="tm3-via-pick">via ${esc(p.season)} R${esc(p.round)}</span>${bVal}</div>`;
+      }
+      return `<div class="tm3-asset tm3-asset-pick"><span class="tm3-sign">${sign}</span><span class="tm3-pick-chip">${esc(p.season)} R${esc(p.round)}${via}</span></div>`;
     };
     const assetFaab = (amount, sign) => `<div class="tm3-asset tm3-asset-faab"><span class="tm3-sign">${sign}</span><span class="tm3-asset-name">$${amount} FAAB</span></div>`;
     const renderSide = (players, picks, faab, sign) => {
@@ -24046,10 +24057,15 @@ async function tmLoadTrades(rosterId) {
         ? `${_tmAvatar({ team_name: partner.team_name, avatar: partner.avatar })}<span class="tm3-trade-with">with <b>${esc(partner.team_name)}</b></span>`
         : '<span class="tm3-trade-with">Trade</span>';
       const hasPlayers = (tr.my_gets || []).length + (tr.my_sends || []).length > 0;
-      const netChip = hasPlayers
+      // A pick-only trade still has a today's-values net once its picks
+      // have become players, so the net chip/footer key off that too.
+      const hasBecame = (tr.my_pick_gets || []).concat(tr.my_pick_sends || [])
+        .some(p => p.became && p.became.name);
+      const hasNet = hasPlayers || hasBecame;
+      const netChip = hasNet
         ? `<span class="tm3-net-chip ${tr.players_net >= 0 ? 'tm3-net-pos' : 'tm3-net-neg'}">${signed(tr.players_net)}</span>` : '';
       const when = [tr.season || '', tr.week === 0 ? 'Offseason' : (tr.week ? `Week ${tr.week}` : ''), tr.date || ''].filter(Boolean).join(' · ');
-      const foot = hasPlayers
+      const foot = hasNet
         ? `<div class="tm3-trade-foot">Players at today's values: <b class="${tr.players_net >= 0 ? 'tm3-net-pos-t' : 'tm3-net-neg-t'}">${signed(tr.players_net)}</b></div>` : '';
       return seasonHead + `<div class="tm3-trade-card">
         <div class="tm3-trade-head">${headLeft}${netChip}<span class="tm3-trade-when">${esc(when)}</span></div>
@@ -24337,14 +24353,29 @@ async function fetchTeamDetails(rosterId) {
     hardTimer = setTimeout(() => controller.abort(), 30000);
 
     const _tmLt = brLeagueType();
-    const response = await fetch(
-      `/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`,
-      { signal: controller.signal }
-    );
+    const _tmUrl = `/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`;
+    let response = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await fetch(_tmUrl, { signal: controller.signal });
+      } catch (fetchErr) {
+        if (fetchErr && fetchErr.name === 'AbortError') throw fetchErr;
+        if (attempt === 1) throw fetchErr;
+        response = null;
+      }
+      if (response && response.ok) break;
+      // A flapping gateway (502/503/504) or a dropped connection usually
+      // recovers within a second or two; retry once before surfacing the
+      // error panel, so a brief backend blip does not read as "this team
+      // will not load".
+      const retryable = !response || [502, 503, 504].includes(response.status);
+      if (!retryable || attempt === 1) break;
+      await new Promise(r => setTimeout(r, 1200));
+    }
     _clear();
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    if (!response || !response.ok) {
+      throw new Error(response ? `HTTP ${response.status}` : 'Network error');
     }
 
     const data = await response.json();
@@ -28686,23 +28717,30 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
 
   // Score/result band only: status line, your score vs opponent (with
   // projected finals while the week is open), the win-probability bar, and
-  // the WON/LOST BY result once final. No My Matchup / League Scores tabs
-  // and no ScoreZone Moments here -- those live on the matchup page.
+  // once final a solid verdict banner (WON/LOST BY in white on green/red)
+  // on top of the band with the winner's score full-strength and the
+  // loser's muted. No My Matchup / League Scores tabs and no ScoreZone
+  // Moments here -- those live on the matchup page.
   function matchupHtml(data) {
     var you = data.you, opp = data.opp, status = data.status || 'pre';
     var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
-    function side(team, name, opposite) {
-      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
+    function side(team, name, opposite, isWin) {
+      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + (isWin ? ' win' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
     }
-    var extra = '';
     if (status === 'final' && opp) {
       var result = data.result || 'T', margin = number(data.margin, 2);
-      extra = '<div class="pf-live-result">' + escapeHtml(result === 'W' ? 'WON BY ' + margin : (result === 'L' ? 'LOST BY ' + margin : 'TIED')) + '</div>';
-    } else if (opp && data.win_prob != null) {
+      var verdict = result === 'W' ? 'WON BY ' + margin : (result === 'L' ? 'LOST BY ' + margin : 'TIED');
+      var bannerCls = result === 'W' ? ' is-win' : (result === 'L' ? ' is-loss' : ' is-tie');
+      var banner = '<div class="pf-live-banner' + bannerCls + '"><span class="pf-live-banner-fin"><span class="pf-live-dot"></span>' + label + '</span><span class="pf-live-banner-verdict">' + escapeHtml(verdict) + '</span></div>';
+      var youWin = result === 'W' || result === 'T', oppWin = result === 'L' || result === 'T';
+      return banner + '<div class="pf-live-grid is-final' + (result === 'T' ? ' is-tie' : '') + '">' + side(you, 'You', false, youWin) + side(opp, opp.name || 'Opp', true, oppWin) + '</div>';
+    }
+    var extra = '';
+    if (opp && data.win_prob != null) {
       var chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
       extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span class="pf-live-wp-you">' + chance + '% to win</span><span class="pf-live-wp-opp">' + (100 - chance) + '%</span></div></div>';
     }
-    return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra;
+    return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false, false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true, false) + '</div>' + extra;
   }
   function renderMatchup(slot, data) {
     if (!slot || !data) return false;
@@ -29559,7 +29597,16 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var card = document.getElementById('pfMovesCard');
     var body = document.getElementById('pfMovesBody');
     if (!card || !body) return;
-    window.brFetchWithTimeout('/api/portfolio-actions', { cache: 'no-store', credentials: 'same-origin' }, 15000)
+    var PF_RETRY = [6000, 15000, 30000];
+    attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
+    // The scan is the heaviest read on the page (13s for 4 leagues
+    // locally, more across every linked league), so the old 15s abort
+    // fired on essentially every cold load and the catch below showed
+    // "Could not load your moves" with no retry. The server now caches
+    // complete scans for 60s and single-flights the compute; this call
+    // gets a longer leash, and a timeout/network failure retries on
+    // the same ladder as an incomplete scan before giving up.
+    window.brFetchWithTimeout('/api/portfolio-actions', { cache: 'no-store', credentials: 'same-origin' }, 45000)
       .then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d || {} }; }); })
       .then(function (res) {
         if (res.status === 403 && res.d.paywall) {
@@ -29568,8 +29615,6 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           return;
         }
         var scan = (res.d && res.d.scan) || null;
-        var PF_RETRY = [6000, 15000, 30000];
-        attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
         if (scan && scan.incomplete && attempt < PF_RETRY.length) {
           setTimeout(function () { __pfMovesGo(attempt + 1); }, PF_RETRY[attempt]);
           return;
@@ -29580,6 +29625,10 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         loadDismissed().then(function () { wireBoard(); renderBoard(); });
       })
       .catch(function () {
+        if (attempt < PF_RETRY.length) {
+          setTimeout(function () { __pfMovesGo(attempt + 1); }, PF_RETRY[attempt]);
+          return;
+        }
         body.innerHTML = '<div class="pf-moves-empty"><strong>Could not load your moves.</strong> ' +
           'Check your connection and refresh.</div>';
       });

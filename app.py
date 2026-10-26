@@ -31765,6 +31765,10 @@ def _team_achievements(ctx, roster_id, owner_uid, platform, season, league_id):
     return out[:3]
 
 
+_TEAM_DETAILS_CACHE: dict = {}
+_TEAM_DETAILS_TTL = 120
+
+
 @app.route("/api/team-details/<roster_id>")
 def api_team_details(roster_id: str):
     """Get comprehensive team details for modal display."""
@@ -31785,6 +31789,17 @@ def api_team_details(roster_id: str):
             season = str(nfl_state.get("season") or datetime.now().year)
 
         season = int(season)
+
+        # Short-TTL response cache: building this payload rescans the
+        # league's weekly points, efficiency and age context, and on a cold
+        # worker that build is slow enough to time out at the gateway,
+        # which reads as "the team modal will not load". The modal data
+        # (record, values, roster) tolerates two minutes of staleness.
+        _td_key = (platform, str(league_id), season, str(roster_id),
+                   str(request.args.get("league_type") or "1qb").strip().lower())
+        _td_cached = _TEAM_DETAILS_CACHE.get(_td_key)
+        if _td_cached and time.time() - _td_cached[0] < _TEAM_DETAILS_TTL:
+            return jsonify(_td_cached[1])
 
         # Get league data
         league = get_league(platform, league_id, season)
@@ -32759,6 +32774,8 @@ def api_team_details(roster_id: str):
 
         # Clean NaN values before JSON serialization
         cleaned_response = clean_nan_for_json(response)
+        _TEAM_DETAILS_CACHE[_td_key] = (time.time(), cleaned_response)
+        _prune_ttl_cache(_TEAM_DETAILS_CACHE, 256)
         return jsonify(cleaned_response)
 
     except Exception as e:
@@ -33171,15 +33188,35 @@ def api_team_trades(roster_id: str):
                 except (TypeError, ValueError):
                     hit = None
                 if hit:
+                    _bpos = hit.get("position") or ""
+                    if _bpos == "PK":
+                        _bpos = "K"
+                    elif _bpos in ("DST", "D/ST"):
+                        _bpos = "DEF"
                     became = {"player_id": hit.get("player_id"), "name": hit.get("name"),
-                              "position": hit.get("position") or ""}
+                              "position": _bpos,
+                              "value": _value_of(hit.get("player_id"), _bpos)}
+            # Via label: the pick's original owner. For the viewer's own
+            # original picks, name her username, not her team name: the
+            # historical season's team name is often her old name for the
+            # team, while the username is stable across seasons.
+            owner_name = None
+            if orig is not None:
+                _oroster = roster_by_id_h.get(orig) or {}
+                _ouser = user_by_owner_h.get(str(_oroster.get("owner_id")))
+                if (my_owner_id is not None
+                        and str(_oroster.get("owner_id")) == my_owner_id):
+                    owner_name = (username_from_user(_ouser)
+                                  or _team_name(orig, roster_by_id_h, user_by_owner_h))
+                else:
+                    owner_name = _team_name(orig, roster_by_id_h, user_by_owner_h)
             return {
                 "season": p.get("season"),
                 "round": p.get("round"),
                 "roster_id": orig,
                 "owner_id": str(p.get("owner_id")) if p.get("owner_id") is not None else None,
                 "previous_owner_id": str(p.get("previous_owner_id")) if p.get("previous_owner_id") is not None else None,
-                "owner_name": _team_name(orig, roster_by_id_h, user_by_owner_h) if orig is not None else None,
+                "owner_name": owner_name,
                 "became": became,
             }
 
@@ -33254,8 +33291,19 @@ def api_team_trades(roster_id: str):
                 if str(move.get("sender")) == my_rid:
                     faab_sends += amount
 
+            # Net at today's values counts the players each traded pick
+            # became, on top of the players traded directly: a received
+            # pick that became a player is worth that player today, and a
+            # sent pick that became a player is value given up. Unresolved
+            # picks (draft not held yet) carry no became value.
+            def _became_total(picks):
+                return sum(
+                    float((pk.get("became") or {}).get("value") or 0)
+                    for pk in picks)
+
             players_net = round(
-                sum(p["value"] for p in my_gets) - sum(p["value"] for p in my_sends), 1)
+                sum(p["value"] for p in my_gets) + _became_total(my_pick_gets)
+                - sum(p["value"] for p in my_sends) - _became_total(my_pick_sends), 1)
 
             trades.append({
                 "season": entry["season"],
@@ -40689,8 +40737,25 @@ def build_portfolio_body(
         "font-variant-numeric:tabular-nums;letter-spacing:.02em;}"
         ".pf-live-wp-you{color:var(--win);}"
         ".pf-live-wp-opp{color:var(--loss);}"
-        ".pf-live-result{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
-        "text-align:center;color:var(--text);margin-top:4px;}"
+        # Final verdict banner: solid green/red strip bleeding to the band's
+        # top edges, FINAL + week on the left, the margin verdict in 15px
+        # white on the right -- the result reads from color alone when
+        # scanning the league grid. Tie gets a neutral slate strip.
+        ".pf-live-banner{margin:-7px -9px 0;padding:8px 11px;display:flex;align-items:center;"
+        "justify-content:space-between;gap:8px;border-radius:8px 8px 0 0;color:#fff;}"
+        ".pf-live-banner.is-win{background:#15803d;}"
+        ".pf-live-banner.is-loss{background:#b91c1c;}"
+        ".pf-live-banner.is-tie{background:#64748b;}"
+        ".pf-live-banner .pf-live-dot{background:#fff;opacity:.85;}"
+        ".pf-live-banner-fin{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;"
+        "display:flex;align-items:center;gap:5px;white-space:nowrap;}"
+        ".pf-live-banner-verdict{font-size:15px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;"
+        "white-space:nowrap;font-variant-numeric:tabular-nums;}"
+        # Final score treatment: winner full-strength and larger, loser
+        # stays at the base muted size; a tie lifts both equally.
+        ".pf-live-side.win .pf-live-lbl{color:var(--text);font-weight:800;}"
+        ".pf-live-grid.is-final .pf-live-side.win .pf-live-score{font-size:26px;}"
+        ".pf-live-grid.is-final.is-tie .pf-live-side.win .pf-live-score{font-size:24px;}"
         ".pf-live-unavailable{font-size:11px;color:var(--text-muted);}"
         ".pf-live-unavailable button{font:inherit;font-size:11px;font-weight:700;cursor:pointer;"
         "background:none;border:none;color:var(--accent);padding:0;}"

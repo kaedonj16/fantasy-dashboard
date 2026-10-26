@@ -53,12 +53,19 @@ def _db_already_initialized() -> bool:
 def resolve_gunicorn_config():
     """Return (port, workers, threads) for the gunicorn command.
 
-    Threads default to 4 (was 2): threads share a worker's address space,
-    so this doubles concurrent request capacity from 4 to 8 with no
-    meaningful memory increase. Override with WEB_THREADS / WEB_WORKERS.
+    Workers default to 1 (was 2): the box is 2GB / 1 CPU, and every worker
+    pays the full post-fork warmup footprint (~265MB RSS measured locally
+    for the shared caches alone, more in production with the real value
+    table and DB-backed caches). The second worker bought almost no CPU
+    parallelism on one core but halved the headroom for request work --
+    a My Leagues load (25+ fanned-out requests: 11 league cards, actions
+    scan, insights, matchups) OOM-restarted the instance even after
+    background playoff sims were capped in #2812. Threads carry the
+    concurrency instead: 4 threads share one address space. Override
+    with WEB_THREADS / WEB_WORKERS.
     """
     port = int(os.environ.get('PORT', 5000))
-    workers = int(os.environ.get('WEB_WORKERS', 2))
+    workers = int(os.environ.get('WEB_WORKERS', 1))
     threads = int(os.environ.get('WEB_THREADS', 4))
     return port, workers, threads
 

@@ -128,8 +128,11 @@ def _portfolio_refresh_pool():
     global _refresh_pool
     with _refresh_pool_lock:
         if _refresh_pool is None:
+            # 2, not 3: each summary build walks a full league context, and
+            # this pool runs alongside the request threads on a 2GB box
+            # (the 2026-10-25/26 My Leagues OOMs).
             _refresh_pool = ThreadPoolExecutor(
-                max_workers=3, thread_name_prefix="pf-refresh")
+                max_workers=2, thread_name_prefix="pf-refresh")
         return _refresh_pool
 
 
@@ -877,6 +880,32 @@ def api_portfolio_actions():
         1 for lg in (league_inputs or []) if str(lg.get("league_id") or "")
     )
 
+    # Cache / single-flight gate (see _ACTIONS_CACHE above): serve a
+    # fresh complete scan, defer to an in-flight compute with the
+    # honest incomplete payload, or become the compute for this viewer.
+    _actions_key = None
+    if season and week:
+        _actions_key = (_user_key() or f"viewer:{viewer_user_id}",
+                        season, week)
+    if _actions_key is not None:
+        _now_c = time.time()
+        with _ACTIONS_LOCK:
+            _hit = _ACTIONS_CACHE.get(_actions_key)
+            if _hit and _now_c - _hit[0] < _ACTIONS_TTL:
+                return jsonify(_hit[1])
+            _started = _ACTIONS_INFLIGHT.get(_actions_key)
+            if _started and _now_c - _started < 120.0:
+                return jsonify({
+                    "actions": [],
+                    "scan": {"total": scan_total, "scanned": 0,
+                             "skipped_cold": scan_total,
+                             "skipped_no_roster": 0, "incomplete": True},
+                    "week": week, "season": season,
+                    "board": {"groups": [], "week": week},
+                    "grade_line": "",
+                })
+            _ACTIONS_INFLIGHT[_actions_key] = _now_c
+
     for lg in (league_inputs or [])[:12]:
         lid = str(lg.get("league_id") or "")
         plat = str(lg.get("platform") or "sleeper").lower()
@@ -1438,6 +1467,15 @@ def api_portfolio_actions():
         payload["grade_line"] = _grade_line
     except Exception:
         logger.debug("[portfolio-actions] board assembly failed", exc_info=True)
+    if _actions_key is not None:
+        with _ACTIONS_LOCK:
+            _ACTIONS_INFLIGHT.pop(_actions_key, None)
+            if not (payload.get("scan") or {}).get("incomplete"):
+                _now_s = time.time()
+                _ACTIONS_CACHE[_actions_key] = (_now_s, payload)
+                for _k in [k for k, (ts, _p) in _ACTIONS_CACHE.items()
+                           if _now_s - ts >= _ACTIONS_TTL]:
+                    _ACTIONS_CACHE.pop(_k, None)
     return jsonify(payload)
 
 
@@ -1661,6 +1699,22 @@ def api_portfolio_deep_dive():
 _INSIGHTS_CACHE: dict = {}
 _INSIGHTS_CACHE_LOCK = threading.Lock()
 _INSIGHTS_TTL = 60.0  # seconds
+
+# /api/portfolio-actions response cache + single-flight (2026-10-26).
+# The warm scan measured 12.9s for just the 4 Sleeper leagues locally;
+# across all 11 linked leagues in production it overruns the client's
+# fetch timeout, so the moves board showed "Could not load your moves"
+# on every load and every retry rescanned from zero (no cache existed).
+# Complete scans are cached per viewer for the insights TTL; while one
+# request computes, concurrent requests for the same viewer answer with
+# the honest incomplete payload immediately so the client's retry
+# ladder lands on the finished cache instead of piling a duplicate
+# scan onto the box. An in-flight mark older than 120s is treated as
+# abandoned (its request died) and a new compute may take over.
+_ACTIONS_CACHE: dict = {}
+_ACTIONS_INFLIGHT: dict = {}
+_ACTIONS_LOCK = threading.Lock()
+_ACTIONS_TTL = 60.0  # seconds
 
 
 def _insights_cache_get(key):
@@ -2028,7 +2082,11 @@ def _compute_portfolio_insights(base):
 
     results = []
     if leagues:
-        with ThreadPoolExecutor(max_workers=6,
+        # 2, not 6: each league's work materializes its matchup rows and
+        # rooting structures (~20MB transient per league measured), and
+        # this pool runs inside a request thread on a 2GB box that is
+        # already fielding the rest of the portfolio fan-out.
+        with ThreadPoolExecutor(max_workers=2,
                                 thread_name_prefix="pf-insights") as pool:
             results = list(pool.map(_work, leagues))
     all_starters = []

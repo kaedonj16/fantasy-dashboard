@@ -149,10 +149,42 @@ def test_final_matchup_card_tuesday_shows_won_by_margin():
     assert "data.result" in live_fn
     assert "data.margin" in live_fn
     assert "number(team.score, status === 'final' ? 2 : 1)" in live_fn
-    assert '.pf-live-result{' in fn
-    assert 'class=\\"pf-live-result\\" style=' not in live_fn
     # The status header uses a plain "FINAL" label only when a result is present.
     assert "'Final · Wk '" in live_fn
+
+
+def test_final_matchup_verdict_banner():
+    """Kaedon's pick (mock A, 2026-10-26): a finished matchup leads with a
+    solid verdict banner so a win vs a loss reads across the league grid
+    without reading the scores."""
+    source = (ROOT / "app.py").read_text()
+    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
+    live_fn = (ROOT / "static" / "app.js").read_text().split("function matchupHtml(data)")[1].split("function renderMatchup")[0]
+    # Banner markup: one strip, outcome class, FINAL label left, verdict right.
+    assert "pf-live-banner" in live_fn
+    assert "' is-win'" in live_fn
+    assert "' is-loss'" in live_fn
+    assert "' is-tie'" in live_fn
+    assert "pf-live-banner-verdict" in live_fn
+    assert "pf-live-banner-fin" in live_fn
+    # The old small centered result line is gone from the final render.
+    assert "pf-live-result" not in live_fn
+    # Winner treatment: the winning side carries .win (full-strength, larger
+    # score via CSS), a tie lifts both sides, and the grid is flagged final.
+    assert "isWin ? ' win' : ''" in live_fn
+    assert "result === 'W' || result === 'T'" in live_fn
+    assert "result === 'L' || result === 'T'" in live_fn
+    assert "pf-live-grid is-final" in live_fn
+    # Banner + score CSS lives with the rest of the band styles, no inline
+    # styles on the banner element.
+    assert ".pf-live-banner{" in fn
+    assert ".pf-live-banner.is-win{" in fn
+    assert ".pf-live-banner.is-loss{" in fn
+    assert ".pf-live-banner.is-tie{" in fn
+    assert ".pf-live-banner-verdict{" in fn
+    assert ".pf-live-grid.is-final .pf-live-side.win .pf-live-score{" in fn
+    assert 'pf-live-banner\\" style=' not in live_fn
+    assert '.pf-live-result{' not in fn
 
 
 def test_matchup_endpoint_fantasy_final_exposes_result_and_margin():
