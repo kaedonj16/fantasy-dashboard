@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-26",
+        "tag": "update",
+        "text": "My Leagues: finished matchups now lead with a verdict banner, green for a win and red for a loss with the margin right on it, and the winning score stands out, so you can read your week across every league card at a glance.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-10-25",
         "tag": "fix",
         "text": "ScoreZone: defensive touchdowns and interceptions now credit your DST, matchup names no longer cut off on phone hero cards, and live plays keep flowing if the play collector stalls: the page now detects a stale feed and restarts collection on its own. The TD alerts bar can be dismissed for the day (with undo) instead of forever, and dark mode greens match the rest of the site.",
