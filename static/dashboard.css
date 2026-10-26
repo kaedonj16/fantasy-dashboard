@@ -26191,7 +26191,7 @@ a.pm-avail-row:hover { background: var(--row); }
 .tm3-asset-none { font-size: 13px; color: var(--text-muted); padding: 3.5px 0; }
 .tm3-pick-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 2px 8px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .tm3-pick-via { color: var(--text-muted); font-weight: 500; margin-left: 3px; }
-.tm3-pick-became { font-size: 12.5px; color: #2563eb; white-space: nowrap; }
+.tm3-via-pick { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 .tm3-trade-foot { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-muted); }
 .tm3-ledger-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); padding: 7px 0; border-top: 1px solid var(--border); }
 .tm3-ledger-row:first-of-type { border-top: none; }
@@ -26221,7 +26221,6 @@ a.pm-avail-row:hover { background: var(--row); }
     .tm3-sign { display: inline; }
     .tm3-col-got .tm3-sign { color: #16a34a; }
     .tm3-col-sent .tm3-sign { color: #dc2626; }
-    .tm3-pick-became { white-space: normal; }
 }
 
 @media (max-width: 700px) {
@@ -26241,7 +26240,6 @@ a.pm-avail-row:hover { background: var(--row); }
     .tm3-sign { display: inline; }
     .tm3-col-got .tm3-sign { color: #16a34a; }
     .tm3-col-sent .tm3-sign { color: #dc2626; }
-    .tm3-pick-became { white-space: normal; }
 }
 
 /* Container twin of the @media (max-width: 768px) modal-header rules: when

@@ -190,6 +190,87 @@ def test_team_trades_route_shapes_partner_values_and_summary(monkeypatch):
     assert stuck["picks_held"] == ["2027 R1"]
 
 
+def test_team_trades_became_values_count_in_net_and_own_pick_via_is_username(monkeypatch):
+    """Resolved picks contribute their became player's today's value to the
+    trade net (in and out), and a pick whose original owner is the viewer is
+    labelled via her username, not her (possibly old) team name."""
+    pytest.importorskip("flask")
+    pytest.importorskip("pandas")
+    import app as appmod
+
+    if hasattr(appmod, "_PLAYER_TRADES_CACHE"):
+        appmod._PLAYER_TRADES_CACHE.clear()
+
+    league = {"settings": {"type": 2}, "scoring_settings": {},
+              "roster_positions": ["QB", "RB", "WR", "TE", "FLEX", "BN"]}
+    rosters = [
+        {"roster_id": 1, "owner_id": "u1", "players": ["100", "901"]},
+        {"roster_id": 2, "owner_id": "u2", "players": ["200"]},
+    ]
+    users = [
+        {"user_id": "u1", "username": "kaedon", "display_name": "kj",
+         "metadata": {"team_name": "Old Team Name"}},
+        {"user_id": "u2", "display_name": "jw", "metadata": {"team_name": "Nunky Figgas"}},
+    ]
+    monkeypatch.setattr(appmod, "get_league", lambda *a, **k: league)
+    monkeypatch.setattr(appmod, "get_rosters", lambda *a, **k: rosters)
+    monkeypatch.setattr(appmod, "get_users", lambda *a, **k: users)
+    monkeypatch.setattr(appmod, "get_model_value_table_cached",
+                        lambda: [{"id": "100", "value": 457}, {"id": "200", "value": 312},
+                                 {"id": "900", "value": 250}, {"id": "901", "value": 180}])
+    _patch_all("utils.utils", "load_players_index",
+               lambda: {"100": {"name": "Emeka Egbuka", "pos": "WR"},
+                        "200": {"name": "Michael Wilson", "pos": "WR"},
+                        "900": {"name": "Mike Washington Jr.", "pos": "RB"},
+                        "901": {"name": "Luther Burden III", "pos": "WR"}}, monkeypatch)
+    trade = {
+        "type": "trade", "roster_ids": [1, 2],
+        "status_updated": 1759881600000,
+        "adds": {"100": 1}, "drops": {"200": 1},
+        "draft_picks": [
+            {"season": 2025, "round": 2, "roster_id": 2, "previous_owner_id": 2, "owner_id": 1},
+            {"season": 2026, "round": 2, "roster_id": 1, "previous_owner_id": 1, "owner_id": 2},
+        ],
+        "waiver_budget": [],
+    }
+    _patch_all("dashboard_services.service", "get_transactions_by_week",
+               lambda league_id, weeks, platform=None, season=None: {4: [trade]}, monkeypatch)
+    _patch_all("dashboard_services.player_league_trades", "build_draft_resolution_map",
+               lambda platform, league_id, seasons=None: {
+                   (2025, 2, "2"): {"player_id": "901", "name": "Luther Burden III", "position": "WR"},
+                   (2026, 2, "1"): {"player_id": "900", "name": "Mike Washington Jr.", "position": "RB"}},
+               monkeypatch)
+
+    client = appmod.app.test_client()
+    resp = client.get("/api/team-trades/1?league_id=LB&platform=sleeper&season=2026")
+    assert resp.status_code == 200
+    (tr,) = resp.get_json()["trades"]
+    (pick_in,) = tr["my_pick_gets"]
+    assert pick_in["became"]["name"] == "Luther Burden III"
+    assert pick_in["became"]["value"] == 180
+    assert pick_in["owner_name"] == "Nunky Figgas"  # partner's pick keeps its team name
+    (pick_out,) = tr["my_pick_sends"]
+    assert pick_out["became"]["name"] == "Mike Washington Jr."
+    assert pick_out["became"]["value"] == 250
+    # The sent pick was originally the viewer's: via is her username, never
+    # the old team name from that season.
+    assert pick_out["owner_name"] == "kaedon"
+    # Net: direct players 457 - 312, plus became 180 in, minus became 250 out.
+    assert tr["players_net"] == 75
+    summary = resp.get_json()["summary"]
+    assert summary["players_net"] == 75
+    assert summary["ledger"][0]["players_net"] == 75
+
+
+def test_frontend_became_row_renders_value_and_badge():
+    js, css = _APP_JS, _CSS
+    # A resolved pick renders as the player, with the pick as the qualifier:
+    # "Luther Burden III via 2025 R2", the player's value on the row.
+    assert "tm3-via-pick" in js and "via ${esc(p.season)} R${esc(p.round)}" in js
+    assert "b.value" in js
+    assert ".tm3-via-pick" in css
+
+
 def _patch_all(module_name, attr, value, monkeypatch):
     """Patch an attribute on every distinct module object a from-import in
     app.py can resolve to (same hazard as in the trades test above)."""
@@ -394,7 +475,7 @@ def test_frontend_builders_and_t3_ledger_contract():
         assert marker in js, marker
     # Trades: partner headline, values, resolution, ledger, what stuck.
     for marker in ("tm3-net-chip", "Partner Ledger", "What Stuck",
-                   "became ", "Players at today's values", "players_net"):
+                   "tm3-via-pick", "Players at today's values", "players_net"):
         assert marker in js, marker
     # T3 ledger: inside the 700px container block, columns collapse to
     # signed lines and the header chip appears.
