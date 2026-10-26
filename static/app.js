@@ -24025,8 +24025,19 @@ async function tmLoadTrades(rosterId) {
       (p.value ? `<span class="tm3-asset-val">${fmtV(p.value)}</span>` : '') + '</div>';
     const assetPick = (p, sign) => {
       const via = p.owner_name ? ` <span class="tm3-pick-via">· via ${esc(p.owner_name)}</span>` : '';
-      const became = p.became && p.became.name ? `<span class="tm3-pick-became">became ${esc(p.became.name)}</span>` : '';
-      return `<div class="tm3-asset tm3-asset-pick"><span class="tm3-sign">${sign}</span><span class="tm3-pick-chip">${esc(p.season)} R${esc(p.round)}${via}</span>${became}</div>`;
+      if (p.became && p.became.name) {
+        // A resolved pick reads as the player it became, with the pick as
+        // the qualifier: "Luther Burden III via 2025 R2", valued like any
+        // other player asset on the card.
+        const b = p.became;
+        const bPos = b.position ? `<span class="pos-badge ${esc(b.position)}">${esc(b.position)}</span>` : '';
+        const bName = b.player_id
+          ? `<span class="tm3-asset-name player-clickable" data-player-id="${esc(b.player_id)}" data-player-name="${esc(b.name)}">${esc(b.name)}</span>`
+          : `<span class="tm3-asset-name">${esc(b.name)}</span>`;
+        const bVal = b.value ? `<span class="tm3-asset-val">${fmtV(b.value)}</span>` : '';
+        return `<div class="tm3-asset"><span class="tm3-sign">${sign}</span>${bPos}${bName}<span class="tm3-via-pick">via ${esc(p.season)} R${esc(p.round)}</span>${bVal}</div>`;
+      }
+      return `<div class="tm3-asset tm3-asset-pick"><span class="tm3-sign">${sign}</span><span class="tm3-pick-chip">${esc(p.season)} R${esc(p.round)}${via}</span></div>`;
     };
     const assetFaab = (amount, sign) => `<div class="tm3-asset tm3-asset-faab"><span class="tm3-sign">${sign}</span><span class="tm3-asset-name">$${amount} FAAB</span></div>`;
     const renderSide = (players, picks, faab, sign) => {
@@ -24046,10 +24057,15 @@ async function tmLoadTrades(rosterId) {
         ? `${_tmAvatar({ team_name: partner.team_name, avatar: partner.avatar })}<span class="tm3-trade-with">with <b>${esc(partner.team_name)}</b></span>`
         : '<span class="tm3-trade-with">Trade</span>';
       const hasPlayers = (tr.my_gets || []).length + (tr.my_sends || []).length > 0;
-      const netChip = hasPlayers
+      // A pick-only trade still has a today's-values net once its picks
+      // have become players, so the net chip/footer key off that too.
+      const hasBecame = (tr.my_pick_gets || []).concat(tr.my_pick_sends || [])
+        .some(p => p.became && p.became.name);
+      const hasNet = hasPlayers || hasBecame;
+      const netChip = hasNet
         ? `<span class="tm3-net-chip ${tr.players_net >= 0 ? 'tm3-net-pos' : 'tm3-net-neg'}">${signed(tr.players_net)}</span>` : '';
       const when = [tr.season || '', tr.week === 0 ? 'Offseason' : (tr.week ? `Week ${tr.week}` : ''), tr.date || ''].filter(Boolean).join(' · ');
-      const foot = hasPlayers
+      const foot = hasNet
         ? `<div class="tm3-trade-foot">Players at today's values: <b class="${tr.players_net >= 0 ? 'tm3-net-pos-t' : 'tm3-net-neg-t'}">${signed(tr.players_net)}</b></div>` : '';
       return seasonHead + `<div class="tm3-trade-card">
         <div class="tm3-trade-head">${headLeft}${netChip}<span class="tm3-trade-when">${esc(when)}</span></div>
@@ -24337,14 +24353,29 @@ async function fetchTeamDetails(rosterId) {
     hardTimer = setTimeout(() => controller.abort(), 30000);
 
     const _tmLt = brLeagueType();
-    const response = await fetch(
-      `/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`,
-      { signal: controller.signal }
-    );
+    const _tmUrl = `/api/team-details/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_tmLt)}`;
+    let response = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await fetch(_tmUrl, { signal: controller.signal });
+      } catch (fetchErr) {
+        if (fetchErr && fetchErr.name === 'AbortError') throw fetchErr;
+        if (attempt === 1) throw fetchErr;
+        response = null;
+      }
+      if (response && response.ok) break;
+      // A flapping gateway (502/503/504) or a dropped connection usually
+      // recovers within a second or two; retry once before surfacing the
+      // error panel, so a brief backend blip does not read as "this team
+      // will not load".
+      const retryable = !response || [502, 503, 504].includes(response.status);
+      if (!retryable || attempt === 1) break;
+      await new Promise(r => setTimeout(r, 1200));
+    }
     _clear();
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    if (!response || !response.ok) {
+      throw new Error(response ? `HTTP ${response.status}` : 'Network error');
     }
 
     const data = await response.json();
