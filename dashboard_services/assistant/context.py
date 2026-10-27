@@ -115,6 +115,42 @@ def _viewer_roster(ctx: dict) -> tuple[dict | None, dict]:
     return roster, viewer
 
 
+def _session_current_league(leagues: list) -> dict | None:
+    """The league the user is currently in, per the Flask session.
+
+    render_page records session["last_league_id"] (plus platform/season)
+    on every page render, and league-less pages (My Leagues, home) render
+    their nav chrome from that same value, so it is the league the header
+    pill shows. It only counts when it names a league the account owns.
+    Outside a request context (background callers) there is no current
+    league and this returns None.
+    """
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return None
+        lid = session.get("last_league_id")
+        plat = str(session.get("last_platform") or "").lower()
+        seas = session.get("last_season")
+    except Exception:
+        return None
+    if not lid:
+        return None
+    fallback = None
+    for lg in leagues or []:
+        if str(lg.get("league_id") or "") != str(lid):
+            continue
+        if plat and str(lg.get("platform") or "").lower() != plat:
+            continue
+        if seas not in (None, "") and lg.get("season") not in (None, "") \
+                and str(lg.get("season")) != str(seas):
+            if fallback is None:
+                fallback = lg
+            continue
+        return lg
+    return fallback
+
+
 def resolve_league(account_key: str | None, *, platform=None, league_id=None, season=None) -> dict:
     """Return a league bundle dict (never raises).
 
@@ -138,13 +174,24 @@ def resolve_league(account_key: str | None, *, platform=None, league_id=None, se
             except Exception:
                 leagues = []
             if leagues:
-                chosen = leagues[0]  # favorite-first ordering in list_user_leagues
+                # The user's current league (the one the header pill
+                # shows) wins over the favorite-first default: picking
+                # leagues[0] here put the assistant in a different
+                # league than the page the user was looking at. The
+                # current league is not an assumption, so it does not
+                # raise the uncertain flag.
+                current = _session_current_league(leagues)
+                if current is not None:
+                    chosen = current
+                    out["assumed_league_uncertain"] = False
+                else:
+                    chosen = leagues[0]  # favorite-first ordering in list_user_leagues
+                    out["assumed_league_uncertain"] = len(leagues) > 1
                 out["platform"] = chosen.get("platform") or out["platform"]
                 out["league_id"] = chosen.get("league_id")
                 if season is None:
                     out["season"] = chosen.get("season")
                 out["league_name"] = chosen.get("name")
-                out["assumed_league_uncertain"] = len(leagues) > 1
     if not out["league_id"]:
         out["week"] = current_week(None)
         return out

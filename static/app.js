@@ -1994,6 +1994,18 @@ window.brHaptic = function (pattern) {
     ['platform', 'season', 'leagueId'].forEach(function (key) {
       if (newRoot.dataset[key] != null) curRoot.dataset[key] = newRoot.dataset[key];
     });
+    // The fetched document's __brctx script never re-runs on a swap, so
+    // sync the live current-league record from the new root's dataset:
+    // everything that reads __brctx (the assistant included) must
+    // follow the league just navigated to, not the tab's first load.
+    try {
+      if (newRoot.dataset.leagueId) {
+        var _swctx = window.__brctx || (window.__brctx = {});
+        _swctx.leagueId = newRoot.dataset.leagueId;
+        if (newRoot.dataset.platform) _swctx.platform = newRoot.dataset.platform;
+        if (newRoot.dataset.season) _swctx.season = Number(newRoot.dataset.season) || _swctx.season;
+      }
+    } catch (e) {}
     reexecScripts(curRoot);
     if (doc.title) document.title = doc.title;
     syncHomeTicker(doc);
@@ -4961,6 +4973,21 @@ function showLoginGate(target, opts) {
       if (valid.indexOf(platform) === -1 || parts.length < 3) return null;
       return { platform: platform, season: parts[1], league_id: parts[2] };
     }
+    // The site's current league for this page, exactly as the header pill
+    // shows it: window.__brctx is server-injected on every render (the
+    // page's own league, or the session's last league on league-less
+    // pages like My Leagues) and kept in step by soft navigation. This
+    // is the league the user believes they are in, so the assistant
+    // must follow it before any saved conversation league.
+    function brctxParams() {
+      var ctx = window.__brctx || {};
+      var platform = String(ctx.platform || '').toLowerCase();
+      var valid = ['sleeper', 'espn', 'yahoo', 'mfl', 'fleaflicker'];
+      if (valid.indexOf(platform) === -1 || !ctx.leagueId) return null;
+      var p = { platform: platform, league_id: String(ctx.leagueId) };
+      if (ctx.season) p.season = ctx.season;
+      return p;
+    }
     function safeHref(href) {
       var h = String(href || '');
       if (h.charAt(0) === '/' && h.charAt(1) !== '/') return h;
@@ -4982,9 +5009,14 @@ function showLoginGate(target, opts) {
     // ---- Cross-page continuity -----------------------------------------
     // The active thread, its league, and the popup state persist in
     // sessionStorage so the conversation survives navigation. League
-    // precedence on load: the page's own league params win; on a page
-    // without them, the saved conversation league wins over the
-    // server's default league.
+    // precedence on load: the page's own league params win; next the
+    // site's current league (__brctx, the header pill's league: on a
+    // league-less page that IS the carried-over league, seeded from the
+    // session's last league); only a page with no current league at all
+    // falls back to the saved conversation league, then the server's
+    // default. The saved league must never outrank the league the user
+    // is currently in: it put the assistant in League of Greatness on
+    // the My Leagues page while the header showed blackedraw.
     var SESSION_KEY = 'brAsstSession';
     var SEEN_KEY = 'brAsstSeen';
     var REOPEN_KEY = 'brAsstReopen';
@@ -5014,7 +5046,7 @@ function showLoginGate(target, opts) {
     }
 
     var params = pageLeagueParams();
-    var ctxParams = params || savedCtxParams();
+    var ctxParams = params || brctxParams() || savedCtxParams();
     var ctxUrl = '/api/assistant/context';
     if (ctxParams) {
       ctxUrl += '?platform=' + encodeURIComponent(ctxParams.platform) +
@@ -5026,6 +5058,11 @@ function showLoginGate(target, opts) {
       return resp.json();
     }).then(function (data) {
       if (!data || !data.league) return;
+      // A league resync (soft-nav switch) may have already rebuilt the
+      // chrome for a newer league while this fetch was in flight; a
+      // second build would duplicate the launcher and resurrect the
+      // stale league.
+      if (document.getElementById('brAsstLauncher')) return;
       state.league = data.league;
       state.caps = data.caps || null;
       state.teaser = data.teaser || null;
@@ -6241,6 +6278,27 @@ function showLoginGate(target, opts) {
       renderMeter();
       restoreSession();
       if (!savedAtLoad) saveSession();
+
+      // Soft-nav league switch: initPageRoot calls this after every
+      // page-root swap. If the page's current league no longer matches
+      // the league this chrome was built for, tear the chrome down and
+      // rebuild it for the current league, so the header, teaser and
+      // future sends all follow the league the user is in now. The old
+      // league's saved session is dropped first, so its thread cannot
+      // restore into the new league (restoreSession's mismatch rule).
+      window.brAssistantResync = function () {
+        var current = pageLeagueParams() || brctxParams();
+        if (!current || !state.league) return;
+        if (String(state.league.league_id) === String(current.league_id) &&
+            String(state.league.platform || '') === String(current.platform || '')) return;
+        ['brAsstLauncher', 'brAsstPopup', 'brAsstScrim', 'brAsstTeaser', 'brAsstIntro'].forEach(function (id) {
+          var node = document.getElementById(id);
+          if (node) node.remove();
+        });
+        try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+        savedAtLoad = null;
+        initAssistant();
+      };
     }
   }
 
@@ -14428,6 +14486,14 @@ window.initPageRoot = function initPageRoot(root = document) {
   // surface seen and settles every dot instance for the league.
   if (typeof initAlertDots === 'function') {
     try { initAlertDots(); } catch (e) {}
+  }
+  // BR Assistant league alignment: the popup's chrome is built once per
+  // full load, so a soft-nav into a different league left it answering
+  // for the previous league while the header pill showed the new one.
+  // On swaps only (a full load builds the assistant fresh), let it
+  // rebuild for the page's current league when they no longer match.
+  if (root !== document && typeof window.brAssistantResync === 'function') {
+    try { window.brAssistantResync(); } catch (e) {}
   }
   // Re-apply ?tab= deep-link after soft-nav DOM swaps (the weekly hub's
   // inline IIFE only runs on full page load).

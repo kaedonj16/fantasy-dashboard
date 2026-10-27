@@ -7,8 +7,8 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Weekly Recap: the Top scorers by position cards are white cards again. An earlier fix today changed the page background under them and left them flat; they now paint the same card background as the other cards on the page.",
-        "link": "/recap"
+        "text": "BR Assistant now follows the league you are actually in. It used to keep answering for an earlier league on pages like My Leagues, even while the league name at the top showed a different one: it now matches the league at the top of the page, and switching leagues in the app switches the assistant too.",
+        "link": "/portfolio"
     },
     {
         "date": "2026-10-27",

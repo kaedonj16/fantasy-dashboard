@@ -555,10 +555,11 @@ def _slice(start: str, end: str) -> str:
 
 def test_thread_restore_on_contextless_page():
     # Continuity: the saved session steers the context fetch when the
-    # page has no league of its own, and the saved thread's messages
-    # are re-rendered from the server history endpoint.
+    # page has no league of its own and no current league either, and
+    # the saved thread's messages are re-rendered from the server
+    # history endpoint.
     assert "brAsstSession" in ASSISTANT_JS
-    assert "var ctxParams = params || savedCtxParams();" in ASSISTANT_JS
+    assert "var ctxParams = params || brctxParams() || savedCtxParams();" in ASSISTANT_JS
     restore = _slice("function restoreSession()", "if (!savedAtLoad) saveSession();")
     assert "/api/assistant/thread?thread_id=" in restore
     assert "appendUser(m.question)" in restore
@@ -570,9 +571,44 @@ def test_thread_restore_on_contextless_page():
 def test_league_page_switch_wins_over_saved_session():
     # Page params are consulted first (the || order), and a saved
     # thread restores only into its own league's context.
-    assert "var ctxParams = params || savedCtxParams();" in ASSISTANT_JS
+    assert "var ctxParams = params || brctxParams() || savedCtxParams();" in ASSISTANT_JS
     restore = _slice("function restoreSession()", "if (!savedAtLoad) saveSession();")
     assert "String(saved.league.league_id) !== String(state.league.league_id)" in restore
+
+
+def test_current_league_wins_over_saved_session():
+    # Regression (2026-10-27 screenshot): on My Leagues the header pill
+    # showed blackedraw while the assistant answered for League of
+    # Greatness, because the saved conversation league outranked the
+    # site's current league. __brctx is the header pill's source, so it
+    # must be consulted before the saved session, and brctxParams must
+    # read it defensively (valid platform, league id required).
+    assert "function brctxParams()" in ASSISTANT_JS
+    brctx = _slice("function brctxParams()", "function safeHref")
+    assert "window.__brctx" in brctx
+    assert "ctx.leagueId" in brctx
+    order = ASSISTANT_JS.index("var ctxParams = params || brctxParams() || savedCtxParams();")
+    assert order > ASSISTANT_JS.index("function brctxParams()")
+
+
+def test_soft_nav_league_switch_resyncs_assistant():
+    # The chrome builds once per full load; a soft-nav league switch
+    # must rebuild it for the new league. initPageRoot (which runs on
+    # every swap) calls the resync hook, applyNewRoot keeps __brctx in
+    # step with the swapped page, and the resync drops the old league's
+    # saved session before rebuilding.
+    assert "window.brAssistantResync = function ()" in ASSISTANT_JS
+    _ri = ASSISTANT_JS.index("window.brAssistantResync = function ()")
+    resync = ASSISTANT_JS[_ri:_ri + 1600]
+    assert "sessionStorage.removeItem(SESSION_KEY)" in resync
+    assert "initAssistant();" in resync
+    page_root = JS[JS.index("window.initPageRoot = function"):]
+    page_root = page_root[:page_root.index("function showDashboardLoadingOverlay")]
+    assert "window.brAssistantResync()" in page_root
+    assert "root !== document" in page_root
+    swap = JS[JS.index("function applyNewRoot"):]
+    swap = swap[:swap.index("window.brSwapPageRoot")]
+    assert "_swctx.leagueId = newRoot.dataset.leagueId;" in swap
 
 
 def test_launcher_typing_state_follows_in_flight_ask():
