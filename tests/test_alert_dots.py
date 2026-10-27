@@ -357,7 +357,7 @@ console.log('alert-dot state logic ok');
 def test_changelog_announces_alert_dots():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[0]
+    top = CHANGELOG[1]
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "new"
     assert "Weekly Recap" in top["text"] and "Breakout Engine" in top["text"]

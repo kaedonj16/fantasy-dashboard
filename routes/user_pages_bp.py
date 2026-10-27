@@ -105,6 +105,10 @@ def _games_scheduled_today(*args, **kwargs):
     from app import _games_scheduled_today as _fn
     return _fn(*args, **kwargs)
 
+def _team_bye_map(*args, **kwargs):
+    from app import _team_bye_map as _fn
+    return _fn(*args, **kwargs)
+
 
 # ── Portfolio summary stale-while-revalidate ─────────────────────────────────
 # /portfolio used to recompute every league's summary inline on each page load
@@ -703,9 +707,11 @@ def page_portfolio():
 
     # Bye week + injury status for the holdings columns (v25), from the
     # shared NFL players index. Best-effort: missing data renders a dash.
+    # The raw Sleeper rows carry no bye_week (see _pf_players_with_byes),
+    # so attach byes from the team map first or the column is all dashes.
     try:
         from dashboard_services.api import get_nfl_players as _gnp_hold
-        _nfl_hold = _gnp_hold() or {}
+        _nfl_hold = _pf_players_with_byes(_gnp_hold() or {}, season)
         for _h in holdings:
             _pl = _nfl_hold.get(str(_h.get("pid"))) or {}
             if _pl.get("bye_week") is not None:
@@ -1907,6 +1913,35 @@ def _insights_cache_put(key, payload):
             _INSIGHTS_CACHE.pop(oldest, None)
 
 
+def _pf_players_with_byes(nfl_players, season):
+    """Attach bye weeks to player rows that do not carry one.
+
+    Sleeper's /players/nfl payload has no bye field at all (verified
+    against the live shape), so any consumer reading ``bye_week`` off
+    those rows silently gets None for every player. Derive the bye from
+    the player's team through the schedule-derived team bye map (the
+    same source the league-players endpoint attaches from), on copies,
+    so the shared players cache is never mutated. Rows that already
+    carry a bye keep it; when no map is available the rows pass through
+    unchanged and callers see the honest no-data state.
+    """
+    try:
+        byes = _team_bye_map(season) or {}
+    except Exception:
+        byes = {}
+    if not byes or not isinstance(nfl_players, dict):
+        return nfl_players
+    from utils.nfl import norm_sched_team
+    out = dict(nfl_players)
+    for pid, pl in nfl_players.items():
+        if not isinstance(pl, dict) or pl.get("bye_week") is not None:
+            continue
+        bw = byes.get(norm_sched_team(pl.get("team") or ""))
+        if bw:
+            out[pid] = {**pl, "bye_week": bw}
+    return out
+
+
 def _pf_viewer_leagues():
     """Shared preamble for the insights/bye endpoints.
 
@@ -1944,6 +1979,7 @@ def _pf_viewer_leagues():
         nfl_players = get_nfl_players() or {}
     except Exception:
         nfl_players = {}
+    nfl_players = _pf_players_with_byes(nfl_players, season)
     try:
         model_rows = list(get_model_value_table_cached() or [])
     except Exception:
@@ -2188,6 +2224,39 @@ def _pf_rooting_for(res, base):
     return starters_out, margin
 
 
+def _pf_bye_target_week(base):
+    """The week Bye Watch must cover: the first week whose games have not
+    kicked off yet.
+
+    Sleeper advances state.week to the upcoming week on Tuesday, days
+    before its first game, so a flat week + 1 skips the very week users
+    are setting lineups (and running waivers) for: on the Tuesday before
+    Week 8 it showed Week 9 and never warned about the Week 8 byes. When
+    the current week's first kickoff is still ahead, the current week IS
+    the target; once it has kicked off, the target rolls to the next
+    week. With no schedule data to prove either way, keep the old
+    week + 1 lookahead.
+    """
+    week = base["week"]
+    try:
+        from utils.utils import load_week_schedule
+        games = load_week_schedule(base["season"], week) or []
+    except Exception:
+        games = []
+    epochs = []
+    for g in games:
+        if not isinstance(g, dict):
+            continue
+        try:
+            ep = float(g.get("gameTime_epoch"))
+        except (TypeError, ValueError):
+            continue
+        epochs.append(ep)
+    if epochs and min(epochs) > time.time():
+        return week
+    return week + 1
+
+
 @user_pages_bp.route("/api/portfolio-bye")
 def api_portfolio_bye():
     """Bye Watch data for My Leagues (v25 insights band, split out).
@@ -2200,7 +2269,7 @@ def api_portfolio_bye():
     base = _pf_viewer_leagues()
     if base is None:
         return jsonify(empty)
-    next_week = base["week"] + 1
+    next_week = _pf_bye_target_week(base)
     total = _pf_scan_total(base["league_inputs"])
     bye_rows = []
     total_out = 0
@@ -2239,23 +2308,40 @@ def _compute_portfolio_insights(base):
     except Exception:
         sched = []
     team_game = {}
-    try:
-        from dashboard_services.api import build_team_game_lookup, get_nfl_scores_for_date
-        from zoneinfo import ZoneInfo as _ZI
-        dates = set()
-        for g in sched:
-            ep = g.get("gameTime_epoch")
-            if ep:
-                dates.add(datetime.fromtimestamp(
-                    float(ep), _ZI("America/New_York")).strftime("%Y%m%d"))
-        for d in dates:
-            try:
-                body = get_nfl_scores_for_date(d) or {}
-                team_game.update(build_team_game_lookup(body))
-            except Exception:
-                continue
-    except Exception:
-        team_game = {}
+    # The live overlay can only add scores/status, which cannot exist
+    # before the week's first kickoff -- and for future dates the ESPN
+    # scoreboard answers with the current week's slate, which
+    # scoreboard_for_date discards as wrong-date (measured at ~6s for a
+    # 3-date slate on the Tuesday before Week 8, paid on every cold
+    # compute for data that is thrown away). Skip the overlay entirely
+    # while the whole slate is still ahead; once any game has kicked
+    # off, overlay with a short timeout so the response stays inside
+    # the client's deadline (the ScoreZone precedent).
+    _epochs = []
+    for g in sched:
+        try:
+            _epochs.append(float(g.get("gameTime_epoch")))
+        except (TypeError, ValueError, AttributeError):
+            continue
+    _slate_ahead = bool(_epochs) and min(_epochs) > time.time()
+    if not _slate_ahead:
+        try:
+            from dashboard_services.api import build_team_game_lookup, get_nfl_scores_for_date
+            from zoneinfo import ZoneInfo as _ZI
+            dates = set()
+            for g in sched:
+                ep = g.get("gameTime_epoch")
+                if ep:
+                    dates.add(datetime.fromtimestamp(
+                        float(ep), _ZI("America/New_York")).strftime("%Y%m%d"))
+            for d in dates:
+                try:
+                    body = get_nfl_scores_for_date(d, timeout=5) or {}
+                    team_game.update(build_team_game_lookup(body))
+                except Exception:
+                    continue
+        except Exception:
+            team_game = {}
     for g in sched:
         home = str(g.get("home") or "")
         away = str(g.get("away") or "")

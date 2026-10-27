@@ -30111,11 +30111,19 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       });
     });
   }
-  function loadInsights() {
+  function loadInsights(attempt) {
     var rb = document.getElementById('pfRootingBody');
     if (!rb) return;
+    attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
+    // Same ladder as the moves board: the scan is a per-league provider
+    // sweep that can overrun one request on a cold cache, and the server
+    // caches the landed compute for 60s and single-flights it. The old
+    // single 20s shot painted "Could not load your games" permanently on
+    // exactly the loads the cache was about to serve. A deferred
+    // (single-flight) or failed attempt retries instead of rendering.
+    var INS_RETRY = [6000, 15000, 30000];
     var fetcher = window.brFetchWithTimeout || window.fetch;
-    fetcher('/api/portfolio-insights', { cache: 'no-store', credentials: 'same-origin' }, 20000)
+    fetcher('/api/portfolio-insights', { cache: 'no-store', credentials: 'same-origin' }, 45000)
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d && d.updated) {
@@ -30125,9 +30133,19 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           });
         }
         if (d && d.season) SEASON = Number(d.season) || SEASON;
-        renderRooting(d && d.rooting && d.rooting.windows);
+        var windows = d && d.rooting && d.rooting.windows;
+        if ((!windows || !windows.length) && d && d.scan && d.scan.incomplete
+            && attempt < INS_RETRY.length) {
+          setTimeout(function () { loadInsights(attempt + 1); }, INS_RETRY[attempt]);
+          return;
+        }
+        renderRooting(windows);
       })
       .catch(function () {
+        if (attempt < INS_RETRY.length) {
+          setTimeout(function () { loadInsights(attempt + 1); }, INS_RETRY[attempt]);
+          return;
+        }
         rb.innerHTML = '<div class="pf-ins-empty">Could not load your games right now.</div>';
       });
   }

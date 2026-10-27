@@ -15,16 +15,19 @@ pytest.importorskip("flask")
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+# Real Sleeper shape: /players/nfl rows carry NO bye field at all, so
+# these fixtures deliberately omit bye_week. Byes must be derived from
+# the player's team via the schedule-derived team bye map (stubbed
+# below as _BYE_MAP); a fixture that hand-writes bye_week onto the
+# players is exactly how the production bug shipped green.
 _PLAYERS = {
-    "s1": {"full_name": "Starter One", "position": "RB", "team": "BUF",
-           "bye_week": 8},
-    "s2": {"full_name": "Starter Two", "position": "WR", "team": "BUF",
-           "bye_week": 3},
-    "b1": {"full_name": "Bench One", "position": "RB", "team": "MIA",
-           "bye_week": 5},
-    "fa1": {"full_name": "Free Agent", "position": "RB", "team": "NE",
-            "bye_week": 5},
+    "s1": {"full_name": "Starter One", "position": "RB", "team": "BUF"},
+    "s2": {"full_name": "Starter Two", "position": "WR", "team": "BUF"},
+    "s3": {"full_name": "Texan Starter", "position": "WR", "team": "HOU"},
+    "b1": {"full_name": "Bench One", "position": "RB", "team": "MIA"},
+    "fa1": {"full_name": "Free Agent", "position": "RB", "team": "NE"},
 }
+_BYE_MAP = {"BUF": 8, "MIA": 5, "NE": 5, "HOU": 8, "WAS": 9}
 _MODEL_ROWS = [{"id": "fa1", "position": "RB", "value": 500.0,
                 "name": "Free Agent"}]
 _LEAGUES = [
@@ -48,7 +51,7 @@ def _ctx(starter, league_name):
     }
 
 
-def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None):
+def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None, week=7):
     from flask import Flask
 
     import dashboard_services.accounts as accounts
@@ -60,7 +63,8 @@ def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None):
     bp_mod._INSIGHTS_CACHE.clear()
     monkeypatch.setattr(
         bp_mod, "get_nfl_state",
-        lambda *a, **k: {"season": 2026, "week": 7, "season_type": "reg"})
+        lambda *a, **k: {"season": 2026, "week": week, "season_type": "reg"})
+    monkeypatch.setattr(bp_mod, "_team_bye_map", lambda season: dict(_BYE_MAP))
     monkeypatch.setattr(
         bp_mod, "get_league_ctx_from_cache",
         lambda plat, lid, season, allow_build=False: ctx_by_lid.get(lid, {}))
@@ -77,7 +81,7 @@ def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None):
     # real scoreboard says for 2026-10-25 -- green while the real slate
     # was upcoming/live, red (windows == 0) once it went final. Pin the
     # overlay to empty so the stubbed schedule drives the games.
-    monkeypatch.setattr(ds_api, "get_nfl_scores_for_date", lambda d: {})
+    monkeypatch.setattr(ds_api, "get_nfl_scores_for_date", lambda d, **k: {})
     monkeypatch.setattr(ds_api, "build_team_game_lookup", lambda body: {})
     monkeypatch.setattr(uu, "load_week_schedule",
                         lambda season, week: sched or [])
@@ -135,6 +139,62 @@ def test_bye_endpoint_all_cold_is_honest_empty(monkeypatch):
     assert data["bye"]["rows"] == []
     assert data["scan"]["scanned"] == 0
     assert data["scan"]["incomplete"] is True
+
+
+def test_players_with_byes_derives_from_team_map(monkeypatch):
+    """Unit-pin the derivation itself: a row with no bye_week gets its
+    team's bye (schedule aliases canonicalized), a row that already
+    carries one keeps it, and the input rows are never mutated."""
+    import routes.user_pages_bp as bp_mod
+
+    monkeypatch.setattr(bp_mod, "_team_bye_map", lambda season: dict(_BYE_MAP))
+    raw = {
+        "a": {"full_name": "A", "team": "BUF"},
+        "b": {"full_name": "B", "team": "WSH"},  # alias of WAS in the map
+        "c": {"full_name": "C", "team": "BUF", "bye_week": 3},
+        "d": {"full_name": "D", "team": "FA"},
+    }
+    out = bp_mod._pf_players_with_byes(raw, 2026)
+    assert out["a"]["bye_week"] == 8
+    assert out["b"]["bye_week"] == 9
+    assert out["c"]["bye_week"] == 3
+    assert "bye_week" not in out["d"]
+    assert "bye_week" not in raw["a"]  # shared cache rows untouched
+
+
+def test_bye_targets_current_week_before_first_kickoff(monkeypatch):
+    """Tuesday-before-the-week case (the reported screenshot): Sleeper
+    state has already advanced to Week 8 but no Week 8 game has kicked
+    off, so Bye Watch must cover Week 8 itself, not skip to Week 9.
+    Schedule epochs are strings in the real cache shape."""
+    import time as _time
+
+    future = str(_time.time() + 3 * 86400)
+    sched = [{"home": "HOU", "away": "IND", "gameTime_epoch": future}]
+    client, _bp, _pa = _client(
+        monkeypatch, {"L1": _ctx("s3", "Alpha")}, sched=sched, week=8)
+    data = client.get("/api/portfolio-bye").get_json()
+    assert data["bye"]["week"] == 8
+    assert data["bye"]["total_out"] == 1
+    row = data["bye"]["rows"][0]
+    assert row["out"][0]["name"] == "Texan Starter"
+    assert row["verdict"].startswith("Hole")
+
+
+def test_bye_targets_next_week_once_kickoff_passes(monkeypatch):
+    """Once the current week's first game has kicked off, the target
+    rolls to the following week (the in-progress week's byes are no
+    longer actionable)."""
+    import time as _time
+
+    past = str(_time.time() - 86400)
+    sched = [{"home": "HOU", "away": "IND", "gameTime_epoch": past}]
+    client, _bp, _pa = _client(
+        monkeypatch, {"L1": _ctx("s3", "Alpha")}, sched=sched, week=8)
+    data = client.get("/api/portfolio-bye").get_json()
+    assert data["bye"]["week"] == 9
+    assert data["bye"]["total_out"] == 0
+    assert data["bye"]["rows"][0]["verdict"] == "Full strength"
 
 
 # ── Insights endpoint: cache + parallel order ───────────────────────────────
@@ -246,15 +306,49 @@ def test_insights_concurrent_call_defers_to_inflight_compute(monkeypatch):
     assert bp_mod._INSIGHTS_INFLIGHT == {}
 
 
+def test_insights_skips_live_overlay_before_first_kickoff(monkeypatch):
+    """A fully upcoming slate has no scores to overlay, and the ESPN
+    scoreboard only discards its wrong-date answer for future dates:
+    the compute must not pay for those calls at all. A recorder stands
+    in for the scores feed; the windows must still build from the
+    schedule alone."""
+    import time as _time
+
+    import dashboard_services.api as ds_api
+
+    calls = []
+
+    def _recorder(d, **k):
+        calls.append(d)
+        return {}
+
+    monkeypatch.setattr(ds_api, "get_nfl_scores_for_date", _recorder)
+    future = _time.time() + 2 * 86400
+    sched = [{"home": "BUF", "away": "NYJ", "gameTime_epoch": future}]
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, _bp, platform_api = _client(monkeypatch, ctxs, sched=sched)
+    monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
+    data = client.get("/api/portfolio-insights").get_json()
+    assert calls == []
+    windows = data["rooting"]["windows"]
+    assert len(windows) == 1
+    assert windows[0]["games"][0]["home"] == "BUF"
+
+
 # ── Client wiring ───────────────────────────────────────────────────────────
 
 def test_client_loads_bye_immediately_and_defers_rooting():
     js = (ROOT / "static" / "app.js").read_text()
     assert "fetcher('/api/portfolio-bye'" in js
     assert "function loadBye()" in js
-    rooting = js[js.index("function loadInsights()"):]
+    rooting = js[js.index("function loadInsights(attempt)"):]
     rooting = rooting[:rooting.index("function loadBye()")]
     assert "renderBye(" not in rooting  # bye no longer rides insights
+    # The rooting load retries on the moves-board ladder instead of
+    # painting its error after a single short fetch.
+    assert "INS_RETRY" in rooting
+    assert "45000" in rooting
+    assert "loadInsights(attempt + 1)" in rooting
     assert "window.addEventListener('br:portfolio-primary-settled', kickInsights" in js
     assert "setTimeout(kickInsights, 6000);" in js
     assert "insightsKicked" in js
