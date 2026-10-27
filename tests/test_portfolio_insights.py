@@ -154,3 +154,53 @@ def test_need_lines_flip_and_out_of_reach():
     assert lines[1] == ("Greatness has nobody left in this window and is "
                         "out of reach.")
     assert len(lines) == 2
+
+
+# ── Rooting / Bye cleanup (2026-10-27 screenshots) ──────────────────────────
+
+def test_bye_full_strength_does_not_repeat_itself():
+    # The screenshot row said the same fact three times: muted text, a
+    # "Full strength" pill and a "Nobody on bye." second line. The builder
+    # now leaves cover_note empty for full-strength rows and the renderer
+    # (pinned below) draws them as one line with no pill.
+    row = pi.bye_row(_league())
+    assert row["verdict"] == "Full strength"
+    assert row["cover_note"] == ""
+
+
+def test_rooting_bye_cleanup_client_and_css():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    # Pregame: no bold 0.0 points; the projection renders muted instead.
+    assert "function rgSide(starters, status)" in js
+    assert "if (status === 'pre')" in js
+    assert "pf-rg-pts proj" in js
+    assert "rgSide(g.sides.away, g.status)" in js
+    assert "rgSide(g.sides.home, g.status)" in js
+    # Away and home starters sit in two columns, each headed by its team,
+    # and the header uses her custom brTeamBadge instead of the old
+    # colored-circle pf-rg-badge (kept only as a fallback string).
+    assert "pf-rg-cols" in js
+    assert "pf-rg-colhead" in js
+    assert "window.brTeamBadge(team, 'xs')" in js
+    # Dedupe: one row per player per side, every league chip together,
+    # and a grouped value is a single number or a low-high range built
+    # by rgValue (never an average).
+    assert "function rgGroup(starters)" in js
+    assert "'pid:' + s.pid" in js
+    assert "pf-rg-chips" in js
+    assert "function rgValue(entries, field)" in js
+    # Bye Watch: attention first, full-strength rows are a single line.
+    bye = js[js.index("function renderBye(bye)"):js.index("function loadInsights")]
+    assert "rank(a) - rank(b)" in bye
+    assert "pf-bye-dot" in bye
+    assert "pf-bye-full" in bye
+    # Compact type scale lives in the app.py pf-ins CSS block, and the
+    # position badge shrink is scoped to rooting rows only.
+    app_src = (root / "app.py").read_text(encoding="utf-8")
+    assert ".pf-rg-badge{width:24px;height:24px" in app_src
+    assert ".pf-rg-winname{font-size:12px" in app_src
+    assert ".pf-rg-team{font-size:12px" in app_src
+    assert ".pf-rg-p .pos-badge{width:29px;height:19px;font-size:10px" in app_src
+    assert ".pf-bye-row{display:flex;align-items:center;gap:8px;padding:5px 0" in app_src

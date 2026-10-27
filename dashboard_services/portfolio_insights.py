@@ -60,7 +60,8 @@ def bye_row(league: dict) -> dict:
     }
     if not out:
         base["verdict"] = "Full strength"
-        base["cover_note"] = "Nobody on bye."
+        # cover_note stays empty: the row already says "Full strength"
+        # once, and a second "Nobody on bye." line only repeats it.
         return base
     used = set()
     covers = []
