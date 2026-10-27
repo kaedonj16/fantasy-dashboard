@@ -30308,17 +30308,63 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
 
   // ── Insights: Rooting Guide + Bye Watch ────────────────────────────────
   function rgBadge(team, color) {
+    // Her custom team badge (app.js brTeamBadge): primary-color rounded
+    // rect, bold white abbreviation, secondary-color stripe on the left
+    // edge. The old pf-rg-badge circle is only a pre-helper fallback.
+    if (window.brTeamBadge) return window.brTeamBadge(team, 'xs');
     return '<span class="pf-rg-badge" style="background:' + esc(color || '#475569') + '">' + esc(team) + '</span>';
   }
-  function rgSide(starters) {
-    return (starters || []).map(function (s) {
-      var crest = crestFor(s.league_name || '');
+  // One row per player per side: the same player started in several
+  // leagues renders once, with every league chip together. Points and
+  // projections are per league (scoring differs), so a grouped row
+  // shows a single value only when every league agrees, otherwise the
+  // low-high range. Nothing is averaged or invented.
+  function rgGroup(starters) {
+    var order = [], byKey = {};
+    (starters || []).forEach(function (s) {
+      var key = s.pid ? ('pid:' + s.pid) : ('np:' + (s.name || '') + '|' + (s.pos || '') + '|' + (s.team || ''));
+      if (!byKey[key]) { byKey[key] = { first: s, entries: [] }; order.push(byKey[key]); }
+      byKey[key].entries.push(s);
+    });
+    return order;
+  }
+  function rgValue(entries, field) {
+    var vals = [];
+    entries.forEach(function (e) {
+      var v = e[field];
+      if (v == null) return;
+      var n = Number(v);
+      if (!isNaN(n) && vals.indexOf(n) === -1) vals.push(n);
+    });
+    if (!vals.length) return '';
+    if (vals.length === 1) return fmt1(vals[0]);
+    return fmt1(Math.min.apply(null, vals)) + '-' + fmt1(Math.max.apply(null, vals));
+  }
+  function rgSide(starters, status) {
+    return rgGroup(starters).map(function (g) {
+      var s = g.first;
+      var chips = g.entries.map(function (e) {
+        var crest = crestFor(e.league_name || '');
+        return '<span class="pf-rg-lg" style="background:' + crest.hue + '" title="' + esc(e.league_name || '') + '">' + crest.ini + '</span>';
+      }).join('');
       var right = '';
-      if (s.points != null) right = '<span class="pf-rg-pts">' + fmt1(s.points) + '</span>';
-      else if (s.proj != null) right = '<span class="pf-rg-pts" style="color:var(--text-subtle)">' + fmt1(s.proj) + '</span>';
+      // Pregame the matchup feed reports 0.0 points for everyone, which
+      // reads as a finished dud line: show the projection muted instead,
+      // and nothing at all when there is no projection to show.
+      if (status === 'pre') {
+        var pre = rgValue(g.entries, 'proj');
+        if (pre) right = '<span class="pf-rg-pts proj">' + pre + '</span>';
+      } else {
+        var pts = rgValue(g.entries, 'points');
+        if (pts) right = '<span class="pf-rg-pts">' + pts + '</span>';
+        else {
+          var proj = rgValue(g.entries, 'proj');
+          if (proj) right = '<span class="pf-rg-pts proj">' + proj + '</span>';
+        }
+      }
       return '<div class="pf-rg-p"><span class="pos-badge ' + esc(s.pos || '') + '">' + esc(s.pos || '') + '</span>' +
         '<span class="pf-rg-pname">' + esc(s.name) + '</span>' +
-        '<span class="pf-rg-lg" style="background:' + crest.hue + '" title="' + esc(s.league_name || '') + '">' + crest.ini + '</span>' +
+        '<span class="pf-rg-chips">' + chips + '</span>' +
         right + '</div>';
     }).join('');
   }
@@ -30353,8 +30399,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           (g.home_rec ? '<span class="pf-rg-rec">' + esc(g.home_rec) + '</span>' : '') +
           rgBadge(g.home, g.home_color) +
           '</div>';
-        if ((g.sides.away || []).length) card += '<div class="pf-rg-side">' + rgSide(g.sides.away) + '</div>';
-        if ((g.sides.home || []).length) card += '<div class="pf-rg-side">' + rgSide(g.sides.home) + '</div>';
+        // Two columns under the header: away starters on the left, home
+        // starters on the right, each column headed by its team (a DEF
+        // starter's team field is its NFL team, so defenses land on
+        // their own team's side). An empty side gets a muted dash.
+        if ((g.sides.away || []).length || (g.sides.home || []).length) {
+          card += '<div class="pf-rg-cols">' +
+            '<div class="pf-rg-col"><div class="pf-rg-colhead">' + esc(g.away) + '</div>' +
+              ((g.sides.away || []).length ? rgSide(g.sides.away, g.status) : '<div class="pf-rg-empty">-</div>') + '</div>' +
+            '<div class="pf-rg-col"><div class="pf-rg-colhead">' + esc(g.home) + '</div>' +
+              ((g.sides.home || []).length ? rgSide(g.sides.home, g.status) : '<div class="pf-rg-empty">-</div>') + '</div>' +
+            '</div>';
+        }
         card += '</div>';
         return card;
       }).join('');
@@ -30377,16 +30433,36 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       body.innerHTML = '<div class="pf-ins-empty">No leagues to check yet.</div>';
       return;
     }
-    body.innerHTML = rows.map(function (r) {
+    // Attention first: holes, then covered leagues, then full strength.
+    var rank = function (r) {
+      if ((r.verdict || '').indexOf('Hole') === 0) return 0;
+      if (r.verdict === 'Covered') return 1;
+      return 2;
+    };
+    var sorted = rows.slice().sort(function (a, b) { return rank(a) - rank(b); });
+    body.innerHTML = sorted.map(function (r) {
       var hole = (r.verdict || '').indexOf('Hole') === 0;
+      var covered = r.verdict === 'Covered';
       var outTxt = r.out_count
         ? (r.out_count + ' out' + (r.out && r.out.length
             ? ': ' + r.out.map(function (o) { return esc(o.name); }).join(', ') : ''))
         : 'Full strength';
-      var h = '<div class="pf-bye-row"><span class="pf-bye-name">' + esc(r.name) + '</span>' +
-        '<span class="pf-bye-out">' + outTxt + '</span>' +
-        '<span class="pf-bye-verdict ' + (hole ? 'hole' : 'ok') + '">' + esc(r.verdict) + '</span>';
-      if (r.cover_note) h += '<span class="pf-bye-fix">' + esc(r.cover_note) + '</span>';
+      // Full strength is one compact line: the name, then the status once
+      // on the right. No verdict pill repeating it and no second
+      // "Nobody on bye." line underneath.
+      if (!hole && !covered) {
+        return '<div class="pf-bye-row"><span class="pf-bye-name">' + esc(r.name) + '</span>' +
+          '<span class="pf-bye-out pf-bye-full"><span class="pf-bye-dot"></span>Full strength</span></div>';
+      }
+      var h = '<div class="pf-bye-row"><span class="pf-bye-name">' + esc(r.name) + '</span>';
+      if (covered) {
+        // One line: who covers, in short form, plus the Covered pill.
+        h += '<span class="pf-bye-out">' + esc(r.cover_note || outTxt) + '</span>' +
+          '<span class="pf-bye-verdict covered">Covered</span>';
+      } else {
+        h += '<span class="pf-bye-out">' + outTxt + '</span>' +
+          '<span class="pf-bye-verdict hole">' + esc(r.verdict) + '</span>';
+      }
       if (r.fix) {
         h += '<span class="pf-bye-fix">' + esc(r.fix.text);
         if (r.fix.move) {
@@ -30395,6 +30471,8 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
             '">Make it a move</button>';
         }
         h += '</span>';
+      } else if (!covered && r.cover_note) {
+        h += '<span class="pf-bye-fix">' + esc(r.cover_note) + '</span>';
       }
       h += '</div>';
       return h;
