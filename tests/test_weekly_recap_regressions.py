@@ -196,6 +196,14 @@ def test_recap_manager_line_uses_username_not_team_name():
     assert "handle = username_by_rid.get(str(rid)) or owner" in source
     assert 'recap-team-manager">@{html.escape(handle)}' in source
 
+    # Week at a Glance HIGH/LOW SCORER cards have the same @ line: it must
+    # also show the username, not repeat the team name (regression: the
+    # screenshot showed "@Fire Riley" under the team "Fire Riley").
+    scorer = source.split("def scorer_card(", 1)[1].split("def matchup_card(", 1)[0]
+    assert "handle = username_by_rid.get(str(rid)) or name" in scorer
+    assert "@{html.escape(handle)}" in scorer
+    assert "@{html.escape(name)}" not in scorer
+
 
 def test_recap_page_renders_weekly_wrapped_launcher():
     """The recap page shows the Weekly Wrapped launcher beside its week

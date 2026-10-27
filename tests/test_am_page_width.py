@@ -44,4 +44,4 @@ def test_compare_modal_widens_in_step():
 
 
 def test_sw_cache_bumped():
-    assert "br-fantasy-v120" in SW
+    assert "br-fantasy-v121" in SW

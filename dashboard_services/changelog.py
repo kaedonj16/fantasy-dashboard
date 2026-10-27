@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-27",
+        "tag": "fix",
+        "text": "Weekly Recap: Week at a Glance now shows the manager username under the High Scorer and Low Scorer team names. It was repeating the team name there instead, so the High Scorer card read Fire Riley with @Fire Riley underneath it.",
+        "link": "/recap"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "update",
         "text": "Weekly Hub: the matchup page is rebuilt around your game. Week Leaders now run across the top, your matchup carousel sits on the left and stays in view while the other column scrolls, and Scorers, Scout and Lineup live in one panel on the right. Scout is now a gameplan: the verdict with your win probability, the calls that decide the matchup, the positional edge, their top threats and their soft spots. Lineup opens on This Week, your current starters against the projected-optimal lineup, the swaps that gain you points and what they do to your win probability, with the completed-weeks Lineup Lab under History.",
         "link": "/"
