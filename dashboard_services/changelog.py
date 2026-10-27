@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "Weekly Recap: the Top scorers by position cards are white cards again. An earlier fix today changed the page background under them and left them flat; they now paint the same card background as the other cards on the page.",
+        "link": "/recap"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Weekly Recap alert dot: opening the recap from the navigation now clears its dot right away (it previously only cleared after a full page reload), and the Tuesday recap-ready notification now opens the recap itself instead of the matchups page.",
         "link": "/recap"
     },
