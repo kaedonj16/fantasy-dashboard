@@ -226,11 +226,18 @@ def test_flush_groups_per_account_and_cleans_up(digest_db, fake_sends,
     by_ep = {s["endpoint"]: s for s in fake_sends}
     assert set(by_ep) == {"ep1", "ep2", "ep3", "ep4"}
     assert by_ep["ep1"]["title"] == "BR Fantasy digest"
-    assert by_ep["ep1"]["url"] == "/portfolio"
-    # ep1 (two leagues) summarizes both of its items; ep2 only its own.
-    assert "2 alerts across 2 leagues" in by_ep["ep1"]["body"]
-    assert "1 alert in Blackedraw" in by_ep["ep2"]["body"]
-    assert "1 alert in Blackedraw" in by_ep["ep4"]["body"]
+    # Both of ep1's items link to "/w", so the digest keeps that link.
+    assert by_ep["ep1"]["url"] == "/w"
+    # ep1 (two leagues) names both of its actual items; single-item devices
+    # get their original push verbatim (own title, body, and link).
+    assert "B1" in by_ep["ep1"]["body"]
+    assert "B2" in by_ep["ep1"]["body"]
+    assert "alerts across" not in by_ep["ep1"]["body"]
+    assert by_ep["ep2"]["title"] == "T3"
+    assert by_ep["ep2"]["body"] == "B3"
+    assert by_ep["ep2"]["url"] == "/w"
+    assert by_ep["ep4"]["title"] == "T5"
+    assert by_ep["ep4"]["body"] == "B5"
 
 
 def test_flush_empty_buffer_sends_nothing(digest_db, fake_sends, fake_season):
@@ -271,7 +278,10 @@ def test_flush_held_before_9am_then_delivered(digest_db, fake_sends,
     sent = pn._flush_digest(now=datetime(2026, 10, 22, 9, 5, tzinfo=ET))
     assert sent == 1
     assert [s["endpoint"] for s in fake_sends] == ["ep1"]
-    assert "1 alert in Blackedraw: 1 value drop." in fake_sends[0]["body"]
+    # A lone buffered item is delivered as its original push, not a count.
+    assert fake_sends[0]["title"] == "T1"
+    assert fake_sends[0]["body"] == "B1"
+    assert fake_sends[0]["url"] == "/w"
     assert digest_db == []
 
 
@@ -290,26 +300,83 @@ def test_flush_combines_same_device_across_account_keys(digest_db, fake_sends,
 
     assert sent == 1
     assert len(fake_sends) == 1
-    assert "2 alerts across 2 leagues: 2 value drops." in fake_sends[0]["body"]
+    assert "B1" in fake_sends[0]["body"]
+    assert "B2" in fake_sends[0]["body"]
+    assert "value drops" not in fake_sends[0]["body"]
     assert digest_db == []
 
 
-def test_digest_summary_counts_and_leagues(fake_season):
+def _named_leagues(monkeypatch):
+    names = {"L1": "Blackedraw", "L2": "League of Greatness"}
+    monkeypatch.setattr(pn, "_league_display_name",
+                        lambda plat, lid, season: names.get(lid, ""))
+
+
+def test_digest_summary_lists_items_grouped_by_league(fake_season, monkeypatch):
+    _named_leagues(monkeypatch)
     items = [
-        {"notif_type": "waiver_candidates", "league_id": "L1"},
-        {"notif_type": "waiver_candidates", "league_id": "L2"},
-        {"notif_type": "injury", "league_id": "L1"},
+        {"notif_type": "waiver_candidates", "league_id": "L1",
+         "platform": "sleeper", "title": "Waiver of the week",
+         "body": "Top target is available.", "url": "/l1/waivers"},
+        {"notif_type": "waiver_candidates", "league_id": "L2",
+         "platform": "sleeper", "title": "Waiver of the week",
+         "body": "Another target is available.", "url": "/l2/waivers"},
+        {"notif_type": "value_drops", "league_id": "L1",
+         "platform": "sleeper", "title": "Dynasty value dropping",
+         "body": "A player is losing dynasty value.", "url": "/l1/trade"},
     ]
-    title, body = pn._digest_summary(items, "2026")
+    title, body, url = pn._digest_payload(items, "2026")
     assert title == "BR Fantasy digest"
-    assert body == ("3 alerts across 2 leagues: "
-                    "2 waiver targets, 1 injury alert.")
+    # The actual alerts, grouped by league, in buffered order. No counts.
+    assert body == ("Blackedraw: Top target is available. "
+                    "A player is losing dynasty value. "
+                    "League of Greatness: Another target is available.")
+    assert "alerts across" not in body
+    # Named items point at different places, so the tap falls back.
+    assert url == "/portfolio"
 
 
-def test_digest_summary_single_item_single_league(fake_season):
-    items = [{"notif_type": "close_game", "league_id": "L1", "platform": "sleeper"}]
-    title, body = pn._digest_summary(items, "2026")
-    assert body == "1 alert in Blackedraw: 1 close game."
+def test_digest_summary_single_item_is_verbatim(fake_season):
+    items = [{"notif_type": "close_game", "league_id": "L1",
+              "platform": "sleeper", "title": "Close game in Blackedraw",
+              "body": "You are up 2.1 with one player left.",
+              "url": "/sleeper/2026/L1/matchup"}]
+    title, body, url = pn._digest_payload(items, "2026")
+    assert title == "Close game in Blackedraw"
+    assert body == "You are up 2.1 with one player left."
+    assert url == "/sleeper/2026/L1/matchup"
+    # The (title, body) shim agrees.
+    assert pn._digest_summary(items, "2026") == (title, body)
+
+
+def test_digest_payload_caps_named_items(fake_season):
+    items = [
+        {"notif_type": "value_drops", "league_id": "L1", "platform": "sleeper",
+         "title": "T", "body": f"Body {i}.", "url": "/l1/trade"}
+        for i in range(5)
+    ]
+    _title, body, url = pn._digest_payload(items, "2026")
+    assert "Body 0." in body
+    assert "Body 2." in body
+    assert "Body 3." not in body
+    assert body.endswith("+2 more")
+    # Every named item shares one link, so the digest keeps it.
+    assert url == "/l1/trade"
+
+
+def test_digest_item_text_strips_trailing_league_name(fake_season):
+    it = {"notif_type": "value_drops", "title": "Dynasty value dropping",
+          "body": "A player is losing value. Check your trade options "
+                  "in Blackedraw."}
+    assert pn._digest_item_text(it, "Blackedraw") == (
+        "A player is losing value. Check your trade options.")
+
+
+def test_digest_item_text_falls_back_to_title_and_label(fake_season):
+    it = {"notif_type": "transaction", "title": "Big drop in Blackedraw",
+          "body": ""}
+    assert pn._digest_item_text(it, "Blackedraw") == (
+        "Big drop in Blackedraw: big drop.")
 
 
 # ── Re-prompt persistence sanitization ────────────────────────────────────────

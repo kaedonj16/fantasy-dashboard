@@ -323,35 +323,106 @@ def _digest_buffer(endpoint, p256dh, auth, notif_type, title, body, url, tag,
         logger.warning("[push] digest buffer failed: %s", exc)
 
 
-def _digest_summary(items, season):
-    """Compose the one-push digest: title + body from buffered items.
+# How many individual alerts a multi-item digest spells out before the rest
+# collapse into a "+N more" tail. Push bodies truncate on the lock screen, so
+# naming everything would bury the first (most important) items.
+_DIGEST_MAX_NAMED = 3
 
-    Example: title "BR Fantasy digest",
-    body "5 alerts across 2 leagues: 3 waiver targets, 1 injury alert, 1 trade alert."
+
+def _digest_item_text(it, league_name=""):
+    """One buffered item as a single specific line: its own body, verbatim.
+
+    The notifiers already write player/league/action into the body, so the
+    digest must not rewrite it. When a league heading names the league, a
+    trailing " in <League>" in the body is dropped to avoid saying it twice.
+    Falls back to "<Title>: <label>" when a row somehow has no body.
     """
-    by_type: dict = {}
+    body = " ".join(str(it.get("body") or "").split()).strip()
+    if body and league_name:
+        for suffix in (f" in {league_name}.", f" in {league_name}"):
+            if body.endswith(suffix):
+                body = body[: -len(suffix)].rstrip() + "."
+                break
+    if body:
+        return body
+    title = " ".join(str(it.get("title") or "").split()).strip()
+    sing, _plur = _DIGEST_LABELS.get(it.get("notif_type") or "", ("alert", "alerts"))
+    if title:
+        return f"{title}: {sing}."
+    return f"1 {sing}."
+
+
+def _digest_payload(items, season):
+    """Compose the one-push digest: (title, body, url) from buffered items.
+
+    A single buffered item is sent exactly as its notifier wrote it: same
+    title, same body, same deep link. There is nothing to summarize, so a
+    counts-only rewrite ("1 alert in X: 1 value drop") only destroys the
+    player and the action.
+
+    Two or more items stay one push, but the body names the actual alerts
+    grouped by league instead of counting types:
+
+        "Blackedraw: <body 1> <body 2> League of Greatness: <body 3> +2 more"
+
+    At most _DIGEST_MAX_NAMED items are spelled out, in buffered order. The
+    tap target is the shared link when every named item points at the same
+    place (the common single-league case), else "/portfolio".
+    """
+    items = list(items or [])
+    if not items:
+        return "BR Fantasy digest", "", "/portfolio"
+    if len(items) == 1:
+        it = items[0]
+        title = str(it.get("title") or "").strip() or "BR Fantasy"
+        body = str(it.get("body") or "").strip() or _digest_item_text(it)
+        url = str(it.get("url") or "").strip() or "/portfolio"
+        return title, body, url
+
+    # Group by league, preserving first-seen league and item order.
+    groups: list = []
+    by_key: dict = {}
     for it in items:
-        by_type.setdefault(it.get("notif_type") or "", []).append(it)
-    phrases = []
-    league_ids = set()
-    for nt, lst in by_type.items():
-        sing, plur = _DIGEST_LABELS.get(nt, ("alert", "alerts"))
-        phrases.append(f"{len(lst)} {sing if len(lst) == 1 else plur}")
-        for it in lst:
-            if it.get("league_id"):
-                league_ids.add(it["league_id"])
-    total = len(items)
-    if len(league_ids) == 1:
-        lid = next(iter(league_ids))
-        plat = next((it.get("platform") or "" for it in items if it.get("league_id") == lid), "")
-        name = _league_display_name(plat, lid, season)
-        loc = f" in {name}" if name else ""
-    elif len(league_ids) > 1:
-        loc = f" across {len(league_ids)} leagues"
-    else:
-        loc = ""
-    body = f"{total} alert{'s' if total != 1 else ''}{loc}: " + ", ".join(phrases) + "."
-    return "BR Fantasy digest", body
+        lid = str(it.get("league_id") or "")
+        plat = str(it.get("platform") or "")
+        key = (lid, plat)
+        group = by_key.get(key)
+        if group is None:
+            name = _league_display_name(plat, lid, season) if lid else ""
+            group = {"name": name, "items": []}
+            by_key[key] = group
+            groups.append(group)
+        group["items"].append(it)
+
+    named = 0
+    hidden = 0
+    parts = []
+    named_urls = []
+    for group in groups:
+        lines = []
+        for it in group["items"]:
+            if named >= _DIGEST_MAX_NAMED:
+                hidden += 1
+                continue
+            lines.append(_digest_item_text(it, group["name"]))
+            named += 1
+            url = str(it.get("url") or "").strip()
+            if url:
+                named_urls.append(url)
+        if lines:
+            heading = f"{group['name']}: " if group["name"] else ""
+            parts.append(heading + " ".join(lines))
+    if hidden:
+        parts.append(f"+{hidden} more")
+    body = " ".join(parts)
+    url = named_urls[0] if named_urls and len(set(named_urls)) == 1 else "/portfolio"
+    return "BR Fantasy digest", body, url
+
+
+def _digest_summary(items, season):
+    """(title, body) for a digest; see _digest_payload for the full shape."""
+    title, body, _url = _digest_payload(items, season)
+    return title, body
 
 
 _DIGEST_EARLIEST_ET_HOUR = 9
@@ -423,10 +494,10 @@ def _flush_digest(now=None):
     sent = 0
     flushed_ids = []
     for endpoint, entry in by_endpoint.items():
-        title, body = _digest_summary(entry["items"], season)
+        title, body, url = _digest_payload(entry["items"], season)
         sent += _send_to_endpoints(
             [(endpoint, entry["p256dh"], entry["auth"])],
-            title, body, "/portfolio", "push-digest",
+            title, body, url, "push-digest",
         )
         flushed_ids.extend(entry["ids"])
     try:
