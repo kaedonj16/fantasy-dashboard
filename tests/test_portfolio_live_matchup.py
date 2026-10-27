@@ -215,3 +215,37 @@ def test_finalized_fantasy_week_supports_tuesday_rollover():
     ])}
     assert _finalized_fantasy_week(ctx, "9", 3) == 2
     assert _finalized_fantasy_week(ctx, "other", 3) is None
+
+
+def test_finalized_fantasy_week_rederives_from_current_leg():
+    """Regression (2026-10-27 screenshot): a league ctx built during the
+    Monday-night game (leg still 7) stamps week 7 unfinalized; on Tuesday the
+    state has rolled to leg 8 but the cached ctx has not rebuilt, so the
+    build-time stamp alone stranded the Josh Allen's Twitter card on a
+    Week 8 0.0 preview while every rebuilt league showed FINAL WK 7. The
+    current leg must re-derive finalized at read time."""
+    pd = pytest.importorskip("pandas")
+    from routes.user_pages_bp import _finalized_fantasy_week
+
+    stale_ctx = {"df_weekly": pd.DataFrame([
+        {"roster_id": 9, "week": 6, "finalized": True},
+        {"roster_id": 9, "week": 7, "finalized": False},
+        {"roster_id": 9, "week": 8, "finalized": False},
+    ])}
+    # The bug, reproduced against the build-time stamp alone: week 6 is two
+    # weeks back, outside the one-week fallback guard.
+    assert _finalized_fantasy_week(stale_ctx, "9", 8) is None
+    # With the current leg, week 7 (< 8) is finalized and week 8 is not.
+    assert _finalized_fantasy_week(stale_ctx, "9", 8, current_leg=8) == 7
+    # Mid-week, the current week stays unfinalized under its own leg.
+    assert _finalized_fantasy_week(stale_ctx, "9", 8, current_leg=7) is None
+    assert _finalized_fantasy_week(stale_ctx, "other", 8, current_leg=8) is None
+
+
+def test_matchup_endpoint_passes_current_leg():
+    source = (ROOT / "routes" / "user_pages_bp.py").read_text()
+    fn = source.split("def api_portfolio_matchup")[1].split("\n@user_pages_bp.route")[0]
+    # The endpoint owns the live NFL state, so it supplies the current leg
+    # (the same source service.py stamped the ctx with at build time).
+    assert 'nfl_state.get("leg")' in fn
+    assert "current_leg=current_leg" in fn
