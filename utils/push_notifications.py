@@ -203,6 +203,343 @@ PUSH_TYPE_BUCKETS = [
 ]
 
 
+# ── Delivery-grouped catalog (notification settings + subscribe picker) ─────
+# The settings screen groups types by WHEN they arrive, not by topic: live
+# alerts, the morning-digest set, and everything else. Every key must match
+# a notif_type used by a notify_* function (plus "changelog", the site-update
+# broadcast key), because _filter_prefs checks prefs by that key.
+
+CHANGELOG_NOTIF_TYPE = "changelog"
+
+PUSH_DELIVERY_GROUPS = [
+    {
+        "id": "live",
+        "label": "Sent right away",
+        "tag": "Live",
+        "types": [
+            {"key": "redzone_scores", "label": "Touchdowns",
+             "desc": "Scores by your players and your opponent's, as they happen."},
+            {"key": "close_game", "label": "Close game",
+             "desc": "Your matchup is inside one score in the fourth quarter."},
+            {"key": "lineup_lock", "label": "Lineup lock",
+             "desc": "A nudge before lock if a starter is flagged or on a bye."},
+        ],
+    },
+    {
+        "id": "digest",
+        "label": "Morning digest",
+        "tag": "7:00 AM",
+        "types": [
+            {"key": "injury", "label": "Injury updates",
+             "desc": "Starter status changes across your rosters."},
+            {"key": "value_drops", "label": "Value drops",
+             "desc": "Dynasty value falls of 10% or more on your players."},
+            {"key": "playoff_odds", "label": "Playoff odds moves",
+             "desc": "Your playoff odds swing by 15 points or more."},
+            {"key": "standings_update", "label": "Standings moves",
+             "desc": "You change position in the standings."},
+            {"key": "breakout_roster", "label": "Breakout players",
+             "desc": "Your players land on the new breakout board."},
+            {"key": "recap_ready", "label": "Weekly recap ready",
+             "desc": "Your recap is ready on Tuesday morning."},
+        ],
+    },
+    {
+        "id": "more",
+        "label": "Also available",
+        "types": [
+            {"key": "matchup_preview", "label": "Matchup previews",
+             "desc": "Your matchup, key players and win odds before kickoff."},
+            {"key": "waiver_candidates", "label": "Waiver wire updates",
+             "desc": "Priority targets about to be claimed in your leagues."},
+            {"key": "transaction", "label": "Big drop alerts",
+             "desc": "A notable player is dropped in one of your leagues."},
+            {"key": "rival_trades", "label": "Rival trades",
+             "desc": "A trade is completed in one of your leagues."},
+            {"key": "top_movers", "label": "Weekly top movers",
+             "desc": "The week's biggest value risers and fallers."},
+            {"key": "watchlist", "label": "Watchlist alerts",
+             "desc": "News on players you have starred."},
+            {"key": "breakout_weekly", "label": "New breakout board",
+             "desc": "The weekly breakout board is published."},
+            {"key": CHANGELOG_NOTIF_TYPE, "label": "Site updates",
+             "desc": "New features and fixes, as they ship."},
+        ],
+    },
+]
+
+# Types quiet hours may never hold back: the live, in-the-moment alerts.
+_QUIET_EXEMPT_TYPES = frozenset({"redzone_scores", "close_game", "lineup_lock"})
+
+
+# ── Quiet hours ──────────────────────────────────────────────────────────────
+# Per-account prefs (mirrored to every device by /api/push/preferences):
+# prefs["quiet_hours"] is True and prefs["quiet_start"] / prefs["quiet_end"]
+# are "HH:MM" in Eastern (defaults 23:00 to 07:00). While the window is
+# active, non-live types are buffered with a hold_until at the window's end
+# and the digest flush delivers them as the morning digest. Injury alerts
+# join the held set ONLY here: with quiet hours off they keep their
+# long-standing immediate behavior (they are deliberately absent from
+# _DIGEST_ELIGIBLE_TYPES, so digest mode alone never holds them).
+
+_QUIET_DEFAULT_START = "23:00"
+_QUIET_DEFAULT_END = "07:00"
+
+
+def _hhmm_minutes(value, fallback):
+    try:
+        hh, mm = str(value or "").split(":", 1)
+        h, m = int(hh), int(mm)
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return h * 60 + m
+    except (TypeError, ValueError):
+        pass
+    fh, fm = fallback.split(":")
+    return int(fh) * 60 + int(fm)
+
+
+def _quiet_window_minutes(prefs):
+    """(start, end) in ET minutes-of-day, or None when quiet hours are off."""
+    if not isinstance(prefs, dict) or prefs.get("quiet_hours") is not True:
+        return None
+    start = _hhmm_minutes(prefs.get("quiet_start"), _QUIET_DEFAULT_START)
+    end = _hhmm_minutes(prefs.get("quiet_end"), _QUIET_DEFAULT_END)
+    if start == end:
+        return None
+    return start, end
+
+
+def _et_now(now=None):
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    if now is None:
+        return datetime.now(et)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=et)
+    return now.astimezone(et)
+
+
+def _in_quiet_hours(prefs, now=None):
+    win = _quiet_window_minutes(prefs)
+    if win is None:
+        return False
+    start, end = win
+    now_et = _et_now(now)
+    mins = now_et.hour * 60 + now_et.minute
+    if start < end:
+        return start <= mins < end
+    return mins >= start or mins < end
+
+
+def _quiet_hold_until(prefs, now=None):
+    """Aware ET datetime of the end of the quiet window containing ``now``.
+
+    Only meaningful while _in_quiet_hours is true. A window that wraps past
+    midnight ends tomorrow morning when ``now`` is in its evening leg.
+    """
+    from datetime import timedelta
+    win = _quiet_window_minutes(prefs)
+    if win is None:
+        return None
+    start, end = win
+    now_et = _et_now(now)
+    end_dt = now_et.replace(hour=end // 60, minute=end % 60,
+                            second=0, microsecond=0)
+    if start > end and (now_et.hour * 60 + now_et.minute) >= start:
+        end_dt += timedelta(days=1)
+    return end_dt
+
+
+# ── In-app notification history (the bell inbox) ─────────────────────────────
+# Every typed alert that goes out to a signed-in user's device is also
+# recorded here, keyed by account_key (the push_subscriptions spelling of
+# the site account id), so the bell panel can list what was sent: push is
+# otherwise fire-and-forget, and a swiped or missed alert existed nowhere.
+# Digest-held alerts are recorded when the flush delivers them, one entry
+# per buffered item. Retention is the latest _NOTIF_HISTORY_KEEP rows per
+# account, pruned on write.
+
+_NOTIF_HISTORY_KEEP = 50
+_NOTIF_TABLE_INIT = False
+
+
+def _init_notif_history_table():
+    global _NOTIF_TABLE_INIT
+    if _NOTIF_TABLE_INIT:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_notifications (
+                    id          SERIAL PRIMARY KEY,
+                    account_key TEXT NOT NULL,
+                    notif_type  TEXT NOT NULL DEFAULT '',
+                    title       TEXT NOT NULL DEFAULT '',
+                    body        TEXT NOT NULL DEFAULT '',
+                    url         TEXT NOT NULL DEFAULT '/',
+                    league_id   TEXT NOT NULL DEFAULT '',
+                    league_name TEXT NOT NULL DEFAULT '',
+                    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    read_at     TIMESTAMPTZ
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS user_notifications_account_idx "
+                "ON user_notifications (account_key, id DESC)"
+            )
+            conn.commit()
+        _NOTIF_TABLE_INIT = True
+    except Exception as exc:
+        logger.warning("[push] notif history table init failed: %s", exc)
+
+
+def record_user_notification(account_key, notif_type, title, body, url="/",
+                             league_id="", league_name=""):
+    """Append one alert to an account's inbox. Never raises: a history
+    failure must not break the send that produced the alert."""
+    acct = str(account_key or "").strip()
+    if not acct:
+        return False
+    _init_notif_history_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """INSERT INTO user_notifications
+                   (account_key, notif_type, title, body, url, league_id,
+                    league_name)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                (acct, notif_type or "", title or "", body or "",
+                 url or "/", str(league_id or ""), league_name or ""),
+            )
+            conn.execute(
+                """DELETE FROM user_notifications WHERE account_key = %s
+                   AND id NOT IN (
+                       SELECT id FROM user_notifications
+                       WHERE account_key = %s ORDER BY id DESC LIMIT %s)""",
+                (acct, acct, _NOTIF_HISTORY_KEEP),
+            )
+            conn.commit()
+        return True
+    except Exception as exc:
+        logger.warning("[push] notif history record failed: %s", exc)
+        return False
+
+
+def _record_for_rows(rows, notif_type, title, body, url,
+                     league_id=None, platform=None):
+    """Record one inbox entry per distinct signed-in account in ``rows``."""
+    accounts = []
+    for r in rows:
+        acct = str(r.get("account_key") or "").strip()
+        if acct and acct not in accounts:
+            accounts.append(acct)
+    if not accounts:
+        return
+    league_name = ""
+    if league_id:
+        try:
+            from dashboard_services.api import get_nfl_state
+            season = (get_nfl_state() or {}).get("season")
+            league_name = _league_display_name(
+                platform, str(league_id), season) or ""
+        except Exception:
+            league_name = ""
+    for acct in accounts:
+        record_user_notification(acct, notif_type, title, body, url,
+                                 league_id=str(league_id or ""),
+                                 league_name=league_name)
+
+
+def list_user_notifications(account_key, limit=_NOTIF_HISTORY_KEEP):
+    """(items, unread_count), newest first, for one account. Never raises."""
+    acct = str(account_key or "").strip()
+    if not acct:
+        return [], 0
+    _init_notif_history_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT id, notif_type, title, body, url, league_id, "
+                "league_name, created_at, read_at FROM user_notifications "
+                "WHERE account_key = %s ORDER BY id DESC LIMIT %s",
+                (acct, int(limit)),
+            ).fetchall()
+            unread_row = conn.execute(
+                "SELECT COUNT(*) AS n FROM user_notifications "
+                "WHERE account_key = %s AND read_at IS NULL",
+                (acct,),
+            ).fetchone()
+        items = []
+        for r in rows:
+            created = r.get("created_at")
+            items.append({
+                "id": r["id"],
+                "type": r.get("notif_type") or "",
+                "title": r.get("title") or "",
+                "body": r.get("body") or "",
+                "url": r.get("url") or "/",
+                "league_id": r.get("league_id") or "",
+                "league_name": r.get("league_name") or "",
+                "created_at": (created.isoformat()
+                               if hasattr(created, "isoformat")
+                               else str(created or "")),
+                "read": r.get("read_at") is not None,
+            })
+        return items, int((unread_row or {}).get("n") or 0)
+    except Exception as exc:
+        logger.warning("[push] notif history list failed: %s", exc)
+        return [], 0
+
+
+def mark_user_notification_read(account_key, notif_id):
+    """Mark one inbox entry read. Scoped to the account, so an id from
+    another user's inbox can never be flipped. Never raises."""
+    acct = str(account_key or "").strip()
+    if not acct or notif_id in (None, ""):
+        return False
+    _init_notif_history_table()
+    try:
+        nid = int(notif_id)
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE user_notifications SET read_at = NOW() "
+                "WHERE id = %s AND account_key = %s AND read_at IS NULL",
+                (nid, acct),
+            )
+            conn.commit()
+        return True
+    except (TypeError, ValueError):
+        return False
+    except Exception as exc:
+        logger.warning("[push] notif history mark-read failed: %s", exc)
+        return False
+
+
+def mark_all_user_notifications_read(account_key):
+    """Mark every inbox entry for the account read. Never raises."""
+    acct = str(account_key or "").strip()
+    if not acct:
+        return False
+    _init_notif_history_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE user_notifications SET read_at = NOW() "
+                "WHERE account_key = %s AND read_at IS NULL",
+                (acct,),
+            )
+            conn.commit()
+        return True
+    except Exception as exc:
+        logger.warning("[push] notif history mark-all-read failed: %s", exc)
+        return False
+
+
 # ── Digest mode: per-device, per-hour batching ────────────────────────────────
 # When a device opts in (prefs["digest"] is True), eligible notifications are
 # buffered in the push_digest_items table instead of being sent immediately,
@@ -275,6 +612,12 @@ def _init_digest_table():
             conn.execute(
                 "ALTER TABLE push_digest_items ADD COLUMN IF NOT EXISTS account_key TEXT"
             )
+            # Quiet-hours holds carry the instant the hold ends (the window's
+            # end in ET); plain digest rows leave it NULL and follow the
+            # legacy 9am flush gate.
+            conn.execute(
+                "ALTER TABLE push_digest_items ADD COLUMN IF NOT EXISTS hold_until TIMESTAMPTZ"
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS push_digest_items_endpoint_idx "
                 "ON push_digest_items (endpoint)"
@@ -290,11 +633,14 @@ def _init_digest_table():
 
 
 def _digest_buffer(endpoint, p256dh, auth, notif_type, title, body, url, tag,
-                   league_id=None, platform=None, account_key=None):
+                   league_id=None, platform=None, account_key=None,
+                   hold_until=None):
     """Buffer one notification for the next digest flush (digest opt-in devices).
 
     The flush groups per device (endpoint); account_key is kept on the row
     for provenance but does not split a device's items into separate digests.
+    ``hold_until`` marks a quiet-hours hold: the flush releases the item once
+    that instant passes, even before the legacy 9am digest gate.
     """
     _init_digest_table()
     hour_bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H")
@@ -311,22 +657,16 @@ def _digest_buffer(endpoint, p256dh, auth, notif_type, title, body, url, tag,
             conn.execute(
                 """INSERT INTO push_digest_items
                    (endpoint, p256dh, auth, account_key, league_id, platform,
-                    notif_type, title, body, url, tag, hour_bucket)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    notif_type, title, body, url, tag, hour_bucket, hold_until)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (endpoint, p256dh, auth, account_key,
                  league_id or "", platform or "",
                  notif_type or "", title or "", body or "", url or "/",
-                 tag or "", hour_bucket),
+                 tag or "", hour_bucket, hold_until),
             )
             conn.commit()
     except Exception as exc:
         logger.warning("[push] digest buffer failed: %s", exc)
-
-
-# How many individual alerts a multi-item digest spells out before the rest
-# collapse into a "+N more" tail. Push bodies truncate on the lock screen, so
-# naming everything would bury the first (most important) items.
-_DIGEST_MAX_NAMED = 3
 
 
 def _digest_item_text(it, league_name=""):
@@ -360,13 +700,13 @@ def _digest_payload(items, season):
     counts-only rewrite ("1 alert in X: 1 value drop") only destroys the
     player and the action.
 
-    Two or more items stay one push, but the body names the actual alerts
-    grouped by league instead of counting types:
+    Two or more items stay one push, but the body names EVERY actual alert
+    grouped by league instead of counting types or collapsing the overflow
+    into an unnamed tail:
 
-        "Blackedraw: <body 1> <body 2> League of Greatness: <body 3> +2 more"
+        "Blackedraw: <body 1> <body 2> League of Greatness: <body 3>"
 
-    At most _DIGEST_MAX_NAMED items are spelled out, in buffered order. The
-    tap target is the shared link when every named item points at the same
+    The tap target is the shared link when every item points at the same
     place (the common single-league case), else "/portfolio".
     """
     items = list(items or [])
@@ -394,28 +734,20 @@ def _digest_payload(items, season):
             groups.append(group)
         group["items"].append(it)
 
-    named = 0
-    hidden = 0
     parts = []
-    named_urls = []
+    item_urls = []
     for group in groups:
         lines = []
         for it in group["items"]:
-            if named >= _DIGEST_MAX_NAMED:
-                hidden += 1
-                continue
             lines.append(_digest_item_text(it, group["name"]))
-            named += 1
             url = str(it.get("url") or "").strip()
             if url:
-                named_urls.append(url)
+                item_urls.append(url)
         if lines:
             heading = f"{group['name']}: " if group["name"] else ""
             parts.append(heading + " ".join(lines))
-    if hidden:
-        parts.append(f"+{hidden} more")
     body = " ".join(parts)
-    url = named_urls[0] if named_urls and len(set(named_urls)) == 1 else "/portfolio"
+    url = item_urls[0] if item_urls and len(set(item_urls)) == 1 else "/portfolio"
     return "BR Fantasy digest", body, url
 
 
@@ -445,29 +777,46 @@ def _digest_flush_due(now=None):
     return now.hour >= _DIGEST_EARLIEST_ET_HOUR
 
 
-def _flush_digest(now=None):
-    """Send one combined push per device for everything buffered since the last
-    due flush. Grouping is per device (endpoint): a device's subscription rows
-    can carry different account_keys (one league subscribed signed-in, another
-    legacy signed-out), and grouping by account split one device's digest
-    into two pushes. Each device receives one digest of its own items -- type
-    prefs were already applied per device at buffer time. Called at the end of
-    run_hourly()/run_all_daily() and as the final cron_daily.py step.
+def _hold_until_due(it, now_utc):
+    """True when a buffered row's quiet-hours hold has expired by ``now_utc``."""
+    hu = it.get("hold_until")
+    if hu is None:
+        return False
+    if isinstance(hu, str):
+        try:
+            hu = datetime.fromisoformat(hu)
+        except ValueError:
+            return False
+    if hu.tzinfo is None:
+        hu = hu.replace(tzinfo=timezone.utc)
+    return hu <= now_utc
 
-    Before 9am Eastern this is a no-op: buffered items stay in the table and
-    the first flush at/after 9am ET delivers them (see quiet-hours note at
-    _DIGEST_ELIGIBLE_TYPES)."""
-    if not _digest_flush_due(now):
-        logger.info("[push] digest flush held: before %d:00 ET",
-                    _DIGEST_EARLIEST_ET_HOUR)
-        return 0
+
+def _flush_digest(now=None):
+    """Send one combined push per device for the buffered items that are due.
+
+    Grouping is per device (endpoint): a device's subscription rows can carry
+    different account_keys (one league subscribed signed-in, another legacy
+    signed-out), and grouping by account split one device's digest into two
+    pushes. Each device receives one digest of its own DUE items -- type
+    prefs were already applied per device at buffer time. Called at the end
+    of run_hourly()/run_all_daily() and as the final cron_daily.py step.
+
+    An item with a quiet-hours hold is due only when that hold expires:
+    the legacy gate must never release a held alert early (a flush running
+    at 11pm would otherwise break the hold it was placed under). Plain
+    digest items (no hold) follow the legacy gate: due at/after 9am
+    Eastern, the digest's standing quiet-hours rule. Items not yet due
+    stay in the table for the next flush. Delivered items are recorded
+    in the recipient account's inbox history, once per account per item even
+    when the account has several devices buffering the same alert."""
     _init_digest_table()
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT id, endpoint, p256dh, auth, account_key, league_id, "
-                "platform, notif_type, title, body, url, tag "
+                "platform, notif_type, title, body, url, tag, hold_until "
                 "FROM push_digest_items ORDER BY id"
             ).fetchall()
     except Exception as exc:
@@ -475,17 +824,29 @@ def _flush_digest(now=None):
         return 0
     if not rows:
         return 0
+    legacy_due = _digest_flush_due(now)
+    now_utc = _et_now(now).astimezone(timezone.utc)
     # One batch per device (endpoint), regardless of which account_key each
     # buffered row carries -- the buffer and the send are both per-endpoint,
     # so the account key must not split a device's items into two digests.
     by_endpoint: dict = {}
     for r in rows:
+        if r.get("hold_until") is not None:
+            if not _hold_until_due(r, now_utc):
+                continue
+        elif not legacy_due:
+            continue
         entry = by_endpoint.setdefault(
             r["endpoint"],
             {"p256dh": r["p256dh"], "auth": r["auth"], "items": [], "ids": []},
         )
         entry["items"].append(r)
         entry["ids"].append(r["id"])
+    if not by_endpoint:
+        logger.info("[push] digest flush held: nothing due yet "
+                    "(before %d:00 ET and no expired quiet-hours holds)",
+                    _DIGEST_EARLIEST_ET_HOUR)
+        return 0
     try:
         from dashboard_services.api import get_nfl_state
         season = (get_nfl_state() or {}).get("season")
@@ -493,6 +854,7 @@ def _flush_digest(now=None):
         season = None
     sent = 0
     flushed_ids = []
+    recorded = set()
     for endpoint, entry in by_endpoint.items():
         title, body, url = _digest_payload(entry["items"], season)
         sent += _send_to_endpoints(
@@ -500,6 +862,26 @@ def _flush_digest(now=None):
             title, body, url, "push-digest",
         )
         flushed_ids.extend(entry["ids"])
+        for it in entry["items"]:
+            acct = str(it.get("account_key") or "").strip()
+            if not acct:
+                continue
+            key = (acct, it.get("notif_type") or "", it.get("title") or "",
+                   it.get("body") or "", str(it.get("league_id") or ""))
+            if key in recorded:
+                continue
+            recorded.add(key)
+            league_name = ""
+            if it.get("league_id"):
+                try:
+                    league_name = _league_display_name(
+                        it.get("platform"), str(it["league_id"]), season) or ""
+                except Exception:
+                    league_name = ""
+            record_user_notification(
+                acct, it.get("notif_type"), it.get("title"), it.get("body"),
+                it.get("url"), league_id=str(it.get("league_id") or ""),
+                league_name=league_name)
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -516,28 +898,46 @@ def _flush_digest(now=None):
 
 def _send_with_digest(rows, title, body, url="/", tag="update", notif_type=None,
                       league_id=None, platform=None):
-    """Preference-filter rows, then send immediately or buffer into the digest.
+    """Preference-filter rows, then send immediately or buffer for later.
 
     Devices that opted into digest mode (prefs["digest"] is True) get eligible
     types buffered for the next _flush_digest() instead of an immediate push.
-    Everything else (no prefs, digest off, ineligible type) sends immediately,
-    exactly like before. Returns the immediate sent count.
+    Quiet hours take precedence over digest mode: while a device's account
+    has quiet hours on and the window is active, non-live types are buffered
+    with a hold_until at the window's end and the flush delivers them as the
+    morning digest. That hold is the ONLY path that buffers injury alerts;
+    with quiet hours off they send immediately, exactly like before.
+    Everything else sends immediately, exactly like before, and immediate
+    sends are recorded in the recipient accounts' inbox history.
+    Returns the immediate sent count.
     """
     immediate = []
+    immediate_rows = []
     for r in rows:
         prefs = _prefs_dict(r.get("prefs"))
         if notif_type and prefs.get(notif_type, True) is False:
             continue
         tup = (r["endpoint"], r["p256dh"], r["auth"])
-        if (notif_type and prefs.get("digest") is True
+        hold_until = None
+        if (notif_type and notif_type not in _QUIET_EXEMPT_TYPES
+                and _in_quiet_hours(prefs)):
+            hold_until = _quiet_hold_until(prefs)
+        if hold_until is not None or (
+                notif_type and prefs.get("digest") is True
                 and notif_type in _DIGEST_ELIGIBLE_TYPES):
             _digest_buffer(tup[0], tup[1], tup[2], notif_type, title, body, url,
                            tag, league_id=league_id,
                            platform=platform or r.get("platform"),
-                           account_key=r.get("account_key"))
+                           account_key=r.get("account_key"),
+                           hold_until=hold_until)
         else:
             immediate.append(tup)
-    return _send_to_endpoints(immediate, title, body, url, tag)
+            immediate_rows.append(r)
+    sent = _send_to_endpoints(immediate, title, body, url, tag)
+    if sent and notif_type:
+        _record_for_rows(immediate_rows, notif_type, title, body, url,
+                         league_id=league_id, platform=platform)
+    return sent
 
 
 def _broadcast_all(title, body, url="/", tag="update", notif_type=None):

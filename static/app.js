@@ -1522,10 +1522,6 @@ window.brHaptic = function (pattern) {
         if (name === 'getting-started' && typeof window.startSiteTour === 'function') {
           setOpen(false); window.startSiteTour();
         }
-        if (name === 'whats-new') {
-          var bell = document.getElementById('changelogBell');
-          if (bell) bell.click();
-        }
         if (name === 'help-tours') showSheetPanel('help-tours', false, action);
         return;
       }
@@ -3253,69 +3249,47 @@ window._brPromoEligible = function () {
     }
   };
 
-  var _NOTIF_TYPES = [
-    { category: 'Your Team' },
-    { key: 'redzone_scores',    label: 'ScoreZone Score Alerts' },
-    { key: 'lineup_lock',       label: 'Lineup Lock Reminders' },
-    { key: 'injury',            label: 'Starter Injury Alerts' },
-    { key: 'close_game',        label: 'Close Game Alerts' },
-    { key: 'matchup_preview',   label: 'Matchup Preview' },
-    { key: 'recap_ready',       label: 'Weekly Recap Available' },
-    { key: 'standings_update',  label: 'Standings Updates' },
-    { category: 'League Activity' },
-    { key: 'rival_trades',      label: 'Rival Trade Alerts' },
-    { key: 'transaction',       label: 'Big Drop Alerts' },
-    { key: 'waiver_candidates', label: 'Waiver Wire Updates' },
-    { category: 'Dynasty' },
-    { key: 'watchlist',         label: 'Watchlist Alerts' },
-    { key: 'value_drops',       label: 'Value Drop Alerts' },
-    { key: 'breakout_roster',   label: 'Breakout Player Alerts' },
-    { key: 'breakout_weekly',   label: 'New Breakout Board' },
-    { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
-    { key: 'top_movers',        label: 'Weekly Top Movers' },
+  // Fallback mirror of the server's PUSH_DELIVERY_GROUPS
+  // (utils/push_notifications.py), used by the notification settings modal
+  // and the subscribe-time picker when /api/push/catalog is unreachable.
+  // Both prefer the live catalog; keep this in sync with the server list.
+  var _NOTIF_GROUPS = [
+    { id: 'live', label: 'Sent right away', tag: 'Live', types: [
+      { key: 'redzone_scores', label: 'Touchdowns', desc: 'Scores by your players and your opponent\u2019s, as they happen.' },
+      { key: 'close_game', label: 'Close game', desc: 'Your matchup is inside one score in the fourth quarter.' },
+      { key: 'lineup_lock', label: 'Lineup lock', desc: 'A nudge before lock if a starter is flagged or on a bye.' },
+    ] },
+    { id: 'digest', label: 'Morning digest', tag: '7:00 AM', types: [
+      { key: 'injury', label: 'Injury updates', desc: 'Starter status changes across your rosters.' },
+      { key: 'value_drops', label: 'Value drops', desc: 'Dynasty value falls of 10% or more on your players.' },
+      { key: 'playoff_odds', label: 'Playoff odds moves', desc: 'Your playoff odds swing by 15 points or more.' },
+      { key: 'standings_update', label: 'Standings moves', desc: 'You change position in the standings.' },
+      { key: 'breakout_roster', label: 'Breakout players', desc: 'Your players land on the new breakout board.' },
+      { key: 'recap_ready', label: 'Weekly recap ready', desc: 'Your recap is ready on Tuesday morning.' },
+    ] },
+    { id: 'more', label: 'Also available', types: [
+      { key: 'matchup_preview', label: 'Matchup previews', desc: 'Your matchup, key players and win odds before kickoff.' },
+      { key: 'waiver_candidates', label: 'Waiver wire updates', desc: 'Priority targets about to be claimed in your leagues.' },
+      { key: 'transaction', label: 'Big drop alerts', desc: 'A notable player is dropped in one of your leagues.' },
+      { key: 'rival_trades', label: 'Rival trades', desc: 'A trade is completed in one of your leagues.' },
+      { key: 'top_movers', label: 'Weekly top movers', desc: 'The week\u2019s biggest value risers and fallers.' },
+      { key: 'watchlist', label: 'Watchlist alerts', desc: 'News on players you have starred.' },
+      { key: 'breakout_weekly', label: 'New breakout board', desc: 'The weekly breakout board is published.' },
+      { key: 'changelog', label: 'Site updates', desc: 'New features and fixes, as they ship.' },
+    ] },
   ];
 
-  // Fallback mirror of the server's PUSH_TYPE_BUCKETS (utils/push_notifications.py),
-  // used by the subscribe-time picker when /api/push/catalog is unreachable.
-  // The picker prefers the live catalog; keep this in sync with the server list.
-  var _NOTIF_BUCKETS = [
-    { id: 'lineup', label: 'Lineup and injuries', blurb: 'Lineup lock reminders, starter injury news, live TD alerts',
-      types: [
-        { key: 'lineup_lock', label: 'Lineup lock reminders' },
-        { key: 'injury', label: 'Starter injury alerts' },
-        { key: 'redzone_scores', label: 'ScoreZone score alerts' },
-      ] },
-    { id: 'matchups', label: 'Matchups live', blurb: 'Close games, matchup previews, standings moves',
-      types: [
-        { key: 'close_game', label: 'Close game alerts' },
-        { key: 'matchup_preview', label: 'Matchup previews' },
-        { key: 'standings_update', label: 'Standings updates' },
-      ] },
-    { id: 'waivers', label: 'Waivers and trends', blurb: 'Waiver targets, big drops, weekly top movers',
-      types: [
-        { key: 'waiver_candidates', label: 'Waiver wire updates' },
-        { key: 'transaction', label: 'Big drop alerts' },
-        { key: 'top_movers', label: 'Weekly top movers' },
-      ] },
-    { id: 'trades', label: 'Trades and value', blurb: 'Rival trades, dynasty value, breakouts, playoff odds',
-      types: [
-        { key: 'rival_trades', label: 'Rival trade alerts' },
-        { key: 'value_drops', label: 'Value drop alerts' },
-        { key: 'breakout_roster', label: 'Breakout player alerts' },
-        { key: 'breakout_weekly', label: 'New breakout board' },
-        { key: 'playoff_odds', label: 'Playoff odds updates' },
-      ] },
-    { id: 'recaps', label: 'Recaps and watchlist', blurb: 'Weekly recaps and alerts on your starred players',
-      types: [
-        { key: 'recap_ready', label: 'Weekly recap available' },
-        { key: 'watchlist', label: 'Watchlist alerts' },
-      ] },
-  ];
 
   // Shared toggle-switch row + HTML escaper for the notification modals.
-  function _toggleHtml(attr, val, label, on) {
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
-      + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + label + '</span>'
+  // With a desc, the label becomes a two-line block (label + one-line plain
+  // description), the View A settings shape.
+  function _toggleHtml(attr, val, label, on, desc) {
+    var labelHtml = desc
+      ? '<span><span style="display:block;font-size:13px;font-weight:600;color:var(--text);">' + label + '</span>'
+        + '<span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">' + desc + '</span></span>'
+      : '<span style="font-size:13px;font-weight:600;color:var(--text);">' + label + '</span>';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">'
+      + labelHtml
       + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
       + '<input type="checkbox" ' + attr + '="' + val + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
       + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
@@ -3361,20 +3335,21 @@ window._brPromoEligible = function () {
   }
 
   // "Tell me about" preference picker, shown right after a fresh subscribe.
-  // Buckets render from /api/push/catalog (server canonical list) with the
-  // baked-in mirror as fallback. Every bucket defaults ON, matching today's
-  // default-all-on subscribe behavior; Done persists the choices.
+  // Renders the same delivery groups as Notification Settings (server
+  // catalog "groups", baked-in mirror as fallback) with a toggle per type.
+  // Every type defaults ON, matching today's default-all-on subscribe
+  // behavior; Done persists the choices.
   window.openPushPicker = async function(endpoint) {
     endpoint = endpoint || window._pushEndpoint || null;
-    var buckets = null;
+    var groups = null;
     try {
       var _cr = await fetch('/api/push/catalog', { cache: 'no-store' });
       if (_cr.ok) {
         var _cj = await _cr.json();
-        if (_cj && Array.isArray(_cj.buckets) && _cj.buckets.length) buckets = _cj.buckets;
+        if (_cj && Array.isArray(_cj.groups) && _cj.groups.length) groups = _cj.groups;
       }
     } catch (_) {}
-    if (!buckets) buckets = _NOTIF_BUCKETS;
+    if (!groups) groups = _NOTIF_GROUPS;
     var prefs = {};
     if (endpoint) {
       try {
@@ -3382,31 +3357,23 @@ window._brPromoEligible = function () {
         if (_pr.ok) prefs = (await _pr.json()).prefs || {};
       } catch (_) {}
     }
-    function _bucketOn(b) {
-      return (b.types || []).every(function (t) { return prefs[t.key] !== false; });
-    }
     var overlay = document.createElement('div');
     overlay.id = 'pushPickerOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
     var modal = document.createElement('div');
     modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
-    var bucketRows = buckets.map(function (b) {
-      var on = _bucketOn(b);
-      return '<div style="padding:10px 0;border-bottom:1px solid var(--border);">'
-        + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">'
-        + '<span style="font-size:13px;font-weight:700;color:var(--text);">' + _npEsc(b.label) + '</span>'
-        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
-        + '<input type="checkbox" data-bucket="' + _npEsc(b.id) + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
-        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
-        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
-        + '</label></div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">' + _npEsc(b.blurb) + '</div>'
-        + '</div>';
+    var groupRows = groups.map(function (g) {
+      var head = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:14px 0 2px;">'
+        + _npEsc(g.label) + '</div>';
+      var rows = (g.types || []).map(function (t) {
+        return _toggleHtml('data-picker-key', t.key, _npEsc(t.label), prefs[t.key] !== false, _npEsc(t.desc || ''));
+      }).join('');
+      return head + rows;
     }).join('');
     var digestOn = prefs.digest === true;
     modal.innerHTML = '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:2px;">Tell me about</div>'
       + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 6px;">Pick which alerts you want. You can change this anytime in Notification Settings.</p>'
-      + bucketRows
+      + groupRows
       + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0 4px;">'
       + '<span><span style="display:block;font-size:13px;font-weight:700;color:var(--text);">Hourly digest</span>'
       + '<span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Combine alerts across your leagues into one notification per hour.</span></span>'
@@ -3422,14 +3389,10 @@ window._brPromoEligible = function () {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
-    var bucketById = {};
-    buckets.forEach(function (b) { bucketById[b.id] = b; });
-    modal.querySelectorAll('input[data-bucket]').forEach(function (cb) {
+    modal.querySelectorAll('input[data-picker-key]').forEach(function (cb) {
       cb.addEventListener('change', function () {
         _npPaintToggle(cb);
-        var b = bucketById[cb.getAttribute('data-bucket')];
-        if (!b) return;
-        (b.types || []).forEach(function (t) { prefs[t.key] = cb.checked; });
+        prefs[cb.getAttribute('data-picker-key')] = cb.checked;
       });
     });
     var digestCb = modal.querySelector('input[data-picker-digest]');
@@ -3498,6 +3461,16 @@ window._brPromoEligible = function () {
       if (r.ok) prefs = (await r.json()).prefs || {};
     } catch (_) {}
 
+    // Delivery-grouped catalog (server canonical; mirror as fallback)
+    var groups = _NOTIF_GROUPS;
+    try {
+      var _cr2 = await fetch('/api/push/catalog', { cache: 'no-store' });
+      if (_cr2.ok) {
+        var _cj2 = await _cr2.json();
+        if (_cj2 && Array.isArray(_cj2.groups) && _cj2.groups.length) groups = _cj2.groups;
+      }
+    } catch (_) {}
+
     // Fetch the user's leagues + which are enabled for this device, plus the
     // subscription keys (needed to re-register a league toggled back on).
     var leagues = [], enabledLeagues = [], subKeys = null;
@@ -3523,85 +3496,140 @@ window._brPromoEligible = function () {
       if (_sub) subKeys = _sub.toJSON().keys;
     } catch (_) {}
 
-    // Build modal (toggle rows via the hoisted _toggleHtml helper)
+    // Build modal (toggle rows via the hoisted _toggleHtml helper), grouped
+    // by delivery per the approved View A: master toggle, Sent right away,
+    // Morning digest, Delivery (digest + quiet hours), then the collapsible
+    // Also available and Leagues sections, collapsed by default with state
+    // summaries on their headers.
     var overlay = document.createElement('div');
     overlay.id = 'notifPrefsOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
     var modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
-    var rows = _NOTIF_TYPES.map(function(t) {
-      if (t.category) {
-        return '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:14px 0 2px;">' + t.category + '</div>';
-      }
-      return _toggleHtml('data-key', t.key, t.label, prefs[t.key] !== false);
-    }).join('');
-    // Digest mode: one combined push per hour across leagues (device-level pref).
+    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
+    var _HEADING = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:16px 0 2px;';
+    function _groupRows(g) {
+      return (g.types || []).map(function(t) {
+        return _toggleHtml('data-key', t.key, _npEsc(t.label), prefs[t.key] !== false, _npEsc(t.desc || ''));
+      }).join('');
+    }
+    function _groupSection(g) {
+      var tag = g.tag ? ' <span style="text-transform:none;letter-spacing:0;font-weight:600;">' + _npEsc(g.tag) + '</span>' : '';
+      return '<div style="' + _HEADING + '">' + _npEsc(g.label) + tag + '</div>' + _groupRows(g);
+    }
+    var liveGroup = groups.filter(function(g) { return g.id === 'live'; })[0];
+    var digestGroup = groups.filter(function(g) { return g.id === 'digest'; })[0];
+    var moreGroup = groups.filter(function(g) { return g.id === 'more'; })[0];
+    var masterOn = groups.every(function(g) {
+      return (g.types || []).every(function(t) { return prefs[t.key] !== false; });
+    });
+    var masterRow = _toggleHtml('data-master', '1', 'Notifications', masterOn,
+      'Every alert type below, on or off together.');
+    // Delivery: hourly digest batching + quiet hours.
     var _digestOn = prefs.digest === true;
-    var digestRow = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:2px 0;">Delivery</div>'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">'
-      + '<span><span style="display:block;font-size:13px;font-weight:600;color:var(--text);">Hourly digest</span>'
-      + '<span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Combine alerts across your leagues into one notification per hour.</span></span>'
-      + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
-      + '<input type="checkbox" data-digest="1"' + (_digestOn ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
-      + '<span style="position:absolute;inset:0;background:' + (_digestOn ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
-      + '<span style="position:absolute;top:2px;left:' + (_digestOn ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
-      + '</label>'
+    var digestRow = _toggleHtml('data-digest', '1', 'Hourly digest', _digestOn,
+      'Combine alerts across your leagues into one notification per hour.');
+    var _quietOn = prefs.quiet_hours === true;
+    var _quietStart = prefs.quiet_start || '23:00';
+    var _quietEnd = prefs.quiet_end || '07:00';
+    var quietRow = _toggleHtml('data-quiet', '1', 'Quiet hours', _quietOn,
+      'Alerts that are not live are held and sent as your morning digest when the window ends. Live alerts always come through.')
+      + '<div id="npQuietWindow" style="display:' + (_quietOn ? 'flex' : 'none') + ';align-items:center;gap:8px;padding:8px 0 12px;border-bottom:1px solid var(--border);">'
+      + '<input type="time" id="npQuietStart" value="' + _npEsc(_quietStart) + '" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;">'
+      + '<span style="font-size:12px;color:var(--text-muted);">to</span>'
+      + '<input type="time" id="npQuietEnd" value="' + _npEsc(_quietEnd) + '" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;">'
       + '</div>';
-    // Per-league toggles (only when the user has more than one league)
-    var leagueRows = '';
+    var deliverySection = '<div style="' + _HEADING + '">Delivery</div>' + digestRow + quietRow;
+    // Collapsible sections (Also available + Leagues only, per the mock).
+    function _collapseSection(id, label) {
+      return '<button type="button" data-collapse="' + id + '" aria-expanded="false" '
+        + 'style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;border-bottom:1px solid var(--border);padding:12px 0;cursor:pointer;">'
+        + '<span style="font-size:13px;font-weight:700;color:var(--text);">' + label + '</span>'
+        + '<span style="display:flex;align-items:center;gap:6px;"><span data-collapse-summary="' + id + '" style="font-size:11px;color:var(--text-muted);font-weight:600;"></span>'
+        + '<span data-collapse-chev="' + id + '" style="color:var(--text-muted);font-size:14px;">&rsaquo;</span></span></button>'
+        + '<div data-collapse-body="' + id + '" hidden>';
+    }
+    var moreSection = '';
+    if (moreGroup) {
+      moreSection = _collapseSection('more', _npEsc(moreGroup.label)) + _groupRows(moreGroup) + '</div>';
+    }
+    var leagueSection = '';
     if (leagues.length > 1) {
-      leagueRows = '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:16px 0 2px;">Leagues</div>'
+      leagueSection = _collapseSection('leagues', 'Leagues')
         + leagues.map(function(lg) {
             var lid = String(lg.league_id || '');
             return _toggleHtml('data-league', lid, _npEsc(lg.name || 'League'), enabledLeagues.indexOf(lid) !== -1);
-          }).join('');
+          }).join('')
+        + '</div>';
     }
     modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
       + '<span style="font-size:15px;font-weight:800;color:var(--text);">Notification Settings</span>'
       + '<button onclick="document.getElementById(\'notifPrefsOverlay\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">&times;</button>'
       + '</div>'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;">'
-      + '<p style="font-size:12px;color:var(--text-muted);margin:0;">Choose which alerts you want to receive.</p>'
-      + '<button id="np-toggle-all" style="background:none;border:none;font-size:11px;font-weight:700;color:var(--accent,#3b82f6);cursor:pointer;padding:0;white-space:nowrap;margin-left:8px;"></button>'
-      + '</div>'
-      + digestRow
-      + rows
-      + leagueRows;
+      + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 4px;">Choose which alerts you want to receive.</p>'
+      + masterRow
+      + (liveGroup ? _groupSection(liveGroup) : '')
+      + (digestGroup ? _groupSection(digestGroup) : '')
+      + deliverySection
+      + moreSection
+      + leagueSection
+      + '<p style="font-size:11px;color:var(--text-muted);margin:14px 0 0;">Settings save to your account and apply on every device.</p>';
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
 
-    // Toggle-all button
-    var toggleAllBtn = modal.querySelector('#np-toggle-all');
-    function _updateToggleAllLabel() {
-      var typeCbs = Array.from(modal.querySelectorAll('input[data-key]'));
-      var allOn = typeCbs.every(function(c) { return c.checked; });
-      if (toggleAllBtn) toggleAllBtn.textContent = allOn ? 'Disable all' : 'Enable all';
+    // Collapsible section headers + state summaries.
+    function _paintToggle(cb, on) {
+      var track = cb.parentElement.querySelector('.np-track');
+      var thumb = cb.parentElement.querySelector('.np-thumb');
+      if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
+      if (thumb) thumb.style.left = on ? '18px' : '2px';
     }
-    _updateToggleAllLabel();
-    if (toggleAllBtn) {
-      toggleAllBtn.addEventListener('click', async function() {
+    function _updateSummaries() {
+      var moreSum = modal.querySelector('[data-collapse-summary="more"]');
+      if (moreSum && moreGroup) {
+        var cbs = Array.from(modal.querySelectorAll('[data-collapse-body="more"] input[data-key]'));
+        var on = cbs.filter(function(c) { return c.checked; }).length;
+        moreSum.textContent = on + ' of ' + cbs.length + ' on';
+      }
+      var lgSum = modal.querySelector('[data-collapse-summary="leagues"]');
+      if (lgSum) {
+        var lcbs = Array.from(modal.querySelectorAll('input[data-league]'));
+        var muted = lcbs.filter(function(c) { return !c.checked; }).length;
+        lgSum.textContent = lcbs.length + ' leagues' + (muted ? ', ' + muted + ' muted' : '');
+      }
+      var masterCb = modal.querySelector('input[data-master]');
+      if (masterCb) {
         var typeCbs = Array.from(modal.querySelectorAll('input[data-key]'));
-        var allOn = typeCbs.every(function(c) { return c.checked; });
-        var next = !allOn;
-        typeCbs.forEach(function(c) {
-          c.checked = next;
-          var track = c.parentElement.querySelector('.np-track');
-          var thumb = c.parentElement.querySelector('.np-thumb');
-          if (track) track.style.background = next ? 'var(--accent,#3b82f6)' : 'var(--border)';
-          if (thumb) thumb.style.left = next ? '18px' : '2px';
-          prefs[c.dataset.key] = next;
-        });
-        _updateToggleAllLabel();
-        try {
-          await fetch('/api/push/preferences', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
-          });
-        } catch (_) {}
-      });
+        var allOn = typeCbs.length > 0 && typeCbs.every(function(c) { return c.checked; });
+        if (masterCb.checked !== allOn) { masterCb.checked = allOn; _paintToggle(masterCb, allOn); }
+      }
     }
+    modal.querySelectorAll('[data-collapse]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = btn.getAttribute('data-collapse');
+        var body = modal.querySelector('[data-collapse-body="' + id + '"]');
+        var chev = modal.querySelector('[data-collapse-chev="' + id + '"]');
+        if (!body) return;
+        var open = body.hidden;
+        body.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (chev) chev.textContent = open ? '\u2304' : '\u203A';
+      });
+    });
+    _updateSummaries();
+
+    // Quiet-hours window inputs persist alongside the toggle.
+    async function _saveQuietWindow() {
+      var s = modal.querySelector('#npQuietStart');
+      var e2 = modal.querySelector('#npQuietEnd');
+      if (s && s.value) prefs.quiet_start = s.value;
+      if (e2 && e2.value) prefs.quiet_end = e2.value;
+      await _npPutPrefs(endpoint, prefs);
+    }
+    ['#npQuietStart', '#npQuietEnd'].forEach(function(sel) {
+      var inp = modal.querySelector(sel);
+      if (inp) inp.addEventListener('change', _saveQuietWindow);
+    });
 
     // Wire up toggle interactions
     modal.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
@@ -3612,8 +3640,23 @@ window._brPromoEligible = function () {
         if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
         if (thumb) thumb.style.left = on ? '18px' : '2px';
         try {
-          if (cb.dataset.digest !== undefined) {
-            // Digest toggle (device-level): batch alerts into one hourly push.
+          if (cb.dataset.master !== undefined) {
+            // Master toggle: every alert type together.
+            modal.querySelectorAll('input[data-key]').forEach(function(c) {
+              c.checked = on;
+              _paintToggle(c, on);
+              prefs[c.dataset.key] = on;
+            });
+            _updateSummaries();
+            await _npPutPrefs(endpoint, prefs);
+          } else if (cb.dataset.quiet !== undefined) {
+            // Quiet hours (account-level): hold non-live alerts overnight.
+            prefs.quiet_hours = on;
+            var win = modal.querySelector('#npQuietWindow');
+            if (win) win.style.display = on ? 'flex' : 'none';
+            await _saveQuietWindow();
+          } else if (cb.dataset.digest !== undefined) {
+            // Digest toggle: batch eligible alerts into the morning digest.
             prefs.digest = on;
             await _npPutPrefs(endpoint, prefs);
           } else if (cb.dataset.league !== undefined) {
@@ -3639,15 +3682,16 @@ window._brPromoEligible = function () {
               });
             }
           } else {
-            // Notification-type toggle (device-level)
+            // Notification-type toggle (synced per-account server-side)
             prefs[cb.dataset.key] = on;
-            _updateToggleAllLabel();
+            _updateSummaries();
             await fetch('/api/push/preferences', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
             });
           }
+          if (cb.dataset.league !== undefined) _updateSummaries();
         } catch (_) {}
       });
     });
@@ -6394,7 +6438,6 @@ function bindOnce(el, key, type, handler, options) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const lightIcons = document.querySelectorAll('.theme-icon.light-icon');
     const darkIcons = document.querySelectorAll('.theme-icon.dark-icon');
-    const themeTexts = document.querySelectorAll('.theme-text');
 
     lightIcons.forEach(icon => {
       icon.style.display = isDark ? 'none' : 'inline';
@@ -6402,10 +6445,11 @@ function bindOnce(el, key, type, handler, options) {
     darkIcons.forEach(icon => {
       icon.style.display = isDark ? 'inline' : 'none';
     });
-    
-    themeTexts.forEach(text => {
-      text.textContent = isDark ? 'Light Mode' : 'Dark Mode';
-    });
+
+    // Dark Mode is a switch row now: the label stays "Dark Mode" and the
+    // switch state (CSS :root[data-theme] + this aria) carries the value.
+    const themeSwitch = document.getElementById('settingsDarkModeBtn');
+    if (themeSwitch) themeSwitch.setAttribute('aria-checked', isDark ? 'true' : 'false');
   }
 
   // Bind toggle button
@@ -16527,29 +16571,23 @@ function _showNotifToast(entry) {
   });
 }
 
-// Global function for notification dots (accessible from settings dropdown)
-function setChangelogDot(hasNew, showSettingsDot = false) {
+// Global function for the notification dot state. "hasNew" means ANY
+// unread: an unread inbox item or an unseen changelog entry (the caller in
+// the notification-center block computes the union). The dot lives on the
+// bell itself now -- desktop button, phone top-bar button, and the More
+// sheet's Account row; the gear proxy dot and the settings-row dot
+// migration retired with the hidden-bell design.
+function setChangelogDot(hasNew) {
   // Update the global notification state
   hasNewNotifications = hasNew;
   window.__brHasNewNotifs = hasNew;
 
-  // Update gear dot - hide it when settings dropdown is opened and we want to show the dot there instead
-  const gearDot = document.getElementById("gearDot");
-  if (gearDot) {
-    gearDot.style.display = (hasNew && !showSettingsDot) ? "block" : "none";
-  }
+  // The bell's own dot.
+  const bellDot = document.querySelector(".changelog-dot");
+  if (bellDot) bellDot.classList.toggle("changelog-dot-hidden", !hasNew);
 
-  // Settings-row dot: show when the gear menu is open (desktop), or always on
-  // mobile where settings are inlined in the More sheet (no gear badge visible).
-  const settingsDot = document.getElementById("settingsNotifDot");
-  if (settingsDot) {
-    const mobileInline = window.matchMedia("(max-width: 768px)").matches
-      && !!document.getElementById("brSheetAccount");
-    settingsDot.style.display = (hasNew && (showSettingsDot || mobileInline)) ? "block" : "none";
-  }
-
-  // Account-header dot: only while Account is collapsed on mobile (the row-level
-  // settingsNotifDot is hidden inside the collapsed body).
+  // Account-row dot in the mobile More sheet: only while Account is
+  // collapsed (the panel itself is one tap further in).
   const acctDot = document.getElementById("brSheetAcctDot");
   const acctToggle = document.getElementById("brSheetAcctToggle");
   if (acctDot && acctToggle) {
@@ -16616,17 +16654,28 @@ document.addEventListener("DOMContentLoaded", () => {
   if (!bellBtn || !dropdown || !dot) return;
 
   let changelogData = [];
+  let inboxItems = [];
+  let inboxUnread = 0;
   let isDropdownOpen = false;
 
-  // Fetch changelog and initialize
+  function changelogUnseen() {
+    if (!changelogData || changelogData.length === 0) return false;
+    const lastSeen = localStorage.getItem("changelog_last_seen");
+    return !lastSeen || changelogData[0].date > lastSeen;
+  }
+
+  // The bell dot is the union: unread inbox items OR an unseen changelog.
+  function refreshNotifDot() {
+    setChangelogDot(inboxUnread > 0 || changelogUnseen());
+  }
+
+  // Fetch changelog + inbox and initialize the notification center
   async function initChangelog() {
     try {
       const res = await fetch("/api/changelog");
       if (!res.ok) throw new Error("Failed to load changelog");
 
       changelogData = await res.json();
-
-      if (!changelogData || changelogData.length === 0) return;
 
       // Detect if user is logged in - prefer server-injected __brctx; fall back to
       // URL heuristic only when the context object is absent.
@@ -16637,39 +16686,107 @@ document.addEventListener("DOMContentLoaded", () => {
         : (pathParts.length >= 3 && Boolean(pathParts[0]) && !isNaN(pathParts[1]));
 
       // Filter out history page entries if not logged in
-      if (!isLoggedIn) {
+      if (!isLoggedIn && Array.isArray(changelogData)) {
         changelogData = changelogData.filter(entry => !entry.link?.includes('/history'));
       }
+      if (!Array.isArray(changelogData)) changelogData = [];
 
-      if (changelogData.length === 0) return;
-
-      // Check if we should show the red dot + notification toast
-      const latestDate = changelogData[0].date;
-      const lastSeen = localStorage.getItem("changelog_last_seen");
-
-      if (!lastSeen || latestDate > lastSeen) {
-        setChangelogDot(true);
-        // Only show the toast for signed-in users, and only once per new entry
-        // per device. Gate on localStorage (persists across logins) rather than
-        // sessionStorage, so a new login doesn't re-fire the same toast; the red
-        // dot still nags until they open the bell.
-        if (isLoggedIn) {
-          if (localStorage.getItem("changelog_toast_last") !== latestDate) {
-            localStorage.setItem("changelog_toast_last", latestDate);
-            _showNotifToast(changelogData[0]);
+      // The inbox: alerts this account was actually sent (guests get an
+      // empty list from the API and just see the changelog items).
+      try {
+        const nres = await fetch("/api/notifications");
+        if (nres.ok) {
+          const nj = await nres.json();
+          if (nj && Array.isArray(nj.items)) {
+            inboxItems = nj.items;
+            inboxUnread = nj.unread || 0;
           }
+        }
+      } catch (_) {}
+
+      // Notification toast for a fresh changelog entry: signed-in users
+      // only, once per entry per device. Gate on localStorage (persists
+      // across logins) rather than sessionStorage, so a new login doesn't
+      // re-fire the same toast; the dot still nags until they open the bell.
+      if (changelogData.length > 0 && changelogUnseen() && isLoggedIn) {
+        const latestDate = changelogData[0].date;
+        if (localStorage.getItem("changelog_toast_last") !== latestDate) {
+          localStorage.setItem("changelog_toast_last", latestDate);
+          _showNotifToast(changelogData[0]);
         }
       }
 
-      // Build dropdown HTML
-      buildDropdown();
+      refreshNotifDot();
+      buildPanel();
     } catch (err) {
       console.error("[changelog] Failed to load:", err);
     }
   }
 
-  // Build the dropdown HTML
-  function buildDropdown() {
+  // ── Notification center panel ──────────────────────────────────────────
+  // One list: the account's sent alerts (inbox) newest first, with the
+  // changelog folded in as an item type. A changelog entry whose headline
+  // matches a recorded changelog inbox item is skipped (the inbox item is
+  // the same alert, with a real read state).
+  const _NI_ICONS = {
+    redzone_scores: ["ni-navy", "M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z"],
+    close_game: ["ni-navy", "M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z"],
+    injury: ["ni-red", "M12 5v14M5 12h14"],
+    recap_ready: ["ni-green", "M4 5h13v14H4zM17 9h3v10h-3M7 9h7M7 13h7"],
+    breakout_roster: ["ni-amber", "M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"],
+    breakout_weekly: ["ni-amber", "M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"],
+    changelog: ["ni-slate", "M4 5h13v14H4zM17 9h3v10h-3M7 9h7M7 13h7"],
+  };
+  const _NI_DEFAULT = ["ni-slate", "M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"];
+
+  function _niEsc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function _niTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    const now = new Date();
+    const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    if (d.toDateString() === now.toDateString()) return time;
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    if ((now - d) / 86400000 < 7) return days[d.getDay()] + " " + time;
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return months[d.getMonth()] + " " + d.getDate();
+  }
+
+  // Mirror of the push-title rule in app.py's changelog notifier: a short
+  // colon head is the headline, the rest is the body.
+  function _entryHeadline(entry) {
+    const text = entry.text || "";
+    const idx = text.indexOf(":");
+    if (idx > 0) {
+      const head = text.slice(0, idx).trim();
+      if (head.length <= 40 && !/[.!?]/.test(head)) {
+        let rest = text.slice(idx + 1).trim();
+        if (rest) rest = rest.charAt(0).toUpperCase() + rest.slice(1);
+        return { title: head, body: rest };
+      }
+    }
+    return { title: text, body: "" };
+  }
+
+  function _niItemHtml(o) {
+    const icon = _NI_ICONS[o.type] || _NI_DEFAULT;
+    return `<a href="${_niEsc(o.url || "#")}" class="ni-item"${o.id ? ` data-notif-id="${o.id}"` : ""}>
+      <span class="ni-ic ${icon[0]}"><svg viewBox="0 0 24 24" stroke="currentColor"><path d="${icon[1]}"/></svg></span>
+      <span class="ni-txt">
+        <span class="ni-ttl">${_niEsc(o.title)}</span>
+        ${o.body ? `<span class="ni-bd">${_niEsc(o.body)}</span>` : ""}
+        <span class="ni-meta">${_niEsc(o.meta)}</span>
+      </span>
+      ${o.read ? "" : `<span class="ni-udot"></span>`}
+    </a>`;
+  }
+
+  function buildPanel() {
     // Detect league context - prefer server-injected __brctx over URL heuristic.
     const _bctx = window.__brctx || {};
     const pathParts = window.location.pathname.split('/').filter(p => p);
@@ -16678,11 +16795,23 @@ document.addEventListener("DOMContentLoaded", () => {
       : (pathParts.length >= 3 && Boolean(pathParts[0]) && !isNaN(pathParts[1]));
     const leaguePrefix = isLoggedIn ? `/${pathParts[0]}/${pathParts[1]}/${pathParts[2]}` : '';
 
-    const entries = changelogData.slice(0, 5).map(entry => {
-      const tagClass = `changelog-tag changelog-tag-${entry.tag}`;
-      const formattedDate = formatDate(entry.date);
-      let link = entry.link || "#";
+    const items = [];
+    const inboxHeads = new Set();
+    inboxItems.forEach(it => {
+      if (it.type === "changelog") inboxHeads.add((it.title || "").trim());
+      const meta = (it.league_name || (it.type === "changelog" ? "Site update" : "All leagues"))
+        + " · " + _niTime(it.created_at);
+      items.push({
+        ts: Date.parse(it.created_at) || 0,
+        html: _niItemHtml({ id: it.id, type: it.type, title: it.title, body: it.body, url: it.url, meta: meta, read: !!it.read }),
+      });
+    });
 
+    const lastSeen = localStorage.getItem("changelog_last_seen") || "";
+    changelogData.slice(0, 5).forEach(entry => {
+      const hb = _entryHeadline(entry);
+      if (inboxHeads.has(hb.title.trim())) return;
+      let link = entry.link || "#";
       // If logged in and link starts with /, prepend league context -- except
       // for global-only pages ("/", /portfolio, /top-movers), which 404 when
       // prefixed. Mirrors the push-broadcast URL policy in routes/push_bp.py.
@@ -16693,40 +16822,83 @@ document.addEventListener("DOMContentLoaded", () => {
       if (isLoggedIn && link.startsWith('/') && !_clGlobal) {
         link = leaguePrefix + link;
       }
+      items.push({
+        ts: Date.parse(entry.date) || 0,
+        html: _niItemHtml({
+          type: "changelog", title: hb.title, body: hb.body, url: link,
+          meta: "Site update · " + _niTime(entry.date + "T12:00:00"),
+          read: !(entry.date > lastSeen),
+        }),
+      });
+    });
+    items.sort((a, b) => b.ts - a.ts);
 
-      return `
-        <a href="${link}" class="changelog-entry" data-link="${link}">
-          <div class="changelog-entry-top">
-            <span class="${tagClass}">${entry.tag}</span>
-            <span class="changelog-entry-date">${formattedDate}</span>
-          </div>
-          <div class="changelog-entry-text">${entry.text}</div>
-        </a>
-      `;
-    }).join("");
-
-    const _notifLink = ('serviceWorker' in navigator && 'PushManager' in window)
-      ? `<button class="changelog-notif-settings-btn" title="Manage push notifications"><img src="/static/bell.png" style="width:13px;height:13px;opacity:.7;vertical-align:-1px;margin-right:6px;">Notification Settings</button>`
-      : '';
+    const listHtml = items.length
+      ? items.map(i => i.html).join("")
+      : `<div class="ni-empty">No notifications yet.</div>`;
+    const showMarkAll = inboxUnread > 0 || changelogUnseen();
     dropdown.innerHTML = `
-      <div class="changelog-dropdown-header">
-        <span>Recent Updates</span>
-        <button class="changelog-dropdown-close" aria-label="Close">&times;</button>
+      <div class="ni-head">
+        <span class="ni-title">Notifications</span>
+        ${showMarkAll ? `<button type="button" class="ni-markall" id="niMarkAll">Mark all read</button>` : ""}
       </div>
-      ${_notifLink ? `<div class="changelog-notif-settings-row">${_notifLink}</div>` : ''}
-      ${entries}
+      <div class="ni-list">${listHtml}</div>
+      <button type="button" class="ni-foot" id="niNotifSettings">
+        <span>Notification settings</span><span class="ni-chev">&rsaquo;</span>
+      </button>
     `;
-    dropdown.querySelector('.changelog-dropdown-close').addEventListener('click', function(e) {
+
+    const markAllBtn = dropdown.querySelector("#niMarkAll");
+    if (markAllBtn) markAllBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      markAllNotificationsRead();
+    });
+    const settingsBtn = dropdown.querySelector("#niNotifSettings");
+    if (settingsBtn) settingsBtn.addEventListener("click", function (e) {
       e.stopPropagation();
       closeDropdown();
+      if (window.openNotifPrefs) window.openNotifPrefs();
     });
-    if (_notifLink) {
-      const _notifBtn = dropdown.querySelector('.changelog-notif-settings-btn');
-      if (_notifBtn) _notifBtn.addEventListener('click', function() {
-        closeDropdown();
-        if (window.openNotifPrefs) window.openNotifPrefs();
+    dropdown.querySelectorAll("[data-notif-id]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        markNotificationRead(el.getAttribute("data-notif-id"));
       });
+    });
+  }
+
+  function markNotificationRead(id) {
+    const it = inboxItems.find(x => String(x.id) === String(id));
+    if (it && !it.read) {
+      it.read = true;
+      inboxUnread = Math.max(0, inboxUnread - 1);
+      refreshNotifDot();
     }
+    try {
+      fetch("/api/notifications/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: Number(id) }),
+        keepalive: true,
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  function markAllNotificationsRead() {
+    inboxItems.forEach(it => { it.read = true; });
+    inboxUnread = 0;
+    if (changelogData.length > 0) {
+      localStorage.setItem("changelog_last_seen", changelogData[0].date);
+    }
+    refreshNotifDot();
+    buildPanel();
+    try {
+      fetch("/api/notifications/read-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        keepalive: true,
+      }).catch(function () {});
+    } catch (_) {}
   }
 
   // Format date (e.g., "2026-03-26" -> "Mar 26")
@@ -16736,22 +16908,25 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${months[date.getMonth()]} ${date.getDate()}`;
   }
 
-  // Toggle dropdown
+  // Toggle the notification-center panel
   function toggleDropdown() {
     isDropdownOpen = !isDropdownOpen;
+    bellBtn.setAttribute("aria-expanded", isDropdownOpen ? "true" : "false");
 
     if (isDropdownOpen) {
       dropdown.style.display = "block";
 
-      // Mark as seen - hide dots on both bell and gear
+      // Opening the panel marks the changelog seen (the panel is rendered
+      // first, so this viewing still shows which entries were new). Inbox
+      // items keep their own per-item read state until clicked or marked
+      // all read.
       if (changelogData && changelogData.length > 0) {
-        const latestDate = changelogData[0].date;
-        localStorage.setItem("changelog_last_seen", latestDate);
-        setChangelogDot(false);
+        localStorage.setItem("changelog_last_seen", changelogData[0].date);
+        refreshNotifDot();
       }
 
       // On mobile the panel lives inline at the bottom of Account; scroll it into
-      // view so "Recent Updates" isn't mostly below the fold of the More sheet.
+      // view so the panel isn't mostly below the fold of the More sheet.
       if (dropdown.closest("#brMoreSheet") || dropdown.closest("#brSheetAccount")) {
         requestAnimationFrame(function () {
           try { dropdown.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
@@ -16762,13 +16937,22 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Close dropdown
+  // Close the panel
   function closeDropdown() {
     if (isDropdownOpen) {
       isDropdownOpen = false;
       dropdown.style.display = "none";
+      bellBtn.setAttribute("aria-expanded", "false");
     }
   }
+
+  // Escape closes the panel, parity with the nav pill dropdowns.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isDropdownOpen) {
+      closeDropdown();
+      bellBtn.focus();
+    }
+  });
 
   // Bind bell click
   bindOnce(bellBtn, "changelogBellClick", "click", (e) => {
@@ -16793,7 +16977,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!isDropdownOpen) return;
     if (dropdown.contains(e.target)) return;
     if (bellWrapper && bellWrapper.contains(e.target)) return;
-    if (e.target.closest && e.target.closest("#settingsChangelogBtn")) return;
     if (e.target.closest && e.target.closest(".br-top-notif")) return;
     closeDropdown();
   });
@@ -16852,23 +17035,14 @@ document.addEventListener("DOMContentLoaded", () => {
   function toggleDropdown() {
     isDropdownOpen = !isDropdownOpen;
     dropdown.style.display = isDropdownOpen ? "block" : "none";
-    
-
-    // When opening settings, show bell dot if there are new notifications
-    if (isDropdownOpen) {
-      // Move notification dot from gear to notification button if there are new notifications
-      if (hasNewNotifications) {
-        setChangelogDot(true, true); // Keep gear dot hidden, show settings notification dot
-      }
-    }
+    gearBtn.setAttribute("aria-expanded", isDropdownOpen ? "true" : "false");
   }
 
   function closeDropdown() {
     if (isDropdownOpen) {
       isDropdownOpen = false;
       dropdown.style.display = "none";
-      // Restore gear badge from real unread state -- never invent unread=true.
-      setChangelogDot(hasNewNotifications, false);
+      gearBtn.setAttribute("aria-expanded", "false");
     }
   }
 
@@ -16886,6 +17060,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Escape closes the menu, parity with the nav pill dropdowns.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isDropdownOpen) {
+      closeDropdown();
+      gearBtn.focus();
+    }
+  });
+
   // Refresh button - close dropdown after click
   const refreshBtn = document.getElementById("refreshBtn");
   if (refreshBtn) {
@@ -16894,22 +17076,27 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Changelog button triggers changelog dropdown
-  const settingsChangelogBtn = document.getElementById("settingsChangelogBtn");
-  const changelogBellBtn = document.getElementById("changelogBell");
-  if (settingsChangelogBtn && changelogBellBtn) {
-    settingsChangelogBtn.addEventListener("click", (e) => {
+  // Notifications row opens the notification settings modal.
+  const settingsNotifBtn = document.getElementById("settingsNotifBtn");
+  if (settingsNotifBtn) {
+    settingsNotifBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       closeDropdown();
-      // Dismiss any leftover What's New toast so it can't cover the panel.
-      document.querySelectorAll(".notif-toast").forEach(function (popup) {
-        popup.remove();
-      });
-      changelogBellBtn.click();
+      if (window.openNotifPrefs) window.openNotifPrefs();
     });
   }
 
-  
+  // Manage subscription opens the Stripe billing portal.
+  const settingsBillingBtn = document.getElementById("settingsBillingBtn");
+  if (settingsBillingBtn) {
+    settingsBillingBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeDropdown();
+      if (window.brOpenBillingPortal) window.brOpenBillingPortal();
+    });
+  }
+
+
   // Prevent dropdown from closing when clicking inside (except on links)
   if (dropdown) {
     dropdown.addEventListener("click", (e) => {
@@ -26924,15 +27111,9 @@ window.showSubWelcome = function (opts) {
   };
 
   _deferInit(function () {
-    var tourBtn = document.getElementById('settingsTourBtn');
-    if (tourBtn) tourBtn.addEventListener('click', function () { window.startSiteTour(); });
-    var welcomeBtn = document.getElementById('settingsWelcomeBtn');
-    if (welcomeBtn) {
-      var isPremium = !!(window.__brctx && window.__brctx.isPremium) ||
-        document.getElementById('page-root')?.dataset?.premium === 'true';
-      if (!isPremium) welcomeBtn.style.display = 'none';
-      else welcomeBtn.addEventListener('click', function () { window.startSubWelcome(); });
-    }
+    // The Site Tour / PRO Welcome settings rows retired with the settings
+    // menu rebuild: both live in the Help & Tours dialog now (Getting
+    // Started starts the tour; PRO Welcome appears there for PRO users).
     initTour();
   });
 }());
@@ -26955,6 +27136,8 @@ window.brOpenHelpTours = function () {
   var old = document.getElementById('brHelpToursDialog');
   if (old) old.remove();
   var guides = window.brAvailableFeatureGuides();
+  var isPremium = !!(window.__brctx && window.__brctx.isPremium) ||
+    (document.getElementById('page-root') && document.getElementById('page-root').dataset.premium === 'true');
   var overlay = document.createElement('div');
   overlay.id = 'brHelpToursDialog';
   overlay.className = 'br-help-overlay';
@@ -26962,6 +27145,7 @@ window.brOpenHelpTours = function () {
     '<button type="button" class="br-help-close" aria-label="Close Help and Tours">&times;</button>' +
     '<h2 id="brHelpTitle">Help &amp; Tours</h2>' +
     '<button type="button" class="br-help-start" data-help-start><strong>Getting Started</strong><small>Learn the BR Fantasy basics</small></button>' +
+    (isPremium ? '<button type="button" class="br-help-start" data-help-welcome><strong>PRO Welcome</strong><small>Replay the PRO welcome tour</small></button>' : '') +
     (guides.length ? '<h3>Feature Guides</h3>' + guides.map(function (g) {
       return '<button type="button" class="br-help-start" data-guide="' + g.id + '"><strong>' + g.title + '</strong><small>' + g.description + '</small></button>';
     }).join('') : '') +
@@ -26970,9 +27154,24 @@ window.brOpenHelpTours = function () {
   overlay.addEventListener('click', function (e) {
     if (e.target === overlay || e.target.closest('.br-help-close')) close();
     if (e.target.closest('[data-help-start]')) { close(); if (window.startSiteTour) window.startSiteTour(); }
+    if (e.target.closest('[data-help-welcome]')) { close(); if (window.startSubWelcome) window.startSubWelcome(); }
   });
   document.body.appendChild(overlay);
   overlay.querySelector('.br-help-close').focus();
+};
+
+// Manage subscription: open the Stripe billing portal and redirect to it.
+window.brOpenBillingPortal = function () {
+  fetch('/api/create-portal-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d && d.url) window.location.href = d.url;
+    else if (typeof showToast === 'function') showToast('Could not open billing. Please try again.', 'error');
+  }).catch(function () {
+    if (typeof showToast === 'function') showToast('Could not open billing. Please try again.', 'error');
+  });
 };
 
 document.addEventListener('click', function (e) {
@@ -26981,7 +27180,8 @@ document.addEventListener('click', function (e) {
   var name = action.getAttribute('data-br-action');
   if (name === 'refresh' && window.brRefreshLeague) window.brRefreshLeague();
   else if (name === 'help-tours') window.brOpenHelpTours();
-  // settingsChangelogBtn already delegates to the one changelog bell below.
+  else if (name === 'notifications' && window.openNotifPrefs) window.openNotifPrefs();
+  else if (name === 'billing-portal') window.brOpenBillingPortal();
 });
 
 // ── Pick value modal ──────────────────────────────────────────────────────────

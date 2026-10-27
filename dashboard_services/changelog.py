@@ -30,6 +30,12 @@ CHANGELOG = [
     },
     {
         "date": "2026-10-27",
+        "tag": "new",
+        "text": "Notification center: the bell at the top of the page is a real button now, and it opens your alerts. Notifications you were sent, like injury updates, recaps and scores, are kept newest first with links straight to the league, next to the latest site updates. Notification settings are grouped by how they arrive, quiet hours can hold non-live alerts overnight and send them with the morning digest, and your choices save to your account so they apply on every device. The settings menu also shows your account and plan at the top.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "fix",
         "text": "My Leagues: a league card no longer jumps ahead to next week's preview while its final result is still due. When the week rolls over, the finished matchup stays on the card even if that league's data was loaded before the last game ended.",
         "link": "/portfolio"

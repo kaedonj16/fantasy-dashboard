@@ -2823,16 +2823,14 @@ def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
         return ""
     name = html.escape(str(meta.get("name") or "This league"))
     fmt = html.escape(str(meta.get("format") or ""))
-    week = html.escape(str(meta.get("week_label") or ""))
-    stale_html = ""
+    # The Week pill no longer renders in the bar (nav cleanup): the chip is
+    # league name + format only. The week itself is preserved as data on the
+    # chip element for anything that needs it -- nothing in JS read the old
+    # .br-ctx-week span (verified by grep across static/, routes/, utils/).
+    week = html.escape(str(meta.get("week_label") or ""), quote=True)
+    week_attr = f" data-week-label='{week}'" if week else ""
     if meta.get("nfl_week_stale"):
-        # Mirror the ScoreZone stale badge: a small amber honesty chip. The
-        # week label may be outdated because the live NFL state fetch failed.
-        stale_html = (
-            "<span class='br-ctx-stale' title='Week info may be stale. "
-            "Live NFL update unavailable.'>Stale</span>"
-        )
-    week_html = f"<span class='br-ctx-week'>{week}{stale_html}</span>" if week else ""
+        week_attr += " data-week-stale='1'"
     fmt_html = f"<span class='br-ctx-format'>{fmt}</span>" if fmt else ""
     if can_switch:
         league_el = (
@@ -2851,9 +2849,8 @@ def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
             f"</div>"
         )
     return (
-        f"<div class='br-ctx' id='brLeagueChrome'>"
+        f"<div class='br-ctx' id='brLeagueChrome'{week_attr}>"
         f"<div class='br-ctx-league-wrap'>{league_el}</div>"
-        f"{week_html}"
         f"</div>"
     )
 
@@ -4435,7 +4432,6 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{my_actions_row}{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         f"<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>{tools_html}</div>"
-        "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         "<h3 class='br-sheet-h'>Account</h3><div class='br-sheet-group'>"
         "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='account' "
@@ -4618,7 +4614,6 @@ def _mobile_nav_guest(active: str) -> str:
         "<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>"
         "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='learn' aria-controls='brMorePanel-learn'>"
         "<span>Help</span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button></div>"
-        "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         "<h3 class='br-sheet-h'>Account</h3><div class='br-sheet-group'>"
         "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='account' aria-controls='brMorePanel-account'>"
@@ -5437,10 +5432,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # the offseason). Uses the same condition that gates the ScoreZone nav item.
     season_active_flag = f"<script>window.__seasonActive={'false' if offseason_mode else 'true'};</script>"
 
-    # Changelog bell (used in both home and league nav)
+    # Notification bell (used in both home and league nav). A real button in
+    # the bar now: borderless utility styling like its search / watchlist /
+    # gear siblings, its own unread dot, and the notification-center panel
+    # (the #changelogDropdown element, kept id for the JS that relocates it).
     changelog_bell = (
             "<div class='changelog-bell-wrapper'>"
-            "  <button type='button' id='changelogBell' class='changelog-bell-btn' aria-label='Recent Updates'>"
+            "  <button type='button' id='changelogBell' class='changelog-bell-btn' aria-label='Notifications' aria-haspopup='true' aria-expanded='false'>"
             "    " + _nav_icon("bell") +
             "  </button>"
             "  <div class='changelog-dot changelog-dot-hidden'></div>"
@@ -5448,48 +5446,137 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</div>"
     )
 
-    # Dark mode toggle button HTML (used in settings dropdown)
+    # Dark mode as a SWITCH row (used in settings dropdown): the switch
+    # visual is driven by :root[data-theme] in CSS, aria-checked by
+    # initDarkMode in app.js. The label no longer renames itself.
     dark_mode_toggle_html = (
-            "<button type='button' class='settings-menu-item' id='settingsDarkModeBtn'>"
+            "<button type='button' class='settings-menu-item settings-theme-switch' id='settingsDarkModeBtn' role='switch' aria-checked='false'>"
             "  " + _nav_icon("moon", cls="settings-menu-icon theme-icon light-icon") +
             "  " + _nav_icon("sun", cls="settings-menu-icon theme-icon dark-icon", style="display:none;") +
-            "  <span class='settings-menu-label theme-text'>Dark Mode</span>"
+            "  <span class='settings-menu-label'>Dark Mode</span>"
+            "  <span class='settings-switch' aria-hidden='true'><span class='settings-switch-thumb'></span></span>"
             "</button>"
     )
 
-    # Site tour + premium welcome replay - league pages only
-    tour_menu_item = (
-            "<button type='button' class='settings-menu-item' id='settingsTourBtn'>"
-            "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
-            "  <span class='settings-menu-label'>Site Tour</span>"
+    # Notifications row: opens the notification settings modal.
+    notif_settings_row = (
+            "<button type='button' class='settings-menu-item' id='settingsNotifBtn' data-br-action='notifications'>"
+            "  " + _nav_icon("bell", cls="settings-menu-icon") +
+            "  <span class='settings-menu-label'>Notifications</span>"
             "</button>"
-            "<button type='button' class='settings-menu-item' id='settingsWelcomeBtn'>"
-            "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
-            "  <span class='settings-menu-label'>PRO Welcome</span>"
-            "</button>"
-    ) if league_id else ""
+    )
 
-    # Public pages previously offered only appearance settings to signed-out
-    # visitors. Give them the same durable account entry point as the home card;
-    # leave the existing signed-in settings menu unchanged.
-    settings_content = dark_mode_toggle_html
-    if not session.get("account_id") and not session.get("viewer_username"):
+    # Identity header + one contextual billing row, from the account session
+    # and the subscription state. Account holders only: viewer-only sign-ins
+    # have no account identity (or Stripe customer) to show.
+    identity_html = ""
+    billing_row_html = ""
+    if session.get("account_id"):
+        _acct_display = html.escape(
+            (session.get("account_first_name") or "").strip()
+            or (session.get("account_email") or "").strip()
+            or "Your account"
+        )
+        try:
+            _acct_is_pro = bool(has_premium_for_viewer(
+                session.get("viewer_username"), session.get("viewer_user_id"),
+                league_id, platform, season))
+        except Exception:
+            _acct_is_pro = False
+        _plan_chip = (
+            "<span class='settings-plan-chip is-pro'>PRO</span>" if _acct_is_pro
+            else "<span class='settings-plan-chip'>Free</span>"
+        )
+        identity_html = (
+            "<div class='settings-identity'>"
+            f"<div class='settings-identity-name'>{_acct_display}{_plan_chip}</div>"
+            "<div class='settings-identity-sub'>Signed in with Google</div>"
+            "</div>"
+        )
+        if _acct_is_pro:
+            billing_row_html = (
+                "<button type='button' class='settings-menu-item' id='settingsBillingBtn' data-br-action='billing-portal'>"
+                "  " + _nav_icon("shield", cls="settings-menu-icon") +
+                "  <span class='settings-menu-label'>Manage subscription</span>"
+                "</button>"
+            )
+        else:
+            billing_row_html = (
+                "<a href='/pricing' class='settings-menu-item'>"
+                "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
+                "  <span class='settings-menu-label'>Go PRO</span>"
+                "</a>"
+            )
+
+    # Shared rows for the signed-in settings menu (same menu on every page).
+    link_league_row = (
+            "<button type='button' class='settings-menu-item' id='settingsLinkBtn' onclick='openLinkModal()'>"
+            "  <svg class='settings-menu-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
+            "       stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"
+            "  <span class='settings-menu-label'>Link a league</span>"
+            "</button>"
+    )
+    refresh_row = (
+            "<button type='button' class='settings-menu-item settings-desktop-tools' id='settingsRefreshBtn' data-br-action='refresh'>"
+            "  " + _nav_icon("refresh", cls="settings-menu-icon") +
+            "  <span class='settings-menu-label'>Refresh Data</span>"
+            "</button>"
+    )
+    help_tours_row = (
+            "<button type='button' class='settings-menu-item settings-desktop-tools' id='settingsHelpToursBtn' data-br-action='help-tours'>"
+            "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
+            "  <span class='settings-menu-label'>Help &amp; Tours</span>"
+            "</button>"
+    )
+    sign_out_row = (
+            "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
+            "  " + _nav_icon("logout", cls="settings-menu-icon") +
+            "  <span class='settings-menu-label'>Sign Out</span>"
+            "</a>"
+    )
+
+    def _settings_menu(league_rows_html=""):
+        """The full signed-in settings menu: identity, League, Preferences,
+        Tools, Help, billing, Sign Out. ``league_rows_html`` carries the
+        switcher (first) + Link a league on pages that build one."""
+        parts = [identity_html]
+        if league_rows_html:
+            parts.append("<div class='settings-menu-heading'>League</div>")
+            parts.append(league_rows_html)
+        parts.append("<div class='settings-menu-heading'>Preferences</div>")
+        parts.append(notif_settings_row)
+        parts.append(dark_mode_toggle_html)
+        parts.append("<div class='settings-menu-heading'>Tools</div>")
+        parts.append(refresh_row)
+        parts.append("<div class='settings-menu-heading'>Help</div>")
+        parts.append(help_tours_row)
+        if billing_row_html:
+            parts.append(billing_row_html)
+        if session.get("account_id") or session.get("viewer_username"):
+            parts.append(sign_out_row)
+        return "".join(parts)
+
+    # The settings menu is the SAME full menu on every page now (it used to
+    # shrink to Dark-Mode-only on home/public pages for signed-in users).
+    # Signed-out visitors get the durable account entry point plus appearance.
+    if session.get("account_id") or session.get("viewer_username"):
+        settings_content = _settings_menu()
+    else:
         settings_content = (
                 "<a href='/auth/google?intent=login&amp;next=/' "
                 "   class='settings-menu-item'>"
                 "  " + _nav_icon("logout", cls="settings-menu-icon", style="transform:scaleX(-1);") +
                 "  <span class='settings-menu-label'>Sign In</span>"
                 "</a>"
-        ) + settings_content
+        ) + dark_mode_toggle_html
 
     # Settings gear dropdown (used in both home and league nav)
     settings_gear = (
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
-            "          aria-label='Settings' title='Settings'>"
+            "          aria-label='Settings' title='Settings' aria-haspopup='true' aria-expanded='false'>"
             "    " + _nav_icon("gear") +
             "  </button>"
-            "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
             f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
             f"    {settings_content}"
             "  </div>"
@@ -5578,7 +5665,37 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 "</div>"
         )
 
-        # Build utility bar for home screen (just settings gear with dark mode)
+        # Signed-in home/public pages get the full settings menu too,
+        # including the League group: the switcher lists the account's
+        # leagues from /api/my-leagues and hides itself at 0-1 leagues.
+        if session.get("viewer_username") or session.get("account_id"):
+            _home_switcher = (
+                "<div class='league-switcher-wrapper'>"
+                "  <select id='leagueSwitcher' class='league-switcher' data-no-custom "
+                "          data-current-league='' "
+                "          data-current-platform='' "
+                "          data-current-season='' "
+                "          data-current-name='' "
+                f"          data-current-username='{session.get('viewer_username') or ''}'>"
+                "    <option value=''>Loading leagues...</option>"
+                "  </select>"
+                "  <div id='leagueSwitcherList' class='ls-list' role='listbox' aria-label='Switch league'></div>"
+                "</div>"
+            )
+            settings_content = _settings_menu(_home_switcher + link_league_row)
+            settings_gear = (
+                    "<div class='settings-gear-wrapper'>"
+                    "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
+                    "          aria-label='Settings' title='Settings' aria-haspopup='true' aria-expanded='false'>"
+                    "    " + _nav_icon("gear") +
+                    "  </button>"
+                    f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
+                    f"    {settings_content}"
+                    "  </div>"
+                    "</div>"
+            )
+
+        # Build utility bar for home screen
         home_utility_bar = (
                 "<div class='nav-utility-bar'>"
                 f"  {player_search_html}"
@@ -5643,6 +5760,18 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <div class='nav-right'>"
             f"    {home_utility_bar}"
             "  </div>"
+            # Phone top bar: the same search + bell buttons the league bar
+            # already has, in the same reserved slots (home/public pages had
+            # no bell entry point at all before this).
+            "  <button type='button' class='br-top-search' aria-label='Search players'"
+            " onclick=\"window.brOpenSearch&&window.brOpenSearch()\">"
+            f"    {_nav_icon('search', size=20)}"
+            "  </button>"
+            "  <button type='button' class='br-top-notif' aria-label='Notifications'"
+            " onclick=\"window.brToggleChangelog&&window.brToggleChangelog(event)\">"
+            f"    {_nav_icon('bell', size=20)}"
+            "    <span class='br-top-notif-dot' id='brTopNotifDot' hidden></span>"
+            "  </button>"
             "</nav>"
             f"{guest_signin_modal}"
             f"{season_active_flag}"
@@ -5843,39 +5972,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 f"</div>"
             )
 
-        # Update settings dropdown content for logged-in users with full menu
-        settings_content = (
-                "<div class='settings-menu-heading'>Account</div>"
-                f"{dark_mode_toggle_html}"
-                f"{league_switcher_html}"
-                "<button type='button' class='settings-menu-item' id='settingsLinkBtn' onclick='openLinkModal()'>"
-                "  <svg class='settings-menu-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
-                "       stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"
-                "  <span class='settings-menu-label'>Link a league</span>"
-                "</button>"
-                "<div class='settings-menu-heading settings-desktop-tools'>Tools</div>"
-                "<button type='button' class='settings-menu-item settings-desktop-tools' id='settingsRefreshBtn' data-br-action='refresh'>"
-                "  " + _nav_icon("refresh", cls="settings-menu-icon") +
-                "  <span class='settings-menu-label'>Refresh Data</span>"
-                "</button>"
-                "<button type='button' class='settings-menu-item settings-desktop-tools' id='settingsChangelogBtn' data-br-action='whats-new'>"
-                "  " + _nav_icon("bell", cls="settings-menu-icon") +
-                "  <span class='settings-menu-label'>What's New</span>"
-                "  <span id='settingsNotifDot' class='settings-notif-dot' style='display:none'></span>"
-                "</button>"
-                "<button type='button' class='settings-menu-item settings-desktop-tools' id='settingsHelpToursBtn' data-br-action='help-tours'>"
-                "  " + _nav_icon("sparkles", cls="settings-menu-icon") +
-                "  <span class='settings-menu-label'>Help &amp; Tours</span>"
-                "</button>"
-                # Preserve the existing replay controls as the implementation
-                # behind Help & Tours; mobile exposes them in that drill-down.
-                f"<div class='settings-tour-replays'>{tour_menu_item}</div>"
-                "<a href='/faq' class='settings-menu-item'><span class='settings-menu-label'>Help / Support</span></a>"
-                "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
-                "  " + _nav_icon("logout", cls="settings-menu-icon") +
-                "  <span class='settings-menu-label'>Sign Out</span>"
-                "</a>"
-        )
+        # The full signed-in settings menu: identity header, League group
+        # (switcher first, then Link a league), Preferences, Tools, Help,
+        # billing row, Sign Out. Site Tour + PRO Welcome live inside the
+        # Help & Tours dialog now, not as their own rows.
+        settings_content = _settings_menu(league_switcher_html + link_league_row)
 
         # Rebuild settings gear with updated content. (The link-a-league modal is
         # injected once per page in render_page, not here -- this gear renders
@@ -5883,10 +5984,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         settings_gear = (
                 "<div class='settings-gear-wrapper'>"
                 "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
-                "          aria-label='Settings' title='Settings'>"
+                "          aria-label='Settings' title='Settings' aria-haspopup='true' aria-expanded='false'>"
                 "    " + _nav_icon("gear") +
                 "  </button>"
-                "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
                 f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
                 f"    {settings_content}"
                 "  </div>"
@@ -5901,21 +6001,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 "  <span class='settings-menu-label'>Sign In</span>"
                 "</button>"
         )
-        link_item = (
-            "<button type='button' class='settings-menu-item' id='settingsLinkBtn' onclick='openLinkModal()'>"
-            "  <svg class='settings-menu-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
-            "       stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M5 12h14'/></svg>"
-            "  <span class='settings-menu-label'>Link a league</span>"
-            "</button>"
-        )
-        settings_content = signin_item + link_item + dark_mode_toggle_html + tour_menu_item
+        settings_content = signin_item + link_league_row + dark_mode_toggle_html
         settings_gear = (
                 "<div class='settings-gear-wrapper'>"
                 "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
-                "          aria-label='Settings' title='Settings'>"
+                "          aria-label='Settings' title='Settings' aria-haspopup='true' aria-expanded='false'>"
                 "    " + _nav_icon("gear") +
                 "  </button>"
-                "  <span id='gearDot' class='nav-notif-dot' style='display:none'></span>"
                 f"  <div id='settingsDropdown' class='settings-dropdown' style='display:none;'>"
                 f"    {settings_content}"
                 "  </div>"

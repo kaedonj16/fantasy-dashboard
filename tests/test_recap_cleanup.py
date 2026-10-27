@@ -118,4 +118,4 @@ def test_changelog_and_sw_for_recap_cleanup():
     assert top["link"] == "/recap"
     assert "Injury Report" in top["text"]
     assert "—" not in top["text"]  # no em dashes in UI copy
-    assert "br-fantasy-v109" in _read("static", "sw.js")
+    assert "br-fantasy-v110" in _read("static", "sw.js")

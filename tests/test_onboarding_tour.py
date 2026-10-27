@@ -42,8 +42,11 @@ def test_premium_welcome_restyle_and_replay():
     assert "{ label: 'Trade Hub'" in APP_JS
     assert "/trade?tab=suggestions" in APP_JS
     assert "Playoff Impact" in APP_JS
-    assert "settingsWelcomeBtn" in APP_PY
-    assert "PRO Welcome" in APP_PY
+    # The PRO Welcome replay row left the settings menu in the notification
+    # center rebuild; it lives in the Help & Tours dialog (app.js) now.
+    assert "settingsWelcomeBtn" not in APP_PY
+    assert "data-help-welcome" in APP_JS
+    assert "PRO Welcome" in APP_JS
     assert ".sub-welcome-card" in CSS
     assert "tour-hole-shield" in CSS
 

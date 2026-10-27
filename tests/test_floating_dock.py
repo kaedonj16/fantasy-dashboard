@@ -84,10 +84,10 @@ def test_top_notif_button_rendered_and_wired():
 
 
 def test_recent_updates_out_of_more_sheet():
-    # No "What's New" row in either mobile More sheet; the desktop gear-menu
-    # row stays.
+    # No "What's New" row anywhere: it retired with the notification
+    # center (the bell is the door now), in the sheets AND the gear menu.
     assert "_sheet_action_row(\"What's New\"" not in APP_PY
-    assert "id='settingsChangelogBtn'" in APP_PY
+    assert "id='settingsChangelogBtn'" not in APP_PY
 
 
 def test_changelog_dropdown_lives_in_top_nav_on_mobile():
