@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "My Leagues: a league card no longer jumps ahead to next week's preview while its final result is still due. When the week rolls over, the finished matchup stays on the card even if that league's data was loaded before the last game ended.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Site reliability: pages and My Leagues load more consistently, and Refresh Data now kicks off the rebuild and updates each league as it lands instead of blocking on a full rebuild, so a slow league no longer stalls the whole site or leaves the refresh spinning.",
         "link": "/portfolio"
     },

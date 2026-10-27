@@ -2448,7 +2448,8 @@ def _matchup_status_label(status_by_pid: dict, pids: list) -> str:
     return "pre"
 
 
-def _finalized_fantasy_week(ctx: dict, roster_id: str, requested_week: int):
+def _finalized_fantasy_week(ctx: dict, roster_id: str, requested_week: int,
+                            current_leg: int | None = None):
     """Return the applicable finalized fantasy week, if the provider has one.
 
     NFL player statuses are useful for live projections, but they are not the
@@ -2456,15 +2457,35 @@ def _finalized_fantasy_week(ctx: dict, roster_id: str, requested_week: int):
     games make that especially visible).  The normalized weekly table is the
     provider-backed fantasy-week authority and also lets Tuesday rollover show
     the matchup that just completed rather than an empty next-week preview.
+
+    The table's ``finalized`` column is stamped when the league context was
+    built (``week < leg`` at build time, in dashboard_services/service.py),
+    and a context can live in cache for 12 hours -- so a context built during
+    the Monday-night game still marks the just-finished week unfinalized on
+    Tuesday morning, and the card above falls through to a next-week preview.
+    When the caller supplies the CURRENT leg, re-apply that same rule at read
+    time: any week earlier than the current leg counts as finalized, whether
+    or not the build-time stamp has caught up. The roster must still have a
+    row for the week (the provider actually has that week's matchup), and
+    the one-week fallback guard below is unchanged.
     """
     df_weekly = (ctx or {}).get("df_weekly")
     if df_weekly is None or getattr(df_weekly, "empty", True):
         return None
     try:
         rows = df_weekly[df_weekly["roster_id"].astype(str) == str(roster_id)]
-        if "finalized" not in rows.columns or "week" not in rows.columns:
+        if "week" not in rows.columns:
             return None
-        rows = rows[rows["finalized"] == True]
+        if "finalized" in rows.columns:
+            finalized = rows["finalized"] == True
+        elif current_leg:
+            import pandas as _pd
+            finalized = _pd.Series(False, index=rows.index)
+        else:
+            return None
+        if current_leg:
+            finalized = finalized | (rows["week"].astype(int) < int(current_leg))
+        rows = rows[finalized]
         weeks = [int(value) for value in rows["week"].tolist()
                  if int(value) <= int(requested_week)]
         if not weeks:
@@ -2961,7 +2982,16 @@ def api_portfolio_matchup():
 
     from zoneinfo import ZoneInfo
     today = datetime.now(ZoneInfo("America/New_York")).date()
-    finalized_week = _finalized_fantasy_week(ctx, viewer_rid, week)
+    # Pass the CURRENT leg so finalized is re-derived at read time: the ctx's
+    # build-time stamp can predate the week rollover by up to the 12h cache
+    # TTL (a Monday-night build still marks the finished week unfinalized on
+    # Tuesday morning, which stranded the card on a next-week 0.0 preview).
+    try:
+        current_leg = int(nfl_state.get("leg") or week)
+    except (TypeError, ValueError):
+        current_leg = week
+    finalized_week = _finalized_fantasy_week(
+        ctx, viewer_rid, week, current_leg=current_leg)
     # Some feeds advance nfl_state before the just-finished fantasy result has
     # cleared on Tuesday. Use that final only during the rollover window; later
     # in the week the card must move on to the scheduled/current matchup.
