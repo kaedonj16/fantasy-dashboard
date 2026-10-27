@@ -5894,7 +5894,13 @@ thead th {
     background: linear-gradient(90deg, #6cb7ff 0%, #2d8cff 100%);
 }
 
-.otc-balance-left, .otc-balance-right, .otc-balance-fair {
+/* Rooted at the bar on purpose: the app.js title upgrader turns the fair
+   band's title= into [data-tooltip], and the generic [data-tooltip] rule
+   further down this file sets position: relative at equal specificity to a
+   bare class rule, which silently knocked the band back into flow (0px
+   tall, invisible) after PR #2592. The two-class selector keeps the band
+   absolutely positioned no matter what attributes it carries. */
+.otc-balance-bar .otc-balance-left, .otc-balance-bar .otc-balance-right, .otc-balance-bar .otc-balance-fair {
     position: absolute;
     top: 0;
     bottom: 0;
