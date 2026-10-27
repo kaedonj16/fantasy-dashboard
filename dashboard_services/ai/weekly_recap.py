@@ -416,10 +416,126 @@ def _build_team_storylines(
     return storylines
 
 
+def _parse_record(text) -> tuple[int, int, int]:
+    """'6-1' / '6-1-1' -> (wins, losses, ties)."""
+    parts = str(text or "0-0").split("-")
+    try:
+        wins = int(parts[0])
+        losses = int(parts[1])
+        ties = int(parts[2]) if len(parts) > 2 else 0
+    except (ValueError, IndexError):
+        return 0, 0, 0
+    return wins, losses, ties
+
+
+def _division_record_text(rec) -> str:
+    """(wins, losses, ties) division record as '2-1' (ties only when > 0),
+    matching the division half of utils.standings.format_record."""
+    if not rec:
+        return "0-0"
+    w, l, t = (int(x or 0) for x in rec)
+    text = f"{w}-{l}"
+    if t:
+        text += f"-{t}"
+    return text
+
+
+def _build_division_races(
+        df_weekly: pd.DataFrame,
+        storylines: list[dict],
+        selected_week: int,
+        division_by_rid: dict | None,
+        division_names: dict | None,
+) -> list[dict]:
+    """Division standings for the story payload, in leagues with divisions.
+
+    Ordered exactly like the recap page's own standings card (overall wins,
+    then division win%, then PF) with division records from
+    utils.standings.division_records on the same week-capped frame, so every
+    fact the story can cite matches the standings shown on the page. Returns
+    [] when the league has no active divisions (fewer than two assigned
+    division ids, or fewer than two divisions with 2+ teams): division-less
+    leagues keep today's payload byte for byte.
+    """
+    if not division_by_rid or not storylines or df_weekly is None or df_weekly.empty:
+        return []
+    by_rid: dict[int, int] = {}
+    for rid, div in division_by_rid.items():
+        try:
+            by_rid[int(rid)] = int(div or 0)
+        except (TypeError, ValueError):
+            continue
+    if len({d for d in by_rid.values() if d}) < 2:
+        return []
+
+    from utils.standings import division_records, division_win_pct
+
+    capped = df_weekly[(df_weekly["finalized"] == True) & (df_weekly["week"] <= selected_week)]
+    div_recs = division_records(capped, by_rid)
+    names: dict[int, str] = {}
+    for div, name in (division_names or {}).items():
+        try:
+            if name:
+                names[int(div)] = str(name)
+        except (TypeError, ValueError):
+            continue
+
+    grouped: dict[int, list[dict]] = {}
+    for s in storylines:
+        try:
+            rid_i = int(s["rid"])
+        except (TypeError, ValueError):
+            continue
+        div = by_rid.get(rid_i) or 0
+        if not div:
+            continue
+        wins, losses, _ties = _parse_record(s.get("record_after"))
+        grouped.setdefault(div, []).append({
+            "team": s["team"],
+            "wins": wins, "losses": losses,
+            "record": s["record_after"],
+            "division_record": _division_record_text(div_recs.get(rid_i, (0, 0, 0))),
+            "_div_rec": div_recs.get(rid_i, (0, 0, 0)),
+            "overall_rank": s.get("rank_after"),
+            "pf": s.get("pf_after") or 0.0,
+        })
+
+    races = []
+    for div in sorted(grouped):
+        teams = grouped[div]
+        if len(teams) < 2:
+            continue
+        teams.sort(key=lambda x: (-x["wins"], -division_win_pct(x["_div_rec"]), -x["pf"]))
+        leader = teams[0]
+        rows = []
+        for i, tm in enumerate(teams, 1):
+            games_back = ((leader["wins"] - tm["wins"]) + (tm["losses"] - leader["losses"])) / 2.0
+            rows.append({
+                "team": tm["team"],
+                "record": tm["record"],
+                "division_record": tm["division_record"],
+                "division_rank": i,
+                "overall_rank": tm["overall_rank"],
+                "games_back": games_back,
+            })
+        races.append({
+            "name": names.get(div) or f"Division {div}",
+            "leader": leader["team"],
+            "leader_record": leader["record"],
+            "leader_division_record": leader["division_record"],
+            "leader_leads_league": leader["overall_rank"] == 1,
+            "tight": len(rows) > 1 and rows[1]["games_back"] <= 1.0,
+            "teams": rows,
+        })
+    return races if len(races) >= 2 else []
+
+
 def _build_matchup_context(
         df_weekly: pd.DataFrame,
         selected_week: int,
         team_by_rid: dict,
+        division_by_rid: dict | None = None,
+        division_names: dict | None = None,
 ) -> list[dict]:
     """For each matchup this week, compute h2h record and prior meetings this season."""
     fin_df = df_weekly[(df_weekly["finalized"] == True) & (df_weekly["week"] <= selected_week)].copy()
@@ -433,6 +549,27 @@ def _build_matchup_context(
         pairs.setdefault(key, []).append((str(row["roster_id"]), float(row["points"])))
 
     this_week = {k: v for k, v in pairs.items() if k[0] == selected_week and len(v) == 2}
+
+    # Same-division annotation for the story payload (division games move
+    # the division race directly). Only added when the league has divisions,
+    # so division-less payloads stay byte-identical.
+    div_by_team: dict[str, int] = {}
+    div_names: dict[int, str] = {}
+    if division_by_rid:
+        for rid, div in division_by_rid.items():
+            try:
+                div_i = int(div or 0)
+            except (TypeError, ValueError):
+                continue
+            name = team_by_rid.get(str(rid))
+            if name and div_i:
+                div_by_team[name] = div_i
+        for div, name in (division_names or {}).items():
+            try:
+                if name:
+                    div_names[int(div)] = str(name)
+            except (TypeError, ValueError):
+                continue
 
     result = []
     for (_w, _mid), sides in this_week.items():
@@ -466,6 +603,11 @@ def _build_matchup_context(
             "team_b_pts": round(pts_b, 1),
             "winner": (team_a if pts_a > pts_b else team_b if pts_b > pts_a else None),
         }
+        if div_by_team:
+            div_a = div_by_team.get(team_a)
+            if div_a and div_a == div_by_team.get(team_b):
+                entry["division_game"] = True
+                entry["division_name"] = div_names.get(div_a) or f"Division {div_a}"
         if prior:
             entry["h2h"] = {
                 "team_a_wins": a_wins,
@@ -953,11 +1095,24 @@ def build_weekly_recap_payload(
     next_week_ctx: dict | None = None,
     team_context: dict | None = None,
     gotw_pin_pair: tuple | None = None,
+    division_by_rid: dict | None = None,
+    division_names: dict | None = None,
 ) -> dict:
     storylines = _build_team_storylines(df_weekly, selected_week, team_by_rid)
     for storyline in storylines:
         storyline.update((team_context or {}).get(str(storyline["rid"]), {}))
-    matchup_context = _build_matchup_context(df_weekly, selected_week, team_by_rid)
+    # Division races for the story, present only in leagues with divisions.
+    # Empty list (and no payload keys anywhere) for division-less leagues;
+    # the matchup annotation below keys off the same activeness test, so a
+    # map without 2+ real divisions changes nothing at all.
+    division_races = _build_division_races(
+        df_weekly, storylines, selected_week, division_by_rid, division_names)
+    matchup_context = _build_matchup_context(
+        df_weekly, selected_week, team_by_rid,
+        division_by_rid=division_by_rid if division_races else None,
+        division_names=division_names)
+    div_rec_by_team = {row["team"]: row["division_record"]
+                       for race in division_races for row in race["teams"]}
 
     settings = (league or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
@@ -1059,8 +1214,11 @@ def build_weekly_recap_payload(
                 **(team_context or {}).get(str(s["rid"]), {}),
                 **({"rank_gap": s["rank_after"] - (team_context or {}).get(str(s["rid"]), {}).get("power_rank")}
                    if (team_context or {}).get(str(s["rid"]), {}).get("power_rank") is not None else {}),
+                **({"division_record": div_rec_by_team[s["team"]]}
+                   if s["team"] in div_rec_by_team else {}),
             } for s in storylines
         ],
+        **({"divisions": division_races} if division_races else {}),
         "high_scorer": {"team": high_scorer["team"], "pts": round(high_scorer["this_week_pts"], 1)} if high_scorer and high_scorer["this_week_pts"] else None,
         "low_scorer":  {"team": low_scorer["team"],  "pts": round(low_scorer["this_week_pts"], 1)} if low_scorer and low_scorer["this_week_pts"] else None,
         "biggest_blowout": biggest_blowout,
@@ -1122,6 +1280,24 @@ Hard rules:
 - Streak values like "W3" or "L2" are data codes, never prose. Never write them, and never write things like "the W3 run". Translate them, or use the supplied streak_label wording: W3 is "3-game win streak", L2 is "2-game losing streak", so write "and the 3-game win streak has them looking steady".
 """.strip()
 
+    # Division framing block: present only when the payload carries division
+    # races (leagues with divisions). Empty for division-less leagues, which
+    # keeps their prompt byte-identical to before.
+    divisions = payload.get("divisions") or []
+    divisions_block = ""
+    if divisions:
+        divisions_block = f"""
+
+Division races (this league has divisions; where a division race and the overall table tell different stories, the division race is the standings story):
+{json.dumps(divisions, indent=2)}
+
+Division framing rules for this league:
+- Name division leaders as division leaders ("leads the West"), with their division record where it matters. Never call a team the league leader, the top team, or first place overall unless leader_leads_league is true for that team in the division data above.
+- A team that leads its division without leading the league is a division leader: frame its race inside its division (the team behind it and the games_back), not as chasing the overall leader.
+- When a division entry says tight, call it a close division race.
+- Matchups flagged division_game in this week's matchups are division games. When one involves a division leader or the team right behind them, frame it as a division game that moved that division race.
+- Division records count division games only. Never present a division record as an overall record, or an overall record as a division record."""
+
     user_prompt = f"""
 Write a weekly recap column for {payload['league_name']}, Week {payload['week']}.
 
@@ -1140,7 +1316,7 @@ Upsets (lower-seeded beat higher-seeded by 3+ ranks): {json.dumps(payload['upset
 Hot streaks (3+ wins in a row): {json.dumps(payload['hot_streaks'])}
 Cold streaks (2+ losses in a row): {json.dumps(payload['cold_streaks'])}
 Big movers (rank moved 2+ spots): {json.dumps(payload['big_movers'])}
-Playoff race: {json.dumps(payload['playoff_race'])}
+Playoff race: {json.dumps(payload['playoff_race'])}{divisions_block}
 
 Use the h2h and season_weeks data where it adds something real to the story - rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline. Explain two or three meaningful developments only: unlucky losses, scoring trends, rivalry results, or a real standings-versus-power discrepancy. Do not recap the award cards, list every score, or repeat the scoreboard.
 
@@ -1466,6 +1642,7 @@ def get_weekly_ai_recap(
         team_by_rid: dict, league: dict, league_id: str, season,
         next_week_ctx: dict | None = None, team_context: dict | None = None,
         platform: str = "sleeper",
+        division_by_rid: dict | None = None, division_names: dict | None = None,
 ) -> tuple[str, str]:
     """Return a stable historical story plus a freshly rendered upcoming card.
 
@@ -1494,7 +1671,8 @@ def get_weekly_ai_recap(
         payload = build_weekly_recap_payload(
             df_weekly, matchups_by_week, selected_week, team_by_rid, league,
             next_week_ctx=next_week_ctx, team_context=team_context,
-            gotw_pin_pair=pin_pair)
+            gotw_pin_pair=pin_pair,
+            division_by_rid=division_by_rid, division_names=division_names)
     except Exception as exc:
         logger.warning("[weekly-recap] payload build failed: %s", exc)
         return "", ""
@@ -1502,6 +1680,11 @@ def get_weekly_ai_recap(
     scored = df_weekly[(df_weekly["finalized"] == True) & (df_weekly["week"] <= selected_week)]
     revision_raw = scored[["week", "roster_id", "points"]].sort_values(["week", "roster_id"]).to_json()
     revision = hashlib.sha256(revision_raw.encode()).hexdigest()[:12]
+    if payload.get("divisions"):
+        # Division-framed stories key apart from the overall-framed ones
+        # cached before this payload existed, so divisions leagues
+        # regenerate once; division-less leagues keep their existing key.
+        revision = f"{revision}div"
     cache_key = _recap_cache_key(league_id, season, selected_week, platform, revision)
     recap_html = _load_recap_no_ttl(cache_key) or ""
     preview = payload.get("next_week_preview")
