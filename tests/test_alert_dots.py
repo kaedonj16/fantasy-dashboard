@@ -479,7 +479,7 @@ console.log('alert-dot soft-nav logic ok');
 def test_changelog_announces_alert_dots():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[8]  # prepends above it: holdings sort + insights speed, rooting/bye cleanup, Front Office scan fix, fair-band fix, assistant league fix, dot fix, recap cleanup, Rooting Guide
+    entry = CHANGELOG[9]  # prepends above it: graphs overhaul, holdings sort + insights speed, rooting/bye cleanup, Front Office scan fix, fair-band fix, assistant league fix, dot fix, recap cleanup, Rooting Guide
     assert entry["date"] == "2026-10-27"
     assert entry["tag"] == "new"
     assert "Weekly Recap" in entry["text"] and "Breakout Engine" in entry["text"]
@@ -489,7 +489,7 @@ def test_changelog_announces_alert_dots():
 def test_changelog_announces_recap_dot_softnav_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[5]  # prepended above it: holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix, the fair-band fix, the assistant league fix
+    top = CHANGELOG[6]  # prepended above it: graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix, the fair-band fix, the assistant league fix
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "alert dot" in top["text"]

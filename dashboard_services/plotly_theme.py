@@ -25,7 +25,10 @@ def apply_brand_layout(fig):
         font=dict(family=BRAND_FONT, size=12.5, color=AXIS_TEXT),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        hoverlabel=dict(font=dict(family=BRAND_FONT, size=12)),
+        hoverlabel=dict(
+            bgcolor="#ffffff", bordercolor="#e5e7eb",
+            font=dict(family=BRAND_FONT, size=12, color="#334155"),
+        ),
         legend=dict(
             font=dict(family=BRAND_FONT, size=11.5),
             bgcolor="rgba(0,0,0,0)",

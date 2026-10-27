@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "update",
+        "text": "League Stats: the chart grid now fits two columns only when each chart has room and drops to one column on narrower windows, cards in a row stretch to the same height, and the Consistency Ranking bars share one scale so they read in order. Chart hover labels now have a solid background, and the Standings Bump Chart renders again and seeds division winners first in division leagues. New charts: Floor / Ceiling, Luck Delta, Scoring Heatmap, Form: Last 3 Weeks, League Scoring by Week, and Career Wins by Team.",
+        "link": "/graphs"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "update",
         "text": "My Leagues loads faster: the Rooting Guide and Bye Watch now answer from a cached result right away and refresh in the background instead of rescanning your leagues on every load, and Player Holdings is sortable: click any column header (position, player, rank, shares, bye, status, 7d trend, value) to sort the whole table.",
         "link": "/portfolio"
     },
