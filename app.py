@@ -3676,6 +3676,101 @@ def _breakouts_are_new() -> bool:
     return is_new
 
 
+# ── Unread alert dots (Weekly Recap + Breakout Engine) ─────────────────────
+# Same mechanism as the changelog bell: the server stamps each nav dot with
+# the latest entry's id, app.js (initAlertDots) compares it against
+# localStorage, and opening the surface marks it seen. Dots render hidden and
+# are only revealed client-side, so a signed-out or up-to-date render never
+# flashes one.
+
+
+def _recap_dot_stamp(platform: str, season: int, league_id: str):
+    """(latest completed week, localStorage key) for the Weekly Recap dot, or
+    (0, "") when the dot must not render: signed-out viewer, missing league
+    context, offseason, a league whose season is not the current NFL season,
+    or no completed week yet. Readiness mirrors notify_recap_ready's gate,
+    and the key is per league so one league's recap never clears another's.
+    """
+    try:
+        if not (platform and league_id and season):
+            return 0, ""
+        if not (session.get("account_id") or session.get("viewer_username")):
+            return 0, ""
+        nfl_state = get_nfl_state() or {}
+        if (nfl_state.get("season_type") or "").lower() not in ("reg", "post"):
+            return 0, ""
+        if int(season) != int(nfl_state.get("season") or 0):
+            return 0, ""
+        from utils.push_notifications import _recap_completed_week
+        week = _recap_completed_week(nfl_state)
+        if week < 1:
+            return 0, ""
+        return week, f"recap_last_seen:{platform}:{int(season)}:{league_id}"
+    except Exception:
+        return 0, ""
+
+
+def _recap_dot_html(platform: str, season: int, league_id: str, *, inline: bool = False) -> str:
+    week, key = _recap_dot_stamp(platform, season, league_id)
+    if not week:
+        return ""
+    cls = "alert-dot recap-dot" + (" alert-dot-inline" if inline else "")
+    return (f"<span class='{cls} alert-dot-hidden' data-alert-week='{week}' "
+            f"data-alert-key='{key}' aria-hidden='true'></span>")
+
+
+# Cache for the latest completed breakout run's identity (the "set" the
+# breakout dot keys on). Refreshed at most once per hour, same discipline as
+# _breakouts_new_cache, so nav renders don't hit the DB on every page load.
+_breakouts_set_cache = {"ts": 0.0, "stamp": ""}
+
+
+def _breakouts_latest_set() -> str:
+    """Identity of the newest completed breakout set as
+    "season:as_of_week:scoring_version", or "" when no run has completed.
+    A new Wednesday run (or a re-grade under a new scoring version) changes
+    the stamp, which is what re-arms the breakout dot."""
+    import time
+    now = time.time()
+    if now - _breakouts_set_cache["ts"] < 3600:
+        return _breakouts_set_cache["stamp"]
+    stamp = ""
+    try:
+        from dashboard_services.breakout_api import get_conn as _bo_conn
+        with _bo_conn() as _bc:
+            with _bc.cursor() as _bcur:
+                _bcur.execute(
+                    "SELECT season, as_of_week, scoring_version "
+                    "FROM weekly_breakout_runs WHERE status = 'complete' "
+                    "ORDER BY completed_at DESC LIMIT 1"
+                )
+                row = _bcur.fetchone() or {}
+                if row.get("season") is not None and row.get("as_of_week") is not None:
+                    stamp = (f"{row.get('season')}:{row.get('as_of_week')}:"
+                             f"{row.get('scoring_version') or ''}")
+    except Exception:
+        stamp = ""
+    _breakouts_set_cache["ts"] = now
+    _breakouts_set_cache["stamp"] = stamp
+    return stamp
+
+
+def _breakout_dot_html(*, inline: bool = False) -> str:
+    """Breakout Engine dot, keyed to the latest completed set (the breakout
+    set is global, not per-league). "" when signed out or no set exists."""
+    try:
+        if not (session.get("account_id") or session.get("viewer_username")):
+            return ""
+    except Exception:
+        return ""
+    stamp = _breakouts_latest_set()
+    if not stamp:
+        return ""
+    cls = "alert-dot breakout-dot" + (" alert-dot-inline" if inline else "")
+    return (f"<span class='{cls} alert-dot-hidden' data-alert-set='{stamp}' "
+            f"data-alert-key='breakout_last_seen' aria-hidden='true'></span>")
+
+
 def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
     """True if one of the week's games dated today is live or kicks off soon.
 
@@ -4127,6 +4222,12 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         )
     _more_live_cls = " br-more-live" if rz_live else ""
     _more_dot = "<span class='rz-mnav-dot' aria-hidden='true'></span>" if rz_live else ""
+    # Unread alert dots (hidden until app.js confirms unopened): absolute
+    # variant for the More tab, inline for sheet rows and category rows.
+    _recap_dot = _recap_dot_html(platform, season, league_id)
+    _recap_dot_in = _recap_dot_html(platform, season, league_id, inline=True)
+    _bo_dot = _breakout_dot_html()
+    _bo_dot_in = _breakout_dot_html(inline=True)
     if secondary_active:
         active_index = len(dock_keys)
     _more_active = " active" if secondary_active else ""
@@ -4134,7 +4235,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     items += (
         f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}{_more_active}' id='brMoreTab' "
         f"aria-label='More navigation; current page: {_DOCK_LABELS.get(active_norm, active_norm.replace('-', ' ').title())}'{_more_current} aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span>{_more_dot}</button>"
+        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span>{_more_dot}{_recap_dot}{_bo_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
     # at the active slot so it rests correctly with no flash; app.js animates a
@@ -4148,14 +4249,14 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     dock = f"<nav class='br-tabbar' aria-label='Primary'>{indicator}{items}</nav>"
 
     # ── More sheet ────────────────────────────────────────────────────────────
-    def _sl(key, label, pro=False):
+    def _sl(key, label, pro=False, badge_html=""):
         icon, ep, suffix = _NAV_PAGE_META[key]
         on = " active" if key == active_norm else ""
         aria = " aria-current='page'" if key == active_norm else ""
         pro_html = "<span class='br-sheet-pro'>PRO</span>" if pro else ""
         return (
             f"<a class='br-sheet-link{on}'{aria} href='{_href(ep, suffix)}'>"
-            f"{_nav_icon(icon, size=20)}<span>{label}</span>{pro_html}</a>"
+            f"{_nav_icon(icon, size=20)}<span>{label}</span>{pro_html}{badge_html}</a>"
         )
 
     def _sec(title, rows):
@@ -4190,7 +4291,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         except Exception:
             _bb_sheet = False
         rows = [
-            _sl("weekly", "Matchups"), _sl("recap", "Weekly Recap"),
+            _sl("weekly", "Matchups"), _sl("recap", "Weekly Recap", badge_html=_recap_dot_in),
             _sl("scout", "Opponent Scout"), _sl("optimal", "Lineup Efficiency"),
             _sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"),
             _sl("schedule", "Schedule Rankings"),
@@ -4228,7 +4329,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         _sl("players", "Player Rankings"), _sl("compare", "Compare Players"),
         _sl("top-movers", "Top Movers"), _sl("advanced-metrics", "Advanced Metrics"),
         _sl("nfl-teams", "NFL Team Rankings"),
-        _sl("breakouts", "Breakout Engine", pro=True), _sl("prospects", "Prospect Rankings"),
+        _sl("breakouts", "Breakout Engine", pro=True, badge_html=_bo_dot_in), _sl("prospects", "Prospect Rankings"),
     ])
 
     _draft_rows = [_sl("draft", "Draft Room"), _sl("draft-cheat-sheet", "Cheat Sheet")]
@@ -4294,10 +4395,17 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>'
         else:
             dot = ""
+        # Unread alert dot for the section's flagged surface, when one is
+        # stamped (hidden until app.js confirms it is unopened).
+        alert = ""
+        if label == "Weekly":
+            alert = _recap_dot_in
+        elif label == "Players":
+            alert = _bo_dot_in
         return (
             f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}{live_cls}' "
             f"data-br-sheet-target='{slug}' aria-controls='brMorePanel-{slug}'>"
-            f"<span>{label}</span>{dot}"
+            f"<span>{label}</span>{dot}{alert}"
             "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
         )
     # Every product section is reachable from the More root, Weekly and Trades
@@ -5319,6 +5427,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     _bo_new_badge = (
         " <span class='nav-new-badge'>NEW</span>" if _breakouts_are_new() else ""
     )
+    # Unread alert dots (hidden until app.js confirms the surface is
+    # unopened): absolute variant for pill buttons, inline for menu items.
+    _recap_dot = _recap_dot_html(platform, season, league_id)
+    _recap_dot_in = _recap_dot_html(platform, season, league_id, inline=True)
+    _bo_dot = _breakout_dot_html()
+    _bo_dot_in = _breakout_dot_html(inline=True)
     # Exposed for client code (e.g. the player-modal ScoreZone tab, which hides in
     # the offseason). Uses the same condition that gates the ScoreZone nav item.
     season_active_flag = f"<script>window.__seasonActive={'false' if offseason_mode else 'true'};</script>"
@@ -5388,7 +5502,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             aria = " aria-current='page'" if key == active else ""
             return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
-        def simple_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
+        def simple_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown",
+                            btn_badge_html: str = "") -> str:
             # The parent pill is active whenever the current page is one of its
             # own items, not only when a caller remembered to list the key in
             # active_keys: the hand-kept lists drifted (Advanced Metrics and
@@ -5407,7 +5522,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             return (
                 f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
                 f"  <button type='button' class='{btn_cls}' id='{btn_id}' aria-expanded='false' aria-haspopup='true' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
-                f"    {label} <span class='nav-pill-chevron' aria-hidden='true'>&#x25BE;</span>"
+                f"    {label} <span class='nav-pill-chevron' aria-hidden='true'>&#x25BE;</span>{btn_badge_html}"
                 f"  </button>"
                 f"  <div class='nav-pill-dropdown-menu' id='{menu_id}' role='menu'>"
                 f"    {item_html}"
@@ -5430,9 +5545,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Top Movers", "/top-movers", "top-movers"),
                 ("Advanced Metrics", "/metrics", "advanced-metrics"),
                 ("NFL Team Rankings", "/nfl-teams", "nfl-teams"),
-                (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "/breakouts", "breakouts"),
+                (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}{_bo_dot_in}", "/breakouts", "breakouts"),
                 ("Prospects", "/prospects", "prospects"),
-            ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown",
+                btn_badge_html=_bo_dot),
             simple_dropdown("Draft", [
                 ("Draft Room", "/draft", "draft"),
                 ("Cheat Sheet", "/draft/cheat-sheet", "draft-cheat-sheet"),
@@ -5541,7 +5657,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown",
-                          btn_extra_cls: str = "") -> str:
+                          btn_extra_cls: str = "", btn_badge_html: str = "") -> str:
         """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
         # Same drift guard as the global nav's simple_dropdown: a page that is
         # an item of this dropdown always lights the parent pill, whether or
@@ -5573,7 +5689,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return (
             f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
             f"  <button type='button' class='{btn_cls}' id='{btn_id}' aria-expanded='false' aria-haspopup='true' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
-            f"    {label} <span class='nav-pill-chevron' aria-hidden='true'>&#x25BE;</span>"
+            f"    {label} <span class='nav-pill-chevron' aria-hidden='true'>&#x25BE;</span>{btn_badge_html}"
             f"  </button>"
             f"  <div class='nav-pill-dropdown-menu' id='{menu_id}' role='menu'>"
             f"    {item_html}"
@@ -5609,7 +5725,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         _waiver_label = "Waivers" if _bb else "Waivers & Start/Sit"
         _weekly_items = [
             ("Matchups", "page_weekly", "weekly", False),
-            ("Weekly Recap", "league_pages.page_recap", "recap", False),
+            (f"Weekly Recap{_recap_dot_in}", "league_pages.page_recap", "recap", False),
             ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
             ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
             # Roster/lineup tools live with the other weekly tools, not Players.
@@ -5645,7 +5761,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
             ["weekly", "recap", "scorezone", "scout", "optimal", "waivers", "lineup-lab", "schedule"],
-            "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
+            "weeklyNavDropdown", btn_extra_cls=_rz_pulse, btn_badge_html=_recap_dot,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings", "league_pages.page_standings", "standings", False),
@@ -5659,9 +5775,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
         ("Advanced Metrics", "league_pages.page_advanced_metrics", "advanced-metrics", False),
         ("NFL Team Rankings", "league_pages.page_nfl_teams", "nfl-teams", False),
-        (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "page_breakouts", "breakouts", False),
+        (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}{_bo_dot_in}", "page_breakouts", "breakouts", False),
         ("Prospect Rankings", "page_prospects", "prospects", False),
-    ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown",
+        btn_badge_html=_bo_dot))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
     _draft_items = [

@@ -16565,6 +16565,48 @@ function setChangelogDot(hasNew, showSettingsDot = false) {
   if (topNotifDot) topNotifDot.hidden = !hasNew;
 }
 
+// Unread alert dots (Weekly Recap + Breakout Engine). Same mechanism as the
+// changelog bell above: the server stamps every dot for a surface with the
+// latest entry's id and a localStorage key; the dot shows while the stored
+// last-seen value is behind the stamp, and landing on the surface itself
+// marks it seen. Recap is keyed per league (week number compare); the
+// breakout set is global (stamp equality compare).
+function initAlertDots() {
+  function group(sel) {
+    return Array.prototype.slice.call(document.querySelectorAll(sel));
+  }
+  function setGroup(els, show) {
+    els.forEach(function (el) { el.classList.toggle("alert-dot-hidden", !show); });
+  }
+
+  var recapDots = group(".recap-dot");
+  if (recapDots.length) {
+    var rWeek = parseInt(recapDots[0].getAttribute("data-alert-week") || "0", 10) || 0;
+    var rKey = recapDots[0].getAttribute("data-alert-key") || "";
+    if (rWeek > 0 && rKey) {
+      var rSeen = parseInt(localStorage.getItem(rKey) || "0", 10) || 0;
+      if (document.querySelector("main.weekly-recap")) {
+        localStorage.setItem(rKey, String(rWeek));
+        rSeen = rWeek;
+      }
+      setGroup(recapDots, rWeek > rSeen);
+    }
+  }
+
+  var boDots = group(".breakout-dot");
+  if (boDots.length) {
+    var bSet = boDots[0].getAttribute("data-alert-set") || "";
+    var bKey = boDots[0].getAttribute("data-alert-key") || "";
+    if (bSet && bKey) {
+      if (document.querySelector(".bo-view-tabs")) {
+        localStorage.setItem(bKey, bSet);
+      }
+      setGroup(boDots, localStorage.getItem(bKey) !== bSet);
+    }
+  }
+}
+document.addEventListener("DOMContentLoaded", initAlertDots);
+
 document.addEventListener("DOMContentLoaded", () => {
   const bellWrapper = document.querySelector(".changelog-bell-wrapper");
   const bellBtn = document.getElementById("changelogBell");

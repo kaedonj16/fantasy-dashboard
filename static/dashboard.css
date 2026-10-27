@@ -1424,6 +1424,41 @@ ul {
     pointer-events: none;
 }
 
+/* Unread alert dots on nav entry points (Weekly Recap, Breakout Engine).
+   Same spec as .changelog-dot; app.js reveals them only while the surface
+   they flag is unopened. The inline variant sits in a menu/row flow instead
+   of the corner of a positioned button. */
+.alert-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #E24B4A;
+    border: 1.5px solid var(--card);
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.alert-dot-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.alert-dot-inline {
+    position: static;
+    display: inline-block;
+    flex: 0 0 auto;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+/* Sheet rows push the dot to the far end, like the ScoreZone live dot. */
+.br-sheet-link .alert-dot-inline {
+    margin-left: auto;
+}
+
 /* Notification dot for gear button (mirrors changelog-dot style) */
 .nav-notif-dot {
     position: absolute;
