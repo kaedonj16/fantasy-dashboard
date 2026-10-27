@@ -21868,7 +21868,8 @@ def _build_lineup_analysis_html(
         pos = html.escape(str(player.get("pos") or "–"))
         nfl = html.escape(str(player.get("nfl") or ""))
         team_text = str(player.get("team") or team_by_rid.get(str(player.get("rid") or "")) or "Team")
-        team = html.escape(team_text)
+        _rid_s = str(player.get("rid") or "")
+        team = _clickable_team_name(team_text, {team_text: _rid_s} if _rid_s else None)
         pts = float(player["pts"])
         name_html = (f'<span class="rc-name player-clickable" tabindex="0" role="button" '
                      f'data-player-id="{pid}" data-player-name="{name_attr}">{name}</span>' if pid
@@ -21904,7 +21905,9 @@ def _build_lineup_analysis_html(
                     f'<span class="rc-meta">{pos} · {nfl}</span></div>'
                     f'<strong class="rc-swap-points" aria-label="{points:.2f} points">{points:.2f}</strong></div>')
 
-        team = html.escape(str(item.get("team") or team_by_rid.get(str(item.get("rid") or "")) or "Team"))
+        _team_raw = str(item.get("team") or team_by_rid.get(str(item.get("rid") or "")) or "Team")
+        _rid_s = str(item.get("rid") or "")
+        team = _clickable_team_name(_team_raw, {_team_raw: _rid_s} if _rid_s else None)
         rot_out = item.get("rotation_out") or [started]
         rot_in = item.get("rotation_in") or [reserve]
         if len(rot_out) > 1 or len(rot_in) > 1 or not rot_out:
@@ -21939,6 +21942,17 @@ def _build_lineup_analysis_html(
         return (f"<section class='rlc-section'><div class='rlc-head'><h3>{html.escape(title)}</h3>"
                 f"<span>{html.escape(note)}</span></div><div class='rlc-rows'>{visible}{more}</div></section>")
 
+    def _viewer_player(p, fallback="Bench player"):
+        """Player name in the viewer banner that opens the player modal,
+        mirroring the lineup rows' minimal player-clickable markup."""
+        nm = html.escape(str(p.get("name") or fallback))
+        pid = html.escape(str(p.get("pid") or p.get("player_id") or ""), quote=True)
+        if not pid:
+            return nm
+        nm_attr = html.escape(str(p.get("name") or fallback), quote=True)
+        return (f'<span class="player-clickable" tabindex="0" role="button" '
+                f'data-player-id="{pid}" data-player-name="{nm_attr}">{nm}</span>')
+
     viewer = ""
     own = next((x for x in analysis["missed_opportunities"] if str(x["rid"]) == str(viewer_rid)), None)
     team = next((x for x in analysis["teams"] if str(x["rid"]) == str(viewer_rid)), None)
@@ -21967,12 +21981,15 @@ def _build_lineup_analysis_html(
             if len(rot_in) > 1 or len(rot_out) > 1 or not rot_out:
                 # A multi-move rotation is not a swap; name who comes in and
                 # price the whole rotation, matching the Missed Opps rows.
-                ins = ", ".join(html.escape(str(p.get("name") or "Bench player")) for p in rot_in)
+                ins = ", ".join(_viewer_player(p) for p in rot_in)
                 hindsight = f" Best legal hindsight lineup: {ins} in (+{own['gap']:.2f})."
             else:
-                hindsight = (f" Best legal hindsight swap: {html.escape(str(own['bench_player'].get('name') or 'Bench player'))} "
-                             f"for {html.escape(str(own['starter'].get('name') or 'starter'))} (+{own['gap']:.2f}).")
-        viewer = f"<div class='recap-viewer-decision'><b>Your team · {html.escape(str(team['team']))}</b><span>{actual_text}.{hindsight}</span></div>"
+                hindsight = (f" Best legal hindsight swap: {_viewer_player(own['bench_player'])} "
+                             f"for {_viewer_player(own['starter'], 'starter')} (+{own['gap']:.2f}).")
+        _viewer_team = _clickable_team_name(
+            str(team['team']),
+            {str(team['team']): str(team.get('rid') or viewer_rid)})
+        viewer = f"<div class='recap-viewer-decision'><b>Your team · {_viewer_team}</b><span>{actual_text}.{hindsight}</span></div>"
 
     return (viewer + "<div class='card recap-lineup-card'><div class='recap-lineup-cols'>"
             + section(analysis["under_title"], analysis["under_note"], under_rows)

@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-27",
+        "tag": "update",
+        "text": "Weekly Recap: the Injury Report is cleaned up so player names are never cut off, with the status pill beside the name and the fantasy team listed under it. The Standings and Power Rankings cards now stretch to the same height, whichever is taller. Every team and player name on the page opens its team or player card, including League Activity, Lineup Review and the Game of the Week look-ahead.",
+        "link": "/recap"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "fix",
         "text": "My Leagues: the Rooting Guide and Bye Watch populate again. Bye Watch now reads each starter's bye from his team's schedule and covers the next week that has not kicked off yet, so it warns you about the byes you are actually facing. The Rooting Guide no longer gives up on a slow first load: it keeps retrying while the scan lands, the way the moves board already did.",
         "link": "/portfolio"
