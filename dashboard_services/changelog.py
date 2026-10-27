@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "Team cards and My Leagues cards: playoff odds now read at one decimal and only show 100% or 0% when a team has mathematically clinched a playoff spot or been eliminated. The Teams page team drawer now shows playoff odds for every team too, with the same rule.",
+        "link": "/teams"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "My Leagues: a league card no longer jumps ahead to next week's preview while its final result is still due. When the week rolls over, the finished matchup stays on the card even if that league's data was loaded before the last game ended.",
         "link": "/portfolio"
     },

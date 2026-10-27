@@ -557,12 +557,33 @@
         'Full Rebuild': 'td-win-full-rebuild'
     };
 
+    // Playoff odds display, same rule as the team modal and the Hub
+    // (_fmt_playoff_pct_display): undecided odds read at one decimal,
+    // floored to tenths, and literal 100 / 0 appears only for the sim's
+    // exact values (mathematically clinched / eliminated; everything
+    // else is capped at 99.9 / 0.1 by the simulator).
+    function _tdFmtPlayoffOdds(v) {
+        var raw = Number(v);
+        if (!isFinite(raw)) return '';
+        if (raw >= 100) return '100';
+        if (raw <= 0) return '0';
+        return (Math.floor(raw * 10 + 1e-9) / 10).toFixed(1);
+    }
+
     function _tdHeadHtml(t) {
         var head = '<div class="td-head-row">' + _tdAvatar(t) +
             '<div class="td-head-id">' +
             '<div class="td-name">' + _tdEsc(t.name) + (t.is_viewer ? '<span class="tsc-you">YOU</span>' : '') + '</div>';
-        if (t.window) {
-            head += '<div class="td-contend ' + (_TD_WIN_CLS[t.window] || 'td-win-crossroads') + '"><span class="td-dot" style="background:' + _tdEsc(t.win_color || '#94a3b8') + ';"></span>' + _tdEsc(t.window) + '</div>';
+        var oddsTxt = (t.playoff_odds != null) ? _tdFmtPlayoffOdds(t.playoff_odds) : '';
+        if (t.window || oddsTxt) {
+            head += '<div class="td-head-pills">';
+            if (t.window) {
+                head += '<span class="td-contend ' + (_TD_WIN_CLS[t.window] || 'td-win-crossroads') + '"><span class="td-dot" style="background:' + _tdEsc(t.win_color || '#94a3b8') + ';"></span>' + _tdEsc(t.window) + '</span>';
+            }
+            if (oddsTxt) {
+                head += '<span class="td-odds">Playoff odds <b>' + oddsTxt + '%</b></span>';
+            }
+            head += '</div>';
         }
         head += '</div>';
         if (t.grade && t.grade !== '?') {
