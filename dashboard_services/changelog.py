@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-27",
+        "tag": "new",
+        "text": "Weekly Recap and Breakout Engine now carry a small red dot in the navigation when there is a new one you have not opened yet. The dot clears when you open it and comes back when the next week's recap or the next breakout set lands.",
+        "link": "/recap"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "fix",
         "text": "Site reliability: pages and My Leagues load more consistently, and Refresh Data now kicks off the rebuild and updates each league as it lands instead of blocking on a full rebuild, so a slow league no longer stalls the whole site or leaves the refresh spinning.",
         "link": "/portfolio"
