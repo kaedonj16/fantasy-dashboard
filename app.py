@@ -40123,6 +40123,12 @@ def build_portfolio_body(
         "border-radius:12px;background:var(--card);color:inherit;outline:none;"
         "transition:border-color .12s;}"
         ".pf-fsearch:focus{border-color:var(--accent);}"
+        # Player Holdings sortable headers: every column sorts on click,
+        # the active column is accented and carries the direction arrow.
+        "#pfTable th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap;}"
+        "#pfTable th[data-sort]:hover{color:var(--accent);}"
+        "#pfTable th.pf-sorted{color:var(--accent);}"
+        "#pfTable th .pf-arrow{font-size:9px;margin-left:3px;}"
         # leagues table
         ".pf-leagues-table{table-layout:fixed;width:100%;}"
         ".pf-leagues-table th,.pf-leagues-table td{vertical-align:middle;}"
@@ -40165,7 +40171,11 @@ def build_portfolio_body(
         # Player Holdings: the 5-col table clips names on phones. Collapse each row
         # into a card -- badge + name/leagues + value -- and drop the secondary Rank
         # and Shares columns (the leagues list already conveys ownership breadth).
-        "#pfTable thead{display:none;}"
+        # The header stays as a slim horizontally scrolling strip so the
+        # sortable columns remain tappable on phones without widening the page.
+        "#pfTable thead{display:block;margin-bottom:8px;}"
+        "#pfTable thead tr{display:flex;gap:2px;overflow-x:auto;}"
+        "#pfTable thead th{flex:0 0 auto;padding:6px 8px;font-size:11px;}"
         "#pfTable,#pfTable tbody{display:block;width:100%;}"
         "#pfTable tr.pf-row{display:flex;align-items:center;gap:10px;"
         "border:1px solid var(--grid);border-radius:12px;padding:10px 12px;margin-bottom:8px;}"
@@ -41282,13 +41292,29 @@ def build_portfolio_body(
                 trend_s = "<span class='pf-trend flat'>=</span>"
             conc_s = (f"<span class='pf-conc'>{cnt} leagues</span>"
                       if cnt and int(cnt) >= 3 else "")
+            # Typed sort keys for the sortable holdings headers: parsed
+            # here, server-side, so the click handler never has to scrape
+            # display text. Missing bye/rank sort last ascending via the
+            # large sentinels; status sorts as its lowercase string (""
+            # for healthy, which the handler maps to a last-place key).
+            try:
+                _cnt_i = int(cnt)
+            except (TypeError, ValueError):
+                _cnt_i = 1
+            _bye_key = _bw_i if _bw_i else 999
+            _rank_digits = "".join(
+                ch for ch in str(p.get("pos_rank") or "") if ch.isdigit())
+            _rank_key = int(_rank_digits) if _rank_digits else 99999
+            _status_key = html.escape(_status.lower(), quote=True)
             # Rows past the first 25 start hidden behind a Show all button
             # (holdings arrive value-ordered); the filter script below can
             # still surface an extra row when it matches a search/filter.
             _row_extra = " pf-row-extra" if _hi >= 25 else ""
             _row_hidden = " hidden" if _hi >= 25 else ""
             h_rows += (
-                f"<tr class='pf-row{_row_extra}'{_row_hidden} data-pos='{pos}' data-name='{name_e.lower()}' data-value='{val}'>"
+                f"<tr class='pf-row{_row_extra}'{_row_hidden} data-pos='{pos}' data-name='{name_e.lower()}' data-value='{val}' "
+                f"data-shares='{_cnt_i}' data-bye='{_bye_key}' data-rank='{_rank_key}' "
+                f"data-status='{_status_key}' data-trend='{_rc7_i}'>"
                 f"<td><span class='pos-badge {pc}'>{pos}</span></td>"
                 f"<td class='team'>"
                 f"<div class='player-clickable' data-player-id='{pid}' data-player-name='{name_e}' style='cursor:pointer;font-weight:600;'>{name_e}{conc_s}</div>"
@@ -41319,7 +41345,16 @@ def build_portfolio_body(
             f"</div>"
             f"<div style='overflow-x:auto;'>"
             f"<table class='standings-table' id='pfTable'>"
-            f"<thead><tr><th></th><th style='text-align:left;'>Player</th><th>Rank</th><th>Shares</th><th>Bye</th><th>Status</th><th>7d</th><th>Value</th></tr></thead>"
+            f"<thead><tr>"
+            f"<th data-sort='pos' aria-sort='none'>Pos<span class='pf-arrow'></span></th>"
+            f"<th data-sort='name' aria-sort='none' style='text-align:left;'>Player<span class='pf-arrow'></span></th>"
+            f"<th data-sort='rank' aria-sort='none'>Rank<span class='pf-arrow'></span></th>"
+            f"<th data-sort='shares' aria-sort='none'>Shares<span class='pf-arrow'></span></th>"
+            f"<th data-sort='bye' aria-sort='none'>Bye<span class='pf-arrow'></span></th>"
+            f"<th data-sort='status' aria-sort='none'>Status<span class='pf-arrow'></span></th>"
+            f"<th data-sort='trend' aria-sort='none'>7d<span class='pf-arrow'></span></th>"
+            f"<th data-sort='value' class='pf-sorted' aria-sort='descending'>Value<span class='pf-arrow'>\u25BC</span></th>"
+            f"</tr></thead>"
             f"<tbody id='pfBody'>{h_rows}</tbody>"
             f"</table>"
             f"</div>"
@@ -41355,6 +41390,38 @@ def build_portfolio_body(
             f"if(s)s.addEventListener('input',function(){{fn=this.value.toLowerCase();applyFilters();}});"
             f"var sa=document.getElementById('pfShowAll');"
             f"if(sa)sa.addEventListener('click',function(){{expanded=true;sa.style.display='none';applyFilters();}});"
+            # Sortable columns: clicking a header reorders every row in
+            # the DOM (hidden past-25 rows included), the top-25 cap is
+            # re-dealt in the new order, and the existing filter/search
+            # render then runs on the sorted order. Keys are the typed
+            # per-row data attributes stamped server-side.
+            f"var sortKey='value',sortDir=-1;"
+            f"var POSORD={{QB:0,RB:1,WR:2,TE:3,K:4,DEF:5,IDP:6}};"
+            f"function posOrd(p){{return POSORD.hasOwnProperty(p)?POSORD[p]:50;}}"
+            f"function nameCmp(a,b){{var x=a.dataset.name||'',y=b.dataset.name||'';return x<y?-1:x>y?1:0;}}"
+            f"function cmpRows(a,b){{var c=0;"
+            f"if(sortKey==='rank'){{c=(parseFloat(a.dataset.rank)||0)-(parseFloat(b.dataset.rank)||0);if(!c)c=posOrd(a.dataset.pos||'')-posOrd(b.dataset.pos||'');if(!c)c=nameCmp(a,b);}}"
+            f"else if(sortKey==='pos'){{c=posOrd(a.dataset.pos||'')-posOrd(b.dataset.pos||'');if(!c)c=(parseFloat(b.dataset.value)||0)-(parseFloat(a.dataset.value)||0);if(!c)c=nameCmp(a,b);}}"
+            f"else if(sortKey==='name'){{c=nameCmp(a,b);}}"
+            f"else if(sortKey==='status'){{var sa2=a.dataset.status||'~~~~',sb2=b.dataset.status||'~~~~';c=sa2<sb2?-1:sa2>sb2?1:0;if(!c)c=nameCmp(a,b);}}"
+            f"else{{c=(parseFloat(a.dataset[sortKey])||0)-(parseFloat(b.dataset[sortKey])||0);if(!c)c=nameCmp(a,b);}}"
+            f"return c*sortDir;}}"
+            f"function applySort(){{"
+            f"var body=document.getElementById('pfBody');if(!body)return;"
+            f"var srows=Array.from(body.querySelectorAll('.pf-row'));"
+            f"srows.sort(cmpRows);"
+            f"srows.forEach(function(r){{body.appendChild(r);}});"
+            f"srows.forEach(function(r,i){{r.classList.toggle('pf-row-extra',i>=25);}});"
+            f"applyFilters();}}"
+            f"document.querySelectorAll('#pfTable th[data-sort]').forEach(function(th){{"
+            f"th.addEventListener('click',function(){{"
+            f"var k=th.getAttribute('data-sort');"
+            f"if(sortKey===k){{sortDir=-sortDir;}}else{{sortKey=k;sortDir=(k==='shares'||k==='trend'||k==='value')?-1:1;}}"
+            f"document.querySelectorAll('#pfTable th[data-sort]').forEach(function(x){{"
+            f"var on=x===th;x.classList.toggle('pf-sorted',on);"
+            f"x.setAttribute('aria-sort',on?(sortDir===1?'ascending':'descending'):'none');"
+            f"var ar=x.querySelector('.pf-arrow');if(ar)ar.textContent=on?(sortDir===1?String.fromCharCode(9650):String.fromCharCode(9660)):'';}});"
+            f"applySort();}});}});"
             f"var prev=document.getElementById('pfPrev'),next=document.getElementById('pfNext');"
             f"if(prev)prev.addEventListener('click',function(){{if(pg>1){{pg--;render();}}}}); "
             f"if(next)next.addEventListener('click',function(){{var pages=Math.ceil(filtered.length/PAGE);if(pg<pages){{pg++;render();}}}}); "

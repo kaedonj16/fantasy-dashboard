@@ -172,7 +172,7 @@ def test_holdings_columns_flag_and_no_pager():
     ]
     html = _render([_league()], holdings=holdings)
     assert "id='pfSecHoldings'" in html
-    for col in ("<th>Bye</th>", "<th>Status</th>", "<th>7d</th>"):
+    for col in ("data-sort='bye'", "data-sort='status'", "data-sort='trend'"):
         assert col in html
     assert "Wk 10" in html
     assert "pf-hstatus warn" in html and "Questionable" in html
@@ -183,3 +183,34 @@ def test_holdings_columns_flag_and_no_pager():
     # No holdings pager.
     assert "id='pfPrev'" not in html and "id='pfNext'" not in html
     assert "id='pfPageInfo'" not in html
+
+
+def test_holdings_sortable_columns_and_row_keys():
+    """Every holdings column header carries a data-sort key, Value is
+    the marked default (descending), and rows carry the typed sort
+    keys the click handler reads (never display text): shares/bye as
+    ints with a large sentinel for a missing bye, rank as the numeric
+    part of the position-rank label, status lowercased, 7d signed."""
+    holdings = [
+        {"pid": "p1", "name": "Top Wideout", "position": "WR", "value": 2980,
+         "pos_rank": "WR4", "shares": 3, "in_leagues": ["Alpha", "Beta", "Gamma"],
+         "bye_week": 10, "status": "Questionable", "rank_change_7d": 12},
+        {"pid": "p2", "name": "Hurt Back", "position": "RB", "value": 720,
+         "pos_rank": "RB27", "shares": 1, "in_leagues": ["Alpha"],
+         "bye_week": None, "status": "", "rank_change_7d": -4},
+    ]
+    html = _render([_league()], holdings=holdings)
+    for key in ("pos", "name", "rank", "shares", "bye", "status",
+                "trend", "value"):
+        assert f"data-sort='{key}'" in html
+    assert "data-sort='value' class='pf-sorted' aria-sort='descending'" in html
+    assert "data-shares='3'" in html and "data-shares='1'" in html
+    assert "data-bye='10'" in html and "data-bye='999'" in html
+    assert "data-rank='4'" in html and "data-rank='27'" in html
+    assert "data-status='questionable'" in html and "data-status=''" in html
+    assert "data-trend='12'" in html and "data-trend='-4'" in html
+    # The sort handler itself: comparator + header wiring + cap re-deal.
+    assert "function cmpRows(a,b)" in html
+    assert "function applySort()" in html
+    assert "pf-row-extra',i>=25" in html
+    assert "aria-sort" in html

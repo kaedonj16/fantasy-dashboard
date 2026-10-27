@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "update",
+        "text": "My Leagues loads faster: the Rooting Guide and Bye Watch now answer from a cached result right away and refresh in the background instead of rescanning your leagues on every load, and Player Holdings is sortable: click any column header (position, player, rank, shares, bye, status, 7d trend, value) to sort the whole table.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "update",
         "text": "My Leagues: the Rooting Guide and Bye Watch are cleaned up. Rooting Guide type and player rows are smaller and tighter, each game splits into two columns with your starters under the team they play for, a player you start in several leagues shows once with all of his league badges together, and upcoming games show the projection in muted type instead of a 0.0 for every player. Bye Watch now says Full strength once per league on a single line, with the leagues that have a hole to fill listed first.",
         "link": "/portfolio"
     },

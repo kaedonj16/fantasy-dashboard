@@ -293,11 +293,11 @@ def test_geometry_spread():
 def test_changelog_and_sw_for_fair_band_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[2]  # prepended above it: the rooting/bye cleanup, the Front Office scan fix
+    top = CHANGELOG[3]  # prepended above it: holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "fair-range" in top["text"]
     assert top["link"] == "/trade"
     assert "—" not in top["text"]  # no em dashes in UI copy
     sw = _read(os.path.join(_HERE, "..", "static", "sw.js"))
-    assert "br-fantasy-v116" in sw
+    assert "br-fantasy-v118" in sw

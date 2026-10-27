@@ -1889,11 +1889,11 @@ def api_portfolio_deep_dive():
 #   data -- only cached contexts, the viewer's starters and bye weeks -- so it
 #   answers immediately instead of waiting behind the rooting scan.
 # - /api/portfolio-insights serves the Rooting Guide. Its per-league work
-#   (a provider matchup fetch per league) runs on a thread pool, and the
-#   assembled response is cached per viewer/season/week for a short TTL so
-#   repeat loads in the window are free. The payload keeps an empty bye
-#   block for shape compatibility; the client reads byes from the bye
-#   endpoint now.
+#   (a provider matchup fetch per league) runs on a bounded background
+#   thread, never on the request thread, and the assembled response is
+#   cached per viewer/season/week for a short TTL so repeat loads in the
+#   window are free. The payload keeps an empty bye block for shape
+#   compatibility; the client reads byes from the bye endpoint now.
 _INSIGHTS_CACHE: dict = {}
 _INSIGHTS_CACHE_LOCK = threading.Lock()
 _INSIGHTS_TTL = 60.0  # seconds
@@ -1901,8 +1901,8 @@ _INSIGHTS_TTL = 60.0  # seconds
 # cache key -> monotonic start of the compute currently running for that
 # viewer. Concurrent requests for the same viewer defer to it instead of
 # piling a duplicate scan onto the box; a mark older than the stale window
-# is treated as abandoned and a new compute may take over. The owning
-# request clears its mark in a finally (see api_portfolio_insights).
+# is treated as abandoned and a new compute may take over. The background
+# worker clears its mark in a finally (see _pf_kick_background).
 _INSIGHTS_INFLIGHT: dict = {}
 _INSIGHTS_INFLIGHT_LOCK = threading.Lock()
 _INSIGHTS_INFLIGHT_STALE_S = 120.0  # seconds
@@ -2007,10 +2007,11 @@ def _latest_partial_payload(actions_key):
     return None
 
 
-def _insights_cache_get(key):
+def _insights_cache_get(key, max_age=None):
     with _INSIGHTS_CACHE_LOCK:
         ent = _INSIGHTS_CACHE.get(key)
-        if ent and time.monotonic() - ent[0] < _INSIGHTS_TTL:
+        if ent and time.monotonic() - ent[0] < (
+                _INSIGHTS_TTL if max_age is None else max_age):
             return ent[1]
     return None
 
@@ -2021,6 +2022,118 @@ def _insights_cache_put(key, payload):
         if len(_INSIGHTS_CACHE) > 64:
             oldest = min(_INSIGHTS_CACHE.items(), key=lambda kv: kv[1][0])[0]
             _INSIGHTS_CACHE.pop(oldest, None)
+
+
+# Stale-while-revalidate for both insight endpoints (2026-10-27 speed
+# pass). Past the fresh TTL, the last finished payload is served
+# immediately -- its ``updated`` stays the true compute time -- while ONE
+# bounded background refresh per viewer recomputes it. Memory bounds:
+# every cache here holds only finished JSON payloads (never league
+# contexts, never the players index), capped at 64 entries with the
+# oldest evicted, and stale entries stop being served past the grace
+# below. Background refreshes are single-flight per viewer (the
+# _*_INFLIGHT marks, stale after 120s like the actions marks) AND
+# globally capped by _ACTIONS_COMPUTE_SEM: a kick that cannot take the
+# semaphore is dropped and its mark cleared, so the next read re-kicks.
+_INSIGHTS_STALE_S = 1800.0  # serve-stale grace for the Rooting Guide
+_BYE_CACHE: dict = {}
+_BYE_CACHE_LOCK = threading.Lock()
+# Bye Watch is next week's outlook built from cache-only data, so a
+# 300s fresh TTL is safe (the insights TTL is 60s because the Rooting
+# Guide carries live scores); a hit pays no preamble at all.
+_BYE_TTL = 300.0  # seconds
+_BYE_STALE_S = 3600.0  # serve-stale grace for Bye Watch
+_BYE_INFLIGHT: dict = {}
+_BYE_INFLIGHT_LOCK = threading.Lock()
+_BYE_INFLIGHT_STALE_S = 120.0  # seconds, mirrors _INSIGHTS_INFLIGHT_STALE_S
+
+
+def _bye_cache_get(key, max_age=None):
+    with _BYE_CACHE_LOCK:
+        ent = _BYE_CACHE.get(key)
+        if ent and time.monotonic() - ent[0] < (
+                _BYE_TTL if max_age is None else max_age):
+            return ent[1]
+    return None
+
+
+def _bye_cache_put(key, payload):
+    with _BYE_CACHE_LOCK:
+        _BYE_CACHE[key] = (time.monotonic(), payload)
+        if len(_BYE_CACHE) > 64:
+            oldest = min(_BYE_CACHE.items(), key=lambda kv: kv[1][0])[0]
+            _BYE_CACHE.pop(oldest, None)
+
+
+def _pf_kick_background(kind, key, identity):
+    """Kick the deferred compute for one insight endpoint on a daemon
+    thread (the /api/portfolio-actions dispatch pattern).
+
+    Single-flight per viewer via the endpoint's inflight mark; globally
+    capped by _ACTIONS_COMPUTE_SEM (acquired non-blocking: an over-cap
+    kick is dropped, its mark cleared in the finally, and the next read
+    re-kicks). Returns True when a worker was spawned or one is already
+    in flight for this key. The worker captures no request state: the
+    preamble runs off the snapshot identity, and only the finished JSON
+    payload enters the cache.
+    """
+    if kind == "bye":
+        inflight, inflight_lock = _BYE_INFLIGHT, _BYE_INFLIGHT_LOCK
+        stale_s = _BYE_INFLIGHT_STALE_S
+    else:
+        inflight, inflight_lock = _INSIGHTS_INFLIGHT, _INSIGHTS_INFLIGHT_LOCK
+        stale_s = _INSIGHTS_INFLIGHT_STALE_S
+    with inflight_lock:
+        started = inflight.get(key)
+        if started is not None and time.monotonic() - started < stale_s:
+            return True
+        inflight[key] = time.monotonic()
+
+    def _worker():
+        owned = [key]
+        try:
+            if not _ACTIONS_COMPUTE_SEM.acquire(blocking=False):
+                return  # over the global cap: dropped, re-kicked next read
+            try:
+                base = _pf_viewer_leagues(identity=identity)
+                if base is None:
+                    return
+                real_key = base["cache_key"]
+                if real_key != key:
+                    # The resolver moved the season: hold the mark and
+                    # cache under the real key as well.
+                    with inflight_lock:
+                        inflight[real_key] = time.monotonic()
+                    owned.append(real_key)
+                if kind == "bye":
+                    payload = _compute_portfolio_bye(base)
+                    # A pass that scanned nothing never replaces the
+                    # last good payload (the actions latest-partial rule).
+                    if (payload.get("scan") or {}).get("scanned", 0) > 0:
+                        _bye_cache_put(real_key, payload)
+                else:
+                    payload = _compute_portfolio_insights(base)
+                    _insights_cache_put(real_key, payload)
+            except Exception:
+                logger.exception(
+                    "[portfolio-%s] background compute failed", kind)
+            finally:
+                _ACTIONS_COMPUTE_SEM.release()
+        finally:
+            with inflight_lock:
+                for _k in owned:
+                    inflight.pop(_k, None)
+
+    try:
+        threading.Thread(target=_worker, daemon=True,
+                         name=f"pf-{kind}-bg").start()
+    except Exception:
+        with inflight_lock:
+            inflight.pop(key, None)
+        logger.debug("[portfolio-%s] background spawn failed",
+                     kind, exc_info=True)
+        return False
+    return True
 
 
 def _pf_players_with_byes(nfl_players, season):
@@ -2052,15 +2165,34 @@ def _pf_players_with_byes(nfl_players, season):
     return out
 
 
-def _pf_viewer_leagues():
+def _pf_identity_snapshot():
+    """Session identity captured on the request thread.
+
+    Background insight computes (see _pf_kick_background) run with no
+    request context, so they receive this plain dict instead of touching
+    ``session``; league resolution itself takes explicit ids and needs
+    no session (the /api/portfolio-actions precedent).
+    """
+    return {
+        "viewer_username": session.get("viewer_username"),
+        "viewer_user_id": session.get("viewer_user_id"),
+        "account_id": session.get("account_id"),
+    }
+
+
+def _pf_viewer_leagues(identity=None):
     """Shared preamble for the insights/bye endpoints.
 
     Returns a context dict, or None when the caller should answer with its
     empty payload (signed out, no current week, league resolution failed).
+    ``identity`` is a _pf_identity_snapshot dict when the caller is a
+    background thread with no request context.
     """
-    viewer_username = session.get("viewer_username")
-    viewer_user_id = session.get("viewer_user_id")
-    account_id = session.get("account_id")
+    if identity is None:
+        identity = _pf_identity_snapshot()
+    viewer_username = identity.get("viewer_username")
+    viewer_user_id = identity.get("viewer_user_id")
+    account_id = identity.get("account_id")
     if (not viewer_username or not viewer_user_id) and not account_id:
         return None
     nfl_state = get_nfl_state() or {}
@@ -2367,18 +2499,8 @@ def _pf_bye_target_week(base):
     return week + 1
 
 
-@user_pages_bp.route("/api/portfolio-bye")
-def api_portfolio_bye():
-    """Bye Watch data for My Leagues (v25 insights band, split out).
-
-    Cache-only league contexts, never a provider matchup call: cold leagues
-    are skipped and reported in the scan block. Not PRO-gated, matching the
-    other insight cards on the page."""
-    empty = {"ok": True, "bye": {"week": 0, "rows": [], "total_out": 0},
-             "scan": {"total": 0, "scanned": 0, "incomplete": True}}
-    base = _pf_viewer_leagues()
-    if base is None:
-        return jsonify(empty)
+def _compute_portfolio_bye(base):
+    """Assemble the Bye Watch payload from a resolved viewer preamble."""
     next_week = _pf_bye_target_week(base)
     total = _pf_scan_total(base["league_inputs"])
     bye_rows = []
@@ -2393,7 +2515,7 @@ def api_portfolio_bye():
         if got:
             bye_rows.append(got[0])
             total_out += got[1]
-    return jsonify({
+    return {
         "ok": True,
         "week": next_week,
         "season": base["season"],
@@ -2401,7 +2523,48 @@ def api_portfolio_bye():
         "scan": {"total": total, "scanned": scanned,
                  "incomplete": scanned < total},
         "updated": datetime.now(timezone.utc).isoformat(),
-    })
+    }
+
+
+@user_pages_bp.route("/api/portfolio-bye")
+def api_portfolio_bye():
+    """Bye Watch data for My Leagues (v25 insights band, split out).
+
+    Cache-only league contexts, never a provider matchup call: cold leagues
+    are skipped and reported in the scan block. Not PRO-gated, matching the
+    other insight cards on the page.
+
+    Speed (2026-10-27): the finished payload is cached per viewer for
+    _BYE_TTL seconds, decided from the light key BEFORE the
+    _pf_viewer_leagues preamble (live league-resolution enrichment, the
+    players index, the model value table), so a hit pays none of it.
+    Past the TTL the stale payload is served immediately -- ``updated``
+    stays the true compute time -- while one bounded background refresh
+    recomputes it (see _pf_kick_background). A cold load still computes
+    on the request thread: the work is cache-only and bounded (at most
+    12 league resolves, no provider calls), and the client has no retry
+    ladder for this endpoint to land a deferred answer on."""
+    empty = {"ok": True, "bye": {"week": 0, "rows": [], "total_out": 0},
+             "scan": {"total": 0, "scanned": 0, "incomplete": True}}
+    light_key = _pf_light_cache_key()
+    if light_key is None:
+        # Signed out / no current week / off-season: the preamble would
+        # answer empty too, without paying for league resolution.
+        return jsonify(empty)
+    cached = _bye_cache_get(light_key)
+    if cached is not None:
+        return jsonify(cached)
+    stale = _bye_cache_get(light_key, max_age=_BYE_STALE_S)
+    if stale is not None:
+        _pf_kick_background("bye", light_key, _pf_identity_snapshot())
+        return jsonify(stale)
+    base = _pf_viewer_leagues()
+    if base is None:
+        return jsonify(empty)
+    payload = _compute_portfolio_bye(base)
+    if payload["scan"]["scanned"] > 0:
+        _bye_cache_put(base["cache_key"], payload)
+    return jsonify(payload)
 
 
 def _compute_portfolio_insights(base):
@@ -2554,8 +2717,15 @@ def api_portfolio_insights():
     # Cache and single-flight are decided from the light key BEFORE the
     # _pf_viewer_leagues preamble (resolve_my_leagues live enrichment,
     # get_nfl_players, the model value table): a hit pays none of it, and
-    # a compute already in flight for this viewer defers with the honest
-    # incomplete payload above instead of starting a duplicate scan.
+    # no request thread ever runs the scan itself (2026-10-27 speed pass:
+    # the owning request used to pay the full per-league provider sweep
+    # synchronously while only concurrent requests deferred). The compute
+    # now runs on one bounded background thread per viewer (see
+    # _pf_kick_background); a fresh cache hit answers as-is, a stale hit
+    # answers stale while the refresh runs, and a cold load answers with
+    # the honest incomplete payload above, which the client's retry
+    # ladder (loadInsights) lands on the finished cache -- the same
+    # contract /api/portfolio-actions has shipped since 2026-10-26.
     light_key = _pf_light_cache_key()
     if light_key is None:
         # Signed out / no current week / off-season: the preamble would
@@ -2564,36 +2734,12 @@ def api_portfolio_insights():
     cached = _insights_cache_get(light_key)
     if cached is not None:
         return jsonify(cached)
-    _owned_keys = []
-    with _INSIGHTS_INFLIGHT_LOCK:
-        _started = _INSIGHTS_INFLIGHT.get(light_key)
-        if (_started is not None
-                and time.monotonic() - _started < _INSIGHTS_INFLIGHT_STALE_S):
-            return jsonify(empty)
-        _INSIGHTS_INFLIGHT[light_key] = time.monotonic()
-        _owned_keys.append(light_key)
-    try:
-        base = _pf_viewer_leagues()
-        if base is None:
-            return jsonify(empty)
-        if base["cache_key"] != light_key:
-            # The resolver moved the season: re-check the real key's cache
-            # and hold the single-flight mark under it as well.
-            cached = _insights_cache_get(base["cache_key"])
-            if cached is not None:
-                return jsonify(cached)
-            with _INSIGHTS_INFLIGHT_LOCK:
-                _INSIGHTS_INFLIGHT[base["cache_key"]] = time.monotonic()
-                _owned_keys.append(base["cache_key"])
-        payload = _compute_portfolio_insights(base)
-        _insights_cache_put(base["cache_key"], payload)
-        return jsonify(payload)
-    finally:
-        # A failed compute must never leak the mark (the #2820 lesson):
-        # later requests would defer to a compute that is not running.
-        with _INSIGHTS_INFLIGHT_LOCK:
-            for _k in _owned_keys:
-                _INSIGHTS_INFLIGHT.pop(_k, None)
+    stale = _insights_cache_get(light_key, max_age=_INSIGHTS_STALE_S)
+    if stale is not None:
+        _pf_kick_background("insights", light_key, _pf_identity_snapshot())
+        return jsonify(stale)
+    _pf_kick_background("insights", light_key, _pf_identity_snapshot())
+    return jsonify(empty)
 
 
 # ── Live matchup score for a My Leagues card ──────────────────────────────────
