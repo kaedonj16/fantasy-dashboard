@@ -7323,7 +7323,7 @@ window.brandPlotlyLayout = function (extra) {
     font: { family: window.brandPlotlyFont, size: 12.5, color: '#7c8798' },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 } },
+    hoverlabel: { bgcolor: '#ffffff', bordercolor: '#e5e7eb', font: { family: window.brandPlotlyFont, size: 12, color: '#334155' } },
     legend: { font: { family: window.brandPlotlyFont, size: 11.5 }, bgcolor: 'rgba(0,0,0,0)', borderwidth: 0 },
   }, extra || {});
 };
