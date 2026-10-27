@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "update",
+        "text": "Weekly Hub: the matchup page is rebuilt around your game. Week Leaders now run across the top, your matchup carousel sits on the left and stays in view while the other column scrolls, and Scorers, Scout and Lineup live in one panel on the right. Scout is now a gameplan: the verdict with your win probability, the calls that decide the matchup, the positional edge, their top threats and their soft spots. Lineup opens on This Week, your current starters against the projected-optimal lineup, the swaps that gain you points and what they do to your win probability, with the completed-weeks Lineup Lab under History.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "update",
         "text": "League Stats: the chart grid now fits two columns only when each chart has room and drops to one column on narrower windows, cards in a row stretch to the same height, and the Consistency Ranking bars share one scale so they read in order. Chart hover labels now have a solid background, and the Standings Bump Chart renders again and seeds division winners first in division leagues. New charts: Floor / Ceiling, Luck Delta, Scoring Heatmap, Form: Last 3 Weeks, League Scoring by Week, and Career Wins by Team.",
         "link": "/graphs"
     },

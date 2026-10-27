@@ -3,13 +3,17 @@
 Weekly-focused, not dynasty. The old version leaned on the dynasty trade-value
 table (big 400/1000 numbers) for both the player rows and the strength/weakness
 math, which is meaningless in a weekly matchup and left real starters blank
-whenever that table lacked a name. This version scouts *this week*:
+whenever that table lacked a name. This version scouts *this week* as a
+gameplan:
 
-  1. "Where the matchup is won" - your projected starters vs theirs, by
-     position, so you can see where you're favored and where you're the dog.
-  2. "Their starters" - the opponent's lineup ranked by this week's projection,
-     with injury flags and a boom/bust profile, so the biggest (and shakiest)
-     threats are on top.
+  1. "Gameplan" - the verdict (favored or dog, with the slide's own win
+     probability), the derived calls from the positional edges, and the
+     always-open positional edge by slot group (QB/RB/WR/TE/FLEX, plus K/DEF
+     when the league starts them).
+  2. "Their threats" - the opponent's lineup ranked by this week's
+     projection (top 4, the rest behind a show-all toggle), with injury
+     flags and a boom/bust profile, plus their soft spots, bench pivots and
+     a status watch.
 
 The boom/bust profile is a real distribution off a player's game-by-game
 scores (floor, ceiling, a steady/volatile label), not a guess: it reuses
@@ -36,6 +40,29 @@ logger = logging.getLogger(__name__)
 # every request, so hold the scored map briefly (mirrors the start/sit loader).
 _WEEKLY_PTS_CACHE: dict = {}
 _WEEKLY_PTS_TTL = 3600.0
+
+
+def _last_final_week(ctx: dict, fallback: int) -> int:
+    """Last provider-finalized week from ctx's df_weekly (duck-typed, no
+    pandas import: this module renders in the slim test job). Used only to
+    mirror the matchup slide's projection-lookup inputs for win probability."""
+    df = ctx.get("df_weekly")
+    try:
+        if (
+            df is not None
+            and not getattr(df, "empty", True)
+            and {"week", "finalized"}.issubset(set(getattr(df, "columns", [])))
+        ):
+            finals = [
+                int(row["week"])
+                for row in df.to_dict("records")
+                if row.get("finalized") is True and row.get("week") is not None
+            ]
+            if finals:
+                return max(finals)
+    except Exception:
+        pass
+    return int(fallback or 0)
 
 
 def platform_sign_in_hint(platform: str) -> str:
@@ -355,40 +382,221 @@ def build_scout_body(ctx: dict) -> str:
 
     have_proj = any(p["proj"] is not None for p in opp_starters + you_starters)
 
-    def _pos_total(starters: list, pos: str) -> "float | None":
-        vals = [p["proj"] for p in starters if p["pos"] == pos and p["proj"] is not None]
-        return sum(vals) if vals else None
-
     you_total = sum(p["proj"] for p in you_starters if p["proj"] is not None)
     opp_total = sum(p["proj"] for p in opp_starters if p["proj"] is not None)
 
-    # ── Section 1: positional edge ────────────────────────────────────────────
-    positions = [p for p in _POS_ORDER if p in _PRIMARY_POS]
-    for pos in ("K", "DEF"):
-        if any(p["pos"] == pos for p in opp_starters + you_starters):
-            positions.append(pos)
+    # ── Slot grouping: edges are by lineup slot (QB/RB/WR/TE/FLEX/K/DEF), so
+    # a flexed RB counts at FLEX, not RB, matching the matchup preview. ──────
+    slot_order: list = []
+    try:
+        from dashboard_services.matchups import _canonical_slot_order
+        slot_order = _canonical_slot_order(ctx.get("roster_positions") or [])
+    except Exception:
+        slot_order = []
 
-    def _edge_row(pos: str) -> str:
-        you_p = _pos_total(you_starters, pos)
-        opp_p = _pos_total(opp_starters, pos)
-        if you_p is None and opp_p is None:
-            return ""
-        yv, ov = (you_p or 0.0), (opp_p or 0.0)
-        total = yv + ov
-        you_share = (yv / total * 100.0) if total > 0 else 50.0
-        delta = yv - ov
+    def _slot_group(slot: str) -> str:
+        s = (slot or "").upper()
+        if s in ("FLEX", "SUPER_FLEX", "SF", "OP", "RB/WR/TE", "W/R/T", "RB_WR", "WR_TE"):
+            return "FLEX"
+        if s in ("DEF", "D/ST", "DST"):
+            return "DEF"
+        return s
+
+    def _with_slots(entries: list) -> list:
+        """Pair each starter entry with its lineup-slot group (best effort).
+
+        Without roster_positions the group is just the player's position.
+        """
+        if not slot_order:
+            return [(e, e["pos"]) for e in entries]
+        try:
+            from dashboard_services.matchups import _realign_starters_to_slots
+            aligned = _realign_starters_to_slots(list(entries), slot_order)
+        except Exception:
+            aligned = list(entries)
+        out = []
+        for i, e in enumerate(aligned):
+            if e is None:
+                continue
+            slot = slot_order[i] if i < len(slot_order) else e["pos"]
+            out.append((e, _slot_group(slot)))
+        return out
+
+    you_slotted = _with_slots(you_starters)
+    opp_slotted = _with_slots(opp_starters)
+
+    def _group_total(slotted: list, group: str) -> "float | None":
+        vals = [e["proj"] for e, g in slotted if g == group and e["proj"] is not None]
+        return sum(vals) if vals else None
+
+    _GROUP_ORDER = ["QB", "RB", "WR", "TE", "FLEX", "K", "DEF"]
+    edge_data: list = []  # (group, you_val|None, opp_val|None, delta)
+    for g in _GROUP_ORDER:
+        if not any(gr == g for _, gr in you_slotted + opp_slotted):
+            continue
+        yv = _group_total(you_slotted, g)
+        ov = _group_total(opp_slotted, g)
+        if yv is None and ov is None:
+            continue
+        edge_data.append((g, yv, ov, (yv or 0.0) - (ov or 0.0)))
+
+    # ── Win probability: the exact model the matchup carousel uses, fed this
+    # matchup's blocks and the slide's own projection lookups. ───────────────
+    win_prob: "float | None" = None
+    if have_proj:
+        try:
+            from dashboard_services.matchups import (
+                build_slide_proj_lookups,
+                compute_win_prob,
+            )
+            _wp_statuses = (
+                (statuses.get(matchup_week) or statuses.get(current_week) or {})
+                .get("statuses", {}) or {}
+            )
+            _wp_map, _wp_pid_proj, _wp_frac = build_slide_proj_lookups(
+                season, matchup_week, _last_final_week(ctx, matchup_week),
+                ctx.get("proj_by_week") or {}, ctx.get("team_game_lookup") or {},
+                scoring_settings=ctx.get("raw_scoring_settings")
+                or ctx.get("scoring_settings"),
+            )
+            _p = compute_win_prob(
+                viewer_block, opponent_block, _wp_statuses, _wp_map,
+                frac_lookup=_wp_frac,
+            )
+            if _p is not None:
+                win_prob = float(_p)
+        except Exception:
+            logger.debug("scout: win prob unavailable", exc_info=True)
+
+    # ── Verdict ───────────────────────────────────────────────────────────────
+    you_standing = standings_map.get(viewer_roster_id)
+    if not isinstance(you_standing, dict):
+        you_standing = standings_map.get(str(viewer_roster_id))
+    if not isinstance(you_standing, dict):
+        you_standing = {}
+    you_roster = next(
+        (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
+    you_settings = (you_roster or {}).get("settings") or {}
+    you_wins = int(you_standing.get("wins") or you_settings.get("wins") or 0)
+    you_losses = int(you_standing.get("losses") or you_settings.get("losses") or 0)
+
+    same_div = False
+    try:
+        from utils.standings_divisions import div_map_for_ctx
+        _dm = div_map_for_ctx(ctx) or {}
+        def _div_of(rid: str):
+            for key in (rid, str(rid)):
+                if key in _dm:
+                    return _dm[key]
+            try:
+                return _dm.get(int(rid))
+            except (TypeError, ValueError):
+                return None
+        _dv, _do = _div_of(viewer_roster_id), _div_of(opponent_roster_id or "")
+        same_div = _dv is not None and _dv == _do
+    except Exception:
+        same_div = False
+
+    total_delta = you_total - opp_total
+    verdict_dog = total_delta < 0
+    if have_proj:
+        chip = ""
+        if win_prob is not None:
+            chip = (
+                f"<span class='scout-wchip{' is-dog' if win_prob < 0.5 else ''}'>"
+                f"{win_prob * 100:.0f}% win prob</span>"
+            )
+        if abs(total_delta) < 1.0:
+            verdict_line = f"Dead even with {opp_name} {chip}"
+        elif total_delta > 0:
+            verdict_line = (
+                f"You are favored by <em>{total_delta:.1f}</em> vs {opp_name} {chip}")
+        else:
+            verdict_line = (
+                f"You are underdogs by <em>{abs(total_delta):.1f}</em> vs {opp_name} {chip}")
+        verdict_sub = (
+            f"{you_total:.1f} vs {opp_total:.1f} proj · {opp_name} "
+            f"{opp_wins}-{opp_losses}, you {you_wins}-{you_losses} · "
+            f"Week {matchup_week}" + (" · divisional" if same_div else "")
+        )
+        wpbar = (
+            f"<div class='scout-wpbar'><span style='width:{win_prob * 100:.0f}%;'></span></div>"
+            if win_prob is not None else ""
+        )
+    else:
+        verdict_line = (
+            f"{opp_name} <span class='scout-record {opp_rec_cls}'>"
+            f"{opp_wins}-{opp_losses}</span>")
+        verdict_sub = f"Week {matchup_week} · projections not available yet"
+        wpbar = ""
+
+    # ── Gameplan calls: derived from the slot edges ───────────────────────────
+    def _group_names(slotted: list, group: str, limit: int = 2) -> list:
+        es = [e for e, g in slotted if g == group and e["proj"] is not None]
+        es.sort(key=lambda e: e["proj"], reverse=True)
+        return es[:limit]
+
+    def _join_names(entries: list) -> str:
+        names = [html.escape(e["name"]) for e in entries]
+        if len(names) <= 2:
+            return " and ".join(names)
+        return ", ".join(names)
+
+    # Largest single-slot (1 starter vs 1 starter) edge, for the callout.
+    _single_deltas = {}
+    for g, yv, ov, delta in edge_data:
+        if len(_group_names(you_slotted, g, 9)) == 1 and len(_group_names(opp_slotted, g, 9)) == 1:
+            _single_deltas[g] = delta
+    _best_single = max(_single_deltas.values(), default=None)
+
+    plan_rows: list = []
+    _used_groups: set = set()
+    pos_edges = sorted((d for d in edge_data if d[3] >= 1.0), key=lambda d: -d[3])
+    neg_edges = sorted((d for d in edge_data if d[3] <= -1.0), key=lambda d: d[3])
+    for g, yv, ov, delta in pos_edges[:2]:
+        yn = _group_names(you_slotted, g)
+        on = _group_names(opp_slotted, g)
+        if len(yn) == 1 and len(on) == 1:
+            ev = (f"<b>{html.escape(yn[0]['name'])} +{delta:.1f} over "
+                  f"{html.escape(on[0]['name'])}</b>")
+            if _best_single is not None and delta == _best_single:
+                ev += " <span>· biggest single-slot edge</span>"
+        else:
+            ev = (f"<b>+{delta:.1f} edge</b> <span>· {_join_names(yn)} vs "
+                  f"{_join_names(on)}</span>")
+        plan_rows.append(("win", f"Win it at {g}", ev))
+        _used_groups.add(g)
+    if neg_edges:
+        g, yv, ov, delta = neg_edges[0]
+        yn = _group_names(you_slotted, g)
+        on = _group_names(opp_slotted, g)
+        if len(yn) == 1 and len(on) == 1:
+            ev = (f"<b>{html.escape(on[0]['name'])} +{abs(delta):.1f} over "
+                  f"{html.escape(yn[0]['name'])}</b>")
+            if len(neg_edges) == 1:
+                ev += " <span>· the one slot they take</span>"
+        else:
+            ev = (f"<b>{abs(delta):.1f} edge to them</b> <span>· {_join_names(on)} vs "
+                  f"{_join_names(yn)}</span>")
+        plan_rows.append(("risk", f"Survive at {g}", ev))
+        _used_groups.add(g)
+
+    # ── Positional Edge (always open, by slot) ────────────────────────────────
+    def _edge_row(g: str, yv, ov, delta: float) -> str:
+        yv2, ov2 = (yv or 0.0), (ov or 0.0)
+        total = yv2 + ov2
+        you_share = (yv2 / total * 100.0) if total > 0 else 50.0
         if abs(delta) < 1.0:
             pill_cls, pill = "edge-even", "Even"
         elif delta > 0:
             pill_cls, pill = "edge-you", f"You +{delta:.1f}"
         else:
             pill_cls, pill = "edge-them", f"Them +{abs(delta):.1f}"
-        pc = pos if pos in _POS_ORDER else "K"
-        you_txt = f"{yv:.1f}" if you_p is not None else "–"
-        opp_txt = f"{ov:.1f}" if opp_p is not None else "–"
+        you_txt = f"{yv:.1f}" if yv is not None else "–"
+        opp_txt = f"{ov:.1f}" if ov is not None else "–"
         return (
             f"<div class='scout-edge'>"
-            f"<span class='pos-badge {pc}'>{pos}</span>"
+            f"<span class='pos-badge {g}'>{g}</span>"
             f"<span class='scout-edge-you'>{you_txt}</span>"
             f"<span class='scout-edge-bar'>"
             f"<span class='scout-edge-fill' style='width:{you_share:.0f}%;'></span>"
@@ -398,10 +606,7 @@ def build_scout_body(ctx: dict) -> str:
             f"</div>"
         )
 
-    edge_rows = "".join(_edge_row(pos) for pos in positions)
-
-    if have_proj and edge_rows:
-        total_delta = you_total - opp_total
+    if have_proj and edge_data:
         if abs(total_delta) < 1.0:
             head_cls, head_txt = "edge-even", "Dead even"
         elif total_delta > 0:
@@ -409,32 +614,19 @@ def build_scout_body(ctx: dict) -> str:
         else:
             head_cls, head_txt = "edge-them", f"Underdog by {abs(total_delta):.1f}"
         edge_section = (
-            f"<details class='card scout-card scout-acc' name='scout-acc' open>"
-            f"<summary class='card-header scout-acc-head'>"
-            f"<h2>{_EDGE_TITLE}</h2>"
-            f"<span class='scout-edge-pill {head_cls}'>{head_txt}</span>"
-            f"<span class='scout-acc-chev'></span>"
-            f"</summary>"
-            f"<div class='card-body'>"
-            f"<div class='scout-edge scout-edge-key'>"
-            f"<span class='pos-badge' style='visibility:hidden;'>·</span>"
-            f"<span class='scout-edge-you'>You {you_total:.1f}</span>"
-            f"<span class='scout-edge-bar' style='visibility:hidden;'></span>"
-            f"<span class='scout-edge-opp'>{opp_total:.1f} Them</span>"
-            f"<span class='scout-edge-pill' style='visibility:hidden;'>·</span>"
-            f"</div>"
-            f"{edge_rows}"
-            f"</div></details>"
+            f"<div class='scout-edge-sec'>"
+            f"<div class='scout-edge-head'><b>{_EDGE_TITLE}</b>"
+            f"<span class='scout-edge-pill {head_cls}'>{head_txt}</span></div>"
+            + "".join(_edge_row(g, yv, ov, d) for g, yv, ov, d in edge_data)
+            + "</div>"
         )
     else:
         edge_section = (
-            f"<details class='card scout-card scout-acc' name='scout-acc' open>"
-            f"<summary class='card-header scout-acc-head'>"
-            f"<h2>{_EDGE_TITLE}</h2><span class='scout-acc-chev'></span>"
-            f"</summary>"
-            "<div class='card-body' style='color:var(--muted);font-size:0.9em;padding:18px;'>"
+            f"<div class='scout-edge-sec'>"
+            f"<div class='scout-edge-head'><b>{_EDGE_TITLE}</b></div>"
+            "<div class='scout-noproj'>"
             "Weekly projections aren't available yet, so the positional edge "
-            "can't be computed. Check back closer to kickoff.</div></details>"
+            "can't be computed. Check back closer to kickoff.</div></div>"
         )
 
     # ── Section 2: opponent threat report ─────────────────────────────────────
@@ -442,11 +634,10 @@ def build_scout_body(ctx: dict) -> str:
         return p["proj"] if p["proj"] is not None else -1.0
 
     ranked = sorted(opp_starters, key=_proj_sort_key, reverse=True)
-    top_pid = ranked[0]["pid"] if ranked and ranked[0]["proj"] is not None else None
     banged_up = [p for p in opp_starters if p["inj_raw"] in _INJ_SITTING]
 
     def _profile_html(prof: "dict | None") -> str:
-        """Boom/bust chip + floor–ceiling range, with the rates in the tooltip."""
+        """Boom/bust chip + floor-ceiling range, with the rates in the tooltip."""
         if not prof:
             return ""
         kind, short = _PROFILE_KIND.get(prof.get("label", ""), ("balanced", prof.get("label", "")))
@@ -461,7 +652,7 @@ def build_scout_body(ctx: dict) -> str:
             season_note = f", {prof['season']} data"
         title = (
             f"{prof.get('label', '')}: floor {floor}, ceiling {ceiling} "
-            f"(20th–80th pct of weekly scores){season_note}. "
+            f"(20th-80th pct of weekly scores){season_note}. "
             f"Boom {boom}% / bust {bust}% of games."
         )
         return (
@@ -469,16 +660,13 @@ def build_scout_body(ctx: dict) -> str:
             f"{html.escape(short)}</span>{range_html}"
         )
 
-    def _threat_row(p: dict) -> str:
-        pc = p["pos"] if p["pos"] in _POS_ORDER else "K"
+    def _threat_row(rank: int, p: dict) -> str:
+        pc = p["pos"] if p["pos"] in _POS_ORDER or p["pos"] == "FLEX" else "K"
         inj_html = ""
         if p["inj_key"]:
             ic = _INJ_CLS.get(p["inj_key"], "")
             il = _INJ_LABEL.get(p["inj_key"], p["inj_key"])
             inj_html = f"<span class='inj-badge {ic}'>{il}</span>"
-        tag_html = ""
-        if p["pid"] == top_pid:
-            tag_html = "<span class='scout-tag scout-tag-threat'>Top threat</span>"
         if p["proj"] is not None:
             ppg_html = f"<span class='scout-ppg'>{p['proj']:.1f} proj</span>"
         else:
@@ -488,32 +676,50 @@ def build_scout_body(ctx: dict) -> str:
             )
         team_html = f"<span class='scout-team'>{html.escape(p['team'])}</span>" if p["team"] else ""
         return (
-            f"<div class='scout-player-row'>"
-            f"<span class='scout-player-id'>"
+            f"<div class='scout-trow'>"
+            f"<span class='scout-rk'>{rank}</span>"
             f"<span class='pos-badge {pc}'>{p['pos']}</span>"
-            f"<span class='scout-player-name'>{html.escape(p['name'])}</span>"
-            f"{team_html}{tag_html}{inj_html}"
+            f"<span class='scout-tid'>"
+            f"<span class='scout-tname'>{html.escape(p['name'])}</span>"
+            f"{team_html}{inj_html}"
             f"</span>"
-            f"<span class='scout-player-meta'>"
             f"<span class='scout-prof-wrap'>{_profile_html(p.get('profile'))}</span>"
             f"{ppg_html}"
-            f"</span>"
             f"</div>"
         )
 
-    threat_rows = "".join(_threat_row(p) for p in ranked)
+    # Top 4 threats up front; the rest behind a client-side show-all toggle.
+    threat_rows = "".join(_threat_row(i + 1, p) for i, p in enumerate(ranked[:4]))
+    extra_rows = "".join(
+        _threat_row(i + 5, p) for i, p in enumerate(ranked[4:]))
+    if extra_rows:
+        threat_rows += (
+            f"<div class='scout-threat-extra' hidden>{extra_rows}</div>"
+            f"<button type='button' class='scout-showall' data-showall "
+            f"data-more='Show all {len(ranked)} starters' "
+            f"data-less='Show fewer starters'>Show all {len(ranked)} starters</button>"
+        )
     if not threat_rows:
         threat_rows = "<p style='color:var(--muted);font-size:0.9em;'>Lineup not yet set.</p>"
 
-    inj_note = ""
-    if banged_up:
-        names = ", ".join(html.escape(p["name"]) for p in banged_up[:3])
-        more = f" +{len(banged_up) - 3} more" if len(banged_up) > 3 else ""
-        inj_note = (
-            f"<div class='scout-inj-note'>"
-            f"{names}{more} may not play. A chance to gain ground."
-            f"</div>"
-        )
+    # Third gameplan call when the edges alone don't fill three: watch their
+    # top threat at a slot the calls haven't covered.
+    if len(plan_rows) < 3:
+        for p in ranked:
+            if p["proj"] is None or p["pos"] in _used_groups:
+                continue
+            plan_rows.append((
+                "risk", f"Watch their {p['pos']}",
+                f"<b>{html.escape(p['name'])} {p['proj']:.1f} proj</b> "
+                f"<span>· their top threat at the slot</span>",
+            ))
+            _used_groups.add(p["pos"])
+            break
+    plan_html = "".join(
+        f"<div class='scout-plan-row pr-{kind}'>"
+        f"<div class='scout-plan-k {kind}'>{label}</div><p>{ev}</p></div>"
+        for kind, label, ev in plan_rows
+    )
 
     # One-line volatility read: only when the lineup leans clearly one way, and
     # only off players with a real (non-small-sample) profile.
@@ -533,73 +739,210 @@ def build_scout_body(ctx: dict) -> str:
                 f"{len(profiled)} starters are consistent, so don't count on them cratering.</div>"
             )
 
+    # ── Soft spots + pivots ───────────────────────────────────────────────────
+    def _slot_label(entry: dict) -> str:
+        """Slot label for a starter, e.g. RB2 for their second RB-slot back."""
+        for e, g in opp_slotted:
+            if e is entry:
+                same = [x for x, gg in opp_slotted if gg == g]
+                if len(same) > 1:
+                    return f"{g}{same.index(e) + 1}"
+                return g
+        return entry["pos"]
+
+    soft_rows: list = []  # (tag|None, text_html)
+    opp_by_proj = sorted(
+        (p for p in opp_starters if p["proj"] is not None),
+        key=lambda p: p["proj"],
+    )
+    you_min = min(
+        (p["proj"] for p in you_starters if p["proj"] is not None), default=None)
+    if opp_by_proj:
+        low = opp_by_proj[0]
+        where = (
+            "is the lowest starter on either side."
+            if you_min is None or low["proj"] <= you_min
+            else "is their lowest starter."
+        )
+        soft_rows.append((
+            f"{_slot_label(low)} · {low['proj']:.1f}",
+            f"{html.escape(low['name'])} {where}",
+        ))
+    if len(opp_by_proj) >= 2:
+        second = opp_by_proj[1]
+        label = (second.get("profile") or {}).get("label", "")
+        if label in ("Boom or bust", "Volatile"):
+            txt = f"{html.escape(second['name'])} runs hot or cold."
+        else:
+            txt = f"{html.escape(second['name'])} is next-lowest at {second['proj']:.1f}."
+        soft_rows.append((f"{_slot_label(second)} · {second['proj']:.1f}", txt))
+
+    # Their bench: a real pivot (out-projects a starter) or a thin one.
+    opp_roster = next(
+        (r for r in rosters if str(r.get("roster_id")) == opponent_roster_id), None)
+    _opp_starter_pid_set = {p["pid"] for p in opp_starters}
+    bench_proj: list = []
+    for pid in (opp_roster or {}).get("players") or []:
+        pid = str(pid)
+        if pid in _opp_starter_pid_set:
+            continue
+        bname, bpos, _bteam = _resolve_player(pid, players_map, players_index)
+        bproj = _week_proj_points(week_proj_map, pid, scoring, bpos)
+        if bproj is not None:
+            bench_proj.append((bname, bproj))
+    if bench_proj:
+        bname, bmax = max(bench_proj, key=lambda x: x[1])
+        if opp_by_proj and bmax > opp_by_proj[0]["proj"]:
+            soft_rows.append((
+                "Bench · live",
+                f"{html.escape(bname)} ({bmax:.1f}) out-projects their "
+                f"{_slot_label(opp_by_proj[0])} starter. They have a move to make.",
+            ))
+        else:
+            soft_rows.append((
+                "Bench · thin",
+                f"No bench player over {bmax:.1f} proj, no real pivot.",
+            ))
+
+    # Status watch: a starter who may not play, and what his absence does to
+    # the slot edge if we can price it.
+    if banged_up:
+        names = ", ".join(html.escape(p["name"]) for p in banged_up[:3])
+        more = f" +{len(banged_up) - 3} more" if len(banged_up) > 3 else ""
+        sit_txt = f"{names}{more} may not play."
+        top_sit = max(banged_up, key=lambda p: p["proj"] or 0.0)
+        if top_sit["proj"]:
+            for e, g in opp_slotted:
+                if e is top_sit:
+                    _gd = next((d for gg, _y, _o, d in edge_data if gg == g), None)
+                    if _gd is not None:
+                        sit_txt += (
+                            f" If {html.escape(top_sit['name'])} sits, your {g} "
+                            f"edge goes to about +{_gd + top_sit['proj']:.0f}. "
+                            f"No move needed."
+                        )
+                    break
+        soft_rows.append(("Status", sit_txt))
+
+    # The read: their path vs your cushion, from the edges and top threats.
+    top_threats = [p for p in ranked if p["proj"] is not None][:2]
+    best_edge = max(edge_data, key=lambda d: d[3]) if edge_data else None
+    read_txt = ""
+    if top_threats and best_edge is not None:
+        t_names = " and ".join(html.escape(p["name"]) for p in top_threats)
+        if win_prob is not None and win_prob < 0.5:
+            read_txt = (
+                f"Your path: {t_names} stay near their floors, and your "
+                f"{best_edge[0]} hits its ceiling.")
+        elif win_prob is not None:
+            read_txt = (
+                f"They need {t_names} at their ceilings to flip this. "
+                f"Your {best_edge[0]} edge is the cushion.")
+        else:
+            read_txt = f"It swings on {t_names} against your {best_edge[0]}."
+    if read_txt:
+        soft_rows.append((None, f"<b>The read:</b> {read_txt}"))
+
+    soft_html = ""
+    if soft_rows:
+        rows_html = "".join(
+            f"<div class='scout-soft-row'>"
+            + (f"<span class='scout-soft-tag'>{html.escape(tag)}</span> " if tag else "")
+            + f"<span>{txt}</span></div>"
+            for tag, txt in soft_rows
+        )
+        soft_html = (
+            "<div class='scout-soft-sec'>"
+            "<b class='scout-soft-title'>Soft spots + your pivots</b>"
+            f"{rows_html}</div>"
+        )
+
     threat_stamp = (
         f"<div class='scout-proj-stamp' style='margin-bottom:8px;'>"
         f"Week {current_week} Sleeper proj · boom/bust from weekly scores</div>"
     )
+
+    gameplan_card = (
+        f"<div class='card scout-card'>"
+        f"<div class='card-header'><h2>Gameplan</h2></div>"
+        f"<div class='card-body'>"
+        f"<div class='scout-verdict{' is-dog' if verdict_dog else ''}'>{verdict_line}</div>"
+        f"<div class='scout-verdict-sub'>{html.escape(verdict_sub)}</div>"
+        f"{wpbar}"
+        + (f"<div class='scout-plan'>{plan_html}</div>" if plan_html else "")
+        + f"{edge_section}"
+        f"</div></div>"
+    )
     threat_section = (
-        f"<details class='card scout-card scout-acc' name='scout-acc'>"
-        f"<summary class='card-header scout-acc-head'>"
-        f"<h2>Their starters</h2>"
-        f"<span class='scout-acc-chev'></span>"
-        f"</summary>"
-        f"<div class='card-body'>{threat_stamp}{inj_note}{read_note}{threat_rows}</div>"
-        f"</details>"
+        f"<div class='card scout-card'>"
+        f"<div class='card-header'><h2>Their threats</h2>"
+        f"<span class='scout-threat-sub'>ranked by projection · floor-ceiling</span></div>"
+        f"<div class='card-body'>{threat_stamp}{read_note}{threat_rows}{soft_html}</div>"
+        f"</div>"
     )
 
     return _SCOUT_STYLE + (
         f"<div class='scout-report'>"
-        f"<div class='scout-header-row'>"
-        f"<span class='scout-opp-name'>{opp_name}</span>"
-        f"<span class='scout-record {opp_rec_cls}'>{opp_wins}-{opp_losses}</span>"
-        f"</div>"
-        f"{edge_section}"
+        f"{gameplan_card}"
         f"{threat_section}"
         f"</div>"
-    ) + _SCOUT_ACCORDION_JS
+    ) + _SCOUT_JS
 
 
 _SCOUT_STYLE = (
     "<style>"
     ".scout-report{display:flex;flex-direction:column;gap:14px;}"
-    ".scout-header-row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}"
-    ".scout-opp-name{font-size:1.3em;font-weight:700;}"
     ".scout-record{font-size:0.95em;font-weight:600;}"
     ".scout-record.color-win{color:var(--win);}"
     ".scout-record.color-loss{color:var(--loss);}"
     ".scout-card{margin:0;}"
-    # Accordion: summary is the clickable card-header; native marker hidden and
-    # replaced by a CSS chevron that flips when the section is open.
-    ".scout-acc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer;list-style:none;user-select:none;}"
-    ".scout-acc-head::-webkit-details-marker{display:none;}"
-    ".scout-acc-head h2{margin:0;margin-right:auto;}"
-    ".scout-acc-chev{flex-shrink:0;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--muted);transition:transform .15s ease;}"
-    ".scout-acc[open]>.scout-acc-head .scout-acc-chev{transform:rotate(180deg);}"
-    ".scout-acc-head:hover .scout-acc-chev{border-top-color:var(--text);}"
+    # Gameplan card: verdict + win prob, the derived calls, then the edge.
+    ".scout-verdict{font-size:1.18em;font-weight:800;}"
+    ".scout-verdict em{font-style:normal;color:var(--win);}"
+    ".scout-verdict.is-dog em{color:var(--loss);}"
+    ".scout-wchip{display:inline-block;background:var(--win);color:#fff;font-weight:800;font-size:0.72em;border-radius:999px;padding:2px 10px;vertical-align:2px;margin-left:6px;white-space:nowrap;}"
+    ".scout-wchip.is-dog{background:var(--loss);}"
+    ".scout-verdict-sub{color:var(--muted);font-size:0.88em;margin-top:2px;}"
+    ".scout-wpbar{height:6px;border-radius:3px;background:color-mix(in srgb,var(--loss) 45%,transparent);overflow:hidden;margin-top:10px;}"
+    ".scout-wpbar span{display:block;height:100%;background:var(--win);}"
+    ".scout-plan{margin-top:10px;}"
+    ".scout-plan-row{display:flex;gap:12px;align-items:baseline;border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin-bottom:8px;font-size:0.94em;}"
+    ".scout-plan-row:last-child{margin-bottom:0;}"
+    ".scout-plan-row.pr-win{background:color-mix(in srgb,var(--win) 5%,transparent);border-color:color-mix(in srgb,var(--win) 25%,var(--border));}"
+    ".scout-plan-row.pr-risk{background:color-mix(in srgb,var(--warning) 6%,transparent);border-color:color-mix(in srgb,var(--warning) 28%,var(--border));}"
+    ".scout-plan-k{font-size:0.72em;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);flex:0 0 108px;}"
+    ".scout-plan-k.win{color:var(--win);}"
+    ".scout-plan-k.risk{color:color-mix(in srgb,var(--warning) 85%,var(--text));}"
+    ".scout-plan-row p{margin:0;}"
+    ".scout-plan-row p span{color:var(--muted);}"
+    ".scout-edge-sec{border-top:1px solid var(--border);margin-top:12px;padding-top:10px;}"
+    ".scout-edge-head{display:flex;align-items:center;gap:10px;}"
+    ".scout-edge-head b{font-size:0.98em;}"
+    ".scout-edge-head .scout-edge-pill{margin-left:auto;}"
+    ".scout-noproj{color:var(--muted);font-size:0.9em;padding:10px 0 4px;}"
     ".scout-edge{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);}"
     ".scout-edge:last-child{border-bottom:none;}"
-    ".scout-edge-key{font-size:0.72em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;padding-bottom:2px;}"
     ".scout-edge-you,.scout-edge-opp{min-width:40px;font-weight:600;font-size:0.9em;}"
     ".scout-edge-you{text-align:right;}"
     ".scout-edge-opp{text-align:left;}"
-    ".scout-edge-bar{flex:1;height:8px;border-radius:4px;background:color-mix(in srgb,var(--loss) 55%,transparent);overflow:hidden;min-width:60px;}"
+    ".scout-edge-bar{flex:1;height:10px;border-radius:5px;background:color-mix(in srgb,var(--loss) 55%,transparent);overflow:hidden;min-width:60px;}"
     ".scout-edge-fill{display:block;height:100%;background:var(--win);border-radius:4px 0 0 4px;}"
     ".scout-edge-pill{font-size:0.75em;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;min-width:64px;text-align:center;}"
     ".edge-you{background:color-mix(in srgb,var(--win) 16%,transparent);color:var(--win);}"
     ".edge-them{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss);}"
     ".edge-even{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);}"
-    ".scout-player-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);font-size:0.9em;}"
-    ".scout-player-row:last-child{border-bottom:none;}"
-    ".scout-player-id{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;}"
-    ".scout-player-meta{flex:0 0 auto;margin-left:auto;display:flex;align-items:center;gap:8px;justify-content:flex-end;}"
-    ".scout-player-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}"
+    # Threat rows: rank, badge, name + team, profile chip + range, projection.
+    ".scout-threat-sub{color:var(--muted);font-size:0.8em;margin-left:auto;}"
+    ".scout-trow{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--border);font-size:0.94em;}"
+    ".scout-trow:last-child{border-bottom:none;}"
+    ".scout-rk{color:var(--warning);font-weight:800;font-size:0.8em;width:14px;flex:0 0 auto;}"
+    ".scout-tid{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;}"
+    ".scout-tname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;}"
     ".scout-team{font-size:0.78em;color:var(--muted);flex-shrink:0;}"
-    ".scout-ppg{font-size:0.82em;font-weight:600;min-width:66px;text-align:right;}"
+    ".scout-ppg{font-size:0.88em;font-weight:800;min-width:66px;text-align:right;white-space:nowrap;}"
     ".scout-ppg-miss{min-width:92px;font-style:italic;font-weight:400;color:var(--muted);}"
     ".scout-proj-stamp{font-size:0.72em;color:var(--muted);font-weight:500;}"
-    ".scout-tag{font-size:0.68em;font-weight:700;padding:2px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em;}"
-    ".scout-tag-threat{background:color-mix(in srgb,var(--warning) 20%,transparent);color:color-mix(in srgb,var(--warning) 85%,var(--text));}"
-    ".scout-inj-note{font-size:0.82em;color:color-mix(in srgb,var(--warning) 85%,var(--text));background:color-mix(in srgb,var(--warning) 10%,transparent);border:1px solid color-mix(in srgb,var(--warning) 30%,var(--border));border-radius:6px;padding:7px 10px;margin-bottom:10px;}"
+    ".scout-showall{display:block;margin:8px auto 0;background:none;border:0;font:inherit;font-size:0.9em;font-weight:700;color:var(--accent);cursor:pointer;padding:4px 8px;}"
     ".scout-read{font-size:0.84em;color:var(--text);background:var(--card-soft,color-mix(in srgb,var(--muted) 8%,transparent));border:1px solid var(--border);border-radius:6px;padding:7px 10px;margin-bottom:10px;}"
     ".scout-prof-wrap{display:inline-flex;align-items:center;gap:5px;justify-content:flex-end;min-width:118px;}"
     ".scout-profile{font-size:0.68em;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap;cursor:default;}"
@@ -608,41 +951,46 @@ _SCOUT_STYLE = (
     ".scout-prof-volatile{background:color-mix(in srgb,var(--warning) 20%,transparent);color:color-mix(in srgb,var(--warning) 85%,var(--text));}"
     ".scout-prof-boom{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss);}"
     ".scout-prof-small{background:color-mix(in srgb,var(--muted) 12%,transparent);color:var(--muted);font-style:italic;font-weight:500;}"
-    ".scout-range{font-size:0.72em;color:var(--muted);min-width:38px;text-align:right;}"
+    ".scout-range{font-size:0.78em;color:var(--muted);min-width:38px;text-align:right;white-space:nowrap;}"
     ".inj-badge{font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;}"
     ".inj-q{background:#fef08a;color:#713f12;}"
     ".inj-d{background:#fed7aa;color:#7c2d12;}"
     ".inj-o{background:#fecaca;color:#7f1d1d;}"
-    # Narrow screens (phones): the identity (badge + full name + team/tags) takes
-    # the whole first line so names are never truncated, and the profile/proj
-    # metrics drop to a second line indented under the name. Kept last in the
-    # sheet so these rules win the source-order tie against the base rules above.
+    # Soft spots + pivots, closing with the read.
+    ".scout-soft-sec{border-top:1px solid var(--border);margin-top:10px;padding-top:8px;}"
+    ".scout-soft-title{font-size:0.98em;}"
+    ".scout-soft-row{padding:7px 0;border-bottom:1px solid var(--border);font-size:0.94em;}"
+    ".scout-soft-row:last-child{border-bottom:none;}"
+    ".scout-soft-row span{color:var(--muted);}"
+    ".scout-soft-row b{color:var(--text);}"
+    ".scout-soft-tag{display:inline-block;background:var(--card-soft,#f1f5f9);border:1px solid var(--border);border-radius:6px;padding:0 6px;font-weight:800;font-size:0.8em;color:var(--text);}"
+    # Narrow screens (phones): identity takes the first line so names are never
+    # truncated; profile/proj metrics drop to a second line under the name.
     "@media (max-width:560px){"
-    ".scout-player-id{flex-basis:100%;}"
-    ".scout-player-name{white-space:normal;overflow:visible;text-overflow:clip;}"
-    ".scout-player-meta{flex:1 1 100%;min-width:0;margin-left:44px;justify-content:flex-start;}"
-    ".scout-prof-wrap{min-width:0;justify-content:flex-start;}"
+    ".scout-tid{flex-basis:100%;}"
+    ".scout-tname{white-space:normal;overflow:visible;text-overflow:clip;}"
+    ".scout-prof-wrap{min-width:0;justify-content:flex-start;margin-left:62px;}"
     ".scout-ppg{margin-left:auto;}"
+    ".scout-plan-k{flex-basis:92px;}"
     "}"
     "</style>"
 )
 
 
-# Enforce single-open accordion behavior. Modern browsers already do this via
-# the shared name="scout-acc" attribute; this is a defensive fallback for older
-# engines and runs once per report. Inline so scout_page stays self-contained.
-_SCOUT_ACCORDION_JS = (
+# Threats show-all toggle: expands the starters past the top 4 in place.
+# Inline so scout_page stays self-contained; binds once per report.
+_SCOUT_JS = (
     "<script>(function(){"
     "var reports=document.querySelectorAll('.scout-report');"
     "for(var i=0;i<reports.length;i++){"
-    "var r=reports[i];if(r.__accBound)continue;r.__accBound=true;"
-    "var accs=r.querySelectorAll('details.scout-acc');"
-    "(function(group){"
-    "for(var j=0;j<group.length;j++){"
-    "group[j].addEventListener('toggle',function(){"
-    "if(this.open){for(var k=0;k<group.length;k++){if(group[k]!==this)group[k].open=false;}}"
-    "});}"
-    "})(accs);"
+    "var r=reports[i];if(r.__scoutBound)continue;r.__scoutBound=true;"
+    "var btn=r.querySelector('[data-showall]');"
+    "var extra=r.querySelector('.scout-threat-extra');"
+    "if(!btn||!extra)continue;"
+    "btn.addEventListener('click',function(){"
+    "var show=extra.hidden;extra.hidden=!show;"
+    "btn.textContent=show?btn.getAttribute('data-less'):btn.getAttribute('data-more');"
+    "});"
     "}"
     "})();</script>"
 )

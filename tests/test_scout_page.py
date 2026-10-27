@@ -1,9 +1,9 @@
 """Scout tab smoke tests: weekly opponent scouting report.
 
 Does not import Flask. Matchups may use the live hub shape (left/right) or the
-older team1/team2 shape. The report has two sections: a positional edge
-("Positional Edge") and an opponent threat list ("Their starters"), shown as a
-single-open accordion.
+older team1/team2 shape. The report is a gameplan card (verdict, derived plan
+rows, always-open "Positional Edge") plus an opponent threat card ("Their
+threats") with soft spots.
 """
 from __future__ import annotations
 
@@ -81,10 +81,11 @@ def test_scout_renders_from_live_left_right_matchups():
     assert "Rival FC" in html            # opponent team name
     assert "Sleeper proj" in html
     assert "Positional Edge" in html
-    assert "Their starters" in html
-    # Two collapsible sections, first (edge) open by default.
-    assert html.count("<details class='card scout-card scout-acc'") == 2
-    assert "scout-acc' name='scout-acc' open>" in html
+    assert "Their threats" in html
+    # Gameplan layout: verdict line up top, no accordion sections anymore.
+    assert "scout-verdict" in html
+    assert "You are favored by" in html
+    assert "<details" not in html
 
 
 def test_scout_falls_back_to_team1_team2():
@@ -187,7 +188,7 @@ def test_scout_profile_absent_without_scores():
     ])
     html = build_scout_body(ctx)
     assert "class='scout-profile" not in html
-    assert "Their starters" in html
+    assert "Their threats" in html
 
 
 def test_scout_volatility_read_line():
@@ -209,3 +210,89 @@ def test_scout_volatility_read_line():
     ctx["prior_season"] = 2025
     html = build_scout_body(ctx)
     assert "High-variance lineup" in html
+
+
+def _gameplan_ctx():
+    """Fuller lineups so slot groups, threats and soft spots all compute."""
+    players = {
+        "q1": {"name": "Josh Allen", "pos": "QB", "team": "BUF"},
+        "r1": {"name": "Bijan Robinson", "pos": "RB", "team": "ATL"},
+        "r2": {"name": "Breece Hall", "pos": "RB", "team": "NYJ"},
+        "w1": {"name": "Ja'Marr Chase", "pos": "WR", "team": "CIN"},
+        "w2": {"name": "Garrett Wilson", "pos": "WR", "team": "NYJ"},
+        "t1": {"name": "Trey McBride", "pos": "TE", "team": "ARI"},
+        "b1": {"name": "Bench Back", "pos": "RB", "team": "DAL"},
+        "oq": {"name": "Justin Herbert", "pos": "QB", "team": "LAC"},
+        "or1": {"name": "Saquon Barkley", "pos": "RB", "team": "PHI"},
+        "or2": {"name": "Jahmyr Gibbs", "pos": "RB", "team": "DET"},
+        "ow1": {"name": "Tyreek Hill", "pos": "WR", "team": "MIA"},
+        "ow2": {"name": "Amon-Ra St. Brown", "pos": "WR", "team": "DET"},
+        "ot1": {"name": "Mark Andrews", "pos": "TE", "team": "BAL"},
+        "ob1": {"name": "Weak Bench", "pos": "WR", "team": "NYG"},
+    }
+    proj = {"q1": 24.0, "r1": 18.0, "r2": 12.0, "w1": 19.0, "w2": 13.0,
+            "t1": 11.0, "b1": 15.0, "oq": 22.0, "or1": 20.0, "or2": 16.0,
+            "ow1": 17.0, "ow2": 15.0, "ot1": 9.4, "ob1": 6.0}
+    mine = ["q1", "r1", "r2", "w1", "w2", "t1"]
+    theirs = ["oq", "or1", "or2", "ow1", "ow2", "ot1"]
+    return {
+        "viewer": {"viewer_roster_id": "1"},
+        "platform": "sleeper",
+        "league_id": "L1",
+        "season": 2026,
+        "current_week": 8,
+        "offseason_mode": False,
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        "rosters": [
+            {"roster_id": 1, "players": mine + ["b1"], "starters": mine,
+             "settings": {"wins": 5, "losses": 2}},
+            {"roster_id": 2, "players": theirs + ["ob1"], "starters": theirs,
+             "settings": {"wins": 4, "losses": 3}},
+        ],
+        "roster_map": {"1": "You", "2": "Fire Riley"},
+        "standings_map": {"1": {"wins": 5, "losses": 2},
+                          "2": {"wins": 4, "losses": 3}},
+        "players_index": players,
+        "matchups_by_week": {8: [{
+            "left": {"roster_id": "1", "starters": [{"pid": p} for p in mine]},
+            "right": {"roster_id": "2", "starters": [{"pid": p} for p in theirs]},
+        }]},
+        "statuses": {8: {"statuses": {"ot1": "O"}}},
+        "proj_by_week": {8: proj},
+        "weekly_pts_map": {},
+        "prior_pts_map": {},
+        "prior_season": None,
+    }
+
+
+def test_scout_gameplan_layout():
+    html = build_scout_body(_gameplan_ctx())
+    # Verdict: 97.0 vs 99.4, so underdogs by 2.4, with the win-prob chip/bar.
+    assert "scout-verdict" in html
+    assert "You are underdogs by" in html
+    assert "win prob" in html
+    assert "scout-wpbar" in html
+    assert "97.0 vs 99.4 proj" in html
+    # Plan rows derived from the slot edges (QB +2.0, TE +1.6, RB -6.0).
+    assert "scout-plan-row pr-win" in html
+    assert "Win it at QB" in html
+    assert "Win it at TE" in html
+    assert "scout-plan-row pr-risk" in html
+    assert "Survive at RB" in html
+    # Positional Edge is always open (no accordion anywhere).
+    assert "Positional Edge" in html
+    assert "<details" not in html
+    # Threats: top 4 visible, the rest behind the show-all toggle.
+    assert "Their threats" in html
+    assert "scout-threat-extra" in html
+    assert "Show all 6 starters" in html
+    assert "scout-trow" in html
+    # Soft spots: lowest starter, thin bench, status watch, the read.
+    assert "Soft spots + your pivots" in html
+    assert "TE · 9.4" in html
+    assert "Mark Andrews is the lowest starter on either side." in html
+    assert "Bench · thin" in html
+    assert "Mark Andrews may not play." in html
+    assert "The read:" in html
+    # No apply-style action anywhere in the report.
+    assert "Apply" not in html
