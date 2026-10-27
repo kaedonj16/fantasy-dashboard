@@ -61,6 +61,9 @@ def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None, week=7):
     import utils.utils as uu
 
     bp_mod._INSIGHTS_CACHE.clear()
+    bp_mod._INSIGHTS_INFLIGHT.clear()
+    bp_mod._BYE_CACHE.clear()
+    bp_mod._BYE_INFLIGHT.clear()
     monkeypatch.setattr(
         bp_mod, "get_nfl_state",
         lambda *a, **k: {"season": 2026, "week": week, "season_type": "reg"})
@@ -197,7 +200,98 @@ def test_bye_targets_next_week_once_kickoff_passes(monkeypatch):
     assert data["bye"]["rows"][0]["verdict"] == "Full strength"
 
 
+# ── Bye endpoint: response cache + stale-while-revalidate ───────────────────
+
+def test_bye_second_call_within_ttl_does_not_recompute(monkeypatch):
+    """The bye payload is cached per viewer under the light key: a
+    second call inside the TTL must not pay the _pf_viewer_leagues
+    preamble (league resolution, players index, model table) at all."""
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, _pa = _client(monkeypatch, ctxs)
+    calls = {"n": 0}
+    orig = bp_mod._pf_viewer_leagues
+
+    def _counting(identity=None):
+        calls["n"] += 1
+        return orig(identity)
+
+    monkeypatch.setattr(bp_mod, "_pf_viewer_leagues", _counting)
+    first = client.get("/api/portfolio-bye").get_json()
+    assert first["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+    assert calls["n"] == 1
+    second = client.get("/api/portfolio-bye").get_json()
+    assert calls["n"] == 1  # cache hit: zero recomputation
+    assert second == first  # same payload, original updated stamp
+
+
+def test_bye_stale_payload_served_while_one_background_refresh_runs(
+        monkeypatch):
+    """Past the fresh TTL (but inside the stale grace) the endpoint
+    serves the stale payload immediately -- original ``updated`` and
+    all -- and kicks exactly one background refresh; a second stale
+    call while it runs does not kick another."""
+    import threading
+    import time as _time
+
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, _pa = _client(monkeypatch, ctxs)
+    first = client.get("/api/portfolio-bye").get_json()
+    assert first["scan"]["scanned"] == 2
+    key = next(iter(bp_mod._BYE_CACHE))
+    stale_payload = bp_mod._BYE_CACHE[key][1]
+    bp_mod._BYE_CACHE[key] = (
+        _time.monotonic() - bp_mod._BYE_TTL - 1.0, stale_payload)
+
+    calls = {"n": 0}
+    orig_compute = bp_mod._compute_portfolio_bye
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _blocking_compute(base):
+        calls["n"] += 1
+        entered.set()
+        release.wait(timeout=5)
+        return orig_compute(base)
+
+    monkeypatch.setattr(bp_mod, "_compute_portfolio_bye", _blocking_compute)
+    try:
+        served = client.get("/api/portfolio-bye").get_json()
+        assert served == first  # stale payload, honest updated stamp
+        assert entered.wait(timeout=2.0)  # the one refresh is running
+        served2 = client.get("/api/portfolio-bye").get_json()
+        assert served2 == first
+        assert calls["n"] == 1  # still exactly one refresh in flight
+    finally:
+        release.set()
+    deadline = _time.time() + 5.0
+    while _time.time() < deadline:
+        if not bp_mod._BYE_INFLIGHT and bp_mod._bye_cache_get(key) is not None:
+            break
+        _time.sleep(0.02)
+    assert bp_mod._BYE_INFLIGHT == {}
+    refreshed = bp_mod._bye_cache_get(key)
+    assert refreshed is not None
+    assert refreshed["updated"] != first["updated"]  # a real recompute landed
+
+
 # ── Insights endpoint: cache + parallel order ───────────────────────────────
+
+def _poll_insights(client, bp_mod, timeout=5.0):
+    """Poll the insights endpoint until the background compute lands in
+    the cache (and its single-flight mark clears), like the client's
+    retry ladder does."""
+    import time as _time
+
+    deadline = _time.time() + timeout
+    data = None
+    while _time.time() < deadline:
+        data = client.get("/api/portfolio-insights").get_json()
+        if (data and not (data.get("scan") or {}).get("incomplete")
+                and not bp_mod._INSIGHTS_INFLIGHT):
+            return data
+        _time.sleep(0.02)
+    return data
+
 
 def _matchup_rows(plat, lid, week, season):
     return [
@@ -220,12 +314,16 @@ def test_insights_second_call_within_ttl_is_cached(monkeypatch):
 
     monkeypatch.setattr(bp_mod, "get_league_ctx_from_cache", _counting)
     first = client.get("/api/portfolio-insights").get_json()
-    assert first["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
-    assert calls["n"] == 2  # one ctx read per league on the cold call
+    # Cold load (2026-10-27 speed pass): the request thread no longer
+    # computes; it answers deferred and the compute lands in background.
+    assert first["scan"]["incomplete"] is True
+    landed = _poll_insights(client, bp_mod)
+    assert landed["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+    assert calls["n"] == 2  # one ctx read per league on the landed compute
     second = client.get("/api/portfolio-insights").get_json()
     assert calls["n"] == 2  # TTL cache: no recomputation at all
-    assert second["rooting"] == first["rooting"]
-    assert second["updated"] == first["updated"]  # honest computed-at time
+    assert second["rooting"] == landed["rooting"]
+    assert second["updated"] == landed["updated"]  # honest computed-at time
     # Bye no longer rides the insights response.
     assert second["bye"]["rows"] == []
 
@@ -237,9 +335,9 @@ def test_insights_parallel_assembly_preserves_league_order(monkeypatch):
     sched = [{"home": "BUF", "away": "NYJ",
               "gameTime_epoch": _sun_1pm_et_epoch()}]
     ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
-    client, _bp, platform_api = _client(monkeypatch, ctxs, sched=sched)
+    client, bp_mod, platform_api = _client(monkeypatch, ctxs, sched=sched)
     monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
-    data = client.get("/api/portfolio-insights").get_json()
+    data = _poll_insights(client, bp_mod)
     windows = data["rooting"]["windows"]
     assert len(windows) == 1
     card = windows[0]["games"][0]
@@ -248,12 +346,13 @@ def test_insights_parallel_assembly_preserves_league_order(monkeypatch):
     assert names == ["Starter One", "Starter Two"]
 
 
-def test_insights_concurrent_call_defers_to_inflight_compute(monkeypatch):
-    """Single-flight (2026-10-27): while one request computes insights,
-    a concurrent request for the same viewer must NOT duplicate the
-    compute (per-league synchronous provider fetches on a second
-    request thread). It answers immediately with the honest incomplete
-    payload, and the landed compute is what later calls serve."""
+def test_insights_cold_call_defers_to_background_compute(monkeypatch):
+    """Non-blocking cold load (2026-10-27 speed pass): NO request thread
+    runs the per-league provider sweep anymore, not even the first one.
+    A cold call answers immediately with the honest incomplete payload
+    while exactly one background compute runs; a concurrent call for
+    the same viewer defers to that compute instead of duplicating it,
+    and the landed compute is what later calls serve."""
     import threading
     import time as _time
 
@@ -269,39 +368,35 @@ def test_insights_concurrent_call_defers_to_inflight_compute(monkeypatch):
 
     def _blocking_rows(plat, lid, week, season):
         calls["n"] += 1
-        if calls["n"] <= 2:  # the first compute's two league fetches (2-wide pool)
+        if calls["n"] <= 2:  # the background compute's two league fetches
             entered.set()
             release.wait(timeout=5)
         return _matchup_rows(plat, lid, week, season)
 
     monkeypatch.setattr(platform_api, "get_matchups", _blocking_rows)
     bp_mod._INSIGHTS_INFLIGHT.clear()
-    holder = {}
-    worker = threading.Thread(
-        target=lambda: holder.setdefault(
-            "data", client.get("/api/portfolio-insights").get_json()))
-    worker.start()
     try:
-        assert entered.wait(timeout=2.0)  # first compute is in flight
+        started = _time.time()
+        first = client.get("/api/portfolio-insights").get_json()
+        # Answered immediately even though the compute it kicked is
+        # parked inside get_matchups: the request thread never computed.
+        assert _time.time() - started < 2.0
+        assert first["scan"]["scanned"] == 0
+        assert first["scan"]["incomplete"] is True
+        assert entered.wait(timeout=2.0)  # background compute is in flight
         deadline = _time.time() + 2.0
         while calls["n"] < 2 and _time.time() < deadline:
             _time.sleep(0.02)
-        assert calls["n"] == 2  # both of the first compute's fetches are parked
-        started = _time.time()
+        assert calls["n"] == 2  # both of the compute's fetches are parked
         deferred = client2.get("/api/portfolio-insights").get_json()
-        # Answered immediately, without a second compute: no extra
-        # provider fetches and no completed scan claimed.
-        assert _time.time() - started < 2.0
+        # Concurrent call: deferred too, no duplicate compute kicked.
         assert calls["n"] == 2
         assert deferred["scan"]["scanned"] == 0
         assert deferred["scan"]["incomplete"] is True
     finally:
         release.set()
-        worker.join(timeout=5.0)
-        bp_mod._INSIGHTS_INFLIGHT.clear()
-    # The owning compute landed and cached; the next call serves it.
-    assert holder["data"]["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
-    served = client.get("/api/portfolio-insights").get_json()
+    # The background compute landed and cached; the next call serves it.
+    served = _poll_insights(client, bp_mod)
     assert served["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
     assert bp_mod._INSIGHTS_INFLIGHT == {}
 
@@ -326,9 +421,9 @@ def test_insights_skips_live_overlay_before_first_kickoff(monkeypatch):
     future = _time.time() + 2 * 86400
     sched = [{"home": "BUF", "away": "NYJ", "gameTime_epoch": future}]
     ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
-    client, _bp, platform_api = _client(monkeypatch, ctxs, sched=sched)
+    client, bp_mod, platform_api = _client(monkeypatch, ctxs, sched=sched)
     monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
-    data = client.get("/api/portfolio-insights").get_json()
+    data = _poll_insights(client, bp_mod)
     assert calls == []
     windows = data["rooting"]["windows"]
     assert len(windows) == 1
@@ -352,3 +447,9 @@ def test_client_loads_bye_immediately_and_defers_rooting():
     assert "window.addEventListener('br:portfolio-primary-settled', kickInsights" in js
     assert "setTimeout(kickInsights, 6000);" in js
     assert "insightsKicked" in js
+    # Speed pass (2026-10-27): the server answers deferred instantly
+    # (background compute), so the first retry is shorter, and the
+    # Rooting card also kicks when scrolled into view.
+    assert "var INS_RETRY = [3000, 15000, 30000];" in js
+    assert "IntersectionObserver" in js
+    assert "getElementById('pfSecRooting')" in js

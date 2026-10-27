@@ -30488,12 +30488,14 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (!rb) return;
     attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
     // Same ladder as the moves board: the scan is a per-league provider
-    // sweep that can overrun one request on a cold cache, and the server
-    // caches the landed compute for 60s and single-flights it. The old
-    // single 20s shot painted "Could not load your games" permanently on
-    // exactly the loads the cache was about to serve. A deferred
-    // (single-flight) or failed attempt retries instead of rendering.
-    var INS_RETRY = [6000, 15000, 30000];
+    // sweep that runs on a bounded server-side background thread, and
+    // the server caches the landed compute for 60s and single-flights
+    // it, so a cold answer comes back deferred immediately and the first
+    // retry only has to outlast the compute itself. The old single 20s
+    // shot painted "Could not load your games" permanently on exactly
+    // the loads the cache was about to serve. A deferred (single-flight)
+    // or failed attempt retries instead of rendering.
+    var INS_RETRY = [3000, 15000, 30000];
     var fetcher = window.brFetchWithTimeout || window.fetch;
     fetcher('/api/portfolio-insights', { cache: 'no-store', credentials: 'same-origin' }, 45000)
       .then(function (r) { return r.json(); })
@@ -30549,7 +30551,10 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   // Bye Watch is cache-only data on its own endpoint: load it immediately.
   // The Rooting Guide scan waits until the league cards settle (or a
   // bounded fallback when the card lifecycle never runs) so it never
-  // competes with the card and board loads.
+  // competes with the card and board loads. It also kicks as soon as the
+  // Rooting card is scrolled into view, so a fast scroll is not stuck
+  // waiting on the fallback; whichever kick fires first wins and the
+  // scan loads exactly once.
   var insightsKicked = false;
   function kickInsights() {
     if (insightsKicked) return;
@@ -30558,6 +30563,19 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   }
   window.addEventListener('br:portfolio-primary-settled', kickInsights, { once: true });
   setTimeout(kickInsights, 6000);
+  var rgCard = document.getElementById('pfSecRooting');
+  if (rgCard && 'IntersectionObserver' in window) {
+    var rgObserver = new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) {
+          rgObserver.disconnect();
+          kickInsights();
+          return;
+        }
+      }
+    }, { rootMargin: '200px' });
+    rgObserver.observe(rgCard);
+  }
   if (document.readyState !== 'loading') loadBye();
   else document.addEventListener('DOMContentLoaded', loadBye);
 })();
