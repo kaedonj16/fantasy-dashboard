@@ -908,6 +908,7 @@ def _append_injury_rows(rows: list, injury_df, roster_name: dict, season) -> Non
                     },
                     "status": status,
                     "body": _clean(rec.get("Body")),
+                    "rid": rid,
                     "team_name": roster_name.get(rid, f"Roster {rid}"),
                 },
             }

@@ -380,20 +380,22 @@ def _recent_activity(activity_df, week: int, limit: int = 5) -> list[dict]:
 _RECAP_INJURIES_CSS = """<style>
   .rc-inj-card { padding:6px 12px; display:grid;
                  grid-template-columns:repeat(2, minmax(0,1fr)); column-gap:20px; }
-  .rc-inj-row { display:flex; align-items:center; gap:10px; padding:8px 0; min-width:0; }
+  .rc-inj-row { padding:10px 0; min-width:0; }
   .rc-inj-row:nth-child(n+3) { border-top:1px solid var(--border); }
   @media (max-width:640px) {
     .rc-inj-card { grid-template-columns:minmax(0,1fr); }
     .rc-inj-row:nth-child(2) { border-top:1px solid var(--border); }
   }
+  .rc-inj-top { display:flex; align-items:center; gap:10px; min-width:0; }
   .rc-inj-status { font-size:11px; font-weight:800; letter-spacing:.05em; padding:3px 7px;
                    border-radius:999px; color:var(--rc-inj); flex-shrink:0;
                    background:color-mix(in srgb, var(--rc-inj) 14%, transparent); }
-  .rc-inj-main { flex:1; min-width:0; }
-  .rc-inj-name { font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .rc-inj-sub { font-size:11px; color:var(--muted); }
-  .rc-inj-team { font-size:13px; font-weight:600; color:var(--muted); text-align:right;
-                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:40%; }
+  .rc-inj-main { min-width:0; }
+  .rc-inj-name { flex:1; min-width:0; font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rc-inj-sub { display:flex; align-items:baseline; gap:6px; min-width:0; margin-top:2px;
+                font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; }
+  .rc-inj-detail { flex-shrink:0; }
+  .rc-inj-team { min-width:0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>"""
 
 _RECAP_ACTIVITY_CSS = """<style>
@@ -834,7 +836,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     <div style="display:flex;align-items:center;gap:10px;opacity:0.5;">
       {ava_img(opp["owner"], opp["rid"], 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(opp["owner"], opp["rid"])}</div>
+        <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(opp["owner"], opp["rid"])}</div>
       </div>
       <div style="font-size:22px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.2f}</div>
     </div>
@@ -1246,7 +1248,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         last_div = div
     standing_rows_html = "".join(standing_parts)
     standings_html = f"""
-<div class="card" style="overflow:hidden;">
+<div class="card recap-rank-card" style="overflow:hidden;">
   <div class="card-header">
     <h3>Standings</h3>
     <a href="/{_platform}/{_season}/{_league_id}/standings?week={selected_week}" style="font-size:13px;color:var(--accent);">View full standings</a>
@@ -1273,7 +1275,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         power_rows.append(f'<div class="st-row{" recap-viewer-team" if str(session.get("viewer_roster_id") or "") == rid else ""}"><div class="st-rank{(" lead" if i == 1 else "")}">{i}</div>'
                           f'{ava_img(team_by_rid.get(rid, ""), rid, 28)}<div class="st-main"><div class="st-name">'
                           f'{team_link(team_by_rid.get(rid, ""), rid)}</div></div><div class="st-rec"><div class="wl">{score_text}</div></div>{move}</div>')
-    power_html = f'<div class="card" style="overflow:hidden"><div class="card-header"><h3>Power Rankings</h3>' \
+    power_html = f'<div class="card recap-rank-card" style="overflow:hidden"><div class="card-header"><h3>Power Rankings</h3>' \
                  f'<a href="/{_platform}/{_season}/{_league_id}/teams" style="font-size:13px;color:var(--accent)">View power rankings</a></div>{"".join(power_rows)}</div>'
     standings_html = f'<section class="recap-section recap-changes"><div class="recap-section-heading"><h2>Standings &amp; Power Rankings</h2><small>Through Week {selected_week}</small></div><div class="recap-rank-grid">{standings_html}{power_html}</div></section>'
 
@@ -1384,14 +1386,24 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 accent = ("var(--loss)" if inj["status"] in ("OUT", "IR", "PUP", "NFI")
                           else "var(--warning)")
                 sub = " · ".join(b for b in (inj["pos"], inj["nfl"], inj["body"]) if b)
+                # Player name gets the full row width: the status pill sits
+                # to its right instead of in its own left column, and the
+                # fantasy team (clickable, opens the team modal) drops to
+                # the muted sub-line after the injury detail, so neither
+                # competes with the name for space in the 336px rail.
+                team_html = team_link(inj["team"], inj.get("rid"))
+                sub_html = (f'<span class="rc-inj-detail">{html.escape(sub)}</span>'
+                            f'<span aria-hidden="true">·</span>' if sub else "")
+                sub_html += f'<span class="rc-inj-team">{team_html}</span>'
                 inj_rows.append(f"""
     <div class="rc-inj-row">
-      <span class="rc-inj-status" style="--rc-inj:{accent};">{html.escape(inj["status"])}</span>
       <div class="rc-inj-main">
-        <div class="rc-inj-name">{player_span(inj["player"], inj["pid"])}</div>
-        <div class="rc-inj-sub">{html.escape(sub)}</div>
+        <div class="rc-inj-top">
+          <div class="rc-inj-name">{player_span(inj["player"], inj["pid"])}</div>
+          <span class="rc-inj-status" style="--rc-inj:{accent};">{html.escape(inj["status"])}</span>
+        </div>
+        <div class="rc-inj-sub">{sub_html}</div>
       </div>
-      <div class="rc-inj-team">{html.escape(inj["team"])}</div>
     </div>""")
             injuries_html = (
                 f'<section class="recap-section recap-injuries"><div class="recap-section-heading">'
@@ -1432,9 +1444,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             yr, rnd = dp.get("season"), dp.get("round")
             label = f"{yr} Rd {rnd} pick" if yr and rnd else "Draft pick"
             orig = str(dp.get("roster_id") or "")
+            via_html = ""
             if orig and orig != str(receiver_rid):
-                label += f" via {team_by_rid.get(orig, 'another team')}"
-            return f'<span class="rc-act-asset">{html.escape(label)}</span>'
+                via_html = (f" via {team_link('', orig)}" if team_by_rid.get(orig)
+                            else " via another team")
+            return f'<span class="rc-act-asset">{html.escape(label)}{via_html}</span>'
 
         act_items = []
         for row in recent_activity:
@@ -1452,7 +1466,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                     gets_html = ", ".join(gets) if gets else '<span class="rc-act-meta">Nothing</span>'
                     sides.append(
                         f'<div class="rc-act-side"><div class="rc-act-team">'
-                        f'{html.escape(str(tm.get("name") or ""))}</div>'
+                        f'{team_link(str(tm.get("name") or ""), rid)}</div>'
                         f'<div class="rc-act-gets">gets {gets_html}</div></div>')
                 if sides:
                     act_items.append(
@@ -1466,7 +1480,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                         f'<div class="rc-act-item"><div class="rc-act-head">'
                         f'<span class="rc-act-kind rc-act-kind--waiver">Waiver add</span>{ts_html}</div>'
                         f'<div class="rc-act-line"><span class="rc-act-team-inline">'
-                        f'{html.escape(str(data.get("name") or ""))}</span> added '
+                        f'{team_link(str(data.get("name") or ""), data.get("rid"))}</span> added '
                         f'{", ".join(adds)}</div></div>')
             elif row["kind"] == "injury":
                 pl = data.get("player") or {}
@@ -1476,12 +1490,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 status = str(data.get("status") or "").strip()
                 body = str(data.get("body") or "").strip()
                 detail = f" ({html.escape(body)})" if body else ""
+                inj_rid = data.get("rid") or next(
+                    (r for r, n in team_by_rid.items()
+                     if n == str(data.get("team_name") or "")), "")
                 act_items.append(
                     f'<div class="rc-act-item"><div class="rc-act-head">'
                     f'<span class="rc-act-kind rc-act-kind--injury">Injury</span>{ts_html}</div>'
                     f'<div class="rc-act-line"><span class="rc-act-team-inline">'
-                    f'{html.escape(str(data.get("team_name") or ""))}</span> '
-                    f'{html.escape(pname)}{pmeta_html} listed '
+                    f'{team_link(str(data.get("team_name") or ""), inj_rid)}</span> '
+                    f'{player_span(pname, pl.get("pid"))}{pmeta_html} listed '
                     f'<strong>{html.escape(status)}</strong>{detail}</div></div>')
         if act_items:
             activity_html = (

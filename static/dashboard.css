@@ -34687,7 +34687,13 @@ button:disabled {
 .weekly-recap .recap-eff-insight { display:flex; flex-direction:column; margin-top:7px; padding-top:10px; border-top:1px solid var(--border); color:var(--muted); font-size:11px; }
 .weekly-recap .recap-eff-insight strong { color:var(--loss); font-size:22px; line-height:1.1; font-variant-numeric:tabular-nums; }
 .weekly-recap .recap-eff-partial { margin-top:8px; color:var(--muted); font-size:11px; }
-.weekly-recap .recap-rank-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start; gap:14px; }
+.weekly-recap .recap-rank-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:stretch; gap:14px; }
+/* Both rank cards stretch to whichever is taller, and their rows stretch
+   with them, so the shorter card never ends in dead space. */
+.weekly-recap .recap-rank-card { display:flex; flex-direction:column; height:100%; }
+.weekly-recap .recap-rank-card .card-header { flex:0 0 auto; }
+.weekly-recap .recap-rank-card .st-division { flex:0 0 auto; }
+.weekly-recap .recap-rank-card .st-row { flex:1 1 auto; }
 .weekly-recap .st-division { padding:9px 16px 5px; color:var(--muted); font-size: 11px; font-weight:800; text-transform:uppercase; }
 .weekly-recap .st-movement { min-width:25px; font-size:11px; font-weight:800; text-align:right; }
 .weekly-recap .st-movement.up { color:var(--win); } .weekly-recap .st-movement.down { color:var(--loss); } .weekly-recap .st-movement.flat { color:var(--muted); }

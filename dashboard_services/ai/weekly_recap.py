@@ -634,6 +634,7 @@ def _starter_flags(
             impact = (value_by_pid.get(pid, 0.0) or 0.0) / _VALUE_TO_PPG
         nfl = str(p.get("nfl") or "").upper()
         entry = {
+            "pid": pid,
             "name": p.get("name"), "pos": p.get("pos"),
             "proj": round(proj, 1), "value": value_by_pid.get(pid, 0.0),
             "impact": round(impact, 1),
@@ -936,7 +937,8 @@ def _build_next_week_preview(
         "as_of": (nctx or {}).get("as_of"),
         "game_of_the_week": top,
         "also_watch": [
-            {"team_a": g["team_a"], "team_b": g["team_b"], "why": g["why"]}
+            {"team_a": g["team_a"], "team_b": g["team_b"], "why": g["why"],
+             "roster_id_a": g.get("roster_id_a"), "roster_id_b": g.get("roster_id_b")}
             for g in games[1:3]
         ],
     }
@@ -1254,6 +1256,33 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
 
     g = preview["game_of_the_week"]
     wk = preview.get("next_week")
+
+    def _team_span(team, rid) -> str:
+        """Team name that opens the team modal via the delegated
+        .team-clickable handler. Plain text when no roster id is known."""
+        esc = html.escape(str(team))
+        rid_s = str(rid or "")
+        if not rid_s:
+            return esc
+        return (f"<span class='team-clickable' role='button' tabindex='0' "
+                f"data-roster-id='{html.escape(rid_s, quote=True)}' "
+                f"data-team-name='{html.escape(str(team), quote=True)}' "
+                f"style='cursor:pointer;'>{esc}</span>")
+
+    def _player_span(name, pid) -> str:
+        """Player name that opens the player modal via the delegated
+        .player-clickable handler. Plain text without a player id or a
+        league context to open the modal against."""
+        esc = html.escape(str(name or ""))
+        pid_s = str(pid or "")
+        if not pid_s or not league_id:
+            return esc
+        return (f"<span class='player-clickable' tabindex='0' role='button' "
+                f"data-player-id='{html.escape(pid_s, quote=True)}' "
+                f"data-player-name='{html.escape(str(name or ''), quote=True)}' "
+                f"data-league-id='{html.escape(str(league_id), quote=True)}' "
+                f"data-platform='{html.escape(str(platform or ''), quote=True)}' "
+                f"data-season='{html.escape(str(season or ''), quote=True)}'>{esc}</span>")
     title_lead = preview.get("round_label") if preview.get("is_playoff") else "Game of the Week"
     # Centered title only; the surrounding section header already carries the week.
     header_html = (
@@ -1263,7 +1292,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
         "</div>"
     )
 
-    def _side(team: str, record: str, rank, avatar, proj, cls: str) -> str:
+    def _side(team: str, record: str, rank, avatar, proj, cls: str, rid="") -> str:
         rank_str = f"#{rank}" if rank else ""
         meta = " · ".join(x for x in [record, rank_str] if x)
         if avatar:
@@ -1283,7 +1312,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
         return (
             f"<div class='{cls} br-gotw-side'>"
             f"{av}"
-            f"<div class='br-gotw-name'>{html.escape(str(team))}</div>"
+            f"<div class='br-gotw-name'>{_team_span(team, rid)}</div>"
             f"<div class='br-gotw-meta'>{html.escape(meta)}</div>"
             f"{proj_html}"
             "</div>"
@@ -1291,9 +1320,9 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
 
     matchup_row = (
         "<div class='br-gotw-matchup'>"
-        + _side(g["team_a"], g["record_a"], g["rank_a"], g.get("avatar_a"), g.get("proj_a"), "br-gotw-l")
+        + _side(g["team_a"], g["record_a"], g["rank_a"], g.get("avatar_a"), g.get("proj_a"), "br-gotw-l", g.get("roster_id_a"))
         + "<div class='br-gotw-vs'>VS</div>"
-        + _side(g["team_b"], g["record_b"], g["rank_b"], g.get("avatar_b"), g.get("proj_b"), "br-gotw-r")
+        + _side(g["team_b"], g["record_b"], g["rank_b"], g.get("avatar_b"), g.get("proj_b"), "br-gotw-r", g.get("roster_id_b"))
         + "</div>"
     )
 
@@ -1351,14 +1380,15 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
                         continue
                     status = label or str(p.get("status") or "").title()
                     cands.append({
-                        "name": p.get("name"), "pos": p.get("pos"),
+                        "name": p.get("name"), "pos": p.get("pos"), "pid": p.get("pid"),
                         "status": status, "cls": badge_cls, "impact": impact,
                         "ppg": p.get("ppg"),
                     })
             cands.sort(key=lambda r: -r["impact"])
-            rows = [{k: r.get(k) for k in ("name", "pos", "status", "cls", "ppg")} for r in cands[:3]]
+            rows = [{k: r.get(k) for k in ("name", "pos", "status", "cls", "ppg", "pid")} for r in cands[:3]]
             if rows:
-                cols.append({"team": team, "side": side, "rows": rows})
+                cols.append({"team": team, "side": side, "rows": rows,
+                             "rid": g.get("roster_id_a") if side == "a" else g.get("roster_id_b")})
         return cols
 
     outs_cols = _notable_outs_cols()
@@ -1369,7 +1399,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
                         if r.get("ppg") else "")
             pos_html = (f"<span class='br-gotw-out-pos'>"
                         f"{html.escape(str(r['pos'] or ''))}</span>")
-            name_html = html.escape(str(r['name']))
+            name_html = _player_span(r['name'], r.get('pid'))
             # Dot separator between pos and PPG, only when PPG is shown.
             sep_html = "<span class='br-gotw-out-sep'>·</span>" if r.get("ppg") else ""
             if side == "a":
@@ -1387,7 +1417,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
 
         col_html = "".join(
             f"<div class='br-gotw-outs-col br-gotw-outs-{c['side']}'>"
-            f"<div class='br-gotw-outs-title'>{html.escape(str(c['team']))} outs</div>"
+            f"<div class='br-gotw-outs-title'>{_team_span(c['team'], c.get('rid'))} outs</div>"
             + "".join(_out_row(r, c["side"]) for r in c["rows"])
             + "</div>"
             for c in outs_cols
@@ -1401,7 +1431,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
     if also:
         label = "Co-game of the week" if preview.get("close_second") else "Also worth watching"
         items = " &nbsp;·&nbsp; ".join(
-            f"{html.escape(str(a['team_a']))} vs {html.escape(str(a['team_b']))} "
+            f"{_team_span(a['team_a'], a.get('roster_id_a'))} vs {_team_span(a['team_b'], a.get('roster_id_b'))} "
             f"<span style='opacity:.75;'>({html.escape(str(a.get('why') or ''))})</span>"
             for a in also
         )

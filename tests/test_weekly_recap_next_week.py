@@ -9,6 +9,8 @@ These tests pin that scoring and the reason it surfaces.
 weekly_recap imports pandas at module load, so the whole module is skipped in
 the base suite when pandas isn't installed.
 """
+import re
+
 import pytest
 
 pd = pytest.importorskip("pandas")
@@ -24,6 +26,12 @@ from dashboard_services.ai.weekly_recap import (  # noqa: E402
     _render_next_week_html,
     _starter_flags,
 )
+
+
+def _text(markup):
+    """Visible text of rendered markup (team/player names may be wrapped in
+    modal-trigger spans, so exact-phrase checks run on the stripped text)."""
+    return re.sub(r"<[^>]+>", "", markup)
 
 
 def _fin_row(week, mid, rid, pts, opp):
@@ -186,7 +194,7 @@ def test_render_shows_matchup_availability_and_blurb():
     out = _render_next_week_html(preview, "Top two teams in the league, going at it.")
     assert "Game of the Week" in out                      # title
     assert "Alpha" in out and "Bravo" in out              # the matchup sides
-    assert "Bravo outs" in out                           # outs column for team b
+    assert "Bravo outs" in _text(out)                           # outs column for team b
     assert "Bijan" in out                                # notable out player
     assert "Out" in out                                  # status badge
     assert "Top two teams in the league, going at it." in out   # AI blurb
@@ -229,7 +237,7 @@ def test_render_outs_columns_are_per_side():
         df, storylines, selected_week=6, playoff_start=14, playoff_teams=6, num_teams=10, nctx=nctx,
     )
     out = _render_next_week_html(preview, "Blurb.")
-    assert "Alpha outs" in out and "Bravo outs" in out
+    assert "Alpha outs" in _text(out) and "Bravo outs" in _text(out)
     assert "Adams" in out and "Bijan" in out
     # Two per-side columns, not one merged list.
     assert out.count("br-gotw-outs-col") >= 2
@@ -299,7 +307,7 @@ def test_preview_flags_benched_players_as_notable_outs():
     assert [p["name"] for p in got["maybe_a"]] == ["Q Back"]
     assert [p["name"] for p in got["bye_a"]] == ["Bye Star"]
     out = _render_next_week_html(preview, "Blurb.")
-    assert "Alpha outs" in out
+    assert "Alpha outs" in _text(out)
     assert "Q Back" in out and "Questionable" in out
     assert "Bye Star" in out and "Bye" in out
 
@@ -339,7 +347,7 @@ def test_render_bye_notability_uses_value_fallback():
         },
     }
     out = _render_next_week_html(preview, "Blurb.")
-    assert "Alpha outs" in out
+    assert "Alpha outs" in _text(out)
     assert "Star" in out
     assert "Scrub" not in out
 
