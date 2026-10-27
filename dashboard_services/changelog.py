@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "BR Assistant now follows the league you are actually in. It used to keep answering for an earlier league on pages like My Leagues, even while the league name at the top showed a different one: it now matches the league at the top of the page, and switching leagues in the app switches the assistant too.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Weekly Recap alert dot: opening the recap from the navigation now clears its dot right away (it previously only cleared after a full page reload), and the Tuesday recap-ready notification now opens the recap itself instead of the matchups page.",
         "link": "/recap"
     },
