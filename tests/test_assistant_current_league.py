@@ -85,13 +85,13 @@ def test_changelog_and_sw_for_assistant_league_fix():
 
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[0]
+    top = CHANGELOG[1]  # prepended above it: the trade fair-band fix
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "BR Assistant" in top["text"]
     assert "—" not in top["text"]  # no em dashes in UI copy
     sw = (Path(__file__).resolve().parents[1] / "static" / "sw.js").read_text(encoding="utf-8")
-    assert "br-fantasy-v112" in sw
+    assert "br-fantasy-v114" in sw
 
 
 def test_explicit_league_still_wins(app_ctx):

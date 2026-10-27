@@ -97,7 +97,7 @@ def test_my_leagues_cards_use_the_same_formatter():
 def test_changelog_announces_team_modal_odds_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[5]
+    entry = CHANGELOG[6]
     assert entry["date"] == "2026-10-27"
     assert entry["tag"] == "fix"
     assert "playoff odds" in entry["text"]
