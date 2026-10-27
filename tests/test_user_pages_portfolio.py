@@ -264,6 +264,8 @@ def _pf_client(monkeypatch, ctx_by_lid, leagues=None, *, locked_teams=(),
     # test here is a fresh viewer scenario, so start from a cold cache.
     bp_mod._ACTIONS_CACHE.clear()
     bp_mod._ACTIONS_INFLIGHT.clear()
+    bp_mod._ACTIONS_FRAGMENTS.clear()
+    bp_mod._ACTIONS_LATEST.clear()
 
     app = Flask(__name__)
     app.secret_key = "test"

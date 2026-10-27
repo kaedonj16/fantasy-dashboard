@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "Front Office: the moves board no longer sits at Scanned 0 for accounts with many leagues. Every league the scan finishes now counts right away and its moves are kept, the scanned count climbs as the remaining leagues land, and the finished board is remembered. The board fills in over a few seconds instead of waiting for all of your leagues to be ready at the same moment.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Trade Analyzer: the navy fair-range bar in the middle of the trade summary track is back. A site-wide tooltip update had quietly knocked it out of place, so the track showed only the marker even for trades the verdict called very fair.",
         "link": "/trade"
     },

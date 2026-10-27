@@ -42,6 +42,8 @@ def _client(monkeypatch):
 
     bp_mod._ACTIONS_CACHE.clear()
     bp_mod._ACTIONS_INFLIGHT.clear()
+    bp_mod._ACTIONS_FRAGMENTS.clear()
+    bp_mod._ACTIONS_LATEST.clear()
     calls = {"ctx": 0}
 
     def _ctx_cached(plat, lid, season, allow_build=True):

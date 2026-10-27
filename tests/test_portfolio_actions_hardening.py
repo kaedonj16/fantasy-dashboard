@@ -66,6 +66,8 @@ def _client(monkeypatch, leagues=None, ctx=None, players=None):
     bp_mod._ACTIONS_CACHE.clear()
     bp_mod._ACTIONS_INFLIGHT.clear()
     bp_mod._ACTIONS_PENDING.clear()
+    bp_mod._ACTIONS_FRAGMENTS.clear()
+    bp_mod._ACTIONS_LATEST.clear()
     calls = {"ctx": 0}
     the_ctx = ctx if ctx is not None else _ctx()
 
