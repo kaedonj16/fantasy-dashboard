@@ -50835,6 +50835,23 @@ em.gneg { background: var(--loss); }
     margin-top: 4px;
 }
 .td-contend .td-dot { margin-right: 0; }
+/* Drawer head pills row: window pill + playoff odds pill side by side. */
+.td-head-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.td-head-pills .td-contend { margin-top: 0; }
+.td-odds {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    background: var(--accent-soft);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 3px 7px;
+}
+.td-odds b { color: var(--text); font-variant-numeric: tabular-nums; }
 /* Drawer window pill colors: match the team's window tag, using the same
    palette as the cards (.wt-* accents / .grade-window-label text). The
    base .td-contend rule above is the Contender green fallback; every

@@ -76,7 +76,9 @@ def test_card_shows_odds_delta_weakest_and_posture():
                  posture="Contend", posture_cls="contend")
     html = _render([lg])
     assert "data-odds='74.0'" in html
-    assert "74%" in html
+    # Odds read at one decimal (floored): only an exact sim 100/0 may read
+    # as a whole 100% / 0%; an undecided 74.0 reads "74.0%", never "74%".
+    assert "74.0%" in html
     assert "▲9" in html
     assert "Playoff odds" in html
     assert "Weakest room:" in html
@@ -92,8 +94,22 @@ def test_card_hides_delta_without_history():
     lg = _league(playoff_odds_pct=61.0, playoff_odds_delta=None,
                  posture="Contend", posture_cls="contend")
     html = _render([lg])
-    assert "61%" in html
+    assert "61.0%" in html
     assert "data-odds-delta hidden" in html
+
+
+def test_card_odds_never_round_up_to_100():
+    # A sim-capped 99.9 is undecided, not clinched: it must read 99.9%.
+    lg = _league(playoff_odds_pct=99.9, playoff_odds_delta=None,
+                 posture="Contend", posture_cls="contend")
+    html = _render([lg])
+    assert "data-odds-val>99.9%</span>" in html
+    assert "data-odds-val>100%</span>" not in html
+    # And a capped 0.1 is alive, not eliminated: it must read 0.1%.
+    lg = _league(playoff_odds_pct=0.1, playoff_odds_delta=None,
+                 posture="Long Shot", posture_cls="long-shot")
+    html = _render([lg])
+    assert "data-odds-val>0.1%</span>" in html
 
 
 def test_card_without_odds_shows_dash():

@@ -25040,6 +25040,20 @@ function tmRetryMatchup(retry, week) {
   tmToggleMatchup(row, week);
 }
 
+// Playoff odds display, shared by the team modal and the My Leagues cards.
+// Mirrors _fmt_playoff_pct_display in app.py: an undecided value reads at
+// one decimal, floored to tenths so it can never round up, and the literal
+// 100 / 0 appears only when the sim value is exact (the simulator reserves
+// that for mathematically clinched / eliminated teams and caps everything
+// else at 99.9 / 0.1).
+function _fmtPlayoffOddsDisplay(v) {
+  const raw = parseFloat(v);
+  if (isNaN(raw)) return '';
+  if (raw >= 100) return '100';
+  if (raw <= 0) return '0';
+  return (Math.floor(raw * 10 + 1e-9) / 10).toFixed(1);
+}
+
 function renderTeamDetails(data) {
   // Update avatar
   const avatarHTML = data.avatar 
@@ -25086,9 +25100,11 @@ function renderTeamDetails(data) {
         </div>`);
     }
     if (data.playoff_odds != null && !isNaN(parseFloat(data.playoff_odds))) {
+      // Never Math.round: that turned 99.9 into a false 100% and 0.1 into
+      // a false 0%. _fmtPlayoffOddsDisplay keeps undecided odds at one decimal.
       tiles.push(`
         <div class="tm-stat-tile">
-          <div class="tm-stat-tile-value">${Math.round(parseFloat(data.playoff_odds))}%</div>
+          <div class="tm-stat-tile-value">${_fmtPlayoffOddsDisplay(data.playoff_odds)}%</div>
           <div class="tm-stat-tile-label">Playoff Odds</div>
         </div>`);
     }
@@ -28805,7 +28821,9 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       if (data.playoff_odds_pct == null) {
         oddsHtml = '<span class="pf-lg-v" data-odds-val>—</span>';
       } else {
-        oddsHtml = '<span class="pf-lg-v" data-odds-val>' + Math.round(Number(data.playoff_odds_pct)) + '%</span>';
+        // Same rule as the team modal: never Math.round the odds value
+        // (99.9 read as a false 100%); the delta arrow stays a whole number.
+        oddsHtml = '<span class="pf-lg-v" data-odds-val>' + _fmtPlayoffOddsDisplay(data.playoff_odds_pct) + '%</span>';
         var oddsDelta = Number(data.playoff_odds_delta);
         if (Number.isFinite(oddsDelta) && Math.abs(oddsDelta) >= 0.05) {
           oddsHtml += '<span class="pf-odds-delta ' + (oddsDelta > 0 ? 'up' : 'down') + '" data-odds-delta>' +
@@ -29567,7 +29585,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var bits = [];
     if (meta.record_line) bits.push(meta.record_line);
     if (meta.odds_pct != null) {
-      var ob = Math.round(Number(meta.odds_pct)) + '% odds';
+      var ob = _fmtPlayoffOddsDisplay(meta.odds_pct) + '% odds';
       var d = Number(meta.odds_delta);
       if (Number.isFinite(d) && Math.abs(d) >= 0.05) {
         ob += ' <span class="pf-delta ' + (d > 0 ? 'up' : 'down') + '">' + (d > 0 ? '▲' : '▼') + Math.abs(Math.round(d)) + '</span>';

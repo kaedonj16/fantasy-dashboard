@@ -40679,7 +40679,9 @@ def build_portfolio_body(
             _odds_attr = -1
         else:
             _odds_attr = float(_odds_pct)
-            odds_html = f"<span class='pf-lg-v' data-odds-val>{float(_odds_pct):.0f}%</span>"
+            # Floored one-decimal display: :.0f rounded a sim-capped 99.9 up
+            # to a false 100% (same rule as the Hub tile / team modal).
+            odds_html = f"<span class='pf-lg-v' data-odds-val>{_fmt_playoff_pct_display(_odds_pct)}%</span>"
             if _odds_delta is not None and abs(float(_odds_delta)) >= 0.05:
                 _dv = float(_odds_delta)
                 _arrow = "\u25B2" if _dv > 0 else "\u25BC"

@@ -587,11 +587,14 @@ def build_teams_body(ctx: dict) -> str:
             )
 
         team_grades = {rid: _grade_for_roster(rid) for rid in team_meta}
+        # Playoff odds by roster (warm sim cache; empty when cold). Used for
+        # the redraft window label and for the team drawer's odds pill in
+        # every mode, so all team modals show the same odds.
+        _po_by_rid = {
+            str((row or {}).get("roster_id")): (row or {}).get("playoff_pct")
+            for row in (_pk_odds or [])
+        }
         if is_redraft_m:
-            _po_by_rid = {
-                str((row or {}).get("roster_id")): (row or {}).get("playoff_pct")
-                for row in (_pk_odds or [])
-            }
             for _rid, _g in team_grades.items():
                 _g["win_window"] = redraft_window_label(
                     playoff_pct=_po_by_rid.get(str(_rid)),
@@ -814,6 +817,7 @@ def build_teams_body(ctx: dict) -> str:
                 "win_color": _win_color,
                 "pos_index": f"{_pos_idx:+.2f}",
                 "pos_index_dir": _pi_dir,
+                "playoff_odds": _po_by_rid.get(str(rid)),
                 "positions": _drawer_pos,
             }
 
