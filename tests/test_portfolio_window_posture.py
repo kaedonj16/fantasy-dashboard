@@ -332,7 +332,7 @@ def test_js_hydration_applies_window_color_and_shape():
 def test_changelog_entry_for_posture_parity():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[14]
+    top = CHANGELOG[15]  # shifted +1 by the Front Office scan fix prepended above it
     assert top["date"] == "2026-10-26"
     assert top["link"] == "/portfolio"
     assert "Teams page" in top["text"]

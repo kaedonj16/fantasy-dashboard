@@ -113,9 +113,9 @@ def test_gotw_names_clickable():
 def test_changelog_and_sw_for_recap_cleanup():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[3]
+    top = CHANGELOG[4]  # prepended above it: Front Office scan fix, fair-band fix, assistant fix, dot fix
     assert top["date"] == "2026-10-27"
     assert top["link"] == "/recap"
     assert "Injury Report" in top["text"]
     assert "—" not in top["text"]  # no em dashes in UI copy
-    assert "br-fantasy-v114" in _read("static", "sw.js")
+    assert "br-fantasy-v115" in _read("static", "sw.js")

@@ -15,6 +15,7 @@ fetched when a request is actually served.
 """
 from __future__ import annotations
 
+import copy
 import html
 import logging
 import os
@@ -815,6 +816,8 @@ def api_portfolio_actions():
     # in exactly one bucket below (scanned / skipped_cold / skipped_no_roster),
     # so scanned + skipped_* = attempted <= total, and incomplete holds
     # whenever scanned < total (including leagues past the attempt slice).
+    # A league covered by a fresh per-league fragment (scanned by a pass
+    # inside _ACTIONS_FRAGMENT_TTL) counts as scanned without an attempt.
     scan_total = 0
     scan_scanned = 0
     scan_skipped_cold = 0
@@ -973,6 +976,22 @@ def api_portfolio_actions():
             lg_season = int(lg.get("season") or season)
             if not lid:
                 continue
+            _frag_key = None
+            _frag_actions_start = len(actions)
+            _scanned_before = scan_scanned
+            if _actions_key is not None:
+                _frag_key = (_actions_key, plat, lid, lg_season)
+                _frag = _get_action_fragment(_frag_key)
+                if _frag is not None:
+                    # A recent pass already scanned this league; reuse its
+                    # fragment rather than rescanning a context the cache
+                    # carousel may have evicted since (see _ACTIONS_FRAGMENTS).
+                    actions.extend(copy.deepcopy(_frag["actions"]))
+                    if _frag.get("board_meta") is not None:
+                        board_meta[f"{plat}|{lid}"] = copy.deepcopy(
+                            _frag["board_meta"])
+                    scan_scanned += 1
+                    continue
             try:
                 lctx = get_league_ctx_from_cache(plat, lid, lg_season, allow_build=False) or {}
             except Exception:
@@ -1480,6 +1499,17 @@ def api_portfolio_actions():
                 except Exception:
                     logger.debug("[portfolio-actions] calendar nudge failed", exc_info=True)
 
+            # Iteration end: a league counted as scanned in this pass
+            # leaves a fragment, so the next pass can reuse it even if
+            # the league's context has been evicted from DASHBOARD_CACHE
+            # by then (see _ACTIONS_FRAGMENTS). Cold and no-roster
+            # outcomes are deliberately not fragmented: they re-attempt
+            # on every pass.
+            if _frag_key is not None and scan_scanned > _scanned_before:
+                _store_action_fragment(
+                    _frag_key, actions[_frag_actions_start:],
+                    board_meta.get(f"{plat}|{lid}"))
+
         try:
             _ranked_actions = rank_cross_league_actions(actions, limit=8)
         except Exception:
@@ -1548,6 +1578,12 @@ def api_portfolio_actions():
             logger.debug("[portfolio-actions] board assembly failed", exc_info=True)
         if _actions_key is not None:
             with _ACTIONS_LOCK:
+                if scan_scanned > 0:
+                    # The latest finished pass is served on later cache
+                    # misses (real counts + moves found so far) instead of
+                    # the hardcoded-zero deferred payload; a pass that
+                    # scanned nothing never replaces it.
+                    _ACTIONS_LATEST[_actions_key] = (time.time(), payload)
                 if not (payload.get("scan") or {}).get("incomplete"):
                     _now_s = time.time()
                     _ACTIONS_CACHE[_actions_key] = (_now_s, payload)
@@ -1564,7 +1600,12 @@ def api_portfolio_actions():
     # 500 the client renders as a dead end (or, worse, an empty board).
     # The in-flight mark is cleared in the worker's finally, so a failed
     # scan can never poison later requests into deferring to a compute
-    # that is not running.
+    # that is not running. While a scan runs (or before the first one
+    # lands), a cache miss answers with the latest finished pass payload
+    # when one is fresh -- real scanned counts and the moves found so
+    # far, accumulating across passes via _ACTIONS_FRAGMENTS -- and only
+    # falls back to the zero-count deferred payload when no pass has
+    # scanned anything yet.
     if _actions_key is None:
         try:
             return jsonify(_run_actions_compute())
@@ -1624,12 +1665,16 @@ def api_portfolio_actions():
                 logger.exception("[portfolio-actions] scan failed")
                 return jsonify(_fallback_payload())
     # No request-thread wait: a scan that is still running (just spawned
-    # above or already in flight) answers with the deferred incomplete
-    # payload immediately, and the client's retry ladder lands on the
+    # above or already in flight) answers immediately with the latest
+    # finished pass payload when one is fresh (the deferred zero-count
+    # payload otherwise), and the client's retry ladder lands on the
     # complete scan once the background worker caches it. A payload that
     # somehow already landed is still served.
     if _holder is not None and _holder.get("payload") is not None:
         return jsonify(_holder["payload"])
+    _partial = _latest_partial_payload(_actions_key)
+    if _partial is not None:
+        return jsonify(_partial)
     return jsonify(_deferred_payload())
 
 # ── Board Done states (v25) ──────────────────────────────────────────────────
@@ -1895,6 +1940,71 @@ try:
         os.environ.get("PORTFOLIO_ACTIONS_SYNC_WAIT_SECONDS") or 8.0)
 except Exception:
     pass
+
+# Per-league scan fragments + latest-partial payloads (2026-10-27).
+#
+# A scan pass can only count a league whose context is readable at that
+# instant (allow_build=False), and the process-local DASHBOARD_CACHE
+# holds at most DASHBOARD_CACHE_MAX (default 4) league contexts, so for
+# a viewer with more leagues than that the warm carousel keeps evicting
+# contexts other leagues' builds just wrote: no single pass could ever
+# see every league, the complete-only cache never landed, and the board
+# showed the deferred "Scanned 0 of N" payload forever. Fragments make
+# progress accumulate across passes instead: each league a pass manages
+# to scan leaves its raw actions + board meta here for
+# _ACTIONS_FRAGMENT_TTL seconds, later passes reuse fresh fragments
+# instead of rescanning, and a pass completes (and caches, as before)
+# once every league is covered by a fresh scan or a fresh fragment.
+# _ACTIONS_LATEST holds the most recent finished pass payload per
+# viewer (complete or not) so cache misses answer with real counts and
+# the moves found so far instead of the hardcoded-zero deferred payload;
+# a failed pass never overwrites it (failures are still never cached).
+_ACTIONS_FRAGMENTS: dict = {}
+_ACTIONS_LATEST: dict = {}
+try:
+    _ACTIONS_FRAGMENT_TTL = float(
+        os.environ.get("PORTFOLIO_ACTIONS_FRAGMENT_TTL_SECONDS") or 300.0)
+except Exception:
+    _ACTIONS_FRAGMENT_TTL = 300.0
+
+
+def _get_action_fragment(key):
+    if key is None:
+        return None
+    with _ACTIONS_LOCK:
+        ent = _ACTIONS_FRAGMENTS.get(key)
+        if ent and time.time() - ent[0] < _ACTIONS_FRAGMENT_TTL:
+            return ent[1]
+    return None
+
+
+def _store_action_fragment(key, actions_slice, board_meta_entry):
+    if key is None:
+        return
+    frag = {"actions": copy.deepcopy(list(actions_slice)),
+            "board_meta": copy.deepcopy(board_meta_entry)}
+    now = time.time()
+    with _ACTIONS_LOCK:
+        _ACTIONS_FRAGMENTS[key] = (now, frag)
+        if len(_ACTIONS_FRAGMENTS) > 512:
+            for _k in [k for k, (ts, _f) in _ACTIONS_FRAGMENTS.items()
+                       if now - ts >= _ACTIONS_FRAGMENT_TTL]:
+                _ACTIONS_FRAGMENTS.pop(_k, None)
+            while len(_ACTIONS_FRAGMENTS) > 512:
+                _oldest = min(_ACTIONS_FRAGMENTS.items(),
+                              key=lambda kv: kv[1][0])[0]
+                _ACTIONS_FRAGMENTS.pop(_oldest, None)
+
+
+def _latest_partial_payload(actions_key):
+    """Most recent finished pass payload for this viewer, while fresh."""
+    if actions_key is None:
+        return None
+    with _ACTIONS_LOCK:
+        ent = _ACTIONS_LATEST.get(actions_key)
+        if ent and time.time() - ent[0] < _ACTIONS_FRAGMENT_TTL:
+            return ent[1]
+    return None
 
 
 def _insights_cache_get(key):
