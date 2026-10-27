@@ -14419,6 +14419,16 @@ function initRecapPage(root = document) {
 window.initPageRoot = function initPageRoot(root = document) {
   initManagerPills(root);
   initCardTabs(root);
+  // Unread alert dots (Weekly Recap / Breakouts): re-evaluate on every swap.
+  // initAlertDots also runs on DOMContentLoaded, but soft navigation never
+  // re-fires it, so tapping Weekly Recap in the nav swapped the page in
+  // without marking the recap seen and the dot stayed lit (and the swapped-in
+  // mobile dock kept its fresh dots hidden even when unopened). Running it
+  // here (applyNewRoot calls initPageRoot after every swap) marks the
+  // surface seen and settles every dot instance for the league.
+  if (typeof initAlertDots === 'function') {
+    try { initAlertDots(); } catch (e) {}
+  }
   // Re-apply ?tab= deep-link after soft-nav DOM swaps (the weekly hub's
   // inline IIFE only runs on full page load).
   if (typeof window.wkActivateTabFromUrl === "function") {
