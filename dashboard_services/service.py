@@ -219,10 +219,27 @@ def fantasy_team_and_roster_for_player(pid: str, rosters: list, roster_map: dict
     return "Free Agent", ""
 
 
+_TOP_THREE_POS_NAMES = {
+    "QB": "Quarterbacks", "RB": "Running backs", "WR": "Wide receivers",
+    "TE": "Tight ends", "K": "Kickers", "DEF": "Defenses",
+}
+
+
 def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = None) -> str:
+    """Top-3-per-position cards for the Weekly Hub Scorers tab.
+
+    Markup is a .wk-scorers-grid of .wk-pos-card cards (pos-badge chip + full
+    position name header, one .wk-srow per scorer). The hub's desktop CSS
+    stretches the cards to fill the panel and spreads the rows through each
+    card; on mobile the grid is a single column list.
+    """
     def card(pos, rows):
+        title = _TOP_THREE_POS_NAMES.get(pos, pos)
+        head = (f"<div class='wk-pos-head'><span class='pos-badge {pos}'>{pos}</span>"
+                f"<h3>{title}</h3></div>")
         if not rows:
-            return f"<div class='side-card'><h2>{pos}</h2><div class='muted'>No data</div></div>"
+            return (f"<div class='wk-pos-card'>{head}"
+                    f"<div class='wk-pos-rows'><div class='wk-nodata'>No data</div></div></div>")
         lis = []
         for i, r in enumerate(rows, start=1):
             team = r.get("nfl") or r.get("team", "")
@@ -232,31 +249,30 @@ def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = No
             else:
                 owner = "Unknown"
                 roster_id = ""
-            place = "first" if i == 1 else "second" if i == 2 else "third"
 
             # Make player name clickable
             pid = r.get("pid", "")
             player_name = r['name']
-            clickable_attrs = f" class='name player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'" if pid else " class='name'"
+            clickable_attrs = f" class='wk-nm player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{player_name}'" if pid else " class='wk-nm'"
 
             # Make team name clickable
             team_clickable = f"<span class='team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{owner}'>{owner}</span>" if roster_id else owner
 
             lis.append(
-                f"<div class='side-row'>"
-                f"  <span class='rank rank-{place}'>{i}</span>"
-                f"  <div class='who'>"
-                f"    <div{clickable_attrs}>{player_name}</div>"
-                f"    <div class='sub'>{team} • {team_clickable}</div>"
-                f"  </div>"
-                f"  <div class='pts'>{pts:.1f}</div>"
+                f"<div class='wk-srow'>"
+                f"  <span class='wk-rk'>{i}</span>"
+                f"  <span class='wk-who'>"
+                f"    <span{clickable_attrs}>{player_name}</span>"
+                f"    <span class='wk-tm'>{team} · {team_clickable}</span>"
+                f"  </span>"
+                f"  <span class='wk-pt'>{pts:.1f}</span>"
                 f"</div>"
             )
-        return f"<div class='side-card'><h3>{pos}</h3>{''.join(lis)}</div>"
+        return f"<div class='wk-pos-card'>{head}<div class='wk-pos-rows'>{''.join(lis)}</div></div>"
 
     _render_positions = positions if positions else ["QB", "RB", "WR", "TE", "K", "DEF"]
     blocks = [card(pos, top_by_pos.get(pos, [])) for pos in _render_positions]
-    return "<div class='sidebar-grid'>" + "".join(blocks) + "</div>"
+    return "<div class='wk-scorers-grid'>" + "".join(blocks) + "</div>"
 
 
 def _seed_zero_standings(owner_avatar: dict) -> pd.DataFrame:

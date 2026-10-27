@@ -1,4 +1,5 @@
-"""Historical lineup analysis for the Matchups page Lineup tab."""
+"""Lineup tab for the Weekly Hub: This Week (current vs projected-optimal)
+plus the historical Lineup Lab (completed weeks) as the History view."""
 from __future__ import annotations
 
 import html
@@ -6,7 +7,7 @@ import logging
 from datetime import datetime
 from flask import request
 
-from utils.optimal_lineup import analyze_team_week
+from utils.optimal_lineup import analyze_lineup, analyze_team_week
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def _metric(value, label, cls=""):
     return f'<div class="card opt-metric {cls}"><strong>{value}</strong><span>{label}</span></div>'
 
 
-def build_optimal_body(ctx):
+def _build_optimal_history(ctx):
     from app import get_players_index_global
     from dashboard_services.platform_api import get_matchups
 
@@ -231,3 +232,365 @@ def build_optimal_body(ctx):
                '<div class="opt-leaderboard-columns" aria-hidden="true"><span>Rank</span><span>Team</span>'
                '<span>Efficiency</span><span>Actual</span><span>Optimal</span><span>Missed</span></div>')
     return nav + f'<div class="opt-leaderboard">{heading}{cards}</div>'
+
+
+# ── This Week: current starters vs the projected-optimal lineup ──────────────
+
+_POS_PLURAL = {"QB": "QBs", "RB": "RBs", "WR": "WRs", "TE": "TEs",
+               "K": "kickers", "DEF": "defenses"}
+
+
+def _lw_last_final_week(ctx, fallback):
+    """Last provider-finalized week from ctx's df_weekly (duck-typed, mirrors
+    the slide projection-lookup inputs)."""
+    df = ctx.get("df_weekly")
+    try:
+        if (df is not None and not getattr(df, "empty", True)
+                and {"week", "finalized"}.issubset(set(getattr(df, "columns", [])))):
+            finals = [int(r["week"]) for r in df.to_dict("records")
+                      if r.get("finalized") is True and r.get("week") is not None]
+            if finals:
+                return max(finals)
+    except Exception:
+        pass
+    return int(fallback or 0)
+
+
+def _lw_ordinal(n):
+    if 10 <= n % 100 <= 20:
+        suf = "th"
+    else:
+        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
+def _lw_block_pids(block):
+    out = []
+    for s in (block or {}).get("starters") or []:
+        pid = s.get("pid") if isinstance(s, dict) else s
+        if pid not in (None, "", "0"):
+            out.append(str(pid))
+    return out
+
+
+def _lw_player_info(ctx, wanted_pids=()):
+    """pid -> {name, pos, team} merged from ctx maps; the global players
+    index is consulted only when a wanted pid is still unnamed."""
+    info = {}
+
+    def _add(pid, name, pos, team):
+        pid = str(pid)
+        if not name:
+            return
+        cur = info.setdefault(pid, {})
+        if name and not cur.get("name"):
+            cur["name"] = name
+        if pos and not cur.get("pos"):
+            cur["pos"] = str(pos).upper()
+        if team and not cur.get("team"):
+            cur["team"] = str(team).upper()
+
+    for pid, p in (ctx.get("players_index") or {}).items():
+        if isinstance(p, dict):
+            _add(pid, p.get("name"), p.get("pos"), p.get("team") or p.get("nfl"))
+    for pid, p in (ctx.get("players_map") or {}).items():
+        if isinstance(p, dict):
+            nm = p.get("full_name") or " ".join(
+                x for x in [p.get("first_name"), p.get("last_name")] if x) or p.get("name")
+            _add(pid, nm, p.get("position") or p.get("pos"), p.get("team"))
+    if any(not (info.get(str(pid)) or {}).get("name") for pid in wanted_pids):
+        try:
+            from app import get_players_index_global
+            for pid, p in (get_players_index_global() or {}).items():
+                if isinstance(p, dict):
+                    _add(pid, p.get("name"), p.get("pos"), p.get("team") or p.get("nfl"))
+        except Exception:
+            pass
+    return info
+
+
+def _build_lineup_this_week(ctx):
+    """Current vs projected-optimal for the current matchup week.
+
+    Returns (html, swap_count); ("", None) when the view cannot be built
+    honestly (no matchup, no projections, no complete optimal)."""
+    from dashboard_services.matchups import (
+        build_slide_proj_lookups,
+        compute_win_prob,
+        resolve_team_game,
+    )
+    from utils.matchup_schedule import resolve_matchup_week
+
+    viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    if not viewer_rid:
+        return "", None
+    season = int(ctx.get("season") or datetime.now().year)
+    current_week = int(ctx.get("current_week") or 1)
+    matchups_by_week = ctx.get("matchups_by_week") or {}
+    week = resolve_matchup_week(current_week, matchups_by_week)
+    rows = matchups_by_week.get(week) or matchups_by_week.get(str(week)) or []
+
+    viewer_block = opponent_block = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for a_key, b_key in (("left", "right"), ("team1", "team2")):
+            a, b = row.get(a_key), row.get(b_key)
+            if not isinstance(a, dict) or not isinstance(b, dict):
+                continue
+            if str(a.get("roster_id")) == viewer_rid:
+                viewer_block, opponent_block = a, b
+            elif str(b.get("roster_id")) == viewer_rid:
+                viewer_block, opponent_block = b, a
+        if viewer_block is not None:
+            break
+    if viewer_block is None or opponent_block is None:
+        return "", None
+    opponent_rid = str(opponent_block.get("roster_id") or "")
+
+    rosters = ctx.get("rosters") or []
+    viewer_roster = next(
+        (r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
+    roster_pids = [str(p) for p in (viewer_roster or {}).get("players") or []
+                   if str(p) not in ("", "0")]
+    starter_pids = _lw_block_pids(viewer_block)
+    if not roster_pids or not starter_pids:
+        return "", None
+    for pid in starter_pids:
+        if pid not in roster_pids:
+            roster_pids.append(pid)
+
+    info = _lw_player_info(ctx, roster_pids)
+    positions = {pid: (info.get(pid) or {}).get("pos", "") for pid in roster_pids}
+
+    # The slide's own projection lookups, so the numbers match the carousel.
+    raw_scoring = (ctx.get("raw_scoring_settings") or ctx.get("scoring_settings")
+                   or ctx.get("scoring") or {})
+    week_proj_map, pid_proj, frac_lookup = build_slide_proj_lookups(
+        season, week, _lw_last_final_week(ctx, week),
+        ctx.get("proj_by_week") or {}, ctx.get("team_game_lookup") or {},
+        scoring_settings=raw_scoring)
+    proj = {}
+    for pid in roster_pids:
+        try:
+            v = pid_proj(pid, positions.get(pid, ""))
+        except Exception:
+            v = None
+        if v is not None:
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                v = 0.0
+            if v > 0:
+                proj[pid] = v
+    if not proj or not any(proj.get(p, 0) > 0 for p in starter_pids):
+        return "", None
+
+    slots_spec = ctx.get("roster_positions") or []
+    data = analyze_lineup(proj, positions, slots_spec, roster_pids, starter_pids)
+    if not data.get("complete"):
+        keep = [p for p in roster_pids if p in proj and positions.get(p)]
+        data = analyze_lineup(
+            proj, positions, slots_spec, keep,
+            [p for p in starter_pids if p in set(keep)])
+        roster_pids = keep
+    if not data.get("complete"):
+        return "", None
+
+    actual, optimal = float(data["actual"]), float(data["optimal"])
+    missed = max(0.0, optimal - actual)
+    slots = data["slots"]
+    actual_asg = data["actual_assignment"]
+    optimal_asg = data["optimal_assignment"]
+    starter_set = {p for p in actual_asg if p}
+    changed = set()
+    for g in data.get("groups", []):
+        changed.update(g.get("slots") or [])
+    if not changed:
+        changed = {i for i, (a, o) in enumerate(zip(actual_asg, optimal_asg)) if a != o}
+
+    # Win probability, current vs optimal starters, via the carousel function.
+    statuses = ctx.get("statuses") or {}
+    status_by_pid = ((statuses.get(week) or {}).get("statuses")
+                     or (statuses.get(current_week) or {}).get("statuses") or {})
+    wp_cur = wp_opt = None
+    try:
+        wp_cur = compute_win_prob(viewer_block, opponent_block, status_by_pid,
+                                  week_proj_map, frac_lookup=frac_lookup)
+        orig_by_pid = {}
+        for s in viewer_block.get("starters") or []:
+            if isinstance(s, dict) and s.get("pid") is not None:
+                orig_by_pid[str(s["pid"])] = s
+        opt_entries = []
+        for pid in optimal_asg:
+            if not pid:
+                continue
+            if pid in orig_by_pid:
+                opt_entries.append(orig_by_pid[pid])
+            else:
+                pinfo = info.get(pid) or {}
+                opt_entries.append({"pid": pid, "pos": pinfo.get("pos", ""),
+                                    "nfl": pinfo.get("team", "")})
+        opt_block = dict(viewer_block)
+        opt_block["starters"] = opt_entries
+        wp_opt = compute_win_prob(opt_block, opponent_block, status_by_pid,
+                                  week_proj_map, frac_lookup=frac_lookup)
+    except Exception:
+        wp_cur = wp_opt = None
+
+    # Swap reasons: projection delta, plus the site's points-allowed table
+    # when the incoming player draws one of the softest matchups at his spot.
+    fpts_against = {}
+    try:
+        from app import _compute_fpts_against
+        fpts_against = _compute_fpts_against(season, raw_scoring) or {}
+    except Exception:
+        fpts_against = {}
+    team_game_lookup = ctx.get("team_game_lookup") or {}
+
+    def _matchup_note(pid):
+        if not fpts_against:
+            return ""
+        pinfo = info.get(pid) or {}
+        pos, team = pinfo.get("pos", ""), pinfo.get("team", "")
+        if not pos or not team:
+            return ""
+        try:
+            from utils.nfl import canon_team
+            game = resolve_team_game(canon_team(team), team_game_lookup)
+        except Exception:
+            game = None
+        if not game:
+            return ""
+        opp = game.get("away") if game.get("home") == team else game.get("home")
+        if not opp:
+            return ""
+        ranked = sorted(
+            ((t, (vals or {}).get(pos)) for t, vals in fpts_against.items()),
+            key=lambda x: (x[1] is not None, x[1] or 0.0), reverse=True)
+        ranked = [t for t, v in ranked if v is not None]
+        if opp not in ranked:
+            return ""
+        rank = ranked.index(opp) + 1
+        if rank > 10:
+            return ""
+        return (f"{opp} allows the {_lw_ordinal(rank)}-most points to "
+                f"{_POS_PLURAL.get(pos, pos + 's')}")
+
+    swaps = []
+    for i in sorted(changed):
+        a, o = actual_asg[i], optimal_asg[i]
+        if not o or o in starter_set:
+            continue
+        delta = proj.get(o, 0.0) - (proj.get(a, 0.0) if a else 0.0)
+        if delta <= 0.05:
+            continue
+        in_name = (info.get(o) or {}).get("name") or o
+        out_name = ((info.get(a) or {}).get("name") or a) if a else "Empty slot"
+        reason = f"{in_name} projects {delta:.1f} more than {out_name}."
+        note = _matchup_note(o)
+        if note:
+            reason += f" {note}."
+        elif delta < 1.5:
+            reason += " Close call."
+        swaps.append({"slot": slots[i], "out": a, "in": o, "delta": delta,
+                      "reason": reason})
+    swaps.sort(key=lambda s: -s["delta"])
+
+    roster_map = ctx.get("roster_map") or {}
+    opp_name = roster_map.get(opponent_rid) or f"Roster {opponent_rid}"
+    sub = (f"<div class='lw-sub'>Week {week} vs {_esc(opp_name)} · "
+           f"projections, not final results</div>")
+
+    wp_metric = ""
+    if wp_cur is not None:
+        wp_txt = f"{wp_cur * 100:.0f}%"
+        if wp_opt is not None and swaps:
+            wp_txt += f" → {wp_opt * 100:.0f}%"
+        wp_metric = (f"<div class='lw-metric'><b>{wp_txt}</b>"
+                     f"<span>Win prob</span></div>")
+    metrics = (
+        "<div class='lw-metrics'>"
+        f"<div class='lw-metric'><b>{actual:.1f}</b><span>Current proj</span></div>"
+        f"<div class='lw-metric'><b>{optimal:.1f}</b><span>Optimal proj</span></div>"
+        f"<div class='lw-metric acc'><b>+{missed:.1f}</b><span>Available</span></div>"
+        f"{wp_metric}</div>"
+    )
+
+    if swaps:
+        swaps_html = "".join(
+            f"<div class='lw-swap'><span class='lw-d'>+{s['delta']:.1f}</span>"
+            f"<span class='lw-out'>{_esc((info.get(s['out']) or {}).get('name') or s['out'] or 'Empty slot')}</span>"
+            f"<span class='lw-arrow'>→</span>"
+            f"<span class='lw-in'>{_esc((info.get(s['in']) or {}).get('name') or s['in'])}</span>"
+            f"<span class='lw-why'>{_esc(s['reason'])}</span></div>"
+            for s in swaps)
+    else:
+        swaps_html = ("<div class='lw-noswap'>No swaps needed. Your current "
+                      "starters are the projected-optimal lineup.</div>")
+
+    def _cell(pid):
+        if not pid:
+            return "Empty slot"
+        nm = (info.get(pid) or {}).get("name") or pid
+        return f"{nm} · {proj.get(pid, 0.0):.1f}"
+
+    rows_html = ""
+    for i, slot in enumerate(slots):
+        a, o = actual_asg[i], optimal_asg[i]
+        is_swap = i in changed and a != o
+        if is_swap:
+            d = proj.get(o, 0.0) - (proj.get(a, 0.0) if a else 0.0)
+            pill = f"<span class='lw-spill'>Swap +{d:.1f}</span>"
+        else:
+            pill = "<span class='lw-keep'>Keep</span>"
+        row_cls = " class='lw-sw'" if is_swap else ""
+        rows_html += (
+            f"<tr{row_cls}>"
+            f"<td>{_esc(str(slot).replace('_', '/'))}</td>"
+            f"<td>{_esc(_cell(a))}</td><td>{_esc(_cell(o))}</td>"
+            f"<td>{pill}</td></tr>")
+    table = (f"<div class='lw-wrap'><table class='lw-table'><thead><tr>"
+             f"<th>Slot</th><th>Current</th><th>Optimal</th><th></th></tr></thead>"
+             f"<tbody>{rows_html}</tbody></table></div>")
+
+    html_out = f"<div class='lw-thisweek'>{sub}{metrics}{swaps_html}{table}</div>"
+    return html_out, len(swaps)
+
+
+def build_optimal_body(ctx):
+    """Lineup tab body: This Week / History segmented switch (v12 layout).
+
+    This Week defaults on, except when the request carries explicit history
+    params (view/period), which is how Lineup Lab links and fragment loads
+    arrive. When This Week cannot be built, History renders alone."""
+    try:
+        tw_html, swap_count = _build_lineup_this_week(ctx)
+    except Exception:
+        logger.exception("lineup this-week build failed")
+        tw_html, swap_count = "", None
+    history_html = _build_optimal_history(ctx)
+    if not tw_html:
+        return history_html
+    ctx["lineup_swap_count"] = swap_count
+    try:
+        args = request.args
+        history_default = bool(args.get("view") or args.get("period"))
+    except Exception:
+        history_default = False
+    tw_active = not history_default
+    seg = (
+        "<div class='opt-seg'>"
+        f"<button type='button' class='opt-seg-btn{' active' if tw_active else ''}' "
+        f"data-opt-seg='thisweek'>This Week</button>"
+        f"<button type='button' class='opt-seg-btn{' active' if not tw_active else ''}' "
+        f"data-opt-seg='history'>History</button>"
+        "</div>"
+    )
+    return (
+        seg
+        + f"<div class='opt-seg-panel' data-opt-panel='thisweek'"
+          f"{'' if tw_active else ' hidden'}>{tw_html}</div>"
+        + f"<div class='opt-seg-panel' data-opt-panel='history'"
+          f"{'' if not tw_active else ' hidden'}>{history_html}</div>"
+    )

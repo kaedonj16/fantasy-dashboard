@@ -388,6 +388,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
         optimal_panel_content = ("<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
                                  "Optimal lineup data unavailable.</div>")
 
+    _lw_swap_count = ctx.get("lineup_swap_count")
+    _lw_chip = (
+        f'<span class="wk-tab-cnt">{int(_lw_swap_count)} swaps</span>'
+        if _lw_swap_count else ""
+    )
     _wk_matchups_btn = (
         '<button class="tab-btn active" data-tab="matchups">Matchups</button>'
         if _show_matchup_preview else ""
@@ -478,22 +483,23 @@ def build_weekly_hub_body(ctx: dict) -> str:
           </div>
         </div>
 
+        <div class="week-leaders-band wk-leaders-strip">
+          <div class="week-leaders-title">Week Leaders</div>
+          <div class="week-side-panels">
+            {side_panel_html}
+          </div>
+        </div>
+
         <div class="card-tabs weekly-hub-tabs" id="weeklyLeftTabs">
           <div class="tab-bar">
             {_wk_matchups_btn}
             <button class="{_wk_scorers_cls}" data-tab="scorers">Scorers</button>
             <button class="tab-btn" data-tab="scout">Scout</button>
-            <button class="tab-btn" data-tab="optimal">Lineup</button>
+            <button class="tab-btn" data-tab="optimal">Lineup{_lw_chip}</button>
           </div>
           <div class="tab-panels">
             {_wk_matchups_panel}
             <div class="{_wk_scorers_panel_cls}" data-tab="scorers">
-              <div class="week-leaders-band">
-                <div class="week-leaders-title">Week Leaders</div>
-                <div class="week-side-panels">
-                  {side_panel_html}
-                </div>
-              </div>
               <div class="week-main-panels">
                 {main_panel_html}
               </div>
@@ -775,11 +781,12 @@ window.wkActivateTabFromUrl = function() {{
   window.wkActivateTabFromUrl();
 }})();
 
-// Desktop layout (>=1100px): restore the pre-tab-switcher arrangement -- the
-// Scorers/Scout/Lineup tabs in a left column, the matchup preview as the wide
-// right column, and Week Leaders in a right-hand "Weekly Tools" aside. Below
-// 1100px it stays the single 4-tab card (the mobile layout). Nodes are moved,
-// not duplicated, so the week-change / live-refresh JS keeps finding them.
+// Desktop layout (>=1100px): Week Leaders stays a full-width strip on top;
+// below it the matchup carousel takes the wide LEFT column (sticky) and the
+// Scorers/Scout/Lineup tabs the RIGHT column, the two columns stretched to
+// equal height. Below 1100px it stays the single 4-tab card (the mobile
+// layout), Matchups first. Nodes are moved, not duplicated, so the
+// week-change / live-refresh JS keeps finding them.
 (function() {{
   var tabs = document.getElementById('weeklyLeftTabs');
   if (!tabs || tabs.__wkReflow) return;
@@ -805,27 +812,18 @@ window.wkActivateTabFromUrl = function() {{
   function toDesktop(tab) {{
     if (tabs.__mode === 'desktop') return;
     var bar   = tabs.querySelector('.tab-bar');
-    var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
     var mcEl  = document.getElementById('weeklyMatchupsContainer');
     var shell = mcEl ? mcEl.closest('.matchups-shell') : null;
-    var band  = document.querySelector('.week-leaders-band');
     if (!bar || !shell) return;
     var two = document.createElement('div');
-    two.className = 'standings-main two-col-standings wk-desktop-two';
-    var leftCol = document.createElement('div');  leftCol.className = 'standings-col';
-    var rightCol = document.createElement('div'); rightCol.className = 'standings-col';
+    two.className = 'wk-hub-two wk-desktop-two';
+    var leftCol = document.createElement('div');  leftCol.className = 'wk-hub-col wk-hub-col-match';
+    var rightCol = document.createElement('div'); rightCol.className = 'wk-hub-col wk-hub-col-tabs';
     main.insertBefore(two, tabs);
-    leftCol.appendChild(tabs);          // tabs card -> left column
-    rightCol.appendChild(shell);        // matchup preview -> wide right column
+    leftCol.appendChild(shell);         // matchup carousel -> left column
+    rightCol.appendChild(tabs);         // tabs card -> right column
     two.appendChild(leftCol);
     two.appendChild(rightCol);
-    if (band) {{
-      var aside = document.createElement('aside');
-      aside.className = 'page-sidebar wk-desktop-aside';
-      aside.setAttribute('data-sidebar-label', 'Weekly Tools');
-      aside.appendChild(band);          // Week Leaders -> right aside
-      pageLayout.appendChild(aside);
-    }}
     var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
     if (mBtn) mBtn.style.display = 'none';
     wkActivateTab(tab || initialTab || 'scorers');
@@ -837,19 +835,11 @@ window.wkActivateTabFromUrl = function() {{
     if (tabs.__mode === 'mobile') return;
     var bar    = tabs.querySelector('.tab-bar');
     var mPanel = tabs.querySelector('.tab-panel[data-tab="matchups"]');
-    var sPanel = tabs.querySelector('.tab-panel[data-tab="scorers"]');
     var mcEl   = document.getElementById('weeklyMatchupsContainer');
     var shell  = mcEl ? mcEl.closest('.matchups-shell') : null;
-    var band   = document.querySelector('.week-leaders-band');
     if (shell && mPanel) mPanel.appendChild(shell);           // matchup -> back in its tab
-    if (band && sPanel) {{
-      var wmp = sPanel.querySelector('.week-main-panels');
-      if (wmp) sPanel.insertBefore(band, wmp); else sPanel.appendChild(band);
-    }}
     var two = main.querySelector('.wk-desktop-two');
     if (two) {{ main.insertBefore(tabs, two); main.removeChild(two); }}
-    var aside = pageLayout.querySelector('.wk-desktop-aside');
-    if (aside) pageLayout.removeChild(aside);
     if (bar) {{
       var mBtn = bar.querySelector('.tab-btn[data-tab="matchups"]');
       if (mBtn) mBtn.style.display = '';
@@ -869,5 +859,31 @@ window.wkActivateTabFromUrl = function() {{
   if (mq.addEventListener) mq.addEventListener('change', onMqChange);
   else if (mq.addListener) mq.addListener(onMqChange);
 }})();
+</script>
+""" + _WK_OPT_SEG_JS
+
+
+_WK_OPT_SEG_JS = """
+<script>
+// Lineup This Week / History segmented switch. Delegated at document level
+// (bound once) because the Lineup fragment is swapped via innerHTML by the
+// opt-nav loader, which would drop any handler bound inside the fragment.
+(function() {
+  if (window.__wkOptSegBound) return;
+  window.__wkOptSegBound = true;
+  document.addEventListener('click', function(e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-opt-seg]') : null;
+    if (!btn) return;
+    var host = document.getElementById('optimalLineupContent');
+    if (!host || !host.contains(btn)) return;
+    var name = btn.getAttribute('data-opt-seg');
+    host.querySelectorAll('[data-opt-seg]').forEach(function(b) {
+      b.classList.toggle('active', b === btn);
+    });
+    host.querySelectorAll('[data-opt-panel]').forEach(function(p) {
+      p.hidden = p.getAttribute('data-opt-panel') !== name;
+    });
+  });
+})();
 </script>
 """
