@@ -295,7 +295,16 @@ def test_portfolio_actions_cold_cache_reports_incomplete_scan(monkeypatch):
 
 def test_portfolio_actions_complete_scan_reports_incomplete_false(monkeypatch):
     ctx = _pf_ctx(projections={"s1": 15.0, "b1": 9.0})
-    data = _pf_get(_pf_client(monkeypatch, {"L1": ctx}))
+    client = _pf_client(monkeypatch, {"L1": ctx})
+    # 2026-10-27: the first GET kicks the background scan and defers
+    # with the honest incomplete payload; the complete scan is what
+    # later GETs serve from the cache.
+    import time as _time
+    data = _pf_get(client)
+    deadline = _time.time() + 5.0
+    while data["scan"]["incomplete"] and _time.time() < deadline:
+        _time.sleep(0.1)
+        data = _pf_get(client)
     assert data["actions"] == []
     assert data["scan"] == {
         "total": 1, "scanned": 1, "skipped_cold": 0,

@@ -73,14 +73,25 @@ def _client(monkeypatch):
 
 def test_complete_scan_is_cached_per_viewer(monkeypatch):
     client, bp_mod, calls = _client(monkeypatch)
+    # 2026-10-27: the request thread no longer waits for the scan. The
+    # first GET kicks the background compute and defers; the complete
+    # scan lands in the per-viewer cache and later GETs serve it.
     first = client.get("/api/portfolio-actions").get_json()
-    assert first["scan"]["incomplete"] is False
-    assert first["scan"]["scanned"] == 1
+    assert first["scan"]["incomplete"] is True
+    complete = first
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        complete = client.get("/api/portfolio-actions").get_json()
+        if complete["scan"]["incomplete"] is False:
+            break
+        time.sleep(0.1)
+    assert complete["scan"]["incomplete"] is False
+    assert complete["scan"]["scanned"] == 1
     ctx_calls_after_first = calls["ctx"]
     assert ctx_calls_after_first >= 1
     second = client.get("/api/portfolio-actions").get_json()
     assert calls["ctx"] == ctx_calls_after_first  # served from cache
-    assert second == first
+    assert second == complete
 
 
 def test_inflight_compute_defers_with_incomplete_payload(monkeypatch):

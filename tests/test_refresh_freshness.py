@@ -298,7 +298,12 @@ def test_freshness_labels_handle_unknown_seconds_future_and_days():
     assert "value > Date.now() + 5 * 60000" in src
     # Two label sites (updateSheetTime + updateChip) plus the auto-revalidate
     # freshness gate, which reuses the same seconds/future-tolerant normalization.
-    assert src.count("normalizeTimestamp(cacheTs())") == 3
+    # Since 2026-10-27 the label sites normalize an override-aware value:
+    # a portfolio refresh supplies its own refreshedAt stamp (the page's
+    # cache-ts is the nav league's, not the portfolio cards'), while every
+    # other caller still falls back to cacheTs().
+    assert src.count("normalizeTimestamp(tsOverride != null ? tsOverride : cacheTs())") == 2
+    assert src.count("normalizeTimestamp(cacheTs())") == 1
     assert "t.textContent = ts ? 'Updated ' + fmtAge(ts) : ''" in src
     assert "el.textContent = t ? fmtAge(t, true) : 'Unknown'" in src
     assert "'d ago'" in src

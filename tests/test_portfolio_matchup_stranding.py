@@ -29,6 +29,10 @@ Server (routes/user_pages_bp.py _build_live_matchups):
     re-paid the full provider build in parallel, pinning request threads;
     builds could outlast the client's 25s abort, so from the client's
     side the preview never landed.
+  * 2026-10-27 reliability fix: the request thread never builds and never
+    waits. A miss kicks one background rebuild and returns None (callers
+    translate it to the pending shape); any cached entry, inside the
+    stale grace or beyond it, is served stale while the rebuild lands.
 """
 
 import threading
@@ -118,11 +122,20 @@ def _key():
     return ("sleeper", "L1", 2026, 6)
 
 
-def test_live_matchup_build_caches_within_ttl(live_matchup_env):
+def test_live_matchup_miss_kicks_background_build_and_caches(live_matchup_env):
     pages, calls = live_matchup_env
+    # A cold miss never builds on the request thread: it returns the
+    # pending signal (None) and kicks exactly one background rebuild.
     first = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    assert first is None
+    assert _wait_until(lambda: _key() in pages._LIVE_MATCHUP_CACHE)
+    assert _wait_until(lambda: _key() not in pages._LIVE_MATCHUP_REBUILDING)
+    # The landed entry is then served from cache within the TTL, with no
+    # second build.
     second = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
-    assert first is second
+    third = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    assert second is third
+    assert second[0]  # the preview payload the background build computed
     assert calls["build"] == 1
 
 
@@ -185,13 +198,35 @@ def test_live_matchup_stale_serves_immediately_and_rebuilds_in_background(
     assert calls["build"] == 1
 
 
-def test_live_matchup_no_entry_builds_synchronously(live_matchup_env):
+def test_live_matchup_no_entry_returns_pending_without_blocking(
+        live_matchup_env, monkeypatch):
     pages, calls = live_matchup_env
-    served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
-    assert served[0]  # preview payload, built on this thread
+    gate = threading.Event()
+    entered = threading.Event()
+
+    def _slow_preview(**_kwargs):
+        entered.set()
+        gate.wait(timeout=5)
+        calls["build"] += 1
+        return [{"left": {"roster_id": "1"}, "right": {"roster_id": "2"}}]
+
+    monkeypatch.setattr(
+        "dashboard_services.matchups.build_matchup_preview", _slow_preview)
+    try:
+        started = time.time()
+        served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+        # The request thread returned the pending signal immediately even
+        # though the provider build it kicked is still gated shut: the
+        # build happens on a background thread, not this one.
+        assert served is None
+        assert time.time() - started < 2.0
+        assert entered.wait(timeout=2.0)
+        assert _key() in pages._LIVE_MATCHUP_REBUILDING
+    finally:
+        gate.set()
+    assert _wait_until(lambda: _key() in pages._LIVE_MATCHUP_CACHE)
+    assert _wait_until(lambda: _key() not in pages._LIVE_MATCHUP_REBUILDING)
     assert calls["build"] == 1
-    assert _key() in pages._LIVE_MATCHUP_CACHE
-    assert _key() not in pages._LIVE_MATCHUP_REBUILDING
 
 
 def test_live_matchup_fresh_entry_returns_without_compute(live_matchup_env):
@@ -205,7 +240,7 @@ def test_live_matchup_fresh_entry_returns_without_compute(live_matchup_env):
     assert _key() not in pages._LIVE_MATCHUP_REBUILDING
 
 
-def test_live_matchup_waits_for_builder_when_nothing_cached(live_matchup_env):
+def test_live_matchup_miss_does_not_wait_for_inflight_builder(live_matchup_env):
     pages, calls = live_matchup_env
     fresh = ([{"fresh": True}], {}, {})
     lock = pages._live_matchup_lock(_key())
@@ -217,14 +252,22 @@ def test_live_matchup_waits_for_builder_when_nothing_cached(live_matchup_env):
         lock.release()
 
     threading.Thread(target=_builder).start()
+    started = time.time()
     served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
-    # No stale entry to serve: the caller waited for the builder and used
-    # its result rather than starting a duplicate build.
-    assert served is fresh
+    # Nothing cached and a builder in flight: the caller no longer waits
+    # on the per-key lock (the old unbounded acquire pinned a request
+    # thread for the whole provider build). It defers with the pending
+    # signal and starts no duplicate build.
+    assert served is None
+    assert time.time() - started < 0.25
+    assert calls["build"] == 0
+    # Once the builder lands its entry, the next call serves it fresh.
+    assert _wait_until(lambda: _key() in pages._LIVE_MATCHUP_CACHE)
+    assert pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX) is fresh
     assert calls["build"] == 0
 
 
-def test_live_matchup_builds_itself_when_builder_stored_nothing(live_matchup_env):
+def test_live_matchup_failed_builder_rekicks_on_next_call(live_matchup_env):
     pages, calls = live_matchup_env
     lock = pages._live_matchup_lock(_key())
     assert lock.acquire(blocking=False)
@@ -234,6 +277,13 @@ def test_live_matchup_builds_itself_when_builder_stored_nothing(live_matchup_env
         lock.release()  # finished without storing (it raised)
 
     threading.Thread(target=_failed_builder).start()
-    served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
-    assert served[0]  # built on this thread after the failed builder
+    # While the failed builder still holds the lock, the call defers and
+    # cannot schedule its own rebuild.
+    assert pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX) is None
+    assert calls["build"] == 0
+    # After it releases without storing, the next call defers again but
+    # this time kicks the background rebuild, which lands the entry.
+    assert _wait_until(lambda: not lock.locked())
+    assert pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX) is None
+    assert _wait_until(lambda: _key() in pages._LIVE_MATCHUP_CACHE)
     assert calls["build"] == 1
