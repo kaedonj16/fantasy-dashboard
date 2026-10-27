@@ -352,13 +352,145 @@ console.log('alert-dot state logic ok');
     assert "alert-dot state logic ok" in result.stdout
 
 
+# ── Soft navigation (node): the in-app nav path ────────────────────────────
+# Regression test for the soft-nav gap: in-app navigation swaps #page-root
+# and re-runs ONLY window.initPageRoot (applyNewRoot); DOMContentLoaded
+# never re-fires. initAlertDots must therefore run from initPageRoot too, or
+# tapping Weekly Recap in the nav shows the recap while the dot stays lit.
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_alert_dots_survive_soft_navigation():
+    source = _read("static/app.js")
+    fn = _function_source(source, "initAlertDots")
+    ipr = _function_source(source, "initPageRoot")
+    harness = """
+function El(attrs) {
+  this.attrs = attrs || {};
+  this.hidden = true;  // server renders every dot with alert-dot-hidden
+  var self = this;
+  this.classList = { toggle: function (cls, force) {
+    if (cls === 'alert-dot-hidden') self.hidden = !!force;
+  } };
+}
+El.prototype.getAttribute = function (n) {
+  return Object.prototype.hasOwnProperty.call(this.attrs, n) ? this.attrs[n] : null;
+};
+var store = {};  // ONE persistent localStorage across the whole session
+var localStorage = {
+  getItem: function (k) { return k in store ? store[k] : null; },
+  setItem: function (k, v) { store[k] = String(v); }
+};
+var page = { recapDots: [], boDots: [], onRecap: false, onBo: false };
+var document = {
+  querySelectorAll: function (sel) {
+    if (sel === '.recap-dot') return page.recapDots;
+    if (sel === '.breakout-dot') return page.boDots;
+    return [];
+  },
+  querySelector: function (sel) {
+    if (sel === 'main.weekly-recap') return page.onRecap ? {} : null;
+    if (sel === '.bo-view-tabs') return page.onBo ? {} : null;
+    return null;
+  }
+};
+var window = {};
+function noop() {}
+var initManagerPills = noop, initCardTabs = noop, initPlayoffOdds = noop,
+    initTeamTabs = noop, initStandingsSort = noop, initGenericTableSort = noop,
+    normalizeClickableAccessibility = noop, bindGlobalCarouselHandlersOnce = noop,
+    initRecapPage = noop;
+var tradePageExists = function () { return false; };
+var recapPageExists = function () { return page.onRecap; };
+var pageRootEl = { querySelector: function () { return null; },
+                   querySelectorAll: function () { return []; } };
+function ok(v, m) { if (!v) throw new Error(m); }
+%s
+%s
+window.initPageRoot = initPageRoot;  // extraction starts at the declaration
+
+var KA = 'recap_last_seen:sleeper:2026:A';
+var KB = 'recap_last_seen:sleeper:2026:B';
+function recapDot(key, week) {
+  return new El({ 'data-alert-week': String(week), 'data-alert-key': key });
+}
+function boDot(set) {
+  return new El({ 'data-alert-set': set, 'data-alert-key': 'breakout_last_seen' });
+}
+function fullLoad() { initAlertDots(); window.initPageRoot(document); }
+function softNav() { window.initPageRoot(pageRootEl); }
+
+// 1. Full load, league A, week 7 recap unseen: both instances show.
+page.recapDots = [recapDot(KA, 7), recapDot(KA, 7)]; page.onRecap = false;
+fullLoad();
+ok(page.recapDots.every(function (d) { return !d.hidden; }), 'A unseen: dots show');
+
+// 2. Soft-nav into A's recap: marks seen, hides every instance.
+page.onRecap = true;
+softNav();
+ok(store[KA] === '7', 'soft-nav into A recap must write the seen week');
+ok(page.recapDots.every(function (d) { return d.hidden; }), 'soft-nav into A recap must hide all instances');
+
+// 3. Soft-nav on to another A page: stays hidden.
+page.onRecap = false;
+softNav();
+ok(page.recapDots.every(function (d) { return d.hidden; }), 'A dot stays hidden after soft-nav onward');
+
+// 4. League B full load: B shows, A activity never touched B's key.
+page.recapDots = [recapDot(KB, 7), recapDot(KB, 7)];
+fullLoad();
+ok(page.recapDots.every(function (d) { return !d.hidden; }), 'B dot shows on B chrome');
+ok(!(KB in store), 'B key untouched by A');
+
+// 5. Soft-nav into B's recap clears B.
+page.onRecap = true;
+softNav();
+ok(store[KB] === '7', 'soft-nav into B recap must write B seen');
+ok(page.recapDots.every(function (d) { return d.hidden; }), 'soft-nav into B recap hides B dots');
+page.onRecap = false;
+
+// 6. Week 8 re-arms A only.
+page.recapDots = [recapDot(KA, 8)];
+fullLoad();
+ok(page.recapDots[0].hidden === false, 'week 8 re-arms A');
+page.recapDots = [recapDot(KB, 7)];
+fullLoad();
+ok(page.recapDots[0].hidden === true, 'B stays read');
+
+// 7. Breakouts through soft-nav: unopened shows, soft-nav in clears.
+store = {}; page.recapDots = [];
+page.boDots = [boDot('2026:7:v3')];
+fullLoad();
+ok(page.boDots[0].hidden === false, 'unopened breakout set shows');
+page.onBo = true;
+softNav();
+ok(store['breakout_last_seen'] === '2026:7:v3', 'soft-nav into breakouts writes the set stamp');
+ok(page.boDots[0].hidden === true, 'soft-nav into breakouts hides the dot');
+console.log('alert-dot soft-nav logic ok');
+""" % (fn, ipr)
+    result = subprocess.run(
+        ["node", "-e", harness], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "alert-dot soft-nav logic ok" in result.stdout
+
+
 # ── Changelog announcement ──────────────────────────────────────────────────
 
 def test_changelog_announces_alert_dots():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[2]
+    entry = CHANGELOG[3]  # prepends above it: the dot fix, recap cleanup, Rooting Guide
+    assert entry["date"] == "2026-10-27"
+    assert entry["tag"] == "new"
+    assert "Weekly Recap" in entry["text"] and "Breakout Engine" in entry["text"]
+    assert "—" not in entry["text"]  # no em dashes in UI copy
+
+
+def test_changelog_announces_recap_dot_softnav_fix():
+    from dashboard_services.changelog import CHANGELOG
+
+    top = CHANGELOG[0]
     assert top["date"] == "2026-10-27"
-    assert top["tag"] == "new"
-    assert "Weekly Recap" in top["text"] and "Breakout Engine" in top["text"]
+    assert top["tag"] == "fix"
+    assert "alert dot" in top["text"]
     assert "—" not in top["text"]  # no em dashes in UI copy

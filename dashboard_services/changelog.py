@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-27",
+        "tag": "fix",
+        "text": "Weekly Recap alert dot: opening the recap from the navigation now clears its dot right away (it previously only cleared after a full page reload), and the Tuesday recap-ready notification now opens the recap itself instead of the matchups page.",
+        "link": "/recap"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "update",
         "text": "Weekly Recap: the Injury Report is cleaned up so player names are never cut off, with the status pill beside the name and the fantasy team listed under it. The Standings and Power Rankings cards now stretch to the same height, whichever is taller. Every team and player name on the page opens its team or player card, including League Activity, Lineup Review and the Game of the Week look-ahead.",
         "link": "/recap"

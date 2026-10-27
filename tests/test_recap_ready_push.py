@@ -119,10 +119,10 @@ def test_tuesday_sends_one_push_per_league(recap_env):
     assert blackedraw["title"] == "Your Week 6 recap is ready"
     assert blackedraw["body"] == (
         "Scores are final. See how your matchup shook out in Blackedraw.")
-    assert blackedraw["url"] == "/sleeper/2026/111/weekly"
+    assert blackedraw["url"] == "/sleeper/2026/111/recap"
     assert blackedraw["tag"] == "recap-ready-2026-6"
     assert blackedraw["notif_type"] == "recap_ready"
-    assert by_league["222"]["url"] == "/espn/2026/222/weekly"
+    assert by_league["222"]["url"] == "/espn/2026/222/recap"
     assert by_league["222"]["body"] == (
         "Scores are final. See how your matchup shook out.")
     # No em dashes anywhere in the copy.

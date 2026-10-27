@@ -2770,7 +2770,7 @@ def notify_recap_ready(today=None):
                 league_id,
                 title=f"Your Week {week} recap is ready",
                 body=recap_body,
-                url=f"/{platform}/{season}/{league_id}/weekly",
+                url=f"/{platform}/{season}/{league_id}/recap",
                 tag=f"recap-ready-{season}-{week}",
                 notif_type="recap_ready",
             ) or 0
