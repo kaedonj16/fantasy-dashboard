@@ -811,6 +811,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             return None
 
     def scorer_card(icon, label, name, pts, rid, sub, accent, opp=None, medal_rank=None):
+        # ``name`` is the team name (df_weekly "owner" is roster_map, not the
+        # manager); the @ line must show the username, like the scoreboard
+        # does, falling back to the team name only when none resolved.
+        handle = username_by_rid.get(str(rid)) or name
         # The week's HIGH SCORER earns a gold medal (a weekly award); the other
         # cards keep their semantic icon. Icon/medal sits in an accent chip.
         chip_inner = (rank_mark(medal_rank, size=15, wrap=False)
@@ -849,7 +853,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
       {ava_img(name, rid, 42)}
       <div style="min-width:0;">
         <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(name, rid)}</div>
-        <div style="font-size:13px;color:var(--muted);">@{html.escape(name)}</div>
+        <div style="font-size:13px;color:var(--muted);">@{html.escape(handle)}</div>
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
