@@ -112,12 +112,29 @@ def test_trending_shares_weekly_data_with_trends_panel():
     assert "wtWrap._weeklyData = null;" in js
 
 
-def test_trending_css_desktop_grid():
+def test_trending_css_single_verdict_card():
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-    assert ".pm-trending-grid" in css
-    # Desktop gets a 2x2 grid.
-    assert "@media (min-width: 641px)" in css
-    assert "grid-template-columns: 1fr 1fr;" in css
+    # Option A: one verdict card, full width at every size (no 2x2 card grid).
+    assert ".pm-trend-hero" in css
+    assert ".pm-trend-verdict-title" in css
+    assert ".pm-trend-group-head" in css
+    assert ".pm-trend-role" in css
+    assert ".pm-trending-grid" not in css
+
+
+def test_trending_option_a_view_in_js():
+    js = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
+    assert "function pmBuildTrendingView(trending, weeks, position)" in js
+    assert "function pmComputeRoleAnchor(weeks, position, moverKeys)" in js
+    assert "Last 3 vs prior" in js
+    assert "Role check" in js
+    # The badge/verdict is stated once, in the verdict block, not per card.
+    assert "pm-trend-verdict" in js
+    # Honest labels: catch rate is not a drops stat, and no mock annotation
+    # text ships in the UI.
+    assert "Drops creeping in" not in js
+    assert "(not /g)" not in js
+    assert "Completion rate down" in js
 
 
 def test_trending_copy_has_no_em_dashes():
@@ -265,6 +282,60 @@ def test_quiet_player_yields_no_trending_cards():
         for _ in range(7)
     ]
     assert _compute_trending(flat, "RB") == []
+
+
+def _build_view(weeks, position):
+    """Run the real pmBuildTrendingView from player_modal.js under node."""
+    js = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
+    start = js.index("Player modal: TRENDING hot/cold section")
+    start = js.rindex("//", 0, start)
+    end = js.index("// Fire-and-forget kick", start)
+    src = js[start:end]
+    driver = (
+        src
+        + "\nconst WEEKS = " + json.dumps(weeks) + ";\n"
+        + "const trending = pmComputeTrending(WEEKS, " + json.dumps(position) + ");\n"
+        + "const view = pmBuildTrendingView(trending, WEEKS, " + json.dumps(position) + ");\n"
+        + "const byKey = {}; trending.forEach(function(t) { byKey[t.key] = t; });\n"
+        + "process.stdout.write(JSON.stringify({\n"
+        + "  hero: view.hero.key, title: view.title, sub: view.sub,\n"
+        + "  groups: view.groups.map(function(g) { return {label: g.label, keys: g.items.map(function(t) { return t.key; })}; }),\n"
+        + "  anchor: view.roleAnchor.map(function(a) { return a.key; }),\n"
+        + "  yptDelta: _pmTrendFmtDeltaFull(byKey['yds_per_target']),\n"
+        + "  yptBase: _pmTrendFmtBase(byKey['yds_per_target']),\n"
+        + "  pprDelta: _pmTrendFmtDeltaFull(byKey['ppr_pts'])\n"
+        + "}));\n"
+    )
+    res = subprocess.run(["node", "-e", driver], capture_output=True,
+                         text=True, timeout=20, check=False)
+    assert res.returncode == 0, res.stderr
+    return json.loads(res.stdout)
+
+
+@_node_required
+def test_option_a_lamb_shape_is_one_efficiency_led_story():
+    # Lamb-shaped: flat targets/share/snaps, catch rate and per-target
+    # efficiency collapse, yardage and PPR follow.
+    prior = dict(snap_pct=90, targets=12, target_share=30, receptions=10,
+                 rec_yards=140, touches=12, ppr_pts=28)
+    recent = dict(snap_pct=90, targets=12, target_share=30, receptions=6,
+                  rec_yards=50, touches=12, ppr_pts=14)
+    weeks = [_wk(**prior) for _ in range(4)] + [_wk(**recent) for _ in range(3)]
+    view = _build_view(weeks, "WR")
+    # PPR is the hero, stated once; efficiency is the cause group and the
+    # remaining production mover is the effect, not two more alarms.
+    assert view["hero"] == "ppr_pts"
+    assert view["title"] == "Cooling off: efficiency-led dip"
+    assert view["sub"] == "Efficiency fell first. Production followed."
+    labels = {g["label"]: g["keys"] for g in view["groups"]}
+    assert set(labels["EFFICIENCY · THE CAUSE"]) == {"catch_pct", "yds_per_target"}
+    assert labels["PRODUCTION · THE EFFECT"] == ["rec_yards"]
+    # Flat role is shown as an anchor, not hidden.
+    assert set(view["anchor"]) == {"targets", "target_share", "snap_pct"}
+    # Rates carry no per-game unit; per-game metrics keep theirs.
+    assert "/g" not in view["yptDelta"]
+    assert "/g" not in view["yptBase"]
+    assert "/g" in view["pprDelta"]
 
 
 def test_trending_new_role_rendering_and_css():

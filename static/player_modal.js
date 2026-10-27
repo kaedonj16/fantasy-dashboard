@@ -6931,6 +6931,7 @@ var _PM_TREND_FLOORS = {
   ppr_pts: 3.0, touches: 4, carries: 4, targets: 2.5, receptions: 2,
   rush_yards: 15, rec_yards: 15, carry_share: 10, target_share: 8,
   snap_pct: 20, rz_touches: 1, pass_att: 10,
+  catch_pct: 10, yds_per_target: 3, yds_per_touch: 2,
 };
 
 // Correlated metrics tell one story (a backfield takeover moves touches,
@@ -6975,7 +6976,7 @@ function _pmTrendCallout(key, hot, recentAvg, suffix) {
     case 'rec_yards': return hot ? ('Yardage surging · ' + rs + '/g') : ('Yardage dipping');
     case 'rush_yards': return hot ? ('Rushing yardage surging') : ('Rushing yardage dipping');
     case 'yds_per_target': return hot ? 'Explosive when targeted' : 'Efficiency slipping per target';
-    case 'catch_pct': return hot ? 'Hands heating up' : 'Drops creeping in';
+    case 'catch_pct': return hot ? 'Completion rate up' : 'Completion rate down';
     case 'ppr_pts': return hot ? ('Scoring surge · ' + rs + ' pts/g') : ('Production dipping · ' + rs + ' pts/g');
     case 'pass_att': return hot ? ('Airing it out · ' + rs + ' att/g') : ('Pass volume down');
     default: return hot ? 'Trending up lately' : 'Trending down lately';
@@ -7099,6 +7100,148 @@ function pmComputeTrending(weeks, position) {
   return picked;
 }
 
+// ── Option A view: one verdict card, not one card per mover ───────────────
+// The movers are one story told as a chain (efficiency or role moves first,
+// production follows), so the section renders a single card: a verdict, the
+// production hero, the remaining movers grouped as evidence, and a role
+// anchor line for the role metrics that did NOT move. Rates (Yds/Target,
+// Yds/Touch) are per play, never per game: their values, deltas and baselines
+// carry no /g unit anywhere.
+function _pmTrendIsRate(key) {
+  return key === 'yds_per_target' || key === 'yds_per_touch';
+}
+
+function _pmTrendFmtVal(t, v) {
+  var n = Math.round(v * 10) / 10;
+  return t.suffix === '%' ? (n + '%') : ('' + n);
+}
+
+function _pmTrendFmtDelta(t) {
+  var sign = t.delta >= 0 ? '+' : '-';
+  if (t.suffix === '%') return sign + Math.abs(Math.round(t.delta)) + ' pts';
+  if (_pmTrendIsRate(t.key)) return sign + (Math.round(Math.abs(t.delta) * 10) / 10);
+  return sign + (Math.round(Math.abs(t.delta) * 10) / 10) + ' /g';
+}
+
+function _pmTrendFmtDeltaFull(t) {
+  var txt = _pmTrendFmtDelta(t);
+  if (t.kind !== 'newrole' && t.pct != null) {
+    txt += ' · ' + (t.pct >= 0 ? '+' : '') + Math.round(t.pct * 100) + '%';
+  }
+  return txt;
+}
+
+function _pmTrendFmtBase(t) {
+  var txt = 'was ' + _pmTrendFmtVal(t, t.baseline);
+  if (t.suffix !== '%' && !_pmTrendIsRate(t.key)) txt += ' /g';
+  return txt;
+}
+
+var _PM_TREND_GROUP_ORDER = ['efficiency', 'volume', 'share', 'redzone', 'passing', 'production'];
+var _PM_TREND_GROUP_LABELS = {
+  efficiency: 'EFFICIENCY', volume: 'VOLUME', share: 'ROLE / SHARE',
+  redzone: 'RED ZONE', passing: 'PASSING', production: 'PRODUCTION',
+};
+var _PM_TREND_ROLE_KEYS = {
+  RB: ['touches', 'carry_share', 'snap_pct'],
+  WR: ['targets', 'target_share', 'snap_pct'],
+  TE: ['targets', 'target_share', 'snap_pct'],
+  QB: ['pass_att', 'snap_pct'],
+};
+
+// Role metrics that did not qualify as movers, as last-3 vs prior context.
+// Flat role next to falling efficiency is a different read from role loss,
+// so a non-move is shown, not hidden.
+function pmComputeRoleAnchor(weeks, position, moverKeys) {
+  if (!weeks || weeks.length < _PM_TREND_MIN_WEEKS) return [];
+  var p = (position || '').toUpperCase();
+  var keys = _PM_TREND_ROLE_KEYS[p] || ['snap_pct'];
+  var specs = {};
+  _pmTrendMetricSets(position).forEach(function(s) { specs[s[0]] = s; });
+  var out = [];
+  keys.forEach(function(key) {
+    if (moverKeys && moverKeys[key]) return;
+    var spec = specs[key];
+    if (!spec) return;
+    var series = _pmTrendSeries(weeks, key, (typeof spec[4] === 'function') ? spec[4] : null);
+    var n = series.length;
+    var prior = series.slice(0, n - 3);
+    if (!prior.length) return;
+    if (weeks.slice(0, n - 3).filter(_pmWeekActive).length < 2) return;
+    var baseline = prior.reduce(function(s, v) { return s + v; }, 0) / prior.length;
+    var r3 = series.slice(-3);
+    var recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
+    out.push({
+      key: key, label: spec[1], suffix: spec[3] || '',
+      recentAvg: recentAvg, baseline: baseline, delta: recentAvg - baseline,
+      pct: baseline > 0 ? (recentAvg - baseline) / baseline : null,
+    });
+  });
+  return out;
+}
+
+function pmBuildTrendingView(trending, weeks, position) {
+  if (!trending || !trending.length) return null;
+  var hero = null;
+  ['ppr_pts', 'rec_yards', 'rush_yards'].forEach(function(k) {
+    if (hero) return;
+    trending.forEach(function(t) { if (!hero && t.key === k) hero = t; });
+  });
+  if (!hero) hero = trending[0];
+  var rest = trending.filter(function(t) { return t !== hero; });
+  var byCluster = {};
+  rest.forEach(function(t) {
+    var c = t.cluster || t.key;
+    if (!byCluster[c]) byCluster[c] = [];
+    byCluster[c].push(t);
+  });
+  var has = function(c) {
+    return trending.some(function(t) { return t.cluster === c; });
+  };
+  var sameDir = function(c) {
+    return trending.some(function(t) { return t.cluster === c && t.hot === hero.hot; });
+  };
+  var groups = [];
+  _PM_TREND_GROUP_ORDER.forEach(function(c) {
+    if (!byCluster[c]) return;
+    var label = _PM_TREND_GROUP_LABELS[c] || c.toUpperCase();
+    if (c === 'efficiency' && has('production') && sameDir('efficiency')) label += ' · THE CAUSE';
+    if (c === 'production' && (has('efficiency') || has('volume') || has('share'))) label += ' · THE EFFECT';
+    groups.push({ cluster: c, label: label, items: byCluster[c] });
+  });
+  Object.keys(byCluster).forEach(function(c) {
+    if (_PM_TREND_GROUP_ORDER.indexOf(c) >= 0) return;
+    groups.push({ cluster: c, label: _PM_TREND_GROUP_LABELS[c] || c.toUpperCase(), items: byCluster[c] });
+  });
+  var title, sub;
+  if (hero.kind === 'newrole') {
+    title = 'New role emerging';
+    sub = hero.callout;
+  } else {
+    var dirWord = hero.hot ? 'Heating up' : 'Cooling off';
+    var outcome = hero.hot ? 'surge' : 'dip';
+    var driver;
+    if (sameDir('efficiency')) driver = 'efficiency-led ' + outcome;
+    else if (sameDir('volume') || sameDir('share')) driver = 'role-led ' + outcome;
+    else driver = 'production ' + outcome;
+    title = dirWord + ': ' + driver;
+    if (sameDir('efficiency') && has('production')) {
+      sub = hero.hot ? 'Efficiency is up first. Production followed.' : 'Efficiency fell first. Production followed.';
+    } else if ((sameDir('volume') || sameDir('share')) && has('production')) {
+      sub = hero.hot ? 'Role is up first. Production followed.' : 'Role fell first. Production followed.';
+    } else {
+      sub = hero.callout;
+    }
+  }
+  var moverKeys = {};
+  trending.forEach(function(t) { moverKeys[t.key] = true; });
+  return {
+    hero: hero, groups: groups, title: title, sub: sub,
+    kind: hero.kind || (hero.hot ? 'hot' : 'cold'), hot: hero.hot,
+    roleAnchor: pmComputeRoleAnchor(weeks, position, moverKeys),
+  };
+}
+
 // Fire-and-forget kick for the TRENDING section. Only single-season views get
 // one (weekly series are per-season); career/multi-season leave the placeholder
 // empty.
@@ -7131,43 +7274,59 @@ function pmRenderTrendingSection(playerId, season, position) {
     }
     var trending = pmComputeTrending((d && d.weeks) || [], position);
     if (!trending.length) { host.innerHTML = ''; return; }
-    var html = '<div class="pm-trending"><div class="pm-trending-head">'
-      + '<span class="pm-trending-dot"></span><span>TRENDING</span></div>'
-      + '<div class="pm-trending-grid">';
-    trending.forEach(function(t) {
-      var cls = t.kind || (t.hot ? 'hot' : 'cold');
-      var badge = cls === 'newrole' ? '&#9650; NEW ROLE'
-        : (t.hot ? '&#9650; HEATING UP' : '&#9660; COOLING OFF');
-      var sparkColor = cls === 'newrole' ? '#2563eb' : (t.hot ? '#16a34a' : '#dc2626');
-      // Delta leads with the absolute move; the % rides along only when an
-      // established baseline made it honest (never on a NEW ROLE card).
-      var absTxt = t.suffix === '%'
-        ? ((t.delta >= 0 ? '+' : '-') + Math.abs(Math.round(t.delta)) + ' pts')
-        : ((t.delta >= 0 ? '+' : '-') + (Math.round(Math.abs(t.delta) * 10) / 10) + ' /g');
-      var pctTxt = (cls !== 'newrole' && t.pct != null)
-        ? (absTxt + ' &middot; ' + (t.pct >= 0 ? '+' : '') + Math.round(t.pct * 100) + '%')
-        : absTxt;
-      var baseTxt = 'was ' + (Math.round(t.baseline * 10) / 10) + t.suffix
-        + (t.suffix === '%' ? '' : ' /g');
-      var valTxt = (Math.round(t.recentAvg * 10) / 10) + t.suffix;
-      var tips = t.series.map(function(val, i) {
-        var w = ((d && d.weeks) || [])[i] || {};
-        var num = Math.round(val * 10) / 10;
-        var vTxt = t.suffix === '%' ? (num + '%') : ('' + num);
+    var view = pmBuildTrendingView(trending, (d && d.weeks) || [], position);
+    if (!view) { host.innerHTML = ''; return; }
+    var weeksArr = (d && d.weeks) || [];
+    var tipsFor = function(t) {
+      return t.series.map(function(val, i) {
+        var w = weeksArr[i] || {};
+        var vTxt = _pmTrendFmtVal(t, val);
         return w.opponent ? (vTxt + ' vs ' + w.opponent)
                           : ('Wk ' + (w.week != null ? w.week : (i + 1)) + ' · ' + vTxt);
       });
-      html += '<div class="pm-trend-row ' + cls + '">'
-        + '<div class="pm-trend-spark">' + pmSparkline(t.series, sparkColor, tips) + '</div>'
-        + '<div class="pm-trend-info"><span class="pm-trend-badge ' + cls + '">' + badge + '</span>'
-        + '<div class="pm-trend-metric">' + t.label + '</div>'
-        + '<div class="pm-trend-call">' + t.callout + '</div></div>'
-        + '<div class="pm-trend-right"><div class="pm-trend-val">' + valTxt + '</div>'
-        + '<div class="pm-trend-delta ' + cls + '">' + pctTxt + '</div>'
-        + '<div class="pm-trend-base">' + baseTxt + '</div></div>'
-        + '</div>';
+    };
+    var sparkFor = function(t) {
+      var c = t.kind === 'newrole' ? '#2563eb' : (t.hot ? '#16a34a' : '#dc2626');
+      return pmSparkline(t.series, c, tipsFor(t));
+    };
+    var cls = view.kind;
+    var badge = cls === 'newrole' ? '&#9650; NEW ROLE'
+      : (view.hot ? '&#9650; HEATING UP' : '&#9660; COOLING OFF');
+    var hero = view.hero;
+    var html = '<div class="pm-trending ' + cls + '"><div class="pm-trending-head">'
+      + '<span class="pm-trending-dot"></span><span>TRENDING</span>'
+      + '<span class="pm-trending-window">Last 3 vs prior</span></div>'
+      + '<div class="pm-trend-verdict"><span class="pm-trend-badge ' + cls + '">' + badge + '</span>'
+      + '<div class="pm-trend-verdict-title">' + view.title + '</div>'
+      + '<div class="pm-trend-verdict-sub">' + view.sub + '</div></div>'
+      + '<div class="pm-trend-hero">'
+      + '<div class="pm-trend-hero-main"><div class="pm-trend-metric">' + hero.label + '</div>'
+      + '<div class="pm-trend-spark">' + sparkFor(hero) + '</div></div>'
+      + '<div class="pm-trend-right"><div class="pm-trend-val">' + _pmTrendFmtVal(hero, hero.recentAvg) + '</div>'
+      + '<div class="pm-trend-delta ' + cls + '">' + _pmTrendFmtDeltaFull(hero) + '</div>'
+      + '<div class="pm-trend-base">' + _pmTrendFmtBase(hero) + '</div></div></div>';
+    view.groups.forEach(function(g) {
+      html += '<div class="pm-trend-group"><div class="pm-trend-group-head">' + g.label + '</div>';
+      g.items.forEach(function(t) {
+        var tCls = t.kind || (t.hot ? 'hot' : 'cold');
+        html += '<div class="pm-trend-row ' + tCls + '">'
+          + '<div class="pm-trend-spark">' + sparkFor(t) + '</div>'
+          + '<div class="pm-trend-info"><div class="pm-trend-metric">' + t.label + '</div>'
+          + '<div class="pm-trend-call">' + t.callout + '</div></div>'
+          + '<div class="pm-trend-right"><div class="pm-trend-val">' + _pmTrendFmtVal(t, t.recentAvg) + '</div>'
+          + '<div class="pm-trend-delta ' + tCls + '">' + _pmTrendFmtDeltaFull(t) + '</div>'
+          + '<div class="pm-trend-base">' + _pmTrendFmtBase(t) + '</div></div>'
+          + '</div>';
+      });
+      html += '</div>';
     });
-    html += '</div></div>';
+    if (view.roleAnchor && view.roleAnchor.length) {
+      var anchorTxt = view.roleAnchor.map(function(a) {
+        return a.label + ' ' + _pmTrendFmtVal(a, a.recentAvg) + ' vs ' + _pmTrendFmtVal(a, a.baseline) + ' prior';
+      }).join(' &middot; ');
+      html += '<div class="pm-trend-role"><span class="pm-trend-role-lab">Role check</span> ' + anchorTxt + '</div>';
+    }
+    html += '</div>';
     // Only render if the host is still in the DOM (modal may have closed).
     if (document.getElementById('pmTrendingSection') === host) host.innerHTML = html;
   });

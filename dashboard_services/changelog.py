@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-27",
+        "tag": "update",
+        "text": "Player card Advanced tab: the Trending section is now one verdict instead of a stack of separate alarms. Your main production number leads, the metrics behind it are grouped as the cause and the effect, and a Role check line shows your target, share and snap numbers even when they have not moved, so an efficiency dip reads differently from a role loss. Catch rate is labelled as a completion rate, and yards per target no longer carries a per-game unit.",
+        "link": "/metrics"
+    },
+    {
         "date": "2026-10-26",
         "tag": "fix",
         "text": "Advanced Metrics graphs: zooming now zooms the axes instead of the whole picture. The ranges narrow and the tick marks step finer while titles, labels and dots stay the same size, so you can spread out a crowded cluster and read exactly where everyone sits. Drag to pan, Reset to return to the full graph, and downloads still export the full graph.",
