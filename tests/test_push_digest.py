@@ -349,18 +349,19 @@ def test_digest_summary_single_item_is_verbatim(fake_season):
     assert pn._digest_summary(items, "2026") == (title, body)
 
 
-def test_digest_payload_caps_named_items(fake_season):
+def test_digest_payload_names_every_item(fake_season):
+    # The overflow cap is gone: every buffered alert is named per league and
+    # nothing collapses into an unnamed "+N more" tail.
     items = [
         {"notif_type": "value_drops", "league_id": "L1", "platform": "sleeper",
          "title": "T", "body": f"Body {i}.", "url": "/l1/trade"}
         for i in range(5)
     ]
     _title, body, url = pn._digest_payload(items, "2026")
-    assert "Body 0." in body
-    assert "Body 2." in body
-    assert "Body 3." not in body
-    assert body.endswith("+2 more")
-    # Every named item shares one link, so the digest keeps it.
+    for i in range(5):
+        assert f"Body {i}." in body
+    assert "more" not in body
+    # Every item shares one link, so the digest keeps it.
     assert url == "/l1/trade"
 
 

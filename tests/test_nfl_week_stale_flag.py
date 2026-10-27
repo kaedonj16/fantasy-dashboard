@@ -89,7 +89,10 @@ def test_is_stale_helper_handles_edge_cases():
     assert nfl_state_is_stale({"freshness": {"classification": "live"}}) is False
 
 
-def test_nav_chip_shows_stale_indicator_when_flagged():
+def test_nav_chip_carries_stale_flag_as_data_when_flagged():
+    # The Week pill no longer renders in the bar (nav cleanup): the week and
+    # its staleness ride on the chip as data attributes instead of a visible
+    # label + stale badge.
     # Importing app pulls openai via dashboard_services.ai; guard per-test so
     # the api-level tests above still run where openai is absent.
     pytest.importorskip("openai")
@@ -104,9 +107,10 @@ def test_nav_chip_shows_stale_indicator_when_flagged():
         "nfl_week_as_of": "2026-09-29T10:00:00+00:00",
     }
     html_out = app_mod._render_league_chrome_chip(meta, can_switch=False)
-    assert "Week 3" in html_out
-    assert "br-ctx-stale" in html_out
-    assert "Stale" in html_out
+    assert "data-week-label='Week 3'" in html_out
+    assert "data-week-stale='1'" in html_out
+    assert "br-ctx-week" not in html_out
+    assert "br-ctx-stale" not in html_out
 
 
 def test_nav_chip_clean_when_week_fresh():
@@ -122,5 +126,6 @@ def test_nav_chip_clean_when_week_fresh():
         "nfl_week_as_of": None,
     }
     html_out = app_mod._render_league_chrome_chip(meta, can_switch=False)
-    assert "Week 4" in html_out
+    assert "data-week-label='Week 4'" in html_out
+    assert "data-week-stale" not in html_out
     assert "br-ctx-stale" not in html_out

@@ -437,12 +437,11 @@ def api_push_preferences():
                     "UPDATE push_subscriptions SET prefs = %s WHERE endpoint = %s",
                     (_json.dumps(prefs), endpoint),
                 )
-                # Digest is a per-account choice: mirror this device's digest
-                # toggle onto the account's other devices so every device in
-                # the account batches the same way. Type prefs stay
-                # device-level and are left untouched here.
-                if isinstance(prefs, dict) and "digest" in prefs:
-                    digest_on = prefs.get("digest") is True
+                # Prefs are a per-ACCOUNT choice now (type toggles, digest,
+                # quiet hours and per-league mutes alike): mirror this
+                # device's full prefs onto the account's other devices so
+                # every device in the account notifies the same way.
+                if isinstance(prefs, dict):
                     rows = conn.execute(
                         "SELECT endpoint, prefs, account_key FROM push_subscriptions "
                         "WHERE endpoint = %s",
@@ -453,22 +452,11 @@ def api_push_preferences():
                         None,
                     )
                     if acct:
-                        for r in conn.execute(
-                            "SELECT endpoint, prefs FROM push_subscriptions "
+                        conn.execute(
+                            "UPDATE push_subscriptions SET prefs = %s "
                             "WHERE account_key = %s AND endpoint <> %s",
-                            (acct, endpoint),
-                        ).fetchall():
-                            try:
-                                other = _json.loads(r["prefs"] or "{}")
-                            except Exception:
-                                other = {}
-                            if (other.get("digest") is True) != digest_on:
-                                other["digest"] = digest_on
-                                conn.execute(
-                                    "UPDATE push_subscriptions SET prefs = %s "
-                                    "WHERE endpoint = %s",
-                                    (_json.dumps(other), r["endpoint"]),
-                                )
+                            (_json.dumps(prefs), acct, endpoint),
+                        )
                 conn.commit()
         except Exception as exc:
             logger.warning("[push] preferences put error: %s", exc)
@@ -479,13 +467,59 @@ def api_push_preferences():
 @push_bp.route("/api/push/catalog")
 @limiter.limit("60 per minute")
 def api_push_catalog():
-    """The canonical notification-type catalog, grouped into friendly buckets.
+    """The canonical notification-type catalog, grouped two ways.
 
-    The client's subscribe-time "tell me about" picker renders from this, so
-    the buckets can never drift out of sync with the server's notif_type keys.
+    "buckets" is the legacy topic grouping the subscribe-time picker used;
+    "groups" is the delivery grouping (Sent right away / Morning digest /
+    Also available) the notification settings screen and the picker both
+    render now. Either way the client renders from this, so the groups can
+    never drift out of sync with the server's notif_type keys.
     """
-    from utils.push_notifications import PUSH_TYPE_BUCKETS
-    return jsonify({"buckets": PUSH_TYPE_BUCKETS})
+    from utils.push_notifications import PUSH_DELIVERY_GROUPS, PUSH_TYPE_BUCKETS
+    return jsonify({"buckets": PUSH_TYPE_BUCKETS, "groups": PUSH_DELIVERY_GROUPS})
+
+
+# ── In-app notification inbox (the bell panel) ───────────────────────────────
+# The bell reads the per-account history the senders record in
+# user_notifications. Guests have no account and no history: the list route
+# answers empty so the panel logic stays uniform, and the write routes 401.
+
+def _inbox_account_key():
+    return str(session.get("account_id") or "").strip()
+
+
+@push_bp.route("/api/notifications")
+@limiter.limit("60 per minute")
+def api_notifications_list():
+    acct = _inbox_account_key()
+    if not acct:
+        return jsonify({"items": [], "unread": 0})
+    from utils.push_notifications import list_user_notifications
+    items, unread = list_user_notifications(acct)
+    return jsonify({"items": items, "unread": unread})
+
+
+@push_bp.route("/api/notifications/read", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_notifications_read():
+    acct = _inbox_account_key()
+    if not acct:
+        return jsonify({"error": "Not signed in"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    from utils.push_notifications import mark_user_notification_read
+    ok = mark_user_notification_read(acct, data.get("id"))
+    return jsonify({"ok": bool(ok)})
+
+
+@push_bp.route("/api/notifications/read-all", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_notifications_read_all():
+    acct = _inbox_account_key()
+    if not acct:
+        return jsonify({"error": "Not signed in"}), 401
+    from utils.push_notifications import mark_all_user_notifications_read
+    ok = mark_all_user_notifications_read(acct)
+    return jsonify({"ok": bool(ok)})
 
 
 @push_bp.route("/api/push/broadcast", methods=["POST"])
@@ -781,12 +815,20 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
             # league-scoped broadcast URLs resolve against.
             rows = _dedupe_broadcast_rows(_pconn.execute(
                 "SELECT endpoint, p256dh, auth, league_id, platform, "
-                "owner_id, account_key FROM push_subscriptions "
+                "owner_id, account_key, prefs FROM push_subscriptions "
                 "ORDER BY id DESC"
             ).fetchall())
     except Exception as exc:
         logger.warning("[push] broadcast query failed: %s", exc)
         return {"error": "DB error"}, 500
+
+    # Site-update broadcasts honor the changelog prefs key like every typed
+    # alert honors its own: a user who turned "Site updates" off in
+    # notification settings gets neither the push nor an inbox entry.
+    from utils.push_notifications import CHANGELOG_NOTIF_TYPE, _prefs_dict
+    rows = [r for r in rows
+            if _prefs_dict(r.get("prefs")).get(CHANGELOG_NOTIF_TYPE, True)
+            is not False]
 
     season = None  # resolved lazily per recipient; global URLs never need it
     try:
@@ -797,6 +839,7 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         return {"error": "VAPID key error"}, 500
     sent = failed = 0
     stale         = []
+    recorded_accounts = set()
 
     for row in rows:
         ep, p256dh, auth = row["endpoint"], row["p256dh"], row["auth"]
@@ -820,6 +863,14 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
                 vapid_claims={"sub": "mailto:admin@brfantasy.com"},
             )
             sent += 1
+            # Fold the broadcast into the recipient's bell inbox as a
+            # changelog item, once per account.
+            acct = str(row.get("account_key") or "").strip()
+            if acct and acct not in recorded_accounts:
+                recorded_accounts.add(acct)
+                from utils.push_notifications import record_user_notification
+                record_user_notification(
+                    acct, CHANGELOG_NOTIF_TYPE, title, body, target_url)
         except WebPushException as exc:
             # A 404/410 means the subscription is permanently dead and must be
             # pruned so we stop retrying it forever. Note: requests.Response is

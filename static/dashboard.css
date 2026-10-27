@@ -651,17 +651,13 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
 .br-help-links { display: flex; gap: 18px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
 
 @media (max-width: 768px) {
-    #brSheetAccount .settings-desktop-tools,
-    #brSheetAccount .settings-tour-replays { display: none !important; }
+    #brSheetAccount .settings-desktop-tools { display: none !important; }
     #brSheetAccount .settings-menu-heading { display: block; }
-    /* Recent Updates opens directly from the mobile top-bar bell as a floating
-       panel under the top nav (it no longer lives in the More sheet).
-       position:absolute + transform:none are load-bearing: the <=640px rule
-       below restyles .changelog-dropdown as position:fixed with a centering
-       transform, and under fixed positioning top:calc(100% + 8px) resolves
-       against the viewport height, parking the open panel just below the
-       bottom of the screen (the "bell does nothing" bug). Absolute anchors
-       100% to the nav height instead. */
+    /* The notification center opens directly from the mobile top-bar bell
+       as a floating panel under the top nav (it does not live in the More
+       sheet). position:absolute anchors top:calc(100% + 8px) to the nav
+       height; under fixed positioning it would resolve against the
+       viewport height and park the open panel below the screen. */
     .top-nav.br-mnav .changelog-dropdown {
         position: absolute;
         transform: none;
@@ -1385,25 +1381,28 @@ ul {
     display: inline-flex;
 }
 
+/* Borderless utility button, styled exactly like its siblings
+   (.utility-icon-btn): 36px, no border, transparent. Color is the shared
+   utility accent (var(--accent)) at rest, the same value the search icon
+   and watchlist star already use, so all four utility icons match. */
 .changelog-bell-btn {
-    display: inline-flex !important;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
-    border-radius: var(--radius) !important;
-    border: 1px solid var(--border) !important;
-    background: var(--card) !important;
-    color: var(--accent) !important;
-    font-size: 18px !important;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    font-size: 18px;
     cursor: pointer;
-    box-shadow: var(--shadow-sm);
-    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: background 0.15s ease, color 0.15s ease;
 }
 
 .changelog-bell-btn:hover {
-    background: var(--accent-soft) !important;
-    border-color: var(--accent) !important;
+    background: var(--card-soft);
+    color: var(--accent);
 }
 
 .changelog-dot {
@@ -1417,6 +1416,11 @@ ul {
     border: 1.5px solid var(--card);
     pointer-events: none;
     transition: opacity 0.2s ease;
+}
+
+.changelog-tag-fix {
+    background: #fef3c7;
+    color: #b45309;
 }
 
 .changelog-dot-hidden {
@@ -1459,32 +1463,6 @@ ul {
     margin-left: auto;
 }
 
-/* Notification dot for gear button (mirrors changelog-dot style) */
-.nav-notif-dot {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #E24B4A;
-    border: 1.5px solid var(--card);
-    pointer-events: none;
-}
-
-/* Notification dot for settings menu items */
-.settings-notif-dot {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #E24B4A;
-    border: 1px solid var(--card-bg);
-    pointer-events: none;
-}
-
 /* Dark mode toggle */
 #darkModeToggle {
     display: inline-flex !important;
@@ -1516,95 +1494,163 @@ ul {
 
 .changelog-dropdown {
     position: absolute;
-    top: calc(0% + 8px);
+    top: calc(100% + 8px);
     right: 0;
-    width: 320px;
+    width: 360px;
     max-width: calc(100vw - 32px);
     background: var(--card);
     border: 0.5px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 12px;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
     z-index: 200;
     display: none;
-    max-height: 415px;
+    max-height: calc(100vh - 96px);
     overflow-y: auto;
+    text-align: left;
 }
 
 [data-theme="dark"] .changelog-dropdown {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
-.changelog-dropdown-header {
-    padding: 12px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text);
-    border-bottom: 0.5px solid var(--border);
-    background: var(--bg-alt);
-    border-radius: var(--radius) var(--radius) 0 0;
+/* Notification center panel (the bell dropdown): inbox items with
+   per-type icon chips, per-item unread dots, Mark all read, and the
+   Notification settings footer row. Adapted from the approved mock. */
+.ni-head {
     display: flex;
-    align-items: center;
     justify-content: space-between;
+    align-items: center;
+    padding: 13px 16px 9px;
 }
 
-.changelog-dropdown-close {
+.ni-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text);
+}
+
+.ni-markall {
     background: none;
     border: none;
-    color: var(--text-muted);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
     padding: 0;
-    flex-shrink: 0;
-}
-
-.changelog-dropdown-close:hover {
-    color: var(--text);
-}
-
-.changelog-notif-settings-row {
-    padding: 8px 12px;
-    border-bottom: 0.5px solid var(--border);
-    background: var(--bg-alt);
-}
-
-.changelog-notif-settings-btn {
-    width: 100%;
-    padding: 7px 10px;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    color: #2563eb;
     cursor: pointer;
-    text-align: left;
-    transition: background 0.12s, color 0.12s;
 }
 
-.changelog-notif-settings-btn:hover {
-    background: var(--row);
-    color: var(--text);
-}
-
-.changelog-entry {
-    padding: 12px 14px;
-    border-bottom: 0.5px solid var(--border);
+.ni-item {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    transition: background 0.15s ease;
+    gap: 11px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    position: relative;
     text-decoration: none;
     color: inherit;
-    cursor: pointer;
+    transition: background 0.15s ease;
 }
 
-.changelog-entry:hover {
+.ni-item:hover {
     background: var(--bg-alt);
 }
 
-.changelog-entry:last-child {
-    border-bottom: none;
+.ni-ic {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ni-ic svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.ni-navy { background: #122d4b; color: #fff; }
+.ni-red { background: #fdecec; color: #dc2626; }
+.ni-green { background: #e7f6ee; color: #16a34a; }
+.ni-amber { background: #fdf3e3; color: #d97706; }
+.ni-slate { background: #eef2f6; color: #64748b; }
+
+[data-theme="dark"] .ni-red { background: rgba(220, 38, 38, 0.16); }
+[data-theme="dark"] .ni-green { background: rgba(22, 163, 74, 0.16); }
+[data-theme="dark"] .ni-amber { background: rgba(217, 119, 6, 0.16); }
+[data-theme="dark"] .ni-slate { background: rgba(100, 116, 139, 0.18); }
+
+.ni-txt {
+    flex: 1;
+    min-width: 0;
+}
+
+.ni-ttl {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--text);
+}
+
+.ni-bd {
+    display: block;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.45;
+    margin-top: 1px;
+}
+
+.ni-meta {
+    display: block;
+    margin-top: 5px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.ni-udot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #dc2626;
+    margin-top: 6px;
+}
+
+.ni-empty {
+    padding: 18px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.ni-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 12px 16px 15px;
+    border: none;
+    border-top: 1px solid var(--border);
+    background: none;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+}
+
+.ni-foot:hover {
+    background: var(--bg-alt);
+}
+
+.ni-chev {
+    color: var(--text-muted);
 }
 
 /* Breakout Candidates Page -- chip look comes from the canonical
@@ -1643,21 +1689,79 @@ ul {
     align-items: center;
 }
 
-/* Keep changelog bell hidden but functional */
-.changelog-bell-wrapper {
-    position: fixed !important;
-    top: 60px;
-    right: 20px;
-    visibility: hidden;
-    pointer-events: none;
-    z-index: 1000;
+/* The gear takes the shared utility accent at rest, like the search,
+   watchlist and bell icons (its .utility-icon-btn base color is muted;
+   hover already converged on the accent). */
+#settingsGearBtn {
+    color: var(--accent);
 }
 
-/* But make the dropdown and notification dot visible when shown */
-.changelog-bell-wrapper .changelog-dropdown,
-.changelog-bell-wrapper .changelog-dot {
-    visibility: visible;
-    pointer-events: all;
+/* Settings identity header: name + plan chip over the sign-in method. */
+.settings-identity {
+    padding: 14px 16px 10px;
+    border-bottom: 0.5px solid var(--border);
+}
+
+.settings-identity-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.settings-plan-chip {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    padding: 2px 7px;
+    border-radius: 20px;
+    background: var(--card-soft);
+    color: var(--text-muted);
+}
+
+.settings-plan-chip.is-pro {
+    background: var(--accent);
+    color: #fff;
+}
+
+.settings-identity-sub {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Dark Mode switch (the row is a role=switch button; the visual state is
+   driven by :root[data-theme], so it can never drift from the theme). */
+.settings-switch {
+    margin-left: auto;
+    flex: none;
+    width: 36px;
+    height: 20px;
+    border-radius: 20px;
+    background: var(--border);
+    position: relative;
+    transition: background 0.15s ease;
+}
+
+.settings-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left 0.15s ease;
+}
+
+:root[data-theme="dark"] .settings-switch {
+    background: var(--accent);
+}
+
+:root[data-theme="dark"] .settings-switch-thumb {
+    left: 18px;
 }
 
 .settings-dropdown {
@@ -2419,63 +2523,6 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 
 
 
-.changelog-entry-top {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    justify-content: space-between;
-}
-
-.changelog-entry-top::after {
-    content: "→";
-    color: var(--text-muted);
-    font-size: 15px;
-    opacity: 0;
-    transform: translateX(-4px);
-    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.changelog-entry:hover .changelog-entry-top::after {
-    opacity: 1;
-    transform: translateX(0);
-}
-
-.changelog-tag {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 7px;
-    border-radius: var(--radius-sm);
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-}
-
-.changelog-tag-feature {
-    background: rgba(16, 185, 129, .12);
-    color: #10b981;
-}
-
-.changelog-tag-fix {
-    background: #fef3c7;
-    color: #b45309;
-}
-
-.changelog-tag-new {
-    background: rgba(59, 130, 246, .12);
-    color: var(--brand-blue);
-}
-
-.changelog-entry-text {
-    font-size: 13px;
-    color: var(--text);
-    line-height: 1.5;
-    font-weight: 500;
-}
-
-.changelog-entry-date {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-
 .site-logo {
     width: 225px;
     height: auto;
@@ -2610,39 +2657,6 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 
 .br-ctx-league.is-static .br-ctx-caret {
     display: none;
-}
-
-.br-ctx-week {
-    flex-shrink: 0;
-    padding: 5px 10px;
-    border-radius: var(--radius-sm);
-    background: var(--card);
-    color: var(--accent);
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.02em;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-/* Honesty chip shown on the nav week label when get_nfl_state() fell back to
-   last-good after a failed fetch. Mirrors the ScoreZone .rz-stale-badge. */
-.br-ctx-stale {
-    display: inline-block;
-    margin-left: 6px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .04em;
-    color: #d97706;
-    background: rgba(245, 158, 11, .12);
-    border: 1px solid rgba(245, 158, 11, .3);
-    padding: 1px 6px;
-    border-radius: var(--radius);
-    vertical-align: 1px;
-}
-
-:root[data-theme="dark"] .br-ctx-stale {
-    background: rgba(245, 158, 11, .15);
-    border-color: rgba(245, 158, 11, .35);
 }
 
 .br-ctx-menu {
@@ -19967,31 +19981,6 @@ img, svg, canvas {
         min-height: 32px;
     }
 
-    .changelog-bell-btn {
-        width: 32px !important;
-        height: 32px !important;
-        font-size: 15px !important;
-    }
-
-    .changelog-dropdown {
-        position: fixed;
-        top: 70px;
-        bottom: auto;
-        left: 50%;
-        right: auto;
-        transform: translateX(-50%);
-        max-width: calc(100vw - 32px);
-        width: 300px;
-        max-height: 60vh;
-        overflow-y: auto;
-        z-index: 1000;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
-    }
-
-    .changelog-bell-wrapper {
-        position: static;
-    }
-
     .otc-info-tooltip {
         left: auto;
         right: 0;
@@ -20412,12 +20401,6 @@ img, svg, canvas {
         min-height: 28px;
     }
 
-    .changelog-bell-btn {
-        width: 28px !important;
-        height: 28px !important;
-        font-size: 13px !important;
-    }
-
     .card {
         padding: 6px;
         border-radius: var(--radius);
@@ -20569,12 +20552,6 @@ img, svg, canvas {
         padding: 4px 6px;
         min-height: 28px;
         margin-top: 4px;
-    }
-
-    .changelog-bell-btn {
-        width: 28px !important;
-        height: 28px !important;
-        font-size: 13px !important;
     }
 
     .card {
@@ -49042,7 +49019,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* Guest home page: product tour, quotes, free tools, how-it-works, FAQ (Kaedon-approved mock). Guest-only sections. */
 
 * { box-sizing: border-box; }
-body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; margin: 0; -webkit-font-smoothing: antialiased; }
+body:has(.home-hero) { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; margin: 0; -webkit-font-smoothing: antialiased; }
 /* Mock banner */
 /* Hero (simplified faithful version) */
 .home-hero { display: grid; gap: 40px; max-width: 1060px; margin: 0 auto; padding: 0 20px 40px; align-items: center; }

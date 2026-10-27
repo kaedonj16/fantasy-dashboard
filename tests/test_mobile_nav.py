@@ -194,16 +194,20 @@ def test_desktop_profile_menu_exposes_shared_tools(monkeypatch):
         app.session["account_id"] = 42
         html = app.build_nav("L", "dashboard", "sleeper", 2026)
     assert "id='settingsRefreshBtn' data-br-action='refresh'" in html
-    assert "id='settingsChangelogBtn' data-br-action='whats-new'" in html
+    # The What's New row retired with the notification center; the
+    # Notifications row (notification settings) replaced it.
+    assert "id='settingsChangelogBtn'" not in html
+    assert "id='settingsNotifBtn' data-br-action='notifications'" in html
     assert "id='settingsHelpToursBtn' data-br-action='help-tours'" in html
     assert "href='/logout'" in html
 
 
 def test_mobile_notifications_click_outside_handles_relocated_dropdown():
-    """Changelog click-outside must treat the relocated panel + Notifications row
-    as inside; otherwise opening Notifications on mobile instantly closes it."""
+    """Panel click-outside must treat the relocated panel + top-bar bell as
+    inside; otherwise opening Notifications on mobile instantly closes it."""
     js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    assert 'e.target.closest("#settingsChangelogBtn")' in js
+    assert 'e.target.closest("#settingsChangelogBtn")' not in js
+    assert 'e.target.closest(".br-top-notif")' in js
     assert "dropdown.contains(e.target)" in js
     assert "dismissNotifToasts" in js
     assert 'dropdown.scrollIntoView' in js
