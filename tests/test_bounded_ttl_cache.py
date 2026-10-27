@@ -143,6 +143,78 @@ def test_same_key_requests_share_one_inflight_fetch():
     assert len(results) == 6
 
 
+def test_singleflight_wait_is_bounded_and_waiter_fetches_itself(monkeypatch):
+    """2026-10-27: the duplicate-key wait used to be unbounded, so one
+    hung fetcher parked every waiter on its request thread forever.
+    After the bounded wait the waiter falls through and fetches itself."""
+    monkeypatch.setattr(api, "_TTL_SINGLEFLIGHT_WAIT_SECONDS", 0.3)
+    calls = 0
+    entered = threading.Event()
+    release = threading.Event()
+
+    @api.ttl_cache(ttl=60)
+    def load(key):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            entered.set()
+            assert release.wait(3)
+        return {"key": key}
+
+    holder = []
+    fetcher = threading.Thread(target=lambda: holder.append(load("same")))
+    fetcher.start()
+    assert entered.wait(1)
+    started = real_time.time()
+    try:
+        result = load("same")
+        # Returned via its own fetch long before the first fetcher was
+        # released: it did not wait unboundedly.
+        assert real_time.time() - started < 2.0
+        assert result == {"key": "same"}
+        assert calls == 2
+    finally:
+        release.set()
+        fetcher.join(2)
+    assert holder == [{"key": "same"}]
+
+
+def test_singleflight_wait_timeout_serves_stale_entry(monkeypatch):
+    """On a bounded-wait timeout with a stale entry still inside the
+    stale window, the waiter serves the stale value instead of fetching
+    a duplicate or waiting again."""
+    monkeypatch.setattr(api, "_TTL_SINGLEFLIGHT_WAIT_SECONDS", 0.3)
+    calls = 0
+    entered = threading.Event()
+    release = threading.Event()
+
+    @api.ttl_cache(ttl=1)
+    def load(key):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            entered.set()
+            assert release.wait(3)
+        return {"key": key, "call": calls}
+
+    assert load("k") == {"key": "k", "call": 1}
+    real_time.sleep(1.2)  # entry is now past its TTL but inside stale grace
+
+    holder = []
+    fetcher = threading.Thread(target=lambda: holder.append(load("k")))
+    fetcher.start()
+    assert entered.wait(1)
+    started = real_time.time()
+    try:
+        result = load("k")
+        assert real_time.time() - started < 2.0
+        assert result == {"key": "k", "call": 1}  # the stale entry
+        assert calls == 2  # the waiter did not start a third fetch
+    finally:
+        release.set()
+        fetcher.join(2)
+
+
 def test_cache_max_environment_default_and_override(monkeypatch):
     assert api.DASHBOARD_CACHE_MAX >= 1
     assert api._positive_env_int("ABSENT_CACHE_SETTING", 75) == 75

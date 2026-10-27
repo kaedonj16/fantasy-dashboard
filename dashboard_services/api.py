@@ -161,6 +161,12 @@ def _freeze(obj):
     return obj  # assume hashable
 
 
+# Bounded single-flight wait inside ttl_cache: a duplicate-key caller
+# waits at most this long for the in-flight fetcher before serving a
+# stale entry or fetching itself. (Module-level so tests can shorten it.)
+_TTL_SINGLEFLIGHT_WAIT_SECONDS = 30.0
+
+
 def ttl_cache(ttl: int = 300):
     """
     Simple in-memory TTL cache.
@@ -238,6 +244,7 @@ def ttl_cache(ttl: int = 300):
 
             now = time.time()
             wait_started = None
+            wait_timed_out = False
             with _cache_lock:
                 while True:
                     now = time.time()
@@ -248,6 +255,20 @@ def ttl_cache(ttl: int = 300):
                             or (wait_started is not None and entry[0] >= wait_started)):
                         _cache.move_to_end(key)
                         return entry[1]
+                    if wait_timed_out:
+                        # The bounded wait below elapsed without the fetcher
+                        # populating the cache. Serve any stale entry that
+                        # survived pruning (prune already drops entries older
+                        # than ttl + DASHBOARD_CACHE_STALE_TTL); with no entry
+                        # at all, fall through and fetch it ourselves rather
+                        # than waiting on the other fetcher again. The key is
+                        # still in _inflight from that fetcher, so just break
+                        # into the normal fetch path below -- this call's
+                        # finally discards the key and notifies as usual.
+                        if entry is not None:
+                            _cache.move_to_end(key)
+                            return entry[1]
+                        break
                     if key not in _inflight:
                         _inflight.add(key)
                         break
@@ -255,7 +276,12 @@ def ttl_cache(ttl: int = 300):
                     # remain outside this lock and continue concurrently.
                     if wait_started is None:
                         wait_started = now
-                    _cache_changed.wait()
+                    # Bounded wait: a hung or very slow fetcher must not park
+                    # every duplicate-key caller forever. wait() returns
+                    # False only on timeout; on notify, loop and re-check the
+                    # cache / inflight state exactly as before.
+                    if not _cache_changed.wait(timeout=_TTL_SINGLEFLIGHT_WAIT_SECONDS):
+                        wait_timed_out = True
 
             try:
                 result = func(*args, **kwargs)

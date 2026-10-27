@@ -188,6 +188,64 @@ def test_insights_parallel_assembly_preserves_league_order(monkeypatch):
     assert names == ["Starter One", "Starter Two"]
 
 
+def test_insights_concurrent_call_defers_to_inflight_compute(monkeypatch):
+    """Single-flight (2026-10-27): while one request computes insights,
+    a concurrent request for the same viewer must NOT duplicate the
+    compute (per-league synchronous provider fetches on a second
+    request thread). It answers immediately with the honest incomplete
+    payload, and the landed compute is what later calls serve."""
+    import threading
+    import time as _time
+
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, platform_api = _client(monkeypatch, ctxs)
+    # A second client on a fresh app over the same blueprint state, with
+    # the same viewer session: the single-flight key must match.
+    client2, _bp2, _pa2 = _client(monkeypatch, ctxs)
+
+    entered = threading.Event()
+    release = threading.Event()
+    calls = {"n": 0}
+
+    def _blocking_rows(plat, lid, week, season):
+        calls["n"] += 1
+        if calls["n"] <= 2:  # the first compute's two league fetches (2-wide pool)
+            entered.set()
+            release.wait(timeout=5)
+        return _matchup_rows(plat, lid, week, season)
+
+    monkeypatch.setattr(platform_api, "get_matchups", _blocking_rows)
+    bp_mod._INSIGHTS_INFLIGHT.clear()
+    holder = {}
+    worker = threading.Thread(
+        target=lambda: holder.setdefault(
+            "data", client.get("/api/portfolio-insights").get_json()))
+    worker.start()
+    try:
+        assert entered.wait(timeout=2.0)  # first compute is in flight
+        deadline = _time.time() + 2.0
+        while calls["n"] < 2 and _time.time() < deadline:
+            _time.sleep(0.02)
+        assert calls["n"] == 2  # both of the first compute's fetches are parked
+        started = _time.time()
+        deferred = client2.get("/api/portfolio-insights").get_json()
+        # Answered immediately, without a second compute: no extra
+        # provider fetches and no completed scan claimed.
+        assert _time.time() - started < 2.0
+        assert calls["n"] == 2
+        assert deferred["scan"]["scanned"] == 0
+        assert deferred["scan"]["incomplete"] is True
+    finally:
+        release.set()
+        worker.join(timeout=5.0)
+        bp_mod._INSIGHTS_INFLIGHT.clear()
+    # The owning compute landed and cached; the next call serves it.
+    assert holder["data"]["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+    served = client.get("/api/portfolio-insights").get_json()
+    assert served["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+    assert bp_mod._INSIGHTS_INFLIGHT == {}
+
+
 # ── Client wiring ───────────────────────────────────────────────────────────
 
 def test_client_loads_bye_immediately_and_defers_rooting():

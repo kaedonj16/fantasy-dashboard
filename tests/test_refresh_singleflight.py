@@ -89,29 +89,82 @@ def test_portfolio_refresh_contract_is_targeted():
     js = (root / "static" / "app.js").read_text()
     py = (root / "app.py").read_text()
     routes = (root / "routes" / "user_pages_bp.py").read_text()
-    assert "window.brRefreshCurrentPage" in js
-    assert "/api/portfolio/refresh" in py
-    assert "style.display!=='none'" in py
+    # The app.js card owner is the SINGLE refresh handler (2026-10-27):
+    # the inline app.py handler that raced it is deleted.
+    assert "window.brRefreshCurrentPage = refresh" in js
+    assert "brRefreshCurrentPage" not in py
+    assert "/api/portfolio/refresh" in js
     assert '@user_pages_bp.route("/api/portfolio/refresh", methods=["POST"])' in routes
-    assert 'max_workers=min(2, len(requested))' in routes
     assert '"account_id" in payload' in routes
+    # Kick-and-return: the endpoint busts + kicks the background summary
+    # refresh and answers accepted/pending immediately; it must not run
+    # the old synchronous per-league build pool on the request thread.
+    endpoint = routes.split("def api_portfolio_refresh")[1].split("\ndef ")[0]
+    assert '"accepted": True' in endpoint
+    assert '"pending": True' in endpoint
+    assert "_kick_summary_refresh(account_id, membership)" in endpoint
+    assert "ThreadPoolExecutor" not in endpoint
+    assert "build_league_summary(" not in endpoint
 
 
-def test_portfolio_refresh_falls_back_for_warm_only_portfolio():
-    """Warm league cards carry no data-summary-card hooks, so an all-warm
-    portfolio produced no keys and the Refresh button silently no-op'd. The
-    handler must instead rebuild every drafted league from the card fetch keys
-    and hand off to a full page refresh (handled:false) so the button always
-    does something, not sit dead."""
+def test_portfolio_refresh_covers_every_visible_card():
+    """The old inline handler collected keys from data-summary-card
+    attributes, which warm cards render valueless, so an all-warm
+    portfolio produced no keys and Refresh silently no-op'd (or posted
+    all 11 leagues unbatched and got a 400). The app.js owner handler
+    instead derives the batch from its visible card set and posts in
+    batches of at most 4, the server's per-POST cap."""
     from pathlib import Path
-    py = (Path(__file__).resolve().parents[1] / "app.py").read_text()
-    handler = py.split("window.brRefreshCurrentPage=async function")[1].split("})();</script>")[0]
-    # The dead no-op is gone.
-    assert "return {success:true,refreshedAt:null}" not in handler
-    # The empty-keys branch rebuilds from the card fetch keys and reloads.
-    assert "if(!keys.length){" in handler
-    assert ".pf-lg-card[data-platform][data-league-id][data-season]" in handler
-    assert "return {handled:false};}" in handler
+    js = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
+    owner = js.split("/* Portfolio cards: one generation owns requests")[1]
+    refresh = owner.split("function refresh(ownerArg)")[1].split("function bind(owner)")[0]
+    assert "owner.cards(true)" in refresh
+    assert "keys.slice(at, at + 4)" in refresh
+    # Completion is the per-card tracker phase polling /api/portfolio/card,
+    # not the batch response: a timed-out card request must still resolve
+    # its tracker exactly once (the old spin-forever hole).
+    assert "fireTrackers" in owner
+    assert "timedOut: true" in owner
+
+
+def test_portfolio_refresh_tracker_fires_exactly_once():
+    """Structural contract for the tracker fix in the app.js card owner:
+
+    * schedule() attaches the tracker BEFORE the queued/inflight dedupe
+      early-return, so a tracker for an already-running card is not
+      silently discarded (it fires when that card settles).
+    * fireTrackers deletes the per-card list BEFORE invoking, so no
+      settle can fire a tracker twice.
+    * requestCard's timeout catch fires the trackers when the retry
+      budget is exhausted; with budget left it reschedules WITHOUT
+      re-passing the tracker (it lives on the owner, not the queue item).
+    """
+    from pathlib import Path
+    js = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
+    owner = js.split("/* Portfolio cards: one generation owns requests")[1]
+
+    schedule = owner.split("function schedule(owner, card, delay, reset, tracker)")[1]
+    schedule = schedule.split("function applyCard")[0]
+    assert schedule.index("attachTracker(owner, key, tracker)") < schedule.index(
+        "owner.queued.has(key)")
+
+    fire = owner.split("function fireTrackers(owner, key, result)")[1]
+    fire = fire.split("function schedule")[0]
+    assert fire.index("delete owner.trackers[key]") < fire.index("list.forEach")
+
+    request = owner.split("function requestCard(owner, item)")[1]
+    request = request.split("function pump(owner)")[0]
+    timeout_branch = request.split("error.name === 'TimeoutError'")[1]
+    timeout_branch = timeout_branch.split("var payload = error.payload")[0]
+    assert "fireTrackers(owner, key" in timeout_branch
+    assert "timedOut: true" in timeout_branch
+    # Intermediate pending settles must not fire: the success path
+    # re-schedules a pending card without firing, and fires trackers
+    # only on the non-pending (terminal) branches.
+    assert "if (result.pending) {" in request
+    pending_branch = request.split("if (result.pending) {")[1].split("} else if")[0]
+    assert "fireTrackers" not in pending_branch
+    assert "else fireTrackers(owner, key, result);" in request
 
 
 def test_league_builds_are_concurrency_capped_process_wide():
@@ -123,8 +176,12 @@ def test_league_builds_are_concurrency_capped_process_wide():
     src = (Path(__file__).resolve().parents[1] / "app.py").read_text()
     assert "_LEAGUE_BUILD_SEM" in src
     assert "LEAGUE_BUILD_CONCURRENCY" in src
-    # The cap actually wraps the expensive build, not just declared.
+    # The cap actually wraps the expensive build, not just declared. Since
+    # 2026-10-27 the acquire is manual and BOUNDED (10s): a thread that
+    # cannot get a build slot degrades to stale/pending instead of
+    # queueing indefinitely behind builds on a 4-thread worker.
     helper = src.split("def get_league_ctx_from_cache(")[1].split("\ndef ")[0]
-    assert "with _LEAGUE_BUILD_SEM:" in helper
-    guarded = helper.split("with _LEAGUE_BUILD_SEM:")[1][:200]
+    assert "_LEAGUE_BUILD_SEM.acquire(timeout=10)" in helper
+    guarded = helper.split("_LEAGUE_BUILD_SEM.acquire(timeout=10)")[1][:1200]
     assert "build_league_context(" in guarded
+    assert "_LEAGUE_BUILD_SEM.release()" in guarded

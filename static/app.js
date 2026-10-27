@@ -4427,6 +4427,12 @@ function showLoginGate(target, opts) {
 // link); there we just wire the refresh button and keep its freshness label.
 (function () {
   var STALE_MS = 6 * 60 * 60 * 1000;
+  // Portfolio-only freshness override: the freshness label on /portfolio
+  // must reflect the portfolio cards' own refreshedAt, not the nav
+  // league's #page-root cache-ts. Set only from an explicit
+  // updateLabels(refreshedAt) call on /portfolio; league pages never
+  // read it (see updateLabels).
+  var portfolioFreshTs = 0;
   var mq = window.matchMedia('(max-width: 768px)');
 
   function normalizeTimestamp(ts) {
@@ -4454,28 +4460,43 @@ function showLoginGate(target, opts) {
     // normalizeTimestamp remains tolerant of seconds at display boundaries.
     return main ? parseInt(main.dataset.cacheTs || '0', 10) : 0;
   }
-  function updateSheetTime() {
+  function updateSheetTime(tsOverride) {
     var t = document.getElementById('brSheetRefreshTime');
     if (!t) return;
-    var ts = normalizeTimestamp(cacheTs());
+    var ts = normalizeTimestamp(tsOverride != null ? tsOverride : cacheTs());
     // Keep the original compact refresh-row presentation when freshness is
     // unknown. The underlying timestamp remains unknown (0); an empty helper
     // label avoids widening/restyling the button with status copy.
     t.textContent = ts ? 'Updated ' + fmtAge(ts) : '';
     t.classList.toggle('cf-stale', !!ts && (Date.now() - ts > STALE_MS));
   }
-  function updateChip() {
+  function updateChip(tsOverride) {
     var chip = document.getElementById('cache-freshness');
     if (!chip) return;
-    var t = normalizeTimestamp(cacheTs());
+    var t = normalizeTimestamp(tsOverride != null ? tsOverride : cacheTs());
     var el = chip.querySelector('.fp-pill-time');
     if (el) el.textContent = t ? fmtAge(t, true) : 'Unknown';
     chip.classList.toggle('cf-stale', !!t && (Date.now() - t > STALE_MS));
     chip.style.opacity = '';
   }
-  function updateLabels() {
-    updateSheetTime();
-    updateChip();
+  function updateLabels(overrideTs) {
+    // Minimal, portfolio-scoped: doRefresh passes the portfolio owner's
+    // refreshedAt here. Only on /portfolio does a valid supplied value
+    // become the label's timestamp (remembered so the periodic no-arg
+    // updateLabels() ticks keep showing it); every other caller and
+    // every league page keeps reading #page-root cache-ts as before.
+    // refreshedAt may arrive as an ISO string (card summaries carry ISO
+    // stamps) or as epoch seconds/ms; accept both.
+    var supplied = normalizeTimestamp(overrideTs);
+    if (!supplied && overrideTs != null) {
+      var parsed = Date.parse(overrideTs);
+      if (Number.isFinite(parsed) && parsed > 0) supplied = normalizeTimestamp(parsed);
+    }
+    if (supplied && location.pathname === '/portfolio') portfolioFreshTs = supplied;
+    var effective = location.pathname === '/portfolio' && portfolioFreshTs
+      ? portfolioFreshTs : undefined;
+    updateSheetTime(effective);
+    updateChip(effective);
   }
   window.brUpdateFreshness = updateLabels;
 
@@ -4535,7 +4556,18 @@ function showLoginGate(target, opts) {
         onCancel: function () {
           cancelRefresh();
         },
-        onRetry: function () { doRefresh(); },
+        onRetry: function () {
+          // Try Again trap fix: the escape has already disarmed the
+          // overlay's buttons, and doRefresh() alone would no-op on
+          // _busy (the current run is still marked busy), leaving a
+          // bare spinner with no buttons and no running refresh.
+          // Cancel the current run first (synchronous: aborts the
+          // controller, clears _busy, hides/resets the overlay and
+          // restores the refresh label), THEN start a fresh run;
+          // doRefresh re-arms the overlay escape for the new run.
+          cancelRefresh();
+          doRefresh();
+        },
         fallbackHref: location.href,
         fallbackLabel: 'Reload page',
       });
@@ -4649,6 +4681,10 @@ function showLoginGate(target, opts) {
     var btn = document.getElementById('brSheetRefresh');
     if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
     showRefreshOverlay(false);
+    // Mirror setRefreshFailure: a cancelled run must not leave the main
+    // refresh button stuck on "Refreshing…".
+    var label = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
+    if (label) label.textContent = 'Refresh Data';
     updateLabels();
   }
 
@@ -28926,21 +28962,51 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (owner.pollTimer) clearInterval(owner.pollTimer);
     if (owner.countdownTimer) clearInterval(owner.countdownTimer);
     owner.queue.length = 0; owner.queued.clear();
+    // A destroyed owner never settles its cards again; drop its trackers
+    // unfired rather than leaking them into a successor owner. (A refresh
+    // awaiting them observes the dead owner and aborts, as before.)
+    owner.trackers = {};
     if (window.brRefreshCurrentPage === owner.refresh) delete window.brRefreshCurrentPage;
   }
   function createOwner(root) {
-    var owner = { id: ++generation, root: root, dead: false, controller: typeof AbortController === 'undefined' ? null : new AbortController(), timers: new Set(), queue: [], queued: new Set(), inflight: new Set(), active: 0, pollTimer: null, countdownTimer: null };
+    var owner = { id: ++generation, root: root, dead: false, controller: typeof AbortController === 'undefined' ? null : new AbortController(), timers: new Set(), queue: [], queued: new Set(), inflight: new Set(), active: 0, pollTimer: null, countdownTimer: null, trackers: {} };
     owner.alive = function () { return !owner.dead && current === owner && location.pathname === '/portfolio' && owner.root.isConnected; };
     owner.cards = function (visibleOnly) { return Array.prototype.slice.call(owner.root.querySelectorAll('.pf-lg-card[data-summary-card][data-platform][data-league-id][data-season]')).filter(function (c) { return !visibleOnly || displayed(c); }); };
     return owner;
   }
+  // Per-card refresh trackers. A tracker registered for a card lives in
+  // owner.trackers[key] until that card reaches a TERMINAL settle, so it
+  // survives queue dedupe, inflight dedupe, pending re-polls and bounded
+  // retries, and fireTrackers() drains the list exactly once. Intermediate
+  // settles (a pending re-poll, a retryable failure while attempts remain)
+  // never fire it.
+  function attachTracker(owner, key, tracker) {
+    if (!tracker) return;
+    var list = owner.trackers[key] || (owner.trackers[key] = []);
+    if (list.indexOf(tracker) === -1) list.push(tracker);
+  }
+  function fireTrackers(owner, key, result) {
+    var list = owner.trackers[key];
+    if (!list || !list.length) return;
+    // Delete BEFORE firing: a tracker that re-schedules its own card can
+    // never be fired twice, and a second drain for the same settle is a
+    // no-op because the list is already gone.
+    delete owner.trackers[key];
+    list.forEach(function (tracker) {
+      try { tracker(result); } catch (e) {}
+    });
+  }
   function schedule(owner, card, delay, reset, tracker) {
     if (!owner.alive() || !card || !card.isConnected) return;
     var key = identity(card);
+    // Attach FIRST, before any dedupe: when the card is already queued or
+    // inflight the new tracker used to be silently discarded. Attached
+    // here, it fires when that queued/inflight card terminally settles.
+    if (tracker) attachTracker(owner, key, tracker);
     if (reset) card._pfAttempts = 0;
     function add() {
       if (!owner.alive() || !card.isConnected || owner.queued.has(key) || owner.inflight.has(key)) return;
-      owner.queued.add(key); owner.queue.push({ card: card, tracker: tracker });
+      owner.queued.add(key); owner.queue.push({ card: card });
       owner.queue.sort(function (a, b) { return Number(displayed(b.card)) - Number(displayed(a.card)) || Number(b.card.dataset.favorite === 'true') - Number(a.card.dataset.favorite === 'true'); });
       pump(owner);
     }
@@ -28977,7 +29043,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     }).then(function (body) {
       if (!owner.alive()) return;
       var result = applyCard(owner, card, body);
-      if (item.tracker) item.tracker(result);
+      // Carry the card summary's own stamp/staleness to refresh trackers:
+      // with the kick-and-return refresh endpoint the batch phase no
+      // longer returns summaries, so this is where refresh() collects
+      // refreshedAt and learns a card ended on last-good/stale data.
+      result.stale = !!(body && body.summary && body.summary.stale);
+      result.refreshedAt = (body && body.summary && (body.summary.last_successful_sync_at || body.summary.refreshed_at)) || (body && body.refreshed_at) || null;
+      // Trackers fire ONLY on a terminal settle (see fireTrackers):
+      // a pending result is an intermediate re-poll, NOT a settle, so
+      // the tracker stays attached and the re-poll scheduled below
+      // carries it to the eventual non-pending settle. (Previously the
+      // tracker fired here on pending too, and refresh() counted the
+      // card done on its first still-warming answer.)
       // Retry on pending OR on a failed summary (e.g. partial with missing
       // record). A failed summary is transient and should not be treated as
       // a successful hydration.
@@ -28990,10 +29067,16 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         // A failed matchup is as transient as a failed summary: retry it on
         // the same bounded ladder instead of resetting the budget and
         // leaving the band stranded until the 45s poller (or forever, when
-        // the server keeps returning the same incomplete shape).
+        // the server keeps returning the same incomplete shape). While
+        // attempts remain the tracker stays attached to the retried
+        // request; only exhaustion is a terminal (failed) settle.
         card._pfAttempts = (card._pfAttempts || 0) + 1;
         if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
-      } else card._pfAttempts = 0;
+        else fireTrackers(owner, key, result);
+      } else {
+        card._pfAttempts = 0;
+        fireTrackers(owner, key, result);
+      }
     }).catch(function (error) {
       if (!owner.alive()) return;
       // A timeout is transient, especially on game day. Schedule a retry
@@ -29004,15 +29087,28 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       // the server-rendered record row with the error text.
       if (error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
         card._pfAttempts = (card._pfAttempts || 0) + 1;
-        if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
+        if (card._pfAttempts <= RETRY_DELAYS.length) {
+          // SPIN-FOREVER FIX: the retry is scheduled WITHOUT re-passing
+          // the tracker, but the tracker is no longer carried on the
+          // queue item: it lives in owner.trackers[key], so it stays
+          // attached to this retried request and fires when that
+          // request terminally settles. The un-tracked (normal page
+          // load) path is unchanged: same ladder, same delays.
+          schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
+        } else {
+          // Retry budget exhausted: this IS the terminal settle, so a
+          // refresh waiting on this card's tracker finally resolves
+          // (as a failure) instead of spinning forever.
+          fireTrackers(owner, key, { summary: false, matchup: false, pending: false, failed: true, timedOut: true });
+        }
         return;
       }
       var payload = error.payload || { state: 'error', message: error.message };
       if (payload.state === 'unavailable' && /sign in/i.test(payload.message || '')) payload.message = 'Session expired. Sign in again.';
       applyCard(owner, card, { summary: payload, matchup: { failed: true, message: payload.message } });
-      if (item.tracker) item.tracker({ summary: false, matchup: false, pending: false });
       card._pfAttempts = (card._pfAttempts || 0) + 1;
       if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
+      else fireTrackers(owner, key, { summary: false, matchup: false, pending: false, failed: true });
     }).finally(function () {
       /* A superseded request belongs only to its original owner. */
       owner.inflight.delete(key); owner.active--;
@@ -29073,33 +29169,92 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (externalSignal) externalSignal.addEventListener('abort', function () { destroy(owner); }, { once: true });
     var cards = owner.cards(true), successes = 0, failures = 0, pending = 0, stamp = null;
     if (!cards.length) return Promise.resolve({ success: false, partial: false, failures: 0 });
+    // Per-card failure accounting: a card contributes AT MOST ONE failure
+    // across both phases. failedIds is the single source of truth and
+    // failures is re-derived from it at every mutation; a terminal
+    // tracker success clears a batch-phase mark for the same card, and a
+    // terminal tracker failure for an already batch-failed card adds
+    // nothing. staleIds records each card's FINAL staleness (its tracker
+    // settle wins over the batch phase).
+    var failedIds = {}, staleIds = {};
+    function markFailed(card) { failedIds[identity(card)] = true; failures = Object.keys(failedIds).length; }
+    function clearFailed(card) { delete failedIds[identity(card)]; failures = Object.keys(failedIds).length; }
     var keys = cards.map(function (c) { return { platform: c.dataset.platform, league_id: c.dataset.leagueId, season: Number(c.dataset.season) }; });
     var chain = Promise.resolve();
     for (var offset = 0; offset < keys.length; offset += 4) (function (at) {
       chain = chain.then(function () { return postBatch(owner, keys.slice(at, at + 4), owner.controller && owner.controller.signal).then(function (res) {
         if (!owner.alive()) return;
-        var results = res.body.results || [];
-        cards.slice(at, at + 4).forEach(function (card, index) {
+        var body = res.body || {};
+        var results = body.results || [];
+        var batchCards = cards.slice(at, at + 4);
+        // Batch-level HTTP failure with no per-league results at all:
+        // count every card in this batch failed ONCE (the tracker phase
+        // below will not count them again; see markFailed/clearFailed).
+        if (!res.ok && !results.length) { batchCards.forEach(markFailed); return; }
+        batchCards.forEach(function (card, index) {
           var result = results[index] || {};
-          if (result.summary) { renderSummary(card, result.summary); var ts = result.summary.last_successful_sync_at; if (ts && (!stamp || ts > stamp)) stamp = ts; }
-          else if (result.last_good) renderSummary(card, Object.assign({}, result.last_good, { stale: true }));
-          if (!result.ok) failures++;
+          // NEW kick-and-return shape: the batch only ACCEPTED the kick
+          // ({ok:true, accepted:true} on the envelope and/or a per-league
+          // {ok:true, pending:true} with refreshed_at:null). Deliberately
+          // NO per-league failure counting and NO summary rendering from
+          // an accepted/pending result: completion is decided solely by
+          // the tracker phase polling /api/portfolio/card.
+          var accepted = !!(body.accepted || result.accepted || result.pending);
+          if (accepted && !result.summary && !result.last_good) return;
+          // LEGACY shape (defensive, an older server may still answer
+          // synchronously): render its summaries exactly as before.
+          if (result.summary) { renderSummary(card, result.summary); var ts = result.summary.last_successful_sync_at || result.summary.refreshed_at; if (ts && (!stamp || ts > stamp)) stamp = ts; if (result.summary.stale) staleIds[identity(card)] = true; }
+          else if (result.last_good) { renderSummary(card, Object.assign({}, result.last_good, { stale: true })); staleIds[identity(card)] = true; }
+          if (!result.ok) markFailed(card);
         });
-        if (!res.ok && !results.length) failures += Math.min(4, cards.length - at);
+      }, function () {
+        // The batch request itself failed (network/timeout, no results
+        // at all): same one-failure-per-card accounting as an HTTP
+        // failure, and the chain continues to the tracker phase, which
+        // is still the completion mechanism.
+        if (!owner.alive()) return;
+        cards.slice(at, at + 4).forEach(markFailed);
       }); });
     })(offset);
     return chain.then(function () {
       if (!owner.alive()) throw new DOMException('Refresh superseded', 'AbortError');
       return new Promise(function (resolve) {
         var remaining = cards.length;
+        var counted = {};
         cards.forEach(function (card) { schedule(owner, card, 0, true, function (result) {
-          if (result.summary && result.matchup && !result.pending) successes++; else { if (result.pending) pending++; failures++; }
+          // fireTrackers guarantees this fires exactly once per card, on
+          // a terminal settle only (never on an intermediate pending
+          // re-poll); `counted` is belt-and-braces against double-count.
+          var id = identity(card);
+          if (counted[id]) return;
+          counted[id] = true;
+          if (result && result.refreshedAt && (!stamp || result.refreshedAt > stamp)) stamp = result.refreshedAt;
+          if (result && result.stale) staleIds[id] = true; else delete staleIds[id];
+          if (result && result.summary && result.matchup && !result.pending) {
+            // Hydrated with summary+matchup. A stale/last-good card
+            // still counts as hydrated here; its staleness is reported
+            // via staleIds and turns the overall result partial below.
+            successes++;
+            clearFailed(card);
+          } else {
+            if (result && result.pending) pending++;
+            markFailed(card);
+          }
           if (!--remaining) resolve();
         }); });
       });
     }).then(function () {
       startPolling(owner);
-      return { success: successes === cards.length && failures === 0, partial: successes > 0 && (failures > 0 || pending > 0), refreshedAt: stamp, failures: failures, pending: pending };
+      // B5 whole-page refresh: the cards have settled, so also re-run
+      // the page's other existing loads (Front Office board, insights,
+      // bye watch). Fire-and-forget: guarded, never awaited, and their
+      // outcome does not change this promise's success accounting.
+      try { if (typeof window.__pfRefreshBoard === 'function') window.__pfRefreshBoard(); } catch (e) {}
+      try { if (typeof window.__pfRefreshInsights === 'function') window.__pfRefreshInsights(); } catch (e) {}
+      try { if (typeof window.__pfRefreshBye === 'function') window.__pfRefreshBye(); } catch (e) {}
+      var anyStale = Object.keys(staleIds).length > 0;
+      var success = successes === cards.length && failures === 0 && pending === 0 && !anyStale;
+      return { success: success, partial: !success && successes > 0, refreshedAt: stamp, failures: failures, pending: pending };
     }).catch(function (error) {
       if (error && error.name === 'AbortError') throw error;
       return { success: false, partial: successes > 0, refreshedAt: stamp, failures: Math.max(1, failures) };
@@ -29794,6 +29949,27 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     setTimeout(kick, 8000);
   };
 
+  // Whole-page refresh hook (B5): __pfBoardInit is one-shot via the
+  // `started` flag, so a Refresh Data re-run needs its own entry point.
+  // Already started: re-run the board fetch immediately. Not started:
+  // mirror __pfBoardInit's premium gate, then go immediately (the
+  // refresh's cards have already settled, so the lazy deferral that
+  // __pfBoardInit exists for no longer applies).
+  window.__pfRefreshBoard = function () {
+    var card = document.getElementById('pfMovesCard');
+    var body = document.getElementById('pfMovesBody');
+    if (!card || !body) return;
+    if (!started) {
+      var prem = (window.__brctx && window.__brctx.isPremium) ||
+        (document.getElementById('page-root') &&
+          document.getElementById('page-root').getAttribute('data-premium') === 'true');
+      if (!prem) { window.__pfBoardInit(); return; }
+      started = true;
+      card.hidden = false;
+    }
+    __pfMovesGo(0);
+  };
+
   // ── Insights: Rooting Guide + Bye Watch ────────────────────────────────
   function rgBadge(team, color) {
     return '<span class="pf-rg-badge" style="background:' + esc(color || '#475569') + '">' + esc(team) + '</span>';
@@ -29932,6 +30108,12 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         bb.innerHTML = '<div class="pf-ins-empty">Could not check byes right now.</div>';
       });
   }
+  // Whole-page refresh hooks (B5): loadInsights/loadBye are scoped in
+  // this IIFE, so expose minimal re-run hooks for the portfolio card
+  // owner's refresh(). loadInsights/loadBye each no-op when their
+  // section is absent from the page.
+  window.__pfRefreshInsights = function () { loadInsights(); };
+  window.__pfRefreshBye = function () { loadBye(); };
   // Bye Watch is cache-only data on its own endpoint: load it immediately.
   // The Rooting Guide scan waits until the league cards settle (or a
   // bounded fallback when the card lifecycle never runs) so it never

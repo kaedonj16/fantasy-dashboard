@@ -95,15 +95,58 @@ def _warm_team_rankings_cache(port: int, season: int) -> None:
     The rankings compute downloads several weekly stat files on a cold
     container and can take 60s+ (near gunicorn's 120s worker timeout), which
     made the Teams page sit on "Loading team data." after a deploy until
-    someone refreshed. One localhost hit here populates the on-disk cache
-    that all gunicorn workers share. Best-effort: never raises.
-    """
-    url = f"http://127.0.0.1:{int(port)}/api/nfl-team-rankings?season={int(season)}"
-    try:
-        import requests
+    someone refreshed.
 
-        resp = requests.get(url, timeout=110)
-        print(f"[post-deploy] Team rankings warmup: HTTP {resp.status_code}")
+    Warmed IN-PROCESS, not via loopback HTTP: the /api/nfl-team-rankings
+    handler (app.py: api_nfl_team_rankings) delegates to
+    _compute_team_offense_ranks(season), and that payload is cached in a
+    SHARED on-disk store -- CACHE_DIR/team_offense_ranks_<season>.json via
+    _read/_write_team_offense_ranks_disk in app.py -- in addition to each
+    worker's private _TEAM_OFFENSE_RANKS_CACHE dict. _compute checks the
+    disk store before computing and writes it after computing, and the
+    container filesystem is shared by all gunicorn workers, so computing
+    here in the post-deploy process populates the store every worker reads.
+    The old loopback GET additionally occupied a gunicorn thread for up to
+    110s right after boot, competing with the first real requests.
+
+    `port` is kept only for the existing call-site contract; it is no longer
+    used. Best-effort: never raises. The compute runs on a daemon thread
+    joined with a bounded 110s wait (the old HTTP timeout), so a hang here
+    logs and lets post_deploy finish instead of stalling it.
+    """
+    _ = port  # no loopback HTTP anymore; see docstring
+    try:
+        import threading
+
+        outcome: dict = {}
+
+        def _compute() -> None:
+            try:
+                from app import _compute_team_offense_ranks
+
+                outcome["payload"] = _compute_team_offense_ranks(int(season))
+            except Exception as e:  # captured, then logged by the joiner
+                outcome["error"] = e
+
+        worker = threading.Thread(
+            target=_compute, daemon=True, name="team-rankings-warmup"
+        )
+        worker.start()
+        worker.join(timeout=110)
+        if worker.is_alive():
+            print(
+                "[post-deploy] Team rankings warmup timed out after 110s; "
+                "continuing without it"
+            )
+        elif "error" in outcome:
+            print(f"[post-deploy] Team rankings warmup failed: {outcome['error']}")
+        else:
+            payload = outcome.get("payload") or {}
+            print(
+                "[post-deploy] Team rankings warmup: warmed shared disk cache "
+                f"for season {int(season)} "
+                f"({len(payload.get('ranks') or {})} rank groups)"
+            )
     except Exception as e:
         print(f"[post-deploy] Team rankings warmup failed: {e}")
 

@@ -124,6 +124,13 @@ _PORTFOLIO_SWR_TTL_S = 60 * 60
 _refresh_pool = None
 _refresh_pool_lock = threading.Lock()
 
+# Per-league single-flight for summary refresh kicks: a key is present from
+# the moment a rebuild is submitted to the bounded pool until its build
+# finishes, so page renders, card hydrations and explicit refreshes for the
+# same league coalesce onto one build instead of stacking duplicates.
+_SUMMARY_REFRESH_INFLIGHT: set = set()
+_SUMMARY_REFRESH_INFLIGHT_LOCK = threading.Lock()
+
 
 def _portfolio_refresh_pool():
     global _refresh_pool
@@ -148,12 +155,21 @@ def _kick_summary_refresh(account_id, membership, _attempt=0):
     previously left the summary cache stale until a client happened to drive
     a successful /api/portfolio/card for that league.
     """
+    lid = str((membership or {}).get("league_id") or "")
+    _key = (str(account_id),
+            str((membership or {}).get("platform") or "sleeper").lower(),
+            lid, str((membership or {}).get("season") or ""))
+    with _SUMMARY_REFRESH_INFLIGHT_LOCK:
+        if _key in _SUMMARY_REFRESH_INFLIGHT:
+            return
+        _SUMMARY_REFRESH_INFLIGHT.add(_key)
     try:
         pool = _portfolio_refresh_pool()
     except Exception:
+        with _SUMMARY_REFRESH_INFLIGHT_LOCK:
+            _SUMMARY_REFRESH_INFLIGHT.discard(_key)
         logger.debug("portfolio refresh pool unavailable", exc_info=True)
         return
-    lid = str((membership or {}).get("league_id") or "")
 
     def _run():
         try:
@@ -176,10 +192,19 @@ def _kick_summary_refresh(account_id, membership, _attempt=0):
         except Exception:
             logger.debug("portfolio background refresh failed league=%s", lid,
                          exc_info=True)
+        finally:
+            # Cleared on every outcome (the #2820 lesson): a failed build
+            # must never leak the mark and block later refreshes. A
+            # ContextPending retry re-kicks after this clear, so it
+            # re-acquires the mark when its timer fires.
+            with _SUMMARY_REFRESH_INFLIGHT_LOCK:
+                _SUMMARY_REFRESH_INFLIGHT.discard(_key)
 
     try:
         pool.submit(_run)
     except Exception:
+        with _SUMMARY_REFRESH_INFLIGHT_LOCK:
+            _SUMMARY_REFRESH_INFLIGHT.discard(_key)
         logger.debug("portfolio refresh submit failed league=%s", lid, exc_info=True)
 
 
@@ -806,6 +831,24 @@ def api_portfolio_actions():
         # caught up" - report it as incomplete.
         return jsonify({"actions": [], "scan": _scan_payload(force_incomplete=True)})
 
+    # Cheap cache probe BEFORE the heavy preamble (resolve_my_leagues live
+    # enrichment, the PRO sweep, player/value loads): a fresh complete scan
+    # is served without paying any of it. The key needs only the session
+    # identity and the NFL season/week, mirroring the dispatch key below.
+    try:
+        _probe_state = get_nfl_state() or {}
+        _probe_season = int(_probe_state.get("season") or datetime.now().year)
+        _probe_week = int(_probe_state.get("week") or 0)
+    except Exception:
+        _probe_season = _probe_week = 0
+    if _probe_season and _probe_week:
+        _probe_key = (_user_key() or f"viewer:{viewer_user_id}",
+                      _probe_season, _probe_week)
+        with _ACTIONS_LOCK:
+            _probe_hit = _ACTIONS_CACHE.get(_probe_key)
+            if _probe_hit and time.time() - _probe_hit[0] < _ACTIONS_TTL:
+                return jsonify(_probe_hit[1])
+
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
     try:
@@ -883,9 +926,9 @@ def api_portfolio_actions():
     )
 
     # Cache / single-flight key (see _ACTIONS_CACHE above). The dispatch
-    # lives below _run_actions_compute: serve a fresh complete scan,
-    # join the in-flight background compute for a bounded grace, or
-    # start it and answer with the honest incomplete payload.
+    # lives below _run_actions_compute: serve a fresh complete scan, or
+    # start / defer to the in-flight background compute and answer with
+    # the honest incomplete payload immediately (no request-thread wait).
     _actions_key = None
     if season and week:
         _actions_key = (_user_key() or f"viewer:{viewer_user_id}",
@@ -1574,8 +1617,12 @@ def api_portfolio_actions():
             except Exception:
                 logger.exception("[portfolio-actions] scan failed")
                 return jsonify(_fallback_payload())
-    _holder["event"].wait(_ACTIONS_SYNC_WAIT)
-    if _holder["payload"] is not None:
+    # No request-thread wait: a scan that is still running (just spawned
+    # above or already in flight) answers with the deferred incomplete
+    # payload immediately, and the client's retry ladder lands on the
+    # complete scan once the background worker caches it. A payload that
+    # somehow already landed is still served.
+    if _holder is not None and _holder.get("payload") is not None:
         return jsonify(_holder["payload"])
     return jsonify(_deferred_payload())
 
@@ -1799,6 +1846,15 @@ def api_portfolio_deep_dive():
 _INSIGHTS_CACHE: dict = {}
 _INSIGHTS_CACHE_LOCK = threading.Lock()
 _INSIGHTS_TTL = 60.0  # seconds
+# Single-flight for the insights compute, mirroring _ACTIONS_INFLIGHT:
+# cache key -> monotonic start of the compute currently running for that
+# viewer. Concurrent requests for the same viewer defer to it instead of
+# piling a duplicate scan onto the box; a mark older than the stale window
+# is treated as abandoned and a new compute may take over. The owning
+# request clears its mark in a finally (see api_portfolio_insights).
+_INSIGHTS_INFLIGHT: dict = {}
+_INSIGHTS_INFLIGHT_LOCK = threading.Lock()
+_INSIGHTS_INFLIGHT_STALE_S = 120.0  # seconds
 
 # /api/portfolio-actions response cache + single-flight (2026-10-26).
 # The warm scan measured 12.9s for just the 4 Sleeper leagues locally;
@@ -1823,9 +1879,10 @@ _ACTIONS_TTL = 60.0  # seconds
 # next retry re-kicks it.
 _ACTIONS_PENDING: dict = {}
 _ACTIONS_COMPUTE_SEM = threading.BoundedSemaphore(2)
-# Bounded grace a request waits for the background scan before answering
-# with the deferred incomplete payload. Fast scans still answer in-request;
-# slow ones land in the cache for the client's retry ladder to pick up.
+# Legacy bounded grace, retained only so existing references keep working:
+# the request thread no longer waits on the background scan at all (it
+# answers with the deferred incomplete payload immediately and the
+# client's retry ladder lands on the finished cache).
 _ACTIONS_SYNC_WAIT = 8.0
 try:
     _ACTIONS_SYNC_WAIT = float(
@@ -1868,8 +1925,18 @@ def _pf_viewer_leagues():
         return None
     try:
         from dashboard_services.accounts import resolve_my_leagues
-        league_inputs, season = resolve_my_leagues(
-            viewer_user_id, account_id, season)
+        import inspect
+        _resolver_params = inspect.signature(resolve_my_leagues).parameters
+        if "enrich_live" in _resolver_params:
+            # Account users already carry their durable memberships: the
+            # live Sleeper enrichment is redundant for them (the same
+            # enrich_live=not bool(account_id) page_portfolio passes).
+            league_inputs, season = resolve_my_leagues(
+                viewer_user_id, account_id, season,
+                enrich_live=not bool(account_id))
+        else:  # compatibility for injected/legacy resolvers
+            league_inputs, season = resolve_my_leagues(
+                viewer_user_id, account_id, season)
     except Exception:
         return None
     try:
@@ -1899,6 +1966,29 @@ def _pf_viewer_leagues():
         "value_by_pid": value_by_pid,
         "cache_key": (account_id or f"viewer:{viewer_user_id}", season, week),
     }
+
+
+def _pf_light_cache_key():
+    """The insights cache key from session + NFL state alone.
+
+    Mirrors the identity/season/week checks and the ``cache_key`` that
+    _pf_viewer_leagues builds, but pays none of that preamble (no league
+    resolution, no player or model-value loads), so a cache hit -- or a
+    single-flight deferral -- can be answered before any of it runs.
+    Returns None when the full preamble would also answer empty (signed
+    out, no current week, or outside the regular/post season).
+    """
+    viewer_username = session.get("viewer_username")
+    viewer_user_id = session.get("viewer_user_id")
+    account_id = session.get("account_id")
+    if (not viewer_username or not viewer_user_id) and not account_id:
+        return None
+    nfl_state = get_nfl_state() or {}
+    season = int(nfl_state.get("season") or datetime.now().year)
+    week = int(nfl_state.get("week") or 0)
+    if not week or nfl_state.get("season_type") not in ("reg", "post"):
+        return None
+    return (account_id or f"viewer:{viewer_user_id}", season, week)
 
 
 def _pf_scan_total(league_inputs):
@@ -2265,15 +2355,49 @@ def api_portfolio_insights():
     empty = {"ok": True, "rooting": {"windows": []},
              "bye": {"week": 0, "rows": [], "total_out": 0},
              "scan": {"total": 0, "scanned": 0, "incomplete": True}}
-    base = _pf_viewer_leagues()
-    if base is None:
+    # Cache and single-flight are decided from the light key BEFORE the
+    # _pf_viewer_leagues preamble (resolve_my_leagues live enrichment,
+    # get_nfl_players, the model value table): a hit pays none of it, and
+    # a compute already in flight for this viewer defers with the honest
+    # incomplete payload above instead of starting a duplicate scan.
+    light_key = _pf_light_cache_key()
+    if light_key is None:
+        # Signed out / no current week / off-season: the preamble would
+        # answer empty too, without paying for league resolution.
         return jsonify(empty)
-    cached = _insights_cache_get(base["cache_key"])
+    cached = _insights_cache_get(light_key)
     if cached is not None:
         return jsonify(cached)
-    payload = _compute_portfolio_insights(base)
-    _insights_cache_put(base["cache_key"], payload)
-    return jsonify(payload)
+    _owned_keys = []
+    with _INSIGHTS_INFLIGHT_LOCK:
+        _started = _INSIGHTS_INFLIGHT.get(light_key)
+        if (_started is not None
+                and time.monotonic() - _started < _INSIGHTS_INFLIGHT_STALE_S):
+            return jsonify(empty)
+        _INSIGHTS_INFLIGHT[light_key] = time.monotonic()
+        _owned_keys.append(light_key)
+    try:
+        base = _pf_viewer_leagues()
+        if base is None:
+            return jsonify(empty)
+        if base["cache_key"] != light_key:
+            # The resolver moved the season: re-check the real key's cache
+            # and hold the single-flight mark under it as well.
+            cached = _insights_cache_get(base["cache_key"])
+            if cached is not None:
+                return jsonify(cached)
+            with _INSIGHTS_INFLIGHT_LOCK:
+                _INSIGHTS_INFLIGHT[base["cache_key"]] = time.monotonic()
+                _owned_keys.append(base["cache_key"])
+        payload = _compute_portfolio_insights(base)
+        _insights_cache_put(base["cache_key"], payload)
+        return jsonify(payload)
+    finally:
+        # A failed compute must never leak the mark (the #2820 lesson):
+        # later requests would defer to a compute that is not running.
+        with _INSIGHTS_INFLIGHT_LOCK:
+            for _k in _owned_keys:
+                _INSIGHTS_INFLIGHT.pop(_k, None)
 
 
 # ── Live matchup score for a My Leagues card ──────────────────────────────────
@@ -2445,50 +2569,29 @@ def _build_live_matchups(platform, resolved_league_id, season, week, ctx):
     """(matchups, status_by_pid, proj_map) for one league/week, TTL-cached.
 
     Only the live pieces are cached -- the viewer's side is picked per request.
-    Stale-while-revalidate: a within-grace stale entry is served immediately
-    and refreshed by a background rebuild, so after the first build no card
-    request blocks on a provider rebuild. Only a missing or beyond-grace
-    entry pays the synchronous build below."""
+    Stale-while-revalidate with NO synchronous build on the request thread:
+    a fresh entry returns as-is; any other cached entry (inside the stale
+    grace or beyond it) is served stale while a background rebuild refreshes
+    it; and with nothing cached a background rebuild is kicked and None is
+    returned, which callers translate into their pending shape so the
+    client polls again instead of waiting on a provider build that can
+    outlast its abort. The bounded-wait fallback this replaces (an
+    unbounded lock wait behind an in-flight builder) could pin one
+    of only four request threads for the full provider build.
+    """
     import time as _time
     key = (str(platform), str(resolved_league_id), int(season), int(week))
     hit = _LIVE_MATCHUP_CACHE.get(key)
     if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
         return hit[1]
-    if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL + _LIVE_MATCHUP_STALE_GRACE:
-        _schedule_live_matchup_rebuild(
-            key, platform, resolved_league_id, season, week, ctx,
-        )
+    # Stale (any age) or missing: kick at most one background rebuild per
+    # key and serve / defer immediately -- never build, never wait here.
+    _schedule_live_matchup_rebuild(
+        key, platform, resolved_league_id, season, week, ctx,
+    )
+    if hit:
         return hit[1]
-
-    lock = _live_matchup_lock(key)
-    if not lock.acquire(blocking=False):
-        # Another thread is already building this league/week (synchronous
-        # path or the background rebuilder). Serve the last-good entry inside
-        # the grace window instead of queueing behind (or duplicating) a
-        # provider build that can outlast the card's client abort; with
-        # nothing usable cached, wait for the builder.
-        if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL + _LIVE_MATCHUP_STALE_GRACE:
-            return hit[1]
-        lock.acquire()
-        try:
-            hit = _LIVE_MATCHUP_CACHE.get(key)
-            if hit:
-                return hit[1]
-        finally:
-            lock.release()
-        # The builder finished without storing (it raised): take the lock
-        # and build on this thread below.
-        lock.acquire()
-    try:
-        # Re-check under the lock: the previous builder may have just stored.
-        hit = _LIVE_MATCHUP_CACHE.get(key)
-        if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
-            return hit[1]
-        return _compute_live_matchups(
-            key, platform, resolved_league_id, season, week, ctx,
-        )
-    finally:
-        lock.release()
+    return None
 
 
 @user_pages_bp.route("/api/portfolio/summary")
@@ -2593,7 +2696,11 @@ def api_weekly_optimal():
 
 @user_pages_bp.route("/api/portfolio/refresh", methods=["POST"])
 def api_portfolio_refresh():
-    """Explicitly refresh at most the visible Portfolio cards, two at a time."""
+    """Kick a background refresh for at most 4 visible Portfolio cards.
+
+    Kick-and-return (2026-10-27): busts each league and kicks its
+    background summary refresh, then answers accepted/pending at once.
+    The client polls /api/portfolio/card until the rebuilds land."""
     account_id = session.get("account_id")
     if not account_id:
         return jsonify({"ok": False, "failure_category": "auth_required"}), 401
@@ -2619,39 +2726,42 @@ def api_portfolio_refresh():
             return jsonify({"ok": False, "failure_category": "unlinked_league"}), 403
         requested.append((key, allowed_by_key[key]))
 
-    from dashboard_services.portfolio_summary import build_league_summary, classify_failure, get_cached_summary
+    # Kick-and-return: bust each requested league and kick its rebuild on
+    # the existing background machinery, then answer immediately. The
+    # synchronous rebuild this replaces busted the cache and rebuilt on
+    # the request thread (14-120s per batch, un-cancellable once the
+    # client gave up, and a re-tap piled a second build onto the same
+    # semaphores). _kick_summary_refresh submits to the bounded
+    # _portfolio_refresh_pool (2 workers) with per-league single-flight,
+    # and its build loads the league context cache-only, which kicks the
+    # deduped league warm when the context is cold -- so the ctx and the
+    # summary both rebuild in the background, and the client polls
+    # /api/portfolio/card for completion instead of reading a summary
+    # out of this response.
     from app import DASHBOARD_CACHE, _cache_key, _touch_league_bust
-    def refresh_one(item):
-        key, membership = item
+    results = []
+    for key, membership in requested:
         platform, league_id, season = key
-        stale = get_cached_summary(account_id, platform, league_id, season)
         try:
             cache_key = _cache_key(platform, season, league_id)
             if cache_key in DASHBOARD_CACHE:
                 DASHBOARD_CACHE[cache_key]["ts"] = 0
+        except Exception:
+            logger.debug("portfolio refresh cache bust failed league=%s",
+                         league_id, exc_info=True)
+        try:
             _touch_league_bust(platform, season, league_id)
-            return {"ok": True, "summary": build_league_summary(
-                account_id, membership, get_league_ctx_from_cache)}
-        except Exception as exc:
-            result = {"ok": False, "failure_category": classify_failure(exc)}
-            if stale:
-                result["last_good"] = stale
-            return result
-
-    # Browser cancellation cannot terminate an accepted WSGI request; this
-    # bounded pool and league single-flight are therefore the authoritative cap.
-    with ThreadPoolExecutor(max_workers=min(2, len(requested))) as pool:
-        results = list(pool.map(refresh_one, requested))
-    successes = sum(1 for value in results if value.get("ok"))
-    logger.info("portfolio_refresh account=%s visible_card_count=%d concurrency=%d success=%d",
-                account_id, len(requested), min(2, len(requested)), successes)
-    successful_syncs = [r.get("summary", {}).get("last_successful_sync_at")
-                        for r in results if r.get("ok") and r.get("summary", {}).get("last_successful_sync_at")]
-    return jsonify({"ok": successes == len(results), "partial": 0 < successes < len(results),
-                    "results": results,
-                    # Batch generation is not data freshness. This value is
-                    # intentionally unknown when no authoritative sync exists.
-                    "refreshed_at": max(successful_syncs) if successful_syncs else None}), (200 if successes else 503)
+        except Exception:
+            logger.debug("portfolio refresh bust touch failed league=%s",
+                         league_id, exc_info=True)
+        _kick_summary_refresh(account_id, membership)
+        results.append({"ok": True, "pending": True,
+                        "platform": platform, "league_id": league_id,
+                        "season": season})
+    logger.info("portfolio_refresh account=%s visible_card_count=%d accepted=%d pending=%d",
+                account_id, len(requested), len(results), len(results))
+    return jsonify({"ok": True, "accepted": True, "partial": False,
+                    "results": results, "refreshed_at": None})
 
 
 @user_pages_bp.route("/api/portfolio/card")
@@ -2681,8 +2791,30 @@ def api_portfolio_card():
                     account_id, platform, league_id, season, auth_ms)
         return jsonify({"ok": False, "state": "unavailable", "message": "League is no longer linked"}), 403
 
-    from dashboard_services.portfolio_summary import build_league_summary, get_cached_summary
+    from dashboard_services.portfolio_summary import get_cached_summary
     stale_summary = get_cached_summary(account_id, platform, league_id, season)
+    # Fresh-ready is the only summary state served as complete: it IS what
+    # build_league_summary would re-derive from this context. Anything else
+    # (stale, partial, or missing) is served stale-or-pending below while
+    # the existing background refresh rebuilds it -- the build never runs
+    # on this request thread.
+    _summary_fresh = False
+    if isinstance(stale_summary, dict) and stale_summary.get("state") == "ready":
+        try:
+            _nfl = get_nfl_state() or {}
+            _ttl = _portfolio_swr_ttl_s(
+                int(_nfl.get("season") or season), int(_nfl.get("week") or 0))
+            _summary_fresh = _cached_summary_fresh(stale_summary, _ttl)
+        except Exception:
+            logger.debug("portfolio card freshness check failed", exc_info=True)
+            _summary_fresh = False
+
+    def _kick_card_refresh():
+        try:
+            _kick_summary_refresh(account_id, membership)
+        except Exception:
+            logger.debug("portfolio card refresh kick failed league=%s",
+                         league_id, exc_info=True)
     ctx_started = clock()
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
@@ -2699,32 +2831,18 @@ def api_portfolio_card():
         summary = stale_summary
         matchup = {"live": False, "state": "pending", "pending": True, "retry_after_ms": 3000}
         state, pending, warm_scheduled = "pending", True, True
+        if not _summary_fresh:
+            _kick_card_refresh()
     else:
         summary_started = clock()
-        # Fast path: a fresh cached "ready" summary IS what
-        # build_league_summary would re-derive from this context (value
-        # lookup over every roster + positional rankings). The client
-        # hydrates every card on every page load through a 2-wide queue, so
-        # re-deriving it per card made the last leagues wait on redundant
-        # compute and pinned request threads. Serve the fresh cache and
-        # spend the request on the matchup, which is not cached.
-        summary = None
-        if isinstance(stale_summary, dict) and stale_summary.get("state") == "ready":
-            try:
-                _nfl = get_nfl_state() or {}
-                _ttl = _portfolio_swr_ttl_s(
-                    int(_nfl.get("season") or season), int(_nfl.get("week") or 0))
-                if _cached_summary_fresh(stale_summary, _ttl):
-                    summary = stale_summary
-            except Exception:
-                logger.debug("portfolio card freshness check failed", exc_info=True)
-                summary = None
-        if summary is None:
-            try:
-                summary = build_league_summary(account_id, membership, lambda *_a, **_k: ctx)
-            except Exception:
-                logger.warning("portfolio card summary failed for %s:%s", platform, league_id, exc_info=True)
-                summary = stale_summary
+        # Serve the persistent summary exactly as cached: fresh-ready
+        # completes the card; stale/partial is served as last-good and
+        # missing serves as the pending state, both with the background
+        # summary refresh kicked so the client's poll (pending below,
+        # retry_after_ms 3000) lands on the rebuilt entry.
+        summary = stale_summary
+        if not _summary_fresh:
+            _kick_card_refresh()
         summary_ms = round((clock() - summary_started) * 1000)
         matchup_started = clock()
         # Reuse the existing matchup calculation without another membership or
@@ -2736,9 +2854,9 @@ def api_portfolio_card():
             matchup_response = matchup_response[0]
         matchup = matchup_response.get_json() if hasattr(matchup_response, "get_json") else matchup_response
         matchup_ms = round((clock() - matchup_started) * 1000)
-        pending = bool((matchup or {}).get("pending"))
+        pending = bool((matchup or {}).get("pending")) or not _summary_fresh
         state = "pending" if pending else "ready"
-        warm_scheduled = False
+        warm_scheduled = not _summary_fresh
 
     total_ms = round((clock() - started) * 1000)
     logger.info(
@@ -2860,12 +2978,18 @@ def api_portfolio_matchup():
 
     resolved_league_id = ctx.get("resolved_league_id") or league_id
     try:
-        matchups, status_by_pid, proj_map = _build_live_matchups(
+        _live = _build_live_matchups(
             platform, resolved_league_id, season, week, ctx,
         )
     except Exception:
         logger.debug("[portfolio-matchup] live build failed", exc_info=True)
         return jsonify({"live": False, "state": "error", "message": "Matchup temporarily unavailable", "reason": "build_failed"})
+    if _live is None:
+        # No usable live entry yet and a background rebuild is running:
+        # the pending shape the card client already polls on.
+        return jsonify({"live": False, "state": "pending", "pending": True,
+                        "retry_after_ms": 3000})
+    matchups, status_by_pid, proj_map = _live
 
     # Find the viewer's matchup and orient "you" / "opp".
     you = opp = None
@@ -3066,12 +3190,16 @@ def api_matchup_league_scores():
 
     resolved_league_id = ctx.get("resolved_league_id") or league_id
     try:
-        matchups, status_by_pid, proj_map = _build_live_matchups(
+        _live = _build_live_matchups(
             platform, resolved_league_id, season, week, ctx,
         )
     except Exception:
         logger.debug("[league-scores] live build failed", exc_info=True)
         return jsonify({"matchups": [], "week": week, "state": "error", "message": "League scores temporarily unavailable", "reason": "build_failed"})
+    if _live is None:
+        return jsonify({"matchups": [], "week": week, "state": "pending",
+                        "pending": True, "retry_after_ms": 3000})
+    matchups, status_by_pid, proj_map = _live
 
     from dashboard_services.matchups import (
         _proj_value_for_pid, compute_win_prob, team_live_totals, make_frac_lookup,
@@ -3281,12 +3409,15 @@ def api_scorezone_moments():
 
     resolved_league_id = ctx.get("resolved_league_id") or league_id
     try:
-        matchups, status_by_pid, proj_map = _build_live_matchups(
+        _live = _build_live_matchups(
             platform, resolved_league_id, season, week, ctx,
         )
     except Exception:
         logger.debug("[scorezone-moments] live build failed", exc_info=True)
         return jsonify({"plays": [], "teams": {}})
+    if _live is None:
+        return jsonify({"plays": [], "teams": {}, "pending": True})
+    matchups, status_by_pid, proj_map = _live
 
     you = opp = None
     for m in matchups:

@@ -120,12 +120,16 @@ def test_lineup_exception_degrades_instead_of_aborting(monkeypatch):
 
     resp = client.get("/api/portfolio-actions")
     assert resp.status_code == 200  # was a scan-aborting 500 pre-fix
-    data = resp.get_json()
-    assert data["scan"]["scanned"] == 1  # the league still counts
-    assert data["scan"]["incomplete"] is False
+    # 2026-10-27: the request defers while the scan runs in the
+    # background; the degraded-but-complete scan lands in the cache and
+    # the next GET serves it.
+    assert resp.get_json()["scan"]["incomplete"] is True
     assert _wait_for_idle(bp_mod)
     # The degraded-but-complete scan is cached like any complete scan.
     assert ("viewer:owner-1", 2026, 7) in bp_mod._ACTIONS_CACHE
+    data = client.get("/api/portfolio-actions").get_json()
+    assert data["scan"]["scanned"] == 1  # the league still counts
+    assert data["scan"]["incomplete"] is False
 
 
 def test_roster_match_exception_counts_unresolved_and_recovers(monkeypatch):
@@ -144,9 +148,9 @@ def test_roster_match_exception_counts_unresolved_and_recovers(monkeypatch):
 
     resp = client.get("/api/portfolio-actions")
     assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["scan"]["skipped_no_roster"] == 1
-    assert data["scan"]["incomplete"] is True
+    # The request defers (2026-10-27 no-wait dispatch); the background
+    # scan is where the roster-match failure is absorbed.
+    assert resp.get_json()["scan"]["incomplete"] is True
     assert _wait_for_idle(bp_mod)
     # The failure is NOT cached as complete, and no mark leaks: the
     # next request recomputes instead of deferring to a dead compute.
@@ -154,7 +158,9 @@ def test_roster_match_exception_counts_unresolved_and_recovers(monkeypatch):
     ctx_calls = calls["ctx"]
     state["fail"] = False
     second = client.get("/api/portfolio-actions").get_json()
+    assert _wait_for_idle(bp_mod)
     assert calls["ctx"] > ctx_calls
+    second = client.get("/api/portfolio-actions").get_json()
     assert second["scan"]["scanned"] == 1
     assert second["scan"]["incomplete"] is False
 
@@ -205,7 +211,11 @@ def test_ranking_failure_serves_unranked_actions(monkeypatch):
 
     resp = client.get("/api/portfolio-actions")
     assert resp.status_code == 200
-    data = resp.get_json()
+    # Deferred while the (unranked-fallback) scan computes in the
+    # background; the landed scan is complete.
+    assert resp.get_json()["scan"]["incomplete"] is True
+    assert _wait_for_idle(bp_mod)
+    data = client.get("/api/portfolio-actions").get_json()
     assert data["scan"]["incomplete"] is False
 
 

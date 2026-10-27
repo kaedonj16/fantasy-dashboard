@@ -74,18 +74,34 @@ def test_card_serves_fresh_cached_summary_without_rebuild(offline_client, monkey
     assert response.json["state"] == "ready"
 
 
-def test_card_rebuilds_when_cached_summary_is_stale(offline_client, monkeypatch):
+def test_card_serves_stale_summary_and_kicks_background_refresh(offline_client, monkeypatch):
+    """A stale cached summary is served as last-good and the rebuild is
+    kicked in the background (2026-10-27 reliability fix): the card
+    request thread never runs build_league_summary inline, which could
+    pin one of only four request threads for the full build."""
     from datetime import datetime, timedelta, timezone
     stale = {"state": "ready", "record": "8-2", "league_id": "L1",
              "generated_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()}
-    _wire_card(monkeypatch, stale)
+    pages = _wire_card(monkeypatch, stale)
+
+    def _no_build(*a, **k):
+        raise AssertionError("stale summary must not be rebuilt inline")
+
     monkeypatch.setattr("dashboard_services.portfolio_summary.build_league_summary",
-                        lambda *a, **k: {"state": "ready", "record": "9-1"})
+                        _no_build)
+    kicks = []
+    monkeypatch.setattr(pages, "_kick_summary_refresh",
+                        lambda account_id, membership: kicks.append(membership["league_id"]))
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 7
     response = offline_client.get("/api/portfolio/card?platform=sleeper&league_id=L1&season=2026")
     assert response.status_code == 200
-    assert response.json["summary"]["record"] == "9-1"
+    assert response.json["summary"]["record"] == "8-2"
+    # Not fresh-ready: the card reports pending so the client keeps
+    # polling, and exactly one background refresh was kicked.
+    assert response.json["pending"] is True
+    assert response.json["retry_after_ms"] == 3000
+    assert kicks == ["L1"]
 
 
 def test_card_rejects_unlinked_league(offline_client, monkeypatch):

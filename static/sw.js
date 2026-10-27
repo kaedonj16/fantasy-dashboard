@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v104';
+const CACHE_NAME = 'br-fantasy-v105';
 
 // How long to wait on the network for a page before painting a cached /
 // offline fallback. This is what kills the blank white screen on PWA launch:
@@ -12,7 +12,7 @@ const CACHE_NAME = 'br-fantasy-v104';
 const NAV_TIMEOUT_MS = 3500;
 // Explicit Refresh (bypass-cache / reload) skips the stale shell preference
 // but still must not hang forever on a stuck fetch.
-const NAV_REFRESH_TIMEOUT_MS = 20000;
+const NAV_REFRESH_TIMEOUT_MS = 45000;
 // ScoreZone embeds live plays in the HTML (window.__rz__). Painting its cached
 // shell after NAV_TIMEOUT_MS shows last session's plays, so ScoreZone
 // navigations give the network a longer head start and don't prefer the

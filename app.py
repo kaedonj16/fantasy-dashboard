@@ -420,6 +420,40 @@ _PLAYOFF_SIM_BUILDING_LOCK = threading.Lock()
 _PLAYOFF_SIM_MAX_CONCURRENT = 2
 _PLAYOFF_SIM_SEM = threading.BoundedSemaphore(_PLAYOFF_SIM_MAX_CONCURRENT)
 
+# Aggregate per-worker ceiling for heavy background kicks, non-blocking,
+# drop on contention. The per-mechanism caps above/below bound each kick
+# type on its own, but never in aggregate: a cold My Leagues / page load
+# can fire page builds, teams/activity builds, activity-section fills and
+# history preloads at once, on top of the capped sim/modal/context-build
+# work. Every previously-uncapped heavy kick now acquires this first
+# (blocking=False); a kick that cannot get a slot is dropped, its dedupe /
+# in-flight mark is cleared, and a later read re-kicks it. Slots are
+# released in the worker body's finally, so a finished/failed build always
+# frees its slot.
+_BG_HEAVY_SEM = threading.BoundedSemaphore(3)
+
+
+def _bg_heavy_target(fn, *args) -> None:
+    """Thread target for a kick that already acquired _BG_HEAVY_SEM.
+
+    The acquire happens at the kick site (non-blocking, drop on
+    contention); this wrapper only guarantees the release once the
+    background work finishes, whether it returns or raises. Routing
+    through a wrapper -- instead of releasing inside fn itself -- keeps
+    direct / synchronous callers of fn (which never acquired a slot)
+    unaffected."""
+    try:
+        fn(*args)
+    finally:
+        _BG_HEAVY_SEM.release()
+
+# In-flight dedupe for the history preload kicked from index() on a league
+# select: keyed by (platform, league_id, season), the identity that kick
+# already receives. Without it every repeat select spawned another thread
+# re-walking the same historical seasons.
+_PRELOAD_HISTORY_INFLIGHT: set = set()
+_PRELOAD_HISTORY_LOCK = threading.Lock()
+
 
 def _roster_sig(ctx: dict) -> str:
     """A stable fingerprint of who's on each roster, so the playoff-odds sim
@@ -8629,6 +8663,14 @@ def _fill_activity_section_async(platform: str, league_id: str, season: int) -> 
             return
         _ACTIVITY_FILL_INFLIGHT.add(key)
 
+    if not _BG_HEAVY_SEM.acquire(blocking=False):
+        # Aggregate background slots are full: drop this kick (see the cap
+        # note at _BG_HEAVY_SEM). Un-mark the key so a later read can
+        # re-kick once a running build finishes.
+        with _ACTIVITY_FILL_LOCK:
+            _ACTIVITY_FILL_INFLIGHT.discard(key)
+        return
+
     def _run() -> None:
         try:
             entry = DASHBOARD_CACHE.get(key)
@@ -8637,6 +8679,7 @@ def _fill_activity_section_async(platform: str, league_id: str, season: int) -> 
         except Exception:
             logger.debug("[activity-fill] background fill failed", exc_info=True)
         finally:
+            _BG_HEAVY_SEM.release()
             with _ACTIVITY_FILL_LOCK:
                 _ACTIVITY_FILL_INFLIGHT.discard(key)
 
@@ -8645,6 +8688,7 @@ def _fill_activity_section_async(platform: str, league_id: str, season: int) -> 
             target=_run, name=f"activity-fill-{platform}-{league_id}", daemon=True,
         ).start()
     except Exception:
+        _BG_HEAVY_SEM.release()
         with _ACTIVITY_FILL_LOCK:
             _ACTIVITY_FILL_INFLIGHT.discard(key)
 
@@ -14220,8 +14264,31 @@ def get_league_ctx_from_cache(
                 # Bound concurrent builds process-wide so a burst of build
                 # requests (portfolio refresh + summary hydration + warms) cannot
                 # stack enough in-flight contexts to OOM the worker.
-                with _LEAGUE_BUILD_SEM:
+                # The acquire itself is also bounded (10s): this function
+                # does not distinguish foreground builds (allow_build=True
+                # callers such as cron/refresh internals) from cache-read /
+                # warm callers -- allow_build is the only flag and it is
+                # True for both -- so the bound applies at this acquire for
+                # every build that reaches it. On timeout degrade exactly
+                # like the lock-busy paths above: serve the stale ctx
+                # marked _cache_stale=True while it is inside the stale
+                # window, otherwise the pending/empty {} the
+                # allow_build=False path returns when it has nothing
+                # usable, instead of queueing this thread indefinitely
+                # behind builds it may never outlive (1 worker x 4 threads).
+                if not _LEAGUE_BUILD_SEM.acquire(timeout=10):
+                    old = (stale_entry or {}).get("ctx")
+                    old_ts = float((stale_entry or {}).get("ts") or 0)
+                    stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
+                    if old and time.time() - old_ts <= stale_window:
+                        old["_cache_stale"] = True
+                        old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
+                        return _stamp_viewer(old)
+                    return {}
+                try:
                     ctx = build_league_context(platform, league_id, season)
+                finally:
+                    _LEAGUE_BUILD_SEM.release()
                 built_at = time.time()
                 ctx["_cache_synced_at"] = datetime.fromtimestamp(built_at, timezone.utc).isoformat()
                 ctx["_cache_stale"] = False
@@ -18142,11 +18209,22 @@ def page_activity(platform: str, season: int, league_id: str):
             _ACTIVITY_BUILDING.add(build_key)
             with _PAGE_BG_LOCK:
                 _PAGE_BG_FAILED.discard(f"activity:{platform}:{season}:{league_id}")
-            threading.Thread(
-                target=_background_build_activity,
-                args=(platform, league_id, season),
-                daemon=True,
-            ).start()
+            if not _BG_HEAVY_SEM.acquire(blocking=False):
+                # Aggregate background slots are full: drop this kick (see
+                # the cap note at _BG_HEAVY_SEM). Un-mark the key so a
+                # later read can re-kick once a running build finishes.
+                _ACTIVITY_BUILDING.discard(build_key)
+            else:
+                try:
+                    threading.Thread(
+                        target=_bg_heavy_target,
+                        args=(_background_build_activity, platform, league_id, season),
+                        daemon=True,
+                    ).start()
+                except Exception:
+                    _BG_HEAVY_SEM.release()
+                    _ACTIVITY_BUILDING.discard(build_key)
+                    raise
 
     skeleton = _build_activity_skeleton(platform, season, league_id)
     resp = make_response(render_page("BR Fantasy Activity", league_id, "activity", skeleton, platform, season))
@@ -19725,11 +19803,22 @@ def page_teams(platform: str, season: int, league_id: str):
             _TEAMS_BUILDING.add(build_key)
             with _PAGE_BG_LOCK:
                 _PAGE_BG_FAILED.discard(f"teams:{platform}:{season}:{league_id}")
-            threading.Thread(
-                target=_background_build_teams,
-                args=(platform, league_id, season),
-                daemon=True,
-            ).start()
+            if not _BG_HEAVY_SEM.acquire(blocking=False):
+                # Aggregate background slots are full: drop this kick (see
+                # the cap note at _BG_HEAVY_SEM). Un-mark the key so a
+                # later read can re-kick once a running build finishes.
+                _TEAMS_BUILDING.discard(build_key)
+            else:
+                try:
+                    threading.Thread(
+                        target=_bg_heavy_target,
+                        args=(_background_build_teams, platform, league_id, season),
+                        daemon=True,
+                    ).start()
+                except Exception:
+                    _BG_HEAVY_SEM.release()
+                    _TEAMS_BUILDING.discard(build_key)
+                    raise
 
     num_teams = int((ctx_entry or {}).get("ctx", {}).get("total_rosters") or 12) if ctx_entry else 12
     skeleton = _build_teams_skeleton(platform, season, league_id, num_teams)
@@ -20496,11 +20585,22 @@ def _serve_cached_or_background(platform, season, league_id, cache_key,
         if build_key not in _PAGE_BG_BUILDING:
             _PAGE_BG_BUILDING.add(build_key)
             _PAGE_BG_FAILED.discard(build_key)  # a fresh request re-attempts
-            threading.Thread(
-                target=_bg_build_page,
-                args=(build_key, platform, season, league_id, cache_key, build_fn),
-                daemon=True,
-            ).start()
+            if not _BG_HEAVY_SEM.acquire(blocking=False):
+                # Aggregate background slots are full: drop this kick (see
+                # the cap note at _BG_HEAVY_SEM). Un-mark the key so a
+                # later read can re-kick once a running build finishes.
+                _PAGE_BG_BUILDING.discard(build_key)
+            else:
+                try:
+                    threading.Thread(
+                        target=_bg_heavy_target,
+                        args=(_bg_build_page, build_key, platform, season, league_id, cache_key, build_fn),
+                        daemon=True,
+                    ).start()
+                except Exception:
+                    _BG_HEAVY_SEM.release()
+                    _PAGE_BG_BUILDING.discard(build_key)
+                    raise
 
     skeleton = _page_skeleton(platform, season, league_id, cache_key, label)
     resp = make_response(render_page(title, league_id, active, skeleton, platform, season))
@@ -22305,21 +22405,48 @@ def index():
         ctx = get_league_ctx_from_cache(platform, league_id, season)
 
         # Preload historical season contexts in the background so History/Awards/Graphs
-        # pages are fast on first click.
-        def _preload_history(p: str, lid: str, s: int) -> None:
-            try:
-                time.sleep(3)  # let the foreground redirect complete first
-                hist_seasons = get_available_history_seasons(p, lid, s)
-                for hist_s in hist_seasons[:3]:  # cap at 3 most-recent seasons
-                    rid = resolve_league_id_for_season(p, lid, s, hist_s)
-                    get_league_ctx_from_cache(p, rid, hist_s)
-                    time.sleep(2)  # spread out API load to avoid rate limiting
-            except Exception:
-                logger.debug("suppressed exception", exc_info=True)
+        # pages are fast on first click. Deduped per (platform, league_id,
+        # season) via _PRELOAD_HISTORY_INFLIGHT and routed through
+        # _BG_HEAVY_SEM like the other heavy kicks: a repeat select while a
+        # preload for this league is already running, or a kick that cannot
+        # get an aggregate slot, spawns nothing (and leaves no mark, so a
+        # later select can re-kick).
+        _preload_key = (str(platform), str(league_id), int(season))
+        with _PRELOAD_HISTORY_LOCK:
+            _preload_kick = _preload_key not in _PRELOAD_HISTORY_INFLIGHT
+            if _preload_kick:
+                _PRELOAD_HISTORY_INFLIGHT.add(_preload_key)
+        if _preload_kick and not _BG_HEAVY_SEM.acquire(blocking=False):
+            with _PRELOAD_HISTORY_LOCK:
+                _PRELOAD_HISTORY_INFLIGHT.discard(_preload_key)
+            _preload_kick = False
+        if _preload_kick:
+            def _preload_history(p: str, lid: str, s: int) -> None:
+                try:
+                    time.sleep(3)  # let the foreground redirect complete first
+                    hist_seasons = get_available_history_seasons(p, lid, s)
+                    for hist_s in hist_seasons[:3]:  # cap at 3 most-recent seasons
+                        rid = resolve_league_id_for_season(p, lid, s, hist_s)
+                        get_league_ctx_from_cache(p, rid, hist_s)
+                        time.sleep(2)  # spread out API load to avoid rate limiting
+                except Exception:
+                    logger.debug("suppressed exception", exc_info=True)
+                finally:
+                    _BG_HEAVY_SEM.release()
+                    with _PRELOAD_HISTORY_LOCK:
+                        _PRELOAD_HISTORY_INFLIGHT.discard(
+                            (str(p), str(lid), int(s))
+                        )
 
-        threading.Thread(
-            target=_preload_history, args=(platform, league_id, season), daemon=True
-        ).start()
+            try:
+                threading.Thread(
+                    target=_preload_history, args=(platform, league_id, season), daemon=True
+                ).start()
+            except Exception:
+                _BG_HEAVY_SEM.release()
+                with _PRELOAD_HISTORY_LOCK:
+                    _PRELOAD_HISTORY_INFLIGHT.discard(_preload_key)
+                raise
 
         next_url = (request.form.get("next") or "").strip()
         if next_url and next_url.startswith("/") and not next_url.startswith("//"):
@@ -40157,47 +40284,6 @@ def build_portfolio_body(
         "else document.addEventListener('DOMContentLoaded',go);})();</script>"
     )
 
-    # Page-level Refresh handler consumed by app.js's doRefresh(). Warm cards
-    # expose data-summary-card hooks; cold/warm-only portfolios don't, so an
-    # empty key set rebuilds the request from the live league slots instead
-    # of silently no-op'ing. Always returns handled:false so app.js still
-    # performs its own full-page reload after the summaries are refreshed.
-    refresh_handler_script = (
-        "<script>(function(){"
-        "window.brRefreshCurrentPage=async function(opts){"
-        "opts=opts||{};"
-        "var signal=opts.signal;"
-        "/* Timeout so a hung /api/portfolio/refresh can't wedge the refresh UI;"
-        "   the abort signal from doRefresh() is also honored."
-        "   Note: account_id comes from the server session; do NOT send it in the"
-        "   payload (the API rejects requests that include it). */"
-        "var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;"
-        "var timer=null;"
-        "if(ctrl){timer=setTimeout(function(){try{ctrl.abort();}catch(_){}} ,45000);"
-        "if(signal){if(signal.aborted){try{ctrl.abort();}catch(_){}}"
-        "else if(signal.addEventListener){signal.addEventListener('abort',function(){try{ctrl.abort();}catch(_){}});}}}"
-        "var fetchSignal=ctrl?ctrl.signal:(signal||undefined);"
-        "try{"
-        "const keys=[...document.querySelectorAll('[data-summary-' + 'card]')]"
-        ".filter(function(el){return el.style.display!=='none';})"
-        ".map(function(el){return el.dataset.summaryCard;}).filter(Boolean);"
-        "if(!keys.length){"
-        "const liveLeagues=[...document.querySelectorAll('.pf-lg-card[data-platform][data-league-id][data-season]')]"
-        ".map(function(el){return {league_id:el.dataset.leagueId,platform:el.dataset.platform,season:el.dataset.season};})"
-        ".filter(function(lg){return lg.league_id;});"
-        "if(!liveLeagues.length){return {handled:false};}"
-        "await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({leagues:liveLeagues}),signal:fetchSignal});"
-        "return {handled:false};}"
-        "const response=await fetch('/api/portfolio/refresh',{method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify({keys:keys}),signal:fetchSignal});"
-        "if(!response.ok){throw new Error('Portfolio refresh failed: '+response.status);}"
-        "return await response.json();"
-        "}finally{if(timer)clearTimeout(timer);}"
-        "};"
-        "})();</script>"
-    )
-
     # ── League list - standings-table ─────────────────────────────────────
     league_rows = ""
     # Every card in an account shell came from durable membership and can be
@@ -41086,8 +41172,7 @@ def build_portfolio_body(
                     + "<div class='pf-ins-stack'>" + pos_card + nfl_html
                     + bye_html + holdings_html + "</div></section>")
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
-            + top_strip + moves_card + league_card + insights + '</div>'
-            + refresh_handler_script)
+            + top_strip + moves_card + league_card + insights + '</div>')
 
 
 # build_scout_body / _week_proj_points live in dashboard_services/pages/scout_page.py
