@@ -14,6 +14,39 @@ import pytest
 
 pytest.importorskip("flask")
 
+
+@pytest.fixture(autouse=True)
+def _isolate_actions_scan_stores():
+    """Keep the process-global actions-scan stores from leaking into
+    or out of these tests.
+
+    The /api/portfolio-actions scan path consults five module-global
+    stores in routes.user_pages_bp (_ACTIONS_CACHE, _ACTIONS_LATEST,
+    _ACTIONS_FRAGMENTS, _ACTIONS_INFLIGHT, _ACTIONS_PENDING), all of
+    which outlive monkeypatch. _client() below clears four of them at
+    setup, but not _ACTIONS_PENDING, and nothing clears any of them on
+    teardown, so a completed scan one test leaves behind (the sibling
+    suites assert ("viewer:owner-1", 2026, 7) warm in _ACTIONS_CACHE
+    at their end) is exactly the state the next test in the process
+    inherits. Clear all five around every test so each one starts
+    from the cold-scan state it asserts. Production semantics are
+    unchanged: a warm cache still serves its TTL within a process.
+    """
+    try:
+        import routes.user_pages_bp as bp_mod
+    except ImportError:
+        yield
+        return
+    stores = (bp_mod._ACTIONS_CACHE, bp_mod._ACTIONS_LATEST,
+              bp_mod._ACTIONS_FRAGMENTS, bp_mod._ACTIONS_INFLIGHT,
+              bp_mod._ACTIONS_PENDING)
+    for store in stores:
+        store.clear()
+    yield
+    for store in stores:
+        store.clear()
+
+
 _LEAGUES = [{"league_id": "L1", "platform": "sleeper", "season": 2026,
              "name": "Alpha"}]
 
@@ -48,6 +81,18 @@ def _client(monkeypatch):
 
     def _ctx_cached(plat, lid, season, allow_build=True):
         calls["ctx"] += 1
+        # The production scan takes seconds (module docstring: 12.9s
+        # warm for 4 leagues), so the first GET's kick-and-defer is
+        # never close. An instant fake makes it a thread-scheduling
+        # race: in a warm process the background scan can finish
+        # before the request thread reaches the post-spawn holder /
+        # latest-pass checks, the "first" response is then the
+        # completed scan, and the cold-scan assert below flakes
+        # (seen in CI on PR #2869's head). A short deterministic
+        # build time models the real scan and pins the contract;
+        # the sibling hardening suite does the same with a 1s odds
+        # stub in test_slow_scan_defers_fast_then_lands_in_cache.
+        time.sleep(0.25)
         return _ctx()
 
     monkeypatch.setattr(

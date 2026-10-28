@@ -14,6 +14,37 @@ pytest.importorskip("pandas")
 pytest.importorskip("flask")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_dashboard_cache():
+    """Keep the process-global league-context cache from leaking into
+    these tests.
+
+    app.DASHBOARD_CACHE outlives monkeypatch and is capped at
+    DASHBOARD_CACHE_MAX (4) entries: every entry-creation path calls
+    app._prune_dashboard_cache, which evicts the oldest-by-ts entries
+    once the cap is reached. In the full suite the cache is already
+    full of earlier tests' league contexts when this module runs, and
+    background league-warm threads (_warm_league_ctx_async, kicked by
+    cache-only readers in earlier portfolio tests) keep landing
+    entry-creations. The refresh test below seeds an entry with a
+    sentinel ts (12345.0 -- the oldest age in the cache, and 0 after
+    the bust), so the first prune fired by any concurrent warm evicted
+    it before the assertion read it back: intermittent CI-only
+    KeyError: ('sleeper', 2026, 'L1') at the ts == 0 assert. Clear the
+    cache around every test so each one starts from the cold-cache
+    state it asserts. Production semantics are unchanged: a full cache
+    still prunes oldest-first within a process.
+    """
+    try:
+        import app as appmod
+    except ImportError:
+        yield
+        return
+    appmod.DASHBOARD_CACHE.clear()
+    yield
+    appmod.DASHBOARD_CACHE.clear()
+
+
 def _membership(league_id="L1"):
     return {"platform": "sleeper", "league_id": league_id, "season": 2026,
             "name": f"League {league_id}"}
