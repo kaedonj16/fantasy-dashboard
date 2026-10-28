@@ -25439,11 +25439,35 @@ def api_players():
         return _api_err("Request failed", e)
 
 
+# Sparklines server cache: the payload is one global result (no per-viewer
+# inputs), rebuilt from a full history-join-values DB query on every Players
+# load. Cache it keyed on the model-value table timestamp -- the same
+# signature the league-players memo uses, since calibrated values (the scale
+# factors below) refresh with that table -- with a short TTL backstop.
+# Bound: exactly one entry (the single global payload).
+_SPARKLINES_CACHE: dict = {"key": None, "ts": 0.0, "result": None}
+_SPARKLINES_CACHE_TTL = 900.0
+_SPARKLINES_CACHE_LOCK = threading.Lock()
+
+
 @app.route("/api/sparklines")
 def api_sparklines():
     """7-day value history scaled to match the calibrated values shown on the rankings page.
     Joins player_value_history with player_values so each series ends at the same value
     the user sees displayed, matching the approach used by the player modal chart."""
+    try:
+        get_model_value_table_cached()
+        _spark_key = _MODEL_VALUE_CACHE_TS
+    except Exception:
+        _spark_key = None
+    if _spark_key:
+        with _SPARKLINES_CACHE_LOCK:
+            if (_SPARKLINES_CACHE["key"] == _spark_key
+                    and _SPARKLINES_CACHE["result"] is not None
+                    and time.time() - _SPARKLINES_CACHE["ts"] < _SPARKLINES_CACHE_TTL):
+                resp = jsonify(_SPARKLINES_CACHE["result"])
+                resp.headers["Cache-Control"] = "public, max-age=3600"
+                return resp
     try:
         from dashboard_services.db import get_conn
         # DB column names in player_value_history (value_sf = base SF, 10-team)
@@ -25507,6 +25531,11 @@ def api_sparklines():
             if entry:
                 result[pid] = entry
 
+        if _spark_key:
+            with _SPARKLINES_CACHE_LOCK:
+                _SPARKLINES_CACHE["key"] = _spark_key
+                _SPARKLINES_CACHE["ts"] = time.time()
+                _SPARKLINES_CACHE["result"] = result
         resp = jsonify(result)
         resp.headers["Cache-Control"] = "public, max-age=3600"
         return resp
@@ -25516,6 +25545,65 @@ def api_sparklines():
 
 _LP_PAYLOAD_CACHE: dict = {}  # kdef(bool) -> {"ts": model_ts, "payload": dict}
 _LP_PAYLOAD_LOCK = threading.Lock()
+# Shared disk tier for the league-players payload (same /tmp convention as
+# store_page_html: every gunicorn worker in the container can read it, writes
+# are atomic via os.replace). The in-process memo above is wiped on every
+# worker recycle (~1000 requests), which used to make the first hit after
+# each recycle re-pay the full enriched-pool rebuild (pick tables, historical
+# ranks, values SELECT, projections, VORP maps). The disk copy is keyed on
+# the exact memo signature (kdef, model_ts, adp_sig), so it can only serve a
+# payload the in-process memo itself would have served. Bound: only the
+# newest _LP_DISK_KEEP files are kept; older signatures are pruned on write.
+_LP_DISK_KEEP = 4
+
+
+def _lp_payload_disk_path(key: bool, model_ts, adp_sig) -> str:
+    import tempfile
+
+    name = "br_lp_payload_%s_%s_%s.json" % (
+        "kdef" if key else "std", model_ts, adp_sig)
+    return os.path.join(tempfile.gettempdir(), name.replace("/", "_"))
+
+
+def _lp_payload_read_disk(key: bool, model_ts, adp_sig):
+    """Payload from the shared disk tier, or None (fail soft to rebuild)."""
+    try:
+        path = _lp_payload_disk_path(key, model_ts, adp_sig)
+        with open(path, encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, dict) and isinstance(payload.get("players"), list):
+            return payload
+    except Exception:
+        logger.debug("[league-players] disk payload read skipped", exc_info=True)
+    return None
+
+
+def _lp_payload_write_disk(key: bool, model_ts, adp_sig, payload) -> None:
+    """Persist a freshly built payload to the shared disk tier (fail soft)."""
+    try:
+        body = json.dumps(payload)
+    except (TypeError, ValueError):
+        return  # non-JSON-native payload: skip the disk tier, as before
+    try:
+        path = _lp_payload_disk_path(key, model_ts, adp_sig)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(body)
+        os.replace(tmp, path)  # atomic - readers never see a partial file
+        import glob as _glob
+        import tempfile as _tempfile
+
+        files = sorted(
+            _glob.glob(os.path.join(_tempfile.gettempdir(), "br_lp_payload_*.json")),
+            key=lambda p: os.path.getmtime(p), reverse=True,
+        )
+        for stale in files[_LP_DISK_KEEP:]:
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+    except Exception:
+        logger.debug("[league-players] disk payload write skipped", exc_info=True)
 # Overlay = canonical projections + Market vs ADP + Hist, on a copy of the
 # memoized pool. Cached separately because that work used to run on every
 # /api/league-players hit even after the base pool was warm -- the cheat sheet's
@@ -26173,8 +26261,20 @@ def _build_league_players_payload(kdef: bool = False) -> dict:
         cached = _LP_PAYLOAD_CACHE.get(key)
         if cached and model_ts and cached["ts"] == model_ts and cached.get("adp_sig") == adp_sig:
             return cached["payload"]
+        # Shared disk tier: after a worker recycle the in-process memo is
+        # empty, but a sibling worker (or this one before recycling) may have
+        # persisted this exact signature. Only consulted when model_ts is
+        # known, mirroring the in-process hit condition above.
+        if model_ts:
+            disk_payload = _lp_payload_read_disk(key, model_ts, adp_sig)
+            if disk_payload is not None:
+                _LP_PAYLOAD_CACHE[key] = {
+                    "ts": model_ts, "adp_sig": adp_sig, "payload": disk_payload}
+                return disk_payload
         payload = _build_league_players_payload_uncached(kdef=kdef)
         _LP_PAYLOAD_CACHE[key] = {"ts": model_ts, "adp_sig": adp_sig, "payload": payload}
+        if model_ts:
+            _lp_payload_write_disk(key, model_ts, adp_sig, payload)
         return payload
 
 

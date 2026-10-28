@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-27",
+        "tag": "update",
+        "text": "Advanced Metrics and Players load faster. The Key Metrics preset now pulls its extra columns in two requests instead of eighteen, leaderboard answers are cached on the server for a few minutes, and the Players list plus its value sparklines are cached so they survive server restarts. Every number is unchanged.",
+        "link": "/advanced-metrics"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "fix",
         "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
         "link": "/recap"

@@ -2989,10 +2989,9 @@ _AM_JS = r"""
       }
     });
   }
-  // Load several extra-metric columns with bounded concurrency so a preset
-  // doesn't fire a dozen leaderboard requests at once and starve the server
-  // (which made columns load slowly or never finish).
-  function _loadExtras(keys) {
+  // Per-key loading with bounded concurrency (fallback when the batch
+  // request itself fails; also the shape single-column retries use).
+  function _loadExtrasPerKey(keys) {
     const list = (keys || []).filter(Boolean);
     const MAX = 4;
     let i = 0, active = 0;
@@ -3003,6 +3002,91 @@ _AM_JS = r"""
       }
     }
     pump();
+  }
+  // Batch URL for several extra metrics in ONE leaderboard request: shared
+  // params ride once, per-metric volume thresholds ride in min_vol_map.
+  // Mirrors fetchExtraData's _buildExtraParams exactly.
+  function _extraBatchUrl(keys, seasonStr) {
+    const p = new URLSearchParams({ metrics: keys.join(','), platform: cfg.platform });
+    if (cfg.leagueId) p.set('league_id', cfg.leagueId);
+    if (seasonStr) p.set('season', String(seasonStr));
+    if (state.combine && amIsMultiSeason()) p.set('combine', '1');
+    const vols = [];
+    keys.forEach(function(k) { const v = defaultVol(k); if (v) vols.push(k + ':' + v); });
+    if (vols.length) p.set('min_vol_map', vols.join(','));
+    const { ws, we } = resolveWeekRange();
+    if (ws) p.set('week_start', String(ws));
+    if (we) p.set('week_end', String(we));
+    return '/api/advanced-metrics/leaderboard?' + p;
+  }
+  // Load several extra-metric columns. PRO-locked columns settle locally as
+  // before; the rest ride one batch request per season instead of one
+  // request per metric per season (the Key Metrics preset was 18 calls).
+  function _loadExtras(keys) {
+    const list = (keys || []).filter(Boolean);
+    if (!list.length) return;
+    const locked = list.filter(function(k) { return _mLocked(k); });
+    const open = list.filter(function(k) { return !_mLocked(k); });
+    locked.forEach(function(k) { fetchExtraData(k); });
+    if (!open.length) return;
+    const requestToken = state.requestToken;
+    const curSeason = state.season || (cfg.seasons && cfg.seasons[0] ? String(cfg.seasons[0]) : '');
+    const seasons = cfg.seasons || [];
+    const primaryYear = amSelectedSeasons()[0] || Number(curSeason) || null;
+    const curIdx = primaryYear != null ? seasons.indexOf(Number(primaryYear)) : -1;
+    const prevSeason = (!amIsMultiSeason() && curIdx >= 0 && curIdx + 1 < seasons.length) ? seasons[curIdx + 1] : null;
+    // Fold one batch payload into a column, mirroring fetchExtraData's
+    // success fold exactly so both paths render identical values.
+    function applyCurr(k, curr) {
+      const rows = curr.players || [];
+      const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
+      rows.forEach(r => {
+        if (r.player_id != null && r.position) {
+          state.playerPos[String(r.player_id)] = String(r.position).toUpperCase();
+        }
+      });
+      state.extraData[k] = {
+        byId: Object.fromEntries(rows.map(r => [amRowKey(r), Number(r.value)])),
+        context: Object.fromEntries(rows.map(r => [amRowKey(r), {tgt:r.tgt, car:r.car, rec:r.rec, att:r.att, db:r.db, games:r.games}])),
+        maxAbs: maxAbs
+      };
+      render();
+    }
+    function applyPrev(k, prev) {
+      state.extraPrevData[k] = Object.fromEntries((prev.players || []).map(r => [amRowKey(r), Number(r.value)]));
+      render();
+    }
+    _amCmpFetch(_extraBatchUrl(open, curSeason), 20000).then(function(res) {
+      if (requestToken !== state.requestToken) return;
+      if (!res || !res.results) { _loadExtrasPerKey(open); return; }
+      open.forEach(function(k) {
+        if (!state.extraMetrics.includes(k) && !(state.filterColKeys && state.filterColKeys.has(k))) return;
+        const r = res.results[k];
+        if (!r) { fetchExtraData(k); return; }
+        if (r.error === 'pro_only' || r.status === 403) {
+          state.extraData[k] = { byId: {}, maxAbs: 1, proLocked: true };
+          render();
+          return;
+        }
+        if (r.error) {
+          state.extraData[k] = { byId: {}, maxAbs: 1, failed: true };
+          render();
+          return;
+        }
+        applyCurr(k, r);
+      });
+      // Previous-season values ride one batch request too, off the
+      // critical path just like the per-key prev fetch was.
+      if (prevSeason) {
+        _amCmpFetch(_extraBatchUrl(open, String(prevSeason)), 20000).then(function(pres) {
+          if (requestToken !== state.requestToken || !pres || !pres.results) return;
+          open.forEach(function(k) {
+            const r = pres.results[k];
+            if (r && !r.error) applyPrev(k, r);
+          });
+        });
+      }
+    });
   }
 
   // ── Weekly usage trends ───────────────────────────────────────────────────

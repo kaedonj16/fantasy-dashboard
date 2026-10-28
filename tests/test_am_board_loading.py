@@ -25,7 +25,32 @@ the "No data yet" empty state for what was really a server fault.
 import json
 import subprocess
 
+import pytest
+
 from dashboard_services.pages.advanced_metrics_page import _AM_JS
+
+
+@pytest.fixture(autouse=True)
+def _isolate_lb_response_cache():
+    """Keep the leaderboard response cache from leaking across tests.
+
+    routes.advanced_metrics_bp._LB_CACHE is process-global and outlives
+    monkeypatch: a payload an earlier test in the suite computed (e.g.
+    test_advanced_metrics_presets' free-metric 200 for the exact URL the
+    builder-error test below uses) is served to that test even after it
+    patches the builder to raise, masking the 500 contract. Clear the
+    cache around every test so each one sees the cold-cache behavior it
+    asserts. Production semantics are unchanged: a warm cache still
+    serves the last computed payload for its TTL within a process.
+    """
+    try:
+        import routes.advanced_metrics_bp as bp
+    except ImportError:
+        yield
+        return
+    bp._LB_CACHE.clear()
+    yield
+    bp._LB_CACHE.clear()
 
 
 def _extract_from(start):
