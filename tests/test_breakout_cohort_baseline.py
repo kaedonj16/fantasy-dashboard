@@ -162,7 +162,7 @@ def test_grade_call_cohort_records_cohort_source():
     assert grade["baseline_source"] == "cohort"
     assert grade["baseline_ppg"] == 7.5
     assert grade["ppg_delta"] == pytest.approx(4.5)
-    assert grade["grading_version"] == "weekly-grading-v4"
+    assert grade["grading_version"] == "weekly-grading-v5"
 
 
 def test_grade_call_without_cohort_stays_ungraded():

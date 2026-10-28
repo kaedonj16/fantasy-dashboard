@@ -92,8 +92,19 @@ def test_weekly_forecast_one_game_hit_pace_is_borderline():
     assert fc["band"] == forecasts.BAND_BORDERLINE
 
 
-def test_weekly_forecast_tracking_to_miss_on_reverted_role():
+def test_weekly_forecast_reverted_role_flat_production_is_borderline():
+    # Grading v5: a reverted role with flat production (+0.5 PPG here)
+    # grades partial, not miss, so the live band is Borderline. (Under
+    # v4 this fixture tracked to miss on the role leg alone.)
     fc = forecasts.weekly_forecast(make_call(), [REVERTED_ROW], through_week=5)
+    assert fc["band"] == forecasts.BAND_BORDERLINE
+
+
+def test_weekly_forecast_tracking_to_miss_on_production_collapse():
+    # Production decides: role fully held (opp 20/g, snap 65) but the
+    # points collapsed to 4.0 PPG vs an 8.0 baseline - a miss track.
+    collapsed = wk(5, snap=65.0, tgt=9.0, car=11.0, ppr=4.0)
+    fc = forecasts.weekly_forecast(make_call(), [collapsed], through_week=5)
     assert fc["band"] == forecasts.BAND_TRACKING_MISS
 
 
@@ -1085,11 +1096,13 @@ def test_outlook_pools_reconstructed_open_calls(monkeypatch):
     # the one weekly outlook.
     assert "weekly_backtest" not in payload["outlook"]
     weekly = payload["outlook"]["weekly"]
-    # Reconstructed: 101 tracks to hit (its week 2 call), 102 tracks to
-    # miss, 103 has no games yet. Live board: Alpha tracks to hit,
-    # Delta pending. Pooled, each player counted once:
+    # Reconstructed: 101 tracks to hit (its week 2 call), 102 is
+    # borderline (role reverted but production flat - under grading v5
+    # that grades partial, not the v4 miss), 103 has no games yet.
+    # Live board: Alpha tracks to hit, Delta pending. Pooled, each
+    # player counted once:
     assert weekly["counts"] == {
-        "tracking_to_hit": 2, "borderline": 0, "tracking_to_miss": 1}
+        "tracking_to_hit": 2, "borderline": 1, "tracking_to_miss": 0}
     assert weekly["open_calls"] == 3
     assert weekly["pending_calls"] == 2
     # Both pending calls (Delta on the live board, 103 reconstructed) are
