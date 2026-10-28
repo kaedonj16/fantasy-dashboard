@@ -18080,6 +18080,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const loadingState = document.getElementById('gm-memo-loading');
     const summaryState = document.getElementById('gm-memo-result');
 
+    // The first click ("Generate Report") may serve the server's 12h
+    // cached report; only a click on the post-result "Refresh Report"
+    // label forces a regeneration.
+    const forceRefresh = (generateGmMemoBtn.textContent || '').trim() === 'Refresh Report';
+
     // Show loading, hide empty state
     generateGmMemoBtn.disabled = true;
     generateGmMemoBtn.setAttribute('aria-busy', 'true');
@@ -18102,10 +18107,9 @@ document.addEventListener('DOMContentLoaded', function() {
           season: parseInt(season),
           platform: platform,
           viewer_roster_id: viewerRosterId,
-          // Button click always means "give me a fresh report". The dashboard
-          // itself does not prefill cached copy -- the result stays hidden
-          // until this click.
-          force: true
+          // The dashboard itself does not prefill cached copy -- the result
+          // stays hidden until this click.
+          force: forceRefresh
         })
       });
 

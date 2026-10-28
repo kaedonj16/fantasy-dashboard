@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-27",
+        "tag": "update",
+        "text": "Speed pass across the site: pages and tools do less repeated work behind the scenes. The Assistant keeps your league context between messages in the same conversation and no longer spends a full report build when you open it, the Front Office report opens from its saved copy when nothing changed, the Dashboard renders only your matchup slide, League Stats season views load from the shared page cache, and the Draft Room, Teams tools and guest home demos reuse finished work instead of redoing it on every open. Numbers and layouts are unchanged.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "fix",
         "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
         "link": "/recap"

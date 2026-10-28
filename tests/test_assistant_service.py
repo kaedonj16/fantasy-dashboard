@@ -142,6 +142,7 @@ def env(monkeypatch):
     monkeypatch.setattr(store, "_TABLE_READY", False)
     monkeypatch.setattr(store, "get_conn", lambda *a, **k: conn)
     monkeypatch.setattr(service, "_active_plan", lambda key: None)
+    service._clear_resolve_snapshot_cache()
     monkeypatch.setattr(service.ctx_mod, "resolve_league", lambda key, **kw: dict(BUNDLE))
     monkeypatch.setattr(service, "resolve_player",
                         lambda name, roster_player_ids=None: _real_resolve(name, index=INDEX, roster_player_ids=roster_player_ids))
@@ -604,3 +605,73 @@ def test_correction_bad_reasoning_no_recheck(env, monkeypatch):
 def test_correction_other_users_log_not_found(env, monkeypatch):
     log_id = _seed_start_sit_answer(env, monkeypatch)
     assert service.apply_correction(log_id, "acct:99", category="wrong_data") is None
+
+
+# -- Per-conversation resolve snapshot ---------------------------------------
+
+def _counting_ask_env(env, monkeypatch):
+    counts = {"resolve": 0, "plan": 0, "prefs": 0, "used": 0}
+    real_resolve = service.ctx_mod.resolve_league
+    real_plan = service._active_plan
+    real_prefs = store.list_preferences
+    real_used = store.count_monthly_asked
+
+    def resolve(key, **kw):
+        counts["resolve"] += 1
+        return real_resolve(key, **kw)
+
+    def plan(key):
+        counts["plan"] += 1
+        return real_plan(key)
+
+    def prefs(key):
+        counts["prefs"] += 1
+        return real_prefs(key)
+
+    def used(key):
+        counts["used"] += 1
+        return real_used(key)
+
+    monkeypatch.setattr(service.ctx_mod, "resolve_league", resolve)
+    monkeypatch.setattr(service, "_active_plan", plan)
+    monkeypatch.setattr(store, "list_preferences", prefs)
+    monkeypatch.setattr(store, "count_monthly_asked", used)
+    monkeypatch.setattr(service, "classify",
+                        _route("start_sit", player_names=["Rome Odunze"]))
+    monkeypatch.setitem(service.BUILDERS, "start_sit", _start_sit_pack)
+    monkeypatch.setattr(service, "compose_answer",
+                        lambda intent, q, pack, *, preferences, assumed_context, history=None:
+                        {"verdict": "START Rome Odunze", "text": "Start Odunze.",
+                         "receipts": [], "caveat": None, "followups": [],
+                         "act_link": None, "actions": []})
+    return counts
+
+
+def test_resolve_snapshot_serves_second_turn_from_cache(env, monkeypatch):
+    counts = _counting_ask_env(env, monkeypatch)
+    service.ask("acct:42", "Start Odunze?", thread_id="t1")
+    service.ask("acct:42", "Start Odunze?", thread_id="t1")
+    # League resolution, plan lookup and preferences are paid once per
+    # conversation; the monthly used count is re-read every message.
+    assert counts == {"resolve": 1, "plan": 1, "prefs": 1, "used": 2}
+    # A league switch mid-thread misses and re-resolves.
+    service.ask("acct:42", "Start Odunze?", thread_id="t1", league_id="L2")
+    assert counts["resolve"] == 2 and counts["plan"] == 2 and counts["prefs"] == 2
+    assert counts["used"] == 3
+
+
+def test_resolve_snapshot_invalidated_by_remember(env, monkeypatch):
+    counts = _counting_ask_env(env, monkeypatch)
+    service.ask("acct:42", "Start Odunze?", thread_id="t1")
+    assert counts["prefs"] == 1
+    monkeypatch.setattr(service, "classify",
+                        _route("remember", preference_text="I prefer upside at flex"))
+    service.ask("acct:42", "Remember: I prefer upside at flex", thread_id="t1")
+    monkeypatch.setattr(service, "classify",
+                        _route("start_sit", player_names=["Rome Odunze"]))
+    service.ask("acct:42", "Start Odunze?", thread_id="t1")
+    # The remember turn stored a preference and dropped the snapshot, so
+    # the next turn re-reads preferences (and sees the new one).
+    assert counts["prefs"] == 2
+    assert [p["text"] for p in store.list_preferences("acct:42")] == [
+        "I prefer upside at flex"]

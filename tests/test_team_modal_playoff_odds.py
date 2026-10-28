@@ -101,7 +101,7 @@ def test_my_leagues_cards_use_the_same_formatter():
 def test_changelog_announces_team_modal_odds_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[15]  # prepended above it: duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix
+    entry = CHANGELOG[16]  # prepended above it: sitewide speed pass, duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix
     assert entry["date"] == "2026-10-27"
     assert entry["tag"] == "fix"
     assert "playoff odds" in entry["text"]

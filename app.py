@@ -641,6 +641,13 @@ _DRAFT_GRADES_CACHE: dict = {}
 _DRAFT_GRADES_CACHE_TTL = 300  # 5 minutes
 _DRAFT_GRADES_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
 
+# Cache for /api/beat-the-market responses (keyed by platform/league/season/
+# window/format + the resolved snapshot dates + a roster signature, so a
+# roster change or a new daily snapshot misses immediately).
+_BEAT_MARKET_CACHE: dict = {}
+_BEAT_MARKET_CACHE_TTL = 300  # 5 minutes
+_BEAT_MARKET_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
+
 # Cache for value-tier thresholds (keyed by model-cache timestamp + league shape).
 # compute_tier_thresholds is an O(n·window) scan over the value table; the inputs
 # only change when values refresh, so memoize on the model-cache timestamp.
@@ -1532,18 +1539,59 @@ def _espn_otp_ui_enabled() -> bool:
         return False
 
 
+# Single-entry result cache for the guest landing demo payload: it is
+# viewer-independent (built only from the values/ratings files and the
+# NFL state), yet the guest home calls _landing_demo_json up to 3x per
+# render and every guest hit re-paid the full build.
+_LANDING_DEMO_CACHE: dict = {"key": None, "ts": 0.0, "json": None}
+_LANDING_DEMO_CACHE_TTL = 300  # 5 minutes; single entry (bound = 1 payload)
+
+
+def _landing_demo_cache_key():
+    """The payload's only inputs: NFL season/week plus the (mtime, size)
+    stamps of the ratings and values files it is built from."""
+    try:
+        from dashboard_services.landing_demos import MATCHUP_RATINGS_PATH, MODEL_VALUES_PATH
+
+        state = get_nfl_state() or {}
+        stamps = []
+        for p in (MATCHUP_RATINGS_PATH, MODEL_VALUES_PATH):
+            try:
+                st = p.stat()
+                stamps.append((st.st_mtime_ns, st.st_size))
+            except Exception:
+                stamps.append(None)
+        return (state.get("season"), state.get("week"), state.get("season_type"), *stamps)
+    except Exception:
+        return None
+
+
 def _landing_demo_json() -> str:
     """Live demo pools for the guest landing (start/sit + value pairs).
 
     Built from the site's own values/ratings via dashboard_services.landing_demos;
-    any failure yields empty pools and the demo cards stay hidden.
+    any failure yields empty pools and the demo cards stay hidden. Successful
+    non-empty builds are cached briefly (see _LANDING_DEMO_CACHE); failures
+    and empty pools are never cached, so the next request retries.
     """
     try:
         import json as _json
 
         from dashboard_services.landing_demos import build_landing_demo_data
 
-        return _json.dumps(build_landing_demo_data())
+        key = _landing_demo_cache_key()
+        now = time.time()
+        hit = _LANDING_DEMO_CACHE
+        if (key is not None and hit.get("key") == key and hit.get("json")
+                and now - float(hit.get("ts") or 0) < _LANDING_DEMO_CACHE_TTL):
+            return hit["json"]
+        data = build_landing_demo_data()
+        payload = _json.dumps(data)
+        if key is not None and (data.get("value_pairs") or data.get("start_sit_pairs")):
+            hit["key"] = key
+            hit["ts"] = now
+            hit["json"] = payload
+        return payload
     except Exception:
         return '{"value_pairs": [], "start_sit_pairs": [], "week_label": "This week"}'
 
@@ -4063,7 +4111,7 @@ _DOCK_LABELS = {
 }
 
 
-def _nav_show_keeper(platform, league_id, season) -> bool:
+def _nav_show_keeper(platform, league_id, season, ctx=None) -> bool:
     """Should the offseason dock surface a Keeper tab?
 
     Only for keeper leagues: Sleeper type 1 (keeper), or any league with a keeper
@@ -4071,10 +4119,14 @@ def _nav_show_keeper(platform, league_id, season) -> bool:
     is no keeper decision and the dock never shows Keeper for them even when
     Sleeper reports a max_keepers value; pure redraft (type 0, no limit) does not
     either. Reads the cached league settings, so it costs nothing extra to check
-    at render time. The Keeper Assistant still lives in the More sheet regardless."""
+    at render time. The Keeper Assistant still lives in the More sheet regardless.
+
+    Callers that already hold the request's ctx (e.g. the Draft Room, which
+    used to trigger a second fetch here) pass it in; the default fetches."""
     settings = {}
     try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        if ctx is None:
+            ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
         settings = (ctx.get("league_settings")
                     or (ctx.get("league") or {}).get("settings")
                     or ctx.get("settings") or {})
@@ -11314,18 +11366,12 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     playoff_teams = int(settings.get("playoff_teams") or 6)
 
     # Run the Monte Carlo sim to get odds-based seedings (same data as the
-    # Playoff Odds tab), sort by first_seed → bye → overall playoff probability
+    # Playoff Odds tab), sort by first_seed → bye → overall playoff probability.
+    # Through the shared helper: the old inline copy hand-duplicated the
+    # cache key/signature/TTL and ran the sim with no prune, dedupe or
+    # semaphore on this (background page-build) thread.
     try:
-        from data_building.simulate_playoff_odds import simulate_playoff_odds
-        _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0), "v3")
-        _sim_sig = _playoff_sim_sig(ctx, platform)
-        _sim_cached = _PLAYOFF_SIM_CACHE.get(_sim_key)
-        if (_sim_cached and time.time() - _sim_cached["ts"] < _PLAYOFF_SIM_CACHE_TTL
-                and _sim_cached.get("sig") == _sim_sig):
-            odds_list = _sim_cached["data"]
-        else:
-            odds_list = simulate_playoff_odds(ctx, platform=platform) or []
-            _PLAYOFF_SIM_CACHE[_sim_key] = {"data": odds_list, "ts": time.time(), "sig": _sim_sig}
+        odds_list = _playoff_sim_cached(ctx, platform)
     except Exception:
         odds_list = []
 
@@ -27940,6 +27986,66 @@ def api_watchlist_alerts():
     return jsonify(out)
 
 
+_SLV_VMAP_CACHE: dict = {"key": None, "map": None}
+
+
+def _slv_value_map() -> dict:
+    """id->row map over the shared model value table, rebuilt only when
+    the table itself refreshes (keyed on its cache timestamp + identity).
+
+    The since-last-visit endpoint used to rebuild this ~7k-entry dict on
+    every call. Rows are read-only for callers, so sharing is safe.
+    Never raises: a failure falls back to an uncached build."""
+    try:
+        table = get_model_value_table_cached() or []
+        key = (_MODEL_VALUE_CACHE_TS, id(table), len(table))
+        if _SLV_VMAP_CACHE.get("key") == key and _SLV_VMAP_CACHE.get("map") is not None:
+            return _SLV_VMAP_CACHE["map"]
+        vmap = {str(p.get("id")): p for p in table if p.get("id")}
+        _SLV_VMAP_CACHE["key"] = key
+        _SLV_VMAP_CACHE["map"] = vmap
+        return vmap
+    except Exception:
+        return {str(p.get("id")): p for p in (get_model_value_table_cached() or []) if p.get("id")}
+
+
+def _slv_roster_snapshot(ctx: dict, roster_id: str, is_sf: bool) -> list:
+    """The viewer's roster snapshot (value + injury per player) for the
+    since-last-visit digest. Extracted unchanged from the endpoint so the
+    computation is testable (and reusable) without the request plumbing."""
+    roster = next(
+        (r for r in (ctx.get("rosters") or []) if str(r.get("roster_id")) == roster_id),
+        None,
+    )
+    if not roster:
+        return []
+    vmap = _slv_value_map()
+    pidx = get_players_index_global() or {}
+    snap = []
+    for pid in (roster.get("players") or []):
+        spid = str(pid)
+        meta = pidx.get(spid) or {}
+        vrow = vmap.get(spid) or {}
+        value = vrow.get("sf_value") if (is_sf and vrow.get("sf_value") is not None) else vrow.get("value")
+        try:
+            value = round(float(value or 0), 1)
+        except (TypeError, ValueError):
+            value = 0.0
+        name = meta.get("full_name") or meta.get("name") or (
+            (str(meta.get("first_name") or "") + " " + str(meta.get("last_name") or "")).strip()
+        )
+        injury = str(meta.get("injury_status") or "").strip()
+        inj_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
+        snap.append({
+            "pid": spid,
+            "name": name or spid,
+            "pos": meta.get("position") or meta.get("pos") or "",
+            "value": value,
+            "injury": injury if inj_active else "",
+        })
+    return snap
+
+
 @app.route("/api/since-last-visit")
 def api_since_last_visit():
     """Powers the dashboard "Since your last visit" digest. Returns:
@@ -27999,36 +28105,7 @@ def api_since_last_visit():
     # visit so the account's new baseline is stored in the same request.
     if roster_id:
         try:
-            roster = next(
-                (r for r in (ctx.get("rosters") or []) if str(r.get("roster_id")) == roster_id),
-                None,
-            )
-            if roster:
-                vmap = {str(p.get("id")): p for p in (get_model_value_table_cached() or []) if p.get("id")}
-                pidx = get_players_index_global() or {}
-                snap = []
-                for pid in (roster.get("players") or []):
-                    spid = str(pid)
-                    meta = pidx.get(spid) or {}
-                    vrow = vmap.get(spid) or {}
-                    value = vrow.get("sf_value") if (is_sf and vrow.get("sf_value") is not None) else vrow.get("value")
-                    try:
-                        value = round(float(value or 0), 1)
-                    except (TypeError, ValueError):
-                        value = 0.0
-                    name = meta.get("full_name") or meta.get("name") or (
-                        (str(meta.get("first_name") or "") + " " + str(meta.get("last_name") or "")).strip()
-                    )
-                    injury = str(meta.get("injury_status") or "").strip()
-                    inj_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
-                    snap.append({
-                        "pid": spid,
-                        "name": name or spid,
-                        "pos": meta.get("position") or meta.get("pos") or "",
-                        "value": value,
-                        "injury": injury if inj_active else "",
-                    })
-                result["roster"] = snap
+            result["roster"] = _slv_roster_snapshot(ctx, roster_id, is_sf)
         except Exception:
             logger.debug("since-last-visit roster snapshot failed", exc_info=True)
 
@@ -33810,6 +33887,22 @@ def api_beat_the_market():
         if not baseline_date:
             return jsonify({"error": "Insufficient history for requested window"}), 404
 
+        def _iso(d) -> str:
+            return d.isoformat() if hasattr(d, "isoformat") else str(d)
+
+        # Fetch rosters before the delta query: the response cache key
+        # fingerprints them, and a warm entry skips the (uncached) delta
+        # query over the full value-history table entirely.
+        rosters = get_rosters(platform, league_id, season) or []
+        users = get_users(platform, league_id, season) or []
+
+        _bm_key = (platform, league_id, season, days, league_type, league_size,
+                   _iso(latest_date_obj), _iso(baseline_date),
+                   _roster_sig({"rosters": rosters}))
+        _bm_hit = _BEAT_MARKET_CACHE.get(_bm_key)
+        if _bm_hit and (time.time() - _bm_hit[0]) < _BEAT_MARKET_CACHE_TTL:
+            return jsonify(_bm_hit[1])
+
         # Fetch deltas for all players in one query
         with get_conn() as conn:
             rows = conn.execute(
@@ -33838,12 +33931,7 @@ def api_beat_the_market():
 
         delta_by_pid = {str(r["player_id"]): float(r["delta"]) for r in rows}
 
-        # Fetch rosters
-        rosters = get_rosters(platform, league_id, season) or []
-        roster_map = _build_roster_map(
-            get_users(platform, league_id, season) or [],
-            rosters
-        )
+        roster_map = _build_roster_map(users, rosters)
 
         # Aggregate per roster (only QB/RB/WR/TE players, ignore picks/K/DEF)
         CORE_POS = {"QB", "RB", "WR", "TE"}
@@ -33891,15 +33979,15 @@ def api_beat_the_market():
 
         results.sort(key=lambda x: x["vs_avg"], reverse=True)
 
-        def _iso(d) -> str:
-            return d.isoformat() if hasattr(d, "isoformat") else str(d)
-
-        return jsonify({
+        payload = {
             "latest_date": _iso(latest_date_obj),
             "baseline_date": _iso(baseline_date),
             "league_avg_delta": avg_delta,
             "rosters": results,
-        })
+        }
+        _prune_ttl_cache(_BEAT_MARKET_CACHE, _BEAT_MARKET_CACHE_MAX)
+        _BEAT_MARKET_CACHE[_bm_key] = (time.time(), payload)
+        return jsonify(payload)
 
     except Exception:
         logger.exception("[beat-the-market] Unexpected error")
@@ -33935,19 +34023,19 @@ def api_playoff_odds():
 
         from data_building.simulate_playoff_odds import (
             remaining_regular_season_weeks,
-            simulate_playoff_odds,
         )
+        # Read-only freshness probe: it drives the snapshot writes below
+        # (only a request that produced a fresh sim records one). The sim
+        # itself goes through the shared helper so this endpoint joins the
+        # same cache key/signature/TTL as every other consumer instead of
+        # hand-duplicating them and racing the page's background sim with
+        # a second, unguarded Monte Carlo on the request thread.
         _sim_key2 = (platform, str(league_id), season, "v3")
         _sim_sig2 = _playoff_sim_sig(ctx, platform)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
-        if (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL
-                and _sim_cached2.get("sig") == _sim_sig2):
-            odds = _sim_cached2["data"]
-            _fresh_sim = False
-        else:
-            odds = simulate_playoff_odds(ctx, platform=platform)
-            _PLAYOFF_SIM_CACHE[_sim_key2] = {"data": odds, "ts": time.time(), "sig": _sim_sig2}
-            _fresh_sim = True
+        _fresh_sim = not (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL
+                          and _sim_cached2.get("sig") == _sim_sig2)
+        odds = _playoff_sim_cached(ctx, platform, block=True)
 
         settings = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)

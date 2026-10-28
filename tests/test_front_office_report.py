@@ -19,7 +19,10 @@ def test_generate_report_uses_delegated_click_handler():
     assert "document.addEventListener('click', async function(event)" in report_code
     assert "event.target.closest('#generateGmMemoBtn')" in report_code
     assert "fetch('/api/gm-memo'" in report_code
-    assert "force: true" in report_code
+    # Only the post-result "Refresh Report" label forces a regeneration;
+    # the first Generate click may serve the server's cached report.
+    assert "force: forceRefresh" in report_code
+    assert "'Refresh Report'" in report_code
 
 
 def test_generate_report_restores_button_after_request():
@@ -99,3 +102,108 @@ def test_front_office_schema_required_covers_all_properties():
         assert set(schema["required"]) == set(schema["properties"].keys()), (
             f"required must list every property key ({scoring_type})"
         )
+
+
+# -- Fingerprint-first cache probe --------------------------------------------
+
+def _probe_ctx():
+    return {
+        "league_id": "L1",
+        "current_week": 7,
+        "current_season": 2026,
+        "rosters": [
+            {"roster_id": 1, "players": ["p1", "p2"]},
+            {"roster_id": 2, "players": ["p3", "p4"]},
+        ],
+        "roster_positions": ["QB", "RB", "WR", "TE", "FLEX"],
+        "roster_map": {},
+        "standings_map": {1: {"record": "5-2", "PF": 900.0, "PA": 800.0}},
+        "players_index": {
+            "p1": {"full_name": "Alpha QB", "position": "QB", "team": "KC"},
+            "p2": {"full_name": "Beta RB", "position": "RB", "team": "BUF"},
+            "p3": {"full_name": "Gamma WR", "position": "WR", "team": "MIA"},
+            "p4": {"full_name": "Delta TE", "position": "TE", "team": "BAL"},
+        },
+        "players_map": {},
+        "players": {"p1": {"injury_status": "Active"}},
+        "model_value_table": [
+            {"id": "p1", "value": 500.0, "position": "QB"},
+            {"id": "p2", "value": 400.0, "position": "RB"},
+            {"id": "p3", "value": 300.0, "position": "WR"},
+            {"id": "p4", "value": 200.0, "position": "TE"},
+        ],
+    }
+
+
+def _patch_report_io(monkeypatch, fo, *, cached_payload=None):
+    state = {"builds": 0, "build_kwargs": None, "saved_keys": [], "loads": []}
+
+    def fake_build(ctx, rid, **kwargs):
+        state["builds"] += 1
+        state["build_kwargs"] = kwargs
+        return {
+            "week": 7, "season": 2026, "record": "5-2",
+            "grades": kwargs.get("grades") or [],
+            "roster_rows": kwargs.get("roster_rows") or [],
+        }
+
+    def fake_load(key):
+        state["loads"].append(key)
+        return cached_payload
+
+    monkeypatch.setattr(fo, "build_front_office_data", fake_build)
+    monkeypatch.setattr(fo, "load_cached_ai_text", fake_load)
+    monkeypatch.setattr(fo, "save_cached_ai_text",
+                        lambda key, text, ttl=None: state["saved_keys"].append(key))
+    monkeypatch.setattr(fo, "ai_available", lambda: False)
+    monkeypatch.setattr(fo, "_fallback_ai", lambda data, reason=None: {"verdict": "HOLD"})
+    monkeypatch.setattr(fo, "render_front_office_card_html", lambda data, ai: "CARD")
+    monkeypatch.setattr(fo, "render_front_office_report_html", lambda data, ai: "REPORT")
+    return state
+
+
+def test_fingerprint_hit_serves_without_building(monkeypatch):
+    import json as _json
+
+    import dashboard_services.ai.front_office_report as fo
+
+    ctx = _probe_ctx()
+    payload = _json.dumps({"card_html": "C", "report_html": "R", "verdict": "BUY"})
+    state = _patch_report_io(monkeypatch, fo, cached_payload=payload)
+    out = fo.get_front_office_report(ctx, "1")
+    assert out["cached"] is True and out["verdict"] == "BUY"
+    assert state["builds"] == 0  # the expensive build never ran
+    probe_key, _ = fo._front_office_probe(ctx, "1")
+    assert state["loads"] == [probe_key]
+
+
+def test_fingerprint_miss_builds_once_with_probe_inputs(monkeypatch):
+    import dashboard_services.ai.front_office_report as fo
+
+    ctx = _probe_ctx()
+    state = _patch_report_io(monkeypatch, fo, cached_payload=None)
+    out = fo.get_front_office_report(ctx, "1")
+    assert out["cached"] is False
+    assert state["builds"] == 1
+    # The build reused the probe's lookup/rows/grades instead of recomputing.
+    assert state["build_kwargs"]["model_value_lookup"]
+    assert state["build_kwargs"]["roster_rows"]
+    assert state["build_kwargs"]["grades"]
+    probe_key, _ = fo._front_office_probe(ctx, "1")
+    assert state["saved_keys"] == [probe_key]  # probe key == build key
+
+    # force_refresh skips the probe entirely and rebuilds.
+    out = fo.get_front_office_report(ctx, "1", force_refresh=True)
+    assert out["cached"] is False
+    assert state["builds"] == 2
+    assert state["build_kwargs"] == {}
+
+
+def test_injury_change_changes_fingerprint(monkeypatch):
+    import dashboard_services.ai.front_office_report as fo
+
+    ctx = _probe_ctx()
+    key_before, _ = fo._front_office_probe(ctx, "1")
+    ctx["players"]["p1"] = {"injury_status": "Out"}
+    key_after, _ = fo._front_office_probe(ctx, "1")
+    assert key_before != key_after

@@ -238,3 +238,33 @@ def test_plotly_theme_hoverlabel_is_opaque():
     assert hl["bgcolor"] == "#ffffff"
     assert hl["bordercolor"] == "#e5e7eb"
     assert hl["font"]["color"] == "#334155"
+
+
+def test_luck_analysis_computed_once_per_season_build(monkeypatch):
+    import dashboard_services.pages.graphs_page as gp
+
+    counts = {"n": 0}
+    real = gp._luck_analysis
+
+    def counting(df):
+        counts["n"] += 1
+        return real(df)
+
+    monkeypatch.setattr(gp, "_luck_analysis", counting)
+    df = _real_shape_weekly()
+    team_stats = pd.DataFrame({
+        "owner": OWNERS,
+        "PF": [900.0 + i * 10 for i in range(10)],
+        "PA": [850.0 + i * 5 for i in range(10)],
+        "AVG": [100.0 + i for i in range(10)],
+        "STD": [15.0] * 10,
+        "MAX": [150.0] * 10,
+        "MIN": [60.0] * 10,
+    })
+    ctx = {"team_stats": team_stats, "df_weekly": df, "league_name": "L",
+           "rosters": [], "players_index": {}, "model_value_table": []}
+    html = gp.build_graphs_body(ctx)
+    # The scatter and the delta bars share one all-play analysis per build.
+    assert counts["n"] == 1
+    assert "Performance vs Luck" in html
+    assert "Luck Delta" in html
