@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-28",
         "tag": "update",
+        "text": "League Stats: charts now fill their cards. When a card stretches to match its row, the chart itself grows instead of leaving an empty gap above the summary. Three duplicate charts were removed: the viewer-only Weekly Scoring Trend (now part of Weekly Scoring: All Teams, with your line in bold), League Scoring by Week (its biggest scoring week now appears in the Scoring Heatmap summary), and the score distribution box plot inside Consistency Ranking. Team names on the scatter charts are shown in full instead of being cut off, chart labels no longer clip at the edges when points are graphed, and long team names get a wider column plus a full-name tooltip on the bar charts.",
+        "link": "/graphs"
+    },
+    {
+        "date": "2026-10-28",
+        "tag": "update",
         "text": "My Leagues Rooting Guide: game cards now sit two per row on wide screens instead of one long stack, and the team badge in each game header sizes to fit its abbreviation, so three-letter teams are no longer clipped under the badge stripe.",
         "link": "/portfolio"
     },

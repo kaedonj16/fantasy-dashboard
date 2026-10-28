@@ -482,6 +482,35 @@ def _esc(s) -> str:
     return html.escape(str(s))
 
 
+def _point_label(owner, cx, cy, rad, x0, x1, y0, y1) -> str:
+    """Full team-name label for a scatter point, kept inside the plot frame.
+
+    The flip threshold is computed from the label's own estimated width
+    (about 5.5px per character at the 9.5px label size) instead of a fixed
+    pixel guess, the label is end-anchored when it cannot fit on the right,
+    and its baseline is clamped inside the frame (pushed below points near
+    the top edge and above points near the bottom edge) so names are never
+    hard-truncated or clipped by the frame."""
+    name = str(owner)
+    est = len(name) * 5.5
+    ly = cy + 3
+    if cy < y0 + 34:
+        # Near the top edge the label goes below the point, clear of the
+        # quadrant corner labels that sit in the top band.
+        ly = cy + rad + 13
+    elif cy > y1 - 16:
+        ly = cy - rad - 7
+    ly = max(y0 + 10, min(y1 - 4, ly))
+    esc = _esc(name)
+    if cx + rad + 3 + est <= x1:
+        return f'<text x="{cx + rad + 3:.1f}" y="{ly:.1f}" {_LBL}>{esc}</text>'
+    if cx - rad - 3 - est >= x0:
+        return f'<text x="{cx - rad - 3:.1f}" y="{ly:.1f}" {_LBL} text-anchor="end">{esc}</text>'
+    if cx >= (x0 + x1) / 2:
+        return f'<text x="{x1 - 2:.1f}" y="{ly:.1f}" {_LBL} text-anchor="end">{esc}</text>'
+    return f'<text x="{x0 + 2:.1f}" y="{ly:.1f}" {_LBL}>{esc}</text>'
+
+
 def luck_quadrant_svg(analysis: dict, viewer_owner: str = "", owner_colors: dict = None) -> str:
     """SVG scatter of actual win% (y) vs all-play win% (x) with a 'deserved'
     diagonal. Points use the shared per-owner color map (identity); the luck
@@ -535,17 +564,13 @@ def luck_quadrant_svg(analysis: dict, viewer_owner: str = "", owner_colors: dict
         is_me = viewer_owner and str(owner) == str(viewer_owner)
         r = 7 if is_me else 5
         ring = ' stroke="var(--text,#0f172a)" stroke-width="2"' if is_me else ' stroke="#fff" stroke-width="1"'
-        short = _esc(str(owner)[:12])
         sign = "+" if delta > 0 else ""
         parts.append(
             f'<g><title>{_esc(owner)}: {a["actual_wins"]:.0f} actual wins vs '
             f'{a["expected_wins"]:.1f} expected ({sign}{delta:.1f})</title>'
             f'<circle cx="{ax:.1f}" cy="{ay:.1f}" r="{r}" fill="{col}"{ring}/>'
         )
-        if ax > x1 - 70:
-            parts.append(f'<text x="{ax-r-3:.1f}" y="{ay+3:.1f}" {_LBL} text-anchor="end">{short}</text></g>')
-        else:
-            parts.append(f'<text x="{ax+r+3:.1f}" y="{ay+3:.1f}" {_LBL}>{short}</text></g>')
+        parts.append(_point_label(owner, ax, ay, r, x0, x1, y0, y1) + '</g>')
 
     parts.append("</svg>")
     return "".join(parts)
@@ -623,16 +648,12 @@ def value_age_svg(rows: List[dict], viewer_owner: str = "", owner_colors: dict =
         rad = 7 if is_me else 5
         col = colors.get(str(owner)) or _ACCENT
         ring = ' stroke="var(--text,#0f172a)" stroke-width="2"' if is_me else ' stroke="#fff" stroke-width="1"'
-        short = _esc(str(owner)[:12])
         parts.append(
             f'<g><title>{_esc(owner)}: {r["total_value"]:.0f} total value, '
             f'{r["avg_age"]:.1f} avg age</title>'
             f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad}" fill="{col}"{ring}/>'
         )
-        if px > x1 - 70:
-            parts.append(f'<text x="{px-rad-3:.1f}" y="{py+3:.1f}" {_LBL} text-anchor="end">{short}</text></g>')
-        else:
-            parts.append(f'<text x="{px+rad+3:.1f}" y="{py+3:.1f}" {_LBL}>{short}</text></g>')
+        parts.append(_point_label(owner, px, py, rad, x0, x1, y0, y1) + '</g>')
 
     parts.append("</svg>")
     return "".join(parts)

@@ -82,7 +82,11 @@ def _graphs_style() -> str:
 .gs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(480px,100%),1fr));gap:16px;align-items:stretch;}
 .gs-grid>.card{height:100%;margin-bottom:0;display:flex;flex-direction:column;}
 .gs-grid .graph-body{flex:1;display:flex;flex-direction:column;container-type:inline-size;}
-.gs-flexsp{flex:1 0 auto;}
+.gs-rows{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;justify-content:space-evenly;}
+.gs-rows>*{flex:1 1 auto;}
+.svg-graph-body{flex:1 1 auto;display:flex;align-items:center;justify-content:center;min-height:0;}
+.svg-graph-body svg{width:100%!important;height:100%!important;max-width:none!important;}
+.gs-plot{flex:1 1 auto;}
 .gs-sub{font-size:12px;color:var(--text-muted,#94a3b8);margin-bottom:10px;}
 .gs-insight{margin-top:12px;padding:10px 12px;background:rgba(30,58,95,.07);border-radius:8px;font-size:13px;line-height:1.5;}
 .gs-legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--text-muted,#64748b);}
@@ -107,8 +111,8 @@ def _graphs_style() -> str:
 .gs-details{margin-top:12px;border-top:1px solid var(--border,#f1f5f9);padding-top:10px;}
 .gs-details summary{cursor:pointer;font-size:13px;font-weight:700;color:#1e3a5f;}
 .gs-select{background:var(--card,#fff);border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:6px 10px;font-size:13px;font-family:inherit;max-width:160px;}
-.h2h-wrap{overflow-x:auto;}
-.h2h-table{border-collapse:collapse;font-size:11px;min-width:100%;}
+.h2h-wrap{overflow-x:auto;flex:1 1 auto;display:flex;}
+.h2h-table{border-collapse:collapse;font-size:11px;min-width:100%;width:100%;height:100%;}
 .h2h-table th,.h2h-table td{padding:6px 8px;text-align:center;border:1px solid var(--border,#eef2f6);white-space:nowrap;}
 .h2h-table thead th{font-size:10px;color:var(--text-muted,#64748b);}
 .h2h-table tbody th{text-align:left;font-weight:700;font-size:12px;position:sticky;left:0;background:var(--card,#fff);}
@@ -131,6 +135,8 @@ def _graphs_style() -> str:
 .dv-track{position:relative;height:10px;background:rgba(127,127,127,.10);border-radius:5px;}
 .dv-zero{position:absolute;display:block;left:50%;top:-2px;bottom:-2px;width:1px;background:rgba(127,127,127,.45);}
 .dv-fill{position:absolute;display:block;top:0;height:100%;border-radius:5px;}
+@container (min-width:420px){.gs-bar-row,.pos-row{grid-template-columns:minmax(170px,200px) 1fr 52px;}.fc-row{grid-template-columns:minmax(170px,200px) 1fr 86px;}.cons-row{grid-template-columns:12px minmax(0,160px) minmax(0,1fr) 38px 96px;}}
+@container (min-width:600px){.gs-bar-row,.pos-row{grid-template-columns:minmax(190px,220px) 1fr 52px;}.fc-row{grid-template-columns:minmax(190px,220px) 1fr 86px;}.cons-row{grid-template-columns:12px minmax(0,180px) minmax(0,1fr) 38px 96px;}}
 </style>"""
 
 
@@ -183,10 +189,12 @@ def _insight(text: str) -> str:
 
 def _card(title: str, subtitle: str, body_html: str, insight: str = "") -> str:
     sub = f'<div class="gs-sub">{html.escape(subtitle)}</div>' if subtitle else ""
-    spacer = '<div class="gs-flexsp" aria-hidden="true"></div>' if insight else ""
+    # No spacer: the chart content itself fills the card (row groups use
+    # .gs-rows, plots use .gs-plot, SVG scatters use .svg-graph-body), so a
+    # card stretched by a taller row mate shows a taller chart, not a gap.
     return (
         f'<div class="card"><div class="card-header-row"><h2>{html.escape(title)}</h2></div>'
-        f'<div class="card-body graph-body">{sub}{body_html}{spacer}{_insight(insight)}</div></div>'
+        f'<div class="card-body graph-body">{sub}{body_html}{_insight(insight)}</div></div>'
     )
 
 
@@ -220,7 +228,11 @@ def _deferred_plotly_js(figs: Dict[str, str]) -> str:
         "if(!P)return;"
         "Object.keys(_FIGS).forEach(function(id){"
         "var f=_FIGS[id];var el=document.getElementById(id);"
-        "if(el)P.newPlot(el,f.data,f.layout,_CFG);"
+        "if(!el)return;"
+        "var pr=P.newPlot(el,f.data,f.layout,_CFG);"
+        "var rz=function(){try{P.Plots.resize(el);}catch(e){}};"
+        "if(pr&&pr.then)pr.then(function(){requestAnimationFrame(rz);});"
+        "if(window.ResizeObserver)new ResizeObserver(rz).observe(el);"
         "});});})();</script>"
     )
 
@@ -344,7 +356,7 @@ def _luck_delta_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict,
             fill = (f"left:50%;width:{w:.1f}%" if delta >= 0
                     else f"left:{50 - w:.1f}%;width:{w:.1f}%")
             body += (
-                f'<div class="{cls}"><span class="nm">{name}</span>'
+                f'<div class="{cls}"><span class="nm" title="{html.escape(owner)}">{name}</span>'
                 f'<div class="dv-track"><span class="dv-zero"></span>'
                 f'<span class="dv-fill" style="{fill};background:{col};"></span></div>'
                 f'<span class="v" style="color:{col};font-weight:700;">{delta:+.1f}</span></div>'
@@ -364,7 +376,7 @@ def _luck_delta_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict,
         return _card(
             "Luck Delta",
             "Actual wins minus all-play expected wins. Right of the line is lucky; left of it is unlucky.",
-            body,
+            f'<div class="gs-rows">{body}</div>',
             " ".join(parts),
         )
     except Exception:
@@ -398,7 +410,7 @@ def _floor_ceiling_card(team_stats, owner_colors: dict, viewer_owner: str) -> st
             width = max((hi - lo) / span * 100, 1.5)
             dot = (avg - glo) / span * 100
             body += (
-                f'<div class="{cls}"><span class="nm">{name}</span>'
+                f'<div class="{cls}"><span class="nm" title="{html.escape(owner)}">{name}</span>'
                 f'<div class="fc-track">'
                 f'<span class="fc-range" style="left:{left:.1f}%;width:{width:.1f}%;background:{color};"></span>'
                 f'<span class="fc-dot" style="left:{dot:.1f}%;border-color:{color};"></span>'
@@ -417,14 +429,14 @@ def _floor_ceiling_card(team_stats, owner_colors: dict, viewer_owner: str) -> st
         return _card(
             "Floor / Ceiling",
             "Each team's worst week to best week on one shared scale. The dot is their weekly average.",
-            body,
+            f'<div class="gs-rows">{body}</div>',
             insight,
         )
     except Exception:
         return ""
 
 
-def _consistency_card(team_stats, owner_colors: dict, viewer_owner: str, detail_html: str = "") -> str:
+def _consistency_card(team_stats, owner_colors: dict, viewer_owner: str) -> str:
     """Boom/bust consistency ranking from each team's weekly scoring spread.
 
     Uses the coefficient of variation (STD / AVG). Teams are split into thirds
@@ -473,7 +485,7 @@ def _consistency_card(team_stats, owner_colors: dict, viewer_owner: str, detail_
         body += (
             f"<div class='cons-row'>"
             f"<span class='cons-dot' style='background:{dot};'></span>"
-            f"<span class='cons-name'>{name}</span>"
+            f"<span class='cons-name' title='{html.escape(owner)}'>{name}</span>"
             f"<span class='cons-track'><span class='cons-fill' style='width:{bar_w:.0f}%;background:{col};'></span></span>"
             f"<span class='cons-vol' title='Week-to-week volatility (std / avg)'>{cv * 100:.0f}%</span>"
             f"<span class='cons-band' style='color:{col};background:{col}1a;'>{label}</span>"
@@ -489,7 +501,7 @@ def _consistency_card(team_stats, owner_colors: dict, viewer_owner: str, detail_
     return _card(
         "Consistency Ranking",
         "Weekly scoring spread (coefficient of variation). Lower is steadier; higher swings between booms and busts.",
-        body + (detail_html or ""),
+        f'<div class="gs-rows">{body}</div>',
         insight,
     )
 
@@ -551,11 +563,12 @@ def _pf_pa_card(team_stats, owner_colors: dict, viewer_owner: str, figs: dict) -
             )
         fig = go.Figure(traces)
         pad = max((float(max(x)) - float(min(x))) * 0.12, 1.0)
+        ypad = max((float(max(y)) - float(min(y))) * 0.12, 1.0)
         fig.update_layout(
             xaxis_title=dict(text="Points Against (PA)", standoff=12),
             xaxis=dict(range=[float(min(x)) - pad, float(max(x)) + pad], automargin=True),
             yaxis_title=dict(text="Points For (PF)"),
-            yaxis=dict(automargin=True),
+            yaxis=dict(range=[float(min(y)) - ypad, float(max(y)) + ypad], automargin=True),
             hovermode="closest",
             margin=dict(l=52, r=40, t=10, b=45),
             showlegend=False,
@@ -583,54 +596,8 @@ def _pf_pa_card(team_stats, owner_colors: dict, viewer_owner: str, figs: dict) -
         return _card(
             "PF vs PA",
             "Total points scored vs allowed. Top-left is the promised land: outscoring everyone while nobody scores on you.",
-            '<div id="chart-pfpa" style="width:100%;min-height:350px;"></div>',
+            '<div class="gs-plot" id="chart-pfpa" style="width:100%;min-height:350px;"></div>',
             insight,
-        )
-    except Exception:
-        return ""
-
-
-def _boxplot_detail_html(df_weekly, owner_colors: dict, figs: dict) -> str:
-    """Score distribution boxplot, returned as a <details> expander for the
-    Consistency Ranking card."""
-    try:
-        order = (
-            df_weekly.groupby("owner")["points"]
-            .median().sort_values(ascending=False)
-            .index.tolist()
-        )
-        if len(order) < 2:
-            return ""
-        traces = []
-        for o in order:
-            pts = df_weekly.loc[df_weekly["owner"] == o, "points"]
-            traces.append(
-                go.Box(
-                    y=[float(v) for v in pts.tolist()],
-                    name=str(o),
-                    boxmean=True,
-                    orientation="v",
-                    hoveron="boxes",
-                    boxpoints=False,
-                    marker=dict(color=owner_colors.get(str(o), "#9ca3af")),
-                    showlegend=False,
-                )
-            )
-        fig = go.Figure(traces)
-        fig.update_layout(
-            xaxis_title=dict(text="Team", standoff=12),
-            yaxis_title=dict(text="Points"),
-            hovermode="closest",
-            margin=dict(l=40, r=20, t=10, b=120),
-            showlegend=False,
-        )
-        apply_brand_layout(fig)
-        figs["chart-boxdist"] = _fig_json(fig)
-        return (
-            "<details class='gs-details'><summary>Show score distributions</summary>"
-            '<div id="chart-boxdist" style="width:100%;min-height:350px;"></div>'
-            "<p class='gs-sub'>Median, quartiles, and mean (x) per team. Wide boxes mean boom-or-bust weeks.</p>"
-            "</details>"
         )
     except Exception:
         return ""
@@ -687,7 +654,8 @@ def _radar_card(team_stats, owner_colors: dict, figs: dict) -> str:
             "(window.ensurePlotly?window.ensurePlotly():Promise.resolve(window.Plotly))"
             ".then(function(P){if(!P)return;"
             "if(!el._plotted){P.newPlot(el,makeRadarData(a,b),layout,"
-            "{responsive:true,displayModeBar:false});el._plotted=true;}"
+            "{responsive:true,displayModeBar:false});el._plotted=true;"
+            "if(window.ResizeObserver)new ResizeObserver(function(){try{P.Plots.resize(el);}catch(e){}}).observe(el);}"
             "else{P.react(el,makeRadarData(a,b),layout);}});}"
             "function _initRadar(){var sA=document.getElementById('radarTeamA');"
             "var sB=document.getElementById('radarTeamB');if(!sA||!sB)return;"
@@ -703,7 +671,7 @@ def _radar_card(team_stats, owner_colors: dict, figs: dict) -> str:
             f"<label style='font-size:12px;'>Team A <select id='radarTeamA' class='gs-select'>{''.join(opts_a)}</select></label>"
             f"<label style='font-size:12px;'>Team B <select id='radarTeamB' class='gs-select'>{''.join(opts_b)}</select></label>"
             "</div>"
-            '<div id="radar-cmp" style="width:100%;min-height:380px;"></div>'
+            '<div class="gs-plot" id="radar-cmp" style="width:100%;min-height:380px;"></div>'
             + js
         )
         return _card(
@@ -749,7 +717,7 @@ def _margin_card(df_weekly, owner_colors: dict, viewer_owner: str) -> str:
             w_txt = f"+{wavg:.1f}" if nw else "0-0"
             l_txt = f"{lavg:.1f}" if nl else "0-0"
             body += (
-                f'<div class="{cls}"><span class="nm">{name}</span>'
+                f'<div class="{cls}"><span class="nm" title="{html.escape(owner)}">{name}</span>'
                 f'<span class="v" style="text-align:left;">'
                 f'<span style="color:#16a34a;font-weight:700;">{w_txt}</span>'
                 f'<span style="color:var(--text-muted,#94a3b8);"> / </span>'
@@ -771,7 +739,7 @@ def _margin_card(df_weekly, owner_colors: dict, viewer_owner: str) -> str:
         return _card(
             "Margin of Victory / Defeat",
             "Average blowout size in wins (green) vs average heartbreak size in losses (red).",
-            body,
+            f'<div class="gs-rows">{body}</div>',
             viewer_note,
         )
     except Exception:
@@ -829,7 +797,7 @@ def _h2h_card(df_weekly, owner_colors: dict, viewer_owner: str) -> str:
                 cells += f"<td class='{cls}' title='{html.escape(a)} vs {html.escape(b)}'>{w}-{l}</td>"
             row_cls = "h2h-you" if (viewer_owner and a == viewer_owner) else ""
             body_rows += (
-                f"<tr class='{row_cls}'><th>{html.escape(a)}</th>{cells}</tr>"
+                f"<tr class='{row_cls}'><th title='{html.escape(a)}'>{html.escape(a)}</th>{cells}</tr>"
             )
         table = (
             "<div class='h2h-wrap'><table class='h2h-table'>"
@@ -919,7 +887,7 @@ def _roster_value_card(rows: list, viewer_owner: str, owner_colors: dict) -> str
         name = html.escape(owner) + (" (you)" if is_you else "")
         color = owner_colors.get(owner, "#9ca3af")
         body += (
-            f'<div class="{cls}"><span class="nm">{name}</span>'
+            f'<div class="{cls}"><span class="nm" title="{html.escape(owner)}">{name}</span>'
             f'<div class="gs-track"><div class="gs-fill" '
             f'style="width:{v / top * 100:.1f}%;background:{color};"></div></div>'
             f'<span class="v">{v:,.0f}</span></div>'
@@ -939,7 +907,7 @@ def _roster_value_card(rows: list, viewer_owner: str, owner_colors: dict) -> str
     return _card(
         "Roster Value by Team",
         "Total dynasty value on each roster, highest first.",
-        body,
+        f'<div class="gs-rows">{body}</div>',
         insight,
     )
 
@@ -1002,7 +970,7 @@ def _positional_value_card(value_ctx: dict, viewer_owner: str, owner_colors: dic
                 for p in POS_ORDER
             )
             body += (
-                f'<div class="{cls}"><span class="nm">{name}</span>'
+                f'<div class="{cls}"><span class="nm" title="{html.escape(owner)}">{name}</span>'
                 f'<div class="pos-track">{segs}</div>'
                 f'<span class="v">{total:,.0f}</span></div>'
             )
@@ -1020,7 +988,7 @@ def _positional_value_card(value_ctx: dict, viewer_owner: str, owner_colors: dic
         return _card(
             "Positional Value Breakdown",
             "Where each roster's dynasty value lives, by position.",
-            body + f"<div class='pos-legend'>{legend}</div>",
+            f'<div class="gs-rows">{body}</div>' + f"<div class='pos-legend'>{legend}</div>",
             viewer_weak,
         )
     except Exception:
@@ -1049,115 +1017,6 @@ def _value_pane(value_ctx: dict, viewer_owner: str, owner_colors: dict) -> str:
 
 
 # ── Trends tab ───────────────────────────────────────────────────────────────
-
-def _trend_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict, figs: dict) -> str:
-    """Weekly Scoring Trend: the viewer's line (thick, team color) against the
-    league average (dashed). Falls back to all teams when the viewer is unknown."""
-    try:
-        weeks = sorted(int(w) for w in df_weekly_finalized["week"].unique())
-        if not weeks:
-            return ""
-        wk_avg = df_weekly_finalized.groupby("week")["points"].mean()
-        avg_line = [float(wk_avg[w]) for w in weeks]
-        traces = []
-        me = None
-        owners = {str(o) for o in df_weekly_finalized["owner"].astype(str).tolist()}
-        if viewer_owner and viewer_owner in owners:
-            g = df_weekly_finalized[
-                df_weekly_finalized["owner"].astype(str) == viewer_owner
-            ].sort_values("week")
-            me = [float(v) for v in g["points"].tolist()]
-            me_weeks = [int(w) for w in g["week"].tolist()]
-            traces.append(
-                go.Scatter(
-                    x=me_weeks, y=me,
-                    mode="lines+markers",
-                    name=viewer_owner,
-                    line=dict(color=owner_colors.get(viewer_owner, _YOU_BLUE), width=3.5),
-                    marker=dict(size=7),
-                    showlegend=False,
-                    hovertemplate="Wk %{x}: %{y:.1f}<extra></extra>",
-                )
-            )
-        else:
-            for owner, gg in df_weekly_finalized.sort_values("week").groupby("owner"):
-                gg = gg.sort_values("week")
-                traces.append(
-                    go.Scatter(
-                        x=[int(w) for w in gg["week"].tolist()],
-                        y=[float(v) for v in gg["points"].tolist()],
-                        mode="lines",
-                        name=str(owner),
-                        line=dict(color=owner_colors.get(str(owner)), width=1.5),
-                        opacity=0.55,
-                        showlegend=False,
-                    )
-                )
-        traces.append(
-            go.Scatter(
-                x=weeks, y=avg_line,
-                mode="lines",
-                name="League avg",
-                line=dict(dash="dash", width=2, color=_LEAGUE_GRAY),
-                showlegend=False,
-                hovertemplate="Wk %{x}: %{y:.1f} avg<extra></extra>",
-            )
-        )
-        fig = go.Figure(traces)
-        fig.update_layout(
-            xaxis_title=dict(text="Week", standoff=12),
-            xaxis=dict(dtick=1),
-            yaxis_title=dict(text="Points"),
-            hovermode="x unified",
-            margin=dict(l=44, r=16, t=10, b=45),
-            showlegend=False,
-        )
-        apply_brand_layout(fig)
-        figs["chart-trend"] = _fig_json(fig)
-
-        insight = ""
-        if me:
-            parts = []
-            if len(me) >= 3:
-                last3 = me[-3:]
-                direction = (
-                    "up" if last3[-1] > last3[0]
-                    else "down" if last3[-1] < last3[0]
-                    else "flat"
-                )
-                parts.append(
-                    "Your scoring is trending "
-                    + direction
-                    + ": "
-                    + " → ".join(f"{v:.0f}" for v in last3)
-                    + " over the last 3 weeks."
-                )
-            vavg = sum(me) / len(me)
-            lavg = float(np.mean(avg_line))
-            diff = vavg - lavg
-            parts.append(
-                f"You're averaging {abs(diff):.1f} points "
-                f"{'above' if diff >= 0 else 'below'} the league."
-            )
-            insight = " ".join(parts)
-        else:
-            avgs = df_weekly_finalized.groupby("owner")["points"].mean().sort_values(ascending=False)
-            if not avgs.empty:
-                insight = (
-                    f"{html.escape(str(avgs.index[0]))} leads the league "
-                    f"at {float(avgs.iloc[0]):.1f} points per week."
-                )
-        you_color = owner_colors.get(viewer_owner, _YOU_BLUE) if me else _LEAGUE_GRAY
-        legend = _legend([(you_color, "You"), (_LEAGUE_GRAY, "League avg")])
-        return _card(
-            "Weekly Scoring Trend",
-            "Points for by week: your team against the league average.",
-            '<div id="chart-trend" style="width:100%;min-height:350px;"></div>' + legend,
-            insight,
-        )
-    except Exception:
-        return ""
-
 
 def _sos_fig(df_weekly_finalized, owner_colors: dict):
     """Strength-of-schedule bar chart: average opponent score faced per team.
@@ -1188,7 +1047,7 @@ def _sos_fig(df_weekly_finalized, owner_colors: dict):
         fig.update_layout(
             xaxis_title=dict(text="Avg opponent score", standoff=12),
             yaxis=dict(automargin=True),
-            margin=dict(l=140, r=20, t=10, b=45),
+            margin=dict(l=24, r=20, t=10, b=45),
             showlegend=False,
             shapes=[dict(
                 type="line",
@@ -1245,6 +1104,7 @@ def _sos_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict, figs: 
                     line=dict(dash="dash", color=_LEAGUE_GRAY),
                 )],
             )
+            fig.update_layout(yaxis=dict(range=[0, max(opp) * 1.08 if opp else None], automargin=True))
             apply_brand_layout(fig)
             figs["chart-sos"] = _fig_json(fig)
             vavg = sum(opp) / len(opp)
@@ -1257,7 +1117,7 @@ def _sos_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict, figs: 
             return _card(
                 "Strength of Schedule",
                 "Opponent points faced by week. Weeks you faced above-average opponents are highlighted.",
-                '<div id="chart-sos" style="width:100%;min-height:350px;"></div>' + legend,
+                '<div class="gs-plot" id="chart-sos" style="width:100%;min-height:350px;"></div>' + legend,
                 insight,
             )
         # Fallback: per-team average opponent score.
@@ -1279,7 +1139,7 @@ def _sos_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict, figs: 
         return _card(
             "Strength of Schedule",
             "Average opponent score each team has faced. Dashed line is the league average.",
-            '<div id="chart-sos" style="width:100%;min-height:350px;"></div>',
+            '<div class="gs-plot" id="chart-sos" style="width:100%;min-height:350px;"></div>',
             insight,
         )
     except Exception:
@@ -1535,16 +1395,18 @@ def _bump_card(df_weekly, owner_colors: dict, viewer_owner: str, figs: dict,
         return _card(
             "Standings Bump Chart",
             subtitle,
-            '<div id="chart-bump" style="width:100%;min-height:380px;"></div>' + _legend(legend_items),
+            '<div class="gs-plot" id="chart-bump" style="width:100%;min-height:380px;"></div>' + _legend(legend_items),
             insight,
         )
     except Exception:
         return ""
 
 
-def _all_teams_trend_card(df_weekly, owner_colors: dict, figs: dict) -> str:
-    """Weekly Scoring Trend (all teams): every team's line plus the league
-    average, for spotting who's hot."""
+def _all_teams_trend_card(df_weekly, owner_colors: dict, figs: dict, viewer_owner: str = "") -> str:
+    """Weekly Scoring: All Teams: every team's line plus the league average,
+    for spotting who's hot. The viewer's line is drawn thick (the emphasis
+    the removed viewer-only Trend card had) and the insight leads with the
+    viewer's own trend when the viewer is known."""
     try:
         weeks = sorted(int(w) for w in df_weekly["week"].unique())
         if not weeks:
@@ -1563,24 +1425,30 @@ def _all_teams_trend_card(df_weekly, owner_colors: dict, figs: dict) -> str:
         ]
         for owner, gg in df_weekly.sort_values("week").groupby("owner"):
             gg = gg.sort_values("week")
+            is_you = bool(viewer_owner) and str(owner) == viewer_owner
             traces.append(
                 go.Scatter(
                     x=[int(w) for w in gg["week"].tolist()],
                     y=[float(v) for v in gg["points"].tolist()],
                     mode="lines+markers",
                     name=str(owner),
-                    line=dict(color=owner_colors.get(str(owner), "#9ca3af"), width=1.8),
-                    marker=dict(size=5),
-                    opacity=0.75,
+                    line=dict(color=owner_colors.get(str(owner), "#9ca3af"),
+                              width=3.5 if is_you else 1.8),
+                    marker=dict(size=7 if is_you else 5),
+                    opacity=1.0 if is_you else 0.75,
                     showlegend=False,
                     hovertemplate=f"{html.escape(str(owner))}<br>Wk %{{x}}: %{{y:.1f}}<extra></extra>",
                 )
             )
         fig = go.Figure(traces)
+        _all_pts = [float(v) for v in df_weekly["points"].tolist()]
+        _ypad = max((max(_all_pts) - min(_all_pts)) * 0.08, 1.0) if _all_pts else 1.0
         fig.update_layout(
             xaxis_title=dict(text="Week", standoff=12),
             xaxis=dict(dtick=1),
             yaxis_title=dict(text="Points"),
+            yaxis=dict(range=[min(_all_pts) - _ypad, max(_all_pts) + _ypad] if _all_pts else None,
+                       automargin=True),
             hovermode="x unified",
             margin=dict(l=44, r=16, t=10, b=45),
             showlegend=False,
@@ -1590,7 +1458,25 @@ def _all_teams_trend_card(df_weekly, owner_colors: dict, figs: dict) -> str:
 
         avgs = df_weekly.groupby("owner")["points"].mean().sort_values(ascending=False)
         insight = ""
-        if not avgs.empty:
+        _me = None
+        if viewer_owner:
+            _g = df_weekly[df_weekly["owner"].astype(str) == viewer_owner].sort_values("week")
+            if not _g.empty:
+                _me = [float(v) for v in _g["points"].tolist()]
+        if _me:
+            parts = []
+            if len(_me) >= 3:
+                last3 = _me[-3:]
+                direction = ("up" if last3[-1] > last3[0]
+                             else "down" if last3[-1] < last3[0] else "flat")
+                parts.append("Your scoring is trending " + direction + ": "
+                             + " → ".join(f"{v:.0f}" for v in last3)
+                             + " over the last 3 weeks.")
+            _diff = (sum(_me) / len(_me)) - float(np.mean(avg_line))
+            parts.append(f"You're averaging {abs(_diff):.1f} points "
+                         f"{'above' if _diff >= 0 else 'below'} the league.")
+            insight = " ".join(parts)
+        elif not avgs.empty:
             top, top_v = str(avgs.index[0]), float(avgs.iloc[0])
             bot, bot_v = str(avgs.index[-1]), float(avgs.iloc[-1])
             insight = (
@@ -1601,8 +1487,8 @@ def _all_teams_trend_card(df_weekly, owner_colors: dict, figs: dict) -> str:
         legend = _legend([(owner_colors.get(o, "#9ca3af"), o) for o in owners])
         return _card(
             "Weekly Scoring: All Teams",
-            "Every team's weekly score. Find who's heating up and who's fading.",
-            '<div id="chart-allteams" style="width:100%;min-height:380px;"></div>' + legend,
+            "Every team's weekly score, yours in bold. Find who's heating up and who's fading.",
+            '<div class="gs-plot" id="chart-allteams" style="width:100%;min-height:380px;"></div>' + legend,
             insight,
         )
     except Exception:
@@ -1622,6 +1508,11 @@ def _heatmap_card(df_weekly, owner_colors: dict, figs: dict) -> str:
         owners = [str(o) for o in avgs.index.tolist()]
         if len(owners) < 2:
             return ""
+        # The service builds exactly one row per owner per week (one
+        # matchup per roster per week), so an (owner, week) key normally
+        # holds a single score. Averaging is a harmless guard only: if a
+        # duplicate row ever appeared it would be the same game repeated,
+        # and the mean of identical scores is that score.
         lookup = {}
         for _, r in df_weekly.iterrows():
             key = (str(r["owner"]), int(r["week"]))
@@ -1647,7 +1538,7 @@ def _heatmap_card(df_weekly, owner_colors: dict, figs: dict) -> str:
             xaxis_title=dict(text="Week", standoff=12),
             xaxis=dict(dtick=1),
             yaxis=dict(autorange="reversed", automargin=True),
-            margin=dict(l=140, r=16, t=10, b=45),
+            margin=dict(l=24, r=16, t=10, b=45),
             showlegend=False,
         )
         apply_brand_layout(fig)
@@ -1656,10 +1547,17 @@ def _heatmap_card(df_weekly, owner_colors: dict, figs: dict) -> str:
         if best:
             parts.append(f"The biggest single week: {html.escape(best[0])} scored {best[2]:.0f} in week {best[1]}.")
         parts.append(f"{html.escape(owners[0])} owns the highest weekly average at {float(avgs.iloc[0]):.1f}.")
+        # Merged from the removed League Scoring by Week card: its biggest
+        # scoring week was the one fact not already visible here.
+        _wk_means = df_weekly.groupby("week")["points"].mean()
+        if not _wk_means.empty:
+            _bw = int(_wk_means.idxmax())
+            parts.append(f"Week {_bw} was the league's biggest scoring week "
+                         f"at {float(_wk_means.max()):.1f} points per team.")
         return _card(
             "Scoring Heatmap",
             "Every team's score by week. Darker is a bigger week.",
-            '<div id="chart-heatmap" style="width:100%;min-height:350px;"></div>',
+            '<div class="gs-plot" id="chart-heatmap" style="width:100%;min-height:350px;"></div>',
             " ".join(parts),
         )
     except Exception:
@@ -1698,7 +1596,7 @@ def _form_card(df_weekly, viewer_owner: str, owner_colors: dict) -> str:
             fill = (f"left:50%;width:{w:.1f}%" if delta >= 0
                     else f"left:{50 - w:.1f}%;width:{w:.1f}%")
             body += (
-                f'<div class="{cls}"><span class="nm">{name}</span>'
+                f'<div class="{cls}"><span class="nm" title="{html.escape(owner)}">{name}</span>'
                 f'<div class="dv-track"><span class="dv-zero"></span>'
                 f'<span class="dv-fill" style="{fill};background:{col};"></span></div>'
                 f'<span class="v" style="color:{col};font-weight:700;">{delta:+.1f}</span></div>'
@@ -1715,58 +1613,7 @@ def _form_card(df_weekly, viewer_owner: str, owner_colors: dict) -> str:
         return _card(
             "Form: Last 3 Weeks",
             "Last 3 weeks per week minus season per week. Right is heating up; left is cooling off.",
-            body,
-            insight,
-        )
-    except Exception:
-        return ""
-
-
-def _env_card(df_weekly, figs: dict) -> str:
-    """League Scoring by Week: the weekly league mean line over a shaded
-    min-to-max band."""
-    try:
-        if df_weekly is None or getattr(df_weekly, "empty", True):
-            return ""
-        grp = df_weekly.groupby("week")["points"]
-        weeks = sorted({int(w) for w in df_weekly["week"].tolist()})
-        if len(weeks) < 2:
-            return ""
-        means = [float(grp.mean()[w]) if w in grp.mean().index else 0.0 for w in weeks]
-        maxs = [float(grp.max()[w]) for w in weeks]
-        mins = [float(grp.min()[w]) for w in weeks]
-        traces = [
-            go.Scatter(x=weeks, y=maxs, mode="lines",
-                       line=dict(color="rgba(42,120,214,0)", width=0),
-                       showlegend=False, hoverinfo="skip"),
-            go.Scatter(x=weeks, y=mins, mode="lines",
-                       line=dict(color="rgba(42,120,214,0)", width=0),
-                       fill="tonexty", fillcolor="rgba(42,120,214,0.15)",
-                       showlegend=False, hoverinfo="skip"),
-            go.Scatter(x=weeks, y=means, mode="lines+markers",
-                       line=dict(color="#2a78d6", width=2.5),
-                       marker=dict(size=6), showlegend=False,
-                       hovertemplate="Wk %{x}: %{y:.1f} league avg<extra></extra>"),
-        ]
-        fig = go.Figure(traces)
-        fig.update_layout(
-            xaxis_title=dict(text="Week", standoff=12),
-            xaxis=dict(dtick=1),
-            yaxis_title=dict(text="Points"),
-            margin=dict(l=44, r=16, t=10, b=45),
-            showlegend=False,
-        )
-        apply_brand_layout(fig)
-        figs["chart-env"] = _fig_json(fig)
-        best_i = max(range(len(weeks)), key=lambda i: means[i])
-        insight = (
-            f"Week {weeks[best_i]} was the league's biggest scoring week "
-            f"at {means[best_i]:.1f} points per team."
-        )
-        return _card(
-            "League Scoring by Week",
-            "League average score by week, with the weekly high-to-low range shaded.",
-            '<div id="chart-env" style="width:100%;min-height:320px;"></div>',
+            f'<div class="gs-rows">{body}</div>',
             insight,
         )
     except Exception:
@@ -1809,7 +1656,7 @@ def _career_wins_card(team_stats, viewer_owner: str, owner_colors: dict) -> str:
             val = w if use_wins else pf
             vtxt = (f"{int(w)}-{int(l)}" + (f"-{int(t)}" if t else "")) if use_wins else f"{pf:,.0f}"
             body += (
-                f'<div class="{cls}"><span class="nm">{name}</span>'
+                f'<div class="{cls}"><span class="nm" title="{html.escape(owner)}">{name}</span>'
                 f'<div class="gs-track"><div class="gs-fill" '
                 f'style="width:{val / top * 100:.1f}%;background:{color};"></div></div>'
                 f'<span class="v">{vtxt}</span></div>'
@@ -1822,7 +1669,7 @@ def _career_wins_card(team_stats, viewer_owner: str, owner_colors: dict) -> str:
                 insight = f"You rank {_ordinal(viewer_rank)} of {len(rows)} in career wins with a {rec} record."
             else:
                 insight = f"You rank {_ordinal(viewer_rank)} of {len(rows)} in career points ({mine[4]:,.0f})."
-        return _card(title, sub, body, insight)
+        return _card(title, sub, f'<div class="gs-rows">{body}</div>', insight)
     except Exception:
         return ""
 
@@ -1867,8 +1714,10 @@ def _season_panes(perf_ctx: dict, value_ctx: dict, viewer_owner: str, figs: dict
         luck_analysis = None
     perf_html = _luck_card(df_weekly, viewer_owner, owner_colors, analysis=luck_analysis)
     perf_html += _luck_delta_card(df_weekly, viewer_owner, owner_colors, analysis=luck_analysis)
-    box_detail = _boxplot_detail_html(df_weekly, owner_colors, figs)
-    perf_html += _consistency_card(team_stats, owner_colors, viewer_owner, box_detail)
+    # Duplicate removed: the score-distribution boxplot that lived inside
+    # Consistency told the same volatility story as Consistency's own bars
+    # and the Floor / Ceiling ranges, so it is gone.
+    perf_html += _consistency_card(team_stats, owner_colors, viewer_owner)
     perf_html += _floor_ceiling_card(team_stats, owner_colors, viewer_owner)
     perf_html += _pf_pa_card(team_stats, owner_colors, viewer_owner, figs)
     perf_html += _margin_card(df_weekly, owner_colors, viewer_owner)
@@ -1883,15 +1732,22 @@ def _season_panes(perf_ctx: dict, value_ctx: dict, viewer_owner: str, figs: dict
         v_owners = vts["owner"].tolist()
     value_html = _value_pane(value_ctx or {}, viewer_owner, owner_color_map(v_owners or owners))
 
-    trends_html = _trend_card(df_weekly, viewer_owner, owner_colors, figs)
-    trends_html += _all_teams_trend_card(df_weekly, owner_colors, figs)
+    # Duplicate removed: Weekly Scoring Trend (viewer line + league avg)
+    # was a strict subset of Weekly Scoring: All Teams, and rendered the
+    # identical chart when the viewer was unknown. All Teams now carries
+    # the viewer's emphasized line and the viewer's trend insight.
+    trends_html = _all_teams_trend_card(df_weekly, owner_colors, figs, viewer_owner)
     trends_html += _heatmap_card(df_weekly, owner_colors, figs)
     trends_html += _bump_card(df_weekly, owner_colors, viewer_owner, figs,
                               div_by_owner=_owner_division_map(perf_ctx, df_weekly),
                               median_match=_ctx_median_match(perf_ctx))
     trends_html += _form_card(df_weekly, viewer_owner, owner_colors)
     trends_html += _sos_card(df_weekly, viewer_owner, owner_colors, figs)
-    trends_html += _env_card(df_weekly, figs)
+    # Duplicate removed: League Scoring by Week plotted the same weekly
+    # league average already drawn in the trend chart, over the same
+    # weekly scores the Heatmap shows cell by cell. Its one unique fact
+    # (the league's biggest scoring week) is merged into the Heatmap
+    # insight in _heatmap_card.
     if not trends_html:
         trends_html = _empty_card("Not enough weekly data for trend charts.")
 
@@ -2025,16 +1881,19 @@ def _career_winpct_card(season_record_df, viewer_owner: str, owner_colors: dict,
                 hovertemplate="%{x}: %{y:.0f}%<extra></extra>",
             )
         )
+        _yp = [p * 100 for p in pcts]
         fig.update_layout(
             xaxis_title=dict(text="Season", standoff=12),
             xaxis=dict(dtick=1),
             yaxis_title=dict(text="Win %"),
+            yaxis=dict(range=[max(0.0, min(_yp) - 8), min(100.0, max(_yp) + 8)] if _yp else None,
+                       automargin=True),
             margin=dict(l=44, r=16, t=10, b=45),
             showlegend=False,
         )
         apply_brand_layout(fig)
         figs["chart-career-wpct"] = _fig_json(fig)
-        chart = '<div id="chart-career-wpct" style="width:100%;min-height:350px;"></div>'
+        chart = '<div class="gs-plot" id="chart-career-wpct" style="width:100%;min-height:350px;"></div>'
     except Exception:
         chart = ""
     return _card(
@@ -2081,7 +1940,7 @@ def _career_pf_card(season_pf_df, viewer_owner: str, owner_colors: dict) -> str:
     return _card(
         "Career Points For",
         "Your total points by season.",
-        body,
+        f'<div class="gs-rows">{body}</div>',
         insight,
     )
 

@@ -93,12 +93,14 @@ def test_graphs_performance_tab_has_luck_and_consistency_with_real_insights():
 
 def test_graphs_trends_tab_has_trend_and_sos_with_real_insights():
     html = _load_builder()(_ctx())
-    assert "Weekly Scoring Trend" in html
-    assert 'id="chart-trend"' in html
+    # The viewer-only Weekly Scoring Trend card was a subset of All Teams
+    # and is removed; All Teams carries the viewer insight now.
+    assert "Weekly Scoring: All Teams" in html
+    assert 'id="chart-allteams"' in html
     assert "Strength of Schedule" in html
     assert 'id="chart-sos"' in html
     # Both charts are registered for deferred Plotly rendering.
-    assert '"chart-trend":' in html
+    assert '"chart-allteams":' in html
     assert '"chart-sos":' in html
     # Real trend insight from Gridiron's last 3 weeks (130, 118, 141).
     assert "trending up" in html
@@ -113,7 +115,7 @@ def test_graphs_sos_card_omitted_without_points_against():
     html = _load_builder()(ctx)
     assert 'id="chart-sos"' not in html
     # The trend chart does not depend on points_against, so it still renders.
-    assert "Weekly Scoring Trend" in html
+    assert "Weekly Scoring: All Teams" in html
 
 
 def test_graphs_value_tab_redraft_shows_honest_empty_state():
@@ -268,10 +270,13 @@ def test_graphs_perf_tab_has_radar_with_team_selectors():
     assert "_initRadar" in html
 
 
-def test_graphs_perf_tab_has_boxplot_expander():
+def test_graphs_perf_tab_has_no_duplicate_boxplot():
+    # The score-distribution boxplot duplicated the Consistency Ranking
+    # and Floor / Ceiling volatility story and was removed.
     html = _load_builder()(_ctx_with_matchups(), tab="perf")
-    assert "Show score distributions" in html
-    assert "chart-boxdist" in html
+    assert "Consistency Ranking" in html
+    assert "Show score distributions" not in html
+    assert "chart-boxdist" not in html
 
 
 def test_graphs_trends_tab_has_bump_and_all_teams_charts():
