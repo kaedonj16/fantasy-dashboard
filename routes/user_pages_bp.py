@@ -279,6 +279,15 @@ def page_portfolio():
         )
     else:  # compatibility for injected/legacy resolvers
         league_inputs, season = resolve_my_leagues(viewer_user_id, account_id, season)
+    # Share this resolution with the insights/bye preambles (the shared
+    # portfolio snapshot): the page just paid for it, so the endpoints
+    # the page is about to fire must not pay it again.
+    try:
+        _pf_resolution_put(viewer_user_id, account_id,
+                           int(nfl_state.get("season") or season),
+                           league_inputs, season)
+    except Exception:
+        logger.debug("portfolio resolution share failed", exc_info=True)
     # Keep the durable membership reconciliation asynchronous, but build the
     # portfolio from league contexts below for account users too.  Returning a
     # membership-only shell here meant that only Record/Standing were ever
@@ -723,6 +732,49 @@ def page_portfolio():
     except Exception:
         logger.debug("holdings bye/status enrich failed", exc_info=True)
 
+    # ── Insights first paint, embedded ──────────────────────────────────
+    # This pass already paid for the league resolution (shared into the
+    # snapshot above), the players index and the model value table, and
+    # the league contexts are warm from the summary pass: compute the
+    # Bye Watch payload (cache-only) and, while the slate is still
+    # ahead, the pregame Rooting Guide payload (no provider calls) from
+    # the SAME data and embed both in the page, so the two cards paint
+    # with zero first-load API calls. The endpoints stay as the
+    # refresh/fallback path (live points, post-kickoff byes rollover).
+    _embed_bye = _embed_rooting = None
+    try:
+        if current_week and (nfl_state.get("season_type") in ("reg", "post")):
+            from dashboard_services.api import get_nfl_players as _gnp_emb
+            _emb_players = _pf_players_with_byes(_gnp_emb() or {}, season)
+            _emb_model_rows = []
+            try:
+                _emb_model_rows = list(get_model_value_table_cached() or [])
+            except Exception:
+                _emb_model_rows = []
+            _emb_values = {}
+            for _r in _emb_model_rows:
+                if isinstance(_r, dict) and _r.get("id"):
+                    try:
+                        _emb_values[str(_r["id"])] = float(_r.get("value") or 0)
+                    except (TypeError, ValueError):
+                        pass
+            _emb_base = {
+                "viewer_user_id": viewer_user_id,
+                "account_id": account_id,
+                "season": season,
+                "week": current_week,
+                "league_inputs": league_inputs or [],
+                "nfl_players": _emb_players,
+                "model_rows": _emb_model_rows,
+                "value_by_pid": _emb_values,
+                "cache_key": (account_id or f"viewer:{viewer_user_id}",
+                              season, current_week),
+            }
+            _embed_bye, _embed_rooting = _pf_embed_payloads(_emb_base)
+    except Exception:
+        logger.debug("portfolio insights embed failed", exc_info=True)
+        _embed_bye = _embed_rooting = None
+
     body = build_portfolio_body(
         portfolio_signed_in_label(),
         valid_leagues, leagues_data, season,
@@ -730,6 +782,14 @@ def page_portfolio():
         total_wins, total_losses, total_ties,
         current_week=current_week,
     )
+    if _embed_bye is not None:
+        body += ("<script type=\"application/json\" id=\"pf-bye-embedded\">"
+                 + json.dumps(_embed_bye).replace("</", "<\\/")
+                 + "</script>")
+    if _embed_rooting is not None:
+        body += ("<script type=\"application/json\" id=\"pf-rooting-embedded\">"
+                 + json.dumps(_embed_rooting).replace("</", "<\\/")
+                 + "</script>")
 
     # Always render with a league nav context - fall back to first valid league
     nav_league_id = from_league
@@ -2016,9 +2076,12 @@ def _insights_cache_get(key, max_age=None):
     return None
 
 
-def _insights_cache_put(key, payload):
+def _insights_cache_put(key, payload, age_s=0.0):
+    # age_s backdates the entry: the disk tier re-seeds payloads whose
+    # true compute time is in the past, and their freshness must be
+    # judged from that time, never from the re-seed moment.
     with _INSIGHTS_CACHE_LOCK:
-        _INSIGHTS_CACHE[key] = (time.monotonic(), payload)
+        _INSIGHTS_CACHE[key] = (time.monotonic() - max(0.0, age_s), payload)
         if len(_INSIGHTS_CACHE) > 64:
             oldest = min(_INSIGHTS_CACHE.items(), key=lambda kv: kv[1][0])[0]
             _INSIGHTS_CACHE.pop(oldest, None)
@@ -2033,8 +2096,9 @@ def _insights_cache_put(key, payload):
 # oldest evicted, and stale entries stop being served past the grace
 # below. Background refreshes are single-flight per viewer (the
 # _*_INFLIGHT marks, stale after 120s like the actions marks) AND
-# globally capped by _ACTIONS_COMPUTE_SEM: a kick that cannot take the
-# semaphore is dropped and its mark cleared, so the next read re-kicks.
+# globally capped by _INSIGHTS_COMPUTE_SEM (see _pf_kick_background):
+# a kick that cannot take the semaphore is dropped and its mark
+# cleared, so the next read re-kicks.
 _INSIGHTS_STALE_S = 1800.0  # serve-stale grace for the Rooting Guide
 _BYE_CACHE: dict = {}
 _BYE_CACHE_LOCK = threading.Lock()
@@ -2057,12 +2121,115 @@ def _bye_cache_get(key, max_age=None):
     return None
 
 
-def _bye_cache_put(key, payload):
+def _bye_cache_put(key, payload, age_s=0.0):
+    # age_s: see _insights_cache_put (disk re-seeds keep true age).
     with _BYE_CACHE_LOCK:
-        _BYE_CACHE[key] = (time.monotonic(), payload)
+        _BYE_CACHE[key] = (time.monotonic() - max(0.0, age_s), payload)
         if len(_BYE_CACHE) > 64:
             oldest = min(_BYE_CACHE.items(), key=lambda kv: kv[1][0])[0]
             _BYE_CACHE.pop(oldest, None)
+
+
+# ── Disk tier for both insight payloads (worker-recycle survival) ──────
+# Production runs ONE gunicorn worker that recycles every ~40-80 page
+# loads (--max-requests), so the in-process dicts above are wiped
+# constantly and the cold path was the COMMON path: every recycle meant
+# a full background compute while the client's retry ladder burned out.
+# Finished payloads therefore also persist to the shared disk cache
+# (CACHE_DIR, the store the team-offense-ranks payload already uses:
+# the container filesystem is shared, so it survives recycles). One
+# file holds a bounded dict for BOTH kinds, keyed
+# "kind:account:season:week"; entries carry their true epoch compute
+# time and TTLs are enforced on read, so a disk hit never restamps
+# ``updated``. Bounds: at most _PF_DISK_MAX small finished JSON
+# payloads on disk, oldest evicted on write; nothing else is stored.
+_PF_DISK_LOCK = threading.Lock()
+_PF_DISK_MAX = 64
+_PF_DISK_FILENAME = "pf_insights_cache.json"
+_PF_DISK_PATH_OVERRIDE = None  # tests point this at a tmp file
+_INSIGHTS_DISK_FRESH_S = 120.0  # disk payloads this young serve as fresh
+
+
+def _pf_disk_path():
+    if _PF_DISK_PATH_OVERRIDE:
+        return _PF_DISK_PATH_OVERRIDE
+    try:
+        from utils.utils import CACHE_DIR
+        return os.path.join(str(CACHE_DIR), _PF_DISK_FILENAME)
+    except Exception:
+        return None
+
+
+def _pf_disk_store_key(kind, key):
+    return "%s:%s:%s:%s" % (kind, key[0], key[1], key[2])
+
+
+def _pf_disk_read_all():
+    """The whole disk-tier dict, or {} on any failure. Never raises."""
+    path = _pf_disk_path()
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            blob = json.load(handle)
+        return blob if isinstance(blob, dict) else {}
+    except Exception:
+        return {}
+
+
+def _pf_disk_get(kind, key, max_age_s):
+    """(payload, age_seconds) for a disk entry within max_age_s, else
+    None. Age is measured from the entry's true compute time."""
+    ent = _pf_disk_read_all().get(_pf_disk_store_key(kind, key))
+    if not isinstance(ent, dict):
+        return None
+    try:
+        computed_at = float(ent.get("computed_at") or 0)
+    except (TypeError, ValueError):
+        return None
+    payload = ent.get("payload")
+    if not computed_at or not isinstance(payload, dict):
+        return None
+    age = time.time() - computed_at
+    if age < 0 or age >= max_age_s:
+        return None
+    return payload, age
+
+
+def _pf_disk_put(kind, key, payload):
+    """Persist one finished payload to the disk tier, evicting the
+    oldest entries past the cap. Never raises."""
+    path = _pf_disk_path()
+    if not path:
+        return
+    try:
+        with _PF_DISK_LOCK:
+            blob = _pf_disk_read_all()
+            blob[_pf_disk_store_key(kind, key)] = {
+                "computed_at": time.time(), "payload": payload}
+            if len(blob) > _PF_DISK_MAX:
+                oldest_first = sorted(
+                    blob.items(),
+                    key=lambda kv: float(
+                        (kv[1] or {}).get("computed_at") or 0))
+                for store_key, _ent in oldest_first[:len(blob) - _PF_DISK_MAX]:
+                    blob.pop(store_key, None)
+            from utils.utils import write_json
+            write_json(path, blob)
+    except Exception:
+        logger.debug("[portfolio-%s] disk cache write failed",
+                     kind, exc_info=True)
+
+
+# Dedicated global cap for the two insight computes ONLY. They used to
+# share _ACTIONS_COMPUTE_SEM(2) with the moves-board scans, which run
+# far longer (11 leagues) and re-kick on every board load: with both
+# slots busy, an insights/bye kick was silently dropped and its
+# progress depended on a later client retry winning the same race
+# again. One dedicated slot keeps the bound strict (at most ONE
+# insights/bye compute at a time per worker, one daemon thread) while
+# removing the starvation; no pool is raised anywhere.
+_INSIGHTS_COMPUTE_SEM = threading.BoundedSemaphore(1)
 
 
 def _pf_kick_background(kind, key, identity):
@@ -2070,7 +2237,7 @@ def _pf_kick_background(kind, key, identity):
     thread (the /api/portfolio-actions dispatch pattern).
 
     Single-flight per viewer via the endpoint's inflight mark; globally
-    capped by _ACTIONS_COMPUTE_SEM (acquired non-blocking: an over-cap
+    capped by _INSIGHTS_COMPUTE_SEM (acquired non-blocking: an over-cap
     kick is dropped, its mark cleared in the finally, and the next read
     re-kicks). Returns True when a worker was spawned or one is already
     in flight for this key. The worker captures no request state: the
@@ -2092,7 +2259,7 @@ def _pf_kick_background(kind, key, identity):
     def _worker():
         owned = [key]
         try:
-            if not _ACTIONS_COMPUTE_SEM.acquire(blocking=False):
+            if not _INSIGHTS_COMPUTE_SEM.acquire(blocking=False):
                 return  # over the global cap: dropped, re-kicked next read
             try:
                 base = _pf_viewer_leagues(identity=identity)
@@ -2111,14 +2278,17 @@ def _pf_kick_background(kind, key, identity):
                     # last good payload (the actions latest-partial rule).
                     if (payload.get("scan") or {}).get("scanned", 0) > 0:
                         _bye_cache_put(real_key, payload)
+                        _pf_disk_put("bye", real_key, payload)
                 else:
                     payload = _compute_portfolio_insights(base)
                     _insights_cache_put(real_key, payload)
+                    if (payload.get("scan") or {}).get("scanned", 0) > 0:
+                        _pf_disk_put("insights", real_key, payload)
             except Exception:
                 logger.exception(
                     "[portfolio-%s] background compute failed", kind)
             finally:
-                _ACTIONS_COMPUTE_SEM.release()
+                _INSIGHTS_COMPUTE_SEM.release()
         finally:
             with inflight_lock:
                 for _k in owned:
@@ -2180,6 +2350,48 @@ def _pf_identity_snapshot():
     }
 
 
+# ── Shared portfolio snapshot: league resolution ────────────────────────
+# One My Leagues load used to pay resolve_my_leagues (live Sleeper
+# enrichment) separately in the page build, the bye endpoint, the
+# insights endpoint and every background compute. The resolution result
+# is now shared through this bounded cache: the page build stores its
+# resolution on every load, and the preamble below reads it instead of
+# resolving again. Only the small resolution result is held (the
+# league_inputs list + resolved season) -- never league contexts or
+# the players index, which stay in their own shared caches. The
+# finished bye/insights payloads live in their own caches + disk tier
+# alongside this, which together form the per-viewer snapshot.
+# Bounds: _PF_RESOLUTION_MAX entries, _PF_RESOLUTION_TTL seconds.
+# The page build itself never READS this cache (it always resolves
+# fresh, so a just-linked league shows immediately); it only writes.
+_PF_RESOLUTION_CACHE: dict = {}
+_PF_RESOLUTION_LOCK = threading.Lock()
+_PF_RESOLUTION_TTL = 120.0  # seconds
+_PF_RESOLUTION_MAX = 64
+
+
+def _pf_resolution_get(viewer_user_id, account_id, season):
+    key = (account_id or f"viewer:{viewer_user_id}", int(season))
+    with _PF_RESOLUTION_LOCK:
+        ent = _PF_RESOLUTION_CACHE.get(key)
+        if ent and time.monotonic() - ent[0] < _PF_RESOLUTION_TTL:
+            return ent[1], ent[2]
+    return None
+
+
+def _pf_resolution_put(viewer_user_id, account_id, season,
+                       league_inputs, resolved_season):
+    key = (account_id or f"viewer:{viewer_user_id}", int(season))
+    with _PF_RESOLUTION_LOCK:
+        _PF_RESOLUTION_CACHE[key] = (
+            time.monotonic(), list(league_inputs or []),
+            int(resolved_season))
+        if len(_PF_RESOLUTION_CACHE) > _PF_RESOLUTION_MAX:
+            oldest = min(_PF_RESOLUTION_CACHE.items(),
+                         key=lambda kv: kv[1][0])[0]
+            _PF_RESOLUTION_CACHE.pop(oldest, None)
+
+
 def _pf_viewer_leagues(identity=None):
     """Shared preamble for the insights/bye endpoints.
 
@@ -2200,22 +2412,28 @@ def _pf_viewer_leagues(identity=None):
     week = int(nfl_state.get("week") or 0)
     if not week or nfl_state.get("season_type") not in ("reg", "post"):
         return None
-    try:
-        from dashboard_services.accounts import resolve_my_leagues
-        import inspect
-        _resolver_params = inspect.signature(resolve_my_leagues).parameters
-        if "enrich_live" in _resolver_params:
-            # Account users already carry their durable memberships: the
-            # live Sleeper enrichment is redundant for them (the same
-            # enrich_live=not bool(account_id) page_portfolio passes).
-            league_inputs, season = resolve_my_leagues(
-                viewer_user_id, account_id, season,
-                enrich_live=not bool(account_id))
-        else:  # compatibility for injected/legacy resolvers
-            league_inputs, season = resolve_my_leagues(
-                viewer_user_id, account_id, season)
-    except Exception:
-        return None
+    _res_hit = _pf_resolution_get(viewer_user_id, account_id, season)
+    if _res_hit is not None:
+        league_inputs, season = _res_hit
+    else:
+        try:
+            from dashboard_services.accounts import resolve_my_leagues
+            import inspect
+            _resolver_params = inspect.signature(resolve_my_leagues).parameters
+            if "enrich_live" in _resolver_params:
+                # Account users already carry their durable memberships: the
+                # live Sleeper enrichment is redundant for them (the same
+                # enrich_live=not bool(account_id) page_portfolio passes).
+                league_inputs, season = resolve_my_leagues(
+                    viewer_user_id, account_id, season,
+                    enrich_live=not bool(account_id))
+            else:  # compatibility for injected/legacy resolvers
+                league_inputs, season = resolve_my_leagues(
+                    viewer_user_id, account_id, season)
+        except Exception:
+            return None
+        _pf_resolution_put(viewer_user_id, account_id, season,
+                           league_inputs, season)
     try:
         from dashboard_services.api import get_nfl_players
         nfl_players = get_nfl_players() or {}
@@ -2405,8 +2623,15 @@ def _pf_bye_row_for(res, next_week, base):
         return None
 
 
-def _pf_rooting_for(res, base):
-    """Rooting inputs for one resolved league: (starters, margin or None)."""
+def _pf_rooting_for(res, base, include_live=True):
+    """Rooting inputs for one resolved league: (starters, margin or None).
+
+    ``include_live=False`` skips the provider matchup fetch entirely:
+    starters then carry projections only (points stay None), which is
+    the honest pregame shape -- the page build uses it for the embedded
+    first paint, and live points arrive via the insights endpoint once
+    games start.
+    """
     nfl_players = base["nfl_players"]
     week = base["week"]
     starters = res["starters"]
@@ -2415,9 +2640,11 @@ def _pf_rooting_for(res, base):
     opp_points = None
     my_points = None
     try:
-        from dashboard_services.platform_api import get_matchups
-        rows = get_matchups(res["plat"], res["lid"], week,
-                            res["lg_season"]) or []
+        rows = []
+        if include_live:
+            from dashboard_services.platform_api import get_matchups
+            rows = get_matchups(res["plat"], res["lid"], week,
+                                res["lg_season"]) or []
         mine = next((r for r in rows
                      if str(r.get("roster_id")) == str(res["viewer_roster"].get("roster_id"))),
                     None)
@@ -2499,6 +2726,78 @@ def _pf_bye_target_week(base):
     return week + 1
 
 
+def _pf_slate_ahead(season, week):
+    """True when the week's first kickoff is still in the future (the
+    pregame case, where the Rooting Guide needs no live data at all).
+    Any doubt (no schedule, no epochs) answers False."""
+    try:
+        from utils.utils import load_week_schedule
+        epochs = []
+        for g in (load_week_schedule(season, week) or []):
+            try:
+                epochs.append(float(g.get("gameTime_epoch")))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        return bool(epochs) and min(epochs) > time.time()
+    except Exception:
+        return False
+
+
+def _pf_embed_payloads(base):
+    """First-paint payloads for the page build's embedded JSON blocks.
+
+    The page build already holds everything Bye Watch needs (cached
+    league contexts, the players index, model values) and everything
+    the pregame Rooting Guide needs (contexts + schedule +
+    projections), so both payloads are computed or reused HERE, inside
+    the pass that already paid for the data, and stored into the
+    shared snapshot caches (+ disk tier) for the endpoints to serve.
+    The page request never waits on a provider call for this: bye is
+    cache-only by design, and rooting is embedded only while the whole
+    slate is still ahead, in its no-live-calls shape.
+
+    Returns (bye_payload_or_None, rooting_payload_or_None); a payload
+    that scanned nothing is never embedded (the client then falls back
+    to the endpoint, whose scan accounting stays honest).
+    """
+    key = base["cache_key"]
+    bye_payload = _bye_cache_get(key)
+    if bye_payload is None:
+        disk = _pf_disk_get("bye", key, _BYE_TTL)
+        if disk is not None:
+            bye_payload, _age = disk
+            _bye_cache_put(key, bye_payload, age_s=_age)
+    if bye_payload is None:
+        bye_payload = _compute_portfolio_bye(base)
+        if (bye_payload.get("scan") or {}).get("scanned", 0) > 0:
+            _bye_cache_put(key, bye_payload)
+            _pf_disk_put("bye", key, bye_payload)
+        else:
+            bye_payload = None
+    elif (bye_payload.get("scan") or {}).get("scanned", 0) == 0:
+        bye_payload = None
+
+    rooting_payload = None
+    if _pf_slate_ahead(base["season"], base["week"]):
+        rooting_payload = _insights_cache_get(key)
+        if rooting_payload is None:
+            disk = _pf_disk_get("insights", key, _INSIGHTS_DISK_FRESH_S)
+            if disk is not None:
+                rooting_payload, _age = disk
+                _insights_cache_put(key, rooting_payload, age_s=_age)
+        if rooting_payload is None:
+            rooting_payload = _compute_portfolio_insights(
+                base, include_live=False)
+            _scan = rooting_payload.get("scan") or {}
+            if _scan.get("scanned", 0) > 0:
+                _insights_cache_put(key, rooting_payload)
+                if not _scan.get("incomplete"):
+                    _pf_disk_put("insights", key, rooting_payload)
+            else:
+                rooting_payload = None
+    return bye_payload, rooting_payload
+
+
 def _compute_portfolio_bye(base):
     """Assemble the Bye Watch payload from a resolved viewer preamble."""
     next_week = _pf_bye_target_week(base)
@@ -2558,17 +2857,34 @@ def api_portfolio_bye():
     if stale is not None:
         _pf_kick_background("bye", light_key, _pf_identity_snapshot())
         return jsonify(stale)
+    # Disk tier: the payload survives worker recycles on the shared
+    # disk cache, so a post-recycle load serves it (stale, with one
+    # background refresh when past the fresh TTL) instead of paying
+    # the full preamble synchronously on the request thread.
+    disk = _pf_disk_get("bye", light_key, _BYE_STALE_S)
+    if disk is not None:
+        payload, age = disk
+        _bye_cache_put(light_key, payload, age_s=age)
+        if age >= _BYE_TTL:
+            _pf_kick_background("bye", light_key, _pf_identity_snapshot())
+        return jsonify(payload)
     base = _pf_viewer_leagues()
     if base is None:
         return jsonify(empty)
     payload = _compute_portfolio_bye(base)
     if payload["scan"]["scanned"] > 0:
         _bye_cache_put(base["cache_key"], payload)
+        _pf_disk_put("bye", base["cache_key"], payload)
     return jsonify(payload)
 
 
-def _compute_portfolio_insights(base):
-    """Assemble the Rooting Guide payload (see api_portfolio_insights)."""
+def _compute_portfolio_insights(base, include_live=True):
+    """Assemble the Rooting Guide payload (see api_portfolio_insights).
+
+    ``include_live=False`` produces the pregame shape with no provider
+    calls at all (no matchup fetches, no ESPN overlay): schedule +
+    starters + projections only, for the page build's embedded paint.
+    """
     from dashboard_services import portfolio_insights as _pins
     from utils.utils import load_week_schedule
 
@@ -2597,7 +2913,7 @@ def _compute_portfolio_insights(base):
         except (TypeError, ValueError, AttributeError):
             continue
     _slate_ahead = bool(_epochs) and min(_epochs) > time.time()
-    if not _slate_ahead:
+    if not _slate_ahead and include_live:
         try:
             from dashboard_services.api import build_team_game_lookup, get_nfl_scores_for_date
             from zoneinfo import ZoneInfo as _ZI
@@ -2643,7 +2959,8 @@ def _compute_portfolio_insights(base):
         res = _pf_resolve_league(lg, base)
         if res is None:
             return None
-        starters_out, margin = _pf_rooting_for(res, base)
+        starters_out, margin = _pf_rooting_for(
+            res, base, include_live=include_live)
         return res, starters_out, margin
 
     results = []
@@ -2733,11 +3050,31 @@ def api_portfolio_insights():
         return jsonify(empty)
     cached = _insights_cache_get(light_key)
     if cached is not None:
+        if (cached.get("scan") or {}).get("incomplete"):
+            # Fresh but partial (the last compute landed while league
+            # contexts were still cold): serve what exists, but keep a
+            # refresh in flight instead of letting the fresh TTL
+            # suppress re-kicks for its whole window.
+            _pf_kick_background("insights", light_key,
+                                _pf_identity_snapshot())
         return jsonify(cached)
     stale = _insights_cache_get(light_key, max_age=_INSIGHTS_STALE_S)
     if stale is not None:
         _pf_kick_background("insights", light_key, _pf_identity_snapshot())
         return jsonify(stale)
+    # Disk tier: after a worker recycle both dicts above are empty, but
+    # the last finished payload survives on the shared disk cache. A
+    # young disk payload serves as-is (its ``updated`` is the true
+    # compute time); an older one serves stale while a refresh runs.
+    disk = _pf_disk_get("insights", light_key, _INSIGHTS_STALE_S)
+    if disk is not None:
+        payload, age = disk
+        _insights_cache_put(light_key, payload, age_s=age)
+        if age >= _INSIGHTS_DISK_FRESH_S or (
+                (payload.get("scan") or {}).get("incomplete")):
+            _pf_kick_background("insights", light_key,
+                                _pf_identity_snapshot())
+        return jsonify(payload)
     _pf_kick_background("insights", light_key, _pf_identity_snapshot())
     return jsonify(empty)
 

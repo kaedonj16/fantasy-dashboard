@@ -203,4 +203,10 @@ def test_rooting_bye_cleanup_client_and_css():
     assert ".pf-rg-winname{font-size:12px" in app_src
     assert ".pf-rg-team{font-size:12px" in app_src
     assert ".pf-rg-p .pos-badge{width:29px;height:19px;font-size:10px" in app_src
-    assert ".pf-bye-row{display:flex;align-items:center;gap:8px;padding:5px 0" in app_src
+    assert ".pf-bye-row{display:flex;align-items:center;gap:8px;padding:5px 0" not in app_src
+    # Bye rows are a consistent 3-column grid (name / content / status):
+    # the old flex row let the out text float at a different x per row
+    # and pinned full-strength text to the far edge with margin-left.
+    assert ".pf-bye-row{display:grid;grid-template-columns:minmax(170px,220px) minmax(0,1fr) auto" in app_src
+    assert ".pf-bye-full{grid-column:3;justify-self:end" in app_src
+    assert ".pf-bye-fix{grid-column:2;" in app_src

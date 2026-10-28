@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "My Leagues: Rooting Guide and Bye Watch are built into the page itself now, from the same data that builds Player Holdings, so they paint with the page instead of loading in afterward. Bye Watch rows line up in clean columns, the league lookup behind the cards runs once and is shared instead of repeated per card, finished results are kept on the server's shared disk so they survive the app's regular restarts, and the cards keep checking politely in the background instead of giving up and painting an empty card.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
         "link": "/recap"
     },

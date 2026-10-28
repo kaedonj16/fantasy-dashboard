@@ -64,6 +64,13 @@ def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None, week=7):
     bp_mod._INSIGHTS_INFLIGHT.clear()
     bp_mod._BYE_CACHE.clear()
     bp_mod._BYE_INFLIGHT.clear()
+    bp_mod._PF_RESOLUTION_CACHE.clear()
+    # Disk tier isolation: each test gets its own throwaway disk-cache
+    # file so payloads persisted by one test can never serve another.
+    import tempfile
+    bp_mod._PF_DISK_PATH_OVERRIDE = str(
+        pathlib.Path(tempfile.mkdtemp(prefix="pf-disk-"))
+        / "pf_insights_cache.json")
     monkeypatch.setattr(
         bp_mod, "get_nfl_state",
         lambda *a, **k: {"season": 2026, "week": week, "season_type": "reg"})
@@ -430,20 +437,218 @@ def test_insights_skips_live_overlay_before_first_kickoff(monkeypatch):
     assert windows[0]["games"][0]["home"] == "BUF"
 
 
+# ── Disk tier: payloads survive a worker recycle ────────────────────────
+
+def test_pf_disk_tier_roundtrip_and_expiry(monkeypatch):
+    """The disk tier stores the finished payload with its true compute
+    time: a read inside the grace returns it with its real age, a read
+    past the grace returns nothing (TTL enforced on read)."""
+    import time as _time
+
+    import routes.user_pages_bp as bp_mod
+
+    key = ("acct-1", 2026, 7)
+    payload = {"ok": True, "scan": {"total": 2, "scanned": 2,
+                                    "incomplete": False},
+               "updated": "2026-10-25T17:00:00+00:00"}
+    bp_mod._pf_disk_put("insights", key, payload)
+    got = bp_mod._pf_disk_get("insights", key, 1800.0)
+    assert got is not None
+    served, age = got
+    assert served == payload  # updated stamp untouched
+    assert 0 <= age < 60
+    # Backdate the stored compute time past the grace: expired.
+    import json as _json
+    path = bp_mod._pf_disk_path()
+    blob = _json.loads(pathlib.Path(path).read_text())
+    store_key = bp_mod._pf_disk_store_key("insights", key)
+    blob[store_key]["computed_at"] = _time.time() - 1801
+    pathlib.Path(path).write_text(_json.dumps(blob))
+    assert bp_mod._pf_disk_get("insights", key, 1800.0) is None
+
+
+def test_insights_disk_tier_serves_after_inprocess_wipe(monkeypatch):
+    """Simulated worker recycle: the finished compute persisted to
+    disk, so after BOTH in-process caches are cleared the endpoint
+    serves the disk payload instantly -- no preamble, no provider
+    fetch, original ``updated`` stamp."""
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, platform_api = _client(monkeypatch, ctxs)
+    monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
+    landed = _poll_insights(client, bp_mod)
+    assert landed["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+
+    calls = {"preamble": 0, "matchups": 0}
+    orig_preamble = bp_mod._pf_viewer_leagues
+
+    def _counting_preamble(identity=None):
+        calls["preamble"] += 1
+        return orig_preamble(identity)
+
+    def _counting_matchups(*a, **k):
+        calls["matchups"] += 1
+        return _matchup_rows(*a, **k)
+
+    monkeypatch.setattr(bp_mod, "_pf_viewer_leagues", _counting_preamble)
+    monkeypatch.setattr(platform_api, "get_matchups", _counting_matchups)
+    bp_mod._INSIGHTS_CACHE.clear()   # the recycle wipes both dicts
+    bp_mod._INSIGHTS_INFLIGHT.clear()
+    served = client.get("/api/portfolio-insights").get_json()
+    assert served["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+    assert served["rooting"] == landed["rooting"]
+    assert served["updated"] == landed["updated"]  # never restamped
+    assert calls == {"preamble": 0, "matchups": 0}
+
+
+def test_bye_disk_tier_serves_after_inprocess_wipe(monkeypatch):
+    """Bye Watch after a recycle: the disk payload serves before the
+    endpoint pays the _pf_viewer_leagues preamble at all."""
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, _pa = _client(monkeypatch, ctxs)
+    first = client.get("/api/portfolio-bye").get_json()
+    assert first["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+
+    calls = {"n": 0}
+    orig = bp_mod._pf_viewer_leagues
+
+    def _counting(identity=None):
+        calls["n"] += 1
+        return orig(identity)
+
+    monkeypatch.setattr(bp_mod, "_pf_viewer_leagues", _counting)
+    bp_mod._BYE_CACHE.clear()   # the recycle wipes both dicts
+    bp_mod._BYE_INFLIGHT.clear()
+    served = client.get("/api/portfolio-bye").get_json()
+    assert served == first  # same payload, same updated stamp
+    assert calls["n"] == 0  # disk answered before the preamble
+
+
+def test_insights_kick_not_starved_by_actions_semaphore(monkeypatch):
+    """Starvation regression: the insights compute used to share
+    _ACTIONS_COMPUTE_SEM(2) with the long moves-board scans, so a busy
+    board silently dropped its kick. With both actions slots held, a
+    cold insights call must STILL land its compute (dedicated
+    _INSIGHTS_COMPUTE_SEM(1))."""
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, platform_api = _client(monkeypatch, ctxs)
+    monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
+    sem = bp_mod._ACTIONS_COMPUTE_SEM
+    assert sem.acquire(blocking=False)
+    assert sem.acquire(blocking=False)
+    try:
+        first = client.get("/api/portfolio-insights").get_json()
+        assert first["scan"]["incomplete"] is True  # deferred as usual
+        landed = _poll_insights(client, bp_mod)
+    finally:
+        sem.release()
+        sem.release()
+    assert landed["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+
+
+# ── Shared snapshot: one resolution serves every endpoint ───────────────
+
+def test_snapshot_resolution_serves_bye_and_insights_preambles(monkeypatch):
+    """The page build stores its league resolution into the shared
+    snapshot; after that, BOTH endpoint preambles (the bye endpoint's
+    synchronous one and the insights background worker's) must reuse
+    it instead of paying resolve_my_leagues again."""
+    import dashboard_services.accounts as accounts
+
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, platform_api = _client(monkeypatch, ctxs)
+    monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
+    # What the page build does with the resolution it already paid for:
+    bp_mod._pf_resolution_put("owner-1", None, 2026, _LEAGUES, 2026)
+
+    calls = {"n": 0}
+    orig_resolver = accounts.resolve_my_leagues
+
+    def _counting_resolver(*a, **k):
+        calls["n"] += 1
+        return orig_resolver(*a, **k)
+
+    monkeypatch.setattr(accounts, "resolve_my_leagues", _counting_resolver)
+    bye = client.get("/api/portfolio-bye").get_json()
+    assert bye["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+    landed = _poll_insights(client, bp_mod)
+    assert landed["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
+    assert calls["n"] == 0  # one resolution, stored once, served both
+
+
+def test_embed_payloads_compute_in_page_pass_and_store(monkeypatch):
+    """The page build's embed pass: bye (cache-only) and the pregame
+    rooting payload are computed from the data the pass already holds
+    -- with get_matchups rigged to raise, proving rooting's embed
+    shape makes NO provider call -- and both land in the snapshot
+    caches (+ disk for bye) for the endpoints to serve. A second
+    embed pass reuses them without recomputing."""
+    import time as _time
+
+    future = _time.time() + 2 * 86400
+    sched = [{"home": "BUF", "away": "NYJ", "gameTime_epoch": future}]
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, platform_api = _client(
+        monkeypatch, ctxs, sched=sched, week=8)
+
+    def _boom(*a, **k):
+        raise AssertionError("embed rooting must not call get_matchups")
+
+    monkeypatch.setattr(platform_api, "get_matchups", _boom)
+    base = {
+        "viewer_user_id": "owner-1", "account_id": None,
+        "season": 2026, "week": 8, "league_inputs": list(_LEAGUES),
+        "nfl_players": bp_mod._pf_players_with_byes(dict(_PLAYERS), 2026),
+        "model_rows": list(_MODEL_ROWS),
+        "value_by_pid": {"fa1": 500.0},
+        "cache_key": ("viewer:owner-1", 2026, 8),
+    }
+    bye_calls = {"n": 0}
+    orig_bye = bp_mod._compute_portfolio_bye
+
+    def _counting_bye(b):
+        bye_calls["n"] += 1
+        return orig_bye(b)
+
+    monkeypatch.setattr(bp_mod, "_compute_portfolio_bye", _counting_bye)
+    bye_payload, rooting_payload = bp_mod._pf_embed_payloads(base)
+    # Bye: Week 8 target (kickoff still ahead), both BUF starters out.
+    assert bye_payload["bye"]["week"] == 8
+    assert bye_payload["scan"]["scanned"] == 2
+    assert bye_payload["bye"]["total_out"] == 2
+    # Rooting: windows built from schedule + starters + projections,
+    # points honestly None pregame, and no provider call happened.
+    assert rooting_payload["scan"] == {
+        "total": 2, "scanned": 2, "incomplete": False}
+    windows = rooting_payload["rooting"]["windows"]
+    assert len(windows) == 1
+    starters = windows[0]["games"][0]["sides"]["home"]
+    assert {s["name"] for s in starters} == {"Starter One", "Starter Two"}
+    assert all(s["points"] is None for s in starters)
+    # Stored for the endpoints: in-process caches and the bye disk tier.
+    key = base["cache_key"]
+    assert bp_mod._bye_cache_get(key) == bye_payload
+    assert bp_mod._insights_cache_get(key) == rooting_payload
+    assert bp_mod._pf_disk_get("bye", key, 300.0) is not None
+    # Second pass (the next page load) reuses, never recomputes.
+    bye2, rooting2 = bp_mod._pf_embed_payloads(base)
+    assert bye_calls["n"] == 1
+    assert bye2 == bye_payload and rooting2 == rooting_payload
+
+
 # ── Client wiring ───────────────────────────────────────────────────────────
 
 def test_client_loads_bye_immediately_and_defers_rooting():
     js = (ROOT / "static" / "app.js").read_text()
     assert "fetcher('/api/portfolio-bye'" in js
-    assert "function loadBye()" in js
-    rooting = js[js.index("function loadInsights(attempt)"):]
-    rooting = rooting[:rooting.index("function loadBye()")]
+    assert "function loadBye(attempt)" in js
+    rooting = js[js.index("function loadInsights(attempt, startedAt)"):]
+    rooting = rooting[:rooting.index("function loadBye(attempt)")]
     assert "renderBye(" not in rooting  # bye no longer rides insights
     # The rooting load retries on the moves-board ladder instead of
     # painting its error after a single short fetch.
     assert "INS_RETRY" in rooting
     assert "45000" in rooting
-    assert "loadInsights(attempt + 1)" in rooting
+    assert "loadInsights(attempt + 1, t0)" in rooting
     assert "window.addEventListener('br:portfolio-primary-settled', kickInsights" in js
     assert "setTimeout(kickInsights, 6000);" in js
     assert "insightsKicked" in js
@@ -453,3 +658,26 @@ def test_client_loads_bye_immediately_and_defers_rooting():
     assert "var INS_RETRY = [3000, 15000, 30000];" in js
     assert "IntersectionObserver" in js
     assert "getElementById('pfSecRooting')" in js
+    # Cold-load fix (2026-10-27): the old ladder burned out at ~48s,
+    # before a cold production compute lands, and painted the
+    # no-starters empty state for a scan that never completed. The
+    # ladder now polls politely for ~3 minutes, and the budget-expired
+    # incomplete state is an honest still-loading message.
+    assert "var INS_POLL_MS = 10000;" in rooting
+    assert "var INS_BUDGET_MS = 180000;" in rooting
+    assert "Still loading your games, taking longer than usual." in rooting
+    assert "rb.isConnected" in rooting
+    # Bye Watch client: it used to be one 20s shot with no retry at
+    # all. It now has its own bounded ladder for failures and for
+    # incomplete scans that produced no rows yet.
+    bye = js[js.index("function loadBye(attempt)"):]
+    bye = bye[:bye.index("window.__pfRefreshInsights")]
+    assert "var BYE_RETRY = [3000, 10000, 20000, 30000];" in bye
+    assert "loadBye(attempt + 1)" in bye
+    # Embedded first paint: both loaders consume the server-embedded
+    # payload (computed in the page build) before any fetch, and each
+    # block is consumed at most once so refresh hooks still fetch.
+    assert "function pfEmbedded(id)" in js
+    assert "_pfConsumed" in js
+    assert "pfEmbedded('pf-bye-embedded')" in js
+    assert "pfEmbedded('pf-rooting-embedded')" in js
