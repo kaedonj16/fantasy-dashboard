@@ -50337,8 +50337,15 @@ table.rz-bs-table thead th:not(:first-child) {
   font-size: 15px;
 }
 .team-badge-xs {
-  width: 24px;
+  /* Sized to content, not a fixed 24px: at 11px/800 a 3-letter
+     abbreviation is ~25px wide, so in a 24px box the centered text
+     slid under the 3px left stripe (painted above the text) and
+     overflow:hidden clipped the first letter. The padding leaves the
+     text clear of the stripe; min-width keeps the old floor. */
+  width: auto;
+  min-width: 24px;
   height: 24px;
+  padding: 0 5px 0 8px;
   font-size: 11px;
   border-radius: var(--radius-sm);
 }

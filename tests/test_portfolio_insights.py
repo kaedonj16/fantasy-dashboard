@@ -210,3 +210,28 @@ def test_rooting_bye_cleanup_client_and_css():
     assert ".pf-bye-row{display:grid;grid-template-columns:minmax(170px,220px) minmax(0,1fr) auto" in app_src
     assert ".pf-bye-full{grid-column:3;justify-self:end" in app_src
     assert ".pf-bye-fix{grid-column:2;" in app_src
+
+
+def test_rooting_games_two_per_row_and_xs_badge_fits_text():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    # Game cards render inside a grid wrapper per window; the day-group
+    # header and the need lines stay full width outside it.
+    assert "'<div class=\"pf-rg-games\">'" in js
+    app_src = (root / "app.py").read_text(encoding="utf-8")
+    # Two game cards per row once the CARD is wide enough (container
+    # query on the card itself, not the viewport), one column below
+    # that, which is also the phone layout.
+    assert "#pfSecRooting{container-type:inline-size;}" in app_src
+    assert ".pf-rg-games{display:grid;grid-template-columns:1fr;gap:6px;}" in app_src
+    assert ".pf-rg-games .pf-rg-game{margin-bottom:0;}" in app_src
+    assert "@container (min-width:720px){.pf-rg-games{grid-template-columns:repeat(2,1fr);}}" in app_src
+    # The xs team badge sizes to its text: in the old fixed 24px box a
+    # 3-letter abbreviation (~25px at 11px/800) slid under the 3px left
+    # stripe and overflow:hidden clipped its first letter.
+    css = (root / "static" / "dashboard.css").read_text(encoding="utf-8")
+    badge = css[css.index(".team-badge-xs {"):css.index(".team-badge-xs::before")]
+    assert "width: auto;" in badge
+    assert "min-width: 24px;" in badge
+    assert "padding: 0 5px 0 8px;" in badge
