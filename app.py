@@ -6333,8 +6333,6 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
   function dismiss() {{
     el.style.display = 'none';
     localStorage.setItem(key, '1');
-    var dot = document.getElementById('recapNavDot');
-    if (dot) dot.remove();
     if (typeof window.brUndoToast === 'function') {{
       window.brUndoToast('Banner dismissed.', function() {{
         localStorage.removeItem(key);
@@ -6343,21 +6341,8 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     }}
   }}
 
-  function addNavDot() {{
-    var weekly = Array.from(document.querySelectorAll('.nav-pill, .nav-dropdown-btn'))
-                      .find(function(n) {{ return n.textContent.trim().startsWith('Weekly'); }});
-    if (!weekly) return;
-    var dot = document.createElement('span');
-    dot.id = 'recapNavDot';
-    dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:#ef4444;'
-                      + 'display:inline-block;margin-left:5px;vertical-align:middle;'
-                      + 'position:relative;top:-1px;flex-shrink:0;';
-    weekly.appendChild(dot);
-  }}
-
   if (!localStorage.getItem(key)) {{
     el.style.display = 'flex';
-    addNavDot();
   }}
 
   document.getElementById('recapReadyClose').addEventListener('click', dismiss);
