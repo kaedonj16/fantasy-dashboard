@@ -30510,20 +30510,73 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       });
     });
   }
-  function loadInsights(attempt) {
+  // First-paint payloads embedded in the page by the server build
+  // (the build already held the data; see _pf_embed_payloads). Each
+  // block is consumed at most once per page instance: refresh hooks
+  // that call the loaders again go to the endpoints for fresh data.
+  function pfEmbedded(id) {
+    var el = document.getElementById(id);
+    if (!el || el._pfConsumed) return null;
+    el._pfConsumed = true;
+    try { return JSON.parse(el.textContent || 'null'); } catch (e) { return null; }
+  }
+  function loadInsights(attempt, startedAt) {
     var rb = document.getElementById('pfRootingBody');
     if (!rb) return;
     attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
-    // Same ladder as the moves board: the scan is a per-league provider
-    // sweep that runs on a bounded server-side background thread, and
-    // the server caches the landed compute for 60s and single-flights
-    // it, so a cold answer comes back deferred immediately and the first
-    // retry only has to outlast the compute itself. The old single 20s
-    // shot painted "Could not load your games" permanently on exactly
-    // the loads the cache was about to serve. A deferred (single-flight)
-    // or failed attempt retries instead of rendering.
+    var t0 = (typeof startedAt === 'number' && startedAt > 0) ? startedAt : Date.now();
+    if (attempt === 0 && typeof startedAt === 'undefined') {
+      var emb = pfEmbedded('pf-rooting-embedded');
+      if (emb) {
+        if (emb.updated) {
+          var embLabel = 'Updated ' + timeLabel(emb.updated);
+          document.querySelectorAll('[data-rooting-upd]').forEach(function (el) {
+            el.textContent = embLabel;
+          });
+        }
+        if (emb.season) SEASON = Number(emb.season) || SEASON;
+        var ew = (emb.rooting && emb.rooting.windows) || [];
+        var embIncomplete = !!(emb.scan && emb.scan.incomplete);
+        if (ew.length || !embIncomplete) renderRooting(ew);
+        var live = false;
+        for (var wi = 0; wi < ew.length && !live; wi++) {
+          var gs = ew[wi].games || [];
+          for (var gi = 0; gi < gs.length; gi++) {
+            if (gs[gi].status && gs[gi].status !== 'pre') { live = true; break; }
+          }
+        }
+        // Complete pregame embed: painted, no first-load fetch at all.
+        // A live or partial embed paints what it has, then falls
+        // through to the polling refresh below for the real data.
+        if (!live && !embIncomplete) return;
+      }
+    }
+    // The scan is a per-league provider sweep that runs on a bounded
+    // server-side background thread; a cold answer comes back deferred
+    // immediately and the retries land on the finished cache. The old
+    // ladder (3s/15s/30s, done by ~48s) was sized for a local compute:
+    // a cold production compute (preamble + up to 12 provider fetches
+    // on one shared CPU, behind a worker that recycles and wipes the
+    // cache) routinely takes longer, so the ladder now keeps polling
+    // politely every 10s for up to ~3 minutes while the card is on the
+    // page. The no-starters empty state renders ONLY when a complete
+    // scan says so; a still-incomplete scan keeps the loading state.
     var INS_RETRY = [3000, 15000, 30000];
+    var INS_POLL_MS = 10000;
+    var INS_BUDGET_MS = 180000;
     var fetcher = window.brFetchWithTimeout || window.fetch;
+    function budgetLeft() { return Date.now() - t0 < INS_BUDGET_MS; }
+    function scheduleRetry() {
+      var delay = attempt < INS_RETRY.length ? INS_RETRY[attempt] : INS_POLL_MS;
+      setTimeout(function () {
+        if (!rb.isConnected) return;  // card left the page: stop polling
+        if (document.hidden) {  // page hidden: check again shortly
+          if (budgetLeft()) scheduleRetry();
+          return;
+        }
+        loadInsights(attempt + 1, t0);
+      }, delay);
+    }
     fetcher('/api/portfolio-insights', { cache: 'no-store', credentials: 'same-origin' }, 45000)
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -30535,25 +30588,54 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         }
         if (d && d.season) SEASON = Number(d.season) || SEASON;
         var windows = d && d.rooting && d.rooting.windows;
-        if ((!windows || !windows.length) && d && d.scan && d.scan.incomplete
-            && attempt < INS_RETRY.length) {
-          setTimeout(function () { loadInsights(attempt + 1); }, INS_RETRY[attempt]);
+        if ((!windows || !windows.length) && d && d.scan && d.scan.incomplete) {
+          if (budgetLeft()) { scheduleRetry(); return; }
+          // Budget spent and the scan STILL has not completed: say so
+          // honestly instead of painting the no-starters empty state
+          // for a scan that never finished.
+          rb.innerHTML = '<div class="pf-ins-empty">Still loading your games, taking longer than usual.</div>';
           return;
         }
         renderRooting(windows);
       })
       .catch(function () {
-        if (attempt < INS_RETRY.length) {
-          setTimeout(function () { loadInsights(attempt + 1); }, INS_RETRY[attempt]);
-          return;
-        }
+        if (budgetLeft()) { scheduleRetry(); return; }
         rb.innerHTML = '<div class="pf-ins-empty">Could not load your games right now.</div>';
       });
   }
-  function loadBye() {
+  function loadBye(attempt) {
     var bb = document.getElementById('pfByeBody');
     if (!bb) return;
+    attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
+    if (attempt === 0) {
+      // Embedded first paint: the server build already computed this
+      // payload from the same pass that built Player Holdings, so the
+      // card paints with no fetch at all on a normal load.
+      var embB = pfEmbedded('pf-bye-embedded');
+      if (embB && embB.bye) {
+        if (embB.updated) {
+          var embBLabel = 'Updated ' + timeLabel(embB.updated);
+          document.querySelectorAll('[data-bye-upd]').forEach(function (el) {
+            el.textContent = embBLabel;
+          });
+        }
+        renderBye(embB.bye);
+        return;
+      }
+    }
+    // Bye used to be a single 20s shot: one slow cold load (the server
+    // pays the full preamble synchronously when every cache tier is
+    // cold) painted "Could not check byes" permanently. It now retries
+    // on a bounded ladder (~60s total) on fetch failure AND on an
+    // incomplete scan that produced no rows yet; a complete scan, or
+    // an incomplete one WITH rows, renders immediately.
+    var BYE_RETRY = [3000, 10000, 20000, 30000];
     var fetcher = window.brFetchWithTimeout || window.fetch;
+    function scheduleRetry() {
+      setTimeout(function () {
+        if (bb.isConnected) loadBye(attempt + 1);
+      }, BYE_RETRY[attempt]);
+    }
     fetcher('/api/portfolio-bye', { cache: 'no-store', credentials: 'same-origin' }, 20000)
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -30563,9 +30645,16 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
             el.textContent = label;
           });
         }
+        var rows = (d && d.bye && d.bye.rows) || [];
+        if (!rows.length && d && d.scan && d.scan.incomplete
+            && attempt < BYE_RETRY.length) {
+          scheduleRetry();
+          return;
+        }
         renderBye(d && d.bye);
       })
       .catch(function () {
+        if (attempt < BYE_RETRY.length) { scheduleRetry(); return; }
         bb.innerHTML = '<div class="pf-ins-empty">Could not check byes right now.</div>';
       });
   }

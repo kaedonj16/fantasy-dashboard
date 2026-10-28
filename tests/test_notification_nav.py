@@ -210,7 +210,7 @@ def test_week_pill_replaced_by_data_attribute():
 def test_changelog_announces_phone_panel_and_more_dot_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[2]  # the duplicate Tuesday dot removal and My Leagues phone tabs + card odds entries prepended above it
+    top = CHANGELOG[3]  # the duplicate Tuesday dot removal and My Leagues phone tabs + card odds entries prepended above it
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "Notifications on your phone" in top["text"]
