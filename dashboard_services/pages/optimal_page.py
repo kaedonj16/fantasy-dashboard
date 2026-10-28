@@ -309,6 +309,73 @@ def _lw_player_info(ctx, wanted_pids=()):
     return info
 
 
+def _lw_stable_optimal_assignment(slots, actual_asg, solver_asg, positions):
+    """Re-seat the solver's optimal starter SET for display.
+
+    assign_optimal_lineup maximizes points, not slot stability, so its raw
+    assignment can rotate continuing starters across slots (Walker RB1 to
+    RB2, Lamb WR to FLEX) depending on roster iteration order. Diffed
+    slot-by-slot, that rotation reads as phantom swaps with wrong deltas.
+    This returns a legal assignment of the same set that keeps every
+    continuing starter in his actual slot whenever one exists (exact search
+    maximizing kept slots); it falls back to the solver's own assignment if
+    no stable seating is found."""
+    from functools import lru_cache
+
+    from utils.lineups import canonicalize_slot, slot_eligible_positions
+
+    solver_set = {p for p in solver_asg if p}
+    actual_set = {p for p in actual_asg if p}
+    if not solver_set:
+        return list(solver_asg)
+    if solver_set == actual_set:
+        return list(actual_asg)
+    players = [p for p in actual_asg if p in solver_set]
+    players += [p for p in solver_asg if p and p not in actual_set]
+    if len(players) != len(slots):
+        return list(solver_asg)
+    pos = {p: canonicalize_slot(positions.get(p)) for p in players}
+    eligible = [
+        [j for j, p in enumerate(players)
+         if pos[p] and pos[p] in slot_eligible_positions(slot)]
+        for slot in slots
+    ]
+    if any(not e for e in eligible):
+        return list(solver_asg)
+
+    @lru_cache(maxsize=None)
+    def _best(i, used):
+        if i == len(slots):
+            return 0
+        best = -1
+        for j in eligible[i]:
+            if used & (1 << j):
+                continue
+            rest = _best(i + 1, used | (1 << j))
+            if rest < 0:
+                continue
+            val = rest + (1 if actual_asg[i] == players[j] else 0)
+            if val > best:
+                best = val
+        return best
+
+    if _best(0, 0) < 0:
+        return list(solver_asg)
+    out, used = [], 0
+    for i in range(len(slots)):
+        for j in eligible[i]:
+            if used & (1 << j):
+                continue
+            rest = _best(i + 1, used | (1 << j))
+            if rest < 0:
+                continue
+            if rest + (1 if actual_asg[i] == players[j] else 0) == _best(i, used):
+                out.append(players[j])
+                used |= 1 << j
+                break
+    return out if len(out) == len(slots) else list(solver_asg)
+
+
 def _build_lineup_this_week(ctx):
     """Current vs projected-optimal for the current matchup week.
 
@@ -319,7 +386,7 @@ def _build_lineup_this_week(ctx):
         compute_win_prob,
         resolve_team_game,
     )
-    from utils.matchup_schedule import resolve_matchup_week
+    from utils.matchup_schedule import resolve_display_week
 
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     if not viewer_rid:
@@ -327,7 +394,14 @@ def _build_lineup_this_week(ctx):
     season = int(ctx.get("season") or datetime.now().year)
     current_week = int(ctx.get("current_week") or 1)
     matchups_by_week = ctx.get("matchups_by_week") or {}
-    week = resolve_matchup_week(current_week, matchups_by_week)
+    # The same week the hub's carousel slides show for this ctx (shared
+    # helper, clamped, with the completed/offseason branch), so the label
+    # and the priced matchup can never point at different weeks.
+    week = resolve_display_week(
+        current_week, matchups_by_week, int(ctx.get("weeks") or 0),
+        season_complete=bool(ctx.get("season_complete")),
+        offseason_mode=bool(ctx.get("offseason_mode")),
+        last_final_week=_lw_last_final_week(ctx, 0))
     rows = matchups_by_week.get(week) or matchups_by_week.get(str(week)) or []
 
     viewer_block = opponent_block = None
@@ -351,8 +425,14 @@ def _build_lineup_this_week(ctx):
     rosters = ctx.get("rosters") or []
     viewer_roster = next(
         (r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
+    # Taxi-squad players cannot be started without a roster move, so they
+    # are never suggested here (the same roster["taxi"] exclusion the digest
+    # and push start decisions apply). Starters are never on taxi; the
+    # starter-append guard below stays as a harmless safety net.
+    taxi_pids = {str(p) for p in (viewer_roster or {}).get("taxi") or []
+                 if str(p) not in ("", "0")}
     roster_pids = [str(p) for p in (viewer_roster or {}).get("players") or []
-                   if str(p) not in ("", "0")]
+                   if str(p) not in ("", "0") and str(p) not in taxi_pids]
     starter_pids = _lw_block_pids(viewer_block)
     if not roster_pids or not starter_pids:
         return "", None
@@ -401,13 +481,13 @@ def _build_lineup_this_week(ctx):
     missed = max(0.0, optimal - actual)
     slots = data["slots"]
     actual_asg = data["actual_assignment"]
-    optimal_asg = data["optimal_assignment"]
+    # Display the optimal SET seated stably (continuing starters keep their
+    # slots), never the solver's raw rotation.
+    optimal_asg = _lw_stable_optimal_assignment(
+        slots, actual_asg, data["optimal_assignment"], positions)
     starter_set = {p for p in actual_asg if p}
-    changed = set()
-    for g in data.get("groups", []):
-        changed.update(g.get("slots") or [])
-    if not changed:
-        changed = {i for i, (a, o) in enumerate(zip(actual_asg, optimal_asg)) if a != o}
+    optimal_set = {p for p in optimal_asg if p}
+    changed = {i for i, (a, o) in enumerate(zip(actual_asg, optimal_asg)) if a != o}
 
     # Win probability, current vs optimal starters, via the carousel function.
     statuses = ctx.get("statuses") or {}
@@ -477,24 +557,46 @@ def _build_lineup_this_week(ctx):
         return (f"{opp} allows the {_lw_ordinal(rank)}-most points to "
                 f"{_POS_PLURAL.get(pos, pos + 's')}")
 
+    # Paired moves from the starter-set difference: who actually enters the
+    # lineup and who actually leaves it. A bench player seated (in the
+    # stabilized display) in a departing starter's slot pairs with him
+    # directly; leftovers, where the entry forced a rotation, pair off by
+    # projection. The deltas telescope: they always sum to Optimal minus
+    # Current, so the banner, the +Available metric, the tab chip and the
+    # table cannot disagree.
+    incoming = sorted(optimal_set - starter_set, key=lambda p: -proj.get(p, 0.0))
+    outgoing = sorted(starter_set - optimal_set, key=lambda p: -proj.get(p, 0.0))
+    pair_out = {}
+    used_out = set()
+    for inn in incoming:
+        seat = optimal_asg.index(inn)
+        a = actual_asg[seat]
+        if a not in optimal_set and a not in used_out:
+            pair_out[inn] = a
+            used_out.add(a)
+    rest_in = [p for p in incoming if p not in pair_out]
+    rest_out = [p for p in outgoing if p not in used_out]
+    for inn, out in zip(rest_in, rest_out):
+        pair_out[inn] = out
+
     swaps = []
-    for i in sorted(changed):
-        a, o = actual_asg[i], optimal_asg[i]
-        if not o or o in starter_set:
-            continue
-        delta = proj.get(o, 0.0) - (proj.get(a, 0.0) if a else 0.0)
-        if delta <= 0.05:
-            continue
-        in_name = (info.get(o) or {}).get("name") or o
-        out_name = ((info.get(a) or {}).get("name") or a) if a else "Empty slot"
-        reason = f"{in_name} projects {delta:.1f} more than {out_name}."
-        note = _matchup_note(o)
+    for inn in incoming:
+        out = pair_out.get(inn)
+        delta = proj.get(inn, 0.0) - (proj.get(out, 0.0) if out else 0.0)
+        in_name = (info.get(inn) or {}).get("name") or inn
+        out_name = ((info.get(out) or {}).get("name") or out) if out else "Empty slot"
+        if delta >= 0:
+            reason = f"{in_name} projects {delta:.1f} more than {out_name}."
+        else:
+            reason = (f"{in_name} projects {abs(delta):.1f} fewer than {out_name}, "
+                      f"but the full set of moves gains {missed:.1f} overall.")
+        note = _matchup_note(inn)
         if note:
             reason += f" {note}."
-        elif delta < 1.5:
+        elif 0 <= delta < 1.5:
             reason += " Close call."
-        swaps.append({"slot": slots[i], "out": a, "in": o, "delta": delta,
-                      "reason": reason})
+        swaps.append({"slot": slots[optimal_asg.index(inn)], "out": out,
+                      "in": inn, "delta": delta, "reason": reason})
     swaps.sort(key=lambda s: -s["delta"])
 
     roster_map = ctx.get("roster_map") or {}
@@ -509,13 +611,23 @@ def _build_lineup_this_week(ctx):
             wp_txt += f" → {wp_opt * 100:.0f}%"
         wp_metric = (f"<div class='lw-metric'><b>{wp_txt}</b>"
                      f"<span>Win prob</span></div>")
-    metrics = (
-        "<div class='lw-metrics'>"
-        f"<div class='lw-metric'><b>{actual:.1f}</b><span>Current proj</span></div>"
-        f"<div class='lw-metric'><b>{optimal:.1f}</b><span>Optimal proj</span></div>"
-        f"<div class='lw-metric acc'><b>+{missed:.1f}</b><span>Available</span></div>"
-        f"{wp_metric}</div>"
-    )
+    if swaps:
+        metrics = (
+            "<div class='lw-metrics'>"
+            f"<div class='lw-metric'><b>{actual:.1f}</b><span>Current proj</span></div>"
+            f"<div class='lw-metric'><b>{optimal:.1f}</b><span>Optimal proj</span></div>"
+            f"<div class='lw-metric acc'><b>+{missed:.1f}</b><span>Available</span></div>"
+            f"{wp_metric}</div>"
+        )
+    else:
+        # Already optimal: the Optimal and Available tiles would only
+        # repeat the Current number, so the band collapses to the two
+        # tiles that say something (current projection, win probability).
+        metrics = (
+            "<div class='lw-metrics lw-metrics-solo'>"
+            f"<div class='lw-metric'><b>{actual:.1f}</b><span>Current proj</span></div>"
+            f"{wp_metric}</div>"
+        )
 
     if swaps:
         swaps_html = "".join(
@@ -535,26 +647,47 @@ def _build_lineup_this_week(ctx):
         nm = (info.get(pid) or {}).get("name") or pid
         return f"{nm} · {proj.get(pid, 0.0):.1f}"
 
-    rows_html = ""
-    for i, slot in enumerate(slots):
-        a, o = actual_asg[i], optimal_asg[i]
-        is_swap = i in changed and a != o
-        if is_swap:
-            d = proj.get(o, 0.0) - (proj.get(a, 0.0) if a else 0.0)
-            pill = f"<span class='lw-spill'>Swap +{d:.1f}</span>"
-        else:
-            pill = "<span class='lw-keep'>Keep</span>"
-        row_cls = " class='lw-sw'" if is_swap else ""
-        rows_html += (
-            f"<tr{row_cls}>"
-            f"<td>{_esc(str(slot).replace('_', '/'))}</td>"
-            f"<td>{_esc(_cell(a))}</td><td>{_esc(_cell(o))}</td>"
-            f"<td>{pill}</td></tr>")
-    table = (f"<div class='lw-wrap'><table class='lw-table'><thead><tr>"
-             f"<th>Slot</th><th>Current</th><th>Optimal</th><th></th></tr></thead>"
-             f"<tbody>{rows_html}</tbody></table></div>")
+    if swaps:
+        rows_html = ""
+        for i, slot in enumerate(slots):
+            a, o = actual_asg[i], optimal_asg[i]
+            is_swap = i in changed and a != o
+            if is_swap:
+                d = proj.get(o, 0.0) - (proj.get(a, 0.0) if a else 0.0)
+                pill = f"<span class='lw-spill'>Swap +{d:.1f}</span>"
+            else:
+                pill = "<span class='lw-keep'>Keep</span>"
+            row_cls = " class='lw-sw'" if is_swap else ""
+            rows_html += (
+                f"<tr{row_cls}>"
+                f"<td>{_esc(str(slot).replace('_', '/'))}</td>"
+                f"<td>{_esc(_cell(a))}</td><td>{_esc(_cell(o))}</td>"
+                f"<td>{pill}</td></tr>")
+        body = (f"<div class='lw-wrap'><table class='lw-table'><thead><tr>"
+                f"<th>Slot</th><th>Current</th><th>Optimal</th><th></th></tr></thead>"
+                f"<tbody>{rows_html}</tbody></table></div>")
+    else:
+        # Already optimal: a Current-vs-Optimal table would print the same
+        # lineup twice, so show one compact starters list with a Total
+        # footer instead. On desktop the hub CSS stretches the list to
+        # fill the panel (rows share the height evenly).
+        list_rows = ""
+        for i, slot in enumerate(slots):
+            a = actual_asg[i]
+            nm = ((info.get(a) or {}).get("name") or a) if a else "Empty slot"
+            pts = f"{proj.get(a, 0.0):.1f}" if a else ""
+            list_rows += (
+                f"<div class='lw-strow'>"
+                f"<span class='lw-stslot'>{_esc(str(slot).replace('_', '/'))}</span>"
+                f"<span class='lw-stname'>{_esc(nm)}</span>"
+                f"<span class='lw-stpts'>{pts}</span></div>")
+        list_rows += (
+            f"<div class='lw-strow lw-strow-total'>"
+            f"<span class='lw-stslot'>Total</span><span class='lw-stname'></span>"
+            f"<span class='lw-stpts'>{actual:.1f}</span></div>")
+        body = f"<div class='lw-wrap'><div class='lw-stlist'>{list_rows}</div></div>"
 
-    html_out = f"<div class='lw-thisweek'>{sub}{metrics}{swaps_html}{table}</div>"
+    html_out = f"<div class='lw-thisweek'>{sub}{metrics}{swaps_html}{body}</div>"
     return html_out, len(swaps)
 
 

@@ -120,11 +120,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
     def clamp_week(w: int) -> int:
         return max(1, min(max_week, int(w)))
 
-    from utils.matchup_schedule import resolve_matchup_week
-    if season_complete or offseason_mode:
-        default_week = clamp_week(last_final_week)
-    else:
-        default_week = clamp_week(resolve_matchup_week(current_week, matchups_by_week))
+    from utils.matchup_schedule import resolve_display_week
+    default_week = resolve_display_week(
+        current_week, matchups_by_week, max_week,
+        season_complete=season_complete, offseason_mode=offseason_mode,
+        last_final_week=last_final_week)
 
     _hub_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     default_matchups = sorted(
@@ -321,6 +321,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         platform,
         season,
         roster_positions=ctx.get("roster_positions") or [],
+        top_n=5,
     )
     proj_by_roster = ctx.get("proj_by_roster") or {}
     highlights_html = _render_weekly_highlights(
@@ -792,9 +793,9 @@ window.wkActivateTabFromUrl = function() {{
 }})();
 
 // Desktop layout (>=1100px): Week Leaders stays a full-width strip on top;
-// below it the matchup carousel takes the wide LEFT column (sticky) and the
-// Scorers/Scout/Lineup tabs the RIGHT column, the two columns stretched to
-// equal height. Below 1100px it stays the single 4-tab card (the mobile
+// below it the matchup carousel takes the LEFT column (sticky, ~54% wide)
+// and the Scorers/Scout/Lineup tabs the RIGHT column (~46%), the two
+// columns stretched to one shared bottom edge. Below 1100px it stays the single 4-tab card (the mobile
 // layout), Matchups first. Nodes are moved, not duplicated, so the
 // week-change / live-refresh JS keeps finding them.
 (function() {{

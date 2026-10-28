@@ -1093,6 +1093,37 @@ def resolve_matchup_week(current_week, matchups_by_week=None) -> int:
     return max(1, week)
 
 
+def resolve_display_week(current_week, matchups_by_week=None, weeks=0, *,
+                         season_complete=False, offseason_mode=False,
+                         last_final_week=0) -> int:
+    """The week the Weekly Hub paints its matchup slides for.
+
+    Single source of truth for the hub's default week so every panel built
+    from the same ctx (carousel slides, Lineup This Week) labels and prices
+    the SAME week. Mirrors the hub's own rule: completed/offseason leagues
+    sit on the last finalized week; in-season leagues sit on the resolved
+    matchup week, clamped to the league's week count.
+    """
+    try:
+        max_week = int(weeks or 0)
+    except (TypeError, ValueError):
+        max_week = 0
+
+    def _clamp(w):
+        try:
+            w = int(w or 0)
+        except (TypeError, ValueError):
+            w = 0
+        w = max(1, w)
+        if max_week >= 1:
+            w = min(max_week, w)
+        return w
+
+    if season_complete or offseason_mode:
+        return _clamp(last_final_week)
+    return _clamp(resolve_matchup_week(current_week, matchups_by_week))
+
+
 # ======================================================================
 # From utils/viewer_resolve.py
 # ======================================================================

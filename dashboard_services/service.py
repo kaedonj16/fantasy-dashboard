@@ -55,10 +55,13 @@ def matchup_cards_last_week(
         platform: str,
         season: str,
         roster_positions: list = None,
+        top_n: int = 3,
 ) -> tuple[int, str, dict]:
     """
     Returns: (week_number, html_for_matchup_cards, top_by_pos_dict)
-      top_by_pos_dict: {'QB': [ {name, pts, nfl, team, owner}, ... up to 3 ], ...}
+      top_by_pos_dict: {'QB': [ {name, pts, nfl, team, owner}, ... up to
+      top_n ], ...} — top_n defaults to 3; the Weekly Hub Scorers panel
+      asks for 5. The matchup cards HTML never reads top_by_pos.
     """
     last_week = int(df_weekly["week"].max())
     try:
@@ -200,7 +203,7 @@ def matchup_cards_last_week(
     ]
     top_by_pos = {}
     for pos in want_positions:
-        pool = sorted(buckets.get(pos, []), key=lambda x: x["pts"], reverse=True)[:3]
+        pool = sorted(buckets.get(pos, []), key=lambda x: x["pts"], reverse=True)[:top_n]
         top_by_pos[pos] = pool
 
     return last_week, "".join(cards), top_by_pos
@@ -226,12 +229,14 @@ _TOP_THREE_POS_NAMES = {
 
 
 def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = None) -> str:
-    """Top-3-per-position cards for the Weekly Hub Scorers tab.
+    """Per-position scorer cards for the Weekly Hub Scorers tab.
 
-    Markup is a .wk-scorers-grid of .wk-pos-card cards (pos-badge chip + full
-    position name header, one .wk-srow per scorer). The hub's desktop CSS
-    stretches the cards to fill the panel and spreads the rows through each
-    card; on mobile the grid is a single column list.
+    Renders however many rows each position list in top_by_pos carries
+    (the hub's pool builders pass the top 5; the shared default depth is
+    3). Markup is a .wk-scorers-grid of .wk-pos-card cards (pos-badge chip
+    + full position name header, one .wk-srow per scorer). On desktop the
+    hub CSS fills the panel with the grid and shares each card's height
+    evenly across its rows; on mobile the grid is a single column list.
     """
     def card(pos, rows):
         title = _TOP_THREE_POS_NAMES.get(pos, pos)
