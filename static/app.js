@@ -16984,6 +16984,41 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${months[date.getMonth()]} ${date.getDate()}`;
   }
 
+  // Mobile floating panel: dim the page behind it while it is open
+  // (the .br-sheet-scrim pattern; CSS lives with the panel's mobile
+  // rules). The scrim parks inside the top nav next to the panel, and
+  // the nav is raised above the floating dock (.br-ni-open) so the dim
+  // covers the dock too. A tap on the dim is an outside tap, so the
+  // document click closer below dismisses the panel (and the scrim
+  // with it) through the same close path. The panel's inline home in
+  // the More sheet's Account section keeps the sheet's own scrim, and
+  // desktop never gets one.
+  let niScrim = null;
+  function niFloatingMobile() {
+    return window.matchMedia("(max-width: 768px)").matches
+      && !!dropdown.closest(".top-nav")
+      && !dropdown.closest("#brMoreSheet")
+      && !dropdown.closest("#brSheetAccount");
+  }
+  function setNiScrim(open) {
+    const nav = dropdown.closest(".top-nav");
+    if (!nav) return;
+    if (open && niFloatingMobile()) {
+      if (!niScrim) {
+        niScrim = document.createElement("div");
+        niScrim.className = "ni-scrim";
+        niScrim.setAttribute("aria-hidden", "true");
+      }
+      if (niScrim.parentNode !== nav) nav.insertBefore(niScrim, dropdown);
+      void niScrim.offsetWidth;  // land the fade's start state first
+      niScrim.classList.add("open");
+      nav.classList.add("br-ni-open");
+    } else {
+      if (niScrim) niScrim.classList.remove("open");
+      nav.classList.remove("br-ni-open");
+    }
+  }
+
   // Toggle the notification-center panel
   function toggleDropdown() {
     isDropdownOpen = !isDropdownOpen;
@@ -16991,6 +17026,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (isDropdownOpen) {
       dropdown.style.display = "block";
+      setNiScrim(true);
 
       // Opening the panel marks the changelog seen (the panel is rendered
       // first, so this viewing still shows which entries were new). Inbox
@@ -17010,6 +17046,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } else {
       dropdown.style.display = "none";
+      setNiScrim(false);
     }
   }
 
@@ -17019,6 +17056,7 @@ document.addEventListener("DOMContentLoaded", () => {
       isDropdownOpen = false;
       dropdown.style.display = "none";
       bellBtn.setAttribute("aria-expanded", "false");
+      setNiScrim(false);
     }
   }
 
