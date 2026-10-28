@@ -666,6 +666,60 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
         left: 12px;
         width: auto;
         max-width: none;
+        /* Bounded sheet. The base cap (100vh - 96px) measures the LARGE
+           viewport, so under iOS Safari's collapsing chrome the panel's
+           tail slid off-screen and under the floating dock. Cap by the
+           dynamic viewport instead and reserve the dock's zone (60px
+           bar + its float offset + clearance) below the panel: the
+           panel always ends above the dock and the list scrolls inside
+           it. vh first for engines without dvh. */
+        max-height: calc(100vh - 176px);
+        max-height: calc(100dvh - 176px);
+    }
+
+    /* While the bounded panel scrolls, its header (title + Mark all
+       read) and its settings footer stay pinned inside it. */
+    .top-nav.br-mnav .changelog-dropdown .ni-head {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--card);
+    }
+
+    .top-nav.br-mnav .changelog-dropdown .ni-foot {
+        position: sticky;
+        bottom: 0;
+        background: var(--card);
+    }
+
+    /* Dim behind the open panel: the .br-sheet-scrim pattern (same
+       color, opacity and fade). app.js parks the element next to the
+       panel inside the top nav, one step under the panel's own
+       z-index; while it is open the nav itself is raised above the
+       floating dock (.br-ni-open) so the dim covers the dock too,
+       like .rz-bs-backdrop. A tap on the dim is an outside tap, so
+       the panel's existing click-outside closer dismisses both. */
+    /* Scoped under .top-nav (where the element lives) so this display
+       beats the base .ni-scrim display:none on specificity: that base
+       rule sits much later in the file, next to .changelog-dropdown. */
+    .top-nav .ni-scrim {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 150;
+        background: rgba(4, 8, 17, .5);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .22s ease;
+    }
+
+    .top-nav .ni-scrim.open {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .top-nav.br-mnav.br-ni-open {
+        z-index: calc(var(--z-chrome) + 2);
     }
 }
 
@@ -1490,6 +1544,12 @@ ul {
     display: inline-block;
     line-height: 1;
     transition: opacity 0.2s ease;
+}
+
+/* Mobile notification-panel dim (JS-created, .ni-scrim); styled and
+   shown only inside the max-width:768px block with the panel rules. */
+.ni-scrim {
+    display: none;
 }
 
 .changelog-dropdown {
@@ -45779,8 +45839,25 @@ a, button, [role="button"], [role="tab"], summary, label,
         transition: color .12s ease;
     }
 
-    .br-tabbar-item > * {
+    /* Content children ride above the gliding pill. Badge dots are NOT
+       content: .alert-dot is absolutely positioned by its own rule, and
+       this blanket rule tied it on specificity and won on source order,
+       dropping the dot into the column flow under the label. */
+    .br-tabbar-item > *:not(.alert-dot) {
         position: relative;
+        z-index: 1;
+    }
+
+    /* A dock tab's unread dot anchors to the ICON's top-right corner
+       (the .br-more-tab .rz-mnav-dot geometry), not the tab slot's: the
+       slot is a wide flex column, so the shared .alert-dot corner
+       offsets (top/right 2px, written for square icon buttons like the
+       bell) would strand the dot at the slot's outer edge. */
+    .br-tabbar-item .alert-dot {
+        top: 7px;
+        right: auto;
+        left: 50%;
+        margin-left: 6px;
         z-index: 1;
     }
 
@@ -46491,6 +46568,10 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
 
     .br-sheet-scrim {
+        transition: none;
+    }
+
+    .ni-scrim {
         transition: none;
     }
 }

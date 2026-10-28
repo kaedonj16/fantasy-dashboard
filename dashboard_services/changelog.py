@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "Notifications on your phone: the panel now fits the screen. It stops above the bottom nav instead of sliding underneath it, the list scrolls inside the panel while the header stays in place, and the page behind it dims while it is open. The red alert dot on the More tab also sits on the More icon again instead of hanging under the label.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Weekly Recap: Week at a Glance now shows the manager username under the High Scorer and Low Scorer team names. It was repeating the team name there instead, so the High Scorer card read Fire Riley with @Fire Riley underneath it.",
         "link": "/recap"
     },

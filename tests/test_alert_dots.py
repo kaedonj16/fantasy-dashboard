@@ -224,6 +224,32 @@ def test_alert_dot_matches_changelog_dot_spec():
     assert hidden["opacity"] == "0"
 
 
+def test_tabbar_blanket_child_rule_cannot_flatten_dots():
+    """Regression (2026-10-27): the dock's blanket `.br-tabbar-item > *`
+    rule (position: relative, to lift tab content above the gliding pill)
+    ties .alert-dot on specificity and won on source order, so the More
+    tab's dots dropped into the column flow under the label and hung at
+    the bar's bottom edge. The blanket rule must exclude badge dots."""
+    css = _read("static/dashboard.css")
+    assert ".br-tabbar-item > *:not(.alert-dot)" in css
+    assert ".br-tabbar-item > * {" not in css
+
+
+def test_tabbar_dot_anchors_to_the_icon_corner():
+    """A dock tab is a wide flex slot, so the shared .alert-dot corner
+    offsets would strand the dot at the slot's outer edge. The tabbar
+    placement anchors to the icon's top-right corner instead, using the
+    same geometry family as the ScoreZone live dot on the More tab."""
+    css = _read("static/dashboard.css")
+    dot = _css_block(css, ".br-tabbar-item .alert-dot")
+    assert dot["left"] == "50%"
+    assert dot["right"] == "auto"
+    assert "margin-left" in dot and "top" in dot
+    rz = _css_block(css, ".br-more-tab .rz-mnav-dot")
+    assert rz["left"] == "50%"
+    assert rz["position"] == "absolute"
+
+
 # ── Client state logic (node) ───────────────────────────────────────────────
 
 def _function_source(source: str, name: str) -> str:
@@ -479,7 +505,7 @@ console.log('alert-dot soft-nav logic ok');
 def test_changelog_announces_alert_dots():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[11]  # prepends above it: recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, rooting/bye cleanup, Front Office scan fix, fair-band fix, assistant league fix, dot fix, recap cleanup, Rooting Guide
+    entry = CHANGELOG[12]  # prepends above it: phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, rooting/bye cleanup, Front Office scan fix, fair-band fix, assistant league fix, dot fix, recap cleanup, Rooting Guide
     assert entry["date"] == "2026-10-27"
     assert entry["tag"] == "new"
     assert "Weekly Recap" in entry["text"] and "Breakout Engine" in entry["text"]
@@ -489,7 +515,7 @@ def test_changelog_announces_alert_dots():
 def test_changelog_announces_recap_dot_softnav_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[8]  # prepended above it: recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix, the fair-band fix, the assistant league fix
+    top = CHANGELOG[9]  # prepended above it: phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix, the fair-band fix, the assistant league fix
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "alert dot" in top["text"]
