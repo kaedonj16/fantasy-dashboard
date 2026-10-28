@@ -3,7 +3,14 @@ Changelog entries for the fantasy dashboard.
 Each entry represents a user-facing change.
 """
 
-CHANGELOG = [    {
+CHANGELOG = [
+    {
+        "date": "2026-10-28",
+        "tag": "fix",
+        "text": "My Leagues: the Front Office board no longer gets stuck on 'Could not check N of N leagues yet'. Checking a league's playoff odds was quietly fetching that league's remaining schedule from the platform inside the scan itself, one fetch per week of the season for every league, so with several leagues the check stalled before it could count even one league as checked. The scan now reads odds from the cache only, the way it was designed to, and the schedule check happens inside the background simulation where it belongs.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-10-28",
         "tag": "fix",
         "text": "My Leagues: the Rooting Guide no longer repeats the same projection as a range (like 9.5-9.5) when your leagues agree on a player; it shows the single number, and only genuinely different league values show the low-high range. In the two-per-row game cards, each player's value now sits in a fixed right-hand rail on the name line instead of wrapping or drifting when a player carries several league badges, and the badges stay together as a group.",
