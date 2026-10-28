@@ -1,7 +1,11 @@
 """Focused tests for the Portfolio Front Office v25 redesign page:
-unpaginated compact league cards with odds, the receipts summary, the
+unpaginated compact league cards, the receipts summary, the
 board card shell, the heatmap, and the reworked holdings table."""
+from pathlib import Path
+
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
 
 pytest.importorskip("flask")
 pytest.importorskip("pandas")
@@ -56,9 +60,12 @@ def test_cards_render_all_leagues_without_pager():
     assert "pfLgPager" not in html
     assert "pfLgPrev" not in html and "pfLgNext" not in html
     assert html.count("data-summary-card") >= 7
-    # Sort control with the three modes from the mock.
+    # Sort control: Urgency / Record / Standings (the Playoff odds mode
+    # left with the card stat, which never populated in production).
     assert "id='pfSortSel'" in html
-    assert "Urgency" in html and "Playoff odds" in html
+    assert "Urgency" in html and "Standings" in html
+    assert "<option value='standings'>Standings</option>" in html
+    assert "<option value='odds'>" not in html
 
 
 def test_leagues_header_and_sort_share_one_line():
@@ -71,16 +78,18 @@ def test_leagues_header_and_sort_share_one_line():
     assert "justify-content:flex-end;padding:10px 2px 0" not in html
 
 
-def test_card_shows_odds_delta_weakest_and_posture():
+def test_card_shows_weakest_and_posture_without_odds():
+    # The league dict can still carry sim odds (the team modal uses them);
+    # the My Leagues card must not render a Playoff odds stat or the
+    # data-odds sort attribute (2026-10-27: the stat never populated).
     lg = _league(playoff_odds_pct=74.0, playoff_odds_delta=9.0,
                  posture="Contend", posture_cls="contend")
     html = _render([lg])
-    assert "data-odds='74.0'" in html
-    # Odds read at one decimal (floored): only an exact sim 100/0 may read
-    # as a whole 100% / 0%; an undecided 74.0 reads "74.0%", never "74%".
-    assert "74.0%" in html
-    assert "▲9" in html
-    assert "Playoff odds" in html
+    assert "Playoff odds" not in html
+    assert "data-odds" not in html
+    assert "74.0%" not in html
+    # Standings sort source: the card carries its rank up front.
+    assert "data-rank='2'" in html
     assert "Weakest room:" in html
     assert "RB · 9th of 10" in html
     assert "pf-posture contend" in html
@@ -90,32 +99,41 @@ def test_card_shows_odds_delta_weakest_and_posture():
     assert "Front Office" in html
 
 
-def test_card_hides_delta_without_history():
-    lg = _league(playoff_odds_pct=61.0, playoff_odds_delta=None,
-                 posture="Contend", posture_cls="contend")
+def test_card_without_rank_gets_sort_sentinel():
+    lg = _league(rank="?")
     html = _render([lg])
-    assert "61.0%" in html
-    assert "data-odds-delta hidden" in html
+    assert "data-rank='999'" in html
 
 
-def test_card_odds_never_round_up_to_100():
-    # A sim-capped 99.9 is undecided, not clinched: it must read 99.9%.
-    lg = _league(playoff_odds_pct=99.9, playoff_odds_delta=None,
-                 posture="Contend", posture_cls="contend")
-    html = _render([lg])
-    assert "data-odds-val>99.9%</span>" in html
-    assert "data-odds-val>100%</span>" not in html
-    # And a capped 0.1 is alive, not eliminated: it must read 0.1%.
-    lg = _league(playoff_odds_pct=0.1, playoff_odds_delta=None,
-                 posture="Long Shot", posture_cls="long-shot")
-    html = _render([lg])
-    assert "data-odds-val>0.1%</span>" in html
-
-
-def test_card_without_odds_shows_dash():
+def test_standings_sort_comparator_and_hydration_hook():
     html = _render([_league()])
-    assert "data-odds='-1'" in html
-    assert "data-odds-val>—</span>" in html
+    # Ascending by data-rank, wins desc on ties, unranked (999) last.
+    assert "sortMode==='standings'" in html
+    assert "parseInt(a.getAttribute('data-rank'),10)" in html
+    assert "sortMode==='odds'" not in html
+    # The inline sort exposes its render so app.js can re-apply the order
+    # as card summaries hydrate.
+    assert "window.__pfApplySort=render;" in html
+    js = (ROOT / "static" / "app.js").read_text()
+    assert "card.dataset.rank" in js
+    assert "card.dataset.odds" not in js
+    assert "window.__pfApplySort" in js
+    rs = js[js.index("function renderSummary("):]
+    rs = rs[:rs.index("function updateAggregateRecord()")]
+    assert "Playoff odds" not in rs
+
+
+def test_phonetabs_sections_carry_scroll_margin():
+    html = _render([_league()])
+    # Measured sticky stack at 390px: nav 59px, phonetabs bar stuck bottom
+    # 98px; margin is the stack + ~10px so a tap lands the card header
+    # fully below both bars instead of underneath them.
+    assert ("#pfSecHeat,#pfSecRooting,#pfSecBye,#pfSecHoldings"
+            "{scroll-margin-top:108px !important;}") in html
+    # One bounded re-align when the insights bodies re-render right after
+    # a tap (content growth above the target), never a polling loop.
+    assert "pfRootingBody" in html and "MutationObserver" in html
+    assert "_pfTap" in html
 
 
 def test_summary_bar_five_stats_and_receipts_shell():

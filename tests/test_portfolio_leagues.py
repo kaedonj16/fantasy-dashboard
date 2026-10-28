@@ -132,11 +132,12 @@ def test_my_leagues_favorites_are_server_backed_and_pinned_without_pager():
     assert "/api/my-leagues/favorite" in fn
     assert "data-favorite',on?'true':'false'" in fn
     # v25: the 4-per-page pager is gone; every league renders and the sort
-    # control (Urgency / Record / Playoff odds) drives the order instead.
+    # control (Urgency / Record / Standings) drives the order instead.
     assert "pfLgPager" not in fn
     assert "var PAGE=4" not in fn
     assert "pfSortSel" in fn
-    assert "data-odds" in fn
+    assert "data-rank=" in fn
+    assert "data-odds" not in fn
 
 
 def test_my_leagues_cards_carry_weakest_room_and_heatmap_ranks():

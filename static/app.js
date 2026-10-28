@@ -29131,28 +29131,12 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
             return '<span class="pf-s-pill ' + cls + '">' + (r === 'W' ? 'W' : 'L') + '</span>';
           }).join('') + '</span>'
         : '<span class="pf-streak-empty">-</span>';
-      var oddsHtml;
-      if (data.playoff_odds_pct == null) {
-        oddsHtml = '<span class="pf-lg-v" data-odds-val>—</span>';
-      } else {
-        // Same rule as the team modal: never Math.round the odds value
-        // (99.9 read as a false 100%); the delta arrow stays a whole number.
-        oddsHtml = '<span class="pf-lg-v" data-odds-val>' + _fmtPlayoffOddsDisplay(data.playoff_odds_pct) + '%</span>';
-        var oddsDelta = Number(data.playoff_odds_delta);
-        if (Number.isFinite(oddsDelta) && Math.abs(oddsDelta) >= 0.05) {
-          oddsHtml += '<span class="pf-odds-delta ' + (oddsDelta > 0 ? 'up' : 'down') + '" data-odds-delta>' +
-            (oddsDelta > 0 ? '▲' : '▼') + Math.abs(Math.round(oddsDelta)) + '</span>';
-        } else {
-          oddsHtml += '<span class="pf-odds-delta" data-odds-delta hidden></span>';
-        }
-      }
       var statsHtml = '<span class="pf-lg-stat"><span class="pf-lg-v ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span><span class="pf-lg-l">Record</span></span>' +
         '<span class="pf-lg-stat" title="Regular-season standings: wins, then points for"><span class="pf-lg-v' + weakCls + '">' + escapeHtml(rank) + ' <small>/ ' + escapeHtml(teams) + '</small></span><span class="pf-lg-l">Standing</span></span>' +
-        '<span class="pf-lg-stat"><span class="pf-lg-vrow">' + oddsHtml + '</span><span class="pf-lg-l">Playoff odds</span></span>' +
         '<span class="pf-lg-stat pf-lg-stat--streak">' + streakHtml + '<span class="pf-lg-l">Streak</span></span>';
       setHtmlIfChanged(stats, statsHtml);
       renderWeakest(card, data, totalN);
-      if (data.playoff_odds_pct != null) card.dataset.odds = String(Number(data.playoff_odds_pct));
+      if (Number.isFinite(rankN) && rankN > 0) card.dataset.rank = String(rankN);
       var postureEl = card.querySelector('[data-posture]');
       if (postureEl && data.posture) {
         postureEl.textContent = data.posture;
@@ -29190,6 +29174,11 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       if (lwRes === 'W' || lwRes === 'L' || lwRes === 'T') card.dataset.lwResult = lwRes;
       updateAggregateRecord();
       updateLastWeekRecord();
+      // Standings sort reads data-rank off the cards, which only exists
+      // once summaries land: re-apply the sort as each card hydrates so
+      // the order corrects itself instead of waiting for a manual change.
+      var _sortSel = document.getElementById('pfSortSel');
+      if (_sortSel && _sortSel.value === 'standings' && window.__pfApplySort) window.__pfApplySort();
       return true;
     }
     if (card.dataset.summaryGood !== 'true') setHtmlIfChanged(stats, '<span class="pf-lg-l">' + escapeHtml(data.message || 'Summary unavailable. Retry.') + '</span>');
