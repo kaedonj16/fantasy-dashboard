@@ -239,7 +239,6 @@ def test_changelog_announces_lineup_lab_as_new():
         if "lineup lab" in e.get("text", "").lower()
         and "weekly nav menu" in e.get("text", "").lower()
     )
-    assert CHANGELOG[48] is entry
     assert entry["date"] == "2026-09-30"
     assert entry["tag"] == "new"
     assert "brand new" in entry["text"].lower()

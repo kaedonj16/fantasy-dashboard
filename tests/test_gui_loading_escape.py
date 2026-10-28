@@ -153,4 +153,6 @@ def test_weekly_hub_week_change_times_out_and_rolls_back():
 # ── Service worker ───────────────────────────────────────────────────────────
 
 def test_service_worker_cache_bumped():
-    assert "br-fantasy-v133" in _read("static/sw.js")
+    from pin_helpers import assert_sw_cache_current
+
+    assert_sw_cache_current(_read("static/sw.js"))

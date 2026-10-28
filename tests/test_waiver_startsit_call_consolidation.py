@@ -444,9 +444,9 @@ def test_lab_payload_served_from_shared_tier_when_in_process_cold(
 # ── Changelog announcement ──────────────────────────────────────────────────
 
 def test_changelog_announces_call_consolidation():
-    from dashboard_services.changelog import CHANGELOG
+    from pin_helpers import changelog_entry
 
-    top = CHANGELOG[11]
+    top = changelog_entry("Waivers and Start/Sit", "Lineup Lab")
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "Waivers and Start/Sit" in top["text"]

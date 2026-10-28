@@ -208,9 +208,9 @@ def test_week_pill_replaced_by_data_attribute():
 
 
 def test_changelog_announces_phone_panel_and_more_dot_fix():
-    from dashboard_services.changelog import CHANGELOG
+    from pin_helpers import changelog_entry
 
-    top = CHANGELOG[17]  # prepended above it: weekly hub v13 layout and lineup fixes, breakout grading production-first + hit floor, rooting guide two-per-row + badge fit, Stripe period-end grant fix, awards page rework, graphs fill and audit, portfolio light resolver, trade calculator dedupe, recap/standings dedupe, sitewide speed pass, Weekly Hub dedupe refresh, waivers/start-sit call consolidation, AM batch + players cache, ScoreZone user-cache speedup, My Leagues portfolio consolidation, duplicate Tuesday dot removal, phone tabs + card odds removal
+    top = changelog_entry("Notifications on your phone", "More tab")
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "Notifications on your phone" in top["text"]
