@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [    {
         "date": "2026-10-28",
+        "tag": "fix",
+        "text": "PRO plans: fixed yearly subscriptions being cut off after about a month. Stripe reports the paid-through date on the plan's line items, and the site was reading it from the wrong place, so annual plans silently expired after 32 days. Yearly PRO now runs for the full term you paid for.",
+        "link": "/pricing"
+    },
+    {
+        "date": "2026-10-28",
         "tag": "update",
         "text": "League Awards: the page is rebuilt around the season in front of you. The defending champion banner carries the championship final score and the full title history, a Title Race strip tracks the current season with a Defence Watch row when the champion sits outside the top four, Fun Awards move up, league records are tiles with runner-up context and the single-week record now shows its real week, and the all-time standings add losses, points for, scoring average and seasons.",
         "link": "/awards"
