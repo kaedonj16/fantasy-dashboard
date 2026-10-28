@@ -235,3 +235,96 @@ def test_rooting_games_two_per_row_and_xs_badge_fits_text():
     assert "width: auto;" in badge
     assert "min-width: 24px;" in badge
     assert "padding: 0 5px 0 8px;" in badge
+
+
+def _extract_js_fn(src, name):
+    start = src.index(f"function {name}(")
+    depth = 0
+    for i in range(src.index("{", start), len(src)):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[start:i + 1]
+    raise AssertionError(f"unterminated function {name}")
+
+
+def test_rg_value_collapses_equal_displayed_ends():
+    # The grouped-row value compares values AS DISPLAYED (fmt1's
+    # 1-decimal rounding): raw values that differ but round to the same
+    # displayed number render as that single number, never a stuttering
+    # "9.5-9.5" range; only genuinely different displayed values range.
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    fns = "\n".join([
+        _extract_js_fn(js, "fmt1"),
+        _extract_js_fn(js, "rgValue"),
+    ])
+    driver = fns + """
+const E = (...vals) => vals.map(v => ({ proj: v, points: v }));
+console.log(JSON.stringify({
+  equalRaw: rgValue(E(19.3, 19.3), 'proj'),
+  displayEqual: rgValue(E(9.54, 9.46), 'proj'),
+  roundingEdge: rgValue(E(10.21, 10.18), 'proj'),
+  threeWayDisplayEqual: rgValue(E(14.82, 14.79, 14.81), 'proj'),
+  realRange: rgValue(E(6.6, 10.5), 'proj'),
+  realRangeReversed: rgValue(E(10.5, 6.6), 'proj'),
+  single: rgValue(E(22.3), 'proj'),
+  pointsField: rgValue([{points: 14.82}, {points: 14.79}], 'points'),
+  pointsRange: rgValue([{points: 11.9}, {points: 16.0}], 'points'),
+  nullsSkipped: rgValue([{proj: null}, {proj: 12.8}], 'proj'),
+  allNull: rgValue([{proj: null}, {}], 'proj'),
+}));
+"""
+    res = subprocess.run([node, "-e", driver], capture_output=True, text=True,
+                         timeout=30)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout.strip().splitlines()[-1])
+
+    assert out["equalRaw"] == "19.3"
+    assert out["displayEqual"] == "9.5"
+    assert out["roundingEdge"] == "10.2"
+    assert out["threeWayDisplayEqual"] == "14.8"
+    assert out["realRange"] == "6.6-10.5"
+    assert out["realRangeReversed"] == "6.6-10.5"
+    assert out["single"] == "22.3"
+    assert out["pointsField"] == "14.8"
+    assert out["pointsRange"] == "11.9-16.0"
+    assert out["nullsSkipped"] == "12.8"
+    assert out["allNull"] == ""
+
+
+def test_rooting_row_value_rail_structure():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    # Name and league chips live in one flex block (.pf-rg-id) so the
+    # chips wrap as a group inside it; the value span stays a direct,
+    # fixed rail child of the row and can never be pushed off its line.
+    assert "'<span class=\"pf-rg-id\"><span class=\"pf-rg-pname\">'" in js
+    assert "'<span class=\"pf-rg-chips\">' + chips + '</span></span>'" in js
+    app_src = (root / "app.py").read_text(encoding="utf-8")
+    assert (".pf-rg-id{flex:1 1 auto;min-width:0;display:flex;"
+            "align-items:center;flex-wrap:wrap;") in app_src
+    # Names are never truncated: no ellipsis machinery on the name, it
+    # takes its natural width and wraps inside the block if it must.
+    assert (".pf-rg-pname{font-weight:600;flex:0 1 auto;min-width:0;"
+            "overflow-wrap:anywhere;}") in app_src
+    pname_rule = app_src[app_src.index(".pf-rg-pname{"):app_src.index(".pf-rg-p .pos-badge")]
+    assert "text-overflow:ellipsis" not in pname_rule
+    assert "white-space:nowrap" not in pname_rule
+    # Value rail: flex-none, never wraps, right-aligned on the name line.
+    assert (".pf-rg-pts{flex:0 0 auto;margin-left:auto;white-space:nowrap;"
+            "text-align:right;") in app_src
+    # Rows top-align so a wrapped chip group never drags the value off
+    # the name line.
+    assert ".pf-rg-p{display:flex;align-items:flex-start;" in app_src
