@@ -62,7 +62,9 @@ def test_live_dot_pulse_gets_headroom_inside_the_clip_box():
 
 
 def test_service_worker_bumped():
-    assert "br-fantasy-v133" in SW
+    from pin_helpers import assert_sw_cache_current
+
+    assert_sw_cache_current(SW)
 
 
 # ------------------------------------------------------- lagging schedule game

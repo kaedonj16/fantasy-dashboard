@@ -184,5 +184,7 @@ def test_sw_cache_bumped_past_v51():
     # At authoring this pinned v52; the merge sweep has since carried the
     # cache to v53 (PR #2704) and this PR rides that bump (PR #2707's v54
     # follows in the same sweep). The invariant is: not the old v51.
-    assert "br-fantasy-v133" in SW_SRC
-    assert "br-fantasy-v51" not in SW_SRC
+    from pin_helpers import assert_sw_cache_bumped_past, assert_sw_cache_current
+
+    assert_sw_cache_current(SW_SRC)
+    assert_sw_cache_bumped_past(51, SW_SRC)

@@ -79,4 +79,6 @@ def test_stat_row_still_renders_under_the_drive_bar():
 
 
 def test_service_worker_bumped_for_the_new_css():
-    assert "br-fantasy-v133" in SW
+    from pin_helpers import assert_sw_cache_current
+
+    assert_sw_cache_current(SW)

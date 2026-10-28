@@ -388,4 +388,6 @@ def test_availability_css_present():
 
 def test_service_worker_bumped():
     sw = _read("static/sw.js")
-    assert "br-fantasy-v133" in sw
+    from pin_helpers import assert_sw_cache_current
+
+    assert_sw_cache_current(sw)

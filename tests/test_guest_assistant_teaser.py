@@ -141,7 +141,9 @@ def test_guest_seo_page_stays_modal_free(offline_client):
 
 
 def test_sw_bumped_for_guest_teaser():
-    assert "br-fantasy-v133" in SW
+    from pin_helpers import assert_sw_cache_current
+
+    assert_sw_cache_current(SW)
 
 
 def test_guest_bubble_has_no_center_park_override():

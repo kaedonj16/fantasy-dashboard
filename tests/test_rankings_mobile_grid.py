@@ -73,4 +73,6 @@ def test_export_csv_lives_on_the_count_row():
 
 
 def test_service_worker_bumped_for_the_new_css():
-    assert "br-fantasy-v133" in SW
+    from pin_helpers import assert_sw_cache_current
+
+    assert_sw_cache_current(SW)

@@ -132,7 +132,9 @@ def test_candidates_has_25s_dom_failsafe():
 # ── SW ───────────────────────────────────────────────────────────────────
 
 def test_sw_cache_bumped():
-    assert "br-fantasy-v133" in SW
+    from pin_helpers import assert_sw_cache_current
+
+    assert_sw_cache_current(SW)
 
 
 # ── Behavioral harness ───────────────────────────────────────────────────
