@@ -1,4 +1,4 @@
-"""Tests for the "injured" breakout grade (weekly-grading-v4).
+"""Tests for the "injured" breakout grade (weekly-grading-v5).
 
 Covers the pure injury-window classifier, the grade_call wiring (the
 2-games rule), summary exclusion of injured grades from hit-rate
@@ -149,7 +149,7 @@ def test_ir_zero_games_grades_injured():
         injury_by_week=inj_weeks({5: ("IR", "IR"), 6: ("IR", "IR"),
                                   7: ("IR", "IR")}))
     assert grade["grade"] == wg.GRADE_INJURED
-    assert grade["grading_version"] == "weekly-grading-v4"
+    assert grade["grading_version"] == "weekly-grading-v5"
     assert grade["detail"]["reason"] == "on_ir_during_window"
     assert grade["detail"]["injury"]["designation"] == "IR"
     assert grade["ppg_delta"] is None
@@ -324,7 +324,7 @@ def test_orchestrator_grades_ir_call_as_injured(monkeypatch):
     assert result["injury_snapshot"] == {"week": 7, "rows": 5}
     grade = saved["g"][0]
     assert grade["grade"] == "injured"
-    assert grade["grading_version"] == "weekly-grading-v4"
+    assert grade["grading_version"] == "weekly-grading-v5"
 
 
 def test_injured_grade_is_terminal_in_frontier(monkeypatch):

@@ -29,26 +29,44 @@ Like the scorer, the outcome math is pure: :func:`grade_call` and
 All DB access is confined to the loader / saver functions at the bottom.
 
 Outcome thresholds (change vs the call's stored baseline; see
-:func:`classify_outcome`):
+:func:`classify_outcome`). Since weekly-grading-v5 the verdict is
+production-first: the production delta decides, and the role leg is
+still computed and recorded on every grade (the report header and the
+receipts print it) but only names the partial inside the flat band.
 
-* role held / grew: opportunity delta >= +2.0 per game, OR snap-share
-  delta >= +8.0 percentage points with opportunities not falling
-  (opportunity delta >= 0, or unmeasured). Snaps alone cannot carry
-  the role leg when the player is actually being used less.
-* role reverted: every available role delta is back at baseline noise
-  (opportunity <= +0.5 per game AND snap share <= +3.0 points)
 * production rose: PPR PPG delta >= +2.0
 * production collapsed: PPR PPG delta <= -2.0
-* hit    = role held/grew AND production rose, on at least 2 outcome
-  games. A hit-pace outcome on a single game is a partial
-  (single_game_sample): one game cannot prove a breakout.
-* miss   = role reverted, OR production collapsed (even when the role
-  held: a player who kept the snaps but stopped producing did not
-  break out). One exception: role reverted BUT production rose still
-  grades partial, not miss (production_rose_despite_role_reverted).
-* partial = anything in between (role held without a production rise
-  or collapse, role partially retained, production up on a partially
-  retained role, ...)
+* hit    = production rose AND the outcome PPG itself reached the
+  position's startable floor (HIT_PPG_FLOOR: QB 20, RB 10, WR 10,
+  TE 8 PPR PPG), on at least 2 outcome games. The floor exists because
+  a delta alone can lie: +2.25 PPG off a 1.8 baseline lands at 4.05
+  PPG, which is not a breakout anyone can start. A hit-pace outcome
+  on a single game is a partial (single_game_sample): one game cannot
+  prove a breakout. The role no longer gates a hit: production that
+  rose to a startable level broke out even if the role mix shifted
+  underneath it (production_rose_despite_role_reverted is a hit now,
+  not the v4 partial).
+* miss   = production collapsed, whatever the role did (a player who
+  kept the snaps but stopped producing did not break out).
+* partial = anything in between: production rose but landed below the
+  floor (production_rose_below_floor), or production inside the flat
+  band (-2.0 < delta < +2.0) on any role. A reverted role no longer
+  turns flat production into a miss; inside the band the role only
+  names the partial (role_held_without_production_rise /
+  production_flat_role_reverted / role_partially_retained).
+* role state is still classified exactly as before - held:
+  opportunity delta >= +2.0 per game, OR snap-share delta >= +8.0
+  percentage points with opportunities not falling (opportunity
+  delta >= 0, or unmeasured; snaps alone cannot carry the role when
+  the player is actually being used less); reverted: every available
+  role delta back at baseline noise (opportunity <= +0.5 per game AND
+  snap share <= +3.0 points); otherwise mixed - and stored on the
+  grade as role_state.
+* when no production delta can be measured (a prior-season baseline
+  whose prior-season rows were not supplied), the pre-v5 role-only
+  verdicts apply unchanged, with their partial ceiling: role reverted
+  is a miss (role_reverted_to_baseline), role held or mixed is a
+  partial, and a hit still requires a measured production rise.
 * injured = the outcome window was wiped out by injury: fewer than 2
   games played while the player carried an IR / PUP / NFI designation
   (any outcome week) or an OUT / DOUBTFUL designation (>= 2 of the 3
@@ -99,7 +117,7 @@ from data_building.breakout_engine.weekly_store import (
 
 GRADES_TABLE = "weekly_breakout_grades"
 INJURY_SNAPSHOTS_TABLE = "player_injury_snapshots"
-GRADING_VERSION = "weekly-grading-v4"
+GRADING_VERSION = "weekly-grading-v5"
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +148,21 @@ OPP_REVERTED_DELTA = 0.5     # carries+targets per game
 SNAP_REVERTED_DELTA = 3.0    # snap-share percentage points
 HIT_MIN_GAMES = 2            # a hit needs at least this many outcome games;
                              # a 1-game hit-pace outcome caps at partial
+# Production floor for a hit (weekly-grading-v5): the outcome PPG must
+# itself be startable at the position, not just up from baseline - a
+# delta off a near-zero baseline is not a breakout (the Chris Bell
+# shape: +2.25 PPG landing at 4.05). The values mirror _MIN_COMP_PPG
+# in data_building/breakout_engine/projections.py, the comps layer's
+# usable-production levels; kept as a literal here so this module
+# never imports the projections layer.
+HIT_PPG_FLOOR = {"QB": 20.0, "RB": 10.0, "WR": 10.0, "TE": 8.0}
+HIT_PPG_FLOOR_DEFAULT = 10.0
+
+
+def hit_ppg_floor(position: Any) -> float:
+    """The outcome-PPG floor a hit must clear at ``position``."""
+    return HIT_PPG_FLOOR.get(str(position or "").strip().upper(),
+                             HIT_PPG_FLOOR_DEFAULT)
 
 # Rates in summarize_grades are None below this many *graded* calls in a
 # group (counts are always reported). Small samples produce noise, not signal.
@@ -460,6 +493,7 @@ def classify_outcome(
     baseline: Dict[str, Optional[float]],
     outcome: Dict[str, Any],
     cohort: bool = False,
+    position: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Classify one realized outcome. Pure; see the module docstring for the
     thresholds. ``baseline`` carries ppr_ppg / opp_pg / snap_pct (any may be
@@ -469,7 +503,14 @@ def classify_outcome(
     against the typical rookie year at its position). There is no role
     to hold relative to, so the verdict is production-only: a hit at
     +PPG_HIT_DELTA over the cohort, a miss at -PPG_HIT_DELTA under it,
-    partial in between."""
+    partial in between. The startable floor does not apply to cohort
+    grades: the cohort mean is already a position-typical level, so a
+    rookie graded against it is not the near-zero-baseline case the
+    floor exists for.
+
+    ``position`` selects the HIT_PPG_FLOOR a non-cohort hit must clear
+    (the outcome PPG itself, per game played); an unknown position
+    takes HIT_PPG_FLOOR_DEFAULT."""
     if not outcome.get("games"):
         return {"grade": GRADE_UNGRADED, "role_state": "unknown",
                 "reason": "no_outcome_games"}
@@ -501,6 +542,9 @@ def classify_outcome(
     # snap leg is guarded: snaps only count as a held role when touches
     # did not fall, because a player can be on the field more while
     # being used less (or while a teammate's absence inflates his snaps).
+    # The role state is still computed and recorded exactly as before -
+    # the report header and receipts print it - but since v5 it no
+    # longer decides the verdict outside the flat band.
     role_held = (
         (opp_delta is not None and opp_delta >= OPP_HELD_DELTA)
         or (snap_delta is not None and snap_delta >= SNAP_HELD_DELTA
@@ -510,28 +554,53 @@ def classify_outcome(
         (opp_delta is None or opp_delta <= OPP_REVERTED_DELTA)
         and (snap_delta is None or snap_delta <= SNAP_REVERTED_DELTA)
     )
+    if role_held:
+        role_state = "held"
+    elif role_reverted:
+        role_state = "reverted"
+    else:
+        role_state = "mixed"
     production_rose = ppg_delta is not None and ppg_delta >= PPG_HIT_DELTA
     production_collapsed = ppg_delta is not None and ppg_delta <= PPG_MISS_DELTA
-    if role_held and production_rose:
-        grade, role_state, reason = GRADE_HIT, "held", "role_held_and_production_rose"
-    elif role_reverted and production_rose:
-        # The role went away but the player produced anyway (efficiency,
-        # touchdowns): that is not a failed call, just not a breakout.
-        grade, role_state, reason = (GRADE_PARTIAL, "reverted",
-                                     "production_rose_despite_role_reverted")
-    elif role_reverted:
-        grade, role_state, reason = GRADE_MISS, "reverted", "role_reverted_to_baseline"
+    outcome_ppg = _num(outcome.get("ppr_ppg"))
+    if ppg_delta is None:
+        # No measured production (a prior-season baseline whose
+        # prior-season rows were not supplied): the pre-v5 role-only
+        # verdicts, with their partial ceiling - a hit has always
+        # required a measured production rise.
+        if role_reverted:
+            grade, reason = GRADE_MISS, "role_reverted_to_baseline"
+        elif role_held:
+            grade, reason = GRADE_PARTIAL, "role_held_without_production_rise"
+        else:
+            grade, reason = GRADE_PARTIAL, "role_partially_retained"
     elif production_collapsed:
-        # Role held or mixed, but production fell off a cliff: a miss,
-        # not a partial. Keeping the snaps is not a breakout when the
-        # points disappear.
-        grade = GRADE_MISS
-        role_state = "held" if role_held else "mixed"
-        reason = "production_collapsed"
+        # Production fell off a cliff: a miss whatever the role did.
+        # Keeping the snaps is not a breakout when the points disappear.
+        grade, reason = GRADE_MISS, "production_collapsed"
+    elif production_rose:
+        if outcome_ppg is not None and outcome_ppg < hit_ppg_floor(position):
+            # The rise is real but landed below a startable level: a
+            # delta off a near-zero baseline is not a breakout.
+            grade, reason = GRADE_PARTIAL, "production_rose_below_floor"
+        elif role_held:
+            grade, reason = GRADE_HIT, "role_held_and_production_rose"
+        elif role_reverted:
+            # The role went away but the player produced anyway, at a
+            # startable level (efficiency, touchdowns): production
+            # decides - that is a breakout, not the v4 partial.
+            grade, reason = GRADE_HIT, "production_rose_despite_role_reverted"
+        else:
+            grade, reason = GRADE_HIT, "production_rose"
+    elif role_reverted:
+        # Flat production on a reverted role: inside the flat band the
+        # role only names the partial - it is no longer a miss (the
+        # v4 role_reverted_to_baseline miss is retired).
+        grade, reason = GRADE_PARTIAL, "production_flat_role_reverted"
     elif role_held:
-        grade, role_state, reason = GRADE_PARTIAL, "held", "role_held_without_production_rise"
+        grade, reason = GRADE_PARTIAL, "role_held_without_production_rise"
     else:
-        grade, role_state, reason = GRADE_PARTIAL, "mixed", "role_partially_retained"
+        grade, reason = GRADE_PARTIAL, "role_partially_retained"
     if grade == GRADE_HIT and int(outcome.get("games") or 0) < HIT_MIN_GAMES:
         # One game at hit pace is a promising start, not a proven
         # breakout: the verdict caps at partial until a second game
@@ -677,7 +746,8 @@ def grade_call(
         }
     else:
         verdict = classify_outcome(baseline, outcome,
-                                   cohort=(baseline_source == "cohort"))
+                                   cohort=(baseline_source == "cohort"),
+                                   position=call.get("position"))
     detail: Dict[str, Any] = {
         "role_state": verdict["role_state"],
         "reason": verdict["reason"],
@@ -693,6 +763,7 @@ def grade_call(
         "opp_reverted_delta": OPP_REVERTED_DELTA,
         "snap_reverted_delta": SNAP_REVERTED_DELTA,
         "hit_min_games": HIT_MIN_GAMES,
+        "hit_ppg_floor": hit_ppg_floor(call.get("position")),
     }
     return {
         "player_id": str(call.get("player_id") or ""),

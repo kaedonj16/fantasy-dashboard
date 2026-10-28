@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [    {
         "date": "2026-10-28",
         "tag": "fix",
+        "text": "Breakout Engine grading is production-first now: a hit needs a real jump in points per game that lands at a startable level for the position, so a small rise off a near-zero baseline no longer counts as a breakout hit. A scorer whose role shrank still earns the hit when the points are real, a flat points line is a partial rather than a miss when the role fades, and a scoring collapse is a miss no matter how the role held up. Stored calls regrade under the new rules on the next grading run.",
+        "link": "/breakouts"
+    },
+    {
+        "date": "2026-10-28",
+        "tag": "fix",
         "text": "PRO plans: fixed yearly subscriptions being cut off after about a month. Stripe reports the paid-through date on the plan's line items, and the site was reading it from the wrong place, so annual plans silently expired after 32 days. Yearly PRO now runs for the full term you paid for.",
         "link": "/pricing"
     },

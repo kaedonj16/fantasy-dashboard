@@ -82,7 +82,10 @@ def test_hit_when_role_holds_and_production_jumps():
     assert grade["detail"]["role_state"] == "held"
 
 
-def test_miss_when_role_reverts_to_baseline():
+def test_partial_when_role_reverts_but_production_flat():
+    # Grading v5: a reverted role alone is no longer a miss. Production
+    # here is +1.0 PPG - inside the flat band - so the role only names
+    # the partial (this exact shape was the v4 miss).
     call = make_call()
     rows = [
         wk(5, snap=38, tgt=2, car=7, ppr=9.0),   # opp 9 (delta -1), snap -2
@@ -90,8 +93,9 @@ def test_miss_when_role_reverts_to_baseline():
         wk(7, snap=38, tgt=2, car=7, ppr=9.0),
     ]
     grade = wg.grade_call(call, rows)
-    assert grade["grade"] == "miss"
+    assert grade["grade"] == "partial"
     assert grade["detail"]["role_state"] == "reverted"
+    assert grade["detail"]["reason"] == "production_flat_role_reverted"
     assert grade["opp_delta"] == -1.0
     assert grade["snap_delta"] == -2.0
 
@@ -109,18 +113,21 @@ def test_partial_when_role_holds_but_ppg_flat():
     assert grade["ppg_delta"] == 0.5
 
 
-def test_partial_when_role_partially_retained():
+def test_hit_when_production_jumps_on_a_mixed_role():
+    # Grading v5: production decides. The role did not clearly hold
+    # (opp +1.0, snap +5 - the mixed zone), but production jumped
+    # +12.0 PPG to a startable 20.0: a hit (v4 capped this at partial
+    # because the role leg did not hold).
     call = make_call()
     rows = [
-        # opp +1.0 (past reverted, short of held), snap +5 (same zone),
-        # production way up: still partial, the role did not clearly hold.
         wk(5, snap=45, tgt=4, car=7, ppr=20.0),
         wk(6, snap=45, tgt=4, car=7, ppr=20.0),
         wk(7, snap=45, tgt=4, car=7, ppr=20.0),
     ]
     grade = wg.grade_call(call, rows)
-    assert grade["grade"] == "partial"
+    assert grade["grade"] == "hit"
     assert grade["detail"]["role_state"] == "mixed"
+    assert grade["detail"]["reason"] == "production_rose"
 
 
 def test_ungraded_when_player_inactive_all_outcome_weeks():
@@ -146,7 +153,9 @@ def test_ungraded_when_no_role_baseline_exists():
 
 
 # ---------------------------------------------------------------------------
-# grading v4: production-aware miss, snap guard, 2-game hit floor
+# grading v4/v5: production-aware verdicts. v5 (2026-10-28) makes
+# production decide: the role leg only names the flat-band partial, and
+# a hit must also clear the position's outcome-PPG floor.
 # ---------------------------------------------------------------------------
 
 _BASE = {"ppr_ppg": 10.0, "opp_pg": 10.0, "snap_pct": 40.0}
@@ -156,19 +165,25 @@ def _outcome(*, ppg, opp, snap, games=3):
     return {"games": games, "ppr_ppg": ppg, "opp_pg": opp, "snap_pct": snap}
 
 
-def test_v4_reverted_role_with_production_rise_is_partial():
+def test_v5_reverted_role_with_production_rise_is_a_hit():
     # The Malachi Fields shape: role back at baseline (opp +0.2, snap
-    # +1.0) but production up +2.5, over the hit bar. Not a miss.
+    # +1.0) but production up +2.5 to 12.5 PPG, over the hit bar and
+    # the floor. Grading v4 made this a partial; v5 lets production
+    # decide - it is a hit.
     verdict = wg.classify_outcome(_BASE, _outcome(ppg=12.5, opp=10.2, snap=41.0))
-    assert verdict["grade"] == "partial"
+    assert verdict["grade"] == "hit"
     assert verdict["role_state"] == "reverted"
     assert verdict["reason"] == "production_rose_despite_role_reverted"
 
 
-def test_v4_reverted_role_without_production_rise_stays_miss():
+def test_v5_reverted_role_without_production_rise_is_partial():
+    # Production +1.0 is inside the flat band: the reverted role names
+    # the partial but no longer makes it a miss (v4 graded this miss /
+    # role_reverted_to_baseline).
     verdict = wg.classify_outcome(_BASE, _outcome(ppg=11.0, opp=10.2, snap=41.0))
-    assert verdict["grade"] == "miss"
-    assert verdict["reason"] == "role_reverted_to_baseline"
+    assert verdict["grade"] == "partial"
+    assert verdict["role_state"] == "reverted"
+    assert verdict["reason"] == "production_flat_role_reverted"
 
 
 def test_v4_production_collapse_is_miss_even_when_role_holds():
@@ -191,13 +206,15 @@ def test_v4_mild_production_dip_with_role_held_stays_partial():
     assert verdict["reason"] == "role_held_without_production_rise"
 
 
-def test_v4_snap_leg_fails_when_touches_fell():
-    # Snap share +10 but touches -1.0/g: on the field more, used less.
-    # The snap leg cannot carry the role, so hit pace is only a partial.
+def test_v5_snap_leg_cannot_veto_a_production_rise():
+    # Snap share +10 but touches -1.0/g: on the field more, used less,
+    # so the role state is mixed - but production rose +3.0 to 13.0
+    # PPG, and under v5 production decides: a hit. (v4 capped this at
+    # partial because the snap leg could not carry the role.)
     verdict = wg.classify_outcome(_BASE, _outcome(ppg=13.0, opp=9.0, snap=50.0))
-    assert verdict["grade"] == "partial"
+    assert verdict["grade"] == "hit"
     assert verdict["role_state"] == "mixed"
-    assert verdict["reason"] == "role_partially_retained"
+    assert verdict["reason"] == "production_rose"
 
 
 def test_v4_snap_leg_holds_when_touches_flat_to_up():
@@ -231,12 +248,97 @@ def test_v4_grade_call_caps_single_game_hit_at_partial():
     assert one["grade"] == "partial"
     assert one["outcome_games"] == 1
     assert one["detail"]["reason"] == "single_game_sample"
-    assert one["grading_version"] == "weekly-grading-v4"
+    assert one["grading_version"] == "weekly-grading-v5"
     assert one["detail"]["thresholds"]["hit_min_games"] == 2
     assert one["detail"]["thresholds"]["ppg_miss_delta"] == -2.0
     two = wg.grade_call(call, [wk(5, snap=65, tgt=9, car=11, ppr=18.0),
                                wk(6, snap=65, tgt=9, car=11, ppr=18.0)])
     assert two["grade"] == "hit"
+
+
+# ---------------------------------------------------------------------------
+# grading v5: the production floor (the Chris Bell fix) and the real
+# Week 4 2026 shapes Kaedon called out in the Breakout Report review
+# ---------------------------------------------------------------------------
+
+def test_v5_bell_rise_below_the_floor_caps_at_partial():
+    # Chris Bell, Week 4 2026 call: stored baselines 1.8 PPG / opp 1.5 /
+    # snap 46.2; outcome W5 2.6 pts and W7 5.5 pts (W6 DNP) = 4.05 PPG,
+    # +2.25 delta, opp delta exactly +2.0, snap +13.25, 2 games. Under
+    # v4 that was a HIT; the rise is real but 4.05 PPG is not a
+    # startable WR line, so v5 caps it at partial.
+    call = make_call(baseline_ppg=1.8, baseline_snap=46.2, baseline_opp=1.5)
+    call["position"] = "WR"
+    rows = [
+        wk(5, snap=71.2, tgt=3, car=0, ppr=2.6),
+        wk(7, snap=47.7, tgt=4, car=0, ppr=5.5),
+    ]
+    grade = wg.grade_call(call, rows)
+    assert grade["grade"] == "partial"
+    assert grade["detail"]["reason"] == "production_rose_below_floor"
+    assert grade["detail"]["role_state"] == "held"
+    assert grade["ppg_delta"] == 2.25
+    assert grade["outcome_ppg"] == 4.05
+    assert grade["outcome_games"] == 2
+    assert grade["detail"]["thresholds"]["hit_ppg_floor"] == 10.0
+
+
+def test_v5_lemon_rise_to_a_startable_level_stays_a_hit():
+    # Makai Lemon, Week 4 2026 call: +9.1 PPG to 11.3 PPG over 3 games,
+    # opportunities and snaps climbing every week. A real breakout on
+    # every axis - still a hit under v5.
+    call = make_call(baseline_ppg=2.2, baseline_snap=66.7, baseline_opp=3.0)
+    call["position"] = "WR"
+    rows = [
+        wk(5, snap=80.6, tgt=7, car=0, ppr=9.3),
+        wk(6, snap=81.2, tgt=6, car=0, ppr=4.9),
+        wk(7, snap=90.9, tgt=8, car=0, ppr=19.7),
+    ]
+    grade = wg.grade_call(call, rows)
+    assert grade["grade"] == "hit"
+    assert grade["detail"]["reason"] == "role_held_and_production_rose"
+    assert grade["ppg_delta"] == 9.1
+    assert grade["outcome_ppg"] == 11.3
+    assert grade["outcome_games"] == 3
+
+
+def test_v5_sadiq_collapse_is_a_miss_even_with_the_role_held():
+    # Kenyon Sadiq shape: production -6.23 PPG while the role held
+    # (opp delta positive). A collapse is a miss regardless of role.
+    call = make_call(baseline_ppg=12.0, baseline_snap=50.0, baseline_opp=5.0)
+    call["position"] = "TE"
+    rows = [
+        wk(5, snap=62, tgt=6, car=2, ppr=8.0),
+        wk(6, snap=62, tgt=5, car=2, ppr=5.3),
+        wk(7, snap=62, tgt=5, car=2, ppr=4.0),
+    ]
+    grade = wg.grade_call(call, rows)
+    assert grade["grade"] == "miss"
+    assert grade["detail"]["reason"] == "production_collapsed"
+    assert grade["detail"]["role_state"] == "held"
+    assert grade["ppg_delta"] == -6.23
+
+
+def test_v5_hit_floor_varies_by_position():
+    # Same +3.5 PPG rise, three floors: a QB must land at 20+ PPG, a
+    # TE at 8+, WR/RB (and the unknown-position default) at 10+.
+    qb = wg.classify_outcome({"ppr_ppg": 16.0, "opp_pg": 10.0, "snap_pct": 40.0},
+                             _outcome(ppg=19.5, opp=12.5, snap=40.0),
+                             position="QB")
+    assert qb["grade"] == "partial"
+    assert qb["reason"] == "production_rose_below_floor"
+    rb = wg.classify_outcome({"ppr_ppg": 16.0, "opp_pg": 10.0, "snap_pct": 40.0},
+                             _outcome(ppg=19.5, opp=12.5, snap=40.0),
+                             position="RB")
+    assert rb["grade"] == "hit"
+    te_base = {"ppr_ppg": 5.0, "opp_pg": 10.0, "snap_pct": 40.0}
+    te_out = _outcome(ppg=8.5, opp=12.5, snap=40.0)
+    assert wg.classify_outcome(te_base, te_out, position="TE")["grade"] == "hit"
+    assert wg.classify_outcome(te_base, te_out, position="WR")["grade"] == "partial"
+    assert wg.classify_outcome(te_base, te_out)["grade"] == "partial"
+    assert wg.hit_ppg_floor("QB") == 20.0
+    assert wg.hit_ppg_floor("TE") == 8.0
+    assert wg.hit_ppg_floor(None) == 10.0
 
 
 # ---------------------------------------------------------------------------

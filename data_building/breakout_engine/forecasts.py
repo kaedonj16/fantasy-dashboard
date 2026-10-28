@@ -149,7 +149,8 @@ def weekly_forecast(
     baseline, _source = wg.resolve_baseline(call, rows, prior_rows,
                                              cohort_ppg)
     verdict = wg.classify_outcome(baseline, outcome,
-                                  cohort=(_source == "cohort"))
+                                  cohort=(_source == "cohort"),
+                                  position=call.get("position"))
     base.update({
         "ppg_delta": wg._round(verdict.get("ppg_delta")),
         "opp_delta": wg._round(verdict.get("opp_delta")),
