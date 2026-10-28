@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-28",
+        "tag": "fix",
+        "text": "My Leagues: on phones, Rooting Guide game cards now stack the two teams, away on top and home below, instead of squeezing them into side-by-side columns too narrow for a name, its league badges, and its value to share one line. Every player row gets the full width of the card, badges stay beside the name, and nothing wraps or strands. The wider desktop cards are unchanged.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-28",
         "tag": "update",
         "text": "My Leagues: the Front Office board is rebuilt around clearing it. Marking a move Done fades it off its league card into a Show completed section (Undo lives there), league groups re-sort so the league with your most important open move is always on top, and the board caps its height with a Show all actions expander instead of pushing the rest of the page down. Waiver adds now name the player to drop, and a drop candidate names the add its freed spot enables. Hiding a league or dismissing a move now actually sticks across refreshes (before, the board saved dismissals but never loaded them back), and a move you just marked Done can no longer reappear as not done when the page reloads from a cached scan. Moves are numbered within their league, the top three open moves overall carry a Top priority tag, waiver details show as fact chips, and due timing is a pill that turns amber only when a real deadline lands today.",
         "link": "/portfolio"
