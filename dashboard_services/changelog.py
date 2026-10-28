@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
+        "link": "/recap"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "My Leagues: the phone section buttons (Strength, Rooting Guide, Byes, Holdings) now land each section right below the top bars instead of scrolling its header underneath them. The Playoff odds stat is off the league cards: it never loaded, so the stats row is Record, Standing and Streak, and the sort control now offers Standings, which orders your leagues by their place in the table.",
         "link": "/portfolio"
     },
