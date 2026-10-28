@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "ScoreZone: the My Leagues view refreshes far more efficiently. Its polls now reuse the same shared data build as the single-league view instead of rebuilding every league from scratch every 15 seconds, and a refresh where nothing changed skips the full feed download entirely. Box scores for finished games also reopen instantly instead of loading again.",
+        "link": "/scorezone"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
         "link": "/recap"
     },

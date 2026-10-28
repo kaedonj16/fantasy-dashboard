@@ -19,6 +19,16 @@ pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.c
 import app  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolate_collect_cache(monkeypatch):
+    """The slice now reads through the shared _rz_cached_collect cache, so
+    each test's patched _scorezone_collect must build fresh: reset the
+    collect cache + single-flight state per test (same isolation the
+    single-flight suite uses)."""
+    monkeypatch.setattr(app, "_RZ_COLLECT_CACHE", {})
+    monkeypatch.setattr(app, "_RZ_COLLECT_INFLIGHT", {})
+
+
 def _league_payload(lid):
     """A minimal _scorezone_collect return for one league where owner 'u1' is the
     viewer (roster 1) facing 'u2' (roster 2) in matchup 10."""

@@ -17157,6 +17157,59 @@ def _scorezone_trigger_scoring_push(platform, league_id, season, week,
     _threading.Thread(target=_run, daemon=True).start()
 
 
+def _rz_player_index_rows(nfl_players):
+    """Flatten the NFL player index to (team, pid, player) rows ONCE per
+    ScoreZone collect, canonicalizing each player's team a single time.
+
+    The per-game metadata build used to rescan ``nfl_players.items()`` for
+    every live/final game and re-run ``canon_team`` on all ~7k entries each
+    time (O(games x index) per collect). Rows preserve the index's own
+    iteration order so per-game slices built from them are identical to the
+    old per-game scans, entry for entry.
+    """
+    rows = []
+    for pid, p in (nfl_players or {}).items():
+        p = p or {}
+        rows.append((canon_team(p.get("team")) or "", pid, p))
+    return rows
+
+
+# Cross-provider id fields carried into per-game player metadata so the PBP
+# resolver can match plays across feeds; absent fields stay absent.
+_RZ_META_ID_FIELDS = (
+    "player_id", "sleeper_id", "tank01_id", "espn_id",
+    "yahoo_id", "mfl_id", "fleaflicker_id", "gsis_id",
+    "sportradar_id",
+)
+
+
+def _rz_player_meta_for_teams(index_rows, game_teams):
+    """Build player_meta_by_pid for one game from pre-flattened index rows.
+
+    Same inclusions as the old per-game full-index scan: players on one of
+    the game's teams who carry a full name, defenses excluded (they resolve
+    through teamStats instead), in original index order.
+    """
+    meta_by_pid: dict = {}
+    for team, pid, p in index_rows:
+        if team not in game_teams:
+            continue
+        full_name = p.get("full_name", "")
+        if not full_name:
+            continue
+        pos = p.get("position", "")
+        if pos == "DEF":
+            continue
+        meta_by_pid[pid] = {
+            "name": full_name, "team": team, "position": pos,
+            # Preserve cross-provider IDs for the authoritative PBP
+            # resolver; absent fields remain absent, never guessed.
+            **{k: p.get(k) for k in _RZ_META_ID_FIELDS
+               if p.get(k) not in (None, "")},
+        }
+    return meta_by_pid
+
+
 def _scorezone_collect(platform, league_id, season, week):
     """Build the raw per-league ScoreZone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
@@ -17292,6 +17345,11 @@ def _scorezone_collect(platform, league_id, season, week):
         if gid and code in ("1", "2"):
             games_to_pids.setdefault(gid, []).append(pid)
 
+    # Flatten the player index once for this collect; the per-game metadata
+    # build below slices these rows instead of rescanning the full index
+    # (and re-canonicalizing every team) once per game.
+    _rz_index_rows = _rz_player_index_rows(nfl_players)
+
     pbp_by_game: dict = {}
     # Server-side play store: one upstream PBP fetch per game per 15s (by the
     # elected poller thread) instead of per viewer per worker. Bulk-read here;
@@ -17352,8 +17410,7 @@ def _scorezone_collect(platform, league_id, season, week):
         tstats = box.get("teamStats") or {}
         name_to_pid: dict = {}
         team_to_def_pid: dict = {}
-        player_meta_by_pid: dict = {}
-        
+
         # Build player metadata for team-scoped resolution
         # CRITICAL: Use the FULL player index for the teams in this game, not just rostered players
         # This allows PBP to resolve unrostered players like Mack Hollins, Demario Douglas, etc.
@@ -17362,27 +17419,11 @@ def _scorezone_collect(platform, league_id, season, week):
             team = player_info[pid].get("team", "")
             if team:
                 game_teams.add(team)
-        
-        # Iterate ALL players in the site index to find those on the game teams
-        for pid, p in nfl_players.items():
-            team = canon_team(p.get("team")) or ""
-            pos = p.get("position", "")
-            full_name = p.get("full_name", "")
-            
-            # Include this player if they're on a team in this game
-            if team in game_teams and full_name:
-                if pos != "DEF":
-                    player_meta_by_pid[pid] = {
-                        "name": full_name, "team": team, "position": pos,
-                        # Preserve cross-provider IDs for the authoritative PBP
-                        # resolver; absent fields remain absent, never guessed.
-                        **{k: p.get(k) for k in (
-                            "player_id", "sleeper_id", "tank01_id", "espn_id",
-                            "yahoo_id", "mfl_id", "fleaflicker_id", "gsis_id",
-                            "sportradar_id",
-                        ) if p.get(k) not in (None, "")},
-                    }
-        
+
+        # Slice this game's players out of the once-per-collect index rows
+        # (identical membership/order to the old per-game full-index scan).
+        player_meta_by_pid = _rz_player_meta_for_teams(_rz_index_rows, game_teams)
+
         # Build name_to_pid from the FULL player index (already in player_meta_by_pid)
         from utils.scorezone_pbp import _normalize_name, _extract_first_initial_last
         for pid, meta in player_meta_by_pid.items():
@@ -17698,6 +17739,93 @@ def _rz_cached_collect(platform, league_id, season, week):
     return _rz_collect_build(key, platform, league_id, season, week)
 
 
+# Short-TTL per-viewer cache for the user-scope (My Leagues) aggregate. The
+# aggregate re-resolves the viewer's whole portfolio (account league lists,
+# live Sleeper memberships, per-league DB viewer resolution) and stitches up
+# to MAX_USER_LEAGUES league slices, so an uncached 15s poll cadence re-paid
+# all of that per viewer per poll. Entries are (expires_ts, etag, payload),
+# keyed by viewer identity + route params; callers must never mutate the
+# cached payload dict (per-request fields are stamped onto a copy, exactly
+# like the league collect cache). Bounds: 32 entries max (pruned oldest
+# ~10% past the cap) and a 60s TTL, matching the collect cache it sits on.
+_RZ_USER_CACHE: dict = {}
+_RZ_USER_CACHE_LOCK = threading.Lock()
+_RZ_USER_INFLIGHT: dict = {}
+_RZ_USER_TTL = 60.0
+
+
+def _rz_user_cache_key(platform, league_id, season, week):
+    """Cache key for one viewer's aggregate. Identity comes from the session
+    (account id when present, else the viewer user id); the portfolio itself
+    is a function of that identity, and the 60s TTL bounds how long a
+    mid-session portfolio change can lag."""
+    try:
+        account_id = session.get("account_id")
+        viewer_uid = str(session.get("viewer_user_id") or "")
+    except Exception:
+        account_id, viewer_uid = None, ""
+    ident = f"acct:{account_id}" if account_id else f"viewer:{viewer_uid}"
+    return (ident, str(platform), int(season), str(league_id), int(week))
+
+
+def _rz_user_build(key, platform, league_id, season, week):
+    """Run _scorezone_fetch_user, cache it, return (payload, etag).
+
+    The etag is a content hash of the built payload (whose updated_at is the
+    build time), so it is stable for the life of the cache entry and changes
+    whenever the aggregate is rebuilt."""
+    d = _scorezone_fetch_user(platform, league_id, season, week)
+    try:
+        fp = json.dumps(d, sort_keys=True, default=str)
+        etag = '"rzu-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
+    except Exception:
+        etag = '"rzu-%d"' % int(time.time())
+    with _RZ_USER_CACHE_LOCK:
+        _RZ_USER_CACHE[key] = (time.time() + _RZ_USER_TTL, etag, d)
+        _prune_ttl_cache(_RZ_USER_CACHE, 32)
+    return d, etag
+
+
+def _rz_cached_fetch_user(platform, league_id, season, week):
+    """Return (payload, etag) for the user-scope aggregate, shared per viewer.
+
+    Mirrors _rz_cached_collect: a fresh cache entry is served as-is, and
+    concurrent polls for the same viewer single-flight on one build instead
+    of each re-resolving the portfolio. Failures are never cached: whatever
+    _scorezone_fetch_user raises propagates to the caller's existing error
+    handling, and waiters retry as the builder in turn.
+    """
+    key = _rz_user_cache_key(platform, league_id, season, week)
+    for _attempt in range(2):
+        entry = _RZ_USER_CACHE.get(key)
+        if entry is not None and entry[0] > time.time():
+            return entry[2], entry[1]
+        with _RZ_USER_CACHE_LOCK:
+            # Re-check under the lock: another thread may have filled the
+            # cache between our first check and acquiring the lock.
+            entry = _RZ_USER_CACHE.get(key)
+            if entry is not None and entry[0] > time.time():
+                return entry[2], entry[1]
+            inflight = _RZ_USER_INFLIGHT.get(key)
+            if inflight is None:
+                inflight = threading.Event()
+                _RZ_USER_INFLIGHT[key] = inflight
+                is_builder = True
+            else:
+                is_builder = False
+        if is_builder:
+            try:
+                return _rz_user_build(key, platform, league_id, season, week)
+            finally:
+                with _RZ_USER_CACHE_LOCK:
+                    _RZ_USER_INFLIGHT.pop(key, None)
+                inflight.set()
+        # Share the in-flight build; bounded wait, same as the collect path.
+        inflight.wait(timeout=_RZ_COLLECT_WAIT_TIMEOUT)
+    # Last resort: build directly rather than wait on a peer a third time.
+    return _rz_user_build(key, platform, league_id, season, week)
+
+
 def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
     """Return live ScoreZone payload. scope='league' (all teams in this league)
     or scope='user' (the viewer's team across all their leagues)."""
@@ -17710,8 +17838,19 @@ def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
 
     if scope == "user":
         try:
-            d = _scorezone_fetch_user(platform, league_id, season, week)
+            _rz_ud, _rz_uetag = _rz_cached_fetch_user(
+                platform, league_id, season, week
+            )
+            # Stamp the per-request field onto a copy so the cached payload
+            # is never mutated, and expose the aggregate's etag so the API
+            # can answer unchanged polls with a 304 (the league branch has
+            # always done this; user scope never set one before).
+            d = dict(_rz_ud)
             d["games_today"] = gt
+            try:
+                g.rz_etag = _rz_uetag
+            except Exception:
+                pass
             return d
         except Exception as _e:
             logger.warning("[scorezone] user-scope fetch failed: %s", _e)
@@ -17896,7 +18035,12 @@ def _scorezone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
     if not lid:
         return None
     try:
-        d = _scorezone_collect(lg_plat, lid, lg_season, week)
+        # The collect is viewer-independent (viewer resolution happens below,
+        # on the returned data), so share the league scope's short-TTL
+        # single-flight cache instead of rebuilding the collect for every
+        # viewer on every poll. The slice only reads the payload and copies
+        # the entries it namespaces, so the cached dict is never mutated.
+        d = _rz_cached_collect(lg_plat, lid, lg_season, week)[0]
     except Exception:
         logger.debug(
             "[scorezone] collect failed platform=%s league=%s season=%s",
@@ -18094,9 +18238,20 @@ def page_scorezone(platform: str, season: int, league_id: str):
                     "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
                     "platform": platform, "league_id": league_id, "updated_at": time.time()}
 
+    # The fetch above stamped this payload's ETag on g (both scopes now).
+    # Embed it next to the snapshot so the client can seed its conditional-
+    # poll state: the embedded payload IS the body this ETag names, so the
+    # first poll can be answered 304 instead of re-downloading ~1MB.
+    _rz_page_etag = None
+    try:
+        _rz_page_etag = g.get("rz_etag") if hasattr(g, "get") else getattr(g, "rz_etag", None)
+    except Exception:
+        _rz_page_etag = None
+
     body = (
         '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
-        f'<script>window.__rz__={json.dumps(data)};</script>'
+        f'<script>window.__rz__={json.dumps(data)};'
+        f'window.__rz_etag__={json.dumps(_rz_page_etag or "")};</script>'
         # The ScoreZone live module is split out of app.js so it only loads here.
         # `defer` runs it after the page's blocking app.js, so the shared helpers
         # (openPlayerModal, window._rzBuildLiveHtml/_rzSyncTabLive) are defined.

@@ -152,6 +152,13 @@
   var _scopeRuntime = { league: null, user: null };
   if (_state && Object.keys(_state).length) {
     _scopeCache[_state.scope || 'league'] = _state;
+    // Seed the conditional-poll ETag from the server render: the embedded
+    // snapshot is the exact payload this ETag names, so the first poll
+    // (including the 250ms visit reconcile) sends If-None-Match and an
+    // unchanged collect answers 304 instead of re-downloading the ~1MB
+    // body the page already has. Demo renders stamp no ETag (and demo
+    // polls skip conditional headers anyway).
+    if (window.__rz_etag__) _rzEtagByScope[_state.scope || 'league'] = window.__rz_etag__;
   }
 
   function _prefsKey(kind) {
@@ -5290,6 +5297,13 @@
   // which side's tables render. Skill positions only (QB/RB/WR/TE).
   var _boxSheet = null; // { gameId, team, data } | { gameId, error }
   var _boxSheetEls = null;
+  // Per-session box-score cache keyed by game id, FINALS ONLY: a final's
+  // numbers never change, so reopening a finished game reuses the fetched
+  // sheet instead of refetching it. Live/scheduled games mutate per play
+  // and deliberately keep the fetch-per-open behavior (including surfacing
+  // fetch errors on reopen). Errors are never cached, so the sheet's retry
+  // always refetches.
+  var _boxCache = {}; // gameId -> data (status === 'final' payloads only)
   var _BOX_SKILL_POS = { QB: 'Quarterbacks', RB: 'Running backs', WR: 'Wide receivers', TE: 'Tight ends' };
 
   function _boxStatusLine(d) {
@@ -5488,17 +5502,26 @@
         if (pid && pid !== '0') window.openPlayerModal(pid, pr.getAttribute('data-pname') || '', { tab: 'live' });
       }
     });
+    function _applyBoxData(data) {
+      if (!_boxSheet || _boxSheet.gameId !== gameId) return; // user moved on
+      var d = data || {};
+      var vt = d.view_team;
+      var teams = d.teams || {};
+      _boxSheet.team = (vt && teams[vt]) ? vt : ((d.away || {}).team || '');
+      _boxSheet.data = d;
+      _renderBoxSheet();
+    }
+    var _boxHit = _boxCache[gameId];
+    if (_boxHit) {
+      _applyBoxData(_boxHit);
+      return;
+    }
     var qs = '?game_id=' + encodeURIComponent(gameId);
     fetch('/api/player-team-boxscore' + qs)
       .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(data) {
-        if (!_boxSheet || _boxSheet.gameId !== gameId) return; // user moved on
-        var d = data || {};
-        var vt = d.view_team;
-        var teams = d.teams || {};
-        _boxSheet.team = (vt && teams[vt]) ? vt : ((d.away || {}).team || '');
-        _boxSheet.data = d;
-        _renderBoxSheet();
+        if (data && data.status === 'final') _boxCache[gameId] = data;
+        _applyBoxData(data);
       })
       .catch(function() {
         if (!_boxSheet || _boxSheet.gameId !== gameId) return;
