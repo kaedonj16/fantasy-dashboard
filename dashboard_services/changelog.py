@@ -7,6 +7,48 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "Trade Calculator: evaluating a trade is faster and steadier. Each edit now sends one evaluation instead of two or three, the market intel for every player in the deal loads in a single request, and Playoff Impact waits for the simulation snapshot to warm up instead of running the numbers on the spot, so the card shows its loading state briefly and then the same before and after odds as before.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "update",
+        "text": "Weekly Recap and Standings load faster: both pages were computing the same standings, power rankings and lineup efficiency more than once per visit, and lineup efficiency was recomputed from scratch on most visits. The duplicate passes are gone and the efficiency result is now remembered between visits, so both pages show the exact same numbers and rankings, just sooner.",
+        "link": "/standings"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "update",
+        "text": "Speed pass across the site: pages and tools do less repeated work behind the scenes. The Assistant keeps your league context between messages in the same conversation and no longer spends a full report build when you open it, the Front Office report opens from its saved copy when nothing changed, the Dashboard renders only your matchup slide, League Stats season views load from the shared page cache, and the Draft Room, Teams tools and guest home demos reuse finished work instead of redoing it on every open. Numbers and layouts are unchanged.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "update",
+        "text": "Weekly Hub: the live matchup views now refresh with far less repeated work behind them. The drive bars read a small game-state feed instead of the full live payload, the matchup board and the player popup share one live-data cache instead of fetching the same feed twice, a refresh whose numbers have not moved is skipped entirely, and the schedule and rankings lookups behind every matchup slide are built once per week instead of once per slide. Nothing on the page changes: same numbers, same panels, just less downloading and recomputing.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
+        "text": "Waivers and Start/Sit: repeat visits load far faster. Waiver candidate lists are cached briefly and the Kicker, Defense and Trending views share one player value index, the Start/Sit strip in the player popup now distills from a single lineup build for your whole roster instead of rebuilding for every player you open, and the Lineup Lab warms up when you reach for its tab instead of on every page load. Its results are also kept in the shared cache, so reopening the Lab after a reload does not rebuild from scratch.",
+        "link": "/waivers"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "update",
+        "text": "Advanced Metrics and Players load faster. The Key Metrics preset now pulls its extra columns in two requests instead of eighteen, leaderboard answers are cached on the server for a few minutes, and the Players list plus its value sparklines are cached so they survive server restarts. Every number is unchanged.",
+        "link": "/advanced-metrics"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
+        "text": "ScoreZone: the My Leagues view refreshes far more efficiently. Its polls now reuse the same shared data build as the single-league view instead of rebuilding every league from scratch every 15 seconds, and a refresh where nothing changed skips the full feed download entirely. Box scores for finished games also reopen instantly instead of loading again.",
+        "link": "/scorezone"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "My Leagues: Rooting Guide and Bye Watch are built into the page itself now, from the same data that builds Player Holdings, so they paint with the page instead of loading in afterward. Bye Watch rows line up in clean columns, the league lookup behind the cards runs once and is shared instead of repeated per card, finished results are kept on the server's shared disk so they survive the app's regular restarts, and the cards keep checking politely in the background instead of giving up and painting an empty card.",
         "link": "/portfolio"
     },

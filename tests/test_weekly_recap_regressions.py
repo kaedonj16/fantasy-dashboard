@@ -47,7 +47,7 @@ def test_shared_analysis_resolves_raw_processed_kicker_and_defense_and_zero():
     assert "rb" in incomplete["missing_scores"]
 
 
-def test_season_service_matches_shared_lineup_analysis_and_recovers(monkeypatch):
+def test_season_service_matches_shared_lineup_analysis_and_recovers(monkeypatch, tmp_path):
     import dashboard_services.season_efficiency as service
     from utils.optimal_lineup import analyze_team_week
     import app
@@ -58,12 +58,24 @@ def test_season_service_matches_shared_lineup_analysis_and_recovers(monkeypatch)
     calls = iter([None, _lineup_rows()])
     monkeypatch.setattr(api, "get_matchups", lambda *args: next(calls))
     service._CACHE.clear()
+    monkeypatch.setattr(service, "_DISK_CACHE_FILE", tmp_path / "eff_cache.json")
     df = pd.DataFrame([{"week": 7, "finalized": True}])
     ctx = {"platform": "sleeper", "season": 2025, "league_id": "L", "df_weekly": df,
            "roster_positions": ["QB", "K", "DEF"], "rosters": [{"roster_id": 1}],
            "optimal_matchups_by_week": {}, "efficiency_weeks": [7]}
     first = service.compute_league_season_efficiency(ctx)
     assert first["state"] == "incomplete"
+    # Incomplete results now carry an honest 60s TTL (they used to retry on
+    # every call); age both cache tiers past it to exercise the recovery
+    # refetch (the stale entry is what flags the refetch).
+    import json as _json
+    for entry in service._CACHE.values():
+        entry["at"] -= service._INCOMPLETE_TTL + 1
+    _disk_file = tmp_path / "eff_cache.json"
+    _disk = _json.loads(_disk_file.read_text())
+    for _e in _disk.values():
+        _e["at"] -= service._INCOMPLETE_TTL + 1
+    _disk_file.write_text(_json.dumps(_disk))
     second = service.compute_league_season_efficiency(ctx)
     direct = analyze_team_week(_lineup_rows(), 1, players, ctx["roster_positions"], week=7)
     assert second["state"] == "complete"

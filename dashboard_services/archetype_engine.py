@@ -8,6 +8,7 @@ No imports from app.py - safe for use from any blueprint or endpoint.
 """
 from __future__ import annotations
 
+import copy
 import logging
 import math
 import threading
@@ -2279,13 +2280,133 @@ def _build_rebuilding(
 #     headline numbers depend on the sim are marked sim_pending with the
 #     sim-derived fields set to None - never an analytical estimate dressed
 #     up as a sim result.
-#   phase="sim":   the pipeline re-run with sims and row output gated to one
-#     group_key, so exactly that player's cards resolve, with the same
-#     numbers a one-shot full request produces. The walk still visits every
-#     candidate in slate order, so cross-row state (used targets / owners)
-#     evolves identically to the full run.
+#   phase="sim":   the requested group's sim numbers filled off the cached
+#     slate (see _sim_rows_from_slate): the analytical walk already ran in
+#     the slate phase, so only the group's overlay sims remain. Any input
+#     the fill cannot reproduce exactly falls back to the historical gated
+#     pipeline re-run, so the numbers are the same either way.
 _TARGET_SIM_CACHE: Dict[tuple, Any] = {}
 _TARGET_SIM_CACHE_MAX = 256
+
+
+def _acquire_sim_state(
+    ctx: Optional[Dict[str, Any]],
+    platform: str,
+    league_id: str,
+    season: int,
+    viewer_roster_id: Any,
+) -> Tuple[Any, Dict, Dict, Dict, List, float]:
+    """Sim-state acquisition shared by the pipeline and the slate fill.
+
+    Returns (sim_state, base_odds, ppg_map, pos_map, roster_positions,
+    current_playoff_pct). This is the pipeline's historical acquisition
+    logic verbatim: per-league cache guarded by a published-schedule
+    freshness check, cold builds serialized per league, and an analytical
+    build_ppg_map fallback whenever the sim build is unavailable.
+    """
+    sim_state: Optional[Dict] = None
+    base_odds: Dict = {}
+    current_playoff_pct: float = 0.0
+    ppg_map: Dict[str, Any] = {}
+    pos_map: Dict[str, str] = {}
+    roster_positions: List[str] = (ctx or {}).get("roster_positions") or []
+    _cache_key = f"{platform}:{league_id}:{season}"
+    try:
+        from data_building.simulate_playoff_odds import (
+            build_sim_state as _build_sim_state,
+            run_base_simulation as _run_base_sim,
+            build_ppg_map as _build_ppg_map,
+            playoff_schedule_sig as _playoff_schedule_sig,
+        )
+        # Compare published-schedule fingerprint on hit so trade-suggestion
+        # odds switch off the round-robin fallback the moment the real slate
+        # is posted (same key shape as before for invalidate / tests).
+        try:
+            _sched_sig = _playoff_schedule_sig(ctx, platform)
+        except Exception:
+            _sched_sig = "fallback"
+        _cached = _SIM_CACHE.get(_cache_key)
+        if (
+            _cached
+            and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL
+            and _cached.get("sched_sig", "fallback") == _sched_sig
+        ):
+            sim_state = _cached["sim_state"]
+            base_odds = _cached["base_odds"]
+            log.debug("[archetype] sim cache hit for %s", _cache_key)
+        else:
+            # Serialize the cold build so overlapping requests (rapid chip
+            # switching) don't each run the base sim. Re-check the cache
+            # inside the lock - the request we waited on may have just
+            # filled it.
+            with _sim_lock_for(_cache_key):
+                _cached = _SIM_CACHE.get(_cache_key)
+                if (
+                    _cached
+                    and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL
+                    and _cached.get("sched_sig", "fallback") == _sched_sig
+                ):
+                    sim_state = _cached["sim_state"]
+                    base_odds = _cached["base_odds"]
+                    log.debug("[archetype] sim cache hit (post-lock) for %s", _cache_key)
+                else:
+                    sim_state = _build_sim_state(ctx, platform=platform)
+                    base_odds = _run_base_sim(sim_state, n_sims=_SUGGESTION_N_SIMS) if sim_state else {}
+                    _SIM_CACHE[_cache_key] = {
+                        "sim_state": sim_state,
+                        "base_odds": base_odds,
+                        "ts": _time.time(),
+                        "sched_sig": _sched_sig,
+                    }
+                    log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
+        if sim_state:
+            ppg_map = sim_state["ppg_map"]
+            pos_map = sim_state["pos_map"]
+            roster_positions = sim_state["roster_positions"]
+            vid = int(viewer_roster_id) if str(viewer_roster_id).isdigit() else viewer_roster_id
+            current_playoff_pct = base_odds.get(vid, 0.0)
+            log.debug("[archetype] viewer playoff_pct=%.1f", current_playoff_pct)
+        else:
+            ppg_map, pos_map = _build_ppg_map(ctx)
+    except Exception as exc:
+        log.debug("[archetype] sim state unavailable, using analytical model: %s", exc)
+        try:
+            from data_building.simulate_playoff_odds import build_ppg_map as _build_ppg_map
+            ppg_map, pos_map = _build_ppg_map(ctx)
+        except Exception:
+            logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
+    return sim_state, base_odds, ppg_map, pos_map, roster_positions, current_playoff_pct
+
+
+def _fill_stash(
+    values_by_id: Dict[str, Any],
+    viewer_players: List[str],
+    rows: Optional[List[Dict[str, Any]]],
+) -> Dict[str, Dict[str, Any]]:
+    """Trimmed value/position projection the slate fill needs.
+
+    The sim phase used to re-derive lineup values from a full pipeline
+    re-run; the fill only ever scores rosters drawn from the viewer's own
+    players plus the slate rows' targets and package pieces, so exactly
+    those players' (value, redraft_value, position) triples are stashed on
+    the slate entry. _optimal_lineup_value reads only these three fields.
+    """
+    pids = {str(p) for p in viewer_players}
+    for r in rows or []:
+        if r.get("player_id"):
+            pids.add(str(r["player_id"]))
+        for a in (r.get("suggested_send") or []) + (r.get("suggested_receive") or []):
+            if a.get("player_id") and not a.get("is_pick"):
+                pids.add(str(a["player_id"]))
+    out: Dict[str, Dict[str, Any]] = {}
+    for pid in pids:
+        info = values_by_id.get(pid) or {}
+        out[pid] = {
+            "value": _f(info.get("value")),
+            "redraft_value": _f(info.get("redraft_value")),
+            "position": str(info.get("position") or ""),
+        }
+    return out
 
 
 def _row_group_key(row: Dict[str, Any], archetype: str) -> str:
@@ -2368,7 +2489,13 @@ def get_archetype_suggestions(
         )
         result.pop("_sim_available", None)
         result.pop("_all_group_keys", None)
+        _impact_rosters = result.pop("_impact_rosters", None) or {}
+        _fill_values = result.pop("_fill_values", None) or {}
         rows = result.get("suggestions") or []
+        # Deep-copy BEFORE the pending pass below nulls the sim-derived
+        # fields on the live rows: the slate cache keeps the analytical
+        # values so the sim phase can fill from them (see _sim_rows_from_slate).
+        _cached_rows = copy.deepcopy(rows)
         groups: List[str] = []
         for r in rows:
             gk = _row_group_key(r, archetype)
@@ -2387,7 +2514,10 @@ def get_archetype_suggestions(
         if len(_SLATE_CACHE) >= _SLATE_CACHE_MAX:
             _oldest = min(_SLATE_CACHE, key=lambda k: _SLATE_CACHE[k]["ts"])
             _SLATE_CACHE.pop(_oldest, None)
-        _SLATE_CACHE[_key] = {"rows": rows, "groups": groups, "ts": _time.time()}
+        _SLATE_CACHE[_key] = {
+            "rows": _cached_rows, "groups": groups, "ts": _time.time(),
+            "impact_rosters": _impact_rosters, "fill_values": _fill_values,
+        }
         return {
             "suggestions": rows,
             "current_playoff_pct": None,
@@ -2401,6 +2531,29 @@ def get_archetype_suggestions(
         _hit = _TARGET_SIM_CACHE.get(ckey)
         if _hit is not None and (_time.time() - _hit["ts"]) < _RESULT_CACHE_TTL:
             return _hit["result"]
+        # Fast path: fill the group's sim numbers off the cached slate
+        # instead of re-running the whole pipeline. The slate entry is
+        # keyed by the exact request fingerprint (rosters included) and is
+        # only honored inside the result-cache TTL; the fill is
+        # all-or-nothing and returns None whenever an input it needs is
+        # unavailable, in which case the historical gated re-run below
+        # produces the numbers exactly as before.
+        _slate = _SLATE_CACHE.get(_key)
+        if _slate is not None and (_time.time() - _slate["ts"]) < _RESULT_CACHE_TTL:
+            _filled = _sim_rows_from_slate(
+                _slate, archetype=archetype, platform=platform,
+                league_id=league_id, season=season,
+                viewer_roster_id=viewer_roster_id, league_type=league_type,
+                league_size=league_size, ctx=ctx, group_key=gk,
+            )
+            if _filled is not None:
+                out, sim_ok = _filled
+                if sim_ok:
+                    if len(_TARGET_SIM_CACHE) >= _TARGET_SIM_CACHE_MAX:
+                        _oldest = min(_TARGET_SIM_CACHE, key=lambda k: _TARGET_SIM_CACHE[k]["ts"])
+                        _TARGET_SIM_CACHE.pop(_oldest, None)
+                    _TARGET_SIM_CACHE[ckey] = {"result": out, "ts": _time.time()}
+                return out
         result = _get_archetype_suggestions_impl(
             archetype=archetype, platform=platform, league_id=league_id, season=season,
             viewer_roster_id=viewer_roster_id, league_type=league_type,
@@ -2409,6 +2562,8 @@ def get_archetype_suggestions(
         )
         sim_ok = bool(result.pop("_sim_available", False))
         slate_groups = result.pop("_all_group_keys", None) or []
+        result.pop("_impact_rosters", None)
+        result.pop("_fill_values", None)
         rows = []
         for r in (result.get("suggestions") or []):
             if _row_group_key(r, archetype) == gk:
@@ -2442,6 +2597,8 @@ def get_archetype_suggestions(
     )
     result.pop("_sim_available", None)
     result.pop("_all_group_keys", None)
+    result.pop("_impact_rosters", None)
+    result.pop("_fill_values", None)
 
     # Only cache real, non-empty results - never lock in a transient empty
     # (e.g. a cold ctx or a failed sim build) for the full TTL.
@@ -2451,6 +2608,237 @@ def get_archetype_suggestions(
             _RESULT_CACHE.pop(_oldest, None)
         _RESULT_CACHE[_key] = {"result": result, "ts": _time.time()}
     return result
+
+
+def _sim_rows_from_slate(
+    slate_entry: Dict[str, Any],
+    *,
+    archetype: str,
+    platform: str,
+    league_id: str,
+    season: int,
+    viewer_roster_id: Any,
+    league_type: str,
+    league_size: int,
+    ctx: Optional[Dict[str, Any]],
+    group_key: str,
+) -> Optional[Tuple[Dict[str, Any], bool]]:
+    """Fill one group's sim numbers off the cached analytical slate.
+
+    Returns (out, sim_ok) in the phase="sim" response shape, or None when
+    any input the pipeline re-run would use is unavailable — the caller
+    then runs the pipeline exactly as before. All-or-nothing: a partially
+    filled group is never served.
+
+    Parity contract (pinned by tests/test_archetype_progressive.py): the
+    filled rows equal the gated pipeline re-run's rows field for field.
+    The slate rows were produced by that same walk on the analytical
+    basis; what remains is exactly the work the builders gate on sim
+    state — recompute the delta fields against the sim-basis league
+    average and run the group's overlay swaps, whose rosters are pure
+    functions of the cached rows (acquire impact rosters are stashed at
+    slate time because their drop choice reads the full value table).
+    """
+    try:
+        arch = (archetype or "").lower().strip()
+        if arch not in ("contending", "consolidate", "distribute", "rebuilding"):
+            return None
+        groups = list(slate_entry.get("groups") or [])
+        if group_key not in groups:
+            return None
+        rows = [
+            r for r in copy.deepcopy(slate_entry.get("rows") or [])
+            if _row_group_key(r, arch) == group_key
+        ]
+        if not rows:
+            return None
+        ctx = ctx or {}
+        rosters = ctx.get("rosters") or []
+        viewer_players: List[str] = []
+        for r in rosters:
+            if str(r.get("roster_id")) == str(viewer_roster_id):
+                viewer_players = [str(p) for p in (r.get("players") or [])]
+                break
+        if not viewer_players:
+            return None
+        fill_values = slate_entry.get("fill_values") or {}
+
+        (sim_state, _base_odds, ppg_map, pos_map, roster_positions,
+         current_playoff_pct) = _acquire_sim_state(
+            ctx, platform, league_id, season, viewer_roster_id)
+
+        if sim_state is None:
+            # No sim state: a pipeline re-run would return these same
+            # analytical rows (same basis, same fingerprint) with a 0.0
+            # current pct, so serve the cached group directly.
+            for r in rows:
+                r["group_key"] = group_key
+                r["rank"] = _suggestion_rank(r)
+            return ({
+                "suggestions": rows,
+                "current_playoff_pct": 0.0,
+                "phase": "sim",
+                "group_key": group_key,
+                "slate_groups": groups,
+            }, False)
+
+        # The builders call int(viewer_roster_id) inside their sim gates;
+        # for a non-numeric id they degrade to analytical-on-sim-basis
+        # numbers the cached slate does not carry. Fall back instead.
+        if not str(viewer_roster_id).isdigit():
+            return None
+        _vid_int = int(viewer_roster_id)
+
+        def _lval(pids: List[str]) -> float:
+            if ppg_map and roster_positions:
+                return _ppg_lineup(pids, ppg_map, pos_map, roster_positions)
+            return _optimal_lineup_value(pids, fill_values, league_type, use_redraft=True)
+
+        def _lineup(pids: List[str]) -> float:
+            return _compute_lineup_score(
+                pids, bool(ppg_map and roster_positions), ppg_map, pos_map,
+                roster_positions, fill_values, league_type)
+
+        league_avg = sum(t["avg"] for t in sim_state["teams"]) / max(1, len(sim_state["teams"]))
+        viewer_lineup_val = _lval(viewer_players)
+        current_wp = _win_prob(viewer_lineup_val, league_avg)
+        settings = ctx.get("settings") or {}
+        num_weeks = max(10, int(settings.get("playoff_week_start", 15)) - 1)
+        num_teams = max(len(rosters), league_size, 8)
+        playoff_spots = max(4, round(num_teams * 0.4))
+        _sim_wp_base = current_wp
+        _cur_week_avg = _viewer_remaining_week_avg(sim_state, _vid_int)
+        if _cur_week_avg:
+            _sim_wp_base = _win_prob(_cur_week_avg, league_avg)
+
+        from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
+        _swap_memo: Dict[frozenset, Tuple[float, float]] = {}
+
+        def _swap(pids: List[str]) -> Tuple[float, float]:
+            _k = frozenset(pids)
+            if _k not in _swap_memo:
+                _swap_memo[_k] = _sim_swap(
+                    sim_state, _vid_int, list(pids), n_sims=_SUGGESTION_N_SIMS)
+            return _swap_memo[_k]
+
+        out_rows: List[Dict[str, Any]] = []
+        if arch in ("contending", "consolidate"):
+            impact_rosters = slate_entry.get("impact_rosters") or {}
+            for r in rows:
+                pid = str(r.get("player_id"))
+                new_pids = impact_rosters.get(pid)
+                if new_pids is None:
+                    return None
+                new_po_pct, new_avg = _swap(new_pids)
+                pod = (new_po_pct - current_playoff_pct) / 100.0
+                wpd = _win_prob(new_avg, league_avg) - _sim_wp_base
+                pkg_pids = {
+                    str(a.get("player_id"))
+                    for a in (r.get("suggested_send") or []) if not a.get("is_pick")
+                }
+                net_roster = [p for p in viewer_players if p not in pkg_pids] + [pid]
+                net_po_pct, net_avg = _swap(net_roster)
+                net_pod = (net_po_pct - current_playoff_pct) / 100.0
+                net_wpd = _win_prob(net_avg, league_avg) - _sim_wp_base
+                # Mirror the pipeline's consolidate sim filter exactly.
+                if arch == "consolidate" and net_wpd < -0.005 and net_pod < 0:
+                    continue
+                r["win_prob_delta"] = round(wpd, 4)
+                r["playoff_odds_delta"] = round(pod, 4)
+                r["net_win_prob_delta"] = round(net_wpd, 4)
+                r["net_playoff_odds_delta"] = round(net_pod, 4)
+                out_rows.append(r)
+        elif arch == "distribute":
+            for r in rows:
+                stud = str((r.get("suggested_send") or [{}])[0].get("player_id"))
+                dep_players = [p for p in viewer_players if p != stud]
+                dep_wpd = (
+                    _win_prob(_lineup(dep_players), league_avg)
+                    - _win_prob(viewer_lineup_val, league_avg)
+                )
+                dep_pod = (
+                    _playoff_odds(current_wp + dep_wpd, num_weeks, num_teams, playoff_spots)
+                    - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+                )
+                recv_ids = [
+                    str(a.get("player_id")) for a in (r.get("suggested_receive") or [])
+                ]
+                new_players = dep_players + recv_ids
+                net_wpd = (
+                    _win_prob(_lineup(new_players), league_avg)
+                    - _win_prob(viewer_lineup_val, league_avg)
+                )
+                new_po_pct, _new_avg = _swap(new_players)
+                net_pod = (new_po_pct - current_playoff_pct) / 100.0
+                # The builder bakes the ceiling clause into `why` from the
+                # sign of its sim-basis net_wpd; the cached row's clause
+                # came from the analytical sign. Re-derive it when the
+                # sign flips so the sentence matches a full re-run.
+                if r.get("why") and (net_wpd >= 0) != ((r.get("net_win_prob_delta") or 0) >= 0):
+                    if net_wpd >= 0:
+                        r["why"] = r["why"].replace(
+                            "Adds depth but trims your ceiling", "Lineup ceiling rises")
+                    else:
+                        r["why"] = r["why"].replace(
+                            "Lineup ceiling rises", "Adds depth but trims your ceiling")
+                r["win_prob_delta"] = round(dep_wpd, 4)
+                r["playoff_odds_delta"] = round(dep_pod, 4)
+                r["net_win_prob_delta"] = round(net_wpd, 4)
+                r["net_playoff_odds_delta"] = round(net_pod, 4)
+                out_rows.append(r)
+        else:  # rebuilding
+            for r in rows:
+                vet = str((r.get("suggested_send") or [{}])[0].get("player_id"))
+                dep_players = [p for p in viewer_players if p != vet]
+                dep_wpd = (
+                    _win_prob(_lineup(dep_players), league_avg)
+                    - _win_prob(viewer_lineup_val, league_avg)
+                )
+                dep_pod = (
+                    _playoff_odds(current_wp + dep_wpd, num_weeks, num_teams, playoff_spots)
+                    - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+                )
+                recv_pids = [
+                    str(a.get("player_id"))
+                    for a in (r.get("suggested_receive") or []) if not a.get("is_pick")
+                ]
+                if recv_pids:
+                    net_players = dep_players + recv_pids
+                    net_wpd = (
+                        _win_prob(_lineup(net_players), league_avg)
+                        - _win_prob(viewer_lineup_val, league_avg)
+                    )
+                    new_po_pct, _new_avg = _swap(net_players)
+                    net_pod = (new_po_pct - current_playoff_pct) / 100.0
+                    r["net_win_prob_delta"] = round(net_wpd, 4)
+                    r["net_playoff_odds_delta"] = round(net_pod, 4)
+                else:
+                    # Pick-only return: the builder reports the bare
+                    # departure deltas as the net deltas.
+                    r["net_win_prob_delta"] = round(dep_wpd, 4)
+                    r["net_playoff_odds_delta"] = round(dep_pod, 4)
+                r["win_prob_delta"] = round(dep_wpd, 4)
+                r["playoff_odds_delta"] = round(dep_pod, 4)
+                out_rows.append(r)
+
+        # The builders finish with a global sort by _suggestion_rank over
+        # the sim-filled fields, and the wrapper's group filter preserves
+        # that order — so re-sort the filled group the same way (stable:
+        # exact rank ties keep slate order).
+        out_rows.sort(key=_suggestion_rank, reverse=True)
+        for r in out_rows:
+            r["group_key"] = group_key
+            r["rank"] = _suggestion_rank(r)
+        return ({
+            "suggestions": out_rows,
+            "current_playoff_pct": round(current_playoff_pct, 1),
+            "phase": "sim",
+            "group_key": group_key,
+            "slate_groups": groups,
+        }, True)
+    except Exception:
+        log.debug("[archetype] slate fill failed; falling back to pipeline", exc_info=True)
+        return None
 
 
 def _get_archetype_suggestions_impl(
@@ -2582,80 +2970,19 @@ def _get_archetype_suggestions_impl(
     ppg_map:  Dict[str, Any] = {}
     pos_map:  Dict[str, str] = {}
     roster_positions: List[str] = ctx.get("roster_positions") or []
-    _cache_key = f"{platform}:{league_id}:{season}"
     if defer_sims:
         # Slate phase (progressive loading): skip the Monte Carlo build
         # entirely. The ppg fallback feeds the analytical slate below; the
-        # per-group sim phase re-runs this pipeline with sims enabled.
+        # per-group sim phase fills sims off the cached slate.
         try:
             from data_building.simulate_playoff_odds import build_ppg_map as _build_ppg_map
             ppg_map, pos_map = _build_ppg_map(ctx)
         except Exception:
             logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
     else:
-        try:
-            from data_building.simulate_playoff_odds import (
-                build_sim_state as _build_sim_state,
-                run_base_simulation as _run_base_sim,
-                build_ppg_map as _build_ppg_map,
-                playoff_schedule_sig as _playoff_schedule_sig,
-            )
-            # Compare published-schedule fingerprint on hit so trade-suggestion
-            # odds switch off the round-robin fallback the moment the real slate
-            # is posted (same key shape as before for invalidate / tests).
-            try:
-                _sched_sig = _playoff_schedule_sig(ctx, platform)
-            except Exception:
-                _sched_sig = "fallback"
-            _cached = _SIM_CACHE.get(_cache_key)
-            if (
-                _cached
-                and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL
-                and _cached.get("sched_sig", "fallback") == _sched_sig
-            ):
-                sim_state  = _cached["sim_state"]
-                base_odds  = _cached["base_odds"]
-                log.debug("[archetype] sim cache hit for %s", _cache_key)
-            else:
-                # Serialize the cold build so overlapping requests (rapid chip
-                # switching) don't each run the base sim. Re-check the cache
-                # inside the lock - the request we waited on may have just filled it.
-                with _sim_lock_for(_cache_key):
-                    _cached = _SIM_CACHE.get(_cache_key)
-                    if (
-                        _cached
-                        and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL
-                        and _cached.get("sched_sig", "fallback") == _sched_sig
-                    ):
-                        sim_state = _cached["sim_state"]
-                        base_odds = _cached["base_odds"]
-                        log.debug("[archetype] sim cache hit (post-lock) for %s", _cache_key)
-                    else:
-                        sim_state = _build_sim_state(ctx, platform=platform)
-                        base_odds = _run_base_sim(sim_state, n_sims=_SUGGESTION_N_SIMS) if sim_state else {}
-                        _SIM_CACHE[_cache_key] = {
-                            "sim_state": sim_state,
-                            "base_odds": base_odds,
-                            "ts": _time.time(),
-                            "sched_sig": _sched_sig,
-                        }
-                        log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
-            if sim_state:
-                ppg_map  = sim_state["ppg_map"]
-                pos_map  = sim_state["pos_map"]
-                roster_positions = sim_state["roster_positions"]
-                vid = int(viewer_roster_id) if str(viewer_roster_id).isdigit() else viewer_roster_id
-                current_playoff_pct = base_odds.get(vid, 0.0)
-                log.debug("[archetype] viewer playoff_pct=%.1f", current_playoff_pct)
-            else:
-                ppg_map, pos_map = _build_ppg_map(ctx)
-        except Exception as exc:
-            log.debug("[archetype] sim state unavailable, using analytical model: %s", exc)
-            try:
-                from data_building.simulate_playoff_odds import build_ppg_map as _build_ppg_map
-                ppg_map, pos_map = _build_ppg_map(ctx)
-            except Exception:
-                logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
+        (sim_state, _base_odds, ppg_map, pos_map, roster_positions,
+         current_playoff_pct) = _acquire_sim_state(
+            ctx, platform, league_id, season, viewer_roster_id)
 
     def _lval(pids: List[str]) -> float:
         if ppg_map and roster_positions:
@@ -2829,6 +3156,7 @@ def _get_archetype_suggestions_impl(
             "_all_group_keys": list(dict.fromkeys(
                 _row_group_key(r, archetype) for r in _sugg
             )),
+            "_fill_values": _fill_stash(values_by_id, viewer_players, _sugg),
         }
 
     # ── Rebuilding: viewer sells a win-now vet for youth / picks ─────────────
@@ -2863,6 +3191,7 @@ def _get_archetype_suggestions_impl(
             "_all_group_keys": list(dict.fromkeys(
                 _row_group_key(r, archetype) for r in _sugg
             )),
+            "_fill_values": _fill_stash(values_by_id, viewer_players, _sugg),
         }
 
     # ── 30-day trend ──────────────────────────────────────────────────────────
@@ -3180,6 +3509,10 @@ def _get_archetype_suggestions_impl(
             tier_thresholds=tier_thresholds, stretch=bool(t.get("is_stretch")),
         )
 
+    # Per-target impact rosters, stashed on the result so the progressive
+    # sim phase can fill off the cached slate without rebuilding them (the
+    # drop choice reads the full value table, which the fill does not hold).
+    _impact_rosters: Dict[str, List[str]] = {}
     for t in top:
         pid = t["player_id"]
         pos = t["position"]
@@ -3192,6 +3525,7 @@ def _get_archetype_suggestions_impl(
         # no sim state exists. Routed through _cached_swap so identical rosters
         # reuse a single overlay run.
         new_pids = _impact_roster(pid, pos)
+        _impact_rosters[str(pid)] = list(new_pids)
 
         # Analytical fallback, clamped to a plausible single-acquisition swing so
         # a thin value model can never surface an absurd number (a real trade
@@ -3325,4 +3659,6 @@ def _get_archetype_suggestions_impl(
         "current_playoff_pct": round(current_playoff_pct, 1),
         "_sim_available": bool(sim_state),
         "_all_group_keys": _all_group_keys,
+        "_fill_values": _fill_stash(values_by_id, viewer_players, results),
+        "_impact_rosters": _impact_rosters,
     }

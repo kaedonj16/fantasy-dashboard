@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import threading
 
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
@@ -101,6 +102,32 @@ def _index_entries(index) -> list[dict]:
     return entries
 
 
+# Memoized derived entries, keyed on the identity of the index object.
+# The production index (app.get_players_index_global) is loaded once per
+# process and never replaced or mutated, so identity is a sound key; the
+# memo holds a strong reference so the id cannot be recycled by GC while
+# the entries are alive. Single slot: production calls all pass the same
+# global object, and alternating explicit indexes (tests) simply rebuild.
+# Entries are read-only for every caller (resolvers build new lists and
+# _public() copies), so sharing the list is safe. A caller that mutates an
+# index in place and re-resolves would see stale entries; no production
+# caller does that.
+_ENTRIES_MEMO = {"index": None, "entries": None}
+_ENTRIES_MEMO_LOCK = threading.Lock()
+
+
+def _index_entries_cached(index) -> list[dict]:
+    if _ENTRIES_MEMO["index"] is index:
+        return _ENTRIES_MEMO["entries"]
+    with _ENTRIES_MEMO_LOCK:
+        if _ENTRIES_MEMO["index"] is index:
+            return _ENTRIES_MEMO["entries"]
+        entries = _index_entries(index)
+        _ENTRIES_MEMO["index"] = index
+        _ENTRIES_MEMO["entries"] = entries
+        return entries
+
+
 def _value_footprint_ids() -> set:
     """Player ids carrying a real footprint: a row with a numeric value
     in the model value table (the table built from usage and stats, the
@@ -160,7 +187,7 @@ def resolve_player(name: str, *, index=None, roster_player_ids=None, footprint_i
             index = get_players_index_global()
         except Exception:
             index = {}
-    entries = _index_entries(index or {})
+    entries = _index_entries_cached(index or {})
     target = _normalize(name)
     if not target:
         return {"status": "missing", "candidates": []}
@@ -220,7 +247,7 @@ def nearest_names(name: str, *, index=None, limit: int = 2) -> list[str]:
         return []
     target_last = target.split()[-1]
     scored = []
-    for e in _index_entries(index or {}):
+    for e in _index_entries_cached(index or {}):
         norm = e["_norm"]
         if not norm:
             continue

@@ -91,11 +91,12 @@ def test_healthy_storage_still_enforces_the_limit(fail_open_app):
 
 
 def test_trade_caps_match_the_counted_client_flow():
-    """app.js costs up to 3 trade-eval POSTs and 2 playoff-impact POSTs
-    per single user action (renderChips ends in recomputeTrade and is
-    called for both sides; suggestion/sample flows add analyzeTrade;
-    every successful recompute spawns one playoff-impact fetch). The
-    caps must allow the same 30 actions/min on both endpoints."""
+    """app.js costs 1 trade-eval POST and 1 playoff-impact POST per
+    settled user action (recomputeTrade coalesces the renderChips pair
+    into one run; suggestion/sample flows add analyzeTrade's separate
+    eval POST; every successful recompute spawns one playoff-impact
+    fetch, plus that card's bounded retries and deferred-state polls).
+    The caps must allow the same 30 actions/min on both endpoints."""
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
 
     eval_block = app_py.split('@app.route("/api/trade-eval", methods=["POST"])', 1)[1]

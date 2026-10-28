@@ -9,6 +9,26 @@ from data_building.advanced_metrics import (
     _adv_weekly_agg_sql,
 )
 
+
+@pytest.fixture(autouse=True)
+def _isolate_lb_response_cache():
+    """Stop this module's leaderboard calls from leaking cache entries.
+
+    routes.advanced_metrics_bp._LB_CACHE is process-global: the payloads
+    these tests compute stay cached after monkeypatch undoes the builder
+    stubs, and a later suite test that patches the builder to raise (the
+    builder-error 500 test in test_am_board_loading, same metric/season
+    URL) was served the warmed 200 instead. Clear around every test.
+    """
+    try:
+        import routes.advanced_metrics_bp as bp
+    except ImportError:
+        yield
+        return
+    bp._LB_CACHE.clear()
+    yield
+    bp._LB_CACHE.clear()
+
 EXPECTED = {
     "rushing": ("rushing_epa_per_att", None),
     "receiving": ("target_share", None),

@@ -1171,10 +1171,12 @@ function wvLabKey() {{
     + (wvGuestParam() ? '|g=' + wvGuestParam() : '');
 }}
 
-// Warm the Lab in the background once Start/Sit data lands, so the payload
-// (and the server-side cache behind it) is ready when the Lab toggle is
-// tapped. Failures are silent: the stash is dropped and the real load keeps
-// its normal loading/error behavior.
+// Warm the Lab payload in the background (and the server-side cache behind
+// it) so the Lab is ready when its toggle is tapped. Failures are silent:
+// the stash is dropped and the real load keeps its normal loading/error
+// behavior. The warm-up fires only on intent (see wvWireLabIntent), never
+// on page load: most Start/Sit views never open the Lab, and an unused
+// prefetch still pays a full server-side Lab build.
 function wvPrefetchLab() {{
   var key = wvLabKey();
   if (wvLabPrefetch && wvLabPrefetch.key === key) return;
@@ -1182,6 +1184,21 @@ function wvPrefetchLab() {{
   wvLabPrefetch = {{ key: key, promise: p }};
   p.catch(function() {{
     if (wvLabPrefetch && wvLabPrefetch.key === key) wvLabPrefetch = null;
+  }});
+}}
+
+// First interaction with the Lab toggle (hover, focus, touch, press) is the
+// intent signal: warm the payload then, so it is usually ready by the time
+// the click lands and wvLoadLab consumes the stash. Wired once; the key
+// dedupe inside wvPrefetchLab keeps repeat signals free.
+var wvLabIntentWired = false;
+function wvWireLabIntent() {{
+  if (wvLabIntentWired) return;
+  var btn = document.getElementById('wvSsModeLab');
+  if (!btn) return;
+  wvLabIntentWired = true;
+  ['pointerenter', 'pointerdown', 'focus', 'touchstart'].forEach(function(ev) {{
+    btn.addEventListener(ev, wvPrefetchLab, {{ passive: true }});
   }});
 }}
 
@@ -2604,7 +2621,7 @@ function wvFetchStartSit() {{
       wvStartSitData = d;
       wvSyncGuestsFromPayload(d);
       wvStartSitData._lineup_requirements = d.lineup_requirements || {{}};
-      wvPrefetchLab();
+      wvWireLabIntent();
       wvSyncPosPills();
       wvRenderStartSit();
       wvLoadTracking();

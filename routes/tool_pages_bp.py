@@ -68,6 +68,10 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     is_sf = False
     roster_positions = None
     scoring = None
+    # One ctx fetch per request, threaded through every block below (this
+    # handler used to re-fetch it five times: here, draft rounds, the
+    # keeper gate via _nav_show_keeper, format detect, keeper compute).
+    ctx = None
     if league_id:
         try:
             ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -92,7 +96,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     num_rounds_startup = None
     if league_id and roster_positions:
         try:
-            _ls = get_league_ctx_from_cache(platform, league_id, season).get("league_settings") or {}
+            _ls = (ctx or {}).get("league_settings") or {}
             _rr = int(_ls.get("draft_rounds") or 0)
             if _rr:
                 num_rounds_rookie = _rr
@@ -109,7 +113,12 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     show_keeper = True
     if league_id:
         try:
-            show_keeper = _nav_show_keeper(platform, league_id, season)
+            if ctx is not None:
+                show_keeper = _nav_show_keeper(platform, league_id, season, ctx=ctx)
+            else:
+                # First fetch failed: keep the helper's own fetch so its
+                # retry-then-default behavior is unchanged.
+                show_keeper = _nav_show_keeper(platform, league_id, season)
         except Exception:
             show_keeper = True
     # League keepers: surface them in the draft room either when the league is a
@@ -123,7 +132,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     if league_id:
         try:
             from utils.league_format import detect_league_format
-            _ctx_fmt = get_league_ctx_from_cache(platform, league_id, season) or {}
+            _ctx_fmt = ctx or {}
             _drafts = []
             try:
                 from dashboard_services.platform_api import get_drafts
@@ -143,7 +152,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     if league_id and show_keeper:
         try:
             from dashboard_services.pages.keeper_page import compute_league_keepers, league_keeper_limit
-            _ctx = get_league_ctx_from_cache(platform, league_id, season)
+            _ctx = ctx
             # Sleeper commonly reports a leftover max_keepers (often 1) on plain
             # redraft leagues (type 0), which made the room auto-surface a keeper
             # banner and pull "kept" players off the board for a league that has

@@ -488,11 +488,19 @@ def test_lab_prefetch_wiring(script):
     assert "req = wvLabPrefetch.promise" in body
     assert "var url = wvLabUrl();" in body
     assert "req = fetch(url).then" in body
-    # The prefetch fires from the Start/Sit success path, right after the
-    # data (and its current_week) lands — the same week the Lab load reads.
+    # The Start/Sit success path no longer fires the prefetch on load: it
+    # wires the Lab toggle's intent listeners right after the data (and its
+    # current_week) lands — the same week the Lab load reads. The prefetch
+    # itself fires on first toggle interaction (hover/focus/press).
     start = script.index("function wvFetchStartSit(")
     body = script[start:script.index("\nfunction ", start + 1)]
-    assert body.index("wvStartSitData = d;") < body.index("wvPrefetchLab();")
+    assert "wvPrefetchLab();" not in body
+    assert body.index("wvStartSitData = d;") < body.index("wvWireLabIntent();")
+    start = script.index("function wvWireLabIntent(")
+    body = script[start:script.index("\nfunction ", start + 1)]
+    assert "getElementById('wvSsModeLab')" in body
+    assert "pointerenter" in body
+    assert "wvPrefetchLab" in body
 
 
 def test_lab_prefetch_fires_and_toggle_consumes(script):

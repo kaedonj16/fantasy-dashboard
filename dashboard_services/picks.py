@@ -5,12 +5,60 @@ from __future__ import annotations
 import json
 import glob
 import logging
+import os
+import threading
 from datetime import date
 from typing import Dict
 
 from utils.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
+
+
+# ── mtime-guarded cache for load_pick_value_table ────────────────────────────
+# The table is built from a fixed set of DATA_DIR files (WLS pick values,
+# model values, calibration scale, FantasyCalc dumps). Callers across the app
+# used to re-read and re-parse all of them on every call. The cache below is
+# keyed on (league_teams, current_year, is_sf) and validated against the
+# (mtime, size) signature of those source files, so a rebuilt input file
+# invalidates it immediately. Bound: at most _PICK_TABLE_CACHE_MAX entries
+# (the league-size x axis combos actually in play), pruned oldest-first.
+_PICK_TABLE_CACHE: Dict[tuple, tuple] = {}
+_PICK_TABLE_CACHE_LOCK = threading.Lock()
+_PICK_TABLE_CACHE_MAX = 16
+
+
+def _resolve_wls_path():
+    """The WLS pick-values file load_pick_value_table reads, or the newest
+    dated fallback when the 'latest' file is absent."""
+    wls_path = DATA_DIR / "pick_values_wls_latest.json"
+    if not wls_path.exists():
+        candidates = sorted(
+            glob.glob(str(DATA_DIR / "pick_values_wls_*.json")), reverse=True
+        )
+        candidates = [c for c in candidates if "latest" not in c]
+        if candidates:
+            from pathlib import Path
+
+            wls_path = Path(candidates[0])
+    return wls_path
+
+
+def _pick_table_source_signature(wls_path) -> tuple:
+    parts = []
+    for p in (
+        wls_path,
+        DATA_DIR / "model_values.json",
+        DATA_DIR / "market_calibration_scale.json",
+        DATA_DIR / "fantasycalc_api_values.csv",
+        DATA_DIR / "fantasycalc_sf_api_values.csv",
+    ):
+        try:
+            st = os.stat(p)
+            parts.append((str(p), st.st_mtime_ns, st.st_size))
+        except OSError:
+            parts.append((str(p), None, None))
+    return tuple(parts)
 
 
 def _load_fc_slot_pick_values(current_year: int, *, is_sf: bool = False) -> Dict[str, float]:
@@ -211,7 +259,49 @@ def load_pick_value_table(
       e.g. "2026_1_01", "2026_1_early", "2027_2_mid"
 
     Values are in the same normalized 0–999.9 scale as player values.
+
+    Results are memoized on the (mtime, size) signature of the source files
+    (see _PICK_TABLE_CACHE). Only the file-driven path is cached: when no
+    WLS file exists the DB fallback runs uncached, exactly as before.
     """
+    if current_year is None:
+        current_year = date.today().year
+
+    wls_path = _resolve_wls_path()
+    cache_key = None
+    signature = None
+    try:
+        wls_exists = wls_path.exists()
+    except Exception:
+        wls_exists = False
+    if wls_exists:
+        cache_key = (league_teams, current_year, bool(is_sf))
+        signature = _pick_table_source_signature(wls_path)
+        with _PICK_TABLE_CACHE_LOCK:
+            hit = _PICK_TABLE_CACHE.get(cache_key)
+            if hit and hit[0] == signature:
+                return dict(hit[1])
+
+    result = _load_pick_value_table_uncached(
+        league_teams=league_teams, current_year=current_year,
+        is_sf=is_sf, wls_path=wls_path,
+    )
+
+    if cache_key is not None:
+        with _PICK_TABLE_CACHE_LOCK:
+            _PICK_TABLE_CACHE[cache_key] = (signature, dict(result))
+            while len(_PICK_TABLE_CACHE) > _PICK_TABLE_CACHE_MAX:
+                _PICK_TABLE_CACHE.pop(next(iter(_PICK_TABLE_CACHE)))
+    return result
+
+
+def _load_pick_value_table_uncached(
+    league_teams: int = 10,
+    current_year: int | None = None,
+    *,
+    is_sf: bool = False,
+    wls_path=None,
+) -> Dict[str, float]:
     if current_year is None:
         current_year = date.today().year
 
@@ -219,14 +309,8 @@ def load_pick_value_table(
     axis = "sf" if is_sf else "1qb"
 
     # Primary source: WLS latest file (has both slot and bucket picks)
-    wls_path = DATA_DIR / "pick_values_wls_latest.json"
-    if not wls_path.exists():
-        candidates = sorted(
-            glob.glob(str(DATA_DIR / "pick_values_wls_*.json")), reverse=True
-        )
-        candidates = [c for c in candidates if "latest" not in c]
-        if candidates:
-            wls_path = candidates[0]
+    if wls_path is None:
+        wls_path = _resolve_wls_path()
 
     if wls_path.exists():
         try:

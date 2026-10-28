@@ -1922,9 +1922,17 @@ def _exclude_hurt_waiver_targets(waiver_targets: list[dict],
     return targets
 
 
-def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
+def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
+                            model_value_lookup: dict | None = None,
+                            roster_rows: list | None = None,
+                            grades: list | None = None) -> dict | None:
     """Assemble every computed input the report needs. Returns None when the
-    roster cannot be resolved."""
+    roster cannot be resolved.
+
+    The cache probe in get_front_office_report may hand in the value
+    lookup / roster rows / grades it already computed for the report
+    fingerprint; they are the identical computations this function would
+    run, so a probe miss does not pay for them twice."""
     team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx, block=False), viewer_roster_id)
     if not team_ctx:
         return None
@@ -1932,13 +1940,16 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     roster = _roster_lookup(ctx, viewer_roster_id)
     if not roster:
         return None
-    model_value_lookup = build_model_value_lookup(
-        ctx.get("model_value_table") or [],
-        is_sf=_ctx_is_sf(ctx),
-        scoring_type=scoring_type,
-    )
-    roster_rows = _build_roster_rows(ctx, roster, model_value_lookup)
-    grades = _positional_grades(ctx, viewer_roster_id, model_value_lookup)
+    if model_value_lookup is None:
+        model_value_lookup = build_model_value_lookup(
+            ctx.get("model_value_table") or [],
+            is_sf=_ctx_is_sf(ctx),
+            scoring_type=scoring_type,
+        )
+    if roster_rows is None:
+        roster_rows = _build_roster_rows(ctx, roster, model_value_lookup)
+    if grades is None:
+        grades = _positional_grades(ctx, viewer_roster_id, model_value_lookup)
     weakest = list(team_ctx.get("weakest_positions") or [])
     if not weakest:
         weakest = [g["pos"] for g in sorted(grades, key=lambda g: g["rank"], reverse=True)[:2]]
@@ -2107,43 +2118,97 @@ def _fallback_ai(data: dict, reason: str = "") -> dict:
     }
 
 
+def _front_office_cache_key(ctx: dict, viewer_roster_id: str, *, week, season,
+                            record, grades, roster_rows) -> str:
+    """The report fingerprint, unchanged: every field is an input the
+    rendered report actually depends on, so a key match means the cached
+    report is the report the full build would render inputs for."""
+    return build_ai_cache_key("front_office_report", {
+        "rid": str(viewer_roster_id),
+        "week": week,
+        "season": season,
+        "league": _safe_str(ctx.get("league_id")),
+        "record": record,
+        "grades": [(g["pos"], g["grade"], g["rank"]) for g in grades or []],
+        "top_values": [r["value"] for r in (roster_rows or [])[:8]],
+        # Injury designations change on their own schedule; without this a
+        # status change would serve the 12h-cached report with stale injuries.
+        "injuries": sorted(
+            f"{r['id']}:{_inj_canonical(r.get('injury') or '')}"
+            for r in (roster_rows or []) if r.get("injury")
+        ),
+    }, CACHE_VERSION)
+
+
+def _front_office_probe(ctx: dict, viewer_roster_id: str):
+    """Cheap cache probe, run BEFORE the full data build.
+
+    The fingerprint's fields all have cheap ctx-only sources (the same
+    helpers the build itself uses): week/season are ctx stamps, record
+    comes from _record_pf_pa_for_roster, and grades / top values /
+    injuries come from the value lookup over the model table. Returns
+    (cache_key, precomputed) where precomputed carries the lookup /
+    roster rows / grades for the build to reuse on a miss, or
+    (None, None) when the viewer's roster cannot be resolved and only
+    the full build can decide."""
+    roster = _roster_lookup(ctx, viewer_roster_id)
+    if not roster:
+        return None, None
+    scoring_type = normalize_trade_scoring_type(ctx_scoring_type(ctx))
+    lookup = build_model_value_lookup(
+        ctx.get("model_value_table") or [],
+        is_sf=_ctx_is_sf(ctx),
+        scoring_type=scoring_type,
+    )
+    roster_rows = _build_roster_rows(ctx, roster, lookup)
+    grades = _positional_grades(ctx, viewer_roster_id, lookup)
+    record = _record_pf_pa_for_roster(ctx, str(viewer_roster_id), roster)[0]
+    cache_key = _front_office_cache_key(
+        ctx, viewer_roster_id,
+        week=ctx.get("current_week"), season=ctx.get("current_season"),
+        record=record, grades=grades, roster_rows=roster_rows)
+    precomputed = {"model_value_lookup": lookup,
+                   "roster_rows": roster_rows, "grades": grades}
+    return cache_key, precomputed
+
+
 def get_front_office_report(ctx: dict, viewer_roster_id: str, force_refresh: bool = False) -> dict:
     """Build the full report. Returns {card_html, report_html, verdict, cached}.
 
     Never blocks on a cold playoff Monte Carlo (see renderer._ctx_with_playoff_odds).
     """
-    data = build_front_office_data(ctx, viewer_roster_id)
+    cache_key = None
+    precomputed: dict = {}
+    if not force_refresh:
+        # Fingerprint first: a warm cache entry serves without paying
+        # build_front_office_data (GM context, trade suggestions, waiver
+        # scans) just to discover the report was already rendered.
+        cache_key, precomputed = _front_office_probe(ctx, viewer_roster_id)
+        precomputed = precomputed or {}
+        if cache_key:
+            cached = load_cached_ai_text(cache_key)
+            if cached:
+                try:
+                    obj = json.loads(cached)
+                    return {
+                        "card_html": _emit_ai_html(obj.get("card_html") or ""),
+                        "report_html": _emit_ai_html(obj.get("report_html") or ""),
+                        "verdict": obj.get("verdict"),
+                        "cached": True,
+                    }
+                except Exception:
+                    logger.debug("[front-office] bad cache entry, regenerating", exc_info=True)
+
+    data = build_front_office_data(ctx, viewer_roster_id, **precomputed)
     if not data:
         return {"card_html": "", "report_html": "", "verdict": None, "cached": False}
 
-    cache_key = build_ai_cache_key("front_office_report", {
-        "rid": str(viewer_roster_id),
-        "week": data.get("week"),
-        "season": data.get("season"),
-        "league": _safe_str(ctx.get("league_id")),
-        "record": data.get("record"),
-        "grades": [(g["pos"], g["grade"], g["rank"]) for g in data.get("grades") or []],
-        "top_values": [r["value"] for r in (data.get("roster_rows") or [])[:8]],
-        # Injury designations change on their own schedule; without this a
-        # status change would serve the 12h-cached report with stale injuries.
-        "injuries": sorted(
-            f"{r['id']}:{_inj_canonical(r.get('injury') or '')}"
-            for r in (data.get("roster_rows") or []) if r.get("injury")
-        ),
-    }, CACHE_VERSION)
-    if not force_refresh:
-        cached = load_cached_ai_text(cache_key)
-        if cached:
-            try:
-                obj = json.loads(cached)
-                return {
-                    "card_html": _emit_ai_html(obj.get("card_html") or ""),
-                    "report_html": _emit_ai_html(obj.get("report_html") or ""),
-                    "verdict": obj.get("verdict"),
-                    "cached": True,
-                }
-            except Exception:
-                logger.debug("[front-office] bad cache entry, regenerating", exc_info=True)
+    if cache_key is None:
+        cache_key = _front_office_cache_key(
+            ctx, viewer_roster_id,
+            week=data.get("week"), season=data.get("season"),
+            record=data.get("record"), grades=data.get("grades"),
+            roster_rows=data.get("roster_rows"))
 
     cache_ttl = None
     if not ai_available():

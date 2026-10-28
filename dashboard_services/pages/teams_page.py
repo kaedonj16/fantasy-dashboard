@@ -142,7 +142,6 @@ def build_teams_body(ctx: dict) -> str:
     _pk_proj_year = current_season + 1
     _pk_slot_by_original: dict = {}
     _pk_final_slots: dict = {}
-    _pk_value_tbl: dict = {}
     # Exact slots for the upcoming draft: its order is already cemented by
     # last season's final standings (same source _team_pick_value uses).
     try:
@@ -170,12 +169,7 @@ def build_teams_body(ctx: dict) -> str:
             }
     except Exception:
         logger.debug("teams: pick slot projection failed", exc_info=True)
-    try:
-        from dashboard_services.picks import load_pick_value_table as _lpvt_teams
-        _pk_value_tbl = dict(_lpvt_teams(league_teams=len(rosters) or 10) or {})
-    except Exception:
-        logger.debug("teams: pick value table failed", exc_info=True)
-    
+
     # Cache-safety (Class A audit): this body is stored in the per-league
     # page_html cache (store_page_html "teams", 30 min, shared across
     # workers via /tmp) and served to every viewer of the league, and the

@@ -125,26 +125,25 @@ def build_dashboard_body(ctx: dict) -> str:
         from utils.standings_divisions import division_records_for_ctx, div_map_for_ctx
         _dash_div_records = division_records_for_ctx(ctx)
         _dash_div_by_rid = div_map_for_ctx(ctx)
-        slides = [
-            render_matchup_slide(
-                season,
-                m,
-                matchup_week,
-                last_final_week,
-                status_by_pid=(statuses.get(matchup_week) or statuses.get(str(matchup_week)) or {}).get("statuses", {}) or {},
-                projections=proj_by_week,
-                players=players_index,
-                teams=teams_index,
-                team_game_lookup=team_game_lookup,
-                fpts_against=_fpts_against_dash,
-                compact=True,
-                scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
-                div_records=_dash_div_records,
-                div_by_rid=_dash_div_by_rid,
-            )
-            for m in _dash_matchups
-        ]
-        _dash_preview_slide = slides[0] if slides else ""
+        # Only the first slide is ever displayed (the sort above puts the
+        # viewer's matchup first); rendering the rest was pure waste, one
+        # full slide render per league matchup on every dashboard load.
+        _dash_preview_slide = render_matchup_slide(
+            season,
+            _dash_matchups[0],
+            matchup_week,
+            last_final_week,
+            status_by_pid=(statuses.get(matchup_week) or statuses.get(str(matchup_week)) or {}).get("statuses", {}) or {},
+            projections=proj_by_week,
+            players=players_index,
+            teams=teams_index,
+            team_game_lookup=team_game_lookup,
+            fpts_against=_fpts_against_dash,
+            compact=True,
+            scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+            div_records=_dash_div_records,
+            div_by_rid=_dash_div_by_rid,
+        ) if _dash_matchups else ""
         _matchup_href = ""
         try:
             _matchup_href = url_for(

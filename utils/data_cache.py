@@ -433,16 +433,47 @@ def load_model_value_table(apply_calibration: bool = True):
     return result
 
 # --- utils/utils.py L563 ---
+# Bounded, file-signature-keyed memos for the two file-backed lookups the
+# Weekly Hub slide path used to re-read and re-canonicalize for every slide:
+# the teams index and each week's schedule. An entry is only served while
+# the source file's (mtime_ns, size) signature is unchanged, so a refreshed
+# data file is picked up on the very next call -- the same contract as
+# read_json_cached and the week-projection memo above.
+_TEAMS_INDEX_MEMO: Dict[str, tuple] = {}
+_WEEK_SCHEDULE_MEMO: "_OrderedDict" = _OrderedDict()
+_WEEK_SCHEDULE_MEMO_MAX = 24
+_FILE_MEMO_LOCK = _threading.Lock()
+
+
+def _file_sig(path) -> Optional[tuple]:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
 def load_teams_index() -> Optional[Dict]:
     from utils.nfl import canonical_teams_index
     """Returns the cached teams index or None.
 
     Alias keys such as WSH are merged into WAS so Washington appears once.
     """
-    raw = read_json(path_teams_index())
+    path = path_teams_index()
+    sig = _file_sig(path)
+    if sig is not None:
+        with _FILE_MEMO_LOCK:
+            hit = _TEAMS_INDEX_MEMO.get(path)
+            if hit is not None and hit[0] == sig:
+                return hit[1]
+    raw = read_json(path)
     if not raw:
         return raw
-    return canonical_teams_index(raw)
+    result = canonical_teams_index(raw)
+    if sig is not None:
+        with _FILE_MEMO_LOCK:
+            _TEAMS_INDEX_MEMO[path] = (sig, result)
+    return result
 
 # --- utils/utils.py L574 ---
 def load_idp_index() -> Optional[Dict]:
@@ -465,17 +496,40 @@ def load_week_sched(season: int, week: int) -> Optional[Dict]:
 def load_week_schedule(season: int, w: int):
     """
     Load schedule for (season, week), fetching and caching if needed.
+
+    The parsed + canonicalized result is memoized per (season, week) keyed
+    on the schedule file's signature, so repeat callers (one per matchup
+    slide, plus each slide-projection lookup) pay the disk read once per
+    file state instead of once per call.
     """
     from utils.nfl import canonicalize_schedule
     week_path = Path(path_week_schedule(season, w))
-    if not week_path.exists():
+    if week_path.exists():
+        sig = _file_sig(week_path)
+        if sig is not None:
+            key = (str(season), str(w), sig)
+            with _FILE_MEMO_LOCK:
+                hit = _WEEK_SCHEDULE_MEMO.get(key)
+                if hit is not None:
+                    _WEEK_SCHEDULE_MEMO.move_to_end(key)
+                    return hit
+    else:
         # FIX: use keyword args so order is correct
         get_week_schedule_cached(season=season, week=w, fetch_fn=get_nfl_games_for_week_raw)
 
     with open(week_path, "r", encoding="utf-8") as f:
         schedule = json.load(f)
 
-    return canonicalize_schedule(schedule)
+    result = canonicalize_schedule(schedule)
+    sig = _file_sig(week_path)
+    if sig is not None:
+        key = (str(season), str(w), sig)
+        with _FILE_MEMO_LOCK:
+            _WEEK_SCHEDULE_MEMO[key] = result
+            _WEEK_SCHEDULE_MEMO.move_to_end(key)
+            while len(_WEEK_SCHEDULE_MEMO) > _WEEK_SCHEDULE_MEMO_MAX:
+                _WEEK_SCHEDULE_MEMO.popitem(last=False)
+    return result
 
 # --- utils/utils.py L604 ---
 def _week_proj_memo_max_from_env() -> int:

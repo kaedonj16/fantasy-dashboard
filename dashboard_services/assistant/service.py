@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 
 from dashboard_services.ai.client import AIUnavailableError, AIRateLimitError
@@ -289,7 +290,10 @@ def _is_account_exempt(account_key: str) -> bool:
         return False
 
 
-def caps_for(account_key: str) -> dict:
+def _plan_state(account_key: str) -> tuple[str, str | None]:
+    """(tier, plan_key) from the account's active plan: the subscription
+    DB chain behind caps_for, split out so ask() can cache just this
+    plan-derived state per conversation (see _resolve_snapshot)."""
     plan = _active_plan(account_key)
     plan_key = None
     if plan is not None:
@@ -298,12 +302,88 @@ def caps_for(account_key: str) -> dict:
         tier = "free"
     else:
         tier = _TIER_BY_PLAN.get(plan_key, "starter")
+    return tier, plan_key
+
+
+def _caps_dict(account_key: str, tier: str, plan_key, used: int) -> dict:
     tiers = [{"key": key, "label": TIER_LABELS[key], "limit": _tier_cap(key),
               "current": key == tier} for key in TIER_ORDER]
-    return {"used": store.count_monthly_asked(account_key),
+    return {"used": used,
             "limit": _tier_cap(tier), "tier": tier, "tier_label": TIER_LABELS[tier],
             "plan_key": plan_key, "exempt": _is_exempt() or _is_account_exempt(account_key),
             "tiers": tiers}
+
+
+def caps_for(account_key: str) -> dict:
+    tier, plan_key = _plan_state(account_key)
+    return _caps_dict(account_key, tier, plan_key, store.count_monthly_asked(account_key))
+
+
+# -- Per-conversation resolve snapshot -------------------------------------
+# ask() used to re-pay the full preamble on every message: the plan DB
+# chain (_active_plan), resolve_league, and list_preferences. Within one
+# conversation those change only when a preference is stored (invalidated
+# explicitly below) or a plan changes (bounded by the TTL). The monthly
+# "used" count is NEVER cached: cap enforcement re-reads it per message,
+# and env-driven caps/exemptions are likewise re-evaluated per message
+# via _caps_dict. Thread/history state is never cached either: it changes
+# every turn by design.
+_RESOLVE_SNAPSHOT_TTL = 90  # seconds; bounds plan/league staleness mid-thread
+_RESOLVE_SNAPSHOT_MAX = 128  # entries, oldest evicted first
+_resolve_snapshot_cache: dict = {}
+_resolve_snapshot_lock = threading.Lock()
+
+
+def _clear_resolve_snapshot_cache() -> None:
+    with _resolve_snapshot_lock:
+        _resolve_snapshot_cache.clear()
+
+
+def _invalidate_resolve_snapshot(account_key: str) -> None:
+    with _resolve_snapshot_lock:
+        for key in [k for k in _resolve_snapshot_cache if k[0] == account_key]:
+            _resolve_snapshot_cache.pop(key, None)
+
+
+def _bundle_copy(bundle: dict) -> dict:
+    """Shallow copy the caller may stamp on (ask() sets is_paid /
+    forced_player_ids); the nested ctx/roster stay shared by reference,
+    exactly as resolve_league's own callers already share them."""
+    out = dict(bundle)
+    if isinstance(out.get("roster_player_ids"), set):
+        out["roster_player_ids"] = set(out["roster_player_ids"])
+    if isinstance(out.get("viewer"), dict):
+        out["viewer"] = dict(out["viewer"])
+    return out
+
+
+def _resolve_snapshot(account_key: str, thread_id, platform, league_id, season):
+    """(bundle_copy, tier, plan_key, preferences) for one conversation.
+
+    Keyed on the caller-supplied thread id and league params, so a league
+    switch mid-thread misses and re-resolves. Compute happens outside the
+    lock; a race may compute twice, which is the same tolerance as the
+    app.py TTL caches.
+    """
+    key = (account_key, thread_id or "", platform or "",
+           str(league_id or ""), season or "")
+    now = time.time()
+    with _resolve_snapshot_lock:
+        hit = _resolve_snapshot_cache.get(key)
+        if hit and now - hit[0] < _RESOLVE_SNAPSHOT_TTL:
+            _ts, bundle, tier, plan_key, prefs = hit
+            return _bundle_copy(bundle), tier, plan_key, list(prefs)
+    bundle = ctx_mod.resolve_league(account_key, platform=platform,
+                                    league_id=league_id, season=season)
+    tier, plan_key = _plan_state(account_key)
+    prefs = store.list_preferences(account_key)
+    with _resolve_snapshot_lock:
+        if len(_resolve_snapshot_cache) >= _RESOLVE_SNAPSHOT_MAX:
+            oldest = min(_resolve_snapshot_cache,
+                         key=lambda k: _resolve_snapshot_cache[k][0])
+            _resolve_snapshot_cache.pop(oldest, None)
+        _resolve_snapshot_cache[key] = (now, bundle, tier, plan_key, prefs)
+    return _bundle_copy(bundle), tier, plan_key, list(prefs)
 
 
 def _history_for(thread: dict) -> tuple[list, dict]:
@@ -437,10 +517,12 @@ def _open_turn(account_key, message, bundle, entities, last_entities,
 
 def ask(account_key: str, message: str, *, platform=None, league_id=None, season=None, thread_id=None, player_id_hint=None) -> dict:
     started = time.time()
-    caps = caps_for(account_key)
+    bundle, _tier, _plan_key, preferences = _resolve_snapshot(
+        account_key, thread_id, platform, league_id, season)
+    caps = _caps_dict(account_key, _tier, _plan_key,
+                      store.count_monthly_asked(account_key))
     if not caps["exempt"] and caps["used"] >= caps["limit"]:
         raise CapReached(caps)
-    bundle = ctx_mod.resolve_league(account_key, platform=platform, league_id=league_id, season=season)
     # Builders with a paywall mirror (the breakout board preview) read the
     # caller's paid status from the bundle; caps_for already resolved it
     # (any tier above free is a paid plan).
@@ -601,6 +683,7 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
         # Strip a leading "remember ..." phrasing is left to the panel verbatim rule:
         # store the preference text the router extracted, else the raw message.
         pref = store.add_preference(account_key, text, league_id=bundle.get("league_id"))
+        _invalidate_resolve_snapshot(account_key)
         answer = {"verdict": None, "text": f"Remembered: {text}", "receipts": [], "caveat": None,
                   "followups": [], "act_link": None, "actions": [], "mentions": [], "preference": pref}
         return _finish(answer, log_intent="remember")
@@ -615,7 +698,7 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
         if open_layer.probe(message, bundle, last_entities).get("anchors"):
             answer, pack, otools, names = _open_turn(
                 account_key, message, bundle, entities, last_entities,
-                history, assumed)
+                history, assumed, preferences=preferences)
             if names:
                 entities["player_names"] = names
             return _finish(answer, log_intent="open", pack=pack, tools=otools,
@@ -651,7 +734,7 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
     if intent == "open":
         answer, pack, otools, names = _open_turn(
             account_key, message, bundle, resolved_entities, last_entities,
-            history, assumed)
+            history, assumed, preferences=preferences)
         if names:
             resolved_entities["player_names"] = names
             entities["player_names"] = names
@@ -671,8 +754,6 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
     if player_id_hint and not player_ids:
         player_ids = [str(player_id_hint)]
     pack, tools = builder(bundle, resolved_entities, player_ids)
-
-    preferences = store.list_preferences(account_key)
 
     # Pack dead end: the fixed metric/leaderboard builders could not
     # place the phrasing at all (the generic "that metric is not
@@ -781,6 +862,100 @@ def get_thread(account_key: str, thread_id: str) -> dict | None:
             "messages": store.list_thread_messages(account_key, str(thread_id))}
 
 
+# -- Proactive digest: composed in the background, never inside the GET ---
+# get_context used to run the this_week builder + an LLM compose inline
+# whenever no digest row existed yet, so an ordinary page load could pay
+# a model call. Now the GET only reads: an existing digest row serves the
+# teaser, and a missing one kicks ONE bounded background build (per-key
+# single-flight, semaphore-capped like _PLAYOFF_SIM_SEM in app.py) and
+# returns teaser=None; the teaser appears on a later load. The once-per-
+# week marker is unchanged: _build_digest writes the same real-or-marker
+# proactive log row the old inline path wrote.
+_DIGEST_INFLIGHT: set = set()
+_DIGEST_LOCK = threading.Lock()
+_DIGEST_SEM = threading.BoundedSemaphore(2)  # max concurrent digest builds per worker
+
+
+def _spawn_digest_thread(fn) -> None:
+    threading.Thread(target=fn, daemon=True).start()
+
+
+def _build_digest(account_key: str, bundle: dict) -> None:
+    """The old inline get_context compose, verbatim: build the this_week
+    pack, compose when it has actions, store the digest row; store the
+    empty marker row when it has none. Runs on a background thread with
+    the bundle resolved on the request thread (no session access here)."""
+    builder = BUILDERS["this_week"]
+    pack, tools = builder(bundle, {}, [])
+    actions = (pack or {}).get("actions") or []
+    if actions:
+        preferences = store.list_preferences(account_key)
+        try:
+            answer = compose_answer("this_week", "What should I do with my team this week?", pack,
+                                    preferences=preferences, assumed_context={"league_id": bundle.get("league_id")})
+        except Exception:
+            answer = None
+        if answer:
+            usage = last_usage()
+            store.write_log(
+                **_log_common(bundle, account_key),
+                thread_id=None, turn_index=None, question_text=None,
+                intent="this_week", entities={}, assumed_context={"league_id": bundle.get("league_id")},
+                channel="site", proactive=True, trigger="digest", input_mode="typed",
+                tools_called=tools, evidence_pack=pack, evidence_as_of=pack.get("as_of") or {},
+                answer_text=answer.get("text"),
+                verdict={"intent": "this_week", "call": answer.get("verdict"), "answer": answer},
+                numbers_shown=numbers_shown_from(answer.get("receipts")),
+                model=usage.get("model"), router_model=None, prompt_version=PROMPT_VERSION,
+                input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+                cached_tokens=usage.get("cached_tokens"), est_cost_usd=usage.get("est_cost_usd"),
+                latency_ms=usage.get("latency_ms"),
+            )
+            return
+    if not actions:
+        # Marker row so we do not recompose an empty digest all week.
+        store.write_log(
+            **_log_common(bundle, account_key),
+            thread_id=None, turn_index=None, question_text=None,
+            intent="this_week", entities={}, assumed_context={"league_id": bundle.get("league_id")},
+            channel="site", proactive=True, trigger="digest", input_mode="typed",
+            tools_called=tools, evidence_pack=pack, evidence_as_of=pack.get("as_of") or {},
+            answer_text=None, verdict=None, numbers_shown={},
+            model=None, router_model=None, prompt_version=PROMPT_VERSION,
+        )
+
+
+def _kick_digest(account_key: str, bundle: dict) -> None:
+    """Single-flight background digest build. A dropped kick (semaphore
+    busy) clears its mark so the next context load can kick again."""
+    key = (account_key, str(bundle.get("league_id") or ""), bundle.get("week"))
+    with _DIGEST_LOCK:
+        if key in _DIGEST_INFLIGHT:
+            return
+        _DIGEST_INFLIGHT.add(key)
+    if not _DIGEST_SEM.acquire(blocking=False):
+        with _DIGEST_LOCK:
+            _DIGEST_INFLIGHT.discard(key)
+        return
+
+    def _run():
+        try:
+            _build_digest(account_key, bundle)
+        except Exception:
+            logger.debug("[assistant] background digest build failed", exc_info=True)
+        finally:
+            _DIGEST_SEM.release()
+            with _DIGEST_LOCK:
+                _DIGEST_INFLIGHT.discard(key)
+
+    try:
+        _spawn_digest_thread(_run)
+    except Exception:
+        _DIGEST_SEM.release()
+        with _DIGEST_LOCK:
+            _DIGEST_INFLIGHT.discard(key)
+
+
 def get_context(account_key: str, *, platform=None, league_id=None, season=None) -> dict:
     bundle = ctx_mod.resolve_league(account_key, platform=platform, league_id=league_id, season=season)
     caps = caps_for(account_key)
@@ -803,47 +978,10 @@ def get_context(account_key: str, *, platform=None, league_id=None, season=None)
                           "lead": lead, "answer": stored_answer}
             # else: marker row (empty digest) - do not recompose all week.
         else:
-            builder = BUILDERS["this_week"]
-            pack, tools = builder(bundle, {}, [])
-            actions = (pack or {}).get("actions") or []
-            if actions:
-                preferences = store.list_preferences(account_key)
-                try:
-                    answer = compose_answer("this_week", "What should I do with my team this week?", pack,
-                                            preferences=preferences, assumed_context={"league_id": bundle.get("league_id")})
-                except Exception:
-                    answer = None
-                if answer:
-                    usage = last_usage()
-                    log_id = store.write_log(
-                        **_log_common(bundle, account_key),
-                        thread_id=None, turn_index=None, question_text=None,
-                        intent="this_week", entities={}, assumed_context={"league_id": bundle.get("league_id")},
-                        channel="site", proactive=True, trigger="digest", input_mode="typed",
-                        tools_called=tools, evidence_pack=pack, evidence_as_of=pack.get("as_of") or {},
-                        answer_text=answer.get("text"),
-                        verdict={"intent": "this_week", "call": answer.get("verdict"), "answer": answer},
-                        numbers_shown=numbers_shown_from(answer.get("receipts")),
-                        model=usage.get("model"), router_model=None, prompt_version=PROMPT_VERSION,
-                        input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
-                        cached_tokens=usage.get("cached_tokens"), est_cost_usd=usage.get("est_cost_usd"),
-                        latency_ms=usage.get("latency_ms"),
-                    )
-                    teaser = {"log_id": log_id, "kind": "digest",
-                              "title": f"Your Week {bundle.get('week')} moves are ready",
-                              "lead": (actions[0].get("headline") if actions else None) or answer.get("text"),
-                              "answer": answer}
-            if teaser is None and not actions:
-                # Marker row so we do not recompose an empty digest all week.
-                store.write_log(
-                    **_log_common(bundle, account_key),
-                    thread_id=None, turn_index=None, question_text=None,
-                    intent="this_week", entities={}, assumed_context={"league_id": bundle.get("league_id")},
-                    channel="site", proactive=True, trigger="digest", input_mode="typed",
-                    tools_called=tools, evidence_pack=pack, evidence_as_of=pack.get("as_of") or {},
-                    answer_text=None, verdict=None, numbers_shown={},
-                    model=None, router_model=None, prompt_version=PROMPT_VERSION,
-                )
+            # No digest row yet: kick the bounded background build and
+            # serve without a teaser. Composing here would put an LLM
+            # call inside this GET on an ordinary page load.
+            _kick_digest(account_key, dict(bundle))
     return {"league": league_out, "caps": caps, "teaser": teaser}
 
 
@@ -971,6 +1109,7 @@ def confirm_proposal(account_key, proposal_id):
     pref = store.confirm_proposal(account_key, proposal_id)
     if pref is None:
         return None
+    _invalidate_resolve_snapshot(account_key)
     prefs = store.list_preferences(account_key)
     profile = infer.profile_from_preferences(prefs)
     return {"preference": pref, "preferences": prefs,
@@ -983,12 +1122,18 @@ def dismiss_proposal(account_key, proposal_id) -> bool:
 
 
 def add_preference(account_key, text, league_id=None):
-    return store.add_preference(account_key, text, league_id=league_id)
+    pref = store.add_preference(account_key, text, league_id=league_id)
+    _invalidate_resolve_snapshot(account_key)
+    return pref
 
 
 def delete_preference(account_key, pref_id):
-    return store.delete_preference(account_key, pref_id)
+    ok = store.delete_preference(account_key, pref_id)
+    _invalidate_resolve_snapshot(account_key)
+    return ok
 
 
 def delete_all_preferences(account_key):
-    return store.delete_all_preferences(account_key)
+    ok = store.delete_all_preferences(account_key)
+    _invalidate_resolve_snapshot(account_key)
+    return ok

@@ -91,3 +91,27 @@ def test_roster_tiebreak_still_wins():
     r = resolve_player("Chris Smith", index=INDEX, footprint_ids=set(),
                        roster_player_ids={"101"})
     assert r["status"] == "resolved" and r["player_id"] == "101"
+
+
+def test_index_entries_built_once_per_index_object(monkeypatch):
+    import dashboard_services.assistant.resolve as resolve_mod
+
+    builds = {"n": 0}
+    real = resolve_mod._index_entries
+    resolve_mod._ENTRIES_MEMO["index"] = None
+    resolve_mod._ENTRIES_MEMO["entries"] = None
+
+    def counting(index):
+        builds["n"] += 1
+        return real(index)
+
+    monkeypatch.setattr(resolve_mod, "_index_entries", counting)
+    r = resolve_mod.resolve_player("Justin Jefferson", index=INDEX,
+                                   roster_player_ids={"6794"})
+    assert r["status"] == "resolved" and r["player_id"] == "6794"
+    resolve_mod.resolve_player("Ja'Marr Chase", index=INDEX)
+    resolve_mod.nearest_names("Nico Collinzz", index=INDEX)
+    assert builds["n"] == 1  # one build served all three calls
+    # A different index object (even with identical content) rebuilds.
+    resolve_mod.resolve_player("Ja'Marr Chase", index=dict(INDEX))
+    assert builds["n"] == 2

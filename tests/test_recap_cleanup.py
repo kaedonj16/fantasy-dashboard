@@ -113,9 +113,9 @@ def test_gotw_names_clickable():
 def test_changelog_and_sw_for_recap_cleanup():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[13]  # prepended above it: duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, rooting/bye cleanup, Front Office scan fix, fair-band fix, assistant fix, dot fix
+    top = CHANGELOG[20]  # prepended above it: trade calculator dedupe, recap/standings dedupe, sitewide speed pass, Weekly Hub dedupe refresh, waivers/start-sit call consolidation, AM batch + players cache, ScoreZone user-cache speedup, My Leagues portfolio consolidation, duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, rooting/bye cleanup, Front Office scan fix, fair-band fix, assistant fix, dot fix
     assert top["date"] == "2026-10-27"
     assert top["link"] == "/recap"
     assert "Injury Report" in top["text"]
     assert "—" not in top["text"]  # no em dashes in UI copy
-    assert "br-fantasy-v125" in _read("static", "sw.js")
+    assert "br-fantasy-v126" in _read("static", "sw.js")

@@ -229,3 +229,11 @@ def test_career_graphs_cache_key_scoped_by_viewer():
     # The background build re-applies the captured viewer on a copy, never by
     # mutating the shared cached ctx.
     assert '"viewer": viewer_snapshot' in LEAGUE_PAGES_BP
+
+
+def test_season_graphs_use_shared_page_cache_with_viewer_key():
+    # Season views build all three panes per load; they go through the
+    # same _serve_cached_or_background as career, keyed on the viewed
+    # season + tab + viewer (members is career-only and stays out).
+    assert "graphs:season:v1:{cache_view}:{tab}:vwr{viewer_rid or 'anon'}" in LEAGUE_PAGES_BP
+    assert "cache_view = view if view.isdigit() else str(season)" in LEAGUE_PAGES_BP
