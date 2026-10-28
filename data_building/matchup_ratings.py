@@ -107,7 +107,8 @@ def build_matchup_rating_profiles(season: int, *, builder=None, logger=print) ->
             logger(f"[matchup_ratings] profile hash={profile_hash} label={label} "
                    f"teams={team_count} status=deduplicated")
             statuses.append({"hash": profile_hash, "label": label, "team_count": team_count,
-                             "status": "deduplicated"})
+                             "status": "deduplicated",
+                             "db_saved": bool(prior_result.get("db_saved"))})
             continue
         seen.add(dedupe_key)
         try:
@@ -115,7 +116,8 @@ def build_matchup_rating_profiles(season: int, *, builder=None, logger=print) ->
             team_count = len((result or {}).get("ratings") or {})
             status = "built" if team_count else "unavailable"
             entry = {"hash": profile_hash, "label": label,
-                     "team_count": team_count, "status": status}
+                     "team_count": team_count, "status": status,
+                     "db_saved": bool((result or {}).get("db_saved")) if team_count else False}
             if not team_count:
                 entry["failure_reason"] = "builder returned no ratings"
             statuses.append(entry)
@@ -126,7 +128,8 @@ def build_matchup_rating_profiles(season: int, *, builder=None, logger=print) ->
                    (f" reason={entry['failure_reason']}" if "failure_reason" in entry else ""))
         except Exception as exc:
             entry = {"hash": profile_hash, "label": label, "team_count": 0,
-                     "status": "failed", "failure_reason": str(exc)}
+                     "status": "failed", "failure_reason": str(exc),
+                     "db_saved": False}
             statuses.append(entry)
             logger(f"[matchup_ratings] profile hash={profile_hash} label={label} "
                    f"teams=0 status=failed reason={exc}")
@@ -318,6 +321,18 @@ def build_matchup_ratings(season: int, through_week: int | None = None, save: bo
         with open(tmp, "w") as f:
             json.dump(out, f)
         os.replace(tmp, destination)
+        # The cron runs in an ephemeral container: the file above never
+        # reaches the web service. Persist to the durable store so the
+        # site actually serves this build; the cron checks db_saved and
+        # fails the step when the default build was not persisted.
+        try:
+            from dashboard_services.matchup_ratings_store import (
+                save_matchup_ratings as _db_save_matchup,
+            )
+            out["db_saved"] = bool(_db_save_matchup(season, out))
+        except Exception as exc:
+            out["db_saved"] = False
+            print(f"[matchup_ratings] DB persist skipped: {exc}")
     return out
 
 

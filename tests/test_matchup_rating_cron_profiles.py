@@ -53,3 +53,29 @@ def test_default_result_materializes_full_ppr_profile_without_second_build(tmp_p
         f"matchup_ratings_s2026_{scoring_profile_hash({'rec': 1.0})}.json")
     assert full_ppr.exists()
     assert next(s for s in statuses if s["label"] == "full PPR")["team_count"] == 1
+
+
+def test_statuses_carry_db_saved_from_builder_results():
+    def builder(season, scoring_settings=None):
+        return {"ratings": {"BUF": {}}, "db_saved": True}
+
+    statuses = build_matchup_rating_profiles(2026, builder=builder, logger=lambda _m: None)
+
+    default = next(s for s in statuses if s["label"] == "default PPR")
+    assert default["status"] == "built"
+    assert default["db_saved"] is True
+    # The deduplicated full-PPR entry shares the default result's persistence.
+    full_ppr = next(s for s in statuses if s["label"] == "full PPR")
+    assert full_ppr["status"] == "deduplicated"
+    assert full_ppr["db_saved"] is True
+
+
+def test_statuses_db_saved_false_when_builder_did_not_persist():
+    def builder(season, scoring_settings=None):
+        return {"ratings": {"BUF": {}}}
+
+    statuses = build_matchup_rating_profiles(2026, builder=builder, logger=lambda _m: None)
+
+    default = next(s for s in statuses if s["label"] == "default PPR")
+    assert default["status"] == "built"
+    assert default["db_saved"] is False
