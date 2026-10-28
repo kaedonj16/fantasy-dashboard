@@ -21957,6 +21957,32 @@ def _load_matchup_ratings(season: int, scoring_settings=None) -> dict:
         "requested_scoring_profile": requested_profile,
         "loaded_scoring_profile": None,
     }
+    # Durable store first: the Wednesday cron runs in an ephemeral
+    # container, so its cache/ file never reaches this service - the
+    # committed snapshot it used to read here was a June 2026 build on a
+    # 2025 window. The cron now upserts each build to Postgres
+    # (dashboard_services.matchup_ratings_store); the flat files below
+    # remain the fallback for environments without a database.
+    try:
+        from dashboard_services.matchup_ratings_store import (
+            load_matchup_ratings as _db_load_matchup,
+        )
+        _db_keys = []
+        if scoring_settings is not None:
+            _db_keys.append(requested_profile)
+        _db_keys.extend([scoring_profile_hash({"rec": 1.0}), "standard-ppr"])
+        for _db_key in dict.fromkeys(_db_keys):
+            _payload = _db_load_matchup(season, _db_key)
+            if _payload and (_payload.get("ratings") or {}):
+                data = _payload["ratings"]
+                metadata.update({
+                    "rating_source": "database",
+                    "loaded_scoring_profile": (_payload.get("scoring_profile")
+                                               or _db_key),
+                })
+                break
+    except Exception:
+        data = {}
     try:
         profiled = os.path.join("cache", f"matchup_ratings_s{season}_{requested_profile}.json")
         default = os.path.join("cache", f"matchup_ratings_s{season}.json")
@@ -21976,7 +22002,7 @@ def _load_matchup_ratings(season: int, scoring_settings=None) -> dict:
                 logger.warning("[matchup-ratings] invalid %s snapshot for season %s",
                                source, season, exc_info=True)
                 continue
-            if candidate_data:
+            if candidate_data and not data:
                 data = candidate_data
                 metadata.update({
                     "rating_source": source,

@@ -82,3 +82,23 @@ def test_unavailable_and_new_multiplier_schema(tmp_path, monkeypatch):
     assert info["BUF"]["adjusted_percent"] == 12.5
     assert info["BUF"]["fpts"] == 24
 
+
+
+def test_database_store_is_preferred_over_flat_files(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _reset()
+    db_ratings = {"BUF": {"RB": {"adjusted_multiplier": 1.31}}}
+    payload = {"season": 2026, "through_week": 7,
+               "scoring_profile": scoring_profile_hash({"rec": 1.0}),
+               "ratings": db_ratings}
+    monkeypatch.setattr(
+        "dashboard_services.matchup_ratings_store.load_matchup_ratings",
+        lambda season, profile=None: payload if profile in (
+            scoring_profile_hash({"rec": 1.0}), "standard-ppr") else None,
+    )
+    # A stale flat file exists too; the durable store must win.
+    _write(tmp_path / "cache/matchup_ratings_s2026.json",
+           {"BUF": {"RB": {"ease": 3}}}, "standard-ppr")
+
+    assert appmod._load_matchup_ratings(2026) == db_ratings
+    assert appmod._matchup_ratings_metadata(2026)["rating_source"] == "database"
