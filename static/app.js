@@ -7458,6 +7458,29 @@ window.initTradePage = function initTradePage(root = document) {
   let _tiRetryTimer = null;
   let _tiRetrySig = "";
   let _tiRetryAttempts = 0;
+  // Coalescing for recomputeTrade: one user action calls it 2-3 times in the
+  // same tick (renderChips("A") + renderChips("B"), plus an explicit call in
+  // some flows). Each call registers a burst ticket; only the last ticket in
+  // the tick runs, so a settled edit costs exactly one eval POST.
+  let _recomputeBurst = 0;
+  // Aborts the in-flight eval POST when a newer recompute supersedes it, so
+  // the server never runs superseded evaluations to completion. (The intel
+  // fan-out already aborts via _tradeIntelAbort; analyzeTrade has its own.)
+  let _evalAbort = null;
+  let _analyzeAbort = null;
+  // Session cache for trade-intel payloads, keyed pid|season|league_type:
+  // a player who stays in the trade across edits is fetched once per page
+  // session instead of once per edit.
+  const _tradeIntelCache = {};
+  // Pending-state polling for Playoff Impact: while the server warms a cold
+  // sim snapshot it answers {pending: true}; the card keeps its spinner and
+  // re-asks on this budget instead of painting a terminal state.
+  let _piPendingAttempts = 0;
+  let _piPendingSig = "";
+  // Shared /api/trade-targets promise for the calculator's two loaders
+  // (loadTradeTargets + loadSuggTargets build the identical URL): one
+  // in-flight/ recent fetch serves both, keyed by the full query string.
+  let _targetsShared = { key: "", ts: 0, promise: null };
 
   // ── Roster filter (logged-in only) ──────────────────────────────────────────
   // Restrict each side's player search to a team's roster. Side A locks to the
@@ -9249,7 +9272,19 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   async function recomputeTrade() {
+    // Coalesce same-tick bursts (see _recomputeBurst): yield one microtask
+    // so sibling calls from the same user action register; only the last
+    // one proceeds. Calls in later ticks (the bounded retry, the next edit)
+    // run normally, so exactly one eval POST fires per settled edit.
+    const _burst = ++_recomputeBurst;
+    await Promise.resolve();
+    if (_burst !== _recomputeBurst) return;
+
     const gen = ++_tradeGeneration;   // capture this call's generation
+    // Supersede any in-flight eval: abort it so the server stops spending
+    // work on a trade the user has already moved past.
+    if (_evalAbort) _evalAbort.abort();
+    _evalAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
 
     const sideATotalEl = root.querySelector("#sideATotal");
     const sideBTotalEl = root.querySelector("#sideBTotal");
@@ -9337,6 +9372,7 @@ window.initTradePage = function initTradePage(root = document) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        ...(_evalAbort ? { signal: _evalAbort.signal } : {}),
       });
 
       if (!res.ok) {
@@ -9426,6 +9462,9 @@ window.initTradePage = function initTradePage(root = document) {
         fetchPlayoffImpact(_intelGen, _intelSignal),
       ]).catch(() => {});
     } catch (err) {
+      // Aborted because a newer recompute superseded this one: stay quiet
+      // (no error paint, no retry budget spent on a trade already replaced).
+      if (err && err.name === "AbortError") return;
       console.error("[trade] error in recomputeTrade:", err);
       // A failed eval strands the summary on the empty-state numbers painted
       // at init (0.0 totals, centered bar, "Build a trade" playoff card),
@@ -9676,6 +9715,33 @@ window.initTradePage = function initTradePage(root = document) {
       if (!res.ok) throw new Error("Playoff impact failed (" + res.status + ")");
       const data = await res.json();
 
+      // Deferred: the server is warming a cold sim snapshot in the
+      // background and will serve the identical numbers once it lands.
+      // Keep the spinner and poll on a bounded, per-trade budget instead
+      // of painting a terminal state for a sim that is still warming.
+      if (data && data.pending) {
+        const _piPendSig = giveIds.join(",") + "|" + getIds.join(",") + "|" + rosterId;
+        if (_piPendSig !== _piPendingSig) { _piPendingSig = _piPendSig; _piPendingAttempts = 0; }
+        if (gen === _tradeGeneration && _piPendingAttempts < 10) {
+          _piPendingAttempts += 1;
+          if (_piRetryTimer) clearTimeout(_piRetryTimer);
+          const _piPendGen = gen;
+          _piRetryTimer = setTimeout(() => {
+            _piRetryTimer = null;
+            if (_piPendGen === _tradeGeneration) fetchPlayoffImpact(_piPendGen, null);
+          }, 2000);
+        } else if (gen === _tradeGeneration) {
+          body.innerHTML = _piMessage(
+            "fa-circle-info",
+            "Not available",
+            "Playoff odds can't be simulated for this league right now (the season may be complete)."
+          );
+        }
+        return;
+      }
+      _piPendingAttempts = 0;
+      _piPendingSig = "";
+
       // The sim landed: clear any retry bookkeeping for this trade.
       _piRetryAttempts = 0;
       if (_piRetryTimer) { clearTimeout(_piRetryTimer); _piRetryTimer = null; }
@@ -9911,16 +9977,35 @@ window.initTradePage = function initTradePage(root = document) {
     intelPanel.style.display = "";
 
     const _timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
-    const results = await Promise.all(
-      playerIds.map(p =>
-        Promise.race([
-          fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`, signal ? { signal } : undefined)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => d ? { ...d, name: p.name, side: p.side } : null),
+    // One batch request for every player not already in the session cache
+    // (was: one GET per player per edit, no reuse across edits). A failed
+    // batch leaves its players unresolved (null below), which the
+    // all-failed retry further down treats exactly like the old
+    // per-player failures.
+    const _cacheKey = p => `${p.id}|${season}|${leagueType}`;
+    const _uncached = playerIds.filter(p => !(_cacheKey(p) in _tradeIntelCache));
+    if (_uncached.length) {
+      try {
+        const _batch = await Promise.race([
+          fetch(`/api/trade-intel/players?ids=${_uncached.map(p => encodeURIComponent(p.id)).join(",")}&season=${season}&league_type=${leagueType}`, signal ? { signal } : undefined)
+            .then(r => r.ok ? r.json() : null),
           _timeout(8000),
-        ]).catch(() => null)
-      )
-    );
+        ]);
+        const _byId = (_batch && _batch.players) || {};
+        for (const p of _uncached) {
+          const d = _byId[p.id];
+          if (d) _tradeIntelCache[_cacheKey(p)] = d;
+        }
+      } catch (e) {
+        // Aborted by a newer recompute: leave the panel alone.
+        if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
+        // Otherwise fall through: uncached players resolve null below.
+      }
+    }
+    const results = playerIds.map(p => {
+      const d = _tradeIntelCache[_cacheKey(p)];
+      return d ? { ...d, name: p.name, side: p.side } : null;
+    });
 
     // Aborted by a newer recompute, or superseded: leave the panel alone.
     if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
@@ -9993,6 +10078,29 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
+  // One shared fetch for /api/trade-targets: loadTradeTargets and
+  // loadSuggTargets build the identical URL, so an action that fires both
+  // (or a repeat open inside the TTL) reuses one promise instead of paying
+  // the server recompute twice. Resolves {status, ok, data} so each loader
+  // keeps its own status handling; a rejected fetch evicts itself so a
+  // retry really retries.
+  // ------------------------------------------------------------
+  function _fetchTradeTargetsShared(url) {
+    const now = Date.now();
+    if (_targetsShared.promise && _targetsShared.key === url && (now - _targetsShared.ts) < 60000) {
+      return _targetsShared.promise;
+    }
+    const promise = (async () => {
+      const res = await fetch(url, { cache: "no-store" });
+      const data = res.ok ? await res.json() : null;
+      return { status: res.status, ok: res.ok, data };
+    })();
+    promise.catch(() => { if (_targetsShared.promise === promise) _targetsShared.promise = null; });
+    _targetsShared = { key: url, ts: now, promise };
+    return promise;
+  }
+
+  // ------------------------------------------------------------
   // loadTradeTargets - roster-fit targets for this team's holes (not top-N at a pos)
   // ------------------------------------------------------------
   async function loadTradeTargets(containerEl) {
@@ -10034,13 +10142,12 @@ window.initTradePage = function initTradePage(root = document) {
     const leagueSize = getLeagueSize();
 
     try {
-      const res = await fetch(
+      const _tr = await _fetchTradeTargetsShared(
         `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
         `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
-        `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
-        { cache: "no-store" }
+        `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`
       );
-      if (res.status === 403) {
+      if (_tr.status === 403) {
         window.brEmptyState(body, {
           icon: 'lock',
           title: 'Trade Targets',
@@ -10050,8 +10157,8 @@ window.initTradePage = function initTradePage(root = document) {
         });
         return;
       }
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
+      if (!_tr.ok) throw new Error("Failed");
+      const data = _tr.data;
       if (data.error) throw new Error(data.error);
 
       const grouped = data.by_position || {};
@@ -11918,20 +12025,19 @@ window.initTradePage = function initTradePage(root = document) {
 
       suggTargetsLoading = true;
       try {
-        const res = await fetch(
+        const _tr = await _fetchTradeTargetsShared(
           `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
           `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
-          `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
-          { cache: "no-store" }
+          `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`
         );
-        if (res.status === 403) {
+        if (_tr.status === 403) {
           suggTargetsLoaded = true;
           if (typeof showPaywall === "function") showPaywall("trade-suggestions");
           else window.brEmptyState(container, { icon: 'lock', title: 'PRO feature', message: 'Upgrade to unlock trade tools.', compact: true });
           return;
         }
-        if (!res.ok) throw new Error("Failed");
-        const data = await res.json();
+        if (!_tr.ok) throw new Error("Failed");
+        const data = _tr.data;
         suggTargetsLoaded = true;  // only mark done after a successful response
         _topChipsCollapsed = false;  // fresh targets load: show the strip again
         _lastTargetsData = data;
@@ -12967,10 +13073,15 @@ window.initTradePage = function initTradePage(root = document) {
     };
 
     try {
+      // Supersede any in-flight analysis: its eval POST carries the AI-take
+      // payload, and a stale one should not run to completion server-side.
+      if (_analyzeAbort) _analyzeAbort.abort();
+      _analyzeAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
       const res = await fetch("/api/trade-eval", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        ...(_analyzeAbort ? { signal: _analyzeAbort.signal } : {}),
       });
 
       if (res.status === 429) {
@@ -13084,6 +13195,8 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.textContent = "";
       }
     } catch (err) {
+      // Aborted by a newer analysis: the newer call owns the panel states.
+      if (err && err.name === "AbortError") return;
       console.error("[trade] error in analyzeTrade:", err);
 
       if (loadingState) loadingState.style.display = "none";
@@ -18080,6 +18193,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const loadingState = document.getElementById('gm-memo-loading');
     const summaryState = document.getElementById('gm-memo-result');
 
+    // The first click ("Generate Report") may serve the server's 12h
+    // cached report; only a click on the post-result "Refresh Report"
+    // label forces a regeneration.
+    const forceRefresh = (generateGmMemoBtn.textContent || '').trim() === 'Refresh Report';
+
     // Show loading, hide empty state
     generateGmMemoBtn.disabled = true;
     generateGmMemoBtn.setAttribute('aria-busy', 'true');
@@ -18102,10 +18220,9 @@ document.addEventListener('DOMContentLoaded', function() {
           season: parseInt(season),
           platform: platform,
           viewer_roster_id: viewerRosterId,
-          // Button click always means "give me a fresh report". The dashboard
-          // itself does not prefill cached copy -- the result stays hidden
-          // until this click.
-          force: true
+          // The dashboard itself does not prefill cached copy -- the result
+          // stays hidden until this click.
+          force: forceRefresh
         })
       });
 
@@ -28567,50 +28684,108 @@ window._rzStubPbpEvents = function(pid, state) {
   return events;
 };
 
-// Default stub for non-ScoreZone pages: one-shot fetch, 30 s cache.
+// ── Shared league-scope ScoreZone live cache ─────────────────────────────
+// One window-level cache owns the league-scope scorezone-data payloads for
+// every off-ScoreZone surface. The player-modal stub (30 s) and the matchup
+// board drive bars (20 s) used to keep two private caches that fetched the
+// identical URL on independent clocks. Entries are keyed by payload variant
+// + league path: 'full' (the modal game log, which needs the play-by-play)
+// and 'lite' (the drive bars, which read only the games map, served by the
+// endpoint's lite slice). One in-flight fetch per entry; waiters flush with
+// the current payload on success, on an HTTP error (stale body), or on a 304
+// (which also renews the entry's freshness); a network failure drops them.
+window.__brSzLiveCache = (function () {
+  var entries = {};
+  var MAX_ENTRIES = 8;
+  var UNCHANGED = {};
+  function basePath() {
+    var parts = window.location.pathname.split('/');
+    return parts.length >= 4 ? '/' + parts[1] + '/' + parts[2] + '/' + parts[3] : '';
+  }
+  function entryFor(variant) {
+    var key = variant + '|' + basePath();
+    var e = entries[key];
+    if (!e) {
+      var keys = Object.keys(entries);
+      if (keys.length >= MAX_ENTRIES) delete entries[keys[0]];
+      e = entries[key] = { data: null, ts: 0, etag: null, fetching: false, waiters: [] };
+    }
+    return e;
+  }
+  function flush(e) {
+    var w = e.waiters; e.waiters = [];
+    w.forEach(function (fn) { try { fn(e.data); } catch (err) {} });
+  }
+  function get(variant, staleMs, cb) {
+    var e = entryFor(variant);
+    if (e.data && Date.now() - e.ts < staleMs) {
+      if (cb) cb(e.data);
+      return e.data;
+    }
+    if (cb) e.waiters.push(cb);
+    if (!e.fetching) {
+      var base = basePath();
+      if (!base) { e.waiters = []; return e.data; }
+      e.fetching = true;
+      var url = '/api' + base + '/scorezone-data?scope=league'
+        + (variant === 'lite' ? '&lite=1' : '') + '&_cb=' + Date.now();
+      var headers = {};
+      if (e.etag) headers['If-None-Match'] = e.etag;
+      fetch(url, { headers: headers }).then(function (r) {
+        var et = r.headers && r.headers.get ? r.headers.get('ETag') : null;
+        if (et) e.etag = et;
+        if (r.status === 304) return UNCHANGED;
+        return r.ok ? r.json() : null;
+      }).then(function (data) {
+        e.fetching = false;
+        if (data === UNCHANGED) {
+          e.ts = Date.now(); // server confirmed the cached body is current
+        } else if (data) {
+          e.data = data; e.ts = Date.now();
+        }
+        flush(e);
+      }).catch(function () {
+        e.fetching = false;
+        e.waiters = [];
+      });
+    }
+    return e.data;
+  }
+  return {
+    get: get,
+    peek: function (variant) { return entryFor(variant).data; },
+    invalidate: function (variant) { entryFor(variant).ts = 0; }
+  };
+}());
+
+// Default stub for non-ScoreZone pages: one-shot fetch, 30 s cache, served
+// by the shared window.__brSzLiveCache ('full' variant).
 // Overridden by the ScoreZone IIFE when #rz-root is present.
 (function() {
-  var _cache = null, _cacheTs = 0, _fetching = false, _pending = [], _timer = null, _generation = 0;
+  var _timer = null;
   window.__rzGetPlayerLive = function(pid) {
     var STALE = 30000;
     var refresh = function() {
+      var data = window.__brSzLiveCache.peek('full');
+      if (!data) return;
       var panel = document.getElementById('pm-panel-live');
       var pmBar = document.getElementById('pmTabBar');
       // Guard: only update if this player's modal is still the active one
       if (panel && panel.classList.contains('pm-panel-active') && pmBar && pmBar.dataset.pmPlayerId === pid) {
-        panel.innerHTML = window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache));
+        panel.innerHTML = window._rzBuildLiveHtml(pid, data, window._rzStubPbpEvents(pid, data));
         window._rzSyncTabLive(panel);
         if (!_timer) _timer = setTimeout(function tick() {
           _timer = null;
           var bar=document.getElementById('pmTabBar'), p=document.getElementById('pm-panel-live');
           if (!bar || !p || !p.classList.contains('pm-panel-active') || bar.dataset.pmPlayerId !== pid) return;
-          _cacheTs = 0;
+          window.__brSzLiveCache.invalidate('full');
           window.__rzGetPlayerLive(pid);
         }, 15000);
       }
     };
-    if (_cache && Date.now() - _cacheTs < STALE) {
-      refresh();
-      return window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache));
-    }
-    if (!_fetching) {
-      _fetching = true;
-      var requestGeneration = ++_generation;
-      var parts = window.location.pathname.split('/');
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone-data?scope=league&_cb=' + Date.now();
-      fetch(url)
-        .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(data) {
-          _fetching = false;
-          if (data && requestGeneration === _generation) { _cache = data; _cacheTs = Date.now(); }
-          _pending.forEach(function(fn) { fn(); });
-          _pending = [];
-        })
-        .catch(function() { _fetching = false; _pending = []; });
-    }
-    _pending.push(refresh);
-    return _cache
-      ? window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache))
+    var data = window.__brSzLiveCache.get('full', STALE, refresh);
+    return data
+      ? window._rzBuildLiveHtml(pid, data, window._rzStubPbpEvents(pid, data))
       : '<div class="rz-pm-live" style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">Loading…</div>';
   };
 }());
@@ -28630,25 +28805,13 @@ window._rzStubPbpEvents = function(pid, state) {
   var norm = function (t) { return (window._rzNormalizeTeam ? window._rzNormalizeTeam(t) : String(t || '')).toUpperCase(); };
   var esc = function (v) { var d = document.createElement('div'); d.textContent = String(v == null ? '' : v); return d.innerHTML; };
 
-  // Shared league-scope live cache (own fetch so the weekly hub doesn't depend
-  // on a player modal being open). 20 s staleness, single in-flight request.
-  var _cache = null, _ts = 0, _fetching = false, _waiters = [];
+  // League-scope live state from the shared window.__brSzLiveCache ('lite'
+  // variant: the drive bars read only the games map, so the board no longer
+  // downloads the full scorezone-data payload on every poll, and it shares
+  // one cache/fetch with the player modal instead of a second private one).
+  // 20 s staleness, single in-flight request (inside the shared cache).
   function getState(cb) {
-    if (_cache && Date.now() - _ts < 20000) { cb && cb(_cache); return _cache; }
-    if (cb) _waiters.push(cb);
-    if (!_fetching) {
-      _fetching = true;
-      var parts = window.location.pathname.split('/');
-      if (parts.length < 4) { _fetching = false; return _cache; }
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone-data?scope=league&_cb=' + Date.now();
-      fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-        _fetching = false;
-        if (data) { _cache = data; _ts = Date.now(); }
-        var w = _waiters; _waiters = [];
-        w.forEach(function (fn) { try { fn(_cache); } catch (e) {} });
-      }).catch(function () { _fetching = false; _waiters = []; });
-    }
-    return _cache;
+    return window.__brSzLiveCache.get('lite', 20000, cb);
   }
 
   function gameForTeam(state, team) {
@@ -28806,7 +28969,7 @@ window._rzStubPbpEvents = function(pid, state) {
   setInterval(function () {
     if (document.hidden) return;
     if (!document.querySelector('.matchup-carousel .mb-fld, .matchup-carousel .mb-moments')) return;
-    _ts = 0; // force a refresh on the next getState
+    window.__brSzLiveCache.invalidate('lite'); // force a refresh on the next getState
     if (window.brRefreshVisibleMatchupLive) window.brRefreshVisibleMatchupLive(document);
   }, 20000);
 }());

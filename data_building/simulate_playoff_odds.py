@@ -370,6 +370,21 @@ def build_sim_state(ctx: dict, platform: str = "sleeper", use_cache: bool = True
     return state
 
 
+def peek_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
+    """Return the cached sim state for this ctx, or None — never builds.
+
+    Read-only counterpart to build_sim_state for request paths that must not
+    block on a cold build (trade Playoff Impact): on a miss the caller kicks
+    a background build and answers with a deferred state instead of paying
+    the projection fetches inline.
+    """
+    sig = _ctx_signature(ctx, platform)
+    hit = _SIM_STATE_CACHE.get(sig)
+    if hit and (time.time() - hit[0]) < _SIM_STATE_TTL:
+        return hit[1]
+    return None
+
+
 def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
     """
     Build everything needed for trade-swap simulations without running them.
@@ -653,6 +668,7 @@ def simulate_swap_impact(
     give_pids: list[str],
     get_pids: list[str],
     n_sims: int = 2000,
+    _shared: Optional[dict] = None,
 ) -> dict:
     """
     Compute before/after playoff metrics for a trade.
@@ -700,8 +716,25 @@ def simulate_swap_impact(
         cp_pids = sim_state.get("roster_pid_map", {}).get(counterparty, [])
         overrides[counterparty] = list((set(cp_pids) - set(get_pids)) | set(give_pids))
 
-    after_profiles = _override_profiles(sim_state, overrides)
-    after_results = _standings_with_overrides(sim_state, after_profiles, overrides, n_sims)
+    # A caller simulating both sides of the same trade (viewer, then the
+    # partner with give/get flipped) passes one _shared dict: the flipped
+    # call's override set is the same two rosters, so its week profiles and
+    # overlay standings are literally the same computation. Reuse them
+    # instead of rebuilding the profiles and replaying the overlay twice.
+    after_profiles = after_results = None
+    _shared_key = None
+    if _shared is not None:
+        _shared_key = (n_sims, frozenset(
+            (rid, frozenset(str(p) for p in pids)) for rid, pids in overrides.items()
+        ))
+        _cached_pair = _shared.get(_shared_key)
+        if _cached_pair is not None:
+            after_profiles, after_results = _cached_pair
+    if after_results is None:
+        after_profiles = _override_profiles(sim_state, overrides)
+        after_results = _standings_with_overrides(sim_state, after_profiles, overrides, n_sims)
+        if _shared is not None:
+            _shared[_shared_key] = (after_profiles, after_results)
     after_row = next((r for r in after_results if r["roster_id"] == viewer_roster_id), {})
 
     import statistics

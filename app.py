@@ -554,6 +554,73 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         return []
 
 
+# ── Trade Playoff Impact: cold-snapshot warming ──────────────────────────────
+# The impact handler serves only from the shared sim-state snapshot (state +
+# its frozen 2000-sim baseline). On a cold snapshot it kicks ONE bounded
+# background warm per league and answers with a deferred state, following
+# the _playoff_sim_cached(block=False) precedent: the Monte Carlo never runs
+# on the request thread.
+_IMPACT_SIM_WARM_LOCK = threading.Lock()
+_IMPACT_SIM_BUILDING: set = set()
+_IMPACT_SIM_WARMED: dict = {}       # warm key -> ts of last completed attempt
+_IMPACT_SIM_WARM_WINDOW = 60        # s: a completed warm with still no state
+                                    # means the build produced none (season over)
+_IMPACT_SIM_WARM_SEM = threading.BoundedSemaphore(2)
+
+
+def _impact_sim_warm_key(platform: str, league_id: str, season) -> tuple:
+    return (platform, str(league_id), int(season or 0))
+
+
+def _kick_impact_sim_warm(ctx: dict, platform: str, league_id: str, season) -> str:
+    """Kick the background sim-state warm for the impact snapshot.
+
+    Returns "building"/"kicked"/"busy" when a warm is in flight (the caller
+    answers with the deferred state), or "recent" when a warm completed
+    inside the window and the snapshot is still cold — the build produced
+    no state, so the caller answers with the terminal unavailable state
+    instead of deferring forever.
+    """
+    key = _impact_sim_warm_key(platform, league_id, season)
+    with _IMPACT_SIM_WARM_LOCK:
+        if key in _IMPACT_SIM_BUILDING:
+            return "building"
+        last = _IMPACT_SIM_WARMED.get(key)
+        if last and time.time() - last < _IMPACT_SIM_WARM_WINDOW:
+            return "recent"
+        if not _IMPACT_SIM_WARM_SEM.acquire(blocking=False):
+            return "busy"
+        _IMPACT_SIM_BUILDING.add(key)
+
+    def _warm(snapshot=dict(ctx), warm_key=key):
+        try:
+            from data_building.simulate_playoff_odds import (
+                build_sim_state as _build_state,
+                run_base_simulation as _run_base,
+            )
+            state = _build_state(snapshot, platform)
+            if state is not None:
+                # Freeze the 2000-sim baseline the impact numbers read, so
+                # the first served request pays no Monte Carlo either.
+                _run_base(state, n_sims=2000)
+        except Exception:
+            logger.debug("[trade-eval/playoff-impact] sim warm failed", exc_info=True)
+        finally:
+            _IMPACT_SIM_WARMED[warm_key] = time.time()
+            with _IMPACT_SIM_WARM_LOCK:
+                _IMPACT_SIM_BUILDING.discard(warm_key)
+            _IMPACT_SIM_WARM_SEM.release()
+
+    try:
+        threading.Thread(target=_warm, daemon=True).start()
+    except Exception:
+        with _IMPACT_SIM_WARM_LOCK:
+            _IMPACT_SIM_BUILDING.discard(key)
+        _IMPACT_SIM_WARM_SEM.release()
+        raise
+    return "kicked"
+
+
 def _fmt_playoff_pct_display(value):
     """Format a playoff-odds percentage for Season Hub display.
 
@@ -640,6 +707,13 @@ _SHARE_CARD_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
 _DRAFT_GRADES_CACHE: dict = {}
 _DRAFT_GRADES_CACHE_TTL = 300  # 5 minutes
 _DRAFT_GRADES_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
+
+# Cache for /api/beat-the-market responses (keyed by platform/league/season/
+# window/format + the resolved snapshot dates + a roster signature, so a
+# roster change or a new daily snapshot misses immediately).
+_BEAT_MARKET_CACHE: dict = {}
+_BEAT_MARKET_CACHE_TTL = 300  # 5 minutes
+_BEAT_MARKET_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
 
 # Cache for value-tier thresholds (keyed by model-cache timestamp + league shape).
 # compute_tier_thresholds is an O(n·window) scan over the value table; the inputs
@@ -1532,18 +1606,59 @@ def _espn_otp_ui_enabled() -> bool:
         return False
 
 
+# Single-entry result cache for the guest landing demo payload: it is
+# viewer-independent (built only from the values/ratings files and the
+# NFL state), yet the guest home calls _landing_demo_json up to 3x per
+# render and every guest hit re-paid the full build.
+_LANDING_DEMO_CACHE: dict = {"key": None, "ts": 0.0, "json": None}
+_LANDING_DEMO_CACHE_TTL = 300  # 5 minutes; single entry (bound = 1 payload)
+
+
+def _landing_demo_cache_key():
+    """The payload's only inputs: NFL season/week plus the (mtime, size)
+    stamps of the ratings and values files it is built from."""
+    try:
+        from dashboard_services.landing_demos import MATCHUP_RATINGS_PATH, MODEL_VALUES_PATH
+
+        state = get_nfl_state() or {}
+        stamps = []
+        for p in (MATCHUP_RATINGS_PATH, MODEL_VALUES_PATH):
+            try:
+                st = p.stat()
+                stamps.append((st.st_mtime_ns, st.st_size))
+            except Exception:
+                stamps.append(None)
+        return (state.get("season"), state.get("week"), state.get("season_type"), *stamps)
+    except Exception:
+        return None
+
+
 def _landing_demo_json() -> str:
     """Live demo pools for the guest landing (start/sit + value pairs).
 
     Built from the site's own values/ratings via dashboard_services.landing_demos;
-    any failure yields empty pools and the demo cards stay hidden.
+    any failure yields empty pools and the demo cards stay hidden. Successful
+    non-empty builds are cached briefly (see _LANDING_DEMO_CACHE); failures
+    and empty pools are never cached, so the next request retries.
     """
     try:
         import json as _json
 
         from dashboard_services.landing_demos import build_landing_demo_data
 
-        return _json.dumps(build_landing_demo_data())
+        key = _landing_demo_cache_key()
+        now = time.time()
+        hit = _LANDING_DEMO_CACHE
+        if (key is not None and hit.get("key") == key and hit.get("json")
+                and now - float(hit.get("ts") or 0) < _LANDING_DEMO_CACHE_TTL):
+            return hit["json"]
+        data = build_landing_demo_data()
+        payload = _json.dumps(data)
+        if key is not None and (data.get("value_pairs") or data.get("start_sit_pairs")):
+            hit["key"] = key
+            hit["ts"] = now
+            hit["json"] = payload
+        return payload
     except Exception:
         return '{"value_pairs": [], "start_sit_pairs": [], "week_label": "This week"}'
 
@@ -4063,7 +4178,7 @@ _DOCK_LABELS = {
 }
 
 
-def _nav_show_keeper(platform, league_id, season) -> bool:
+def _nav_show_keeper(platform, league_id, season, ctx=None) -> bool:
     """Should the offseason dock surface a Keeper tab?
 
     Only for keeper leagues: Sleeper type 1 (keeper), or any league with a keeper
@@ -4071,10 +4186,14 @@ def _nav_show_keeper(platform, league_id, season) -> bool:
     is no keeper decision and the dock never shows Keeper for them even when
     Sleeper reports a max_keepers value; pure redraft (type 0, no limit) does not
     either. Reads the cached league settings, so it costs nothing extra to check
-    at render time. The Keeper Assistant still lives in the More sheet regardless."""
+    at render time. The Keeper Assistant still lives in the More sheet regardless.
+
+    Callers that already hold the request's ctx (e.g. the Draft Room, which
+    used to trigger a second fetch here) pass it in; the default fetches."""
     settings = {}
     try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        if ctx is None:
+            ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
         settings = (ctx.get("league_settings")
                     or (ctx.get("league") or {}).get("settings")
                     or ctx.get("settings") or {})
@@ -11314,18 +11433,12 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     playoff_teams = int(settings.get("playoff_teams") or 6)
 
     # Run the Monte Carlo sim to get odds-based seedings (same data as the
-    # Playoff Odds tab), sort by first_seed → bye → overall playoff probability
+    # Playoff Odds tab), sort by first_seed → bye → overall playoff probability.
+    # Through the shared helper: the old inline copy hand-duplicated the
+    # cache key/signature/TTL and ran the sim with no prune, dedupe or
+    # semaphore on this (background page-build) thread.
     try:
-        from data_building.simulate_playoff_odds import simulate_playoff_odds
-        _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0), "v3")
-        _sim_sig = _playoff_sim_sig(ctx, platform)
-        _sim_cached = _PLAYOFF_SIM_CACHE.get(_sim_key)
-        if (_sim_cached and time.time() - _sim_cached["ts"] < _PLAYOFF_SIM_CACHE_TTL
-                and _sim_cached.get("sig") == _sim_sig):
-            odds_list = _sim_cached["data"]
-        else:
-            odds_list = simulate_playoff_odds(ctx, platform=platform) or []
-            _PLAYOFF_SIM_CACHE[_sim_key] = {"data": odds_list, "ts": time.time(), "sig": _sim_sig}
+        odds_list = _playoff_sim_cached(ctx, platform)
     except Exception:
         odds_list = []
 
@@ -11586,22 +11699,36 @@ def render_share_rankings(ctx: dict) -> str:
     else:
         owner_to_rid = {v: k for k, v in roster_map.items()}
 
-    # ── Value: load from player_values DB ─────────────────────────
+    # ── Value: the ctx model table this request already built ────
+    # Its rows carry the raw player_values columns verbatim (model_value =
+    # value_1qb, model_sf_value = value_sf), so the shares read the same
+    # source as every other value surface on the page instead of issuing a
+    # second full player_values SELECT. Fall back to that SELECT only when
+    # the ctx has no usable table (e.g. the JSON value source, whose rows
+    # lack the raw columns).
     roster_positions = ctx.get("roster_positions") or []
     is_sf = _is_superflex_lineup(roster_positions)
     val_col = "value_sf" if is_sf else "value_1qb"
+    raw_key = "model_sf_value" if is_sf else "model_value"
 
     values_by_pid: Dict[str, float] = {}
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as _conn:
-            rows = _conn.execute(
-                f"SELECT player_id, {val_col} AS v FROM player_values WHERE {val_col} IS NOT NULL"
-            ).fetchall()
-        for r in rows:
-            values_by_pid[str(r["player_id"])] = float(r["v"] or 0)
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
+    _model_table = ctx.get("model_value_table") or []
+    if _model_table and raw_key in (_model_table[0] or {}):
+        for _row in _model_table:
+            _v = (_row or {}).get(raw_key)
+            if _v is not None:
+                values_by_pid[str(_row.get("id"))] = float(_v or 0)
+    if not values_by_pid:
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as _conn:
+                rows = _conn.execute(
+                    f"SELECT player_id, {val_col} AS v FROM player_values WHERE {val_col} IS NOT NULL"
+                ).fetchall()
+            for r in rows:
+                values_by_pid[str(r["player_id"])] = float(r["v"] or 0)
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
 
     rid_to_roster = {str(r.get("roster_id")): r for r in rosters}
 
@@ -11835,17 +11962,29 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
     }
 
 
-def build_standings_as_of_week(ctx: dict, week: int) -> dict:
+def build_standings_as_of_week(ctx: dict, week: int, *, include_team_stats: bool = True) -> dict:
     """Shallow-copied ctx whose team_stats and df_weekly are recomputed through
     the given finalized week, so the standings/power surfaces render as they
     stood then. Values come straight from the weekly scores, so the record,
-    PF/PA, streaks and performance PowerScore are all exact for that point."""
+    PF/PA, streaks and performance PowerScore are all exact for that point.
+
+    ``include_team_stats=False`` skips the expensive ``finalize_team_stats``
+    pass and leaves the source ctx's ``team_stats`` in place; the returned
+    ctx's ``df_weekly`` cap is identical either way. Only for callers that
+    provably never read the capped ``team_stats`` (the recap's live view,
+    whose rows and power list are derived from ``df_weekly`` and the blended
+    power context, neither of which reads ``team_stats``)."""
     from dashboard_services.service import finalize_team_stats, regular_season_length
     from utils.standings import median_match_enabled
 
     df_weekly = ctx["df_weekly"]
     wk = pd.to_numeric(df_weekly["week"], errors="coerce")
     fin = df_weekly[(df_weekly["finalized"] == True) & (wk <= int(week))].copy()
+
+    new_ctx = dict(ctx)
+    new_ctx["df_weekly"] = fin
+    if not include_team_stats:
+        return new_ctx
 
     owner_avatar = {}
     if "owner" in df_weekly.columns and "avatar" in df_weekly.columns:
@@ -11856,7 +11995,7 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
         or (ctx.get("league") or {}).get("settings")
         or {}
     )
-    team_stats = finalize_team_stats(
+    new_ctx["team_stats"] = finalize_team_stats(
         fin, owner_avatar,
         ctx.get("matchups_by_week") or {},
         ctx.get("users") or [],
@@ -11864,10 +12003,6 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
         regular_season_weeks=regular_season_length(_settings),
         median_match=median_match_enabled(_settings),
     )
-
-    new_ctx = dict(ctx)
-    new_ctx["team_stats"] = team_stats
-    new_ctx["df_weekly"] = fin
     return new_ctx
 
 
@@ -16256,6 +16391,21 @@ def api_start_sit_tracking():
 _SS_STRIP_CACHE: dict = {}  # key -> (monotonic ts, distilled dict)
 _SS_STRIP_TTL = 120.0
 
+# The build behind the strip is a full roster options build, and the strip
+# cache above only dedupes repeats of the SAME player: five modal opens for
+# five different players in one league used to pay five full builds in two
+# minutes. The build is player-independent for roster players (the builder
+# drops an already-rostered guest, so a roster player's build IS the
+# no-guest build), so that canonical build is cached once per
+# (league, viewer, week) and every roster player's strip distills from it.
+# Guest (non-roster) players keep their per-player build: their guest row
+# exists only in a build that carries them, and a guest forces the live
+# path for the whole payload, so guest payloads are never mixed into this
+# cache and roster verdicts never come from a guest-flavoured build.
+_SS_OPTIONS_CACHE: dict = {}  # key -> (monotonic ts, payload)
+_SS_OPTIONS_TTL = 120.0
+_SS_OPTIONS_MAX = 64
+
 
 def _ss_ordinal(n: int) -> str:
     if 10 <= n % 100 <= 20:
@@ -16298,8 +16448,44 @@ def api_player_startsit_strip():
     if _hit and time.monotonic() - _hit[0] < _SS_STRIP_TTL:
         return jsonify(_hit[1])
 
-    payload, status = _build_start_sit_options(
-        platform, league_id, season, [player_id])
+    # Active-roster membership (players minus reserve/taxi, mirroring the
+    # builder's guest filtering) decides which build may serve the strip.
+    _is_roster_player = False
+    try:
+        _vroster = next(
+            (r for r in (ctx.get("rosters") or [])
+             if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+        if _vroster:
+            _res_set = {str(p) for p in (_vroster.get("reserve") or [])}
+            _tax_set = {str(p) for p in (_vroster.get("taxi") or [])}
+            _is_roster_player = any(
+                str(p) == player_id
+                and str(p) not in _res_set and str(p) not in _tax_set
+                for p in (_vroster.get("players") or []))
+    except Exception:
+        _is_roster_player = False
+
+    payload = None
+    status = None
+    if _is_roster_player:
+        _okey = (platform, league_id, int(season), str(viewer_roster_id),
+                 int(ctx.get("current_week") or 1), id(ctx))
+        _ohit = _SS_OPTIONS_CACHE.get(_okey)
+        if _ohit and time.monotonic() - _ohit[0] < _SS_OPTIONS_TTL:
+            payload, status = _ohit[1], 200
+        else:
+            payload, status = _build_start_sit_options(
+                platform, league_id, season, [])
+            if status == 200:
+                _SS_OPTIONS_CACHE[_okey] = (time.monotonic(), payload)
+                if len(_SS_OPTIONS_CACHE) > _SS_OPTIONS_MAX:
+                    _oldest = min(
+                        _SS_OPTIONS_CACHE,
+                        key=lambda k: _SS_OPTIONS_CACHE[k][0])
+                    del _SS_OPTIONS_CACHE[_oldest]
+    if payload is None:
+        payload, status = _build_start_sit_options(
+            platform, league_id, season, [player_id])
     if status in (401, 409):
         return jsonify({"state": "hidden"})
     if status != 200:
@@ -16434,6 +16620,75 @@ _LAB_PAYLOAD_LIVE_TTL = 30.0
 _LAB_PAYLOAD_LOCK = threading.Lock()
 _LAB_PAYLOAD_MAX = 64
 
+# Shared tier for the Lab payload cache. A Lab build is ~40 distribution
+# profiles plus a provider matchup fetch, and the worker recycles every
+# ~1000 requests, wiping the in-process cache above and re-paying the build
+# on the next open. Finished payloads are mirrored to Redis (the same
+# fail-soft pattern as the weekly-recap GOTW payloads) under a hash of the
+# exact in-process key, so the key/signature semantics above are unchanged;
+# the entry carries its own ts/ttl and is only served while fresh by the
+# same _lab_payload_ttl window the in-process tier would have used. Without
+# REDIS_URL (local dev, tests) every call here is a no-op and behavior is
+# exactly the in-process cache alone.
+
+
+def _lab_redis_client():
+    url = (os.environ.get("REDIS_URL") or "").strip()
+    if not url:
+        return None
+    try:
+        import redis as _redis_lib
+        return _redis_lib.from_url(
+            url, socket_connect_timeout=1.5, socket_timeout=1.5,
+            decode_responses=True)
+    except Exception:
+        return None
+
+
+def _lab_shared_key(cache_key) -> str:
+    raw = json.dumps([str(p) for p in cache_key],
+                     default=str).encode("utf-8")
+    return "lineup_lab:" + hashlib.sha256(raw).hexdigest()[:32]
+
+
+def _lab_payload_shared_get(cache_key):
+    """(payload, remaining_ttl_seconds) from the shared tier, or None."""
+    client = _lab_redis_client()
+    if client is None:
+        return None
+    try:
+        raw = client.get(_lab_shared_key(cache_key))
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        env = json.loads(raw)
+        ts = float(env.get("ts") or 0)
+        ttl = float(env.get("ttl") or 0)
+        payload = env.get("payload")
+    except Exception:
+        return None
+    if not isinstance(payload, dict) or ttl <= 0:
+        return None
+    remaining = ttl - (time.time() - ts)
+    if remaining <= 0:
+        return None
+    return payload, remaining
+
+
+def _lab_payload_shared_put(cache_key, ttl, payload):
+    client = _lab_redis_client()
+    if client is None:
+        return
+    try:
+        env = {"ts": time.time(), "ttl": float(ttl), "payload": payload}
+        client.setex(_lab_shared_key(cache_key), max(1, int(ttl)),
+                     json.dumps(env, default=str))
+    except Exception:
+        logger.debug("[lineup-lab] shared payload store skipped",
+                     exc_info=True)
+
 
 def _lab_payload_ttl(payload: dict) -> float:
     """TTL for a built Lab payload, decided from its per-player live state.
@@ -16521,6 +16776,17 @@ def api_lineup_lab():
         if hit and time.monotonic() - hit[0] < hit[1]:
             return jsonify(hit[2])
 
+    # Shared tier: a payload built by any worker (or before this worker's
+    # last recycle) serves here while still inside its TTL window, and
+    # backfills the in-process tier with the remaining freshness.
+    _shared = _lab_payload_shared_get(cache_key)
+    if _shared is not None:
+        _shared_payload, _shared_remaining = _shared
+        with _LAB_PAYLOAD_LOCK:
+            _LAB_PAYLOAD_CACHE[cache_key] = (
+                time.monotonic(), _shared_remaining, _shared_payload)
+        return jsonify(_shared_payload)
+
     try:
         from data_building.lineup_lab import build_lineup_lab_payload
         payload = build_lineup_lab_payload(
@@ -16539,12 +16805,14 @@ def api_lineup_lab():
         return jsonify({"state": "temporarily_unavailable", "retryable": True,
                         "message": "Lineup Lab is temporarily unavailable."}), 503
     payload["state"] = "loaded"
+    _built_ttl = _lab_payload_ttl(payload)
     with _LAB_PAYLOAD_LOCK:
         _LAB_PAYLOAD_CACHE[cache_key] = (
-            time.monotonic(), _lab_payload_ttl(payload), payload)
+            time.monotonic(), _built_ttl, payload)
         if len(_LAB_PAYLOAD_CACHE) > _LAB_PAYLOAD_MAX:
             oldest = min(_LAB_PAYLOAD_CACHE, key=lambda k: _LAB_PAYLOAD_CACHE[k][0])
             del _LAB_PAYLOAD_CACHE[oldest]
+    _lab_payload_shared_put(cache_key, _built_ttl, payload)
     return jsonify(payload)
 
 
@@ -17157,6 +17425,59 @@ def _scorezone_trigger_scoring_push(platform, league_id, season, week,
     _threading.Thread(target=_run, daemon=True).start()
 
 
+def _rz_player_index_rows(nfl_players):
+    """Flatten the NFL player index to (team, pid, player) rows ONCE per
+    ScoreZone collect, canonicalizing each player's team a single time.
+
+    The per-game metadata build used to rescan ``nfl_players.items()`` for
+    every live/final game and re-run ``canon_team`` on all ~7k entries each
+    time (O(games x index) per collect). Rows preserve the index's own
+    iteration order so per-game slices built from them are identical to the
+    old per-game scans, entry for entry.
+    """
+    rows = []
+    for pid, p in (nfl_players or {}).items():
+        p = p or {}
+        rows.append((canon_team(p.get("team")) or "", pid, p))
+    return rows
+
+
+# Cross-provider id fields carried into per-game player metadata so the PBP
+# resolver can match plays across feeds; absent fields stay absent.
+_RZ_META_ID_FIELDS = (
+    "player_id", "sleeper_id", "tank01_id", "espn_id",
+    "yahoo_id", "mfl_id", "fleaflicker_id", "gsis_id",
+    "sportradar_id",
+)
+
+
+def _rz_player_meta_for_teams(index_rows, game_teams):
+    """Build player_meta_by_pid for one game from pre-flattened index rows.
+
+    Same inclusions as the old per-game full-index scan: players on one of
+    the game's teams who carry a full name, defenses excluded (they resolve
+    through teamStats instead), in original index order.
+    """
+    meta_by_pid: dict = {}
+    for team, pid, p in index_rows:
+        if team not in game_teams:
+            continue
+        full_name = p.get("full_name", "")
+        if not full_name:
+            continue
+        pos = p.get("position", "")
+        if pos == "DEF":
+            continue
+        meta_by_pid[pid] = {
+            "name": full_name, "team": team, "position": pos,
+            # Preserve cross-provider IDs for the authoritative PBP
+            # resolver; absent fields remain absent, never guessed.
+            **{k: p.get(k) for k in _RZ_META_ID_FIELDS
+               if p.get(k) not in (None, "")},
+        }
+    return meta_by_pid
+
+
 def _scorezone_collect(platform, league_id, season, week):
     """Build the raw per-league ScoreZone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
@@ -17292,6 +17613,11 @@ def _scorezone_collect(platform, league_id, season, week):
         if gid and code in ("1", "2"):
             games_to_pids.setdefault(gid, []).append(pid)
 
+    # Flatten the player index once for this collect; the per-game metadata
+    # build below slices these rows instead of rescanning the full index
+    # (and re-canonicalizing every team) once per game.
+    _rz_index_rows = _rz_player_index_rows(nfl_players)
+
     pbp_by_game: dict = {}
     # Server-side play store: one upstream PBP fetch per game per 15s (by the
     # elected poller thread) instead of per viewer per worker. Bulk-read here;
@@ -17352,8 +17678,7 @@ def _scorezone_collect(platform, league_id, season, week):
         tstats = box.get("teamStats") or {}
         name_to_pid: dict = {}
         team_to_def_pid: dict = {}
-        player_meta_by_pid: dict = {}
-        
+
         # Build player metadata for team-scoped resolution
         # CRITICAL: Use the FULL player index for the teams in this game, not just rostered players
         # This allows PBP to resolve unrostered players like Mack Hollins, Demario Douglas, etc.
@@ -17362,27 +17687,11 @@ def _scorezone_collect(platform, league_id, season, week):
             team = player_info[pid].get("team", "")
             if team:
                 game_teams.add(team)
-        
-        # Iterate ALL players in the site index to find those on the game teams
-        for pid, p in nfl_players.items():
-            team = canon_team(p.get("team")) or ""
-            pos = p.get("position", "")
-            full_name = p.get("full_name", "")
-            
-            # Include this player if they're on a team in this game
-            if team in game_teams and full_name:
-                if pos != "DEF":
-                    player_meta_by_pid[pid] = {
-                        "name": full_name, "team": team, "position": pos,
-                        # Preserve cross-provider IDs for the authoritative PBP
-                        # resolver; absent fields remain absent, never guessed.
-                        **{k: p.get(k) for k in (
-                            "player_id", "sleeper_id", "tank01_id", "espn_id",
-                            "yahoo_id", "mfl_id", "fleaflicker_id", "gsis_id",
-                            "sportradar_id",
-                        ) if p.get(k) not in (None, "")},
-                    }
-        
+
+        # Slice this game's players out of the once-per-collect index rows
+        # (identical membership/order to the old per-game full-index scan).
+        player_meta_by_pid = _rz_player_meta_for_teams(_rz_index_rows, game_teams)
+
         # Build name_to_pid from the FULL player index (already in player_meta_by_pid)
         from utils.scorezone_pbp import _normalize_name, _extract_first_initial_last
         for pid, meta in player_meta_by_pid.items():
@@ -17698,6 +18007,93 @@ def _rz_cached_collect(platform, league_id, season, week):
     return _rz_collect_build(key, platform, league_id, season, week)
 
 
+# Short-TTL per-viewer cache for the user-scope (My Leagues) aggregate. The
+# aggregate re-resolves the viewer's whole portfolio (account league lists,
+# live Sleeper memberships, per-league DB viewer resolution) and stitches up
+# to MAX_USER_LEAGUES league slices, so an uncached 15s poll cadence re-paid
+# all of that per viewer per poll. Entries are (expires_ts, etag, payload),
+# keyed by viewer identity + route params; callers must never mutate the
+# cached payload dict (per-request fields are stamped onto a copy, exactly
+# like the league collect cache). Bounds: 32 entries max (pruned oldest
+# ~10% past the cap) and a 60s TTL, matching the collect cache it sits on.
+_RZ_USER_CACHE: dict = {}
+_RZ_USER_CACHE_LOCK = threading.Lock()
+_RZ_USER_INFLIGHT: dict = {}
+_RZ_USER_TTL = 60.0
+
+
+def _rz_user_cache_key(platform, league_id, season, week):
+    """Cache key for one viewer's aggregate. Identity comes from the session
+    (account id when present, else the viewer user id); the portfolio itself
+    is a function of that identity, and the 60s TTL bounds how long a
+    mid-session portfolio change can lag."""
+    try:
+        account_id = session.get("account_id")
+        viewer_uid = str(session.get("viewer_user_id") or "")
+    except Exception:
+        account_id, viewer_uid = None, ""
+    ident = f"acct:{account_id}" if account_id else f"viewer:{viewer_uid}"
+    return (ident, str(platform), int(season), str(league_id), int(week))
+
+
+def _rz_user_build(key, platform, league_id, season, week):
+    """Run _scorezone_fetch_user, cache it, return (payload, etag).
+
+    The etag is a content hash of the built payload (whose updated_at is the
+    build time), so it is stable for the life of the cache entry and changes
+    whenever the aggregate is rebuilt."""
+    d = _scorezone_fetch_user(platform, league_id, season, week)
+    try:
+        fp = json.dumps(d, sort_keys=True, default=str)
+        etag = '"rzu-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
+    except Exception:
+        etag = '"rzu-%d"' % int(time.time())
+    with _RZ_USER_CACHE_LOCK:
+        _RZ_USER_CACHE[key] = (time.time() + _RZ_USER_TTL, etag, d)
+        _prune_ttl_cache(_RZ_USER_CACHE, 32)
+    return d, etag
+
+
+def _rz_cached_fetch_user(platform, league_id, season, week):
+    """Return (payload, etag) for the user-scope aggregate, shared per viewer.
+
+    Mirrors _rz_cached_collect: a fresh cache entry is served as-is, and
+    concurrent polls for the same viewer single-flight on one build instead
+    of each re-resolving the portfolio. Failures are never cached: whatever
+    _scorezone_fetch_user raises propagates to the caller's existing error
+    handling, and waiters retry as the builder in turn.
+    """
+    key = _rz_user_cache_key(platform, league_id, season, week)
+    for _attempt in range(2):
+        entry = _RZ_USER_CACHE.get(key)
+        if entry is not None and entry[0] > time.time():
+            return entry[2], entry[1]
+        with _RZ_USER_CACHE_LOCK:
+            # Re-check under the lock: another thread may have filled the
+            # cache between our first check and acquiring the lock.
+            entry = _RZ_USER_CACHE.get(key)
+            if entry is not None and entry[0] > time.time():
+                return entry[2], entry[1]
+            inflight = _RZ_USER_INFLIGHT.get(key)
+            if inflight is None:
+                inflight = threading.Event()
+                _RZ_USER_INFLIGHT[key] = inflight
+                is_builder = True
+            else:
+                is_builder = False
+        if is_builder:
+            try:
+                return _rz_user_build(key, platform, league_id, season, week)
+            finally:
+                with _RZ_USER_CACHE_LOCK:
+                    _RZ_USER_INFLIGHT.pop(key, None)
+                inflight.set()
+        # Share the in-flight build; bounded wait, same as the collect path.
+        inflight.wait(timeout=_RZ_COLLECT_WAIT_TIMEOUT)
+    # Last resort: build directly rather than wait on a peer a third time.
+    return _rz_user_build(key, platform, league_id, season, week)
+
+
 def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
     """Return live ScoreZone payload. scope='league' (all teams in this league)
     or scope='user' (the viewer's team across all their leagues)."""
@@ -17710,8 +18106,19 @@ def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
 
     if scope == "user":
         try:
-            d = _scorezone_fetch_user(platform, league_id, season, week)
+            _rz_ud, _rz_uetag = _rz_cached_fetch_user(
+                platform, league_id, season, week
+            )
+            # Stamp the per-request field onto a copy so the cached payload
+            # is never mutated, and expose the aggregate's etag so the API
+            # can answer unchanged polls with a 304 (the league branch has
+            # always done this; user scope never set one before).
+            d = dict(_rz_ud)
             d["games_today"] = gt
+            try:
+                g.rz_etag = _rz_uetag
+            except Exception:
+                pass
             return d
         except Exception as _e:
             logger.warning("[scorezone] user-scope fetch failed: %s", _e)
@@ -17896,7 +18303,12 @@ def _scorezone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
     if not lid:
         return None
     try:
-        d = _scorezone_collect(lg_plat, lid, lg_season, week)
+        # The collect is viewer-independent (viewer resolution happens below,
+        # on the returned data), so share the league scope's short-TTL
+        # single-flight cache instead of rebuilding the collect for every
+        # viewer on every poll. The slice only reads the payload and copies
+        # the entries it namespaces, so the cached dict is never mutated.
+        d = _rz_cached_collect(lg_plat, lid, lg_season, week)[0]
     except Exception:
         logger.debug(
             "[scorezone] collect failed platform=%s league=%s season=%s",
@@ -18094,9 +18506,20 @@ def page_scorezone(platform: str, season: int, league_id: str):
                     "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
                     "platform": platform, "league_id": league_id, "updated_at": time.time()}
 
+    # The fetch above stamped this payload's ETag on g (both scopes now).
+    # Embed it next to the snapshot so the client can seed its conditional-
+    # poll state: the embedded payload IS the body this ETag names, so the
+    # first poll can be answered 304 instead of re-downloading ~1MB.
+    _rz_page_etag = None
+    try:
+        _rz_page_etag = g.get("rz_etag") if hasattr(g, "get") else getattr(g, "rz_etag", None)
+    except Exception:
+        _rz_page_etag = None
+
     body = (
         '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
-        f'<script>window.__rz__={json.dumps(data)};</script>'
+        f'<script>window.__rz__={json.dumps(data)};'
+        f'window.__rz_etag__={json.dumps(_rz_page_etag or "")};</script>'
         # The ScoreZone live module is split out of app.js so it only loads here.
         # `defer` runs it after the page's blocking app.js, so the shared helpers
         # (openPlayerModal, window._rzBuildLiveHtml/_rzSyncTabLive) are defined.
@@ -18199,6 +18622,38 @@ def api_scorezone_data(platform: str, season: int, league_id: str):
         except Exception:
             pass
         data = _scorezone_fetch(platform, league_id, season, week=week, scope=scope)
+        # Lite variant (league scope only): the matchup-board drive bars read
+        # only the per-game state, so slice the shared, cached collect down
+        # to the games map instead of serializing the full ~1MB body
+        # (play-by-play + player info) on every poll. The lite ETag hashes
+        # the slice itself, so a poll whose game state has not moved answers
+        # 304 even while the underlying play-by-play keeps growing.
+        if scope == "league" and request.args.get("lite") == "1":
+            data = {
+                "games": data.get("games") or {},
+                "week": data.get("week"),
+                "season": data.get("season"),
+                "platform": data.get("platform"),
+                "league_id": data.get("league_id"),
+                "scope": data.get("scope"),
+                "games_today": data.get("games_today"),
+                "updated_at": data.get("updated_at"),
+            }
+            try:
+                _lite_fp = json.dumps(data, sort_keys=True, default=str)
+                etag = '"rzl-%s"' % hashlib.sha1(_lite_fp.encode()).hexdigest()[:32]
+            except Exception:
+                etag = None
+            if etag and request.headers.get("If-None-Match") == etag:
+                response = app.response_class(status=304)
+                response.headers["ETag"] = etag
+                return response
+            response = jsonify(data)
+            if etag:
+                response.headers["ETag"] = etag
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            return response
         # Conditional polls: when the client already holds this exact payload
         # (ETag = content hash of the shared collect + viewer id), answer 304
         # without re-serializing or re-sending the ~1MB body.
@@ -22905,23 +23360,28 @@ def api_weekly_week():
     # League Scores payload, built from the same matchup data as the carousel
     # so the tab renders instantly without a separate API fetch. Uses the
     # same slide-style lookups as the carousel so totals always agree.
+    # The game-day auto-refresh passes ls=0: it repaints only the top /
+    # highlights / matchups panels and never reads league_scores, so the
+    # build is skipped on polls instead of being computed and thrown away
+    # every 60 s (the week-change fetch, which does consume it, omits ls).
     _api_ls_payload = []
-    try:
-        from dashboard_services.matchups import build_league_scores_list, build_slide_proj_lookups
-        _api_ls_proj_map, _api_ls_pid_proj, _api_ls_frac = build_slide_proj_lookups(
-            season, week, last_final_week, proj_by_week,
-            team_game_lookup or {},
-            scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
-        )
-        _api_ls_payload = build_league_scores_list(
-            matchups, _api_vid, status_by_pid, _api_ls_proj_map,
-            proj_lookup=_api_ls_pid_proj, frac_lookup=_api_ls_frac,
-        )
-    except Exception:
-        logger.debug("[api_weekly_week] league-scores payload failed", exc_info=True)
-        _api_ls_payload = []
+    if request.args.get("ls") != "0":
+        try:
+            from dashboard_services.matchups import build_league_scores_list, build_slide_proj_lookups
+            _api_ls_proj_map, _api_ls_pid_proj, _api_ls_frac = build_slide_proj_lookups(
+                season, week, last_final_week, proj_by_week,
+                team_game_lookup or {},
+                scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+            )
+            _api_ls_payload = build_league_scores_list(
+                matchups, _api_vid, status_by_pid, _api_ls_proj_map,
+                proj_lookup=_api_ls_pid_proj, frac_lookup=_api_ls_frac,
+            )
+        except Exception:
+            logger.debug("[api_weekly_week] league-scores payload failed", exc_info=True)
+            _api_ls_payload = []
 
-    return jsonify({
+    payload = {
         "ok": True,
         "top_html": top_html,
         "highlights_html": highlights_html,
@@ -22929,7 +23389,26 @@ def api_weekly_week():
         "league_scores": {"matchups": _api_ls_payload, "week": week},
         "week_has_scores": bool(_api_wrapped_url),
         "wrapped_url": _api_wrapped_url,
-    })
+    }
+    # Content-hash ETag so an auto-refresh poll whose content has not moved
+    # answers 304 with no body instead of re-downloading the full payload;
+    # the poller stores the ETag and sends it back as If-None-Match.
+    _ww_etag = None
+    try:
+        _ww_fp = json.dumps(payload, sort_keys=True, default=str)
+        _ww_etag = '"ww-%s"' % hashlib.sha1(_ww_fp.encode()).hexdigest()[:32]
+    except Exception:
+        logger.debug("[api_weekly_week] etag failed", exc_info=True)
+    if _ww_etag and request.headers.get("If-None-Match") == _ww_etag:
+        _ww_resp = app.response_class(status=304)
+        _ww_resp.headers["ETag"] = _ww_etag
+        _ww_resp.headers["Cache-Control"] = "private, no-cache"
+        return _ww_resp
+    _ww_resp = jsonify(payload)
+    if _ww_etag:
+        _ww_resp.headers["ETag"] = _ww_etag
+    _ww_resp.headers["Cache-Control"] = "private, no-cache"
+    return _ww_resp
 
 
 @app.route("/api/refresh-page", methods=["POST"])
@@ -25178,10 +25657,9 @@ from utils.json_sanitize import sanitize_for_json as _sanitize_for_json  # noqa:
 
 @app.route("/api/trade-eval/playoff-impact", methods=["POST"])
 # 60/min, not 20: every successful recomputeTrade() spawns one
-# playoff-impact POST, and the renderChips("A") + renderChips("B") pair in
-# one user action spawns 2, so 20/min was only 10 real actions per minute
-# and tripped BEFORE trade-eval did. 60/min matches the 30 actions/min
-# budget the trade-eval cap now allows.
+# playoff-impact POST, plus the card's bounded retries and its deferred-state
+# polls while a cold sim snapshot warms. 60/min keeps headroom over the
+# trade-eval cap's 30 actions/min budget.
 @limiter.limit("60 per minute")
 def api_trade_eval_playoff_impact():
     """
@@ -25220,16 +25698,28 @@ def api_trade_eval_playoff_impact():
 
     try:
         from data_building.simulate_playoff_odds import (
-            build_sim_state as _build_sim_state,
+            peek_sim_state as _peek_sim_state,
             simulate_swap_impact as _simulate_swap_impact,
             shape_playoff_impact_for_league as _shape_pi,
         )
         ctx = get_league_ctx_from_cache(platform, league_id, season)
-        sim_state = _build_sim_state(ctx, platform)
-        if sim_state is None:
-            return jsonify({"available": False, "reason": "season_complete"})
+        # Serve only from the frozen shared snapshot: a cold state (or a
+        # state whose frozen baseline is not the 2000-sim one this handler
+        # reads) kicks a bounded background warm and defers, rather than
+        # building state and running the Monte Carlo on the request thread.
+        sim_state = _peek_sim_state(ctx, platform)
+        _freeze = (sim_state or {}).get("_mc_freeze") or {}
+        if sim_state is None or _freeze.get("n_sims") != 2000:
+            _warm = _kick_impact_sim_warm(ctx, platform, league_id, season)
+            if sim_state is None and _warm == "recent":
+                return jsonify({"available": False, "reason": "season_complete"})
+            return jsonify({"available": False, "pending": True, "reason": "sim_warming"})
 
-        result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids)
+        # One shared dict across both calls: the flipped partner call's
+        # override set is the same two rosters, so its week profiles and
+        # overlay standings are reused instead of computed twice.
+        _shared: dict = {}
+        result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids, _shared=_shared)
         is_redraft = _league_is_redraft(ctx)
         result = _shape_pi(result, is_redraft)
 
@@ -25248,7 +25738,7 @@ def api_trade_eval_playoff_impact():
             opp_rid = None
         if opp_rid and opp_rid != roster_id:
             try:
-                partner_result = _simulate_swap_impact(sim_state, opp_rid, get_ids, give_ids)
+                partner_result = _simulate_swap_impact(sim_state, opp_rid, get_ids, give_ids, _shared=_shared)
                 partner_result = _shape_pi(partner_result, is_redraft)
                 result["partner"] = partner_result
                 result["partner_roster_id"] = opp_rid
@@ -25439,11 +25929,35 @@ def api_players():
         return _api_err("Request failed", e)
 
 
+# Sparklines server cache: the payload is one global result (no per-viewer
+# inputs), rebuilt from a full history-join-values DB query on every Players
+# load. Cache it keyed on the model-value table timestamp -- the same
+# signature the league-players memo uses, since calibrated values (the scale
+# factors below) refresh with that table -- with a short TTL backstop.
+# Bound: exactly one entry (the single global payload).
+_SPARKLINES_CACHE: dict = {"key": None, "ts": 0.0, "result": None}
+_SPARKLINES_CACHE_TTL = 900.0
+_SPARKLINES_CACHE_LOCK = threading.Lock()
+
+
 @app.route("/api/sparklines")
 def api_sparklines():
     """7-day value history scaled to match the calibrated values shown on the rankings page.
     Joins player_value_history with player_values so each series ends at the same value
     the user sees displayed, matching the approach used by the player modal chart."""
+    try:
+        get_model_value_table_cached()
+        _spark_key = _MODEL_VALUE_CACHE_TS
+    except Exception:
+        _spark_key = None
+    if _spark_key:
+        with _SPARKLINES_CACHE_LOCK:
+            if (_SPARKLINES_CACHE["key"] == _spark_key
+                    and _SPARKLINES_CACHE["result"] is not None
+                    and time.time() - _SPARKLINES_CACHE["ts"] < _SPARKLINES_CACHE_TTL):
+                resp = jsonify(_SPARKLINES_CACHE["result"])
+                resp.headers["Cache-Control"] = "public, max-age=3600"
+                return resp
     try:
         from dashboard_services.db import get_conn
         # DB column names in player_value_history (value_sf = base SF, 10-team)
@@ -25507,6 +26021,11 @@ def api_sparklines():
             if entry:
                 result[pid] = entry
 
+        if _spark_key:
+            with _SPARKLINES_CACHE_LOCK:
+                _SPARKLINES_CACHE["key"] = _spark_key
+                _SPARKLINES_CACHE["ts"] = time.time()
+                _SPARKLINES_CACHE["result"] = result
         resp = jsonify(result)
         resp.headers["Cache-Control"] = "public, max-age=3600"
         return resp
@@ -25516,6 +26035,65 @@ def api_sparklines():
 
 _LP_PAYLOAD_CACHE: dict = {}  # kdef(bool) -> {"ts": model_ts, "payload": dict}
 _LP_PAYLOAD_LOCK = threading.Lock()
+# Shared disk tier for the league-players payload (same /tmp convention as
+# store_page_html: every gunicorn worker in the container can read it, writes
+# are atomic via os.replace). The in-process memo above is wiped on every
+# worker recycle (~1000 requests), which used to make the first hit after
+# each recycle re-pay the full enriched-pool rebuild (pick tables, historical
+# ranks, values SELECT, projections, VORP maps). The disk copy is keyed on
+# the exact memo signature (kdef, model_ts, adp_sig), so it can only serve a
+# payload the in-process memo itself would have served. Bound: only the
+# newest _LP_DISK_KEEP files are kept; older signatures are pruned on write.
+_LP_DISK_KEEP = 4
+
+
+def _lp_payload_disk_path(key: bool, model_ts, adp_sig) -> str:
+    import tempfile
+
+    name = "br_lp_payload_%s_%s_%s.json" % (
+        "kdef" if key else "std", model_ts, adp_sig)
+    return os.path.join(tempfile.gettempdir(), name.replace("/", "_"))
+
+
+def _lp_payload_read_disk(key: bool, model_ts, adp_sig):
+    """Payload from the shared disk tier, or None (fail soft to rebuild)."""
+    try:
+        path = _lp_payload_disk_path(key, model_ts, adp_sig)
+        with open(path, encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, dict) and isinstance(payload.get("players"), list):
+            return payload
+    except Exception:
+        logger.debug("[league-players] disk payload read skipped", exc_info=True)
+    return None
+
+
+def _lp_payload_write_disk(key: bool, model_ts, adp_sig, payload) -> None:
+    """Persist a freshly built payload to the shared disk tier (fail soft)."""
+    try:
+        body = json.dumps(payload)
+    except (TypeError, ValueError):
+        return  # non-JSON-native payload: skip the disk tier, as before
+    try:
+        path = _lp_payload_disk_path(key, model_ts, adp_sig)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(body)
+        os.replace(tmp, path)  # atomic - readers never see a partial file
+        import glob as _glob
+        import tempfile as _tempfile
+
+        files = sorted(
+            _glob.glob(os.path.join(_tempfile.gettempdir(), "br_lp_payload_*.json")),
+            key=lambda p: os.path.getmtime(p), reverse=True,
+        )
+        for stale in files[_LP_DISK_KEEP:]:
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+    except Exception:
+        logger.debug("[league-players] disk payload write skipped", exc_info=True)
 # Overlay = canonical projections + Market vs ADP + Hist, on a copy of the
 # memoized pool. Cached separately because that work used to run on every
 # /api/league-players hit even after the base pool was warm -- the cheat sheet's
@@ -26173,8 +26751,20 @@ def _build_league_players_payload(kdef: bool = False) -> dict:
         cached = _LP_PAYLOAD_CACHE.get(key)
         if cached and model_ts and cached["ts"] == model_ts and cached.get("adp_sig") == adp_sig:
             return cached["payload"]
+        # Shared disk tier: after a worker recycle the in-process memo is
+        # empty, but a sibling worker (or this one before recycling) may have
+        # persisted this exact signature. Only consulted when model_ts is
+        # known, mirroring the in-process hit condition above.
+        if model_ts:
+            disk_payload = _lp_payload_read_disk(key, model_ts, adp_sig)
+            if disk_payload is not None:
+                _LP_PAYLOAD_CACHE[key] = {
+                    "ts": model_ts, "adp_sig": adp_sig, "payload": disk_payload}
+                return disk_payload
         payload = _build_league_players_payload_uncached(kdef=kdef)
         _LP_PAYLOAD_CACHE[key] = {"ts": model_ts, "adp_sig": adp_sig, "payload": payload}
+        if model_ts:
+            _lp_payload_write_disk(key, model_ts, adp_sig, payload)
         return payload
 
 
@@ -27940,6 +28530,66 @@ def api_watchlist_alerts():
     return jsonify(out)
 
 
+_SLV_VMAP_CACHE: dict = {"key": None, "map": None}
+
+
+def _slv_value_map() -> dict:
+    """id->row map over the shared model value table, rebuilt only when
+    the table itself refreshes (keyed on its cache timestamp + identity).
+
+    The since-last-visit endpoint used to rebuild this ~7k-entry dict on
+    every call. Rows are read-only for callers, so sharing is safe.
+    Never raises: a failure falls back to an uncached build."""
+    try:
+        table = get_model_value_table_cached() or []
+        key = (_MODEL_VALUE_CACHE_TS, id(table), len(table))
+        if _SLV_VMAP_CACHE.get("key") == key and _SLV_VMAP_CACHE.get("map") is not None:
+            return _SLV_VMAP_CACHE["map"]
+        vmap = {str(p.get("id")): p for p in table if p.get("id")}
+        _SLV_VMAP_CACHE["key"] = key
+        _SLV_VMAP_CACHE["map"] = vmap
+        return vmap
+    except Exception:
+        return {str(p.get("id")): p for p in (get_model_value_table_cached() or []) if p.get("id")}
+
+
+def _slv_roster_snapshot(ctx: dict, roster_id: str, is_sf: bool) -> list:
+    """The viewer's roster snapshot (value + injury per player) for the
+    since-last-visit digest. Extracted unchanged from the endpoint so the
+    computation is testable (and reusable) without the request plumbing."""
+    roster = next(
+        (r for r in (ctx.get("rosters") or []) if str(r.get("roster_id")) == roster_id),
+        None,
+    )
+    if not roster:
+        return []
+    vmap = _slv_value_map()
+    pidx = get_players_index_global() or {}
+    snap = []
+    for pid in (roster.get("players") or []):
+        spid = str(pid)
+        meta = pidx.get(spid) or {}
+        vrow = vmap.get(spid) or {}
+        value = vrow.get("sf_value") if (is_sf and vrow.get("sf_value") is not None) else vrow.get("value")
+        try:
+            value = round(float(value or 0), 1)
+        except (TypeError, ValueError):
+            value = 0.0
+        name = meta.get("full_name") or meta.get("name") or (
+            (str(meta.get("first_name") or "") + " " + str(meta.get("last_name") or "")).strip()
+        )
+        injury = str(meta.get("injury_status") or "").strip()
+        inj_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
+        snap.append({
+            "pid": spid,
+            "name": name or spid,
+            "pos": meta.get("position") or meta.get("pos") or "",
+            "value": value,
+            "injury": injury if inj_active else "",
+        })
+    return snap
+
+
 @app.route("/api/since-last-visit")
 def api_since_last_visit():
     """Powers the dashboard "Since your last visit" digest. Returns:
@@ -27999,36 +28649,7 @@ def api_since_last_visit():
     # visit so the account's new baseline is stored in the same request.
     if roster_id:
         try:
-            roster = next(
-                (r for r in (ctx.get("rosters") or []) if str(r.get("roster_id")) == roster_id),
-                None,
-            )
-            if roster:
-                vmap = {str(p.get("id")): p for p in (get_model_value_table_cached() or []) if p.get("id")}
-                pidx = get_players_index_global() or {}
-                snap = []
-                for pid in (roster.get("players") or []):
-                    spid = str(pid)
-                    meta = pidx.get(spid) or {}
-                    vrow = vmap.get(spid) or {}
-                    value = vrow.get("sf_value") if (is_sf and vrow.get("sf_value") is not None) else vrow.get("value")
-                    try:
-                        value = round(float(value or 0), 1)
-                    except (TypeError, ValueError):
-                        value = 0.0
-                    name = meta.get("full_name") or meta.get("name") or (
-                        (str(meta.get("first_name") or "") + " " + str(meta.get("last_name") or "")).strip()
-                    )
-                    injury = str(meta.get("injury_status") or "").strip()
-                    inj_active = bool(injury) and injury.upper() not in ("ACTIVE", "HEALTHY", "NA")
-                    snap.append({
-                        "pid": spid,
-                        "name": name or spid,
-                        "pos": meta.get("position") or meta.get("pos") or "",
-                        "value": value,
-                        "injury": injury if inj_active else "",
-                    })
-                result["roster"] = snap
+            result["roster"] = _slv_roster_snapshot(ctx, roster_id, is_sf)
         except Exception:
             logger.debug("since-last-visit roster snapshot failed", exc_info=True)
 
@@ -33810,6 +34431,22 @@ def api_beat_the_market():
         if not baseline_date:
             return jsonify({"error": "Insufficient history for requested window"}), 404
 
+        def _iso(d) -> str:
+            return d.isoformat() if hasattr(d, "isoformat") else str(d)
+
+        # Fetch rosters before the delta query: the response cache key
+        # fingerprints them, and a warm entry skips the (uncached) delta
+        # query over the full value-history table entirely.
+        rosters = get_rosters(platform, league_id, season) or []
+        users = get_users(platform, league_id, season) or []
+
+        _bm_key = (platform, league_id, season, days, league_type, league_size,
+                   _iso(latest_date_obj), _iso(baseline_date),
+                   _roster_sig({"rosters": rosters}))
+        _bm_hit = _BEAT_MARKET_CACHE.get(_bm_key)
+        if _bm_hit and (time.time() - _bm_hit[0]) < _BEAT_MARKET_CACHE_TTL:
+            return jsonify(_bm_hit[1])
+
         # Fetch deltas for all players in one query
         with get_conn() as conn:
             rows = conn.execute(
@@ -33838,12 +34475,7 @@ def api_beat_the_market():
 
         delta_by_pid = {str(r["player_id"]): float(r["delta"]) for r in rows}
 
-        # Fetch rosters
-        rosters = get_rosters(platform, league_id, season) or []
-        roster_map = _build_roster_map(
-            get_users(platform, league_id, season) or [],
-            rosters
-        )
+        roster_map = _build_roster_map(users, rosters)
 
         # Aggregate per roster (only QB/RB/WR/TE players, ignore picks/K/DEF)
         CORE_POS = {"QB", "RB", "WR", "TE"}
@@ -33891,15 +34523,15 @@ def api_beat_the_market():
 
         results.sort(key=lambda x: x["vs_avg"], reverse=True)
 
-        def _iso(d) -> str:
-            return d.isoformat() if hasattr(d, "isoformat") else str(d)
-
-        return jsonify({
+        payload = {
             "latest_date": _iso(latest_date_obj),
             "baseline_date": _iso(baseline_date),
             "league_avg_delta": avg_delta,
             "rosters": results,
-        })
+        }
+        _prune_ttl_cache(_BEAT_MARKET_CACHE, _BEAT_MARKET_CACHE_MAX)
+        _BEAT_MARKET_CACHE[_bm_key] = (time.time(), payload)
+        return jsonify(payload)
 
     except Exception:
         logger.exception("[beat-the-market] Unexpected error")
@@ -33935,19 +34567,19 @@ def api_playoff_odds():
 
         from data_building.simulate_playoff_odds import (
             remaining_regular_season_weeks,
-            simulate_playoff_odds,
         )
+        # Read-only freshness probe: it drives the snapshot writes below
+        # (only a request that produced a fresh sim records one). The sim
+        # itself goes through the shared helper so this endpoint joins the
+        # same cache key/signature/TTL as every other consumer instead of
+        # hand-duplicating them and racing the page's background sim with
+        # a second, unguarded Monte Carlo on the request thread.
         _sim_key2 = (platform, str(league_id), season, "v3")
         _sim_sig2 = _playoff_sim_sig(ctx, platform)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
-        if (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL
-                and _sim_cached2.get("sig") == _sim_sig2):
-            odds = _sim_cached2["data"]
-            _fresh_sim = False
-        else:
-            odds = simulate_playoff_odds(ctx, platform=platform)
-            _PLAYOFF_SIM_CACHE[_sim_key2] = {"data": odds, "ts": time.time(), "sig": _sim_sig2}
-            _fresh_sim = True
+        _fresh_sim = not (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL
+                          and _sim_cached2.get("sig") == _sim_sig2)
+        odds = _playoff_sim_cached(ctx, platform, block=True)
 
         settings = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)
@@ -35701,6 +36333,136 @@ def api_trade_intel_trending():
         })
 
 
+def _trade_intel_player_payload(conn, player_id, season, league_type,
+                                league_size, players_map, rk_year, extras=None):
+    """The exact payload of /api/trade-intel/player/<id> for one player.
+
+    Shared by the single endpoint and the batch endpoint so the trade
+    calculator's per-edit intel fan-out costs one request instead of one
+    per player. ``extras`` may carry a precomputed
+    trade_intel_card_extras() result for a whole id list; its per-player
+    entries are identical to the single-id call's.
+    """
+    fmt = "sf" if league_type == "sf" else "1qb"
+    raw_col = f"value_{fmt}"
+    cal_col = f"calibrated_value_{fmt}"
+
+    _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
+    sz_suffix = _SZ_MAP.get(league_size, "")
+
+    sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
+    if sz_col and _trade_intel_col_exists(conn, sz_col):
+        value_col_expr = f"COALESCE(s.{sz_col}, s.market_value_{fmt})"
+    else:
+        value_col_expr = f"s.market_value_{fmt}"
+
+    stat_row = conn.execute(
+        f"""
+        SELECT
+            s.*,
+            {value_col_expr}                                                AS market_value,
+            COALESCE(rk.rookie_value, pv.{raw_col})                         AS model_value,
+            COALESCE(rk.rookie_value, pv.{cal_col}, pv.{raw_col})           AS calibrated_value,
+            pv.calibration_source,
+            COALESCE(pv.position, rp.position)       AS position,
+            COALESCE(pv.team, rp.actual_nfl_team)    AS team
+        FROM trade_intel_player_stats s
+        LEFT JOIN player_values pv ON pv.player_id = s.player_id
+        LEFT JOIN rookie_prospects rp ON rp.sleeper_id = s.player_id
+                                     AND rp.draft_class_year = %s
+        LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
+                                    AND rk.draft_class_year = rp.draft_class_year
+        WHERE s.player_id = %s AND s.season = %s
+          AND s.league_format = 'all'
+        """,
+        (rk_year, player_id, season)
+    ).fetchone()
+
+    package_rows = conn.execute(
+        """
+        SELECT package_key, occurrence_count
+        FROM trade_intel_packages
+        WHERE anchor_player_id = %s AND season = %s
+        ORDER BY occurrence_count DESC
+        LIMIT 10
+        """,
+        (player_id, season)
+    ).fetchall()
+
+    def _resolve_package(pkg_key: str) -> list[dict]:
+        companions = []
+        for pid in pkg_key.split("|"):
+            if not pid:
+                continue
+            info = players_map.get(pid, {})
+            companions.append({
+                "player_id": pid,
+                "name": info.get("name", pid),
+                "position": info.get("pos"),
+            })
+        return companions
+
+    common_packages = [
+        {
+            "companions": _resolve_package(r["package_key"]),
+            "occurrence_count": r["occurrence_count"],
+        }
+        for r in package_rows
+        if r["package_key"]
+    ]
+
+    if not stat_row:
+        return {
+            "player_id": player_id,
+            "season": season,
+            "trade_count": 0,
+            "common_packages": common_packages,
+            "velocity": {"recent_90d": 0, "prior_90d": 0, "trend": None},
+            "buyer_split": {},
+        }
+
+    model_val = float(stat_row["model_value"] or 0)
+    market_val = float(stat_row["market_value"] or 0)
+    calibrated_val = float(stat_row["calibrated_value"] or 0)
+    # Delta is market vs raw model - shows how much the model diverges from real trades
+    delta = round(market_val - model_val, 1) if model_val and market_val else None
+
+    # Market-intel extras for the card (90d heat + buyer split).
+    # Best-effort: the card renders fine without them.
+    _velocity = {"recent_90d": 0, "prior_90d": 0, "trend": None}
+    _buyer_split = {}
+    if extras is not None:
+        _e = extras.get(str(player_id)) or {}
+        _velocity = _e.get("velocity") or _velocity
+        _buyer_split = _e.get("buyer_split") or {}
+    else:
+        try:
+            _extras = trade_intel_card_extras([player_id])
+            _e = _extras.get(str(player_id)) or {}
+            _velocity = _e.get("velocity") or _velocity
+            _buyer_split = _e.get("buyer_split") or {}
+        except Exception:
+            logger.debug("trade-intel card extras failed", exc_info=True)
+
+    return {
+        "player_id": player_id,
+        "season": season,
+        "trade_count_7d": stat_row["trade_count_7d"],
+        "trade_count_30d": stat_row["trade_count_30d"],
+        "trade_count_all": stat_row["trade_count"],
+        "market_value": market_val or None,
+        "model_value": model_val or None,
+        "calibrated_value": calibrated_val or None,
+        "calibration_source": stat_row["calibration_source"],
+        "value_delta": delta,
+        "buy_sell_ratio": float(stat_row["buy_sell_ratio"]) if stat_row["buy_sell_ratio"] else None,
+        "avg_package_value": float(stat_row["avg_package_value"]) if stat_row["avg_package_value"] else None,
+        "common_packages": common_packages,
+        "velocity": _velocity,
+        "buyer_split": _buyer_split,
+    }
+
+
 @app.route("/api/trade-intel/player/<player_id>")
 def api_trade_intel_player(player_id: str):
     """
@@ -35716,129 +36478,63 @@ def api_trade_intel_player(player_id: str):
         league_type = str(request.args.get("league_type") or "1qb").strip().lower()
         league_size = int(request.args.get("league_size") or 10)
 
-        fmt = "sf" if league_type == "sf" else "1qb"
-        raw_col = f"value_{fmt}"
-        cal_col = f"calibrated_value_{fmt}"
-
-        _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
-        sz_suffix = _SZ_MAP.get(league_size, "")
-
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_tip
         _rk_year_p = _garc_tip()
-
-        with get_conn() as conn:
-            sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
-            if sz_col and _trade_intel_col_exists(conn, sz_col):
-                value_col_expr = f"COALESCE(s.{sz_col}, s.market_value_{fmt})"
-            else:
-                value_col_expr = f"s.market_value_{fmt}"
-
-            stat_row = conn.execute(
-                f"""
-                SELECT
-                    s.*,
-                    {value_col_expr}                                                AS market_value,
-                    COALESCE(rk.rookie_value, pv.{raw_col})                         AS model_value,
-                    COALESCE(rk.rookie_value, pv.{cal_col}, pv.{raw_col})           AS calibrated_value,
-                    pv.calibration_source,
-                    COALESCE(pv.position, rp.position)       AS position,
-                    COALESCE(pv.team, rp.actual_nfl_team)    AS team
-                FROM trade_intel_player_stats s
-                LEFT JOIN player_values pv ON pv.player_id = s.player_id
-                LEFT JOIN rookie_prospects rp ON rp.sleeper_id = s.player_id
-                                             AND rp.draft_class_year = %s
-                LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
-                                            AND rk.draft_class_year = rp.draft_class_year
-                WHERE s.player_id = %s AND s.season = %s
-                  AND s.league_format = 'all'
-                """,
-                (_rk_year_p, player_id, season)
-            ).fetchone()
-
-            package_rows = conn.execute(
-                """
-                SELECT package_key, occurrence_count
-                FROM trade_intel_packages
-                WHERE anchor_player_id = %s AND season = %s
-                ORDER BY occurrence_count DESC
-                LIMIT 10
-                """,
-                (player_id, season)
-            ).fetchall()
-
         from utils.utils import load_players_index
         players_map = load_players_index() or {}
 
-        def _resolve_package(pkg_key: str) -> list[dict]:
-            companions = []
-            for pid in pkg_key.split("|"):
-                if not pid:
-                    continue
-                info = players_map.get(pid, {})
-                companions.append({
-                    "player_id": pid,
-                    "name": info.get("name", pid),
-                    "position": info.get("pos"),
-                })
-            return companions
-
-        common_packages = [
-            {
-                "companions": _resolve_package(r["package_key"]),
-                "occurrence_count": r["occurrence_count"],
-            }
-            for r in package_rows
-            if r["package_key"]
-        ]
-
-        if not stat_row:
-            return jsonify({
-                "player_id": player_id,
-                "season": season,
-                "trade_count": 0,
-                "common_packages": common_packages,
-                "velocity": {"recent_90d": 0, "prior_90d": 0, "trend": None},
-                "buyer_split": {},
-            })
-
-        model_val = float(stat_row["model_value"] or 0)
-        market_val = float(stat_row["market_value"] or 0)
-        calibrated_val = float(stat_row["calibrated_value"] or 0)
-        # Delta is market vs raw model - shows how much the model diverges from real trades
-        delta = round(market_val - model_val, 1) if model_val and market_val else None
-
-        # Market-intel extras for the card (90d heat + buyer split).
-        # Best-effort: the card renders fine without them.
-        _velocity = {"recent_90d": 0, "prior_90d": 0, "trend": None}
-        _buyer_split = {}
-        try:
-            _extras = trade_intel_card_extras([player_id])
-            _e = _extras.get(str(player_id)) or {}
-            _velocity = _e.get("velocity") or _velocity
-            _buyer_split = _e.get("buyer_split") or {}
-        except Exception:
-            logger.debug("trade-intel card extras failed", exc_info=True)
-
-        return jsonify({
-            "player_id": player_id,
-            "season": season,
-            "trade_count_7d": stat_row["trade_count_7d"],
-            "trade_count_30d": stat_row["trade_count_30d"],
-            "trade_count_all": stat_row["trade_count"],
-            "market_value": market_val or None,
-            "model_value": model_val or None,
-            "calibrated_value": calibrated_val or None,
-            "calibration_source": stat_row["calibration_source"],
-            "value_delta": delta,
-            "buy_sell_ratio": float(stat_row["buy_sell_ratio"]) if stat_row["buy_sell_ratio"] else None,
-            "avg_package_value": float(stat_row["avg_package_value"]) if stat_row["avg_package_value"] else None,
-            "common_packages": common_packages,
-            "velocity": _velocity,
-            "buyer_split": _buyer_split,
-        })
+        with get_conn() as conn:
+            payload = _trade_intel_player_payload(
+                conn, player_id, season, league_type, league_size,
+                players_map, _rk_year_p)
+        return jsonify(payload)
 
     except Exception:
         logger.exception("[trade-intel/player] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/players")
+def api_trade_intel_players():
+    """Batch form of /api/trade-intel/player/<id>: ?ids=a,b,c plus the same
+    season / league_type / league_size params. Returns
+    {"players": {id: payload}} with per-player payloads identical to the
+    single endpoint's. A player whose payload build fails is omitted; the
+    client treats that like a failed single call and renders the rest.
+    """
+    from dashboard_services.db import get_conn
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+        league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+        league_size = int(request.args.get("league_size") or 10)
+        ids = [p.strip() for p in str(request.args.get("ids") or "").split(",") if p.strip()]
+        ids = list(dict.fromkeys(ids))[:40]
+        if not ids:
+            return jsonify({"season": season, "players": {}})
+
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_tip
+        _rk_year_p = _garc_tip()
+        from utils.utils import load_players_index
+        players_map = load_players_index() or {}
+        try:
+            extras = trade_intel_card_extras(ids)
+        except Exception:
+            extras = {}
+
+        players = {}
+        with get_conn() as conn:
+            for pid in ids:
+                try:
+                    players[pid] = _trade_intel_player_payload(
+                        conn, pid, season, league_type, league_size,
+                        players_map, _rk_year_p, extras=extras)
+                except Exception:
+                    logger.debug("[trade-intel/players] payload failed for %s",
+                                 pid, exc_info=True)
+        return jsonify({"season": season, "players": players})
+
+    except Exception:
+        logger.exception("[trade-intel/players] error")
         return jsonify({"error": "Internal error"}), 500
 
 

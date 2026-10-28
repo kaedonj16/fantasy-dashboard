@@ -19,6 +19,10 @@ def state(monkeypatch):
     monkeypatch.setattr(store, "_TABLE_READY", False)
     monkeypatch.setattr(store, "get_conn", lambda *a, **k: conn)
     monkeypatch.setattr(service, "_active_plan", lambda key: None)
+    service._clear_resolve_snapshot_cache()
+    # Digest builds run on a background thread in production; run them
+    # inline here so context tests stay deterministic.
+    monkeypatch.setattr(service, "_spawn_digest_thread", lambda fn: fn())
     monkeypatch.setattr(service.ctx_mod, "resolve_league", lambda key, **kw: dict(BUNDLE))
     return st
 
@@ -81,14 +85,48 @@ def test_context_happy_path_and_teaser_generated_once(app, state, monkeypatch):
         ("free", 25, True), ("starter", 100, False),
         ("all_pro", 250, False), ("hall_of_fame", 1000, False),
     ]
-    assert body["teaser"]["kind"] == "digest"
-    assert body["teaser"]["title"] == "Your Week 7 moves are ready"
-    assert body["teaser"]["lead"] == "Start Odunze"
+    # The GET never composes inline: the first fetch only kicks the
+    # (here, inline-run) background build, so it serves no teaser even
+    # though the compose has now happened exactly once.
+    assert body["teaser"] is None
     assert calls["n"] == 1
 
     r2 = c.get("/api/assistant/context")
-    assert r2.get_json()["teaser"]["lead"] == "Start Odunze"
+    teaser = r2.get_json()["teaser"]
+    assert teaser["kind"] == "digest"
+    assert teaser["title"] == "Your Week 7 moves are ready"
+    assert teaser["lead"] == "Start Odunze"
     assert calls["n"] == 1  # second fetch served from the stored proactive row
+
+
+def test_context_get_never_composes_or_builds_inline(app, state, monkeypatch):
+    # With the background spawn captured (not run), the GET must leave
+    # builder and compose untouched and request exactly one kick.
+    counts = {"build": 0, "compose": 0, "kick": 0}
+
+    def fake_builder(bundle, entities, player_ids=None):
+        counts["build"] += 1
+        return ({"type": "this_week", "available": True, "actions": [], "as_of": {}}, [])
+
+    def fake_compose(intent, question, pack, *, preferences, assumed_context, history=None):
+        counts["compose"] += 1
+        return {"verdict": None, "text": "x", "receipts": [], "caveat": None,
+                "followups": [], "act_link": None, "actions": []}
+
+    monkeypatch.setitem(service.BUILDERS, "this_week", fake_builder)
+    monkeypatch.setattr(service, "compose_answer", fake_compose)
+    monkeypatch.setattr(service, "_spawn_digest_thread",
+                        lambda fn: counts.__setitem__("kick", counts["kick"] + 1))
+
+    c = _client(app)
+    body = c.get("/api/assistant/context?platform=sleeper&league_id=L1&season=2026").get_json()
+    assert body["teaser"] is None
+    assert counts == {"build": 0, "compose": 0, "kick": 1}
+    # Single-flight: a second GET while the first build is still marked
+    # in flight does not kick again.
+    body2 = c.get("/api/assistant/context?platform=sleeper&league_id=L1&season=2026").get_json()
+    assert body2["teaser"] is None
+    assert counts["kick"] == 1
 
 
 def test_context_caps_reflect_paid_tier(app, state, monkeypatch):

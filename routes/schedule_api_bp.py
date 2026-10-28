@@ -3,12 +3,22 @@ from __future__ import annotations
 import logging
 import os
 import json
+import time
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 from utils.utils import CACHE_DIR
 logger = logging.getLogger(__name__)
 
 schedule_api_bp = Blueprint("schedule_api_bp", __name__)
+
+# Bounded response cache for /api/schedule-strength: one handler run pays
+# a ctx load plus ~14-17 provider matchup fetches, so repeat opens within
+# the TTL serve the stored payload. Keyed on league/season/week/reg-weeks
+# plus a roster signature, so a roster change misses immediately. Error
+# responses are never cached.
+_SCHED_STRENGTH_CACHE: dict = {}  # key -> (ts, payload)
+_SCHED_STRENGTH_CACHE_TTL = 300  # 5 minutes
+_SCHED_STRENGTH_CACHE_MAX = 200  # entries; oldest ~10% evicted past the cap
 
 _SCHED_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b",
                      "TE": "#a855f7", "K": "#6b7280", "DEF": "#6b7280"}
@@ -54,6 +64,14 @@ def _sched_rank_color(*a, **k):
 
 def get_league_ctx_from_cache(*a, **k):
     from app import get_league_ctx_from_cache as _fn
+    return _fn(*a, **k)
+
+def _prune_ttl_cache(*a, **k):
+    from app import _prune_ttl_cache as _fn
+    return _fn(*a, **k)
+
+def _roster_sig(*a, **k):
+    from app import _roster_sig as _fn
     return _fn(*a, **k)
 
 def get_model_value_table_cached(*a, **k):
@@ -492,10 +510,6 @@ def api_schedule_strength():
             regular_season_length,
         )
 
-        rosters = get_rosters(platform, league_id, season) or []
-        users = get_users(platform, league_id, season) or []
-        roster_map = _build_roster_map(users, rosters)
-
         ctx = {}
         settings = {}
         try:
@@ -507,7 +521,21 @@ def api_schedule_strength():
             )
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+        # ctx-first: the resolved ctx already carries rosters / users /
+        # roster_map (the map is built by this same _build_roster_map);
+        # provider fetches are only the fallback when ctx lacks them.
+        rosters = ctx.get("rosters") or get_rosters(platform, league_id, season) or []
+        roster_map = ctx.get("roster_map") or {}
+        if not roster_map:
+            users = ctx.get("users") or get_users(platform, league_id, season) or []
+            roster_map = _build_roster_map(users, rosters)
         reg_weeks = regular_season_length(settings)
+
+        _ss_key = (platform, league_id, season, current_week, reg_weeks,
+                   _roster_sig({"rosters": rosters}))
+        _ss_hit = _SCHED_STRENGTH_CACHE.get(_ss_key)
+        if _ss_hit and (time.time() - _ss_hit[0]) < _SCHED_STRENGTH_CACHE_TTL:
+            return jsonify(_ss_hit[1])
 
         matchups_by_week: dict[int, list] = {}
         for w in range(1, reg_weeks + 1):
@@ -527,14 +555,17 @@ def api_schedule_strength():
             projected_avg_by_rid=proj or None,
         )
 
-        return jsonify({
+        payload = {
             "current_week": current_week,
             "weeks_remaining": max((t["games_remaining"] for t in results), default=0),
             "teams": results,
             "using_power_rankings": source == "even",
             "using_projections": source == "projected",
             "using_blend": source == "blended",
-        })
+        }
+        _prune_ttl_cache(_SCHED_STRENGTH_CACHE, _SCHED_STRENGTH_CACHE_MAX)
+        _SCHED_STRENGTH_CACHE[_ss_key] = (time.time(), payload)
+        return jsonify(payload)
 
     except Exception:
         logger.exception("[schedule-strength] Unexpected error")

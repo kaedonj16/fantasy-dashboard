@@ -272,11 +272,13 @@ def _luck_analysis(df_weekly_finalized) -> dict:
     return all_play_analysis(weekly_scores, actual_wins)
 
 
-def _luck_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict) -> str:
+def _luck_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict,
+               analysis: dict | None = None) -> str:
     """Performance vs Luck scatter (all-play win rate vs actual), with a
     plain-English read of the viewer's luck delta."""
     try:
-        analysis = _luck_analysis(df_weekly_finalized)
+        if analysis is None:
+            analysis = _luck_analysis(df_weekly_finalized)
         svg = luck_quadrant_svg(analysis, viewer_owner, owner_colors)
     except Exception:
         return ""
@@ -313,11 +315,13 @@ def _luck_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict) -> st
     )
 
 
-def _luck_delta_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict) -> str:
+def _luck_delta_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict,
+                     analysis: dict | None = None) -> str:
     """Luck Delta: diverging bars of actual wins minus all-play expected
     wins (same _luck_analysis as the scatter), sorted luckiest first."""
     try:
-        analysis = _luck_analysis(df_weekly_finalized)
+        if analysis is None:
+            analysis = _luck_analysis(df_weekly_finalized)
         rows = []
         for owner, a in (analysis or {}).items():
             if not a.get("games"):
@@ -1854,8 +1858,15 @@ def _season_panes(perf_ctx: dict, value_ctx: dict, viewer_owner: str, figs: dict
     owners = team_stats["owner"].tolist()
     owner_colors = owner_color_map(owners)
 
-    perf_html = _luck_card(df_weekly, viewer_owner, owner_colors)
-    perf_html += _luck_delta_card(df_weekly, viewer_owner, owner_colors)
+    # One luck analysis per build: the scatter and the delta bars both
+    # consume it, and the all-play pass over every finalized week is the
+    # perf pane's most expensive shared input.
+    try:
+        luck_analysis = _luck_analysis(df_weekly)
+    except Exception:
+        luck_analysis = None
+    perf_html = _luck_card(df_weekly, viewer_owner, owner_colors, analysis=luck_analysis)
+    perf_html += _luck_delta_card(df_weekly, viewer_owner, owner_colors, analysis=luck_analysis)
     box_detail = _boxplot_detail_html(df_weekly, owner_colors, figs)
     perf_html += _consistency_card(team_stats, owner_colors, viewer_owner, box_detail)
     perf_html += _floor_ceiling_card(team_stats, owner_colors, viewer_owner)

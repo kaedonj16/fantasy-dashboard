@@ -85,13 +85,13 @@ def test_changelog_and_sw_for_assistant_league_fix():
 
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[11]  # prepended above it: duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix, the trade fair-band fix
+    top = CHANGELOG[18]  # prepended above it: trade calculator dedupe, recap/standings dedupe, sitewide speed pass, Weekly Hub dedupe refresh, waivers/start-sit call consolidation, AM batch + players cache, ScoreZone user-cache speedup, My Leagues portfolio consolidation, duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix, the trade fair-band fix
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "BR Assistant" in top["text"]
     assert "—" not in top["text"]  # no em dashes in UI copy
     sw = (Path(__file__).resolve().parents[1] / "static" / "sw.js").read_text(encoding="utf-8")
-    assert "br-fantasy-v125" in sw
+    assert "br-fantasy-v126" in sw
 
 
 def test_explicit_league_still_wins(app_ctx):

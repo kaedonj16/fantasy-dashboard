@@ -1013,7 +1013,6 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     # accidentally asking it to index the original zero-column DataFrame.
     recap_ctx = dict(ctx)
     recap_ctx["df_weekly"] = fin_df
-    historical_ctx = build_standings_as_of_week(recap_ctx, selected_week)
     from dashboard_services.ai.context_builders import build_power_rankings_context
 
     # Power rankings must match the standings page for the same week. The
@@ -1027,6 +1026,13 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     # split, so all three surfaces agree week for week.
     _latest_final_week = available_weeks[-1] if available_weeks else selected_week
     _power_is_live = selected_week >= _latest_final_week
+    # On the live view nothing reads the capped team_stats: the standings
+    # rows come from the capped df_weekly and power comes from
+    # build_power_rankings_context (which never reads team_stats), so skip
+    # the finalize_team_stats pass for both capped builds. Historical views
+    # read the capped team_stats for power, so they keep the full build.
+    historical_ctx = build_standings_as_of_week(
+        recap_ctx, selected_week, include_team_stats=not _power_is_live)
 
     def _owner_to_rid_for(capped_ctx):
         mapping = {name: rid for rid, name in team_by_rid.items()}
@@ -1207,7 +1213,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     prior_standings = []
     prior_power_teams = []
     if selected_week > 1:
-        prior_ctx = build_standings_as_of_week(recap_ctx, selected_week - 1)
+        prior_ctx = build_standings_as_of_week(
+            recap_ctx, selected_week - 1, include_team_stats=not _power_is_live)
         prior_standings = _standings_rows(prior_ctx)
         # Same split as the current week (like-for-like movement): when the
         # recap week is live, standings movement also baselines on the

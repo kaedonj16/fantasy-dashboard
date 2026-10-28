@@ -400,8 +400,7 @@ def page_graphs(platform: str, season: int, league_id: str):
         )
 
     # Career view aggregates every past season (slow on a cold cache) -> build in
-    # the background and show a skeleton. Season views are a single, light league
-    # context, so render them inline.
+    # the background and show a skeleton.
     if view == "career":
         return _serve_cached_or_background(
             # v2 invalidates HTML built before career rows were keyed by stable
@@ -412,8 +411,21 @@ def page_graphs(platform: str, season: int, league_id: str):
             "Building career graphs",
         )
 
-    body_html = _render(view, members, tab)
-    return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
+    # Season views build all three tab panes (18 card builders) on every
+    # load, so they take the same shared page-HTML cache as career: same
+    # TTL and league-bust invalidation, keyed on the viewed season + tab +
+    # viewer (the body highlights the viewer's team). ``members`` has no
+    # effect on season HTML (career-only filter), so it stays out of the
+    # key; no finer data stamp exists at this layer, so freshness rides
+    # the shared page-cache TTL/bust exactly like the career view.
+    cache_view = view if view.isdigit() else str(season)
+    return _serve_cached_or_background(
+        platform, season, league_id,
+        f"graphs:season:v1:{cache_view}:{tab}:vwr{viewer_rid or 'anon'}",
+        "BR Fantasy Graphs", "graphs",
+        lambda: _render(view, members, tab),
+        "Building season graphs",
+    )
 
 
 # ── League history ────────────────────────────────────────────────────────────

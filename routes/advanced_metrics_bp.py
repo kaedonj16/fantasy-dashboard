@@ -6,6 +6,7 @@ at start-up stays free of a circular import."""
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from datetime import datetime
 
@@ -55,12 +56,77 @@ def get_players_global(*a, **k):
     return _fn(*a, **k)
 
 
-@advanced_metrics_bp.route("/api/advanced-metrics/leaderboard")
-def api_advanced_metrics_leaderboard():
-    """Players ranked by a single advanced metric, for the Advanced Metrics page.
+# ── Enriched-response cache ──────────────────────────────────────────────────
+# The leaderboard builders in data_building.advanced_metrics are daily-cached,
+# but the ENRICHED response built here (years_exp attach + per-row season-team
+# resolution over up to 500 rows) was recomputed on every call, and the page's
+# preset load fires one call per metric per season. Cache the finished payload
+# keyed on the EFFECTIVE request parameters (metric, position, seasons,
+# effective min_vol, combine, week range, and num_teams for value metrics).
+#
+# PRO safety: the cache is consulted ONLY after the per-metric gates pass
+# (unknown metric 400, premium-not-exposed 403, PRO-metric-without-premium
+# 403), and it is keyed without any viewer identity because the payload is
+# viewer-independent once the gate has passed -- the gate itself runs on
+# every request, cache hit or not, so a free viewer can never receive a PRO
+# metric's payload from an entry a PRO viewer warmed.
+#
+# Bound: at most _LB_CACHE_MAX entries, TTL _ADVANCED_METRICS_TTL seconds
+# (the module convention), oldest pruned on write.
+_LB_CACHE: dict = {}
+_LB_CACHE_LOCK = threading.Lock()
+_LB_CACHE_MAX = 256
+_LB_BATCH_MAX_METRICS = 24
 
-    Premium-gated. Query params: metric (required, whitelisted), position (optional),
-    league_id/platform (for the premium check).
+
+def _lb_cache_get(key):
+    import time as _time
+
+    with _LB_CACHE_LOCK:
+        ent = _LB_CACHE.get(key)
+        if ent and _time.time() - ent[0] < _ADVANCED_METRICS_TTL:
+            return ent[1]
+    return None
+
+
+def _lb_cache_put(key, payload):
+    import time as _time
+
+    with _LB_CACHE_LOCK:
+        _LB_CACHE[key] = (_time.time(), payload)
+        while len(_LB_CACHE) > _LB_CACHE_MAX:
+            oldest = min(_LB_CACHE, key=lambda k: _LB_CACHE[k][0])
+            _LB_CACHE.pop(oldest, None)
+
+
+def _lb_enrich_ctx():
+    """Per-request enrich state shared across a batch: the full players feed
+    is loaded at most once, and season-team stints are resolved at most once
+    per (player, season) no matter how many metrics in the batch carry the
+    same player rows."""
+    return {"players_global": None, "team_stints": {}}
+
+
+def _lb_teams_in_season(ctx, player_id, season):
+    key = (str(player_id), int(season))
+    stints = ctx["team_stints"].get(key)
+    if stints is None:
+        from data_building.external_data.player_team_history import teams_in_season
+
+        stints = teams_in_season(str(player_id), int(season)) or []
+        ctx["team_stints"][key] = stints
+    return stints
+
+
+def _compute_leaderboard_payload(q, premium_check, enrich_ctx):
+    """Compute one leaderboard payload. Returns (status, payload_dict).
+
+    ``q`` maps raw query-param names to strings (the route passes
+    request.args; the batch path passes per-metric overrides of the shared
+    args). ``premium_check`` is a zero-arg callable for the per-user PRO
+    check, evaluated lazily and at most once per request by the caller.
+    Gate order (unknown metric, premium-not-exposed, PRO) and the payload
+    shape are exactly the historical single-metric route's.
     """
     from data_building.advanced_metrics import (
         get_metric_leaderboard, get_weekly_range_leaderboard,
@@ -72,17 +138,17 @@ def api_advanced_metrics_leaderboard():
         parse_season_list,
     )
 
-    metric = (request.args.get("metric") or "opportunity_share").strip()
+    metric = (q.get("metric") or "opportunity_share").strip()
     if metric not in LEADERBOARD_METRICS:
-        return jsonify({"error": "unknown metric"}), 400
+        return 400, {"error": "unknown metric"}
     # Premium (PFF) metrics are not displayable publicly.
     if metric in PREMIUM_METRICS and not premium_metrics_exposed():
-        return jsonify({"error": "metric not available"}), 403
+        return 403, {"error": "metric not available"}
     # PRO intelligence metrics require a per-user subscription.
-    if metric in PRO_METRICS and not _request_has_premium():
-        return jsonify({"error": "pro_only"}), 403
-    position = (request.args.get("position") or "").strip().upper() or None
-    season_str = (request.args.get("season") or "").strip()
+    if metric in PRO_METRICS and not premium_check():
+        return 403, {"error": "pro_only"}
+    position = (q.get("position") or "").strip().upper() or None
+    season_str = (q.get("season") or "").strip()
     selected_seasons = parse_season_list(season_str)
     # One year stays an int (existing cache/SQL path). Several years are a list
     # so the leaderboard returns one row per player-season.
@@ -92,12 +158,12 @@ def api_advanced_metrics_leaderboard():
         season = selected_seasons[0]
     else:
         season = None
-    min_vol_str = (request.args.get("min_vol") or "").strip()
+    min_vol_str = (q.get("min_vol") or "").strip()
     min_vol = int(min_vol_str) if min_vol_str.isdigit() else None
-    combine_raw = (request.args.get("combine") or "").strip().lower()
+    combine_raw = (q.get("combine") or "").strip().lower()
     combine = combine_raw in ("1", "true", "yes")
-    week_start_str = (request.args.get("week_start") or "").strip()
-    week_end_str   = (request.args.get("week_end") or "").strip()
+    week_start_str = (q.get("week_start") or "").strip()
+    week_end_str   = (q.get("week_end") or "").strip()
     # Week filtering is all-or-nothing. Invalid values are ignored; valid NFL
     # weeks are clamped and reversed ranges are normalized.
     week_start = int(week_start_str) if week_start_str.isdigit() else None
@@ -133,21 +199,37 @@ def api_advanced_metrics_leaderboard():
             _full_default = int(_opts[0]) if _opts else 1
             min_vol = qualification.minimum(_mv.get("col") or "games", _full_default)
 
+    # Value metrics (VORP/WAR) are league-size aware; derive num_teams from
+    # the league context when available, else standard 12-team. Resolved
+    # before the cache lookup because num_teams is part of the cache key.
+    # Multi-season value rows go through get_metric_leaderboard so each
+    # year is computed separately and stamped.
+    _num_teams = 12
+    if metric in VALUE_METRICS and not is_multi_season:
+        try:
+            _league_id = (q.get("league_id") or "").strip()
+            _platform = (q.get("platform") or "sleeper").strip()
+            if _league_id:
+                _ctx = get_league_ctx_from_cache(_platform, _league_id, season) or {}
+                _num_teams = int(_ctx.get("total_rosters") or 0) or 12
+        except Exception:
+            _num_teams = 12
+
+    # Enriched-response cache: consulted only now that the gates above have
+    # passed for THIS viewer (see the _LB_CACHE note). The key carries every
+    # effective parameter that shapes the payload.
+    _cache_key = (
+        metric, position, tuple(selected_seasons), min_vol, bool(combine),
+        week_start if is_week_filtered else None,
+        week_end if is_week_filtered else None,
+        _num_teams if (metric in VALUE_METRICS and not is_multi_season) else None,
+    )
+    _cached = _lb_cache_get(_cache_key)
+    if _cached is not None:
+        return 200, _cached
+
     try:
         if metric in VALUE_METRICS and not is_multi_season:
-            # Value metrics (VORP/WAR) are league-size aware; derive num_teams
-            # from the league context when available, else standard 12-team.
-            # Multi-season value rows go through get_metric_leaderboard so each
-            # year is computed separately and stamped.
-            _num_teams = 12
-            try:
-                _league_id = (request.args.get("league_id") or "").strip()
-                _platform = (request.args.get("platform") or "sleeper").strip()
-                if _league_id:
-                    _ctx = get_league_ctx_from_cache(_platform, _league_id, season) or {}
-                    _num_teams = int(_ctx.get("total_rosters") or 0) or 12
-            except Exception:
-                _num_teams = 12
             players = get_value_leaderboard(
                 metric, position=position, season=season, num_teams=_num_teams,
             )
@@ -175,12 +257,14 @@ def api_advanced_metrics_leaderboard():
         # with players=[] made the client render the "No data yet" empty
         # state for a server fault, with no retry affordance.
         logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
-        return jsonify({"error": "leaderboard_failed"}), 500
+        return 500, {"error": "leaderboard_failed"}
 
     # Attach experience so the client can offer a rookie/years-exp filter; the
     # reduced players index has no years_exp, so read the full feed (cached).
     try:
-        _full_players_lb = get_players_global() or {}
+        if enrich_ctx["players_global"] is None:
+            enrich_ctx["players_global"] = get_players_global() or {}
+        _full_players_lb = enrich_ctx["players_global"]
         for _p in players or []:
             if "years_exp" not in _p:
                 _p["years_exp"] = (
@@ -200,7 +284,6 @@ def api_advanced_metrics_leaderboard():
     if selected_seasons:
         try:
             from data_building.external_data.player_current_team import normalize_nfl_team
-            from data_building.external_data.player_team_history import teams_in_season
             for _p in players or []:
                 years = _p.get("seasons") or (
                     [_p["season"]] if _p.get("season") is not None else selected_seasons
@@ -212,7 +295,7 @@ def api_advanced_metrics_leaderboard():
                         year_i = int(year)
                     except (TypeError, ValueError):
                         continue
-                    for stint in teams_in_season(str(_p.get("player_id")), year_i) or []:
+                    for stint in _lb_teams_in_season(enrich_ctx, _p.get("player_id"), year_i):
                         # teams_in_season resolves in history form (Rams = LA);
                         # rows elsewhere carry the site form (LAR) from the
                         # players index. Stamp site form so the team filter
@@ -240,7 +323,7 @@ def api_advanced_metrics_leaderboard():
 
     spec = LEADERBOARD_METRICS[metric]
     vol_col = (spec.get("min_vol") or {}).get("col") or "games"
-    resp = jsonify({
+    payload = {
         "metric": metric,
         "label": spec["label"],
         "positions": spec["positions"],
@@ -257,10 +340,80 @@ def api_advanced_metrics_leaderboard():
             "provisional": qualification.provisional, "note": qualification.note(),
             "default_min_vol": min_vol} if qualification else None),
         "players": players,
-    })
-    # Leaderboard data is rebuilt at most daily, so let the browser reuse the
-    # response for a few minutes -- makes graph reopens / metric toggles instant
-    # even across page reloads within a session.
+    }
+    _lb_cache_put(_cache_key, payload)
+    return 200, payload
+
+
+def _lb_premium_check_memo():
+    """A lazily-evaluated, once-per-request premium check shared by every
+    metric in a (batch) request: the check reads request-level args, so one
+    evaluation serves all metrics exactly as repeated calls would."""
+    state = {}
+
+    def _check():
+        if "v" not in state:
+            state["v"] = _request_has_premium()
+        return state["v"]
+
+    return _check
+
+
+@advanced_metrics_bp.route("/api/advanced-metrics/leaderboard")
+def api_advanced_metrics_leaderboard():
+    """Players ranked by a single advanced metric, for the Advanced Metrics page.
+
+    Premium-gated. Query params: metric (required, whitelisted), position (optional),
+    league_id/platform (for the premium check).
+
+    Batch mode: pass ``metrics=a,b,c`` (plus optional ``min_vol_map=a:5,b:8``
+    per-metric thresholds; every other param is shared) and the response is
+    ``{"results": {metric: payload | {"error": ..., "status": ...}}}`` with a
+    200 status, so a preset's extra columns cost ONE request whose preamble
+    (premium evaluation, players feed, season-team stints) is paid once,
+    while each metric still passes its own gates.
+    """
+    metrics_param = (request.args.get("metrics") or "").strip()
+    if metrics_param:
+        return _leaderboard_batch_response(metrics_param)
+    status, payload = _compute_leaderboard_payload(
+        request.args, _lb_premium_check_memo(), _lb_enrich_ctx())
+    resp = jsonify(payload)
+    if status == 200:
+        # Leaderboard data is rebuilt at most daily, so let the browser reuse
+        # the response for a few minutes -- makes graph reopens / metric
+        # toggles instant even across page reloads within a session.
+        resp.headers["Cache-Control"] = "private, max-age=300"
+    return resp, status
+
+
+def _leaderboard_batch_response(metrics_param):
+    raw = [m.strip() for m in metrics_param.split(",") if m.strip()]
+    metrics = list(dict.fromkeys(raw))[:_LB_BATCH_MAX_METRICS]
+    if not metrics:
+        return jsonify({"error": "unknown metric"}), 400
+    vol_map = {}
+    for pair in (request.args.get("min_vol_map") or "").split(","):
+        if ":" in pair:
+            k, v = pair.split(":", 1)
+            vol_map[k.strip()] = v.strip()
+    shared = dict(request.args)
+    shared.pop("metrics", None)
+    shared.pop("min_vol_map", None)
+    premium_check = _lb_premium_check_memo()
+    enrich_ctx = _lb_enrich_ctx()
+    results = {}
+    for m in metrics:
+        q = dict(shared)
+        q["metric"] = m
+        if m in vol_map:
+            q["min_vol"] = vol_map[m]
+        status, payload = _compute_leaderboard_payload(q, premium_check, enrich_ctx)
+        if status == 200:
+            results[m] = payload
+        else:
+            results[m] = {"error": payload.get("error"), "status": status}
+    resp = jsonify({"results": results})
     resp.headers["Cache-Control"] = "private, max-age=300"
     return resp
 
