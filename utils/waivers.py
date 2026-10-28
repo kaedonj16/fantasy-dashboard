@@ -750,14 +750,19 @@ def pick_waiver_push_candidate(
     *,
     min_value: float = 500.0,
     players: dict | None = None,
+    value_key: str = "value",
+    fallback_key: str | None = None,
 ) -> dict | None:
     """Top free-agent for the hourly waiver push (R05.4).
 
-    Prefers higher dynasty value among skill-position players who still have an
+    Prefers higher value among skill-position players who still have an
     NFL team. Players with a serious injury designation are never picked: a
     push telling a manager to add a player who is OUT or on IR is worse than
     no push. ``players`` is the Sleeper players feed ({pid: meta}); when it is
     unavailable the injury screen is skipped rather than failing the push.
+    ``value_key`` / ``fallback_key`` select the value column the candidate is
+    priced on (primary-then-fallback, e.g. the league format's redraft
+    columns); the defaults preserve the historical dynasty ``value`` read.
     Returns ``{name, position, value, player_id}`` or None.
     """
     available = []
@@ -778,10 +783,15 @@ def pick_waiver_push_candidate(
             meta = players.get(pid) or players.get(str(pid)) or {}
             if is_seriously_hurt(meta.get("injury_status") or meta.get("status")):
                 continue
-        try:
-            val = float(p.get("value") or 0)
-        except (TypeError, ValueError):
-            val = 0.0
+        val = 0.0
+        for _k in (value_key, fallback_key):
+            if not _k or p.get(_k) is None:
+                continue
+            try:
+                val = float(p.get(_k) or 0)
+            except (TypeError, ValueError):
+                val = 0.0
+            break
         if val < float(min_value):
             continue
         available.append({

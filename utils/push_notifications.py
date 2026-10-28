@@ -1599,6 +1599,82 @@ def _unlink_dead_league(league_id, platform):
 
 
 _league_name_cache: dict = {}
+_league_format_cache: dict = {}
+
+# Live-served values (verified 2026-10-28 from /api/league-players) top
+# out at ~1100 for the single most valuable player in both formats
+# (dynasty Gibbs 1095.1, redraft Gibbs 1100.9; size/SF variants peak at
+# ~1188), so the old HIGH_VALUE = 3000 / DROP_THRESHOLD = 2000 cutoffs
+# sat 2-3x above the ceiling and could never fire. 600 / 400 sit at the
+# real scale's "clearly elite" / "clearly startable" bands.
+HIGH_VALUE = 600
+DROP_THRESHOLD = 400
+
+
+def _league_format(platform, league_id, season):
+    """Canonical format flags for one league (dynasty / redraft / keeper,
+    1QB / SF), memoized per run.
+
+    Resolved via platform_api.get_league + the same classifier the weekly
+    email digest uses. Any failure (or an unresolvable league) falls back
+    to the classifier's own default -- dynasty -- and never raises into a
+    notify loop.
+    """
+    key = (str(platform or ""), str(league_id or ""), str(season or ""))
+    if key in _league_format_cache:
+        return _league_format_cache[key]
+    fmt = None
+    try:
+        from utils.league import classify_league_roster_format
+        league = {}
+        if season:
+            from dashboard_services.platform_api import get_league
+            league = get_league(platform, str(league_id), int(season)) or {}
+        fmt = classify_league_roster_format(league=league, platform=platform)
+        if isinstance(league, dict):
+            size = league.get("total_rosters")
+            if size is None and isinstance(league.get("settings"), dict):
+                size = league["settings"].get("num_teams")
+            try:
+                size = int(size)
+            except (TypeError, ValueError):
+                size = None
+            if size in (8, 10, 12, 14):
+                fmt["league_size"] = size
+    except Exception:
+        fmt = None
+    if not isinstance(fmt, dict) or not fmt:
+        fmt = {
+            "type": "dynasty", "is_dynasty": True, "is_redraft": False,
+            "is_keeper": False, "is_superflex": False, "qb_format": "1qb",
+        }
+    _league_format_cache[key] = fmt
+    return fmt
+
+
+def _format_value(row, fmt):
+    """A player row's value on the league's own format scale.
+
+    Primary-then-fallback columns from value_keys_for_format -- exactly
+    the lookup the weekly email digest's waiver recommendations use, so a
+    redraft league is priced on redraft values (falling back to the
+    dynasty column only when the served row carries no redraft price).
+    """
+    if not isinstance(row, dict):
+        return 0.0
+    try:
+        from utils.digest import value_keys_for_format
+        primary, fallback = value_keys_for_format(fmt or {})
+    except Exception:
+        primary, fallback = "value", "value"
+    for k in (primary, fallback):
+        v = row.get(k)
+        if v is not None:
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+    return 0.0
 
 
 def _league_display_name(platform, league_id, season):
@@ -2195,7 +2271,13 @@ def notify_injury_flip():
 # ── Notification 2: Value drops on rostered players ───────────────────────────
 
 def notify_value_drops():
-    """Notify owners when a player on their roster drops significantly in dynasty value."""
+    """Notify owners when a player on their roster drops significantly in value.
+
+    Format-aware: dynasty leagues are priced on dynasty movers, redraft /
+    keeper leagues on redraft movers (redraft history only started
+    accruing with PR #2845, so until a baseline exists a redraft league
+    simply gets no alert -- it never falls back to dynasty movers).
+    """
     try:
         from dashboard_services.db import get_conn
         from dashboard_services.player_value_history import get_top_movers
@@ -2212,10 +2294,32 @@ def notify_value_drops():
         if not leagues:
             return
 
-        movers  = get_top_movers(days=7, limit=50)
-        fallers = [f for f in movers.get("fallers", []) if (f.get("delta") or 0) < -30]
-        if not fallers:
-            return
+        # Each format's movers are computed lazily, at most once per run
+        # (keyed by the QB format / size the movers query is priced on).
+        _fallers_cache: dict = {}
+
+        def _fallers_for(fmt):
+            is_redraft = bool(fmt.get("is_redraft") or fmt.get("is_keeper"))
+            if is_redraft:
+                key = ("redraft", fmt.get("qb_format") or "1qb",
+                       fmt.get("league_size") or 10)
+            else:
+                key = ("dynasty",)
+            if key not in _fallers_cache:
+                if is_redraft:
+                    try:
+                        movers = get_top_movers(
+                            days=7, limit=50, scoring_type="redraft",
+                            league_type=key[1], league_size=key[2])
+                    except Exception:
+                        movers = {}
+                else:
+                    movers = get_top_movers(days=7, limit=50)
+                _fallers_cache[key] = [
+                    f for f in (movers or {}).get("fallers", [])
+                    if (f.get("delta") or 0) < -30
+                ]
+            return _fallers_cache[key]
 
         state_key = f"value_drop_{season}_{week}"
         with get_conn() as conn:
@@ -2224,6 +2328,11 @@ def notify_value_drops():
 
         for league_id, platform in leagues:
             try:
+                fmt = _league_format(platform, league_id, season)
+                is_redraft = bool(fmt.get("is_redraft") or fmt.get("is_keeper"))
+                fallers = _fallers_for(fmt)
+                if not fallers:
+                    continue
                 rosters = get_rosters(platform, league_id, season) or []
                 for roster in rosters:
                     if not isinstance(roster, dict):
@@ -2240,11 +2349,12 @@ def notify_value_drops():
                         continue
                     top  = drops[0]
                     name = top.get("name") or "A player on your roster"
+                    fmt_word = "redraft" if is_redraft else "dynasty"
                     _broadcast_owner_for_roster(
                         platform, league_id, season, roster.get("roster_id"), owner_id,
-                        title="Dynasty value dropping",
+                        title=f"{fmt_word.capitalize()} value dropping",
                         body=(
-                            f"{name} is losing dynasty value this week. "
+                            f"{name} is losing {fmt_word} value this week. "
                             "Check your trade options"
                             f"{' in ' + league_name if league_name else ''}."
                         ),
@@ -2311,8 +2421,13 @@ def notify_waiver_candidates():
             try:
                 rosters  = get_rosters(platform, league_id, season) or []
                 rostered = {pid for r in rosters for pid in (r.get("players") or [])}
+                from utils.digest import value_keys_for_format
+                _primary, _fallback = value_keys_for_format(
+                    _league_format(platform, league_id, season))
                 top = pick_waiver_push_candidate(value_tbl, rostered,
-                                                 players=_push_players)
+                                                 players=_push_players,
+                                                 value_key=_primary,
+                                                 fallback_key=_fallback)
                 if not top:
                     continue
                 title, body = waiver_push_copy(top)
@@ -2361,7 +2476,6 @@ def notify_rival_trades():
 
         value_tbl = load_model_value_table() or []
         value_map = {p["id"]: p for p in value_tbl if p.get("id")}
-        HIGH_VALUE = 3000
 
         state_key = f"rival_trade_notified_{season}"
         with get_conn() as conn:
@@ -2371,6 +2485,7 @@ def notify_rival_trades():
 
         for league_id, platform in leagues:
             try:
+                fmt = _league_format(platform, league_id, season)
                 txns = get_transactions(platform, league_id, int(week), int(season)) or []
                 for t in txns:
                     if t.get("type") != "trade":
@@ -2381,11 +2496,11 @@ def notify_rival_trades():
                     adds = t.get("adds") or {}
                     high = [
                         pid for pid in adds
-                        if value_map.get(pid, {}).get("value", 0) >= HIGH_VALUE
+                        if _format_value(value_map.get(pid, {}), fmt) >= HIGH_VALUE
                     ]
                     if not high:
                         continue
-                    top_pid    = max(high, key=lambda p: value_map.get(p, {}).get("value", 0))
+                    top_pid    = max(high, key=lambda p: _format_value(value_map.get(p, {}), fmt))
                     top_player = value_map.get(top_pid, {})
                     name = top_player.get("name") or top_player.get("full_name") or "A top player"
                     league_name = _league_display_name(platform, league_id, season)
@@ -3125,7 +3240,6 @@ def notify_transaction_drops():
 
         value_tbl = load_model_value_table() or []
         value_map = {p["id"]: p for p in value_tbl if p.get("id")}
-        DROP_THRESHOLD = 2000
 
         state_key = f"drop_notified_{season}_{week}"
         with get_conn() as conn:
@@ -3136,6 +3250,7 @@ def notify_transaction_drops():
 
         for league_id, platform in leagues:
             try:
+                fmt = _league_format(platform, league_id, season)
                 txns = get_transactions(platform, league_id, int(week), int(season)) or []
                 for t in txns:
                     if t.get("type") not in ("waiver", "free_agent"):
@@ -3148,11 +3263,11 @@ def notify_transaction_drops():
                         continue
                     high = [
                         pid for pid in drops
-                        if value_map.get(pid, {}).get("value", 0) >= DROP_THRESHOLD
+                        if _format_value(value_map.get(pid, {}), fmt) >= DROP_THRESHOLD
                     ]
                     if not high:
                         continue
-                    top_pid = max(high, key=lambda p: value_map.get(p, {}).get("value", 0))
+                    top_pid = max(high, key=lambda p: _format_value(value_map.get(p, {}), fmt))
                     player  = value_map.get(top_pid, {})
                     name    = player.get("name") or player.get("full_name") or "A top player"
                     pos     = player.get("position") or ""

@@ -504,6 +504,7 @@ def get_top_movers(
         min_baseline_value: int = 0,
         min_current_value: float = 0.0,
         current_values: dict | None = None,
+        scoring_type: str = "dynasty",
 ) -> dict:
     """Cached wrapper around the (expensive) top-movers computation.
 
@@ -511,11 +512,18 @@ def get_top_movers(
     FC/DP-zeroed number shown elsewhere); it is intentionally NOT part of the
     cache key because it is stable for a given snapshot date, which the key
     already tracks.
+
+    ``scoring_type="redraft"`` reads the redraft history columns directly
+    (same semantics as get_player_value_history's redraft branch): no
+    COALESCE to the dynasty value, so a player whose redraft value is NULL
+    simply has no mover row.
     """
+    _redraft = str(scoring_type or "dynasty").lower() == "redraft"
     init_value_history_db()
     latest = get_latest_snapshot_date(source=source)
     key = (str(latest), days, limit, source, league_type, league_size,
-           min_baseline_value, min_current_value)
+           min_baseline_value, min_current_value,
+           "redraft" if _redraft else "dynasty")
     hit = _TOP_MOVERS_CACHE.get(key)
     if hit is not None:
         return hit
@@ -523,6 +531,7 @@ def get_top_movers(
         days=days, limit=limit, source=source, league_type=league_type,
         league_size=league_size, min_baseline_value=min_baseline_value,
         min_current_value=min_current_value, current_values=current_values,
+        scoring_type="redraft" if _redraft else "dynasty",
     )
     # Cache only a populated result so a transient empty board doesn't stick.
     if result and (result.get("risers") or result.get("fallers")):
@@ -543,6 +552,7 @@ def _get_top_movers_uncached(
         min_baseline_value: int = 0,
         min_current_value: float = 0.0,
         current_values: dict | None = None,
+        scoring_type: str = "dynasty",
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
@@ -649,21 +659,27 @@ def _get_top_movers_uncached(
                     "fallers": [],
                 }
 
-            # Determine which value field to use based on league type and size
-            if league_size == 10:
-                value_field = "sf_value" if league_type == "sf" else "value"
+            if str(scoring_type or "dynasty").lower() == "redraft":
+                # Redraft columns hold the WLS solve exactly as stored:
+                # read the one column directly, never COALESCE to a
+                # dynasty column (a size the WLS never solved is a gap,
+                # not a point at the dynasty value). The query's
+                # IS NOT NULL filter then drops gap players entirely.
+                if league_size == 10:
+                    value_expr = "redraft_sf_value" if league_type == "sf" else "redraft_value"
+                else:
+                    value_expr = (f"redraft_sf_value_{league_size}" if league_type == "sf"
+                                  else f"redraft_value_{league_size}")
             else:
-                value_field = f"sf_value_{league_size}" if league_type == "sf" else f"value_{league_size}"
-
-            # Fallback chain: size-specific -> 10-team (value_sf=calibrated, sf_value=raw) -> value
-            if league_type == "sf" and league_size != 10:
-                value_expr = f"COALESCE(sf_value_{league_size}, value_sf, sf_value, value)"
-            elif league_type == "sf":
-                value_expr = "COALESCE(value_sf, sf_value, value)"
-            elif league_size != 10:
-                value_expr = f"COALESCE(value_{league_size}, value)"
-            else:
-                value_expr = "value"
+                # Fallback chain: size-specific -> 10-team (value_sf=calibrated, sf_value=raw) -> value
+                if league_type == "sf" and league_size != 10:
+                    value_expr = f"COALESCE(sf_value_{league_size}, value_sf, sf_value, value)"
+                elif league_type == "sf":
+                    value_expr = "COALESCE(value_sf, sf_value, value)"
+                elif league_size != 10:
+                    value_expr = f"COALESCE(value_{league_size}, value)"
+                else:
+                    value_expr = "value"
 
             cur.execute(
                 f"""

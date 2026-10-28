@@ -656,19 +656,39 @@ def get_top_movers(
         source: str = "model",
         league_type: str = "1qb",
         league_size: int = 10,
+        scoring_type: str = "dynasty",
 ) -> dict:
     """
     Try requested window first (ex: 7 days).
     If no baseline exists, fall back to 6, then 5, ... down to 1.
+
+    ``scoring_type="redraft"`` reads the redraft history columns directly
+    (same semantics as get_player_value_history's redraft branch): no
+    COALESCE to the dynasty value, so a player whose redraft value is NULL
+    simply has no mover row.
     """
+    _redraft = str(scoring_type or "dynasty").lower() == "redraft"
     try:
         init_value_history_db()
         return _get_top_movers_from_db(
             days=days, limit=limit, source=source,
             league_type=league_type, league_size=league_size,
+            scoring_type="redraft" if _redraft else "dynasty",
         )
     except RuntimeError as e:
         if "DATABASE_URL is not set" in str(e):
+            if _redraft:
+                # The parquet fallback carries no redraft columns; return
+                # the empty movers shape rather than dynasty movement
+                # dressed up as redraft.
+                return {
+                    "latest_date": None,
+                    "comparison_date": None,
+                    "requested_days": days,
+                    "used_days": None,
+                    "risers": [],
+                    "fallers": [],
+                }
             return _get_top_movers_from_parquet(days=days, limit=limit)
         else:
             raise
@@ -677,6 +697,7 @@ def get_top_movers(
 def _get_top_movers_from_db(
         days: int, limit: int, source: str,
         league_type: str = "1qb", league_size: int = 10,
+        scoring_type: str = "dynasty",
 ) -> dict:
     """Get movers from database table."""
     latest_date = get_latest_snapshot_date(source=source)
@@ -733,9 +754,15 @@ def _get_top_movers_from_db(
                     "fallers": [],
                 }
 
-            vcol = _value_col(league_type, league_size)
-            # Fall back to base 'value' column for rows that predate multi-size storage
-            vcol_expr = f"COALESCE({vcol}, value)"
+            if str(scoring_type or "dynasty").lower() == "redraft":
+                # Redraft columns hold the WLS solve exactly as stored:
+                # read directly, never COALESCE to the dynasty value (a
+                # size the WLS never solved is a gap, not a dynasty point).
+                vcol_expr = _redraft_value_col(league_type, league_size)
+            else:
+                vcol = _value_col(league_type, league_size)
+                # Fall back to base 'value' column for rows that predate multi-size storage
+                vcol_expr = f"COALESCE({vcol}, value)"
 
             cur.execute(
                 f"""
@@ -819,6 +846,10 @@ def _get_top_movers_from_db(
     movers = []
     for row in rows:
         row_dict = dict(row)
+        # A NULL value on either side (e.g. a redraft column the WLS never
+        # solved) means no movement can be computed for this player.
+        if row_dict.get("delta") is None or row_dict.get("new_value") is None:
+            continue
         player_id = str(row_dict["player_id"])
         # Skip picks - they're not players and their value swings are data noise
         if _pick_re.match(player_id):
