@@ -239,3 +239,66 @@ def test_portfolio_moves_card_has_dismiss_wiring():
     assert "brUndoToast" in board
     endpoint = (ROOT / "routes" / "user_pages_bp.py").read_text(encoding="utf-8")
     assert 'player_id=str(hit.get("player_id") or "")' in endpoint
+
+
+def test_group_hide_key_round_trips(dismiss_env):
+    # League-group hides ride the same store under the reserved key
+    # "pf:group" (the scope already identifies the league).
+    client, _ = dismiss_env
+    _sign_in(client)
+    res = client.post(
+        "/api/action-dismissals", json={**_SCOPE, "item_key": "pf:group"})
+    assert res.status_code == 200
+    res = client.get("/api/action-dismissals", query_string=_SCOPE)
+    assert res.get_json()["dismissed"] == ["pf:group"]
+    res = client.delete(
+        "/api/action-dismissals", json={**_SCOPE, "item_key": "pf:group"})
+    assert res.get_json()["dismissed"] == []
+
+
+def test_portfolio_board_loads_dismissals_per_scope():
+    """Pin the client's read contract with the store. The board used to
+    issue ONE GET with only ?week=, which the endpoint rejects (400,
+    platform fails validation) and whose response the client misread
+    as row objects; the failure was swallowed, so every refresh
+    resurrected every dismissal. loadDismissed must instead issue one
+    GET per league group scope (platform/league_id/season/week/day,
+    the same shape the dashboard's syncFromServer builds) and read the
+    response's dismissed list as bare item_key strings, mapping the
+    reserved pf:group key into HIDDEN_GROUPS."""
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    board = js[js.index("Portfolio Front Office board + insights"):]
+    fn = board[board.index("function loadDismissed()"):]
+    fn = fn[:fn.index("function postGroupDismissal")]
+    # Per-scope query string, assembled from the group's own identity.
+    assert "'/api/action-dismissals' + qs" in fn
+    for part in ("?platform=", "&league_id=", "&season=", "&week=", "&day="):
+        assert part in fn, part
+    assert "todayET()" in fn
+    assert "mergedGroups().map" in fn
+    # Bare item_key strings, never the old row-object misread.
+    assert "itemKey" in fn
+    assert "row.item_key" not in fn and "row.platform" not in board
+    # The reserved group key maps back into HIDDEN_GROUPS.
+    assert "'pf:group'" in fn
+    assert "HIDDEN_GROUPS[g.key] = true" in fn
+    # The broken single-request shape is gone from the whole board.
+    assert "action-dismissals?week=" not in board
+
+
+def test_portfolio_board_persists_group_hides():
+    """Hide/unhide (group header x, hidden-strip Undo, footer Undo all)
+    write through to the same store under pf:group."""
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    board = js[js.index("Portfolio Front Office board + insights"):]
+    fn = board[board.index("function postGroupDismissal"):]
+    fn = fn[:fn.index("function postDismissal")]
+    assert "item_key: 'pf:group'" in fn
+    assert "undo ? 'DELETE' : 'POST'" in fn
+    assert "todayET()" in fn
+    wire = board[board.index("function wireBoard()"):]
+    assert "postGroupDismissal(hg, false)" in wire
+    assert "postGroupDismissal(ug, true)" in wire
+    unhide = board[board.index("function unhideAll()"):]
+    unhide = unhide[:unhide.index("function findMove")]
+    assert "postGroupDismissal(g, true)" in unhide
