@@ -163,12 +163,36 @@ def record_calibrated_history_snapshot() -> int:
     Call this AFTER run_trade_value_model() has written calibrated_value_1qb.
     Uses ON CONFLICT UPDATE so it overwrites any raw-model entry already written
     today by build_daily_model_values().
+
+    Also carries the redraft WLS values (player_values.redraft_value_*) into
+    the history redraft columns, exactly as stored: no smoothing (the WLS
+    write is already daily-move-clamped), no fallback from the base columns,
+    and NULL stays NULL for sizes the WLS never solved (8/14). This step is
+    the only redraft history writer, and it must stay after the WLS step -
+    the earlier record_model_value_snapshot runs pre-WLS and would snapshot
+    the FantasyCalc prior instead of the solved values.
     """
     from datetime import date
     from dashboard_services.db import get_conn
     from utils.utils import load_players_index, load_model_value_table
 
     today = date.today().isoformat()
+
+    # Ensure the history table (incl. the redraft columns) exists before the
+    # INSERT below names them.
+    try:
+        from data_building.player_value_history import init_value_history_db
+        init_value_history_db()
+    except Exception:
+        logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
+
+    def _rd(row, key):
+        """Redraft value exactly as stored, or None (never 0, never faked)."""
+        try:
+            v = row[key]
+        except (KeyError, IndexError, TypeError):
+            return None
+        return float(v) if v is not None else None
 
     # Build id -> name map: model table first (has picks + all players), then players_index fallback
     name_map: dict = {}
@@ -207,13 +231,22 @@ def record_calibrated_history_snapshot() -> int:
                     COALESCE(calibrated_value_14,  GREATEST(value_14, value_1qb)) AS value_14,
                     COALESCE(calibrated_sf_value_8,  sf_value_8,  value_sf) AS sf_value_8,
                     COALESCE(calibrated_sf_value_12, sf_value_12, value_sf) AS sf_value_12,
-                    COALESCE(calibrated_sf_value_14, sf_value_14, value_sf) AS sf_value_14
+                    COALESCE(calibrated_sf_value_14, sf_value_14, value_sf) AS sf_value_14,
+                    redraft_value_1qb    AS redraft_value,
+                    redraft_value_sf     AS redraft_sf_value,
+                    redraft_value_8,
+                    redraft_value_12,
+                    redraft_value_14,
+                    redraft_sf_value_8,
+                    redraft_sf_value_12,
+                    redraft_sf_value_14
                 FROM player_values
                 WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
                 """
             ).fetchall()
         except Exception:
-            # Fallback if calibrated_value_8 columns haven't been migrated yet
+            # Fallback if calibrated_value_8 / redraft size columns haven't
+            # been migrated yet: base redraft values only, sizes stay NULL.
             rows = conn.execute(
                 """
                 SELECT
@@ -227,7 +260,9 @@ def record_calibrated_history_snapshot() -> int:
                     GREATEST(value_14, value_1qb)               AS value_14,
                     COALESCE(GREATEST(sf_value_8,  value_sf), value_1qb)  AS sf_value_8,
                     COALESCE(GREATEST(sf_value_12, value_sf), value_1qb)  AS sf_value_12,
-                    COALESCE(GREATEST(sf_value_14, value_sf), value_1qb)  AS sf_value_14
+                    COALESCE(GREATEST(sf_value_14, value_sf), value_1qb)  AS sf_value_14,
+                    redraft_value_1qb    AS redraft_value,
+                    redraft_value_sf     AS redraft_sf_value
                 FROM player_values
                 WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
                 """
@@ -256,8 +291,13 @@ def record_calibrated_history_snapshot() -> int:
                             INSERT INTO player_value_history
                                 (as_of_date, player_id, name, position, team,
                                  value, value_sf, value_8, value_12, value_14,
-                                 sf_value_8, sf_value_12, sf_value_14, source)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model')
+                                 sf_value_8, sf_value_12, sf_value_14,
+                                 redraft_value, redraft_sf_value,
+                                 redraft_value_8, redraft_value_12, redraft_value_14,
+                                 redraft_sf_value_8, redraft_sf_value_12, redraft_sf_value_14,
+                                 source)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                    %s, %s, %s, %s, %s, %s, %s, %s, 'model')
                             ON CONFLICT (as_of_date, player_id, source)
                             DO UPDATE SET
                                 name        = EXCLUDED.name,
@@ -269,6 +309,14 @@ def record_calibrated_history_snapshot() -> int:
                                 sf_value_8  = EXCLUDED.sf_value_8,
                                 sf_value_12 = EXCLUDED.sf_value_12,
                                 sf_value_14 = EXCLUDED.sf_value_14,
+                                redraft_value       = COALESCE(EXCLUDED.redraft_value, player_value_history.redraft_value),
+                                redraft_sf_value    = COALESCE(EXCLUDED.redraft_sf_value, player_value_history.redraft_sf_value),
+                                redraft_value_8     = COALESCE(EXCLUDED.redraft_value_8, player_value_history.redraft_value_8),
+                                redraft_value_12    = COALESCE(EXCLUDED.redraft_value_12, player_value_history.redraft_value_12),
+                                redraft_value_14    = COALESCE(EXCLUDED.redraft_value_14, player_value_history.redraft_value_14),
+                                redraft_sf_value_8  = COALESCE(EXCLUDED.redraft_sf_value_8, player_value_history.redraft_sf_value_8),
+                                redraft_sf_value_12 = COALESCE(EXCLUDED.redraft_sf_value_12, player_value_history.redraft_sf_value_12),
+                                redraft_sf_value_14 = COALESCE(EXCLUDED.redraft_sf_value_14, player_value_history.redraft_sf_value_14),
                                 position    = EXCLUDED.position,
                                 team        = EXCLUDED.team
                             """,
@@ -282,6 +330,14 @@ def record_calibrated_history_snapshot() -> int:
                                 float(r["sf_value_8"] or 0),
                                 float(r["sf_value_12"] or 0),
                                 float(r["sf_value_14"] or 0),
+                                _rd(r, "redraft_value"),
+                                _rd(r, "redraft_sf_value"),
+                                _rd(r, "redraft_value_8"),
+                                _rd(r, "redraft_value_12"),
+                                _rd(r, "redraft_value_14"),
+                                _rd(r, "redraft_sf_value_8"),
+                                _rd(r, "redraft_sf_value_12"),
+                                _rd(r, "redraft_sf_value_14"),
                             ),
                         )
                         batch_written += 1
