@@ -104,6 +104,32 @@ def init_value_history_db() -> None:
                     END $$;
                     """
                 )
+            # Add redraft WLS columns (base + league sizes). These mirror the
+            # dynasty naming: redraft_value / redraft_sf_value are the 10-team
+            # WLS solve stored in player_values.redraft_value_1qb /
+            # redraft_value_sf; redraft_value_{size} / redraft_sf_value_{size}
+            # are the per-size solves. The daily cron only solves 10 and 12,
+            # so 8/14 stay NULL until a run for that size exists - never
+            # backfilled from the base columns.
+            for col in [
+                "redraft_value", "redraft_sf_value",
+                "redraft_value_8", "redraft_value_12", "redraft_value_14",
+                "redraft_sf_value_8", "redraft_sf_value_12", "redraft_sf_value_14",
+            ]:
+                cur.execute(
+                    f"""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'player_value_history'
+                            AND column_name = '{col}'
+                        ) THEN
+                            ALTER TABLE player_value_history ADD COLUMN {col} NUMERIC;
+                        END IF;
+                    END $$;
+                    """
+                )
             cur.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_player_value_history_player_date
@@ -309,9 +335,11 @@ def get_player_value_history(
         source: str = "model",
         league_type: str = "1qb",
         league_size: int = 10,
+        scoring_type: str = "dynasty",
 ) -> list[dict]:
     import time as _time
-    _cache_key = (str(player_id), days, source, league_type, league_size)
+    _redraft = str(scoring_type or "dynasty").lower() == "redraft"
+    _cache_key = (str(player_id), days, source, league_type, league_size, _redraft)
     _cached = _player_history_cache.get(_cache_key)
     if _cached and _time.time() - _cached[1] < _PLAYER_HISTORY_TTL:
         return _cached[0]
@@ -340,6 +368,21 @@ def get_player_value_history(
     else:
         _1qb_col, _sf_col = "value", "value_sf"
 
+    if _redraft:
+        # Redraft history columns hold the WLS solve exactly as served, so
+        # they are read directly: no COALESCE to the base column (a size the
+        # WLS never solved is a gap, not a point at the base value) and no
+        # calibrated rescaling below (the stored values already are the
+        # current-values scale).
+        if league_size == 8:
+            _1qb_col, _sf_col = "redraft_value_8", "redraft_sf_value_8"
+        elif league_size == 12:
+            _1qb_col, _sf_col = "redraft_value_12", "redraft_sf_value_12"
+        elif league_size == 14:
+            _1qb_col, _sf_col = "redraft_value_14", "redraft_sf_value_14"
+        else:
+            _1qb_col, _sf_col = "redraft_value", "redraft_sf_value"
+
     # SF column: prefer the SMOOTHED sf_value. smooth_value_history.py applies its
     # EMA to `value` and `sf_value` only — not to value_sf / the size-specific
     # columns — so reading value_sf first produced a spiky SF line while 1QB (which
@@ -357,6 +400,9 @@ def get_player_value_history(
     # produced a spiky 1QB line. Prefer the smoothed base `value` (re-scaled to
     # the calibrated endpoint below); fall back to the size column if it's null.
     _1qb_expr = f"COALESCE(value, {_1qb_col})"
+    if _redraft:
+        _sf_expr = _sf_col
+        _1qb_expr = _1qb_col
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -378,11 +424,13 @@ def get_player_value_history(
             """,
             (source, str(player_id), cutoff),
         ).fetchall()
-        _cal_row = conn.execute(
-            """SELECT calibrated_value_1qb, calibrated_value_sf
-               FROM player_values WHERE player_id = %s""",
-            (str(player_id),),
-        ).fetchone()
+        _cal_row = None
+        if not _redraft:
+            _cal_row = conn.execute(
+                """SELECT calibrated_value_1qb, calibrated_value_sf
+                   FROM player_values WHERE player_id = %s""",
+                (str(player_id),),
+            ).fetchone()
 
     # Scale historical values to the calibrated scale so the graph matches the
     # current modal value. Use the latest history row's raw value as the
@@ -390,7 +438,7 @@ def get_player_value_history(
     _cal_scale_1qb = 1.0
     _cal_scale_sf  = 1.0
     try:
-        _last_raw_1qb = float(rows[-1]["value_1qb"]) if rows else 0.0
+        _last_raw_1qb = float(rows[-1]["value_1qb"]) if rows and rows[-1]["value_1qb"] is not None else 0.0
         # SF scale denominator: the latest row that actually has an SF value
         # (trailing gap dates have none and cannot anchor the scale).
         _last_raw_sf  = 0.0
@@ -411,7 +459,7 @@ def get_player_value_history(
     out: list[dict] = []
     prev_val: Optional[float] = None
     for r in rows:
-        v1qb = float(r["value_1qb"]) * _cal_scale_1qb
+        v1qb = None if r["value_1qb"] is None else float(r["value_1qb"]) * _cal_scale_1qb
         vsf  = None if r["value_sf"] is None else float(r["value_sf"]) * _cal_scale_sf
         # Primary "value" follows league_type for backwards-compat callers.
         # On a gap date an SF league has no primary value either (None), and
@@ -427,7 +475,7 @@ def get_player_value_history(
                 "position":      r["position"],
                 "team":          r["team"],
                 "value":         None if primary is None else round(primary, 1),
-                "value_1qb":     round(v1qb, 1),
+                "value_1qb":     None if v1qb is None else round(v1qb, 1),
                 "value_sf":      None if vsf is None else round(vsf, 1),
                 "delta_from_prev": delta,
                 "source":        r["source"],

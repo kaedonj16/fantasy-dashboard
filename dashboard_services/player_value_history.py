@@ -57,7 +57,11 @@ def init_value_history_db() -> None:
                 )
                 """
             )
-            # Add size/type columns to existing tables that predate this schema
+            # Add size/type columns to existing tables that predate this schema.
+            # Redraft columns mirror the dynasty naming: redraft_value /
+            # redraft_sf_value are the 10-team WLS solve; the {size} variants
+            # are per-size solves (only 10/12 are solved daily, so 8/14 stay
+            # NULL until a run for that size exists - never backfilled).
             for col, typ in [
                 ("value_sf",    "NUMERIC"),
                 ("value_8",     "NUMERIC"),
@@ -66,6 +70,14 @@ def init_value_history_db() -> None:
                 ("sf_value_8",  "NUMERIC"),
                 ("sf_value_12", "NUMERIC"),
                 ("sf_value_14", "NUMERIC"),
+                ("redraft_value",       "NUMERIC"),
+                ("redraft_sf_value",    "NUMERIC"),
+                ("redraft_value_8",     "NUMERIC"),
+                ("redraft_value_12",    "NUMERIC"),
+                ("redraft_value_14",    "NUMERIC"),
+                ("redraft_sf_value_8",  "NUMERIC"),
+                ("redraft_sf_value_12", "NUMERIC"),
+                ("redraft_sf_value_14", "NUMERIC"),
             ]:
                 cur.execute(
                     f"ALTER TABLE player_value_history ADD COLUMN IF NOT EXISTS {col} {typ}"
@@ -242,6 +254,7 @@ def get_player_value_history(
         source: str = "model",
         league_type: str = "1qb",
         league_size: int = 10,
+        scoring_type: str = "dynasty",
 ) -> list[dict]:
     init_value_history_db()
 
@@ -250,7 +263,16 @@ def get_player_value_history(
         return []
 
     cutoff = (date.fromisoformat(latest_date) - timedelta(days=max(days, 1) - 1)).isoformat()
-    col = _value_col(league_type, league_size)
+    _redraft = str(scoring_type or "dynasty").lower() == "redraft"
+    if _redraft:
+        # Redraft columns hold the WLS solve exactly as served: read them
+        # directly, never COALESCE to the dynasty value (a size the WLS
+        # never solved is a gap, not a point at the dynasty value).
+        col = _redraft_value_col(league_type, league_size)
+        _value_expr = col
+    else:
+        col = _value_col(league_type, league_size)
+        _value_expr = f"COALESCE({col}, value)"
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -261,7 +283,7 @@ def get_player_value_history(
                 name,
                 position,
                 team,
-                COALESCE({col}, value) AS value,
+                {_value_expr} AS value,
                 source
             FROM player_value_history
             WHERE source = %s
@@ -275,6 +297,8 @@ def get_player_value_history(
     out: list[dict] = []
     prev_val: Optional[float] = None
     for r in rows:
+        if r["value"] is None:
+            continue
         val = float(r["value"])
         if val <= 0:
             continue
@@ -615,6 +639,14 @@ def _value_col(league_type: str = "1qb", league_size: int = 10) -> str:
     if sf:
         return {8: "sf_value_8", 12: "sf_value_12", 14: "sf_value_14"}.get(league_size, "value_sf")
     return {8: "value_8", 12: "value_12", 14: "value_14"}.get(league_size, "value")
+
+
+def _redraft_value_col(league_type: str = "1qb", league_size: int = 10) -> str:
+    """Return the player_value_history redraft column for a league type/size."""
+    sf = league_type.lower() == "sf"
+    if sf:
+        return {8: "redraft_sf_value_8", 12: "redraft_sf_value_12", 14: "redraft_sf_value_14"}.get(league_size, "redraft_sf_value")
+    return {8: "redraft_value_8", 12: "redraft_value_12", 14: "redraft_value_14"}.get(league_size, "redraft_value")
 
 
 def get_top_movers(
