@@ -7458,6 +7458,29 @@ window.initTradePage = function initTradePage(root = document) {
   let _tiRetryTimer = null;
   let _tiRetrySig = "";
   let _tiRetryAttempts = 0;
+  // Coalescing for recomputeTrade: one user action calls it 2-3 times in the
+  // same tick (renderChips("A") + renderChips("B"), plus an explicit call in
+  // some flows). Each call registers a burst ticket; only the last ticket in
+  // the tick runs, so a settled edit costs exactly one eval POST.
+  let _recomputeBurst = 0;
+  // Aborts the in-flight eval POST when a newer recompute supersedes it, so
+  // the server never runs superseded evaluations to completion. (The intel
+  // fan-out already aborts via _tradeIntelAbort; analyzeTrade has its own.)
+  let _evalAbort = null;
+  let _analyzeAbort = null;
+  // Session cache for trade-intel payloads, keyed pid|season|league_type:
+  // a player who stays in the trade across edits is fetched once per page
+  // session instead of once per edit.
+  const _tradeIntelCache = {};
+  // Pending-state polling for Playoff Impact: while the server warms a cold
+  // sim snapshot it answers {pending: true}; the card keeps its spinner and
+  // re-asks on this budget instead of painting a terminal state.
+  let _piPendingAttempts = 0;
+  let _piPendingSig = "";
+  // Shared /api/trade-targets promise for the calculator's two loaders
+  // (loadTradeTargets + loadSuggTargets build the identical URL): one
+  // in-flight/ recent fetch serves both, keyed by the full query string.
+  let _targetsShared = { key: "", ts: 0, promise: null };
 
   // ── Roster filter (logged-in only) ──────────────────────────────────────────
   // Restrict each side's player search to a team's roster. Side A locks to the
@@ -9249,7 +9272,19 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   async function recomputeTrade() {
+    // Coalesce same-tick bursts (see _recomputeBurst): yield one microtask
+    // so sibling calls from the same user action register; only the last
+    // one proceeds. Calls in later ticks (the bounded retry, the next edit)
+    // run normally, so exactly one eval POST fires per settled edit.
+    const _burst = ++_recomputeBurst;
+    await Promise.resolve();
+    if (_burst !== _recomputeBurst) return;
+
     const gen = ++_tradeGeneration;   // capture this call's generation
+    // Supersede any in-flight eval: abort it so the server stops spending
+    // work on a trade the user has already moved past.
+    if (_evalAbort) _evalAbort.abort();
+    _evalAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
 
     const sideATotalEl = root.querySelector("#sideATotal");
     const sideBTotalEl = root.querySelector("#sideBTotal");
@@ -9337,6 +9372,7 @@ window.initTradePage = function initTradePage(root = document) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        ...(_evalAbort ? { signal: _evalAbort.signal } : {}),
       });
 
       if (!res.ok) {
@@ -9426,6 +9462,9 @@ window.initTradePage = function initTradePage(root = document) {
         fetchPlayoffImpact(_intelGen, _intelSignal),
       ]).catch(() => {});
     } catch (err) {
+      // Aborted because a newer recompute superseded this one: stay quiet
+      // (no error paint, no retry budget spent on a trade already replaced).
+      if (err && err.name === "AbortError") return;
       console.error("[trade] error in recomputeTrade:", err);
       // A failed eval strands the summary on the empty-state numbers painted
       // at init (0.0 totals, centered bar, "Build a trade" playoff card),
@@ -9676,6 +9715,33 @@ window.initTradePage = function initTradePage(root = document) {
       if (!res.ok) throw new Error("Playoff impact failed (" + res.status + ")");
       const data = await res.json();
 
+      // Deferred: the server is warming a cold sim snapshot in the
+      // background and will serve the identical numbers once it lands.
+      // Keep the spinner and poll on a bounded, per-trade budget instead
+      // of painting a terminal state for a sim that is still warming.
+      if (data && data.pending) {
+        const _piPendSig = giveIds.join(",") + "|" + getIds.join(",") + "|" + rosterId;
+        if (_piPendSig !== _piPendingSig) { _piPendingSig = _piPendSig; _piPendingAttempts = 0; }
+        if (gen === _tradeGeneration && _piPendingAttempts < 10) {
+          _piPendingAttempts += 1;
+          if (_piRetryTimer) clearTimeout(_piRetryTimer);
+          const _piPendGen = gen;
+          _piRetryTimer = setTimeout(() => {
+            _piRetryTimer = null;
+            if (_piPendGen === _tradeGeneration) fetchPlayoffImpact(_piPendGen, null);
+          }, 2000);
+        } else if (gen === _tradeGeneration) {
+          body.innerHTML = _piMessage(
+            "fa-circle-info",
+            "Not available",
+            "Playoff odds can't be simulated for this league right now (the season may be complete)."
+          );
+        }
+        return;
+      }
+      _piPendingAttempts = 0;
+      _piPendingSig = "";
+
       // The sim landed: clear any retry bookkeeping for this trade.
       _piRetryAttempts = 0;
       if (_piRetryTimer) { clearTimeout(_piRetryTimer); _piRetryTimer = null; }
@@ -9911,16 +9977,35 @@ window.initTradePage = function initTradePage(root = document) {
     intelPanel.style.display = "";
 
     const _timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
-    const results = await Promise.all(
-      playerIds.map(p =>
-        Promise.race([
-          fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`, signal ? { signal } : undefined)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => d ? { ...d, name: p.name, side: p.side } : null),
+    // One batch request for every player not already in the session cache
+    // (was: one GET per player per edit, no reuse across edits). A failed
+    // batch leaves its players unresolved (null below), which the
+    // all-failed retry further down treats exactly like the old
+    // per-player failures.
+    const _cacheKey = p => `${p.id}|${season}|${leagueType}`;
+    const _uncached = playerIds.filter(p => !(_cacheKey(p) in _tradeIntelCache));
+    if (_uncached.length) {
+      try {
+        const _batch = await Promise.race([
+          fetch(`/api/trade-intel/players?ids=${_uncached.map(p => encodeURIComponent(p.id)).join(",")}&season=${season}&league_type=${leagueType}`, signal ? { signal } : undefined)
+            .then(r => r.ok ? r.json() : null),
           _timeout(8000),
-        ]).catch(() => null)
-      )
-    );
+        ]);
+        const _byId = (_batch && _batch.players) || {};
+        for (const p of _uncached) {
+          const d = _byId[p.id];
+          if (d) _tradeIntelCache[_cacheKey(p)] = d;
+        }
+      } catch (e) {
+        // Aborted by a newer recompute: leave the panel alone.
+        if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
+        // Otherwise fall through: uncached players resolve null below.
+      }
+    }
+    const results = playerIds.map(p => {
+      const d = _tradeIntelCache[_cacheKey(p)];
+      return d ? { ...d, name: p.name, side: p.side } : null;
+    });
 
     // Aborted by a newer recompute, or superseded: leave the panel alone.
     if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
@@ -9993,6 +10078,29 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
+  // One shared fetch for /api/trade-targets: loadTradeTargets and
+  // loadSuggTargets build the identical URL, so an action that fires both
+  // (or a repeat open inside the TTL) reuses one promise instead of paying
+  // the server recompute twice. Resolves {status, ok, data} so each loader
+  // keeps its own status handling; a rejected fetch evicts itself so a
+  // retry really retries.
+  // ------------------------------------------------------------
+  function _fetchTradeTargetsShared(url) {
+    const now = Date.now();
+    if (_targetsShared.promise && _targetsShared.key === url && (now - _targetsShared.ts) < 60000) {
+      return _targetsShared.promise;
+    }
+    const promise = (async () => {
+      const res = await fetch(url, { cache: "no-store" });
+      const data = res.ok ? await res.json() : null;
+      return { status: res.status, ok: res.ok, data };
+    })();
+    promise.catch(() => { if (_targetsShared.promise === promise) _targetsShared.promise = null; });
+    _targetsShared = { key: url, ts: now, promise };
+    return promise;
+  }
+
+  // ------------------------------------------------------------
   // loadTradeTargets - roster-fit targets for this team's holes (not top-N at a pos)
   // ------------------------------------------------------------
   async function loadTradeTargets(containerEl) {
@@ -10034,13 +10142,12 @@ window.initTradePage = function initTradePage(root = document) {
     const leagueSize = getLeagueSize();
 
     try {
-      const res = await fetch(
+      const _tr = await _fetchTradeTargetsShared(
         `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
         `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
-        `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
-        { cache: "no-store" }
+        `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`
       );
-      if (res.status === 403) {
+      if (_tr.status === 403) {
         window.brEmptyState(body, {
           icon: 'lock',
           title: 'Trade Targets',
@@ -10050,8 +10157,8 @@ window.initTradePage = function initTradePage(root = document) {
         });
         return;
       }
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
+      if (!_tr.ok) throw new Error("Failed");
+      const data = _tr.data;
       if (data.error) throw new Error(data.error);
 
       const grouped = data.by_position || {};
@@ -11918,20 +12025,19 @@ window.initTradePage = function initTradePage(root = document) {
 
       suggTargetsLoading = true;
       try {
-        const res = await fetch(
+        const _tr = await _fetchTradeTargetsShared(
           `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
           `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
-          `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
-          { cache: "no-store" }
+          `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`
         );
-        if (res.status === 403) {
+        if (_tr.status === 403) {
           suggTargetsLoaded = true;
           if (typeof showPaywall === "function") showPaywall("trade-suggestions");
           else window.brEmptyState(container, { icon: 'lock', title: 'PRO feature', message: 'Upgrade to unlock trade tools.', compact: true });
           return;
         }
-        if (!res.ok) throw new Error("Failed");
-        const data = await res.json();
+        if (!_tr.ok) throw new Error("Failed");
+        const data = _tr.data;
         suggTargetsLoaded = true;  // only mark done after a successful response
         _topChipsCollapsed = false;  // fresh targets load: show the strip again
         _lastTargetsData = data;
@@ -12967,10 +13073,15 @@ window.initTradePage = function initTradePage(root = document) {
     };
 
     try {
+      // Supersede any in-flight analysis: its eval POST carries the AI-take
+      // payload, and a stale one should not run to completion server-side.
+      if (_analyzeAbort) _analyzeAbort.abort();
+      _analyzeAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
       const res = await fetch("/api/trade-eval", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        ...(_analyzeAbort ? { signal: _analyzeAbort.signal } : {}),
       });
 
       if (res.status === 429) {
@@ -13084,6 +13195,8 @@ window.initTradePage = function initTradePage(root = document) {
         errorBox.textContent = "";
       }
     } catch (err) {
+      // Aborted by a newer analysis: the newer call owns the panel states.
+      if (err && err.name === "AbortError") return;
       console.error("[trade] error in analyzeTrade:", err);
 
       if (loadingState) loadingState.style.display = "none";

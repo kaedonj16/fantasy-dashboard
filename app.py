@@ -554,6 +554,73 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         return []
 
 
+# ── Trade Playoff Impact: cold-snapshot warming ──────────────────────────────
+# The impact handler serves only from the shared sim-state snapshot (state +
+# its frozen 2000-sim baseline). On a cold snapshot it kicks ONE bounded
+# background warm per league and answers with a deferred state, following
+# the _playoff_sim_cached(block=False) precedent: the Monte Carlo never runs
+# on the request thread.
+_IMPACT_SIM_WARM_LOCK = threading.Lock()
+_IMPACT_SIM_BUILDING: set = set()
+_IMPACT_SIM_WARMED: dict = {}       # warm key -> ts of last completed attempt
+_IMPACT_SIM_WARM_WINDOW = 60        # s: a completed warm with still no state
+                                    # means the build produced none (season over)
+_IMPACT_SIM_WARM_SEM = threading.BoundedSemaphore(2)
+
+
+def _impact_sim_warm_key(platform: str, league_id: str, season) -> tuple:
+    return (platform, str(league_id), int(season or 0))
+
+
+def _kick_impact_sim_warm(ctx: dict, platform: str, league_id: str, season) -> str:
+    """Kick the background sim-state warm for the impact snapshot.
+
+    Returns "building"/"kicked"/"busy" when a warm is in flight (the caller
+    answers with the deferred state), or "recent" when a warm completed
+    inside the window and the snapshot is still cold — the build produced
+    no state, so the caller answers with the terminal unavailable state
+    instead of deferring forever.
+    """
+    key = _impact_sim_warm_key(platform, league_id, season)
+    with _IMPACT_SIM_WARM_LOCK:
+        if key in _IMPACT_SIM_BUILDING:
+            return "building"
+        last = _IMPACT_SIM_WARMED.get(key)
+        if last and time.time() - last < _IMPACT_SIM_WARM_WINDOW:
+            return "recent"
+        if not _IMPACT_SIM_WARM_SEM.acquire(blocking=False):
+            return "busy"
+        _IMPACT_SIM_BUILDING.add(key)
+
+    def _warm(snapshot=dict(ctx), warm_key=key):
+        try:
+            from data_building.simulate_playoff_odds import (
+                build_sim_state as _build_state,
+                run_base_simulation as _run_base,
+            )
+            state = _build_state(snapshot, platform)
+            if state is not None:
+                # Freeze the 2000-sim baseline the impact numbers read, so
+                # the first served request pays no Monte Carlo either.
+                _run_base(state, n_sims=2000)
+        except Exception:
+            logger.debug("[trade-eval/playoff-impact] sim warm failed", exc_info=True)
+        finally:
+            _IMPACT_SIM_WARMED[warm_key] = time.time()
+            with _IMPACT_SIM_WARM_LOCK:
+                _IMPACT_SIM_BUILDING.discard(warm_key)
+            _IMPACT_SIM_WARM_SEM.release()
+
+    try:
+        threading.Thread(target=_warm, daemon=True).start()
+    except Exception:
+        with _IMPACT_SIM_WARM_LOCK:
+            _IMPACT_SIM_BUILDING.discard(key)
+        _IMPACT_SIM_WARM_SEM.release()
+        raise
+    return "kicked"
+
+
 def _fmt_playoff_pct_display(value):
     """Format a playoff-odds percentage for Season Hub display.
 
@@ -25178,10 +25245,9 @@ from utils.json_sanitize import sanitize_for_json as _sanitize_for_json  # noqa:
 
 @app.route("/api/trade-eval/playoff-impact", methods=["POST"])
 # 60/min, not 20: every successful recomputeTrade() spawns one
-# playoff-impact POST, and the renderChips("A") + renderChips("B") pair in
-# one user action spawns 2, so 20/min was only 10 real actions per minute
-# and tripped BEFORE trade-eval did. 60/min matches the 30 actions/min
-# budget the trade-eval cap now allows.
+# playoff-impact POST, plus the card's bounded retries and its deferred-state
+# polls while a cold sim snapshot warms. 60/min keeps headroom over the
+# trade-eval cap's 30 actions/min budget.
 @limiter.limit("60 per minute")
 def api_trade_eval_playoff_impact():
     """
@@ -25220,16 +25286,28 @@ def api_trade_eval_playoff_impact():
 
     try:
         from data_building.simulate_playoff_odds import (
-            build_sim_state as _build_sim_state,
+            peek_sim_state as _peek_sim_state,
             simulate_swap_impact as _simulate_swap_impact,
             shape_playoff_impact_for_league as _shape_pi,
         )
         ctx = get_league_ctx_from_cache(platform, league_id, season)
-        sim_state = _build_sim_state(ctx, platform)
-        if sim_state is None:
-            return jsonify({"available": False, "reason": "season_complete"})
+        # Serve only from the frozen shared snapshot: a cold state (or a
+        # state whose frozen baseline is not the 2000-sim one this handler
+        # reads) kicks a bounded background warm and defers, rather than
+        # building state and running the Monte Carlo on the request thread.
+        sim_state = _peek_sim_state(ctx, platform)
+        _freeze = (sim_state or {}).get("_mc_freeze") or {}
+        if sim_state is None or _freeze.get("n_sims") != 2000:
+            _warm = _kick_impact_sim_warm(ctx, platform, league_id, season)
+            if sim_state is None and _warm == "recent":
+                return jsonify({"available": False, "reason": "season_complete"})
+            return jsonify({"available": False, "pending": True, "reason": "sim_warming"})
 
-        result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids)
+        # One shared dict across both calls: the flipped partner call's
+        # override set is the same two rosters, so its week profiles and
+        # overlay standings are reused instead of computed twice.
+        _shared: dict = {}
+        result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids, _shared=_shared)
         is_redraft = _league_is_redraft(ctx)
         result = _shape_pi(result, is_redraft)
 
@@ -25248,7 +25326,7 @@ def api_trade_eval_playoff_impact():
             opp_rid = None
         if opp_rid and opp_rid != roster_id:
             try:
-                partner_result = _simulate_swap_impact(sim_state, opp_rid, get_ids, give_ids)
+                partner_result = _simulate_swap_impact(sim_state, opp_rid, get_ids, give_ids, _shared=_shared)
                 partner_result = _shape_pi(partner_result, is_redraft)
                 result["partner"] = partner_result
                 result["partner_roster_id"] = opp_rid
@@ -35701,6 +35779,136 @@ def api_trade_intel_trending():
         })
 
 
+def _trade_intel_player_payload(conn, player_id, season, league_type,
+                                league_size, players_map, rk_year, extras=None):
+    """The exact payload of /api/trade-intel/player/<id> for one player.
+
+    Shared by the single endpoint and the batch endpoint so the trade
+    calculator's per-edit intel fan-out costs one request instead of one
+    per player. ``extras`` may carry a precomputed
+    trade_intel_card_extras() result for a whole id list; its per-player
+    entries are identical to the single-id call's.
+    """
+    fmt = "sf" if league_type == "sf" else "1qb"
+    raw_col = f"value_{fmt}"
+    cal_col = f"calibrated_value_{fmt}"
+
+    _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
+    sz_suffix = _SZ_MAP.get(league_size, "")
+
+    sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
+    if sz_col and _trade_intel_col_exists(conn, sz_col):
+        value_col_expr = f"COALESCE(s.{sz_col}, s.market_value_{fmt})"
+    else:
+        value_col_expr = f"s.market_value_{fmt}"
+
+    stat_row = conn.execute(
+        f"""
+        SELECT
+            s.*,
+            {value_col_expr}                                                AS market_value,
+            COALESCE(rk.rookie_value, pv.{raw_col})                         AS model_value,
+            COALESCE(rk.rookie_value, pv.{cal_col}, pv.{raw_col})           AS calibrated_value,
+            pv.calibration_source,
+            COALESCE(pv.position, rp.position)       AS position,
+            COALESCE(pv.team, rp.actual_nfl_team)    AS team
+        FROM trade_intel_player_stats s
+        LEFT JOIN player_values pv ON pv.player_id = s.player_id
+        LEFT JOIN rookie_prospects rp ON rp.sleeper_id = s.player_id
+                                     AND rp.draft_class_year = %s
+        LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
+                                    AND rk.draft_class_year = rp.draft_class_year
+        WHERE s.player_id = %s AND s.season = %s
+          AND s.league_format = 'all'
+        """,
+        (rk_year, player_id, season)
+    ).fetchone()
+
+    package_rows = conn.execute(
+        """
+        SELECT package_key, occurrence_count
+        FROM trade_intel_packages
+        WHERE anchor_player_id = %s AND season = %s
+        ORDER BY occurrence_count DESC
+        LIMIT 10
+        """,
+        (player_id, season)
+    ).fetchall()
+
+    def _resolve_package(pkg_key: str) -> list[dict]:
+        companions = []
+        for pid in pkg_key.split("|"):
+            if not pid:
+                continue
+            info = players_map.get(pid, {})
+            companions.append({
+                "player_id": pid,
+                "name": info.get("name", pid),
+                "position": info.get("pos"),
+            })
+        return companions
+
+    common_packages = [
+        {
+            "companions": _resolve_package(r["package_key"]),
+            "occurrence_count": r["occurrence_count"],
+        }
+        for r in package_rows
+        if r["package_key"]
+    ]
+
+    if not stat_row:
+        return {
+            "player_id": player_id,
+            "season": season,
+            "trade_count": 0,
+            "common_packages": common_packages,
+            "velocity": {"recent_90d": 0, "prior_90d": 0, "trend": None},
+            "buyer_split": {},
+        }
+
+    model_val = float(stat_row["model_value"] or 0)
+    market_val = float(stat_row["market_value"] or 0)
+    calibrated_val = float(stat_row["calibrated_value"] or 0)
+    # Delta is market vs raw model - shows how much the model diverges from real trades
+    delta = round(market_val - model_val, 1) if model_val and market_val else None
+
+    # Market-intel extras for the card (90d heat + buyer split).
+    # Best-effort: the card renders fine without them.
+    _velocity = {"recent_90d": 0, "prior_90d": 0, "trend": None}
+    _buyer_split = {}
+    if extras is not None:
+        _e = extras.get(str(player_id)) or {}
+        _velocity = _e.get("velocity") or _velocity
+        _buyer_split = _e.get("buyer_split") or {}
+    else:
+        try:
+            _extras = trade_intel_card_extras([player_id])
+            _e = _extras.get(str(player_id)) or {}
+            _velocity = _e.get("velocity") or _velocity
+            _buyer_split = _e.get("buyer_split") or {}
+        except Exception:
+            logger.debug("trade-intel card extras failed", exc_info=True)
+
+    return {
+        "player_id": player_id,
+        "season": season,
+        "trade_count_7d": stat_row["trade_count_7d"],
+        "trade_count_30d": stat_row["trade_count_30d"],
+        "trade_count_all": stat_row["trade_count"],
+        "market_value": market_val or None,
+        "model_value": model_val or None,
+        "calibrated_value": calibrated_val or None,
+        "calibration_source": stat_row["calibration_source"],
+        "value_delta": delta,
+        "buy_sell_ratio": float(stat_row["buy_sell_ratio"]) if stat_row["buy_sell_ratio"] else None,
+        "avg_package_value": float(stat_row["avg_package_value"]) if stat_row["avg_package_value"] else None,
+        "common_packages": common_packages,
+        "velocity": _velocity,
+        "buyer_split": _buyer_split,
+    }
+
+
 @app.route("/api/trade-intel/player/<player_id>")
 def api_trade_intel_player(player_id: str):
     """
@@ -35716,129 +35924,63 @@ def api_trade_intel_player(player_id: str):
         league_type = str(request.args.get("league_type") or "1qb").strip().lower()
         league_size = int(request.args.get("league_size") or 10)
 
-        fmt = "sf" if league_type == "sf" else "1qb"
-        raw_col = f"value_{fmt}"
-        cal_col = f"calibrated_value_{fmt}"
-
-        _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
-        sz_suffix = _SZ_MAP.get(league_size, "")
-
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_tip
         _rk_year_p = _garc_tip()
-
-        with get_conn() as conn:
-            sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
-            if sz_col and _trade_intel_col_exists(conn, sz_col):
-                value_col_expr = f"COALESCE(s.{sz_col}, s.market_value_{fmt})"
-            else:
-                value_col_expr = f"s.market_value_{fmt}"
-
-            stat_row = conn.execute(
-                f"""
-                SELECT
-                    s.*,
-                    {value_col_expr}                                                AS market_value,
-                    COALESCE(rk.rookie_value, pv.{raw_col})                         AS model_value,
-                    COALESCE(rk.rookie_value, pv.{cal_col}, pv.{raw_col})           AS calibrated_value,
-                    pv.calibration_source,
-                    COALESCE(pv.position, rp.position)       AS position,
-                    COALESCE(pv.team, rp.actual_nfl_team)    AS team
-                FROM trade_intel_player_stats s
-                LEFT JOIN player_values pv ON pv.player_id = s.player_id
-                LEFT JOIN rookie_prospects rp ON rp.sleeper_id = s.player_id
-                                             AND rp.draft_class_year = %s
-                LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
-                                            AND rk.draft_class_year = rp.draft_class_year
-                WHERE s.player_id = %s AND s.season = %s
-                  AND s.league_format = 'all'
-                """,
-                (_rk_year_p, player_id, season)
-            ).fetchone()
-
-            package_rows = conn.execute(
-                """
-                SELECT package_key, occurrence_count
-                FROM trade_intel_packages
-                WHERE anchor_player_id = %s AND season = %s
-                ORDER BY occurrence_count DESC
-                LIMIT 10
-                """,
-                (player_id, season)
-            ).fetchall()
-
         from utils.utils import load_players_index
         players_map = load_players_index() or {}
 
-        def _resolve_package(pkg_key: str) -> list[dict]:
-            companions = []
-            for pid in pkg_key.split("|"):
-                if not pid:
-                    continue
-                info = players_map.get(pid, {})
-                companions.append({
-                    "player_id": pid,
-                    "name": info.get("name", pid),
-                    "position": info.get("pos"),
-                })
-            return companions
-
-        common_packages = [
-            {
-                "companions": _resolve_package(r["package_key"]),
-                "occurrence_count": r["occurrence_count"],
-            }
-            for r in package_rows
-            if r["package_key"]
-        ]
-
-        if not stat_row:
-            return jsonify({
-                "player_id": player_id,
-                "season": season,
-                "trade_count": 0,
-                "common_packages": common_packages,
-                "velocity": {"recent_90d": 0, "prior_90d": 0, "trend": None},
-                "buyer_split": {},
-            })
-
-        model_val = float(stat_row["model_value"] or 0)
-        market_val = float(stat_row["market_value"] or 0)
-        calibrated_val = float(stat_row["calibrated_value"] or 0)
-        # Delta is market vs raw model - shows how much the model diverges from real trades
-        delta = round(market_val - model_val, 1) if model_val and market_val else None
-
-        # Market-intel extras for the card (90d heat + buyer split).
-        # Best-effort: the card renders fine without them.
-        _velocity = {"recent_90d": 0, "prior_90d": 0, "trend": None}
-        _buyer_split = {}
-        try:
-            _extras = trade_intel_card_extras([player_id])
-            _e = _extras.get(str(player_id)) or {}
-            _velocity = _e.get("velocity") or _velocity
-            _buyer_split = _e.get("buyer_split") or {}
-        except Exception:
-            logger.debug("trade-intel card extras failed", exc_info=True)
-
-        return jsonify({
-            "player_id": player_id,
-            "season": season,
-            "trade_count_7d": stat_row["trade_count_7d"],
-            "trade_count_30d": stat_row["trade_count_30d"],
-            "trade_count_all": stat_row["trade_count"],
-            "market_value": market_val or None,
-            "model_value": model_val or None,
-            "calibrated_value": calibrated_val or None,
-            "calibration_source": stat_row["calibration_source"],
-            "value_delta": delta,
-            "buy_sell_ratio": float(stat_row["buy_sell_ratio"]) if stat_row["buy_sell_ratio"] else None,
-            "avg_package_value": float(stat_row["avg_package_value"]) if stat_row["avg_package_value"] else None,
-            "common_packages": common_packages,
-            "velocity": _velocity,
-            "buyer_split": _buyer_split,
-        })
+        with get_conn() as conn:
+            payload = _trade_intel_player_payload(
+                conn, player_id, season, league_type, league_size,
+                players_map, _rk_year_p)
+        return jsonify(payload)
 
     except Exception:
         logger.exception("[trade-intel/player] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/players")
+def api_trade_intel_players():
+    """Batch form of /api/trade-intel/player/<id>: ?ids=a,b,c plus the same
+    season / league_type / league_size params. Returns
+    {"players": {id: payload}} with per-player payloads identical to the
+    single endpoint's. A player whose payload build fails is omitted; the
+    client treats that like a failed single call and renders the rest.
+    """
+    from dashboard_services.db import get_conn
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+        league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+        league_size = int(request.args.get("league_size") or 10)
+        ids = [p.strip() for p in str(request.args.get("ids") or "").split(",") if p.strip()]
+        ids = list(dict.fromkeys(ids))[:40]
+        if not ids:
+            return jsonify({"season": season, "players": {}})
+
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_tip
+        _rk_year_p = _garc_tip()
+        from utils.utils import load_players_index
+        players_map = load_players_index() or {}
+        try:
+            extras = trade_intel_card_extras(ids)
+        except Exception:
+            extras = {}
+
+        players = {}
+        with get_conn() as conn:
+            for pid in ids:
+                try:
+                    players[pid] = _trade_intel_player_payload(
+                        conn, pid, season, league_type, league_size,
+                        players_map, _rk_year_p, extras=extras)
+                except Exception:
+                    logger.debug("[trade-intel/players] payload failed for %s",
+                                 pid, exc_info=True)
+        return jsonify({"season": season, "players": players})
+
+    except Exception:
+        logger.exception("[trade-intel/players] error")
         return jsonify({"error": "Internal error"}), 500
 
 
