@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-28",
+        "tag": "fix",
+        "text": "My Leagues: the Rooting Guide and Bye Watch now load from a lightweight data pass built only from your league rosters, this week's matchups and the shared player list, instead of the full season-long league build they used to wait on. That build was heavy enough that it often never finished before the app recycled itself, which is why both cards loaded only sometimes. The numbers, groupings and projections are unchanged; the cards now finish loading every time.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-28",
         "tag": "update",
         "text": "League Stats: charts now fill their cards. When a card stretches to match its row, the chart itself grows instead of leaving an empty gap above the summary. Three duplicate charts were removed: the viewer-only Weekly Scoring Trend (now part of Weekly Scoring: All Teams, with your line in bold), League Scoring by Week (its biggest scoring week now appears in the Scoring Heatmap summary), and the score distribution box plot inside Consistency Ranking. Team names on the scatter charts are shown in full instead of being cut off, chart labels no longer clip at the edges when points are graphed, and long team names get a wider column plus a full-name tooltip on the bar charts.",
         "link": "/graphs"
