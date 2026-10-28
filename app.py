@@ -493,7 +493,25 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
     background thread and returns [] immediately. Synchronous render paths
     (e.g. the dashboard's trade-window card) use that so a cold sim -- several
     projection fetches plus a Monte Carlo run -- never blocks a page paint;
-    the surface simply appears on the next visit."""
+    the surface simply appears on the next visit.
+
+    The schedule component of the signature is computed ONLY on the blocking
+    path and inside the background sim thread. ``playoff_schedule_sig``
+    fetches the published slate from the provider (one get_matchups per
+    regular-season week), so computing the full signature on the calling
+    thread made every "cache-only" block=False read pay unbounded provider
+    I/O before the cache was even consulted. Inside the portfolio actions
+    scan that wedged the whole pass on the first league's odds attach --
+    before any league could be marked scanned or fragmented -- so the
+    Front Office board sat at "Could not check N of N" indefinitely
+    (2026-10-28). block=False therefore validates a warm entry on the
+    locally computable signature parts (roster fingerprint + current
+    week, both pure functions of the ctx); the background sim refreshes
+    the full signature, schedule included, when it stores its result, so
+    a schedule-only change can serve the previous sim for at most the
+    cache TTL on these surfaces -- the pre-v3 trade they already made.
+    Entries stored before the roster_sig/week fields existed fail the
+    cheap check once and are rewritten in the new shape by the re-sim."""
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
         key = (
@@ -504,19 +522,38 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             # (v2 only keyed on roster composition).
             "v3",
         )
-        sig = _playoff_sim_sig(ctx, platform)
         hit = _PLAYOFF_SIM_CACHE.get(key)
-        # Serve the cache only while it's fresh AND built on the current
-        # rosters / week / schedule -- a trade or newly published slate
-        # changes the signature and forces a re-sim right away.
-        if hit and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL and hit.get("sig") == sig:
-            return hit["data"] or []
+        fresh = bool(hit) and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL
+        if not block:
+            # Cache-only path: no schedule fingerprint on this thread (see
+            # docstring). Roster + week are cheap local checks and still
+            # force a re-sim the moment either actually changes.
+            if (
+                fresh
+                and hit.get("roster_sig") == _roster_sig(ctx)
+                and hit.get("week") == int(ctx.get("current_week") or 0)
+            ):
+                return hit["data"] or []
+        else:
+            sig = _playoff_sim_sig(ctx, platform)
+            # Serve the cache only while it's fresh AND built on the current
+            # rosters / week / schedule -- a trade or newly published slate
+            # changes the signature and forces a re-sim right away.
+            if fresh and hit.get("sig") == sig:
+                return hit["data"] or []
 
-        def _run(snapshot=dict(ctx), snap_sig=sig):
+        def _run(snapshot=dict(ctx)):
             try:
+                snap_sig = _playoff_sim_sig(snapshot, platform)
                 odds = simulate_playoff_odds(snapshot, platform=platform) or []
                 _prune_ttl_cache(_PLAYOFF_SIM_CACHE, _PLAYOFF_SIM_CACHE_MAX)
-                _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time(), "sig": snap_sig}
+                _PLAYOFF_SIM_CACHE[key] = {
+                    "data": odds,
+                    "ts": time.time(),
+                    "sig": snap_sig,
+                    "roster_sig": _roster_sig(snapshot),
+                    "week": int(snapshot.get("current_week") or 0),
+                }
             except Exception:
                 logger.debug("background playoff sim failed", exc_info=True)
             finally:
@@ -547,7 +584,13 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
 
         odds = simulate_playoff_odds(ctx, platform=platform) or []
         _prune_ttl_cache(_PLAYOFF_SIM_CACHE, _PLAYOFF_SIM_CACHE_MAX)
-        _PLAYOFF_SIM_CACHE[key] = {"data": odds, "ts": time.time(), "sig": sig}
+        _PLAYOFF_SIM_CACHE[key] = {
+            "data": odds,
+            "ts": time.time(),
+            "sig": sig,
+            "roster_sig": _roster_sig(ctx),
+            "week": int(ctx.get("current_week") or 0),
+        }
         return odds
     except Exception:
         logger.debug("playoff sim failed", exc_info=True)

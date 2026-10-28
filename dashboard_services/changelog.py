@@ -3,7 +3,14 @@ Changelog entries for the fantasy dashboard.
 Each entry represents a user-facing change.
 """
 
-CHANGELOG = [    {
+CHANGELOG = [
+    {
+        "date": "2026-10-28",
+        "tag": "fix",
+        "text": "My Leagues: the Front Office board no longer gets stuck on 'Could not check N of N leagues yet'. Checking a league's playoff odds was quietly fetching that league's remaining schedule from the platform inside the scan itself, one fetch per week of the season for every league, so with several leagues the check stalled before it could count even one league as checked. The scan now reads odds from the cache only, the way it was designed to, and the schedule check happens inside the background simulation where it belongs.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-10-28",
         "tag": "fix",
         "text": "Weekly Hub: the matchup carousel is narrower so the Scorers, Scout and Lineup panels get more room, and the two columns now share one clean bottom edge. Scorers shows the top 5 at every position instead of the top 3. The Lineup tab's This Week view is fixed and cleaner: it no longer suggests taxi-squad players, its swap suggestions match the points it shows (no more phantom swaps from players just moving between slots), its week label always matches the matchup on screen, and when your starters are already the projected-optimal lineup it shows them as one clean list instead of a doubled comparison table.",
