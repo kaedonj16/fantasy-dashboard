@@ -2445,6 +2445,192 @@ def build_trade_suggestions_context(
 # Power Rankings Context
 # ──────────────────────────────────────────────────────────────────────────────
 
+# ── Static (df-independent) power-rankings inputs ──────────────────────────
+# build_power_rankings_context runs once per standings/recap render for the
+# current week and again on week-capped ctx copies (previous week on the
+# standings page and its week endpoint, prior week on the recap). Those
+# copies are shallow: they share the SAME rosters, model table, players
+# index/map and picks objects, and everything derived purely from those
+# objects (the value lookup, dynasty/redraft totals, draft capital, and each
+# roster's value/age/grade profile) is identical between the passes. This
+# bundle memoizes exactly that work on the source objects' identities; only
+# the df_weekly-derived terms (all-play, momentum, SoS, ROS ease, PPG,
+# blended scores) are computed per call. Strong refs to the key objects are
+# held so their ids cannot be recycled while the entry lives. One entry is
+# enough: a request's passes all share one league snapshot.
+_POWER_STATIC_CACHE: dict = {"key": None, "refs": None, "data": None}
+
+
+def _power_pct_fn(totals: dict):
+    _sorted = sorted(totals.values())
+    _n = max(len(_sorted) - 1, 1)
+
+    def _pct(rid_int) -> float:
+        t = totals.get(rid_int, 0.0)
+        return sum(1 for v in _sorted if v < t) / _n
+
+    return _pct
+
+
+def _power_static_bundle(ctx: dict, rosters: list, *, scoring_type: str,
+                         is_sf: bool, roster_positions: list) -> dict:
+    model_table = ctx.get("model_value_table") or []
+    players_index = ctx.get("players_index") or {}
+    players_map = ctx.get("players_map") or {}
+    picks_by_roster = ctx.get("picks_by_roster") or {}
+    key = (
+        id(rosters), id(model_table), id(players_index), id(players_map),
+        id(picks_by_roster), tuple(roster_positions or ()),
+        scoring_type, bool(is_sf),
+    )
+    if _POWER_STATIC_CACHE["key"] == key:
+        return _POWER_STATIC_CACHE["data"]
+
+    from dashboard_services.power_score import (
+        available_starter_lineup_value,
+        starter_lineup_value,
+    )
+
+    is_redraft = scoring_type == "redraft"
+    redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+    _CORE_POS = {"QB", "RB", "WR", "TE"}
+
+    model_value_lookup = build_model_value_lookup(
+        model_table, is_sf=is_sf, scoring_type=scoring_type,
+    )
+
+    # ── Dynasty totals, redraft totals, and dynasty/redraft ratios ──
+    team_dynasty_total: dict = {}
+    team_redraft_total: dict = {}
+    team_dr_ratio: dict = {}
+    for roster in rosters:
+        rid_int = roster.get("roster_id")
+        if rid_int is None:
+            continue
+        _pairs: list = []
+        for pid in (roster.get("players") or []):
+            row = model_value_lookup.get(str(pid)) or {}
+            pos = str(row.get("position") or "").upper()
+            if pos not in _CORE_POS:
+                continue
+            dval = _safe_float(row.get("value") or 0)
+            rval = _safe_float(row.get(redraft_key) or 0)
+            _pairs.append((dval, rval))
+        _dtot, _rtot, _drr = _team_value_axes(_pairs)
+        team_dynasty_total[rid_int] = _dtot
+        team_redraft_total[rid_int] = _rtot
+        team_dr_ratio[rid_int] = _drr
+
+    dynasty_pct_fn = _power_pct_fn(team_dynasty_total)
+    redraft_pct_fn = _power_pct_fn(team_redraft_total)
+
+    # League-relative draft capital for the window classifier (see
+    # league_capital_context). Redraft leagues carry no tradeable picks.
+    cap_pct_by_roster, surplus_by_roster = league_capital_context(
+        {} if is_redraft else picks_by_roster
+    )
+
+    profiles: dict = {}
+    for roster in rosters:
+        rid = str(roster.get("roster_id") or "")
+        rid_int = roster.get("roster_id")
+        roster_players = roster.get("players") or []
+
+        roster_players_vals = []
+        for pid in roster_players:
+            mv = model_value_lookup.get(str(pid)) or {}
+            val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
+            roster_players_vals.append(val)
+        avg_value = (
+            sum(roster_players_vals) / len(roster_players_vals)
+            if roster_players_vals else 0.0
+        )
+
+        # Slot-legal win-now starter strength (falls back to top-8 redraft).
+        starter_value = starter_lineup_value(
+            roster_players,
+            model_value_lookup,
+            redraft_key=redraft_key,
+            roster_positions=roster_positions,
+        )
+        # True-strength term inputs: injury designations ride on the Sleeper
+        # player feed (players_index / players_map).
+        _injury_by_pid = {}
+        for _pid in roster_players:
+            _spid = str(_pid)
+            _meta = players_index.get(_spid) or players_map.get(_spid) or {}
+            _injury_by_pid[_spid] = _meta.get("injury_status") or ""
+        starter_value_available = available_starter_lineup_value(
+            roster_players,
+            model_value_lookup,
+            redraft_key=redraft_key,
+            roster_positions=roster_positions,
+            injury_by_pid=_injury_by_pid,
+        )
+
+        players_summary = summarize_roster_players(
+            roster=roster,
+            players_index=players_index,
+            players_map=players_map,
+            model_value_lookup=model_value_lookup,
+        )
+        future_picks = [] if is_redraft else (ctx.get("picks_by_roster") or {}).get(rid, [])
+        direction = detect_team_direction(
+            players_summary, future_picks, scoring_type=scoring_type,
+        )
+        pos_strength = group_position_strength(players_summary)
+
+        ages = [_safe_float(p.get("age")) for p in players_summary if p.get("age") not in (None, "")]
+        avg_age = round(sum(ages) / len(ages), 1) if ages else None
+        first_round_picks = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
+
+        # Win window using league-context percentiles (same as teams page).
+        try:
+            grade_data = calculate_roster_grade(
+                players_summary,
+                future_picks,
+                dynasty_pct_val=dynasty_pct_fn(rid_int),
+                redraft_pct_val=redraft_pct_fn(rid_int),
+                dr_ratio=team_dr_ratio.get(rid_int, 1.0),
+                capital_pct_val=cap_pct_by_roster.get(rid),
+                surplus_firsts_val=surplus_by_roster.get(rid),
+                num_teams=len(rosters),
+                scoring_type=scoring_type,
+            )
+            win_window = grade_data.get("win_window") or direction
+        except Exception:
+            win_window = direction
+
+        profiles[rid] = {
+            "avg_value": avg_value,
+            "starter_value": starter_value,
+            "starter_value_available": starter_value_available,
+            "players_summary": players_summary,
+            "future_picks": future_picks,
+            "direction": direction,
+            "pos_strength": pos_strength,
+            "avg_age": avg_age,
+            "first_round_picks": first_round_picks,
+            "win_window": win_window,
+        }
+
+    data = {
+        "lookup": model_value_lookup,
+        "dynasty_total": team_dynasty_total,
+        "redraft_total": team_redraft_total,
+        "dr_ratio": team_dr_ratio,
+        "cap_pct": cap_pct_by_roster,
+        "surplus": surplus_by_roster,
+        "profiles": profiles,
+    }
+    _POWER_STATIC_CACHE["key"] = key
+    _POWER_STATIC_CACHE["refs"] = (
+        rosters, model_table, players_index, players_map, picks_by_roster,
+    )
+    _POWER_STATIC_CACHE["data"] = data
+    return data
+
+
 def build_power_rankings_context(ctx: dict) -> dict:
     """
     Build context for AI-generated power rankings.
@@ -2464,9 +2650,6 @@ def build_power_rankings_context(ctx: dict) -> dict:
     scoring_type = ctx_scoring_type(ctx)
     is_redraft = scoring_type == "redraft"
     is_sf = _ctx_is_sf(ctx)
-    model_value_lookup = build_model_value_lookup(
-        ctx.get("model_value_table") or [], is_sf=is_sf, scoring_type=scoring_type,
-    )
     playoff_by_rid = {
         str((row or {}).get("roster_id")): row
         for row in _playoff_rows(ctx)
@@ -2477,55 +2660,24 @@ def build_power_rankings_context(ctx: dict) -> dict:
     except (TypeError, ValueError):
         playoff_teams = 6
     season_phase = _season_phase(ctx.get("current_week"), "")
-    redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
-    _CORE_POS = {"QB", "RB", "WR", "TE"}
 
     from dashboard_services.power_score import (
-        available_starter_lineup_value,
         blended_team_scores,
         season_phase_from_progress,
-        starter_lineup_value,
     )
     roster_positions = ctx.get("roster_positions") or []
 
-    # ── Pre-compute dynasty totals, redraft totals, and dynasty/redraft ratios ──
-    _team_dynasty_total: dict = {}
-    _team_redraft_total: dict = {}
-    _team_dr_ratio: dict = {}
-    for roster in rosters:
-        rid_int = roster.get("roster_id")
-        if rid_int is None:
-            continue
-        _pairs: list = []
-        for pid in (roster.get("players") or []):
-            row = model_value_lookup.get(str(pid)) or {}
-            pos = str(row.get("position") or "").upper()
-            if pos not in _CORE_POS:
-                continue
-            dval = _safe_float(row.get("value") or 0)
-            rval = _safe_float(row.get(redraft_key) or 0)
-            _pairs.append((dval, rval))
-        _dtot, _rtot, _drr = _team_value_axes(_pairs)
-        _team_dynasty_total[rid_int] = _dtot
-        _team_redraft_total[rid_int] = _rtot
-        _team_dr_ratio[rid_int] = _drr
-
-    def _make_pct_fn(totals: dict):
-        _sorted = sorted(totals.values())
-        _n = max(len(_sorted) - 1, 1)
-        def _pct(rid_int) -> float:
-            t = totals.get(rid_int, 0.0)
-            return sum(1 for v in _sorted if v < t) / _n
-        return _pct
-
-    _dynasty_pct_fn = _make_pct_fn(_team_dynasty_total)
-    _redraft_pct_fn = _make_pct_fn(_team_redraft_total)
-
-    # League-relative draft capital for the window classifier (see
-    # league_capital_context). Redraft leagues carry no tradeable picks.
-    _cap_pct_by_roster, _surplus_by_roster = league_capital_context(
-        {} if is_redraft else (ctx.get("picks_by_roster") or {})
+    # ── Static inputs shared with this request's other power pass ──
+    # Value lookup, dynasty/redraft totals, draft capital and the per-roster
+    # value/grade profiles derive only from the rosters / model table /
+    # players index objects, which a week-capped ctx shares with the base
+    # ctx, so _power_static_bundle computes them once per league snapshot.
+    _static = _power_static_bundle(
+        ctx, rosters, scoring_type=scoring_type, is_sf=is_sf,
+        roster_positions=roster_positions,
     )
+    _redraft_pct_fn = _power_pct_fn(_static["redraft_total"])
+    _profiles = _static["profiles"]
 
     # ── All-play win % per roster (the in-season rank signal) ──────────────────
     # Actual record is heavily schedule-luck-driven. All-play -- how you'd fare
@@ -2693,72 +2845,21 @@ def build_power_rankings_context(ctx: dict) -> dict:
         sos = _sos.get(rid, 0.5)
         sos_label = "Brutal" if sos >= 0.56 else ("Soft" if sos <= 0.44 else "Average")
 
-        # Compute roster value
-        roster_players_vals = []
-        for pid in roster.get("players") or []:
-            mv = model_value_lookup.get(str(pid)) or {}
-            val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
-            roster_players_vals.append(val)
-        avg_value = sum(roster_players_vals) / len(roster_players_vals) if roster_players_vals else 0.0
-        # Slot-legal win-now starter strength (falls back to top-8 redraft).
-
-        starter_value = starter_lineup_value(
-            roster.get("players") or [],
-            model_value_lookup,
-            redraft_key=redraft_key,
-            roster_positions=roster_positions,
-        )
-        # True-strength term: the lineup the team can actually field. Injury
-        # designations ride on the Sleeper player feed (players_index /
-        # players_map); with no injury data anywhere this equals the raw
-        # starter value exactly (see available_starter_lineup_value).
-        _players_index = ctx.get("players_index") or {}
-        _players_map = ctx.get("players_map") or {}
-        _injury_by_pid = {}
-        for _pid in roster.get("players") or []:
-            _spid = str(_pid)
-            _meta = _players_index.get(_spid) or _players_map.get(_spid) or {}
-            _injury_by_pid[_spid] = _meta.get("injury_status") or ""
-        starter_value_available = available_starter_lineup_value(
-            roster.get("players") or [],
-            model_value_lookup,
-            redraft_key=redraft_key,
-            roster_positions=roster_positions,
-            injury_by_pid=_injury_by_pid,
-        )
-
-        players_summary = summarize_roster_players(
-            roster=roster,
-            players_index=ctx.get("players_index") or {},
-            players_map=ctx.get("players_map") or {},
-            model_value_lookup=model_value_lookup,
-        )
-        future_picks = [] if is_redraft else ctx.get("picks_by_roster", {}).get(rid, [])
-        direction = detect_team_direction(
-            players_summary, future_picks, scoring_type=scoring_type,
-        )
-        pos_strength = group_position_strength(players_summary)
-
-        ages = [_safe_float(p.get("age")) for p in players_summary if p.get("age") not in (None, "")]
-        avg_age = round(sum(ages) / len(ages), 1) if ages else None
-        first_round_picks = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
-
-        # Compute win_window using league-context percentiles (same as teams page)
-        try:
-            grade_data = calculate_roster_grade(
-                players_summary,
-                future_picks,
-                dynasty_pct_val=_dynasty_pct_fn(rid_int),
-                redraft_pct_val=_redraft_pct_fn(rid_int),
-                dr_ratio=_team_dr_ratio.get(rid_int, 1.0),
-                capital_pct_val=_cap_pct_by_roster.get(rid),
-                surplus_firsts_val=_surplus_by_roster.get(rid),
-                num_teams=len(rosters),
-                scoring_type=scoring_type,
-            )
-            win_window = grade_data.get("win_window") or direction
-        except Exception:
-            win_window = direction
+        # Roster value / grade profile: computed once per league snapshot by
+        # _power_static_bundle and shared with this request's other power
+        # pass (see above). Only the redraft playoff overrides below and the
+        # df-derived terms above are per-call.
+        _prof = _profiles.get(rid) or {}
+        avg_value = _prof.get("avg_value", 0.0)
+        starter_value = _prof.get("starter_value")
+        starter_value_available = _prof.get("starter_value_available")
+        players_summary = _prof.get("players_summary") or []
+        future_picks = _prof.get("future_picks") or []
+        direction = _prof.get("direction")
+        pos_strength = _prof.get("pos_strength") or {}
+        avg_age = _prof.get("avg_age")
+        first_round_picks = _prof.get("first_round_picks", 0)
+        win_window = _prof.get("win_window") or direction
 
         po_row = playoff_by_rid.get(rid) or {}
         try:

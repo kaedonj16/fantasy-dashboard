@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-27",
+        "tag": "update",
+        "text": "Weekly Recap and Standings load faster: both pages were computing the same standings, power rankings and lineup efficiency more than once per visit, and lineup efficiency was recomputed from scratch on most visits. The duplicate passes are gone and the efficiency result is now remembered between visits, so both pages show the exact same numbers and rankings, just sooner.",
+        "link": "/standings"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "fix",
         "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
         "link": "/recap"

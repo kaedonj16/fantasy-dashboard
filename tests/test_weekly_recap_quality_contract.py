@@ -32,7 +32,7 @@ def test_lineup_selectors_share_one_historical_calculation():
 def test_recap_uses_shared_historical_and_picture_resolvers():
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     assert 'recap_ctx["df_weekly"] = fin_df' in source
-    assert "build_standings_as_of_week(recap_ctx, selected_week)" in source
+    assert "build_standings_as_of_week(\n        recap_ctx, selected_week, include_team_stats=not _power_is_live)" in source
     assert "power_teams = _power_teams_for(historical_ctx)" in source
     assert "_power_teams_from_team_stats" in source
     assert "team_avatar(_platform, roster, users)" in source
@@ -54,7 +54,7 @@ def test_recap_sections_follow_editorial_order_and_end_with_up_next():
 def test_historical_movement_is_week_capped_and_week_one_safe():
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     assert "if selected_week > 1:" in source
-    assert "build_standings_as_of_week(recap_ctx, selected_week - 1)" in source
+    assert "build_standings_as_of_week(\n            recap_ctx, selected_week - 1, include_team_stats=not _power_is_live)" in source
     assert "prior_power_teams = _power_teams_for(prior_ctx)" in source
     assert "prior_standings else ''" in source
 

@@ -11586,22 +11586,36 @@ def render_share_rankings(ctx: dict) -> str:
     else:
         owner_to_rid = {v: k for k, v in roster_map.items()}
 
-    # ── Value: load from player_values DB ─────────────────────────
+    # ── Value: the ctx model table this request already built ────
+    # Its rows carry the raw player_values columns verbatim (model_value =
+    # value_1qb, model_sf_value = value_sf), so the shares read the same
+    # source as every other value surface on the page instead of issuing a
+    # second full player_values SELECT. Fall back to that SELECT only when
+    # the ctx has no usable table (e.g. the JSON value source, whose rows
+    # lack the raw columns).
     roster_positions = ctx.get("roster_positions") or []
     is_sf = _is_superflex_lineup(roster_positions)
     val_col = "value_sf" if is_sf else "value_1qb"
+    raw_key = "model_sf_value" if is_sf else "model_value"
 
     values_by_pid: Dict[str, float] = {}
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as _conn:
-            rows = _conn.execute(
-                f"SELECT player_id, {val_col} AS v FROM player_values WHERE {val_col} IS NOT NULL"
-            ).fetchall()
-        for r in rows:
-            values_by_pid[str(r["player_id"])] = float(r["v"] or 0)
-    except Exception:
-        logger.debug("suppressed exception", exc_info=True)
+    _model_table = ctx.get("model_value_table") or []
+    if _model_table and raw_key in (_model_table[0] or {}):
+        for _row in _model_table:
+            _v = (_row or {}).get(raw_key)
+            if _v is not None:
+                values_by_pid[str(_row.get("id"))] = float(_v or 0)
+    if not values_by_pid:
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as _conn:
+                rows = _conn.execute(
+                    f"SELECT player_id, {val_col} AS v FROM player_values WHERE {val_col} IS NOT NULL"
+                ).fetchall()
+            for r in rows:
+                values_by_pid[str(r["player_id"])] = float(r["v"] or 0)
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
 
     rid_to_roster = {str(r.get("roster_id")): r for r in rosters}
 
@@ -11835,17 +11849,29 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
     }
 
 
-def build_standings_as_of_week(ctx: dict, week: int) -> dict:
+def build_standings_as_of_week(ctx: dict, week: int, *, include_team_stats: bool = True) -> dict:
     """Shallow-copied ctx whose team_stats and df_weekly are recomputed through
     the given finalized week, so the standings/power surfaces render as they
     stood then. Values come straight from the weekly scores, so the record,
-    PF/PA, streaks and performance PowerScore are all exact for that point."""
+    PF/PA, streaks and performance PowerScore are all exact for that point.
+
+    ``include_team_stats=False`` skips the expensive ``finalize_team_stats``
+    pass and leaves the source ctx's ``team_stats`` in place; the returned
+    ctx's ``df_weekly`` cap is identical either way. Only for callers that
+    provably never read the capped ``team_stats`` (the recap's live view,
+    whose rows and power list are derived from ``df_weekly`` and the blended
+    power context, neither of which reads ``team_stats``)."""
     from dashboard_services.service import finalize_team_stats, regular_season_length
     from utils.standings import median_match_enabled
 
     df_weekly = ctx["df_weekly"]
     wk = pd.to_numeric(df_weekly["week"], errors="coerce")
     fin = df_weekly[(df_weekly["finalized"] == True) & (wk <= int(week))].copy()
+
+    new_ctx = dict(ctx)
+    new_ctx["df_weekly"] = fin
+    if not include_team_stats:
+        return new_ctx
 
     owner_avatar = {}
     if "owner" in df_weekly.columns and "avatar" in df_weekly.columns:
@@ -11856,7 +11882,7 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
         or (ctx.get("league") or {}).get("settings")
         or {}
     )
-    team_stats = finalize_team_stats(
+    new_ctx["team_stats"] = finalize_team_stats(
         fin, owner_avatar,
         ctx.get("matchups_by_week") or {},
         ctx.get("users") or [],
@@ -11864,10 +11890,6 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
         regular_season_weeks=regular_season_length(_settings),
         median_match=median_match_enabled(_settings),
     )
-
-    new_ctx = dict(ctx)
-    new_ctx["team_stats"] = team_stats
-    new_ctx["df_weekly"] = fin
     return new_ctx
 
 

@@ -505,7 +505,7 @@ console.log('alert-dot soft-nav logic ok');
 def test_changelog_announces_alert_dots():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[14]  # prepends above it: duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, rooting/bye cleanup, Front Office scan fix, fair-band fix, assistant league fix, dot fix, recap cleanup, Rooting Guide
+    entry = CHANGELOG[15]  # prepends above it: recap/standings dedupe, duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, rooting/bye cleanup, Front Office scan fix, fair-band fix, assistant league fix, dot fix, recap cleanup, Rooting Guide
     assert entry["date"] == "2026-10-27"
     assert entry["tag"] == "new"
     assert "Weekly Recap" in entry["text"] and "Breakout Engine" in entry["text"]
@@ -515,7 +515,7 @@ def test_changelog_announces_alert_dots():
 def test_changelog_announces_recap_dot_softnav_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[11]  # prepended above it: duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix, the fair-band fix, the assistant league fix
+    top = CHANGELOG[12]  # prepended above it: recap/standings dedupe, duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix, the fair-band fix, the assistant league fix
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "alert dot" in top["text"]
@@ -540,7 +540,7 @@ def test_tuesday_banner_adds_no_second_dot():
 def test_changelog_announces_duplicate_dot_removal():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[0]
+    top = CHANGELOG[1]  # the recap/standings dedupe entry prepended above it
     assert top["date"] == "2026-10-27"
     assert top["tag"] == "fix"
     assert "duplicate red dot" in top["text"]
