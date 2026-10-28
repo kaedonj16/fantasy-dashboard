@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # The single kept exact pin. Bump this line together with CACHE_NAME in
 # static/sw.js; no other test file may carry the literal version.
-EXPECTED_SW_CACHE_NAME = "br-fantasy-v133"
+EXPECTED_SW_CACHE_NAME = "br-fantasy-v134"
 
 _CACHE_NAME_RE = re.compile(r"const CACHE_NAME = '(br-fantasy-v(\d+))';")
 

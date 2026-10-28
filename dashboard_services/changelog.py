@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [    {
         "date": "2026-10-28",
         "tag": "fix",
+        "text": "My Leagues: the Rooting Guide no longer repeats the same projection as a range (like 9.5-9.5) when your leagues agree on a player; it shows the single number, and only genuinely different league values show the low-high range. In the two-per-row game cards, each player's value now sits in a fixed right-hand rail on the name line instead of wrapping or drifting when a player carries several league badges, and the badges stay together as a group.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-28",
+        "tag": "fix",
         "text": "Weekly Hub: the matchup carousel is narrower so the Scorers, Scout and Lineup panels get more room, and the two columns now share one clean bottom edge. Scorers shows the top 5 at every position instead of the top 3. The Lineup tab's This Week view is fixed and cleaner: it no longer suggests taxi-squad players, its swap suggestions match the points it shows (no more phantom swaps from players just moving between slots), its week label always matches the matchup on screen, and when your starters are already the projected-optimal lineup it shows them as one clean list instead of a doubled comparison table.",
         "link": "/"
     },

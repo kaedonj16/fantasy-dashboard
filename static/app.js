@@ -30519,16 +30519,25 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     return order;
   }
   function rgValue(entries, field) {
-    var vals = [];
+    // Values are compared AS DISPLAYED (after fmt1's 1-decimal
+    // rounding): leagues whose raw values differ but round to the same
+    // displayed number show that single number, never a stuttering
+    // "9.5-9.5" range. Only genuinely different displayed values
+    // render as a low-high range.
+    var seen = {}, disp = [];
     entries.forEach(function (e) {
       var v = e[field];
       if (v == null) return;
       var n = Number(v);
-      if (!isNaN(n) && vals.indexOf(n) === -1) vals.push(n);
+      if (!isNaN(n)) {
+        var d = fmt1(n);
+        if (!seen[d]) { seen[d] = true; disp.push(d); }
+      }
     });
-    if (!vals.length) return '';
-    if (vals.length === 1) return fmt1(vals[0]);
-    return fmt1(Math.min.apply(null, vals)) + '-' + fmt1(Math.max.apply(null, vals));
+    if (!disp.length) return '';
+    if (disp.length === 1) return disp[0];
+    var nums = disp.map(function (d) { return Number(d); });
+    return fmt1(Math.min.apply(null, nums)) + '-' + fmt1(Math.max.apply(null, nums));
   }
   function rgSide(starters, status) {
     return rgGroup(starters).map(function (g) {
@@ -30553,8 +30562,8 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         }
       }
       return '<div class="pf-rg-p"><span class="pos-badge ' + esc(s.pos || '') + '">' + esc(s.pos || '') + '</span>' +
-        '<span class="pf-rg-pname">' + esc(s.name) + '</span>' +
-        '<span class="pf-rg-chips">' + chips + '</span>' +
+        '<span class="pf-rg-id"><span class="pf-rg-pname">' + esc(s.name) + '</span>' +
+        '<span class="pf-rg-chips">' + chips + '</span></span>' +
         right + '</div>';
     }).join('');
   }
