@@ -28567,50 +28567,108 @@ window._rzStubPbpEvents = function(pid, state) {
   return events;
 };
 
-// Default stub for non-ScoreZone pages: one-shot fetch, 30 s cache.
+// ── Shared league-scope ScoreZone live cache ─────────────────────────────
+// One window-level cache owns the league-scope scorezone-data payloads for
+// every off-ScoreZone surface. The player-modal stub (30 s) and the matchup
+// board drive bars (20 s) used to keep two private caches that fetched the
+// identical URL on independent clocks. Entries are keyed by payload variant
+// + league path: 'full' (the modal game log, which needs the play-by-play)
+// and 'lite' (the drive bars, which read only the games map, served by the
+// endpoint's lite slice). One in-flight fetch per entry; waiters flush with
+// the current payload on success, on an HTTP error (stale body), or on a 304
+// (which also renews the entry's freshness); a network failure drops them.
+window.__brSzLiveCache = (function () {
+  var entries = {};
+  var MAX_ENTRIES = 8;
+  var UNCHANGED = {};
+  function basePath() {
+    var parts = window.location.pathname.split('/');
+    return parts.length >= 4 ? '/' + parts[1] + '/' + parts[2] + '/' + parts[3] : '';
+  }
+  function entryFor(variant) {
+    var key = variant + '|' + basePath();
+    var e = entries[key];
+    if (!e) {
+      var keys = Object.keys(entries);
+      if (keys.length >= MAX_ENTRIES) delete entries[keys[0]];
+      e = entries[key] = { data: null, ts: 0, etag: null, fetching: false, waiters: [] };
+    }
+    return e;
+  }
+  function flush(e) {
+    var w = e.waiters; e.waiters = [];
+    w.forEach(function (fn) { try { fn(e.data); } catch (err) {} });
+  }
+  function get(variant, staleMs, cb) {
+    var e = entryFor(variant);
+    if (e.data && Date.now() - e.ts < staleMs) {
+      if (cb) cb(e.data);
+      return e.data;
+    }
+    if (cb) e.waiters.push(cb);
+    if (!e.fetching) {
+      var base = basePath();
+      if (!base) { e.waiters = []; return e.data; }
+      e.fetching = true;
+      var url = '/api' + base + '/scorezone-data?scope=league'
+        + (variant === 'lite' ? '&lite=1' : '') + '&_cb=' + Date.now();
+      var headers = {};
+      if (e.etag) headers['If-None-Match'] = e.etag;
+      fetch(url, { headers: headers }).then(function (r) {
+        var et = r.headers && r.headers.get ? r.headers.get('ETag') : null;
+        if (et) e.etag = et;
+        if (r.status === 304) return UNCHANGED;
+        return r.ok ? r.json() : null;
+      }).then(function (data) {
+        e.fetching = false;
+        if (data === UNCHANGED) {
+          e.ts = Date.now(); // server confirmed the cached body is current
+        } else if (data) {
+          e.data = data; e.ts = Date.now();
+        }
+        flush(e);
+      }).catch(function () {
+        e.fetching = false;
+        e.waiters = [];
+      });
+    }
+    return e.data;
+  }
+  return {
+    get: get,
+    peek: function (variant) { return entryFor(variant).data; },
+    invalidate: function (variant) { entryFor(variant).ts = 0; }
+  };
+}());
+
+// Default stub for non-ScoreZone pages: one-shot fetch, 30 s cache, served
+// by the shared window.__brSzLiveCache ('full' variant).
 // Overridden by the ScoreZone IIFE when #rz-root is present.
 (function() {
-  var _cache = null, _cacheTs = 0, _fetching = false, _pending = [], _timer = null, _generation = 0;
+  var _timer = null;
   window.__rzGetPlayerLive = function(pid) {
     var STALE = 30000;
     var refresh = function() {
+      var data = window.__brSzLiveCache.peek('full');
+      if (!data) return;
       var panel = document.getElementById('pm-panel-live');
       var pmBar = document.getElementById('pmTabBar');
       // Guard: only update if this player's modal is still the active one
       if (panel && panel.classList.contains('pm-panel-active') && pmBar && pmBar.dataset.pmPlayerId === pid) {
-        panel.innerHTML = window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache));
+        panel.innerHTML = window._rzBuildLiveHtml(pid, data, window._rzStubPbpEvents(pid, data));
         window._rzSyncTabLive(panel);
         if (!_timer) _timer = setTimeout(function tick() {
           _timer = null;
           var bar=document.getElementById('pmTabBar'), p=document.getElementById('pm-panel-live');
           if (!bar || !p || !p.classList.contains('pm-panel-active') || bar.dataset.pmPlayerId !== pid) return;
-          _cacheTs = 0;
+          window.__brSzLiveCache.invalidate('full');
           window.__rzGetPlayerLive(pid);
         }, 15000);
       }
     };
-    if (_cache && Date.now() - _cacheTs < STALE) {
-      refresh();
-      return window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache));
-    }
-    if (!_fetching) {
-      _fetching = true;
-      var requestGeneration = ++_generation;
-      var parts = window.location.pathname.split('/');
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone-data?scope=league&_cb=' + Date.now();
-      fetch(url)
-        .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(data) {
-          _fetching = false;
-          if (data && requestGeneration === _generation) { _cache = data; _cacheTs = Date.now(); }
-          _pending.forEach(function(fn) { fn(); });
-          _pending = [];
-        })
-        .catch(function() { _fetching = false; _pending = []; });
-    }
-    _pending.push(refresh);
-    return _cache
-      ? window._rzBuildLiveHtml(pid, _cache, window._rzStubPbpEvents(pid, _cache))
+    var data = window.__brSzLiveCache.get('full', STALE, refresh);
+    return data
+      ? window._rzBuildLiveHtml(pid, data, window._rzStubPbpEvents(pid, data))
       : '<div class="rz-pm-live" style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">Loading…</div>';
   };
 }());
@@ -28630,25 +28688,13 @@ window._rzStubPbpEvents = function(pid, state) {
   var norm = function (t) { return (window._rzNormalizeTeam ? window._rzNormalizeTeam(t) : String(t || '')).toUpperCase(); };
   var esc = function (v) { var d = document.createElement('div'); d.textContent = String(v == null ? '' : v); return d.innerHTML; };
 
-  // Shared league-scope live cache (own fetch so the weekly hub doesn't depend
-  // on a player modal being open). 20 s staleness, single in-flight request.
-  var _cache = null, _ts = 0, _fetching = false, _waiters = [];
+  // League-scope live state from the shared window.__brSzLiveCache ('lite'
+  // variant: the drive bars read only the games map, so the board no longer
+  // downloads the full scorezone-data payload on every poll, and it shares
+  // one cache/fetch with the player modal instead of a second private one).
+  // 20 s staleness, single in-flight request (inside the shared cache).
   function getState(cb) {
-    if (_cache && Date.now() - _ts < 20000) { cb && cb(_cache); return _cache; }
-    if (cb) _waiters.push(cb);
-    if (!_fetching) {
-      _fetching = true;
-      var parts = window.location.pathname.split('/');
-      if (parts.length < 4) { _fetching = false; return _cache; }
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone-data?scope=league&_cb=' + Date.now();
-      fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-        _fetching = false;
-        if (data) { _cache = data; _ts = Date.now(); }
-        var w = _waiters; _waiters = [];
-        w.forEach(function (fn) { try { fn(_cache); } catch (e) {} });
-      }).catch(function () { _fetching = false; _waiters = []; });
-    }
-    return _cache;
+    return window.__brSzLiveCache.get('lite', 20000, cb);
   }
 
   function gameForTeam(state, team) {
@@ -28806,7 +28852,7 @@ window._rzStubPbpEvents = function(pid, state) {
   setInterval(function () {
     if (document.hidden) return;
     if (!document.querySelector('.matchup-carousel .mb-fld, .matchup-carousel .mb-moments')) return;
-    _ts = 0; // force a refresh on the next getState
+    window.__brSzLiveCache.invalidate('lite'); // force a refresh on the next getState
     if (window.brRefreshVisibleMatchupLive) window.brRefreshVisibleMatchupLive(document);
   }, 20000);
 }());

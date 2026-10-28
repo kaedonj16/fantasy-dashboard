@@ -708,16 +708,26 @@ def build_weekly_hub_body(ctx: dict) -> str:
   // Auto-refresh the week every 60 s only when a game is happening today
   if (!liveActive()) return;
   var _autoRefreshSeq = 0;
+  // Polls never read league_scores, so ls=0 skips building it server-side;
+  // the response ETag is stored and sent back so an unchanged poll answers
+  // 304 with no body to download or repaint.
+  var _autoWeek = '';
+  var _autoEtag = null;
   setInterval(function() {{
     var w = String(sel.value || '');
     if (!w) return;
+    if (w !== _autoWeek) {{ _autoWeek = w; _autoEtag = null; }}
     var mySeq = ++_autoRefreshSeq;
     var url = '/api/weekly-week?platform=' + encodeURIComponent({platform_js}) +
       '&season=' + encodeURIComponent({season_js}) +
       '&league_id=' + encodeURIComponent({league_js}) +
-      '&week=' + encodeURIComponent(w);
-    fetch(url).then(function(res) {{
+      '&week=' + encodeURIComponent(w) + '&ls=0';
+    var _autoHeaders = _autoEtag ? {{ 'If-None-Match': _autoEtag }} : {{}};
+    fetch(url, {{ headers: _autoHeaders }}).then(function(res) {{
+      if (res.status === 304) return null; // unchanged since the last poll
       if (!res.ok) throw new Error('HTTP ' + res.status);
+      var _et = res.headers.get('ETag');
+      if (_et) _autoEtag = _et;
       return res.json();
     }}).then(function(data) {{
       if (!data || !data.ok || mySeq !== _autoRefreshSeq) return; // stale or error

@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-27",
+        "tag": "update",
+        "text": "Weekly Hub: the live matchup views now refresh with far less repeated work behind them. The drive bars read a small game-state feed instead of the full live payload, the matchup board and the player popup share one live-data cache instead of fetching the same feed twice, a refresh whose numbers have not moved is skipped entirely, and the schedule and rankings lookups behind every matchup slide are built once per week instead of once per slide. Nothing on the page changes: same numbers, same panels, just less downloading and recomputing.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-27",
         "tag": "fix",
         "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
         "link": "/recap"

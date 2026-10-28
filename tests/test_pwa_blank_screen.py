@@ -58,7 +58,7 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # ships the prospect modal advanced-table fix; v49 ships the
     # full-viewport assistant scrim (the dim covers the mobile dock).
     # Assert the current version, not a stale pin.
-    assert "br-fantasy-v124" in SW
+    assert "br-fantasy-v127" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():

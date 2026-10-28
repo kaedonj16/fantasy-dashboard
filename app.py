@@ -18199,6 +18199,38 @@ def api_scorezone_data(platform: str, season: int, league_id: str):
         except Exception:
             pass
         data = _scorezone_fetch(platform, league_id, season, week=week, scope=scope)
+        # Lite variant (league scope only): the matchup-board drive bars read
+        # only the per-game state, so slice the shared, cached collect down
+        # to the games map instead of serializing the full ~1MB body
+        # (play-by-play + player info) on every poll. The lite ETag hashes
+        # the slice itself, so a poll whose game state has not moved answers
+        # 304 even while the underlying play-by-play keeps growing.
+        if scope == "league" and request.args.get("lite") == "1":
+            data = {
+                "games": data.get("games") or {},
+                "week": data.get("week"),
+                "season": data.get("season"),
+                "platform": data.get("platform"),
+                "league_id": data.get("league_id"),
+                "scope": data.get("scope"),
+                "games_today": data.get("games_today"),
+                "updated_at": data.get("updated_at"),
+            }
+            try:
+                _lite_fp = json.dumps(data, sort_keys=True, default=str)
+                etag = '"rzl-%s"' % hashlib.sha1(_lite_fp.encode()).hexdigest()[:32]
+            except Exception:
+                etag = None
+            if etag and request.headers.get("If-None-Match") == etag:
+                response = app.response_class(status=304)
+                response.headers["ETag"] = etag
+                return response
+            response = jsonify(data)
+            if etag:
+                response.headers["ETag"] = etag
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            return response
         # Conditional polls: when the client already holds this exact payload
         # (ETag = content hash of the shared collect + viewer id), answer 304
         # without re-serializing or re-sending the ~1MB body.
@@ -22905,23 +22937,28 @@ def api_weekly_week():
     # League Scores payload, built from the same matchup data as the carousel
     # so the tab renders instantly without a separate API fetch. Uses the
     # same slide-style lookups as the carousel so totals always agree.
+    # The game-day auto-refresh passes ls=0: it repaints only the top /
+    # highlights / matchups panels and never reads league_scores, so the
+    # build is skipped on polls instead of being computed and thrown away
+    # every 60 s (the week-change fetch, which does consume it, omits ls).
     _api_ls_payload = []
-    try:
-        from dashboard_services.matchups import build_league_scores_list, build_slide_proj_lookups
-        _api_ls_proj_map, _api_ls_pid_proj, _api_ls_frac = build_slide_proj_lookups(
-            season, week, last_final_week, proj_by_week,
-            team_game_lookup or {},
-            scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
-        )
-        _api_ls_payload = build_league_scores_list(
-            matchups, _api_vid, status_by_pid, _api_ls_proj_map,
-            proj_lookup=_api_ls_pid_proj, frac_lookup=_api_ls_frac,
-        )
-    except Exception:
-        logger.debug("[api_weekly_week] league-scores payload failed", exc_info=True)
-        _api_ls_payload = []
+    if request.args.get("ls") != "0":
+        try:
+            from dashboard_services.matchups import build_league_scores_list, build_slide_proj_lookups
+            _api_ls_proj_map, _api_ls_pid_proj, _api_ls_frac = build_slide_proj_lookups(
+                season, week, last_final_week, proj_by_week,
+                team_game_lookup or {},
+                scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+            )
+            _api_ls_payload = build_league_scores_list(
+                matchups, _api_vid, status_by_pid, _api_ls_proj_map,
+                proj_lookup=_api_ls_pid_proj, frac_lookup=_api_ls_frac,
+            )
+        except Exception:
+            logger.debug("[api_weekly_week] league-scores payload failed", exc_info=True)
+            _api_ls_payload = []
 
-    return jsonify({
+    payload = {
         "ok": True,
         "top_html": top_html,
         "highlights_html": highlights_html,
@@ -22929,7 +22966,26 @@ def api_weekly_week():
         "league_scores": {"matchups": _api_ls_payload, "week": week},
         "week_has_scores": bool(_api_wrapped_url),
         "wrapped_url": _api_wrapped_url,
-    })
+    }
+    # Content-hash ETag so an auto-refresh poll whose content has not moved
+    # answers 304 with no body instead of re-downloading the full payload;
+    # the poller stores the ETag and sends it back as If-None-Match.
+    _ww_etag = None
+    try:
+        _ww_fp = json.dumps(payload, sort_keys=True, default=str)
+        _ww_etag = '"ww-%s"' % hashlib.sha1(_ww_fp.encode()).hexdigest()[:32]
+    except Exception:
+        logger.debug("[api_weekly_week] etag failed", exc_info=True)
+    if _ww_etag and request.headers.get("If-None-Match") == _ww_etag:
+        _ww_resp = app.response_class(status=304)
+        _ww_resp.headers["ETag"] = _ww_etag
+        _ww_resp.headers["Cache-Control"] = "private, no-cache"
+        return _ww_resp
+    _ww_resp = jsonify(payload)
+    if _ww_etag:
+        _ww_resp.headers["ETag"] = _ww_etag
+    _ww_resp.headers["Cache-Control"] = "private, no-cache"
+    return _ww_resp
 
 
 @app.route("/api/refresh-page", methods=["POST"])

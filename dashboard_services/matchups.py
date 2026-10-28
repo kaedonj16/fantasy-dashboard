@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 import html
 import json
+import os
 import re
+import threading
+from collections import OrderedDict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from itertools import zip_longest
@@ -385,6 +388,69 @@ def _proj_value_for_pid(
     return 0.0
 
 
+# ── Shared slide lookups ──────────────────────────────────────────────────
+# A non-compact slide needs the teams index, the offense rankings derived
+# from it, and the week's team->game schedule lookup. None of them depend on
+# the matchup being rendered, yet render_matchup_slide used to rebuild all
+# three for every slide, and build_slide_proj_lookups rebuilt the schedule
+# lookup again for each League Scores / Scout / Lineup surface (and the
+# whole set repeated on every weekly-week poll). Build them once per
+# (season, week, source-file state) and share: the memo is keyed on the
+# teams-index and schedule file signatures, so a refreshed data file
+# rebuilds exactly once, and on the builder functions' identities, so a
+# swapped loader (tests monkeypatch these module functions) never reads a
+# stale entry. Bounded LRU; every consumer treats the values as read-only
+# (rank/lookup .get() calls only).
+_SLIDE_LOOKUPS_MAX = 8
+_SLIDE_LOOKUPS: "OrderedDict[tuple, tuple]" = OrderedDict()
+_SLIDE_LOOKUPS_LOCK = threading.Lock()
+
+
+def _slide_source_sig(path) -> Optional[tuple]:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def slide_shared_lookups(season, w):
+    """(teams_index, offense_ranks, team_schedule_lookup) for (season, w),
+    built once per source-file state and shared by every slide render and
+    slide-projection lookup in the process."""
+    from utils.data_cache import path_teams_index, path_week_schedule
+
+    teams_path = path_teams_index()
+    sched_path = path_week_schedule(season, w)
+
+    def _key():
+        return (
+            str(season), str(w),
+            _slide_source_sig(teams_path), _slide_source_sig(sched_path),
+            id(load_teams_index), id(build_offense_rankings),
+            id(load_week_schedule), id(build_team_schedule_lookup),
+        )
+
+    with _SLIDE_LOOKUPS_LOCK:
+        hit = _SLIDE_LOOKUPS.get(_key())
+        if hit is not None:
+            _SLIDE_LOOKUPS.move_to_end(_key())
+            return hit
+    teams_index = load_teams_index()
+    offense_ranks = build_offense_rankings(teams_index)
+    team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
+    value = (teams_index, offense_ranks, team_schedule_lookup)
+    # Re-key on the post-build signatures: load_week_schedule may have
+    # fetched a missing schedule file into existence during the build.
+    key = _key()
+    with _SLIDE_LOOKUPS_LOCK:
+        _SLIDE_LOOKUPS[key] = value
+        _SLIDE_LOOKUPS.move_to_end(key)
+        while len(_SLIDE_LOOKUPS) > _SLIDE_LOOKUPS_MAX:
+            _SLIDE_LOOKUPS.popitem(last=False)
+    return value
+
+
 def build_slide_proj_lookups(
     season: Any,
     w: Any,
@@ -410,7 +476,7 @@ def build_slide_proj_lookups(
     neither lookup and undercounted projections for players missing from
     the bundle or mid-game.
     """
-    team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
+    team_schedule_lookup = slide_shared_lookups(season, w)[2]
     # For future-week previews, today's live scores are from a different week
     # (e.g., viewing Week 5 on Tuesday shows Week 4 MNF finals). Ignore final
     # games from the live lookup so player rows fall back to the upcoming
@@ -2011,11 +2077,9 @@ def render_matchup_slide(
         week_stats = {}
         team_schedule_lookup = {}
     else:
-        teams_index = load_teams_index()
-        offense_ranks = build_offense_rankings(teams_index)
+        teams_index, offense_ranks, team_schedule_lookup = slide_shared_lookups(season, w)
         _fpts_data = fpts_against or {}
         week_stats = _week_stats_for_slide(season, w, ensure_sleeper=past_week)
-        team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
 
     # Live game progress: lets in-progress starters project their finish (banked
     # points + remaining projection) instead of freezing at their current score,

@@ -314,7 +314,12 @@ def test_shared_board_and_modal_refresh_contract():
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     assert "window._rzRenderGameBoard(game, { modal:true })" in app_js
     assert "field_position_reliable" in app_js
-    assert "requestGeneration === _generation" in app_js
+    # Board + modal live fetches share one window-level cache keyed by
+    # league path, so a response can only land in its own league's entry
+    # (replaces the stub's old per-fetch generation guard).
+    assert "window.__brSzLiveCache = (function" in app_js
+    assert "__brSzLiveCache.get('full', STALE, refresh)" in app_js
+    assert "__brSzLiveCache.get('lite', 20000, cb)" in app_js
     assert "setTimeout(function tick()" in app_js
     assert "Live box-score stats are temporarily unavailable." in app_js
     assert "Stat breakdown appears once the game is underway." not in app_js
