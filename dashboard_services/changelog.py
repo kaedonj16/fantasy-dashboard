@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-28",
+        "tag": "update",
+        "text": "My Leagues Rooting Guide: game cards now sit two per row on wide screens instead of one long stack, and the team badge in each game header sizes to fit its abbreviation, so three-letter teams are no longer clipped under the badge stripe.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-10-27",
         "tag": "fix",
         "text": "Trade Calculator: evaluating a trade is faster and steadier. Each edit now sends one evaluation instead of two or three, the market intel for every player in the deal loads in a single request, and Playoff Impact waits for the simulation snapshot to warm up instead of running the numbers on the spot, so the card shows its loading state briefly and then the same before and after odds as before.",

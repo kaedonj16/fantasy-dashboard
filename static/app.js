@@ -30569,7 +30569,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       var h = '<div class="pf-rg-win"><div class="pf-rg-winh">' +
         '<span class="pf-rg-winname">' + esc(w.label) + '</span>' +
         '<span class="pf-rg-stakes">' + esc(w.stakes || '') + '</span></div>';
-      h += (w.games || []).map(function (g) {
+      h += '<div class="pf-rg-games">' + (w.games || []).map(function (g) {
         var live = g.status === 'in';
         var status = (live ? '<span class="dot"></span>' : '') + esc(g.status_line || '');
         var scores = g.status !== 'pre'
@@ -30603,7 +30603,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         }
         card += '</div>';
         return card;
-      }).join('');
+      }).join('') + '</div>';
       (w.need_lines || []).forEach(function (line) {
         h += '<div class="pf-rg-need">' + esc(line) + '</div>';
       });
