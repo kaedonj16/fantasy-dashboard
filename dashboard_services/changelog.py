@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "Waivers and Start/Sit: repeat visits load far faster. Waiver candidate lists are cached briefly and the Kicker, Defense and Trending views share one player value index, the Start/Sit strip in the player popup now distills from a single lineup build for your whole roster instead of rebuilding for every player you open, and the Lineup Lab warms up when you reach for its tab instead of on every page load. Its results are also kept in the shared cache, so reopening the Lab after a reload does not rebuild from scratch.",
+        "link": "/waivers"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
         "link": "/recap"
     },

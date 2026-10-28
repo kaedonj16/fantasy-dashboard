@@ -6,6 +6,8 @@ at start-up stays free of a circular import.
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import logging
 import os
 import time
@@ -63,6 +65,104 @@ waiver_bp = Blueprint("waiver_bp", __name__)
 # custom-scoring projection lookups. Same bounded-pool rationale the breakout
 # enrichment already uses (top-150 by value ∪ signals).
 _WAIVER_ENRICH_POOL = 150
+
+
+# ── Shared model-value index ─────────────────────────────────────────────────
+# The candidates, big-games and trending-adds handlers each used to build
+# their own {player_id: row} dict over the full model value table (~7k rows)
+# on every request. The table itself is already cached app-wide and the same
+# list object is handed back until it rebuilds, so one index built from it
+# serves all three endpoints (and later requests) until the table's identity
+# changes. Rows are shared read-only, exactly as the per-endpoint builds were.
+_VALUE_INDEX_MEMO: dict = {"key": None, "index": None}
+
+
+def _waiver_value_index() -> dict:
+    """{player_id: model-value row} for the current model value table."""
+    tbl = get_model_value_table_cached() or []
+    key = (id(tbl), len(tbl))
+    if _VALUE_INDEX_MEMO["key"] == key and _VALUE_INDEX_MEMO["index"] is not None:
+        return _VALUE_INDEX_MEMO["index"]
+    index = {str(r.get("id")): r for r in tbl
+             if isinstance(r, dict) and r.get("id")}
+    _VALUE_INDEX_MEMO["key"] = key
+    _VALUE_INDEX_MEMO["index"] = index
+    return index
+
+
+# ── Waiver-candidates result cache ───────────────────────────────────────────
+# The candidates pipeline (value scan + per-candidate enrichment over the
+# enrich pool) used to re-run in full on every page load, horizon toggle and
+# K/DEF tab switch. Finished payloads are cached briefly, keyed on everything
+# the response depends on: league, horizon, position tab, the personalizing
+# roster id, the league context's identity, a signature of every roster in
+# the league (adds/drops change the answer), the model value table's
+# identity, the NFL state (usage trends / discovery week / FAAB phase) and
+# the viewer's do-not-drop set. Any of those changing is a cache miss, so a
+# cached payload is always one the live pipeline would have produced inside
+# the TTL window.
+_WAIVER_CANDIDATES_CACHE: dict = {}  # key -> (monotonic ts, payload)
+_WAIVER_CANDIDATES_CACHE_TTL = 300.0
+_WAIVER_CANDIDATES_CACHE_MAX = 64
+
+
+def _waiver_roster_signature(ctx) -> str:
+    """Cheap fingerprint of every roster (membership + FAAB spend state)."""
+    parts = []
+    for r in (ctx.get("rosters") or []):
+        if not isinstance(r, dict):
+            continue
+        parts.append((
+            str(r.get("roster_id") or ""),
+            tuple(str(p) for p in (r.get("players") or [])),
+            tuple(str(p) for p in (r.get("reserve") or [])),
+            tuple(str(p) for p in (r.get("taxi") or [])),
+            json.dumps(r.get("settings") or {}, sort_keys=True, default=str),
+        ))
+    parts.sort()
+    return hashlib.sha256(repr(parts).encode("utf-8")).hexdigest()
+
+
+def _waiver_candidates_cache_key(platform, league_id, season, horizon,
+                                 position_filter, rid, ctx):
+    try:
+        _tbl = get_model_value_table_cached() or []
+        _tbl_key = (id(_tbl), len(_tbl))
+    except Exception:
+        _tbl_key = None
+    try:
+        _nfl = get_nfl_state() or {}
+        _state_key = (_nfl.get("season"), _nfl.get("week"),
+                      _nfl.get("display_week"), _nfl.get("season_type"))
+    except Exception:
+        _state_key = None
+    try:
+        from flask import session as _sess_ck
+        _prot = load_do_not_drop(
+            _sess_ck.get("account_id"), platform, league_id) or set()
+        _prot_key = tuple(sorted(str(p) for p in _prot))
+    except Exception:
+        _prot_key = ()
+    return (
+        platform, league_id, int(season), horizon, position_filter or "",
+        rid or "", id(ctx), _waiver_roster_signature(ctx),
+        _tbl_key, _state_key, _prot_key,
+    )
+
+
+def _waiver_candidates_cache_get(key):
+    hit = _WAIVER_CANDIDATES_CACHE.get(key)
+    if hit and (time.monotonic() - hit[0]) < _WAIVER_CANDIDATES_CACHE_TTL:
+        return copy.deepcopy(hit[1])
+    return None
+
+
+def _waiver_candidates_cache_put(key, payload):
+    _WAIVER_CANDIDATES_CACHE[key] = (time.monotonic(), copy.deepcopy(payload))
+    if len(_WAIVER_CANDIDATES_CACHE) > _WAIVER_CANDIDATES_CACHE_MAX:
+        oldest = min(_WAIVER_CANDIDATES_CACHE,
+                     key=lambda k: _WAIVER_CANDIDATES_CACHE[k][0])
+        del _WAIVER_CANDIDATES_CACHE[oldest]
 
 
 # ── Lazy shims to app.py internals (resolved at request time) ─────────────────
@@ -215,11 +315,27 @@ def api_waiver_candidates():
     except Exception as e:
         return _api_err("Request failed", e)
 
+    # Result cache (see _WAIVER_CANDIDATES_CACHE above): an identical repeat
+    # request inside the TTL serves the finished payload instead of re-running
+    # the pipeline below.
+    _cand_key = _waiver_candidates_cache_key(
+        platform, league_id, season, horizon, position_filter,
+        (request.args.get("rid") or "").strip(), ctx)
+    _cand_hit = _waiver_candidates_cache_get(_cand_key)
+    if _cand_hit is not None:
+        return jsonify(_cand_hit)
+
     # K / D/ST tabs: scored by the shared streaming rankers (matchup-based
     # Vegas implied totals), presented in the same ranked-list shape as the
     # skill-position candidates. Skips the skill-position pipeline entirely.
     if position_filter in ("K", "DEF"):
-        return _api_waiver_candidates_kdef(position_filter, platform, league_id, season, ctx)
+        _kdef_resp = _api_waiver_candidates_kdef(
+            position_filter, platform, league_id, season, ctx)
+        if getattr(_kdef_resp, "status_code", None) == 200:
+            _kdef_payload = _kdef_resp.get_json(silent=True)
+            if _kdef_payload is not None:
+                _waiver_candidates_cache_put(_cand_key, _kdef_payload)
+        return _kdef_resp
 
     rosters = ctx.get("rosters") or []
     rostered_ids = {
@@ -827,8 +943,7 @@ def api_waiver_candidates():
     # Only surface drops when the active roster is full -- otherwise they can add
     # without cutting anyone.
     _rid = (request.args.get("rid") or "").strip()
-    _mvt_by_id = {str(r.get("id")): r for r in model_value_table
-                  if isinstance(r, dict) and r.get("id")}
+    _mvt_by_id = _waiver_value_index()
     # Keep-depth from THIS league's actual starting requirements (#3), not a fixed
     # 2QB/5RB/6WR/2TE heuristic: a position is "spare" only past its starters +
     # one bench of insurance. Superflex/FLEX/TE-premium already flow through
@@ -1223,13 +1338,15 @@ def api_waiver_candidates():
         path="/api/waiver-candidates",
         props={"platform": platform, "league_id": league_id, "count": len(result)},
     )
-    return jsonify({"candidates": result, "total": len(result),
-                    "faab_enabled": _faab_enabled,
-                    # Drives the "link your team" banner: True only when ?rid=
-                    # resolved to a real roster in this league.
-                    "personalized": _viewer_roster is not None,
-                    "league_uses_k": _kd_flags["k"],
-                    "league_uses_def": _kd_flags["def"]})
+    _payload = {"candidates": result, "total": len(result),
+                "faab_enabled": _faab_enabled,
+                # Drives the "link your team" banner: True only when ?rid=
+                # resolved to a real roster in this league.
+                "personalized": _viewer_roster is not None,
+                "league_uses_k": _kd_flags["k"],
+                "league_uses_def": _kd_flags["def"]}
+    _waiver_candidates_cache_put(_cand_key, _payload)
+    return jsonify(_payload)
 
 
 def _kdef_roster_position(pid, players_index):
@@ -1601,8 +1718,7 @@ def api_waiver_big_games():
                     rostered_ids.add(str(pid))
 
     players_index = ctx.get("players_index") or get_players_index_global() or {}
-    _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
-            if isinstance(r, dict) and r.get("id")}
+    _mvt = _waiver_value_index()
     roster_positions = ctx.get("roster_positions") or []
     superflex = any(_canonicalize_slot(slot) == "SUPER_FLEX" for slot in roster_positions)
     qb_need = False
@@ -1720,8 +1836,7 @@ def api_trending_adds():
         for pid in (r.get("players") or [])
     }
     players_index = ctx.get("players_index") or get_players_index_global() or {}
-    _mvt = {str(r.get("id")): r for r in (get_model_value_table_cached() or [])
-            if isinstance(r, dict) and r.get("id")}
+    _mvt = _waiver_value_index()
     _tr_vf, _tr_vfb = _waiver_value_keys(ctx) if ctx else ("value", "value")
     _tr_rk = _waiver_rank_label_key(ctx) if ctx else "pos_rank_label"
 

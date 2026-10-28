@@ -16256,6 +16256,21 @@ def api_start_sit_tracking():
 _SS_STRIP_CACHE: dict = {}  # key -> (monotonic ts, distilled dict)
 _SS_STRIP_TTL = 120.0
 
+# The build behind the strip is a full roster options build, and the strip
+# cache above only dedupes repeats of the SAME player: five modal opens for
+# five different players in one league used to pay five full builds in two
+# minutes. The build is player-independent for roster players (the builder
+# drops an already-rostered guest, so a roster player's build IS the
+# no-guest build), so that canonical build is cached once per
+# (league, viewer, week) and every roster player's strip distills from it.
+# Guest (non-roster) players keep their per-player build: their guest row
+# exists only in a build that carries them, and a guest forces the live
+# path for the whole payload, so guest payloads are never mixed into this
+# cache and roster verdicts never come from a guest-flavoured build.
+_SS_OPTIONS_CACHE: dict = {}  # key -> (monotonic ts, payload)
+_SS_OPTIONS_TTL = 120.0
+_SS_OPTIONS_MAX = 64
+
 
 def _ss_ordinal(n: int) -> str:
     if 10 <= n % 100 <= 20:
@@ -16298,8 +16313,44 @@ def api_player_startsit_strip():
     if _hit and time.monotonic() - _hit[0] < _SS_STRIP_TTL:
         return jsonify(_hit[1])
 
-    payload, status = _build_start_sit_options(
-        platform, league_id, season, [player_id])
+    # Active-roster membership (players minus reserve/taxi, mirroring the
+    # builder's guest filtering) decides which build may serve the strip.
+    _is_roster_player = False
+    try:
+        _vroster = next(
+            (r for r in (ctx.get("rosters") or [])
+             if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+        if _vroster:
+            _res_set = {str(p) for p in (_vroster.get("reserve") or [])}
+            _tax_set = {str(p) for p in (_vroster.get("taxi") or [])}
+            _is_roster_player = any(
+                str(p) == player_id
+                and str(p) not in _res_set and str(p) not in _tax_set
+                for p in (_vroster.get("players") or []))
+    except Exception:
+        _is_roster_player = False
+
+    payload = None
+    status = None
+    if _is_roster_player:
+        _okey = (platform, league_id, int(season), str(viewer_roster_id),
+                 int(ctx.get("current_week") or 1), id(ctx))
+        _ohit = _SS_OPTIONS_CACHE.get(_okey)
+        if _ohit and time.monotonic() - _ohit[0] < _SS_OPTIONS_TTL:
+            payload, status = _ohit[1], 200
+        else:
+            payload, status = _build_start_sit_options(
+                platform, league_id, season, [])
+            if status == 200:
+                _SS_OPTIONS_CACHE[_okey] = (time.monotonic(), payload)
+                if len(_SS_OPTIONS_CACHE) > _SS_OPTIONS_MAX:
+                    _oldest = min(
+                        _SS_OPTIONS_CACHE,
+                        key=lambda k: _SS_OPTIONS_CACHE[k][0])
+                    del _SS_OPTIONS_CACHE[_oldest]
+    if payload is None:
+        payload, status = _build_start_sit_options(
+            platform, league_id, season, [player_id])
     if status in (401, 409):
         return jsonify({"state": "hidden"})
     if status != 200:
@@ -16434,6 +16485,75 @@ _LAB_PAYLOAD_LIVE_TTL = 30.0
 _LAB_PAYLOAD_LOCK = threading.Lock()
 _LAB_PAYLOAD_MAX = 64
 
+# Shared tier for the Lab payload cache. A Lab build is ~40 distribution
+# profiles plus a provider matchup fetch, and the worker recycles every
+# ~1000 requests, wiping the in-process cache above and re-paying the build
+# on the next open. Finished payloads are mirrored to Redis (the same
+# fail-soft pattern as the weekly-recap GOTW payloads) under a hash of the
+# exact in-process key, so the key/signature semantics above are unchanged;
+# the entry carries its own ts/ttl and is only served while fresh by the
+# same _lab_payload_ttl window the in-process tier would have used. Without
+# REDIS_URL (local dev, tests) every call here is a no-op and behavior is
+# exactly the in-process cache alone.
+
+
+def _lab_redis_client():
+    url = (os.environ.get("REDIS_URL") or "").strip()
+    if not url:
+        return None
+    try:
+        import redis as _redis_lib
+        return _redis_lib.from_url(
+            url, socket_connect_timeout=1.5, socket_timeout=1.5,
+            decode_responses=True)
+    except Exception:
+        return None
+
+
+def _lab_shared_key(cache_key) -> str:
+    raw = json.dumps([str(p) for p in cache_key],
+                     default=str).encode("utf-8")
+    return "lineup_lab:" + hashlib.sha256(raw).hexdigest()[:32]
+
+
+def _lab_payload_shared_get(cache_key):
+    """(payload, remaining_ttl_seconds) from the shared tier, or None."""
+    client = _lab_redis_client()
+    if client is None:
+        return None
+    try:
+        raw = client.get(_lab_shared_key(cache_key))
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        env = json.loads(raw)
+        ts = float(env.get("ts") or 0)
+        ttl = float(env.get("ttl") or 0)
+        payload = env.get("payload")
+    except Exception:
+        return None
+    if not isinstance(payload, dict) or ttl <= 0:
+        return None
+    remaining = ttl - (time.time() - ts)
+    if remaining <= 0:
+        return None
+    return payload, remaining
+
+
+def _lab_payload_shared_put(cache_key, ttl, payload):
+    client = _lab_redis_client()
+    if client is None:
+        return
+    try:
+        env = {"ts": time.time(), "ttl": float(ttl), "payload": payload}
+        client.setex(_lab_shared_key(cache_key), max(1, int(ttl)),
+                     json.dumps(env, default=str))
+    except Exception:
+        logger.debug("[lineup-lab] shared payload store skipped",
+                     exc_info=True)
+
 
 def _lab_payload_ttl(payload: dict) -> float:
     """TTL for a built Lab payload, decided from its per-player live state.
@@ -16521,6 +16641,17 @@ def api_lineup_lab():
         if hit and time.monotonic() - hit[0] < hit[1]:
             return jsonify(hit[2])
 
+    # Shared tier: a payload built by any worker (or before this worker's
+    # last recycle) serves here while still inside its TTL window, and
+    # backfills the in-process tier with the remaining freshness.
+    _shared = _lab_payload_shared_get(cache_key)
+    if _shared is not None:
+        _shared_payload, _shared_remaining = _shared
+        with _LAB_PAYLOAD_LOCK:
+            _LAB_PAYLOAD_CACHE[cache_key] = (
+                time.monotonic(), _shared_remaining, _shared_payload)
+        return jsonify(_shared_payload)
+
     try:
         from data_building.lineup_lab import build_lineup_lab_payload
         payload = build_lineup_lab_payload(
@@ -16539,12 +16670,14 @@ def api_lineup_lab():
         return jsonify({"state": "temporarily_unavailable", "retryable": True,
                         "message": "Lineup Lab is temporarily unavailable."}), 503
     payload["state"] = "loaded"
+    _built_ttl = _lab_payload_ttl(payload)
     with _LAB_PAYLOAD_LOCK:
         _LAB_PAYLOAD_CACHE[cache_key] = (
-            time.monotonic(), _lab_payload_ttl(payload), payload)
+            time.monotonic(), _built_ttl, payload)
         if len(_LAB_PAYLOAD_CACHE) > _LAB_PAYLOAD_MAX:
             oldest = min(_LAB_PAYLOAD_CACHE, key=lambda k: _LAB_PAYLOAD_CACHE[k][0])
             del _LAB_PAYLOAD_CACHE[oldest]
+    _lab_payload_shared_put(cache_key, _built_ttl, payload)
     return jsonify(payload)
 
 
