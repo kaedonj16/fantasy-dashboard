@@ -40411,8 +40411,12 @@ def build_portfolio_body(
         ".pf-sort-sel{border:1px solid var(--grid);background:var(--card);color:var(--text);border-radius:8px;padding:6px 28px 6px 10px;font-size:13px;font-weight:700;max-width:52vw;}"
         ".pf-lg-card[data-href]{cursor:pointer;}"
         ".pf-lg-vrow{display:inline-flex;align-items:baseline;gap:5px;}"
-        ".pf-odds-delta{font-size:11px;font-weight:800;}"
-        ".pf-odds-delta.up{color:var(--win);}.pf-odds-delta.down{color:var(--loss);}"
+        # Phone section tabs: the section cards need a scroll margin equal
+        # to the sticky stack they land under (site nav 59px + the stuck
+        # phonetabs bar ending at 98px, measured at 390px in Playwright)
+        # plus breathing room, or a tab tap scrolls the card header
+        # underneath both bars.
+        "#pfSecHeat,#pfSecRooting,#pfSecBye,#pfSecHoldings{scroll-margin-top:108px !important;}"
         ".pf-lg-weak{font-size:11px;color:var(--text-muted);}"
         ".pf-lg-weak strong{color:var(--q-ink,var(--text));}"
         ".pf-posture{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--grid);color:var(--text-muted);flex:0 0 auto;}"
@@ -40797,28 +40801,11 @@ def build_portfolio_body(
         off_note = "<span class='pf-lg-off'>(Off)</span>" if lg.get("offseason") else ""
 
         # v25 compact card: the position-strength strip moves to the
-        # insights heatmap; the card carries only its weakest room, its
-        # playoff odds (cache-only, from the summary) with a 7-day trend
-        # delta, and its posture.
+        # insights heatmap; the card carries only its weakest room and its
+        # posture. (Playoff odds came off the card 2026-10-27: the stat
+        # never populated in production, a permanent dash. The team modal
+        # odds tile and the sim plumbing behind it are untouched.)
         pos_ranks = lg.get("pos_user_rank") or {}
-        _odds_pct = lg.get("playoff_odds_pct")
-        _odds_delta = lg.get("playoff_odds_delta")
-        if _odds_pct is None:
-            odds_html = "<span class='pf-lg-v' data-odds-val>—</span>"
-            _odds_attr = -1
-        else:
-            _odds_attr = float(_odds_pct)
-            # Floored one-decimal display: :.0f rounded a sim-capped 99.9 up
-            # to a false 100% (same rule as the Hub tile / team modal).
-            odds_html = f"<span class='pf-lg-v' data-odds-val>{_fmt_playoff_pct_display(_odds_pct)}%</span>"
-            if _odds_delta is not None and abs(float(_odds_delta)) >= 0.05:
-                _dv = float(_odds_delta)
-                _arrow = "\u25B2" if _dv > 0 else "\u25BC"
-                _dcls = "up" if _dv > 0 else "down"
-                odds_html += (f"<span class='pf-odds-delta {_dcls}' data-odds-delta>"
-                              f"{_arrow}{abs(_dv):.0f}</span>")
-            else:
-                odds_html += "<span class='pf-odds-delta' data-odds-delta hidden></span>"
         weakest_html = ""
         try:
             from dashboard_services.portfolio_board import (
@@ -40893,7 +40880,7 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-href='{html.escape(str(href), quote=True)}' data-odds='{_odds_attr}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-href='{html.escape(str(href), quote=True)}' data-rank='{_rank_i if _rank_i else 999}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
@@ -40905,8 +40892,6 @@ def build_portfolio_body(
             f"<span class='pf-lg-l'>Record</span></span>"
             f"<span class='pf-lg-stat' title='Regular-season standings: wins, then points for'>"
             f"{standing_html}<span class='pf-lg-l'>Standing</span></span>"
-            f"<span class='pf-lg-stat'><span class='pf-lg-vrow'>{odds_html}</span>"
-            f"<span class='pf-lg-l'>Playoff odds</span></span>"
             f"<span class='pf-lg-stat pf-lg-stat--streak'>{streak_html}"
             f"<span class='pf-lg-l'>Streak</span></span>"
             f"</div>"
@@ -41120,7 +41105,7 @@ def build_portfolio_body(
         "<select id='pfSortSel' class='pf-sort-sel'>"
         "<option value='urgency'>Urgency</option>"
         "<option value='record'>Record</option>"
-        "<option value='odds'>Playoff odds</option>"
+        "<option value='standings'>Standings</option>"
         "</select></div></div>"
         f"<div class='pf-lg-grid'>{league_rows}</div>"
         "</div>"
@@ -41143,7 +41128,9 @@ def build_portfolio_body(
         "if(ia!==ib)return ia-ib;"
         "if(sortMode==='record'){var dw=(+b.getAttribute('data-wins')||0)-(+a.getAttribute('data-wins')||0);if(dw)return dw;"
         "var dl=(+a.getAttribute('data-losses')||0)-(+b.getAttribute('data-losses')||0);if(dl)return dl;}"
-        "if(sortMode==='odds'){var dq=(+b.getAttribute('data-odds')||-1)-(+a.getAttribute('data-odds')||-1);if(dq)return dq;}"
+        "if(sortMode==='standings'){var ra=parseInt(a.getAttribute('data-rank'),10),rb=parseInt(b.getAttribute('data-rank'),10);"
+        "ra=ra>0?ra:999;rb=rb>0?rb:999;if(ra!==rb)return ra-rb;"
+        "var dw2=(+b.getAttribute('data-wins')||0)-(+a.getAttribute('data-wins')||0);if(dw2)return dw2;}"
         "return a._ord-b._ord;});}"
         "function render(){var ord=ordered(),f=favs();"
         "ord.forEach(function(c){grid.appendChild(c);c.style.display='';"
@@ -41155,6 +41142,7 @@ def build_portfolio_body(
         "var hydrated=c.dataset.summaryGood==='true'&&(!slot||slot.dataset.matchupGood==='true');"
         "if(!hydrated)window.__pfQueueCard(c);});}"
         "window.__pfQueueVisible=queueAll;"
+        "window.__pfApplySort=render;"
         "grid.addEventListener('click',function(e){var s=e.target.closest('.pf-lg-fav');"
         "if(s){e.preventDefault();e.stopPropagation();var c=s.closest('.pf-lg-card');if(!c)return;"
         "var k=keyOf(c);if(!k)return;var f=favs(),idx=f.indexOf(k);"
@@ -41450,17 +41438,48 @@ def build_portfolio_body(
         "<script>(function(){"
         "var bar=document.getElementById('pfPhoneTabs');if(!bar)return;"
         "var btns=[].slice.call(bar.querySelectorAll('button[data-t]'));"
+        # One bounded re-align: Rooting/Bye content lands after the tap and
+        # grows the cards above the target, pushing it down after the first
+        # scroll has already landed. If the tapped section (or one above it)
+        # re-renders within 2.5s of the tap and the user has not taken over
+        # scrolling (wheel/touch), align once more, then stop.
+        "var _pfTap=null,_pfUserScroll=false;"
+        "window.addEventListener('wheel',function(){_pfUserScroll=true;},{passive:true});"
+        "window.addEventListener('touchmove',function(){_pfUserScroll=true;},{passive:true});"
+        "window.addEventListener('pointerdown',function(){_pfUserScroll=true;},{passive:true});"
+        # The 2.5s window counts from when the tap's own smooth scroll
+        # settles, not from the tap: a long scroll can eat the whole
+        # window before the growth it needs to correct even lands.
+        "window.addEventListener('scroll',function(){"
+        "if(_pfTap&&!_pfUserScroll)_pfTap.t=Date.now();},{passive:true});"
+        "function _pfAlign(id){var el=document.getElementById(id);"
+        "if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}"
+        # This script sits BEFORE the section cards in the document, so
+        # the bodies/observers can only wire once parsing finishes.
+        "var _pfMo=null;"
+        "if('MutationObserver' in window){"
+        "_pfMo=new MutationObserver(function(){"
+        "if(!_pfTap)return;"
+        "if(_pfUserScroll||Date.now()-_pfTap.t>2500){_pfTap=null;return;}"
+        "var id=_pfTap.id;_pfTap=null;_pfAlign(id);});}"
+        "function _pfWire(){"
+        "if(_pfMo)['pfRootingBody','pfByeBody'].forEach(function(bid){"
+        "var bd=document.getElementById(bid);if(bd)_pfMo.observe(bd,{childList:true});});"
+        "if(window.__pfIo)btns.forEach(function(b){"
+        "var el=document.getElementById(b.getAttribute('data-t'));"
+        "if(el)window.__pfIo.observe(el);});}"
+        "if(document.readyState==='loading')"
+        "document.addEventListener('DOMContentLoaded',_pfWire);else _pfWire();"
         "btns.forEach(function(b){b.addEventListener('click',function(){"
         "btns.forEach(function(x){x.classList.remove('on');});b.classList.add('on');"
-        "var el=document.getElementById(b.getAttribute('data-t'));"
-        "if(el)el.scrollIntoView({behavior:'smooth',block:'start'});});});"
+        "var tid=b.getAttribute('data-t');"
+        "_pfUserScroll=false;_pfTap={id:tid,t:Date.now()};"
+        "_pfAlign(tid);});});"
         "if('IntersectionObserver' in window){"
-        "var io=new IntersectionObserver(function(es){es.forEach(function(en){"
+        "window.__pfIo=new IntersectionObserver(function(es){es.forEach(function(en){"
         "if(en.isIntersecting){btns.forEach(function(x){"
         "x.classList.toggle('on',x.getAttribute('data-t')===en.target.id);});}});},"
-        "{rootMargin:'-40% 0px -55% 0px'});"
-        "btns.forEach(function(b){var el=document.getElementById(b.getAttribute('data-t'));"
-        "if(el)io.observe(el);});}"
+        "{rootMargin:'-40% 0px -55% 0px'});}"
         "})();</script>"
     )
     insights_label = (

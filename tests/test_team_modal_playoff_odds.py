@@ -80,24 +80,28 @@ def test_drawer_payload_carries_playoff_odds_for_every_mode():
 
 
 def test_my_leagues_cards_use_the_same_formatter():
-    """My Leagues (portfolio) cards had the same rounding bug in three
-    places: the server-rendered card (: .0f), the client hydrate of that
-    card (Math.round), and the Front Office board group meta (Math.round).
-    The odds VALUE must use the floored one-decimal formatter everywhere;
-    the trend delta arrows keep their whole-number shape by design."""
-    assert "_fmtPlayoffOddsDisplay(data.playoff_odds_pct)" in APP_JS
+    """The odds VALUE must use the floored one-decimal formatter wherever
+    odds still display: the team modal and the Front Office board group
+    meta. The My Leagues league cards no longer display odds at all
+    (2026-10-27: the stat never populated, a permanent dash), so neither
+    the client hydrate nor the server card may reference the odds value.
+    The trend delta arrows keep their whole-number shape by design."""
+    assert "_fmtPlayoffOddsDisplay(data.playoff_odds)" in APP_JS  # team modal
     assert "_fmtPlayoffOddsDisplay(meta.odds_pct)" in APP_JS
     assert "Math.round(Number(data.playoff_odds_pct))" not in APP_JS
     assert "Math.round(Number(meta.odds_pct))" not in APP_JS
+    rs = APP_JS[APP_JS.index("function renderSummary("):]
+    rs = rs[:rs.index("function updateAggregateRecord()")]
+    assert "playoff_odds_pct" not in rs
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert "{_fmt_playoff_pct_display(_odds_pct)}%" in app_py
+    assert "{_fmt_playoff_pct_display(_odds_pct)}%" not in app_py
     assert "{float(_odds_pct):.0f}%" not in app_py
 
 
 def test_changelog_announces_team_modal_odds_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[13]  # prepended above it: phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix
+    entry = CHANGELOG[14]  # prepended above it: phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix
     assert entry["date"] == "2026-10-27"
     assert entry["tag"] == "fix"
     assert "playoff odds" in entry["text"]

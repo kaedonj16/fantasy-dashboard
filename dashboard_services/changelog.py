@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-27",
         "tag": "fix",
+        "text": "My Leagues: the phone section buttons (Strength, Rooting Guide, Byes, Holdings) now land each section right below the top bars instead of scrolling its header underneath them. The Playoff odds stat is off the league cards: it never loaded, so the stats row is Record, Standing and Streak, and the sort control now offers Standings, which orders your leagues by their place in the table.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-27",
+        "tag": "fix",
         "text": "Notifications on your phone: the panel now fits the screen. It stops above the bottom nav instead of sliding underneath it, the list scrolls inside the panel while the header stays in place, and the page behind it dims while it is open. The red alert dot on the More tab also sits on the More icon again instead of hanging under the label.",
         "link": "/"
     },

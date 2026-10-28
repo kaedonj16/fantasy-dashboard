@@ -66,7 +66,11 @@ def test_render_summary_rebuilds_weakest_room_line():
     assert "Weakest room:" in seg
     render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
     assert "renderWeakest(card, data, totalN)" in render
-    assert "playoff_odds_pct" in render
+    # Playoff odds came off the My Leagues cards 2026-10-27 (the stat never
+    # populated): renderSummary must not rebuild an odds stat, and the sort
+    # datum it stamps is now dataset.rank for the Standings sort.
+    assert "playoff_odds_pct" not in render
+    assert "card.dataset.rank" in render
 
 
 def test_cached_stale_summary_preserves_underlying_sync_timestamp(monkeypatch):
