@@ -29919,6 +29919,8 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   var CLEARED_DONE = {};   // groupKey|moveKey -> true (undone this session)
   var HIDDEN_GROUPS = {};  // groupKey -> true
   var COLLAPSED = {};      // groupKey -> true
+  var COMPLETED_OPEN = false;  // "Show completed" section expanded
+  var CAP_EXPANDED = false;    // height cap lifted (in-session only)
   var started = false;
 
   function byeMoves() {
@@ -29997,16 +29999,25 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     }).join('') + '</div>';
   }
 
-  function moveHtml(g, mv) {
+  function moveHtml(g, mv, inCompleted) {
     var key = mv.move_key || pfKey(mv);
     var timing = mv.timing || { label: '', locked: false, lock_label: '' };
     var done = moveDoneState(g, mv);
     var locked = !!timing.locked;
     var cls = 'pf-move' + (locked ? ' locked' : '') + (done ? (done.verified ? ' done-v' : ' done-m') : '');
     var h = '<div class="' + cls + '" data-move="' + esc(key) + '">';
-    h += '<div class="pf-move-top"><span class="pf-rank' + (done && !done.verified ? ' marked' : '') + '">' + (mv.rank || '') + '</span>';
-    h += '<div class="pf-move-main"><div class="pf-move-title">' + esc(mv.title) + '</div>';
-    if (mv.detail && !done) h += '<div class="pf-move-why">' + esc(mv.detail) + '</div>';
+    // Rank badge: inside a group it numbers the move within its league
+    // (the render-time _localRank annotation); Completed items keep
+    // the board's global rank, as the live done styling always has.
+    var rankShown = inCompleted ? (mv.rank || '') : (mv._localRank != null ? mv._localRank : '');
+    h += '<div class="pf-move-top"><span class="pf-rank' + (done && !done.verified ? ' marked' : '') + '">' + rankShown + '</span>';
+    h += '<div class="pf-move-main"><div class="pf-move-title">' + esc(mv.title) +
+      (mv._topTag && !done && !inCompleted ? '<span class="pf-top-tag">Top priority</span>' : '') + '</div>';
+    if (!done && mv.facts && mv.facts.length) {
+      h += '<div class="pf-facts">' + mv.facts.map(function (f) {
+        return '<span class="pf-fact">' + esc(f) + '</span>';
+      }).join('') + '</div>';
+    } else if (mv.detail && !done) h += '<div class="pf-move-why">' + esc(mv.detail) + '</div>';
     if (mv.after) h += '<div class="pf-move-after">After this: <strong>' + esc(mv.after) + '</strong></div>';
     h += '</div>';
     if (!done && !locked) h += '<button type="button" class="pf-move-x" data-act="dismiss" title="Dismiss" aria-label="Dismiss">×</button>';
@@ -30014,7 +30025,17 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     h += '<div class="pf-move-meta"><span class="pf-kind ' + esc(kindKey(mv.kind)) + '">' + esc(kindLabel(mv.kind)) + '</span>';
     if (mv.depends) h += '<span class="pf-dep">' + esc(mv.depends) + '</span>';
     if (locked) h += '<span class="pf-timing lock">' + esc(timing.lock_label || 'Locked') + '</span>';
-    else if (timing.label) h += '<span class="pf-timing">' + esc(timing.label) + '</span>';
+    else if (timing.label) {
+      // Due pill urgency comes only from real deadline data on the
+      // move: a same-day kickoff lock (timing_for's "Locks <time>",
+      // derived from lock_epoch) or a calendar move whose stamped
+      // due_in_weeks is 0 (the trade deadline is this week). Never
+      // from the label text alone.
+      var urgent = /^Locks /.test(timing.label) ||
+        (kindKey(mv.kind) === 'calendar' && mv.due_in_weeks != null &&
+          Number(mv.due_in_weeks) === 0);
+      h += '<span class="pf-timing' + (urgent ? ' urgent' : '') + '">' + esc(timing.label) + '</span>';
+    }
     if (done) {
       h += '<span class="pf-done-tag' + (done.verified ? '' : ' marked') + '">' + (done.verified ? 'DONE' : 'MARKED DONE') + '</span>';
       h += '<span class="pf-move-btns"><button type="button" class="pf-undo-btn" data-act="undone">Undo</button></span>';
@@ -30067,8 +30088,17 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       '<span class="pf-lgcount">' + doneCount + ' of ' + visible.length + ' done</span>' +
       '<span class="pf-chev">' + (COLLAPSED[key] ? '▸' : '▾') + '</span>' +
       '<button type="button" class="pf-group-x" data-gact="hide" title="Hide this league" aria-label="Hide league">×</button></div>';
+    var open = visible.filter(function (mv) { return !moveDoneState(g, mv); });
     if (!COLLAPSED[key]) {
-      h += '<div class="pf-group-moves">' + visible.map(function (mv) { return moveHtml(g, mv); }).join('') + '</div>';
+      if (open.length) {
+        h += '<div class="pf-group-moves">' + open.map(function (mv) { return moveHtml(g, mv); }).join('') + '</div>';
+      } else if (visible.length) {
+        // Every visible move is done: they render in the board's
+        // Completed section, and the group keeps a slim caught-up row.
+        h += '<div class="pf-group-empty"><span class="pf-ge-dot"></span>All caught up · no open moves</div>';
+      } else {
+        h += '<div class="pf-group-moves"></div>';
+      }
     }
     h += '</div>';
     return h;
@@ -30097,10 +30127,155 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     });
   }
 
+  function findGroup(groupKey) {
+    var groups = mergedGroups();
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].key === groupKey) return groups[i];
+    }
+    return null;
+  }
+
+  // Groups order by their highest-priority OPEN move (the board's
+  // global rank, restricted to moves neither dismissed nor done), so
+  // the next thing to do sits at the top and groups re-sort live as
+  // moves are completed or undone. Groups with no open move sink
+  // below, keeping their relative order.
+  function sortedGroups(groups) {
+    function topOpenRank(g) {
+      var best = null;
+      g.moves.forEach(function (mv) {
+        if ((DISMISSED[pfScope(mv)] || {})[mv.move_key || pfKey(mv)]) return;
+        if (moveDoneState(g, mv)) return;
+        var r = Number(mv.rank) || 0;
+        if (best === null || r < best) best = r;
+      });
+      return best;
+    }
+    return groups.map(function (g, i) { return { g: g, i: i, top: topOpenRank(g) }; })
+      .sort(function (a, b) {
+        if (a.top === null && b.top === null) return a.i - b.i;
+        if (a.top === null) return 1;
+        if (b.top === null) return -1;
+        return (a.top - b.top) || (a.i - b.i);
+      })
+      .map(function (x) { return x.g; });
+  }
+
+  // Render-time annotations: _localRank numbers each open move within
+  // its league (1-based, board order); _topTag marks the top 3 open
+  // moves board-wide by global rank (visible groups only: a hidden
+  // league's moves are not on the board to tag).
+  function annotateBoardMoves(groups) {
+    var openRanked = [];
+    groups.forEach(function (g) {
+      var local = 0;
+      g.moves.forEach(function (mv) {
+        mv._topTag = false;
+        if ((DISMISSED[pfScope(mv)] || {})[mv.move_key || pfKey(mv)]) return;
+        if (moveDoneState(g, mv)) return;
+        local += 1;
+        mv._localRank = local;
+        if (!HIDDEN_GROUPS[g.key]) openRanked.push(mv);
+      });
+    });
+    openRanked.sort(function (a, b) {
+      return (Number(a.rank) || 0) - (Number(b.rank) || 0);
+    });
+    openRanked.slice(0, 3).forEach(function (mv) { mv._topTag = true; });
+  }
+
+  function completedItems(groups) {
+    var out = [];
+    groups.forEach(function (g) {
+      if (HIDDEN_GROUPS[g.key]) return;
+      g.moves.forEach(function (mv) {
+        if ((DISMISSED[pfScope(mv)] || {})[mv.move_key || pfKey(mv)]) return;
+        if (moveDoneState(g, mv)) out.push({ g: g, mv: mv });
+      });
+    });
+    return out;
+  }
+
+  function completedHtml(groups) {
+    var items = completedItems(groups);
+    if (!items.length) return '';
+    var h = '<div class="pf-completed" id="pfCompleted">';
+    h += '<button type="button" class="pf-completed-h" data-comp="toggle" aria-expanded="' +
+      (COMPLETED_OPEN ? 'true' : 'false') + '">' +
+      '<span class="pf-completed-dot">✓</span><span>Show completed</span>' +
+      '<span class="pf-completed-count">· ' + items.length + '</span>' +
+      '<span class="pf-chev" style="margin-left:auto;">' + (COMPLETED_OPEN ? '▾' : '▸') + '</span></button>';
+    if (COMPLETED_OPEN) {
+      h += '<div class="pf-completed-list">' + items.map(function (x) {
+        var crest = crestFor((x.g.meta || {}).crest_name || x.g.league_name);
+        return '<div class="pf-completed-item" data-group="' + esc(x.g.key) + '">' +
+          '<div class="pf-completed-lg"><span class="pf-rg-lg" style="background:' + crest.hue + ';">' +
+          crest.ini + '</span>' + esc(x.g.league_name) + '</div>' +
+          moveHtml(x.g, x.mv, true) + '</div>';
+      }).join('') + '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  // Height cap: the groups area is capped at ~480px so a many-league
+  // board cannot push the rest of the page down, with a soft fade and
+  // a "Show all actions · N more" pill. The cap height SNAPS to the
+  // bottom edge of the last fully visible group/move row inside the
+  // budget, so the cut always lands between rows and no interactive
+  // element ever sits under the fade.
+  var PF_CAP_BUDGET = 480;
+  function applyCap() {
+    var wrap = document.getElementById('pfGroupsWrap');
+    var fade = document.getElementById('pfCapFade');
+    var row = document.getElementById('pfCapRow');
+    var btn = document.getElementById('pfCapBtn');
+    if (!wrap || !fade || !row || !btn) return;
+    wrap.classList.remove('pf-capped');
+    wrap.style.maxHeight = '';
+    var total = wrap.scrollHeight;
+    var capped = false;
+    var hiddenMoves = 0;
+    if (!CAP_EXPANDED && total > PF_CAP_BUDGET) {
+      var wrapTop = wrap.getBoundingClientRect().top;
+      var bounds = [];
+      wrap.querySelectorAll('.pf-group, .pf-group-strip').forEach(function (el) {
+        bounds.push(el.getBoundingClientRect().bottom - wrapTop);
+      });
+      wrap.querySelectorAll('.pf-move').forEach(function (el) {
+        bounds.push(el.getBoundingClientRect().bottom - wrapTop);
+      });
+      bounds.sort(function (a, b) { return a - b; });
+      var capH = 0;
+      for (var i = 0; i < bounds.length; i++) {
+        if (bounds[i] <= PF_CAP_BUDGET) capH = bounds[i]; else break;
+      }
+      if (capH > 0) {
+        capped = true;
+        wrap.classList.add('pf-capped');
+        wrap.style.maxHeight = capH + 'px';
+        wrap.querySelectorAll('.pf-move').forEach(function (el) {
+          if (el.getBoundingClientRect().bottom - wrapTop > capH + 1) hiddenMoves += 1;
+        });
+      }
+    }
+    fade.hidden = !capped;
+    if (CAP_EXPANDED) {
+      row.hidden = total <= PF_CAP_BUDGET;
+      btn.textContent = 'Show less';
+    } else if (capped) {
+      row.hidden = false;
+      btn.textContent = 'Show all actions · ' + hiddenMoves + ' more';
+    } else {
+      row.hidden = true;
+    }
+  }
+
   function renderBoard() {
     var body = document.getElementById('pfMovesBody');
     if (!body || !BOARD) return;
-    var groups = mergedGroups();
+    var groups = sortedGroups(mergedGroups());
+    annotateBoardMoves(groups);
     var scan = BOARD.scan || {};
     var scanEl = document.getElementById('pfScanLine');
     if (scanEl) {
@@ -30121,7 +30296,14 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var pill = document.getElementById('pfDonePill');
     if (pill) {
       pill.hidden = !totalMoves;
-      pill.textContent = totalMoves ? (totalDone + ' of ' + totalMoves + ' done') : '';
+      if (totalMoves) {
+        var pct = Math.round((totalDone / totalMoves) * 100);
+        pill.innerHTML = '<span>' + totalDone + ' of ' + totalMoves + ' done</span>' +
+          '<span class="pf-done-bar"><span class="pf-done-bar-fill" style="width:' +
+          pct + '%;"></span></span>';
+      } else {
+        pill.textContent = '';
+      }
     }
     var genBtn = document.getElementById('pfGenBtn');
     if (genBtn) genBtn.hidden = !groups.length;
@@ -30134,7 +30316,11 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           'Check back after games and waivers process.</div>';
       }
     } else {
-      var html = groups.map(groupHtml).join('');
+      var html = '<div class="pf-groups-wrap" id="pfGroupsWrap">' +
+        groups.map(groupHtml).join('') +
+        '<div class="pf-cap-fade" id="pfCapFade" hidden></div></div>';
+      html += '<div class="pf-cap-row" id="pfCapRow" hidden>' +
+        '<button type="button" class="pf-cap-btn" id="pfCapBtn">Show all actions</button></div>';
       var hold = [], watch = [];
       groups.forEach(function (g) {
         g.moves.forEach(function (mv) {
@@ -30162,7 +30348,9 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           ' of ' + (scan.total || 0) + ' leagues yet, so some moves may be missing. ' +
           'Those leagues are still loading.</div>';
       }
+      html += completedHtml(groups);
       body.innerHTML = html;
+      applyCap();
     }
     var gradeEl = document.getElementById('pfGradeLine');
     if (gradeEl) {
@@ -30207,18 +30395,56 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     }
   }
 
+  // The store's contract is per league scope (the league dashboard's
+  // dismissal script speaks it the same way): one GET per group with
+  // platform/league_id/season/week/day, and the response's dismissed
+  // list is bare item_key strings for that scope. The reserved key
+  // "pf:group" in a scope means the whole league group is hidden.
+  // (The previous single ?week= GET matched neither side of that
+  // contract: the server 400'd it, the client never checked, and
+  // every refresh resurrected every dismissal.)
   function loadDismissed() {
-    return window.brFetchWithTimeout('/api/action-dismissals?week=' + WEEK,
-      { cache: 'no-store', credentials: 'same-origin' }, 10000)
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        DISMISSED = {};
-        ((d && d.dismissed) || []).forEach(function (row) {
-          var scope = [row.platform, row.league_id, row.season].join('|');
-          (DISMISSED[scope] = DISMISSED[scope] || {})[row.item_key] = true;
-        });
+    DISMISSED = {};
+    var day = todayET();
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    var jobs = mergedGroups().map(function (g) {
+      var qs = '?platform=' + encodeURIComponent(g.platform || 'sleeper') +
+        '&league_id=' + encodeURIComponent(g.league_id || '') +
+        '&season=' + encodeURIComponent(g.season || '') +
+        '&week=' + WEEK + '&day=' + encodeURIComponent(day);
+      return fetcher('/api/action-dismissals' + qs,
+        { cache: 'no-store', credentials: 'same-origin' }, 10000)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var scope = pfScope(g);
+          var confirmed = {};
+          ((d && d.dismissed) || []).forEach(function (itemKey) {
+            if (itemKey === 'pf:group') { confirmed.group = true; return; }
+            (DISMISSED[scope] = DISMISSED[scope] || {})[itemKey] = true;
+          });
+          // The server is the source of truth for group hides too: a
+          // hide it does not confirm (undone elsewhere, or a new day)
+          // does not survive the load.
+          if (confirmed.group) HIDDEN_GROUPS[g.key] = true;
+          else delete HIDDEN_GROUPS[g.key];
+        })
+        .catch(function () {});
+    });
+    return Promise.all(jobs);
+  }
+
+  function postGroupDismissal(g, undo) {
+    var fetcher = window.brFetchWithTimeout || window.fetch;
+    return fetcher('/api/action-dismissals', {
+      method: undo ? 'DELETE' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        platform: g.platform || 'sleeper', league_id: g.league_id || '',
+        season: Number(g.season) || undefined,
+        week: WEEK, day: todayET(), item_key: 'pf:group'
       })
-      .catch(function () {});
+    }, 10000).catch(function () {});
   }
 
   function postDismissal(mv, undo) {
@@ -30299,10 +30525,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       })
     }, 10000).catch(function () {});
     renderBoard();
+    // The move returns to its group with a fade-in.
+    var back = document.querySelector(
+      '.pf-group[data-group="' + g.key + '"] .pf-move[data-move="' + key + '"]');
+    if (back) back.classList.add('pf-move-enter');
   }
 
   function unhideAll() {
-    Object.keys(HIDDEN_GROUPS).forEach(function (k) { delete HIDDEN_GROUPS[k]; });
+    Object.keys(HIDDEN_GROUPS).forEach(function (k) {
+      var g = findGroup(k);
+      if (g) postGroupDismissal(g, true);
+      delete HIDDEN_GROUPS[k];
+    });
     Object.keys(DISMISSED).forEach(function (scope) {
       Object.keys(DISMISSED[scope]).forEach(function (key) {
         var parts = scope.split('|');
@@ -30325,19 +30559,50 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     return null;
   }
 
+  // Done click: the row fades and collapses off its card (~320ms),
+  // then the normal setDone flow runs and the re-render lands the
+  // move in the Completed section.
+  function fadeOutThenDone(g, mv, rowEl) {
+    if (!rowEl) { setDone(g, mv); return; }
+    if (rowEl.classList.contains('pf-move-leaving')) return;
+    rowEl.style.height = rowEl.offsetHeight + 'px';
+    rowEl.classList.add('pf-move-leaving');
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { rowEl.style.height = '0px'; });
+    });
+    setTimeout(function () { setDone(g, mv); }, 340);
+  }
+
   function wireBoard() {
     var card = document.getElementById('pfMovesCard');
     if (!card || card._pfWired) return;
     card._pfWired = true;
     card.addEventListener('click', function (e) {
+      var compBtn = e.target.closest('[data-comp]');
+      if (compBtn) { COMPLETED_OPEN = !COMPLETED_OPEN; renderBoard(); return; }
+      if (e.target.closest('#pfCapBtn')) {
+        CAP_EXPANDED = !CAP_EXPANDED;
+        applyCap();
+        return;
+      }
       var gact = e.target.closest('[data-gact]');
       if (gact) {
         var gel = gact.closest('[data-group]');
         var gkey = gel && gel.getAttribute('data-group');
         if (!gkey) return;
         var act = gact.getAttribute('data-gact');
-        if (act === 'hide') { HIDDEN_GROUPS[gkey] = true; renderBoard(); }
-        else if (act === 'unhide') { delete HIDDEN_GROUPS[gkey]; renderBoard(); }
+        if (act === 'hide') {
+          var hg = findGroup(gkey);
+          HIDDEN_GROUPS[gkey] = true;
+          renderBoard();
+          if (hg) postGroupDismissal(hg, false);
+        }
+        else if (act === 'unhide') {
+          var ug = findGroup(gkey);
+          delete HIDDEN_GROUPS[gkey];
+          renderBoard();
+          if (ug) postGroupDismissal(ug, true);
+        }
         else if (act === 'collapse' && !e.target.closest('[data-gact="hide"]')) {
           COLLAPSED[gkey] = !COLLAPSED[gkey];
           renderBoard();
@@ -30353,7 +30618,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       if (!found) return;
       var act2 = btn.getAttribute('data-act');
       if (act2 === 'dismiss') dismissMove(found.g, found.mv);
-      else if (act2 === 'done') setDone(found.g, found.mv);
+      else if (act2 === 'done') fadeOutThenDone(found.g, found.mv, moveEl);
       else if (act2 === 'undone') clearDone(found.g, found.mv);
       else if (act2 === 'evidence') {
         var ev = moveEl.querySelector('.pf-evidence');

@@ -3067,7 +3067,7 @@ def calendar_action(
     if 1 <= dl <= 18:
         gap = dl - wk
         if gap == 0:
-            return make_action(
+            act = make_action(
                 kind="calendar", platform=plat, season=season, league_id=league_id,
                 league_name=league_name,
                 title="Trade deadline is this week",
@@ -3075,8 +3075,13 @@ def calendar_action(
                 href=f"/{plat}/{int(season)}/{league_id}/trade",
                 severity=0.95,
             )
+            # Real deadline data for the board's due pill (never derived
+            # from label text downstream).
+            act["due_week"] = dl
+            act["due_in_weeks"] = 0
+            return act
         if 0 < gap <= 2:
-            return make_action(
+            act = make_action(
                 kind="calendar", platform=plat, season=season, league_id=league_id,
                 league_name=league_name,
                 title=f"Trade deadline in {_weeks(gap)}",
@@ -3084,6 +3089,9 @@ def calendar_action(
                 href=f"/{plat}/{int(season)}/{league_id}/trade",
                 severity=0.75 if gap == 1 else 0.6,
             )
+            act["due_week"] = dl
+            act["due_in_weeks"] = gap
+            return act
 
     # Playoffs approaching: seed-and-lock-your-roster nudge.
     try:

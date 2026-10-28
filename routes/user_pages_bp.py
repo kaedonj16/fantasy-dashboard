@@ -900,7 +900,8 @@ def api_portfolio_actions():
         with _ACTIONS_LOCK:
             _probe_hit = _ACTIONS_CACHE.get(_probe_key)
             if _probe_hit and time.time() - _probe_hit[0] < _ACTIONS_TTL:
-                return jsonify(_probe_hit[1])
+                return jsonify(_reattach_done_states(
+                    _probe_hit[1], _user_key(), _probe_season, _probe_week))
 
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
@@ -1290,6 +1291,7 @@ def api_portfolio_actions():
                     logger.debug("[portfolio-actions] swap scan failed", exc_info=True)
             # One injury stash/drop hint per league (active-roster candidates only;
             # players already in reserve/IR do not need a stash/move-to-IR tip).
+            _league_drop_act = None
             try:
                 from utils.injury_plan import injury_plan, ir_capacity
                 from dashboard_services.injury_return import weeks_out_for_player
@@ -1340,6 +1342,10 @@ def api_portfolio_actions():
                              "v": f"{capacity['ir_used']} of {capacity['ir_slots']} slots used"},
                         ]
                         actions.append(act)
+                        if plan["verdict"] == "Drop candidate":
+                            # The waiver block below pairs this drop with
+                            # the league's add (the freed spot's use).
+                            _league_drop_act = act
                         break
             except Exception:
                 pass
@@ -1474,7 +1480,63 @@ def api_portfolio_actions():
                                  "v": f"{hit['name']} · value {float(hit.get('value') or 0):,.0f}"},
                                 {"k": "Why", "v": hit.get("reason") or ""},
                             ]
+                            # Waiver pairing: the shared selector already
+                            # named the drop this add requires (its
+                            # add_drop outcome cleared the x1.05 bar
+                            # against that actual player). Surface it as
+                            # the detail's final segment + an evidence
+                            # row; no drop exists for open-spot/stash
+                            # outcomes, and none is invented there.
+                            _drop = hit.get("drop") or {}
+                            _drop_name = str(_drop.get("name") or "").strip()
+                            if _drop_name:
+                                _drop_pos = str(
+                                    _drop.get("position") or "").strip()
+                                _seg = (f"Drop {_drop_name} ({_drop_pos})"
+                                        if _drop_pos else f"Drop {_drop_name}")
+                                _wact["detail"] = (
+                                    (_wact["detail"] + " · ")
+                                    if _wact.get("detail") else ""
+                                ) + _seg
+                                _wact["evidence"].append({
+                                    "k": "Drop",
+                                    "v": (f"{_drop_name} · {_drop_pos}"
+                                          if _drop_pos else _drop_name),
+                                })
+                            # Fact chips: the segments that compose the
+                            # detail, so the client can render them as
+                            # chips instead of one dotted sentence. The
+                            # detail string itself is unchanged.
+                            if _wact.get("detail"):
+                                _wact["facts"] = [
+                                    _s.strip()
+                                    for _s in str(_wact["detail"]).split(" · ")
+                                    if _s.strip()
+                                ]
                             actions.append(_wact)
+                            # Drop side of the pairing: this league's
+                            # injury "Drop candidate" move names the add
+                            # its freed spot enables (same pass, no new
+                            # engine call).
+                            if _league_drop_act is not None:
+                                _add_pos = str(
+                                    hit.get("position") or "").strip()
+                                _pair = (
+                                    f"Add {hit['name']} ({_add_pos}) "
+                                    "with the freed spot"
+                                    if _add_pos else
+                                    f"Add {hit['name']} with the freed spot"
+                                )
+                                _league_drop_act["detail"] = (
+                                    (_league_drop_act["detail"] + " · ")
+                                    if _league_drop_act.get("detail") else ""
+                                ) + _pair
+                                _league_drop_act.setdefault(
+                                    "evidence", []).append({
+                                        "k": "Add",
+                                        "v": (f"{hit['name']} · {_add_pos}"
+                                              if _add_pos else hit["name"]),
+                                    })
             except Exception:
                 logger.debug("[portfolio-actions] waiver pickup failed", exc_info=True)
 
@@ -1662,7 +1724,8 @@ def api_portfolio_actions():
         _now_c = time.time()
         _hit = _ACTIONS_CACHE.get(_actions_key)
         if _hit and _now_c - _hit[0] < _ACTIONS_TTL:
-            return jsonify(_hit[1])
+            return jsonify(_reattach_done_states(
+                _hit[1], _captured_ukey, season, week))
         _started = _ACTIONS_INFLIGHT.get(_actions_key)
         if _started and _now_c - _started < 120.0:
             _holder = _ACTIONS_PENDING.get(_actions_key)
@@ -1715,10 +1778,12 @@ def api_portfolio_actions():
     # complete scan once the background worker caches it. A payload that
     # somehow already landed is still served.
     if _holder is not None and _holder.get("payload") is not None:
-        return jsonify(_holder["payload"])
+        return jsonify(_reattach_done_states(
+            _holder["payload"], _captured_ukey, season, week))
     _partial = _latest_partial_payload(_actions_key)
     if _partial is not None:
-        return jsonify(_partial)
+        return jsonify(_reattach_done_states(
+            _partial, _captured_ukey, season, week))
     return jsonify(_deferred_payload())
 
 # ── Board Done states (v25) ──────────────────────────────────────────────────
@@ -2050,6 +2115,42 @@ def _latest_partial_payload(actions_key):
         if ent and time.time() - ent[0] < _ACTIONS_FRAGMENT_TTL:
             return ent[1]
     return None
+
+
+def _reattach_done_states(payload, user_key, season, week):
+    """Refresh ``mv.done`` on a served board payload from the Done store.
+
+    Cached payloads (_ACTIONS_CACHE, 60s) and latest-pass payloads
+    (_ACTIONS_LATEST, 300s) are assembled before any Done clicks that
+    land while they are fresh, and the move-done POST/DELETE never
+    invalidates them, so serving one verbatim resurrects a just-Done
+    move as not-done until the next recompute. One indexed
+    load_done_states pass over the payload's groups at serve time keeps
+    the durable store the source of truth. The cached object is updated
+    in place (every serve path shares it), which is idempotent."""
+    if not payload or not user_key or not season or not week:
+        return payload
+    groups = ((payload.get("board") or {}).get("groups")) or []
+    if not groups:
+        return payload
+    try:
+        from dashboard_services import portfolio_board as _pb
+        states = _pb.load_done_states(user_key, season, week)
+    except Exception:
+        return payload
+    for grp in groups:
+        plat = str(grp.get("platform") or "")
+        lid = str(grp.get("league_id") or "")
+        done_count = 0
+        for mv in grp.get("moves") or []:
+            st = states.get((plat, lid, str(mv.get("move_key") or "")))
+            mv["done"] = st
+            if st:
+                done_count += 1
+        meta = grp.get("meta")
+        if isinstance(meta, dict) and "moves_count" in meta:
+            meta["done_count"] = done_count
+    return payload
 
 
 def _insights_cache_get(key, max_age=None):

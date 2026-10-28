@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-28",
+        "tag": "update",
+        "text": "My Leagues: the Front Office board is rebuilt around clearing it. Marking a move Done fades it off its league card into a Show completed section (Undo lives there), league groups re-sort so the league with your most important open move is always on top, and the board caps its height with a Show all actions expander instead of pushing the rest of the page down. Waiver adds now name the player to drop, and a drop candidate names the add its freed spot enables. Hiding a league or dismissing a move now actually sticks across refreshes (before, the board saved dismissals but never loaded them back), and a move you just marked Done can no longer reappear as not done when the page reloads from a cached scan. Moves are numbered within their league, the top three open moves overall carry a Top priority tag, waiver details show as fact chips, and due timing is a pill that turns amber only when a real deadline lands today.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-28",
         "tag": "fix",
         "text": "My Leagues: the Front Office board no longer gets stuck on 'Could not check N of N leagues yet'. Checking a league's playoff odds was quietly fetching that league's remaining schedule from the platform inside the scan itself, one fetch per week of the season for every league, so with several leagues the check stalled before it could count even one league as checked. The scan now reads odds from the cache only, the way it was designed to, and the schedule check happens inside the background simulation where it belongs.",
         "link": "/portfolio"
