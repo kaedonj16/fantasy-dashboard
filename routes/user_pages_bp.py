@@ -734,42 +734,22 @@ def page_portfolio():
 
     # ── Insights first paint, embedded ──────────────────────────────────
     # This pass already paid for the league resolution (shared into the
-    # snapshot above), the players index and the model value table, and
-    # the league contexts are warm from the summary pass: compute the
-    # Bye Watch payload (cache-only) and, while the slate is still
-    # ahead, the pregame Rooting Guide payload (no provider calls) from
-    # the SAME data and embed both in the page, so the two cards paint
-    # with zero first-load API calls. The endpoints stay as the
+    # snapshot above). The Bye Watch payload and, while the slate is
+    # still ahead, the pregame Rooting Guide payload (no live calls)
+    # are computed from the LIGHT resolver (provider-layer rosters +
+    # shared players index/model table by reference -- no league
+    # contexts) and embedded in the page, so the two cards paint with
+    # zero first-load API calls. The endpoints stay as the
     # refresh/fallback path (live points, post-kickoff byes rollover).
     _embed_bye = _embed_rooting = None
     try:
         if current_week and (nfl_state.get("season_type") in ("reg", "post")):
-            from dashboard_services.api import get_nfl_players as _gnp_emb
-            _emb_players = _pf_players_with_byes(_gnp_emb() or {}, season)
-            _emb_model_rows = []
-            try:
-                _emb_model_rows = list(get_model_value_table_cached() or [])
-            except Exception:
-                _emb_model_rows = []
-            _emb_values = {}
-            for _r in _emb_model_rows:
-                if isinstance(_r, dict) and _r.get("id"):
-                    try:
-                        _emb_values[str(_r["id"])] = float(_r.get("value") or 0)
-                    except (TypeError, ValueError):
-                        pass
-            _emb_base = {
-                "viewer_user_id": viewer_user_id,
-                "account_id": account_id,
-                "season": season,
-                "week": current_week,
-                "league_inputs": league_inputs or [],
-                "nfl_players": _emb_players,
-                "model_rows": _emb_model_rows,
-                "value_by_pid": _emb_values,
-                "cache_key": (account_id or f"viewer:{viewer_user_id}",
-                              season, current_week),
-            }
+            _emb_base = _pf_light_base(
+                identity={"viewer_username": viewer_username,
+                          "viewer_user_id": viewer_user_id,
+                          "account_id": account_id},
+                league_inputs=league_inputs or [],
+                season=season, week=current_week)
             _embed_bye, _embed_rooting = _pf_embed_payloads(_emb_base)
     except Exception:
         logger.debug("portfolio insights embed failed", exc_info=True)
@@ -1946,8 +1926,9 @@ def api_portfolio_deep_dive():
 # viewer roster):
 #
 # - /api/portfolio-bye serves Bye Watch alone. Bye needs NO provider matchup
-#   data -- only cached contexts, the viewer's starters and bye weeks -- so it
-#   answers immediately instead of waiting behind the rooting scan.
+#   data -- only the light resolver's provider-layer rosters, the viewer's
+#   starters and bye weeks -- so it answers immediately instead of waiting
+#   behind the rooting scan.
 # - /api/portfolio-insights serves the Rooting Guide. Its per-league work
 #   (a provider matchup fetch per league) runs on a bounded background
 #   thread, never on the request thread, and the assembled response is
@@ -2262,7 +2243,7 @@ def _pf_kick_background(kind, key, identity):
             if not _INSIGHTS_COMPUTE_SEM.acquire(blocking=False):
                 return  # over the global cap: dropped, re-kicked next read
             try:
-                base = _pf_viewer_leagues(identity=identity)
+                base = _pf_light_base(identity=identity)
                 if base is None:
                     return
                 real_key = base["cache_key"]
@@ -2462,6 +2443,75 @@ def _pf_viewer_leagues(identity=None):
         "value_by_pid": value_by_pid,
         "cache_key": (account_id or f"viewer:{viewer_user_id}", season, week),
     }
+
+
+def _pf_light_base(identity=None, league_inputs=None, season=None, week=None):
+    """Light preamble for the insights surfaces (2026-10-28).
+
+    Identity + the shared league resolution (same snapshot cache the
+    old preamble used) + dashboard_services.portfolio_light.make_base.
+    The light base holds the shared players index and the model value
+    table BY REFERENCE and resolves each league from the cached
+    provider layer, so a league no longer needs a warm full league
+    context (the 17-week df_weekly build) to be scanned -- the
+    dependency that made Rooting Guide / Bye Watch load only
+    sometimes. Returns None in exactly the cases _pf_viewer_leagues
+    does (signed out, no current week, off-season, resolution failed).
+
+    With ``league_inputs`` given (the page build, which just paid for
+    its own resolution), the guards and the resolution are skipped.
+    """
+    if identity is None:
+        identity = _pf_identity_snapshot()
+    viewer_user_id = identity.get("viewer_user_id")
+    account_id = identity.get("account_id")
+    if league_inputs is None:
+        viewer_username = identity.get("viewer_username")
+        if (not viewer_username or not viewer_user_id) and not account_id:
+            return None
+        nfl_state = get_nfl_state() or {}
+        season = int(nfl_state.get("season") or datetime.now().year)
+        week = int(nfl_state.get("week") or 0)
+        if not week or nfl_state.get("season_type") not in ("reg", "post"):
+            return None
+        leg = int(nfl_state.get("leg") or week)
+        _res_hit = _pf_resolution_get(viewer_user_id, account_id, season)
+        if _res_hit is not None:
+            league_inputs, season = _res_hit
+        else:
+            try:
+                from dashboard_services.accounts import resolve_my_leagues
+                import inspect
+                _resolver_params = inspect.signature(resolve_my_leagues).parameters
+                if "enrich_live" in _resolver_params:
+                    league_inputs, season = resolve_my_leagues(
+                        viewer_user_id, account_id, season,
+                        enrich_live=not bool(account_id))
+                else:  # compatibility for injected/legacy resolvers
+                    league_inputs, season = resolve_my_leagues(
+                        viewer_user_id, account_id, season)
+            except Exception:
+                return None
+            _pf_resolution_put(viewer_user_id, account_id, season,
+                               league_inputs, season)
+    else:
+        leg = week
+    from dashboard_services import portfolio_light
+    from dashboard_services.api import get_nfl_players
+    try:
+        players = get_nfl_players() or {}
+    except Exception:
+        players = {}
+    try:
+        model_rows = get_model_value_table_cached() or []
+    except Exception:
+        model_rows = []
+    return portfolio_light.make_base(
+        viewer_user_id=viewer_user_id, account_id=account_id,
+        season=season, week=week, leg=leg,
+        league_inputs=league_inputs or [],
+        players=players, model_rows=model_rows,
+        bye_map=_team_bye_map(season) or {})
 
 
 def _pf_light_cache_key():
@@ -2746,10 +2796,11 @@ def _pf_slate_ahead(season, week):
 def _pf_embed_payloads(base):
     """First-paint payloads for the page build's embedded JSON blocks.
 
-    The page build already holds everything Bye Watch needs (cached
-    league contexts, the players index, model values) and everything
-    the pregame Rooting Guide needs (contexts + schedule +
-    projections), so both payloads are computed or reused HERE, inside
+    The page build already paid for the league resolution, and the
+    light resolver holds everything Bye Watch and the pregame
+    Rooting Guide need (provider-layer rosters, the shared players
+    index and model values by reference, schedule + projections),
+    so both payloads are computed or reused HERE, inside
     the pass that already paid for the data, and stored into the
     shared snapshot caches (+ disk tier) for the endpoints to serve.
     The page request never waits on a provider call for this: bye is
@@ -2799,30 +2850,11 @@ def _pf_embed_payloads(base):
 
 
 def _compute_portfolio_bye(base):
-    """Assemble the Bye Watch payload from a resolved viewer preamble."""
-    next_week = _pf_bye_target_week(base)
-    total = _pf_scan_total(base["league_inputs"])
-    bye_rows = []
-    total_out = 0
-    scanned = 0
-    for lg in base["league_inputs"][:12]:
-        res = _pf_resolve_league(lg, base)
-        if res is None:
-            continue
-        scanned += 1
-        got = _pf_bye_row_for(res, next_week, base)
-        if got:
-            bye_rows.append(got[0])
-            total_out += got[1]
-    return {
-        "ok": True,
-        "week": next_week,
-        "season": base["season"],
-        "bye": {"week": next_week, "rows": bye_rows, "total_out": total_out},
-        "scan": {"total": total, "scanned": scanned,
-                 "incomplete": scanned < total},
-        "updated": datetime.now(timezone.utc).isoformat(),
-    }
+    """Assemble the Bye Watch payload from a light-resolved preamble
+    (dashboard_services.portfolio_light). Kept as the bp-level entry
+    the endpoints, the background worker and the embed pass call."""
+    from dashboard_services import portfolio_light
+    return portfolio_light.bye_payload(base)
 
 
 @user_pages_bp.route("/api/portfolio-bye")
@@ -2868,7 +2900,7 @@ def api_portfolio_bye():
         if age >= _BYE_TTL:
             _pf_kick_background("bye", light_key, _pf_identity_snapshot())
         return jsonify(payload)
-    base = _pf_viewer_leagues()
+    base = _pf_light_base()
     if base is None:
         return jsonify(empty)
     payload = _compute_portfolio_bye(base)
@@ -2879,144 +2911,16 @@ def api_portfolio_bye():
 
 
 def _compute_portfolio_insights(base, include_live=True):
-    """Assemble the Rooting Guide payload (see api_portfolio_insights).
+    """Assemble the Rooting Guide payload from a light-resolved
+    preamble (dashboard_services.portfolio_light).
 
     ``include_live=False`` produces the pregame shape with no provider
     calls at all (no matchup fetches, no ESPN overlay): schedule +
     starters + projections only, for the page build's embedded paint.
-    """
-    from dashboard_services import portfolio_insights as _pins
-    from utils.utils import load_week_schedule
-
-    season = base["season"]
-    week = base["week"]
-    # Normalized week games (schedule + live overlay from the scores feed).
-    games_norm = []
-    try:
-        sched = list(load_week_schedule(season, week) or [])
-    except Exception:
-        sched = []
-    team_game = {}
-    # The live overlay can only add scores/status, which cannot exist
-    # before the week's first kickoff -- and for future dates the ESPN
-    # scoreboard answers with the current week's slate, which
-    # scoreboard_for_date discards as wrong-date (measured at ~6s for a
-    # 3-date slate on the Tuesday before Week 8, paid on every cold
-    # compute for data that is thrown away). Skip the overlay entirely
-    # while the whole slate is still ahead; once any game has kicked
-    # off, overlay with a short timeout so the response stays inside
-    # the client's deadline (the ScoreZone precedent).
-    _epochs = []
-    for g in sched:
-        try:
-            _epochs.append(float(g.get("gameTime_epoch")))
-        except (TypeError, ValueError, AttributeError):
-            continue
-    _slate_ahead = bool(_epochs) and min(_epochs) > time.time()
-    if not _slate_ahead and include_live:
-        try:
-            from dashboard_services.api import build_team_game_lookup, get_nfl_scores_for_date
-            from zoneinfo import ZoneInfo as _ZI
-            dates = set()
-            for g in sched:
-                ep = g.get("gameTime_epoch")
-                if ep:
-                    dates.add(datetime.fromtimestamp(
-                        float(ep), _ZI("America/New_York")).strftime("%Y%m%d"))
-            for d in dates:
-                try:
-                    body = get_nfl_scores_for_date(d, timeout=5) or {}
-                    team_game.update(build_team_game_lookup(body))
-                except Exception:
-                    continue
-        except Exception:
-            team_game = {}
-    for g in sched:
-        home = str(g.get("home") or "")
-        away = str(g.get("away") or "")
-        gd = None
-        for key in (home, away):
-            if team_game.get(key):
-                gd = team_game[key]
-                break
-        if gd:
-            games_norm.append(_pins.normalize_game(gd))
-        else:
-            ep = g.get("gameTime_epoch")
-            games_norm.append({
-                "home": home, "away": away, "home_pts": None, "away_pts": None,
-                "status": "pre", "game_status": "", "game_quarter": "",
-                "game_clock": "",
-                "epoch": float(ep) if ep else None,
-            })
-
-    # Per-league rooting work in parallel; results are assembled in the
-    # original league order so windows/margins stay deterministic.
-    leagues = list(base["league_inputs"][:12])
-    total = _pf_scan_total(base["league_inputs"])
-
-    def _work(lg):
-        res = _pf_resolve_league(lg, base)
-        if res is None:
-            return None
-        starters_out, margin = _pf_rooting_for(
-            res, base, include_live=include_live)
-        return res, starters_out, margin
-
-    results = []
-    if leagues:
-        # 2, not 6: each league's work materializes its matchup rows and
-        # rooting structures (~20MB transient per league measured), and
-        # this pool runs inside a request thread on a 2GB box that is
-        # already fielding the rest of the portfolio fan-out.
-        with ThreadPoolExecutor(max_workers=2,
-                                thread_name_prefix="pf-insights") as pool:
-            results = list(pool.map(_work, leagues))
-    all_starters = []
-    margins = {}
-    scanned = 0
-    for out in results:
-        if out is None:
-            continue
-        res, starters_out, margin = out
-        scanned += 1
-        all_starters.extend(starters_out)
-        if margin is not None:
-            margins[res["league_key"]] = margin
-
-    try:
-        from app import _NFL_COLORS as _team_colors
-    except Exception:
-        _team_colors = {}
-    windows = _pins.group_rooting(games_norm, all_starters,
-                                  team_colors=_team_colors)
-    if windows:
-        final_window = windows[-1]
-        final_teams = set()
-        any_live_left = False
-        for card in final_window.get("games") or []:
-            final_teams.add(card.get("away"))
-            final_teams.add(card.get("home"))
-            if card.get("status") != "final":
-                any_live_left = True
-        for s in all_starters:
-            if s.get("team") in final_teams and s.get("league_key") in margins:
-                margins[s["league_key"]]["remaining_names"].append(s.get("name"))
-        # Need lines only while the final window can still change outcomes.
-        final_window["need_lines"] = (
-            _pins.need_lines(margins) if any_live_left else [])
-    return {
-        "ok": True,
-        "week": week,
-        "season": season,
-        "rooting": {"windows": windows},
-        # Bye Watch lives on /api/portfolio-bye now; the empty block keeps
-        # the response shape older clients were built against.
-        "bye": {"week": week + 1, "rows": [], "total_out": 0},
-        "scan": {"total": total, "scanned": scanned,
-                 "incomplete": scanned < total},
-        "updated": datetime.now(timezone.utc).isoformat(),
-    }
+    Kept as the bp-level entry the background worker and the embed
+    pass call."""
+    from dashboard_services import portfolio_light
+    return portfolio_light.rooting_payload(base, include_live=include_live)
 
 
 @user_pages_bp.route("/api/portfolio-insights")

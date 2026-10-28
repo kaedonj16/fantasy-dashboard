@@ -95,6 +95,43 @@ def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None, week=7):
     monkeypatch.setattr(ds_api, "build_team_game_lookup", lambda body: {})
     monkeypatch.setattr(uu, "load_week_schedule",
                         lambda season, week: sched or [])
+    # Light resolver seam (2026-10-28): the bye/insights computes read
+    # league meta/rosters/users from the cached provider layer and the
+    # current week's projections from the memoized per-week builder,
+    # so the ctx fixtures are exploded into provider stubs over the
+    # same data. A league absent from ctx_by_lid is "cold": its
+    # provider reads come back empty and the scan reports it
+    # unscanned -- exactly what a missing ctx used to mean. (The ctx
+    # stub above stays for the surfaces that still read contexts.)
+    import dashboard_services.portfolio_light as pf_light
+
+    def _stub_league(plat, lid, season):
+        ctx = ctx_by_lid.get(lid) or {}
+        league = dict(ctx.get("league") or {})
+        if ctx:
+            league.setdefault("roster_positions",
+                              ctx.get("roster_positions") or [])
+            league.setdefault("scoring_settings", {})
+        return league
+
+    monkeypatch.setattr(platform_api, "get_league", _stub_league)
+    monkeypatch.setattr(
+        platform_api, "get_rosters",
+        lambda plat, lid, season: list(
+            (ctx_by_lid.get(lid) or {}).get("rosters") or []))
+    monkeypatch.setattr(
+        platform_api, "get_users",
+        lambda plat, lid, season: list(
+            (ctx_by_lid.get(lid) or {}).get("users") or []))
+    _proj = {}
+    for _c in ctx_by_lid.values():
+        for _w, _bundle in (_c.get("proj_by_week") or {}).items():
+            _entry = _proj.setdefault(_w, {"projections": {}})
+            _entry["projections"].update(
+                (_bundle or {}).get("projections") or {})
+    monkeypatch.setattr(
+        pf_light, "_projections_by_week",
+        lambda season, weeks, scoring: dict(_proj))
     app = Flask(__name__)
     app.secret_key = "test"
     app.register_blueprint(bp_mod.user_pages_bp)
@@ -211,18 +248,18 @@ def test_bye_targets_next_week_once_kickoff_passes(monkeypatch):
 
 def test_bye_second_call_within_ttl_does_not_recompute(monkeypatch):
     """The bye payload is cached per viewer under the light key: a
-    second call inside the TTL must not pay the _pf_viewer_leagues
+    second call inside the TTL must not pay the _pf_light_base
     preamble (league resolution, players index, model table) at all."""
     ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
     client, bp_mod, _pa = _client(monkeypatch, ctxs)
     calls = {"n": 0}
-    orig = bp_mod._pf_viewer_leagues
+    orig = bp_mod._pf_light_base
 
-    def _counting(identity=None):
+    def _counting(identity=None, **kw):
         calls["n"] += 1
-        return orig(identity)
+        return orig(identity, **kw)
 
-    monkeypatch.setattr(bp_mod, "_pf_viewer_leagues", _counting)
+    monkeypatch.setattr(bp_mod, "_pf_light_base", _counting)
     first = client.get("/api/portfolio-bye").get_json()
     assert first["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
     assert calls["n"] == 1
@@ -312,23 +349,33 @@ def test_insights_second_call_within_ttl_is_cached(monkeypatch):
     client, bp_mod, platform_api = _client(monkeypatch, ctxs)
     monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
 
-    calls = {"n": 0}
-    orig = bp_mod.get_league_ctx_from_cache
+    # Light resolver (2026-10-28): the landed compute reads each
+    # league's rosters from the provider layer exactly once and never
+    # touches a league context at all.
+    calls = {"ctx": 0, "rosters": 0}
+    orig_ctx = bp_mod.get_league_ctx_from_cache
 
-    def _counting(plat, lid, season, allow_build=False):
-        calls["n"] += 1
-        return orig(plat, lid, season, allow_build=allow_build)
+    def _counting_ctx(plat, lid, season, allow_build=False):
+        calls["ctx"] += 1
+        return orig_ctx(plat, lid, season, allow_build=allow_build)
 
-    monkeypatch.setattr(bp_mod, "get_league_ctx_from_cache", _counting)
+    monkeypatch.setattr(bp_mod, "get_league_ctx_from_cache", _counting_ctx)
+    orig_rosters = platform_api.get_rosters
+
+    def _counting_rosters(plat, lid, season):
+        calls["rosters"] += 1
+        return orig_rosters(plat, lid, season)
+
+    monkeypatch.setattr(platform_api, "get_rosters", _counting_rosters)
     first = client.get("/api/portfolio-insights").get_json()
     # Cold load (2026-10-27 speed pass): the request thread no longer
     # computes; it answers deferred and the compute lands in background.
     assert first["scan"]["incomplete"] is True
     landed = _poll_insights(client, bp_mod)
     assert landed["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
-    assert calls["n"] == 2  # one ctx read per league on the landed compute
+    assert calls == {"ctx": 0, "rosters": 2}
     second = client.get("/api/portfolio-insights").get_json()
-    assert calls["n"] == 2  # TTL cache: no recomputation at all
+    assert calls == {"ctx": 0, "rosters": 2}  # TTL cache: no recompute
     assert second["rooting"] == landed["rooting"]
     assert second["updated"] == landed["updated"]  # honest computed-at time
     # Bye no longer rides the insights response.
@@ -375,7 +422,7 @@ def test_insights_cold_call_defers_to_background_compute(monkeypatch):
 
     def _blocking_rows(plat, lid, week, season):
         calls["n"] += 1
-        if calls["n"] <= 2:  # the background compute's two league fetches
+        if calls["n"] <= 1:  # the background compute's first league fetch
             entered.set()
             release.wait(timeout=5)
         return _matchup_rows(plat, lid, week, season)
@@ -391,13 +438,12 @@ def test_insights_cold_call_defers_to_background_compute(monkeypatch):
         assert first["scan"]["scanned"] == 0
         assert first["scan"]["incomplete"] is True
         assert entered.wait(timeout=2.0)  # background compute is in flight
-        deadline = _time.time() + 2.0
-        while calls["n"] < 2 and _time.time() < deadline:
-            _time.sleep(0.02)
-        assert calls["n"] == 2  # both of the compute's fetches are parked
+        # Sequential compute (light resolver): the second league's
+        # fetch has not started while the first is parked.
+        assert calls["n"] == 1
         deferred = client2.get("/api/portfolio-insights").get_json()
         # Concurrent call: deferred too, no duplicate compute kicked.
-        assert calls["n"] == 2
+        assert calls["n"] == 1
         assert deferred["scan"]["scanned"] == 0
         assert deferred["scan"]["incomplete"] is True
     finally:
@@ -479,11 +525,11 @@ def test_insights_disk_tier_serves_after_inprocess_wipe(monkeypatch):
     assert landed["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
 
     calls = {"preamble": 0, "matchups": 0}
-    orig_preamble = bp_mod._pf_viewer_leagues
+    orig_preamble = bp_mod._pf_light_base
 
-    def _counting_preamble(identity=None):
+    def _counting_preamble(identity=None, **kw):
         calls["preamble"] += 1
-        return orig_preamble(identity)
+        return orig_preamble(identity, **kw)
 
     def _counting_matchups(*a, **k):
         calls["matchups"] += 1
@@ -502,18 +548,18 @@ def test_insights_disk_tier_serves_after_inprocess_wipe(monkeypatch):
 
 def test_bye_disk_tier_serves_after_inprocess_wipe(monkeypatch):
     """Bye Watch after a recycle: the disk payload serves before the
-    endpoint pays the _pf_viewer_leagues preamble at all."""
+    endpoint pays the _pf_light_base preamble at all."""
     ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
     client, bp_mod, _pa = _client(monkeypatch, ctxs)
     first = client.get("/api/portfolio-bye").get_json()
     assert first["scan"] == {"total": 2, "scanned": 2, "incomplete": False}
 
     calls = {"n": 0}
-    orig = bp_mod._pf_viewer_leagues
+    orig = bp_mod._pf_light_base
 
-    def _counting(identity=None):
+    def _counting(identity=None, **kw):
         calls["n"] += 1
-        return orig(identity)
+        return orig(identity, **kw)
 
     monkeypatch.setattr(bp_mod, "_pf_viewer_leagues", _counting)
     bp_mod._BYE_CACHE.clear()   # the recycle wipes both dicts
@@ -594,14 +640,13 @@ def test_embed_payloads_compute_in_page_pass_and_store(monkeypatch):
         raise AssertionError("embed rooting must not call get_matchups")
 
     monkeypatch.setattr(platform_api, "get_matchups", _boom)
-    base = {
-        "viewer_user_id": "owner-1", "account_id": None,
-        "season": 2026, "week": 8, "league_inputs": list(_LEAGUES),
-        "nfl_players": bp_mod._pf_players_with_byes(dict(_PLAYERS), 2026),
-        "model_rows": list(_MODEL_ROWS),
-        "value_by_pid": {"fa1": 500.0},
-        "cache_key": ("viewer:owner-1", 2026, 8),
-    }
+    # The page build's embed pass now resolves through the light
+    # preamble with the resolution it already paid for.
+    base = bp_mod._pf_light_base(
+        identity={"viewer_username": "tester",
+                  "viewer_user_id": "owner-1", "account_id": None},
+        league_inputs=list(_LEAGUES), season=2026, week=8)
+    assert base["cache_key"] == ("viewer:owner-1", 2026, 8)
     bye_calls = {"n": 0}
     orig_bye = bp_mod._compute_portfolio_bye
 
