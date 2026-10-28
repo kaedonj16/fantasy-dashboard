@@ -41531,6 +41531,17 @@ def build_portfolio_body(
         ".pf-rg-pts.proj{font-weight:600;color:var(--text-subtle);}"
         ".pf-rg-pts{flex:0 0 auto;margin-left:auto;white-space:nowrap;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;}"
         ".pf-rg-lg{width:15px;height:15px;border-radius:4px;display:inline-grid;place-items:center;color:#fff;font-size:7px;font-weight:800;flex:0 0 auto;}"
+        # Narrow game cards (phones: each side column is only ~160px
+        # wide, too narrow for a name + league badges + value to share
+        # one line): the two sides stack instead, away on top and home
+        # below, so every player row gets the full card width and the
+        # badges stay inline after the name, exactly as on wide cards.
+        # The vertical divider becomes a hairline above the home side.
+        # The card itself is the container, so the rule keys off card
+        # width: a phone card (~342px) stacks, a two-per-row desktop
+        # card (~570px) keeps the side-by-side layout.
+        ".pf-rg-game{container-type:inline-size;}"
+        "@container (max-width:540px){.pf-rg-cols{grid-template-columns:1fr;}.pf-rg-col + .pf-rg-col{border-left:0;padding-left:0;margin-left:0;border-top:1px solid var(--grid);padding-top:6px;margin-top:6px;}}"
         ".pf-bye-row{display:grid;grid-template-columns:minmax(170px,220px) minmax(0,1fr) auto;align-items:center;column-gap:12px;padding:5px 0;border-top:1px solid var(--grid);font-size:12px;}"
         ".pf-bye-row:first-child{border-top:0;}"
         ".pf-bye-name{font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"

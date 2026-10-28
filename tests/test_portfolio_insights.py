@@ -328,3 +328,31 @@ def test_rooting_row_value_rail_structure():
     # Rows top-align so a wrapped chip group never drags the value off
     # the name line.
     assert ".pf-rg-p{display:flex;align-items:flex-start;" in app_src
+
+
+def test_rooting_narrow_card_stacks_sides():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    app_src = (root / "app.py").read_text(encoding="utf-8")
+    # Narrow game cards stack the two sides (away on top, home below)
+    # so every player row gets the full card width, instead of
+    # squeezing name + badges + value into a ~160px side column. The
+    # card itself is the container, so the rule keys off card width
+    # (phone ~342px stacks; the two-per-row desktop card ~570px keeps
+    # the side-by-side layout above).
+    assert ".pf-rg-game{container-type:inline-size;}" in app_src
+    assert ("@container (max-width:540px){.pf-rg-cols{grid-template-columns:1fr;}"
+            ) in app_src
+    # The vertical divider is dropped in stacked mode and replaced by
+    # a hairline above the second (home) side.
+    assert (".pf-rg-col + .pf-rg-col{border-left:0;padding-left:0;margin-left:0;"
+            "border-top:1px solid var(--grid);") in app_src
+    # The identity block is never column-stacked: badges stay inline
+    # after the name at every width.
+    assert ".pf-rg-id{flex-direction:column" not in app_src
+    assert (".pf-rg-id{flex:1 1 auto;min-width:0;display:flex;"
+            "align-items:center;flex-wrap:wrap;") in app_src
+    # The base side-by-side layout stays exactly as shipped.
+    assert ".pf-rg-cols{display:grid;grid-template-columns:1fr 1fr;" in app_src
+    assert (".pf-rg-col + .pf-rg-col{border-left:1px solid var(--grid);"
+            "padding-left:8px;margin-left:8px;}") in app_src
