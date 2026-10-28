@@ -81,6 +81,10 @@ def get_league_ctx_from_cache(*args, **kwargs):
     from app import get_league_ctx_from_cache as _fn
     return _fn(*args, **kwargs)
 
+def ensure_weekly_bits(*args, **kwargs):
+    from app import ensure_weekly_bits as _fn
+    return _fn(*args, **kwargs)
+
 def get_model_value_table_cached(*args, **kwargs):
     from app import get_model_value_table_cached as _fn
     return _fn(*args, **kwargs)
@@ -3289,6 +3293,12 @@ def api_weekly_optimal():
                and str(x.get("league_id") or "") == league_id for x in allowed):
         return jsonify({"ok": False, "message": "League is no longer linked"}), 403
     ctx = get_league_ctx_from_cache(platform, league_id, season)
+    # Mirror the Weekly Hub page route: the Lineup builder reads the ctx's
+    # weekly bits (matchups / projections), and a cached ctx that has not
+    # been through the hub yet may not carry them, which silently changed
+    # (or dropped) the This Week view the fragment returned.
+    if ctx:
+        ensure_weekly_bits(ctx)
     from dashboard_services.pages.optimal_page import build_optimal_body
     html_fragment = build_optimal_body(ctx)
     query = f"tab=optimal&view={view}&period={period}"

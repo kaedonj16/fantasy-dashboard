@@ -101,7 +101,7 @@ def test_my_leagues_cards_use_the_same_formatter():
 def test_changelog_announces_team_modal_odds_fix():
     from dashboard_services.changelog import CHANGELOG
 
-    entry = CHANGELOG[29]  # prepended above it: breakout grading production-first + hit floor, rooting guide two-per-row + badge fit, Stripe period-end grant fix, awards page rework, graphs fill and audit, portfolio light resolver, trade calculator dedupe, recap/standings dedupe, sitewide speed pass, Weekly Hub dedupe refresh, waivers/start-sit call consolidation, AM batch + players cache, ScoreZone user-cache speedup, My Leagues portfolio consolidation, duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix
+    entry = CHANGELOG[30]  # prepended above it: weekly hub v13 layout and lineup fixes, breakout grading production-first + hit floor, rooting guide two-per-row + badge fit, Stripe period-end grant fix, awards page rework, graphs fill and audit, portfolio light resolver, trade calculator dedupe, recap/standings dedupe, sitewide speed pass, Weekly Hub dedupe refresh, waivers/start-sit call consolidation, AM batch + players cache, ScoreZone user-cache speedup, My Leagues portfolio consolidation, duplicate Tuesday dot removal, phone tabs + card odds removal, phone notifications panel + More-dot fix, recap glance username fix, Weekly Hub revamp, graphs overhaul, holdings sort + insights speed, the rooting/bye cleanup, the Front Office scan fix
     assert entry["date"] == "2026-10-27"
     assert entry["tag"] == "fix"
     assert "playoff odds" in entry["text"]

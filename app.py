@@ -13432,7 +13432,10 @@ def render_weekly_top_scorers_for_week(
         platform: str,
         season: str,
         roster_positions: list = None,
+        top_n: int = 3,
 ) -> str:
+    # Depth per position: 3 by default; the Weekly Hub Scorers panel (page
+    # render and its week-change fragment) passes 5.
     _base_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
     rp_set = set(roster_positions or [])
     active_positions = [
@@ -13456,6 +13459,7 @@ def render_weekly_top_scorers_for_week(
             platform,
             season,
             roster_positions=roster_positions,
+            top_n=top_n,
         )
         return render_top_three(top_by_pos, rosters, roster_map, active_positions)
 
@@ -13495,7 +13499,7 @@ def render_weekly_top_scorers_for_week(
     for pos in top_by_pos:
         f = [r for r in proj_rows if r["pos"] == pos]
         f.sort(key=lambda r: r["points"], reverse=True)
-        top_by_pos[pos] = f[:3]
+        top_by_pos[pos] = f[:top_n]
 
     return render_top_three(top_by_pos, rosters, roster_map, active_positions)
 
@@ -23528,6 +23532,7 @@ def api_weekly_week():
         platform,
         season,
         roster_positions=ctx.get("roster_positions") or [],
+        top_n=5,
     )
     _api_proj_by_roster = ctx.get("proj_by_roster") or {}
     highlights_html = _render_weekly_highlights(

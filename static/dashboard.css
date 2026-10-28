@@ -53742,9 +53742,12 @@ html:has(.home-page) { scroll-behavior: smooth; }
 /* ── Weekly Hub revamp (v12): leaders strip, carousel-left two-column ─────
    New rules only. The .page-layout.weekly-hub >=1025px sidebar track is
    retired (no aside is built anymore), the leaders band becomes a full-width
-   strip, and the desktop reflow columns (.wk-hub-two) stretch to equal
-   height with the matchup shell sticky in its own column. No carousel row
-   or slide rule is touched by this section. */
+   strip, and the desktop reflow columns (.wk-hub-two, ~54% carousel /
+   ~46% tabs) stretch to one shared bottom edge with the matchup shell
+   sticky in its own full-height column. The Scorers cards (top 5 per
+   position) and the Lineup This Week list/table fill the tabs column by
+   sharing its height evenly across their rows, never by pooled blank
+   space. No carousel row or slide rule is touched by this section. */
 @media (min-width: 1025px) {
     .page-layout.weekly-hub {
         grid-template-columns: minmax(0, 1fr);
@@ -53773,9 +53776,16 @@ html:has(.home-page) { scroll-behavior: smooth; }
 
 .wk-hub-two {
     display: grid;
-    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 54fr) minmax(0, 46fr);
     gap: 14px;
     align-items: stretch;
+}
+
+/* Both columns span the row's full height (align-items: stretch above);
+   the matchup column's sticky shell needs that full-height track to
+   travel in, and the tabs column fills it with its active panel. */
+.wk-hub-col-match {
+    align-self: stretch;
 }
 
 .wk-hub-col {
@@ -53827,8 +53837,9 @@ html:has(.home-page) { scroll-behavior: smooth; }
     white-space: nowrap;
 }
 
-/* Scorers: position cards grid. Desktop fills the panel (rows 1fr, cards
-   stretch, scorer rows spread through each card); mobile is one column. */
+/* Scorers: position cards grid (top 5 per position). On desktop the grid
+   fills the panel and each card shares its height evenly across its
+   rows; mobile is one column of natural-height cards. */
 .wk-scorers-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -53853,6 +53864,17 @@ html:has(.home-page) { scroll-behavior: smooth; }
     flex: 1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-auto-rows: 1fr;
+}
+
+/* Desktop fill: the card header stays at natural height and the scorer
+   rows share the rest of the card evenly (content centered in each
+   share), so no blank space pools anywhere in the card. */
+#weeklyLeftTabs.wk-desktop .wk-pos-rows {
+    flex: 1;
+}
+
+#weeklyLeftTabs.wk-desktop .wk-srow {
+    flex: 1;
 }
 
 .wk-pos-card {
@@ -53881,11 +53903,6 @@ html:has(.home-page) { scroll-behavior: smooth; }
 .wk-pos-rows {
     display: flex;
     flex-direction: column;
-}
-
-#weeklyLeftTabs.wk-desktop .wk-pos-rows {
-    flex: 1;
-    justify-content: space-between;
 }
 
 .wk-srow {
@@ -53983,6 +54000,13 @@ html:has(.home-page) { scroll-behavior: smooth; }
     .lw-metrics {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+}
+
+/* No-swap This Week band: only the Current proj and Win prob tiles, so
+   the band is two across at every width instead of stranding two tiles
+   in the 4-up grid. */
+.lw-metrics.lw-metrics-solo {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .lw-metric {
@@ -54112,6 +54136,157 @@ html:has(.home-page) { scroll-behavior: smooth; }
     border-radius: 20px;
     padding: 2px 9px;
     white-space: nowrap;
+}
+
+/* No-swap This Week: one compact starters list (slot, name, projection)
+   with a Total footer, replacing the doubled comparison table. */
+.lw-stlist {
+    display: flex;
+    flex-direction: column;
+}
+
+.lw-strow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 13.5px;
+    min-width: 0;
+}
+
+.lw-stlist > .lw-strow:first-child {
+    border-top: none;
+}
+
+.lw-stslot {
+    flex: 0 0 52px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.lw-stname {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lw-stpts {
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.lw-strow-total {
+    background: var(--row);
+}
+
+.lw-strow-total .lw-stslot {
+    color: var(--text);
+}
+
+.lw-strow-total .lw-stpts {
+    font-size: 15px;
+}
+
+/* Desktop hub fill for the Lineup This Week view: the panel is as tall
+   as the carousel column, so the view's chain flexes and the starters
+   list (no-swap) or comparison table (swap state) fills the remaining
+   height with its rows at equal shares, content centered, dividers at
+   the row boundaries. No blank space pools at the panel bottom. */
+#weeklyLeftTabs.wk-desktop #optimalLineupContent {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#weeklyLeftTabs.wk-desktop .opt-seg-panel[data-opt-panel="thisweek"]:not([hidden]) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-thisweek {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-thisweek .lw-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-stlist {
+    flex: 1;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-strow {
+    flex: 1 1 0;
+}
+
+/* Swap-state table as flex rows so its rows share the height the same
+   way (a real table cannot distribute surplus height evenly). Scoped
+   to the hub's This Week panel; .lw-table has no other consumers. */
+#weeklyLeftTabs.wk-desktop .lw-table {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table thead {
+    display: block;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table tbody {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table tr {
+    display: flex;
+    align-items: stretch;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table tbody tr {
+    flex: 1 1 0;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table th,
+#weeklyLeftTabs.wk-desktop .lw-table td {
+    display: flex;
+    align-items: center;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table th:nth-child(1),
+#weeklyLeftTabs.wk-desktop .lw-table td:nth-child(1) {
+    flex: 0 0 60px;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table th:nth-child(2),
+#weeklyLeftTabs.wk-desktop .lw-table td:nth-child(2) {
+    flex: 1.25 1 0;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table th:nth-child(3),
+#weeklyLeftTabs.wk-desktop .lw-table td:nth-child(3) {
+    flex: 1 1 0;
+}
+
+#weeklyLeftTabs.wk-desktop .lw-table th:nth-child(4),
+#weeklyLeftTabs.wk-desktop .lw-table td:nth-child(4) {
+    flex: 0 0 104px;
 }
 
 /* ============================================================
