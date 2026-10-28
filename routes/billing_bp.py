@@ -649,24 +649,61 @@ def _require_google_to_subscribe():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _subscription_period_end(sub) -> "datetime":
+def _subscription_period_end(sub):
     """Return the subscription's current period end as a UTC datetime.
 
     Stripe API 2025-03-31+ (stripe-python v15) moved ``current_period_end`` off
-    the Subscription object onto each subscription *item*. This reads whichever
-    location is present and falls back to a 32-day grant if neither is found.
+    the Subscription object onto each subscription *item*, so this reads the
+    top-level field first, then the max item period end. Every read goes
+    through ``_stripe_field``: on real v15 resource objects ``.get`` is not a
+    usable accessor (it raises AttributeError on items), so hand-rolled
+    ``getattr``/``.get``/``[]`` chains read top-level fine but throw on items
+    and used to be swallowed into a silent 32-day fallback.
+
+    Returns None when no period end is readable. Callers decide the fallback
+    via ``_period_end_or_fallback``; this helper never invents a date.
     """
-    ts = getattr(sub, "current_period_end", None)
+    if not sub:
+        return None
+    ts = _stripe_field(sub, "current_period_end")
     if not ts:
-        try:
-            items = (sub.get("items") if hasattr(sub, "get") else sub["items"])
-            data = items["data"] if items else []
-            ts = max((it.get("current_period_end") or 0) for it in data) or None
-        except Exception:
-            ts = None
-    if ts:
+        items = _stripe_field(sub, "items")
+        data = _stripe_field(items, "data") or []
+        ends = []
+        for item in data:
+            end = _stripe_field(item, "current_period_end")
+            if end:
+                ends.append(end)
+        ts = max(ends) if ends else None
+    if not ts:
+        return None
+    try:
         return datetime.fromtimestamp(ts, tz=timezone.utc)
-    return datetime.now(timezone.utc) + timedelta(days=32)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _period_end_or_fallback(sub, *, interval: str, sub_id: str = "",
+                            source: str = "grant"):
+    """Period end from Stripe, or a loud interval-aware fallback.
+
+    The fallback keeps a grant from being blocked by an unreadable Stripe
+    object, sized to the plan's billing interval (month -> 32 days, year ->
+    366 days). It logs an ERROR naming the subscription every time it fires:
+    the previous silent 32-day fallback credited yearly plans with a month
+    of access and nobody noticed until buyers lost PRO.
+    """
+    end = _subscription_period_end(sub)
+    if end is not None:
+        return end
+    normalized = _normalize_interval(interval)
+    days = 32 if normalized == "month" else 366
+    logger.error(
+        "[stripe] %s: current_period_end unreadable for sub=%s; "
+        "granting interval fallback (+%d days, interval=%s)",
+        source, sub_id or "-", days, normalized,
+    )
+    return datetime.now(timezone.utc) + timedelta(days=days)
 
 
 def _try_grant_from_stripe_success() -> None:
@@ -694,15 +731,10 @@ def _try_grant_from_stripe_success() -> None:
         cust_id   = _stripe_id(_stripe_field(cs, "customer"))
 
         try:
-            sub        = _stripe().Subscription.retrieve(sub_id) if sub_id else None
-            expires_at = (
-                _subscription_period_end(sub)
-                if sub else datetime.now(timezone.utc) + timedelta(days=366)
-            )
+            sub = _stripe().Subscription.retrieve(sub_id) if sub_id else None
             if plan not in _KNOWN_PLANS:
                 plan = _plan_from_subscription(sub)
         except Exception:
-            expires_at = datetime.now(timezone.utc) + timedelta(days=366)
             sub = None
 
         if plan not in _KNOWN_PLANS:
@@ -720,6 +752,10 @@ def _try_grant_from_stripe_success() -> None:
         if interval not in ("month", "year") and sub is not None:
             interval = _interval_from_subscription(sub) or interval
         interval = _normalize_interval(interval)
+
+        expires_at = _period_end_or_fallback(
+            sub, interval=interval, sub_id=sub_id, source="success-page",
+        )
 
         _apply_plan_grant(
             plan, user_id, league_id, platform, expires_at, sub_id, cust_id,
@@ -2093,16 +2129,15 @@ def _handle_subscription_lifecycle_event(s, etype: str) -> None:
         return
     status = str(_stripe_field(s, "status") or "").strip().lower()
     cancel_at_period_end = bool(_stripe_field(s, "cancel_at_period_end"))
-    try:
-        expires_at = _subscription_period_end(s)
-    except Exception:
-        expires_at = datetime.now(timezone.utc) + timedelta(days=32)
     meta = _metadata_dict(s)
     plan = (meta.get("plan") or "").strip()
     if plan not in _KNOWN_PLANS:
         plan = _plan_from_subscription(s)
     interval = _normalize_interval(
         _interval_from_subscription(s) or meta.get("interval") or "year"
+    )
+    expires_at = _period_end_or_fallback(
+        s, interval=interval, sub_id=sub_id, source=etype,
     )
     user_id = _subscriber_user_id({
         "user_id": meta.get("user_id") or meta.get("account_id") or "",
@@ -2224,10 +2259,6 @@ def stripe_webhook():
             sub_id = _stripe_id(_stripe_field(s, "id"))
             cust_id = _stripe_id(_stripe_field(s, "customer"))
             sub = s
-            try:
-                expires_at = _subscription_period_end(sub)
-            except Exception:
-                expires_at = datetime.now(timezone.utc) + timedelta(days=32)
             if plan not in _KNOWN_PLANS:
                 plan = _plan_from_subscription(sub)
         else:
@@ -2235,19 +2266,20 @@ def stripe_webhook():
             cust_id   = _stripe_id(_stripe_field(s, "customer"))
             try:
                 sub = _stripe().Subscription.retrieve(sub_id) if sub_id else None
-                expires_at = _subscription_period_end(sub) if sub else (
-                    datetime.now(timezone.utc) + timedelta(days=32)
-                )
                 if plan not in _KNOWN_PLANS:
                     plan = _plan_from_subscription(sub)
             except Exception:
-                expires_at = datetime.now(timezone.utc) + timedelta(days=32)
+                sub = None
 
         # Interval-agnostic: Stripe's price is the source of truth (covers
         # interval switches made in the billing portal), checkout metadata
         # is the fallback for unexpanded prices.
         interval = _interval_from_subscription(sub) or (meta.get("interval") or "").strip().lower()
         interval = _normalize_interval(interval)
+
+        expires_at = _period_end_or_fallback(
+            sub, interval=interval, sub_id=sub_id, source=f"webhook:{etype}",
+        )
 
         _apply_plan_grant(
             plan, user_id, league_id, platform, expires_at, sub_id, cust_id,
@@ -2276,11 +2308,14 @@ def stripe_webhook():
                 logger.debug("[stripe] resolve dunning after invoice.paid failed", exc_info=True)
             try:
                 sub        = _stripe().Subscription.retrieve(sub_id)
-                expires_at = _subscription_period_end(sub)
                 # Interval-agnostic: renewals just extend the period, and the
                 # interval column follows whatever price the subscription now
                 # runs on (e.g. a monthly->annual switch in the portal).
                 interval = _interval_from_subscription(sub) or "year"
+                expires_at = _period_end_or_fallback(
+                    sub, interval=interval, sub_id=_stripe_id(sub_id),
+                    source="invoice.paid",
+                )
                 from dashboard_services.db import get_conn
                 with get_conn() as conn:
                     with conn.cursor() as cur:
