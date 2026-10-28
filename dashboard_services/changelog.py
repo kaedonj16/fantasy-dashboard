@@ -3,7 +3,12 @@ Changelog entries for the fantasy dashboard.
 Each entry represents a user-facing change.
 """
 
-CHANGELOG = [
+CHANGELOG = [    {
+        "date": "2026-10-28",
+        "tag": "update",
+        "text": "League Awards: the page is rebuilt around the season in front of you. The defending champion banner carries the championship final score and the full title history, a Title Race strip tracks the current season with a Defence Watch row when the champion sits outside the top four, Fun Awards move up, league records are tiles with runner-up context and the single-week record now shows its real week, and the all-time standings add losses, points for, scoring average and seasons.",
+        "link": "/awards"
+    },
     {
         "date": "2026-10-28",
         "tag": "fix",
@@ -1105,4 +1110,5 @@ CHANGELOG = [
         "text": "Trade Calculator: Counter suggestions now include specific players and picks",
         "link": "/trade"
     }
+
 ]

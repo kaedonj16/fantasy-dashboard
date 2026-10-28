@@ -332,7 +332,7 @@ def test_js_hydration_applies_window_color_and_shape():
 def test_changelog_entry_for_posture_parity():
     from dashboard_services.changelog import CHANGELOG
 
-    top = CHANGELOG[34]  # shifted +1 by the rooting guide two-per-row + badge fit prepend, +1 by the graphs fill and audit prepend, +1 by the portfolio light resolver prepend, +1 by each of the 7 dedupe batch entries and +1 by the My Leagues portfolio consolidation, +1 by the duplicate Tuesday dot removal, +1 by the phone tabs + card odds removal, +1 by the phone notifications panel + More-dot fix, +1 by the recap glance username fix, +1 by the Weekly Hub revamp, +1 by the graphs overhaul, +1 by the holdings sort + insights speed prepend, +1 by the rooting/bye cleanup, and +1 earlier by the Front Office scan fix
+    top = CHANGELOG[35]  # shifted +1 by the rooting guide two-per-row + badge fit prepend, +1 by the awards page rework prepend, +1 by the graphs fill and audit prepend, +1 by the portfolio light resolver prepend, +1 by each of the 7 dedupe batch entries and +1 by the My Leagues portfolio consolidation, +1 by the duplicate Tuesday dot removal, +1 by the phone tabs + card odds removal, +1 by the phone notifications panel + More-dot fix, +1 by the recap glance username fix, +1 by the Weekly Hub revamp, +1 by the graphs overhaul, +1 by the holdings sort + insights speed prepend, +1 by the rooting/bye cleanup, and +1 earlier by the Front Office scan fix
     assert top["date"] == "2026-10-26"
     assert top["link"] == "/portfolio"
     assert "Teams page" in top["text"]

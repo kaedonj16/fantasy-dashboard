@@ -20523,6 +20523,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
 
         # Build user_id → display_name for this season (later seasons overwrite earlier)
         season_users = ctx.get("users") or []
+        season_team_by_uid: dict[str, str] = {}
         for u in season_users:
             uid = str(u.get("user_id") or "").strip()
             if not uid:
@@ -20536,6 +20537,8 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
                     or uid
             )
             user_id_to_name[uid] = name
+            if metadata.get("team_name"):
+                season_team_by_uid[uid] = str(metadata["team_name"])
 
         # roster_id → user_id for this season
         season_rosters = ctx.get("rosters") or []
@@ -20580,6 +20583,33 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             career_owners[uid]["PF"] += float(row.get("PF", 0))
             career_owners[uid]["PA"] += float(row.get("PA", 0))
             career_owners[uid]["seasons"] += 1
+
+        # Latest team name per owner: seasons run oldest-first with the
+        # current season last, so this season's name wins.
+        for _uid_t, _tn in season_team_by_uid.items():
+            if _tn and _uid_t in career_owners:
+                career_owners[_uid_t]["team_name"] = _tn
+
+        # Current-season standings snapshot for the Title Race strip. Only
+        # the route's own season carries it; historical entries omit the key.
+        cur_standings: list = []
+        if int(hist_s) == int(season):
+            for _, row in ts.iterrows():
+                owner_key = str(row.get("owner", "Unknown"))
+                if has_roster_id:
+                    _uid_c = roster_to_uid.get(owner_key) or owner_key
+                    _team_c = roster_map.get(owner_key, "")
+                else:
+                    _uid_c = name_to_uid.get(owner_key) or owner_key
+                    _team_c = owner_key
+                cur_standings.append({
+                    "uid": _uid_c,
+                    "wins": int(row.get("Wins", 0)),
+                    "losses": int(row.get("Losses", 0)),
+                    "ties": int(row.get("Ties", 0)),
+                    "pf": float(row.get("PF", 0)),
+                    "team": _team_c,
+                })
 
         # Collect weekly scores per user_id
         sub_cols = ["owner", "points"] + (["roster_id"] if "roster_id" in df.columns else [])
@@ -20691,6 +20721,103 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             championships.setdefault(champ_uid, []).append(hist_s)
 
         summary = _build_history_summary(ctx)
+
+        # ── Young-league rework extras, all from this season's real data ──
+        # Highest single week: identity + week number (the old record never
+        # stored the week, so the page rendered "Wk {season}"). Prefer the
+        # finalized df (roster_id gives the uid directly); fall back to the
+        # season summary's own highest-week fields.
+        hw_value = float(summary.get("highest_week_value") or 0)
+        hw_week = int(summary.get("highest_week_week") or 0)
+        hw_team = summary.get("highest_week_team")
+        hw_uid = name_to_uid.get(str(hw_team)) if hw_team else None
+        _fin = df[df["finalized"] == True] if "finalized" in df.columns else df
+        if {"week", "points"}.issubset(df.columns) and not _fin.empty:
+            _hi = _fin.loc[_fin["points"].idxmax()]
+            hw_value = float(_hi["points"])
+            hw_week = int(_hi["week"])
+            if has_roster_id and "roster_id" in _fin.columns:
+                _rk = str(_hi["roster_id"])
+                hw_uid = roster_to_uid.get(_rk) or _rk
+                hw_team = roster_map.get(_rk, "")
+            else:
+                hw_team = str(_hi["owner"])
+                hw_uid = name_to_uid.get(hw_team) or hw_team
+
+        # Closest matchup detail (summary shape: {week, winner, loser,
+        # winner_pts, loser_pts}); winner/loser are team names there.
+        _cd = summary.get("closest_detail") or {}
+        closest_fields = {
+            "closest_week": int(_cd.get("week") or 0),
+            "closest_winner_uid": name_to_uid.get(str(_cd.get("winner", ""))) or _cd.get("winner"),
+            "closest_winner_team": _cd.get("winner"),
+            "closest_winner_pts": float(_cd.get("winner_pts") or 0),
+            "closest_loser_uid": name_to_uid.get(str(_cd.get("loser", ""))) or _cd.get("loser"),
+            "closest_loser_team": _cd.get("loser"),
+            "closest_loser_pts": float(_cd.get("loser_pts") or 0),
+        }
+
+        # Longest win streak inside this single season, regular season only
+        # (a cross-season count would jump a playoff loss in between).
+        streak_fields: dict = {"streak_len": 0}
+        if {"week", "points", "points_against", "owner"}.issubset(df.columns):
+            _reg_rows = df[df["week"] < _po_start]
+            if "finalized" in _reg_rows.columns:
+                _reg_rows = _reg_rows[_reg_rows["finalized"] == True]
+            _cur_streak: dict = {}
+            _best_streak = None  # (len, uid, team, start_week, end_week)
+            for _, _r in _reg_rows.sort_values("week").iterrows():
+                if has_roster_id and "roster_id" in _reg_rows.columns:
+                    _rk = str(_r["roster_id"])
+                    _uid_s = roster_to_uid.get(_rk) or _rk
+                    _team_s = roster_map.get(_rk, "")
+                else:
+                    _team_s = str(_r["owner"])
+                    _uid_s = name_to_uid.get(_team_s) or _team_s
+                _wk = int(_r["week"])
+                if float(_r["points"]) > float(_r["points_against"]):
+                    _st = _cur_streak.get(_uid_s)
+                    if _st and _st[2] == _wk - 1:
+                        _st[0] += 1
+                        _st[2] = _wk
+                    else:
+                        _st = [1, _wk, _wk]
+                        _cur_streak[_uid_s] = _st
+                    if _best_streak is None or _st[0] > _best_streak[0]:
+                        _best_streak = (_st[0], _uid_s, _team_s, _st[1], _st[2])
+                else:
+                    _cur_streak.pop(_uid_s, None)
+            if _best_streak:
+                streak_fields = {
+                    "streak_len": _best_streak[0],
+                    "streak_owner_uid": _best_streak[1],
+                    "streak_team": _best_streak[2],
+                    "streak_start_week": _best_streak[3],
+                    "streak_end_week": _best_streak[4],
+                }
+
+        # Championship final: the finalists' only head-to-head meeting at or
+        # after playoff_week_start in this season's df. Anything ambiguous
+        # (no meeting, or several) leaves the score unknown, never invented.
+        champ_score = ru_score = None
+        final_week = None
+        if champ_name not in ("–", "-", "") and runner_up_name not in ("–", "-", ""):
+            if {"week", "matchup_id", "owner", "points"}.issubset(df.columns):
+                _po_rows = df[df["week"] >= _po_start]
+                if "finalized" in _po_rows.columns:
+                    _po_rows = _po_rows[_po_rows["finalized"] == True]
+                _meetings = []
+                for (_wk_m, _mid_m), _grp in _po_rows.groupby(["week", "matchup_id"]):
+                    if len(_grp) != 2:
+                        continue
+                    _by_owner = {str(r["owner"]): float(r["points"]) for _, r in _grp.iterrows()}
+                    if set(_by_owner) == {champ_name, runner_up_name}:
+                        _meetings.append((int(_wk_m), _by_owner))
+                if len(_meetings) == 1:
+                    final_week, _by_owner = _meetings[0]
+                    champ_score = _by_owner.get(champ_name)
+                    ru_score = _by_owner.get(runner_up_name)
+
         season_records.append({
             "season": hist_s,
             "champion": champ_name,
@@ -20698,12 +20825,24 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             "runner_up": runner_up_name,
             "runner_up_uid": runner_up_uid,
             "champion_record": summary.get("champion_record", "–"),
+            "champion_team": champ_name if champ_name not in ("–", "-", "") else "",
+            "runner_up_team": runner_up_name if runner_up_name not in ("–", "-", "") else "",
+            "champion_score": champ_score,
+            "runner_up_score": ru_score,
+            "final_week": final_week,
             "top_pf_team": summary.get("top_scorer_team", "–"),
             "top_pf": float(summary.get("top_scorer_value") or 0),
-            "highest_week_team": summary.get("highest_week_team", "–"),
-            "highest_week_value": float(summary.get("highest_week_value") or 0),
+            "top_pf_uid": name_to_uid.get(str(summary.get("top_scorer_team", ""))) or None,
+            "highest_week_team": hw_team or summary.get("highest_week_team", "–"),
+            "highest_week_value": hw_value,
+            "highest_week": hw_week,
+            "highest_week_uid": hw_uid,
+            "highest_week_season": hist_s,
             "closest_matchup": summary.get("closest_matchup", "–"),
             "closest_margin": float(summary.get("closest_margin") or 0),
+            **closest_fields,
+            **streak_fields,
+            "cur_standings": cur_standings,
         })
 
     payload = (available, career_owners, championships, season_records, user_id_to_name)
@@ -20733,6 +20872,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         rows.append({
             "owner": uid,
             "display_name": _display_name(uid),
+            "TeamName": d.get("team_name", ""),
             "Championships": len(championships.get(uid, [])),
             "Wins": d["Wins"],
             "Losses": d["Losses"],
@@ -20767,33 +20907,43 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
           </div>
         </div>"""
 
-    # ── All-Time Standings (simplified) ─────────────────────────────────────────
+    # ── All-Time Standings (expanded) ─────────────────────────────────────
     standings_rows_html = ""
     for i, (_, row) in enumerate(career_df.iterrows()):
         rank = i + 1
-        rank_html = f'<span class="awards-rank-1">{rank}</span>' if rank == 1 else str(rank)
         winpct = f"{row['Win%']:.3f}".lstrip("0")
+        titles = int(row['Championships'])
+        team_sub = ""
+        if row.get("TeamName") and str(row["TeamName"]) != str(row["display_name"]):
+            team_sub = f'<div class="awards-own-team">{html.escape(str(row["TeamName"]))}</div>'
         standings_rows_html += f"""
         <tr>
-          <td>{rank_html}</td>
-          <td style="font-weight:700;">{html.escape(str(row['display_name']))}</td>
-          <td class="num">{int(row['Championships'])}</td>
+          <td>{rank_mark(rank, wrap=False)}</td>
+          <td><div class="awards-own-name">{html.escape(str(row['display_name']))}</div>{team_sub}</td>
+          <td class="num">{titles if titles else ''}</td>
           <td class="num">{int(row['Wins'])}</td>
+          <td class="num">{int(row['Losses'])}</td>
           <td class="num">{winpct}</td>
+          <td class="num">{row['PF']:,.1f}</td>
+          <td class="num">{row['AVG']:.1f}</td>
+          <td class="num">{int(row['Seasons'])}</td>
         </tr>"""
 
     standings_table = f"""
-    <div>
+    <div class="awards-section">
       <div class="awards-section-t"><i class="fa-solid fa-ranking-star"></i> All-Time Standings</div>
-      <div class="card">
-        <table class="awards-standings-table">
-          <thead><tr><th></th><th>OWNER</th><th class="num">TITLES</th><th class="num">W</th><th class="num">WIN%</th></tr></thead>
-          <tbody>{standings_rows_html}</tbody>
-        </table>
+      <div class="card awards-standings-card">
+        <div class="awards-table-scroll">
+          <table class="awards-standings-table">
+            <thead><tr><th></th><th>OWNER</th><th class="num">TITLES</th><th class="num">W</th><th class="num">L</th><th class="num">WIN%</th><th class="num">PF</th><th class="num">AVG</th><th class="num">SEASONS</th></tr></thead>
+            <tbody>{standings_rows_html}</tbody>
+          </table>
+        </div>
+        <div class="awards-rank-note">Ranked by titles, then wins, then win%</div>
       </div>
     </div>"""
 
-    # ── Champion hero + championship timeline ─────────────────────────────────
+    # ── Champion hero (championship history lives inside it) ──────────────
     def _has_champ(rec: dict) -> bool:
         return rec.get("champion") not in ("–", "-", "", None)
 
@@ -20802,29 +20952,12 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     # in-progress season, which has no champion yet).
     defending = next((r for r in sorted_records if _has_champ(r)), None)
 
-    hero_html = ""
-    if defending:
-        d_champ = _display_name(defending.get("champion_uid") or defending["champion"]) if defending.get(
-            "champion_uid") else defending["champion"]
-        d_runner = _display_name(defending.get("runner_up_uid") or defending["runner_up"]) if defending.get(
-            "runner_up_uid") else defending["runner_up"]
-        d_rec = defending.get("champion_record") or ""
-        d_detail = f"{defending['season']}"
-        if d_rec and d_rec != "–":
-            d_detail += f" &middot; {html.escape(d_rec)}"
-        if d_runner and d_runner != "–":
-            d_detail += f" &middot; Beat {html.escape(d_runner)}"
-        hero_html = f"""
-    <div class="awards-hero">
-      <div class="awards-hero-inner">
-        <div class="awards-hero-ic"><i class="fa-solid fa-trophy"></i></div>
-        <div>
-          <div class="awards-hero-label">DEFENDING CHAMPION</div>
-          <div class="awards-hero-winner">{html.escape(d_champ)}</div>
-          <div class="awards-hero-detail">{d_detail}</div>
-        </div>
-      </div>
-    </div>"""
+    def _final_score_txt(rec: dict) -> str:
+        """'150.3 to 137.3 (Week 17)' for a known final, else ''."""
+        cs, rs, fw = rec.get("champion_score"), rec.get("runner_up_score"), rec.get("final_week")
+        if cs is None or rs is None or not fw:
+            return ""
+        return f"{float(cs):.1f} to {float(rs):.1f} (Week {int(fw)})"
 
     tl_chips_html = ""
     for rec in sorted_records:
@@ -20832,8 +20965,14 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             continue
         champ_display = _display_name(rec.get("champion_uid") or rec["champion"]) if rec.get("champion_uid") else rec[
             "champion"]
+        sub_parts = []
         rec_val = rec.get("champion_record") or ""
-        sub_html = f'<div class="awards-tl-s">{html.escape(rec_val)}</div>' if rec_val and rec_val != "–" else ""
+        if rec_val and rec_val != "–":
+            sub_parts.append(html.escape(rec_val))
+        _cs, _rs = rec.get("champion_score"), rec.get("runner_up_score")
+        if _cs is not None and _rs is not None:
+            sub_parts.append(f"Final {float(_cs):.1f} - {float(_rs):.1f}")
+        sub_html = f'<div class="awards-tl-s">{" &middot; ".join(sub_parts)}</div>' if sub_parts else ""
         latest_cls = " latest" if defending and rec["season"] == defending["season"] else ""
         tl_chips_html += f"""
       <div class="awards-tl{latest_cls}">
@@ -20842,88 +20981,256 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         {sub_html}
       </div>"""
 
-    timeline_section = ""
-    if tl_chips_html:
-        timeline_section = f"""
-    <div class="awards-section">
-      <div class="awards-section-t"><i class="fa-solid fa-clock-rotate-left"></i> Championship History</div>
-      <div class="awards-timeline">{tl_chips_html}
+    hero_html = ""
+    if defending:
+        d_champ = _display_name(defending.get("champion_uid") or defending["champion"]) if defending.get(
+            "champion_uid") else defending["champion"]
+        d_runner = _display_name(defending.get("runner_up_uid") or defending["runner_up"]) if defending.get(
+            "runner_up_uid") else defending["runner_up"]
+        d_team = defending.get("champion_team") or ""
+        team_html = (f'<div class="awards-hero-team">{html.escape(d_team)}</div>'
+                     if d_team and d_team != d_champ else "")
+        d_rec = defending.get("champion_record") or ""
+        d_detail = f"{defending['season']}"
+        if d_rec and d_rec != "–":
+            d_detail += f" &middot; {html.escape(d_rec)}"
+        if d_runner and d_runner != "–":
+            d_detail += f" &middot; Beat {html.escape(d_runner)} in the final"
+            _fs = _final_score_txt(defending)
+            if _fs:
+                d_detail += f", {_fs}"
+        decided = sum(1 for r in sorted_records if _has_champ(r))
+        title_word = "title decided" if decided == 1 else "titles decided"
+        hero_html = f"""
+    <div class="awards-hero">
+      <div class="awards-hero-inner">
+        <div class="awards-hero-ic"><i class="fa-solid fa-trophy"></i></div>
+        <div class="awards-hero-main">
+          <div class="awards-hero-label">DEFENDING CHAMPION</div>
+          <div class="awards-hero-winner">{html.escape(d_champ)}</div>
+          {team_html}
+          <div class="awards-hero-detail">{d_detail}</div>
+        </div>
+        <div class="awards-hero-side">
+          <div class="awards-hero-side-t">CHAMPIONSHIP HISTORY</div>
+          <div class="awards-timeline awards-timeline-hero">{tl_chips_html}
+          </div>
+          <div class="awards-hero-side-note">{len(sorted_records)} seasons &middot; {decided} {title_word}</div>
+        </div>
       </div>
     </div>"""
 
-    # ── League Records (label/value rows) ─────────────────────────────────────
-    record_rows: list = []  # (label, value, sub)
+    # ── Title Race (current season, only while it has no champion) ────────
+    def _ordinal(n: int) -> str:
+        if 10 <= n % 100 <= 20:
+            suf = "th"
+        else:
+            suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+        return f"{n}{suf}"
+
+    def _wl_txt(s: dict) -> str:
+        wl = f"{int(s.get('wins', 0))}-{int(s.get('losses', 0))}"
+        if int(s.get("ties", 0)):
+            wl += f"-{int(s['ties'])}"
+        return wl
+
+    race_section = ""
+    cur_rec = next(
+        (r for r in season_records if season and int(r.get("season", -1)) == int(season)),
+        None,
+    )
+    if cur_rec and not _has_champ(cur_rec) and cur_rec.get("cur_standings"):
+        ranked = sorted(
+            cur_rec["cur_standings"],
+            key=lambda s: (-int(s.get("wins", 0)), -float(s.get("pf", 0))),
+        )
+        if ranked:
+            leader = ranked[0]
+            thru = (int(leader.get("wins", 0)) + int(leader.get("losses", 0))
+                    + int(leader.get("ties", 0)))
+            race_rows = ""
+            for i, s in enumerate(ranked[:4]):
+                uname = _display_name(s.get("uid") or "")
+                tsub = (f' <span class="awards-race-team">{html.escape(str(s.get("team")))}</span>'
+                        if s.get("team") else "")
+                race_rows += f"""
+        <div class="awards-race-row">
+          {rank_mark(i + 1, wrap=False)}
+          <div class="awards-race-id"><span class="awards-race-name">{html.escape(uname)}</span>{tsub}</div>
+          <span class="awards-race-rec">{_wl_txt(s)}</span>
+          <span class="awards-race-pf">{float(s.get('pf', 0)):,.1f} PF</span>
+        </div>"""
+            if defending and defending.get("champion_uid"):
+                champ_uid = str(defending["champion_uid"])
+                champ_idx = next(
+                    (i for i, s in enumerate(ranked) if str(s.get("uid")) == champ_uid),
+                    None,
+                )
+                if champ_idx is not None and champ_idx >= 4:
+                    s = ranked[champ_idx]
+                    uname = _display_name(s.get("uid") or "")
+                    race_rows += f"""
+        <div class="awards-race-row awards-watch-row">
+          <span class="awards-watch-tag">DEFENCE WATCH</span>
+          <div class="awards-race-id"><span class="awards-race-name">{html.escape(uname)}</span> <span class="awards-race-team">the {int(defending['season'])} champion sits {_ordinal(champ_idx + 1)}</span></div>
+          <span class="awards-race-rec">{_wl_txt(s)}</span>
+          <span class="awards-race-pf">{float(s.get('pf', 0)):,.1f} PF</span>
+        </div>"""
+            race_section = f"""
+    <div class="awards-section">
+      <div class="awards-section-t"><i class="fa-solid fa-flag-checkered"></i> Title Race <span class="awards-sec-sub">Through Week {thru}</span></div>
+      <div class="card awards-race-card">{race_rows}
+      </div>
+    </div>"""
+
+    # ── League Records (tiles) ────────────────────────────────────────────
+    # Tile: (label, value, holder username, subline, context line). Holder is
+    # always the username; the team name rides as the subline.
+    tiles: list = []
+    eligible = career_df[career_df["Seasons"] >= 2] if not career_df.empty else career_df
+    no_titles = career_df[career_df["Championships"] == 0] if not career_df.empty else career_df
+
     if season_records:
-        best_pf_rec = max(season_records, key=lambda x: x["top_pf"])
-        best_wk_rec = max(season_records, key=lambda x: x["highest_week_value"])
-    else:
-        best_pf_rec = best_wk_rec = None
+        # Highest Season PF, with the runner-up season as context.
+        pf_sorted = sorted(
+            (r for r in season_records if float(r.get("top_pf") or 0) > 0),
+            key=lambda x: -float(x["top_pf"]),
+        )
+        if pf_sorted:
+            best = pf_sorted[0]
+            holder = (_display_name(best["top_pf_uid"]) if best.get("top_pf_uid")
+                      else str(best.get("top_pf_team", "")))
+            sub = (f"{best.get('top_pf_team', '')} · {best['season']}" if best.get("top_pf_uid")
+                   else f"{best['season']}")
+            ctx = ""
+            if len(pf_sorted) > 1:
+                second = pf_sorted[1]
+                sname = (_display_name(second["top_pf_uid"]) if second.get("top_pf_uid")
+                         else str(second.get("top_pf_team", "")))
+                ctx = (f"2nd: {sname} {float(second['top_pf']):,.1f} "
+                       f"· gap +{float(best['top_pf']) - float(second['top_pf']):.1f}")
+            tiles.append(("Highest Season PF", f"{float(best['top_pf']):,.1f}", holder, sub, ctx))
 
-    if best_pf_rec:
-        record_rows.append((
-            "Highest Season PF",
-            f"{best_pf_rec['top_pf']:.1f}",
-            f"{best_pf_rec['top_pf_team']} · {best_pf_rec['season']}",
-        ))
-    if best_wk_rec:
-        record_rows.append((
-            "Highest Single Week",
-            f"{best_wk_rec['highest_week_value']:.1f}",
-            f"{best_wk_rec['highest_week_team']} · Wk {best_wk_rec.get('highest_week', '')} {best_wk_rec['season']}".replace("  ", " ").strip(),
-        ))
+        # Highest Single Week: only seasons whose record carries the week
+        # number (the collector stores it now; without it the tile would
+        # repeat the old "Wk {season}" bug, so it is omitted instead).
+        wk_cands = [r for r in season_records
+                    if r.get("highest_week") and float(r.get("highest_week_value") or 0) > 0]
+        if wk_cands:
+            best = max(wk_cands, key=lambda x: float(x["highest_week_value"]))
+            holder = (_display_name(best["highest_week_uid"]) if best.get("highest_week_uid")
+                      else str(best.get("highest_week_team", "")))
+            team = str(best.get("highest_week_team") or "")
+            sub = (f"{team} · Wk {int(best['highest_week'])} · {best['season']}" if team
+                   else f"Wk {int(best['highest_week'])} · {best['season']}")
+            tiles.append(("Highest Single Week", f"{float(best['highest_week_value']):.1f}",
+                          holder, sub, ""))
 
-    if not career_df.empty and int(career_df.iloc[0]["Championships"]) > 0:
-        most_champ_owner = str(career_df.iloc[0]["display_name"])
-        most_champ_n = int(career_df.iloc[0]["Championships"])
-        record_rows.append((
-            "Most Championships",
-            str(most_champ_n),
-            most_champ_owner,
-        ))
+        # Closest Matchup: smallest positive margin across seasons.
+        cm_cands = [r for r in season_records
+                    if r.get("closest_week") and float(r.get("closest_margin") or 0) > 0]
+        if cm_cands:
+            best = min(cm_cands, key=lambda x: float(x["closest_margin"]))
+            holder = (_display_name(best["closest_winner_uid"]) if best.get("closest_winner_uid")
+                      else str(best.get("closest_winner_team", "")))
+            loser = (_display_name(best["closest_loser_uid"]) if best.get("closest_loser_uid")
+                     else str(best.get("closest_loser_team", "")))
+            sub = (f"{float(best.get('closest_winner_pts') or 0):.2f} vs {loser} "
+                   f"{float(best.get('closest_loser_pts') or 0):.2f} "
+                   f"· Wk {int(best['closest_week'])} · {best['season']}")
+            tiles.append(("Closest Matchup", f"{float(best['closest_margin']):.2f}",
+                          holder, sub, ""))
 
-    # Best all-time win% (min 2 seasons)
-    eligible = career_df[career_df["Seasons"] >= 2]
-    if not eligible.empty:
-        best_winpct_row = eligible.loc[eligible["Win%"].idxmax()]
-        record_rows.append((
-            "Best Win%",
-            f"{best_winpct_row['Win%']:.3f}".lstrip("0"),
-            f"{best_winpct_row['display_name']} · {int(best_winpct_row['Seasons'])} seasons",
-        ))
+        # Longest Win Streak: best within-season regular-season run.
+        st_cands = [r for r in season_records if int(r.get("streak_len") or 0) >= 2]
+        if st_cands:
+            best = max(st_cands, key=lambda x: int(x["streak_len"]))
+            holder = (_display_name(best["streak_owner_uid"]) if best.get("streak_owner_uid")
+                      else str(best.get("streak_team", "")))
+            _a = int(best.get("streak_start_week") or 0)
+            _b = int(best.get("streak_end_week") or 0)
+            wk_txt = (f"Weeks {_a}-{_b}" if _a and _b and _a != _b
+                      else (f"Week {_a}" if _a else ""))
+            sub = (f"{best['season']} · {wk_txt}, regular season" if wk_txt
+                   else f"{best['season']} · regular season")
+            tiles.append(("Longest Win Streak", str(int(best["streak_len"])), holder, sub, ""))
 
-    # Most seasons played
     if not career_df.empty:
+        # Best all-time win% (min 2 seasons), with exact-tie context.
+        if not eligible.empty:
+            best_wp = float(eligible["Win%"].max())
+            best_winpct_row = eligible.loc[eligible["Win%"].idxmax()]
+            tied = [str(r["display_name"]) for _, r in eligible.iterrows()
+                    if float(r["Win%"]) == best_wp
+                    and str(r["owner"]) != str(best_winpct_row["owner"])]
+            wp_fmt = f"{best_wp:.3f}".lstrip("0")
+            ctx = f"Tied with {tied[0]} at {wp_fmt}" if tied else ""
+            tiles.append((
+                "Best Win%",
+                f"{best_wp:.3f}".lstrip("0"),
+                str(best_winpct_row["display_name"]),
+                f"{int(best_winpct_row['Seasons'])} seasons",
+                ctx,
+            ))
+
+        # Most points, no ring, with the second such owner as context.
+        if not no_titles.empty:
+            nr_sorted = no_titles.sort_values("PF", ascending=False)
+            unlucky_row = nr_sorted.iloc[0]
+            ctx = ""
+            if len(nr_sorted) > 1:
+                second = nr_sorted.iloc[1]
+                ctx = (f"2nd: {second['display_name']} {float(second['PF']):,.1f} "
+                       f"· gap of {float(unlucky_row['PF']) - float(second['PF']):.1f} pts")
+            tiles.append((
+                "Most Points, No Ring",
+                f"{float(unlucky_row['PF']):,.1f}",
+                str(unlucky_row["display_name"]),
+                str(unlucky_row.get("TeamName") or "0 titles"),
+                ctx,
+            ))
+
+        # Most Championships: only once a second title exists (a "1" in a
+        # one-title league is filler, so the tile stays hidden).
+        top_row = career_df.iloc[0]
+        if int(top_row["Championships"]) >= 2:
+            tiles.append((
+                "Most Championships",
+                str(int(top_row["Championships"])),
+                str(top_row["display_name"]),
+                str(top_row.get("TeamName") or ""),
+                "",
+            ))
+
+        # Most Seasons: only once anyone reaches a third season.
         most_seasons_row = career_df.loc[career_df["Seasons"].idxmax()]
-        record_rows.append((
-            "Most Seasons",
-            str(int(most_seasons_row["Seasons"])),
-            str(most_seasons_row["display_name"]),
-        ))
+        if int(most_seasons_row["Seasons"]) >= 3:
+            tiles.append((
+                "Most Seasons",
+                str(int(most_seasons_row["Seasons"])),
+                str(most_seasons_row["display_name"]),
+                str(most_seasons_row.get("TeamName") or ""),
+                "",
+            ))
 
-    # Most points, no ring
-    no_titles = career_df[career_df["Championships"] == 0]
-    if not no_titles.empty:
-        unlucky_row = no_titles.loc[no_titles["PF"].idxmax()]
-        record_rows.append((
-            "Most Points, No Ring",
-            f"{unlucky_row['PF']:,.1f}",
-            str(unlucky_row["display_name"]),
-        ))
-
-    records_rows_html = ""
-    for label, value, sub in record_rows:
-        records_rows_html += f"""
-        <div class="awards-rec-row">
-          <span class="awards-rec-k">{html.escape(label)}</span>
-          <span class="awards-rec-v">{html.escape(value)}<small>{html.escape(sub)}</small></span>
+    tiles_html = ""
+    for label, value, holder, sub, ctx in tiles:
+        sub_html = f'<div class="awards-tile-sub">{html.escape(sub)}</div>' if sub else ""
+        ctx_html = f'<div class="awards-tile-ctx">{html.escape(ctx)}</div>' if ctx else ""
+        tiles_html += f"""
+        <div class="awards-tile">
+          <div class="awards-tile-k">{html.escape(label)}</div>
+          <div class="awards-tile-v">{html.escape(value)}</div>
+          <div class="awards-tile-who">{html.escape(holder)}</div>
+          {sub_html}{ctx_html}
         </div>"""
 
     records_section = ""
-    if records_rows_html:
+    if tiles_html:
         records_section = f"""
-    <div>
+    <div class="awards-section">
       <div class="awards-section-t"><i class="fa-solid fa-medal"></i> League Records</div>
-      <div class="card">{records_rows_html}
+      <div class="awards-tiles">{tiles_html}
       </div>
     </div>"""
 
@@ -20948,17 +21255,6 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             html.escape(bridesmaid_name),
             f"{bridesmaid_count}× runner-up, 0 titles",
             "#fce7f3", "#be185d",
-        )
-
-    # Most Dominant - best career win% (2+ seasons)
-    if not eligible.empty:
-        dominant_row = eligible.loc[eligible["Win%"].idxmax()]
-        fun_awards_html += _fun_award(
-            "Most Dominant",
-            'fa-crown',
-            html.escape(str(dominant_row["display_name"])),
-            f"{dominant_row['Win%']:.1%} all-time win rate",
-            "#fef3c7", "#b45309",
         )
 
     # The Punching Bag - most PA with a losing record
@@ -21088,14 +21384,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
       <div class="overview-main">
         {nav_row}
         {hero_html}
-        {timeline_section}
-        <div class="awards-section">
-          <div class="awards-records-standings">
-            {records_section}
-            {standings_table}
-          </div>
-        </div>
+        {race_section}
         {fun_awards_section}
+        {records_section}
+        {standings_table}
       </div>
     </div>"""
 
