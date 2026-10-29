@@ -41708,8 +41708,9 @@ def build_portfolio_body(
         ".pf-lg-room.best{text-align:right;}"
         ".pf-lg-room strong{color:var(--q-ink,var(--text));}"
         # The Fix room always reads red (it is the problem to solve);
-        # Best keeps its tier color.
+        # Best reads bold dark like the approved mock, never a tier color.
         ".pf-lg-room.fix strong{color:var(--loss);}"
+        ".pf-lg-room.best strong{color:var(--text);}"
         # Posture (Direction A, 2026-10-29): a colored dot + word at the end
         # of the header meta line. No pill, no tint, and no second
         # descriptor / shape tag beside it. Colors are the posture colors
@@ -41973,12 +41974,13 @@ def build_portfolio_body(
                 f"{_lg_header(name_link, _lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season)), plat, posture_html=_POSTURE_PH)}"
                 f"<div class='pf-lg-live' aria-busy='true' data-lg-live data-platform='{html.escape(str(plat), quote=True)}' "
                 f"data-league-id='{html.escape(str(lid), quote=True)}' data-season='{html.escape(str(_lg_season_shell), quote=True)}'>"
-                "<div class='pf-live-skel' aria-hidden='true'><div class='skeleton pf-live-skel-status'></div>"
+                "<div class='pf-live-skel' aria-hidden='true'>"
+                "<div class='skeleton pf-live-skel-head'></div>"
                 "<div class='pf-live-grid'><div class='pf-live-side'><div class='skeleton pf-live-skel-score'></div></div>"
                 "<div class='pf-live-side opp'><div class='skeleton pf-live-skel-score'></div></div></div></div></div>"
-                f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-rec'>-</span>"
-                f"<span class='pf-lg-band-side'><span class='pf-lg-standing'>-</span>"
-                f"<span class='pf-lg-streak' data-summary-streak>...</span></span></div>"
+                f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-band-main'><span class='pf-lg-rec'>-</span>"
+                f"<span class='pf-lg-streak' data-summary-streak>...</span></span>"
+                f"<span class='pf-lg-band-side'><span class='pf-lg-standing'>-</span></span></div>"
                 f"<button type='button' class='pf-lg-retry' data-summary-retry hidden>Retry</button></div>"
             )
             continue
@@ -42073,9 +42075,10 @@ def build_portfolio_body(
         _lw_r = (lg.get("last_week_result") or "").strip().upper()
         _lw_attr = f" data-lw-result='{_lw_r}'" if _lw_r in ("W", "L", "T") else ""
 
-        # Standing as an ordinal place ("10th / 10") with a red flag for a
-        # bottom-third finish -- a place reads more clearly than the old "10/10",
-        # which looked like a score.
+        # Standing as an ordinal place ("10th / 10") on the right side of
+        # the record band -- a place reads more clearly than the old "10/10",
+        # which looked like a score. Top 3 read green, a bottom-third
+        # finish reads red, the middle stays muted.
         from utils.format import ord_suffix
         try:
             _rank_i = int(rank)
@@ -42086,7 +42089,12 @@ def build_portfolio_body(
         except (TypeError, ValueError):
             _total_i = None
         if _rank_i and _total_i:
-            _st_flag = " pf-lg-v--weak" if _pos_tier(_rank_i, _total_i) == "weak" else ""
+            if _pos_tier(_rank_i, _total_i) == "weak":
+                _st_flag = " pf-lg-v--weak"
+            elif _rank_i <= 3:
+                _st_flag = " pf-lg-v--top"
+            else:
+                _st_flag = ""
             standing_html = (
                 f"<span class='pf-lg-standing{_st_flag}'>{_rank_i}"
                 f"<small>{ord_suffix(_rank_i)}</small> <small>/ {_total_i}</small></span>"
@@ -42183,15 +42191,13 @@ def build_portfolio_body(
         _lg_season_live = lg.get("season") or season
         live_skel = (
             "<div class='pf-live-skel' aria-hidden='true'>"
-            "<div class='skeleton pf-live-skel-status'></div>"
+            "<div class='skeleton pf-live-skel-head'></div>"
             "<div class='pf-live-grid'>"
             "<div class='pf-live-side'>"
-            "<div class='skeleton pf-live-skel-lbl'></div>"
             "<div class='skeleton pf-live-skel-score'></div>"
             "<div class='skeleton pf-live-skel-proj'></div>"
             "</div>"
             "<div class='pf-live-side opp'>"
-            "<div class='skeleton pf-live-skel-lbl'></div>"
             "<div class='skeleton pf-live-skel-score'></div>"
             "<div class='skeleton pf-live-skel-proj'></div>"
             "</div>"
@@ -42225,10 +42231,12 @@ def build_portfolio_body(
             f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-href='{html.escape(str(href), quote=True)}' data-rank='{_rank_i if _rank_i else 999}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
             f"{_lg_header(_headline, _lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season)), plat, league_name=_meta_league, posture_html=posture_html, extra=off_note)}"
             f"<div class='pf-lg-stats' data-summary-stats>"
+            f"<span class='pf-lg-band-main'>"
             f"<span class='pf-lg-rec {rec_cls2}'>{rec}</span>"
+            f"{streak_html}</span>"
             f"<span class='pf-lg-band-side'>"
             f"<span title='Regular-season standings: wins, then points for'>{standing_html}</span>"
-            f"{streak_html}</span>"
+            f"</span>"
             f"</div>"
             f"<button type='button' class='pf-lg-retry' data-summary-retry hidden>Retry</button>"
             f"{rooms_html}"
@@ -42282,15 +42290,19 @@ def build_portfolio_body(
         # Record band (Direction A, 2026-10-29): the record / standing /
         # streak row is a full-bleed tinted band, tone shift only (no
         # inset border, radius or box of its own). Record is the Tier-1
-        # number; standing and the plain-text streak sit muted beside it.
-        ".pf-lg-stats{display:flex;align-items:center;gap:14px;min-width:0;"
+        # number with the plain-text streak under it on the left; the
+        # standing sits bigger on the right (green top 3, red bottom
+        # third, muted middle).
+        ".pf-lg-stats{display:flex;align-items:center;justify-content:space-between;gap:14px;min-width:0;"
         "margin:1px -12px 0;padding:10px 12px;background:#e8f0f7;}"
         ":root[data-theme='dark'] .pf-lg-stats{background:#0b1d31;}"
         ".pf-lg-rec{font-size:50px;font-weight:900;line-height:1;letter-spacing:-.02em;"
         "font-variant-numeric:tabular-nums;color:var(--text);}"
-        ".pf-lg-band-side{display:flex;flex-direction:column;gap:3px;min-width:0;}"
-        ".pf-lg-standing{font-size:20px;font-weight:800;line-height:1.1;color:var(--text-muted);}"
+        ".pf-lg-band-main{display:flex;flex-direction:column;gap:3px;min-width:0;}"
+        ".pf-lg-band-side{display:flex;flex-direction:column;gap:3px;min-width:0;text-align:right;}"
+        ".pf-lg-standing{font-size:26px;font-weight:800;line-height:1.1;color:var(--text-muted);}"
         ".pf-lg-standing small{font-size:.72em;font-weight:700;color:var(--text-subtle);}"
+        ".pf-lg-v--top{color:var(--win);}"
         ".pf-lg-v--weak{color:var(--loss);}"
         ".pf-lg-streak{font-size:13px;font-weight:700;letter-spacing:.08em;color:var(--text-muted);}"
         ".pf-lg-retry{align-self:flex-start;font:inherit;font-size:12px;font-weight:700;"
@@ -42340,36 +42352,43 @@ def build_portfolio_body(
         # card, flat on the card surface with a hairline above it. No
         # inset background, border or radius of its own. Your total vs
         # opponent as a head-to-head, each side's projected final, and a
-        # win-probability bar (your share green, the opponent's the
-        # remainder). Hydrated client-side (pfLiveScores); starts as a
-        # skeleton, then swaps to scores or hides when not live.
+        # win-probability bar (your share green over a neutral track, only
+        # your percentage labeled). No week/status line and no "You" caption:
+        # only the opponent is named. Hydrated client-side (pfLiveScores);
+        # starts as a skeleton, then swaps to scores or hides when not live.
         ".pf-lg-live{border-top:1px solid var(--grid);padding-top:8px;margin-top:2px;"
         "display:flex;flex-direction:column;gap:6px;}"
         # The class sets display:flex, which would otherwise beat the UA
         # [hidden]{display:none}; hide after fetch when scores aren't live.
         ".pf-lg-live[hidden]{display:none;}"
-        # Content-shaped skeleton (status + two scores + WP track) using the
+        # Content-shaped skeleton (head line, two scores + WP track) using the
         # shared .skeleton shimmer so the band reserves space while loading.
         ".pf-live-skel{display:flex;flex-direction:column;gap:6px;}"
-        ".pf-live-skel-status{height:8px;width:72px;border-radius:4px;}"
-        ".pf-live-skel-lbl{height:8px;width:48px;border-radius:4px;}"
-        ".pf-live-side.opp .pf-live-skel-lbl{width:56px;}"
+        ".pf-live-skel-head{height:8px;width:132px;border-radius:4px;}"
         ".pf-live-skel-score{height:20px;width:52px;border-radius:4px;margin-top:2px;}"
         ".pf-live-skel-proj{height:7px;width:40px;border-radius:4px;}"
         ".pf-live-skel-wp{height:6px;width:100%;border-radius:999px;margin-top:2px;}"
-        ".pf-live-status{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
-        "color:var(--text-subtle);display:flex;align-items:center;gap:5px;}"
         ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
-        ".pf-live-status.is-live{color:var(--win);}"
-        ".pf-live-status.is-live .pf-live-dot{background:var(--win);animation:pfLivePulse 1.6s ease-in-out infinite;}"
-        "@keyframes pfLivePulse{0%,100%{opacity:1;}50%{opacity:.35;}}"
         # Head-to-head: your side left-aligned, opponent right-aligned. The leader's
         # score is crisp; the trailer's is muted, so who's ahead reads at a glance.
         ".pf-live-grid{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;}"
         ".pf-live-side{min-width:0;display:flex;flex-direction:column;gap:1px;}"
         ".pf-live-side.opp{align-items:flex-end;text-align:right;}"
-        ".pf-live-lbl{font-size:11px;font-weight:700;color:var(--text-muted);max-width:100%;"
-        "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        # Strip head line (mock): "Wk n · vs <opponent>" on the left,
+        # your win chance on the right; a green dot leads it while live.
+        ".pf-live-head{display:flex;align-items:center;gap:6px;font-size:12px;"
+        "font-weight:700;color:var(--text-muted);}"
+        ".pf-live-head-txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-live-head-wp{margin-left:auto;flex:0 0 auto;color:var(--win);font-weight:800;"
+        "font-variant-numeric:tabular-nums;}"
+        ".pf-live-head-wp.is-low{color:var(--loss);}"
+        ".pf-live-head .pf-live-dot{background:var(--win);}"
+        # Score line: yours reads inline ("You 148.0 proj"); the
+        # opponent's number stands alone, unnamed, on the right.
+        ".pf-live-main{display:flex;align-items:baseline;gap:6px;}"
+        ".pf-live-side.opp .pf-live-main{justify-content:flex-end;}"
+        ".pf-live-you{font-size:12px;font-weight:700;color:var(--text-muted);}"
+        ".pf-live-tag{font-size:11px;color:var(--text-subtle);}"
         # Tier 2 numbers: your score / projection is the big bold one;
         # the opponent's is smaller and muted.
         ".pf-live-score{font-size:16px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;"
@@ -42377,17 +42396,15 @@ def build_portfolio_body(
         ".pf-live-side:not(.opp) .pf-live-score{font-size:24px;font-weight:900;color:var(--text);}"
         ".pf-live-side.win .pf-live-score{color:var(--text);}"
         ".pf-live-proj{font-size:11px;color:var(--text-subtle);font-variant-numeric:tabular-nums;}"
-        # Win-probability bar: your chance filled from the left in win-green over a
-        # loss-red remainder (the opponent's chance). Reads as a tug-of-war.
+        # Win-probability bar (mock): your chance filled from the left in
+        # win-green over the pale pink track (#fecaca, the shared winbar
+        # color). Your percentage lives on the head line, so the bar
+        # carries no labels under it.
         ".pf-live-wp{display:flex;flex-direction:column;gap:3px;}"
         ".pf-live-wp-track{position:relative;height:6px;border-radius:999px;overflow:hidden;"
-        "background:color-mix(in srgb,var(--loss) 24%,transparent);}"
+        "background:#fecaca;}"
         ".pf-live-wp-fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;"
         "background:var(--win);transition:width .5s ease;}"
-        ".pf-live-wp-lbls{display:flex;justify-content:space-between;font-size:11px;font-weight:800;"
-        "font-variant-numeric:tabular-nums;letter-spacing:.02em;}"
-        ".pf-live-wp-you{color:var(--win);}"
-        ".pf-live-wp-opp{color:var(--loss);}"
         # Final verdict banner: solid green/red strip bleeding to the band's
         # top edges, FINAL + week on the left, the margin verdict in 15px
         # white on the right -- the result reads from color alone when
@@ -42404,7 +42421,6 @@ def build_portfolio_body(
         "white-space:nowrap;font-variant-numeric:tabular-nums;}"
         # Final score treatment: winner full-strength and larger, loser
         # stays at the base muted size; a tie lifts both equally.
-        ".pf-live-side.win .pf-live-lbl{color:var(--text);font-weight:800;}"
         ".pf-live-grid.is-final .pf-live-side.win .pf-live-score{font-size:26px;}"
         ".pf-live-grid.is-final.is-tie .pf-live-side.win .pf-live-score{font-size:24px;}"
         ".pf-live-unavailable{font-size:11px;color:var(--text-muted);}"

@@ -37,7 +37,7 @@ def test_progressive_hydration_keeps_streak_slot_and_resets_manual_retry():
 def test_render_summary_reapplies_server_side_styling_after_async_refresh():
     """renderSummary() rewrites data-summary-stats after the async summary
     fetch resolves. It must reproduce the exact classes/markup the server
-    renders on first paint (record color, weak-standing flag, the record
+    renders on first paint (record color, standing color flags, the record
     band layout, the plain-text streak), or those cues visibly disappear
     the moment the card hydrates."""
     from pathlib import Path
@@ -45,8 +45,8 @@ def test_render_summary_reapplies_server_side_styling_after_async_refresh():
     source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
     render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
     assert "color-win" in render and "color-loss" in render
-    assert "pf-lg-v--weak" in render
-    assert "pf-lg-rec" in render and "pf-lg-band-side" in render
+    assert "pf-lg-v--weak" in render and "pf-lg-v--top" in render
+    assert "pf-lg-rec" in render and "pf-lg-band-main" in render and "pf-lg-band-side" in render
     assert "pf-lg-standing" in render
     assert "pf-lg-streak" in render and "join('-')" in render
     assert "pf-s-pill" not in render

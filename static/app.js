@@ -29416,9 +29416,13 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         ? (wins > losses ? 'color-win' : (losses > wins ? 'color-loss' : ''))
         : '';
       var rankN = Number(data.rank), totalN = Number(data.total_teams);
-      var weakCls = Number.isFinite(rankN) && Number.isFinite(totalN) && totalN > 1 && rankN > 0
-        && ((rankN - 1) / (totalN - 1)) >= (2 / 3 - 1e-9)
-        ? ' pf-lg-v--weak' : '';
+      // Standing color: bottom third red (same threshold as the server),
+      // top 3 green, the middle muted.
+      var stCls = '';
+      if (Number.isFinite(rankN) && Number.isFinite(totalN) && totalN > 1 && rankN > 0) {
+        if (((rankN - 1) / (totalN - 1)) >= (2 / 3 - 1e-9)) stCls = ' pf-lg-v--weak';
+        else if (rankN <= 3) stCls = ' pf-lg-v--top';
+      }
       var streak = data.streak || [];
       var streakTxt = streak.length
         ? streak.slice(-3).map(function (r) { return r === 'W' ? 'W' : (r === 'L' ? 'L' : 'T'); }).join('-')
@@ -29427,9 +29431,9 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       var standingTxt = Number.isFinite(rankN2) && rankN2 > 0
         ? escapeHtml(rank) + '<small>' + ordSuffix(rankN2) + '</small> <small>/ ' + escapeHtml(teams) + '</small>'
         : escapeHtml(rank) + '/' + escapeHtml(teams);
-      var statsHtml = '<span class="pf-lg-rec ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span>' +
-        '<span class="pf-lg-band-side"><span title="Regular-season standings: wins, then points for"><span class="pf-lg-standing' + weakCls + '">' + standingTxt + '</span></span>' +
-        '<span class="pf-lg-streak">' + streakTxt + '</span></span>';
+      var statsHtml = '<span class="pf-lg-band-main"><span class="pf-lg-rec ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span>' +
+        '<span class="pf-lg-streak">' + streakTxt + '</span></span>' +
+        '<span class="pf-lg-band-side"><span title="Regular-season standings: wins, then points for"><span class="pf-lg-standing' + stCls + '">' + standingTxt + '</span></span></span>';
       setHtmlIfChanged(stats, statsHtml);
       renderRooms(card, data, totalN);
       if (Number.isFinite(rankN) && rankN > 0) card.dataset.rank = String(rankN);
@@ -29525,23 +29529,35 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     else if (l > w) agg.classList.add('color-loss');
   }
 
-  // Score/result band only: status line, your score vs opponent (with
-  // projected finals while the week is open), the win-probability bar, and
-  // once final a solid verdict banner (WON/LOST BY in white on green/red)
-  // on top of the band with the winner's score full-strength and the
-  // loser's muted. No My Matchup / League Scores tabs and no ScoreZone
-  // Moments here -- those live on the matchup page.
+  // Score/result band only: your score vs opponent (with projected
+  // finals while the week is open), the win-probability bar, and once
+  // final a solid verdict banner (WON/LOST BY in white on green/red) on
+  // top of the band with the winner's score full-strength and the loser's
+  // muted. The strip follows the approved mock: a head line "Wk n ·
+  // vs <opponent>" with your win chance on the same line, your score
+  // inline as "You 148.0 proj", the opponent named only in the head
+  // line, and no percentage labels under the win bar. No My Matchup /
+  // League Scores tabs and no ScoreZone Moments here -- those live on
+  // the matchup page.
   function matchupHtml(data) {
     var you = data.you, opp = data.opp, status = data.status || 'pre';
     var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
-    function side(team, name, opposite, isWin) {
+    var chance = null;
+    if (opp && data.win_prob != null) chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
+    function side(team, opposite, isWin) {
       // Pregame: the big number is the projection, never a fake 0.0
-      // score. Live: the real score, projection underneath. Final: the
-      // result score only.
+      // score, with the "proj" tag after the number. Live: the real
+      // score, projection underneath. Final: the result score only.
+      // Your side reads inline ("You 148.0 proj"); the opponent's
+      // number stands alone, unnamed (they are named in the head line).
       var big = '-';
       if (team) big = status === 'pre' ? number(team.proj, 1) : number(team.score, status === 'final' ? 2 : 1);
+      var tag = team && status === 'pre' ? '<span class="pf-live-tag">proj</span>' : '';
       var sub = team && status === 'in' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '';
-      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + (isWin ? ' win' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + big + '</div>' + sub + '</div>';
+      if (opposite) {
+        return '<div class="pf-live-side opp' + (isWin ? ' win' : '') + '"><div class="pf-live-main"><span class="pf-live-score">' + big + '</span>' + tag + '</div>' + sub + '</div>';
+      }
+      return '<div class="pf-live-side' + (isWin ? ' win' : '') + '"><div class="pf-live-main"><span class="pf-live-you">You</span><span class="pf-live-score">' + big + '</span>' + tag + '</div>' + sub + '</div>';
     }
     if (status === 'final' && opp) {
       var result = data.result || 'T', margin = number(data.margin, 2);
@@ -29549,14 +29565,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       var bannerCls = result === 'W' ? ' is-win' : (result === 'L' ? ' is-loss' : ' is-tie');
       var banner = '<div class="pf-live-banner' + bannerCls + '"><span class="pf-live-banner-fin"><span class="pf-live-dot"></span>' + label + '</span><span class="pf-live-banner-verdict">' + escapeHtml(verdict) + '</span></div>';
       var youWin = result === 'W' || result === 'T', oppWin = result === 'L' || result === 'T';
-      return banner + '<div class="pf-live-grid is-final' + (result === 'T' ? ' is-tie' : '') + '">' + side(you, 'You', false, youWin) + side(opp, opp.name || 'Opp', true, oppWin) + '</div>';
+      return banner + '<div class="pf-live-grid is-final' + (result === 'T' ? ' is-tie' : '') + '">' + side(you, false, youWin) + side(opp, true, oppWin) + '</div>';
     }
+    // Head line: week + opponent on the left (the only place the
+    // opponent is named), your win chance on the right.
+    var headTxt = label + (opp ? ' · vs ' + escapeHtml(opp.name || 'Opp') : ' · Bye');
+    var headWp = chance != null ? '<span class="pf-live-head-wp' + (chance < 50 ? ' is-low' : '') + '">' + chance + '% to win</span>' : '';
+    var head = '<div class="pf-live-head">' + (status === 'in' ? '<span class="pf-live-dot"></span>' : '') + '<span class="pf-live-head-txt">' + headTxt + '</span>' + headWp + '</div>';
     var extra = '';
-    if (opp && data.win_prob != null) {
-      var chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
-      extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span class="pf-live-wp-you">' + chance + '% to win</span><span class="pf-live-wp-opp">' + (100 - chance) + '%</span></div></div>';
+    if (chance != null) {
+      extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div></div>';
     }
-    return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false, false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true, false) + '</div>' + extra;
+    return head + '<div class="pf-live-grid">' + side(you, false, false) + (opp ? side(opp, true, false) : '') + '</div>' + extra;
   }
   function renderMatchup(slot, data) {
     if (!slot || !data) return false;

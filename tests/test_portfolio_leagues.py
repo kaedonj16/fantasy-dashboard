@@ -160,11 +160,13 @@ def test_my_leagues_cards_carry_fix_best_rooms_and_heatmap_ranks():
 def test_my_leagues_standing_is_an_ordinal_place_with_a_flag():
     fn = _portfolio_fn()
     assert "from utils.format import ord_suffix" in fn
-    assert "pf-lg-v--weak" in fn
+    assert "pf-lg-v--weak" in fn and "pf-lg-v--top" in fn
     assert "class='pf-lg-standing" in fn
     assert "Regular-season standings: wins, then points for" in fn
-    # A bottom-third standing is flagged via the tier helper, not hard-coded.
+    # A bottom-third standing is flagged red via the tier helper, not
+    # hard-coded; a top-3 standing is flagged green.
     assert "_pos_tier(_rank_i, _total_i)" in fn
+    assert "_rank_i <= 3" in fn
 
 
 def test_my_leagues_streak_is_plain_text_not_pills():
