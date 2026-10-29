@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-29",
+        "tag": "fix",
+        "text": "Player cards: the Breakout tab no longer goes missing on a first, cold open. The tab used to wait on the heaviest part of the player card, so a slow first load hid it for that whole visit even for players on the breakout board. It now checks its own light flag as soon as the card opens, retries quietly if that first check is slow, and opening a player straight from the Breakout Engine lands on the Breakout tab like it should.",
+        "link": "/breakouts"
+    },
+    {
+        "date": "2026-10-29",
         "tag": "update",
         "text": "League Health is redesigned around one health card: your score, its verdict and the four things driving it (inactive teams, trades, lopsided trades, total moves) now sit together at the top. Multi-season history reads as two compact trend lines with chronic inactivity flagged underneath, the Team Overview table drops the parity dot strip, the Trade Fairness Log is one line per trade, and the PRO invite is a slim row at the bottom of the page.",
         "link": "/league_health"

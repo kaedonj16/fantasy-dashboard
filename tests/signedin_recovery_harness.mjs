@@ -44,7 +44,7 @@ const vars = [
   declLine(MODAL_SRC, 'var _PM_SMALL_TTL'),
 ].join('\n');
 const fn = extractBlock(MODAL_SRC, 'function _pmFetch(url, ms)')
-  + '\n' + extractBlock(MODAL_SRC, 'function _pmSmallFetch(key, url)');
+  + '\n' + extractBlock(MODAL_SRC, 'function _pmSmallFetch(key, url, timeoutMs)');
 
 let fetchCalls = 0;
 let mode = 'hang';

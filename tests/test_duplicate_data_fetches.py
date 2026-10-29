@@ -85,7 +85,8 @@ def test_breakout_tab_joins_inflight_prefetch():
     assert "panel.dataset.loaded = '1';" in tab
     # GUI Fix 1 routes the on-demand fetch through the bounded _pmFetch
     # helper (brFetchWithTimeout) so a stalled origin cannot strand the tab.
-    assert "_pmFetch(_boUrl)" in tab
+    # The cold-load fix gives that fetch a 30s budget plus one quiet retry.
+    assert "_pmFetch(_boUrl, 30000)" in tab
 
 
 def test_trade_intel_fetches_abortable_per_generation():

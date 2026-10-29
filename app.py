@@ -30885,6 +30885,42 @@ def api_player_details(player_id: str):
         return _api_err("Request failed", e)
 
 
+@app.route("/api/player-breakout-tab/<player_id>")
+def api_player_breakout_tab(player_id: str):
+    """Lightweight Breakout-tab flags for the player modal.
+
+    The modal used to learn tab visibility only from the deferred
+    player-details payload, which also builds value history, prospect
+    data and eligibility: a cold deferred build (20-30s in production)
+    blew the client's fetch timeout and the tab stayed hidden for that
+    whole modal open even though the player had a breakout call. This
+    endpoint answers from the cached breakout ID sets alone (one board
+    build + one surfaced-ids map per TTL, shared across workers): no
+    league sync, no history, no prospect load. Membership only, the
+    same exposure as /api/breakout/player's membership block. Any
+    failure reports no call, and the modal's deferred patch remains as
+    a second source.
+    """
+    try:
+        season = int(request.args.get("season", datetime.now().year))
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    on_board, call = False, None
+    try:
+        on_board, call = _breakout_flags_cached(player_id, season)
+        on_board = bool(on_board)
+    except Exception:
+        logger.debug("[api_player_breakout_tab] flags skipped", exc_info=True)
+        on_board, call = False, None
+    return jsonify({
+        "player_id": str(player_id),
+        "season": season,
+        "on_breakout_board": on_board,
+        "has_breakout_call": bool(on_board or call),
+        "breakout_call": call if isinstance(call, dict) else None,
+    })
+
+
 # Process-level cache of resolved market ADP maps for /api/player-adp. The
 # maps are global (identical for every player: season x source x axis), so
 # resolving them once per worker per TTL turns repeat modal opens into dict
