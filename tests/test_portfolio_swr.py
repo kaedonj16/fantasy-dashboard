@@ -21,7 +21,8 @@ def _summary(**overrides):
         "streak": ["W", "L", "W"],
         "pos_user_rank": {"QB": 3, "RB": 5, "WR": 2, "TE": 8},
         "pos_user_pctile": {"QB": 70.0, "RB": 55.0, "WR": 85.0, "TE": 30.0},
-        # TE strength 4.5x the league median -> the card badges TE-Premium.
+        # Strengths feed the rooms/heatmap; the card itself no longer
+        # carries an archetype badge (Direction A, 2026-10-29).
         "pos_user_vals": {"QB": 100.0, "RB": 100.0, "WR": 100.0, "TE": 900.0},
         "pos_league_avgs": {"QB": 100.0, "RB": 100.0, "WR": 100.0, "TE": 200.0},
         "all_players": {
@@ -104,9 +105,12 @@ def test_fresh_cached_summary_used_without_recompute(offline_client, monkeypatch
     assert b"Cached League" in resp.data
     assert b"7-4" in resp.data
     assert b"Player One" in resp.data
-    assert b"Record loading" not in resp.data
-    # The archetype badge comes from the cached strengths, not the fallback.
-    assert b"TE-Premium" in resp.data
+    assert b"pf-lg-rec'>-</span>" not in resp.data
+    # Direction A: no archetype badge on the card; the cached ranks
+    # render as the Fix / Best room columns instead.
+    assert b"TE-Premium" not in resp.data
+    assert b"Fix: " in resp.data and "TE · 8th of 12".encode() in resp.data
+    assert b"Best: " in resp.data and "WR · 2nd of 12".encode() in resp.data
     assert kicked == []
 
 
@@ -125,7 +129,7 @@ def test_fresh_legacy_summary_without_strengths_kicks_refresh(offline_client, mo
     resp = offline_client.get("/portfolio")
     assert resp.status_code == 200
     assert b"7-4" in resp.data
-    assert b"Record loading" not in resp.data
+    assert b"pf-lg-rec'>-</span>" not in resp.data
     assert kicked == [(7, "L1")]
 
 
@@ -136,7 +140,7 @@ def test_cache_miss_renders_shell_and_kicks_refresh(offline_client, monkeypatch)
     resp = offline_client.get("/portfolio")
     assert resp.status_code == 200
     # Hydratable skeleton: the client fills it via /api/portfolio/card.
-    assert b"Record loading" in resp.data
+    assert b"pf-lg-rec'>-</span>" in resp.data
     assert b'data-summary-card' in resp.data
     assert kicked == [(7, "L1")]
 
@@ -154,7 +158,7 @@ def test_stale_cache_renders_last_good_card_and_kicks_refresh(offline_client, mo
 
     resp = offline_client.get("/portfolio")
     assert resp.status_code == 200
-    assert b"Record loading" not in resp.data
+    assert b"pf-lg-rec'>-</span>" not in resp.data
     assert b"7-4" in resp.data
     assert b"Player One" in resp.data
     assert kicked == [(7, "L1")]
@@ -172,7 +176,7 @@ def test_game_day_uses_shorter_ttl(offline_client, monkeypatch):
     _signed_in(offline_client, account_id=7, account_email="a@example.com")
     resp = offline_client.get("/portfolio")
     assert b"7-4" in resp.data
-    assert b"Record loading" not in resp.data
+    assert b"pf-lg-rec'>-</span>" not in resp.data
     assert kicked == [(7, "L1")]
 
     # Not a game day: same entry is fresh -> full card, no refresh.
@@ -182,7 +186,7 @@ def test_game_day_uses_shorter_ttl(offline_client, monkeypatch):
     _signed_in(offline_client, account_id=7, account_email="a@example.com")
     resp = offline_client.get("/portfolio")
     assert b"7-4" in resp.data
-    assert b"Record loading" not in resp.data
+    assert b"pf-lg-rec'>-</span>" not in resp.data
     assert kicked == []
 
 
@@ -200,7 +204,7 @@ def test_mixed_fresh_and_stale_leagues(offline_client, monkeypatch):
     assert b"Fresh League" in resp.data
     assert b"7-4" in resp.data  # fresh league's full card
     assert b"Stale League" in resp.data
-    assert b"Record loading" in resp.data  # stale league's shell
+    assert b"pf-lg-rec'>-</span>" in resp.data  # stale league's shell
     assert kicked == [(7, "L2")]
 
 
@@ -217,7 +221,7 @@ def test_cached_team_not_linked_renders_pending_card(offline_client, monkeypatch
     resp = offline_client.get("/portfolio")
     assert resp.status_code == 200
     assert b"Team not linked yet" in resp.data
-    assert b"Record loading" not in resp.data
+    assert b"pf-lg-rec'>-</span>" not in resp.data
     assert kicked == []
 
 
@@ -259,4 +263,4 @@ def test_sleeper_only_session_keeps_inline_path(offline_client, monkeypatch):
     resp = offline_client.get("/portfolio")
     assert resp.status_code == 200
     assert b"7-4" in resp.data
-    assert b"Record loading" not in resp.data
+    assert b"pf-lg-rec'>-</span>" not in resp.data

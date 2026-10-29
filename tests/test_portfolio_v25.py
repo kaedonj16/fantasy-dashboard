@@ -78,7 +78,7 @@ def test_leagues_header_and_sort_share_one_line():
     assert "justify-content:flex-end;padding:10px 2px 0" not in html
 
 
-def test_card_shows_weakest_and_posture_without_odds():
+def test_card_shows_fix_best_and_posture_without_odds():
     # The league dict can still carry sim odds (the team modal uses them);
     # the My Leagues card must not render a Playoff odds stat or the
     # data-odds sort attribute (2026-10-27: the stat never populated).
@@ -90,13 +90,18 @@ def test_card_shows_weakest_and_posture_without_odds():
     assert "74.0%" not in html
     # Standings sort source: the card carries its rank up front.
     assert "data-rank='2'" in html
-    assert "Weakest room:" in html
-    assert "RB · 9th of 10" in html
+    # Rooms in two columns from pos_user_rank {QB 4, RB 9, WR 2, TE 6}:
+    # Fix is the weakest (RB 9th), Best the strongest (WR 2nd).
+    assert "Fix: " in html and "RB · 9th of 10" in html
+    assert "Best: " in html and "WR · 2nd of 10" in html
+    assert "Weakest room:" not in html
     assert "pf-posture contend" in html
     assert ">Contend</span>" in html
     # Whole card is the link; the favorite button stays a separate control.
     assert "data-href='/sleeper/2026/1/dashboard'" in html
-    assert "Front Office" in html
+    # No footer on the card: no Front Office link, no Open button.
+    assert "class='pf-lg-fo'" not in html
+    assert "pf-lg-open" not in html
 
 
 def test_card_without_rank_gets_sort_sentinel():

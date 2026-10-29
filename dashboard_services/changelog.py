@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-29",
+        "tag": "update",
+        "text": "My Leagues cards are redesigned. Your team name headlines each card, with the league, platform and season posture (a colored dot and word) on one quiet line under it. Your record sits in a tinted band with your standing and streak beside it, your weakest room (Fix) and strongest room (Best) sit in two columns under the band, and the score strip at the bottom shows projections before the game, the live score during it, and the result after. The Front Office and Open buttons and the per-card updated stamps are gone: the whole card opens the league, the star and the menu at the top right keep favorite and remove, and one Updated line sits above the grid.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-29",
         "tag": "fix",
         "text": "Teams and My Leagues: positional room rankings no longer punish you for rostering depth. A room used to score as an average over only the players present, so a team with one quarterback got that quarterback at full value while a deeper room was averaged down, and adding a player could actually drop your rank. Rooms are now scored against the full set of slots, empty slots counting as zero, and one player past the usual depth cutoff counts a little instead of zero, so QB3s and sixth running backs are worth something in dynasty.",
         "link": "/teams"

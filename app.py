@@ -41646,28 +41646,33 @@ def build_portfolio_body(
         # plus breathing room, or a tab tap scrolls the card header
         # underneath both bars.
         "#pfSecHeat,#pfSecRooting,#pfSecBye,#pfSecHoldings{scroll-margin-top:108px !important;}"
-        ".pf-lg-weak{font-size:11px;color:var(--text-muted);}"
-        ".pf-lg-weak strong{color:var(--q-ink,var(--text));}"
-        ".pf-posture{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--grid);color:var(--text-muted);flex:0 0 auto;}"
-        ".pf-posture.contend{background:#dcf2e4;color:#15803d;}"
-        ".pf-posture.fringe{background:#fbeecd;color:#92400e;}"
-        ".pf-posture.rebuild{background:#fbe0e0;color:#b91c1c;}"
-        # Dynasty window chip: Teams window color (--wc, set inline from
-        # the same color map the Teams page uses) as text + dot on a soft
-        # tint of itself, plus the roster-shape tag after it.
-        ".pf-posture.win{background:color-mix(in srgb,var(--wc,#64748b) 13%,transparent);"
-        "color:var(--wc,#64748b);display:inline-flex;align-items:center;gap:6px;}"
-        ".pf-posture.win::before{content:'';width:6px;height:6px;border-radius:50%;"
-        "background:var(--wc,#64748b);flex:0 0 auto;}"
-        ".pf-posture.bubble{background:#fbeecd;color:#92400e;}"
-        ".pf-posture.longshot{background:var(--grid);color:var(--text-muted);}"
-        ".pf-shape{font-size:10px;font-weight:700;letter-spacing:.03em;padding:2px 7px;"
-        "border-radius:6px;color:var(--text);background:rgba(148,163,184,.16);"
-        "border:1px solid var(--border);white-space:nowrap;flex:0 0 auto;}"
-        ".pf-shape[hidden]{display:none;}"
-        ".pf-lg-moves-flag{font-size:11px;font-weight:800;color:var(--accent);white-space:nowrap;}"
-        ".pf-lg-fo{font-weight:700;font-size:12px;color:var(--text-muted);text-decoration:none;white-space:nowrap;}"
+        ".pf-lg-rooms{display:flex;justify-content:space-between;gap:10px;"
+        "font-size:12px;color:var(--text-muted);min-width:0;}"
+        ".pf-lg-room{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".pf-lg-room.best{text-align:right;}"
+        ".pf-lg-room strong{color:var(--q-ink,var(--text));}"
+        # The Fix room always reads red (it is the problem to solve);
+        # Best keeps its tier color.
+        ".pf-lg-room.fix strong{color:var(--loss);}"
+        # Posture (Direction A, 2026-10-29): a colored dot + word at the end
+        # of the header meta line. No pill, no tint, and no second
+        # descriptor / shape tag beside it. Colors are the posture colors
+        # the pill used (the dynasty window path takes its Teams color
+        # from --wc, set inline from the same map the Teams page uses).
+        ".pf-posture{font-size:12px;font-weight:800;letter-spacing:.01em;"
+        "color:var(--text-muted);display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;}"
+        ".pf-posture::before{content:'';width:7px;height:7px;border-radius:50%;"
+        "background:currentColor;flex:0 0 auto;}"
+        ".pf-posture[hidden]{display:none;}"
+        ".pf-posture.contend{color:#15803d;}"
+        ".pf-posture.fringe{color:#92400e;}"
+        ".pf-posture.rebuild{color:#b91c1c;}"
+        ".pf-posture.win{color:var(--wc,#64748b);}"
+        ".pf-posture.bubble{color:#92400e;}"
+        ".pf-posture.longshot{color:var(--text-muted);}"
         ".pf-upd{font-size:11px;color:var(--text-subtle);margin-left:auto;white-space:nowrap;}"
+        ".pf-lg-updated{font-size:11px;color:var(--text-subtle);margin:8px 2px 0;}"
+        ".pf-lg-updated[hidden]{display:none;}"
         ".pf-ins-stack{display:flex;flex-direction:column;gap:14px;}"
         ".pf-hm{overflow-y:auto;max-height:470px;}"
         ".pf-hm-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--grid);}"
@@ -41787,6 +41792,9 @@ def build_portfolio_body(
     )
 
     # ── League list - standings-table ─────────────────────────────────────
+    # Empty posture placeholder for shell cards: hydration fills the
+    # dot + word in place when the summary lands.
+    _POSTURE_PH = "<span class='pf-posture' data-posture hidden></span>"
     league_rows = ""
     # Every card in an account shell came from durable membership and can be
     # unlinked. The season is explicit: removing one season must not silently
@@ -41799,18 +41807,27 @@ def build_portfolio_body(
         return (
             f"<button type='button' class='pf-unlink' data-platform='{_plat}' "
             f"data-league='{_lid}' data-season='{int(_season or season)}' "
-            f"title='Unlink this league' aria-label='Unlink league'>&times;</button>"
+            f"title='Remove this linked league' aria-label='Remove league'>Remove league</button>"
         )
 
     def _lg_tools(is_favorite=False, *extra):
-        # Favorite (+ optional unlink) only -- archetype badge lives under the
-        # title so it can't collide with the star on narrow viewports.
+        # Favorite star plus a kebab menu on the same top row. The remove
+        # (unlink) action lives inside the menu, not as a bare x on the
+        # header (Direction A redesign, 2026-10-29).
         bits = "".join(x for x in extra if x)
+        menu = ""
+        if bits:
+            menu = (
+                "<span class='pf-lg-menuwrap'>"
+                "<button type='button' class='pf-lg-menu-btn' aria-label='League actions' "
+                "aria-haspopup='true' aria-expanded='false'>&vellip;</button>"
+                f"<span class='pf-lg-menu' hidden>{bits}</span></span>"
+            )
         return (
             "<div class='pf-lg-tools'>"
             f"<button type='button' class='pf-lg-fav{' on' if is_favorite else ''}' aria-label='Favorite league' "
             f"aria-pressed='{'true' if is_favorite else 'false'}' title='Favorite'>&#9733;</button>"
-            f"{bits}</div>"
+            f"{menu}</div>"
         )
 
     _PLAT_LABELS = {
@@ -41821,32 +41838,39 @@ def build_portfolio_body(
         "fleaflicker": "Fleaflicker",
     }
 
-    def _plat_script(_plat):
+    def _plat_label(_plat):
         key = str(_plat or "").lower()
         label = _PLAT_LABELS.get(key)
         if not label and key:
             label = key[:1].upper() + key[1:]
-        if not label:
-            return ""
-        return (
-            f"<span class='pf-lg-plat pf-lg-plat-{html.escape(key)}'>"
-            f"{html.escape(label)}</span>"
-        )
+        return label or ""
 
-    def _lg_id(name_inner, _plat, extra="", arch="", team=""):
-        # Platform script sits inline with the name (line 1); the owner/team and
-        # any archetype live on the muted meta line (line 2). This keeps the
-        # identity to two clean lines instead of one overloaded row.
-        plat = _plat_script(_plat)
-        team_html = (
-            f"<span class='pf-lg-team'>{html.escape(team)}</span>"
-            if team else ""
-        )
-        meta_inner = f"{team_html}{arch}" if (team_html or arch) else ""
-        meta = f"<div class='pf-lg-meta'>{meta_inner}</div>" if meta_inner else ""
+    def _lg_header(headline_inner, tools_inner, _plat, league_name="",
+                   posture_html="", extra=""):
+        # Direction A header (2026-10-29): the team name is the headline
+        # (league name when no team is resolved), star + kebab sit on the
+        # same top row, and the meta line below is a full-card-width block
+        # (league name, platform, posture) that can wrap underneath the
+        # tools instead of being squeezed into the column beside them.
+        bits = []
+        if league_name:
+            bits.append(
+                f"<span class='pf-lg-lgname'>{html.escape(str(league_name))}</span>")
+        _label = _plat_label(_plat)
+        if _label:
+            bits.append(f"<span class='pf-lg-platname'>{html.escape(_label)}</span>")
+        if posture_html:
+            bits.append(posture_html)
+        meta = ""
+        if bits:
+            meta = (
+                "<div class='pf-lg-meta'>"
+                + "<span class='pf-lg-sep'>&middot;</span>".join(bits)
+                + "</div>"
+            )
         return (
-            f"<div class='pf-lg-id'><div class='pf-lg-title'>{name_inner}{plat}{extra}</div>"
-            f"{meta}</div>"
+            f"<div class='pf-lg-top'><span class='pf-lg-title'>{headline_inner}{extra}</span>"
+            f"{tools_inner}</div>{meta}"
         )
 
     def _pos_tier(_r, _n):
@@ -41882,29 +41906,24 @@ def build_portfolio_body(
         name = html.escape(_raw_name)
         name_link = f"<a href='{href}' class='pf-league-link pf-lg-name'>{name}</a>"
         name_muted = f"<span class='pf-lg-name' style='color:var(--text-muted);'>{name}</span>"
-        # Presentational crest for the league card: initials + a stable hue from
-        # the name (no new data -- derived from the league name we already show).
-        _ini = html.escape("".join(w[0] for w in _raw_name.split()[:2]).upper() or "?")
-        _crest_hue = f"hsl({sum(ord(c) for c in _raw_name) % 360} 52% 46%)"
+        # Direction A (2026-10-29): no crest/initials box on league cards;
+        # the team name headlines the card instead.
 
         if lg.get("loading"):
             _lg_season_shell = lg.get("season") or season
-            _updated = html.escape(str(lg.get("last_updated") or "Awaiting first refresh"))
             league_rows += (
                 f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' "
                 f"data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
-                f"<div class='pf-lg-top'><span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
-                f"{_lg_id(name_link, plat)}{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}</div>"
+                f"{_lg_header(name_link, _lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season)), plat, posture_html=_POSTURE_PH)}"
                 f"<div class='pf-lg-live' aria-busy='true' data-lg-live data-platform='{html.escape(str(plat), quote=True)}' "
                 f"data-league-id='{html.escape(str(lid), quote=True)}' data-season='{html.escape(str(_lg_season_shell), quote=True)}'>"
                 "<div class='pf-live-skel' aria-hidden='true'><div class='skeleton pf-live-skel-status'></div>"
                 "<div class='pf-live-grid'><div class='pf-live-side'><div class='skeleton pf-live-skel-score'></div></div>"
                 "<div class='pf-live-side opp'><div class='skeleton pf-live-skel-score'></div></div></div></div></div>"
-                f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-stat'><span class='pf-lg-v'>-</span><span class='pf-lg-l'>Record loading</span></span>"
-                f"<span class='pf-lg-stat'><span class='pf-lg-v'>-</span><span class='pf-lg-l'>Standing loading</span></span>"
-                f"<span class='pf-lg-stat'><span class='pf-lg-v' data-summary-streak>...</span><span class='pf-lg-l'>Streak loading</span></span></div>"
-                f"<div class='pf-lg-foot'><span class='pf-lg-l' data-summary-updated>Updated {_updated}</span>"
-                f"<button type='button' data-summary-retry hidden>Retry</button><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div></div>"
+                f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-rec'>-</span>"
+                f"<span class='pf-lg-band-side'><span class='pf-lg-standing'>-</span>"
+                f"<span class='pf-lg-streak' data-summary-streak>...</span></span></div>"
+                f"<button type='button' class='pf-lg-retry' data-summary-retry hidden>Retry</button></div>"
             )
             continue
 
@@ -41967,11 +41986,7 @@ def build_portfolio_body(
                 )
             league_rows += (
                 f"<div class='{_card_pending_cls}' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}'>"
-                f"<div class='pf-lg-top'>"
-                f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
-                f"{_lg_id(name_link, plat)}"
-                f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
-                f"</div>"
+                f"{_lg_header(name_link, _lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season)), plat)}"
                 f"{countdown}"
                 f"<div class='pf-lg-pending-row'>"
                 f"<span class='{_pill_cls}'>{reason}</span>"
@@ -41984,11 +41999,7 @@ def build_portfolio_body(
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
                 f"<div class='pf-lg-card' data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
-                f"<div class='pf-lg-top'>"
-                f"<span class='pf-lg-crest' style='background:var(--border);color:var(--text-muted);'>{_ini}</span>"
-                f"{_lg_id(name_muted, plat)}"
-                f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
-                f"</div>"
+                f"{_lg_header(name_muted, _lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season)), plat)}"
                 f"<div class='pf-lg-err'>couldn’t load</div>"
                 f"</div>"
             )
@@ -42021,60 +42032,77 @@ def build_portfolio_body(
         if _rank_i and _total_i:
             _st_flag = " pf-lg-v--weak" if _pos_tier(_rank_i, _total_i) == "weak" else ""
             standing_html = (
-                f"<span class='pf-lg-v{_st_flag}'>{_rank_i}"
+                f"<span class='pf-lg-standing{_st_flag}'>{_rank_i}"
                 f"<small>{ord_suffix(_rank_i)}</small> <small>/ {_total_i}</small></span>"
             )
         else:
             standing_html = (
-                f"<span class='pf-lg-v'>{html.escape(str(rank))}/{html.escape(str(total))}</span>"
+                f"<span class='pf-lg-standing'>{html.escape(str(rank))}/{html.escape(str(total))}</span>"
             )
 
-        # Streak as W/L pills (most recent three) instead of grey dots; before
-        # any game is played the pills would be meaningless, so show a dash.
+        # Streak as plain text (most recent three, e.g. "L-W-W") in the
+        # record band; before any game is played show a dash.
         streak = lg.get("streak") or []
         if streak:
-            _pills = ""
-            for r in streak[-3:]:
-                _cls = "pf-s-w" if r == "W" else "pf-s-l"
-                _pills += f"<span class='pf-s-pill {_cls}'>{'W' if r == 'W' else 'L'}</span>"
-            streak_html = f"<span class='pf-streak'>{_pills}</span>"
+            _streak_txt = "-".join(
+                "W" if r == "W" else ("L" if r == "L" else "T")
+                for r in streak[-3:]
+            )
+            streak_html = f"<span class='pf-lg-streak'>{_streak_txt}</span>"
         else:
-            streak_html = "<span class='pf-streak-empty'>-</span>"
-
-        _uvs = lg.get("pos_user_vals") or {}
-        _avgs = lg.get("pos_league_avgs") or {}
-        _ratios = {p: (_uvs.get(p, 0) / (_avgs.get(p) or 1)) for p in ["QB", "RB", "WR", "TE"]}
-        _best_pos = max(_ratios, key=_ratios.get) if _ratios else "QB"
-        _arch_map = {"QB": "QB-Heavy", "RB": "RB Corps", "WR": "WR-Spread", "TE": "TE-Premium"}
-        arch = _arch_map.get(_best_pos, "Balanced") if _ratios.get(_best_pos, 1.0) > 1.10 else "Balanced"
-        _arch_color = _ARCH_COLORS.get(arch, "#6b7280")
-        arch_badge = f"<span class='pf-arch' style='background:{_arch_color};'>{arch}</span>"
+            streak_html = "<span class='pf-lg-streak'>-</span>"
 
         off_note = "<span class='pf-lg-off'>(Off)</span>" if lg.get("offseason") else ""
 
-        # v25 compact card: the position-strength strip moves to the
-        # insights heatmap; the card carries only its weakest room and its
-        # posture. (Playoff odds came off the card 2026-10-27: the stat
-        # never populated in production, a permanent dash. The team modal
-        # odds tile and the sim plumbing behind it are untouched.)
+        # Rooms in two columns (Direction A, 2026-10-29): Fix (weakest
+        # room) on the left, Best (strongest room) on the right. Both read
+        # the same per-position rank dict the card already carries
+        # (pos_user_rank, from rank_rosters_by_position via the summary);
+        # strongest is the mirror of weakest over that dict, never a
+        # separate computation. (Playoff odds came off the card
+        # 2026-10-27: the stat never populated in production, a permanent
+        # dash. The team modal odds tile and the sim plumbing behind it
+        # are untouched.)
         pos_ranks = lg.get("pos_user_rank") or {}
-        weakest_html = ""
+        rooms_html = ""
         try:
             from dashboard_services.portfolio_board import (
+                strongest_room as _sr_fn,
                 tier_for_rank as _tier_fn,
                 weakest_room as _wr_fn,
             )
             _wr = _wr_fn(pos_ranks, _total_i)
+            _sr = _sr_fn(pos_ranks, _total_i)
         except Exception:
             _wr = None
-        if _wr:
-            _wtotal = _wr.get("total") or _total_i
-            _wtier = _tier_fn(_wr["rank"], _wtotal)
-            weakest_html = (
-                f"<div class='pf-lg-weak' data-weakest>Weakest room: "
-                f"<strong class='q-{_wtier}'>{_wr['pos']} · {_wr['rank']}"
-                f"{ord_suffix(_wr['rank'])} of {_wtotal}</strong></div>"
+            _sr = None
+        if _wr or _sr:
+            _fix_html = ""
+            if _wr:
+                _wtotal = _wr.get("total") or _total_i
+                _wtier = _tier_fn(_wr["rank"], _wtotal)
+                _fix_html = (
+                    f"<span class='pf-lg-room fix'>Fix: "
+                    f"<strong class='q-{_wtier}'>{_wr['pos']} · {_wr['rank']}"
+                    f"{ord_suffix(_wr['rank'])} of {_wtotal}</strong></span>"
+                )
+            _best_html = ""
+            if _sr and not (_wr and _sr["pos"] == _wr["pos"]):
+                _stotal = _sr.get("total") or _total_i
+                _stier = _tier_fn(_sr["rank"], _stotal)
+                _best_html = (
+                    f"<span class='pf-lg-room best'>Best: "
+                    f"<strong class='q-{_stier}'>{_sr['pos']} · {_sr['rank']}"
+                    f"{ord_suffix(_sr['rank'])} of {_stotal}</strong></span>"
+                )
+            rooms_html = (
+                f"<div class='pf-lg-rooms' data-rooms>{_fix_html}{_best_html}</div>"
             )
+        # Posture is a dot + word at the end of the header meta line
+        # (Direction A): no pill, and no second descriptor / shape tag.
+        # The label, class and color come from the same live posture
+        # source as before (Teams-classifier parity); only the
+        # presentation changed.
         _posture = lg.get("posture")
         if _posture:
             _p_cls = str(lg.get("posture_cls") or "")
@@ -42083,19 +42111,12 @@ def build_portfolio_body(
                 f" style='--wc:{html.escape(_p_color, quote=True)}'"
                 if _p_cls == "win" and _p_color else ""
             )
-            _p_shape = str(lg.get("posture_shape") or "")
-            _shape_html = (
-                f"<span class='pf-shape' data-posture-shape>"
-                f"{html.escape(_p_shape)}</span>"
-                if _p_shape else
-                "<span class='pf-shape' data-posture-shape hidden></span>"
-            )
             posture_html = (
                 f"<span class='pf-posture {_p_cls}' data-posture{_chip_style}>"
-                f"{html.escape(str(_posture))}</span>{_shape_html}"
+                f"{html.escape(str(_posture))}</span>"
             )
         else:
-            posture_html = arch_badge
+            posture_html = "<span class='pf-posture' data-posture hidden></span>"
 
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
         # in-season during game weeks. Starts as a content-shaped skeleton so the
@@ -42131,29 +42152,31 @@ def build_portfolio_body(
             f"{live_skel}</div>"
         )
 
+        # Headline is the team name (Direction A H4); the league name
+        # moves to the meta line. Without a resolved team the league name
+        # headlines and the meta line carries platform + posture only.
+        _team_name = str(lg.get("team_name") or "").strip()
+        if _team_name:
+            _headline = (
+                f"<a href='{href}' class='pf-lg-name'>"
+                f"{html.escape(_team_name)}</a>"
+            )
+            _meta_league = _raw_name
+        else:
+            _headline = name_link
+            _meta_league = ""
         league_rows += (
             f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-href='{html.escape(str(href), quote=True)}' data-rank='{_rank_i if _rank_i else 999}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
-            f"<div class='pf-lg-top'>"
-            f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
-            f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
-            f"{_lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season))}"
-            f"</div>"
-            f"{live_slot}"
+            f"{_lg_header(_headline, _lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season)), plat, league_name=_meta_league, posture_html=posture_html, extra=off_note)}"
             f"<div class='pf-lg-stats' data-summary-stats>"
-            f"<span class='pf-lg-stat'><span class='pf-lg-v {rec_cls2}'>{rec}</span>"
-            f"<span class='pf-lg-l'>Record</span></span>"
-            f"<span class='pf-lg-stat' title='Regular-season standings: wins, then points for'>"
-            f"{standing_html}<span class='pf-lg-l'>Standing</span></span>"
-            f"<span class='pf-lg-stat pf-lg-stat--streak'>{streak_html}"
-            f"<span class='pf-lg-l'>Streak</span></span>"
+            f"<span class='pf-lg-rec {rec_cls2}'>{rec}</span>"
+            f"<span class='pf-lg-band-side'>"
+            f"<span title='Regular-season standings: wins, then points for'>{standing_html}</span>"
+            f"{streak_html}</span>"
             f"</div>"
-            f"{weakest_html}"
-            f"<div class='pf-lg-foot'>{posture_html}"
-            f"<span class='pf-lg-moves-flag' data-moves-flag hidden></span>"
-            f"<span class='pf-lg-l' data-summary-updated></span>"
-            f"<button type='button' data-summary-retry hidden>Retry</button>"
-            f"<a href='{href}' class='pf-lg-fo'>Front Office</a>"
-            f"<a href='{href}' class='pf-lg-open'>Open &rarr;</a></div>"
+            f"<button type='button' class='pf-lg-retry' data-summary-retry hidden>Retry</button>"
+            f"{rooms_html}"
+            f"{live_slot}"
             f"</div>"
         )
 
@@ -42161,31 +42184,35 @@ def build_portfolio_body(
         "<style>"
         ".pf-lg-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px;}"
         "@media(max-width:980px){.pf-lg-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}"
-        ".pf-lg-card{background:var(--card);border:1px solid var(--grid);border-radius:10px;"
+        ".pf-lg-card{background:var(--card);border:1px solid var(--border);border-radius:12px;"
         "padding:10px 12px;display:flex;flex-direction:column;gap:7px;min-width:0;max-width:100%;"
-        "overflow:hidden;box-sizing:border-box;}"
-        ".pf-lg-top{display:flex;align-items:center;gap:8px;min-width:0;}"
-        ".pf-lg-crest{width:28px;height:28px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;"
-        "color:#fff;font-weight:800;font-size:11px;}"
-        ".pf-lg-id{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:2px;}"
-        ".pf-lg-title{min-width:0;max-width:100%;display:flex;align-items:baseline;gap:5px;}"
-        ".pf-lg-name{font-weight:800;font-size:13px;line-height:1.2;text-decoration:none;color:var(--text);"
+        "overflow:hidden;box-sizing:border-box;box-shadow:0 1px 3px rgba(18,45,75,.07);}"
+        # Dark: step the card off the near-identical page navy with shadow.
+        ":root[data-theme='dark'] .pf-lg-card{box-shadow:0 2px 10px rgba(0,0,0,.35);}"
+        ".pf-lg-top{display:flex;align-items:flex-start;gap:8px;min-width:0;}"
+        ".pf-lg-title{flex:1;min-width:0;display:flex;align-items:baseline;gap:5px;}"
+        ".pf-lg-name{font-weight:900;font-size:19px;line-height:1.15;text-decoration:none;color:var(--text);"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;min-width:0;flex:1 1 auto;}"
         "a.pf-lg-name:hover{color:var(--accent);}"
         ".pf-lg-off{font-size:11px;color:var(--text-subtle);flex:0 0 auto;white-space:nowrap;}"
-        ".pf-lg-meta{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;}"
-        ".pf-lg-team{font-size:11px;color:var(--text-muted);line-height:1.2;"
-        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}"
-        ".pf-lg-plat+.pf-lg-team::before{content:'·';margin-right:6px;color:var(--text-subtle);}"
-        ".pf-lg-plat{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;line-height:1.2;"
-        "flex:0 0 auto;}"
-        ".pf-lg-plat-sleeper{color:#6C4BF0;}"
-        ".pf-lg-plat-espn{color:#D33A46;}"
-        ".pf-lg-plat-yahoo{color:#12A4A0;}"
-        ".pf-lg-plat-mfl{color:#3B7DD8;}"
-        ".pf-lg-plat-fleaflicker{color:#E08A1E;}"
-        # Tools is star-only (plus rare unlink); keep it from eating title width.
+        # Meta line: full-card-width block under the top row (league,
+        # platform, posture), free to wrap underneath the star / kebab.
+        ".pf-lg-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;max-width:100%;"
+        "font-size:12px;color:var(--text-muted);line-height:1.3;margin-top:-3px;}"
+        ".pf-lg-sep{color:var(--text-subtle);}"
+        # Tools: star + kebab on the top row; remove lives in the menu.
         ".pf-lg-tools{display:flex;align-items:center;gap:4px;flex:0 0 auto;}"
+        ".pf-lg-menuwrap{position:relative;display:inline-flex;}"
+        ".pf-lg-menu-btn{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;"
+        "background:none;border:0;cursor:pointer;font-size:16px;line-height:1;margin:0;padding:0;"
+        "color:var(--text-subtle);border-radius:6px;}"
+        ".pf-lg-menu-btn:hover{color:var(--text);background:var(--grid);}"
+        ".pf-lg-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:40;min-width:148px;"
+        "background:var(--card);border:1px solid var(--border);border-radius:10px;"
+        "box-shadow:0 8px 24px rgba(2,6,23,.18);padding:4px;}"
+        ".pf-lg-menu[hidden]{display:none;}"
+        ".pf-lg-menu .pf-unlink{margin:0;width:100%;text-align:left;font-size:13px;font-weight:700;"
+        "padding:7px 9px;opacity:1;color:var(--text);border-radius:6px;}"
         ".pf-lg-mid{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;min-width:0;}"
         ".pf-lg-mid.pf-lg-draft{display:grid;grid-template-columns:1fr;}"
         ".pf-lg-stat{display:inline-flex;align-items:baseline;gap:4px;min-width:0;}"
@@ -42196,20 +42223,23 @@ def build_portfolio_body(
         ".pf-lg-l{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;"
         "color:var(--text-subtle);margin:0;line-height:1;}"
         ".pf-lg-card .pf-dot{width:6px;height:6px;}"
-        # Stats row: three equal, divided columns (Record / Standing / Streak),
-        # value over a small uppercase label.
-        ".pf-lg-stats{display:flex;align-items:stretch;min-width:0;}"
-        ".pf-lg-stats .pf-lg-stat{flex:1;min-width:0;display:flex;flex-direction:column;"
-        "align-items:flex-start;gap:1px;}"
-        ".pf-lg-stats .pf-lg-stat+.pf-lg-stat{border-left:1px solid var(--grid);"
-        "padding-left:10px;margin-left:10px;}"
-        ".pf-lg-v small{font-size:.72em;font-weight:700;color:var(--text-subtle);}"
+        # Record band (Direction A, 2026-10-29): the record / standing /
+        # streak row is a full-bleed tinted band, tone shift only (no
+        # inset border, radius or box of its own). Record is the Tier-1
+        # number; standing and the plain-text streak sit muted beside it.
+        ".pf-lg-stats{display:flex;align-items:center;gap:14px;min-width:0;"
+        "margin:1px -12px 0;padding:10px 12px;background:#e8f0f7;}"
+        ":root[data-theme='dark'] .pf-lg-stats{background:#0b1d31;}"
+        ".pf-lg-rec{font-size:50px;font-weight:900;line-height:1;letter-spacing:-.02em;"
+        "font-variant-numeric:tabular-nums;color:var(--text);}"
+        ".pf-lg-band-side{display:flex;flex-direction:column;gap:3px;min-width:0;}"
+        ".pf-lg-standing{font-size:20px;font-weight:800;line-height:1.1;color:var(--text-muted);}"
+        ".pf-lg-standing small{font-size:.72em;font-weight:700;color:var(--text-subtle);}"
         ".pf-lg-v--weak{color:var(--loss);}"
-        # Streak as W/L pills (reuses the base .pf-streak flex row).
-        ".pf-s-pill{width:15px;height:15px;border-radius:5px;display:grid;place-items:center;"
-        "font-size:11px;font-weight:800;color:#fff;line-height:1;}"
-        ".pf-s-w{background:var(--win);}.pf-s-l{background:var(--loss);}"
-        ".pf-streak-empty{font-size:13px;font-weight:800;color:var(--text-subtle);line-height:1.1;}"
+        ".pf-lg-streak{font-size:13px;font-weight:700;letter-spacing:.08em;color:var(--text-muted);}"
+        ".pf-lg-retry{align-self:flex-start;font:inherit;font-size:12px;font-weight:700;"
+        "color:var(--accent);background:none;border:none;cursor:pointer;padding:0;}"
+        ".pf-lg-retry[hidden]{display:none;}"
         # Position-strength strip: a full-bleed band inside the card.
         ".pf-lg-strength{margin:0 -12px;padding:8px 12px 9px;display:flex;flex-direction:column;"
         "gap:5px;border-top:1px solid var(--grid);"
@@ -42234,13 +42264,9 @@ def build_portfolio_body(
         "--q-line:var(--grid);--q-ink:var(--text);}"
         ".q-weak{--q-fill:color-mix(in srgb,var(--loss) 11%,transparent);"
         "--q-line:color-mix(in srgb,var(--loss) 30%,transparent);--q-ink:var(--loss);}"
-        ".pf-lg-foot{display:flex;align-items:center;gap:8px;border-top:1px solid var(--grid);"
-        "padding-top:6px;flex-wrap:nowrap;min-width:0;}"
-        ".pf-lg-foot .pf-arch{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;"
-        "font-size:11px;padding:2px 8px;}"
-        ".pf-lg-foot .pf-pos-chips{margin-top:0;flex:1 1 auto;min-width:0;gap:6px 8px;"
-        "overflow:hidden;}"
-        ".pf-lg-open{margin-left:auto;font-weight:800;font-size:13px;color:var(--accent);text-decoration:none;white-space:nowrap;flex-shrink:0;}"
+        # No card footer (Direction A, 2026-10-29): no Front Office link,
+        # no Open button, no per-card Updated stamp. The whole card is the
+        # tap target; one Updated line sits above the grid instead.
         ".pf-lg-pending-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"
         "border-top:1px solid var(--grid);padding-top:6px;margin-top:0;}"
         ".pf-lg-err{font-size:13px;color:var(--text-subtle);}"
@@ -42249,24 +42275,19 @@ def build_portfolio_body(
         "color:var(--text-subtle);opacity:.5;transition:opacity .12s,color .12s;}"
         ".pf-lg-fav:hover{opacity:1;color:var(--gold,#ca8a04);}"
         ".pf-lg-fav.on{opacity:1;color:var(--gold,#ca8a04);}"
-        # Badge sits beside the platform script; shrink/ellipsis instead of
-        # overflowing the card's right edge.
-        ".pf-lg-meta .pf-arch{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;"
-        "text-overflow:ellipsis;font-size:.58em;padding:1px 6px;}"
-        ".pf-lg-tools .pf-unlink{margin-left:0;flex:0 0 auto;}"
         ".pf-lg-pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:10px;}"
         ".pf-lg-pager button{border:1px solid var(--grid);background:var(--card);color:var(--text);"
         "border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;}"
         ".pf-lg-pager button:disabled{opacity:.4;cursor:default;}"
         ".pf-lg-pager-lbl{font-size:13px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
-        # Live matchup band: your total vs opponent as a head-to-head, each side's
-        # projected final, and a win-probability bar (your share green, the
-        # opponent's the remainder). Hydrated client-side (pfLiveScores); starts
-        # as a skeleton, then swaps to scores or hides when not live. A neutral
-        # inset -- not another bordered card -- so it doesn't echo the
-        # Record/Standing/Streak row beneath it.
-        ".pf-lg-live{border-radius:8px;padding:7px 9px 8px;"
-        "background:color-mix(in srgb,var(--text-subtle) 9%,transparent);"
+        # Score strip (Direction A, 2026-10-29): the LAST section of the
+        # card, flat on the card surface with a hairline above it. No
+        # inset background, border or radius of its own. Your total vs
+        # opponent as a head-to-head, each side's projected final, and a
+        # win-probability bar (your share green, the opponent's the
+        # remainder). Hydrated client-side (pfLiveScores); starts as a
+        # skeleton, then swaps to scores or hides when not live.
+        ".pf-lg-live{border-top:1px solid var(--grid);padding-top:8px;margin-top:2px;"
         "display:flex;flex-direction:column;gap:6px;}"
         # The class sets display:flex, which would otherwise beat the UA
         # [hidden]{display:none}; hide after fetch when scores aren't live.
@@ -42293,8 +42314,11 @@ def build_portfolio_body(
         ".pf-live-side.opp{align-items:flex-end;text-align:right;}"
         ".pf-live-lbl{font-size:11px;font-weight:700;color:var(--text-muted);max-width:100%;"
         "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
-        ".pf-live-score{font-size:22px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;"
-        "color:var(--text-subtle);}"
+        # Tier 2 numbers: your score / projection is the big bold one;
+        # the opponent's is smaller and muted.
+        ".pf-live-score{font-size:16px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;"
+        "color:var(--text-muted);}"
+        ".pf-live-side:not(.opp) .pf-live-score{font-size:24px;font-weight:900;color:var(--text);}"
         ".pf-live-side.win .pf-live-score{color:var(--text);}"
         ".pf-live-proj{font-size:11px;color:var(--text-subtle);font-variant-numeric:tabular-nums;}"
         # Win-probability bar: your chance filled from the left in win-green over a
@@ -42312,8 +42336,8 @@ def build_portfolio_body(
         # top edges, FINAL + week on the left, the margin verdict in 15px
         # white on the right -- the result reads from color alone when
         # scanning the league grid. Tie gets a neutral slate strip.
-        ".pf-live-banner{margin:-7px -9px 0;padding:8px 11px;display:flex;align-items:center;"
-        "justify-content:space-between;gap:8px;border-radius:8px 8px 0 0;color:#fff;}"
+        ".pf-live-banner{margin:-8px -12px 0;padding:8px 12px;display:flex;align-items:center;"
+        "justify-content:space-between;gap:8px;color:#fff;}"
         ".pf-live-banner.is-win{background:#15803d;}"
         ".pf-live-banner.is-loss{background:#b91c1c;}"
         ".pf-live-banner.is-tie{background:#64748b;}"
@@ -42337,18 +42361,13 @@ def build_portfolio_body(
         ".pf-lg-card{flex:0 0 85%;scroll-snap-align:start;padding:9px 10px;gap:6px;}"
         ".pf-lg-top{gap:7px;}"
         ".pf-lg-mid{gap:4px 12px;}"
-        ".pf-lg-stats .pf-lg-stat+.pf-lg-stat{padding-left:8px;margin-left:8px;}"
+        ".pf-lg-name{font-size:17px;}"
+        # Record band bleeds to the phone card's narrower padding; the
+        # Tier-1 record steps down to 42px.
+        ".pf-lg-stats{margin:1px -10px 0;padding:9px 10px;}"
+        ".pf-lg-rec{font-size:42px;}"
         ".pf-lg-strength{margin:0 -10px;padding:7px 10px 8px;}"
-        ".pf-lg-foot{gap:6px;padding-top:5px;flex-wrap:wrap;row-gap:5px;}"
-        # Phone: the nowrap footer fit when it held one posture chip, but
-        # the window chip + shape tag (#2816) beside the updated stamp and
-        # the Front Office / Open links overflow the card: the stamp was
-        # crushed into a ~70px multi-line column and the links clipped at
-        # the card edge. Wrap the row and give the stamp its own
-        # full-width line; pills stay on line one, links on the last.
-        ".pf-lg-foot [data-summary-updated]{flex:1 1 100%;}"
-        ".pf-lg-foot .pf-pos-chips{gap:4px 7px;}"
-        ".pf-lg-foot .pf-arch{font-size:11px;padding:1px 6px;}"
+        ".pf-live-banner{margin:-8px -10px 0;padding:8px 10px;}"
         "}"
         "</style>"
         f"<div class='card'>"
@@ -42359,6 +42378,9 @@ def build_portfolio_body(
         "<option value='record'>Record</option>"
         "<option value='standings'>Standings</option>"
         "</select></div></div>"
+        # One Updated line for the whole grid (Direction A): the per-card
+        # stamps are gone; hydration fills this from the newest summary.
+        f"<div class='pf-lg-updated' data-portfolio-updated hidden></div>"
         f"<div class='pf-lg-grid'>{league_rows}</div>"
         "</div>"
         # All leagues render (v25): no pager. Favorites stay pinned first,
@@ -42395,7 +42417,17 @@ def build_portfolio_body(
         "if(!hydrated)window.__pfQueueCard(c);});}"
         "window.__pfQueueVisible=queueAll;"
         "window.__pfApplySort=render;"
-        "grid.addEventListener('click',function(e){var s=e.target.closest('.pf-lg-fav');"
+        "grid.addEventListener('click',function(e){"
+        "var mb=e.target.closest('.pf-lg-menu-btn');"
+        "if(mb){e.preventDefault();e.stopPropagation();"
+        "var wrap=mb.closest('.pf-lg-menuwrap');var m=wrap?wrap.querySelector('.pf-lg-menu'):null;"
+        "var wasOpen=!!(m&&!m.hidden);"
+        "grid.querySelectorAll('.pf-lg-menu').forEach(function(x){x.hidden=true;});"
+        "grid.querySelectorAll('.pf-lg-menu-btn').forEach(function(x){x.setAttribute('aria-expanded','false');});"
+        "if(m&&!wasOpen){m.hidden=false;mb.setAttribute('aria-expanded','true');}return;}"
+        "if(!e.target.closest('.pf-lg-menu')){grid.querySelectorAll('.pf-lg-menu').forEach(function(x){x.hidden=true;});"
+        "grid.querySelectorAll('.pf-lg-menu-btn').forEach(function(x){x.setAttribute('aria-expanded','false');});}"
+        "var s=e.target.closest('.pf-lg-fav');"
         "if(s){e.preventDefault();e.stopPropagation();var c=s.closest('.pf-lg-card');if(!c)return;"
         "var k=keyOf(c);if(!k)return;var f=favs(),idx=f.indexOf(k);"
         "var on=idx<0;if(idx>=0)f.splice(idx,1);else f.unshift(k);"

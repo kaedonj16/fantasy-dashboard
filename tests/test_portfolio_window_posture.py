@@ -296,17 +296,20 @@ def _render_card(**kw):
         )
 
 
-def test_card_renders_window_chip_and_shape():
+def test_card_renders_window_posture_dot_without_shape():
+    # Direction A (2026-10-29): posture is a dot + word in the header
+    # meta line. The label/class/color source is unchanged (Teams
+    # parity), but the shape tag no longer rides on the card.
     html = _render_card(posture="Contender Window", posture_cls="win",
                         posture_color="#3b82f6", posture_shape="DEEP")
     assert "pf-posture win" in html
     assert "--wc:#3b82f6" in html
     assert ">Contender Window</span>" in html
-    assert "data-posture-shape" in html
-    assert ">DEEP</span>" in html
-    # Window chip CSS ships with the page.
+    assert "data-posture-shape" not in html
+    assert ">DEEP</span>" not in html
+    # Posture dot CSS ships with the page; the shape tag CSS is gone.
     assert ".pf-posture.win{" in html
-    assert ".pf-shape{" in html
+    assert ".pf-shape{" not in html
 
 
 def test_card_renders_redraft_long_shot_never_rebuild():
@@ -317,7 +320,7 @@ def test_card_renders_redraft_long_shot_never_rebuild():
     assert "pf-posture rebuild" not in html
 
 
-def test_js_hydration_applies_window_color_and_shape():
+def test_js_hydration_applies_window_color_without_shape():
     from pathlib import Path
 
     src = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
@@ -325,8 +328,9 @@ def test_js_hydration_applies_window_color_and_shape():
     seg = seg.split("var stamp = data.last_successful_sync_at")[0]
     assert "data.posture_color" in seg
     assert "setProperty('--wc'" in seg
-    assert "data.posture_shape" in seg
-    assert "data-posture-shape" in seg
+    # The shape tag is gone from the card; hydration must not rebuild it.
+    assert "posture_shape" not in seg
+    assert "data-posture-shape" not in seg
 
 
 def test_changelog_entry_for_posture_parity():

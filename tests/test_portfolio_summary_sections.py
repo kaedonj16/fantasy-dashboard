@@ -37,35 +37,37 @@ def test_progressive_hydration_keeps_streak_slot_and_resets_manual_retry():
 def test_render_summary_reapplies_server_side_styling_after_async_refresh():
     """renderSummary() rewrites data-summary-stats after the async summary
     fetch resolves. It must reproduce the exact classes/markup the server
-    renders on first paint (record color, weak-standing flag, streak pills,
-    the pf-lg-stat--streak alignment modifier), or those cues visibly
-    disappear the moment the card hydrates."""
+    renders on first paint (record color, weak-standing flag, the record
+    band layout, the plain-text streak), or those cues visibly disappear
+    the moment the card hydrates."""
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
     render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
     assert "color-win" in render and "color-loss" in render
     assert "pf-lg-v--weak" in render
-    assert "pf-lg-stat--streak" in render
-    assert "pf-s-pill" in render and "pf-s-w" in render and "pf-s-l" in render
-    assert "pf-streak-empty" in render
+    assert "pf-lg-rec" in render and "pf-lg-band-side" in render
+    assert "pf-lg-standing" in render
+    assert "pf-lg-streak" in render and "join('-')" in render
+    assert "pf-s-pill" not in render
     assert 'title="Regular-season standings: wins, then points for"' in render
 
 
-def test_render_summary_rebuilds_weakest_room_line():
-    """v25: the card's position data is one weakest-room line (the full rank
-    grid lives in the insights heatmap). Cards that start in the 'loading'
-    skeleton state only get the line once renderSummary rebuilds it."""
+def test_render_summary_rebuilds_fix_best_rooms():
+    """Direction A: the card's position data is two room columns, Fix
+    (weakest) and Best (strongest), both off pos_user_rank. Cards that
+    start in the 'loading' skeleton state only get them once
+    renderSummary rebuilds them."""
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
-    assert "function renderWeakest(card, data, totalN)" in source
-    seg = source[source.index("function renderWeakest(card, data, totalN)"):source.index("function renderSummary(card, data)")]
+    assert "function renderRooms(card, data, totalN)" in source
+    seg = source[source.index("function renderRooms(card, data, totalN)"):source.index("function renderSummary(card, data)")]
     assert "pos_user_rank" in seg
-    assert "data-weakest" in seg
-    assert "Weakest room:" in seg
+    assert "data-rooms" in seg
+    assert "Fix: " in seg and "Best: " in seg
     render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
-    assert "renderWeakest(card, data, totalN)" in render
+    assert "renderRooms(card, data, totalN)" in render
     # Playoff odds came off the My Leagues cards 2026-10-27 (the stat never
     # populated): renderSummary must not rebuild an odds stat, and the sort
     # datum it stamps is now dataset.rank for the Standings sort.

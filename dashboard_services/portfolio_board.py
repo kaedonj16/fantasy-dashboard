@@ -362,6 +362,33 @@ def weakest_room(pos_ranks: dict, total_teams) -> Optional[dict]:
     return best[1] if best else None
 
 
+def strongest_room(pos_ranks: dict, total_teams) -> Optional[dict]:
+    """The user's best in-league position rank, for the card's Best column.
+
+    Reads the same per-position rank dict weakest_room scans (populated
+    from rank_rosters_by_position), so the strongest room is the mirror
+    image of the weakest, never a separate computation. Lowest rank
+    number is strongest; ties break toward the earlier position in
+    QB/RB/WR/TE order so the answer is deterministic."""
+    try:
+        total = int(total_teams)
+    except (TypeError, ValueError):
+        total = 0
+    best = None
+    for idx, pos in enumerate(POSITIONS):
+        raw = (pos_ranks or {}).get(pos)
+        try:
+            rank = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if rank <= 0:
+            continue
+        key = (rank, idx)
+        if best is None or key < best[0]:
+            best = (key, {"pos": pos, "rank": rank, "total": total or None})
+    return best[1] if best else None
+
+
 def tier_for_rank(rank, total) -> str:
     """good / mid / weak by thirds, matching the card strength strip."""
     try:

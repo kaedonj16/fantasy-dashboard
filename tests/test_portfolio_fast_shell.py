@@ -188,7 +188,9 @@ def test_cold_league_renders_hydratable_shell_not_a_blocking_build(offline_clien
     # The cold league is a hydratable card the client loaders will fill.
     assert b"data-lg-key='sleeper:L1'" in response.data
     assert b"data-summary-card" in response.data
-    assert b"Record loading" in response.data
+    # Direction A shell: the record band placeholder hydrates in place.
+    assert b"data-summary-stats" in response.data
+    assert b"pf-lg-rec" in response.data
 
 
 def test_summary_endpoint_returns_pending_without_running_provider_work(offline_client, monkeypatch):
