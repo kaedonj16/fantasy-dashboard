@@ -657,6 +657,44 @@ def load_dynastyprocess_df(
 
 
 # ------------------------------------------------
+# DynastyProcess staleness (2026-10-29)
+# ------------------------------------------------
+# DP is an expert-consensus feed that updates roughly weekly. When the
+# loaded scrape is old, its board lags the live market (e.g. the
+# 2026-10-23 scrape still ranked Bijan Robinson over Jahmyr Gibbs days
+# after Gibbs' value had moved), so the 1QB market blend halves DP's
+# weight until a fresher scrape lands.
+DP_FRESH_WEIGHT = 0.20   # normal DynastyProcess weight in the 1QB blend
+DP_STALE_WEIGHT = 0.10   # weight when the newest scrape is stale
+DP_STALE_DAYS = 5        # scrape age (days) beyond which DP counts as stale
+
+
+def dp_effective_weight(dp_frame=None, *, today: date | None = None) -> tuple[float, Optional[date]]:
+    """Effective DynastyProcess weight for the 1QB market blend.
+
+    Reads the newest ``scrape_date`` in the loaded (raw) DP frame: more
+    than DP_STALE_DAYS before `today` -> DP_STALE_WEIGHT, otherwise
+    DP_FRESH_WEIGHT. A missing/unparseable scrape_date (or no frame)
+    keeps DP_FRESH_WEIGHT - absence of evidence is not staleness.
+    Returns (weight, newest_scrape_date_seen_or_None).
+    """
+    newest: Optional[date] = None
+    try:
+        if dp_frame is not None and "scrape_date" in getattr(dp_frame, "columns", []):
+            parsed = pd.to_datetime(dp_frame["scrape_date"], errors="coerce")
+            parsed = parsed.dropna()
+            if len(parsed):
+                newest = parsed.max().date()
+    except Exception:
+        newest = None
+    if newest is None:
+        return DP_FRESH_WEIGHT, None
+    if ((today or date.today()) - newest).days > DP_STALE_DAYS:
+        return DP_STALE_WEIGHT, newest
+    return DP_FRESH_WEIGHT, newest
+
+
+# ------------------------------------------------
 # Engine loader
 # ------------------------------------------------
 
@@ -979,6 +1017,12 @@ def rewrite_value_table_with_model() -> Path:
 
             sf_vendor_values[pid] = sf_value
 
+    # DynastyProcess staleness: halve DP's 1QB blend weight when the loaded
+    # scrape is more than DP_STALE_DAYS old (see dp_effective_weight).
+    _DP_WEIGHT, _DP_SCRAPE_SEEN = dp_effective_weight(dp_df_full)
+    print(f"[rewrite_value_table] DynastyProcess weight={_DP_WEIGHT} "
+          f"(newest scrape_date={_DP_SCRAPE_SEEN})")
+
     df_by_id: dict[str, pd.Series] = {}
     for _, row in inference_df.iterrows():
         pid = str(row.get("sleeper_id"))
@@ -1028,7 +1072,7 @@ def rewrite_value_table_with_model() -> Path:
         # renormalized over the present sources (the usage engine's former 40% term
         # was removed — the board is now purely market-derived). A source is dropped
         # only when it doesn't cover the player.
-        W_VENDOR, W_DP = 0.40, 0.20
+        W_VENDOR, W_DP = 0.40, _DP_WEIGHT
         weighted_sum = 0.0
         total_weight = 0.0
         if fc_val > 0:

@@ -79,6 +79,158 @@ MIN_REDRAFT_NATIVE_TRADES = int(os.environ.get("MIN_REDRAFT_NATIVE_TRADES", "500
 # 10%/day smoothing).
 DAILY_MOVE_CAP     = float(os.environ.get("VALUE_MOVE_CAP_OVERRIDE", "0.10"))
 
+# ---------------------------------------------------------------------------
+# Thin-segment robustness (2026-10-29)
+#
+# At the top of the board the native segment (one SF flag x one size bucket)
+# can be extremely thin: on 2026-10-29 Bijan Robinson and Jahmyr Gibbs each
+# had decayed native backing of ~2.9 in the default dynasty/1QB/10-team
+# segment and no native trade newer than 23 days, yet a +0.58% vs +0.19%
+# calibration difference flipped #1 overall on a tied prior. Three guards
+# keep a thin, stale segment from steering the board:
+#   1. Segment borrowing - thin players (native backing below
+#      THIN_BACKING_THRESHOLD) also draw on adjacent-segment trades at a
+#      discounted decay weight, so a trade that happened in the "wrong"
+#      bucket still counts for something.
+#   2. Freshness shrink - a player's calibration deviation decays toward
+#      their prior as their newest native trade ages.
+#   3. Top flip guard - calibration may not invert two top-50 players whose
+#      priors are within FLIP_GUARD_MAX_GAP unless the flip is earned with
+#      real, fresh native backing.
+# ---------------------------------------------------------------------------
+THIN_BACKING_THRESHOLD = 5.0   # native decayed backing below which a player is "thin"
+BORROW_DISCOUNT_SIZE   = 0.5   # tier A: same SF flag, sizes outside the native bucket
+BORROW_DISCOUNT_SF     = 0.35  # tier B: opposite SF flag, native size bucket
+FRESHNESS_FULL_DAYS    = 21    # newest native trade <= this old: deviation kept whole
+FRESHNESS_FLOOR_DAYS   = 81    # newest native trade >= this old (or none): floor factor
+FRESHNESS_FLOOR        = 0.3   # fraction of the deviation kept at/past the floor age
+FLIP_GUARD_TOP_N       = 50    # only the top-N players by prior are flip-guarded
+FLIP_GUARD_MAX_GAP     = 0.01  # prior gap (relative to the higher prior) under 1%
+FLIP_GUARD_MIN_BACKING = 10.0  # native backing that can earn a flip
+FLIP_GUARD_MAX_TRADE_AGE_DAYS = 14  # ...with a native trade at most this old
+
+
+def _borrow_discount(*, same_sf: bool, same_size: bool) -> float | None:
+    """Decay-weight discount for a borrowed (adjacent-segment) trade.
+
+    Tier A (same SF flag, different size bucket) keeps BORROW_DISCOUNT_SIZE;
+    tier B (opposite SF flag, same size bucket) keeps BORROW_DISCOUNT_SF.
+    Native trades (same/same) and doubly-adjacent trades (neither) are not
+    borrowed: returns None for those combinations.
+    """
+    if same_sf and not same_size:
+        return BORROW_DISCOUNT_SIZE
+    if not same_sf and same_size:
+        return BORROW_DISCOUNT_SF
+    return None
+
+
+def _terms_touch_thin(terms: list[tuple[int, float]], thin_idx: set[int]) -> bool:
+    """True when any term (unknown index) of a trade belongs to a thin player."""
+    return any(idx in thin_idx for idx, _sign in terms)
+
+
+def _freshness_factor(age_days: float | None, *, segment_has_trades: bool = True) -> float:
+    """Fraction of a calibration deviation kept, by newest-native-trade age.
+
+    1.0 at <= FRESHNESS_FULL_DAYS, FRESHNESS_FLOOR at >= FRESHNESS_FLOOR_DAYS,
+    linear in between. A player with no dated native trade gets the floor
+    when the segment has trades at all; when the segment is empty the
+    deviation is left alone (there is nothing to shrink toward stale data).
+    """
+    if age_days is None:
+        return FRESHNESS_FLOOR if segment_has_trades else 1.0
+    if age_days <= FRESHNESS_FULL_DAYS:
+        return 1.0
+    if age_days >= FRESHNESS_FLOOR_DAYS:
+        return FRESHNESS_FLOOR
+    span = FRESHNESS_FLOOR_DAYS - FRESHNESS_FULL_DAYS
+    return 1.0 - (age_days - FRESHNESS_FULL_DAYS) / span * (1.0 - FRESHNESS_FLOOR)
+
+
+def _apply_freshness_shrink(
+    cal_players: np.ndarray,
+    prior_players: np.ndarray,
+    newest_age_days: list,
+    *,
+    segment_has_trades: bool,
+) -> np.ndarray:
+    """Shrink calibrated player values toward their priors by trade freshness.
+
+    cal' = prior + (cal - prior) * _freshness_factor(age). Operates on the
+    player slice only; pick buckets are not freshness-shrunk.
+    """
+    out = np.array(cal_players, dtype=float)
+    prior = np.asarray(prior_players, dtype=float)
+    for i in range(len(out)):
+        if prior[i] <= 0:
+            continue
+        age = newest_age_days[i] if i < len(newest_age_days) else None
+        factor = _freshness_factor(age, segment_has_trades=segment_has_trades)
+        if factor < 1.0:
+            out[i] = prior[i] + (out[i] - prior[i]) * factor
+    return out
+
+
+def _apply_flip_guard(
+    cal_players: np.ndarray,
+    prior_players: np.ndarray,
+    native_backing: np.ndarray,
+    newest_age_days: list,
+    *,
+    top_n: int = FLIP_GUARD_TOP_N,
+) -> np.ndarray:
+    """Revert sub-1% prior-gap inversions among the top-`top_n` players.
+
+    Walks players in prior-descending order (ties broken by index, so the
+    result is deterministic). When a lower-prior player's calibrated value
+    ranks above a higher-prior player whose prior gap is < FLIP_GUARD_MAX_GAP,
+    BOTH revert to their priors - unless the lower-prior player earned the
+    flip: native backing >= FLIP_GUARD_MIN_BACKING and a native trade at most
+    FLIP_GUARD_MAX_TRADE_AGE_DAYS old. Player slice only.
+    """
+    out = np.array(cal_players, dtype=float)
+    prior = np.asarray(prior_players, dtype=float)
+    backing = np.asarray(native_backing, dtype=float)
+    n = min(top_n, len(out))
+    if n < 2:
+        return out
+    order = sorted(range(len(out)), key=lambda i: (-prior[i], i))[:n]
+    for a in range(n):
+        i = order[a]
+        if prior[i] <= 0:
+            continue
+        for b in range(a + 1, n):
+            j = order[b]
+            if prior[j] <= 0 or prior[j] > prior[i]:
+                continue
+            if (prior[i] - prior[j]) / prior[i] >= FLIP_GUARD_MAX_GAP:
+                continue
+            if out[j] <= out[i]:
+                continue
+            age_j = newest_age_days[j] if j < len(newest_age_days) else None
+            earned = (
+                backing[j] >= FLIP_GUARD_MIN_BACKING
+                and age_j is not None
+                and age_j <= FLIP_GUARD_MAX_TRADE_AGE_DAYS
+            )
+            if earned:
+                continue
+            out[i] = prior[i]
+            out[j] = prior[j]
+    return out
+
+
+def _newest_age_days(newest_map: dict, idx: int, now: datetime) -> float | None:
+    """Age in days of the newest tracked trade for unknown `idx`, or None."""
+    ts = newest_map.get(idx)
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return max(0.0, (now - ts).total_seconds() / 86400.0)
+
+
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
@@ -166,6 +318,25 @@ def _teams_filter(league_size: int) -> str:
     if league_size == 14:
         return "AND l.num_teams >= 14"
     return ""
+
+
+def _borrowed_teams_filter(league_size: int) -> str | None:
+    """SQL fragment for tier-A borrowed trades: sizes OUTSIDE the native bucket.
+
+    Exactly complements _teams_filter for the canonical sizes, so a borrowed
+    trade can never double-count a native one within the same matrix. Returns
+    None when the native filter is unbounded (unknown size): no safe
+    complement exists, so tier-A borrowing is skipped for that run.
+    """
+    if league_size == 8:
+        return "AND (l.num_teams < 6 OR l.num_teams > 9)"
+    if league_size == 10:
+        return "AND (l.num_teams < 9 OR l.num_teams > 11)"
+    if league_size == 12:
+        return "AND (l.num_teams < 11 OR l.num_teams > 13)"
+    if league_size == 14:
+        return "AND l.num_teams < 14"
+    return None
 
 
 def _ensure_player_values_columns() -> None:
@@ -445,6 +616,11 @@ def _stream_normal_equations(
     all_idx: dict[str, int],
     N: int,
     current_year: int | None = None,
+    *,
+    teams_clause: str | None = None,
+    weight_scale: float = 1.0,
+    thin_idx: set[int] | None = None,
+    newest_out: dict[int, datetime] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
     """
     Streaming equivalent of _load_trades + _build_normal_equations for the cron
@@ -454,8 +630,16 @@ def _stream_normal_equations(
     512Mi and the popular league sizes carry very large trade volumes.
 
     Produces the exact same AᵀWA / AᵀWb / constraint count as the list-based path.
+
+    Borrowed-pass knobs (defaults reproduce the native pass exactly):
+      teams_clause  - replaces the native _teams_filter fragment.
+      weight_scale  - multiplies each trade's decay weight (borrow discount).
+      thin_idx      - when set, only trades touching one of these unknown
+                      indices are folded in (thin-player gating).
+      newest_out    - when given, updated in place with the newest accepted
+                      trade's created_at per unknown index (freshness age).
     """
-    teams_clause = _teams_filter(league_size)
+    clause = _teams_filter(league_size) if teams_clause is None else teams_clause
     AtWA = np.zeros((N, N))
     AtWb = np.zeros(N)
     stats = {"accepted": 0, "rejected_pick": 0,
@@ -473,7 +657,7 @@ def _stream_normal_equations(
         if created and created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
         days_ago = (now - created).total_seconds() / 86400 if created else 999
-        w = _decay_weight(days_ago)
+        w = _decay_weight(days_ago) * weight_scale
 
         terms: list[tuple[int, float]] = []
         for a in assets:
@@ -495,10 +679,19 @@ def _stream_normal_equations(
         if not any(s > 0 for _, s in terms) or not any(s < 0 for _, s in terms):
             stats["rejected_one_sided"] += 1
             return
+        # Borrowed pass: a trade only counts if a thin player is in it.
+        if thin_idx is not None and not _terms_touch_thin(terms, thin_idx):
+            stats["rejected_no_thin"] = stats.get("rejected_no_thin", 0) + 1
+            return
         for idx_i, sign_i in terms:
             for idx_j, sign_j in terms:
                 AtWA[idx_i, idx_j] += w * sign_i * sign_j
         stats["accepted"] += 1
+        if newest_out is not None and created is not None:
+            for idx, _sign in terms:
+                prev = newest_out.get(idx)
+                if prev is None or created > prev:
+                    newest_out[idx] = created
 
     cur_tid = None
     cur_assets: list[dict] = []
@@ -522,7 +715,7 @@ def _stream_normal_equations(
                   AND l.league_type = %s
                   AND (t.created_at IS NULL
                        OR t.created_at >= NOW() - make_interval(days => %s))
-                  {teams_clause}
+                  {clause}
                 ORDER BY t.id
                 """,
                 (season, is_sf, league_type, TRADES_LOOKBACK_DAYS),
@@ -546,6 +739,54 @@ def _stream_normal_equations(
                     })
             _flush(cur_assets, cur_created)
     return AtWA, AtWb, stats
+
+
+def _stream_borrowed_into(
+    AtWA: np.ndarray,
+    *,
+    season: int,
+    target_is_sf: bool,
+    league_type: int,
+    league_size: int,
+    all_idx: dict[str, int],
+    N: int,
+    thin_idx: set[int],
+) -> dict[str, int]:
+    """Fold adjacent-segment trades for thin players into an existing AᵀWA.
+
+    Tier A: same SF flag as the target segment, league sizes OUTSIDE the
+    native bucket, at BORROW_DISCOUNT_SIZE of the decay weight.
+    Tier B: opposite SF flag, native size bucket, at BORROW_DISCOUNT_SF.
+    Both tiers are disjoint from each other and from the native segment by
+    construction (the tier-A teams clause is the exact complement of the
+    native one), so no trade is double-counted within a matrix. A borrowed
+    trade is folded in only when it touches a thin player (thin_idx).
+    Streams like the native pass; returns accepted counts per tier.
+    """
+    counts = {"size": 0, "cross_sf": 0}
+    if not thin_idx:
+        return counts
+
+    size_scale = _borrow_discount(same_sf=True, same_size=False)
+    clause = _borrowed_teams_filter(league_size)
+    if size_scale is not None and clause is not None:
+        tmp, _atwb, stats_a = _stream_normal_equations(
+            season, target_is_sf, league_type, league_size, all_idx, N, season,
+            teams_clause=clause, weight_scale=size_scale, thin_idx=thin_idx)
+        AtWA += tmp
+        counts["size"] = int(stats_a.get("accepted", 0))
+        del tmp
+
+    sf_scale = _borrow_discount(same_sf=False, same_size=True)
+    if sf_scale is not None:
+        tmp, _atwb, stats_b = _stream_normal_equations(
+            season, not target_is_sf, league_type, league_size, all_idx, N, season,
+            weight_scale=sf_scale, thin_idx=thin_idx)
+        AtWA += tmp
+        counts["cross_sf"] = int(stats_b.get("accepted", 0))
+        del tmp
+
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -827,11 +1068,48 @@ def run_trade_value_model(
     # no full list resident). The empty-segment fallback just streams the other
     # segment via the src_* flags chosen above. Both matrices are N×N (small);
     # only the streaming batch and the current trade add to peak memory.
+    # newest_*_map tracks each unknown's newest trade in the stream that fed
+    # its matrix (the native segment, or the whole-segment fallback source
+    # when the native segment was empty) for the freshness shrink below.
+    newest_1qb_map: dict[int, datetime] = {}
     AtWA_1qb, AtWb_1qb, stats_1qb = _stream_normal_equations(
-        season, src_1qb_is_sf, league_type, league_size, all_idx, N, season)
+        season, src_1qb_is_sf, league_type, league_size, all_idx, N, season,
+        newest_out=newest_1qb_map)
+    # Native backing BEFORE any borrowing: it decides who is thin, and it is
+    # what the flip guard treats as "earned" backing.
+    backing_1qb_native = np.diag(AtWA_1qb)[:n_pl].copy()
+    borrowed_1qb = {"size": 0, "cross_sf": 0}
+    if has_1qb:
+        thin_1qb = {i for i in range(n_pl)
+                    if backing_1qb_native[i] < THIN_BACKING_THRESHOLD}
+        if thin_1qb:
+            borrowed_1qb = _stream_borrowed_into(
+                AtWA_1qb, season=season, target_is_sf=False,
+                league_type=league_type, league_size=league_size,
+                all_idx=all_idx, N=N, thin_idx=thin_1qb)
+            logger.info(
+                "[trade_value_model] 1QB borrowing: %d size-tier + %d SF-tier "
+                "trades folded in for %d thin players",
+                borrowed_1qb["size"], borrowed_1qb["cross_sf"], len(thin_1qb))
     gc.collect()
+    newest_sf_map: dict[int, datetime] = {}
     AtWA_sf,  AtWb_sf,  stats_sf  = _stream_normal_equations(
-        season, src_sf_is_sf, league_type, league_size, all_idx, N, season)
+        season, src_sf_is_sf, league_type, league_size, all_idx, N, season,
+        newest_out=newest_sf_map)
+    backing_sf_native = np.diag(AtWA_sf)[:n_pl].copy()
+    borrowed_sf = {"size": 0, "cross_sf": 0}
+    if has_sf:
+        thin_sf = {i for i in range(n_pl)
+                   if backing_sf_native[i] < THIN_BACKING_THRESHOLD}
+        if thin_sf:
+            borrowed_sf = _stream_borrowed_into(
+                AtWA_sf, season=season, target_is_sf=True,
+                league_type=league_type, league_size=league_size,
+                all_idx=all_idx, N=N, thin_idx=thin_sf)
+            logger.info(
+                "[trade_value_model] SF borrowing: %d size-tier + %d 1QB-tier "
+                "trades folded in for %d thin players",
+                borrowed_sf["size"], borrowed_sf["cross_sf"], len(thin_sf))
     gc.collect()
     M_1qb = stats_1qb["accepted"]
     M_sf = stats_sf["accepted"]
@@ -848,6 +1126,10 @@ def run_trade_value_model(
         "trades_used_sf": M_sf,
         "source_1qb": source_1qb,
         "source_sf": source_sf,
+        "borrowed_into_1qb_size": borrowed_1qb["size"],
+        "borrowed_into_1qb_cross_sf": borrowed_1qb["cross_sf"],
+        "borrowed_into_sf_size": borrowed_sf["size"],
+        "borrowed_into_sf_cross_1qb": borrowed_sf["cross_sf"],
         **{f"{key}_1qb": value for key, value in stats_1qb.items() if key != "accepted"},
         **{f"{key}_sf": value for key, value in stats_sf.items() if key != "accepted"},
     }
@@ -936,6 +1218,31 @@ def run_trade_value_model(
             _sf_basket_mean = float(_sf_sorted[:_sf_k].mean())
             if _sf_basket_mean > 0:
                 v_sf_norm = np.clip(v_sf_norm / _sf_basket_mean * MAX_VALUE, 0.0, None)
+
+    # --- Thin-segment guards: freshness shrink, then the top flip guard ---
+    # Each segment shrinks by the age of ITS OWN newest native trade (the
+    # newest_*_map built while that segment's matrix streamed). The shrink
+    # runs before the flip guard and before rows are written, so the daily
+    # move clamp in _write_calibrated/_write_redraft_values still bounds the
+    # final day-over-day step on top of the shrunk value. Players with no
+    # trades anywhere in either segment are untouched in practice: their
+    # solved value already sits at the prior, so shrinking is a no-op.
+    if n_pl > 0:
+        _now_run = datetime.now(tz=timezone.utc)
+        ages_1qb = [_newest_age_days(newest_1qb_map, i, _now_run)
+                    for i in range(n_pl)]
+        ages_sf = [_newest_age_days(newest_sf_map, i, _now_run)
+                   for i in range(n_pl)]
+        v_1qb_norm[:n_pl] = _apply_freshness_shrink(
+            v_1qb_norm[:n_pl], prior_1qb[:n_pl], ages_1qb,
+            segment_has_trades=bool(np.any(backing_1qb_native > 0)))
+        v_sf_norm[:n_pl] = _apply_freshness_shrink(
+            v_sf_norm[:n_pl], prior_sf[:n_pl], ages_sf,
+            segment_has_trades=bool(np.any(backing_sf_native > 0)))
+        v_1qb_norm[:n_pl] = _apply_flip_guard(
+            v_1qb_norm[:n_pl], prior_1qb[:n_pl], backing_1qb_native, ages_1qb)
+        v_sf_norm[:n_pl] = _apply_flip_guard(
+            v_sf_norm[:n_pl], prior_sf[:n_pl], backing_sf_native, ages_sf)
 
     # --- Player output ---
     out_rows = []
