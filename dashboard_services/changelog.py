@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
+        "text": "My Leagues: the Front Office full report is now The Brief. Generate full report writes a short prose brief instead of a list of steps: how your leagues split between contending, on the bubble and rebuilding, your flagship league and your deep end by record, the biggest projected gain on the board, the claims running against the waiver clock, and what locks when. Trade deadlines show up as league facts inside the brief, never as moves to make, and the brief closes by confirming the leagues that need nothing this week.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "update",
         "text": "Teams: the signal badges in the team drawer (Core, Hold, Sell High and the rest) now match the Suggested Moves badges, solid signal color with white text, and the league rank numbers inside the Value by position bar on each team card are white so they read cleanly on the colored segments.",
         "link": "/teams"
     },
