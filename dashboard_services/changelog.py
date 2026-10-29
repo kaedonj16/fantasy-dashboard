@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-29",
+        "tag": "fix",
+        "text": "My Leagues cards: the record band now matches the approved layout. Your streak sits under your record on the left, and your standing sits bigger on the right side of the band, green for a top 3 place and red for a bottom third finish. The Best room reads in plain dark text instead of green. The score strip leads with a week line that names your opponent and carries your win percentage, your score reads inline next to the word You with the projection tagged after it, your opponent gets a smaller unnamed number, and the win bar runs green over a pale pink track with no labels under it.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-29",
         "tag": "update",
         "text": "Teams: the signal badges in the team drawer (Core, Hold, Sell High and the rest) now match the Suggested Moves badges, solid signal color with white text, and the league rank numbers inside the Value by position bar on each team card are white so they read cleanly on the colored segments.",
         "link": "/teams"

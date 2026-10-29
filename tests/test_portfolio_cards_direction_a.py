@@ -89,6 +89,16 @@ def test_record_band_and_plain_text_streak():
     assert "pf-lg-standing" in card and "1<small>st</small>" in card
     assert "<span class='pf-lg-streak'>L-W-W</span>" in card
     assert "pf-s-pill" not in card
+    # Band layout: record + streak in the left column (streak under the
+    # record), standing alone in the right column, set bigger than the
+    # first build had it.
+    band = card.split("data-summary-stats", 1)[1].split("pf-lg-retry", 1)[0]
+    main_col = band.split("pf-lg-band-main", 1)[1].split("pf-lg-band-side", 1)[0]
+    assert "pf-lg-rec" in main_col and "pf-lg-streak" in main_col
+    side_col = band.split("pf-lg-band-side", 1)[1]
+    assert "pf-lg-standing" in side_col and "pf-lg-streak" not in side_col
+    assert ".pf-lg-standing{font-size:26px" in html
+    assert "justify-content:space-between" in html.split(".pf-lg-stats{", 1)[1].split("}", 1)[0]
     # Full-bleed tint band, light + dark tones from the approved mock.
     assert "background:#e8f0f7" in html
     assert ":root[data-theme='dark'] .pf-lg-stats{background:#0b1d31;}" in html
@@ -112,9 +122,26 @@ def test_rooms_single_rank_shows_fix_only():
     assert "Best: " not in card.split("data-rooms", 1)[1].split("</div>", 1)[0]
 
 
-def test_fix_room_reads_red_best_keeps_tier_color():
+def test_standing_colors_top3_green_bottom_third_red_middle_muted():
+    html = _render([_league()])
+    assert ".pf-lg-v--top{color:var(--win);}" in html
+    assert ".pf-lg-v--weak{color:var(--loss);}" in html
+    # The rank-1 fixture is a top-3 standing: green.
+    assert "pf-lg-standing pf-lg-v--top" in _card(html)
+    top3 = _card(_render([_league(rank=3)]))
+    assert "pf-lg-standing pf-lg-v--top" in top3
+    low = _card(_render([_league(rank=8, wins=1, losses=6, record="1-6")]))
+    assert "pf-lg-standing pf-lg-v--weak" in low
+    mid = _card(_render([_league(rank=5, wins=4, losses=3, record="4-3")]))
+    assert "class='pf-lg-standing'>5" in mid
+
+
+def test_fix_room_reads_red_best_reads_dark():
     html = _render([_league()])
     assert ".pf-lg-room.fix strong{color:var(--loss);}" in html
+    # Best is bold dark like the mock, not its tier color (a strong room
+    # read all green in the first build).
+    assert ".pf-lg-room.best strong{color:var(--text);}" in html
 
 
 def test_no_footer_and_one_updated_line_above_grid():
@@ -144,6 +171,31 @@ def test_card_chrome_light_border_and_dark_shadow():
     html = _render([_league()])
     assert "border:1px solid var(--border);border-radius:12px" in html
     assert ":root[data-theme='dark'] .pf-lg-card{box-shadow:0 2px 10px rgba(0,0,0,.35);}" in html
+
+
+def test_score_strip_matches_mock_head_inline_you_and_pink_bar():
+    client = (ROOT / "static" / "app.js").read_text()
+    fn = client.split("function matchupHtml(data)")[1].split("function renderMatchup")[0]
+    # Head line (mock strip): "Wk n · vs <opponent>" on the left, your
+    # win chance on the same line ("% to win", red when under 50 via
+    # is-low). The opponent is named only in this head line.
+    assert "pf-live-head" in fn and "' \u00b7 vs '" in fn
+    assert "pf-live-head-wp" in fn and "% to win" in fn and "is-low" in fn
+    # Your score line is inline: "You <number> proj" (You word first,
+    # proj tag after the number); no caption element over either number.
+    assert "pf-live-you" in fn and ">You</span>" in fn
+    assert "pf-live-tag" in fn
+    assert "pf-live-lbl" not in fn
+    # No percentage labels under the bar at all: no label row, and the
+    # opponent's complementary percentage is never rendered.
+    assert "pf-live-wp-lbls" not in fn and "pf-live-wp-opp" not in fn
+    html = _render([_league()])
+    assert "pf-live-lbl" not in html
+    assert "pf-live-wp-lbls" not in html and "pf-live-wp-opp" not in html
+    assert ".pf-live-head{" in html and ".pf-live-you{" in html
+    # The bar track is the mock's pale pink (#fecaca), not neutral.
+    track = html.split(".pf-live-wp-track{", 1)[1].split("}", 1)[0]
+    assert "#fecaca" in track
 
 
 def test_pregame_strip_shows_projection_never_fake_zero():
