@@ -30771,12 +30771,38 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           credentials: 'same-origin', body: '{}'
         }, 30000).then(function (r) { return r.json(); }).then(function (d) {
           genBtn.disabled = false;
-          if (d && d.ok) {
+          if (d && d.ok && d.brief) {
+            // The Brief: kicker, standfirst, prose paragraphs of
+            // spans (strong marks player names and numbers), then
+            // muted end matter after a hairline.
+            var bf = d.brief;
+            var bfSpans = function (arr) {
+              return (arr || []).map(function (sp) {
+                var t = esc(sp.text || '');
+                return sp.strong ? '<strong>' + t + '</strong>' : t;
+              }).join('');
+            };
+            var bfHtml = '<div class="pf-bf">';
+            if (bf.kicker) bfHtml += '<div class="pf-bf-kicker">' + esc(bf.kicker) + '</div>';
+            if (bf.standfirst && bf.standfirst.length) bfHtml += '<div class="pf-bf-stand">' + bfSpans(bf.standfirst) + '</div>';
+            bfHtml += (bf.paragraphs || []).map(function (p) {
+              return '<p class="pf-bf-p">' + bfSpans(p) + '</p>';
+            }).join('');
+            if (bf.end_matter && bf.end_matter.length) {
+              bfHtml += '<div class="pf-bf-end">' + bf.end_matter.map(function (l) {
+                return '<div class="pf-bf-endline">' + bfSpans(l) + '</div>';
+              }).join('') + '</div>';
+            }
+            bfHtml += '</div>';
+            dd.innerHTML = bfHtml;
+            dd.hidden = false;
+            genBtn.textContent = 'Hide report';
+          } else if (d && d.ok) {
+            // Legacy shape (a cached pre-Brief response): headline
+            // plus labeled sections, kept so an in-flight old
+            // response still renders instead of breaking.
             var ddHtml = '<div class="pf-dd-h">' + esc(d.headline) + '</div>';
             if (d.sections && d.sections.length) {
-              // Labeled sections (The plan / Reminders / Already
-              // done); a section with an empty label (the closing
-              // coverage line) renders unheaded.
               ddHtml += d.sections.map(function (s) {
                 return (s.label ? '<div class="pf-dd-sec">' + esc(s.label) + '</div>' : '') +
                   (s.items || []).map(function (b) {
