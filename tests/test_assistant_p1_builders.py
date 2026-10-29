@@ -113,7 +113,9 @@ def test_teams_builder_position_focus(base):
     assert [r["rank"] for r in ranking] == [1, 2, 3, 4]
     assert ranking[0]["team_name"] == "Pittsburgh Pilots"
     assert ranking[-1]["team_name"] == "Sacko Squad"
-    assert ranking[-1]["strength"] == 500.0
+    # A lone 500 TE no longer scores 500: under the fixed denominator the
+    # unfilled TE weights (0.20/0.08/0.05) count as 0, so 500 / 1.33.
+    assert ranking[-1]["strength"] == pytest.approx(500 / 1.33, abs=0.1)
 
 
 def test_teams_builder_this_season_mode(base):

@@ -200,7 +200,7 @@ def test_refresh_repaint_guards_present():
     src = (ROOT / "static" / "app.js").read_text()
     assert "function setHtmlIfChanged(el, html)" in src
     assert "setHtmlIfChanged(stats, statsHtml)" in src
-    assert "card._pfWeakHtml" in src
+    assert "card._pfRoomsHtml" in src
     assert "agg._pfRec" in src
     assert "function updateLastWeekRecord()" in src
     assert 'data-lw-result' in src or "dataset.lwResult" in src

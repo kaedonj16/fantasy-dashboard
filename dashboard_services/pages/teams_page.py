@@ -624,6 +624,17 @@ def build_teams_body(ctx: dict) -> str:
             _dw_pos_max[_p] = round(max(_totals, default=0.0), 1)
             _dw_pos_avg[_p] = round(sum(_totals) / len(_totals), 1) if _totals else 0.0
 
+        # Draft-capital rank per team (for the CAP segment of the mix bar):
+        # pick value descending, ties break by str(rid) like the positional
+        # ranks in rank_rosters_by_position.
+        _cap_rank = {
+            _rid: _i + 1
+            for _i, _rid in enumerate(sorted(
+                team_meta.keys(),
+                key=lambda _r: (-float(team_pick_value.get(_r, 0.0) or 0.0), str(_r)),
+            ))
+        }
+
         for _card_idx, (rid, meta) in enumerate(team_meta.items()):
             name = meta["name"]
             avatar = meta.get("avatar") or ""
@@ -671,14 +682,24 @@ def build_teams_body(ctx: dict) -> str:
                 round(sum(team_pos_values[rid].get("WR", [])), 1),
                 round(sum(team_pos_values[rid].get("TE", [])), 1),
             ]
+            # Each segment carries its league rank at that position as a
+            # small centered number (the drawer's rank, same pos_rank the
+            # grades use; CAP ranks draft capital) - width stays the
+            # position's share of total value.
+            _mix_ranks = [pos_rank[_p].get(rid, 0) for _p in POS_ORDER]
             if not is_redraft_m and ctx.get("draft_capital_available", True):
                 _mix_labels.append("CAP")
                 _mix_colors.append("#c92c68")
                 _mix_values.append(round(team_pick_value.get(rid, 0.0), 1))
+                _mix_ranks.append(_cap_rank.get(rid, 0))
             _mix_total = sum(_mix_values)
             _mix_segs = "".join(
-                f"<div class='tsc-mix-seg' style='flex:{v:.2f};background:{c};'></div>"
-                for v, c in zip(_mix_values, _mix_colors) if v and v > 0
+                f"<div class='tsc-mix-seg' style='flex:{v:.2f};background:{c};' "
+                f"title='{lbl} rank #{rk} of {_n_teams}'>"
+                f"<span class='tsc-mix-rank'>{rk}</span></div>"
+                for lbl, v, c, rk in zip(
+                    _mix_labels, _mix_values, _mix_colors, _mix_ranks)
+                if v and v > 0 and rk
             )
             _mix_legend = " ".join(
                 f"<span class='tsc-mix-leg'><span class='tsc-mix-dot' style='background:{c};'></span>"

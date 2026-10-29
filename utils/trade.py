@@ -179,9 +179,11 @@ def availability_multiplier(depth_rank: int, pos_count: int) -> float:
 
 
 # Long enough to occupy every weight ``weighted_pos_strength`` will apply
-# (RB/WR with 2+ flex uses 5). Padding missing slots as 0 means adding a
-# QB2/TE2 is credited as filling an empty starter/depth slot instead of
-# diluting a lone elite when the short list only used the first weight.
+# (RB/WR with 2+ flex uses 6, tail credit included). Padding missing slots
+# as 0 means adding a QB2/TE2 is credited as filling an empty starter/depth
+# slot instead of diluting a lone elite when the short list only used the
+# first weight. ``weighted_pos_strength`` now applies the same fixed
+# denominator itself, so the padding here is belt-and-braces.
 _STRENGTH_PAD = 6
 
 
@@ -1290,6 +1292,15 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
       - TE: mostly TE1, tiny credit for TE2
 
     This prevents 5 mid players from outscoring 2 elite starters.
+
+    The denominator is ALWAYS the full weight sum for the position, never
+    just the weights of the players present: unfilled slots score 0, so
+    adding any positive-value player can only raise a room's strength, and
+    a thin room gets no undiluted-QB1 free pass (the dilution fix; the
+    trade path's ``strength_gain`` already padded for exactly this). One
+    tail slot past the usual depth weights carries 0.05, so a dynasty
+    asset just beyond the cutoff (QB3 in 1QB, RB6, ...) counts for a
+    little instead of exactly zero.
     """
     if not vals:
         return 0.0
@@ -1310,42 +1321,46 @@ def weighted_pos_strength(vals: List[float], pos: str, slot_counts: Dict[str, in
         # In 1QB, QB2 is bench insurance. In superflex/2QB, QB2 is a weekly
         # starter and must carry nearly the same weight as QB1; the old fixed
         # 0.20 weight materially overrated teams with one elite QB and no QB2.
-        weights = [1.0] + [0.90] * (qb_starters - 1) + [0.20]
+        # The trailing 0.05 is tail credit for one more QB past the bench
+        # slot (a QB3 in 1QB is a real dynasty asset, not a zero).
+        weights = [1.0] + [0.90] * (qb_starters - 1) + [0.20, 0.05]
 
     elif pos == "RB":
         # RB1/RB2 matter most, then some flex/depth credit. Restricted
-        # RB/WR and RB/TE spots count; WR/TE-only does not.
+        # RB/WR and RB/TE spots count; WR/TE-only does not. Trailing 0.05
+        # is tail credit for one back past the depth weights.
         rb_flex = flex_slots + rb_wr_slots + rb_te_slots
         if rb_flex >= 2:
-            weights = [1.0, 0.85, 0.35, 0.20, 0.10]
+            weights = [1.0, 0.85, 0.35, 0.20, 0.10, 0.05]
         elif rb_flex == 1:
-            weights = [1.0, 0.85, 0.30, 0.15]
+            weights = [1.0, 0.85, 0.30, 0.15, 0.05]
         else:
-            weights = [1.0, 0.85, 0.15]
+            weights = [1.0, 0.85, 0.15, 0.05]
 
     elif pos == "WR":
         wr_flex = flex_slots + rb_wr_slots + wr_te_slots
         if wr_flex >= 2:
-            weights = [1.0, 0.85, 0.35, 0.20, 0.10]
+            weights = [1.0, 0.85, 0.35, 0.20, 0.10, 0.05]
         elif wr_flex == 1:
-            weights = [1.0, 0.85, 0.30, 0.15]
+            weights = [1.0, 0.85, 0.30, 0.15, 0.05]
         else:
-            weights = [1.0, 0.85, 0.15]
+            weights = [1.0, 0.85, 0.15, 0.05]
 
     elif pos == "TE":
         # TE premium on starter, little on TE2 unless you want more.
-        # WR/RB-only flex does not make a TE2 startable.
+        # WR/RB-only flex does not make a TE2 startable. Trailing 0.05 is
+        # tail credit for one more TE past the usual weights.
         te_flex = flex_slots + wr_te_slots + rb_te_slots
         if te_flex >= 1:
-            weights = [1.0, 0.20, 0.08]
+            weights = [1.0, 0.20, 0.08, 0.05]
         else:
-            weights = [1.0, 0.15]
+            weights = [1.0, 0.15, 0.05]
 
     else:
         weights = [1.0]
 
     used = vals[:len(weights)]
-    denom = sum(weights[:len(used)]) or 1.0
+    denom = sum(weights) or 1.0
     return sum(v * w for v, w in zip(used, weights)) / denom
 
 

@@ -11,17 +11,15 @@ def _portfolio_fn() -> str:
     return source.split("def build_portfolio_body")[1].split("\ndef ")[0]
 
 
-def test_my_leagues_cards_show_a_platform_script():
+def test_my_leagues_cards_show_platform_label_in_meta_line():
+    # Direction A (2026-10-29): the platform is a plain label on the
+    # header meta line (league, platform, posture), not a colored
+    # script beside the name.
     fn = _portfolio_fn()
-    assert "def _plat_script(_plat):" in fn
-    assert "def _lg_id(name_inner, _plat, extra=\"\", arch=\"\", team=\"\"):" in fn
-    assert "class='pf-lg-plat pf-lg-plat-" in fn
-    assert ".pf-lg-plat-sleeper{color:#6C4BF0;}" in fn
-    assert ".pf-lg-plat-espn{color:#D33A46;}" in fn
-    assert ".pf-lg-plat-yahoo{color:#12A4A0;}" in fn
-    assert ".pf-lg-plat-mfl{color:#3B7DD8;}" in fn
-    assert ".pf-lg-plat-fleaflicker{color:#E08A1E;}" in fn
-    assert fn.count("_lg_id(") >= 4
+    assert "def _plat_label(_plat):" in fn
+    assert "def _lg_header(" in fn
+    assert "class='pf-lg-platname'" in fn
+    assert fn.count("_lg_header(") >= 4
     assert '"sleeper": "Sleeper"' in fn
     assert '"espn": "ESPN"' in fn
     assert '"yahoo": "Yahoo"' in fn
@@ -89,39 +87,40 @@ def test_my_leagues_cards_do_not_overflow_on_mobile():
     # scroll sideways instead of stacking into one tall column.
     assert "scroll-snap-type:x mandatory" in fn
     assert ".pf-lg-card{flex:0 0 85%;scroll-snap-align:start" in fn
-    assert ".pf-lg-foot .pf-arch" in fn
     assert "flex-shrink:0" in fn
-    assert ".pf-lg-open" in fn
     assert "overflow:hidden;box-sizing:border-box;" in fn
 
 
-def test_my_leagues_card_footer_wraps_on_mobile():
-    """Footer regression (2026-10-26): the nowrap footer fit with one
-    posture chip, but the window chip + shape tag (#2816) beside the
-    updated stamp and the Front Office / Open links overflowed the card
-    at phone widths - the stamp crushed into a ~70px multi-line column
-    and the links clipped at the card edge. The phone block must wrap
-    the footer and give the stamp its own full-width line."""
+def test_my_leagues_cards_have_no_footer():
+    """Direction A (2026-10-29): the card footer is gone entirely. No
+    Front Office link, no Open button, no per-card Updated stamp (the
+    #2816/#2821 footer overflow class dies with it); one Updated line
+    sits above the grid instead."""
     fn = _portfolio_fn()
-    phone = fn.split("@media(max-width:640px){")[1].split('".pf-lg-foot .pf-arch')[0]
-    assert ".pf-lg-foot{gap:6px;padding-top:5px;flex-wrap:wrap;row-gap:5px;}" in phone
-    assert ".pf-lg-foot [data-summary-updated]{flex:1 1 100%;}" in phone
+    assert "pf-lg-foot" not in fn
+    assert "class='pf-lg-fo'" not in fn
+    assert "pf-lg-open" not in fn
+    assert "data-summary-updated" not in fn
+    assert "data-portfolio-updated" in fn
 
 
-def test_my_leagues_fav_and_arch_share_a_tools_group():
-    """Favorite star stays in tools; archetype badge sits in the action row."""
+def test_my_leagues_tools_hold_star_and_kebab_menu():
+    """Direction A header: star + kebab on the top row, Remove league
+    inside the kebab menu, and the meta line is a full-width block
+    below the top row so it can wrap underneath the tools."""
     fn = _portfolio_fn()
     assert "def _lg_tools(" in fn
     assert "class='pf-lg-tools'" in fn
     assert ".pf-lg-tools{display:flex;align-items:center;gap:4px;flex:0 0 auto;}" in fn
     assert "width:24px;height:24px;display:inline-flex" in fn
     assert "class='pf-lg-meta'" in fn
-    # Archetype badge moved out of the identity meta line into the foot so it
-    # can't collide with the platform script / owner name.
-    assert ".pf-lg-foot .pf-arch{" in fn
-    # Star and arch are no longer competing for the same top-right slot.
+    assert "pf-lg-menu-btn" in fn
+    assert "pf-lg-menu" in fn
+    assert ">Remove league</button>" in fn
+    # The archetype badge and its shape tag are gone from the card.
+    assert "data-posture-shape" not in fn
     assert fn.count("_lg_tools(") >= 3
-    assert "_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')" in fn
+    assert "_lg_header(_headline" in fn
     assert "pf-lg-fav' aria-label='Favorite league'" not in fn.split("def _lg_tools")[0]
 
 
@@ -140,18 +139,19 @@ def test_my_leagues_favorites_are_server_backed_and_pinned_without_pager():
     assert "data-odds" not in fn
 
 
-def test_my_leagues_cards_carry_weakest_room_and_heatmap_ranks():
-    """v25: cards slim down to a weakest-room line; the full rank grid moves
-    to the Positional Strength heatmap in the insights band."""
+def test_my_leagues_cards_carry_fix_best_rooms_and_heatmap_ranks():
+    """Direction A: rooms are two columns, Fix (weakest) left and Best
+    (strongest) right, both from the same pos_user_rank dict; the full
+    rank grid stays in the Positional Strength heatmap."""
     fn = _portfolio_fn()
     assert "def _pos_tier(" in fn
-    assert "data-weakest" in fn
-    assert "Weakest room: " in fn
+    assert "data-rooms" in fn
+    assert "Fix: " in fn and "Best: " in fn
+    assert "strongest_room as _sr_fn" in fn
+    assert "weakest_room as _wr_fn" in fn
+    assert "Weakest room: " not in fn
     assert "pf-hm-chip q-" in fn
     assert ".q-good{" in fn and ".q-mid{" in fn and ".q-weak{" in fn
-    # No "best" crown — it misread as a #1 badge on merely top-third positions.
-    assert "pc-crown" not in fn
-    assert "&#9650; best" not in fn
     # The old per-card strength strip must not come back on cards.
     assert "class='pf-lg-strength'" not in fn.split("league_rows += (")[-1]
     assert "class='pf-pos-chips'" not in fn.split("league_rows += (")[-1]
@@ -161,25 +161,30 @@ def test_my_leagues_standing_is_an_ordinal_place_with_a_flag():
     fn = _portfolio_fn()
     assert "from utils.format import ord_suffix" in fn
     assert "pf-lg-v--weak" in fn
-    assert "class='pf-lg-l'>Standing</span>" in fn
+    assert "class='pf-lg-standing" in fn
+    assert "Regular-season standings: wins, then points for" in fn
     # A bottom-third standing is flagged via the tier helper, not hard-coded.
     assert "_pos_tier(_rank_i, _total_i)" in fn
 
 
-def test_my_leagues_streak_uses_win_loss_pills_not_empty_dots():
+def test_my_leagues_streak_is_plain_text_not_pills():
+    # Direction A: the streak is plain text (L-W-W) in the record band;
+    # the W/L square pills are gone.
     fn = _portfolio_fn()
-    assert "pf-s-pill" in fn
-    assert ".pf-s-w{background:var(--win);}" in fn
-    assert "pf-streak-empty" in fn
-    # The old always-on three grey dots are gone from the played-team card.
+    assert "pf-s-pill" not in fn
+    assert "class='pf-lg-streak'" in fn
+    assert '"-".join(' in fn
     assert "range(3 - len(streak))" not in fn
 
 
 def test_my_leagues_cards_show_resolved_team_and_standings_rank():
+    # The resolved team name headlines the card (H4); the standing in
+    # the record band still carries its explanatory title.
     fn = _portfolio_fn()
-    assert "class='pf-lg-team'" in fn
+    assert "_team_name = str(lg.get(\"team_name\") or \"\").strip()" in fn
+    assert "html.escape(_team_name)" in fn
     assert "Regular-season standings: wins, then points for" in fn
-    assert "pf-lg-l'>Standing</span>" in fn
+    assert "class='pf-lg-standing" in fn
 
 
 def test_my_leagues_cards_are_compact():
@@ -187,8 +192,9 @@ def test_my_leagues_cards_are_compact():
     fn = _portfolio_fn()
     assert "padding:10px 12px" in fn
     assert "gap:7px" in fn
-    assert "width:28px;height:28px;border-radius:8px" in fn
-    assert "class='pf-lg-stat'" in fn
+    # Tier-1 record in the tinted band; no crest box.
+    assert ".pf-lg-rec{font-size:50px" in fn
+    assert "pf-lg-crest" not in fn
     assert ".pf-lg-mid{display:flex;align-items:center;flex-wrap:wrap;" in fn
     assert "padding:9px 10px;gap:6px;" in fn
     assert "overflow:hidden;box-sizing:border-box;" in fn

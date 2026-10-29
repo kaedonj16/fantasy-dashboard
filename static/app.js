@@ -29350,39 +29350,61 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (mod100 >= 11 && mod100 <= 13) return 'th';
     switch (n % 10) { case 1: return 'st'; case 2: return 'nd'; case 3: return 'rd'; default: return 'th'; }
   }
-  // v25: the card carries its weakest room as one line (the full rank grid
-  // lives in the Positional Strength heatmap below).
-  function renderWeakest(card, data, totalN) {
+  // Direction A: the card carries its rooms in two columns, Fix
+  // (weakest) left and Best (strongest) right, both read off the same
+  // pos_user_rank dict (the full rank grid lives in the Positional
+  // Strength heatmap below). Strongest is the mirror of weakest over
+  // that dict, never a separate computation.
+  function renderRooms(card, data, totalN) {
     var stats = card.querySelector('[data-summary-stats]');
     if (!stats) return;
     var posRanks = data.pos_user_rank || {};
-    var worst = null;
+    var worst = null, best = null;
     ['QB', 'RB', 'WR', 'TE'].forEach(function (pos, idx) {
       var pr = Number(posRanks[pos]);
       if (!Number.isFinite(pr) || pr <= 0) return;
       if (!worst || pr > worst.rank || (pr === worst.rank && idx > worst.idx)) {
         worst = { pos: pos, rank: pr, idx: idx };
       }
+      if (!best || pr < best.rank || (pr === best.rank && idx < best.idx)) {
+        best = { pos: pos, rank: pr, idx: idx };
+      }
     });
-    var existing = card.querySelector('[data-weakest]');
+    var existing = card.querySelector('[data-rooms]');
     if (!worst || !Number.isFinite(totalN) || totalN <= 0) {
       if (existing) existing.remove();
-      card._pfWeakHtml = null;
+      card._pfRoomsHtml = null;
       return;
     }
-    var tier = posTier(worst.rank, totalN);
-    var html = '<div class="pf-lg-weak" data-weakest>Weakest room: <strong class="q-' + tier + '">' +
-      worst.pos + ' · ' + worst.rank + ordSuffix(worst.rank) + ' of ' + totalN + '</strong></div>';
-    if (card._pfWeakHtml === html) return;
-    card._pfWeakHtml = html;
+    var fixHtml = '<span class="pf-lg-room fix">Fix: <strong class="q-' + posTier(worst.rank, totalN) + '">' +
+      worst.pos + ' · ' + worst.rank + ordSuffix(worst.rank) + ' of ' + totalN + '</strong></span>';
+    var bestHtml = '';
+    if (best && best.pos !== worst.pos) {
+      bestHtml = '<span class="pf-lg-room best">Best: <strong class="q-' + posTier(best.rank, totalN) + '">' +
+        best.pos + ' · ' + best.rank + ordSuffix(best.rank) + ' of ' + totalN + '</strong></span>';
+    }
+    var html = '<div class="pf-lg-rooms" data-rooms>' + fixHtml + bestHtml + '</div>';
+    if (card._pfRoomsHtml === html) return;
+    card._pfRoomsHtml = html;
     if (existing) { existing.outerHTML = html; } else { stats.insertAdjacentHTML('afterend', html); }
+  }
+  // One Updated line above the whole grid (Direction A): the newest
+  // summary stamp across hydrated cards wins; per-card stamps are gone.
+  function notePortfolioUpdated(stamp, stale) {
+    var el = document.querySelector('[data-portfolio-updated]');
+    if (!el || !stamp) return;
+    var t = Date.parse(stamp);
+    if (!Number.isFinite(t)) return;
+    if (el._pfT && el._pfT >= t) return;
+    el._pfT = t;
+    el.textContent = (stale ? 'Last good data · Updated ' : 'Updated ') + new Date(stamp).toLocaleString();
+    el.hidden = false;
   }
   function renderSummary(card, data) {
     if (!data) return false;
     var stats = card.querySelector('[data-summary-stats]');
     if (!stats) return false;
     var retry = card.querySelector('[data-summary-retry]');
-    var updated = card.querySelector('[data-summary-updated]');
     // A partial summary with no record is not a success: the record section
     // failed transiently and should be retried, not rendered as '-'.
     var _recordMissing = data.record == null && data.state !== 'ready';
@@ -29398,43 +29420,33 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         && ((rankN - 1) / (totalN - 1)) >= (2 / 3 - 1e-9)
         ? ' pf-lg-v--weak' : '';
       var streak = data.streak || [];
-      var streakHtml = streak.length
-        ? '<span class="pf-streak">' + streak.slice(-3).map(function (r) {
-            var cls = r === 'W' ? 'pf-s-w' : 'pf-s-l';
-            return '<span class="pf-s-pill ' + cls + '">' + (r === 'W' ? 'W' : 'L') + '</span>';
-          }).join('') + '</span>'
-        : '<span class="pf-streak-empty">-</span>';
-      var statsHtml = '<span class="pf-lg-stat"><span class="pf-lg-v ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span><span class="pf-lg-l">Record</span></span>' +
-        '<span class="pf-lg-stat" title="Regular-season standings: wins, then points for"><span class="pf-lg-v' + weakCls + '">' + escapeHtml(rank) + ' <small>/ ' + escapeHtml(teams) + '</small></span><span class="pf-lg-l">Standing</span></span>' +
-        '<span class="pf-lg-stat pf-lg-stat--streak">' + streakHtml + '<span class="pf-lg-l">Streak</span></span>';
+      var streakTxt = streak.length
+        ? streak.slice(-3).map(function (r) { return r === 'W' ? 'W' : (r === 'L' ? 'L' : 'T'); }).join('-')
+        : '-';
+      var rankN2 = Number(rank);
+      var standingTxt = Number.isFinite(rankN2) && rankN2 > 0
+        ? escapeHtml(rank) + '<small>' + ordSuffix(rankN2) + '</small> <small>/ ' + escapeHtml(teams) + '</small>'
+        : escapeHtml(rank) + '/' + escapeHtml(teams);
+      var statsHtml = '<span class="pf-lg-rec ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span>' +
+        '<span class="pf-lg-band-side"><span title="Regular-season standings: wins, then points for"><span class="pf-lg-standing' + weakCls + '">' + standingTxt + '</span></span>' +
+        '<span class="pf-lg-streak">' + streakTxt + '</span></span>';
       setHtmlIfChanged(stats, statsHtml);
-      renderWeakest(card, data, totalN);
+      renderRooms(card, data, totalN);
       if (Number.isFinite(rankN) && rankN > 0) card.dataset.rank = String(rankN);
       var postureEl = card.querySelector('[data-posture]');
-      if (postureEl && data.posture) {
-        postureEl.textContent = data.posture;
-        postureEl.className = 'pf-posture ' + (data.posture_cls || '');
-        if (data.posture_color) postureEl.style.setProperty('--wc', data.posture_color);
-        else postureEl.style.removeProperty('--wc');
-        var shapeEl = card.querySelector('[data-posture-shape]');
-        if (data.posture_shape) {
-          if (!shapeEl) {
-            shapeEl = document.createElement('span');
-            shapeEl.className = 'pf-shape';
-            shapeEl.setAttribute('data-posture-shape', '');
-            postureEl.after(shapeEl);
-          }
-          shapeEl.textContent = data.posture_shape;
-          shapeEl.hidden = false;
-        } else if (shapeEl) {
-          shapeEl.hidden = true;
+      if (postureEl) {
+        if (data.posture) {
+          postureEl.textContent = data.posture;
+          postureEl.className = 'pf-posture ' + (data.posture_cls || '');
+          if (data.posture_color) postureEl.style.setProperty('--wc', data.posture_color);
+          else postureEl.style.removeProperty('--wc');
+          postureEl.hidden = false;
+        } else {
+          postureEl.hidden = true;
         }
       }
       var stamp = data.last_successful_sync_at || data.refreshed_at;
-      if (updated && stamp) {
-        var stampTxt = (data.stale ? 'Last good data · ' : 'Updated ') + new Date(stamp).toLocaleString();
-        if (updated._pfStamp !== stampTxt) { updated._pfStamp = stampTxt; updated.textContent = stampTxt; }
-      }
+      if (stamp) notePortfolioUpdated(stamp, data.stale);
       if (retry) retry.hidden = true;
       card.dataset.summaryGood = 'true';
       // Stamp per-league record for aggregate recomputation, then refresh the
@@ -29523,7 +29535,13 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var you = data.you, opp = data.opp, status = data.status || 'pre';
     var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
     function side(team, name, opposite, isWin) {
-      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + (isWin ? ' win' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + (team ? number(team.score, status === 'final' ? 2 : 1) : '-') + '</div>' + (team && status !== 'final' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '') + '</div>';
+      // Pregame: the big number is the projection, never a fake 0.0
+      // score. Live: the real score, projection underneath. Final: the
+      // result score only.
+      var big = '-';
+      if (team) big = status === 'pre' ? number(team.proj, 1) : number(team.score, status === 'final' ? 2 : 1);
+      var sub = team && status === 'in' ? '<div class="pf-live-proj">proj ' + number(team.proj, 1) + '</div>' : '';
+      return '<div class="pf-live-side' + (opposite ? ' opp' : '') + (isWin ? ' win' : '') + '"><div class="pf-live-lbl">' + escapeHtml(name) + '</div><div class="pf-live-score">' + big + '</div>' + sub + '</div>';
     }
     if (status === 'final' && opp) {
       var result = data.result || 'T', margin = number(data.margin, 2);

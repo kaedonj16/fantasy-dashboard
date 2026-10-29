@@ -50942,13 +50942,26 @@ table.rz-bs-table thead th:not(:first-child) {
 .tsc-mix-total { font-size: 12px; color: var(--text); }
 .tsc-mix-bar {
     display: flex;
-    height: 11px;
+    height: 18px;
     border-radius: 6px;
     overflow: hidden;
     margin: 4px 0 7px;
     background: var(--accent-soft);
 }
-.tsc-mix-seg { height: 100%; }
+.tsc-mix-seg {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.tsc-mix-rank {
+    font-size: 10.5px;
+    font-weight: 800;
+    line-height: 1;
+    color: rgba(0, 0, 0, .72);
+    white-space: nowrap;
+}
 .tsc-mix-legend {
     display: flex;
     gap: 10px;

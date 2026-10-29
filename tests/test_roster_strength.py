@@ -16,10 +16,12 @@ def test_empty_values_return_zero():
     assert weighted_pos_strength(None, "RB", {}) == 0.0
 
 
-def test_single_player_equals_own_value():
-    # denom == weight of the one used slot, so a lone player scores its value.
-    assert weighted_pos_strength([100.0], "QB", {}) == pytest.approx(100.0)
-    assert weighted_pos_strength([100.0], "RB", {}) == pytest.approx(100.0)
+def test_single_player_scores_against_the_full_denominator():
+    # Dilution fix: unfilled slots score 0 instead of shrinking the
+    # denominator, so a lone player scores value / full weight sum.
+    # QB 1QB weights [1.0, 0.20, 0.05]; RB no-flex [1.0, 0.85, 0.15, 0.05].
+    assert weighted_pos_strength([100.0], "QB", {}) == pytest.approx(100.0 / 1.25)
+    assert weighted_pos_strength([100.0], "RB", {}) == pytest.approx(100.0 / 2.05)
 
 
 def test_values_sorted_descending_before_weighting():
@@ -30,11 +32,11 @@ def test_values_sorted_descending_before_weighting():
 
 
 def test_qb_weighting_favors_starter():
-    # QB weights [1.0, 0.20]: (100 + 100*0.2) / 1.2 = 100 when both equal.
-    assert weighted_pos_strength([100, 100], "QB", {}) == pytest.approx(100.0)
+    # QB weights [1.0, 0.20, 0.05]: (100 + 100*0.2) / 1.25 with equal QBs.
+    assert weighted_pos_strength([100, 100], "QB", {}) == pytest.approx(120 / 1.25)
     # A weak QB2 barely moves the number.
     val = weighted_pos_strength([100, 0], "QB", {})
-    assert val == pytest.approx(100 / 1.2)
+    assert val == pytest.approx(100 / 1.25)
 
 
 def test_superflex_treats_qb2_as_a_starter():
@@ -42,8 +44,8 @@ def test_superflex_treats_qb2_as_a_starter():
     one_qb = weighted_pos_strength(vals, "QB", {"QB": 1})
     superflex = weighted_pos_strength(vals, "QB", {"QB": 1, "SUPER_FLEX": 1})
 
-    assert one_qb == pytest.approx((100 + 20 * 0.20) / 1.20)
-    assert superflex == pytest.approx((100 + 20 * 0.90) / 1.90)
+    assert one_qb == pytest.approx((100 + 20 * 0.20) / 1.25)
+    assert superflex == pytest.approx((100 + 20 * 0.90) / 2.15)
     assert superflex < one_qb
 
 
@@ -56,7 +58,7 @@ def test_superflex_provider_aliases_use_the_same_qb_formula(slot_name):
 
 def test_two_qb_lineup_treats_both_qbs_as_starters():
     assert weighted_pos_strength([100, 50], "QB", {"QB": 2}) == pytest.approx(
-        (100 + 50 * 0.90) / 1.90
+        (100 + 50 * 0.90) / 2.15
     )
 
 
@@ -107,17 +109,18 @@ def test_unknown_position_uses_top_player_only():
 def test_none_values_coerced_to_zero():
     # A None in the list must not raise.
     val = weighted_pos_strength([100, None], "QB", {})
-    assert val == pytest.approx(100 / 1.2)
+    assert val == pytest.approx(100 / 1.25)
 
 
 def test_te_weighting_uses_flex_variant():
     vals = [100, 100, 100]
-    no_flex = weighted_pos_strength(vals, "TE", {})          # [1.0, 0.15]
-    with_flex = weighted_pos_strength(vals, "TE", {"FLEX": 1})  # [1.0, 0.20, 0.08]
-    # Both equal-valued -> collapse to 100, but the weight sets differ; a weak
-    # TE2/TE3 would separate them. Here confirm both stay at the starter value.
+    no_flex = weighted_pos_strength(vals, "TE", {})          # [1.0, 0.15, 0.05]
+    with_flex = weighted_pos_strength(vals, "TE", {"FLEX": 1})  # [1.0, 0.20, 0.08, 0.05]
+    # No-flex fills every weight slot with a 100, so it stays at 100. The
+    # flex set has a fourth (tail) slot this room leaves empty, and empty
+    # slots score 0 under the fixed denominator, so it lands just under.
     assert no_flex == pytest.approx(100.0)
-    assert with_flex == pytest.approx(100.0)
+    assert with_flex == pytest.approx((100 + 20 + 8) / 1.33)
 
 
 def test_strength_percentile_empty_or_solo_is_median():
@@ -212,15 +215,60 @@ def test_roster_pos_value_lists_skips_zero_and_missing():
 
 
 def test_rank_rosters_by_position_orders_by_weighted_strength():
+    # In a league starting 3 WRs (WR/WR/FLEX), the deeper room wins under
+    # the fixed denominator: its weighted starters (95/88/70) out-sum the
+    # top-heavy room's (110/90/5). Before the dilution fix the top-heavy
+    # room won only because its shorter player list shrank its denominator.
     slots = {"WR": 2, "FLEX": 1}
     team_pos = {
         "elite": {"QB": [], "RB": [], "WR": [110, 90, 5], "TE": []},
         "depth": {"QB": [], "RB": [], "WR": [95, 88, 70, 50, 40], "TE": []},
     }
     strengths, ranks = rank_rosters_by_position(team_pos, slots)
-    assert strengths["elite"]["WR"] > strengths["depth"]["WR"]
-    assert ranks["WR"]["elite"] == 1
-    assert ranks["WR"]["depth"] == 2
+    assert strengths["depth"]["WR"] > strengths["elite"]["WR"]
+    assert ranks["WR"]["depth"] == 1
+    assert ranks["WR"]["elite"] == 2
+
+
+def test_adding_a_player_never_lowers_strength():
+    # The dilution fix, stated as a property: for every position, tacking
+    # any positive-value player onto a room must not reduce its strength
+    # (dropping Purdy must not raise a QB room, and so on).
+    cases = [
+        ("QB", {"QB": 1}, [600.0]),
+        ("QB", {"QB": 1}, [600.0, 300.0]),
+        ("QB", {"QB": 1, "SUPER_FLEX": 1}, [600.0]),
+        ("RB", {"RB": 2, "FLEX": 2}, [500.0, 400.0]),
+        ("RB", {"RB": 2, "FLEX": 2}, [500.0, 400.0, 200.0, 100.0, 50.0]),
+        ("WR", {"WR": 2, "FLEX": 1}, [500.0, 400.0, 300.0]),
+        ("TE", {"TE": 1}, [400.0]),
+        ("TE", {"TE": 1, "FLEX": 1}, [400.0, 100.0]),
+    ]
+    for pos, slots, base in cases:
+        before = weighted_pos_strength(base, pos, slots)
+        for extra in (1.0, 40.0, 250.0):
+            after = weighted_pos_strength(base + [extra], pos, slots)
+            assert after >= before, (pos, base, extra, before, after)
+
+
+def test_thin_room_gets_no_undiluted_free_pass():
+    # A lone 650 QB no longer scores 650: the empty QB2/tail slots count
+    # as 0, so a 600 QB1 with a real 300 QB2 behind him outranks him.
+    solo = weighted_pos_strength([650.0], "QB", {"QB": 1})
+    room = weighted_pos_strength([600.0, 300.0], "QB", {"QB": 1})
+    assert room > solo
+
+
+def test_tail_credit_counts_one_player_past_the_old_cutoff():
+    # QB3 in 1QB used to count exactly zero; at the 0.05 tail weight a
+    # 25-value QB3 adds 25 * 0.05 / 1.25 = 1.0.
+    without = weighted_pos_strength([100.0, 50.0], "QB", {"QB": 1})
+    with_tail = weighted_pos_strength([100.0, 50.0, 25.0], "QB", {"QB": 1})
+    assert with_tail == pytest.approx(without + 1.0)
+    # RB6 in a 2-flex league likewise adds a little instead of nothing.
+    five = weighted_pos_strength([100, 90, 80, 70, 60], "RB", {"FLEX": 2})
+    six = weighted_pos_strength([100, 90, 80, 70, 60, 50], "RB", {"FLEX": 2})
+    assert six > five
 
 
 def test_rank_rosters_by_position_tie_breaks_by_roster_id():

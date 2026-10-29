@@ -28,6 +28,7 @@ _CARD_SELECTORS = (
     ".tsc-pi",
     ".tsc-pi-track",
     ".tsc-mix-bar",
+    ".tsc-mix-rank",
     ".tsc-mix-legend",
     ".tsc-mix-dot",
     ".tsc-details",
@@ -160,3 +161,22 @@ def test_teams_page_mobile_side_padding_is_slim():
 
 def test_no_stadium_pills_in_teams_css():
     assert "border-radius: 999px" not in CSS
+
+
+def test_mix_bar_segments_carry_position_rank_numbers():
+    """Each mix-bar segment shows the team's league rank at that position
+    as a small centered number (QB/RB/WR/TE from pos_rank, CAP from the
+    draft-capital ranking), while the segment width stays the value share."""
+    assert "tsc-mix-rank" in TEAMS_PAGE
+    assert "_mix_ranks" in TEAMS_PAGE
+    assert "pos_rank[_p].get(rid, 0)" in TEAMS_PAGE
+    assert "_cap_rank" in TEAMS_PAGE
+    seg = re.search(r"\.tsc-mix-seg\s*\{([^}]+)\}", CSS)
+    assert seg, "missing .tsc-mix-seg rule"
+    body = seg.group(1)
+    assert "display: flex" in body
+    assert "align-items: center" in body
+    assert "justify-content: center" in body
+    rank = re.search(r"\.tsc-mix-rank\s*\{([^}]+)\}", CSS)
+    assert rank, "missing .tsc-mix-rank rule"
+    assert "font-weight: 800" in rank.group(1)

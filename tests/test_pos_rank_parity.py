@@ -19,8 +19,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_weighted_and_composite_can_flip_adjacent_places():
     """The bug: starter-heavy WR room ranks above a deeper room on weighted
-    strength, and below it on the composite the Teams page used to sort by."""
-    slots = {"WR": 2, "FLEX": 1}
+    strength, and below it on the composite the Teams page used to sort by.
+
+    Shown in a 2-WR league (no flex): the weighted ranker still gives the
+    top-heavy room the edge there, while the composite (starter average
+    plus bench quality) prefers the deeper room. In a 3-WR-start league
+    the fixed denominator now agrees with the composite on this fixture;
+    see the rank test in test_roster_strength.py."""
+    slots = {"WR": 2}
     elite = [110, 90, 5]
     depth = [95, 88, 70, 50, 40]
     assert weighted_pos_strength(elite, "WR", slots) > weighted_pos_strength(
@@ -33,6 +39,10 @@ def test_weighted_and_composite_can_flip_adjacent_places():
 
 
 def test_shared_ranker_follows_weighted_not_composite():
+    # The shared ranker must follow the weighted order, whatever it is:
+    # in this 3-WR-start league the deeper room's weighted strength
+    # (85.2) now beats the top-heavy room's (80.0) under the fixed
+    # denominator, so team 6 takes the place ahead of team 5.
     slots = {"WR": 2, "FLEX": 1}
     filler = {"QB": [50], "RB": [50], "TE": [50]}
     team_pos = {}
@@ -41,8 +51,8 @@ def test_shared_ranker_follows_weighted_not_composite():
     team_pos[5] = {**filler, "WR": [110, 90, 5]}
     team_pos[6] = {**filler, "WR": [95, 88, 70, 50, 40]}
     _strengths, ranks = rank_rosters_by_position(team_pos, slots)
-    assert ranks["WR"][5] == 5
-    assert ranks["WR"][6] == 6
+    assert ranks["WR"][6] == 5
+    assert ranks["WR"][5] == 6
 
 
 def test_league_format_value_lookup_uses_sf_and_te_premium():
