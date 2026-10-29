@@ -261,3 +261,116 @@ def test_no_bare_location_reload_outside_tap():
             "reload() inside unexpected function %s" % nearest
         # Anonymous callbacks are fine only if inside applyUpdate/bypassReload
         # or the controllerchange onmessage handler; check enclosing named fn.
+
+
+# --- Regression: controllerchange must not reload without a tap -------------
+# sw.js calls skipWaiting() on install, so a new worker takes control on its
+# own whenever a deploy lands (checks run on load, on foreground/focus/online,
+# and every 30 min). waitingSw is armed automatically by armRegistration /
+# trackWorker with no tap involved, so a controllerchange that finds
+# waitingSw set is NOT proof the user tapped "Tap to update". The old handler
+# treated it as proof and reloaded the page mid-view (on mobile, where in-app
+# navigation from the dashboard is a same-document swap, the reload throws
+# the user back to the dashboard they started from).
+
+_WAITING_PREAMBLE_MARK = "waiting: null,"
+
+
+def _waiting_preamble():
+    assert _WAITING_PREAMBLE_MARK in MOCK_PREAMBLE
+    return MOCK_PREAMBLE.replace(
+        _WAITING_PREAMBLE_MARK,
+        "waiting: { state: 'installed', "
+        "postMessage: function(){ globalThis.__skipWaitingPosted = true; }, "
+        "addEventListener: function(){} },",
+    )
+
+
+_FIRE_CC = (
+    "(__swListeners['controllerchange'] || []).forEach(function(fn){ fn(); });\n"
+)
+_FLUSH = (
+    "function flush(n){ return n <= 0 ? Promise.resolve() : "
+    "new Promise(function(res){ setImmediate(function(){ flush(n-1).then(res); }); }); }\n"
+)
+
+
+def test_controllerchange_without_tap_never_reloads():
+    iife = _extract_iife("initUpdatePrompt")
+    out = _run_node(iife, _waiting_preamble(), textwrap.dedent("""\
+        %s
+        flush(8).then(function(){
+          // A new worker took control on its own (deploy + skipWaiting).
+          // Nobody tapped the update prompt.
+          %s
+          return flush(4);
+        }).then(function(){
+          console.log(JSON.stringify({
+            reloads: globalThis.__reloads,
+            skipWaitingPosted: !!globalThis.__skipWaitingPosted,
+          }));
+        });
+    """ % (_FLUSH, _FIRE_CC)))
+    import json
+    data = json.loads(out)
+    assert data["reloads"] == 0, \
+        "controllerchange without a tap must not reload: %s" % data
+    assert data["skipWaitingPosted"] is False, data
+
+
+def test_controllerchange_after_tap_reloads():
+    iife = _extract_iife("initUpdatePrompt")
+    out = _run_node(iife, _waiting_preamble(), textwrap.dedent("""\
+        %s
+        flush(8).then(function(){
+          var banner = document.querySelector('.br-update-banner');
+          var main = null;
+          banner.children.forEach(function(c){ if (c.className === 'br-update-main') main = c; });
+          main.click();
+          // The tap asked the waiting worker to activate; its takeover is
+          // what may reload, and only because the tap came first.
+          %s
+          return flush(4);
+        }).then(function(){
+          console.log(JSON.stringify({
+            reloadsAfterTap: globalThis.__reloads,
+            skipWaitingPosted: !!globalThis.__skipWaitingPosted,
+          }));
+        });
+    """ % (_FLUSH, _FIRE_CC)))
+    import json
+    data = json.loads(out)
+    assert data["skipWaitingPosted"] is True, \
+        "tapping update must post SKIP_WAITING: %s" % data
+    assert data["reloadsAfterTap"] >= 1, \
+        "controllerchange after a tap must reload: %s" % data
+
+
+def test_tap_after_auto_takeover_reloads_directly():
+    iife = _extract_iife("initUpdatePrompt")
+    out = _run_node(iife, _waiting_preamble(), textwrap.dedent("""\
+        %s
+        flush(8).then(function(){
+          // Worker took control on its own first: no reload (pinned above).
+          %s
+          return flush(4);
+        }).then(function(){
+          var mid = globalThis.__reloads;
+          var banner = document.querySelector('.br-update-banner');
+          var main = null;
+          if (banner) banner.children.forEach(function(c){ if (c.className === 'br-update-main') main = c; });
+          if (main) main.click();
+          return flush(4).then(function(){ return mid; });
+        }).then(function(mid){
+          console.log(JSON.stringify({
+            reloadsBeforeTap: mid,
+            reloadsAfterTap: globalThis.__reloads,
+          }));
+        });
+    """ % (_FLUSH, _FIRE_CC)))
+    import json
+    data = json.loads(out)
+    assert data["reloadsBeforeTap"] == 0, \
+        "auto takeover must not reload before the tap: %s" % data
+    assert data["reloadsAfterTap"] >= 1, \
+        "tapping update after an auto takeover must still reload: %s" % data
