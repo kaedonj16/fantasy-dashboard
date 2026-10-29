@@ -95,7 +95,7 @@ def build_schedule_body(ctx):
         <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
         <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
         <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal (bottom 25%)</span>
-        <span class="sched-legend-note">Ease is the 0 to 100 score for the selected range. Adj Avg is the average adjusted % across those weeks, byes excluded.</span>
+        <span class="sched-legend-note">Ease is the 0 to 100 score for the selected range, byes excluded. Each week cell is that defense's adjusted % for the week.</span>
         <button type="button" class="sched-info" aria-label="About ease" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
         <button type="button" class="sched-info" aria-label="Seasonal rating data source" title="__SOURCE_COPY__"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
       </div>
@@ -103,7 +103,6 @@ def build_schedule_body(ctx):
       <div id="schedRankingsGrid" class="sched-grid-wrap">
         <div class="sched-empty">Loading schedule&#8230;</div>
       </div>
-      <div id="schedRankingsCards" class="srk-cards"></div>
     </div>
     """
 
@@ -170,15 +169,13 @@ def build_schedule_body(ctx):
       var rankPos     = 'QB';
       var hardFirst   = false;
 
-      // Fetch-promise caches, keyed by position. Main and Next 3 depend on
-      // the selected range and are dropped when it changes; the playoff
-      // range never changes within a session, so its cache survives.
-      var mainCache = {}, next3Cache = {}, poCache = {};
+      // Fetch promises for the selected range, keyed by position; dropped
+      // when the range changes.
+      var mainCache = {};
 
       var startSel = document.getElementById('schedWkStart');
       var endSel   = document.getElementById('schedWkEnd');
       var gridEl   = document.getElementById('schedRankingsGrid');
-      var cardsEl  = document.getElementById('schedRankingsCards');
       var sortBtn  = document.getElementById('schedRankSort');
 
       function esc(s) {
@@ -198,12 +195,6 @@ def build_schedule_body(ctx):
         return f <= 0.25 ? '#22c55e' : f <= 0.50 ? '#84cc16' : f <= 0.75 ? '#f59e0b' : '#ef4444';
       }
 
-      function byPid(data) {
-        var m = {};
-        ((data && data.rankings) || []).forEach(function(r) { m[String(r.pid)] = r; });
-        return m;
-      }
-
       // ── Data layer ──────────────────────────────────────────────────────
       function fetchRange(cache, pos, s, e) {
         if (!cache[pos]) {
@@ -220,30 +211,15 @@ def build_schedule_body(ctx):
       }
 
       function posData(pos) {
-        var n3End = Math.min(wkEnd, wkStart + 2);
-        var mainP = fetchRange(mainCache, pos, wkStart, wkEnd);
-        var n3P = n3End === wkEnd ? mainP : fetchRange(next3Cache, pos, wkStart, n3End);
-        var poP;
-        if (CFG.playoffStart === wkStart && CFG.playoffEnd === wkEnd) poP = mainP;
-        else if (CFG.playoffStart === wkStart && CFG.playoffEnd === n3End) poP = n3P;
-        else poP = fetchRange(poCache, pos, CFG.playoffStart, CFG.playoffEnd);
-        return Promise.all([mainP, n3P, poP]).then(function(ds) {
-          return { main: ds[0], n3: byPid(ds[1]), po: byPid(ds[2]) };
+        return fetchRange(mainCache, pos, wkStart, wkEnd).then(function(data) {
+          return { main: data };
         });
       }
 
       // ── Row models ──────────────────────────────────────────────────────
       function makeModel(r, pd) {
         var pid = String(r.pid);
-        var n3 = pd.n3[pid], po = pd.po[pid];
-        return {
-          r: r, pid: pid,
-          n3Rank: n3 && n3.sos_rank != null ? n3.sos_rank : null,
-          n3Total: n3 ? n3.sos_total : null,
-          poRank: po && po.sos_rank != null ? po.sos_rank : null,
-          poTotal: po ? po.sos_total : null,
-          added: !!addedSet[pid]
-        };
+        return { r: r, pid: pid, added: !!addedSet[pid] };
       }
 
       function sortModels(models) {
@@ -297,14 +273,11 @@ def build_schedule_body(ctx):
 
       function playerInner(m) {
         var r = m.r;
-        return '<span class="sched-pos" style="background:' + r.color + '22;color:' + r.color + ';">' + esc(r.pos) + '</span>' +
-               '<span class="player-clickable sched-pname" data-player-id="' + esc(m.pid) + '">' + esc(r.name) + '</span>' +
-               '<span class="sched-nfl">' + esc(r.team) + '</span>' + badgeHtml(m) + removeHtml(m);
-      }
-
-      function auxRankHtml(rank, total) {
-        if (rank == null) return '<span class="srk-rank-na">n/a</span>';
-        return '<span style="color:' + tierColor(rank, total) + '">#' + rank + '</span>';
+        return '<span class="srk-pcell">' +
+               '<span class="sched-pos" style="background:' + r.color + '22;color:' + r.color + ';">' + esc(r.pos) + '</span>' +
+               '<span class="srk-names"><span class="player-clickable sched-pname" data-player-id="' + esc(m.pid) + '">' + esc(r.name) + '</span></span>' +
+               '<span class="sched-nfl">' + esc(r.team) + '</span>' + badgeHtml(m) + removeHtml(m) +
+               '</span>';
       }
 
       // ── Desktop table ───────────────────────────────────────────────────
@@ -316,7 +289,11 @@ def build_schedule_body(ctx):
       function bandRow(weeks) {
         var reg = 0, po = 0;
         weeks.forEach(function(w) { if (w >= CFG.playoffStart) po++; else reg++; });
-        var h = '<tr class="srk-band"><th colspan="6"></th>';
+        // The spacer is two cells, not one colspan: the Rank+Player spacer
+        // stays pinned over the sticky columns, and the Ease spacer hides
+        // together with the Ease column on phones. A single colspan spacer
+        // would shift the Playoffs band one column when Ease hides.
+        var h = '<tr class="srk-band"><th colspan="2" class="srk-band-pin"></th><th class="srk-band-ease"></th>';
         if (reg) h += '<th colspan="' + reg + '">Regular season</th>';
         if (po) h += '<th colspan="' + po + '" class="srk-band-po">Playoffs</th>';
         return h + '</tr>';
@@ -336,10 +313,6 @@ def build_schedule_body(ctx):
         } else {
           easeHtml = '<span class="srk-rank-na">n/a</span>';
         }
-        var avgHtml = r.adjusted_avg_percent != null
-          ? '<span style="color:' + tc + '">' + fmtPct(r.adjusted_avg_percent) + '</span>'
-          : '<span class="srk-rank-na">N/A</span>';
-
         var cells = '';
         (r.cells || []).forEach(function(c, i) {
           var cls = 'sched-td' + (i === poIdx && i > 0 ? ' srk-po-start' : '');
@@ -356,9 +329,6 @@ def build_schedule_body(ctx):
           '<td class="sched-td srk-td-rank">' + rankHtml + '</td>' +
           '<td class="sched-td sched-td-player">' + playerInner(m) + '</td>' +
           '<td class="sched-td srk-ease-cell">' + easeHtml + '</td>' +
-          '<td class="sched-td srk-aux">' + avgHtml + '</td>' +
-          '<td class="sched-td srk-aux">' + auxRankHtml(m.n3Rank, m.n3Total) + '</td>' +
-          '<td class="sched-td srk-aux">' + auxRankHtml(m.poRank, m.poTotal) + '</td>' +
           cells + '</tr>';
       }
 
@@ -366,15 +336,12 @@ def build_schedule_body(ctx):
         var poIdx = poColIndex(weeks);
         var head = '<th class="sched-th srk-th-rank">Rank</th>' +
                    '<th class="sched-th sched-th-player">Player</th>' +
-                   '<th class="sched-th">Ease</th>' +
-                   '<th class="sched-th">Adj Avg</th>' +
-                   '<th class="sched-th">Next 3</th>' +
-                   '<th class="sched-th">Playoffs</th>';
+                   '<th class="sched-th srk-th-ease">Ease</th>';
         weeks.forEach(function(w, i) {
           head += '<th class="sched-th' + (i === poIdx && i > 0 ? ' srk-po-start' : '') + '">Wk ' + w +
                     (w === CFG.startWeek ? '<span class="srk-now">Now</span>' : '') + '</th>';
         });
-        var totalCols = 6 + weeks.length;
+        var totalCols = 3 + weeks.length;
         var body = '';
         sections.forEach(function(sec) {
           if (sec.label) {
@@ -385,51 +352,6 @@ def build_schedule_body(ctx):
           sec.models.forEach(function(m) { body += tableRow(m, poIdx); });
         });
         return '<table class="sched-table"><thead>' + bandRow(weeks) + '<tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
-      }
-
-      // ── Phone cards ─────────────────────────────────────────────────────
-      function pillHtml(r, w) {
-        var cell = null;
-        (r.cells || []).forEach(function(c) { if (c.week === w) cell = c; });
-        if (!cell) return '';
-        if (cell.bye) return '<span class="srk-mpill srk-mpill-bye">Wk ' + w + ' BYE</span>';
-        var effect = cell.adjusted_percent != null ? fmtPct(cell.adjusted_percent) : 'N/A';
-        return '<span class="srk-mpill" style="background:' + (cell.bg || 'transparent') + '"><b>' + w + '</b> ' +
-                 esc((cell.at || '') + (cell.opp || '')) +
-                 ' <i style="color:' + (cell.txt || 'inherit') + ';">' + effect + '</i></span>';
-      }
-
-      function phoneCard(m, weeks) {
-        var r = m.r;
-        var tc = tierColor(r.sos_rank, r.sos_total);
-        var rankTxt = r.sos_rank != null ? '#' + r.sos_rank : 'n/a';
-        var easeTxt = r.ease_score != null ? String(Math.round(r.ease_score)) : 'n/a';
-        var avgTxt = r.adjusted_avg_percent != null ? fmtPct(r.adjusted_avg_percent) : 'N/A';
-        var n3Txt = m.n3Rank != null ? '#' + m.n3Rank : 'n/a';
-        var poTxt = m.poRank != null ? '#' + m.poRank : 'n/a';
-        var nextPills = weeks.slice(0, 3).map(function(w) { return pillHtml(r, w); }).join('');
-        var poWeeks = weeks.filter(function(w) { return w >= CFG.playoffStart; });
-        var poPills = poWeeks.map(function(w) { return pillHtml(r, w); }).join('');
-        return '<div class="srk-mcard">' +
-          '<div class="srk-mtop"><span class="srk-mrank" style="color:' + tc + '">' + rankTxt + '</span>' + playerInner(m) + '</div>' +
-          '<div class="srk-msums">' +
-            '<span>Ease <b style="color:' + tc + '">' + easeTxt + '</b></span>' +
-            '<span>Adj avg <b>' + avgTxt + '</b></span>' +
-            '<span>Next 3 <b style="color:' + tierColor(m.n3Rank, m.n3Total) + '">' + n3Txt + '</b></span>' +
-            '<span>Playoffs <b style="color:' + tierColor(m.poRank, m.poTotal) + '">' + poTxt + '</b></span>' +
-          '</div>' +
-          '<div class="srk-mrow"><span class="srk-mlabel">Next</span>' + nextPills + '</div>' +
-          (poPills ? '<div class="srk-mrow"><span class="srk-mlabel">Playoffs</span>' + poPills + '</div>' : '') +
-        '</div>';
-      }
-
-      function buildCards(sections, weeks) {
-        var out = '';
-        sections.forEach(function(sec) {
-          if (sec.label) out += '<div class="srk-mgroup">' + esc(sec.label) + '</div>';
-          sec.models.forEach(function(m) { out += phoneCard(m, weeks); });
-        });
-        return out;
       }
 
       // ── View assembly ───────────────────────────────────────────────────
@@ -463,11 +385,9 @@ def build_schedule_body(ctx):
           gridEl.innerHTML = currentView === 'league'
             ? '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No data</strong>Nothing for this position or week range.</div>'
             : '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No players to show</strong>No one on your roster lands in this view.</div>';
-          cardsEl.innerHTML = '';
           return;
         }
         gridEl.innerHTML = buildTable(sections, weeks);
-        cardsEl.innerHTML = buildCards(sections, weeks);
       }
 
       var renderSeq = 0;
@@ -476,7 +396,6 @@ def build_schedule_body(ctx):
         var seq = ++renderSeq;
         var loading = '<div class="loading-state-msg"><div class="loading-spinner" aria-hidden="true"></div><span>Loading rankings…</span></div>';
         gridEl.innerHTML = loading;
-        cardsEl.innerHTML = loading;
         var positions = (currentView === 'myteam' && rankPos === 'all')
           ? POSITIONS
           : [rankPos === 'all' ? 'QB' : rankPos];
@@ -489,7 +408,6 @@ def build_schedule_body(ctx):
           if (seq !== renderSeq) return;
           var err = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load rankings</strong>Refresh and try again.</div>';
           gridEl.innerHTML = err;
-          cardsEl.innerHTML = err;
         });
       }
 
@@ -545,7 +463,7 @@ def build_schedule_body(ctx):
       }
       function onRangeChange() {
         fillWeekSelects(); persistWks(); syncPresetBtns();
-        mainCache = {}; next3Cache = {};
+        mainCache = {};
         render();
       }
       if (rosBtn) rosBtn.addEventListener('click', function() { applyPreset(CFG.startWeek, CFG.playoffEnd); });
@@ -587,7 +505,7 @@ def build_schedule_body(ctx):
         render();
       });
 
-      // Remove a staged player (table cell and phone card both carry it).
+      // Remove a staged player from its table cell.
       function onRemoveClick(e) {
         var btn = e.target.closest ? e.target.closest('[data-remove-pid]') : null;
         if (!btn) return;
@@ -598,7 +516,6 @@ def build_schedule_body(ctx):
         persistAdded(); render();
       }
       gridEl.addEventListener('click', onRemoveClick);
-      cardsEl.addEventListener('click', onRemoveClick);
 
       fillWeekSelects();
       syncPresetBtns();

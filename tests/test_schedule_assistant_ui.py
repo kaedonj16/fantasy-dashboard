@@ -46,6 +46,22 @@ def test_scope_toggle_and_position_pills():
     assert "Bye Outlook" not in SOURCE
 
 
-def test_rank_summary_columns_present():
-    assert ">Next 3</th>" in SOURCE
-    assert ">Playoffs</th>" in SOURCE
+def test_week_by_week_columns_without_summary_columns_or_phone_cards():
+    # Rank | Player | Ease, then the week columns: the Adj Avg / Next 3 /
+    # Playoffs summary columns and the separate phone cards are gone.
+    assert '<th class="sched-th srk-th-ease">Ease</th>' in SOURCE
+    assert '<th class="sched-th">Adj Avg</th>' not in SOURCE
+    assert '<th class="sched-th">Next 3</th>' not in SOURCE
+    assert '<th class="sched-th">Playoffs</th>' not in SOURCE
+    assert "srk-mcard" not in SOURCE
+    assert "schedRankingsCards" not in SOURCE
+    assert "n3Rank" not in SOURCE and "poRank" not in SOURCE
+
+
+def test_band_spacer_splits_so_ease_hiding_cannot_shift_the_band():
+    # Rank+Player spacer is its own pinned cell; the Ease spacer hides with
+    # the Ease column on phones instead of shifting the Playoffs band.
+    assert '<th colspan="2" class="srk-band-pin"></th><th class="srk-band-ease"></th>' in SOURCE
+    css = Path("static/dashboard.css").read_text()
+    assert ".srk-band .srk-band-pin" in css
+    assert ".schedule-card .srk-ease-cell" in css
