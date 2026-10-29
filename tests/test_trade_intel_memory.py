@@ -1,8 +1,12 @@
-"""Guards that trade-intel discovery/crawl stay inside the 512Mi cron cap.
+"""Guards that trade-intel discovery/crawl stay memory-safe on the cron.
 
 The trade-recrawl starter job OOM'd while BFS-expanding 2000 seed leagues with
 10 workers, each holding full Sleeper JSON, then (had it survived) would have
 cached every crawled week's transactions in dashboard_services.api.ttl_cache.
+The two trade crons now run on the 2GB standard plan with raised caps (set
+via TRADE_INTEL_* env vars in render.yaml); the in-code defaults stay at the
+512Mi-safe values and the stream-scanning design these tests pin is what
+makes the raised caps safe.
 """
 from pathlib import Path
 from unittest.mock import patch
@@ -38,20 +42,28 @@ def test_refresh_script_isolates_stages_in_subprocesses():
     assert "--stage" in source
 
 
-def test_trade_recrawl_cron_stays_on_starter_without_playwright():
+def test_trade_recrawl_cron_scales_up_on_standard_without_playwright():
     source = (ROOT / "render.yaml").read_text()
     recrawl = source.split("name: trade-recrawl", 1)[1].split("\n  - type:", 1)[0]
-    assert "plan: starter" in recrawl
+    assert "plan: standard" in recrawl
     assert "playwright" not in recrawl
-    assert "--batch-size 1000" in recrawl
+    assert "--batch-size 2000" in recrawl
+    assert "--workers 8" in recrawl
+    # Raised discovery caps ride along as env vars, not code defaults.
+    assert "TRADE_INTEL_DISCOVERY_WORKERS" in recrawl
+    assert "TRADE_INTEL_MAX_SEEDS" in recrawl
+    assert "TRADE_INTEL_FRONTIER_CAP" in recrawl
 
 
-def test_league_discovery_cron_caps_target_on_starter():
+def test_league_discovery_cron_caps_target_on_standard():
     source = (ROOT / "render.yaml").read_text()
-    disc = source.split("name: league-discovery", 1)[1]
-    assert "plan: starter" in disc
+    disc = source.split("name: league-discovery", 1)[1].split("\n  - type:", 1)[0]
+    assert "plan: standard" in disc
     assert "--target 1000" in disc
-    assert "--target 2000" not in disc.split("databases:", 1)[0]
+    assert "--target 2000" not in disc
+    assert "TRADE_INTEL_DISCOVERY_WORKERS" in disc
+    assert "TRADE_INTEL_MAX_SEEDS" in disc
+    assert "TRADE_INTEL_FRONTIER_CAP" in disc
 
 
 def test_orchestrator_spawns_each_stage_as_a_subprocess(monkeypatch):

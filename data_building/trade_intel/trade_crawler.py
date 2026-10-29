@@ -382,8 +382,65 @@ def _snapshot_trade_time_values(pending: list[tuple[list[str], Any]]) -> None:
             logger.debug("[crawler] trade-time value snapshot failed", exc_info=True)
 
 
+def _reserve_size(batch_size: int) -> int:
+    """How many slots of a recrawl batch are reserved for the tail (~20%)."""
+    return batch_size // 5
+
+
+def _merge_crawl_batches(velocity_rows, reserve_rows, batch_size: int) -> list[dict]:
+    """Merge velocity-ordered and oldest-first recrawl picks into one batch.
+
+    Reserve rows (the oldest-crawled eligible leagues) are guaranteed their
+    ~20% of the batch so the quiet tail of the pool cannot starve behind
+    trade velocity; the remaining slots keep velocity order. Dedupes by
+    league_id, and any slot a duplicate frees is backfilled from the
+    remaining velocity rows, so the merged batch is exactly batch_size
+    whenever the pool has that many eligible leagues.
+    """
+    reserve = []
+    seen = set()
+    for row in reserve_rows:
+        lid = row["league_id"]
+        if lid in seen:
+            continue
+        seen.add(lid)
+        reserve.append(row)
+        if len(reserve) >= _reserve_size(batch_size):
+            break
+
+    merged = []
+    velocity_target = batch_size - len(reserve)
+    for row in velocity_rows:
+        if len(merged) >= velocity_target:
+            break
+        lid = row["league_id"]
+        if lid in seen:
+            continue
+        seen.add(lid)
+        merged.append(row)
+    merged.extend(reserve)
+
+    if len(merged) < batch_size:
+        for row in velocity_rows:
+            if len(merged) >= batch_size:
+                break
+            lid = row["league_id"]
+            if lid in seen:
+                continue
+            seen.add(lid)
+            merged.append(row)
+    return merged[:batch_size]
+
+
 def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_days: int = 7) -> list[dict]:
-    """Return leagues based on crawl mode."""
+    """Return leagues based on crawl mode.
+
+    Recrawl modes ("existing" / "both") merge two picks: a velocity-ordered
+    main batch plus a ~20% reserve of the oldest-crawled stale leagues, so
+    quiet leagues keep getting revisited even when they never win the
+    velocity sort. The reserve pick runs first and the velocity pick second;
+    the merge (see _merge_crawl_batches) guarantees the reserve its slots.
+    """
     with get_conn() as conn:
         if crawl_mode == "new":
             # Uncrawled redraft, keeper, and dynasty leagues. Keeper is crawled
@@ -398,13 +455,28 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                 ORDER BY discovered_at DESC
                 LIMIT %s
             """
-            params = (batch_size,)
-        elif crawl_mode == "existing":
+            return conn.execute(query, (batch_size,)).fetchall()
+
+        if crawl_mode == "existing":
+            # Reserve: previously crawled leagues past the recrawl window,
+            # oldest-crawled first, regardless of trade velocity. Uses the
+            # same staleness filter as the velocity pick but not its
+            # total_trades / 14-day dead-league rule.
+            reserve_query = """
+                SELECT league_id, season, last_crawled_week, league_type
+                FROM trade_intel_leagues
+                WHERE crawl_enabled = TRUE
+                  AND last_crawled_week IS NOT NULL
+                  AND (last_crawled_at IS NULL OR last_crawled_at < NOW() - INTERVAL '%s days')
+                  AND league_type IN (0, 1, 2)
+                ORDER BY last_crawled_at ASC NULLS FIRST
+                LIMIT %s
+            """
             # Previously crawled redraft, keeper, and dynasty leagues, not recently.
             # Velocity prioritization: most recently active leagues first. Dead
             # leagues (total_trades = 0, fully crawled) re-crawl at most every
             # 14 days instead of every recrawl_days.
-            query = """
+            velocity_query = """
                 SELECT league_id, season, last_crawled_week, league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
@@ -416,31 +488,51 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                          last_crawled_at ASC NULLS FIRST
                 LIMIT %s
             """
-            params = (recrawl_days, batch_size)
-        else:  # both
-            # Mix new and existing leagues across all three markets. The old
-            # query selected only type 2 here, silently starving redraft collection.
-            # Velocity prioritization: most recently active leagues first.
-            query = """
-                SELECT league_id, season, last_crawled_week, league_type
-                FROM trade_intel_leagues
-                WHERE crawl_enabled = TRUE
-                  AND league_type IN (0, 1, 2)
-                  AND (
-                    last_crawled_week IS NULL
-                    OR last_crawled_at IS NULL
-                    OR last_crawled_at < NOW() - make_interval(days => %s)
-                  )
-                ORDER BY last_trade_at DESC NULLS LAST,
-                         (last_crawled_week IS NULL) DESC,
-                         last_crawled_at ASC NULLS FIRST,
-                         league_type ASC,
-                         discovered_at DESC
-                LIMIT %s
-            """
-            params = (recrawl_days, batch_size)
-        
-        return conn.execute(query, params).fetchall()
+            reserve_rows = conn.execute(
+                reserve_query, (recrawl_days, _reserve_size(batch_size))
+            ).fetchall()
+            velocity_rows = conn.execute(
+                velocity_query, (recrawl_days, batch_size)
+            ).fetchall()
+            return _merge_crawl_batches(velocity_rows, reserve_rows, batch_size)
+
+        # both: mix new and existing leagues across all three markets. The old
+        # query selected only type 2 here, silently starving redraft collection.
+        # Velocity prioritization: most recently active leagues first.
+        reserve_query = """
+            SELECT league_id, season, last_crawled_week, league_type
+            FROM trade_intel_leagues
+            WHERE crawl_enabled = TRUE
+              AND league_type IN (0, 1, 2)
+              AND last_crawled_week IS NOT NULL
+              AND (last_crawled_at IS NULL OR last_crawled_at < NOW() - make_interval(days => %s))
+            ORDER BY last_crawled_at ASC NULLS FIRST
+            LIMIT %s
+        """
+        velocity_query = """
+            SELECT league_id, season, last_crawled_week, league_type
+            FROM trade_intel_leagues
+            WHERE crawl_enabled = TRUE
+              AND league_type IN (0, 1, 2)
+              AND (
+                last_crawled_week IS NULL
+                OR last_crawled_at IS NULL
+                OR last_crawled_at < NOW() - make_interval(days => %s)
+              )
+            ORDER BY last_trade_at DESC NULLS LAST,
+                     (last_crawled_week IS NULL) DESC,
+                     last_crawled_at ASC NULLS FIRST,
+                     league_type ASC,
+                     discovered_at DESC
+            LIMIT %s
+        """
+        reserve_rows = conn.execute(
+            reserve_query, (recrawl_days, _reserve_size(batch_size))
+        ).fetchall()
+        velocity_rows = conn.execute(
+            velocity_query, (recrawl_days, batch_size)
+        ).fetchall()
+        return _merge_crawl_batches(velocity_rows, reserve_rows, batch_size)
 
 
 def _mark_crawled_batch(updates: list[tuple[int, str, int]]) -> None:

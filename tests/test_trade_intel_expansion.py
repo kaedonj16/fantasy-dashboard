@@ -233,6 +233,112 @@ def test_env_var_caps_parsed():
     assert proc.stdout.strip() == "6 9 120 2000"
 
 
+# ---------------------------------------------------------------------------
+# Discovery scale-up: seed targeting + recrawl tail reserve
+# ---------------------------------------------------------------------------
+
+def _row(lid):
+    return {"league_id": lid, "season": 2026, "last_crawled_week": 8,
+            "league_type": 2}
+
+
+def test_seed_query_prefers_dynasty_then_active():
+    """_seed_league_ids expands dynasty, recently-active leagues first."""
+    pytest.importorskip("requests")
+    from data_building.trade_intel import league_discovery as ld
+
+    captured = {}
+
+    def fake_execute(query, params=None):
+        captured["query"] = query
+        captured["params"] = params
+        fake = MagicMock()
+        fake.fetchall.return_value = [{"league_id": "42"}]
+        return fake
+
+    fake_conn = MagicMock()
+    fake_conn.__enter__.return_value = fake_conn
+    fake_conn.execute.side_effect = fake_execute
+
+    with patch.object(ld, "get_conn", return_value=fake_conn):
+        assert ld._seed_league_ids(2026, limit=10) == ["42"]
+
+    q = captured["query"]
+    assert "league_type IN (0, 1, 2)" in q  # seed pool filter unchanged
+    order_by = q[q.index("ORDER BY"):]
+    assert order_by.index("(league_type = 2) DESC") \
+        < order_by.index("last_trade_at DESC NULLS LAST") \
+        < order_by.index("last_crawled_at ASC NULLS FIRST")
+    assert captured["params"] == (2026, 2025, 10)
+
+
+def test_merge_crawl_batches_reserves_tail_slots():
+    pytest.importorskip("requests")
+    from data_building.trade_intel.trade_crawler import _merge_crawl_batches
+
+    velocity = [_row(f"v{i}") for i in range(10)]
+    reserve = [_row("old1"), _row("old2"), _row("old3")]
+    merged = _merge_crawl_batches(velocity, reserve, batch_size=10)
+    ids = [r["league_id"] for r in merged]
+    assert len(ids) == 10
+    assert len(set(ids)) == 10
+    # batch 10 -> reserve is 2 slots; the two oldest-crawled leagues make it
+    assert "old1" in ids and "old2" in ids
+    # the other 8 slots keep velocity order
+    assert ids[:8] == [f"v{i}" for i in range(8)]
+
+
+def test_merge_crawl_batches_backfills_when_reserve_overlaps_velocity():
+    pytest.importorskip("requests")
+    from data_building.trade_intel.trade_crawler import _merge_crawl_batches
+
+    velocity = [_row(f"v{i}") for i in range(10)]
+    reserve = [_row("v0"), _row("v1")]  # already at the head of velocity
+    merged = _merge_crawl_batches(velocity, reserve, batch_size=10)
+    ids = [r["league_id"] for r in merged]
+    assert len(ids) == 10
+    assert len(set(ids)) == 10
+    assert set(ids) == {f"v{i}" for i in range(10)}
+
+
+def test_merge_crawl_batches_small_pool_returns_what_exists():
+    pytest.importorskip("requests")
+    from data_building.trade_intel.trade_crawler import _merge_crawl_batches
+
+    merged = _merge_crawl_batches([_row("a")], [_row("b"), _row("a")], batch_size=10)
+    assert [r["league_id"] for r in merged] == ["b", "a"]
+
+
+def test_recrawl_both_mode_merges_oldest_reserve():
+    """_leagues_to_crawl('both') guarantees stale leagues their reserve slots."""
+    pytest.importorskip("requests")
+    from data_building.trade_intel import trade_crawler
+
+    velocity_rows = [_row(f"v{i}") for i in range(10)]
+    reserve_rows = [_row("old1"), _row("old2")]
+
+    def fake_execute(query, params=None):
+        fake = MagicMock()
+        # The velocity pick is the one ordered by trade velocity.
+        if "last_trade_at DESC" in query:
+            fake.fetchall.return_value = list(velocity_rows)
+        else:
+            fake.fetchall.return_value = list(reserve_rows)
+        return fake
+
+    fake_conn = MagicMock()
+    fake_conn.__enter__.return_value = fake_conn
+    fake_conn.execute.side_effect = fake_execute
+
+    with patch.object(trade_crawler, "get_conn", return_value=fake_conn):
+        rows = trade_crawler._leagues_to_crawl(
+            batch_size=10, crawl_mode="both", recrawl_days=2)
+
+    ids = [r["league_id"] for r in rows]
+    assert len(ids) == 10
+    assert "old1" in ids and "old2" in ids
+
+
 def test_default_caps_unchanged():
     """Without env vars the Render-512Mi-safe defaults hold."""
     env = {k: v for k, v in os.environ.items()

@@ -406,15 +406,27 @@ services:
     # leagues for fresh trades, so the pool both expands and stays current
     # instead of only crawling new leagues once at discovery time.
     schedule: 0 */4 * * *
-    plan: starter
-    # Playwright is unused here (HTTP-only discovery + crawl). Installing
-    # Chromium bloated the image and is not needed for this job.
+    # Standard (2GB) plan: discovery/crawl caps are raised via the
+    # TRADE_INTEL_* env vars below. Safe at this size because Sleeper
+    # payloads are stream-scanned for ids (never fully materialized) and
+    # discovery/crawl/analytics each run in their own subprocess, so one
+    # stage's peak RSS is the whole footprint at any moment. HTTP-only job:
+    # no browser automation is installed for it.
+    plan: standard
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    # batch-size 1000 (not 2000): crawler peak is per-league JSON × in-flight
-    # workers. Discovery/crawl/analytics each run in their own subprocess so
-    # the 512Mi starter cap is one stage at a time.
-    startCommand: python scripts/refresh_trade_intel.py --discover-target 500 --batch-size 1000 --workers 4 --crawl-mode both --recrawl-days 2 --analytics
+    # batch-size 2000 with 8 workers fits the 2GB plan: crawler peak is
+    # per-league JSON × in-flight workers, and transaction bodies are
+    # parsed one league at a time rather than cached process-wide.
+    startCommand: python scripts/refresh_trade_intel.py --discover-target 500 --batch-size 2000 --workers 8 --crawl-mode both --recrawl-days 2 --analytics
     envVars:
+      - key: TRADE_INTEL_DISCOVERY_WORKERS
+        value: "8"
+      - key: TRADE_INTEL_DISCOVERY_IN_FLIGHT
+        value: "16"
+      - key: TRADE_INTEL_MAX_SEEDS
+        value: "400"
+      - key: TRADE_INTEL_FRONTIER_CAP
+        value: "8000"
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DATABASE_URL
@@ -427,15 +439,26 @@ services:
   - type: cron
     name: league-discovery
     runtime: python
-    # Daily at 6am — BFS-expands the league pool via Sleeper API (no Playwright needed).
+    # Daily at 6am — BFS-expands the league pool via Sleeper API (HTTP-only).
     # Runs before the 8am daily-job so freshly discovered leagues are available sooner.
-    # starter 512Mi: run_discovery caps seeds/in-flight and stream-scans Sleeper
-    # bodies; --target only caps inserts, not RSS. Keep this at 1000.
+    # Standard (2GB) plan: run_discovery seeds/in-flight/frontier caps are
+    # raised via the TRADE_INTEL_* env vars below. Sleeper bodies are
+    # stream-scanned for ids, never fully materialized, so RSS stays
+    # bounded by the in-flight window rather than the frontier size.
+    # --target still caps inserts per run; keep it at 1000.
     schedule: 0 6 * * *
-    plan: starter
+    plan: standard
     buildCommand: pip install --no-cache-dir -r requirements.txt
     startCommand: python scripts/discover_leagues.py --target 1000
     envVars:
+      - key: TRADE_INTEL_DISCOVERY_WORKERS
+        value: "8"
+      - key: TRADE_INTEL_DISCOVERY_IN_FLIGHT
+        value: "16"
+      - key: TRADE_INTEL_MAX_SEEDS
+        value: "400"
+      - key: TRADE_INTEL_FRONTIER_CAP
+        value: "8000"
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DATABASE_URL
