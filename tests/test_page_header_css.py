@@ -43,10 +43,14 @@ def test_league_health_title_left_aligned_without_global_h1_bar():
     assert ".lh-wrap > h1::after {{ display:none; }}" in src
 
 
-def test_league_health_invite_card_header_aligns_and_copy_button_is_styled():
+def test_league_health_invite_is_a_slim_row_and_copy_button_is_styled():
     src = _read("dashboard_services/pages/commissioner_page.py")
-    # Card header takes the body's 18px inset so header and body copy line up.
-    assert "#lhLeagueInvite .card-header {{ padding:16px 18px 0; min-height:0; }}" in src
-    # Copy button (.btn, undefined in dashboard.css) matches the invite
-    # input's height/type instead of the 22px UA fallback.
+    # Direction A: the invite is a slim flex row at the bottom of the page,
+    # not a headed card with a visible link input.
+    assert 'id="lhLeagueInvite"' in src
+    assert "#lhLeagueInvite {{ display:flex; align-items:center;" in src
+    assert "lhInvitePath" not in src
+    assert "data-invite-path=" in src
+    # Copy button (.btn, undefined in dashboard.css) gets real geometry
+    # instead of the 22px UA fallback.
     assert "#lhInviteCopy {{ padding:8px 14px; font-size:13px;" in src

@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
+        "text": "League Health is redesigned around one health card: your score, its verdict and the four things driving it (inactive teams, trades, lopsided trades, total moves) now sit together at the top. Multi-season history reads as two compact trend lines with chronic inactivity flagged underneath, the Team Overview table drops the parity dot strip, the Trade Fairness Log is one line per trade, and the PRO invite is a slim row at the bottom of the page.",
+        "link": "/league_health"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "update",
         "text": "Under the hood: the app now versions its offline cache from the actual files it ships, so new updates reach your phone on the next load without waiting on a manual cache bump.",
         "link": "/portfolio"
     },

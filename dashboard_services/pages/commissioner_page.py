@@ -158,14 +158,14 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
         completed = prior_moves_series if series is moves_series else prior_trades_series
         vals = [v for _, v in completed]
         if len(vals) < 2:
-            return ("→", "var(--muted)", "flat")
+            return ("var(--muted)", "flat")
         delta = vals[-1] - vals[0]
         thresh = max(2.0, 0.10 * abs(vals[0] or 1))
         if delta > thresh:
-            return ("▲", "#22c55e", "up")
+            return ("#22c55e", "up")
         if delta < -thresh:
-            return ("▼", "#ef4444", "down")
-        return ("→", "var(--muted)", "flat")
+            return ("#ef4444", "down")
+        return ("var(--muted)", "flat")
 
     def _series_html(series):
         parts = []
@@ -173,41 +173,27 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
         for i, (yr, val) in enumerate(series):
             is_last = i == last_idx
             if is_last and not season_complete:
-                # Current season still in progress - muted style with dashed border
-                chip_bg = "var(--row,rgba(127,127,127,.08))"
-                chip_fg = "var(--muted)"
-                chip_border = "var(--muted)"
-                border_style = "dashed"
-                yr_label = f"{yr} ↻"
-            elif is_last:
-                chip_bg = "var(--accent,#3b82f6)"
-                chip_fg = "#fff"
-                chip_border = "transparent"
-                border_style = "solid"
-                yr_label = str(yr)
+                # Current season still in progress: muted year with a note.
+                parts.append(
+                    f"<span class='msh-item is-current'><span class='msh-yr'>{yr}</span> "
+                    f"<b>{val}</b> <span class='msh-note'>in progress</span></span>"
+                )
             else:
-                chip_bg = "var(--row,rgba(127,127,127,.08))"
-                chip_fg = "var(--text)"
-                chip_border = "var(--border)"
-                border_style = "solid"
-                yr_label = str(yr)
-            parts.append(
-                f"<span class='msh-chip' style='background:{chip_bg};color:{chip_fg};"
-                f"border-color:{chip_border};border-style:{border_style};'>"
-                f"<span class='msh-chip-yr'>{yr_label}</span>"
-                f"<span class='msh-chip-val'>{val}</span></span>"
-            )
+                parts.append(
+                    f"<span class='msh-item'><span class='msh-yr'>{yr}</span> "
+                    f"<b>{val}</b></span>"
+                )
         connector = "<span class='msh-arrow'>›</span>"
         return connector.join(parts)
 
-    m_arrow, m_color, m_dir = _dir(moves_series)
-    t_arrow, t_color, t_dir = _dir(trades_series)
+    m_color, m_dir = _dir(moves_series)
+    t_color, t_dir = _dir(trades_series)
 
-    def _trend_badge(arrow, color, direction):
+    def _trend_badge(color, direction):
         label = {"up": "Rising", "down": "Falling", "flat": "Steady"}[direction]
         return (
             f"<span class='msh-trend' style='color:{color};background:{color}1a;'>"
-            f"{arrow} {label}</span>"
+            f"{label}</span>"
         )
 
     owners = layer.get("owners") or {}
@@ -219,64 +205,60 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
             chronic.append((o["name"], inact, windows))
     chronic.sort(key=lambda x: -x[1])
 
-    chronic_rows = "".join(
-        f"<div class='msh-chronic-row'>"
-        f"<span class='msh-chronic-name'>{name}</span>"
-        f"<span class='msh-chronic-flag'>inactive {inact} of last {windows}</span></div>"
-        for name, inact, windows in chronic
-    ) or (
-                       "<div class='msh-chronic-ok'>"
-                       "<span class='msh-chronic-ok-icon'>✓</span>"
-                       "No chronic inactivity - owners stay engaged across seasons.</div>"
-                   )
+    if chronic:
+        chronic_html = "".join(
+            f"<div class='msh-chronic'>"
+            f"<span class='msh-chronic-label'>Chronic Inactivity</span>"
+            f"<span class='msh-chronic-name'>{name}</span>"
+            f"<span class='msh-chronic-flag'>inactive {inact} of last {windows}</span></div>"
+            for name, inact, windows in chronic
+        )
+    else:
+        chronic_html = (
+            "<div class='msh-chronic'>"
+            "<span class='msh-chronic-label'>Chronic Inactivity</span>"
+            "<span class='msh-chronic-ok'>"
+            "No chronic inactivity. Owners stay engaged across seasons.</span></div>"
+        )
 
     n_prior = len(seasons)
     return f"""
 <style>
   .msh-card {{ padding:20px; margin-bottom:20px; }}
-  .msh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
+  .msh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:6px; }}
   .msh-head-title {{ font-size:13px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
   .msh-head-sub {{ font-size:13px; color:var(--muted); }}
-  .msh-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-bottom:18px; }}
-  .msh-stat {{ border:1px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--row,rgba(127,127,127,.03)); }}
-  .msh-stat-head {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }}
-  .msh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }}
-  .msh-trend {{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:8px; white-space:nowrap; }}
-  .msh-series {{ display:flex; align-items:center; flex-wrap:wrap; gap:2px; }}
-  .msh-chip {{ display:inline-flex; flex-direction:column; align-items:center; gap:1px; padding:5px 11px; border-radius:10px; border:1px solid; line-height:1.1; }}
-  .msh-chip-yr {{ font-size:11px; font-weight:600; opacity:.75; }}
-  .msh-chip-val {{ font-size:15px; font-weight:800; }}
-  .msh-arrow {{ color:var(--muted); font-size:15px; font-weight:700; padding:0 2px; opacity:.5; }}
-  .msh-chronic-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-bottom:8px; }}
-  .msh-chronic-row {{ display:flex; align-items:center; justify-content:space-between; padding:9px 12px; border-radius:10px; background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.18); margin-bottom:6px; font-size:13px; }}
+  .msh-line {{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 0; border-top:1px solid var(--border); }}
+  .msh-line-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; min-width:52px; }}
+  .msh-seq {{ display:inline-flex; align-items:center; flex-wrap:wrap; gap:6px; flex:1; font-size:13px; color:var(--text); }}
+  .msh-yr {{ color:var(--muted); font-weight:600; }}
+  .msh-item.is-current {{ color:var(--muted); }}
+  .msh-note {{ font-size:11px; color:var(--muted); }}
+  .msh-arrow {{ color:var(--muted); font-size:15px; font-weight:700; opacity:.5; }}
+  .msh-trend {{ margin-left:auto; font-size:11px; font-weight:700; padding:3px 9px; border-radius:8px; white-space:nowrap; }}
+  .msh-chronic {{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0 2px; margin-top:4px; border-top:1px solid var(--border); font-size:13px; }}
+  .msh-chronic-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }}
   .msh-chronic-name {{ font-weight:600; color:var(--text); }}
-  .msh-chronic-flag {{ color:#ef4444; font-weight:700; font-size:13px; }}
-  .msh-chronic-ok {{ display:flex; align-items:center; gap:8px; padding:11px 14px; border-radius:10px; background:rgba(34,197,94,.07); border:1px solid rgba(34,197,94,.2); color:var(--text); font-size:13px; }}
-  .msh-chronic-ok-icon {{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:#22c55e; color:#fff; font-size:11px; font-weight:800; flex-shrink:0; }}
+  .msh-chronic-flag {{ color:#ef4444; font-weight:700; font-size:13px; margin-left:auto; }}
+  .msh-chronic-ok {{ color:var(--text); }}
+  @media (max-width:640px) {{ .msh-chronic-flag {{ margin-left:0; }} }}
 </style>
 <div class="card msh-card">
   <div class="msh-head">
     <span class="msh-head-title">Multi-Season Health</span>
     <span class="msh-head-sub">last {n_prior} prior season{'s' if n_prior != 1 else ''}</span>
   </div>
-  <div class="msh-grid">
-    <div class="msh-stat">
-      <div class="msh-stat-head">
-        <span class="msh-stat-label">Total Moves / Season</span>
-        {_trend_badge(m_arrow, m_color, m_dir)}
-      </div>
-      <div class="msh-series">{_series_html(moves_series)}</div>
-    </div>
-    <div class="msh-stat">
-      <div class="msh-stat-head">
-        <span class="msh-stat-label">Trades / Season</span>
-        {_trend_badge(t_arrow, t_color, t_dir)}
-      </div>
-      <div class="msh-series">{_series_html(trades_series)}</div>
-    </div>
+  <div class="msh-line">
+    <span class="msh-line-label">Moves</span>
+    <span class="msh-seq">{_series_html(moves_series)}</span>
+    {_trend_badge(m_color, m_dir)}
   </div>
-  <div class="msh-chronic-label">Chronic Inactivity</div>
-  {chronic_rows}
+  <div class="msh-line">
+    <span class="msh-line-label">Trades</span>
+    <span class="msh-seq">{_series_html(trades_series)}</span>
+    {_trend_badge(t_color, t_dir)}
+  </div>
+  {chronic_html}
 </div>"""
 
 
@@ -574,7 +556,7 @@ def build_commissioner_body(ctx):
     # Ring geometry + a one-line verdict, both from values already computed above
     # (this is presentation only -- no new metric is calculated).
     import math as _math
-    _ring_r = 54
+    _ring_r = 40
     _ring_circ = 2 * _math.pi * _ring_r
     _ring_off = _ring_circ * (1 - min(100, max(0, activity_score)) / 100)
     _verdict_bits = [f"{total_trades} trade" + ("s" if total_trades != 1 else ""),
@@ -585,36 +567,38 @@ def build_commissioner_body(ctx):
 
     health_html = f"""
 <style>
-  .lh-card {{ padding:20px; margin-bottom:20px; }}
-  .lh-hero2 {{ display:grid; grid-template-columns:auto 1fr; gap:22px; align-items:center; }}
-  @media (max-width:560px) {{ .lh-hero2 {{ grid-template-columns:1fr; text-align:center; justify-items:center; }} }}
-  .lh-ring {{ position:relative; width:128px; height:128px; flex-shrink:0; }}
-  .lh-ring svg {{ transform:rotate(-90deg); }}
+  .lh-card {{ padding:22px 20px; margin-bottom:20px; }}
+  .lh-hero2 {{ display:grid; grid-template-columns:auto minmax(170px,240px) 1fr; gap:26px; align-items:center; }}
+  @media (max-width:760px) {{ .lh-hero2 {{ grid-template-columns:1fr; justify-items:center; text-align:center; }} .lh-verdict {{ margin-left:auto; margin-right:auto; }} .lh-bars-col {{ width:100%; text-align:left; }} }}
+  .lh-ring {{ position:relative; width:96px; height:96px; flex-shrink:0; }}
+  .lh-ring svg {{ transform:rotate(-90deg); display:block; }}
   .lh-ring-mid {{ position:absolute; inset:0; display:grid; place-content:center; text-align:center; }}
-  .lh-ring-num {{ font-size:28px; font-weight:800; line-height:1; }}
-  .lh-ring-cap {{ font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:3px; }}
+  .lh-ring-num {{ font-size:26px; font-weight:800; line-height:1; }}
+  .lh-ring-cap {{ font-size:9px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-top:3px; padding:0 10px; }}
   .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:8px; text-transform:uppercase; }}
-  .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
+  .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:44ch; line-height:1.5; }}
   .lh-verdict b {{ color:var(--text); }}
   .lh-wrap {{ max-width:1180px; margin:0 auto; }}
   /* This title is left-aligned with the content below it, so the global
      centered h1::after sky bar (300px wide, margin auto) renders as a stray
      floating bar under it. Suppress it, same opt-out as .wl-page-title. */
   .lh-wrap > h1::after {{ display:none; }}
-  .lh-bars {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px 34px; }}
-  @media (max-width:640px) {{ .lh-bars {{ grid-template-columns:1fr; gap:15px; }} }}
+  .lh-bars-col {{ display:flex; flex-direction:column; gap:14px; min-width:0; }}
   .lh-bar-row {{ display:flex; flex-direction:column; gap:7px; }}
   .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; }}
   .lh-bar-label {{ font-size:13px; font-weight:600; color:var(--text); }}
   .lh-bar-val {{ font-size:15px; font-weight:800; line-height:1; }}
-  .lh-bar-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; }}
+  .lh-bar-track {{ height:7px; border-radius:99px; background:var(--border); overflow:hidden; }}
   .lh-bar-fill {{ height:100%; border-radius:99px; min-width:2px; transition:width .3s ease; }}
-  .lh-parity {{ position:relative; height:58px; margin:4px 4px 2px; }}
-  .lh-parity-axis {{ position:absolute; left:0; right:0; top:33px; height:2px; background:var(--border); border-radius:2px; }}
-  .lh-parity-fair {{ position:absolute; top:21px; bottom:6px; width:2px; background:var(--accent); opacity:.55; }}
-  .lh-parity-fair span {{ position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:11px; font-weight:700; color:var(--muted); white-space:nowrap; }}
-  .lh-pdot {{ position:absolute; top:26px; width:14px; height:14px; border-radius:50%; transform:translateX(-50%); border:2px solid var(--card); box-shadow:0 1px 3px rgba(0,0,0,.28); }}
-  .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin:2px 4px 12px; }}
+  .lh-trade-row {{ display:flex; align-items:center; gap:10px; padding:11px 20px; border-bottom:1px solid var(--border); font-size:13px; }}
+  .lh-trade-row:last-child {{ border-bottom:0; }}
+  .lh-tr-side {{ flex:1 1 0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); }}
+  .lh-tr-side b {{ font-weight:700; }}
+  .lh-tr-val {{ font-weight:800; }}
+  .lh-tr-vs {{ color:var(--muted); font-size:15px; flex-shrink:0; }}
+  .lh-tr-diff {{ font-weight:800; white-space:nowrap; margin-left:auto; }}
+  .lh-tr-label {{ font-size:11px; font-weight:800; letter-spacing:.05em; white-space:nowrap; }}
+  @media (max-width:640px) {{ .lh-trade-row {{ flex-wrap:wrap; gap:7px; }} .lh-tr-diff {{ margin-left:0; }} }}
   .comm-team-table thead th:first-child, .comm-team-table tbody td:first-child {{
     position:sticky; left:0; z-index:2; background:var(--card);
     border-right:1px solid var(--border);
@@ -624,9 +608,9 @@ def build_commissioner_body(ctx):
 <div class="card lh-card">
   <div class="lh-hero2">
     <div class="lh-ring">
-      <svg width="128" height="128" viewBox="0 0 128 128" aria-hidden="true">
-        <circle cx="64" cy="64" r="{_ring_r}" fill="none" stroke="var(--border)" stroke-width="10"></circle>
-        <circle cx="64" cy="64" r="{_ring_r}" fill="none" stroke="{score_color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="{_ring_circ:.1f}" stroke-dashoffset="{_ring_off:.1f}"></circle>
+      <svg width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
+        <circle cx="48" cy="48" r="{_ring_r}" fill="none" stroke="var(--border)" stroke-width="9"></circle>
+        <circle cx="48" cy="48" r="{_ring_r}" fill="none" stroke="{score_color}" stroke-width="9" stroke-linecap="round" stroke-dasharray="{_ring_circ:.1f}" stroke-dashoffset="{_ring_off:.1f}"></circle>
       </svg>
       <div class="lh-ring-mid"><div class="lh-ring-num" style="color:{score_color};">{int(activity_score)}</div><div class="lh-ring-cap">Health Score</div></div>
     </div>
@@ -634,11 +618,8 @@ def build_commissioner_body(ctx):
       <span class="lh-pill" style="color:{score_color};background:color-mix(in srgb,{score_color} 15%,transparent);">{score_label}</span>
       <div class="lh-verdict">{_verdict}</div>
     </div>
-  </div>
-</div>
-<div class="card" style="padding:18px 20px;margin-bottom:20px;">
-  <div class="card-header" style="margin-bottom:6px;"><h3>What's driving the score</h3></div>
-  <div class="lh-bars">{_bars_html}
+    <div class="lh-bars-col">{_bars_html}
+    </div>
   </div>
 </div>"""
 
@@ -664,38 +645,9 @@ def build_commissioner_body(ctx):
   <td style="padding:10px;text-align:center;">{r['trades']}</td>
 </tr>"""
 
-    # Parity strip: plot each team's existing value_pct along a thin↔stacked axis
-    # with the fair share marked. Pure visualization of the same numbers -- no new
-    # metric is computed.
-    _shares = [r["value_pct"] for r in roster_infos] or [fair_share]
-    _p_lo = min(min(_shares), fair_share)
-    _p_hi = max(max(_shares), fair_share)
-    _p_span = (_p_hi - _p_lo) or 1.0
-    _p_lo -= _p_span * 0.12
-    _p_hi += _p_span * 0.12
-    _p_span = (_p_hi - _p_lo) or 1.0
-
-    def _p_x(s):
-        return max(0.0, min(100.0, (s - _p_lo) / _p_span * 100))
-
-    _p_dots = ""
-    for r in roster_infos:
-        _pc = "#ef4444" if r["inactive"] else ("#22c55e" if abs(r["value_pct"] - fair_share) <= 2 else "#f59e0b")
-        _p_dots += (f'<div class="lh-pdot" title="{html.escape(r["name"])} &middot; {r["value_pct"]:.1f}%" '
-                    f'style="left:{_p_x(r["value_pct"]):.1f}%;background:{_pc};"></div>')
-    parity_html = (
-        f'<div style="padding:14px 16px 0;">'
-        f'<div class="lh-parity"><div class="lh-parity-axis"></div>'
-        f'<div class="lh-parity-fair" style="left:{_p_x(fair_share):.1f}%;"><span>fair {fair_share:.1f}%</span></div>'
-        f'{_p_dots}</div>'
-        f'<div class="lh-parity-scale"><span>Thin roster</span><span>Fair share</span><span>Stacked roster</span></div>'
-        f'</div>'
-    )
-
     roster_table = f"""
 <div class="card" style="overflow:auto;margin-bottom:20px;">
   <div class="card-header"><h3>Team Overview</h3></div>
-  {parity_html}
   <table class="comm-team-table" style="width:100%;border-collapse:collapse;" data-sortable>
     <thead><tr style="border-bottom:2px solid var(--border);">
       <th style="padding:10px 14px;text-align:left;font-size:13px;color:var(--muted);">TEAM</th>
@@ -714,32 +666,13 @@ def build_commissioner_body(ctx):
         for t in trade_rows[:25]:
             diff_color = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 40 else "#22c55e")
             diff_label = "LOPSIDED" if t["lopsided"] else ("UNEVEN" if t["diff"] > 40 else "FAIR")
-            max_val = max(t["val_a"], t["val_b"], 1)
-            pct_a = t["val_a"] / max_val * 100
-            pct_b = t["val_b"] / max_val * 100
             trade_items += f"""
-<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);border-left:3px solid {diff_color};">
-  <div style="flex:1;min-width:0;">
-    <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE A</div>
-    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(t['team_a'])}</div>
-    <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.15;margin:2px 0;">{int(t['val_a']):,}</div>
-    <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;">
-      <div style="height:3px;background:var(--accent);border-radius:2px;width:{pct_a:.0f}%;"></div>
-    </div>
-  </div>
-  <div style="text-align:center;flex-shrink:0;">
-    <div style="font-size:15px;color:var(--muted);margin-bottom:5px;">&#8644;</div>
-    <div style="background:{diff_color}22;color:{diff_color};font-size:13px;font-weight:700;padding:3px 10px;border-radius:10px;white-space:nowrap;">&#177;{int(t['diff']):,}</div>
-    <div style="font-size:11px;color:{diff_color};margin-top:3px;font-weight:700;letter-spacing:.06em;">{diff_label}</div>
-  </div>
-  <div style="flex:1;min-width:0;text-align:right;">
-    <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE B</div>
-    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(t['team_b'])}</div>
-    <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.15;margin:2px 0;">{int(t['val_b']):,}</div>
-    <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;display:flex;justify-content:flex-end;">
-      <div style="height:3px;background:var(--accent);border-radius:2px;width:{pct_b:.0f}%;"></div>
-    </div>
-  </div>
+<div class="lh-trade-row">
+  <span class="lh-tr-side"><b>{html.escape(t['team_a'])}</b> <span class="lh-tr-val">{int(t['val_a']):,}</span></span>
+  <span class="lh-tr-vs">&#8644;</span>
+  <span class="lh-tr-side"><b>{html.escape(t['team_b'])}</b> <span class="lh-tr-val">{int(t['val_b']):,}</span></span>
+  <span class="lh-tr-diff" style="color:{diff_color};">&#177;{int(t['diff']):,}</span>
+  <span class="lh-tr-label" style="color:{diff_color};">{diff_label}</span>
 </div>"""
         trade_card = f"""
 <div class="card" style="overflow:hidden;">
@@ -779,42 +712,33 @@ def build_commissioner_body(ctx):
         _inv = html.escape(league_invite_path(platform, season, league_id), quote=True)
         invite_card = f"""
 <style>
-  /* .card-header carries no horizontal padding while this card's body is
-     inset 18px, so the header text sat 18px left of the body copy. Line
-     them up, and drop the header's 50px min-height band. */
-  #lhLeagueInvite .card-header {{ padding:16px 18px 0; min-height:0; }}
-  /* dashboard.css defines no .btn class, so this button fell back to the
-     UA padding (1px 6px, 22px tall) next to the 33px invite input. Match
-     the input's height and type size. */
+  /* Slim final row (Direction A), not a headed card. The copy button
+     (.btn, undefined in dashboard.css) gets real geometry here so it does
+     not fall back to the 22px UA padding next to the row copy. */
+  #lhLeagueInvite {{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; margin-bottom:20px; }}
+  #lhLeagueInvite .lh-invite-text {{ flex:1; min-width:220px; margin:0; font-size:13px; line-height:1.45; color:var(--text-muted); }}
+  #lhLeagueInvite .lh-invite-text b {{ color:var(--text); }}
   #lhInviteCopy {{ padding:8px 14px; font-size:13px; line-height:1.25; white-space:nowrap; }}
 </style>
-<div class="card" id="lhLeagueInvite" style="margin-bottom:16px;">
-  <div class="card-header">
-    <h3>Invite your league to PRO</h3>
-  </div>
-  <div class="card-body" style="padding:16px 18px;">
-    <p style="margin:0 0 10px;font-size:13px;line-height:1.45;color:var(--text-muted);">
-      Share this link so teammates can claim League PRO on this league after a League plan is active.
-    </p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <input id="lhInvitePath" type="text" readonly value="{_inv}"
-        style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;">
-      <button type="button" class="btn" id="lhInviteCopy">Copy invite link</button>
-    </div>
-  </div>
+<div class="card" id="lhLeagueInvite">
+  <p class="lh-invite-text"><b>Invite your league to PRO:</b> share this link so teammates can claim League PRO on this league.</p>
+  <button type="button" class="btn" id="lhInviteCopy" data-invite-path="{_inv}">Copy invite link</button>
 </div>
 <script>
 (function(){{
   var btn = document.getElementById('lhInviteCopy');
-  var inp = document.getElementById('lhInvitePath');
-  if (!btn || !inp) return;
+  if (!btn) return;
   btn.addEventListener('click', function(){{
-    var url = (window.location.origin || '') + inp.value;
+    var url = (window.location.origin || '') + btn.getAttribute('data-invite-path');
     if (navigator.clipboard && navigator.clipboard.writeText) {{
       navigator.clipboard.writeText(url).then(function(){{ btn.textContent = 'Copied'; }});
     }} else {{
-      inp.select();
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
       document.execCommand('copy');
+      document.body.removeChild(ta);
       btn.textContent = 'Copied';
     }}
   }});
@@ -823,7 +747,7 @@ def build_commissioner_body(ctx):
     except Exception:
         invite_card = ""
 
-    return f'<div class="lh-wrap"><h1 class="page-title" style="margin-bottom:8px;">League Health</h1><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{invite_card}{health_html}{history_panel}{roster_table}{trade_card}</div>'
+    return f'<div class="lh-wrap"><h1 class="page-title" style="margin-bottom:8px;">League Health</h1><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{health_html}{history_panel}{roster_table}{trade_card}{invite_card}</div>'
 
 
 # /<...>/league_health and /<...>/commissioner are served by routes/league_pages_bp.py.
