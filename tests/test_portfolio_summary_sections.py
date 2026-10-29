@@ -144,10 +144,12 @@ def test_build_summary_carries_archetype_badge_strengths(monkeypatch):
         7, {"platform": "sleeper", "league_id": "L", "season": 2026},
         lambda *a: ctx,
     )
-    assert result["pos_user_vals"] == {"QB": 300.0, "RB": 0.0, "WR": 0.0, "TE": 900.0}
+    # Weighted strengths under the fixed denominator: a lone QB scores
+    # 300 / 1.25 and a lone TE 900 / 1.20 (unfilled slots count as 0).
+    assert result["pos_user_vals"] == {"QB": 240.0, "RB": 0.0, "WR": 0.0, "TE": 750.0}
     # Medians across the three rosters; an all-zero position falls back to 1
     # (the inline summary's `or 1`), so its ratio can never win the badge.
-    assert result["pos_league_avgs"] == {"QB": 250.0, "RB": 1, "WR": 1, "TE": 200.0}
+    assert result["pos_league_avgs"] == {"QB": 200.0, "RB": 1, "WR": 1, "TE": 166.66666666666669}
     # TE ratio 4.5x the median is the badge winner, not "Balanced".
     ratios = {p: result["pos_user_vals"][p] / result["pos_league_avgs"][p]
               for p in ("QB", "RB", "WR", "TE")}
