@@ -16488,6 +16488,31 @@ _SS_OPTIONS_TTL = 120.0
 _SS_OPTIONS_MAX = 64
 
 
+def _ss_ctx_signature(ctx) -> str:
+    """Content fingerprint of the ctx fields the options build reads:
+    starting slots, roster membership, and scoring. The options cache key
+    must tell two different league shapes apart even when they arrive as
+    different ctx objects (and must never merge them when a freed ctx's
+    memory address is reused, which an id(ctx) key component did: a
+    Superflex-shaped payload could be served for the same league's
+    non-Superflex shape, flipping a bench RB's strip verdict to Start)."""
+    parts = [
+        tuple(str(p) for p in (ctx.get("roster_positions") or [])),
+        json.dumps(ctx.get("scoring_settings") or {},
+                   sort_keys=True, default=str),
+    ]
+    for r in (ctx.get("rosters") or []):
+        if not isinstance(r, dict):
+            continue
+        parts.append((
+            str(r.get("roster_id") or ""),
+            tuple(str(p) for p in (r.get("players") or [])),
+            tuple(str(p) for p in (r.get("reserve") or [])),
+            tuple(str(p) for p in (r.get("taxi") or [])),
+        ))
+    return hashlib.sha256(repr(parts).encode("utf-8")).hexdigest()
+
+
 def _ss_ordinal(n: int) -> str:
     if 10 <= n % 100 <= 20:
         suf = "th"
@@ -16550,7 +16575,7 @@ def api_player_startsit_strip():
     status = None
     if _is_roster_player:
         _okey = (platform, league_id, int(season), str(viewer_roster_id),
-                 int(ctx.get("current_week") or 1), id(ctx))
+                 int(ctx.get("current_week") or 1), _ss_ctx_signature(ctx))
         _ohit = _SS_OPTIONS_CACHE.get(_okey)
         if _ohit and time.monotonic() - _ohit[0] < _SS_OPTIONS_TTL:
             payload, status = _ohit[1], 200
