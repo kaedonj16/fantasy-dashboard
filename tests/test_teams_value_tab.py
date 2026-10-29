@@ -51,7 +51,11 @@ def test_value_tab_keeps_window_pills_and_header():
     for days in ("7", "14", "30", "60"):
         assert 'data-days="%s"' % days in render
     assert "Value Tracker" in render
-    assert "Which rosters gained the most dynasty value?" in render
+    # The subtitle names the active format: Beat the Market follows the
+    # Dynasty / This Season toggle since the redraft follow-up.
+    assert "Which rosters gained the most " in render
+    assert "data.scoring_type === 'redraft' ? 'redraft' : 'dynasty'" in render
+    assert " value?</span>" in render
     # Column header tracks the active window.
     assert "c-30d" in render
     assert "+ days + 'D" in render

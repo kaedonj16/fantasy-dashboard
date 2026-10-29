@@ -886,6 +886,8 @@ class DigestRunCache:
         self.pidx: dict = {}
         self.movers_1qb: dict = {}
         self.movers_sf: dict = {}
+        self.movers_redraft_1qb: dict = {}
+        self.movers_redraft_sf: dict = {}
         self.model_rows: list = []
         self.model_by_id: dict[str, dict] = {}
         self.nfl_state: dict = {}
@@ -906,6 +908,23 @@ class DigestRunCache:
             self.pidx = load_players_index() or {}
             self.movers_1qb = get_top_movers(days=7, limit=2000, league_type="1qb") or {}
             self.movers_sf = get_top_movers(days=7, limit=2000, league_type="sf") or {}
+            # Redraft movers load alongside (lazily enough: same shared
+            # load, only for the weekly run). They read the redraft
+            # history columns directly; while that history is young they
+            # simply come back empty, and a redraft league's digest then
+            # shows no movers rather than dynasty movers.
+            try:
+                self.movers_redraft_1qb = get_top_movers(
+                    days=7, limit=2000, league_type="1qb",
+                    scoring_type="redraft") or {}
+                self.movers_redraft_sf = get_top_movers(
+                    days=7, limit=2000, league_type="sf",
+                    scoring_type="redraft") or {}
+            except Exception:
+                logger.debug("[digest-cache] redraft movers load failed",
+                             exc_info=True)
+                self.movers_redraft_1qb = self.movers_redraft_1qb or {}
+                self.movers_redraft_sf = self.movers_redraft_sf or {}
         except Exception:
             logger.debug("[digest-cache] movers/index load failed", exc_info=True)
             self.pidx = self.pidx or {}
@@ -1010,7 +1029,18 @@ class DigestRunCache:
         except Exception:
             logger.debug("[digest-cache] breakout load failed", exc_info=True)
 
-    def movers_for(self, *, is_superflex: bool) -> dict:
+    def movers_for(self, *, is_superflex: bool, fmt: Optional[dict] = None) -> dict:
+        """Movers for one league, priced in the league's own format.
+
+        Redraft and keeper leagues get the redraft movers (the same
+        selection rule value_keys_for_format applies to player values);
+        dynasty leagues get the dynasty movers. ``fmt`` is the league's
+        classify_league_roster_format dict; callers that pass none keep
+        the historical dynasty behavior.
+        """
+        fmt = fmt or {}
+        if fmt.get("is_redraft") or fmt.get("is_keeper"):
+            return self.movers_redraft_sf if is_superflex else self.movers_redraft_1qb
         return self.movers_sf if is_superflex else self.movers_1qb
 
     def league_bundle(self, platform: str, season: int, league_id: str) -> Optional[dict]:

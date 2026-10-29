@@ -65,10 +65,23 @@
         panel.innerHTML = '<div class="analytics-empty">' + (message || 'Could not load data.') + '</div>';
     }
 
+    // The Dynasty / This Season toggle only exists on dynasty leagues
+    // (its state is the explicit format signal for Beat the Market). On
+    // leagues without the toggle, no signal is sent and the server
+    // classifies the league itself.
+    var _btmLoadedFormat = undefined;
+    function _btmFormatSignal() {
+        if (!document.querySelector('.teams-mode-toggle')) return null;
+        return window.__teamsValueMode === 'redraft' ? 'redraft' : 'dynasty';
+    }
+
     function loadBtm() {
         _syncLeagueCfg();
-        if (_loaded.btm) return;
+        // Reload when the grading mode flipped since the last load, so the
+        // VALUE tab never shows dynasty deltas in This Season mode.
+        if (_loaded.btm && _btmLoadedFormat === _btmFormatSignal()) return;
         _loaded.btm = true;
+        _btmLoadedFormat = _btmFormatSignal();
         var panel = document.getElementById('btmPanel');
         if (!panel) return;
         // Slim (narrow) rendering only in the desktop sidebar. On mobile the
@@ -103,7 +116,7 @@
                 html += '<div class="btm-header">' +
                     '<div class="btm-header-text">' +
                     '<span class="btm-title">Value Tracker</span>' +
-                    '<span class="btm-subtitle">Which rosters gained the most dynasty value?</span>' +
+                    '<span class="btm-subtitle">Which rosters gained the most ' + (data.scoring_type === 'redraft' ? 'redraft' : 'dynasty') + ' value?</span>' +
                     '</div>' +
                     '<div class="btm-window-pills">' +
                     '<button class="btm-pill' + (days === 7 ? ' active' : '') + '" data-days="7">7d</button>' +
@@ -182,9 +195,11 @@
 
         function fetchBtm(days) {
             panel.innerHTML = '<div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>';
+            var _btmFmt = _btmFormatSignal();
             fetch('/api/beat-the-market?platform=' + _platform +
                 '&league_id=' + _leagueId + '&season=' + _season +
-                '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=' + days)
+                '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=' + days +
+                (_btmFmt ? '&scoring_type=' + _btmFmt : ''))
                 .then(function (r) {
                     return r.json();
                 })

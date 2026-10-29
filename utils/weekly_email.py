@@ -1024,7 +1024,7 @@ def _collect_league_digest(
     if pidx is None:
         pidx = cache.pidx or {}
     if movers is None:
-        movers = cache.movers_for(is_superflex=bool(fmt.get("is_superflex")))
+        movers = cache.movers_for(is_superflex=bool(fmt.get("is_superflex")), fmt=fmt)
 
     is_dynasty = bool(fmt.get("is_dynasty"))
     show_assets = uses_long_term_value(fmt)
@@ -1608,7 +1608,7 @@ def _best_effort_lineup_actions(leagues: list[dict], run_cache=None) -> list:
             fallers = []
             if fmt.get("is_dynasty") and cache is not None:
                 mine = {str(p) for p in (roster.get("players") or [])}
-                movers = cache.movers_for(is_superflex=bool(fmt.get("is_superflex")))
+                movers = cache.movers_for(is_superflex=bool(fmt.get("is_superflex")), fmt=fmt)
                 fallers = filter_movers(
                     movers.get("fallers") or [], want_positive=False, mine=mine,
                     min_abs=LEAGUEWIDE_MOVE_MIN, limit=1,
