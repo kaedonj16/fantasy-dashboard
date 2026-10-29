@@ -276,3 +276,110 @@ def test_plotly_toggle_covers_polar_charts(js):
     assert "polar.radialaxis.gridcolor" in fn, \
         "radar charts still need polar chrome restyled on toggle"
     assert "hoverlabel.bgcolor" in fn
+
+
+# ---------------------------------------------------------------------------
+# Medal and rank badges: the last cluster from the 2026-09-30 audit.
+# .dyn-rank.rank-1/2/3 and the .os-snap-medal top-3 variants carry light
+# metallic gradients with near-black text in their base rules. The dark
+# overrides use the deepened metallic variants from the approved visual
+# improvements mock (Dark Mode tab); the base light rules must not move.
+# ---------------------------------------------------------------------------
+
+MEDAL_DARK_SELECTORS = [
+    ".dyn-rank.rank-1",
+    ".dyn-rank.rank-2",
+    ".dyn-rank.rank-3",
+    ".os-snap-row.is-1 .os-snap-medal",
+    ".os-snap-row.is-2 .os-snap-medal",
+    ".os-snap-row.is-3 .os-snap-medal",
+]
+
+
+@pytest.mark.parametrize("selector", MEDAL_DARK_SELECTORS)
+def test_medal_dark_override(css, selector):
+    assert has_dark_override(css, selector), \
+        f"{selector} is a light metallic badge with no dark variant"
+
+
+def _dark_rule_body(css_text, selector):
+    pattern = r'\[data-theme="dark"\]\s*' + re.escape(selector) + r'\s*\{([^}]*)\}'
+    match = re.search(pattern, css_text)
+    assert match, f"no dark rule for {selector}"
+    return match.group(1)
+
+
+MEDAL_DARK_VALUES = [
+    # selector, gradient stops, text color, box-shadow (os-snap only)
+    (".dyn-rank.rank-1", "#b45309", "#92400e", "#fde68a", None),
+    (".dyn-rank.rank-2", "#475569", "#334155", "#e2e8f0", None),
+    (".dyn-rank.rank-3", "#9a5b2e", "#7c4522", "#fed7aa", None),
+    (".os-snap-row.is-1 .os-snap-medal", "#b45309", "#92400e", "#fde68a",
+     "0 3px 10px rgba(245, 158, 11, .22)"),
+    (".os-snap-row.is-2 .os-snap-medal", "#475569", "#334155", "#e2e8f0",
+     "0 3px 10px rgba(148, 163, 184, .18)"),
+    (".os-snap-row.is-3 .os-snap-medal", "#9a5b2e", "#7c4522", "#fed7aa",
+     "0 3px 10px rgba(194, 128, 63, .2)"),
+]
+
+
+@pytest.mark.parametrize(
+    "selector,stop1,stop2,color,shadow", MEDAL_DARK_VALUES
+)
+def test_medal_dark_values(css, selector, stop1, stop2, color, shadow):
+    body = _dark_rule_body(css, selector)
+    assert f"background: linear-gradient(135deg, {stop1}, {stop2});" in body
+    assert f"color: {color};" in body
+    if shadow is not None:
+        assert f"box-shadow: {shadow};" in body
+
+
+def test_medal_dark_rules_before_icons_merge_marker(css):
+    marker = css.index("MERGED: icons.css")
+    for selector in MEDAL_DARK_SELECTORS:
+        pattern = r'\[data-theme="dark"\]\s*' + re.escape(selector) + r'\s*\{'
+        match = re.search(pattern, css)
+        assert match and match.start() < marker, \
+            f"dark rule for {selector} must sit before the icons merge marker"
+
+
+def test_medal_light_base_rules_unchanged(css):
+    """Light mode must be visually unchanged: the base metallic rules stay."""
+    assert (
+        ".dyn-rank.rank-1 {\n"
+        "    background: linear-gradient(135deg, #fcd34d, #f59e0b);\n"
+        "    color: #3f2d03;\n}"
+    ) in css
+    assert (
+        ".dyn-rank.rank-2 {\n"
+        "    background: linear-gradient(135deg, #eef2f7, #a9b6c7);\n"
+        "    color: #27303d;\n}"
+    ) in css
+    assert (
+        ".dyn-rank.rank-3 {\n"
+        "    background: linear-gradient(135deg, #eabb92, #c2803f);\n"
+        "    color: #3a2408;\n}"
+    ) in css
+    assert (
+        ".os-snap-row.is-1 .os-snap-medal {\n"
+        "    background: linear-gradient(135deg, #fcd34d, #f59e0b);\n"
+        "    color: #3f2d03;"
+    ) in css
+    assert (
+        ".os-snap-row.is-2 .os-snap-medal {\n"
+        "    background: linear-gradient(135deg, #eef2f7, #a9b6c7);\n"
+        "    color: #27303d;"
+    ) in css
+    assert (
+        ".os-snap-row.is-3 .os-snap-medal {\n"
+        "    background: linear-gradient(135deg, #eabb92, #c2803f);\n"
+        "    color: #3a2408;"
+    ) in css
+
+
+def test_medal_dark_mode_changelog_entry():
+    from pin_helpers import changelog_entry
+
+    entry = changelog_entry("top 3 dynasty rank badges", "deepened metallic", tag="fix")
+    assert entry["date"] == "2026-10-29"
+    assert "snapshot medals" in entry["text"]

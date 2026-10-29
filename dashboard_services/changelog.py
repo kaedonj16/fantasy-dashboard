@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-29",
+        "tag": "fix",
+        "text": "Dark mode: the top 3 dynasty rank badges and the team snapshot medals no longer glow. Their bright gold, silver and bronze gradients are replaced with deepened metallic tones and lighter text in dark mode, so the medal places read clearly on the dark background. Light mode looks exactly as before.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-29",
         "tag": "update",
         "text": "Player search everywhere is smarter. One shared matcher now powers the nav search, trade calculator, rankings, compare, Advanced Metrics, Trade Intel, draft room, cheat sheet and the rest, so punctuation, initials, partial names and small typos all find the right player: try jamarr, amonra, jsn, cmc or chase jamarr. Results rank the best match first, with player value breaking ties, so robinson leads with Bijan and st brown leads with Amon-Ra.",
         "link": "/players"

@@ -54425,6 +54425,45 @@ html:has(.home-page) { scroll-behavior: smooth; }
     flex: 0 0 104px;
 }
 
+/* Dark mode medal and rank badges: the top-3 dynasty rank pills (.dyn-rank)
+   and the offseason snapshot medals (.os-snap-medal) carry light metallic
+   gradients with near-black text in the base rules, which glare on the dark
+   ground. Deepened metallic variants keep the gold, silver and bronze read
+   in dark mode. Light mode is untouched: these rules are dark-scoped only.
+   Values match the approved visual improvements mock, Dark Mode tab. */
+[data-theme="dark"] .dyn-rank.rank-1 {
+    background: linear-gradient(135deg, #b45309, #92400e);
+    color: #fde68a;
+}
+
+[data-theme="dark"] .dyn-rank.rank-2 {
+    background: linear-gradient(135deg, #475569, #334155);
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .dyn-rank.rank-3 {
+    background: linear-gradient(135deg, #9a5b2e, #7c4522);
+    color: #fed7aa;
+}
+
+[data-theme="dark"] .os-snap-row.is-1 .os-snap-medal {
+    background: linear-gradient(135deg, #b45309, #92400e);
+    color: #fde68a;
+    box-shadow: 0 3px 10px rgba(245, 158, 11, .22);
+}
+
+[data-theme="dark"] .os-snap-row.is-2 .os-snap-medal {
+    background: linear-gradient(135deg, #475569, #334155);
+    color: #e2e8f0;
+    box-shadow: 0 3px 10px rgba(148, 163, 184, .18);
+}
+
+[data-theme="dark"] .os-snap-row.is-3 .os-snap-medal {
+    background: linear-gradient(135deg, #9a5b2e, #7c4522);
+    color: #fed7aa;
+    box-shadow: 0 3px 10px rgba(194, 128, 63, .2);
+}
+
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
