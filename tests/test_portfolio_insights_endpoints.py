@@ -682,7 +682,7 @@ def test_embed_payloads_compute_in_page_pass_and_store(monkeypatch):
 
 # ── Client wiring ───────────────────────────────────────────────────────────
 
-def test_client_loads_bye_immediately_and_defers_rooting():
+def test_client_hydrates_insights_lazily_on_first_row_open():
     js = (ROOT / "static" / "app.js").read_text()
     assert "fetcher('/api/portfolio-bye'" in js
     assert "function loadBye(attempt)" in js
@@ -694,15 +694,25 @@ def test_client_loads_bye_immediately_and_defers_rooting():
     assert "INS_RETRY" in rooting
     assert "45000" in rooting
     assert "loadInsights(attempt + 1, t0)" in rooting
-    assert "window.addEventListener('br:portfolio-primary-settled', kickInsights" in js
-    assert "setTimeout(kickInsights, 6000);" in js
-    assert "insightsKicked" in js
+    # Direction C (2026-10-29): neither loader runs on page load. The
+    # old page-load kicks (primary-settled listener, 6s fallback timer,
+    # scroll-into-view observer) are gone; the accordion's first open
+    # dispatches through __pfLoadSection, each section loads once, and
+    # the whole-page refresh hooks re-run only already-loaded sections.
+    assert "kickInsights" not in js
+    assert "window.__pfLoadSection = function (id)" in js
+    assert "if (id === 'pfSecRooting')" in js
+    assert ("if (insightsLoaded || !document.getElementById('pfRootingBody')) return;"
+            in js)
+    assert ("if (byeLoaded || !document.getElementById('pfByeBody')) return;"
+            in js)
+    assert ("window.__pfRefreshInsights = function () "
+            "{ if (insightsLoaded) loadInsights(); };") in js
+    assert ("window.__pfRefreshBye = function () "
+            "{ if (byeLoaded) loadBye(); };") in js
     # Speed pass (2026-10-27): the server answers deferred instantly
-    # (background compute), so the first retry is shorter, and the
-    # Rooting card also kicks when scrolled into view.
+    # (background compute), so the first retry is shorter.
     assert "var INS_RETRY = [3000, 15000, 30000];" in js
-    assert "IntersectionObserver" in js
-    assert "getElementById('pfSecRooting')" in js
     # Cold-load fix (2026-10-27): the old ladder burned out at ~48s,
     # before a cold production compute lands, and painted the
     # no-starters empty state for a scan that never completed. The

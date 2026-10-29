@@ -31288,42 +31288,35 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         bb.innerHTML = '<div class="pf-ins-empty">Could not check byes right now.</div>';
       });
   }
+  // Direction C lazy hydration: the Rooting Guide and Bye Watch rows
+  // sit collapsed inside the one insights accordion card, so NOTHING
+  // in this section fetches on page load. The accordion wiring in the
+  // page body calls __pfLoadSection the first time a row opens; each
+  // section loads exactly once per page instance, painting from its
+  // server-embedded payload when the build provided one (no fetch at
+  // all) and only then falling back to its endpoint. Re-opening a row
+  // never refetches. Heatmap and Holdings are server-rendered and
+  // need no loader.
+  var insightsLoaded = false;
+  var byeLoaded = false;
+  window.__pfLoadSection = function (id) {
+    if (id === 'pfSecRooting') {
+      if (insightsLoaded || !document.getElementById('pfRootingBody')) return;
+      insightsLoaded = true;
+      loadInsights();
+    } else if (id === 'pfSecBye') {
+      if (byeLoaded || !document.getElementById('pfByeBody')) return;
+      byeLoaded = true;
+      loadBye();
+    }
+  };
   // Whole-page refresh hooks (B5): loadInsights/loadBye are scoped in
   // this IIFE, so expose minimal re-run hooks for the portfolio card
-  // owner's refresh(). loadInsights/loadBye each no-op when their
-  // section is absent from the page.
-  window.__pfRefreshInsights = function () { loadInsights(); };
-  window.__pfRefreshBye = function () { loadBye(); };
-  // Bye Watch is cache-only data on its own endpoint: load it immediately.
-  // The Rooting Guide scan waits until the league cards settle (or a
-  // bounded fallback when the card lifecycle never runs) so it never
-  // competes with the card and board loads. It also kicks as soon as the
-  // Rooting card is scrolled into view, so a fast scroll is not stuck
-  // waiting on the fallback; whichever kick fires first wins and the
-  // scan loads exactly once.
-  var insightsKicked = false;
-  function kickInsights() {
-    if (insightsKicked) return;
-    insightsKicked = true;
-    loadInsights();
-  }
-  window.addEventListener('br:portfolio-primary-settled', kickInsights, { once: true });
-  setTimeout(kickInsights, 6000);
-  var rgCard = document.getElementById('pfSecRooting');
-  if (rgCard && 'IntersectionObserver' in window) {
-    var rgObserver = new IntersectionObserver(function (entries) {
-      for (var i = 0; i < entries.length; i++) {
-        if (entries[i].isIntersecting) {
-          rgObserver.disconnect();
-          kickInsights();
-          return;
-        }
-      }
-    }, { rootMargin: '200px' });
-    rgObserver.observe(rgCard);
-  }
-  if (document.readyState !== 'loading') loadBye();
-  else document.addEventListener('DOMContentLoaded', loadBye);
+  // owner's refresh(). A refresh re-runs a section ONLY if it has
+  // already been opened (and so loaded) once; a never-opened row
+  // stays unloaded, keeping the lazy contract.
+  window.__pfRefreshInsights = function () { if (insightsLoaded) loadInsights(); };
+  window.__pfRefreshBye = function () { if (byeLoaded) loadBye(); };
 })();
 
 /* Weekly hub: League Scores tab (My Matchup | League Scores).

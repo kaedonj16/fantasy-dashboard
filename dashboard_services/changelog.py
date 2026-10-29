@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-29",
+        "tag": "update",
+        "text": "My Leagues: the Portfolio insights sections now sit as four collapsed rows inside one card (Positional Strength, Rooting Guide, Bye Watch and Player Holdings). Tap a row to open it, and each section loads only when you first open it, so the page arrives faster. The Rooting Guide row shows only on game days. The summary card at the top keeps every tile and gets a cleaner look: bigger stat values, quiet uppercase labels, hairline dividers, and the This week (proj) tile now shows it opens the projected finals.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-29",
         "tag": "fix",
         "text": "Player cards: the Breakout tab no longer goes missing on a first, cold open. The tab used to wait on the heaviest part of the player card, so a slow first load hid it for that whole visit even for players on the breakout board. It now checks its own light flag as soon as the card opens, retries quietly if that first check is slow, and opening a player straight from the Breakout Engine lands on the Breakout tab like it should.",
         "link": "/breakouts"

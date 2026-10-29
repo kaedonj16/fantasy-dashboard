@@ -41377,10 +41377,16 @@ def build_portfolio_body(
         ".pf-grid-2>.card{display:flex;flex-direction:column;}"
         ".pf-grid-2>.card>.card-body{flex:1;}"
         "@media(max-width:700px){.pf-grid-2{grid-template-columns:1fr;}}"
-        # Summary header: title + a cohesive 3-up stat bar (Leagues/Record/Season)
+        # Summary header: title + a cohesive stat bar (Leagues/Record/etc).
+        # Polish (Direction C): the card itself carries the same surface
+        # as the league cards (pale hairline + soft shadow, stepped in
+        # dark); flat inside, hairline dividers only, no inset boxes.
+        ".pf-summary-card{border:1px solid var(--border);border-radius:12px;"
+        "box-shadow:0 1px 3px rgba(18,45,75,.07);padding:16px 18px;}"
+        ":root[data-theme='dark'] .pf-summary-card{box-shadow:0 2px 10px rgba(0,0,0,.35);}"
         ".pf-summary{display:flex;flex-direction:column;gap:14px;}"
-        ".pf-summary-title{font-size:22px;font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.1;}"
-        ".pf-summary-sub{font-size:13px;color:var(--text-muted);margin-top:3px;}"
+        ".pf-summary-title{font-size:24px;font-weight:800;letter-spacing:-.015em;color:var(--text);line-height:1.1;}"
+        ".pf-summary-sub{font-size:13px;color:var(--text-muted);margin-top:4px;}"
         ".pf-reset-user{color:var(--text-muted);font-size:13px;font-weight:700;"
         "text-decoration:underline;text-underline-offset:2px;}"
         ".pf-reset-user:hover{color:var(--accent);}"
@@ -41390,14 +41396,14 @@ def build_portfolio_body(
         "padding:7px 12px;cursor:pointer;white-space:nowrap;}"
         ".pf-notif-btn:hover{color:var(--accent);border-color:var(--accent);}"
         ".pf-stat-bar{display:grid;grid-template-columns:repeat(3,1fr);"
-        "border:1px solid var(--grid);border-radius:12px;overflow:hidden;background:var(--row);}"
+        "border-top:1px solid var(--grid);border-bottom:1px solid var(--grid);}"
         ".pf-stat-bar--4{grid-template-columns:repeat(4,1fr);}"
-        ".pf-stat{padding:12px 10px;text-align:center;min-width:0;}"
+        ".pf-stat{padding:13px 10px 11px;text-align:center;min-width:0;}"
         ".pf-stat+.pf-stat{border-left:1px solid var(--grid);}"
-        ".pf-stat-val{font-size:22px;font-weight:800;color:var(--text);line-height:1.15;"
+        ".pf-stat-val{font-size:25px;font-weight:800;color:var(--text);line-height:1.15;"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
-        ".pf-stat-label{font-size:11px;font-weight:600;color:var(--text-subtle);"
-        "text-transform:uppercase;letter-spacing:.06em;margin-top:5px;}"
+        ".pf-stat-label{font-size:10.5px;font-weight:700;color:var(--text-subtle);"
+        "text-transform:uppercase;letter-spacing:.08em;margin-top:5px;}"
         # color-win/loss were referenced but never defined -- wire them to the theme.
         ".color-win{color:var(--win);}.color-loss{color:var(--loss);}"
         ".pf-arch{font-size:0.63em;font-weight:700;padding:2px 7px;border-radius:10px;"
@@ -41603,7 +41609,7 @@ def build_portfolio_body(
         _next_deadline = "—"
     _who = html.escape(username or "your account")
     top_strip = (
-        f"<div class='card' style='margin-bottom:14px;'>"
+        f"<div class='card pf-summary-card' style='margin-bottom:14px;'>"
         f"<div class='pf-summary'>"
         f"<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:10px;'>"
         f"<div>"
@@ -41636,12 +41642,16 @@ def build_portfolio_body(
         "<style>"
         ".pf-stat-bar--5{grid-template-columns:repeat(5,1fr);}"
         ".pf-stat-bar--4{grid-template-columns:repeat(4,1fr);}"
-        ".pf-stat-btn{background:none;border:0;padding:0;cursor:pointer;text-align:center;font:inherit;color:inherit;display:flex;flex-direction:column;align-items:center;gap:0;}"
+        ".pf-stat-btn{background:none;border:0;padding:13px 10px 11px;cursor:pointer;text-align:center;font:inherit;color:inherit;display:flex;flex-direction:column;align-items:center;gap:0;border-radius:8px;transition:background .12s;}"
         ".pf-stat-btn .pf-stat-val{color:var(--accent);}"
-        ".pf-stat-val--sm{font-size:15px;}"
-        ".pf-receipts{border-top:1px solid var(--grid);margin-top:10px;padding-top:10px;}"
+        ".pf-stat-btn .pf-stat-label::after{content:'\\25BE';margin-left:5px;color:var(--accent);font-size:10px;}"
+        ".pf-stat-btn[aria-expanded='true'] .pf-stat-label::after{content:'\\25B4';}"
+        ".pf-stat-btn:hover{background:var(--card-soft);}"
+        ".pf-stat-btn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}"
+        ".pf-stat-val--sm{font-size:16px;}"
+        ".pf-receipts{margin-top:2px;padding-top:10px;}"
         ".pf-receipts-head{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-subtle);margin-bottom:6px;}"
-        ".pf-rc-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--grid);font-size:12px;}"
+        ".pf-rc-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--grid);font-size:12px;}"
         ".pf-rc-row:first-child{border-top:0;}"
         ".pf-rc-lg{font-weight:800;flex:0 1 22%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
         ".pf-rc-opp{color:var(--text-muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
@@ -41793,6 +41803,29 @@ def build_portfolio_body(
         ".pf-lg-updated{font-size:11px;color:var(--text-subtle);margin:8px 2px 0;}"
         ".pf-lg-updated[hidden]{display:none;}"
         ".pf-ins-stack{display:flex;flex-direction:column;gap:14px;}"
+        # Insights accordion (Direction C): the four sections live as
+        # collapsed rows inside ONE Portfolio insights card. Flat rows,
+        # hairline separators, chevron affordance; bodies render hidden
+        # until their row opens.
+        ".pf-ins-card{overflow:hidden;}"
+        ".pf-ins-head{display:flex;align-items:center;gap:10px;padding:14px 16px 12px;}"
+        ".pf-ins-head h2{font-size:16px;}"
+        ".pf-acc{border-top:1px solid var(--grid);}"
+        ".pf-acc-h{display:flex;align-items:center;gap:8px;width:100%;padding:13px 16px;"
+        "background:none;border:0;font:inherit;color:var(--text);cursor:pointer;text-align:left;}"
+        ".pf-acc-h:hover{background:var(--card-soft);}"
+        ".pf-acc-h:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}"
+        ".pf-acc-name{font-size:14px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;}"
+        ".pf-acc-sub{font-size:12px;color:var(--text-muted);font-weight:400;"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
+        ".pf-acc-chev{margin-left:auto;color:var(--text-subtle);font-weight:800;flex:0 0 auto;"
+        "transition:transform .15s;}"
+        ".pf-acc .pf-upd{margin-left:0;}"
+        ".pf-acc-h .pf-upd{margin-left:auto;}"
+        ".pf-acc-h .pf-upd + .pf-acc-chev{margin-left:0;}"
+        ".pf-acc.open .pf-acc-chev{transform:rotate(180deg);}"
+        ".pf-acc-b{padding:2px 16px 14px;}"
+        ".pf-acc-b[hidden]{display:none;}"
         ".pf-hm{overflow-y:auto;max-height:470px;}"
         ".pf-hm-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--grid);}"
         ".pf-hm-row:first-child{border-top:0;}"
@@ -42626,11 +42659,13 @@ def build_portfolio_body(
                 f"{html.escape(str(_row.get('name') or ''))}</span>{_cells}</div>"
             )
         pos_card = (
-            f"<div class='card' id='pfSecHeat'>"
-            f"<div class='card-header'><h2>Positional Strength</h2>"
-            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>in-league rank by position</span>"
-            f"{_hm_stamp}</div>"
-            f"<div class='card-body'>"
+            f"<div class='pf-acc' id='pfSecHeat'>"
+            f"<button type='button' class='pf-acc-h' data-pf-acc='pfSecHeat' aria-expanded='false'>"
+            f"<span class='pf-acc-name'>Positional Strength</span>"
+            f"<span class='pf-acc-sub'>in-league rank by position</span>"
+            f"{_hm_stamp}"
+            f"<span class='pf-acc-chev'>▾</span></button>"
+            f"<div class='pf-acc-b' hidden>"
             f"<div class='pf-hm'><div class='pf-hm-row pf-hm-headrow'>"
             f"<span class='pf-hm-name'>League</span>{_hm_head}</div>"
             f"{_hm_body}</div>"
@@ -42638,23 +42673,38 @@ def build_portfolio_body(
         )
 
     # ── Rooting Guide + Bye Watch (v25) ───────────────────────────────────
-    # Shells hydrated lazily from /api/portfolio-insights by app.js: the
-    # page request itself never scans leagues for these.
+    # Accordion rows inside the one insights card (Direction C). Their
+    # bodies hydrate from /api/portfolio-insights and /api/portfolio-bye
+    # via app.js on FIRST open of the row, never on page load: the page
+    # request itself never scans leagues for these. The Rooting Guide
+    # row renders ONLY on game days (the shared schedule check, so Thu /
+    # Sun / Mon all count); the other rows always render.
+    _rooting_today = False
+    try:
+        _rooting_today = bool(_games_scheduled_today(season, current_week))
+    except Exception:
+        _rooting_today = False
     nfl_html = (
-        "<div class='card' id='pfSecRooting'>"
-        "<div class='card-header'><h2>Rooting Guide</h2>"
-        "<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>your starters, game by game</span>"
-        "<span class='pf-upd' data-rooting-upd></span></div>"
-        "<div class='card-body' id='pfRootingBody'>"
-        "<div class='pf-ins-loading'>Loading your games…</div>"
-        "</div></div>"
+        (
+            "<div class='pf-acc' id='pfSecRooting'>"
+            "<button type='button' class='pf-acc-h' data-pf-acc='pfSecRooting' aria-expanded='false'>"
+            "<span class='pf-acc-name'>Rooting Guide</span>"
+            "<span class='pf-acc-sub'>your starters, game by game</span>"
+            "<span class='pf-upd' data-rooting-upd></span>"
+            "<span class='pf-acc-chev'>▾</span></button>"
+            "<div class='pf-acc-b' id='pfRootingBody' hidden>"
+            "<div class='pf-ins-loading'>Loading your games…</div>"
+            "</div></div>"
+        ) if _rooting_today else ""
     )
     bye_html = (
-        "<div class='card' id='pfSecBye'>"
-        "<div class='card-header'><h2>Bye Watch</h2>"
-        "<span style='font-size:13px;color:var(--text-muted);font-weight:400;' data-bye-sub>next week</span>"
-        "<span class='pf-upd' data-bye-upd></span></div>"
-        "<div class='card-body' id='pfByeBody'>"
+        "<div class='pf-acc' id='pfSecBye'>"
+        "<button type='button' class='pf-acc-h' data-pf-acc='pfSecBye' aria-expanded='false'>"
+        "<span class='pf-acc-name'>Bye Watch</span>"
+        "<span class='pf-acc-sub' data-bye-sub>next week</span>"
+        "<span class='pf-upd' data-bye-upd></span>"
+        "<span class='pf-acc-chev'>▾</span></button>"
+        "<div class='pf-acc-b' id='pfByeBody' hidden>"
         "<div class='pf-ins-loading'>Checking next week's byes…</div>"
         "</div></div>"
     )
@@ -42735,11 +42785,12 @@ def build_portfolio_body(
                 f"</tr>"
             )
         holdings_html = (
-            f"<div class='card' id='pfSecHoldings'>"
-            f"<div class='card-header'><h2>Player Holdings</h2>"
-            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>ownership across your leagues</span>"
-            f"</div>"
-            f"<div class='card-body'>"
+            f"<div class='pf-acc' id='pfSecHoldings'>"
+            f"<button type='button' class='pf-acc-h' data-pf-acc='pfSecHoldings' aria-expanded='false'>"
+            f"<span class='pf-acc-name'>Player Holdings</span>"
+            f"<span class='pf-acc-sub'>ownership across your leagues</span>"
+            f"<span class='pf-acc-chev'>▾</span></button>"
+            f"<div class='pf-acc-b' hidden>"
             f"<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;'>"
             f"<button class='pf-pill on' data-pos='ALL'>All</button>"
             f"<button class='pf-pill' data-pos='QB'>QB</button>"
@@ -42836,12 +42887,16 @@ def build_portfolio_body(
         )
 
     # Portfolio Movers is removed in v25 (holdings carries the 7d trend).
-    # Insights stack full-width: heatmap, Rooting Guide, Bye Watch, Holdings,
-    # with a sticky phone tab bar (Strength / Rooting guide / Byes / Holdings).
+    # Insights (Direction C): heatmap, Rooting Guide, Bye Watch and
+    # Holdings live as collapsed accordion rows inside ONE card, with a
+    # sticky phone tab bar (Strength / Rooting guide / Byes / Holdings)
+    # whose taps expand the row they name. A section with no row (the
+    # Rooting Guide off game days) gets no tab either.
     _tab_defs = []
     if pos_card:
         _tab_defs.append(("pfSecHeat", "Strength"))
-    _tab_defs.append(("pfSecRooting", "Rooting guide"))
+    if nfl_html:
+        _tab_defs.append(("pfSecRooting", "Rooting guide"))
     _tab_defs.append(("pfSecBye", "Byes"))
     if holdings_html:
         _tab_defs.append(("pfSecHoldings", "Holdings"))
@@ -42891,6 +42946,9 @@ def build_portfolio_body(
         "btns.forEach(function(b){b.addEventListener('click',function(){"
         "btns.forEach(function(x){x.classList.remove('on');});b.classList.add('on');"
         "var tid=b.getAttribute('data-t');"
+        # Direction C: a tab tap opens its accordion row first (which is
+        # also what starts that section's lazy hydration), then scrolls.
+        "if(window.__pfOpenSection)window.__pfOpenSection(tid);"
         "_pfUserScroll=false;_pfTap={id:tid,t:Date.now()};"
         "_pfAlign(tid);});});"
         "if('IntersectionObserver' in window){"
@@ -42900,19 +42958,40 @@ def build_portfolio_body(
         "{rootMargin:'-40% 0px -55% 0px'});}"
         "})();</script>"
     )
-    insights_label = (
-        "<div style='font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;"
-        "color:var(--text-subtle);margin:22px 2px 12px;'>Portfolio insights</div>"
-        if (pos_card or nfl_html or bye_html or holdings_html) else ""
+    # Accordion wiring (Direction C): row headers toggle their bodies;
+    # __pfOpenSection is the shared entry the phone tabs use (expand,
+    # then the tab script scrolls). Opening a row calls app.js's
+    # __pfLoadSection, which starts that section's lazy hydration on
+    # first open only. This script sits after the card in the document,
+    # so it can wire immediately.
+    acc_script = (
+        "<script>(function(){"
+        "function _pfToggle(id){"
+        "var sec=document.getElementById(id);if(!sec)return;"
+        "var btn=sec.querySelector('[data-pf-acc]');"
+        "var body=sec.querySelector('.pf-acc-b');"
+        "var open=sec.classList.toggle('open');"
+        "if(body)body.hidden=!open;"
+        "if(btn)btn.setAttribute('aria-expanded',open?'true':'false');"
+        "if(open&&window.__pfLoadSection)window.__pfLoadSection(id);}"
+        "window.__pfOpenSection=function(id){"
+        "var sec=document.getElementById(id);if(!sec)return;"
+        "if(!sec.classList.contains('open'))_pfToggle(id);};"
+        "document.querySelectorAll('[data-pf-acc]').forEach(function(btn){"
+        "btn.addEventListener('click',function(){"
+        "_pfToggle(btn.getAttribute('data-pf-acc'));});});"
+        "})();</script>"
     )
     # Constrain to a centered column so the page doesn't stretch edge-to-edge on
     # wide monitors (matches the League Health treatment).
     insights = ""
-    if insights_label:
-        insights = ("<section data-portfolio-cross-league>" + insights_label
+    if pos_card or nfl_html or bye_html or holdings_html:
+        insights = ("<section data-portfolio-cross-league>"
                     + phonetabs
-                    + "<div class='pf-ins-stack'>" + pos_card + nfl_html
-                    + bye_html + holdings_html + "</div></section>")
+                    + "<div class='card pf-ins-card'>"
+                    + "<div class='pf-ins-head'><h2>Portfolio insights</h2></div>"
+                    + pos_card + nfl_html + bye_html + holdings_html
+                    + "</div>" + acc_script + "</section>")
     return (css + '<div style="max-width:1040px;margin:0 auto;">'
             + top_strip + moves_card + league_card + insights + '</div>')
 
