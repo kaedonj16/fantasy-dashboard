@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-28",
+        "tag": "update",
+        "text": "Schedule Rankings: the table is week by week again. Rank, player and Ease sit beside a column for every week in the range, so a whole remaining schedule reads left to right, and the Adj Avg, Next 3 and Playoffs summary columns are gone. On phones the separate summary cards are gone too: the same table swipes sideways with rank and player pinned in place, Ease tucked away to give the weeks room, and the playoff weeks still banded at the top.",
+        "link": "/schedule"
+    },
+    {
+        "date": "2026-10-28",
         "tag": "fix",
         "text": "My Leagues: on phones, Rooting Guide game cards now stack the two teams, away on top and home below, instead of squeezing them into side-by-side columns too narrow for a name, its league badges, and its value to share one line. Every player row gets the full width of the card, badges stay beside the name, and nothing wraps or strands. The wider desktop cards are unchanged.",
         "link": "/portfolio"
