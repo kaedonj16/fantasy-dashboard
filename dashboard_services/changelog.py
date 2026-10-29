@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-29",
+        "tag": "fix",
+        "text": "Player profiles: the Recent form graph now loads from a lightweight feed built only from the current season, so it appears faster and no longer disappears when the full game log is slow.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-29",
         "tag": "update",
         "text": "Guides: the guides index is grouped by category (Trade Case Studies, Inside the Model, Market Movement, Roster Construction, Weekly Decisions), with a category chip, date, and read time on every card. Each article now opens with its category, its own published and updated dates, and jump pills for its sections, and read times are computed from the article text itself.",
         "link": "/guides"

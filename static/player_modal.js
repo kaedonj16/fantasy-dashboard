@@ -111,7 +111,7 @@ function _pmStartEarlyFetches(playerId, descriptor) {
     // to the loader.)
     _pmSmallFetch('adp:' + playerId + ':' + season,
       '/api/player-adp/' + encodeURIComponent(playerId) + '?season=' + encodeURIComponent(season));
-    // Recent Form game-logs: mirror _pmLoadRecentForm's URL construction
+    // Recent Form: mirror _pmLoadRecentForm's URL construction
     // exactly (pathname league, page league type/size) so the loader's
     // registry lookup hits.
     var pathParts = window.location.pathname.split('/').filter(function (x) { return x; });
@@ -119,10 +119,10 @@ function _pmStartEarlyFetches(playerId, descriptor) {
     var _leagueId = pathParts[2] || null;
     var _lt = (typeof brLeagueType === 'function') ? brLeagueType() : '';
     var _ls = (typeof brLeagueSize === 'function') ? brLeagueSize() : '';
-    var logsUrl = '/api/player-game-logs/' + encodeURIComponent(playerId)
+    var rfUrl = '/api/player-recent-form/' + encodeURIComponent(playerId)
       + '?season=' + _season + '&league_type=' + _lt + '&league_size=' + _ls;
-    if (_leagueId) logsUrl += '&league_id=' + _leagueId + '&platform=' + (pathParts[0] || 'sleeper');
-    _pmEarlyResponseFetch(logsUrl);
+    if (_leagueId) rfUrl += '&league_id=' + _leagueId + '&platform=' + (pathParts[0] || 'sleeper');
+    _pmEarlyResponseFetch(rfUrl);
     if (leagueId) {
       var qs = '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId)
         + '&season=' + encodeURIComponent(season);
@@ -2677,17 +2677,27 @@ function _pmLoadRecentForm(playerId, season, pos) {
   el.innerHTML = _pmRecentFormSkeleton();
   el.hidden = false;
   let _barsRendered = false;
-  // Mirror the Stats tab's game-logs URL construction exactly.
+  // Same URL construction as the Stats tab's game-logs URL, but against
+  // the lightweight recent-form endpoint (current season only).
   const pathParts = window.location.pathname.split('/').filter(p => p);
   const _platform = pathParts[0] || 'sleeper';
   const _season = pathParts[1] || season || new Date().getFullYear();
   const _leagueId = pathParts[2] || null;
   const _lt = (typeof brLeagueType === 'function') ? brLeagueType() : '';
   const _ls = (typeof brLeagueSize === 'function') ? brLeagueSize() : '';
-  let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
-  if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
-  (_pmTakeEarlyResponse(logsUrl) || _pmFetch(logsUrl))
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  let rfUrl = `/api/player-recent-form/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
+  if (_leagueId) rfUrl += `&league_id=${_leagueId}&platform=${_platform}`;
+  // One quiet retry: a single timeout or bad response used to hide the
+  // card for the whole modal visit. The retry is always a fresh bounded
+  // fetch, never the consumed early promise.
+  const _rfAttempt = () => _pmFetch(rfUrl, 15000)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  const _rfEarly = _pmTakeEarlyResponse(rfUrl);
+  const _rfFirst = _rfEarly
+    ? _rfEarly.then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    : _rfAttempt();
+  _rfFirst
+    .catch(() => _rfAttempt())
     .then(data => {
       // Stale-render guards, same as the neighboring lazy loaders: the
       // element must still be in the DOM and still belong to this player.

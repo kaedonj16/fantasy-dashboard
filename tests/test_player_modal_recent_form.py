@@ -1,6 +1,6 @@
 """Player modal Overview Recent Form: skeleton + per-bar opponent labels.
 
-- While the game-logs fetch is in flight, the card shows a skeleton in the
+- While the recent-form fetch is in flight, the card shows a skeleton in the
   real graph's footprint (same divider/header/column structure, shared
   .skeleton shimmer); the real bars replace it, and the no-data / failure
   paths re-hide the card so the skeleton never sticks.
@@ -42,7 +42,7 @@ def test_skeleton_shown_up_front_and_rehidden_without_data():
     body = _loader_body()
     # Skeleton goes in before the fetch starts.
     assert "el.innerHTML = _pmRecentFormSkeleton();" in body
-    assert body.index("_pmRecentFormSkeleton()") < body.index("_pmFetch(logsUrl)")
+    assert body.index("_pmRecentFormSkeleton()") < body.index("_pmFetch(rfUrl, 15000)")
     # No logs / no real games / failure all re-hide the card.
     assert "if (!Array.isArray(logs) || !logs.length) { el.hidden = true; return; }" in body
     assert "if (!real.length) { el.hidden = true; return; }" in body

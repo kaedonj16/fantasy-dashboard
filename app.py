@@ -31643,6 +31643,247 @@ def api_player_game_logs(player_id: str):
         return _api_err("Request failed", e)
 
 
+# Short-TTL cache for the lightweight Recent Form feed, mirroring
+# _GAME_LOGS_CACHE: same key (player + season + scoring settings), same TTL
+# and bound. Recent Form only ever needs the current season's real games, so
+# this route skips the full game-log build (every season, projections,
+# matchup ratings, eligibility, league sync) that made the modal graph slow.
+_RECENT_FORM_CACHE: Dict[str, tuple] = {}
+_RECENT_FORM_CACHE_TTL = 300  # seconds
+_RECENT_FORM_CACHE_MAX = 500  # entries; evict oldest when exceeded
+
+
+@app.route("/api/player-recent-form/<player_id>")
+def api_player_recent_form(player_id: str):
+    """Recent Form feed: one season of game logs, same shape as game-logs.
+
+    Returns {"game_logs_by_year": {<season>: [...]}, "season_teams":
+    {<season>: team}} for the requested season only, with the exact row
+    semantics of api_player_game_logs for that season (scoring, schedule
+    matchup, bye/DNP rows, advanced-metrics join) but none of its
+    projections, matchup ratings, eligibility check, or multi-season loop.
+    """
+    try:
+        from utils.utils import load_relevant_index
+        from dashboard_services.platform_api import sync_league_globals
+
+        league_id = request.args.get("league_id")
+        platform = request.args.get("platform", "sleeper")
+        season = int(request.args.get("season", datetime.now().year))
+
+        if league_id:
+            # sync_league_globals is a no-op for Sleeper - must call get_league explicitly
+            if platform == "sleeper":
+                from dashboard_services.api import get_league as _get_league
+                _get_league(league_id)
+            else:
+                sync_league_globals(platform, league_id, season)
+            scoring_settings = get_normalized_scoring_settings(platform)
+        else:
+            scoring_settings = {
+                "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
+                "rush_yd": 0.1, "rush_td": 6.0, "rec": 1.0,
+                "rec_yd": 0.1, "rec_td": 6.0, "fum_lost": -2.0,
+            }
+
+        # Serve a recent identical computation straight from cache, skipping
+        # all the per-week file parsing below. The check sits after scoring
+        # resolution (the key needs the scoring hash) but before any
+        # stats/schedule/DB work.
+        _cache_key = _game_logs_cache_key(player_id, season, scoring_settings)
+        _cached = _RECENT_FORM_CACHE.get(_cache_key)
+        if _cached and time.time() - _cached[0] < _RECENT_FORM_CACHE_TTL:
+            return jsonify({"game_logs_by_year": _cached[1],
+                            "season_teams": _cached[2] if len(_cached) > 2 else {}})
+
+        players_index = load_relevant_index() or {}
+        player_meta = players_index.get(player_id) or {}
+        if not player_meta:
+            players_index_full = load_players_index() or {}
+            player_meta = players_index_full.get(player_id) or {}
+        player_team = canon_team(player_meta.get("team", "")) or player_meta.get("team", "")
+
+        game_logs = []
+        _team_counts: dict = {}
+
+        # Parse the season's schedule week files in parallel, like the
+        # game-log route (sorted input plus pool.map's order preservation
+        # keeps the first-file-wins week dedup deterministic).
+        import concurrent.futures as _sched_futures
+        schedule_by_week: dict = {}
+        _sched_files = sorted(glob.glob(os.path.join("cache", "schedule", f"schedule_s{season}_w*.json")))
+        with _sched_futures.ThreadPoolExecutor(
+            max_workers=min(4, len(_sched_files) or 1),
+            thread_name_prefix="recentform-sched",
+        ) as _sched_pool:
+            for _parsed in _sched_pool.map(_load_schedule_week_file, _sched_files):
+                if _parsed is None:
+                    continue
+                _wk_num, _games = _parsed
+                if _wk_num not in schedule_by_week:
+                    schedule_by_week[_wk_num] = _games
+
+        player_stats_by_week = _sleeper_stats_by_week(player_id, season)
+
+        if player_stats_by_week:
+            stats_by_week = {week: {str(player_id): stats}
+                             for week, stats in player_stats_by_week.items()}
+
+            def _calc_pts(s):
+                return round(_score_stats(s, scoring_settings), 2)
+
+            def _stats_dict(s):
+                return {k: s.get(k) for k in
+                        ["pass_yd", "pass_td", "pass_int", "pass_att", "rush_att", "rush_yd", "rush_td", "rec", "rec_tgt", "rec_yd",
+                         "rec_td", "fum_lost"]}
+
+            if schedule_by_week:
+                # Full path: schedule available - include opponent and date.
+                # Resolve the team the player was actually on THIS season/week
+                # (handles trades) rather than their current team.
+                from data_building.external_data.player_team_history import team_for_week
+                for week_num in sorted(schedule_by_week.keys()):
+                    games = schedule_by_week[week_num]
+                    if not isinstance(games, list):
+                        continue
+                    opponent, is_away, game_date, wk_team = _game_log_matchup(
+                        team_for_week(player_id, season, week_num) or player_team,
+                        games,
+                    )
+                    if wk_team:
+                        _team_counts[wk_team] = _team_counts.get(wk_team, 0) + 1
+                    stats = (stats_by_week.get(week_num) or {}).get(player_id)
+                    # Bye week: no game found for this team and no stats
+                    if not opponent and not game_date and stats is None:
+                        # Grab the date from any game that week so it sorts correctly
+                        any_game = next((g for g in games if isinstance(g, dict) and g.get("gameDate")), None)
+                        bye_date = any_game.get("gameDate", "") if any_game else ""
+                        game_logs.append({"week": week_num, "date": bye_date,
+                                          "opponent": "BYE", "fantasy_pts": None, "stats": None, "is_bye": True})
+                        continue
+                    if stats:
+                        game_logs.append({"week": week_num, "date": game_date,
+                                          "opponent": f"@{opponent}" if is_away else opponent,
+                                          "fantasy_pts": _calc_pts(stats), "stats": _stats_dict(stats)})
+                    else:
+                        game_logs.append({"week": week_num, "date": game_date,
+                                          "opponent": f"@{opponent}" if is_away else opponent,
+                                          "fantasy_pts": None, "stats": None})
+            else:
+                # Fallback: no schedule files - show stats without opponent/date
+                for week_num in sorted(stats_by_week.keys()):
+                    stats = stats_by_week[week_num].get(player_id)
+                    if stats:
+                        game_logs.append({"week": week_num, "date": "",
+                                          "opponent": "", "fantasy_pts": _calc_pts(stats),
+                                          "stats": _stats_dict(stats)})
+                    else:
+                        game_logs.append({"week": week_num, "date": "",
+                                          "opponent": "", "fantasy_pts": None, "stats": None})
+
+        game_logs_by_year: dict = {}
+        season_teams: dict = {}
+        if game_logs:
+            game_logs.sort(key=lambda g: g.get("date", "") or "")
+            game_logs_by_year[season] = game_logs
+            # Team label for the season header: most common weekly team
+            # (handles mid-season trades), else the player's current team.
+            if _team_counts:
+                season_teams[season] = max(_team_counts, key=_team_counts.get)
+            elif player_team:
+                season_teams[season] = player_team
+
+        # ── Weekly advanced metrics per game ─────────────────────────────────
+        # Same join as the game-log route, for this season only, so the
+        # Overview Role card can aggregate adv.target_share / adv.snap_pct
+        # from these logs. Best-effort: a DB failure leaves the games
+        # without `adv` and the UI renders dashes.
+        def _fnum(v):
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        def _inum(v):
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        try:
+            from data_building.weekly_metrics import init_weekly_metrics_db
+            from data_building.advanced_metrics import (
+                init_weekly_advanced_metrics_db,
+                get_conn as _adv_get_conn,
+            )
+            init_weekly_metrics_db()
+            init_weekly_advanced_metrics_db()
+            _rec_pts = float((scoring_settings or {}).get("rec", 1.0) or 0)
+            _xfp_col = (
+                "expected_ppr" if _rec_pts >= 0.75
+                else "expected_half_ppr" if _rec_pts >= 0.25
+                else "expected_standard"
+            )
+            with _adv_get_conn() as _aconn:
+                _logs = game_logs_by_year.get(season) or []
+                if _logs:
+                    _usage = {
+                        int(r["week"]): r for r in _aconn.execute(
+                            "SELECT week, snap_pct, target_share, carry_share, "
+                            "rz_targets, rz_carries FROM player_weekly_metrics "
+                            "WHERE player_id = %s AND season = %s",
+                            (str(player_id), int(season)),
+                        ).fetchall()
+                    }
+                    _adv = {
+                        int(r["week"]): r for r in _aconn.execute(
+                            "SELECT week, avg_depth_of_target, ybc_per_carry, "
+                            f"{_xfp_col} AS xfp, broken_tackles, wopr "
+                            "FROM player_weekly_advanced_metrics "
+                            "WHERE player_id = %s AND season = %s",
+                            (str(player_id), int(season)),
+                        ).fetchall()
+                    }
+                    for _g in _logs:
+                        if _g.get("is_bye") or _g.get("is_projection"):
+                            continue
+                        _wk = _g.get("week")
+                        try:
+                            _wk = int(_wk)
+                        except (TypeError, ValueError):
+                            continue
+                        _u = _usage.get(_wk) or {}
+                        _a = _adv.get(_wk) or {}
+                        if not _u and not _a:
+                            continue
+                        _g["adv"] = {
+                            "snap_pct": _fnum(_u.get("snap_pct")),
+                            "target_share": _fnum(_u.get("target_share")),
+                            "carry_share": _fnum(_u.get("carry_share")),
+                            "rz_targets": _inum(_u.get("rz_targets")),
+                            "rz_carries": _inum(_u.get("rz_carries")),
+                            "adot": _fnum(_a.get("avg_depth_of_target")),
+                            "ybc": _fnum(_a.get("ybc_per_carry")),
+                            "xfp": _fnum(_a.get("xfp")),
+                            "btk": _fnum(_a.get("broken_tackles")),
+                            "wopr": _fnum(_a.get("wopr")),
+                        }
+        except Exception:
+            logger.debug("[recent_form] advanced metrics join failed", exc_info=True)
+
+        # Cache the fully-computed result (bounded; evict oldest when full).
+        if len(_RECENT_FORM_CACHE) >= _RECENT_FORM_CACHE_MAX:
+            for _k in sorted(_RECENT_FORM_CACHE, key=lambda k: _RECENT_FORM_CACHE[k][0])[:_RECENT_FORM_CACHE_MAX // 10]:
+                _RECENT_FORM_CACHE.pop(_k, None)
+        _RECENT_FORM_CACHE[_cache_key] = (time.time(), game_logs_by_year, season_teams)
+
+        return jsonify({"game_logs_by_year": game_logs_by_year,
+                        "season_teams": season_teams})
+    except Exception as e:
+        logger.exception("[api_player_recent_form] error")
+        return _api_err("Request failed", e)
+
+
 # ── Player modal Team tab ─────────────────────────────────────────────────────
 _TEAM_OFFENSE_RANKS_CACHE: dict = {}
 _TEAM_OFFENSE_RANKS_TTL = 3600  # 1 hour
