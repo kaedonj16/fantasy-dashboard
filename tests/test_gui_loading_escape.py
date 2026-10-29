@@ -60,8 +60,10 @@ def test_pm_fetch_helper_bounds_requests_via_shared_timeout():
 
 def test_pm_small_fetch_is_bounded():
     src = _modal()
-    small = src.split("function _pmSmallFetch(key, url)")[1][:2500]
-    assert "_pmFetch(url, 15000)" in small
+    small = src.split("function _pmSmallFetch(key, url, timeoutMs)")[1][:2500]
+    # Default budget stays 15s; callers with heavier payloads (the modal's
+    # deferred build) pass a larger timeoutMs explicitly.
+    assert "_pmFetch(url, timeoutMs || 15000)" in small
 
 
 def test_pm_team_tab_fetch_is_bounded():
@@ -73,7 +75,7 @@ def test_pm_team_tab_fetch_is_bounded():
 
 def test_pm_stats_and_breakout_tab_fetches_are_bounded():
     src = _modal()
-    assert "_bkRequest = _pmFetch(_boUrl)" in src
+    assert "_pmFetch(_boUrl, 30000)" in src
     stats = src.split("// ── Lazy-load Stats tab")[1].split("// ── Lazy-load Rookie tab")[0]
     assert "_pmFetch(logsUrl)" in stats
 

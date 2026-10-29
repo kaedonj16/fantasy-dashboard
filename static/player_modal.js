@@ -39,7 +39,7 @@ function _pmFetch(url, ms) {
   return fetch(url);
 }
 
-function _pmSmallFetch(key, url) {
+function _pmSmallFetch(key, url, timeoutMs) {
   var now = Date.now();
   var hit = _pmSmallCache.get(key);
   if (hit) {
@@ -51,7 +51,7 @@ function _pmSmallFetch(key, url) {
     _pmSmallCache.delete(key); // expired or failed: fall through and refetch
   }
   var entry = { ts: now, promise: null, data: undefined };
-  entry.promise = _pmFetch(url, 15000)
+  entry.promise = _pmFetch(url, timeoutMs || 15000)
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) { entry.data = d; entry.ts = Date.now(); return d; })
     .catch(function () { _pmSmallCache.delete(key); return null; });
@@ -665,10 +665,39 @@ function openPlayerModal(playerId, playerName, opts) {
   // in parallel with the core request below; the section loaders adopt
   // these in-flight promises instead of starting cold after first paint.
   try { _pmStartEarlyFetches(playerId, _detailsDescriptor); } catch (_) {}
+  // The deferred build is the modal's heaviest payload (value history,
+  // prospect data, eligibility, breakout flags): a cold build measured
+  // 20-30s in production, past the shared 15s small-fetch timeout, and a
+  // timed-out attempt used to resolve null and leave every deferred-gated
+  // tab (Breakout above all) hidden for that whole modal open. Give it a
+  // 30s budget and one quiet retry: by the time a cold first attempt has
+  // timed out, the server has usually finished and cached that build, so
+  // the retry lands fast.
+  const _deferredKey = 'deferred:' + playerId + ':' + _detailsDescriptor.ctx.season + ':' + (_detailsDescriptor.ctx.leagueId || '');
   const _deferredPromise = _pmSmallFetch(
-    'deferred:' + playerId + ':' + _detailsDescriptor.ctx.season + ':' + (_detailsDescriptor.ctx.leagueId || ''),
-    _detailsDescriptor.url + '&deferred=1');
-  
+    _deferredKey, _detailsDescriptor.url + '&deferred=1', 30000)
+    .then(function (d) {
+      if (d) return d;
+      return _pmSmallFetch(_deferredKey + ':retry', _detailsDescriptor.url + '&deferred=1', 30000);
+    });
+  // Breakout tab flags have their own light endpoint (cached ID sets
+  // only: no value history, no prospect load, no league sync), fired in
+  // parallel so the tab's visibility never waits on the full deferred
+  // build above. One quiet retry on failure, same reasoning as the
+  // deferred payload: a cold flags build warms the shared cache the
+  // retry then reads.
+  const _boFlagsUrl = '/api/player-breakout-tab/' + encodeURIComponent(playerId)
+    + '?season=' + encodeURIComponent(_detailsDescriptor.ctx.season);
+  const _boFlagsPromise = _pmFetch(_boFlagsUrl, 20000)
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .catch(function () { return null; })
+    .then(function (d) {
+      if (d) return d;
+      return _pmFetch(_boFlagsUrl, 20000)
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+    });
+
   // Create modal overlay
   const overlay = document.createElement('div');
   overlay.className = 'player-modal-overlay';
@@ -1816,15 +1845,19 @@ function openPlayerModal(playerId, playerName, opts) {
         tabProspect.classList.toggle('pm-tab-disabled', !_isRookie);
       }
       if (pmTabBar) pmTabBar.dataset.pmPpg = (data.stats && data.stats.ppg != null) ? String(data.stats.ppg) : '';
-      // Breakout tab: HARD RULE. The tab exists only when the
-      // player-details payload says this player has a breakout call:
-      // on the current board (on_breakout_board), or surfaced in any
-      // earlier week this season (has_breakout_call -- the tab then
-      // serves that week's card). Otherwise it is hidden outright:
-      // never disabled, never titled, never shown later.
-      // The breakout-page candidate context stays as panel data only.
+      // Breakout tab: HARD RULE. The tab exists only when this player
+      // has a breakout call: on the current board (on_breakout_board),
+      // or surfaced in any earlier week this season (has_breakout_call
+      // -- the tab then serves that week's card). A card rendered by
+      // the Breakout Engine itself (boardEligible, from the candidate
+      // context passed at open) is authoritative too: that click IS a
+      // board call, so its tab shows at first paint instead of waiting
+      // on the deferred payload or the flags fetch to agree. Otherwise
+      // the tab is hidden outright at this paint: never disabled,
+      // never titled; the flags fetch / deferred patch below can still
+      // reveal it when they land.
       const tabBreakout = document.getElementById('pmTabBreakout');
-      const _onBreakoutBoard = data.on_breakout_board === true || data.has_breakout_call === true;
+      const _onBreakoutBoard = data.on_breakout_board === true || data.has_breakout_call === true || boardEligible;
       if (tabBreakout) {
         tabBreakout.style.display = _onBreakoutBoard ? '' : 'none';
       }
@@ -2116,10 +2149,43 @@ function openPlayerModal(playerId, playerName, opts) {
 
         // Breakout tab: exists only with a real call (same hard rule as
         // the core render); the panel lazy-fetches its card when opened.
+        // A board-context candidate is never hidden by this patch: its
+        // click is itself a board call, so a stale flags read cannot
+        // un-show a tab the board just handed out.
         if (tabBreakout) {
           var _onBo = dfd.on_breakout_board === true || dfd.has_breakout_call === true;
-          tabBreakout.style.display = _onBo ? '' : 'none';
+          if (_onBo) _pmRevealBreakoutTab(true);
+          else if (!boardEligible) tabBreakout.style.display = 'none';
         }
+      }
+      // Breakout tab reveal shared by the flags fetch and the deferred
+      // patch: show the tab when either source reports a real call, and
+      // when this open explicitly requested the Breakout tab (a board
+      // click or a ?player_tab=breakout link) while the user is still
+      // sitting on the default Overview paint, land them on it. A user
+      // who already picked another tab is never yanked across.
+      function _pmRevealBreakoutTab(hasCall) {
+        if (!tabBreakout || !hasCall) return;
+        tabBreakout.style.display = '';
+        if ((opts && opts.tab) === 'breakout') {
+          var _activeBtn = document.querySelector('.pm-tab.active');
+          if (_activeBtn && _activeBtn.getAttribute('data-tab') === 'overview') {
+            pmSwitchTab('breakout');
+          }
+        }
+      }
+      if (_boFlagsPromise) {
+        _boFlagsPromise.then(function (flags) {
+          try {
+            if (!flags || flags.error) return;
+            if (!overlay.isConnected || overlay.dataset.closed === '1'
+                || document.querySelector('.player-modal-overlay') !== overlay
+                || overlay.dataset.playerId !== String(playerId)) return;
+            if (flags.on_breakout_board === true || flags.has_breakout_call === true) {
+              _pmRevealBreakoutTab(true);
+            }
+          } catch (e) { /* flags are best-effort; the deferred patch still applies */ }
+        }).catch(function () { /* flags failure leaves the core render as-is */ });
       }
       if (_deferredPromise) {
         _deferredPromise.then(function(dfd) {
@@ -3088,8 +3154,13 @@ function pmSwitchTab(tab, clickEvent) {
     const _boPlatform = _boMatch ? _boMatch[1] : 'sleeper';
     const _boUrl = `/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}`;
     // Lazy fetch on tab open (panel.dataset.loaded guards against duplicates).
-    const _bkRequest = _pmFetch(_boUrl)
+    // The detail build is heavy cold (board + ranks + forecasts), past the
+    // shared 20s budget on a first load: give it 30s and one quiet retry
+    // before surfacing the error state, because a timed-out first attempt
+    // leaves the server-side caches warm for the retry.
+    const _bkFetchOnce = () => _pmFetch(_boUrl, 30000)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+    const _bkRequest = _bkFetchOnce().catch(() => new Promise(res => setTimeout(res, 1200)).then(_bkFetchOnce));
     _bkRequest
       .then(data => {
         if (!panel.isConnected) return;
