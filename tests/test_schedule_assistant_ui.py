@@ -46,22 +46,35 @@ def test_scope_toggle_and_position_pills():
     assert "Bye Outlook" not in SOURCE
 
 
-def test_week_by_week_columns_without_summary_columns_or_phone_cards():
-    # Rank | Player | Ease, then the week columns: the Adj Avg / Next 3 /
-    # Playoffs summary columns and the separate phone cards are gone.
+def test_week_by_week_columns_and_adj_avg_at_both_widths():
+    # Rank | Player | Ease | Adj Avg, then the week columns. Next 3 /
+    # Playoffs stay gone, and the separate phone cards stay gone. Adj Avg
+    # is a normal scrolling column on desktop and pins beside the player
+    # column at <=768px (where Ease hides, it is the summary in view).
     assert '<th class="sched-th srk-th-ease">Ease</th>' in SOURCE
-    assert '<th class="sched-th">Adj Avg</th>' not in SOURCE
+    assert '<th class="sched-th srk-th-adjavg">Adj Avg' in SOURCE
+    assert "Average percentage by which the selected defenses increase or suppress" in SOURCE
+    assert "srk-adjavg" in SOURCE and "r.adjusted_avg_percent" in SOURCE
     assert '<th class="sched-th">Next 3</th>' not in SOURCE
     assert '<th class="sched-th">Playoffs</th>' not in SOURCE
     assert "srk-mcard" not in SOURCE
     assert "schedRankingsCards" not in SOURCE
     assert "n3Rank" not in SOURCE and "poRank" not in SOURCE
+    css = Path("static/dashboard.css").read_text()
+    assert ".srk-th-adjavg" in css and ".srk-band-adjavg" in css
+    # Nothing hides the column on desktop any more.
+    assert ".srk-th-adjavg,\n.srk-adjavg,\n.srk-band-adjavg {\n    display: none;\n}" not in css
+    # Pinning exists only inside the phone block.
+    phone = css.split("@media (max-width: 768px)", 1)[1]
+    assert ".schedule-card .srk-adjavg" in phone
+    assert "left: 208px" in phone
 
 
 def test_band_spacer_splits_so_ease_hiding_cannot_shift_the_band():
     # Rank+Player spacer is its own pinned cell; the Ease spacer hides with
-    # the Ease column on phones instead of shifting the Playoffs band.
-    assert '<th colspan="2" class="srk-band-pin"></th><th class="srk-band-ease"></th>' in SOURCE
+    # the Ease column on phones, and the Adj Avg spacer shows only where
+    # its column shows, instead of shifting the Playoffs band.
+    assert '<th colspan="2" class="srk-band-pin"></th><th class="srk-band-ease"></th><th class="srk-band-adjavg"></th>' in SOURCE
     css = Path("static/dashboard.css").read_text()
     assert ".srk-band .srk-band-pin" in css
     assert ".schedule-card .srk-ease-cell" in css

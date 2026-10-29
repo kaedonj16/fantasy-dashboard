@@ -289,11 +289,12 @@ def build_schedule_body(ctx):
       function bandRow(weeks) {
         var reg = 0, po = 0;
         weeks.forEach(function(w) { if (w >= CFG.playoffStart) po++; else reg++; });
-        // The spacer is two cells, not one colspan: the Rank+Player spacer
-        // stays pinned over the sticky columns, and the Ease spacer hides
-        // together with the Ease column on phones. A single colspan spacer
-        // would shift the Playoffs band one column when Ease hides.
-        var h = '<tr class="srk-band"><th colspan="2" class="srk-band-pin"></th><th class="srk-band-ease"></th>';
+        // The spacer is split into per-column cells, not one colspan: the
+        // Rank+Player spacer stays pinned over the sticky columns, the Ease
+        // spacer hides together with the Ease column on phones, and the Adj
+        // Avg spacer shows only on phones, where its column shows. A single
+        // colspan spacer would shift the Playoffs band when a column hides.
+        var h = '<tr class="srk-band"><th colspan="2" class="srk-band-pin"></th><th class="srk-band-ease"></th><th class="srk-band-adjavg"></th>';
         if (reg) h += '<th colspan="' + reg + '">Regular season</th>';
         if (po) h += '<th colspan="' + po + '" class="srk-band-po">Playoffs</th>';
         return h + '</tr>';
@@ -313,6 +314,9 @@ def build_schedule_body(ctx):
         } else {
           easeHtml = '<span class="srk-rank-na">n/a</span>';
         }
+        var avgHtml = r.adjusted_avg_percent != null
+          ? '<span style="color:' + tc + '">' + fmtPct(r.adjusted_avg_percent) + '</span>'
+          : '<span class="srk-rank-na">N/A</span>';
         var cells = '';
         (r.cells || []).forEach(function(c, i) {
           var cls = 'sched-td' + (i === poIdx && i > 0 ? ' srk-po-start' : '');
@@ -329,6 +333,7 @@ def build_schedule_body(ctx):
           '<td class="sched-td srk-td-rank">' + rankHtml + '</td>' +
           '<td class="sched-td sched-td-player">' + playerInner(m) + '</td>' +
           '<td class="sched-td srk-ease-cell">' + easeHtml + '</td>' +
+          '<td class="sched-td srk-adjavg">' + avgHtml + '</td>' +
           cells + '</tr>';
       }
 
@@ -336,12 +341,13 @@ def build_schedule_body(ctx):
         var poIdx = poColIndex(weeks);
         var head = '<th class="sched-th srk-th-rank">Rank</th>' +
                    '<th class="sched-th sched-th-player">Player</th>' +
-                   '<th class="sched-th srk-th-ease">Ease</th>';
+                   '<th class="sched-th srk-th-ease">Ease</th>' +
+                   '<th class="sched-th srk-th-adjavg">Adj Avg <button type="button" class="sched-info" title="Average percentage by which the selected defenses increase or suppress expected production at this position.">ⓘ</button></th>';
         weeks.forEach(function(w, i) {
           head += '<th class="sched-th' + (i === poIdx && i > 0 ? ' srk-po-start' : '') + '">Wk ' + w +
                     (w === CFG.startWeek ? '<span class="srk-now">Now</span>' : '') + '</th>';
         });
-        var totalCols = 3 + weeks.length;
+        var totalCols = 4 + weeks.length;
         var body = '';
         sections.forEach(function(sec) {
           if (sec.label) {
