@@ -36771,6 +36771,14 @@ button:disabled {
     min-width: 118px;
 }
 
+/* Adj Avg is a plain scrolling column on desktop, after Ease. The phone
+   block at the bottom of this section pins it beside the player column
+   (where Ease hides, it becomes the summary that stays in view). */
+.srk-adjavg {
+    font-size: 13.5px;
+    font-weight: 800;
+}
+
 .srk-ease-bar {
     display: inline-block;
     width: 92px;
@@ -36805,7 +36813,7 @@ button:disabled {
 }
 
 /* Phone: no separate cards. The same week-by-week table swipes sideways
-   inside its wrapper, Ease hidden, Rank + Player pinned. The pinned cells
+   inside its wrapper, Ease hidden, Rank + Player + Adj Avg pinned. The pinned cells
    follow the approved mock's z-index ladder (pinned body 5, scrolling
    headers 6, pinned headers 10, pinned band cell 11) with fully opaque
    backgrounds: without it, Safari paints the scrolling week headers
@@ -36820,6 +36828,55 @@ button:disabled {
     .schedule-card .srk-ease-cell,
     .schedule-card .srk-band-ease {
         display: none;
+    }
+
+    /* Adj Avg is the summary on phones (Ease hides here): it pins beside
+       the player column, so a row keeps a summary number in view while
+       the weeks swipe. Its sticky offset is the rank column (27px) plus
+       the player column's fixed 181px. */
+    .schedule-card .srk-th-adjavg,
+    .schedule-card .srk-adjavg {
+        position: sticky;
+        left: 208px;
+        width: 48px;
+        min-width: 48px;
+        max-width: 48px;
+        overflow: hidden;
+        background-clip: padding-box;
+        border-right: 1px solid var(--border);
+        box-shadow: 6px 0 7px -5px rgba(15, 23, 42, 0.18);
+    }
+
+    /* At 11px the one-line label measures ~55px and clips in the 48px
+       column, so at this width it wraps at the space into an Adj / Avg
+       stack at 10px (desktop keeps the one-line label). */
+    .schedule-card .srk-th-adjavg {
+        padding: 6px 2px;
+        font-size: 10px;
+        line-height: 1.15;
+        white-space: normal;
+        box-shadow: 6px 0 7px -5px rgba(15, 23, 42, 0.28);
+    }
+
+    /* The info glyph cannot share the 48px header with the label; the
+       label alone rides on phones (the tooltip stays in the markup). */
+    .schedule-card .srk-th-adjavg .sched-info {
+        display: none;
+    }
+
+    .schedule-card .srk-adjavg {
+        background: var(--card);
+        text-align: center;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 5px 4px;
+    }
+
+    .schedule-card .srk-band .srk-band-adjavg {
+        position: sticky;
+        left: 208px;
+        background: var(--card);
+        background-clip: padding-box;
     }
 
     .schedule-card .sched-th {
@@ -36855,18 +36912,20 @@ button:disabled {
         font-size: 11px;
     }
 
+    /* No shadow on the player column here: the pinned zone now ends at
+       the Adj Avg column, which carries the sticky edge shadow instead.
+       The player column also takes a fixed width at this size (its cap):
+       the Adj Avg column pins at 27px + this width, so the width cannot
+       float with the longest name in the current view. */
     .schedule-card .sched-th-player,
     .schedule-card .sched-td-player {
         left: 27px;
+        width: 181px;
+        min-width: 181px;
         max-width: 181px;
         overflow: hidden;
         background-clip: padding-box;
         border-right: 1px solid var(--border);
-        box-shadow: 6px 0 7px -5px rgba(15, 23, 42, 0.18);
-    }
-
-    .schedule-card .sched-th-player {
-        box-shadow: 6px 0 7px -5px rgba(15, 23, 42, 0.28);
     }
 
     .schedule-card .sched-td-player {
@@ -36878,21 +36937,24 @@ button:disabled {
        tie the pinned headers (that tie was the Safari ghosting bug), so it
        skips the pinned cells outright. */
     .schedule-card .srk-td-rank,
-    .schedule-card .sched-td-player {
+    .schedule-card .sched-td-player,
+    .schedule-card .srk-adjavg {
         z-index: 5;
     }
 
-    .schedule-card .sched-table thead th:not(.srk-th-rank):not(.sched-th-player):not(.srk-band-pin) {
+    .schedule-card .sched-table thead th:not(.srk-th-rank):not(.sched-th-player):not(.srk-th-adjavg):not(.srk-band-pin):not(.srk-band-adjavg) {
         position: relative;
         z-index: 6;
     }
 
     .schedule-card .srk-th-rank,
-    .schedule-card .sched-th-player {
+    .schedule-card .sched-th-player,
+    .schedule-card .srk-th-adjavg {
         z-index: 10;
     }
 
-    .schedule-card .srk-band .srk-band-pin {
+    .schedule-card .srk-band .srk-band-pin,
+    .schedule-card .srk-band .srk-band-adjavg {
         z-index: 11;
     }
 

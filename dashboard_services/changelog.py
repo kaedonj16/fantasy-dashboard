@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-28",
         "tag": "update",
+        "text": "Schedule Rankings: Adj Avg is back as a column, sitting after Ease on desktop. On phones, where Ease tucks away to give the weeks room, Adj Avg pins beside the player column instead, colored by how easy the schedule is, so each row keeps a summary number in view while you swipe.",
+        "link": "/schedule"
+    },
+    {
+        "date": "2026-10-28",
+        "tag": "update",
         "text": "Schedule Rankings: the table is week by week again. Rank, player and Ease sit beside a column for every week in the range, so a whole remaining schedule reads left to right, and the Adj Avg, Next 3 and Playoffs summary columns are gone. On phones the separate summary cards are gone too: the same table swipes sideways with rank and player pinned in place, Ease tucked away to give the weeks room, and the playoff weeks still banded at the top.",
         "link": "/schedule"
     },
