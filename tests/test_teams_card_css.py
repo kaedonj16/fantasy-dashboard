@@ -180,3 +180,4 @@ def test_mix_bar_segments_carry_position_rank_numbers():
     rank = re.search(r"\.tsc-mix-rank\s*\{([^}]+)\}", CSS)
     assert rank, "missing .tsc-mix-rank rule"
     assert "font-weight: 800" in rank.group(1)
+    assert "color: #fff" in rank.group(1)

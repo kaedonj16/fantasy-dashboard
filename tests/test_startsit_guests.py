@@ -73,6 +73,7 @@ def ss_client(offline_client, monkeypatch):
     import utils.utils as uu_mod
 
     appmod._SS_STRIP_CACHE.clear()
+    appmod._SS_OPTIONS_CACHE.clear()
     monkeypatch.setattr(appmod, "_session_signed_in", lambda: True)
     monkeypatch.setattr(appmod, "get_league_ctx_from_cache",
                         lambda *a, **k: _ss_ctx())
@@ -104,6 +105,7 @@ def ss_client(offline_client, monkeypatch):
     monkeypatch.setattr(uu_mod, "load_week_sched", lambda *a, **k: list(SCHED))
     yield offline_client
     appmod._SS_STRIP_CACHE.clear()
+    appmod._SS_OPTIONS_CACHE.clear()
 
 
 def _rb_rows(payload):
@@ -340,6 +342,31 @@ def test_strip_roster_starter_and_bench(ss_client):
     d = ss_client.get(STRIP + "rb4").get_json()
     assert d["state"] == "ok" and d["verdict"] == "Bench" and d["slot"] == "RB4"
     assert "Runner Three" in d["reason"]  # the flex starter he sits behind
+
+
+def test_strip_options_cache_never_serves_the_other_ctx_shape(
+        ss_client, monkeypatch):
+    # Regression: the roster options cache used to key on id(ctx). This
+    # fixture serves a fresh ctx object per request, so once the Superflex
+    # ctx was freed, a later non-Superflex ctx could land on the same
+    # memory address and be served the Superflex payload: rb4 read "Start"
+    # in a league with no SUPER_FLEX slot (the #2877 CI failure). The key
+    # now carries a content signature of the ctx shape.
+    import app as appmod
+    assert (appmod._ss_ctx_signature(_ss_ctx())
+            != appmod._ss_ctx_signature(_ss_ctx_sf()))
+    _use_sf_ctx(ss_client, monkeypatch)
+    d = ss_client.get(STRIP + "rb4").get_json()
+    assert d["state"] == "ok" and d["verdict"] == "Start"
+    assert d["slot"] == "SUPER FLEX"
+    # Same league, non-Superflex shape. The per-player strip cache is
+    # shape-blind, so clear it the way _use_sf_ctx does; the OPTIONS cache
+    # must still refuse the Superflex payload on its own key.
+    monkeypatch.setattr(appmod, "get_league_ctx_from_cache",
+                        lambda *a, **k: _ss_ctx())
+    appmod._SS_STRIP_CACHE.clear()
+    d = ss_client.get(STRIP + "rb4").get_json()
+    assert d["state"] == "ok" and d["verdict"] == "Bench" and d["slot"] == "RB4"
 
 
 def test_strip_unavailable_states_are_explicit(ss_client):

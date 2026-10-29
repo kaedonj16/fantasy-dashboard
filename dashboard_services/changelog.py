@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
+        "text": "Teams: the signal badges in the team drawer (Core, Hold, Sell High and the rest) now match the Suggested Moves badges, solid signal color with white text, and the league rank numbers inside the Value by position bar on each team card are white so they read cleanly on the colored segments.",
+        "link": "/teams"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "update",
         "text": "My Leagues cards are redesigned. Your team name headlines each card, with the league, platform and season posture (a colored dot and word) on one quiet line under it. Your record sits in a tinted band with your standing and streak beside it, your weakest room (Fix) and strongest room (Best) sit in two columns under the band, and the score strip at the bottom shows projections before the game, the live score during it, and the result after. The Front Office and Open buttons and the per-card updated stamps are gone: the whole card opens the league, the star and the menu at the top right keep favorite and remove, and one Updated line sits above the grid.",
         "link": "/portfolio"
     },
