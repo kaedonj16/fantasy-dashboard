@@ -21356,6 +21356,9 @@ document.addEventListener('click', function (e) {
     b.classList.toggle('is-active', b.getAttribute('data-cmp-valuemode') === _cmpValueMode);
   });
   _cmpRerenderOverview();
+  // The value-history charts (2-player + triple) follow the same toggle:
+  // the active compare view registers its redraw when it wires up.
+  if (typeof window._cmpRedrawValueCharts === 'function') window._cmpRedrawValueCharts();
 });
 }
 function _cmpHistValue(h) {
@@ -21365,6 +21368,29 @@ function _cmpHistValue(h) {
     : (h.value_1qb != null ? h.value_1qb : h.value);
   const n = Number(raw);
   return isFinite(n) ? n : null;
+}
+// The value-history charts follow the same Dynasty/Redraft toggle as the
+// overview values: redraft mode plots each player's redraft series
+// (value_history_redraft, attached by player-details alongside the
+// dynasty series). A player with no series in the active format simply
+// has no line, and a chart block with no active-format series at all
+// hides; nothing ever falls back to the other format's history.
+function _cmpHistSeries(p) {
+  if (!p) return [];
+  return _cmpIsRedraft() ? (p.value_history_redraft || []) : (p.value_history || []);
+}
+function _cmpHistLabel() {
+  return _cmpIsRedraft() ? 'Redraft Value History' : 'Dynasty Value History';
+}
+function _cmpToggleChartBlock(div, show) {
+  if (!div) return;
+  div.style.display = show ? '' : 'none';
+  const hdr = div.previousElementSibling;
+  if (hdr && hdr.classList && hdr.classList.contains('pm-section-header')) {
+    hdr.style.display = show ? '' : 'none';
+    const hr = hdr.previousElementSibling;
+    if (hr && hr.tagName === 'HR') hr.style.display = show ? '' : 'none';
+  }
 }
 function _cmpLeagueParams() {
   return (typeof _wlLeagueParams === 'function')
@@ -23182,18 +23208,18 @@ function _compareBodyHTML(p1, p2, opts) {
   // tab's content instead of the modal's hero cards. The old dual-header hero
   // row is gone: it duplicated the headshot + name + pos/team/age that the
   // table header already shows, and left a dead empty cell in the header row.
-  const _anyHistory = [p1, p2].some(p => (p.value_history || []).length > 0);
+  // The chart block follows the active Dynasty/Redraft format: it exists
+  // when either side has a series in that format, and its label names the
+  // format. (This block was previously computed but never interpolated
+  // into the shared body, so the two-player chart never rendered; the
+  // both-baselines case needs no special case here because a baseline
+  // has no series in either format.)
+  const _anyHistory = [p1, p2].some(p => (_cmpHistSeries(p) || []).length > 0);
   const _chartBlock = _anyHistory
     ? '<hr class="pm-section-divider">'
-      + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
+      + '<div class="pm-section-header"><span class="pm-section-label cmp-vh-label">' + _cmpHistLabel() + '</span></div>'
       + '<div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>'
     : '';
-  // The modal's hero overview always reserves the chart slot (tier averages
-  // draw as flat reference lines); only the both-baselines case drops it.
-  const _heroChartBlock = (p1 && p1.is_baseline && p2 && p2.is_baseline) ? ''
-    : '<hr class="pm-section-divider">'
-      + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
-      + '<div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>';
   // Two-player Overview: one centered middle-column table on both the page and
   // the modal (names in the center, values outside), replacing the page's
   // compact verdict table and the modal's hero cards so the surfaces align.
@@ -23204,6 +23230,7 @@ function _compareBodyHTML(p1, p2, opts) {
 
       <div class="compare-tab-panel" data-cmppanel="overview">
         ${_overviewInner}
+        ${_chartBlock}
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="startsit" hidden>
@@ -23363,8 +23390,16 @@ function _compareWireView(p1, p2) {
   // calls _cmpEnsureStats / _cmpEnsureMetrics on first visit.
   window._cmpLazy = { p1: p1, p2: p2, b1: b1, b2: b2, statsDone: false, metricsDone: false };
 
-  const chartDiv = document.getElementById('compareValueChart');
-  if (chartDiv) {
+  // Draw (or redraw, on a Dynasty/Redraft toggle flip) the two-player
+  // value-history chart from the ACTIVE format's series per player.
+  const _drawCmpChart = () => {
+    const chartDiv = document.getElementById('compareValueChart');
+    if (!chartDiv) return;
+    // No active-format series on either side: hide the whole block
+    // rather than drawing the other format's history under this label.
+    const _anyActive = [p1, p2].some(p => (_cmpHistSeries(p) || []).length > 0);
+    _cmpToggleChartBlock(chartDiv, _anyActive);
+    if (!_anyActive) return;
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const _ct = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
     const gridColor = _ct.grid || (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)');
@@ -23372,12 +23407,17 @@ function _compareWireView(p1, p2) {
     // Shared date axis from whichever side(s) have real history, so a tier
     // average can be drawn as a flat dashed reference line across the same span.
     let _axis = [];
-    [p1, p2].forEach(p => (p.value_history || []).forEach(h => { const d = h.as_of_date || h.date; if (d) _axis.push(d); }));
+    [p1, p2].forEach(p => (_cmpHistSeries(p) || []).forEach(h => { const d = h.as_of_date || h.date; if (d) _axis.push(d); }));
     _axis = Array.from(new Set(_axis)).sort();
     if (!_axis.length) _axis = [new Date().toISOString().slice(0, 10)];
     const makeTrace = (p, isB, color) => {
       if (isB) {
-        const v = _cmpIsSf()
+        // Tier averages carry no redraft stats, so in redraft mode the
+        // reference line simply does not draw (never a dynasty value
+        // under a redraft label).
+        const v = _cmpIsRedraft()
+          ? (_cmpIsSf() ? (p.stats && p.stats.redraft_value_sf) : (p.stats && p.stats.redraft_value_1qb))
+          : _cmpIsSf()
           ? ((p.stats && p.stats.sf_value) != null ? p.stats.sf_value : (p.stats && p.stats.value))
           : ((p.stats && p.stats.value) != null ? p.stats.value : null);
         return {
@@ -23386,8 +23426,9 @@ function _compareWireView(p1, p2) {
           hovertemplate: `<b>${p.name}</b><br>tier average<br>Value: ${v}<extra></extra>`,
         };
       }
-      const dates = (p.value_history || []).map(h => h.as_of_date || h.date);
-      const vals  = (p.value_history || []).map(h => _cmpHistValue(h));
+      const _series = _cmpHistSeries(p) || [];
+      const dates = _series.map(h => h.as_of_date || h.date);
+      const vals  = _series.map(h => _cmpHistValue(h));
       return {
         x: dates, y: vals, mode: 'lines', name: p.name,
         line: { color, width: 2.5 },
@@ -23400,18 +23441,21 @@ function _compareWireView(p1, p2) {
     ];
     // Draw a tier average as a shaded value band (its min-max dynasty value across
     // the tier) with the average as the dashed line through it, so it reads as a
-    // range rather than a single hard line.
+    // range rather than a single hard line. The bands are dynasty ranges, so
+    // they are skipped in redraft mode.
     const _bandShapes = [];
-    [[p1, b1, '59,130,246'], [p2, b2, '245,158,11']].forEach(([p, isB, rgb]) => {
-      const band = _cmpIsSf() ? (p.sf_value_band || p.value_band) : p.value_band;
-      if (isB && Array.isArray(band) && band.length === 2) {
-        _bandShapes.push({
-          type: 'rect', xref: 'paper', x0: 0, x1: 1, yref: 'y',
-          y0: band[0], y1: band[1],
-          fillcolor: `rgba(${rgb},0.10)`, line: { width: 0 }, layer: 'below',
-        });
-      }
-    });
+    if (!_cmpIsRedraft()) {
+      [[p1, b1, '59,130,246'], [p2, b2, '245,158,11']].forEach(([p, isB, rgb]) => {
+        const band = _cmpIsSf() ? (p.sf_value_band || p.value_band) : p.value_band;
+        if (isB && Array.isArray(band) && band.length === 2) {
+          _bandShapes.push({
+            type: 'rect', xref: 'paper', x0: 0, x1: 1, yref: 'y',
+            y0: band[0], y1: band[1],
+            fillcolor: `rgba(${rgb},0.10)`, line: { width: 0 }, layer: 'below',
+          });
+        }
+      });
+    }
     const _cmpLayout = {
       paper_bgcolor: 'transparent',
       plot_bgcolor: 'transparent',
@@ -23428,7 +23472,12 @@ function _compareWireView(p1, p2) {
     if (window.ensurePlotly) window.ensurePlotly().then(function () {
       Plotly.newPlot(chartDiv, traces, _cmpLayout, { responsive: true, displayModeBar: false });
     }).catch(function () {});
-  }
+  };
+  _drawCmpChart();
+  window._cmpRedrawValueCharts = function () {
+    document.querySelectorAll('.cmp-vh-label').forEach(el => { el.textContent = _cmpHistLabel(); });
+    _drawCmpChart();
+  };
 }
 
 // ── Unified compare overview table (2 or 3 players) ─────────────────────
@@ -23648,10 +23697,10 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
   if (!hostEl) return;
   const players = [d1, d2, d3];
 
-  const anyHistory = players.some(p => (p.value_history || []).length > 0);
+  const anyHistory = players.some(p => (_cmpHistSeries(p) || []).length > 0);
   const chartBlock = anyHistory
     ? '<hr class="pm-section-divider">'
-      + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
+      + '<div class="pm-section-header"><span class="pm-section-label cmp-vh-label">' + _cmpHistLabel() + '</span></div>'
       + '<div id="compareTripleChart" class="player-modal-chart-container" style="min-height:240px;"></div>'
     : '';
 
@@ -23688,6 +23737,10 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
   _cmpBindOverviewHeads();
 
   if (anyHistory) _renderTripleValueChart(players);
+  window._cmpRedrawValueCharts = function () {
+    document.querySelectorAll('.cmp-vh-label').forEach(el => { el.textContent = _cmpHistLabel(); });
+    _renderTripleValueChart(players);
+  };
 }
 
 // Tab switching for the 3-way compare. Lazy-loads each tab's per-player content
@@ -23957,16 +24010,21 @@ function _cmp3UsageTable(players, weeksArr) {
 
 // Three-line value-history chart for the 3-way compare. Mirrors the two-player
 // #compareValueChart (same Plotly theming + hover), one line per player.
+// Plots the ACTIVE Dynasty/Redraft format's series per player, like the
+// two-player chart; the triple view registers its own toggle redraw below.
 function _renderTripleValueChart(players) {
   const chartDiv = document.getElementById('compareTripleChart');
   if (!chartDiv) return;
+  const _anyActive = (players || []).some(p => (_cmpHistSeries(p) || []).length > 0);
+  _cmpToggleChartBlock(chartDiv, _anyActive);
+  if (!_anyActive) return;
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const _ct = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
   const gridColor = _ct.grid || (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)');
   const textColor = _ct.text || (isDark ? '#9ca3af' : '#6b7280');
   const traces = players.map((p, i) => ({
-    x: (p.value_history || []).map(h => h.as_of_date || h.date),
-    y: (p.value_history || []).map(h => _cmpHistValue(h)),
+    x: (_cmpHistSeries(p) || []).map(h => h.as_of_date || h.date),
+    y: (_cmpHistSeries(p) || []).map(h => _cmpHistValue(h)),
     mode: 'lines', name: p.name,
     line: { color: _CMP3_COLORS[i], width: 2.5 },
     hovertemplate: '<b>' + (p.name || '') + '</b><br>%{x}<br>Value: %{y}<extra></extra>',

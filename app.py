@@ -758,6 +758,40 @@ _BEAT_MARKET_CACHE: dict = {}
 _BEAT_MARKET_CACHE_TTL = 300  # 5 minutes
 _BEAT_MARKET_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
 
+# Memoized league-format resolution for /api/beat-the-market when the client
+# sends no explicit format: (platform, league_id, season) -> "dynasty"/"redraft".
+_BEAT_MARKET_FORMAT_CACHE: dict = {}
+
+
+def _beat_market_league_format(platform, league_id, season):
+    """Value format for a league: "redraft" for redraft/keeper leagues,
+    "dynasty" otherwise (keeper counts as redraft, the digest precedent).
+
+    Resolved via the canonical classifier; any failure (or an unresolvable
+    league) falls back to the classifier's own default, dynasty, and never
+    raises into the endpoint.
+    """
+    key = (str(platform or ""), str(league_id or ""), season)
+    if key in _BEAT_MARKET_FORMAT_CACHE:
+        return _BEAT_MARKET_FORMAT_CACHE[key]
+    fmt = "dynasty"
+    try:
+        from utils.league import classify_league_roster_format
+
+        league = {}
+        try:
+            league = get_league(platform, league_id, season) or {}
+        except Exception:
+            league = {}
+        info = classify_league_roster_format(league=league, platform=platform)
+        if info.get("is_redraft") or info.get("is_keeper"):
+            fmt = "redraft"
+    except Exception:
+        logger.debug("[beat-the-market] league format resolution failed",
+                     exc_info=True)
+    _BEAT_MARKET_FORMAT_CACHE[key] = fmt
+    return fmt
+
 # Cache for value-tier thresholds (keyed by model-cache timestamp + league shape).
 # compute_tier_thresholds is an O(n·window) scan over the value table; the inputs
 # only change when values refresh, so memoize on the model-cache timestamp.
@@ -28198,7 +28232,8 @@ def _board_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
 
 def _trade_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
                                        league_type: str, league_size: int,
-                                       version_key=None):
+                                       version_key=None,
+                                       scoring_type: str = "dynasty"):
     """Trade-calculator JSON: skill players + picks, value fields, folded-in
     deltas/indicators. ETag + max-age=1800 like the board view."""
     if version_key is not None:
@@ -28213,11 +28248,16 @@ def _trade_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
     else:
         from dashboard_services.league_players_board import slim_trade_payload
         # Fold in 7-day deltas (cached by snapshot date in get_top_movers).
+        # The deltas follow the request's value format: a redraft board
+        # shows redraft movement, never dynasty deltas beside redraft
+        # values. The board cache key already separates formats via
+        # overlay_key (which embeds the request scoring_type).
         delta_map = {}
         try:
             from data_building.player_value_history import get_top_movers
             movers = get_top_movers(days=7, limit=1000, league_type=league_type,
-                                    league_size=league_size) or {}
+                                    league_size=league_size,
+                                    scoring_type=scoring_type) or {}
             for p in (movers.get("risers") or []) + (movers.get("fallers") or []):
                 pid = str(p.get("player_id") or "")
                 d = p.get("delta")
@@ -28335,6 +28375,7 @@ def api_league_players():
                 result, overlay_key=overlay_key, is_sf=_mi_is_sf,
                 league_type=_trade_league_type, league_size=_trade_league_size,
                 version_key=_lp_version_key if board_cacheable else None,
+                scoring_type=("redraft" if _mi_scoring == "redraft" else "dynasty"),
             )
         if _view_board:
             if board_cacheable:
@@ -28804,8 +28845,13 @@ def api_player_deltas():
     except (TypeError, ValueError):
         league_size = 10
 
+    # Optional value format: redraft deltas read the redraft history
+    # columns; anything else (including a bogus value) stays dynasty.
+    _pd_scoring = str(request.args.get("scoring_type") or "").strip().lower()
+    _pd_scoring = "redraft" if _pd_scoring == "redraft" else "dynasty"
+
     # Get top movers data which includes deltas
-    movers_data = get_top_movers(days=days, limit=1000, league_type=league_type, league_size=league_size) or {}
+    movers_data = get_top_movers(days=days, limit=1000, league_type=league_type, league_size=league_size, scoring_type=_pd_scoring) or {}
 
     # Build a simple player_id -> delta map
     deltas = {}
@@ -34782,7 +34828,8 @@ def api_beat_the_market():
 
     A positive 'vs_avg' means the roster gained more value than a typical roster.
 
-    Query params: platform, league_id, season, days (default 30), league_type, league_size
+    Query params: platform, league_id, season, days (default 30), league_type, league_size,
+    scoring_type (dynasty/redraft; absent = classify the league, keeper = redraft)
     """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
@@ -34808,9 +34855,30 @@ def api_beat_the_market():
     except (TypeError, ValueError):
         league_size = 10
 
+    # Value format: an explicit client signal (the Teams page sends its
+    # Dynasty / This Season toggle state as scoring_type) wins; otherwise
+    # classify the league itself. Unknown defaults dynasty.
+    _btm_fmt_param = str(request.args.get("scoring_type") or "").strip().lower()
+    if _btm_fmt_param in ("dynasty", "redraft"):
+        scoring_format = _btm_fmt_param
+    else:
+        scoring_format = _beat_market_league_format(platform, league_id, season)
+    _btm_redraft = scoring_format == "redraft"
+
     try:
         # Determine the right value field
-        if league_type == "sf" and league_size != 10:
+        if _btm_redraft:
+            # Redraft history columns hold the WLS solve exactly as served:
+            # read the one column directly, never COALESCE to a dynasty
+            # column (a size the WLS never solved is a gap, not a point at
+            # the dynasty value).
+            if league_type == "sf":
+                value_expr = ("redraft_sf_value" if league_size == 10
+                              else f"redraft_sf_value_{league_size}")
+            else:
+                value_expr = ("redraft_value" if league_size == 10
+                              else f"redraft_value_{league_size}")
+        elif league_type == "sf" and league_size != 10:
             value_expr = f"COALESCE(sf_value_{league_size}, sf_value, value)"
         elif league_type == "sf":
             value_expr = "COALESCE(sf_value, value)"
@@ -34834,16 +34902,39 @@ def api_beat_the_market():
         else:
             latest_date_obj = _date.fromisoformat(str(latest_date))
 
-        # Find the closest baseline date within the requested window
+        # Redraft mode needs redraft data at the latest snapshot too: the
+        # history rows exist for every date, but their redraft columns are
+        # NULL before redraft tracking began (and stay NULL for league
+        # sizes the WLS never solves). No redraft latest = the endpoint's
+        # no-data response, never dynasty deltas under a redraft label.
+        if _btm_redraft:
+            with get_conn() as conn:
+                _latest_rd = conn.execute(
+                    "SELECT 1 AS x FROM player_value_history "
+                    f"WHERE source = 'model' AND as_of_date = %s AND {value_expr} IS NOT NULL "
+                    "LIMIT 1",
+                    (latest_date_obj,)
+                ).fetchone()
+            if not _latest_rd:
+                return jsonify({"error": "Insufficient history for requested window"}), 404
+
+        # Find the closest baseline date within the requested window. In
+        # redraft mode the baseline date must actually carry redraft
+        # values, so the search requires a non-NULL redraft column; the
+        # fallback to the earliest in-window snapshot is otherwise the
+        # same as dynasty, and payload baseline_date/latest_date report
+        # the real span the deltas cover.
         baseline_date = None
+        _baseline_sql = (
+            "SELECT MAX(as_of_date) AS d FROM player_value_history "
+            "WHERE source = 'model' AND as_of_date <= %s"
+        )
+        if _btm_redraft:
+            _baseline_sql += f" AND {value_expr} IS NOT NULL"
         with get_conn() as conn:
             for candidate_days in range(days, 0, -1):
                 target = latest_date_obj - _td(days=candidate_days)
-                row = conn.execute(
-                    "SELECT MAX(as_of_date) AS d FROM player_value_history "
-                    "WHERE source = 'model' AND as_of_date <= %s",
-                    (target,)
-                ).fetchone()
+                row = conn.execute(_baseline_sql, (target,)).fetchone()
                 if row and row["d"] and row["d"] < latest_date_obj:
                     baseline_date = row["d"]
                     break
@@ -34861,6 +34952,7 @@ def api_beat_the_market():
         users = get_users(platform, league_id, season) or []
 
         _bm_key = (platform, league_id, season, days, league_type, league_size,
+                   scoring_format,
                    _iso(latest_date_obj), _iso(baseline_date),
                    _roster_sig({"rosters": rosters}))
         _bm_hit = _BEAT_MARKET_CACHE.get(_bm_key)
@@ -34889,6 +34981,7 @@ def api_beat_the_market():
                        ROUND((l.val - b.val)::numeric, 1) AS delta
                 FROM latest l
                 JOIN baseline b ON b.player_id = l.player_id
+                {"WHERE l.val IS NOT NULL AND b.val IS NOT NULL" if _btm_redraft else ""}
                 """,
                 (latest_date_obj, baseline_date)
             ).fetchall()
@@ -34947,6 +35040,7 @@ def api_beat_the_market():
             "latest_date": _iso(latest_date_obj),
             "baseline_date": _iso(baseline_date),
             "league_avg_delta": avg_delta,
+            "scoring_type": scoring_format,
             "rosters": results,
         }
         _prune_ttl_cache(_BEAT_MARKET_CACHE, _BEAT_MARKET_CACHE_MAX)

@@ -90,7 +90,12 @@ def test_teams_loaders_resync_league_cfg():
         "loadRosterIntel",
     ):
         block = src[src.index("function %s()" % name) :]
-        head = block[: block.index("\n      function ") if "\n      function " in block[:800] else 200]
+        # Scope to this loader's own body: everything up to the next
+        # top-level function (4-space indent inside the Teams IIFE).
+        # (The old 200-char fallback window broke when loadBtm gained a
+        # format-flip guard comment above its _loaded check.)
+        nxt = block.find("\n    function ", 1)
+        head = block if nxt < 0 else block[:nxt]
         # Each loader must re-read cfg before the lazy-load short-circuit.
         assert "_syncLeagueCfg()" in head, name
         assert head.index("_syncLeagueCfg()") < head.index("if (_loaded.")

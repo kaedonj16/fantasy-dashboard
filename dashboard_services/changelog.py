@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
+        "text": "Redraft value history now reaches the rest of the site: Beat the Market on the Teams page follows your league format (or the This Season toggle), the Compare value history chart follows the Dynasty/Redraft toggle for two and three player compares, trade calculator value deltas match the format you are viewing, and the weekly email digest picks risers and fallers in each league's own format. Redraft history is still young, so redraft views cover the shorter span honestly instead of borrowing dynasty numbers.",
+        "link": "/compare"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "update",
         "text": "Player cards and Top Movers now speak redraft too. In a player card, the value history chart follows the Dynasty/Redraft toggle: switch to Redraft and the chart shows redraft value history under its own label. Redraft values have only been tracked since late October, so that line starts short and grows a point a day; until it has points, the card says so instead of showing dynasty numbers in its place. Top Movers gains the same choice: the page and the trade calculator movers panel both have a Dynasty/Redraft toggle, and the redraft board is built from redraft values only.",
         "link": "/top-movers"
     },
