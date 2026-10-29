@@ -491,6 +491,8 @@ def test_client_fires_deferred_and_early_fetches():
     assert "_pmStartEarlyFetches(playerId, _detailsDescriptor)" in js
     assert "_detailsDescriptor.url + '&deferred=1'" in js
     assert "function _pmPatchDeferred(dfd)" in js
-    assert "_pmTakeEarlyResponse(logsUrl) || _pmFetch(logsUrl)" in js
+    assert "_pmTakeEarlyResponse(rfUrl)" in js
+    assert "_pmFetch(rfUrl, 15000)" in js
+    assert ".catch(() => _rfAttempt())" in js  # one quiet retry, fresh fetch
     assert "_pmTakeEarlyJson(tradesUrl) || jget(tradesUrl)" in js
     assert "pmHeroPpgVal" in js and "pmHeroTotalVal" in js

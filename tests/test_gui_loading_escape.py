@@ -83,9 +83,10 @@ def test_pm_stats_and_breakout_tab_fetches_are_bounded():
 def test_pm_recent_form_and_boxscore_fetches_are_bounded():
     src = _modal()
     assert "_pmFetch('/api/player-team-boxscore?' + qs.toString())" in src
-    # Recent Form is the first _pmFetch(logsUrl) call site in the file,
-    # ahead of the Stats tab's.
-    assert src.index("_pmFetch(logsUrl)") < src.index("// ── Lazy-load Stats tab")
+    # Recent Form fetches the light recent-form endpoint through the
+    # bounded _pmFetch (15s), ahead of the Stats tab's game-logs fetch.
+    assert "_pmFetch(rfUrl, 15000)" in src
+    assert src.index("_pmFetch(rfUrl, 15000)") < src.index("// ── Lazy-load Stats tab")
 
 
 # ── League Scores tab (app.js) ───────────────────────────────────────────────
