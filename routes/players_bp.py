@@ -630,6 +630,8 @@ def api_player_value_history(player_id: str):
         days = 30
 
     league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+    scoring_type = "redraft" if str(
+        request.args.get("scoring_type", "dynasty")).strip().lower() == "redraft" else "dynasty"
     try:
         league_size = int(request.args.get("league_size", 10))
         if league_size not in (8, 10, 12, 14):
@@ -640,11 +642,13 @@ def api_player_value_history(player_id: str):
     history = get_player_value_history(
         player_id, days=max(days, 1),
         league_type=league_type, league_size=league_size,
+        scoring_type=scoring_type,
     )
     return jsonify(
         {
             "player_id": str(player_id),
             "days": max(days, 1),
+            "scoring_type": scoring_type,
             "history": history,
         }
     )

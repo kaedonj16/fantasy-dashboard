@@ -389,8 +389,54 @@ _TOP_MOVERS_EDITORIAL_HTML = """
 """
 
 
+def _top_movers_editorial_redraft_html() -> str:
+    """Tier 3 editorial for the redraft view of /top-movers.
+
+    The dynasty block's mechanics (production, opportunity, injury,
+    sentiment) carry over, but its age-curve and future-seasons framing is
+    dynasty-only, so the redraft view gets its own shorter block instead of
+    a word-swapped copy. No em dashes (site rule).
+    """
+    return """
+  <div class="rf-seo-content" data-tier3="top-movers-editorial-redraft">
+    <h2>What actually moves redraft value</h2>
+    <p>Four forces move a redraft price during the season. Production is the
+    loudest: points change minds, and a few strong weeks reprice a player
+    whether the role changed or not. Opportunity is the force that lasts: a
+    new starting job, a rising snap share or a bigger slice of team targets
+    changes what a player will score for the rest of this season, not just
+    last week. Injury moves prices in both directions, discounting the
+    player who is out and inflating the backup who inherits the role.
+    Sentiment ties the rest together: once a league makes up its mind,
+    prices can run ahead of the evidence in either direction.</p>
+
+    <h2>Why the 7, 30 and 90 day windows tell different stories</h2>
+    <p>The short window is a reaction window. Seven days captures one game
+    and one injury report, so it is the best place to find overreactions
+    and the worst place to find proof. Thirty days is a role window: a
+    month is long enough for snap and target trends to separate a real
+    depth chart change from a single game plan. Ninety days reaches back
+    toward draft season, when prices were set by projection instead of
+    production. A player rising on all three windows is usually a genuine
+    breakout. A player rising only on the shortest one is a question to
+    investigate, not a conclusion.</p>
+
+    <h2>How to act on a move</h2>
+    <p>Start with the role, not the arrow. If a faller kept his snaps and
+    targets and only lost touchdowns and yardage luck, the dip is a buying
+    window: see the <a href="/guides/buy-low-sell-high">buy low and sell
+    high guide</a> for how to price it. If a riser gained value on
+    touchdowns while his share of the offense stood still, the spike is a
+    selling window. When a move checks out, grade the actual package in
+    the <a href="/trade">trade calculator</a> with your format set
+    correctly.</p>
+  </div>
+"""
+
+
 def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
-                              signed_in: bool = False, days: int = 7) -> str:
+                              signed_in: bool = False, days: int = 7,
+                              scoring_format: str = "dynasty") -> str:
     """Weekly risers and fallers page.
 
     signed_in: when True, player names render as clickable spans that open the
@@ -400,8 +446,19 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
 
     days: active timeframe window (7/30/90). Drives the timeframe toggle so the
     selected range is highlighted; each option is a crawlable ?days= link.
+
+    scoring_format: "dynasty" (default) or "redraft". Redraft swaps the
+    title, subtitle and explanatory copy to the redraft frame, and every
+    toggle link preserves both ?days= and ?format= so the two toggles
+    compose. Redraft history only began accruing in late October 2026, so
+    the longer windows are legitimately sparse until it builds.
     """
     from dashboard_services.pages.player_page import slugify
+
+    _redraft = str(scoring_format or "dynasty").strip().lower() == "redraft"
+    _fmt_word = "Redraft" if _redraft else "Dynasty"
+    _fmt_word_l = "redraft" if _redraft else "dynasty"
+    _fmt_query = "&format=redraft" if _redraft else ""
 
     date_str    = as_of_date or datetime.now().strftime("%B %d, %Y")
     latest_date = movers.get("latest_date", "")
@@ -492,21 +549,72 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
         active = d == days
         cls = "otc-day-filter rf-tf-opt is-active" if active else "otc-day-filter rf-tf-opt"
         aria = ' aria-current="true"' if active else ""
-        return f'<a class="{cls}" href="/top-movers?days={d}"{aria}>{lbl}</a>'
+        return f'<a class="{cls}" href="/top-movers?days={d}{_fmt_query}"{aria}>{lbl}</a>'
 
     _toggle = "".join(_tf_opt(d, lbl) for d, lbl in ((7, "7d"), (30, "30d"), (90, "90d")))
     toggle_html = f'<div class="otc-day-filters rf-timeframe" role="group" aria-label="Timeframe">{_toggle}</div>'
 
+    def _fmt_opt(fmt: str, lbl: str) -> str:
+        active = (fmt == "redraft") == _redraft
+        cls = "otc-day-filter rf-tf-opt is-active" if active else "otc-day-filter rf-tf-opt"
+        aria = ' aria-current="true"' if active else ""
+        href = f"/top-movers?days={days}" + ("&format=redraft" if fmt == "redraft" else "")
+        return f'<a class="{cls}" href="{href}"{aria}>{lbl}</a>'
+
+    _fmt_toggle = _fmt_opt("dynasty", "Dynasty") + _fmt_opt("redraft", "Redraft")
+    fmt_toggle_html = (
+        f'<div class="otc-day-filters rf-timeframe" role="group" '
+        f'aria-label="Value format">{_fmt_toggle}</div>'
+    )
+
+    if _redraft:
+        _why_section = f"""
+  <div class="rf-seo-content">
+    <h2>Why Do Redraft Values Change?</h2>
+    <p>Redraft trade values shift with production, role changes, injury
+    reports and schedule, all inside a single season: there is no future
+    year to fall back on, so a lost role or a multi-week absence reprices a
+    player fast. Big risers typically follow breakout performances or an
+    expanded role; big fallers often reflect injuries or increased
+    competition.</p>
+
+    <h2>How to Use Top Movers</h2>
+    <p>Risers are buy candidates, their real market value is rising but roster holders
+    may not have adjusted their asking price yet. Fallers are sell candidates for the same
+    reason. Use the <a href="/trade">BR Fantasy Trade Calculator</a> to turn this intel
+    into winning trades in your redraft league.</p>
+  </div>
+{_top_movers_editorial_redraft_html()}
+"""
+    else:
+        _why_section = f"""
+  <div class="rf-seo-content">
+    <h2>Why Do Dynasty Values Change?</h2>
+    <p>Dynasty trade values shift based on real transaction data from thousands of leagues,
+    injury reports, depth chart changes, and model updates. Big risers typically follow
+    breakout performances or positive depth chart news; big fallers often reflect injuries
+    or increased competition.</p>
+
+    <h2>How to Use Top Movers</h2>
+    <p>Risers are buy candidates, their real market value is rising but roster holders
+    may not have adjusted their asking price yet. Fallers are sell candidates for the same
+    reason. Use the <a href="/trade">BR Fantasy Trade Calculator</a> to turn this intel
+    into winning trades in your dynasty league.</p>
+  </div>
+{_TOP_MOVERS_EDITORIAL_HTML}
+"""
+
     return f"""
 <div class="rf-page">
   <div class="rf-hero">
-    <h1 class="rf-title">Dynasty Fantasy Football Top Movers</h1>
+    <h1 class="rf-title">{_fmt_word} Fantasy Football Top Movers</h1>
     <p class="rf-updated"><span class="rf-updated-dot"></span>Updated {html.escape(date_str)} · refreshed daily</p>
     <p class="rf-subtitle">
-      Biggest dynasty trade value movers {_win_word}, {range_note}.
+      Biggest {_fmt_word_l} trade value movers {_win_word}, {range_note}.
       Use the <a href="/trade">Trade Calculator</a> to act on these moves.
     </p>
     {toggle_html}
+    {fmt_toggle_html}
   </div>
 
   <div class="rf-grid">
@@ -524,21 +632,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
     </div>
   </div>
 
-  <div class="rf-seo-content">
-    <h2>Why Do Dynasty Values Change?</h2>
-    <p>Dynasty trade values shift based on real transaction data from thousands of leagues,
-    injury reports, depth chart changes, and model updates. Big risers typically follow
-    breakout performances or positive depth chart news; big fallers often reflect injuries
-    or increased competition.</p>
-
-    <h2>How to Use Top Movers</h2>
-    <p>Risers are buy candidates, their real market value is rising but roster holders
-    may not have adjusted their asking price yet. Fallers are sell candidates for the same
-    reason. Use the <a href="/trade">BR Fantasy Trade Calculator</a> to turn this intel
-    into winning trades in your dynasty league.</p>
-  </div>
-{_TOP_MOVERS_EDITORIAL_HTML}
-
+{_why_section}
   <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
     <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to track movers on your roster</a>
     <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Free for your first league</p>

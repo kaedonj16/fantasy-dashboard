@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-29",
+        "tag": "update",
+        "text": "Player cards and Top Movers now speak redraft too. In a player card, the value history chart follows the Dynasty/Redraft toggle: switch to Redraft and the chart shows redraft value history under its own label. Redraft values have only been tracked since late October, so that line starts short and grows a point a day; until it has points, the card says so instead of showing dynasty numbers in its place. Top Movers gains the same choice: the page and the trade calculator movers panel both have a Dynasty/Redraft toggle, and the redraft board is built from redraft values only.",
+        "link": "/top-movers"
+    },
+    {
         "date": "2026-10-28",
         "tag": "fix",
         "text": "Pages no longer reload on their own when a new version of the app lands in the background. The update still arrives and the New version banner still offers it, but the page you are reading stays put until you tap to update.",
