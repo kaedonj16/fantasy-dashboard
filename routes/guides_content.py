@@ -9,16 +9,52 @@ from __future__ import annotations
 
 GUIDE_AUTHOR_NAME = "hoodiekj"
 GUIDE_AUTHOR_URL = "https://youtube.com/@hoodiekj"
+# Legacy shared stamps. Guide records now carry their own per-article
+# "published" / "updated" literals (the values these constants always
+# resolved to), so new guides can carry real individual dates. The first
+# six guides keep the site's declared published date of 2026-06-15 (the
+# GUIDE_PUBLISHED value in place since the guides were first committed);
+# every guide's updated date is 2026-10-02, the Tier 2 deepening date.
+# Do not invent varied dates for the legacy guides: 2026-10-02 is the
+# only verified update date they have. These constants stay defined for
+# any importer that still references the shared stamps.
 GUIDE_PUBLISHED = "2026-06-15"
 GUIDE_UPDATED = "2026-10-02"
+
+# Index grouping order (guides index renders one section per category,
+# in this order; categories with no guides are skipped).
+GUIDE_CATEGORY_ORDER = [
+    "Trade Case Studies",
+    "Inside the Model",
+    "Market Movement",
+    "Roster Construction",
+    "Weekly Decisions",
+    "Guides",
+]
+
+# Short chip label + chip background per category, used on index cards.
+# The article header chip carries the full category name instead.
+GUIDE_CATEGORY_CHIPS = {
+    "Trade Case Studies": ("Case Study", "#38bdf8"),
+    "Inside the Model": ("Model", "#a78bfa"),
+    "Market Movement": ("Market", "#fbbf24"),
+    "Roster Construction": ("Roster", "#4ade80"),
+    "Weekly Decisions": ("Weekly", "#f472b6"),
+    "Guides": ("Guide", "#94a3b8"),
+}
+
+# Read time is computed from each article's actual word count at this
+# reading speed, rounded to the nearest minute with a 1 minute floor.
+READ_TIME_WPM = 200
 
 GUIDES = {
     "dynasty-trade-value": {
         "title": "How Dynasty Trade Value Works",
         "summary": "What a dynasty trade value actually measures, why it differs from "
                    "redraft rankings, and how to read the numbers behind a deal.",
-        "published": GUIDE_PUBLISHED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-06-15",
+        "updated": "2026-10-02",
+        "category": "Inside the Model",
         "body": """
             <p>
               Every player in a dynasty league carries a <strong>trade value</strong>: a
@@ -184,8 +220,9 @@ GUIDES = {
         "title": "Superflex vs 1QB: Why the Same Player Has Two Values",
         "summary": "Quarterbacks dominate Superflex leagues. Here's how values shift between "
                    "formats and how to avoid badly mispricing a trade.",
-        "published": GUIDE_PUBLISHED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-06-15",
+        "updated": "2026-10-02",
+        "category": "Roster Construction",
         "body": """
             <p>
               The single biggest factor in a player&rsquo;s dynasty value, bigger than age,
@@ -326,8 +363,9 @@ GUIDES = {
         "title": "Reading Advanced Metrics: A Fantasy Manager's Guide",
         "summary": "Target share, air yards, snap counts, red-zone usage and more, what "
                    "each metric tells you and which ones actually predict fantasy points.",
-        "published": GUIDE_PUBLISHED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-06-15",
+        "updated": "2026-10-02",
+        "category": "Inside the Model",
         "body": """
             <p>
               Box-score stats tell you what already happened. <strong>Advanced
@@ -489,8 +527,9 @@ GUIDES = {
         "title": "Dynasty Rookie Draft Strategy",
         "summary": "How to value rookie picks, read prospect profiles, and avoid the most common "
                    "first-year-player mistakes in dynasty.",
-        "published": GUIDE_PUBLISHED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-06-15",
+        "updated": "2026-10-02",
+        "category": "Roster Construction",
         "body": """
             <p>
               The rookie draft is where dynasty championships are quietly built. Cheap,
@@ -658,8 +697,9 @@ GUIDES = {
         "title": "Buy-Low and Sell-High: Timing the Dynasty Market",
         "summary": "Dynasty value is always moving. Learn to recognize the windows where you can "
                    "buy a player below his real worth or sell above it.",
-        "published": GUIDE_PUBLISHED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-06-15",
+        "updated": "2026-10-02",
+        "category": "Market Movement",
         "body": """
             <p>
               Dynasty trade value is not static, it moves constantly with injuries,
@@ -821,8 +861,9 @@ GUIDES = {
         "title": "How to Evaluate a Dynasty Trade",
         "summary": "A step-by-step process for judging any trade offer, beyond just adding "
                    "up the values on each side.",
-        "published": GUIDE_PUBLISHED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-06-15",
+        "updated": "2026-10-02",
+        "category": "Trade Case Studies",
         "body": """
             <p>
               Adding up trade values on each side of a deal is a useful first check, but
@@ -994,8 +1035,9 @@ GUIDES = {
         "title": "How to Rebuild a Dynasty Roster",
         "summary": "When to tear it down, which assets to sell, and how to restock with youth "
                    "and picks without wasting two seasons.",
-        "published": GUIDE_UPDATED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-10-02",
+        "updated": "2026-10-02",
+        "category": "Roster Construction",
         "body": """
             <p>
               A rebuild is not a vibe. It is a decision that your current roster cannot
@@ -1149,8 +1191,9 @@ GUIDES = {
         "title": "How to Contend in Dynasty Leagues",
         "summary": "How to recognize a real championship window and which trades actually "
                    "push a good team over the top.",
-        "published": GUIDE_UPDATED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-10-02",
+        "updated": "2026-10-02",
+        "category": "Roster Construction",
         "body": """
             <p>
               Contending is the opposite of collecting. You already have a starting
@@ -1298,8 +1341,9 @@ GUIDES = {
         "title": "TE Premium Dynasty Strategy",
         "summary": "How extra tight-end scoring changes startup drafts, trades, and which "
                    "archetypes are actually worth paying up for.",
-        "published": GUIDE_UPDATED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-10-02",
+        "updated": "2026-10-02",
+        "category": "Roster Construction",
         "body": """
             <p>
               Tight-end premium (TEP) leagues award extra points per tight-end
@@ -1445,8 +1489,9 @@ GUIDES = {
         "title": "Dynasty Startup Draft Strategy",
         "summary": "How to build a roster from scratch: where to spend early picks, when to "
                    "take quarterbacks, and how to avoid a pretty team that never wins.",
-        "published": GUIDE_UPDATED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-10-02",
+        "updated": "2026-10-02",
+        "category": "Roster Construction",
         "body": """
             <p>
               A dynasty startup is the one draft where the entire player pool is
@@ -1601,8 +1646,9 @@ GUIDES = {
         "title": "Waiver Wire and FAAB Strategy for Fantasy Football",
         "summary": "How to spend a FAAB budget, when to use waiver priority, and which "
                    "pickups actually change a roster.",
-        "published": GUIDE_UPDATED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-10-02",
+        "updated": "2026-10-02",
+        "category": "Weekly Decisions",
         "body": """
             <p>
               The waiver wire is the only market in fantasy where you compete against
@@ -1758,8 +1804,9 @@ GUIDES = {
         "title": "ADP vs Trade Value: Why Draft Price Is Not Trade Price",
         "summary": "Startup ADP and dynasty trade values answer different questions. "
                    "Here's how to use both without mixing them up.",
-        "published": GUIDE_UPDATED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-10-02",
+        "updated": "2026-10-02",
+        "category": "Market Movement",
         "body": """
             <p>
               Average Draft Position (ADP) is a record of where players have been taken
@@ -1899,8 +1946,9 @@ GUIDES = {
         "title": "Positional Aging Curves in Dynasty",
         "summary": "Why running backs fall off earlier than receivers and quarterbacks, "
                    "and how to stop treating every 27-year-old the same.",
-        "published": GUIDE_UPDATED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-10-02",
+        "updated": "2026-10-02",
+        "category": "Inside the Model",
         "body": """
             <p>
               Dynasty value is a bet on remaining seasons, not just remaining weeks.
@@ -2050,8 +2098,9 @@ GUIDES = {
         "title": "How to Use the BR Fantasy Trade Calculator",
         "summary": "A practical walkthrough of grading a deal, toggling league settings, "
                    "and turning a lopsided offer into a counter that might actually land.",
-        "published": GUIDE_UPDATED,
-        "updated": GUIDE_UPDATED,
+        "published": "2026-10-02",
+        "updated": "2026-10-02",
+        "category": "Guides",
         "body": """
             <p>
               The <a href="/trade">trade calculator</a> is the public tool most managers
@@ -2208,3 +2257,67 @@ GUIDE_ORDER = [
     "positional-aging-curves",
     "using-the-trade-calculator",
 ]
+
+
+# ── Read time + section helpers ─────────────────────────────────────────────
+# Pure functions over a guide's body HTML, shared by the index cards, the
+# article header, and the tests so every surface agrees on the numbers.
+
+import html as _html_module
+import re as _re
+
+_H2_RE = _re.compile(r'<h2 class="static-section-title">(.*?)</h2>', _re.DOTALL)
+_TAG_RE = _re.compile(r"<[^>]+>")
+
+
+def guide_word_count(body: str) -> int:
+    """Words in a guide body, markup stripped."""
+    text = _html_module.unescape(_TAG_RE.sub(" ", body or ""))
+    return len(text.split())
+
+
+def guide_read_minutes(body: str) -> int:
+    """Read time in minutes at READ_TIME_WPM, minimum 1."""
+    return max(1, int(guide_word_count(body) / READ_TIME_WPM + 0.5))
+
+
+def _guide_anchor(title: str, seen: dict) -> str:
+    base = _re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "section"
+    count = seen.get(base, 0) + 1
+    seen[base] = count
+    return base if count == 1 else f"{base}-{count}"
+
+
+def guide_sections(body: str) -> list:
+    """[(anchor, title)] for the body's h2 sections, in document order.
+
+    Anchors come from the same pass guide_body_with_section_ids uses, so
+    a jump pill's href always matches the id stamped on its heading.
+    """
+    seen: dict = {}
+    sections = []
+    for match in _H2_RE.finditer(body or ""):
+        title = _html_module.unescape(_TAG_RE.sub(" ", match.group(1)))
+        title = " ".join(title.split())
+        sections.append((_guide_anchor(title, seen), title))
+    return sections
+
+
+def guide_body_with_section_ids(body: str) -> tuple:
+    """(body_html, sections) with an id stamped on every h2 section.
+
+    The stored body copy is untouched; ids are added at render time only
+    so the article header's section-jump pills have targets.
+    """
+    sections = guide_sections(body)
+    if not sections:
+        return body, sections
+    anchors = iter(anchor for anchor, _title in sections)
+
+    def _stamp(_match) -> str:
+        return (
+            f'<h2 class="static-section-title" id="guide-sec-{next(anchors)}">'
+            f"{_match.group(1)}</h2>"
+        )
+
+    return _H2_RE.sub(_stamp, body), sections

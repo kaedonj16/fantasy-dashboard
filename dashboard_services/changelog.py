@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-29",
+        "tag": "update",
+        "text": "Guides: the guides index is grouped by category (Trade Case Studies, Inside the Model, Market Movement, Roster Construction, Weekly Decisions), with a category chip, date, and read time on every card. Each article now opens with its category, its own published and updated dates, and jump pills for its sections, and read times are computed from the article text itself.",
+        "link": "/guides"
+    },
+    {
+        "date": "2026-10-29",
         "tag": "fix",
         "text": "Dark mode: the top 3 dynasty rank badges and the team snapshot medals no longer glow. Their bright gold, silver and bronze gradients are replaced with deepened metallic tones and lighter text in dark mode, so the medal places read clearly on the dark background. Light mode looks exactly as before.",
         "link": "/"
