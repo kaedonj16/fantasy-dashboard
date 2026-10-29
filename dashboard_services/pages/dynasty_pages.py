@@ -242,7 +242,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
       var link = r.querySelector(".dvt-player-link");
       var name = link ? link.textContent.toLowerCase() : "";
       var posOk  = activePos === "All" || pos === activePos;
-      var nameOk = !q || name.indexOf(q) !== -1;
+      var nameOk = !q || (typeof brScorePlayerName === 'function' ? brScorePlayerName(name, q) > 0 : name.indexOf(q) !== -1);
       var show   = posOk && nameOk;
       r.style.display = show ? "" : "none";
 

@@ -1,13 +1,17 @@
 """Account portfolios populate cards and cross-league insights on first paint."""
 
 
-def test_account_portfolio_renders_complete_cross_league_data(offline_client, monkeypatch):
+def _setup_fast_portfolio(offline_client, monkeypatch, game_day):
+    import app as app_mod
     import routes.user_pages_bp as pages
     from datetime import datetime, timezone
 
     seen = {}
     monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026, "week": 3})
-    monkeypatch.setattr(pages, "_games_scheduled_today", lambda season, week: False)
+    monkeypatch.setattr(pages, "_games_scheduled_today", lambda season, week: game_day)
+    # Direction C: build_portfolio_body gates the Rooting Guide row on
+    # the app-level schedule check; pin it to the same fixture value.
+    monkeypatch.setattr(app_mod, "_games_scheduled_today", lambda season, week: game_day)
     def resolve(viewer_user_id, account_id, current_season, *, enrich_live=True):
         seen["kwargs"] = {"enrich_live": enrich_live}
         return ([{
@@ -40,16 +44,34 @@ def test_account_portfolio_renders_complete_cross_league_data(offline_client, mo
     with offline_client.session_transaction() as sess:
         sess["account_id"] = 7
         sess["account_email"] = "a@example.com"
-    response = offline_client.get("/portfolio")
+    return offline_client.get("/portfolio"), seen
+
+
+def test_account_portfolio_renders_complete_cross_league_data(offline_client, monkeypatch):
+    response, seen = _setup_fast_portfolio(offline_client, monkeypatch, game_day=False)
     assert response.status_code == 200
     assert b"Fast League" in response.data
     assert b"7-4" in response.data
     assert b"Player Holdings" in response.data and b"Player One" in response.data
-    # v25: NFL Exposure is replaced by the Rooting Guide.
-    assert b"Rooting Guide" in response.data
+    # v25: NFL Exposure is replaced by the Rooting Guide. Direction C:
+    # the Rooting Guide row renders only on game days, and this fixture
+    # has no game today, so the row (and its tab) are absent entirely.
+    assert b"Rooting Guide" not in response.data
+    assert b"id='pfSecRooting'" not in response.data
     assert b"NFL Exposure" not in response.data
     assert b"Positional Strength" in response.data
     assert b"Record loading" not in response.data
+    assert seen["kwargs"]["enrich_live"] is False
+
+
+def test_account_portfolio_rooting_row_renders_on_game_day(offline_client, monkeypatch):
+    response, seen = _setup_fast_portfolio(offline_client, monkeypatch, game_day=True)
+    assert response.status_code == 200
+    # Game day: the Rooting Guide accordion row is present, collapsed.
+    assert b"Rooting Guide" in response.data
+    assert b"id='pfSecRooting'" in response.data
+    assert b"id='pfRootingBody' hidden" in response.data
+    assert b"NFL Exposure" not in response.data
     assert seen["kwargs"]["enrich_live"] is False
 
 

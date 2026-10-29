@@ -259,9 +259,11 @@ def slim_trade_payload(
 
 
 # ── Nav-search view ───────────────────────────────────────────────────────────
-# The nav player search needs only 5 fields per player (id, name, position,
-# team, headshot) and skips picks. ~50KB vs ~200KB for the trade view.
-SEARCH_PLAYER_KEYS = ("id", "name", "position", "team", "espnHeadshot")
+# The nav player search needs only a few fields per player (id, name,
+# position, team, headshot, plus search_name and value so the shared
+# brNameMatch matcher can normalize and rank) and skips picks. Still far
+# smaller than the trade view.
+SEARCH_PLAYER_KEYS = ("id", "name", "position", "team", "espnHeadshot", "search_name", "value")
 
 
 def slim_search_player(player: Mapping[str, Any]) -> Optional[dict]:

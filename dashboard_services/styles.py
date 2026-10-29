@@ -2275,7 +2275,7 @@ TRADE_HTML = """
           }
 
           const matches = allPlayers
-            .filter(p => p.name && p.name.toLowerCase().includes(query))
+            .filter(p => p.name && (typeof brScorePlayerName === 'function' ? brScorePlayerName(p, query) > 0 : p.name.toLowerCase().includes(query)))
             .slice(0, 20);
 
           if (!matches.length) return;
