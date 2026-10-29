@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
+        "text": "Player search everywhere is smarter. One shared matcher now powers the nav search, trade calculator, rankings, compare, Advanced Metrics, Trade Intel, draft room, cheat sheet and the rest, so punctuation, initials, partial names and small typos all find the right player: try jamarr, amonra, jsn, cmc or chase jamarr. Results rank the best match first, with player value breaking ties, so robinson leads with Bijan and st brown leads with Amon-Ra.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "update",
         "text": "My Leagues: the Portfolio insights sections now sit as four collapsed rows inside one card (Positional Strength, Rooting Guide, Bye Watch and Player Holdings). Tap a row to open it, and each section loads only when you first open it, so the page arrives faster. The Rooting Guide row shows only on game days. The summary card at the top keeps every tile and gets a cleaner look: bigger stat values, quiet uppercase labels, hairline dividers, and the This week (proj) tile now shows it opens the projected finals.",
         "link": "/portfolio"
     },

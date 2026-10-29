@@ -9,6 +9,267 @@
 // Redraft mode ranks on redraft value; Dynasty mode on dynasty value. Both use
 // the league-roster replacement level, and Superflex re-prices QBs by moving that
 // replacement line, not by a hand bump.
+// [br-name-match:begin] Shared player-name matcher: ONE implementation for
+// every player search surface (nav, trade calc, suggestions, compare,
+// rankings, advanced metrics, trade intel, draft room, cheat sheet, dynasty
+// tracker, portfolio). This block also lives verbatim in static/rankings.js,
+// static/draft_room.js and static/cheat_sheet.js (those bundles can load
+// without the app core); tests/test_shared_name_matcher.py pins the copies
+// identical. Pure function declarations only (no top-level const/var/let),
+// so loading two copies on one page can never collide. Mirrors the Python
+// name_match_score in utils/players.py.
+// Canonical normalize (same rules as Python normalize_name): lowercase,
+// accents stripped, periods and apostrophes removed, hyphens become spaces,
+// suffix tokens (jr/sr/ii/iii/iv/v) pulled out of the token list and kept
+// separately. Score tiers: exact > substring > compact-equal (spaces
+// removed: amonra, ceedee) > initials (JSN, CMC, BTJ) > compact substring >
+// token-prefix in any order (jax sm, chase jamarr) > per-token typo via
+// bounded Levenshtein. A suffix
+// token in the query is a +25 ranking bonus when the player's suffix
+// matches, never a hard filter. Callers sort score desc, then their own
+// value desc, then name asc.
+function brNameSuffixSet() {
+  return { jr: 1, sr: 1, ii: 1, iii: 1, iv: 1, v: 1 };
+}
+function brNameNormTokens(name) {
+  var s = String(name == null ? '' : name);
+  try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  s = s.toLowerCase();
+  s = s.replace(/[.''`]/g, '');
+  s = s.replace(/[-‐-―]/g, ' ');
+  s = s.replace(/[^a-z0-9]+/g, ' ');
+  return s.split(' ').filter(Boolean);
+}
+function brNameCamelParts(tok) {
+  // Split one original-case token at lower->upper boundaries:
+  // McCaffrey -> [Mc, Caffrey], CeeDee -> [Cee, Dee]. Drives initials.
+  var parts = [];
+  var cur = '';
+  for (var i = 0; i < tok.length; i++) {
+    var ch = tok.charAt(i);
+    if (i > 0 && ch >= 'A' && ch <= 'Z' && tok.charAt(i - 1) >= 'a' && tok.charAt(i - 1) <= 'z') {
+      parts.push(cur);
+      cur = ch;
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur) parts.push(cur);
+  return parts;
+}
+function brNameTokenInit(origTok, normTok) {
+  // Initials contributed by one token: "A.J." -> "aj", McCaffrey -> "mc",
+  // CeeDee -> "cd", anything else -> its first letter.
+  if (!origTok) return normTok ? normTok.charAt(0) : '';
+  var cleaned = String(origTok).replace(/[^A-Za-z.]/g, '');
+  if (cleaned.indexOf('.') >= 0) {
+    var bits = cleaned.split('.').filter(Boolean);
+    if (bits.length > 1) {
+      return bits.map(function (b) { return b.charAt(0).toLowerCase(); }).join('');
+    }
+  }
+  var parts = brNameCamelParts(cleaned);
+  if (parts.length > 1) {
+    return parts.map(function (p) { return p.charAt(0).toLowerCase(); }).join('');
+  }
+  return normTok ? normTok.charAt(0) : '';
+}
+function brNameFields(name) {
+  var raw = String(name == null ? '' : name);
+  var suffixSet = brNameSuffixSet();
+  var rawToks = brNameNormTokens(raw);
+  var suffix = '';
+  var keep = [];
+  for (var i = 0; i < rawToks.length; i++) {
+    if (suffixSet[rawToks[i]]) suffix = rawToks[i];
+    else keep.push(i);
+  }
+  var toks = keep.map(function (i) { return rawToks[i]; });
+  if (!toks.length) { toks = rawToks.slice(); keep = rawToks.map(function (_, i) { return i; }); }
+  // Original space/hyphen tokens align 1:1 with rawToks (normalizing only
+  // strips punctuation inside a token), which drives per-token initials.
+  var origToks = raw.split(/[\s\-‐-―]+/).filter(Boolean);
+  var aligned = origToks.length === rawToks.length;
+  var segInits = keep.map(function (idx) {
+    return brNameTokenInit(aligned ? origToks[idx] : null, rawToks[idx]);
+  });
+  var initialsSet = {};
+  var initials = [];
+  function addInit(s) { if (s && !initialsSet[s]) { initialsSet[s] = 1; initials.push(s); } }
+  var full = segInits.join('');
+  addInit(full);
+  if (suffix) addInit(full + suffix.charAt(0));
+  var base = toks.map(function (t) { return t.charAt(0); }).join('');
+  addInit(base);
+  if (suffix) addInit(base + suffix.charAt(0));
+  if (segInits.length > 1) {
+    var fl = segInits[0] + segInits[segInits.length - 1];
+    addInit(fl);
+    if (suffix) addInit(fl + suffix.charAt(0));
+  }
+  return {
+    norm: toks.join(' '),
+    compact: toks.join(''),
+    toks: toks,
+    segInits: segInits,
+    initials: initials,
+    suffix: suffix
+  };
+}
+function brNameParseQuery(query) {
+  var rawToks = brNameNormTokens(query);
+  var suffixSet = brNameSuffixSet();
+  var suffix = '';
+  var toks = [];
+  for (var i = 0; i < rawToks.length; i++) {
+    if (suffixSet[rawToks[i]]) suffix = rawToks[i];
+    else toks.push(rawToks[i]);
+  }
+  return { norm: toks.join(' '), compact: toks.join(''), toks: toks, suffix: suffix };
+}
+function brNameLev(a, b, cap) {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > cap) return cap + 1;
+  var prev = [];
+  var cur = [];
+  var i;
+  var j;
+  for (j = 0; j <= b.length; j++) prev[j] = j;
+  for (i = 1; i <= a.length; i++) {
+    cur[0] = i;
+    var best = cur[0];
+    for (j = 1; j <= b.length; j++) {
+      var cost = a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > cap) return cap + 1;
+    var tmp = prev;
+    prev = cur;
+    cur = tmp;
+  }
+  return prev[b.length];
+}
+function brNameTokenOk(qt, fields, used) {
+  for (var i = 0; i < fields.toks.length; i++) {
+    if (used[i]) continue;
+    if (fields.toks[i].indexOf(qt) === 0 || fields.segInits[i] === qt) {
+      used[i] = 1;
+      return true;
+    }
+  }
+  return false;
+}
+function brNameTypoDist(qt, fields, used) {
+  var cap = qt.length >= 6 ? 2 : (qt.length >= 4 ? 1 : 0);
+  var bestI = -1;
+  var bestD = cap + 1;
+  for (var i = 0; i < fields.toks.length; i++) {
+    if (used[i]) continue;
+    var t = fields.toks[i];
+    if (Math.abs(t.length - qt.length) > cap) continue;
+    var d = brNameLev(qt, t, cap);
+    if (d < bestD) { bestD = d; bestI = i; }
+  }
+  if (bestI < 0) return -1;
+  used[bestI] = 1;
+  return bestD;
+}
+function brScoreNameFields(fields, pq) {
+  if (!fields || !pq || !pq.toks.length) return 0;
+  var score = 0;
+  if (fields.norm === pq.norm) {
+    score = 1000;
+  } else if (pq.norm && fields.norm.indexOf(pq.norm) >= 0) {
+    score = 900 + (fields.norm.indexOf(pq.norm) === 0 ? 5 : 0);
+  } else if (pq.compact && fields.compact === pq.compact) {
+    score = 880;
+  } else if (pq.toks.length === 1 && fields.initials.indexOf(pq.compact) >= 0) {
+    score = 850;
+  } else if (pq.compact.length >= 3 && fields.compact.indexOf(pq.compact) >= 0) {
+    score = 840 + (fields.compact.indexOf(pq.compact) === 0 ? 5 : 0);
+  } else {
+    var used = {};
+    var ok = true;
+    var i;
+    for (i = 0; i < pq.toks.length; i++) {
+      if (!brNameTokenOk(pq.toks[i], fields, used)) { ok = false; break; }
+    }
+    if (ok) {
+      score = 800;
+    } else {
+      used = {};
+      ok = true;
+      var dist = 0;
+      for (i = 0; i < pq.toks.length; i++) {
+        var d = brNameTypoDist(pq.toks[i], fields, used);
+        if (d < 0) { ok = false; break; }
+        dist += d;
+      }
+      if (ok) score = 700 - 10 * dist;
+    }
+  }
+  if (score > 0 && pq.suffix && fields.suffix && pq.suffix === fields.suffix) score += 25;
+  return score;
+}
+function brNameCachedFields(player, key, name) {
+  var cached = player[key];
+  if (cached && cached._for === name) return cached.f;
+  var fields = brNameFields(name);
+  try { player[key] = { _for: name, f: fields }; } catch (e) {}
+  return fields;
+}
+function brScorePlayerName(player, query) {
+  var pq = (query && typeof query === 'object' && query.toks) ? query : brNameParseQuery(query);
+  if (!pq.toks.length) return 0;
+  var isObj = player && typeof player === 'object';
+  var name = isObj ? (player.name || '') : String(player == null ? '' : player);
+  var searchName = isObj ? (player.search_name || '') : '';
+  var best = 0;
+  if (name) {
+    var f = isObj ? brNameCachedFields(player, '_brNmF', name) : brNameFields(name);
+    best = brScoreNameFields(f, pq);
+  }
+  if (searchName && searchName !== name) {
+    var f2 = isObj ? brNameCachedFields(player, '_brNmS', searchName) : brNameFields(searchName);
+    var s2 = brScoreNameFields(f2, pq);
+    if (s2 > best) best = s2;
+  }
+  return best;
+}
+function brRankPlayersByName(players, query, valueFn, limit) {
+  var pq = brNameParseQuery(query);
+  if (!pq.toks.length) return [];
+  var ranked = [];
+  var list = players || [];
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i];
+    var s = brScorePlayerName(p, pq);
+    if (s > 0) {
+      ranked.push({ p: p, s: s, v: valueFn ? (Number(valueFn(p)) || 0) : 0 });
+    }
+  }
+  ranked.sort(function (a, b) {
+    if (b.s !== a.s) return b.s - a.s;
+    if (b.v !== a.v) return b.v - a.v;
+    var an = (a.p && a.p.name) || '';
+    var bn = (b.p && b.p.name) || '';
+    return an < bn ? -1 : (an > bn ? 1 : 0);
+  });
+  var out = ranked.map(function (x) { return x.p; });
+  return limit ? out.slice(0, limit) : out;
+}
+if (typeof window !== 'undefined') {
+  window.brNameMatch = {
+    fields: brNameFields,
+    parseQuery: brNameParseQuery,
+    scoreFields: brScoreNameFields,
+    score: brScorePlayerName,
+    rank: brRankPlayersByName
+  };
+}
+// [br-name-match:end]
+
 (function () {
     var cfg = window.__cheatCfg || {};
     var C = window.DraftBoardCore;
@@ -1311,7 +1572,7 @@
     // Search + position filters narrow which players are shown (they don't re-rank).
     function visiblePlayer(x) {
         if (state.posFilter !== 'ALL' && x.pos !== state.posFilter) return false;
-        if (state.search && x.name.toLowerCase().indexOf(state.search) < 0) return false;
+        if (state.search && !(typeof brScorePlayerName === 'function' && brScorePlayerName(x, state.search) > 0)) return false;
         return true;
     }
 

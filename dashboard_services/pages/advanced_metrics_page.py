@@ -4064,7 +4064,7 @@ _AM_JS = r"""
     if (state.rosterOnly) displayRows = displayRows.filter(r => ownedIds.has(String(r.player_id)));
     if (state.search) {
       const q = state.search.toLowerCase();
-      displayRows = displayRows.filter(r => (r.name || '').toLowerCase().includes(q));
+      displayRows = displayRows.filter(r => (typeof brScorePlayerName === 'function') ? brScorePlayerName(r, q) > 0 : (r.name || '').toLowerCase().includes(q));
     }
     if (state.team) {
       const _st = state.team.toUpperCase();

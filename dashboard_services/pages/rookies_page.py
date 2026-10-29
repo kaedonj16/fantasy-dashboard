@@ -625,8 +625,19 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }
     if (rkSearch.length > 0) {
       var q = rkSearch;
+      // Shared matcher (brNameMatch, core bundle): normalized / compact /
+      // initials / typo tolerant, ranked score -> prospect_score.
+      if (typeof brRankPlayersByName === 'function') {
+        return brRankPlayersByName(players, q, function(r) {
+          return parseFloat(r.prospect_score || 0);
+        });
+      }
+      var qL = q.toLowerCase();
       return players
-        .map(function(r) { return { r: r, s: rkFuzzy(r.name, q) }; })
+        .map(function(r) {
+          var n = (r.name || '').toLowerCase();
+          return { r: r, s: n.includes(qL) ? 100 + (100 - n.indexOf(qL)) : 0 };
+        })
         .filter(function(x) { return x.s > 0; })
         .sort(function(a, b) {
           return b.s - a.s ||
@@ -836,14 +847,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     rkRender();
   }
 
-  function rkFuzzy(name, q) {
-    if (!name || !q) return 0;
-    var n = name.toLowerCase(), qL = q.toLowerCase();
-    if (n.includes(qL)) return 100 + (100 - n.indexOf(qL));
-    var nw = n.split(/[\\s\\-]+/);
-    if (nw.some(function(w){ return w.startsWith(qL); })) return 60;
-    return 0;
-  }
 </script>
 """ + """
 <script>

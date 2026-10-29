@@ -26325,7 +26325,7 @@ def api_players():
     Query params:
         page  (int, default 1)   -- 1-based page number
         limit (int, default 0)   -- results per page; 0 = return all (legacy)
-        q     (str, optional)    -- prefix/substring filter applied before paging
+        q     (str, optional)    -- shared name-matcher filter applied before paging
         league_type (str)        -- 1qb (default) or sf; controls sort value
     """
     try:
@@ -26348,11 +26348,17 @@ def api_players():
         q = request.args.get("q", "").strip().lower()
 
         # Lightweight (pid, meta) candidates; filter by name before building.
+        # Shared name matcher (Python mirror of the JS brNameMatch tiers:
+        # normalized / compact / initials / token-prefix / typo), parsed
+        # once for the whole index; the value sort below is unchanged.
         if q:
+            from utils.players import name_match_query as _nmq, name_match_score as _nms
+
+            _pq = _nmq(q)
             candidates = [
                 (pid, meta) for pid, meta in players_index.items()
                 if meta.get("pos") not in ("K", "DEF")
-                and q in (meta.get("name") or "").lower()
+                and _nms(meta.get("name") or "", _pq) > 0
             ]
         else:
             candidates = [
@@ -37204,12 +37210,16 @@ def api_trade_database():
 
         players_map = load_players_index() or {}
 
-        # Resolve name search to IDs (legacy ?q= path)
+        # Resolve name search to IDs (legacy ?q= path) via the shared name
+        # matcher (Python mirror of the JS brNameMatch tiers), parsed once.
         match_ids: list[str] = []
         if q:
+            from utils.players import name_match_query as _nmq, name_match_score as _nms
+
+            _pq = _nmq(q)
             match_ids = [
                 pid for pid, info in players_map.items()
-                if q in (info.get("name") or "").lower()
+                if _nms(info.get("name") or "", _pq) > 0
             ]
             if not match_ids:
                 return jsonify({"trades": [], "total": 0, "has_more": False})
@@ -42825,7 +42835,7 @@ def build_portfolio_body(
             f"var PAGE=100000,fp='ALL',fn='',pg=1,filtered=[],expanded=false;"
             f"function applyFilters(){{"
             f"var rows=Array.from(document.querySelectorAll('.pf-row'));"
-            f"filtered=rows.filter(function(r){{return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));}});"
+            f"filtered=rows.filter(function(r){{return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||(typeof brScorePlayerName==='function'?brScorePlayerName(r.dataset.name,fn)>0:r.dataset.name.includes(fn)));}});"
             f"pg=1;render();}}"
             f"function render(){{"
             f"var total=filtered.length,pages=Math.max(1,Math.ceil(total/PAGE));"

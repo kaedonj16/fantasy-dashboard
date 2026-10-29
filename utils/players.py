@@ -1458,3 +1458,191 @@ def normalize_name(name: str) -> str:
     parts = [p for p in parts if p not in suffixes]
 
     return " ".join(parts)
+
+
+# --- Shared player-name matcher (Python mirror of the JS brNameMatch block
+# in static/app.js; tests/test_shared_name_matcher.py pins both against the
+# same battery). Score tiers: exact > substring > compact-equal (spaces
+# removed) > initials > compact substring > token-prefix in any order >
+# per-token typo (bounded
+# Levenshtein). A suffix token in the query is a +25 bonus when the player's
+# suffix matches, never a filter. Callers sort score desc, then value desc.
+_NAME_MATCH_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
+def _name_match_norm_tokens(name) -> list:
+    import unicodedata
+
+    s = unicodedata.normalize("NFKD", str(name or ""))
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = s.lower()
+    s = re.sub(r"[.'’`]", "", s)
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return s.split()
+
+
+def _name_match_camel_parts(tok: str) -> list:
+    parts, cur = [], ""
+    for i, ch in enumerate(tok):
+        if i > 0 and ch.isupper() and tok[i - 1].islower():
+            parts.append(cur)
+            cur = ch
+        else:
+            cur += ch
+    if cur:
+        parts.append(cur)
+    return parts
+
+
+def _name_match_token_init(orig_tok, norm_tok: str) -> str:
+    if not orig_tok:
+        return norm_tok[:1]
+    cleaned = re.sub(r"[^A-Za-z.]", "", str(orig_tok))
+    if "." in cleaned:
+        bits = [b for b in cleaned.split(".") if b]
+        if len(bits) > 1:
+            return "".join(b[0].lower() for b in bits)
+    parts = _name_match_camel_parts(cleaned)
+    if len(parts) > 1:
+        return "".join(p[0].lower() for p in parts)
+    return norm_tok[:1]
+
+
+def name_match_fields(name) -> dict:
+    raw = str(name or "")
+    raw_toks = _name_match_norm_tokens(raw)
+    suffix = ""
+    keep = []
+    for i, tok in enumerate(raw_toks):
+        if tok in _NAME_MATCH_SUFFIXES:
+            suffix = tok
+        else:
+            keep.append(i)
+    toks = [raw_toks[i] for i in keep]
+    if not toks:
+        toks = list(raw_toks)
+        keep = list(range(len(raw_toks)))
+    orig_toks = [t for t in re.split(r"[\s\-\u2010-\u2015]+", raw) if t]
+    aligned = len(orig_toks) == len(raw_toks)
+    seg_inits = [
+        _name_match_token_init(orig_toks[idx] if aligned else None, raw_toks[idx])
+        for idx in keep
+    ]
+    initials: list = []
+
+    def _add(s):
+        if s and s not in initials:
+            initials.append(s)
+
+    full = "".join(seg_inits)
+    _add(full)
+    if suffix:
+        _add(full + suffix[0])
+    base = "".join(t[:1] for t in toks)
+    _add(base)
+    if suffix:
+        _add(base + suffix[0])
+    if len(seg_inits) > 1:
+        fl = seg_inits[0] + seg_inits[-1]
+        _add(fl)
+        if suffix:
+            _add(fl + suffix[0])
+    return {
+        "norm": " ".join(toks),
+        "compact": "".join(toks),
+        "toks": toks,
+        "seg_inits": seg_inits,
+        "initials": initials,
+        "suffix": suffix,
+    }
+
+
+def name_match_query(query) -> dict:
+    raw_toks = _name_match_norm_tokens(query)
+    suffix = ""
+    toks = []
+    for tok in raw_toks:
+        if tok in _NAME_MATCH_SUFFIXES:
+            suffix = tok
+        else:
+            toks.append(tok)
+    return {"norm": " ".join(toks), "compact": "".join(toks), "toks": toks, "suffix": suffix}
+
+
+def _name_match_lev(a: str, b: str, cap: int) -> int:
+    if a == b:
+        return 0
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        best = i
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+            best = min(best, cur[j])
+        if best > cap:
+            return cap + 1
+        prev = cur
+    return prev[-1]
+
+
+def name_match_score(name, query) -> int:
+    """Score `name` against `query` with the shared matcher tiers.
+
+    `query` may be a raw string or a parsed name_match_query() dict (parse
+    once when scoring a whole index). Returns 0 for no match.
+    """
+    pq = query if isinstance(query, dict) else name_match_query(query)
+    if not pq["toks"]:
+        return 0
+    fields = name_match_fields(name)
+    score = 0
+    if fields["norm"] == pq["norm"]:
+        score = 1000
+    elif pq["norm"] and pq["norm"] in fields["norm"]:
+        score = 900 + (5 if fields["norm"].startswith(pq["norm"]) else 0)
+    elif pq["compact"] and fields["compact"] == pq["compact"]:
+        score = 880
+    elif len(pq["toks"]) == 1 and pq["compact"] in fields["initials"]:
+        score = 850
+    elif len(pq["compact"]) >= 3 and pq["compact"] in fields["compact"]:
+        score = 840 + (5 if fields["compact"].startswith(pq["compact"]) else 0)
+    else:
+        used: set = set()
+        ok = True
+        for qt in pq["toks"]:
+            hit = next(
+                (i for i, t in enumerate(fields["toks"])
+                 if i not in used and (t.startswith(qt) or fields["seg_inits"][i] == qt)),
+                None,
+            )
+            if hit is None:
+                ok = False
+                break
+            used.add(hit)
+        if ok:
+            score = 800
+        else:
+            used = set()
+            dist = 0
+            ok = True
+            for qt in pq["toks"]:
+                cap = 2 if len(qt) >= 6 else (1 if len(qt) >= 4 else 0)
+                best_i, best_d = None, cap + 1
+                for i, t in enumerate(fields["toks"]):
+                    if i in used or abs(len(t) - len(qt)) > cap:
+                        continue
+                    d = _name_match_lev(qt, t, cap)
+                    if d < best_d:
+                        best_i, best_d = i, d
+                if best_i is None:
+                    ok = False
+                    break
+                used.add(best_i)
+                dist += best_d
+            if ok:
+                score = 700 - 10 * dist
+    if score > 0 and pq["suffix"] and fields["suffix"] and pq["suffix"] == fields["suffix"]:
+        score += 25
+    return score

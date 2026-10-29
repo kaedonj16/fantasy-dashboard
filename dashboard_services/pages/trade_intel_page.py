@@ -856,10 +856,9 @@ def build_trade_intel_body(
           if (loading) loading.style.display = 'none';
           if (empty)   empty.style.display   = 'none';
           await ensurePlayers();
-          const matches = _allPlayers
-            .filter(p => (p.name||'').toLowerCase().includes(q))
-            .sort((a,b) => (b.value||0) - (a.value||0))
-            .slice(0, 8);
+          const matches = (typeof brRankPlayersByName === 'function')
+            ? brRankPlayersByName(_allPlayers, q, p => (p.value || 0), 8)
+            : _allPlayers.filter(p => (p.name||'').toLowerCase().includes(q)).sort((a,b) => (b.value||0) - (a.value||0)).slice(0, 8);
           if (!matches.length) {{
             grid.style.display = '';
             grid.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px 0;">No players found.</div>';

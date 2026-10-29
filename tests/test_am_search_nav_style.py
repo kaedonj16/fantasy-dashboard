@@ -97,9 +97,11 @@ def test_typing_filters_names_live_with_no_pick_a_result_model():
     # from the trimmed value, resets paging, and re-renders, immediately
     # (no debounce, no intermediate results model).
     assert "state.search = searchEl.value.trim(); state.page = 0; _amSyncSearchClear(); render();" in js
-    # render() applies that as a name substring filter over display rows.
+    # render() applies that as a name filter over display rows, through the
+    # shared brNameMatch matcher (normalized / compact / initials /
+    # token-prefix / typo tiers), substring fallback if it is unavailable.
     assert "const q = state.search.toLowerCase();" in js
-    assert "displayRows = displayRows.filter(r => (r.name || '').toLowerCase().includes(q));" in js
+    assert "displayRows = displayRows.filter(r => (typeof brScorePlayerName === 'function') ? brScorePlayerName(r, q) > 0 : (r.name || '').toLowerCase().includes(q));" in js
     # The whole nav-search selection model stays gone: no payload fetch,
     # no result rows, no group label, no matcher, no apply-on-select
     # path, no arrow-key selection.
