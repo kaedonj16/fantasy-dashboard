@@ -236,7 +236,10 @@ def _seed_league_ids(season: int, limit: int = _MAX_SEEDS_PER_RUN) -> List[str]:
     empty; the user must insert at least one league_id manually to bootstrap.
     Includes dynasty (2), keeper (1), and true-redraft (0) leagues as BFS seeds.
 
-    Returns a list (SQL order: least-recently crawled first) capped at `limit`.
+    Returns a list capped at `limit`, ordered so BFS expands dynasty and
+    most-recently-active leagues first: those owners surface the leagues the
+    value calibration actually consumes, instead of re-expanding whichever
+    quiet corner of the pool happens to be least-recently crawled.
     Expanding the whole pool is neither necessary to hit `target` nor safe on
     the 512Mi cron.
     """
@@ -246,7 +249,9 @@ def _seed_league_ids(season: int, limit: int = _MAX_SEEDS_PER_RUN) -> List[str]:
             SELECT league_id FROM trade_intel_leagues
             WHERE season IN (%s, %s)
               AND league_type IN (0, 1, 2)
-            ORDER BY last_crawled_at ASC NULLS FIRST
+            ORDER BY (league_type = 2) DESC,
+                     last_trade_at DESC NULLS LAST,
+                     last_crawled_at ASC NULLS FIRST
             LIMIT %s
             """,
             (season, season - 1, int(limit))
@@ -262,7 +267,9 @@ def _user_leagues(user_id: str, season: int) -> List[str]:
     seen: Set[str] = set()
     # Tuple not set: stable order. Stream-scan ids so the full league objects
     # (scoring_settings, roster_positions, …) are never parsed into a tree.
-    for yr in (season, season + 1):
+    # Include season - 1 so each owner's prior-season leagues (often the same
+    # leagues under last year's id, plus folded ones) enter the frontier too.
+    for yr in (season - 1, season, season + 1):
         remaining = _MAX_LEAGUES_PER_USER - len(ids)
         for lid in _ids_from_stream(
             f"/user/{user_id}/leagues/nfl/{yr}",
@@ -626,7 +633,7 @@ def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) 
     return n
 
 
-def walk_history_chains(max_depth: int = 3, season: Optional[int] = None) -> int:
+def walk_history_chains(max_depth: int = 12, season: Optional[int] = None) -> int:
     """
     Walk previous_league_id chains to recover ancestor leagues the crawler
     never saw.

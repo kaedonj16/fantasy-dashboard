@@ -55,7 +55,7 @@ def _run_discovery(target: int) -> int:
     )
 
     logger.info("Discovery: seeding from stored users...")
-    seed_from_stored_users(batch_size=200)
+    seed_from_stored_users(batch_size=1000)
     logger.info("Discovery: targeting %d new leagues...", target)
     discovered = run_discovery(target=target)
     logger.info("Discovery: %d new leagues added.", discovered)
