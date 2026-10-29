@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
+        "text": "Under the hood: the app now versions its offline cache from the actual files it ships, so new updates reach your phone on the next load without waiting on a manual cache bump.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "update",
         "text": "The real trade total is on the page now: the Trade Database header shows how many real Sleeper trades are indexed, a quiet line above the results follows your filters, the Trade Calculator notes the trade total its values are calibrated from, Trade Intelligence leads with the live dynasty trade count, and the home page notes the 530,000+ real trades behind the values.",
         "link": "/trade-database"
     },

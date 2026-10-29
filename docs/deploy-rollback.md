@@ -70,20 +70,25 @@ from main ships the bad code again.
 
 ## Service worker cache version
 
-Any deploy or rollback that changes shipped JS or CSS must ship a new
-service worker cache version, or phones keep painting the old cached
-shell:
+There is no manual cache version to bump. The served worker's
+`CACHE_NAME` is derived at boot from a hash of the cached asset set
+(`utils/sw_cache.py`): any deploy or rollback whose JS/CSS/precache
+bytes differ from the previous deploy serves a worker with a different
+name, and the activate handler purges the old cache. A rollback is no
+exception: the rolled-back code derives the name from its own asset
+bytes, so rolling back also rolls the cache name back, and users
+re-cache the rolled-back shell.
 
-1. In `static/sw.js`, bump `CACHE_NAME` by one version (for example
-   `br-fantasy-v35` to `br-fantasy-v36`) in the same PR as the JS or CSS
-   change.
-2. Update the tests that pin the current version:
-   `tests/test_pwa_blank_screen.py` and `tests/test_site_audit_2026.py`.
-3. A rollback is no exception. If the rollback target predates a cache
-   version bump, the rolled back code carries its own older `CACHE_NAME`.
-   Confirm which cache version the live service worker reports after the
-   rollback, and if users could be stuck on a newer poisoned cache, fix
-   forward with a fresh bump instead of relying on the rollback alone.
+Two things still deserve a look after a deploy or rollback:
+
+1. Confirm the live `/sw.js` reports a `br-fantasy-h<hash>` name (the
+   fallback literal `br-fantasy-v148` appears only if the boot build
+   declined, which the startup log line `[sw.js] ...` would show).
+2. If users could be stuck on a poisoned cache whose bytes happen to
+   hash to the same name as the fixed build (in practice: the cache
+   was poisoned by content, not by code), force a one-off roll by
+   setting the `SW_CACHE_NAME` env var on the web service to a fresh
+   name and redeploying; remove the var once clients have migrated.
 
 ## Warning: what a code rollback does not undo
 
