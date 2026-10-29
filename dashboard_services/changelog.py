@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "fix",
+        "text": "Usage risers on the home dashboard: player names now get the full row width, with the usage readout below the name and the season and last-3 bars labelled, so long names no longer truncate and the bars read at a glance.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "fix",
         "text": "Player profiles and compare load faster and stop hanging: cached game logs no longer repeat the eligibility check on every open, your league's trade history is scanned once instead of twice per profile, the Rookie tab reads a lightweight current-season feed, and the remaining modal sections now time out and retry instead of spinning forever.",
         "link": "/"
     },

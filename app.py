@@ -10465,7 +10465,7 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
                 </div>
                 <div class="um-trend">
                   <span class="um-detail">{html.escape(str(stat))} {_num(avg)} &rarr; {_num(recent)}</span>
-                  <span class="um-bars" aria-hidden="true"><span class="um-bar um-bar-season" style="width:{season_w:.1f}%"></span><span class="um-bar um-bar-recent" style="width:{recent_w:.1f}%"></span></span>
+                  <span class="um-bars" aria-hidden="true"><span class="um-bar-row"><span class="um-bar-lab">Season</span><span class="um-track"><span class="um-bar um-bar-season" style="width:{season_w:.1f}%"></span></span></span><span class="um-bar-row"><span class="um-bar-lab">Last 3</span><span class="um-track"><span class="um-bar um-bar-recent" style="width:{recent_w:.1f}%"></span></span></span></span>
                 </div>
                 <span class="um-delta up">&#9650;{_num(delta)}</span>
               </li>""")
