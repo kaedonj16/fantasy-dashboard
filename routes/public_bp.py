@@ -16,8 +16,12 @@ from flask import Blueprint, Response, send_file, request
 from routes.guides_content import (
     GUIDE_AUTHOR_NAME,
     GUIDE_AUTHOR_URL,
+    GUIDE_CATEGORY_CHIPS,
+    GUIDE_CATEGORY_ORDER,
     GUIDE_ORDER as _GUIDE_ORDER,
     GUIDES,
+    guide_body_with_section_ids,
+    guide_read_minutes,
 )
 
 public_bp = Blueprint("public", __name__)
@@ -246,15 +250,21 @@ def sitemap_xml():
         ("/glossary", "0.6", "monthly"),
     ]
 
-    # Guide articles (original long-form content)
+    # Guide articles (original long-form content), each with its own
+    # per-article updated date as lastmod.
     for _slug in _GUIDE_ORDER:
-        static_urls.append((f"/guides/{_slug}", "0.6", "monthly"))
+        _updated = (GUIDES.get(_slug) or {}).get("updated") or ""
+        static_urls.append((f"/guides/{_slug}", "0.6", "monthly", _updated))
 
     import xml.etree.ElementTree as ET
     urlset = ET.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
-    for path, priority, changefreq in static_urls:
+    for _entry in static_urls:
+        path, priority, changefreq = _entry[0], _entry[1], _entry[2]
+        lastmod = _entry[3] if len(_entry) > 3 else ""
         url_el = ET.SubElement(urlset, "url")
         ET.SubElement(url_el, "loc").text = base + path
+        if lastmod:
+            ET.SubElement(url_el, "lastmod").text = lastmod
         ET.SubElement(url_el, "priority").text = priority
         ET.SubElement(url_el, "changefreq").text = changefreq
 
@@ -1123,23 +1133,102 @@ def _guides_base(platform, season, league_id):
     return ""
 
 
+def _guide_date_long(iso_date: str) -> str:
+    """'2026-10-02' -> 'Oct 2, 2026' for guide date lines."""
+    from datetime import datetime
+
+    try:
+        parsed = datetime.strptime((iso_date or "").strip(), "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return iso_date or ""
+    return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
+
+
+def _guide_chip(category: str, full: bool = False) -> str:
+    """Category chip: short label on index cards, full name on articles."""
+    label, color = GUIDE_CATEGORY_CHIPS.get(category, (category, "#94a3b8"))
+    text = category if full else label
+    return (
+        f'<span class="guide-chip" style="background:{color};">{text}</span>'
+    )
+
+
+# Scoped styles for the guides index + article header (category chips,
+# grouped card grid, section-jump pills). Kept with the routes that render
+# them so the guides template carries no dashboard.css dependency.
+_GUIDE_STYLE = """
+<style>
+.guide-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+@media(max-width:760px){.guide-grid{grid-template-columns:1fr;}}
+.guide-card{display:block;text-decoration:none;border:1px solid var(--border);
+  border-radius:12px;padding:16px 18px;background:var(--card);}
+.guide-card:hover{border-color:var(--accent);}
+.guide-card-top{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.guide-chip{font-size:10.5px;font-weight:800;letter-spacing:.05em;
+  text-transform:uppercase;padding:3px 8px;border-radius:6px;color:#0b1220;}
+.guide-date{margin-left:auto;font-size:12px;color:var(--text-subtle);
+  font-weight:600;white-space:nowrap;}
+.guide-card-title{font-size:16.5px;font-weight:800;color:var(--text);
+  line-height:1.25;margin-bottom:5px;}
+.guide-card-sum{margin:0;font-size:14px;color:var(--text-muted);line-height:1.5;}
+.guide-card-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;
+  font-size:12.5px;color:var(--text-subtle);font-weight:600;}
+.guide-cathead{display:flex;align-items:center;gap:10px;margin:26px 0 12px;}
+.guide-cathead h3{font-size:15px;font-weight:800;letter-spacing:.03em;
+  text-transform:uppercase;color:var(--text);margin:0;}
+.guide-cathead i{flex:1;height:1px;background:var(--border);}
+.guide-article-head{border-bottom:1px solid var(--border);
+  padding-bottom:18px;margin-bottom:6px;}
+.guide-dates{font-size:12.5px;color:var(--text-subtle);font-weight:600;}
+.guide-toc{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;}
+.guide-toc a{font-size:12.5px;font-weight:700;color:var(--accent);
+  text-decoration:none;border:1px solid var(--border);border-radius:999px;
+  padding:5px 11px;background:var(--card-soft);}
+</style>
+"""
+
+
 @public_bp.route("/guides")
 @public_bp.route("/<platform>/<int:season>/<league_id>/guides")
 def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
                  league_id: Optional[str] = None):
     base = _guides_base(platform, season, league_id)
-    cards = []
-    for slug in _GUIDE_ORDER:
+
+    def _card(slug: str) -> str:
         g = GUIDES[slug]
-        cards.append(f"""
-            <a class="guide-card" href="{base}/guides/{slug}"
-               style="display:block;text-decoration:none;border:1px solid var(--border);
-                      border-radius:12px;padding:16px 18px;margin-bottom:12px;">
-              <div class="static-section-title" style="margin:0 0 4px;">{g['title']}</div>
-              <p style="margin:0;color:var(--muted);font-size:15px;">{g['summary']}</p>
+        category = g.get("category") or "Guides"
+        published = _guide_date_long(g.get("published") or "")
+        updated = _guide_date_long(g.get("updated") or "")
+        minutes = guide_read_minutes(g.get("body") or "")
+        return f"""
+            <a class="guide-card" href="{base}/guides/{slug}">
+              <div class="guide-card-top">{_guide_chip(category)}
+                <span class="guide-date">{updated}</span></div>
+              <div class="guide-card-title">{g['title']}</div>
+              <p class="guide-card-sum">{g['summary']}</p>
+              <div class="guide-card-meta"><span>{minutes} min read</span>
+                <span>Published {published}</span></div>
             </a>
+        """
+
+    # One section per category, in GUIDE_CATEGORY_ORDER; guides keep
+    # their GUIDE_ORDER order inside a group, and any category outside
+    # the known order falls back to the plain "Guides" grouping.
+    groups = []
+    for category in GUIDE_CATEGORY_ORDER:
+        members = [
+            slug for slug in _GUIDE_ORDER
+            if (GUIDES[slug].get("category") or "Guides") == category
+        ]
+        if not members:
+            continue
+        cards = "".join(_card(slug) for slug in members)
+        groups.append(f"""
+            <div class="guide-cathead"><h3>{category}</h3><i></i></div>
+            <div class="guide-grid">{cards}</div>
         """)
     body = f"""
+        {_GUIDE_STYLE}
         <div class="static-page">
           <div class="static-card-page">
             <h1 class="static-hero-title">Dynasty &amp; Fantasy Football Guides</h1>
@@ -1158,9 +1247,7 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
                 account is required to read the guides or use the public rankings.
               </p>
             </div>
-            <div class="static-section">
-              {''.join(cards)}
-            </div>
+            {''.join(groups)}
           </div>
         </div>
     """
@@ -1201,11 +1288,34 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
 
     published = g.get("published") or ""
     updated = g.get("updated") or published
-    byline = (
-        f'<p class="guide-byline">By <a href="{GUIDE_AUTHOR_URL}" target="_blank" '
-        f'rel="author noopener">{GUIDE_AUTHOR_NAME}</a>'
-        f'{f" · Updated {updated}" if updated else ""}</p>'
+    category = g.get("category") or "Guides"
+    minutes = guide_read_minutes(g.get("body") or "")
+    body_html, sections = guide_body_with_section_ids(g.get("body") or "")
+
+    from html import escape as _escape
+
+    toc_html = ""
+    if sections:
+        pills = "".join(
+            f'<a href="#guide-sec-{anchor}">{_escape(title)}</a>'
+            for anchor, title in sections
+        )
+        toc_html = f'<div class="guide-toc">{pills}</div>'
+    dates_line = (
+        f"Published {_guide_date_long(published)}"
+        f" &middot; Updated {_guide_date_long(updated)}"
     )
+    article_head = f"""
+        <div class="guide-article-head">
+          <div class="guide-card-top" style="margin-bottom:10px;">
+            {_guide_chip(category, full=True)}
+            <span class="guide-dates">{dates_line}</span>
+          </div>
+          <h1 class="static-hero-title">{g['title']}</h1>
+          <p class="guide-byline">By BR Fantasy &middot; {minutes} min read</p>
+          {toc_html}
+        </div>
+    """
 
     import json
     origin = _seo_origin()
@@ -1249,15 +1359,15 @@ def guide_page(slug: str, platform: Optional[str] = None, season: Optional[int] 
     jsonld = _ld_script(article_ld) + _ld_script(breadcrumb_ld)
 
     body = f"""
+        {_GUIDE_STYLE}
         <div class="static-page">
           <div class="static-card-page">
             <p style="margin:0 0 6px;font-size:13px;">
               <a href="{base}/guides">&larr; All guides</a>
             </p>
-            <h1 class="static-hero-title">{g['title']}</h1>
-            {byline}
+            {article_head}
             <div class="static-section">
-              {g['body']}
+              {body_html}
             </div>
             {nav_html}
             {jsonld}

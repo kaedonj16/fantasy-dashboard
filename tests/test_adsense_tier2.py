@@ -20,14 +20,51 @@ def _guide_words(body: str) -> int:
     return len(re.sub(r"\s+", " ", text).split())
 
 
-def test_guides_are_long_form_with_sections():
-    from routes.guides_content import GUIDE_ORDER, GUIDES, GUIDE_UPDATED
+# Per-article metadata for the 14 legacy guides, keyed by slug:
+# (category, published, updated). Dates are the honest ones, not varied
+# for show: the first six guides carry the site's declared published date
+# of 2026-06-15 (the GUIDE_PUBLISHED value in place since the guides were
+# first committed), the Tier 2 guides were published at the deepening,
+# and every guide's updated date is 2026-10-02, the Tier 2 date itself.
+EXPECTED_GUIDE_META = {
+    "dynasty-trade-value": ("Inside the Model", "2026-06-15", "2026-10-02"),
+    "superflex-vs-1qb": ("Roster Construction", "2026-06-15", "2026-10-02"),
+    "reading-advanced-metrics": ("Inside the Model", "2026-06-15", "2026-10-02"),
+    "rookie-draft-strategy": ("Roster Construction", "2026-06-15", "2026-10-02"),
+    "buy-low-sell-high": ("Market Movement", "2026-06-15", "2026-10-02"),
+    "evaluating-a-trade": ("Trade Case Studies", "2026-06-15", "2026-10-02"),
+    "dynasty-rebuild-strategy": ("Roster Construction", "2026-10-02", "2026-10-02"),
+    "contending-in-dynasty": ("Roster Construction", "2026-10-02", "2026-10-02"),
+    "te-premium-leagues": ("Roster Construction", "2026-10-02", "2026-10-02"),
+    "startup-draft-guide": ("Roster Construction", "2026-10-02", "2026-10-02"),
+    "waiver-wire-and-faab": ("Weekly Decisions", "2026-10-02", "2026-10-02"),
+    "adp-vs-trade-value": ("Market Movement", "2026-10-02", "2026-10-02"),
+    "positional-aging-curves": ("Inside the Model", "2026-10-02", "2026-10-02"),
+    "using-the-trade-calculator": ("Guides", "2026-10-02", "2026-10-02"),
+}
 
-    assert GUIDE_UPDATED == "2026-10-02"
+
+def test_guides_are_long_form_with_sections():
+    from routes.guides_content import (
+        GUIDE_CATEGORY_ORDER,
+        GUIDE_ORDER,
+        GUIDES,
+        guide_read_minutes,
+    )
+
     assert len(GUIDE_ORDER) == 14
-    assert set(GUIDE_ORDER) == set(GUIDES)
+    assert set(GUIDE_ORDER) == set(GUIDES) == set(EXPECTED_GUIDE_META)
     for slug in GUIDE_ORDER:
-        body = GUIDES[slug]["body"]
+        category, published, updated = EXPECTED_GUIDE_META[slug]
+        guide = GUIDES[slug]
+        # Per-article structure: every guide carries its own category and
+        # its own published/updated dates, and a computable read time.
+        assert guide["category"] == category, f"{slug} category drifted"
+        assert guide["category"] in GUIDE_CATEGORY_ORDER
+        assert guide["published"] == published, f"{slug} published drifted"
+        assert guide["updated"] == updated, f"{slug} updated drifted"
+        assert guide_read_minutes(guide["body"]) > 0
+        body = guide["body"]
         words = _guide_words(body)
         assert words >= 900, f"{slug} too thin for Tier 2 ({words} words)"
         h2 = body.count('<h2 class="static-section-title">')
