@@ -21716,11 +21716,20 @@ img, svg, canvas {
     padding: 6px 0 8px;
 }
 
+/* Stacked row: name + delta on the first line, then the usage readout
+   (right-aligned) and the labelled Season / Last 3 bars below the name.
+   The trend block no longer competes with the name for width, so names
+   never truncate next to it. */
 .usage-mover {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "main delta"
+        "trend trend";
+    align-items: start;
+    column-gap: 12px;
+    row-gap: 8px;
+    padding: 12px 16px 14px;
     border-top: 1px solid var(--os-border, rgba(148, 163, 184, 0.18));
 }
 
@@ -21745,7 +21754,7 @@ img, svg, canvas {
 }
 
 .usage-mover .um-main {
-    flex: 1 1 auto;
+    grid-area: main;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -21768,16 +21777,17 @@ img, svg, canvas {
 }
 
 .usage-mover .um-trend {
-    flex: 0 1 148px;
-    min-width: 84px;
+    grid-area: trend;
+    justify-self: stretch;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
 }
 
 .usage-mover .um-detail {
     font-size: 13px;
-    color: var(--muted);
+    font-weight: 600;
+    color: var(--text);
     white-space: nowrap;
     text-align: right;
 }
@@ -21785,12 +21795,33 @@ img, svg, canvas {
 .usage-mover .um-bars {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 5px;
+}
+
+.usage-mover .um-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.usage-mover .um-bar-lab {
+    flex: 0 0 44px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.usage-mover .um-track {
+    flex: 1;
+    min-width: 0;
+    display: flex;
 }
 
 .usage-mover .um-bar {
     display: block;
-    height: 4px;
+    height: 5px;
     border-radius: var(--radius-sm);
 }
 
@@ -21803,7 +21834,8 @@ img, svg, canvas {
 }
 
 .usage-mover .um-delta {
-    flex: 0 0 auto;
+    grid-area: delta;
+    justify-self: end;
     display: inline-flex;
     align-items: center;
     font-size: 13px;
