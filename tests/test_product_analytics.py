@@ -670,6 +670,24 @@ def test_admin_page_dau_chart_carries_the_split(monkeypatch):
     import re
 
     client = _make_admin_client(monkeypatch, admin=True)
+    # The shared stub's fixed DAU date ages out of the trailing 30-day
+    # window the route fills (fill_daily_dau drops rows older than
+    # today - 29d), so re-stub DAU with today's row: the split payload
+    # assertion below then holds on any run date.
+    from dashboard_services import analytics as _svc
+
+    monkeypatch.setattr(
+        _svc,
+        "dau_last_30_days",
+        lambda: [
+            {
+                "date": _svc.ny_today().isoformat(),
+                "users": 10,
+                "signed_in": 6,
+                "anonymous": 4,
+            }
+        ],
+    )
     resp = client.get("/admin/analytics")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
