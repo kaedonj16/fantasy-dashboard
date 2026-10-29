@@ -20728,7 +20728,7 @@ function openProspectModal(playerId, playerName) {
       }
 
       // Fetch comparables
-      fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
+      _advFetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id), 15000)
         .then(function(res){ if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
         .then(function(cd) {
           var cb = document.getElementById('rkComparablesBody');
@@ -22808,7 +22808,7 @@ async function cmpRenderTrends(which) {
     let weeks = _cmpWeeklyCache[cacheKey];
     if (!weeks) {
       try {
-        weeks = (await fetch(`/api/player-weekly-metrics/${side.pid}?season=${season}`)
+        weeks = (await _advFetch(`/api/player-weekly-metrics/${side.pid}?season=${season}`, 15000)
           .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })).weeks || [];
       } catch (_) {
         // Do not cache the failure: an empty cache entry stranded the trends
@@ -22914,7 +22914,11 @@ function _cmpLoadGameLogs(pid, position, containerId) {
   const _ls = brLeagueSize();
   let logsUrl = `/api/player-game-logs/${encodeURIComponent(pid)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
   if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
-  fetch(logsUrl)
+  // Bounded fetch (was a raw fetch with no timeout, and the error state's
+  // retry callback was null, so a hang spun forever and the retry card
+  // could never retry). Compare renders all years, so it stays on the
+  // full game-logs endpoint.
+  _advFetch(logsUrl, 20000)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
       if (!el.isConnected) return;
@@ -22930,7 +22934,7 @@ function _cmpLoadGameLogs(pid, position, containerId) {
       });
     })
     .catch(() => {
-      if (el.isConnected) window.brErrorState(el, 'Could not load game logs.', null, { compact: true });
+      if (el.isConnected) window.brErrorState(el, 'Could not load game logs.', () => _cmpLoadGameLogs(pid, position, containerId), { compact: true });
     });
 }
 
@@ -24165,7 +24169,7 @@ function cmp3EnsureUsage() {
   if (!host) return;
   const fetchOne = function (p) {
     const season = _cmp3Season(p);
-    return fetch('/api/player-weekly-metrics/' + encodeURIComponent(p.player_id) + '?season=' + season)
+    return _advFetch('/api/player-weekly-metrics/' + encodeURIComponent(p.player_id) + '?season=' + season, 15000)
       .then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; })
       .then(function (d) { return (d && d.weeks) || []; });
   };
@@ -24836,7 +24840,7 @@ async function tmLoadTrades(rosterId) {
     if (!leagueId) throw new Error('League ID not found');
 
     const _lt = (typeof brLeagueType === 'function') ? brLeagueType() : '1qb';
-    const res = await fetch(`/api/team-trades/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_lt)}`);
+    const res = await _advFetch(`/api/team-trades/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_lt)}`, 20000);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -24939,7 +24943,9 @@ async function tmLoadTrades(rosterId) {
 
     panel.innerHTML = `<div class="tm3">${strip}${cards}${extras}</div>`;
   } catch (err) {
-    panel.innerHTML = `<div class="team-modal-error"><div>Failed to load trades</div><div style="font-size:13px;color:#9ca3af">${err.message}</div></div>`;
+    panel.innerHTML = `<div class="team-modal-error"><div>Failed to load trades</div><div style="font-size:13px;color:#9ca3af">${err.message}</div><button type="button" class="tm-trades-retry" style="margin-top:10px;padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface2,transparent);color:var(--text);cursor:pointer;font-size:13px;">Retry</button></div>`;
+    const _tmRetry = panel.querySelector('.tm-trades-retry');
+    if (_tmRetry) _tmRetry.addEventListener('click', function () { tmLoadTrades(rosterId); });
   }
 }
 

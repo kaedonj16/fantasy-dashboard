@@ -77,7 +77,9 @@ def test_pm_stats_and_breakout_tab_fetches_are_bounded():
     src = _modal()
     assert "_pmFetch(_boUrl, 30000)" in src
     stats = src.split("// ── Lazy-load Stats tab")[1].split("// ── Lazy-load Rookie tab")[0]
-    assert "_pmFetch(logsUrl)" in stats
+    # Stats reads through the shared bounded game-logs promise cache
+    # (_pmGameLogsJson wraps _pmFetch at 20000; failures evict for Retry).
+    assert "_pmGameLogsJson(logsUrl)" in stats
 
 
 def test_pm_recent_form_and_boxscore_fetches_are_bounded():
