@@ -66,6 +66,9 @@ package.json
 # Generated at startup by _ensure_minified_appjs()
 static/app.min.js
 static/app.min.js.src
+# Generated at startup by _ensure_sw_js() (content-derived CACHE_NAME)
+static/sw.built.js
+static/sw.built.js.src
 static/dashboard.min.css
 static/dashboard.min.css.src
 # Generated at startup by _ensure_public_js() (slim bundle for public pages)

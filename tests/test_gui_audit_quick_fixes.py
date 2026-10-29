@@ -180,11 +180,13 @@ def test_home_desktop_spacing_untouched():
 
 # ── Service worker ─────────────────────────────────────────────────────
 
-def test_sw_cache_bumped_past_v51():
-    # At authoring this pinned v52; the merge sweep has since carried the
-    # cache to v53 (PR #2704) and this PR rides that bump (PR #2707's v54
-    # follows in the same sweep). The invariant is: not the old v51.
-    from pin_helpers import assert_sw_cache_bumped_past, assert_sw_cache_current
+def test_sw_cache_name_is_content_derived():
+    # At authoring this pinned "bumped past v51" (the manual-bump era:
+    # v52 at authoring, carried to v53/v54 by merge sweeps). Manual
+    # version numbers are gone: the cache name is derived from the
+    # cached asset set (utils/sw_cache.py), so the invariant now is
+    # that the served name is the derived one, which rolls on any
+    # asset change by construction.
+    from pin_helpers import assert_sw_cache_current
 
     assert_sw_cache_current(SW_SRC)
-    assert_sw_cache_bumped_past(51, SW_SRC)

@@ -829,6 +829,12 @@ app = Flask(
 )
 
 
+# Filename the /sw.js route serves. Starts as the tracked template;
+# _ensure_sw_js() in the boot-build block below repoints it at the
+# boot-built worker whose CACHE_NAME is content-derived.
+_SW_JS_FILE = "sw.js"
+
+
 @app.route("/sw.js")
 def service_worker():
     """Serve the service worker at the root path (required for PWA scope).
@@ -836,7 +842,7 @@ def service_worker():
     The app registers '/sw.js' but the file lives in static/. Without this
     route, the SW 404s and installed PWAs never receive updates.
     """
-    return app.send_static_file("sw.js")
+    return app.send_static_file(_SW_JS_FILE)
 
 # Behind Render's TLS-terminating proxy, Flask otherwise sees plain http and
 # builds http:// URLs (request.host_url/base_url) - which made the sitemap
@@ -1053,6 +1059,25 @@ _FEATURES_JS_FILE = _ensure_features_js()
 _FEATURES_JS_V = _static_hash(_FEATURES_JS_FILE) if _FEATURES_JS_FILE else ""
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
+
+
+def _ensure_sw_js() -> str:
+    """Build the served service worker with a content-derived CACHE_NAME.
+
+    Replaces the old hand-bumped `br-fantasy-vNNN` ritual: the served
+    worker (static/sw.built.js, gitignored like the other boot builds)
+    carries `br-fantasy-h<hash of the cached asset set>`, so any change
+    to sw.js, the precache assets, app.js, dashboard.css or the other
+    first-party sources rolls users' caches automatically, and a
+    backend-only deploy leaves the name untouched. Falls back to the
+    tracked template on any problem. See utils/sw_cache.py.
+    """
+    from utils.sw_cache import ensure_sw_js
+
+    return ensure_sw_js(Path(__file__).parent / "static")
+
+
+_SW_JS_FILE = _ensure_sw_js()
 
 # First-paint / per-page assets that used to ship unminified. Minify at boot
 # (same sidecar pattern as app.js / dashboard.css) so signed-in shells and

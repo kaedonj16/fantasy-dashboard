@@ -11,6 +11,12 @@ changelog checks find entries by content via ``changelog_entry(...)``;
 the one consolidated newest-first assertion lives in
 ``tests/test_sw_changelog_pins.py``.
 
+The SW half has since been removed at the source: the served cache
+name is content-derived (utils/sw_cache.py) and pin_helpers'
+``EXPECTED_SW_CACHE_NAME`` is computed from the tree, never a literal
+a human syncs. The guard below still applies verbatim: a hardcoded
+version literal in a test would resurrect the collision pattern.
+
 This guard scans every other test file's AST and fails if the old
 pattern reappears:
 

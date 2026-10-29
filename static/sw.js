@@ -2,6 +2,14 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
+// CACHE_NAME below is a FALLBACK literal, not a version anyone bumps.
+// At boot, app.py (utils/sw_cache.py) rewrites this line in the served
+// worker (static/sw.built.js) to a content-derived name,
+// 'br-fantasy-h<hash of the cached asset set>', so the cache rolls
+// automatically when sw.js, the precache assets, app.js, dashboard.css
+// or the other first-party sources change. Do not edit this number to
+// force an update; if the boot build ever declines, this literal is
+// what ships, so it simply stays at the last hand-bumped version.
 const CACHE_NAME = 'br-fantasy-v148';
 
 // How long to wait on the network for a page before painting a cached /

@@ -224,8 +224,10 @@ def test_dashboard_css_font_sizes_untouched_by_this_pass():
 
 
 def test_sw_bumped():
-    # Authored at v52; the merge sweep carried the cache past it (v53 in
-    # PR #2704, v54 with this PR's merge). Invariant: bumped past v51.
-    from pin_helpers import assert_sw_cache_bumped_past
+    # Authored in the manual-bump era as "bumped past v51". Manual
+    # version numbers are gone: the cache name is derived from the
+    # cached asset set (utils/sw_cache.py), so the invariant now is
+    # that the served name is the derived one.
+    from pin_helpers import assert_sw_cache_current
 
-    assert_sw_cache_bumped_past(51, SW)
+    assert_sw_cache_current(SW)

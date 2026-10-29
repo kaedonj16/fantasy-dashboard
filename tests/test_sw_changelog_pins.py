@@ -4,9 +4,11 @@ Everything else that used to pin the SW cache version or a changelog
 position now derives its subject (see tests/pin_helpers.py). Only two
 assertions in the suite are allowed to be positional/exact:
 
-* the SW version in static/sw.js must agree with the single canonical pin
-  in tests/pin_helpers.py, so a version bump that forgets the synced pin
-  still fails CI (and a synced bump touches exactly one test file);
+* the served SW cache name must be the content-derived one for the
+  current tree (utils/sw_cache.py computes it from the cached asset
+  set; there is no manual version pin left to sync, so this is the
+  consolidated mechanism assertion, kept here so it runs exactly once
+  as a named behaviour);
 * CHANGELOG[0] must be the newest entry: app._notify_changelog_on_startup
   broadcasts CHANGELOG[0] as the latest announcement and the changelog
   API serves the list newest-first, so head-is-newest is real product
@@ -17,7 +19,7 @@ from __future__ import annotations
 from pin_helpers import assert_sw_cache_current
 
 
-def test_sw_cache_version_matches_canonical_pin():
+def test_sw_cache_name_matches_derived_expectation():
     assert_sw_cache_current()
 
 

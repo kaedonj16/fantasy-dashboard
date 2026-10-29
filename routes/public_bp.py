@@ -149,7 +149,11 @@ def brevo_email_webhook():
 
 @public_bp.route("/sw.js")
 def service_worker():
-    resp = send_file("static/sw.js", mimetype="application/javascript")
+    # Serve the boot-built worker (content-derived CACHE_NAME, see
+    # utils/sw_cache.py); served_sw_path falls back to the template.
+    from utils.sw_cache import served_sw_path
+
+    resp = send_file(served_sw_path(), mimetype="application/javascript")
     # SW must revalidate promptly so deploys aren't stuck behind CDN/browser cache.
     resp.headers["Cache-Control"] = "no-cache"
     return resp
