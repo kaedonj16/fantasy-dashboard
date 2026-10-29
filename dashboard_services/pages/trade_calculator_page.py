@@ -1247,6 +1247,10 @@ def build_trade_calculator_body(
                 <button class="otc-day-filter" data-days="14" onclick="changeMoversDays(14)">14d</button>
                 <button class="otc-day-filter" data-days="30" onclick="changeMoversDays(30)">30d</button>
               </div>
+              <div class="otc-day-filters otc-movers-format-filters" role="group" aria-label="Movers value format">
+                <button class="otc-day-filter otc-movers-format active" data-movers-format="dynasty" onclick="changeMoversFormat('dynasty')">Dynasty</button>
+                <button class="otc-day-filter otc-movers-format" data-movers-format="redraft" onclick="changeMoversFormat('redraft')">Redraft</button>
+              </div>
             </div>
 
             <div id="moversTabContent" class="otc-tab-content is-active">

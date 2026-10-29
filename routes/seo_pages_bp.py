@@ -132,7 +132,13 @@ def dynasty_trade_value_chart():
 
 @seo_pages_bp.route("/top-movers")
 def top_movers_page():
-    """Weekly dynasty risers and fallers -- freshness content for SEO."""
+    """Weekly risers and fallers -- freshness content for SEO.
+
+    ?format=dynasty|redraft (default dynasty) picks the value format: the
+    redraft view reads the redraft history columns and is filtered/anchored
+    on redraft displayed values. Redraft history only began accruing in
+    late October 2026, so its longer windows are legitimately sparse.
+    """
     from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
     from data_building.player_value_history import get_top_movers
     # Timeframe toggle: 7 / 30 / 90 days. Clamp to the supported set so a hand-
@@ -143,10 +149,13 @@ def top_movers_page():
         days = 7
     if days not in (7, 30, 90):
         days = 7
+    scoring_format = "redraft" if str(
+        request.args.get("format", "dynasty")).strip().lower() == "redraft" else "dynasty"
     try:
         movers = get_top_movers(days=days, limit=20, min_baseline_value=5,
-                                min_current_value=20.0,
-                                current_values=_displayed_value_map("1qb"))
+                                min_current_value=20.0, scoring_type=scoring_format,
+                                current_values=_displayed_value_map(
+                                    "1qb", scoring_type=scoring_format))
     except Exception:
         movers = {"risers": [], "fallers": []}
 
@@ -155,14 +164,15 @@ def top_movers_page():
     date_label = _dt.now().strftime("%B %d, %Y")
     body = build_risers_fallers_body(movers, as_of_date=date_label,
                                      signed_in=_session_signed_in(),
-                                     days=days)
+                                     days=days, scoring_format=scoring_format)
 
     _win_label = {7: "week", 30: "30 days", 90: "90 days"}[days]
+    _fmt_title = "Redraft" if scoring_format == "redraft" else "Dynasty"
     return render_page(
-        f"Top Movers: {date_label} | BR Fantasy",
+        f"{_fmt_title} Top Movers: {date_label} | BR Fantasy",
         None, "top-movers", body,
         description=(
-            f"Dynasty fantasy football risers and fallers over the last {_win_label} "
+            f"{_fmt_title} fantasy football risers and fallers over the last {_win_label} "
             f"({date_label}). Biggest trade value movers, act fast with the BR Fantasy "
             f"Trade Calculator."
         ),

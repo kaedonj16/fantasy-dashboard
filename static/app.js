@@ -8296,18 +8296,48 @@ window.initTradePage = function initTradePage(root = document) {
 
   let loadMoversTimeout = null;
   let currentMoversDays = 7; // Default to 7 days
+  // Movers value format: opens on the trade calculator's own scoring type
+  // when the page exposes one, dynasty otherwise. Redraft movers read the
+  // redraft history (tracked since late October 2026), so redraft windows
+  // can legitimately come back sparse.
+  let currentMoversFormat = (() => {
+    try {
+      const sel = root.querySelector("#scoringTypeSelect");
+      const v = (sel?.value || "").trim().toLowerCase();
+      if (v === "redraft" || v === "dynasty") return v;
+      if (typeof getScoringType === "function") {
+        const fromPage = String(getScoringType() || "").trim().toLowerCase();
+        if (fromPage === "redraft" || fromPage === "dynasty") return fromPage;
+      }
+    } catch (e) { /* default below */ }
+    return "dynasty";
+  })();
+
+  function syncMoversFormatButtons() {
+    document.querySelectorAll('.otc-movers-panel .otc-movers-format').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-movers-format') === currentMoversFormat);
+    });
+  }
 
   // Function to change movers days period
   window.changeMoversDays = function(days) {
     currentMoversDays = days;
 
-    // Update active button
-    const dayFilters = document.querySelectorAll('.otc-movers-panel .otc-day-filter');
+    // Update active button (day buttons only: the format toggle shares the
+    // .otc-day-filter styling but keys off data-movers-format).
+    const dayFilters = document.querySelectorAll('.otc-movers-panel .otc-day-filter[data-days]');
     dayFilters.forEach(btn => {
       btn.classList.toggle('active', parseInt(btn.getAttribute('data-days')) === days);
     });
 
     // Reload movers with new days
+    loadTopMovers(true);
+  };
+
+  // Function to change movers value format (dynasty / redraft)
+  window.changeMoversFormat = function(format) {
+    currentMoversFormat = format === "redraft" ? "redraft" : "dynasty";
+    syncMoversFormatButtons();
     loadTopMovers(true);
   };
 
@@ -8340,9 +8370,10 @@ window.initTradePage = function initTradePage(root = document) {
     if (fallersEl) fallersEl.innerHTML = moverSkeleton();
 
     try {
+      syncMoversFormatButtons();
       const leagueType = getLeagueType();
       const leagueSize = getLeagueSize();
-      const res = await fetch(`/api/value-movers?days=${currentMoversDays}&limit=5&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+      const res = await fetch(`/api/value-movers?days=${currentMoversDays}&limit=5&league_type=${leagueType}&league_size=${leagueSize}&scoring_type=${currentMoversFormat}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load movers.");
 
       const data = await res.json();
@@ -8370,7 +8401,8 @@ window.initTradePage = function initTradePage(root = document) {
           }
         }
 
-        sub.textContent = `Biggest ${usedDays}-day changes in ${leagueLabel}${sizeLabel} BR value${freshnessText}`;
+        const formatLabel = currentMoversFormat === "redraft" ? " redraft" : " dynasty";
+        sub.textContent = `Biggest ${usedDays}-day changes in ${leagueLabel}${sizeLabel}${formatLabel} BR value${freshnessText}`;
       }
 
       renderMovers(data);
@@ -8539,6 +8571,7 @@ window.initTradePage = function initTradePage(root = document) {
     const targetsContent = root.querySelector("#targetsTabContent");
     const moversSub = root.querySelector("#moversSub");
     const dayFilters = root.querySelector(".otc-movers-panel .otc-day-filters");
+    const formatFilters = root.querySelector(".otc-movers-panel .otc-movers-format-filters");
 
     tabButtons.forEach(btn => {
       btn.addEventListener("click", () => {
@@ -8559,9 +8592,11 @@ window.initTradePage = function initTradePage(root = document) {
             const leagueSize = getLeagueSize();
             const leagueLabel = leagueType === "sf" ? "SF" : "1QB";
             const sizeLabel = leagueSize === 10 ? "" : ` ${leagueSize}-team`;
-            moversSub.textContent = `Biggest 7-day changes in ${leagueLabel}${sizeLabel} BR value`;
+            const formatLabel = currentMoversFormat === "redraft" ? " redraft" : " dynasty";
+            moversSub.textContent = `Biggest ${currentMoversDays}-day changes in ${leagueLabel}${sizeLabel}${formatLabel} BR value`;
           }
           if (dayFilters) dayFilters.style.display = "flex";
+          if (formatFilters) formatFilters.style.display = "flex";
 
         } else if (tab === "breakouts") {
           breakoutsContent?.classList.add("is-active");
@@ -8570,6 +8605,7 @@ window.initTradePage = function initTradePage(root = document) {
             moversSub.textContent = "Top 5 breakouts from Breakout Engine ";
           }
           if (dayFilters) dayFilters.style.display = "none";
+          if (formatFilters) formatFilters.style.display = "none";
           if (breakoutsContent && !breakoutsContent.dataset.loaded) {
             breakoutsContent.dataset.loaded = "true";
             loadBreakouts();
@@ -8582,6 +8618,7 @@ window.initTradePage = function initTradePage(root = document) {
             moversSub.textContent = "Players to pursue based on your roster gaps";
           }
           if (dayFilters) dayFilters.style.display = "none";
+          if (formatFilters) formatFilters.style.display = "none";
           if (targetsContent) {
             loadTradeTargets();
           }

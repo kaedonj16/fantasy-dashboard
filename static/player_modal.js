@@ -270,16 +270,62 @@ function _pmStartEarlyFetches(playerId, descriptor) {
   };
 })();
 
+// The chart follows the modal's Dynasty/Redraft toggle: data carries both
+// series (value_history = dynasty, value_history_redraft = redraft) and
+// data.pmScoringType mirrors the toggle's current state. __pmVH (the Trades
+// tab's "value change since trade") is NOT this: it stays dynasty always.
+function _pmActiveVhFormat(data) {
+  return (data && data.pmScoringType === 'redraft') ? 'redraft' : 'dynasty';
+}
+function _pmActiveValueHistory(data) {
+  if (!data) return [];
+  const series = _pmActiveVhFormat(data) === 'redraft'
+    ? data.value_history_redraft : data.value_history;
+  return Array.isArray(series) ? series : [];
+}
+function _pmVhLabel(fmt) {
+  return fmt === 'redraft' ? 'Redraft Value History' : 'Dynasty Value History';
+}
+
 // Value-history chart renderer (Overview). Extracted from the
 // details render so the deferred payload can draw the chart in
 // place when the history arrives after first paint; the initial
 // render calls it exactly as the inline block did.
 function _pmRenderValueHistoryChart(data) {
       // ── Render value history chart in Overview panel ───────────────────────
-      if (data.value_history && data.value_history.length > 0) {
+      const _vhFmt = _pmActiveVhFormat(data);
+      const _vhSeries = _pmActiveValueHistory(data);
+      const _vhDiv = document.getElementById('playerValueChart');
+      // Re-renders (format toggle, deferred patch) must be idempotent: drop
+      // any range bar a previous draw inserted before drawing again, and
+      // restamp the section label for the active format.
+      if (_vhDiv && _vhDiv.parentNode) {
+        _vhDiv.parentNode.querySelectorAll('.pvc-range-bar').forEach(b => b.remove());
+      }
+      const _vhLbl = document.getElementById('pmValueHistoryLabel');
+      if (_vhLbl) _vhLbl.textContent = _pmVhLabel(_vhFmt);
+      if (_vhDiv && !_vhSeries.length) {
+        // The active format has no history points yet (redraft tracking
+        // only began in late October 2026): show the block with an honest
+        // note instead of drawing the other format's line under this
+        // format's label, and clear any stale summary from the last draw.
+        const _vhSum = document.getElementById('pmVhSummary');
+        if (_vhSum) { _vhSum.innerHTML = ''; _vhSum.style.display = 'none'; }
+        if (window.Plotly && _vhDiv._fullLayout) {
+          try { Plotly.purge(_vhDiv); } catch (e) { /* non-fatal */ }
+        }
+        _vhDiv.style.height = '';
+        _vhDiv.innerHTML = '<div class="pm-vh-note" style="padding:10px 0;font-size:13px;color:var(--text-muted);">'
+          + (_vhFmt === 'redraft'
+            ? 'Redraft history is still building. Values have only been tracked since late October.'
+            : 'No dynasty value history for this player yet.')
+          + '</div>';
+      }
+      if (_vhSeries.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv) {
-          const fullHistory = data.value_history;
+          chartDiv.innerHTML = '';  // clears a prior thin-state note
+          const fullHistory = _vhSeries;
           const formatDateLabel = (dateStr) => {
             if (!dateStr) return '';
             const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -990,6 +1036,9 @@ function openPlayerModal(playerId, playerName, opts) {
           pmScoringFormat = _pageFmt;
         }
       }
+      // Mirror of the toggle state for the (module-level) chart renderer,
+      // which reads the active format off the data object at render time.
+      data.pmScoringType = pmScoringType;
       const _heroFmt = (v) => (v > 0 ? v : '-');
       const _heroSub = (posR, ovrR) => (posR ? `POS : ${posR} · OVR : ${ovrR ?? '–'}` : '-');
       const _heroActive = () => {
@@ -1215,7 +1264,10 @@ function openPlayerModal(playerId, playerName, opts) {
       let hasMetrics =
         supportedMetricsPosition &&
         (data.has_advanced_metrics === true || hasGameLogs);
-      let hasChart   = data.value_history && data.value_history.length > 0;
+      // The block exists when EITHER format has points; the chart then
+      // renders the active format's series (or its thin-state note).
+      let hasChart   = (data.value_history && data.value_history.length > 0)
+        || (data.value_history_redraft && data.value_history_redraft.length > 0);
 
       const vtTrendBadge = '';
 
@@ -1462,7 +1514,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const _valueHistoryBlockHTML = function() { return hasChart ? `
           <div class="pm-ov-value">
           <hr class="pm-section-divider">
-          <div class="pm-section-header"><span class="pm-section-label" id="pmValueHistoryLabel">${pmScoringType === 'redraft' ? 'Dynasty Value History' : 'Value History'}</span></div>
+          <div class="pm-section-header"><span class="pm-section-label" id="pmValueHistoryLabel">${pmScoringType === 'redraft' ? 'Redraft Value History' : 'Dynasty Value History'}</span></div>
           <div class="pm-vh-summary" id="pmVhSummary" aria-live="polite"></div>
           <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
           </div>
@@ -1607,9 +1659,9 @@ function openPlayerModal(playerId, playerName, opts) {
         <div class="pm-panel" id="pm-panel-live"></div>
       `;
 
-      // Dynasty/Redraft + PPR/Half/STD toggles: swap hero 1QB/SF values + ranks.
-      // Value history stays dynasty PPR (DB), so the chart label clarifies when
-      // redraft is selected.
+      // Dynasty/Redraft + PPR/Half/STD toggles: swap hero 1QB/SF values +
+      // ranks, and re-render the value history chart for the newly active
+      // format's series (redraft history is served in the same payload).
       (function _wireScoringToggle() {
         const typeToggle = document.getElementById('pmScoringTypeToggle');
         const fmtToggle = document.getElementById('pmScoringFormatToggle');
@@ -1626,7 +1678,7 @@ function openPlayerModal(playerId, playerName, opts) {
           const histLbl = document.getElementById('pmValueHistoryLabel');
           if (histLbl) {
             histLbl.textContent = pmScoringType === 'redraft'
-              ? 'Dynasty Value History' : 'Value History';
+              ? 'Redraft Value History' : 'Dynasty Value History';
           }
           if (typeToggle) {
             typeToggle.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
@@ -1643,11 +1695,16 @@ function openPlayerModal(playerId, playerName, opts) {
             });
           }
         };
+        const applyValueHistory = () => {
+          data.pmScoringType = pmScoringType;
+          try { _pmRenderValueHistoryChart(data); } catch (e) { /* non-fatal */ }
+        };
         if (typeToggle) {
           typeToggle.querySelectorAll('.pm-trades-toggle-btn').forEach(btn => {
             btn.addEventListener('click', () => {
               pmScoringType = btn.getAttribute('data-scoring') === 'redraft' ? 'redraft' : 'dynasty';
               applyHero();
+              applyValueHistory();
             });
           });
         }
@@ -1911,6 +1968,7 @@ function openPlayerModal(playerId, playerName, opts) {
 
       // Stash this player's value history so the Trades tab can show the
       // player's value change since each trade (client-side, no extra fetch).
+      // Dynasty series only, even when the chart is showing redraft.
       try {
         window.__pmVH = {
           pid: String(playerId),
@@ -1941,6 +1999,7 @@ function openPlayerModal(playerId, playerName, opts) {
       function _pmPatchDeferred(dfd) {
         if (dfd.stats) data.stats = Object.assign({}, data.stats || {}, dfd.stats);
         data.value_history = dfd.value_history || [];
+        data.value_history_redraft = dfd.value_history_redraft || [];
         data.value_trend = dfd.value_trend || null;
         data.playoff_sos = dfd.playoff_sos || null;
         data.has_game_logs = dfd.has_game_logs === true;
@@ -1997,9 +2056,15 @@ function openPlayerModal(playerId, playerName, opts) {
         }
 
         // Value history: insert the block ahead of the ADP block when the
-        // core payload had none, then draw the chart.
-        if (Array.isArray(dfd.value_history) && dfd.value_history.length) {
-          try { window.__pmVH = { pid: String(playerId), hist: dfd.value_history }; } catch (e) {}
+        // core payload had none, then draw the chart for the ACTIVE format
+        // (the user may have toggled to redraft before this landed). The
+        // block exists when either series has points. __pmVH stays the
+        // dynasty series: the Trades tab measures value change since each
+        // trade against dynasty values.
+        var _vhAny = (Array.isArray(dfd.value_history) && dfd.value_history.length)
+          || (Array.isArray(dfd.value_history_redraft) && dfd.value_history_redraft.length);
+        if (_vhAny) {
+          try { window.__pmVH = { pid: String(playerId), hist: Array.isArray(dfd.value_history) ? dfd.value_history : [] }; } catch (e) {}
           if (!document.getElementById('playerValueChart')) {
             hasChart = true;
             var _mainCol = document.querySelector('.pm-ov-main');

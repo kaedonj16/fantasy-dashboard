@@ -28691,7 +28691,7 @@ def api_league_rosters():
 # /api/advanced-metrics/seasons extracted to routes/misc_api_bp.py
 
 
-def _displayed_value_map(league_type: str) -> dict:
+def _displayed_value_map(league_type: str, scoring_type: str = "dynasty") -> dict:
     """player_id -> the value shown everywhere else on the site.
 
     get_model_value_table_cached() is the single source the app renders from:
@@ -28700,15 +28700,26 @@ def _displayed_value_map(league_type: str) -> dict:
     keeps the movers board consistent with those displayed values, so a player
     whose raw model-history value is briefly inflated (while an anchor correction
     unwinds) but who reads as ~0 everywhere else never surfaces as a mover.
+
+    scoring_type="redraft" reads the table's redraft columns instead
+    (redraft_value_1qb / redraft_value_sf): the same WLS solve the redraft
+    history snapshot stores, so a redraft movers board is filtered and
+    anchored on redraft displayed values, never dynasty ones. Rows that
+    lack the redraft fields map to 0.0, exactly like a dynasty row with no
+    value.
     """
     use_sf = str(league_type).strip().lower() == "sf"
+    _redraft = str(scoring_type or "dynasty").strip().lower() == "redraft"
     out: dict = {}
     try:
         for p in (get_model_value_table_cached() or []):
             pid = str(p.get("id") or "")
             if not pid:
                 continue
-            v = p.get("sf_value") if use_sf else p.get("value")
+            if _redraft:
+                v = p.get("redraft_value_sf") if use_sf else p.get("redraft_value_1qb")
+            else:
+                v = p.get("sf_value") if use_sf else p.get("value")
             try:
                 out[pid] = float(v or 0)
             except (TypeError, ValueError):
@@ -28732,6 +28743,8 @@ def api_value_movers():
         limit = 5
 
     league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+    scoring_type = "redraft" if str(
+        request.args.get("scoring_type", "dynasty")).strip().lower() == "redraft" else "dynasty"
 
     try:
         league_size = int(request.args.get("league_size", 10))
@@ -28743,8 +28756,9 @@ def api_value_movers():
 
     payload = get_top_movers(days=max(days, 1), limit=max(limit, 1), league_type=league_type,
                              league_size=league_size, min_baseline_value=10,
-                             min_current_value=20.0,
-                             current_values=_displayed_value_map(league_type)) or {}
+                             min_current_value=20.0, scoring_type=scoring_type,
+                             current_values=_displayed_value_map(
+                                 league_type, scoring_type=scoring_type)) or {}
 
     if isinstance(payload, list):
         movers = payload
@@ -29097,7 +29111,7 @@ def api_since_last_visit():
 
 _PLAYER_INDICATORS_CACHE: dict = {}  # (table_ts, league_type, league_size, season) -> (ts, payload)
 
-_VALUE_HISTORY_CACHE: dict = {}  # (player_id, days, league_type, league_size) -> (ts, rows)
+_VALUE_HISTORY_CACHE: dict = {}  # (player_id, days, league_type, league_size, scoring_type) -> (ts, rows)
 _VALUE_HISTORY_MAX = 256  # ~45KB/player; shared via Redis too (see _cached_value_history)
 _VALUE_HISTORY_TTL = 3600  # values are rebuilt daily; an hour is safely fresh
 
@@ -29127,16 +29141,22 @@ def _trade_eval_id_map(value_table: list, source: str, source_ts: float) -> dict
         return {}
 
 
-def _cached_value_history(player_id: str, *, days: int, league_type: str, league_size: int):
+def _cached_value_history(player_id: str, *, days: int, league_type: str, league_size: int,
+                          scoring_type: str = "dynasty"):
     """get_player_value_history with a short LRU-bounded cache. Never raises.
 
     Calls the module-global get_player_value_history (data_building) so tests
     can monkeypatch app.get_player_value_history as before. The extra LRU
     bound keeps the hottest few modal opens cached without letting the entry
     count grow without limit.
+
+    scoring_type ("dynasty" / "redraft") is part of both cache keys: the two
+    formats read different history columns and must never serve each other's
+    rows.
     """
     try:
-        key = (str(player_id), int(days), str(league_type), int(league_size))
+        _st = "redraft" if str(scoring_type or "dynasty").strip().lower() == "redraft" else "dynasty"
+        key = (str(player_id), int(days), str(league_type), int(league_size), _st)
         now = time.time()
         hit = _VALUE_HISTORY_CACHE.get(key)
         if hit and now - hit[0] < _VALUE_HISTORY_TTL:
@@ -29156,9 +29176,15 @@ def _cached_value_history(player_id: str, *, days: int, league_type: str, league
                 return _rows
         except Exception:
             logger.debug("[value history] shared cache read failed", exc_info=True)
+        # scoring_type is only passed for redraft: dynasty is the reader's
+        # own default, and omitting it keeps the long-standing monkeypatch
+        # contract (tests stub app.get_player_value_history without the
+        # new kwarg) working exactly as before.
+        _vh_kwargs = {"scoring_type": "redraft"} if _st == "redraft" else {}
         rows = get_player_value_history(
             str(player_id), days=int(days),
             league_type=str(league_type), league_size=int(league_size),
+            **_vh_kwargs,
         ) or []
         _lru_cache_put(_VALUE_HISTORY_CACHE, key, (now, rows), _VALUE_HISTORY_MAX)
         try:
@@ -29586,6 +29612,7 @@ def _player_details_deferred_subset(response):
         "player_id": response.get("player_id"),
         "deferred": True,
         "value_history": response.get("value_history") or [],
+        "value_history_redraft": response.get("value_history_redraft") or [],
         "value_trend": response.get("value_trend"),
         "prospect_data": response.get("prospect_data"),
         "has_prospect_data": bool(response.get("has_prospect_data")),
@@ -29902,11 +29929,27 @@ def api_player_details(player_id: str):
         # DB round-trip and the modal patches the chart in when the
         # deferred payload lands. Cached per player (shared, 1h TTL).
         value_history = []
+        value_history_redraft = []
         if _deferred_build:
             value_history = _cached_value_history(
                 player_id, days=365,
                 league_type=_modal_lt, league_size=_modal_ls,
             )
+            # Redraft history (stored since the redraft snapshot landed):
+            # served alongside the dynasty series so the modal chart can
+            # follow the Dynasty/Redraft hero toggle. It is NOT run through
+            # the FC/DP ratio rescale below: the stored redraft values are
+            # already the served scale (the history reader's redraft branch
+            # deliberately skips calibration). Short series are expected
+            # (tracking only began in late October); the client renders
+            # whatever points exist and never borrows dynasty points.
+            # Copied row dicts: the TE-premium pass below mutates points in
+            # place, and the cached lists are shared across requests.
+            value_history_redraft = [dict(_h) for _h in (_cached_value_history(
+                player_id, days=365,
+                league_type=_modal_lt, league_size=_modal_ls,
+                scoring_type="redraft",
+            ) or [])]
 
         # Scale history to match FC/DP-corrected current values.
         # The history function returns value_1qb and value_sf separately;
@@ -30083,6 +30126,16 @@ def api_player_details(player_id: str):
                 for _k in ("value_1qb", "value_sf", "value"):
                     if _h.get(_k) is not None:
                         _h[_k] = round(float(_h[_k]) * _te_mult, 1)
+            # Same TE premium for the redraft series (matching _rd_val,
+            # which TE-scales the redraft hero values); delta_from_prev is
+            # scaled by the same multiplier so the series stays consistent.
+            for _h in (value_history_redraft or []):
+                for _k in ("value_1qb", "value_sf", "value"):
+                    if _h.get(_k) is not None:
+                        _h[_k] = round(float(_h[_k]) * _te_mult, 1)
+                if _h.get("delta_from_prev") is not None:
+                    _h["delta_from_prev"] = round(
+                        float(_h["delta_from_prev"]) * _te_mult, 1)
 
         _modal_age = age_from_bday(player_meta.get("bDay")) or player_value.get("age") or player_meta.get("age")
 
@@ -30673,6 +30726,7 @@ def api_player_details(player_id: str):
                 "start_sit": _start_sit_payload,
             },
             "value_history": value_history,
+            "value_history_redraft": value_history_redraft,
             "game_logs_by_year": game_logs_by_year,
             "has_game_logs": has_game_logs,
             "has_advanced_metrics": has_advanced_metrics,
