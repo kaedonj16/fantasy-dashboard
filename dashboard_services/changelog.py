@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
+        "text": "My Leagues: the Front Office full report is a real plan now. Generate full report walks every open move in the board's priority order under labeled sections, each step with its league, record, posture, the reason behind it and its timing, plus a timeline of what runs before waivers and what locks at kickoff. The trade deadline shows as a reminder, never as a numbered move. The report names moves already marked Done by their titles instead of walking them as to-dos, closes by confirming the leagues that need nothing, and if your leagues are still being checked it says so and asks you to retry instead of narrating a half-finished scan as the full picture.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "update",
         "text": "Redraft value history now reaches the rest of the site: Beat the Market on the Teams page follows your league format (or the This Season toggle), the Compare value history chart follows the Dynasty/Redraft toggle for two and three player compares, trade calculator value deltas match the format you are viewing, and the weekly email digest picks risers and fallers in each league's own format. Redraft history is still young, so redraft views cover the shorter span honestly instead of borrowing dynasty numbers.",
         "link": "/compare"
     },

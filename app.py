@@ -41610,6 +41610,8 @@ def build_portfolio_body(
         ".pf-dd-h{font-size:13px;font-weight:800;margin-bottom:6px;}"
         ".pf-dd-b{font-size:12px;color:var(--text-muted);line-height:1.5;padding:2px 0 2px 14px;position:relative;}"
         ".pf-dd-b::before{content:'\\2022';position:absolute;left:2px;}"
+        ".pf-dd-sec{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);margin:10px 0 3px;}"
+        ".pf-dd-sec:first-of-type{margin-top:2px;}"
         ".pf-grade-line{border-top:1px solid var(--grid);padding:9px 16px;font-size:12px;color:var(--text-muted);}"
         ".pf-hidden-footer{border-top:1px solid var(--grid);padding:9px 16px;font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px;}"
         ".pf-group-empty{display:flex;align-items:center;gap:8px;padding:11px 14px;font-size:12.5px;font-weight:600;color:var(--text-subtle);}"

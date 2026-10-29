@@ -19,6 +19,7 @@ import copy
 import html
 import logging
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -1913,78 +1914,377 @@ def api_portfolio_move_done():
 @user_pages_bp.route("/api/portfolio-deep-dive", methods=["POST"])
 @limiter.limit("30/minute")
 def api_portfolio_deep_dive():
-    """Cross-league deep dive for the board: a deterministic narrative
-    composed from the same scan the board renders (the Front Office
-    convention: the basic board is already live and stays live whether
-    this succeeds or fails)."""
+    """Cross-league deep dive for the board: an ordered plan over the
+    board's own moves, composed deterministically from the same scan
+    the board renders (the Front Office convention: the basic board is
+    already live and stays live whether this succeeds or fails).
+
+    Every line traces to a payload field: the move's title, its detail
+    or evidence, its timing, and its league's record line and posture.
+    Posture counts never stand alone as content; the plan's rank order
+    already expresses priority. Calendar nudges (kind="calendar":
+    trade deadline, playoff countdown) are dates to be aware of, not
+    moves to execute, so they are never counted or numbered here; they
+    surface as reminder lines after the plan. The response carries the
+    lines twice over: ``bullets`` (the flat list, kept for any older
+    reader) and ``sections`` (the same lines grouped under The plan /
+    Reminders / Already done labels, coverage line last and
+    unheaded), which is what the client renders. There is deliberately
+    no cross-league "conflict" callout: separate leagues have
+    independent wires, FAAB and rosters, so the same player claimed
+    in two leagues (or claimed in one and dropped in another) is an
+    ordinary per-league decision, not a collision. A partial scan is
+    refused with a retryable error instead of being narrated as the
+    full picture, because the counts of a half-finished scan read as
+    final."""
     resp = api_portfolio_actions()
+    if isinstance(resp, tuple):
+        resp = resp[0]
     if getattr(resp, "status_code", 200) != 200:
         return resp
     data = resp.get_json() or {}
+    if (data.get("scan") or {}).get("incomplete"):
+        return jsonify({"ok": False, "error": "scan_incomplete"})
     groups = ((data.get("board") or {}).get("groups")) or []
     if not groups:
         return jsonify({"ok": False, "error": "no_board"})
-    total_moves = sum(len(g.get("moves") or []) for g in groups)
-    # Deep-dive prose buckets over the Teams window / redraft labels the
-    # cards and board headers now carry (legacy Contend/Fringe/Rebuild
-    # from stale caches still bucket the same way).
-    _CONTENDING = {"Contend", "Powerhouse", "Contender", "Win-Now",
-                   "Contender Window"}
-    _MIDDLE = {"Bubble", "Rising", "Crossroads", "Treadmill", "Fringe"}
-    _REBUILDING = {"Long Shot", "Retooling", "Rebuilding", "Full Rebuild",
-                   "Rebuild"}
 
-    def _posture_bucket(label):
-        if label in _CONTENDING:
-            return "Contend"
-        if label in _REBUILDING:
-            return "Rebuild"
-        if label in _MIDDLE:
-            return "Fringe"
-        return None
+    def _evidence_value(mv, key):
+        for row in mv.get("evidence") or []:
+            if isinstance(row, dict) and str(row.get("k") or "") == key:
+                v = str(row.get("v") or "").strip()
+                if v:
+                    return v
+        return ""
 
-    posture_counts = {"Contend": 0, "Fringe": 0, "Rebuild": 0}
-    moves_by_posture = {"Contend": 0, "Fringe": 0, "Rebuild": 0}
-    locked = 0
-    top_move = None
-    claim_move = None
+    # When a move carries no detail, its reason is the SINGLE strongest
+    # evidence row, not every row stacked: the swap's gain, the claim's
+    # why, the injury's time out, in that spirit.
+    _EVIDENCE_PRIORITY = ("Gain", "Matchup", "Trend", "Why",
+                          "Time out", "Status", "IR room", "Start",
+                          "Bench", "Add", "Drop")
+
+    def _norm_name(name):
+        """Player-name key for cross-referencing moves: lowercase,
+        punctuation stripped, whitespace collapsed. Used for the
+        restatement check; a name that does not normalize to at
+        least two tokens never matches anything."""
+        return " ".join(
+            re.sub(r"[^a-z0-9 ]", " ", str(name or "").lower()).split())
+
+    def _title_player_names(mv):
+        """The player names a title carries, parsed from the board's
+        own title shapes only: 'Start A over B', and 'Add X (POS)' /
+        'Stash X (POS)'. Anything else yields no names, so the
+        restatement check stays silent rather than guessing."""
+        title = str(mv.get("title") or "").strip()
+        m = re.match(r"^Start\s+(.+?)\s+over\s+(.+)$", title)
+        if m:
+            return [m.group(1).strip(), m.group(2).strip()]
+        m = re.match(r"^(?:Add|Stash)\s+(.+?)(?:\s*\([^)]*\))?$", title)
+        if m:
+            return [m.group(1).strip()]
+        return []
+
+    _NUM_RE = re.compile(r"\d+(?:\.\d+)?")
+
+    def _restates_title(mv, text):
+        """True when a candidate reason merely repeats the title's own
+        claim. Explicit rule, no similarity scoring: the text names
+        every player the title names AND every number in it already
+        appears in one of the move's Start/Bench evidence rows (i.e.
+        it is the raw projection line restated). A text carrying a
+        number found nowhere in those rows, or naming no title player,
+        adds a fact and is kept."""
+        names = _title_player_names(mv)
+        if not names:
+            return False
+        low = _norm_name(text)
+        if not all(_norm_name(n) and _norm_name(n) in low
+                   for n in names):
+            return False
+        proj_nums = set()
+        for key in ("Start", "Bench"):
+            proj_nums.update(
+                _NUM_RE.findall(_evidence_value(mv, key)))
+        nums = _NUM_RE.findall(text)
+        return bool(nums) and all(n in proj_nums for n in nums)
+
+    def _move_reason(mv):
+        """The why for one move, from its own fields only, and never a
+        restatement of the title: when the detail only repeats the
+        title's claim (the swap shape: title 'Start A over B', detail
+        'A projects X vs B's Y'), the reason compresses to the one
+        added fact, the projected delta from the Gain row ('Worth
+        +5.1 projected pts in the swap.'). Otherwise the detail stands
+        (with the gain or the named drop folded in when it omits
+        them), else the single strongest evidence row that is not
+        itself a restatement. A move whose detail was dropped for
+        restating the title falls back to the consequence the title
+        states, so a bye or an out starter still carries its reason.
+        No invented numbers."""
+        detail = str(mv.get("detail") or "").strip()
+        if detail and _restates_title(mv, detail):
+            gain = _evidence_value(mv, "Gain")
+            if gain:
+                return f"Worth {gain} in the swap."
+            detail = ""
+        if detail:
+            gain = _evidence_value(mv, "Gain")
+            if (gain and "gain" not in detail.lower()
+                    and gain.split()[0] not in detail):
+                detail = f"{detail} ({gain})"
+            if mv.get("kind") == "waiver":
+                # A claim's step must name its drop even when the
+                # detail forgot to (the drop used to ride a separate
+                # roundup line; the step carries it now).
+                drop = _evidence_value(mv, "Drop")
+                if drop:
+                    name = drop.split(" · ")[0].strip()
+                    if name and name not in detail:
+                        if " · " in drop:
+                            nm, pos = drop.split(" · ", 1)
+                            detail += f" · Drop {nm} ({pos})"
+                        else:
+                            detail += f" · Drop {drop}"
+            return detail
+        for key in _EVIDENCE_PRIORITY:
+            v = _evidence_value(mv, key)
+            if v and not _restates_title(mv, v):
+                return v
+        ev = [str(r.get("v") or "").strip()
+              for r in (mv.get("evidence") or []) if isinstance(r, dict)]
+        ev = [v for v in ev if v and not _restates_title(mv, v)]
+        if ev:
+            return ev[0]
+        low = str(mv.get("title") or "").lower()
+        if "on bye" in low:
+            return ("The starter is on a bye this week, so the slot "
+                    "needs a fill.")
+        if " is out" in low:
+            return ("The starter is out, so the slot needs a "
+                    "replacement.")
+        if low.startswith("empty starting slot"):
+            return ("A starting slot is empty and scores nothing until "
+                    "it is filled.")
+        return ""
+
+    def _rank_list(ranks):
+        rs = [f"Move {r}" for r in ranks]
+        if len(rs) == 1:
+            return rs[0]
+        if len(rs) == 2:
+            return f"{rs[0]} and {rs[1]}"
+        return ", ".join(rs[:-1]) + f" and {rs[-1]}"
+
+    ordered = []
     for g in groups:
-        posture = _posture_bucket((g.get("meta") or {}).get("posture"))
-        if posture in posture_counts:
-            posture_counts[posture] += 1
         for mv in g.get("moves") or []:
-            if posture in moves_by_posture:
-                moves_by_posture[posture] += 1
-            if (mv.get("timing") or {}).get("locked"):
-                locked += 1
-            if top_move is None or (mv.get("rank") or 99) < (top_move.get("rank") or 99):
-                top_move = dict(mv, _league=g.get("league_name"))
-            if claim_move is None and mv.get("kind") == "waiver":
-                claim_move = dict(mv, _league=g.get("league_name"))
-    bullets = []
-    if top_move:
-        bullets.append(
-            f"Start with Move {top_move.get('rank')}: {top_move.get('title')} "
-            f"({top_move.get('_league')}). {top_move.get('detail') or ''}".strip())
-    bullets.append(
-        f"{posture_counts['Contend']} contending · {posture_counts['Fringe']} fringe · "
-        f"{posture_counts['Rebuild']} rebuilding across {len(groups)} leagues "
-        f"with moves this week.")
-    if moves_by_posture["Contend"]:
-        bullets.append(
-            f"{moves_by_posture['Contend']} of the {total_moves} moves sit in "
-            "contending leagues. Protect those first.")
-    if claim_move:
-        bullets.append(
-            f"One add covers {claim_move.get('_league')}: {claim_move.get('title')}.")
-    if locked:
-        bullets.append(
-            f"{locked} move{'s are' if locked != 1 else ' is'} already locked "
-            "by kickoff. What is left is below.")
-    headline = (f"{total_moves} moves across {len(groups)} leagues. "
-                "Here is the order that protects your contenders.")
+            ordered.append((g, mv))
+    ordered.sort(key=lambda gm: (gm[1].get("rank") or 99))
+    # Calendar nudges are reminders, not actions: they take no number
+    # and no slot in the move count or the ordering line. The true
+    # actions are renumbered cleanly in board-rank order (open and
+    # done share one sequence), so every "Move N" anywhere in this
+    # report means the same move. A calendar nudge already marked
+    # done is acknowledged and drops out entirely.
+    numbered = []
+    reminders = []
+    for g, mv in ordered:
+        if mv.get("kind") == "calendar":
+            if not mv.get("done"):
+                reminders.append((g, mv))
+            continue
+        numbered.append((g, mv, len(numbered) + 1))
+    open_moves = [(g, mv, n) for g, mv, n in numbered
+                  if not mv.get("done")]
+    done_moves = [(g, mv, n) for g, mv, n in numbered if mv.get("done")]
+
+    plan_items = []
+    seen_leagues = set()
+    for g, mv, num in open_moves:
+        league = str(g.get("league_name") or "")
+        head = f"Move {num}"
+        if league:
+            head += f" · {league}"
+        if g.get("key") not in seen_leagues:
+            # League context rides on the league's first (highest
+            # priority) step: its record line and posture label.
+            seen_leagues.add(g.get("key"))
+            meta = g.get("meta") or {}
+            ctx = " · ".join(
+                x for x in (meta.get("record_line"), meta.get("posture"))
+                if x)
+            if ctx:
+                head += f" ({ctx})"
+        # No em dashes in the report (Kaedon's standing UI rule): the
+        # head joins the title with a colon, sentences with periods.
+        text = f"{head}: {mv.get('title')}"
+        reason = _move_reason(mv)
+        if reason:
+            text += f". {reason}"
+        timing = mv.get("timing") or {}
+        if timing.get("locked"):
+            text += f" ({timing.get('lock_label') or 'Already locked'})"
+        elif timing.get("label"):
+            text += f" ({timing['label']})"
+        plan_items.append(text)
+
+    locked_nums = [n for g, mv, n in open_moves
+                   if (mv.get("timing") or {}).get("locked")]
+    if locked_nums:
+        plan_items.append(
+            f"Already locked by kickoff: {_rank_list(locked_nums)}. "
+            "Those can no longer be changed; everything else in the "
+            "plan is still open.")
+
+    # Timeline roll-up: the plan's steps already sit in priority
+    # order; this line groups them by WHEN each must happen, from the
+    # moves' own timing fields. Buckets are conservative: a move is
+    # wire-bound when its label mentions waivers or the wire, or it is
+    # a waiver claim at all; kickoff-locked when it is already locked
+    # or its label carries a lock time; everything else has no hard
+    # deadline. The clause quotes the move's own label text, so no
+    # weekday or hour is ever invented here.
+    wire_moves, lock_moves, free_moves = [], [], []
+    for g, mv, n in open_moves:
+        timing = mv.get("timing") or {}
+        label = str(timing.get("label") or "").lower()
+        if "waiver" in label or "wire" in label \
+                or mv.get("kind") == "waiver":
+            wire_moves.append((g, mv, n))
+        elif timing.get("locked") or "lock" in label:
+            lock_moves.append((g, mv, n))
+        else:
+            free_moves.append((g, mv, n))
+    timeline_clauses = []
+    if wire_moves:
+        if len(wire_moves) == 1:
+            timeline_clauses.append(
+                f"Move {wire_moves[0][2]} goes before waivers run.")
+        else:
+            timeline_clauses.append(
+                f"{_rank_list([n for g, mv, n in wire_moves])} go "
+                "before waivers run.")
+    if lock_moves:
+        if len(lock_moves) == 1:
+            g, mv, n = lock_moves[0]
+            label = str((mv.get("timing") or {}).get("label") or "")
+            if label.lower().startswith("locks "):
+                # The label itself carries the time: quote it rather
+                # than paraphrasing ("Move 2 locks 1:00 PM.").
+                timeline_clauses.append(
+                    f"Move {n} {label[0].lower() + label[1:]}.")
+            elif label:
+                timeline_clauses.append(
+                    f"Move {n} ({label}) is locked at kickoff.")
+            else:
+                timeline_clauses.append(
+                    f"Move {n} is locked at kickoff.")
+        else:
+            timeline_clauses.append(
+                f"{_rank_list([n for g, mv, n in lock_moves])} are "
+                "locked at kickoff.")
+    if free_moves:
+        if len(free_moves) == 1:
+            timeline_clauses.append(
+                f"Move {free_moves[0][2]} has no hard deadline.")
+        else:
+            timeline_clauses.append(
+                f"{_rank_list([n for g, mv, n in free_moves])} have "
+                "no hard deadline.")
+    if timeline_clauses:
+        plan_items.append("Timeline: " + " ".join(timeline_clauses))
+
+
+    reminder_items = []
+    for g, mv in reminders:
+        title = str(mv.get("title") or "").strip()
+        if not title:
+            continue
+        line = f"Reminder: {title[0].lower() + title[1:]}"
+        league = str(g.get("league_name") or "")
+        if league:
+            line += f" in {league}"
+        detail = str(mv.get("detail") or "").strip()
+        if detail:
+            # Period join, not an em dash (standing UI rule).
+            line += f". {detail}"
+        reminder_items.append(line if line.endswith(".") else line + ".")
+
+    done_items = []
+    if done_moves:
+        parts = []
+        for g, mv, n in done_moves:
+            seg = f"Move {n}, {mv.get('title')}"
+            league = str(g.get("league_name") or "")
+            if league:
+                seg += f" ({league})"
+            parts.append(seg)
+        done_items.append("Already marked done: " + "; ".join(parts) + ".")
+
+    # Coverage: leagues the scan actually scanned that produced
+    # neither an action nor a reminder get one closing line, so
+    # silence reads as "checked, nothing needed" rather than "never
+    # looked". The count derives from the scan's own scanned tally
+    # minus the leagues present as board groups (a group exists for
+    # every league holding an action or a reminder). Leagues the scan
+    # skipped are never counted as quiet: they were not checked. If
+    # the payload carries no scanned tally, the number cannot be
+    # derived honestly and the line is not emitted.
+    scan = data.get("scan") or {}
+    scan_total = scan.get("total") or 0
+    coverage_line = ""
+    if scan.get("scanned") is not None:
+        try:
+            n_scanned = int(scan.get("scanned") or 0)
+        except (TypeError, ValueError):
+            n_scanned = 0
+        covered = {g.get("key") for g in groups}
+        if n_scanned > len(covered):
+            n_quiet = n_scanned - len(covered)
+            coverage_line = (
+                f"The other {n_quiet} league"
+                + ("s" if n_quiet != 1 else "")
+                + " need nothing this week.")
+
+    sections = []
+    if plan_items:
+        sections.append({"label": "The plan", "items": plan_items})
+    if reminder_items:
+        sections.append({"label": "Reminders", "items": reminder_items})
+    if done_items:
+        sections.append({"label": "Already done", "items": done_items})
+    if coverage_line:
+        sections.append({"label": "", "items": [coverage_line]})
+    bullets = [item for s in sections for item in s["items"]]
+
+    action_leagues = len({g.get("key") for g, mv, n in numbered})
+    scope = (f"{len(open_moves)} moves across {action_leagues} of your "
+             f"{scan_total} leagues"
+             if scan_total and scan_total > action_leagues
+             else f"{len(open_moves)} moves across {action_leagues} "
+                  f"leagues")
+    if reminders:
+        scope += (f" · plus {len(reminders)} reminder"
+                  + ("s" if len(reminders) != 1 else ""))
+    if open_moves:
+        first_g, first_mv, first_num = open_moves[0]
+        headline = (f"{scope}, in the order to work them. First: "
+                    f"Move {first_num}, {first_mv.get('title')} "
+                    f"({first_g.get('league_name')}).")
+    elif done_moves:
+        headline = (f"Nothing open: every move on the board across "
+                    f"{action_leagues} leagues is marked done.")
+        if reminders:
+            headline += (" The reminder below still stands."
+                         if len(reminders) == 1
+                         else " The reminders below still stand.")
+    else:
+        headline = "No actions on the board this week."
     return jsonify({
         "ok": True, "headline": headline, "bullets": bullets,
+        "sections": sections,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     })
 

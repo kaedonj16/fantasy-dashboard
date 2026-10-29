@@ -30754,10 +30754,23 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         }, 30000).then(function (r) { return r.json(); }).then(function (d) {
           genBtn.disabled = false;
           if (d && d.ok) {
-            dd.innerHTML = '<div class="pf-dd-h">' + esc(d.headline) + '</div>' +
-              (d.bullets || []).map(function (b) {
+            var ddHtml = '<div class="pf-dd-h">' + esc(d.headline) + '</div>';
+            if (d.sections && d.sections.length) {
+              // Labeled sections (The plan / Reminders / Already
+              // done); a section with an empty label (the closing
+              // coverage line) renders unheaded.
+              ddHtml += d.sections.map(function (s) {
+                return (s.label ? '<div class="pf-dd-sec">' + esc(s.label) + '</div>' : '') +
+                  (s.items || []).map(function (b) {
+                    return '<div class="pf-dd-b">' + esc(b) + '</div>';
+                  }).join('');
+              }).join('');
+            } else {
+              ddHtml += (d.bullets || []).map(function (b) {
                 return '<div class="pf-dd-b">' + esc(b) + '</div>';
               }).join('');
+            }
+            dd.innerHTML = ddHtml;
             dd.hidden = false;
             genBtn.textContent = 'Hide report';
           } else {
