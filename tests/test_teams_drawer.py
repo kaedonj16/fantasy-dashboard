@@ -71,6 +71,46 @@ def test_drawer_tag_classes_cover_all_signals():
         assert re.search(re.escape("." + cls) + r"\s*\{", CSS), f"missing CSS for {cls}"
 
 
+def test_drawer_tags_match_suggested_moves_badge_css():
+    """Drawer player-row badges (.td-tag) carry the same CSS as the
+    Suggested Moves badges (.ri-move-tag): solid signal color with white
+    text, same size, padding, radius and minimum width. Sell High is the
+    reference: solid #ef4444 in both places."""
+    tag = re.search(r"\.td-tag\s*\{([^}]+)\}", CSS)
+    assert tag, "missing .td-tag rule"
+    body = tag.group(1)
+    for decl in (
+        "color: #fff",
+        "font-size: 11px",
+        "font-weight: 800",
+        "letter-spacing: .03em",
+        "padding: 2px 6px",
+        "border-radius: var(--radius-sm)",
+        "min-width: 62px",
+        "text-align: center",
+    ):
+        assert decl in body, f".td-tag lost Suggested Moves badge declaration {decl}"
+    move = re.search(r"\.ri-move-tag\s*\{([^}]+)\}", CSS)
+    assert move, "missing .ri-move-tag rule"
+    assert "color: #fff" in move.group(1)
+    # Every signal variant is a solid background in its signal color (the
+    # colors teams.js passes inline to .ri-move-tag), never a pale tint.
+    for cls, bg in (
+        ("td-t-core", "#22c55e"),
+        ("td-t-hold", "#64748b"),
+        ("td-t-sell", "#ef4444"),
+        ("td-t-stash", "#0d9488"),
+        ("td-t-sleeper", "#06b6d4"),
+        ("td-t-breakout", "#8b5cf6"),
+        ("td-t-monitor", "#f59e0b"),
+        ("td-t-cut", "#64748b"),
+    ):
+        rule = re.search(re.escape("." + cls) + r"\s*\{([^}]+)\}", CSS)
+        assert rule, f"missing CSS for {cls}"
+        assert "background: %s" % bg in rule.group(1), f"{cls} must be solid {bg}"
+        assert "color-mix" not in rule.group(1), f"{cls} must not be a pale tint"
+
+
 def test_roster_intel_fetch_is_shared_and_league_keyed():
     fetch = JS[JS.index("function _riFetchData("):]
     assert "_syncLeagueCfg()" in fetch

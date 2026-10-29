@@ -50959,7 +50959,7 @@ table.rz-bs-table thead th:not(:first-child) {
     font-size: 10.5px;
     font-weight: 800;
     line-height: 1;
-    color: rgba(0, 0, 0, .72);
+    color: #fff;
     white-space: nowrap;
 }
 .tsc-mix-legend {
@@ -51218,24 +51218,29 @@ em.gneg { background: var(--loss); }
 }
 .td-pill b { color: var(--text); }
 
-/* Roster-intel tags inside drawer player rows */
+/* Roster-intel tags inside drawer player rows: same badge CSS as the
+   Suggested Moves tags (.ri-move-tag): solid signal color, white text. */
 .td-tag {
-    font-size: 10px;
+    display: inline-block;
+    color: #fff;
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: .04em;
-    padding: 4px 9px;
-    border-radius: 7px;
+    letter-spacing: .03em;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
     flex: none;
     text-transform: uppercase;
+    min-width: 62px;
+    text-align: center;
 }
-.td-t-core { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
-.td-t-hold { background: var(--accent-soft); color: var(--text-muted); }
-.td-t-sell { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
-.td-t-stash { background: color-mix(in srgb, #0d9488 16%, transparent); color: #0d9488; }
-.td-t-sleeper { background: color-mix(in srgb, #0284c7 16%, transparent); color: #0284c7; }
-.td-t-breakout { background: color-mix(in srgb, #8b5cf6 16%, transparent); color: #8b5cf6; }
-.td-t-monitor { background: color-mix(in srgb, #d97706 16%, transparent); color: #d97706; }
-.td-t-cut { background: var(--accent-soft); color: var(--text-muted); opacity: .75; }
+.td-t-core { background: #22c55e; }
+.td-t-hold { background: #64748b; }
+.td-t-sell { background: #ef4444; }
+.td-t-stash { background: #0d9488; }
+.td-t-sleeper { background: #06b6d4; }
+.td-t-breakout { background: #8b5cf6; }
+.td-t-monitor { background: #f59e0b; }
+.td-t-cut { background: #64748b; }
 
 .td-note {
     font-size: 13px;
