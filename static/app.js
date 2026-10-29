@@ -1114,6 +1114,8 @@ window.brHaptic = function (pattern) {
   var promptedFor = '';    // server version we've already shown the prompt for
   var dismissedFor = '';   // server version the user dismissed
   var waitingSw = null;    // worker waiting for our tap to activate
+  var updateRequested = false;   // set ONLY by applyUpdate (a real tap)
+  var swActivated = false;       // a worker took control with no tap
   var hadController = !!navigator.serviceWorker.controller;
   var timer = null;
 
@@ -1161,9 +1163,14 @@ window.brHaptic = function (pattern) {
     // A worker is waiting for our tap: let it activate, then the
     // controllerchange handler below reloads. Otherwise bypass the HTTP cache
     // so the reload fetches the new HTML instead of the stale shell.
-    if (waitingSw) {
+    if (waitingSw && !swActivated) {
+      // Record the tap BEFORE asking the worker to activate: sw.js
+      // skipWaiting()s on install, so a worker can also take control with
+      // no tap at all, and the controllerchange handler must be able to
+      // tell the two apart. Only a recorded tap may reload the page.
+      updateRequested = true;
       try { waitingSw.postMessage({ type: 'SKIP_WAITING' }); return; }
-      catch (_) {}
+      catch (_) { updateRequested = false; }
     }
     bypassReload();
   }
@@ -1213,13 +1220,21 @@ window.brHaptic = function (pattern) {
   }
 
   navigator.serviceWorker.addEventListener('controllerchange', function () {
-    if (waitingSw) {
+    if (updateRequested) {
       // We tapped "update" and the worker just took over: load the new page.
+      updateRequested = false;
       waitingSw = null;
       bypassReload();
       return;
     }
     if (!hadController) { hadController = true; return; }  // first claim, not an update
+    // A new worker took control on its own: sw.js skipWaiting()s on install
+    // and waitingSw is armed automatically (armRegistration / trackWorker),
+    // so a waiting worker is not proof of a tap. Never reload a page the
+    // user is looking at. Remember the takeover so a later tap on the
+    // update prompt reloads directly instead of waiting for a second
+    // controllerchange that will never come, and surface the prompt.
+    swActivated = true;
     checkVersion();
   });
 
