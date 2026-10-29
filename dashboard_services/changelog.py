@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-29",
+        "tag": "fix",
+        "text": "My Leagues cards: the record band now matches the approved layout. Your streak sits under your record on the left, and your standing sits bigger on the right side of the band, green for a top 3 place and red for a bottom third finish. The Best room reads in plain dark text instead of green. The score strip leads with a week line that names your opponent and carries your win percentage, your score reads inline next to the word You with the projection tagged after it, your opponent gets a smaller unnamed number, and the win bar runs green over a pale pink track with no labels under it.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-29",
         "tag": "update",
         "text": "My Leagues cards are redesigned. Your team name headlines each card, with the league, platform and season posture (a colored dot and word) on one quiet line under it. Your record sits in a tinted band with your standing and streak beside it, your weakest room (Fix) and strongest room (Best) sit in two columns under the band, and the score strip at the bottom shows projections before the game, the live score during it, and the result after. The Front Office and Open buttons and the per-card updated stamps are gone: the whole card opens the league, the star and the menu at the top right keep favorite and remove, and one Updated line sits above the grid.",
         "link": "/portfolio"
