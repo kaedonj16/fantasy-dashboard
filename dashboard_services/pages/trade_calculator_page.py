@@ -345,6 +345,7 @@ def build_trade_calculator_body(
                   </div>
                 </div>
               </div>
+              <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">Values calibrated from <span data-trade-count>…</span> real Sleeper trades</div>
             </div>
             <div class="otc-page-head-controls">
               <div class="otc-settings-row">

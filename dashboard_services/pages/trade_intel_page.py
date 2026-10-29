@@ -50,7 +50,7 @@ def build_trade_intel_body(
             'padding-bottom:16px;margin-bottom:0;">'
             '<h2 style="margin:0 0 4px;font-size:22px;">Trade Intelligence</h2>'
             '<div style="font-size:13px;color:var(--text-muted);">'
-            f"Actionable insights from thousands of real dynasty trades. {_TI_SOURCE_NOTE}"
+            f"Actionable insights from <span data-ti-dynasty-count>…</span> real dynasty trades. {_TI_SOURCE_NOTE}"
             "</div></div>"
             '<div class="card-body" style="padding-top:20px;">'
         )
@@ -476,6 +476,19 @@ def build_trade_intel_body(
       let currentPos = 'ALL';
 
       loadTIPage(1);
+
+      // Header subtitle dynasty total: lazy-fill from the cached count
+      // endpoint so no COUNT(*) runs during page render.
+      fetch('/api/trade-count?format=dynasty&season=' + TI_SEASON)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {{
+          if (d && d.count) {{
+            document.querySelectorAll('[data-ti-dynasty-count]').forEach(el => {{
+              el.textContent = Number(d.count).toLocaleString();
+            }});
+          }}
+        }})
+        .catch(() => {{}});
 
       function loadTIPage(page) {{
         if (typeof page === 'string') {{

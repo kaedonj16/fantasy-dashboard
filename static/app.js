@@ -14261,15 +14261,21 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // Trade count lazy-loads from the cached /api/trade-count endpoint so the
-  // DB COUNT(*) never blocks the page render.
+  // DB COUNT(*) never blocks the page render. The same fetch fills the
+  // tooltip's #tradeCount and every [data-trade-count] line on the page.
   function _lazyTradeCount() {
     var el = root.querySelector("#tradeCount");
-    if (!el) return;
+    var fills = root.querySelectorAll("[data-trade-count]");
+    if (!el && !fills.length) return;
     var run = function () {
       fetch("/api/trade-count").then(function (r) {
         return r.ok ? r.json() : null;
       }).then(function (d) {
-        if (d && d.count) el.textContent = Number(d.count).toLocaleString();
+        if (d && d.count) {
+          var label = Number(d.count).toLocaleString();
+          if (el) el.textContent = label;
+          fills.forEach(function (n) { n.textContent = label; });
+        }
       }).catch(function () {});
     };
     if (typeof requestIdleCallback === "function") {

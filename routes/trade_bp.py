@@ -344,6 +344,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         <h2>Trade Database</h2>
         <div class="tdb-page-sub">
           Explore thousands of real Sleeper trades. Filter by dynasty or redraft to match the market you care about. {_TI_SOURCE_NOTE}
+          <br><span data-trade-count>…</span> real Sleeper trades indexed
         </div>
       </div>
       <div class="card-body tdb-page-body">
@@ -410,6 +411,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         </div>
 
         <div id="tdbStatus" class="tdb-status"></div>
+        <div id="tdbSummary" class="tdb-summary"></div>
         <div id="tdbList"   class="tdb-list"></div>
 
         <div id="tdbLoading" class="tdb-loading" style="display:none;">
@@ -444,6 +446,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-page-header h2 {{ margin: 0 0 4px; font-size: 22px; }}
       .tdb-page-sub {{ font-size: 13px; color: var(--text-muted); }}
+      .tdb-summary {{ font-size: 13px; color: var(--text-muted); margin: 0 0 10px; }}
       .tdb-page-body {{ padding-top: 20px; }}
       /* Skeleton loading for trade cards */
       .tdb-loading {{ padding: 8px 0; }}
@@ -701,6 +704,29 @@ def page_trade_database(platform: str, season: int, league_id: str):
       const listEl   = document.getElementById('tdbList');
       const statusEl = document.getElementById('tdbStatus');
 
+      // Header subtitle trade total: lazy-fill from the cached count
+      // endpoint so no COUNT(*) runs during page render.
+      fetch('/api/trade-count')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {{
+          if (d && d.count) {{
+            document.querySelectorAll('[data-trade-count]').forEach(el => {{
+              el.textContent = Number(d.count).toLocaleString();
+            }});
+          }}
+        }})
+        .catch(() => {{}});
+
+      const TDB_FORMAT_LABELS = {{ all: 'All formats', dynasty: 'Dynasty', redraft: 'Redraft', keeper: 'Keeper' }};
+      const TDB_RANGE_LABELS  = {{ all: 'All season', '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days' }};
+      function updateTDBSummary(total) {{
+        const el = document.getElementById('tdbSummary');
+        if (!el) return;
+        const fmt = TDB_FORMAT_LABELS[leagueFormat] || 'All formats';
+        const rng = TDB_RANGE_LABELS[timeRange] || 'All season';
+        el.textContent = `${{Number(total || 0).toLocaleString()}} trades · ${{fmt}} · ${{rng}}`;
+      }}
+
       const initQ = new URLSearchParams(window.location.search).get('q') || '';
 
       loadTDBPage(1);
@@ -885,10 +911,12 @@ def page_trade_database(platform: str, season: int, league_id: str):
               listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;grid-column:1/-1;">No trades found.</div>';
               listEl.style.display = '';
               document.getElementById('tdbPagination').style.display = 'none';
+              updateTDBSummary(data.total);
               return;
             }}
             paginationData = data.pagination;
             listEl.style.display = '';
+            updateTDBSummary(paginationData.total_players);
             updateTDBPaginationControls();
             renderTDBTrades(trades);
           }})
