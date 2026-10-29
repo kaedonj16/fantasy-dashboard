@@ -62,6 +62,33 @@ function _pmSmallFetch(key, url, timeoutMs) {
   return entry.promise;
 }
 
+// Shared game-logs JSON for the modal session, keyed by the exact URL.
+// The Stats tab is the remaining in-modal consumer of the full game-logs
+// payload; a repeat open (or a retry after a successful load in the same
+// session) reuses the parsed payload instead of re-downloading every
+// season. Bounded like _pmSmallCache. Failures evict the entry, so the
+// Stats tab's Retry path always refetches.
+var _pmGameLogsCache = new Map(); // url -> { ts, promise }
+var _PM_GAMELOGS_TTL = 5 * 60 * 1000, _PM_GAMELOGS_MAX = 8;
+function _pmGameLogsJson(url) {
+  var now = Date.now();
+  var hit = _pmGameLogsCache.get(url);
+  if (hit && now - hit.ts < _PM_GAMELOGS_TTL) return hit.promise;
+  _pmGameLogsCache.delete(url);
+  var entry = { ts: now, promise: null };
+  entry.promise = _pmFetch(url, 20000)
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .catch(function (e) {
+      if (_pmGameLogsCache.get(url) === entry) _pmGameLogsCache.delete(url);
+      throw e;
+    });
+  _pmGameLogsCache.set(url, entry);
+  if (_pmGameLogsCache.size > _PM_GAMELOGS_MAX) {
+    _pmGameLogsCache.delete(_pmGameLogsCache.keys().next().value);
+  }
+  return entry.promise;
+}
+
 // Click-time early fetches: the modal's already-lazy section loads
 // (Recent Form game-logs, market ADP, In-this-league trades/acquisition,
 // the start/sit strip, and the deferred player-details payload) start
@@ -1894,7 +1921,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Lazy-load prospect comparables for rookies ─────────────────────────
       const _pmLoadComparables = function(pdObj) {
       if (data.is_rookie === true && pdObj && pdObj.player_id) {
-        fetch(`/api/prospects/comparables/${encodeURIComponent(pdObj.player_id)}`)
+        _pmFetch(`/api/prospects/comparables/${encodeURIComponent(pdObj.player_id)}`, 15000)
           .then(r => r.json())
           .then(cd => {
             const cb = document.getElementById('pmComparablesBody');
@@ -2560,7 +2587,10 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
   // Prefer folded-in data from player-details (saves 2 round-trips).
   // Fall back to standalone fetches when the keys are absent (e.g. cached
   // older response shape).
-  const jget = function (u) { return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); };
+  // Bounded + session-cached JSON get (was a raw fetch with no timeout:
+  // a stalled league-trades request hung the section forever). Same
+  // contract as before: resolves the parsed payload, or null on failure.
+  const jget = function (u) { return _pmSmallFetch('jget:' + u, u); };
   let tradesPromise, acqPromise;
   if (data && data.league_trades !== undefined && data.acquisition_events !== undefined) {
     tradesPromise = Promise.resolve(data.league_trades);
@@ -3222,8 +3252,7 @@ function pmSwitchTab(tab, clickEvent) {
     const _ls = brLeagueSize();
     let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
     if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
-    _pmFetch(logsUrl)
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    _pmGameLogsJson(logsUrl)
       .then(data => {
         if (!panel.isConnected) return;
         const logsByYear = data.game_logs_by_year || {};
@@ -3435,10 +3464,17 @@ function _pmLoadRookieReturns(panel, playerId, pmTabBar) {
   const _leagueId = pathParts[2] || null;
   const _lt = brLeagueType();
   const _ls = brLeagueSize();
-  let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
-  if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
-  fetch(logsUrl)
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  // Current-season rows only, from the lightweight recent-form endpoint
+  // (PR #2895; same {game_logs_by_year, season_teams} shape, one season).
+  // This loader reads only the current/latest season, so it no longer
+  // downloads the full multi-season game-logs payload. One quiet retry on
+  // failure; the section stays hidden if the retry also fails, as before.
+  let rfUrl = `/api/player-recent-form/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
+  if (_leagueId) rfUrl += `&league_id=${_leagueId}&platform=${_platform}`;
+  const _rfAttempt = () => _pmFetch(rfUrl, 15000)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  _rfAttempt()
+    .catch(() => _rfAttempt())
     .then(data => {
       if (!panel.isConnected || !el.isConnected || el.dataset.pid !== String(playerId)) return;
       const logsByYear = data.game_logs_by_year || {};
@@ -4119,7 +4155,7 @@ function _pmTeamUsageBars(usageData, focusName) {
 function _pmLoadUsageBars(container, team, season, focusName) {
   if (!container || !team) return;
   const url = `/api/team-rb-usage?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}`;
-  fetch(url)
+  _pmFetch(url, 15000)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
       if (!container.isConnected) return;
@@ -4792,7 +4828,7 @@ function pmPrefetchTabs() {
       if (cached && Date.now() - cached.ts < teamTTL) return; // already warm
     } catch (_) {}
     const doFetch = function () {
-      fetch(teamUrl)
+      _pmFetch(teamUrl, 15000)
         .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(data => {
           try { localStorage.setItem(teamKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
@@ -6375,7 +6411,7 @@ function pmSeasonTrendFetch(playerId, metric) {
   if (_pmSeasonTrendCache[ck]) return Promise.resolve(_pmSeasonTrendCache[ck]);
   var url = '/api/player-advanced-metrics-trend/' + encodeURIComponent(playerId);
   if (metric) url += '?metrics=' + encodeURIComponent(metric);
-  return fetch(url).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
+  return _pmFetch(url, 15000).then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
     if (d) _pmSeasonTrendCache[ck] = d;
     return d;
   });
@@ -7407,7 +7443,7 @@ function pmRenderTrendingSection(playerId, season, position) {
     && String(wrap.dataset.season || '') === String(season || '');
   var p = useCached
     ? Promise.resolve({ weeks: wrap._weeklyData })
-    : fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
+    : _pmFetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam, 15000)
         .then(function(r) { return r.json(); })
         .catch(function() { return { weeks: [] }; });
   p.then(function(d) {
@@ -7641,7 +7677,7 @@ function pmToggleWeeklyTrends(playerId) {
     ? wrap._weeklyData : null;
   var _weeksPromise = _cachedWeeks
     ? Promise.resolve({ weeks: _cachedWeeks })
-    : fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
+    : _pmFetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam, 15000)
         .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
   _weeksPromise
     .then(function(d) {

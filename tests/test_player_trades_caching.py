@@ -112,10 +112,14 @@ def test_player_league_trades_route_cached(monkeypatch, appmod):
     assert client.get(url).status_code == 200
     assert client.get(url).status_code == 200
     assert len(calls) == 1  # second identical request served from cache
+    # The scan is identical for every limit, so the cache key excludes it:
+    # the compute runs once at the max limit (50) and smaller requests are
+    # truncated after the read.
+    assert calls[0]["limit"] == 50
     client.get("/api/player-league-trades/8112?platform=sleeper&league_id=L1&season=2026&limit=50")
-    assert len(calls) == 2  # different limit is a different cache entry
+    assert len(calls) == 1  # different limit is the SAME cache entry now
     client.get("/api/player-league-trades/9999?platform=sleeper&league_id=L1&season=2026&limit=10")
-    assert len(calls) == 3  # different player is a different cache entry
+    assert len(calls) == 2  # different player is a different cache entry
 
 
 def test_player_acquisition_route_cached(monkeypatch, appmod):

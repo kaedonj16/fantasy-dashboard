@@ -53,6 +53,16 @@ def svc(monkeypatch):
     monkeypatch.delitem(sys.modules, "dashboard_services.service", raising=False)
     import dashboard_services.service as svc_mod
     monkeypatch.setitem(sys.modules, "dashboard_services.service", svc_mod)
+    # The import above also rebinds the dashboard_services package's
+    # `service` attribute to this fresh, stub-born module object, and
+    # monkeypatch's sys.modules restore does not undo that: afterwards,
+    # `from dashboard_services import service` (package attribute) and
+    # `from dashboard_services.service import ...` (sys.modules) resolve
+    # to DIFFERENT module objects, so a later test can patch one copy
+    # while the code under test reads the other. Record the package
+    # attribute through monkeypatch too so teardown restores it.
+    import dashboard_services
+    monkeypatch.setattr(dashboard_services, "service", svc_mod)
     return svc_mod, platform_api
 
 

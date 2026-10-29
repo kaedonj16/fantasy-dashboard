@@ -31184,7 +31184,6 @@ def api_player_game_logs(player_id: str):
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
         season = int(request.args.get("season", datetime.now().year))
-        has_game_logs, _ = _player_nfl_eligibility(player_id, season)
 
         if league_id:
             # sync_league_globals is a no-op for Sleeper - must call get_league explicitly
@@ -31201,14 +31200,24 @@ def api_player_game_logs(player_id: str):
                 "rec_yd": 0.1, "rec_td": 6.0, "fum_lost": -2.0,
             }
 
-        # Serve a recent identical computation straight from cache, skipping all
-        # the per-week file globbing/parsing below.
+        # Serve a recent identical computation straight from cache, skipping
+        # all the per-week file globbing/parsing below AND the eligibility
+        # check: eligibility (uncached DB queries, with a fallback that can
+        # escalate to a full stats-by-week scan) used to run before this
+        # check, so every cache hit paid it for a payload that does not
+        # depend on it. The league sync above stays: the cache key is keyed
+        # on the scoring hash, and for Sleeper the underlying league fetch
+        # is ttl-cached (300s), so resolving scoring on a hit is cheap.
+        # has_game_logs is stored in the cache tuple on a miss and served
+        # from it on hits.
         _cache_key = _game_logs_cache_key(player_id, season, scoring_settings)
         _cached = _GAME_LOGS_CACHE.get(_cache_key)
         if _cached and time.time() - _cached[0] < _GAME_LOGS_CACHE_TTL:
             return jsonify({"game_logs_by_year": _cached[1],
                             "season_teams": _cached[2] if len(_cached) > 2 else {},
-                            "has_game_logs": has_game_logs})
+                            "has_game_logs": _cached[3] if len(_cached) > 3 else False})
+
+        has_game_logs, _ = _player_nfl_eligibility(player_id, season)
 
         players_index = load_relevant_index() or {}
         player_meta = players_index.get(player_id) or {}
@@ -31633,7 +31642,7 @@ def api_player_game_logs(player_id: str):
         if len(_GAME_LOGS_CACHE) >= _GAME_LOGS_CACHE_MAX:
             for _k in sorted(_GAME_LOGS_CACHE, key=lambda k: _GAME_LOGS_CACHE[k][0])[:_GAME_LOGS_CACHE_MAX // 10]:
                 _GAME_LOGS_CACHE.pop(_k, None)
-        _GAME_LOGS_CACHE[_cache_key] = (time.time(), game_logs_by_year, season_teams)
+        _GAME_LOGS_CACHE[_cache_key] = (time.time(), game_logs_by_year, season_teams, has_game_logs)
 
         return jsonify({"game_logs_by_year": game_logs_by_year,
                         "season_teams": season_teams,
@@ -32702,6 +32711,16 @@ def api_player_team(player_id: str):
         season = int(request.args.get("season", datetime.now().year))
         skill_positions = {"QB", "RB", "WR", "TE"}
 
+        # Cache check first: the key is (player_id, season) alone, so a hit
+        # needs none of the players-index loads / team resolution below
+        # (they used to run before the check, taxing every warm Team tab
+        # open). A payload is only ever stored after the not-found /
+        # no-team guards below pass, so skipping them on a hit is safe.
+        _payload_key = (str(player_id), season)
+        _payload_hit = _TEAM_PAYLOAD_CACHE.get(_payload_key)
+        if _payload_hit and time.time() - _payload_hit[0] < _TEAM_PAYLOAD_TTL:
+            return jsonify(_payload_hit[1])
+
         players_index = get_players_index_global() or load_relevant_index() or {}
         player_meta = players_index.get(str(player_id)) or {}
         if not player_meta:
@@ -32732,11 +32751,6 @@ def api_player_team(player_id: str):
 
         if not team or position not in skill_positions:
             return jsonify({"available": False})
-
-        _payload_key = (str(player_id), season)
-        _payload_hit = _TEAM_PAYLOAD_CACHE.get(_payload_key)
-        if _payload_hit and time.time() - _payload_hit[0] < _TEAM_PAYLOAD_TTL:
-            return jsonify(_payload_hit[1])
 
         offense = _compute_team_offense_ranks(season)
         stats_season = offense.get("stats_season", season)
@@ -34624,20 +34638,29 @@ def api_player_league_trades(player_id: str):
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
 
-        cache_key = ("trades", platform, league_id, season, limit, str(player_id))
+        # The chain scan underneath is identical for every limit (limit
+        # only truncates the returned list, and the service reports the
+        # full total regardless), so the cache key excludes limit: compute
+        # once at the max limit any caller needs (50, the Trades tab) and
+        # truncate a copy after the read. Overview (limit=10) and the
+        # Trades tab (limit=50) used to pay the full scan twice per player.
+        cache_key = ("trades", platform, league_id, season, str(player_id))
         cached = _player_trades_cache_get(cache_key)
-        if cached is not None:
-            return jsonify(cached)
-
-        payload = get_player_league_trades(
-            player_id=player_id,
-            platform=platform,
-            league_id=league_id,
-            season=season,
-            limit=limit,
-        )
-        _player_trades_cache_put(cache_key, payload)
-        return jsonify(payload)
+        if cached is None:
+            cached = get_player_league_trades(
+                player_id=player_id,
+                platform=platform,
+                league_id=league_id,
+                season=season,
+                limit=50,
+            )
+            _player_trades_cache_put(cache_key, cached)
+        effective_limit = max(1, min(limit, 50))
+        if len(cached.get("trades") or []) > effective_limit:
+            payload = dict(cached)
+            payload["trades"] = cached["trades"][:effective_limit]
+            return jsonify(payload)
+        return jsonify(cached)
     except Exception as e:
         logger.exception("[api_player_league_trades] error")
         return _api_err("Request failed", e)
@@ -37722,6 +37745,23 @@ def api_trade_database():
         return jsonify({"error": "Internal error"}), 500
 
 
+# ── Trade-intel player-trades response cache ─────────────────────────────────
+# Bounded read-only queries (3 per request), but the Trades tab's DB scope
+# re-asks on every open. Same per-worker pattern as _GAME_LOGS_CACHE; the
+# key carries the full normalized param set. The premium gate in the route
+# runs BEFORE any cache read, so a hit never bypasses it.
+_TI_TRADES_CACHE: dict = {}  # key -> (time ts, payload)
+_TI_TRADES_CACHE_TTL = 300  # seconds
+_TI_TRADES_CACHE_MAX = 256
+
+
+def _ti_trades_cache_put(key, payload) -> None:
+    if len(_TI_TRADES_CACHE) >= _TI_TRADES_CACHE_MAX:
+        for _k in sorted(_TI_TRADES_CACHE, key=lambda k: _TI_TRADES_CACHE[k][0])[:_TI_TRADES_CACHE_MAX // 10]:
+            _TI_TRADES_CACHE.pop(_k, None)
+    _TI_TRADES_CACHE[key] = (time.time(), payload)
+
+
 @app.route("/api/trade-intel/player-trades/<player_id>")
 def api_trade_intel_player_trades(player_id: str):
     """
@@ -37739,6 +37779,12 @@ def api_trade_intel_player_trades(player_id: str):
         page = max(1, int(request.args.get("page") or 1))
         limit = min(int(request.args.get("limit") or 15), 50)
         offset = (page - 1) * limit
+
+        _ti_cache_key = (str(player_id), season, league_type, league_format,
+                         page, limit)
+        _ti_hit = _TI_TRADES_CACHE.get(_ti_cache_key)
+        if _ti_hit and time.time() - _ti_hit[0] < _TI_TRADES_CACHE_TTL:
+            return jsonify(_ti_hit[1])
 
         sf_param = None
         if league_type == "sf":
@@ -37791,8 +37837,10 @@ def api_trade_intel_player_trades(player_id: str):
             ).fetchall()
 
             if not trade_rows:
-                return jsonify({"trades": [], "total": total, "page": page,
-                                "total_pages": 0, "has_prev": False, "has_next": False})
+                _ti_payload = {"trades": [], "total": total, "page": page,
+                               "total_pages": 0, "has_prev": False, "has_next": False}
+                _ti_trades_cache_put(_ti_cache_key, _ti_payload)
+                return jsonify(_ti_payload)
 
             trade_ids = [r["id"] for r in trade_rows]
             asset_rows = conn.execute(
@@ -37878,7 +37926,7 @@ def api_trade_intel_player_trades(player_id: str):
             logger.debug("[player-trades] pick resolution skipped", exc_info=True)
 
         total_pages = max(1, (total + limit - 1) // limit)
-        return jsonify({
+        _ti_payload = {
             "trades": result,
             "total": total,
             "page": page,
@@ -37886,7 +37934,9 @@ def api_trade_intel_player_trades(player_id: str):
             "has_prev": page > 1,
             "has_next": page < total_pages,
             "source": "trade_db",
-        })
+        }
+        _ti_trades_cache_put(_ti_cache_key, _ti_payload)
+        return jsonify(_ti_payload)
 
     except Exception:
         logger.exception("[player-trades] error")

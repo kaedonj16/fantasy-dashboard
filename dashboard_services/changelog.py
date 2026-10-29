@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "fix",
+        "text": "Player profiles and compare load faster and stop hanging: cached game logs no longer repeat the eligibility check on every open, your league's trade history is scanned once instead of twice per profile, the Rookie tab reads a lightweight current-season feed, and the remaining modal sections now time out and retry instead of spinning forever.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "fix",
         "text": "Player profiles: the Recent form graph now loads from a lightweight feed built only from the current season, so it appears faster and no longer disappears when the full game log is slow.",
         "link": "/"
     },

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
+import time
 from datetime import date, datetime
 
 from flask import Blueprint, jsonify, request, session
@@ -40,6 +42,35 @@ def _request_has_pro() -> bool:
     except Exception:
         logger.debug("player-metrics PRO check failed", exc_info=True)
         return False
+
+# ── Per-worker response cache for the weekly/advanced metrics routes ─────────
+# Both routes are pure reads over weekly-granularity data (a 5-minute TTL
+# cannot go visibly stale), but each request used to pay the full DB query
+# set. Keys carry every input the payload varies by, including the PRO
+# flag: the advanced payload is stripped for non-PRO viewers, so PRO and
+# non-PRO responses must never share an entry. Mirrors _GAME_LOGS_CACHE.
+_METRICS_RESPONSE_CACHE: dict = {}  # key -> (time ts, payload dict)
+_METRICS_RESPONSE_TTL = 300  # seconds
+_METRICS_RESPONSE_MAX = 256
+_METRICS_RESPONSE_LOCK = threading.Lock()
+
+
+def _metrics_cache_get(key):
+    with _METRICS_RESPONSE_LOCK:
+        hit = _METRICS_RESPONSE_CACHE.get(key)
+        if hit and time.time() - hit[0] < _METRICS_RESPONSE_TTL:
+            return hit[1]
+    return None
+
+
+def _metrics_cache_put(key, payload) -> None:
+    with _METRICS_RESPONSE_LOCK:
+        _METRICS_RESPONSE_CACHE[key] = (time.time(), payload)
+        if len(_METRICS_RESPONSE_CACHE) > _METRICS_RESPONSE_MAX:
+            oldest = min(_METRICS_RESPONSE_CACHE,
+                         key=lambda k: _METRICS_RESPONSE_CACHE[k][0])
+            del _METRICS_RESPONSE_CACHE[oldest]
+
 
 # Meta / non-numeric columns that ride along on a season snapshot. Blind
 # float() on these 500s /api/player-advanced-metrics and the modal Adv
@@ -90,6 +121,12 @@ def api_player_weekly_metrics(player_id: str):
         # During the offseason the current season has no weeks yet.
         if str(nfl_state.get("season_type") or "").lower() == "off":
             season -= 1
+    # This payload does not vary by viewer (no PRO stripping on this
+    # route), so the key is just (player, resolved season).
+    _wm_cache_key = ("weekly", str(player_id), season)
+    _wm_cached = _metrics_cache_get(_wm_cache_key)
+    if _wm_cached is not None:
+        return jsonify(_wm_cached)
     try:
         from data_building.weekly_metrics import get_player_weekly_series
         weeks = get_player_weekly_series(player_id, season)
@@ -141,7 +178,9 @@ def api_player_weekly_metrics(player_id: str):
                 w["opponent"] = opp
     except Exception as exc:
         logger.debug("[player-weekly-metrics] opponent merge %s failed: %s", player_id, exc)
-    return jsonify({"player_id": str(player_id), "season": season, "weeks": weeks})
+    _wm_payload = {"player_id": str(player_id), "season": season, "weeks": weeks}
+    _metrics_cache_put(_wm_cache_key, _wm_payload)
+    return jsonify(_wm_payload)
 
 
 # ── /api/player-advanced-metrics/<player_id> ──────────────────────────────────
@@ -215,6 +254,21 @@ def api_player_advanced_metrics(player_id: str):
                 week_lo, week_hi = week_hi, week_lo
         elif not is_multi_season and _wk and _wk.isdigit():
             week_lo = week_hi = int(_wk)
+
+        # Response cache: the payload varies by the season/week params,
+        # by league (VORP/WAR use the league's team count), and by PRO
+        # status (PRO metrics are stripped for non-PRO viewers), so the
+        # key carries all of them. Only the success payload is stored;
+        # the 404/500 paths below are never cached.
+        _am_cache_key = (
+            "advanced", str(player_id), requested_raw, _ws, _we, _wk,
+            (request.args.get("league_id") or "").strip(),
+            (request.args.get("platform") or "sleeper").strip(),
+            _request_has_pro(),
+        )
+        _am_cached = _metrics_cache_get(_am_cache_key)
+        if _am_cached is not None:
+            return jsonify(_am_cached)
 
         # Get all seasons with data for this player
         available_seasons = get_available_seasons_for_player(str(player_id))
@@ -374,7 +428,7 @@ def api_player_advanced_metrics(player_id: str):
             # player_evaluation_score is 65% role_score (PRO); don't leak it.
             metrics_payload.pop("player_evaluation_score", None)
 
-        return jsonify({
+        _am_payload = {
             "player_id": str(player_id),
             "position": _normalize_position(metrics.get("position")),
             "season": season_val,
@@ -387,7 +441,9 @@ def api_player_advanced_metrics(player_id: str):
             ),
             "metrics": metrics_payload,
             "as_of_date": as_of_date,
-        })
+        }
+        _metrics_cache_put(_am_cache_key, _am_payload)
+        return jsonify(_am_payload)
 
     except Exception as e:
         logger.exception("[player-advanced-metrics] Error for %s", player_id)

@@ -8,6 +8,8 @@ traded pick eventually became.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -18,6 +20,50 @@ logger = logging.getLogger(__name__)
 # Dynasty trades cluster there, so "This League" has to include it or it
 # looks like current-season in-season activity only.
 _TX_WEEKS = range(0, 19)
+
+# ── Shared week-transactions memo ─────────────────────────────────────────────
+# get_player_league_trades and get_player_acquisition_events both scan the
+# same per-(league, season) week transactions (weeks 0-18), and the player
+# modal early-fires both endpoints on every open, so a cold open used to
+# pay the full provider scan twice (once in parallel, once serially). This
+# memo lets the second caller reuse the first caller's fetch within a
+# short window. Only successful fetches are memoized: an exception
+# propagates to the caller exactly as the direct fetch did, and is never
+# cached. The endpoints' own response cache (600s) sits above this, so a
+# 300s memo does not extend the staleness any user can observe.
+_TX_FETCH_CACHE: dict = {}  # (platform, league_id, season) -> (monotonic ts, tx_by_week, fetch_fn)
+_TX_FETCH_TTL = 300.0
+_TX_FETCH_MAX = 64
+_TX_FETCH_LOCK = threading.Lock()
+
+
+def _transactions_by_week_cached(league_id: str, platform: str, season: int):
+    """get_transactions_by_week for the full week range, memoized briefly.
+
+    Returns the same mapping the direct call returns ({} on a provider
+    miss, per the service's own contract); raises exactly when the direct
+    call raises. An entry is only served when the underlying fetch
+    function is the identical object that produced it, so swapping the
+    provider (a different platform transport, or a test fake) can never
+    be served another provider's data.
+    """
+    from dashboard_services.service import get_transactions_by_week
+
+    key = (str(platform), str(league_id), int(season))
+    now = time.monotonic()
+    with _TX_FETCH_LOCK:
+        hit = _TX_FETCH_CACHE.get(key)
+        if hit and now - hit[0] < _TX_FETCH_TTL and hit[2] is get_transactions_by_week:
+            return hit[1]
+    tx = get_transactions_by_week(
+        league_id, _TX_WEEKS, platform=platform, season=int(season)
+    ) or {}
+    with _TX_FETCH_LOCK:
+        _TX_FETCH_CACHE[key] = (time.monotonic(), tx, get_transactions_by_week)
+        if len(_TX_FETCH_CACHE) > _TX_FETCH_MAX:
+            oldest = min(_TX_FETCH_CACHE, key=lambda k: _TX_FETCH_CACHE[k][0])
+            del _TX_FETCH_CACHE[oldest]
+    return tx
 
 
 def _player_info(pid: str, players_index: dict, *, is_focus: bool = False) -> dict:
@@ -414,7 +460,6 @@ def get_player_league_trades(
     history (via previous_league_id / ESPN year probe), newest first.
     """
     from dashboard_services.api import build_league_history_map
-    from dashboard_services.service import get_transactions_by_week
     from utils.utils import load_players_index
 
     pid = str(player_id or "").strip()
@@ -451,9 +496,7 @@ def get_player_league_trades(
     def _prefetch_season(_pair):
         _hs, _hlid = _pair
         try:
-            _tx = get_transactions_by_week(
-                _hlid, _TX_WEEKS, platform=plat, season=_hs
-            ) or {}
+            _tx = _transactions_by_week_cached(_hlid, plat, _hs) or {}
         except Exception:
             logger.debug(
                 "[player-league-trades] tx fetch failed %s %s",
@@ -574,7 +617,6 @@ def get_player_acquisition_events(
         return {"events": []}
 
     from dashboard_services.api import build_league_history_map
-    from dashboard_services.service import get_transactions_by_week
 
     try:
         season_map = build_league_history_map(plat, lid, int(season)) or {int(season): lid}
@@ -656,8 +698,8 @@ def get_player_acquisition_events(
             hist_lid = str(season_map[hist_season])
             names = _roster_names(plat, hist_lid, int(hist_season))
             try:
-                tx_by_week = get_transactions_by_week(
-                    hist_lid, _TX_WEEKS, platform=plat, season=int(hist_season)
+                tx_by_week = _transactions_by_week_cached(
+                    hist_lid, plat, int(hist_season)
                 ) or {}
             except Exception:
                 continue
