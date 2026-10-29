@@ -1233,13 +1233,16 @@ def _add_cache_headers(response):
 # pragmatic, non-breaking choice.
 _CSP_POLICY = "; ".join([
     "default-src 'self'",
-    # Google AdSense / Funding Choices CMP + Plotly (jsDelivr) + Sentry.
+    # Google AdSense / Funding Choices CMP + Plotly (jsDelivr) + Sentry +
+    # Mediavine Grow (inert until GROW_SCRIPT_SRC is set; allowlisted now so
+    # enabling it is an env change only, not a second code deploy).
     "script-src 'self' 'unsafe-inline' "
     "https://pagead2.googlesyndication.com https://*.googlesyndication.com "
     "https://*.googleadservices.com https://*.google.com https://*.gstatic.com "
     "https://*.doubleclick.net https://fundingchoicesmessages.google.com "
     "https://cdn.jsdelivr.net https://browser.sentry-cdn.com "
-    "https://*.cloudflareinsights.com",
+    "https://*.cloudflareinsights.com "
+    "https://*.grow.me https://*.mediavine.com",
     "style-src 'self' 'unsafe-inline' https://*.googlesyndication.com "
     "https://fundingchoicesmessages.google.com "
     "https://fonts.googleapis.com",
@@ -1250,13 +1253,14 @@ _CSP_POLICY = "; ".join([
     "https://*.googlesyndication.com https://*.doubleclick.net "
     "https://pagead2.googlesyndication.com https://fundingchoicesmessages.google.com "
     "https://cdn.jsdelivr.net "
-    "https://*.cloudflareinsights.com",
+    "https://*.cloudflareinsights.com "
+    "https://*.grow.me https://*.mediavine.com",
     # 'self' lets the app embed its own pages (the Draft Room's in-draft cheat
     # sheet overlay iframes /draft/cheat-sheet/embed). Ads and Google's consent
     # messaging render inside iframes from Google ad / CMP hosts.
     "frame-src 'self' https://*.googlesyndication.com https://*.doubleclick.net "
     "https://*.google.com https://fundingchoicesmessages.google.com "
-    "https://*.googleadservices.com",
+    "https://*.googleadservices.com https://*.grow.me",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -2580,6 +2584,9 @@ BASE_HTML = """
 
     <!-- Google AdSense -->
     {adsense_script}
+
+    <!-- Mediavine Grow (emits nothing until GROW_SCRIPT_SRC is set) -->
+    {grow_script}
 
     <!-- Warm up TLS to the third-party origins we load from so first paint /
          charts / ads aren't blocked on a cold connection handshake. -->
@@ -6384,6 +6391,22 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 # paint; the googlefcPresent signal iframe is Google's documented snippet.
 _FUNDING_CHOICES = """<script async src="https://fundingchoicesmessages.google.com/i/pub-9164153092633845?ers=1"></script>
 <script>(function(){function signalGooglefcPresent(){if(!window.frames['googlefcPresent']){if(document.body){var iframe=document.createElement('iframe');iframe.style='width: 0; height: 0; border: none; z-index: -1000; left: -1000px; top: -1000px;';iframe.style.display='none';iframe.name='googlefcPresent';document.body.appendChild(iframe);}else{setTimeout(signalGooglefcPresent,0);}}}signalGooglefcPresent();})();</script>"""
+# Mediavine Grow (the on-ramp to Journey ads): for non-WordPress sites the
+# Grow install is a per-site <script> copied from the Grow Publisher Portal
+# (Install Grow tab) into the <head> sitewide -- there is no generic URL, so
+# the per-site script URL is configuration, not code. GROW_SCRIPT_SRC holds
+# the full src URL from the portal snippet. Unset (the default) this emits
+# nothing at all: zero behavior change. When set on the web service, the tag
+# rides the exact same show_ads gate as the AdSense loader / Funding Choices
+# above (suppressed for PRO viewers, on _NO_ADS_PAGES, on ad-ineligible
+# responses, and in soft-nav payloads).
+def _grow_script_tag() -> str:
+    src = (os.environ.get("GROW_SCRIPT_SRC") or "").strip()
+    if not src.startswith("https://"):
+        return ""
+    return f'<script async src="{html.escape(src, quote=True)}"></script>'
+
+
 _AD_SCRIPT = ''
 # Ad slots are the bare Google <ins> element ONLY -- no wrapper box and no
 # "Advertisement" label chrome of our own. Account approval/serving is
@@ -7500,6 +7523,7 @@ def render_page(
         ad_eligible="true" if show_ads else "false",
         adsense_script="" if (_soft_nav or not show_ads) else _AD_SCRIPT,
         funding_choices="" if (_soft_nav or not show_ads) else _FUNDING_CHOICES,
+        grow_script="" if (_soft_nav or not show_ads) else _grow_script_tag(),
         ad_top="" if (_soft_nav or not show_ads) else _AD_TOP,
         ad_bottom="" if (_soft_nav or not show_ads) else _AD_BOTTOM,
         adsense_init="" if (_soft_nav or not show_ads) else _AD_INIT,
