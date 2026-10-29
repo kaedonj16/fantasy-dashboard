@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, jsonify, redirect
+from flask import Blueprint, jsonify, redirect, request
 
 from dashboard_services.changelog import CHANGELOG
 
@@ -55,9 +55,43 @@ def api_trade_count():
     """Get the count of trades from trade_intel_trades table.
 
     Cached 1 hour: the count only changes on trade-intel rebuilds.
+
+    With ?format=dynasty&season=<year>, returns the count of that season's
+    dynasty trades (trade_intel_leagues.league_type = 2) instead, cached
+    under its own format+season key. No params = the all-trades total the
+    trade calculator has always used.
     """
     import time
     now = time.time()
+    fmt = (request.args.get("format") or "").strip().lower()
+    season_raw = (request.args.get("season") or "").strip()
+    season = None
+    if season_raw:
+        try:
+            season = int(season_raw)
+        except ValueError:
+            season = None
+    if fmt == "dynasty" and season is not None:
+        key = f"dynasty:{season}"
+        cached = _TRADE_COUNT_CACHE.get(key)
+        if cached and now - cached[0] < 3600:
+            return jsonify({"count": cached[1]})
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT COUNT(*) AS n FROM trade_intel_trades t "
+                    "JOIN trade_intel_leagues l ON l.league_id = t.league_id "
+                    "WHERE l.league_type = 2 AND t.season = %s",
+                    (season,),
+                )
+                count = cursor.fetchone()["n"]
+            _TRADE_COUNT_CACHE[key] = (now, count)
+            return jsonify({"count": count})
+        except Exception:
+            # Return fallback count if table doesn't exist or other error
+            return jsonify({"count": 15000})
     cached = _TRADE_COUNT_CACHE.get("v1")
     if cached and now - cached[0] < 3600:
         return jsonify({"count": cached[1]})

@@ -1777,6 +1777,7 @@ FORM_BODY = """
         <a class="ld-btn ld-btn-sky" href="/trade">Trade calculator</a>
       </div>
       <p class="ld-hero-note"><strong>Free for your first league</strong> &middot; Read-only &middot; 2-minute setup</p>
+      <p class="ld-hero-note">530,000+ real trades analyzed</p>
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
