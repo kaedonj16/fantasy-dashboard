@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Generator
 
 from dashboard_services.ai.client import clean_ai_text, get_ai_client
@@ -37,7 +38,10 @@ POS_RANK_LABEL_NOTE = (
     "leaguewide. So \"WR2\" means the 2nd-most-valuable WR overall (an elite, high-end "
     "asset), NOT a WR2 starter slot or a mid-tier/role designation. Always interpret these "
     "as rank-by-value, and when you reference one, phrase it as a ranking (e.g. \"the WR2 "
-    "overall\" or \"a top-3 WR\"), never as a lineup tier."
+    "overall\" or \"a top-3 WR\"), never as a lineup tier. RANK FIDELITY: when you state "
+    "a specific player's positional rank, use exactly that player's label from the JSON. "
+    "Never substitute a rank from memory or training knowledge, never round or adjust "
+    "one, and never state a positional rank for a player whose label is not in the JSON."
 )
 
 
@@ -946,6 +950,90 @@ Trade context:
 """.strip()
 
 
+_RANK_LABEL_RE = re.compile(r"^(QB|RB|WR|TE)\s*#?\s*(\d{1,3})$")
+
+
+def _trade_asset_rank_labels(payload: dict) -> dict:
+    """Player name/surname -> (position, rank) from the trade payload's assets.
+
+    Ground truth for prose rank mentions: the pos_rank_label each asset
+    carries (the viewer's format, recomputed server-side from the served
+    values, matching the calculator chips).
+    """
+    out: dict = {}
+    trade = (payload or {}).get("trade") or {}
+    for side_key in ("viewer_gets", "viewer_gives"):
+        for asset in ((trade.get(side_key) or {}).get("assets") or []):
+            if not isinstance(asset, dict):
+                continue
+            m = _RANK_LABEL_RE.match(
+                str(asset.get("pos_rank_label") or "").strip().upper())
+            name = str(asset.get("name") or "").strip()
+            if not m or not name:
+                continue
+            entry = (m.group(1), int(m.group(2)))
+            out[name.lower()] = entry
+            surname = name.split()[-1]
+            if len(surname) >= 4:
+                out.setdefault(surname.lower(), entry)
+    return out
+
+
+def enforce_trade_rank_labels(data: dict, payload: dict) -> dict:
+    """Rewrite rank mentions tied to a traded player to that player's label.
+
+    The model occasionally narrates a positional rank from training
+    knowledge instead of the supplied label (chip said WR10, prose said
+    WR12). Only tightly-bound mentions are rewritten: an appositive right
+    after the player's name ("Garrett Wilson, a proven WR12"), a
+    parenthetical ("Garrett Wilson (WR12)"), or a label directly before
+    the name ("WR12 Garrett Wilson"). Loose role language ("a WR1 than
+    Egbuka") is not a rank claim about a labelled player and is left alone.
+    """
+    labels = _trade_asset_rank_labels(payload)
+    if not labels or not isinstance(data, dict):
+        return data
+
+    def fix_text(text: str) -> str:
+        out = str(text)
+        for key, (pos, rank) in labels.items():
+            name = re.escape(key)
+            # "Name, a young WR15" / "Name, the WR15" / "Name, WR15"
+            out = re.sub(
+                rf"(\b{name}\b\s*,\s*(?:a\s+|an\s+|the\s+)?"
+                rf"(?:[\w'-]+\s+){{0,2}}?{pos}\s*#?\s*)\d{{1,3}}",
+                rf"\g<1>{rank}",
+                out,
+                flags=re.IGNORECASE,
+            )
+            # "Name (WR15)"
+            out = re.sub(
+                rf"(\b{name}\b\s*\(\s*{pos}\s*#?\s*)\d{{1,3}}",
+                rf"\g<1>{rank}",
+                out,
+                flags=re.IGNORECASE,
+            )
+            # "WR15 Name"
+            out = re.sub(
+                rf"\b({pos}\s*#?\s*)\d{{1,3}}(\s+{name}\b)",
+                rf"\g<1>{rank}\g<2>",
+                out,
+                flags=re.IGNORECASE,
+            )
+        return out
+
+    def walk(value):
+        if isinstance(value, str):
+            return fix_text(value)
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        return value
+
+    return walk(data)
+
+
 def generate_trade_ai_result(payload: dict) -> dict:
     """
     LLM-backed trade analysis with structured JSON output.
@@ -1013,7 +1101,7 @@ def generate_trade_ai_result(payload: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError("LLM trade analysis did not return an object")
 
-    return data
+    return enforce_trade_rank_labels(data, payload)
 
 
 POWER_RANKINGS_SYSTEM_DYNASTY = """

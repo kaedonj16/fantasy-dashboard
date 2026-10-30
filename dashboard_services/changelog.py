@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "fix",
+        "text": "Trade Analyst: the positional ranks in the analysis now match the ranks on the trade cards above it. The analyst was handed a rank stored before the latest value calibration (and the 1QB rank even in Superflex and redraft leagues); it now receives the same format rank the cards show, and any rank it writes for a traded player is checked against that rank before you see it.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "fix",
         "text": "Usage risers on the home dashboard: player names now get the full row width, with the usage readout below the name and the season and last-3 bars labelled, so long names no longer truncate and the bars read at a glance.",
         "link": "/"
     },
