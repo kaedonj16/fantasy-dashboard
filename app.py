@@ -25696,6 +25696,40 @@ def api_trade_eval():
 
     players_by_id = _trade_eval_id_map(value_table, _idmap_src, _idmap_ts)
 
+    # Rank labels for the analyst must match the chips on the calculator
+    # cards above them. The board payload recomputes pos_rank_label from the
+    # calibrated served values, but the DB rows this endpoint prices from
+    # carry the label stored at daily save time (ranked on the
+    # pre-calibration model ordering; the calibration step updates the
+    # calibrated values and never the label), so the two surfaces disagreed
+    # (chip WR10, analyst prose WR12). Recompute every format's label from
+    # THIS table's values, on copies: players_by_id rows are shared through
+    # the id-map cache and must not be mutated. Each asset then carries the
+    # label for the viewer's format (SF label in SF, redraft label in
+    # redraft), exactly what buildMetaBits renders on the card.
+    _rank_labels: dict = {}
+    try:
+        from utils.value_helpers import (
+            apply_redraft_display_fields as _ardf,
+            format_rank_label_key as _frlk,
+            rerank_pos_labels as _rerank_labels,
+            row_format_rank_label as _row_lbl,
+        )
+        _ranked = [dict(p) for p in value_table if isinstance(p, dict)]
+        _rerank_labels(_ranked, "value", "pos_rank", "pos_rank_label")
+        _rerank_labels(_ranked, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
+        _ardf(_ranked)
+        _lbl_key = _frlk(
+            is_redraft=(scoring_type == "redraft"),
+            is_sf=(league_type == "sf"),
+        )
+        for _p in _ranked:
+            _pid = str(_p.get("id") or "")
+            if _pid:
+                _rank_labels[_pid] = _row_lbl(_p, _lbl_key)
+    except Exception:
+        logger.debug("[trade-eval] rank label recompute skipped", exc_info=True)
+
     pick_values = load_pick_value_table(is_sf=(league_type == "sf")) or {}
 
     def value_pick(pk: str):
@@ -25827,7 +25861,7 @@ def api_trade_eval():
                 "position": pos,
                 "team": team,
                 "age": age,
-                "pos_rank_label": player.get("pos_rank_label") or "",
+                "pos_rank_label": _rank_labels.get(pid_str) or player.get("pos_rank_label") or "",
                 "rank_change_7d": player.get("rank_change_7d"),
             })
 

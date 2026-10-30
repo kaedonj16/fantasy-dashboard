@@ -585,8 +585,10 @@ def get_trade_ai_analysis(
         "opponent_team": opponent_ctx or None,
     }
 
-    # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v9")
+    # Build cache key for trade analysis. v10: asset rank labels are now the
+    # recomputed format labels and prose ranks are pinned to them; cached
+    # v9 analyses can carry the old mismatched ranks, so they must not hit.
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v10")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
