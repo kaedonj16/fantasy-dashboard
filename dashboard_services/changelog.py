@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "update",
+        "text": "Dynasty values: the market blend behind the dynasty board now uses KeepTradeCut as its second source alongside FantasyCalc, replacing DynastyProcess. KeepTradeCut values are crowdsourced and trade based and refresh through the day, so the board tracks the live dynasty market more closely. DynastyProcess still fills in for any player KeepTradeCut does not cover.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "update",
         "text": "Power Rankings now grade the team you have today: the ranking blends all-play results with your current lineup's projected points for the rest of the season, so a mid-season trade for a big scorer moves your ranking right away, before the new roster plays a game. Trade value and draft picks no longer move the in-season ranking.",
         "link": "/standings"
     },

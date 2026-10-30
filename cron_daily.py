@@ -116,7 +116,7 @@ def _model_values_fresh() -> bool:
     # If any vendor CSV is newer than model_values.json, the model needs a rebuild
     # even if it was already written today (it was built from stale data).
     mv_mtime = mv.stat().st_mtime
-    for _csv in ("fantasycalc_api_values.csv", "dynastyprocess_values.csv"):
+    for _csv in ("fantasycalc_api_values.csv", "dynastyprocess_values.csv", "keeptradecut_values.csv"):
         _p = DATA_DIR / _csv
         if _p.exists() and _p.stat().st_mtime > mv_mtime:
             return False
@@ -127,7 +127,8 @@ def _vendor_values_fresh() -> bool:
     return (
         _file_fresh_today(DATA_DIR / "fantasycalc_api_values.csv") and
         _file_fresh_today(DATA_DIR / "fantasycalc_sf_api_values.csv") and
-        _file_fresh_today(DATA_DIR / "dynastyprocess_values.csv")
+        _file_fresh_today(DATA_DIR / "dynastyprocess_values.csv") and
+        _file_fresh_today(DATA_DIR / "keeptradecut_values.csv")
     )
 
 
