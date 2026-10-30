@@ -26599,6 +26599,182 @@ def api_sparklines():
         return _api_err("Sparklines unavailable", e)
 
 
+@app.route("/api/player-quicklook/<player_id>")
+def api_player_quicklook(player_id: str):
+    """Hover quick-look data for one rankings row: the 30-day value trend
+    for the active format plus the player's next matchup.
+
+    The card itself renders identity + both format values from the
+    rankings payload the page already holds, and pulls last-3 game logs
+    from /api/player-game-logs (the player modal's own source), so this
+    route only carries what the page cannot already know:
+
+    - history: _cached_value_history (the modal chart's reader, already
+      calibrated so the series ends at the displayed value), sliced to
+      the active format's column, plus the 7-day percent change computed
+      inside that same series.
+    - next: the team's next non-final game from build_team_schedule,
+      labeled with the Schedule Assistant's SoS-adjusted ease rank for
+      the player's position (_matchup_rank_table, 1 = easiest) and the
+      Schedule Rankings tier for that rank. def_ppg is that table's raw
+      points allowed per game to the position.
+
+    Anything unavailable comes back null/empty, never invented: the card
+    hides a zone it has no honest data for.
+    """
+    try:
+        from dashboard_services.quicklook import (
+            format_kickoff,
+            pct_change_7d,
+            tier_for_rank,
+        )
+
+        league_type = "sf" if request.args.get("league_type") == "sf" else "1qb"
+        try:
+            league_size = int(request.args.get("league_size") or 10)
+        except (TypeError, ValueError):
+            league_size = 10
+        if league_size not in (8, 10, 12, 14):
+            league_size = 10
+        scoring_type = (
+            "redraft" if request.args.get("scoring_type") == "redraft" else "dynasty"
+        )
+
+        # ── Value trend (30d) ──────────────────────────────────────────
+        history = []
+        pct_7d = None
+        try:
+            rows = _cached_value_history(
+                str(player_id), days=31,
+                league_type=league_type, league_size=league_size,
+                scoring_type=scoring_type,
+            ) or []
+            col = "value_sf" if league_type == "sf" else "value_1qb"
+            dated = [
+                (str(r.get("as_of_date"))[:10], r.get(col))
+                for r in rows
+                if r.get("as_of_date") and r.get(col) is not None
+            ]
+            history = [
+                {"d": d, "v": round(float(v), 1)} for d, v in dated if float(v) > 0
+            ]
+            pct_7d = pct_change_7d([(d, float(v)) for d, v in dated])
+        except Exception:
+            logger.debug("[quicklook] history failed", exc_info=True)
+            history, pct_7d = [], None
+
+        # ── Next matchup ───────────────────────────────────────────────
+        nxt = None
+        try:
+            from utils.utils import load_players_index, load_relevant_index
+
+            players_index = load_relevant_index() or {}
+            meta = players_index.get(str(player_id)) or {}
+            if not meta:
+                players_index = load_players_index() or {}
+                meta = players_index.get(str(player_id)) or {}
+            team = canon_team(meta.get("team", "")) or meta.get("team", "")
+            pos = (meta.get("pos") or meta.get("position") or "").upper()
+            state = get_nfl_state() or {}
+            season = int(state.get("season") or datetime.now().year)
+            cur_week = int(state.get("week") or state.get("display_week") or 1)
+            season_type = (state.get("season_type") or "regular").lower()
+            if team and season_type not in ("off", "post"):
+                from utils.players import build_team_schedule
+
+                rows = build_team_schedule(
+                    team, season, include_postseason=False
+                ) or []
+                bye_week = None
+                game_row = None
+                for r in rows:
+                    wk = int(r.get("week") or 0)
+                    if wk < cur_week or wk > 18:
+                        continue
+                    if r.get("status") == "bye" or r.get("opponent") == "BYE":
+                        if wk == cur_week:
+                            bye_week = wk
+                        continue
+                    if r.get("status") == "final":
+                        continue
+                    if not r.get("opponent"):
+                        continue
+                    game_row = r
+                    break
+                if game_row is not None:
+                    opp = game_row.get("opponent") or ""
+                    when = ""
+                    try:
+                        from utils.data_cache import load_week_schedule
+
+                        for g in load_week_schedule(
+                            season, int(game_row.get("week") or 0)
+                        ) or []:
+                            if not isinstance(g, dict):
+                                continue
+                            teams = {
+                                canon_team(g.get("home", "")),
+                                canon_team(g.get("away", "")),
+                            }
+                            if canon_team(opp) in teams and team in teams:
+                                when = format_kickoff(
+                                    g.get("gameDate"), g.get("gameTime")
+                                )
+                                break
+                    except Exception:
+                        logger.debug(
+                            "[quicklook] kickoff lookup failed", exc_info=True
+                        )
+                    nxt = {
+                        "week": int(game_row.get("week") or 0),
+                        "opp": opp,
+                        "home": bool(game_row.get("is_home")),
+                        "when": when,
+                        "bye_week": bye_week,
+                        "rank": None,
+                        "total": None,
+                        "tier": None,
+                        "tier_color": None,
+                        "def_ppg": None,
+                    }
+                    if pos in ("QB", "RB", "WR", "TE"):
+                        try:
+                            from utils.schedule_ease import (
+                                norm_sched_team as _norm_sched_team,
+                            )
+
+                            rank_map, total, info, _isz = _matchup_rank_table(
+                                season, pos
+                            )
+                            rk = rank_map.get(_norm_sched_team(opp))
+                            if rk:
+                                nxt["rank"] = int(rk)
+                                nxt["total"] = int(total)
+                                tier = tier_for_rank(rk, total)
+                                if tier:
+                                    nxt["tier"], nxt["tier_color"] = tier
+                                fpts = (info.get(_norm_sched_team(opp)) or {}).get(
+                                    "fpts"
+                                )
+                                if isinstance(fpts, (int, float)) and not isinstance(
+                                    fpts, bool
+                                ):
+                                    nxt["def_ppg"] = round(float(fpts), 1)
+                        except Exception:
+                            logger.debug(
+                                "[quicklook] matchup rank failed", exc_info=True
+                            )
+        except Exception:
+            logger.debug("[quicklook] next matchup failed", exc_info=True)
+            nxt = None
+
+        resp = jsonify({"history": history, "pct_7d": pct_7d, "next": nxt})
+        resp.headers["Cache-Control"] = "private, max-age=300"
+        return resp
+    except Exception as e:
+        return _api_err("Quick-look unavailable", e)
+
+
 _LP_PAYLOAD_CACHE: dict = {}  # kdef(bool) -> {"ts": model_ts, "payload": dict}
 _LP_PAYLOAD_LOCK = threading.Lock()
 # Shared disk tier for the league-players payload (same /tmp convention as

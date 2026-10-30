@@ -1094,6 +1094,7 @@ function prFlipRender() {
 // Sort and filter players, then render rows into the main table
 function prRender() {
   if (!prLoaded) return;
+  prQlHide();  // a re-render replaces the rows; any open quick-look is stale
   const sortBy = prSortKey;
   prSyncAdpSourceUI(sortBy);
 
@@ -1300,6 +1301,7 @@ function prRender() {
     const row = document.createElement('div');
     row.className = 'pr-player-row pr-grid-row';
     row.setAttribute('data-flip-key', 'p' + p.id);
+    row.dataset.pid = String(p.id);
     // Draft picks aren't real players (no player/prospect modal to open), so the
     // row isn't clickable for them.
     const isPick = p.position === 'PICK';
@@ -1904,6 +1906,451 @@ Promise.all([
   }
 });
 }
+// ── Hover quick-look card (desktop pointers only) ─────────────────────
+// After a 600ms hover intent on a row, a horizontal strip opens under (or
+// above) the row with what the row does not already show: both format
+// values, the 30-day value trend, the last 3 game logs, and the next
+// matchup in Schedule Rankings terms. Data the page cannot already know
+// comes from /api/player-quicklook (trend + next matchup) and
+// /api/player-game-logs (the player modal's own endpoint). Phones get
+// nothing here: tap already opens the full player modal in one tap, and
+// the card must never become a toll booth in front of it.
+var PR_QL_DELAY = 600;
+var prQlEl = null;
+var prQlPid = null;
+var prQlRow = null;
+var prQlShowTimer = null;
+var prQlHideTimer = null;
+var prQlCache = {};
+var prQlRankCache = { sig: '', by: {} };
+var prQlCanHover = !!(window.matchMedia
+  && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+
+function prQlEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// prGetValue for a forced format (the card shows 1QB and SF side by side,
+// whatever the board is currently set to).
+function prQlValueFor(p, isSf) {
+  var base;
+  if (prScoringType === 'redraft') {
+    base = isSf
+      ? Number(p.redraft_value_sf != null ? p.redraft_value_sf : (p.redraft_value_1qb || 0))
+      : Number(p.redraft_value_1qb || 0);
+  } else if (isSf) {
+    base = Number(p[prValueKey(true)] != null ? p[prValueKey(true)] : (p.sf_value != null ? p.sf_value : (p.value || 0)));
+  } else {
+    base = Number(p[prValueKey(false)] != null ? p[prValueKey(false)] : (p.value || 0));
+  }
+  base *= prTeBoost(p.position);
+  return Math.round(base * 10) / 10;
+}
+
+// Overall + positional ranks for one format, computed over the loaded
+// board (players only, value > 0) and cached per settings signature.
+function prQlRanksFor(isSf) {
+  var sig = [prScoringType, prLeagueSize, prTePremium].join('|');
+  if (prQlRankCache.sig !== sig) prQlRankCache = { sig: sig, by: {} };
+  var key = isSf ? 'sf' : 'qb';
+  if (prQlRankCache.by[key]) return prQlRankCache.by[key];
+  var rows = prAllPlayers.filter(function(p) {
+    return p.position !== 'PICK' && prQlValueFor(p, isSf) > 0;
+  });
+  rows.sort(function(a, b) { return prQlValueFor(b, isSf) - prQlValueFor(a, isSf); });
+  var ovr = {}, posCount = {}, pos = {};
+  rows.forEach(function(p, i) {
+    ovr[String(p.id)] = i + 1;
+    var pc = (posCount[p.position] = (posCount[p.position] || 0) + 1);
+    pos[String(p.id)] = (p.position || '') + pc;
+  });
+  prQlRankCache.by[key] = { ovr: ovr, pos: pos };
+  return prQlRankCache.by[key];
+}
+
+// Long names stay whole: each part is unbreakable, a suffix joins its
+// surname, and the size steps down as the name lengthens (ql-name-lg/xl).
+function prQlNameHTML(name) {
+  var parts = String(name || '').split(/\s+/).filter(Boolean);
+  var SUF = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
+  if (parts.length >= 3 && SUF.indexOf(parts[parts.length - 1]) !== -1) {
+    parts = parts.slice(0, -2)
+      .concat([parts[parts.length - 2] + ' ' + parts[parts.length - 1]]);
+  }
+  var len = parts.join(' ').length;
+  var cls = len > 19 ? ' ql-name-xl' : len > 15 ? ' ql-name-lg' : '';
+  return '<div class="ql-name' + cls + '">' + parts.map(function(w) {
+    return '<span class="ql-nw">' + prQlEsc(w) + '</span>';
+  }).join(' ') + '</div>';
+}
+
+// Same headshot chain as prHeadshotHTML (ESPN combiner, Sleeper CDN
+// fallback, initials last), at card size: combiner width 360 for the
+// 168px-wide identity panel.
+function prQlHeadshotHTML(p) {
+  if (p.position === 'PICK') {
+    return '<span class="ql-photo ql-photo-pick"><i class="fa-solid fa-ticket"></i></span>';
+  }
+  var name = String(p.name || '');
+  var toks = name.split(/\s+/).filter(Boolean);
+  var initials = toks.length
+    ? (toks[0].charAt(0) + (toks.length > 1 ? toks[toks.length - 1].charAt(0) : '')).toUpperCase()
+    : '?';
+  var _style = ' style="background:var(--accent-soft);color:var(--accent)"';
+  var mono = '<span class="ql-mono" style="display:none" aria-hidden="true">' + initials + '</span>';
+  var espn = String(p.espnHeadshot || '');
+  var sleeper = p.id ? ('https://sleepercdn.com/content/nfl/players/thumb/' + encodeURIComponent(p.id) + '.jpg') : '';
+  if (!espn && !sleeper) {
+    return '<span class="ql-photo"><span class="ql-mono ql-mono-on"' + _style + '>' + initials + '</span></span>';
+  }
+  var hi = espn ? prHiResHeadshot(espn, 360) : '';
+  var src = hi || sleeper;
+  var fb = [];
+  if (hi && espn && hi !== espn) fb.push(espn);
+  if (sleeper && sleeper !== src) fb.push(sleeper);
+  return '<span class="ql-photo"><img class="ql-hs" src="' + src + '" data-fb="' + fb.join('|')
+    + '" onerror="prImgFallback(this)" alt="" loading="lazy">' + mono + '</span>';
+}
+
+function prQlGameLine(p, g) {
+  var s = (g && g.stats) || {};
+  function n(k) { var v = s[k]; return v != null ? Number(v) : 0; }
+  var bits = [];
+  if (p.position === 'QB') {
+    bits.push(n('pass_att') + ' att · ' + n('pass_yd') + ' yds · ' + n('pass_td') + ' TD');
+    if (n('rush_att') >= 3) {
+      bits.push(n('rush_att') + ' car · ' + n('rush_yd') + ' yds'
+        + (n('rush_td') ? ' · ' + n('rush_td') + ' TD' : ''));
+    }
+  } else if (p.position === 'RB') {
+    bits.push(n('rush_att') + ' car · ' + n('rush_yd') + ' yds · ' + n('rush_td') + ' TD');
+    if (n('rec_tgt') > 0) {
+      bits.push(n('rec_tgt') + ' tgt · ' + n('rec') + ' rec · ' + n('rec_yd') + ' yds'
+        + (n('rec_td') ? ' · ' + n('rec_td') + ' TD' : ''));
+    }
+  } else if (p.position === 'WR' || p.position === 'TE') {
+    bits.push(n('rec_tgt') + ' tgt · ' + n('rec') + ' rec · ' + n('rec_yd') + ' yds · ' + n('rec_td') + ' TD');
+    if (n('rush_att') > 0) {
+      bits.push(n('rush_att') + ' car · ' + n('rush_yd') + ' yds'
+        + (n('rush_td') ? ' · ' + n('rush_td') + ' TD' : ''));
+    }
+  }
+  return bits.join('<br>');
+}
+
+function prQlGamesHTML(p, payload) {
+  var byYear = (payload && payload.game_logs_by_year) || {};
+  var years = Object.keys(byYear).sort().reverse();
+  var logs = null;
+  for (var i = 0; i < years.length; i++) {
+    if (Array.isArray(byYear[years[i]]) && byYear[years[i]].length) {
+      logs = byYear[years[i]];
+      break;
+    }
+  }
+  if (!logs) return '<div class="ql-empty">No games yet this season</div>';
+  var real = logs.filter(function(g) {
+    if (!g || g.is_bye || g.is_projection || g.fantasy_pts == null) return false;
+    var s = g.stats || {};
+    return s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null;
+  }).slice().sort(function(a, b) { return (Number(a.week) || 0) - (Number(b.week) || 0); });
+  var last = real.slice(-3).reverse();
+  if (!last.length) return '<div class="ql-empty">No games yet this season</div>';
+  return last.map(function(g) {
+    var oppRaw = String(g.opponent || '').trim();
+    var opp = !oppRaw || oppRaw === 'BYE' ? ''
+      : oppRaw.charAt(0) === '@' ? '@ ' + oppRaw.slice(1) : 'vs ' + oppRaw;
+    return '<div class="ql-game"><div class="ql-game-top"><span class="ql-game-wk">Wk '
+      + (g.week != null ? g.week : '') + (opp ? ' · ' + prQlEsc(opp) : '')
+      + '</span><span class="ql-game-pts">' + Number(g.fantasy_pts || 0).toFixed(1)
+      + '</span></div><div class="ql-game-line">' + prQlGameLine(p, g) + '</div></div>';
+  }).join('');
+}
+
+function prQlTrendSVG(vals) {
+  var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  var span = (max - min) || 1;
+  var W = 200, H = 64, PAD = 5;
+  var pts = vals.map(function(v, i) {
+    var x = PAD + (W - 2 * PAD) * (vals.length === 1 ? 0 : i / (vals.length - 1));
+    var y = H - PAD - (H - 2 * PAD) * ((v - min) / span);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  var lastPt = pts.split(' ').pop().split(',');
+  var up = vals[vals.length - 1] >= vals[0];
+  var color = up ? '#22c55e' : '#ef4444';
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">'
+    + '<polyline points="' + pts + '" fill="none" stroke="' + color
+    + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+    + '<circle cx="' + lastPt[0] + '" cy="' + lastPt[1] + '" r="3.2" fill="' + color
+    + '" stroke="var(--card-bg)" stroke-width="1.6"/></svg>';
+}
+
+var PR_QL_TIERS = {
+  'Elite': ['#22c55e', 'rgba(34,197,94,0.16)'],
+  'Good': ['#84cc16', 'rgba(132,204,22,0.16)'],
+  'Tough': ['#f59e0b', 'rgba(245,158,11,0.16)'],
+  'Brutal': ['#ef4444', 'rgba(239,68,68,0.16)']
+};
+
+function prQlNextHTML(p, nxt) {
+  if (!nxt) return '<div class="ql-empty">No upcoming game scheduled</div>';
+  var badge = (typeof window.brTeamBadge === 'function' && window.brTeamBadge(nxt.opp, 'md'))
+    || '<span class="team-badge team-badge-md" style="--badge-primary:#334155;--badge-secondary:#64748b">'
+      + prQlEsc(nxt.opp) + '</span>';
+  var out = '<div class="ql-next-head">' + badge + '<div class="ql-next-id">'
+    + '<div class="ql-next-vs">' + (nxt.home ? 'vs ' : '@ ') + prQlEsc(nxt.opp) + '</div>'
+    + '<div class="ql-next-when">Wk ' + nxt.week
+    + (nxt.when ? ' · ' + prQlEsc(nxt.when) : '') + '</div></div></div>';
+  if (nxt.bye_week) {
+    out += '<div class="ql-next-bye">Bye Wk ' + nxt.bye_week + '</div>';
+  }
+  if (nxt.def_ppg != null) {
+    out += '<div class="ql-next-stat"><span class="ql-next-num">'
+      + Number(nxt.def_ppg).toFixed(1)
+      + '</span><span class="ql-next-cap">PPG allowed<br>to ' + prQlEsc(p.position)
+      + 's</span></div>';
+  }
+  if (nxt.rank) {
+    out += '<div class="ql-next-rank">#' + nxt.rank + ' easiest vs '
+      + prQlEsc(p.position) + 's</div>';
+  }
+  if (nxt.tier && PR_QL_TIERS[nxt.tier]) {
+    var tc = PR_QL_TIERS[nxt.tier];
+    out += '<div class="ql-next-pill" style="color:' + tc[0] + ';background:' + tc[1]
+      + '">' + nxt.tier + ' matchup</div>';
+  }
+  return out;
+}
+
+function prQlKey(pid) {
+  return [pid, prLeagueType, prLeagueSize, prScoringType].join('|');
+}
+
+// Zones fill independently as their source lands: the quicklook fetch
+// (trend + next) must never wait on the game-logs fetch, which can be
+// slow on a cold cache.
+function prQlFillQuick(p, q) {
+  if (!prQlEl || prQlPid !== String(p.id)) return;
+  var trendEl = prQlEl.querySelector('[data-ql-zone="trend"]');
+  var nextEl = prQlEl.querySelector('[data-ql-zone="next"]');
+  q = q || null;
+  if (trendEl) {
+    var hist = (q && q.history) || [];
+    if (hist.length >= 2) {
+      var pct = q.pct_7d;
+      var pctHTML = pct == null ? '<span class="ql-trend-flat">7d change n/a</span>'
+        : '<span class="' + (pct >= 0 ? 'ql-up' : 'ql-down') + '">'
+          + (pct >= 0 ? '+' : '') + Number(pct).toFixed(1) + '% in 7d</span>';
+      trendEl.innerHTML = '<div class="ql-zone-title">Value trend · 30d</div>'
+        + '<div class="ql-chart">' + prQlTrendSVG(hist.map(function(h) { return h.v; }))
+        + '</div><div class="ql-trend-foot"><span>' + prQlEsc(hist[0].d.slice(5))
+        + '</span>' + pctHTML + '<span>Today</span></div>';
+    } else {
+      trendEl.innerHTML = '<div class="ql-zone-title">Value trend · 30d</div>'
+        + '<div class="ql-empty">Not enough history yet</div>';
+    }
+  }
+  if (nextEl) {
+    nextEl.innerHTML = '<div class="ql-zone-title">Next matchup</div>'
+      + '<div class="ql-next-panel">' + prQlNextHTML(p, q && q.next) + '</div>';
+  }
+  prQlPosition();
+}
+
+function prQlFillGames(p, payload) {
+  if (!prQlEl || prQlPid !== String(p.id)) return;
+  var gamesEl = prQlEl.querySelector('[data-ql-zone="games"]');
+  if (gamesEl) {
+    gamesEl.innerHTML = '<div class="ql-zone-title">Last 3 games</div>'
+      + prQlGamesHTML(p, payload);
+  }
+  prQlPosition();
+}
+
+function prQlFetch(p) {
+  var key = prQlKey(p.id);
+  var entry = prQlCache[key] || (prQlCache[key] = {});
+  if (entry.quickDone) {
+    prQlFillQuick(p, entry.quick);
+  } else if (!entry.quickBusy) {
+    entry.quickBusy = true;
+    var qs = '?league_type=' + encodeURIComponent(prLeagueType)
+      + '&league_size=' + encodeURIComponent(prLeagueSize)
+      + '&scoring_type=' + encodeURIComponent(prScoringType);
+    fetch('/api/player-quicklook/' + encodeURIComponent(p.id) + qs)
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .catch(function() { return null; })
+      .then(function(q) {
+        entry.quick = q;
+        entry.quickDone = true;
+        entry.quickBusy = false;
+        prQlFillQuick(p, q);
+      });
+  }
+  if (p.position === 'PICK') return;
+  if (entry.gamesDone) {
+    prQlFillGames(p, entry.games);
+  } else if (!entry.gamesBusy) {
+    entry.gamesBusy = true;
+    fetch('/api/player-game-logs/' + encodeURIComponent(p.id))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .catch(function() { return null; })
+      .then(function(g) {
+        entry.games = g;
+        entry.gamesDone = true;
+        entry.gamesBusy = false;
+        prQlFillGames(p, g);
+      });
+  }
+}
+
+function prQlBuild(p) {
+  var isPick = p.position === 'PICK';
+  var qbR = prQlRanksFor(false), sfR = prQlRanksFor(true);
+  var vQb = prQlValueFor(p, false), vSf = prQlValueFor(p, true);
+  var rankChange = prScoringType === 'redraft' ? null
+    : (prLeagueType === 'sf' ? p.sf_rank_change_7d : p.rank_change_7d);
+  var moveHTML;
+  if (rankChange == null) {
+    moveHTML = '<span class="ql-move-flat">Not tracked in redraft</span>';
+  } else if (rankChange === 0) {
+    moveHTML = '<span class="ql-move-flat">No move</span>';
+  } else if (rankChange > 0) {
+    moveHTML = '<span class="ql-up">▲ ' + rankChange + ' spots</span>';
+  } else {
+    moveHTML = '<span class="ql-down">▼ ' + Math.abs(rankChange) + ' spots</span>';
+  }
+  var meta = [p.team && p.team !== '–' ? p.team : '',
+    p.age != null ? 'Age ' + Number(p.age).toFixed(1) : ''].filter(Boolean).join(' · ');
+  var html = '<div class="ql-col ql-col-id">' + prQlHeadshotHTML(p) + prQlNameHTML(p.name)
+    + '<div class="ql-meta"><span class="ql-pospill">' + prQlEsc(prPosRankLabel(p))
+    + '</span>' + (meta ? '<span>' + prQlEsc(meta) + '</span>' : '') + '</div>'
+    + '<div class="ql-move"><span class="ql-move-label">7d rank move</span>' + moveHTML
+    + '</div></div>'
+    + '<div class="ql-col ql-col-val"><div class="ql-zone-title">Value</div>'
+    + '<div class="ql-values">'
+    + '<div class="ql-vbox"><span class="ql-vlab">1QB value</span><span class="ql-vnum">'
+    + prFormatValue(vQb) + '</span><span class="ql-vsub">'
+    + (qbR.ovr[String(p.id)] ? 'Overall #' + qbR.ovr[String(p.id)] + ' · ' : '')
+    + prQlEsc(qbR.pos[String(p.id)] || p.position) + '</span></div>'
+    + '<div class="ql-vbox"><span class="ql-vlab">SF value</span><span class="ql-vnum">'
+    + prFormatValue(vSf) + '</span><span class="ql-vsub">'
+    + prQlEsc(sfR.pos[String(p.id)] || p.position) + ' in Superflex</span></div>'
+    + '</div></div>'
+    + '<div class="ql-col ql-col-trend" data-ql-zone="trend">'
+    + '<div class="ql-zone-title">Value trend · 30d</div><div class="ql-skel"></div></div>';
+  if (!isPick) {
+    html += '<div class="ql-col ql-col-games" data-ql-zone="games">'
+      + '<div class="ql-zone-title">Last 3 games</div><div class="ql-skel"></div></div>'
+      + '<div class="ql-col ql-col-next" data-ql-zone="next">'
+      + '<div class="ql-zone-title">Next matchup</div><div class="ql-skel"></div></div>';
+  }
+  return html;
+}
+
+function prQlPosition() {
+  if (!prQlEl || !prQlRow) return;
+  var r = prQlRow.getBoundingClientRect();
+  var cw = prQlEl.offsetWidth, ch = prQlEl.offsetHeight;
+  var left = Math.min(Math.max(12, r.left + r.width / 2 - cw / 2),
+    window.innerWidth - cw - 12);
+  var below = r.bottom + 10;
+  var above = r.top - ch - 10;
+  var placeAbove = below + ch > window.innerHeight - 8 && above >= 8;
+  prQlEl.style.left = left + 'px';
+  prQlEl.style.top = (placeAbove ? above : below) + 'px';
+  prQlEl.classList.toggle('ql-above', placeAbove);
+  var caret = Math.min(Math.max(26, r.left + 120 - left), cw - 26);
+  prQlEl.style.setProperty('--ql-caret-x', caret + 'px');
+}
+
+function prQlShow(p, row) {
+  prQlCancelHide();
+  if (!prQlEl) {
+    prQlEl = document.createElement('div');
+    prQlEl.id = 'prQuicklook';
+    prQlEl.className = 'ql-card';
+    prQlEl.addEventListener('pointerenter', prQlCancelHide);
+    prQlEl.addEventListener('pointerleave', function() { prQlScheduleHide(180); });
+    document.body.appendChild(prQlEl);
+  }
+  if (prQlRow && prQlRow !== row) prQlRow.classList.remove('ql-on');
+  prQlPid = String(p.id);
+  prQlRow = row;
+  row.classList.add('ql-on');
+  prQlEl.innerHTML = prQlBuild(p);
+  prQlEl.classList.toggle('ql-solo', p.position === 'PICK');
+  prQlEl.style.visibility = 'hidden';
+  prQlEl.classList.add('ql-open');
+  prQlPosition();
+  prQlEl.style.visibility = '';
+  prQlFetch(p);
+}
+
+function prQlCancelShow() {
+  if (prQlShowTimer) { clearTimeout(prQlShowTimer); prQlShowTimer = null; }
+}
+function prQlCancelHide() {
+  if (prQlHideTimer) { clearTimeout(prQlHideTimer); prQlHideTimer = null; }
+}
+function prQlScheduleHide(ms) {
+  prQlCancelHide();
+  prQlHideTimer = setTimeout(prQlHide, ms);
+}
+function prQlHide() {
+  prQlCancelShow();
+  prQlCancelHide();
+  if (prQlRow) prQlRow.classList.remove('ql-on');
+  prQlRow = null;
+  prQlPid = null;
+  if (prQlEl) prQlEl.classList.remove('ql-open');
+}
+
+if (!window.__prQlBound) {
+  window.__prQlBound = true;
+  document.addEventListener('pointerover', function(e) {
+    if (!prQlCanHover) return;
+    var row = e.target && e.target.closest
+      ? e.target.closest('#prList .pr-player-row') : null;
+    if (!row || !row.dataset.pid) return;
+    if (e.relatedTarget && row.contains(e.relatedTarget)) return;
+    prQlCancelHide();
+    var pid = row.dataset.pid;
+    if (prQlPid === pid) return;
+    var p = prAllPlayers.find(function(x) { return String(x.id) === pid; });
+    if (!p) return;
+    prQlCancelShow();
+    prQlShowTimer = setTimeout(function() { prQlShow(p, row); }, PR_QL_DELAY);
+  });
+  document.addEventListener('pointerout', function(e) {
+    if (!prQlCanHover) return;
+    var row = e.target && e.target.closest
+      ? e.target.closest('#prList .pr-player-row') : null;
+    if (!row) return;
+    if (e.relatedTarget && row.contains(e.relatedTarget)) return;
+    if (e.relatedTarget && prQlEl && prQlEl.contains(e.relatedTarget)) {
+      prQlCancelHide();
+      return;
+    }
+    if (prQlPid === row.dataset.pid) prQlScheduleHide(220);
+    else prQlCancelShow();
+  });
+  document.addEventListener('click', function(e) {
+    if (e.target && e.target.closest && e.target.closest('#prList .pr-player-row')) {
+      prQlHide();
+    }
+  });
+  window.addEventListener('scroll', function() {
+    if (prQlPid || prQlShowTimer) prQlHide();
+  }, true);
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') prQlHide();
+  });
+}
+
 if (prScoringType === 'redraft') {
   try { prSetScoringType('redraft'); } catch (e) {}
 }

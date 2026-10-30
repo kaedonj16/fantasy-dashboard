@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "new",
+        "text": "Player Rankings quick look: on desktop, hold your cursor on a player for a moment and a quick-look strip opens right at the row. It shows the player's 1QB and Superflex values side by side, their 30-day value trend, their last 3 game logs, and their next matchup with the defense's Schedule Rankings ease rank and tier. Clicking the row still opens the full player card, and phones are unchanged.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "fix",
         "text": "Trade calculator Player Insights: the Movers filters now sit on one line. The 7d, 14d and 30d time range and the Dynasty and Redraft format toggle share a single row, with the format pinned to the right, instead of stacking as two rows of chips.",
         "link": "/trade"
