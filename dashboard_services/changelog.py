@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-30",
+        "tag": "feature",
+        "text": "ScoreZone game boards get a field view: the selected NFL game now shows a perspective field with both end zones in team colours, the current drive drawn as a trail of play dots ending at the ball, a flag with the exact spot, the first-down line, and a live drive summary with play count, net yards and where the drive started. Negative plays track backwards honestly, and the board falls back to the familiar drive bar whenever the field position is not reliable. Play dots carry a quiet pass and run cue: runs are solid dots, passes are hollow rings in the same team colour, and sacks count as passes. The field view also appears in the ScoreZone tab of player profiles. On live updates each new play animates onto the field as it arrives, and a touchdown flashes the end zone it was scored in; bulk updates simply show the finished board.",
+        "link": "/scorezone"
+    },
+    {
         "date": "2026-10-29",
         "tag": "fix",
         "text": "ScoreZone game board: the possession dot no longer sits past the score where it collided with the clock in the middle on phones. When the drive bar is showing, its team-color fill already shows who has the ball, so the dot steps aside. When there is no drive bar, the dot now sits on the team badge corner instead. Team names also appear once now: the badge chip carries the abbreviation, so the duplicate text next to it is gone from the board and the game pills. The yard line appears once too: when the drive bar is showing, it lives only on the bar's flag and the center line reads just the down and distance.",

@@ -42657,6 +42657,86 @@ a.rz-demo-link:hover {
 .rz-field-scale { position: relative; height: 12px; margin-top: 3px; }
 .rz-field-scale span { position: absolute; transform: translateX(-50%); font-size: 11px; font-weight: 700; color: var(--rz-muted, var(--text-muted)); font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .rz-field-fill, .rz-field-flag { transition: none; } }
+/* ScoreZone field board (ScoreZone page only, via _rzRenderGameBoard's
+   fieldBoard option): a perspective field with the current drive drawn as a
+   trail of uniform play dots ending at a solid ball. Static by design -- no
+   animation. The yard-number row reuses .rz-field-scale. */
+.rz-fb { margin-top: 10px; }
+.rz-fb-persp { perspective: 360px; }
+.rz-fb-field {
+    position: relative;
+    height: 74px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--rz-border, var(--border));
+    background: repeating-linear-gradient(90deg,
+        color-mix(in srgb, var(--rz-text, var(--text)) 5%, var(--rz-card, var(--card))) 0 10%,
+        color-mix(in srgb, var(--rz-text, var(--text)) 11%, var(--rz-card, var(--card))) 10% 20%);
+    transform: rotateX(22deg);
+    transform-origin: bottom;
+    box-shadow: 0 14px 18px -10px rgba(15, 36, 64, .35);
+}
+.rz-fb-ez { position: absolute; top: 0; bottom: 0; width: 10%; }
+.rz-fb-ez > span {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 10px; font-weight: 900; letter-spacing: .14em;
+    color: var(--rz-text, var(--text)); opacity: .55; writing-mode: vertical-rl;
+}
+/* Dark theme: the EZ abbreviation rides on a lifted tint (dark primaries are
+   lightened in the renderer); at the light label's 55% it still washes out,
+   so bump opacity until it reads clearly against its tint. */
+:root[data-theme="dark"] .rz-fb-ez > span { opacity: .92; }
+.rz-fb-shade { position: absolute; top: 0; bottom: 0; }
+.rz-fb-seg { position: absolute; top: 50%; transform: translateY(-50%); background: var(--rz-fb-color); border-radius: 99px; z-index: 2; }
+.rz-fb-dot { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: var(--rz-fb-color); transform: translate(-50%, -50%); z-index: 3; }
+/* Pass/run cue (field board only): a pass play's dot goes hollow -- same 7px
+   circle, same team colour, a 2px ring with the field tone knocked out of
+   the centre (an 8% text mix over the card sits between the field's two
+   stripe tones) so the trail does not show through. Runs stay solid. */
+.rz-fb-dot.is-pass { background: color-mix(in srgb, var(--rz-text, var(--text)) 8%, var(--rz-card, var(--card))); border: 2px solid var(--rz-fb-color); box-sizing: border-box; }
+.rz-fb-ball { position: absolute; top: 50%; width: 11px; height: 11px; border-radius: 50%; background: var(--rz-fb-color); transform: translate(-50%, -50%); z-index: 4; }
+/* the first-down line is the only yellow on the board */
+.rz-fb-fd { position: absolute; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: #eab308; z-index: 2; }
+.rz-fb-flag { position: absolute; top: 5px; transform: translateX(-50%); background: var(--rz-fb-color); color: #fff; font-size: 10px; font-weight: 900; padding: 1.5px 6px; border-radius: 99px; white-space: nowrap; z-index: 5; }
+.rz-fb-chip { position: absolute; bottom: 5px; transform: translateX(-50%); background: var(--rz-fb-color); color: #fff; font-size: 10px; font-weight: 900; padding: 1.5px 6px; border-radius: 99px; white-space: nowrap; z-index: 5; }
+.rz-fb-drive { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 9px; font-size: 11px; font-weight: 800; color: var(--rz-muted, var(--text-muted)); font-variant-numeric: tabular-nums; }
+.rz-fb-drive b { color: var(--rz-text, var(--text)); }
+.rz-fb-live { display: inline-flex; align-items: center; gap: 5px; color: var(--rz-live, #16a34a); font-weight: 900; letter-spacing: .06em; white-space: nowrap; }
+.rz-fb-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--rz-live, #16a34a); flex: 0 0 auto; }
+/* TD celebration pieces: the flash overlay rests invisible; the pill is the
+   board's only TD announcement. */
+.rz-fb-tdflash { position: absolute; top: 0; bottom: 0; width: 10%; opacity: 0; z-index: 1; }
+.rz-fb-td { position: absolute; top: 5px; left: 50%; transform: translateX(-50%); background: var(--rz-fb-color); color: #fff; font-size: 10px; font-weight: 900; letter-spacing: .08em; padding: 1.5px 7px; border-radius: 99px; white-space: nowrap; z-index: 6; }
+/* Live-arrival animation. The rz-fb-anim classes are emitted only on the
+   render that carries exactly one new play on a live update (bulk loads,
+   backfills and first renders are always static), and a re-render replaces
+   the board wholesale, so a newer refresh cancels any running animation. */
+.rz-fb-anim .rz-fb-ball { animation: rz-fb-ball-slide 1.3s cubic-bezier(.35, 0, .2, 1); }
+@keyframes rz-fb-ball-slide { from { left: var(--rz-fb-ball-from, 50%); } }
+.rz-fb-seg-new { animation-duration: 1.3s; animation-timing-function: cubic-bezier(.35, 0, .2, 1); }
+.rz-fb-seg-new.is-fwd { animation-name: rz-fb-draw-fwd; }
+.rz-fb-seg-new.is-back { animation-name: rz-fb-draw-back; }
+@keyframes rz-fb-draw-fwd { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes rz-fb-draw-back { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
+.rz-fb-anim .rz-fb-dot.is-new { animation: rz-fb-dot-in 1.3s ease-out; }
+@keyframes rz-fb-dot-in { 0%, 55% { opacity: 0; transform: translate(-50%, -50%) scale(.2); } 80% { opacity: 1; } 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.rz-fb-anim .rz-fb-flag, .rz-fb-anim .rz-fb-chip { animation: rz-fb-settle .4s ease-out 1.05s backwards; }
+.rz-fb-anim .rz-fb-drive { animation: rz-fb-settle .4s ease-out 1.05s backwards; }
+@keyframes rz-fb-settle { from { opacity: 0; } to { opacity: 1; } }
+.rz-fb-anim-td .rz-fb-tdflash { animation: rz-fb-tdflash 3s ease-out backwards; }
+@keyframes rz-fb-tdflash { 0% { opacity: 0; } 10% { opacity: .75; } 24% { opacity: .22; } 40% { opacity: .55; } 58% { opacity: .15; } 76% { opacity: .32; } 100% { opacity: 0; } }
+.rz-fb-anim-td .rz-fb-td { animation: rz-fb-td-pill 3s ease-out both; }
+@keyframes rz-fb-td-pill { 0% { opacity: 0; visibility: visible; } 8% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+.rz-nfl-score.rz-fb-score-pop { display: inline-block; animation: rz-fb-score-pop .9s ease-out .3s both; }
+@keyframes rz-fb-score-pop { 0% { transform: scale(1); } 30% { transform: scale(1.35); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
+/* Reduced motion: no arrival or celebration motion at all; the board is
+   always its final state (the TD pill may still show statically). */
+@media (prefers-reduced-motion: reduce) {
+    .rz-fb-anim .rz-fb-ball, .rz-fb-seg-new, .rz-fb-anim .rz-fb-dot.is-new,
+    .rz-fb-anim .rz-fb-flag, .rz-fb-anim .rz-fb-chip, .rz-fb-anim .rz-fb-drive,
+    .rz-fb-anim-td .rz-fb-tdflash, .rz-fb-anim-td .rz-fb-td,
+    .rz-nfl-score.rz-fb-score-pop { animation: none; }
+}
 .rz-nfl-board--modal { margin: 10px 12px 8px; }
 .rz-pm-injury-row { padding: 0 16px 4px; }
 .rz-nfl-board.is-live {

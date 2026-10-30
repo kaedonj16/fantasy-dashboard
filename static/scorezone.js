@@ -2676,6 +2676,309 @@
       + '<span class="rz-boxscore-ico" aria-hidden="true">▦</span>Box score</button>';
   }
 
+  // ── Field board fallback ──
+  // Only used when the shared app.js renderer did not load; mirrors
+  // window._rzDeriveDrive / window._rzFieldBoardHtml so the ScoreZone board
+  // shows the same perspective field + drive trail either way. Spots are
+  // absolute field coordinates: 0 at the away goal line, 100 at the home
+  // goal line. Returns '' whenever the field position is not reliable, so
+  // the board falls back to the plain score row.
+  var _FB_COLORS = {ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
+  function _fbNormTeam(t) {
+    var s = String(t || '').trim().toUpperCase();
+    return ({ JAC: 'JAX', WSH: 'WAS', OAK: 'LV', SD: 'LAC', STL: 'LAR' })[s] || s;
+  }
+  function _fbSpotAbs(label, away, home) {
+    var raw = String(label || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    if (/^(50|MIDFIELD)$/.test(raw)) return 50;
+    var m = raw.match(/^([A-Z]{2,3})\s+(\d{1,2})$/);
+    if (!m) return null;
+    var terr = _fbNormTeam(m[1]), yard = Number(m[2]);
+    if (yard < 0 || yard > 50) return null;
+    if (terr === away) return yard;
+    if (terr === home) return 100 - yard;
+    return null;
+  }
+  function _fbSpotLabel(a, away, home) {
+    if (a == null || isNaN(a)) return '';
+    var y = Math.round(a);
+    if (y === 50) return '50';
+    return y < 50 ? away + ' ' + y : home + ' ' + (100 - y);
+  }
+  // Fallback field board's own drive-signature registry (the shared app.js
+  // renderer keeps its own): the last drive this fallback rendered, so a
+  // live single-play arrival can be told apart from bulk jumps.
+  var _fbPrevSig = null;
+  var _fbAnimType = null; // animation the fallback board last emitted (score pop hook)
+
+  function _nflFieldBoardHtml(g, plays) {
+    if (!g || _normGameStatus(g) !== 'live' || !g.field_position_reliable) { _fbPrevSig = null; return ''; }
+    var away = _fbNormTeam(g.away), home = _fbNormTeam(g.home);
+    var poss = _fbNormTeam(g.possession);
+    if (!poss || (poss !== away && poss !== home)) { _fbPrevSig = null; return ''; }
+    var spot = _fbSpotAbs(g.yard_line, away, home);
+    if (spot == null) { _fbPrevSig = null; return ''; }
+    var side = poss === away ? 'away' : 'home';
+    var dir = side === 'away' ? 1 : -1;
+    // Line-to-gain, same rule as the shared renderer: a clean numeric
+    // distance that stops short of the goal line.
+    var ltg = null, distN = parseInt(String(g.distance), 10);
+    var toGoal = side === 'away' ? 100 - spot : spot;
+    var goalToGo = /goal/i.test(String(g.distance)) || (!isNaN(distN) && distN >= toGoal);
+    if (!isNaN(distN) && distN >= 1 && !goalToGo) {
+      var gain = side === 'away' ? spot + distN : spot - distN;
+      if (gain > 0 && gain < 100) ltg = gain;
+    }
+    // Current drive: maximal trailing run of scrimmage plays by the
+    // possessing team, grouped back together from per-player rows.
+    var drive = null;
+    if (plays && plays.length) {
+      var invalid = { NO_PLAY: true, NULLIFIED: true, OVERTURNED: true };
+      var num = function(v) { var n = Number(v || 0); return isFinite(n) ? n : 0; };
+      var groups = {}, order = [];
+      plays.forEach(function(row, idx) {
+        if (!row) return;
+        var key = (row.play_id != null && row.play_id !== '') ? 'p:' + row.play_id
+          : 's:' + (row.seq != null ? row.seq : idx);
+        var gr = groups[key];
+        if (!gr) {
+          var sq = Number(row.seq);
+          gr = groups[key] = { rows: [], seq: isFinite(sq) ? sq : idx, idx: idx };
+          order.push(gr);
+        }
+        gr.rows.push(row);
+      });
+      order.sort(function(a, b) { return (a.seq - b.seq) || (a.idx - b.idx); });
+      var candidates = [];
+      order.forEach(function(gr) {
+        var head = gr.rows[0];
+        var state = String(head.play_state || 'VALID').toUpperCase();
+        if (invalid[state] || head.is_no_play) return;
+        var text = String(head.play_text || '');
+        if (/kickoff|kicks off|onside/i.test(text)) return;
+        var carries = 0, rushYds = 0, passAtt = 0, passYds = 0, tdScore = 0, scrimmage = false;
+        var sacked = /sack/i.test(text);
+        var offVotes = {}, allVotes = {}, sackTeams = {};
+        gr.rows.forEach(function(r) {
+          var sl = r.stat_line || {};
+          var c = num(sl.carries), pa = num(sl.pass_att);
+          carries += c; rushYds += num(sl.rush_yds);
+          passAtt += pa; passYds += num(sl.pass_yds);
+          tdScore += num(sl.pass_td) + num(sl.rec_td) + num(sl.rush_td);
+          var off = !!(c || pa || num(sl.targets) || num(sl.rec)
+            || num(sl.rush_yds) || num(sl.pass_yds) || num(sl.int));
+          if (off) scrimmage = true;
+          var t = _fbNormTeam(r.team);
+          if (t !== away && t !== home) return;
+          allVotes[t] = (allVotes[t] || 0) + 1;
+          if (off) offVotes[t] = (offVotes[t] || 0) + 1;
+          if (num(sl.sacks)) sackTeams[t] = true;
+        });
+        if (!scrimmage && !sacked) return;
+        var pick = function(votes) {
+          var best = '', n = 0;
+          Object.keys(votes).forEach(function(t) { if (votes[t] > n) { n = votes[t]; best = t; } });
+          return best;
+        };
+        var team = pick(offVotes) || pick(allVotes);
+        if (!team && sacked) {
+          var others = Object.keys(allVotes).filter(function(t) { return !sackTeams[t]; });
+          if (others.length === 1) team = others[0];
+        }
+        if (!team) return;
+        candidates.push({
+          team: team, seq: gr.seq,
+          snapAbs: _fbSpotAbs(head.yard_line, away, home),
+          endAbs: _fbSpotAbs(head.end_yard_line, away, home),
+          carries: carries, rushYds: rushYds, passAtt: passAtt, passYds: passYds,
+          tdScore: tdScore, sacked: sacked
+        });
+      });
+      var run = [];
+      for (var i = candidates.length - 1; i >= 0; i--) {
+        if (candidates[i].team !== poss) break;
+        run.unshift(candidates[i]);
+      }
+      for (var j = 0; j < run.length; j++) {
+        if (run[j].endAbs == null) {
+          run[j].endAbs = (j + 1 < run.length) ? run[j + 1].snapAbs : spot;
+        }
+      }
+      run = run.filter(function(p) { return p.endAbs != null; });
+      while (run.length && run[0].snapAbs == null) run.shift();
+      if (run.length) {
+        var last = run[run.length - 1], chip = null;
+        if (last.carries > 0) chip = { yards: Math.round(last.rushYds), kind: 'run' };
+        else if (last.sacked && last.snapAbs != null) {
+          chip = { yards: Math.round((last.endAbs - last.snapAbs) * dir), kind: 'sack' };
+        } else if (last.passAtt > 0 || last.passYds !== 0) {
+          chip = { yards: Math.round(last.passYds), kind: 'pass' };
+        }
+        var chipText = null;
+        if (chip) {
+          var cy = chip.yards;
+          chipText = (cy > 0 ? '+' + cy : (cy < 0 ? '−' + Math.abs(cy) : '0')) + ' ' + chip.kind;
+        }
+        drive = {
+          count: run.length,
+          points: run.map(function(p) { return p.endAbs; }),
+          // Per-play kind for the pass/run dot cue, same signals as the
+          // chip: carries -> run; a sack counts as a pass; pass attempts /
+          // passing yards -> pass; no clean read -> null (solid dot).
+          kinds: run.map(function(p) {
+            if (p.carries > 0) return 'run';
+            if (p.sacked || p.passAtt > 0 || p.passYds !== 0) return 'pass';
+            return null;
+          }),
+          firstSeq: run[0].seq, lastSeq: last.seq,
+          // TD on the latest play, from real signals only: a TD in its
+          // stat rows, or its end spot reaching the goal line it attacks.
+          td: !!(last.tdScore > 0 || (dir === 1 ? last.endAbs >= 100 : last.endAbs <= 0)),
+          startAbs: run[0].snapAbs,
+          startLabel: _fbSpotLabel(run[0].snapAbs, away, home),
+          net: Math.round((spot - run[0].snapAbs) * dir),
+          chip: chipText
+        };
+      }
+    }
+    // Live-arrival animation decision, mirroring the shared renderer: only
+    // when this refresh detected exactly one new play ('live' mode) AND
+    // the same drive grew by exactly one play, earlier spots unchanged.
+    // Anything else (bulk, backfill, revisions) just moves the baseline.
+    var fbAnim = null;
+    if (drive) {
+      var fbSig = { firstSeq: drive.firstSeq, lastSeq: drive.lastSeq, count: drive.count,
+        points: drive.points, startAbs: drive.startAbs, poss: poss, td: !!drive.td };
+      if (_animationMode === 'live' && _fbPrevSig && _fbPrevSig.firstSeq === fbSig.firstSeq
+        && _fbPrevSig.startAbs === fbSig.startAbs && _fbPrevSig.poss === fbSig.poss
+        && fbSig.count === _fbPrevSig.count + 1
+        && _fbPrevSig.points.every(function(p, i) { return p === fbSig.points[i]; })) {
+        fbAnim = { type: fbSig.td ? 'td' : 'play', fromAbs: _fbPrevSig.points[_fbPrevSig.points.length - 1] };
+      }
+      _fbPrevSig = fbSig;
+    } else _fbPrevSig = null;
+    _fbAnimType = fbAnim ? fbAnim.type : null;
+    var tc = _FB_COLORS[poss] || '#334155';
+    var lum = function(h) {
+      h = String(h).replace('#', '');
+      if (h.length !== 6) return 255;
+      return 0.299 * parseInt(h.slice(0, 2), 16) + 0.587 * parseInt(h.slice(2, 4), 16) + 0.114 * parseInt(h.slice(4, 6), 16);
+    };
+    var dark = false;
+    try { dark = document.documentElement.getAttribute('data-theme') === 'dark'; } catch (e) {}
+    // Dark theme: a dark primary tinted raw vanishes on the dark field (GB's
+    // #203731, CHI navy, LV black), so lift the colour's HSL lightness to a
+    // floor -- hue and saturation untouched, still recognisably the team's
+    // colour -- and tint from the lifted colour at the light-colour alpha.
+    var lift = function(hex) {
+      var h = String(hex).replace('#', '');
+      if (h.length !== 6) return hex;
+      var r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
+      var mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+      if (l >= 0.45) return hex;
+      var d = mx - mn;
+      var s = d === 0 ? 0 : (l < 0.5 ? d / (mx + mn) : d / (2 - mx - mn));
+      var hue = 0;
+      if (d !== 0) {
+        if (mx === r) hue = ((g - b) / d) % 6;
+        else if (mx === g) hue = (b - r) / d + 2;
+        else hue = (r - g) / d + 4;
+        hue *= 60; if (hue < 0) hue += 360;
+      }
+      l = 0.45;
+      var c = (1 - Math.abs(2 * l - 1)) * s;
+      var x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+      var m = l - c / 2, rr = 0, gg = 0, bb = 0;
+      if (hue < 60) { rr = c; gg = x; }
+      else if (hue < 120) { rr = x; gg = c; }
+      else if (hue < 180) { gg = c; bb = x; }
+      else if (hue < 240) { gg = x; bb = c; }
+      else if (hue < 300) { rr = x; bb = c; }
+      else { rr = c; bb = x; }
+      var to = function(v) { var n2 = Math.round((v + m) * 255).toString(16); return n2.length === 1 ? '0' + n2 : n2; };
+      return '#' + to(rr) + to(gg) + to(bb);
+    };
+    var tint = function(hex) {
+      if (dark) return lift(hex) + '59';
+      return hex + (lum(hex) < 66 ? '38' : '59');
+    };
+    // Dark theme: the possession story (shade, trail, ball, flag) runs on the
+    // lifted colour too -- a raw dark primary is invisible on the dark field.
+    var tcEff = dark ? lift(tc) : tc;
+    var xOf = function(a) { return 10 + a * 0.8; };
+    var ballX = xOf(spot);
+    var shade = side === 'away'
+      ? '<span class="rz-fb-shade" style="left:10%;width:' + (ballX - 10) + '%;background:' + tcEff + '29"></span>'
+      : '<span class="rz-fb-shade" style="left:' + ballX + '%;width:' + (90 - ballX) + '%;background:' + tcEff + '29"></span>';
+    var trail = '';
+    if (drive) {
+      var pts = [drive.startAbs].concat(drive.points);
+      var n = pts.length - 1;
+      for (var k = 0; k < n; k++) {
+        var x1 = xOf(pts[k]), x2 = xOf(pts[k + 1]);
+        if (x1 === x2) continue;
+        var t = n === 1 ? 1 : k / (n - 1);
+        var lo = Math.min(x1, x2), hi = Math.max(x1, x2);
+        var L = Math.max(9.5, lo - (k === 0 ? 0 : 0.5));
+        var W = Math.min(90.5, hi + 0.5) - L;
+        var segCls = 'rz-fb-seg';
+        if (fbAnim && k === n - 1) segCls += ' rz-fb-seg-new ' + (x2 > x1 ? 'is-fwd' : 'is-back');
+        trail += '<span class="' + segCls + '" style="left:' + L + '%;width:' + W + '%;height:'
+          + (3 + 2 * t * t).toFixed(1) + 'px;opacity:' + (0.4 + 0.6 * t).toFixed(2) + '"></span>';
+      }
+      drive.points.forEach(function(p, i) {
+        var pass = drive.kinds && drive.kinds[i] === 'pass';
+        var isNew = !!fbAnim && i === drive.points.length - 1;
+        trail += '<span class="rz-fb-dot' + (pass ? ' is-pass' : '') + (isNew ? ' is-new' : '')
+          + '" style="left:' + xOf(p) + '%"></span>';
+      });
+    }
+    var fd = (ltg != null) ? '<span class="rz-fb-fd" style="left:' + xOf(ltg) + '%"></span>' : '';
+    var flagX = Math.min(Math.max(ballX, 15), 85);
+    var pillInk = lum(tcEff) >= 66 ? ';color:#0f2440' : '';
+    var spotLabel = _fbSpotLabel(spot, away, home);
+    var flag = '<span class="rz-fb-flag" style="left:' + flagX + '%' + pillInk + '">' + spotLabel + '</span>';
+    var chipHtml = (drive && drive.chip)
+      ? '<span class="rz-fb-chip" style="left:' + flagX + '%' + pillInk + '">' + drive.chip + '</span>' : '';
+    var labels = [[20, '20'], [40, '40'], [50, '50'], [60, '40'], [80, '20']].map(function(p) {
+      return '<span style="left:' + xOf(p[0]) + '%">' + p[1] + '</span>';
+    }).join('');
+    var driveRow = '';
+    if (drive) {
+      driveRow = '<div class="rz-fb-drive"><span class="rz-fb-live"><span class="rz-fb-live-dot"></span>LIVE DRIVE</span>'
+        + '<span><b>' + drive.count + ' ' + (drive.count === 1 ? 'play' : 'plays') + '</b> · <b>'
+        + drive.net + ' ' + (Math.abs(drive.net) === 1 ? 'yd' : 'yds') + '</b></span>'
+        + '<span>started ' + drive.startLabel + '</span></div>';
+    }
+    var aria = 'Ball at ' + spotLabel + ', ' + poss + ' ball' + (drive
+      ? '. Drive: ' + drive.count + ' plays, ' + drive.net + ' yards, started ' + drive.startLabel : '');
+    // TD celebration, mirroring the shared renderer: flash + pill only on
+    // the arrival render; the pill alone shows statically under reduced
+    // motion while the TD is the latest play. Only TD announcement.
+    var tdHtml = '';
+    if (drive && drive.td) {
+      var tdArrival = !!(fbAnim && fbAnim.type === 'td');
+      var reduced = false;
+      try { reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+      if (tdArrival) {
+        tdHtml += '<span class="rz-fb-tdflash" style="' + (side === 'away' ? 'left:90%' : 'left:0')
+          + ';background:' + tcEff + '"></span>';
+      }
+      if (tdArrival || reduced) {
+        tdHtml += '<span class="rz-fb-td"' + (pillInk ? ' style="' + pillInk.slice(1) + '"' : '') + '>TOUCHDOWN</span>';
+      }
+    }
+    return '<div class="rz-fb' + (fbAnim ? ' rz-fb-anim rz-fb-anim-' + fbAnim.type : '') + '"><div class="rz-fb-persp"><div class="rz-fb-field" style="--rz-fb-color:' + tcEff + '" role="img" aria-label="' + aria + '">'
+      + '<span class="rz-fb-ez" style="left:0;background:' + tint(_FB_COLORS[away] || '#334155') + '"><span>' + away + '</span></span>'
+      + '<span class="rz-fb-ez" style="right:0;background:' + tint(_FB_COLORS[home] || '#334155') + '"><span>' + home + '</span></span>'
+      + shade + trail + fd + flag
+      + '<span class="rz-fb-ball" style="left:' + ballX + '%' + (fbAnim ? ';--rz-fb-ball-from:' + xOf(fbAnim.fromAbs) + '%' : '') + '"></span>'
+      + chipHtml + tdHtml
+      + '</div></div>'
+      + driveRow
+      + '<div class="rz-field-scale">' + labels + '</div></div>';
+  }
+
   function _renderNflBoard() {
     if (_filters.nfl === 'all') return '';
     var g = _nflGameInfo(_filters.nfl);
@@ -2684,7 +2987,7 @@
       // The shared app.js renderer owns the board markup on the real page, so
       // the button must attach here too. Without this the button only existed
       // in the scorezone.js fallback below, which never runs when app.js loaded.
-      return window._rzRenderGameBoard(g, { id: 'rz-nfl-board' }) + _boxScoreButtonHtml();
+      return window._rzRenderGameBoard(g, { id: 'rz-nfl-board', fieldBoard: true, fbLive: _animationMode === 'live', pbpPlays: (_state.pbp_by_game || {})[_filters.nfl] || [] }) + _boxScoreButtonHtml();
     }
     var norm = _normGameStatus(g);
     var live = norm === 'live';
@@ -2699,7 +3002,10 @@
     // Possession is a *current* marker -- only meaningful for a live game (§2).
     var awayPoss = live && poss && poss === String(away).toUpperCase();
     var homePoss = live && poss && poss === String(home).toUpperCase();
-    var sit = _nflBoardSitLine(g, norm);
+    // Field board (this page only): when it renders, its flag owns the yard
+    // line, so the centre line keeps down & distance only.
+    var fbHtml = live ? _nflFieldBoardHtml(g, (_state.pbp_by_game || {})[_filters.nfl] || []) : '';
+    var sit = fbHtml ? (_downDist({ down: g.down, distance: g.distance }) || '') : _nflBoardSitLine(g, norm);
     var stateCls = ' is-' + norm;
     var logo = function(abv) {
       if (window.brTeamBadge) return window.brTeamBadge(abv, 'xs');
@@ -2713,7 +3019,7 @@
       // never a flow item that can drift into the middle column.
       var ballHtml = hasBall
         ? '<span class="rz-nfl-poss" title="Possession" aria-label="Has possession"></span>' : '';
-      var scoreHtml = showScore ? '<span class="rz-nfl-score">' + pts + '</span>' : '';
+      var scoreHtml = showScore ? '<span class="rz-nfl-score' + (hasBall && _fbAnimType === 'td' ? ' rz-fb-score-pop' : '') + '">' + pts + '</span>' : '';
       // Score sits toward the center; the home block reverses so its logo stays
       // outermost (CSS row-reverse), keeping both scores flanking the middle.
       return '<div class="rz-nfl-team rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
@@ -2753,6 +3059,7 @@
       + team(away, aPts, awayPoss, 'away')
       + mid
       + team(home, hPts, homePoss, 'home')
+      + fbHtml
       + _boxScoreButtonHtml()
       + '</div>';
   }
