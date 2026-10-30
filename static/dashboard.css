@@ -6511,6 +6511,30 @@ strong + .player-badge,
     padding: 0 12px;
 }
 
+/* Movers controls on ONE row (Kaedon 2026-10-30): the time range
+   (7d/14d/30d) and the value format (Dynasty/Redraft) used to stack as
+   two chip rows. The row carries the spacing the first group used to
+   carry; the groups inside drop their own panel margin/padding and
+   never wrap, and the format group pins to the right edge. */
+.otc-movers-panel .otc-movers-filter-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 0 12px;
+}
+
+.otc-movers-panel .otc-movers-filter-row .otc-day-filters {
+    margin-top: 0;
+    padding: 0;
+    flex-wrap: nowrap;
+}
+
+.otc-movers-panel .otc-movers-filter-row .otc-movers-format-filters {
+    margin-left: auto;
+}
+
 .otc-day-filter,
 .otc-filter-chip,
 .bo-tr-tab,
