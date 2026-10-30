@@ -3064,8 +3064,10 @@
       + '</div>';
   }
 
-  // Compact centered status for an NFL game pill.
-  function _gamePillStatus(g, norm) {
+  // Compact centered status for an NFL game pill. Pregame pills can ask
+  // for the kickoff day as well as the time ("SUN · 1:00 PM"); the default
+  // form stays time-only so existing aria labels keep their exact wording.
+  function _gamePillStatus(g, norm, includeDay) {
     if (norm === 'final') return 'FINAL';
     if (norm === 'halftime') return 'HALF';
     if (norm === 'delayed') return 'DELAYED';
@@ -3076,7 +3078,14 @@
     var ep = parseFloat((g && g.game_time_epoch) || 0);
     if (ep) {
       var d = new Date(ep * 1000);
-      if (!isNaN(d.getTime())) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      if (!isNaN(d.getTime())) {
+        var time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        if (includeDay) {
+          var day = d.toLocaleDateString([], { weekday: 'short' }).toUpperCase();
+          return day + ' · ' + time;
+        }
+        return time;
+      }
     }
     return (g && g.game_status) || 'PRE';
   }
@@ -3091,10 +3100,13 @@
 
   // Badge chip already carries the abbreviation, so no separate abv text:
   // chip + score only (the board does the same; name appears exactly once).
+  // In the versus line the away score follows its chip, while the home
+  // score precedes its chip: chip-score-@-score-chip.
   function _gamePillTeamRow(abv, pts, side, showScore) {
+    var logo = _gamePillLogo(abv);
+    var score = showScore ? '<span class="rz-gp-score">' + (pts === '' ? '' : pts) + '</span>' : '';
     return '<span class="rz-gp-team ' + side + '">'
-      + _gamePillLogo(abv)
-      + (showScore ? '<span class="rz-gp-score">' + (pts === '' ? '' : pts) + '</span>' : '')
+      + (side === 'home' ? score + logo : logo + score)
       + '</span>';
   }
 
@@ -3117,16 +3129,20 @@
       var selected = _filters.nfl === o.id;
       var aPts = (g.away_pts === '' || g.away_pts == null) ? '' : g.away_pts;
       var hPts = (g.home_pts === '' || g.home_pts == null) ? '' : g.home_pts;
-      var status = _gamePillStatus(g, norm);
+      var ariaStatus = _gamePillStatus(g, norm);
+      var status = _gamePillStatus(g, norm, true);
       var showScore = norm !== 'pregame' && norm !== 'unknown';
-      var aria = o.away + (showScore ? ' ' + aPts : '') + ' at ' + o.home + (showScore ? ' ' + hPts : '') + ', ' + status;
+      var aria = o.away + (showScore ? ' ' + aPts : '') + ' at ' + o.home + (showScore ? ' ' + hPts : '') + ', ' + ariaStatus;
       return '<button type="button" class="rz-game-pill is-' + norm
         + (selected ? ' is-selected' : '') + '" data-nfl-gid="' + o.id + '"'
         + ' aria-pressed="' + (selected ? 'true' : 'false') + '"'
         + ' aria-label="' + _esc(aria) + '">'
+        + '<span class="rz-gp-versus">'
         + _gamePillTeamRow(o.away, aPts, 'away', showScore)
-        + '<span class="rz-gp-status">' + status + '</span>'
+        + '<span class="rz-gp-at" aria-hidden="true">@</span>'
         + _gamePillTeamRow(o.home, hPts, 'home', showScore)
+        + '</span>'
+        + '<span class="rz-gp-status">' + status + '</span>'
         + '</button>';
     }).join('');
     return '<div class="rz-game-strip">'
@@ -4049,7 +4065,7 @@
       var g = gameMap[gid];
       var gameInfo = _nflGameInfo(gid) || g;
       var norm = _normGameStatus(gameInfo);
-      var statusText = _gamePillStatus(gameInfo, norm);
+      var statusText = _gamePillStatus(gameInfo, norm, true);
       var showScore = norm !== 'pregame' && norm !== 'unknown';
       var awayPts = gameInfo.away_pts == null ? '' : gameInfo.away_pts;
       var homePts = gameInfo.home_pts == null ? '' : gameInfo.home_pts;
@@ -4065,9 +4081,12 @@
       }
       html += '<div class="rz-pregame-game">'
         + '<div class="rz-game-pill rz-pregame-pill is-' + norm + '">'
+        + '<span class="rz-gp-versus">'
         + _gamePillTeamRow(g.away, awayPts, 'away', showScore)
-        + '<span class="rz-gp-status">' + statusText + '</span>'
+        + '<span class="rz-gp-at" aria-hidden="true">@</span>'
         + _gamePillTeamRow(g.home, homePts, 'home', showScore)
+        + '</span>'
+        + '<span class="rz-gp-status">' + statusText + '</span>'
         + '</div>'
         + playerChip
         + '</div>';

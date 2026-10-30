@@ -41514,8 +41514,8 @@ a.rz-demo-link:hover {
 }
 
 .rz-pregame-pill {
-    width: 120px;
-    max-width: 120px;
+    width: max-content;
+    max-width: 100%;
     cursor: default;
 }
 
@@ -42615,6 +42615,38 @@ a.rz-demo-link:hover {
     align-items: center;
     gap: 10px;
 }
+/* Pregame board header (B1): the matchup reads as one centered unit --
+   badge, code, AT, code, badge -- with the game's status line centered
+   underneath. Live/final boards keep the score-row layout above. */
+.rz-nfl-pregame-head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    text-align: center;
+}
+.rz-nfl-pregame-matchup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 900;
+    color: var(--rz-text);
+}
+.rz-nfl-pregame-at {
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    color: var(--rz-muted);
+}
+.rz-nfl-pregame-status {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    color: var(--rz-muted);
+    font-variant-numeric: tabular-nums;
+}
 /* Field-position row: context row on top (DRIVE + down & distance + any
    real drive summary), then the S1 ultra-slim inline bar (Kaedon's slimming
    pick over the first 2026-10-30 redesign, whose 24px track + floating flag
@@ -42919,16 +42951,17 @@ a.rz-demo-link:hover {
 
 .rz-game-pill {
     flex: 0 0 auto;
-    /* Compact -- much smaller than the detailed scoreboard (§4). Partial next
-       pill peeks in at mobile widths so the strip reads as scrollable. */
-    min-width: 108px;
-    max-width: 150px;
-    min-height: 46px;
+    /* Versus-line pills are content-sized -- no fixed minimum width leaving
+       dead space in pregame pills. Partial next pill still peeks in at
+       mobile widths so the strip reads as scrollable. */
+    min-width: 0;
+    max-width: none;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: stretch;
     justify-content: center;
-    gap: 2px;
+    gap: 4px;
     padding: 7px 10px;
     background: var(--rz-card);
     border: 1px solid var(--rz-border);
@@ -42966,8 +42999,24 @@ a.rz-demo-link:hover {
     color: var(--rz-muted);
 }
 .rz-game-pill-all.is-selected .rz-gp-all { color: var(--on-accent); }
-.rz-gp-team {
+/* Versus line: away chip + score, @, home score + chip on ONE line, with
+   the status as a small left-aligned line underneath. */
+.rz-gp-versus {
     display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    white-space: nowrap;
+}
+.rz-gp-at {
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--rz-muted);
+}
+.rz-game-pill.is-selected .rz-gp-at { color: var(--on-accent); opacity: .75; }
+.rz-gp-team {
+    display: inline-flex;
     align-items: center;
     gap: 5px;
     min-width: 0;
@@ -42998,8 +43047,9 @@ a.rz-demo-link:hover {
     color: var(--rz-text);
     font-variant-numeric: tabular-nums;
 }
+.rz-gp-versus .rz-gp-score { margin-left: 0; }
 .rz-gp-status {
-    text-align: center;
+    text-align: left;
     font-size: 11px;
     font-weight: 800;
     letter-spacing: .05em;
@@ -43045,6 +43095,24 @@ a.rz-demo-link:hover {
     outline-offset: 2px;
 }
 .rz-boxscore-ico { font-size: 15px; color: var(--rz-muted); }
+/* Pregame only: the Box score control shrinks from the full-width slab to
+   a compact pill centered under the B1 header. The board carries the
+   pregame state, so this follows it live -- the button is the board's next
+   sibling on the ScoreZone page and its child in the fallback renderer. */
+.rz-nfl-board--pregame + .rz-boxscore-btn,
+.rz-nfl-board.is-delayed + .rz-boxscore-btn,
+.rz-nfl-board.is-unknown + .rz-boxscore-btn,
+.rz-nfl-board--pregame .rz-boxscore-btn,
+.rz-nfl-board.is-pregame .rz-boxscore-btn,
+.rz-nfl-board.is-delayed .rz-boxscore-btn,
+.rz-nfl-board.is-unknown .rz-boxscore-btn {
+    width: max-content;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 7px 14px;
+    font-size: 12px;
+}
 
 /* Visit-sync progress bar: thin indeterminate bar pinned to the viewport top while
    the visit reconcile re-syncs with the live API. ScoreZone-scoped so it never
@@ -43391,7 +43459,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     .rz-nfl-kick-time { font-size: 13px; }
 
     .rz-page { --rz-content-gutter: 10px; }
-    .rz-game-pill { min-width: 100px; }
+    .rz-game-pill { min-width: 0; }
     .rz-mc-hero { width: 74vw; max-width: 300px; }
 
     .rz-header {
@@ -49699,13 +49767,16 @@ body:has(.home-hero) { background: var(--bg); color: var(--text); font-family: -
 .hp-rz .rz-game-strip { margin: 0 0 6px; }
 .hp-rz .rz-game-strip-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 12px 12px 6px; scrollbar-width: none; }
 .hp-rz .rz-game-strip-scroll::-webkit-scrollbar { display: none; }
-.hp-rz .rz-game-pill { flex: 0 0 auto; min-width: 108px; max-width: 150px; min-height: 46px; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; padding: 7px 10px; background: var(--rz-card); border: 1px solid var(--rz-border); border-radius: var(--radius); cursor: pointer; font: inherit; color: var(--rz-text); text-align: left; }
+.hp-rz .rz-game-pill { flex: 0 0 auto; min-width: 0; max-width: none; min-height: 0; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; padding: 7px 10px; background: var(--rz-card); border: 1px solid var(--rz-border); border-radius: var(--radius); cursor: pointer; font: inherit; color: var(--rz-text); text-align: left; }
 .hp-rz .rz-game-pill.is-selected { border-color: var(--rz-red); background: var(--rz-red-soft); box-shadow: 0 0 0 1px var(--rz-red); }
-.hp-rz .rz-gp-team { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.hp-rz .rz-gp-versus { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.hp-rz .rz-gp-at { font-size: 11px; font-weight: 900; line-height: 1; color: var(--rz-muted); }
+.hp-rz .rz-gp-team { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
 .hp-rz .rz-gp-logo-txt { font-size: 11px; font-weight: 800; color: var(--rz-muted); }
 .hp-rz .rz-gp-abv { font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--rz-text); }
 .hp-rz .rz-gp-score { margin-left: auto; font-size: 13px; font-weight: 900; color: var(--rz-text); font-variant-numeric: tabular-nums; }
-.hp-rz .rz-gp-status { text-align: center; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--rz-muted); line-height: 1; padding: 1px 0; }
+.hp-rz .rz-gp-versus .rz-gp-score { margin-left: 0; }
+.hp-rz .rz-gp-status { text-align: left; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--rz-muted); line-height: 1; padding: 1px 0; }
 .hp-rz .rz-game-pill.is-live .rz-gp-status { color: var(--rz-live); }
 .hp-rz .rz-game-pill.is-final .rz-gp-abv, .hp-rz .rz-game-pill.is-final .rz-gp-score { color: var(--rz-muted); }
 .hp-rz .rz-player-row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--rz-border); }

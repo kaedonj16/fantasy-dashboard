@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "update",
+        "text": "ScoreZone game picker: each game now reads as one compact versus line, with the team badges either side of the @, scores inline once the game is underway, and the day and kickoff time on a small line underneath. An upcoming game's board header centers the matchup, and its Box score button is now a compact pill instead of a full-width bar.",
+        "link": "/scorezone"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "new",
         "text": "Pull to refresh in the app: on ScoreZone and the Weekly Hub, pull down from the top of the page to refresh the scores in place. Your week, league and scroll position stay exactly where they were, and the refresh uses the same path as the ScoreZone timer tap.",
         "link": "/scorezone"
