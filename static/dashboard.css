@@ -42716,16 +42716,27 @@ a.rz-demo-link:hover {
     min-width: 0;
     flex: 0 0 auto;
 }
-/* Possession indicator: a small amber dot sitting just past the score on the
-   centre-facing side (toward the clock). It is the last flex child of the team
-   block, so row-reverse on the home side keeps it toward the middle. */
+/* Possession indicator: a small amber dot overlaid on the badge corner.
+   Absolutely positioned inside .rz-nfl-logo-wrap, so it takes no flow width
+   and can never drift into the middle column and stack on the live dot at
+   phone width (the old past-the-score flow position did exactly that).
+   Renderers only emit it when the field bar below is absent; the bar's
+   team-color fill + flag already show possession when it renders. */
+.rz-nfl-logo-wrap {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+}
 .rz-nfl-poss {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
     width: 9px;
     height: 9px;
     border-radius: 50%;
     background: #f59e0b;
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, .18);
-    flex: 0 0 auto;
+    box-shadow: 0 0 0 2px var(--rz-card, var(--card, #fff));
+    pointer-events: none;
 }
 .rz-nfl-score {
     font-size: 22px;

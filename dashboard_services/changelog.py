@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "fix",
+        "text": "ScoreZone game board: the possession dot no longer sits past the score where it collided with the clock in the middle on phones. When the drive bar is showing, its team-color fill already shows who has the ball, so the dot steps aside. When there is no drive bar, the dot now sits on the team badge corner instead. Team names also appear once now: the badge chip carries the abbreviation, so the duplicate text next to it is gone from the board and the game pills. The yard line appears once too: when the drive bar is showing, it lives only on the bar's flag and the center line reads just the down and distance.",
+        "link": "/scorezone"
+    },
+    {
+        "date": "2026-10-29",
+        "tag": "fix",
         "text": "Trade Analyst: the positional ranks in the analysis now match the ranks on the trade cards above it. The analyst was handed a rank stored before the latest value calibration (and the 1QB rank even in Superflex and redraft leagues); it now receives the same format rank the cards show, and any rank it writes for a traded player is checked against that rank before you see it.",
         "link": "/trade"
     },
