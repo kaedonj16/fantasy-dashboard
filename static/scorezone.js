@@ -5020,9 +5020,25 @@
   // active poll/stream and starts a fresh request with immediate loading
   // feedback so a hung stream can never leave the button inert.
   function _manualRefresh() {
-    if (_scope === 'user') _refreshUserStream({ manual: true });
-    else _refresh({ manual: true });
+    if (_scope === 'user') return _refreshUserStream({ manual: true });
+    return _refresh({ manual: true });
   }
+
+  // Pull-to-refresh (PWA): the core controller in app.js calls
+  // window.brPageRefresh() when a top-of-page pull passes its threshold.
+  // The hook is exactly the proven manual-refresh path above (timer tap /
+  // resume), returning its promise so the indicator can wait for the fetch
+  // to settle. Soft-nav detach is handled the same way _refresh handles it:
+  // a swapped-out ScoreZone drops the registration instead of refreshing a
+  // dead page, so later pages never inherit this hook.
+  function _ptrPageRefresh() {
+    if (root.isConnected === false) {
+      if (window.brPageRefresh === _ptrPageRefresh) delete window.brPageRefresh;
+      return Promise.resolve();
+    }
+    return _manualRefresh();
+  }
+  window.brPageRefresh = _ptrPageRefresh;
 
   async function _refresh(opts) {
     opts = opts || {};

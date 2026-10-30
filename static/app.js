@@ -19384,6 +19384,181 @@ if (typeof window !== 'undefined') {
 }
 // [br-name-match:end]
 
+/* br-ptr:start */
+// Pull-to-refresh (PWA, v1). Touch-only, in-place, and opt-in per page: a
+// page registers window.brPageRefresh() returning a Promise that resolves
+// when its data refresh has completed (ScoreZone and the Weekly Hub do).
+// Pages without a hook get NO gesture and NO reload fallback. The body's
+// overscroll-behavior-y: contain stays, so Android's native pull-to-refresh
+// cannot double-fire underneath this one.
+(function () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (window.__brPtrInstalled) return;
+  window.__brPtrInstalled = true;
+
+  var THRESHOLD = 76;      // raw pull px that arms a refresh on release
+  var RESISTANCE = 2.5;    // indicator moves at pull / RESISTANCE
+  var MAX_VISUAL = 76;     // indicator travel cap, px (lands on the pin spot)
+  var HIDDEN_Y = -64;      // translateY that parks the chip off-screen
+  var PIN_Y = 12;          // translateY while a refresh is running
+  var MAX_WAIT_MS = 15000; // the indicator can never strand on a hung hook
+
+  var candidate = false;
+  var refreshing = false;
+  var startX = 0;
+  var startY = 0;
+  var pull = 0;
+  var el = null;
+  var finishTimer = null;
+
+  function ensureEl() {
+    if (el) return el;
+    el = document.createElement('div');
+    el.className = 'br-ptr';
+    el.setAttribute('aria-hidden', 'true');
+    var spin = document.createElement('span');
+    spin.className = 'br-ptr-spinner';
+    el.appendChild(spin);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function setY(y) {
+    if (!el) return;
+    el.style.transform = 'translate(-50%, ' + y + 'px)';
+  }
+
+  function showPull(visual) {
+    ensureEl();
+    el.classList.add('br-ptr-visible');
+    el.classList.toggle('br-ptr-armed', pull >= THRESHOLD);
+    setY(HIDDEN_Y + visual);
+  }
+
+  function retract() {
+    if (!el) return;
+    el.classList.remove('br-ptr-visible', 'br-ptr-armed', 'br-ptr-refreshing');
+    setY(HIDDEN_Y);
+  }
+
+  function modalOpen() {
+    try {
+      return !!document.querySelector(
+        '.player-modal-overlay, .for-modal-overlay, .team-modal-overlay,' +
+        ' .rzm-modal-overlay, .modal-overlay, .modal.open, .sheet.open,' +
+        ' .br-more-sheet.open, [data-br-modal-open="true"]'
+      );
+    } catch (e) { return false; }
+  }
+
+  // A pull that starts on something with its own scrolling / dragging /
+  // editing is not a page pull.
+  function blockedTarget(node) {
+    var depth = 0;
+    while (node && node !== document && depth < 14) {
+      var tag = node.tagName ? String(node.tagName).toUpperCase() : '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'CANVAS') return true;
+      if (node.isContentEditable) return true;
+      var cls = '';
+      try { cls = typeof node.className === 'string' ? node.className : ''; } catch (e) { cls = ''; }
+      if (/(^|\s)(carousel|hz-scroll|scroll-row|tab-bar)(\s|$)/.test(cls)) return true;
+      // Inner scroller that can still scroll up: the gesture belongs to it.
+      if (node.scrollTop > 0 && node.scrollHeight > node.clientHeight + 4) return true;
+      // Horizontal scroller/carousel with room to move sideways.
+      if (node.scrollLeft !== undefined && node.scrollWidth > node.clientWidth + 4) {
+        var ox = '';
+        try {
+          var cs = window.getComputedStyle ? window.getComputedStyle(node) : null;
+          ox = cs ? (cs.overflowX || '') : '';
+        } catch (e) { ox = ''; }
+        if (ox === 'auto' || ox === 'scroll') return true;
+      }
+      node = node.parentElement || node.parentNode;
+      depth++;
+    }
+    return false;
+  }
+
+  function touchPoint(e) {
+    var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+    return t || null;
+  }
+
+  // The site's scroll can live on the window, <html>, or <body> depending
+  // on the render (app.js's own getScroll() reads the same three), so the
+  // "very top" check takes the max of all three.
+  function pageScrollY() {
+    var y = window.scrollY || window.pageYOffset || 0;
+    var de = document.documentElement ? (document.documentElement.scrollTop || 0) : 0;
+    var bd = document.body ? (document.body.scrollTop || 0) : 0;
+    return Math.max(y, de, bd);
+  }
+
+  document.addEventListener('touchstart', function (e) {
+    candidate = false;
+    pull = 0;
+    if (refreshing) return;
+    if (typeof window.brPageRefresh !== 'function') return; // no hook, no gesture
+    if (pageScrollY() > 0) return; // not at the very top
+    if (modalOpen()) return;
+    if (blockedTarget(e.target)) return;
+    var t = touchPoint(e);
+    if (!t) return;
+    startX = t.clientX;
+    startY = t.clientY;
+    candidate = true;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!candidate || refreshing) return;
+    if (pageScrollY() > 0) { candidate = false; retract(); return; }
+    var t = touchPoint(e);
+    if (!t) return;
+    var dx = t.clientX - startX;
+    var dy = t.clientY - startY;
+    if (Math.abs(dx) > Math.abs(dy)) { candidate = false; retract(); return; } // horizontal gesture
+    if (dy <= 0) { pull = 0; retract(); return; }
+    pull = dy;
+    if (e.cancelable && e.preventDefault) e.preventDefault();
+    showPull(Math.min(MAX_VISUAL, dy / RESISTANCE));
+  }, { passive: false });
+
+  function finishRefresh() {
+    if (finishTimer) { clearTimeout(finishTimer); finishTimer = null; }
+    refreshing = false;
+    retract();
+  }
+
+  function triggerRefresh() {
+    refreshing = true;
+    ensureEl();
+    el.classList.add('br-ptr-visible', 'br-ptr-refreshing');
+    el.classList.remove('br-ptr-armed');
+    setY(PIN_Y);
+    finishTimer = setTimeout(finishRefresh, MAX_WAIT_MS);
+    var p;
+    try { p = window.brPageRefresh(); } catch (err) { finishRefresh(); return; }
+    if (p && typeof p.then === 'function') p.then(finishRefresh, finishRefresh);
+    else finishRefresh();
+  }
+
+  document.addEventListener('touchend', function () {
+    if (!candidate) return;
+    candidate = false;
+    if (refreshing) return;
+    if (pull >= THRESHOLD && typeof window.brPageRefresh === 'function') triggerRefresh();
+    else retract();
+    pull = 0;
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', function () {
+    candidate = false;
+    pull = 0;
+    if (!refreshing) retract();
+  }, { passive: true });
+})();
+/* br-ptr:end */
+
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 
 // R06.3 -- one in-app toast near lineup lock when starters need attention.
