@@ -701,6 +701,7 @@ def test_changelog_announces_trends_and_hist_without_em_dashes():
     scout = next(
         entry for entry in CHANGELOG
         if entry.get("tag") == "update" and "Pro" in entry.get("text", "")
+        and entry.get("link") == "/draft/cheat-sheet"
     )
     assert "top-5" in scout["text"]
     assert "top-24" in scout["text"]

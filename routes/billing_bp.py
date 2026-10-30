@@ -850,10 +850,10 @@ _PRO_FEATURES = [
 ]
 
 _FREE_FEATURES = [
-    ("fa-calculator", "Trade calculator &amp; Sleeper comps"),
-    ("fa-table", "Advanced Metrics"),
-    ("fa-gavel", "Auction Values"),
-    ("fa-file-csv", "Live cheat-sheet overlay &amp; CSV"),
+    ("fa-hand-holding-dollar", "Trade calculator &amp; Sleeper comps"),
+    ("fa-bars", "Advanced Metrics"),
+    ("fa-gem", "Auction Values"),
+    ("fa-newspaper", "Live cheat-sheet overlay &amp; CSV"),
 ]
 
 
@@ -1551,31 +1551,30 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
 
     trial_active = bool(trial_state and trial_state.get("active"))
     trial_used = bool(trial_state and trial_state.get("used"))
+    # The trial card renders as a slim strip inside the plans section,
+    # directly above the plan grid (paywall rework), in its real conditional
+    # forms only: an offer card, or an active-trial status card.
     trial_section = ""
     if trial_active:
         _days = trial_state.get("days_left") or 1
         _unit = "day" if _days == 1 else "days"
         trial_section = f"""
-      <section class="pricing-section" aria-label="PRO trial status">
         <div class="pricing-trial-card pricing-trial-active">
           <div>
             <h2>Your PRO trial is active</h2>
             <p>Trial ends in {_days} {_unit}. Full PRO is on while it lasts.</p>
           </div>
           <span class="pricing-trial-count" aria-hidden="true">{_days}d</span>
-        </div>
-      </section>"""
+        </div>"""
     elif not trial_used and not trial_is_pro:
         trial_section = """
-      <section class="pricing-section" aria-label="PRO free trial">
         <div class="pricing-trial-card">
           <div>
             <h2>Try PRO free for 7 days</h2>
             <p>Full PRO access across everything. No card required. One trial per account.</p>
           </div>
           <a class="btn btn-primary" href="/pro-trial/start?next=/pricing">Start free trial</a>
-        </div>
-      </section>"""
+        </div>"""
 
     winback_status = request.args.get("winback", "")
     winback_banner = ""
@@ -1602,14 +1601,16 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         <h1>PRO: roster-aware fantasy tools for $10/year.</h1>
         <p>Turn your roster, market activity, and league outlook into clearer trade, waiver, weekly, and draft decisions.</p>
       </header>
-      {trial_section}
 
       <section class="pricing-section pricing-plans" aria-labelledby="pricing-plans-title">
-        <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose your coverage</h2><p>Every plan is personal: PRO covers you in the leagues you unlock, not your league mates. Billed monthly or annually. Annual billing saves up to 44%.</p></div>
-        <div class="billing-toggle" role="group" aria-label="Billing interval">
-          <button type="button" class="billing-toggle-btn" data-billing-interval="month" aria-pressed="false">Monthly</button>
-          <button type="button" class="billing-toggle-btn is-active" data-billing-interval="year" aria-pressed="true">Annual<span class="billing-toggle-save">save 44%</span></button>
+        <div class="pricing-plans-headrow">
+          <div class="pricing-section-heading"><h2 id="pricing-plans-title">Choose your coverage</h2><p>Every plan is personal: PRO covers you in the leagues you unlock, not your league mates. Billed monthly or annually. Annual billing saves up to 44%.</p></div>
+          <div class="billing-toggle" role="group" aria-label="Billing interval">
+            <button type="button" class="billing-toggle-btn" data-billing-interval="month" aria-pressed="false">Monthly</button>
+            <button type="button" class="billing-toggle-btn is-active" data-billing-interval="year" aria-pressed="true">Annual<span class="billing-toggle-save">save 44%</span></button>
+          </div>
         </div>
+        {trial_section}
         <div class="pricing-plan-grid" data-billing="year">{plan_cards}</div>
         <aside class="pricing-proof" aria-label="What managers say">
           <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
@@ -1646,23 +1647,81 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
       <section class="pricing-section" aria-labelledby="pro-includes-title">
         <div class="pricing-section-heading"><h2 id="pro-includes-title">What PRO includes</h2><p>Decision support built around the teams and leagues your plan covers.</p></div>
         <div class="pricing-benefit-groups">
-          <article><i class="fa-solid fa-handshake" aria-hidden="true"></i><h3>Trade decisions</h3><p>Roster-based suggestions, Trade Intel, AI trade analysis and counters, and playoff-impact simulations.</p></article>
-          <article><i class="fa-solid fa-fire" aria-hidden="true"></i><h3>Player discovery</h3><p>Breakout Engine opportunity signals, historical peers, and confidence-adjusted projections.</p></article>
-          <article><i class="fa-solid fa-calendar-week" aria-hidden="true"></i><h3>Weekly guidance</h3><p>Front Office Report, the premium AI weekly recap storyline, and cross-league “This week’s moves.” The cross-league digest requires All-Pro or Hall of Fame coverage across your leagues.</p></article>
-          <article><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><h3>Draft tools</h3><p>Custom Draft Board, Trend Scout, and Draft Grades.</p></article>
+          <article><span class="pricing-ichip"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i></span><h3>Trade decisions</h3><p>Roster-based suggestions, Trade Intel, AI trade analysis and counters, and playoff-impact simulations.</p></article>
+          <article><span class="pricing-ichip"><i class="fa-solid fa-fire" aria-hidden="true"></i></span><h3>Player discovery</h3><p>Breakout Engine opportunity signals, historical peers, and confidence-adjusted projections.</p></article>
+          <article><span class="pricing-ichip"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span><h3>Weekly guidance</h3><p>Front Office Report, the premium AI weekly recap storyline, and cross-league “This week’s moves.” The cross-league digest requires All-Pro or Hall of Fame coverage across your leagues.</p></article>
+          <article><span class="pricing-ichip"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></span><h3>Draft tools</h3><p>Custom Draft Board, Trend Scout, and Draft Grades.</p></article>
+        </div>
+      </section>
+
+      <section class="pricing-section" aria-labelledby="pro-metrics-title">
+        <div class="pricing-section-heading"><h2 id="pro-metrics-title">PRO metrics</h2><p>The gated metric set in Advanced Metrics and the player modal.</p></div>
+        <div class="pricing-benefit-groups pricing-metrics-groups">
+          <article>
+            <span class="pricing-ichip"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span><h3>Efficiency</h3>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">Points over expected, per game<span class="premium-badge">PRO</span></div>
+              <p>Actual points per game minus the points that same opportunity was expected to produce. Shown in PPR, Half PPR, and Standard.</p>
+            </div>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">Points over expected<span class="premium-badge">PRO</span></div>
+              <p>The season total behind the per game number, in PPR, Half PPR, and Standard.</p>
+            </div>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">Target Quality<span class="premium-badge">PRO</span></div>
+              <p>Composite of targets per game, yards per target, and receiving touchdowns.</p>
+            </div>
+          </article>
+          <article>
+            <span class="pricing-ichip"><i class="fa-solid fa-bullseye" aria-hidden="true"></i></span><h3>Opportunity</h3>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">WOPR<span class="premium-badge">PRO</span></div>
+              <p>Weighted opportunity rating: 1.5 times target share plus 0.7 times air yards share.</p>
+            </div>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">Opportunity trend<span class="premium-badge">PRO</span></div>
+              <p>Last 3 weeks of usage against the season average, on the key stat for the position.</p>
+            </div>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">xFP trend<span class="premium-badge">PRO</span></div>
+              <p>Last 3 weeks of expected PPR per game against the season average.</p>
+            </div>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">Role Score<span class="premium-badge">PRO</span></div>
+              <p>Share of team targets and carries, red zone usage, and quarterback passing and rushing workload.</p>
+            </div>
+          </article>
+          <article>
+            <span class="pricing-ichip"><i class="fa-solid fa-chart-bar" aria-hidden="true"></i></span><h3>Consistency</h3>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">Consistency (fantasy point CV)<span class="premium-badge">PRO</span></div>
+              <p>Variation in weekly PPR scores. Lower means steadier week to week scoring, high means boom or bust.</p>
+            </div>
+          </article>
+          <article>
+            <span class="pricing-ichip"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span><h3>Value</h3>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">Value over replacement (VORP)<span class="premium-badge">PRO</span></div>
+              <p>Season PPR points above a replacement level starter at the same position.</p>
+            </div>
+            <div class="pricing-metric">
+              <div class="pricing-metric-head">WAR<span class="premium-badge">PRO</span></div>
+              <p>VORP converted into wins above replacement.</p>
+            </div>
+          </article>
         </div>
       </section>
 
       <section class="pricing-section" aria-labelledby="previews-title">
         <div class="pricing-section-heading"><h2 id="previews-title">See the value in context</h2><p>Illustrative examples only. Not your league results or current player recommendations.</p></div>
         <div class="pricing-preview-grid">
-          <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-right-left" aria-hidden="true"></i><h3>Roster-fit trade</h3><strong>Turn surplus WR depth into a starting RB</strong><p>Your receiver room can absorb the loss; the return fills the clearest weekly lineup gap without concentrating too much value in one asset.</p></article>
+          <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i><h3>Roster-fit trade</h3><strong>Turn surplus WR depth into a starting RB</strong><p>Your receiver room can absorb the loss; the return fills the clearest weekly lineup gap without concentrating too much value in one asset.</p></article>
           <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-arrow-trend-up" aria-hidden="true"></i><h3>Breakout analysis</h3><strong>Opportunity: expanding · Confidence: medium</strong><p>Vacated targets and a clearer route to snaps create upside, while a small sample keeps confidence measured.</p></article>
           <article class="pricing-preview"><span>Sample preview</span><i class="fa-solid fa-newspaper" aria-hidden="true"></i><h3>Weekly storyline</h3><strong>A narrow win reshapes the race</strong><p>Your flex delivered late, moving the team above .500 as next week’s matchup puts the final playoff spot in reach.</p></article>
         </div>
       </section>
 
-      <section class="pricing-section" aria-labelledby="free-title">
+      <section class="pricing-section pricing-free-section" aria-labelledby="free-title">
         <div class="pricing-section-heading"><h2 id="free-title">What remains free</h2><p>Upgrade only when the premium guidance fits your game.</p></div>
         {_pricing_features_grid(_FREE_FEATURES, free=True)}
         <p class="pricing-free-note">ADP rankings, basic player data, and the non-storyline sections of Weekly Recap also remain free.</p>
@@ -1670,7 +1729,8 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
 
       <section class="pricing-section pricing-faq" aria-labelledby="faq-title">
         <div class="pricing-section-heading"><h2 id="faq-title">Plan coverage FAQ</h2></div>
-        <details><summary>Does Starter cover my league mates?</summary><p>No. It gives only you PRO in one league you choose.</p></details>
+        <div class="pricing-faq-card">
+        <details open><summary>Does Starter cover my league mates?</summary><p>No. It gives only you PRO in one league you choose.</p></details>
         <details><summary>What does All-Pro cover?</summary><p>PRO for you in up to 5 leagues you choose. Your league mates are not upgraded.</p></details>
         <details><summary>Does Hall of Fame cover everyone everywhere?</summary><p>No. It gives you PRO in every league you play. Your league mates stay on the free tier.</p></details>
         <details><summary>How do Starter and All-Pro league slots work?</summary><p>After checkout you pick which leagues get PRO: 1 league on Starter, up to 5 on All-Pro. You can change your picks anytime from your PRO settings, and PRO applies only to you in those leagues.</p></details>
@@ -1679,6 +1739,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         <details><summary>How does PRO billing work?</summary><p>PRO is billed monthly or annually, depending on the interval you choose at checkout. Your subscription renews automatically at the then-current price until you cancel.</p></details>
         <details><summary>How do I cancel?</summary><p>Cancel anytime through the subscription management link in your account. Your PRO access continues until the end of the current term.</p></details>
         <details><summary>Can I get a refund?</summary><p>Charges are non-refundable except as required by law. Canceling stops future renewals but does not refund the current term.</p></details>
+        </div>
       </section>
       {_pricing_faq_ld_json()}
     </main>

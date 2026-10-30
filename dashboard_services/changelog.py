@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "update",
+        "text": "PRO pricing page refresh: the plan picker now leads with the free trial strip and the billing toggle beside the heading, the All-Pro card stands out with a lifted, tinted treatment, and a new PRO metrics section groups the gated metrics under Efficiency, Opportunity, Consistency, and Value. What remains free now sits in its own styled panel, and the plan coverage FAQ reads as one card with the first answer open. Plans, prices, and coverage are unchanged.",
+        "link": "/pricing"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "update",
         "text": "ScoreZone game picker: each game now reads as one compact versus line, with the team badges either side of the @, scores inline once the game is underway, and the day and kickoff time on a small line underneath. An upcoming game's board header centers the matchup, and its Box score button is now a compact pill instead of a full-width bar.",
         "link": "/scorezone"
     },

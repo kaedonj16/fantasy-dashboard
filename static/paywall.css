@@ -374,15 +374,17 @@
 
 /* Pricing page and focused upgrade-dialog presentation. */
 .pricing-page { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:28px 0 56px; color:var(--text); }
-.pricing-hero { max-width:720px; margin:0 auto 28px; text-align:center; }
+.pricing-hero { max-width:720px; margin:0 auto 20px; text-align:center; }
 .pricing-eyebrow { color:var(--brand-blue, #2563eb); font-size:12px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
 .pricing-hero h1 { margin:8px 0 10px; font-size:clamp(28px, 5vw, 44px); line-height:1.08; }
 .pricing-hero p, .pricing-section-heading p, .pricing-free-note { color:var(--text-muted); line-height:1.55; }
-.pricing-section { margin-top:30px; }
+.pricing-section { margin-top:36px; }
 .pricing-section-heading { margin-bottom:14px; }
 .pricing-section-heading h2 { margin:0 0 4px; font-size:var(--fs-h2); }
 .pricing-section-heading p { margin:0; font-size:14px; }
-.pricing-plan-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; }
+.pricing-plan-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:16px; }
+.pricing-plan-grid .pricing-option { padding:22px; }
+.pricing-page .paywall-cta { min-height:44px; }
 .billing-toggle { display:inline-flex; margin:0 0 16px; padding:4px; gap:4px; border:1px solid var(--border); border-radius:999px; background:var(--card); }
 .billing-toggle-btn { border:0; border-radius:999px; padding:8px 18px; font-size:14px; font-weight:700; color:var(--text-muted); background:transparent; cursor:pointer; }
 .billing-toggle-btn.is-active { color:#fff; background:linear-gradient(135deg,#122d4b,#2563eb); }
@@ -445,11 +447,13 @@
 .paywall-more { max-width:620px; margin:10px auto 0; text-align:left; }
 .paywall-full-pricing { display:inline-block; margin-top:10px; color:var(--brand-blue, #2563eb); font-size:var(--fs-sm); font-weight:700; }
 @media (max-width:920px) {
-  .pricing-plan-grid, .pricing-benefit-groups { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .pricing-benefit-groups { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .pricing-plan-grid { grid-template-columns:1fr; max-width:520px; margin:0 auto; }
+  .pricing-plan-grid .pricing-option.featured { transform:none; }
 }
 @media (max-width:600px) {
   .pricing-page { width:min(100% - 20px, 1120px); padding-top:18px; }
-  .pricing-plan-grid, .pricing-benefit-groups, .pricing-preview-grid { grid-template-columns:1fr; }
+  .pricing-benefit-groups, .pricing-preview-grid { grid-template-columns:1fr; }
   .pricing-option { padding:18px; }
   .pricing-header { min-height:0; }
   .paywall-pricing { grid-template-columns:1fr; }
@@ -486,6 +490,74 @@
 .paywall-or::before, .paywall-or::after { content:""; flex:1; border-top:1px solid var(--border); }
 @media (max-width:600px) {
   .pricing-trial-card { flex-direction:column; align-items:stretch; text-align:center; }
+}
+
+/* ── Pricing page rework (approved mock, page-reworks round 2) ──────────
+   Shared section-header hairline, plans headrow, trial strip inside the
+   plans section, one card language for the benefit + metric grids, the
+   styled free section, and the FAQ card. Page-scoped so the paywall modal
+   keeps its own system. */
+.pricing-page .pricing-section-heading { border-bottom:1px solid var(--border); padding-bottom:12px; }
+.pricing-plans-headrow { display:flex; align-items:flex-end; justify-content:space-between; gap:14px 18px; flex-wrap:wrap; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:14px; }
+.pricing-plans-headrow .pricing-section-heading { margin-bottom:0; flex:1 1 340px; border-bottom:0; padding-bottom:0; }
+.pricing-plans-headrow .billing-toggle { margin:0; flex:none; }
+@media (max-width:640px) {
+  .pricing-plans-headrow { flex-direction:column; align-items:stretch; }
+  .pricing-plans-headrow .billing-toggle { align-self:flex-start; }
+}
+.pricing-page .pricing-plans .pricing-trial-card { max-width:none; margin:0 0 16px; padding:16px 20px; box-shadow:0 10px 26px -14px rgba(15,35,60,.35); }
+.pricing-page .pricing-plans .pricing-trial-card h2 { font-size:17px; margin:0 0 3px; }
+.pricing-page .pricing-plans .pricing-trial-card p { font-size:var(--fs-sm); }
+.pricing-plan-grid .pricing-option.featured { transform:translateY(-6px); background:linear-gradient(180deg, color-mix(in srgb, var(--brand-blue, #2563eb) 6%, var(--card)) 0%, var(--card) 140px); box-shadow:0 16px 34px color-mix(in srgb, var(--brand-blue, #2563eb) 22%, transparent); }
+@media (max-width:920px) {
+  .pricing-page .pricing-plan-grid .pricing-option.featured { transform:none; }
+}
+.pricing-plan-grid .pricing-option.featured .pricing-price .pp-price { font-size:42px; }
+.pricing-page .pricing-proof { border:0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); border-radius:0; background:transparent; max-width:640px; padding:18px 12px; margin:22px auto 0; }
+.pricing-page .pricing-proof blockquote { font-size:18px; }
+.pricing-page .pricing-auth-note { margin-top:12px; }
+.pricing-page .pricing-benefit-groups { align-items:stretch; gap:14px; }
+.pricing-page .pricing-benefit-groups article { display:flex; flex-direction:column; padding:20px; border-radius:14px; box-shadow:0 1px 2px rgba(15,35,60,.05), 0 10px 22px -14px rgba(15,35,60,.28); transition:box-shadow .18s ease, transform .18s ease; }
+.pricing-page .pricing-benefit-groups article:hover { transform:translateY(-2px); box-shadow:0 2px 3px rgba(15,35,60,.06), 0 16px 30px -14px rgba(15,35,60,.35); }
+.pricing-page .pricing-ichip { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:10px; background:var(--accent-soft); flex:none; align-self:flex-start; }
+.pricing-page .pricing-benefit-groups .pricing-ichip i { font-size:17px; }
+.pricing-page .pricing-benefit-groups h3 { margin-top:12px; }
+.pricing-page .pricing-benefit-groups.pricing-metrics-groups { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+@media (max-width:640px) {
+  .pricing-page .pricing-benefit-groups.pricing-metrics-groups { grid-template-columns:1fr; }
+}
+.pricing-metric { border-top:1px solid var(--border); padding:10px 0 2px; margin-top:10px; }
+.pricing-metric-head { display:flex; align-items:center; flex-wrap:wrap; gap:2px; font-size:14px; font-weight:700; color:var(--text); line-height:1.35; }
+.pricing-metric-head .premium-badge { margin-left:auto; }
+.pricing-page .pricing-benefit-groups .pricing-metric p { margin-top:4px; }
+.pricing-page .pricing-free-section { background:var(--bg-alt, #f4f6f8); border:1px solid var(--border); border-radius:14px; padding:20px; }
+.pricing-page .pricing-free-section .pricing-features-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.pricing-page .pricing-free-section .pricing-feature-item { display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+.pricing-page .pricing-free-section .pricing-feature-icon { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; flex:none; border-radius:8px; background:var(--accent-soft); color:var(--accent); font-size:14px; margin-top:0; }
+.pricing-page .pricing-free-section .pricing-feature-icon i { font-size:15px; }
+[data-theme="dark"] .pricing-page .pricing-free-section .pricing-feature-icon { color:var(--accent); }
+.pricing-page .pricing-free-section .pricing-feature-label { font-size:14px; font-weight:600; color:var(--text); line-height:1.35; }
+.pricing-page .pricing-free-section .pricing-free-note { border-top:1px solid var(--border); padding-top:12px; margin-top:14px; }
+@media (max-width:640px) {
+  .pricing-page .pricing-free-section { padding:16px; }
+  .pricing-page .pricing-free-section .pricing-features-grid { grid-template-columns:1fr; }
+}
+.pricing-page .pricing-faq .pricing-faq-card { background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:0 1px 2px rgba(15,35,60,.05), 0 10px 22px -14px rgba(15,35,60,.28); overflow:hidden; max-width:900px; }
+.pricing-page .pricing-faq .pricing-faq-card details { padding:0; border-top:0; }
+.pricing-page .pricing-faq .pricing-faq-card details + details { border-top:1px solid var(--border); }
+.pricing-page .pricing-faq .pricing-faq-card details[open] { background:var(--bg-alt, #f4f6f8); }
+.pricing-page .pricing-faq .pricing-faq-card details[open] summary, .pricing-page .pricing-faq .pricing-faq-card details[open] p { box-shadow:inset 3px 0 0 var(--accent); }
+.pricing-page .pricing-faq summary { list-style:none; display:flex; align-items:center; gap:10px; padding:17px 22px; font-size:15px; font-weight:700; line-height:1.4; letter-spacing:-.01em; color:var(--text); cursor:pointer; }
+.pricing-page .pricing-faq summary::-webkit-details-marker { display:none; }
+.pricing-page .pricing-faq summary::after { content:""; flex:none; margin-left:auto; width:26px; height:26px; border-radius:50%; background:var(--bg-alt, #f4f6f8) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") center / 12px no-repeat; transition:transform .2s ease, background-color .2s ease; }
+.pricing-page .pricing-faq details[open] summary::after { transform:rotate(180deg); background-color:var(--accent-soft); }
+.pricing-page .pricing-faq summary:hover { background:var(--bg-alt, #f4f6f8); }
+.pricing-page .pricing-faq .pricing-faq-card details[open] summary:hover { background:transparent; }
+.pricing-page .pricing-faq .pricing-faq-card p { margin:0; padding:1px 22px 20px; font-size:14px; line-height:1.65; color:var(--text-muted); max-width:68ch; }
+@media (max-width:640px) {
+  .pricing-page .pricing-faq summary { padding:16px; font-size:14.5px; }
+  .pricing-page .pricing-faq summary::after { width:24px; height:24px; }
+  .pricing-page .pricing-faq .pricing-faq-card p { padding:1px 16px 17px; }
 }
 
 /* ── PRO plan modal redesign ──────────────────────────────────────────
