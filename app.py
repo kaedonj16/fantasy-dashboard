@@ -42127,6 +42127,24 @@ def build_portfolio_body(
         ".pf-bf-endline{font-size:13.5px;color:var(--text-muted);line-height:1.5;padding:1px 0;}"
         "@media (max-width:640px){.pf-bf-stand{font-size:19px;}}"
         ".pf-grade-line{border-top:1px solid var(--grid);padding:9px 16px;font-size:12px;color:var(--text-muted);}"
+        # Front Office loading state: the card is visible from first paint
+        # (it used to render hidden and only appear when the scan landed,
+        # so the section read as missing for the whole cold scan). A
+        # pulsing dot + live sub-line + hairline skeleton rows hold roughly
+        # the board's height while /api/portfolio-actions runs; the JS
+        # updates #pfLoadSub with real scanned/total counts on each
+        # incomplete pass instead of leaving one static line up.
+        ".pf-load{display:flex;align-items:flex-start;gap:9px;padding:4px 2px 10px;}"
+        ".pf-load-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto;margin-top:5px;animation:pfLoadPulse 1.2s ease-in-out infinite;}"
+        "@keyframes pfLoadPulse{0%,100%{opacity:.35;}50%{opacity:1;}}"
+        ".pf-load-title{font-size:13.5px;font-weight:700;color:var(--text);}"
+        ".pf-load-sub{font-size:12.5px;color:var(--text-muted);margin-top:2px;line-height:1.45;}"
+        ".pf-load-skel{border-top:1px solid var(--grid);}"
+        ".pf-load-row{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--grid);}"
+        ".pf-load-bar{height:10px;border-radius:5px;background:var(--grid);animation:pfLoadPulse 1.2s ease-in-out infinite;}"
+        ".pf-load-bar.w-lg{width:46%;}.pf-load-bar.w-md{width:32%;}.pf-load-bar.w-sm{width:22%;}"
+        ".pf-load-chip{width:24px;height:24px;border-radius:50%;background:var(--grid);flex:0 0 auto;animation:pfLoadPulse 1.2s ease-in-out infinite;}"
+        "@media (prefers-reduced-motion: reduce){.pf-load-dot,.pf-load-bar,.pf-load-chip{animation:none;}}"
         ".pf-hidden-footer{border-top:1px solid var(--grid);padding:9px 16px;font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px;}"
         ".pf-group-empty{display:flex;align-items:center;gap:8px;padding:11px 14px;font-size:12.5px;font-weight:600;color:var(--text-subtle);}"
         ".pf-group-empty .pf-ge-dot{width:7px;height:7px;border-radius:50%;background:var(--win);flex:0 0 auto;}"
@@ -42306,8 +42324,12 @@ def build_portfolio_body(
     # ── Board card (v25): grouped Front Office board, filled async from
     # /api/portfolio-actions by __pfBoardInit in static/app.js. The card
     # renders its deterministic board first; the deep dive is additive.
+    # The card itself is NOT hidden: it paints immediately with the
+    # scanning loading state in pfMovesBody, so the section is visibly
+    # present (and holds its height) for the whole cold scan instead of
+    # popping in only when the board lands.
     moves_card = v25_css + (
-        "<div class='card pf-moves-card' id='pfMovesCard' style='margin-bottom:14px;' hidden>"
+        "<div class='card pf-moves-card' id='pfMovesCard' style='margin-bottom:14px;'>"
         "<div class='card-header pf-moves-head'>"
         "<div><h2>Front Office</h2>"
         "<span class='pf-moves-sub'>Do this first, across your leagues</span></div>"
@@ -42317,7 +42339,7 @@ def build_portfolio_body(
         "</div></div>"
         "<div class='pf-scanline' id='pfScanLine' hidden></div>"
         "<div class='card-body' id='pfMovesBody'>"
-        "<div class='pf-moves-loading'>Checking lineups…</div>"
+        "<div class='pf-moves-loading'><div class='pf-load' role='status'><span class='pf-load-dot'></span><div><div class='pf-load-title'>Scanning your leagues…</div><div class='pf-load-sub' id='pfLoadSub'>Checking lineups, waivers and deadlines across your leagues.</div></div></div><div class='pf-load-skel' aria-hidden='true'><div class='pf-load-row'><span class='pf-load-chip'></span><span class='pf-load-bar w-lg'></span></div><div class='pf-load-row'><span class='pf-load-chip'></span><span class='pf-load-bar w-md'></span></div><div class='pf-load-row'><span class='pf-load-chip'></span><span class='pf-load-bar w-sm'></span></div></div></div>"
         "</div>"
         "<div class='pf-deepdive' id='pfDeepDive' hidden></div>"
         "<div class='pf-grade-line' id='pfGradeLine' hidden></div>"
