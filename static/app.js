@@ -32578,11 +32578,11 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         text: 'Front Office moves: Done files an action under Show completed. Evidence shows why it was suggested.' }
     ],
     'teams': [
-      { selector: '.teams-mode-toggle',
+      { selector: '#teamsPageLayout .teams-mode-toggle',
         text: 'Dynasty and This Season re-grade every team. Flip it and every number changes.' },
-      { selector: '.team-strength-card',
+      { selector: '#teamsPageLayout .team-strength-card',
         text: 'Tap any team card for the full breakdown. Position rooms and Roster Intel open inside the drawer.' },
-      { selector: '.teams-ptabs',
+      { selector: '#teamsPageLayout .teams-ptabs',
         text: 'Value and Schedule are separate views, behind these tabs.' }
     ],
     'rankings': [
@@ -32720,6 +32720,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   function renderStep() {
     var tour = activeTour;
     if (!tour) return;
+    if (!tourStillOnPage(tour)) { endTour(false, false); return; }
     var step = tour.steps[tour.idx];
     // Retry budget is per step: reset whenever the step index changes, so
     // one slow step cannot starve every later step of its probes.
@@ -32766,7 +32767,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     renderStep();
   }
 
-  function endTour(skipped) {
+  function endTour(skipped, burnKey) {
     var tour = activeTour;
     activeTour = null;
     lastTarget = null;
@@ -32783,8 +32784,20 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       if (modal && isVisible(modal)) modal.style.display = 'none';
     }
     // Only a tour the user actually saw counts as done. A tour whose steps
-    // all failed to render must not burn the user's one showing.
-    if (tour.shown > 0) lsSet(LS_KEYS[tour.feature], '1');
+    // all failed to render must not burn the user's one showing. A tour
+    // interrupted by a page change (burnKey === false) never burns either:
+    // it belongs to the page the user left, not the one they landed on.
+    if (burnKey !== false && tour.shown > 0) lsSet(LS_KEYS[tour.feature], '1');
+  }
+
+  // A tour belongs to the page it started on. Soft-nav swaps the page
+  // root without a reload, so a tour still stepping (or still in its
+  // start delay / retry wait) when the user navigates would otherwise
+  // keep rendering over the new page. The modal tour is exempt: the
+  // modal legitimately overlays any page.
+  function tourStillOnPage(tour) {
+    if (!tour || tour.feature === 'player-modal') return true;
+    return detectFeature() === tour.feature;
   }
 
   function onReposition() {
@@ -32825,8 +32838,10 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (document.querySelector('.pf-lg-card')) {
       return 'portfolio';
     }
-    // Teams page.
-    if (document.querySelector('.teams-mode-toggle')) {
+    // Teams page. Scope to the page root id: the Rankings page reuses the
+    // .teams-mode-toggle component for its sort control (#prSortToggle),
+    // so the bare class matches there too and fired this tour on Rankings.
+    if (document.getElementById('teamsPageLayout')) {
       return 'teams';
     }
     // Rankings page.
@@ -32849,7 +32864,13 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   }
 
   function check() {
-    if (activeTour) return;
+    if (activeTour) {
+      // A page swap landed while a tour was running: end it quietly
+      // (without burning its key) instead of letting it step on the
+      // new page.
+      if (!tourStillOnPage(activeTour)) endTour(false, false);
+      return;
+    }
     // Don't fight other overlays (site tour, PRO welcome, open modals).
     if (document.querySelector('.tour-overlay-piece')) return;
     if (window.__brWelcomeActive || window.__brWelcomePending) return;
@@ -32940,7 +32961,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     id: 'teams', title: 'Teams',
     description: 'Grading modes, the team drawer, and views',
     steps: TOUR_DEFS['teams'],
-    available: function () { return !!document.querySelector('.teams-mode-toggle'); }
+    available: function () { return !!document.getElementById('teamsPageLayout'); }
   };
   window.brFeatureGuides['rankings'] = {
     id: 'rankings', title: 'Rankings',

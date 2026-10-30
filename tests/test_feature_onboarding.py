@@ -203,6 +203,36 @@ def test_teams_page_renders_fob_targets(offline_client):
     assert "teams-ptabs" in html
 
 
+def test_teams_tour_scoped_to_teams_page_not_rankings_sort_toggle():
+    """Regression for the bug Kaedon hit on the live site: the Rankings
+    rework reuses the Teams sliding-pill component for its sort control
+    (class 'teams-mode-toggle pr-sort-toggle', #prSortToggle), so the
+    bare class exists on the Rankings page. Teams detection and steps
+    must scope to the Teams page root, or the Teams tour fires on
+    Rankings (it did, 2026-10-30)."""
+    fob = FOB
+    # Detection keys off the Teams page root id, never the shared class.
+    assert "getElementById('teamsPageLayout')" in fob
+    assert "#teamsPageLayout .teams-mode-toggle" in fob
+    assert "#teamsPageLayout .team-strength-card" in fob
+    # The collision is real in the current rankings markup.
+    players = (ROOT / "dashboard_services" / "pages" / "players_page.py").read_text()
+    assert "teams-mode-toggle pr-sort-toggle" in players
+    assert 'id="teamsPageLayout"' in (ROOT / "dashboard_services" / "pages" / "teams_page.py").read_text()
+
+
+def test_tour_ends_on_page_change_without_burning_key():
+    """A tour belongs to its starting page: soft-nav swaps must end a
+    running tour quietly and must not mark it seen (the user never
+    finished it; it should fire properly on its own page later)."""
+    fob = FOB
+    assert "tourStillOnPage" in fob
+    assert "endTour(false, false)" in fob
+    assert "burnKey !== false" in fob
+    # The modal tour is exempt from the page-match guard.
+    assert "tour.feature === 'player-modal'" in fob
+
+
 def test_players_page_renders_rankings_targets(offline_client):
     r = offline_client.get("/sleeper/2026/tourdemo/players?tour=1")
     assert r.status_code == 200, r.status_code
