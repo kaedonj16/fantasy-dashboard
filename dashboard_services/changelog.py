@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "fix",
+        "text": "BR Assistant: asking whether you will win this week no longer answers that there is no scheduled matchup while your matchup is still loading. The assistant now waits briefly for the live matchup to load, and if it is still warming up it says so and asks you to ask again, instead of inventing a verdict about the week.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "fix",
         "text": "Trade calculator Player Insights: the Movers scope line under the tabs now fits on one line. It reads as the biggest BR value movers for the selected window, format and league size, in a slightly tighter label style, instead of wrapping its last word onto a second line.",
         "link": "/trade"
     },

@@ -183,6 +183,7 @@ Reality notes vs the workshop tool map (verified in this repo):
 from __future__ import annotations
 
 import logging
+import time
 from decimal import Decimal
 
 from dashboard_services.assistant import aliases
@@ -6215,10 +6216,45 @@ def standings_as_of_week(ctx, week):
     return _fn(ctx, week)
 
 
+# _build_live_matchups never builds on the calling thread: on a cold
+# cache it kicks a single-flight background rebuild and returns None
+# (the portfolio cards translate that into their pending shape and the
+# client polls). A chat turn has no poll, so the shim waits a bounded
+# few seconds for that rebuild to land before reporting pending; it
+# never starts a build itself, each re-check is a plain cache read.
+_LIVE_MATCHUP_WAIT_SECONDS = 5.0
+_LIVE_MATCHUP_POLL_SECONDS = 0.25
+
+
 def live_matchups(platform, league_id, season, week, ctx):
-    """(matchups, status_by_pid, proj_map) via the portfolio card's builder."""
+    """(matchups, status_by_pid, proj_map) via the portfolio card's builder.
+
+    Returns None when the background rebuild has not landed inside the
+    bounded wait: that is a pending state, NOT an empty matchup list,
+    and callers must not report it as "no scheduled matchup".
+    """
     from routes.user_pages_bp import _build_live_matchups as _fn
-    return _fn(platform, league_id, season, week, ctx)
+    result = _fn(platform, league_id, season, week, ctx)
+    if result is not None:
+        return result
+    deadline = time.monotonic() + _LIVE_MATCHUP_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        time.sleep(_LIVE_MATCHUP_POLL_SECONDS)
+        result = _fn(platform, league_id, season, week, ctx)
+        if result is not None:
+            return result
+    return None
+
+
+def _pending_matchup_pack(pack, week):
+    """The honest state for a matchup whose live build is still warming:
+    pending, with a retry sentence, never a false no-matchup verdict."""
+    pack["available"] = False
+    pack["pending"] = True
+    pack["missing"] = (f"your Week {week} matchup is still loading, "
+                       "give it a few seconds and ask again")
+    pack["nearest"] = []
+    return pack
 
 
 def projected_starter_avgs(rosters, ctx, season, current_week):
@@ -6731,13 +6767,19 @@ def build_matchup(bundle, entities=None, player_ids=None) -> tuple[dict, list[st
     pack["week"] = week
     league_id = str(ctx.get("resolved_league_id") or bundle.get("league_id") or "")
     try:
-        matchups, status_by_pid, proj_map = live_matchups(
+        _live = live_matchups(
             bundle.get("platform") or "sleeper", league_id,
             bundle.get("season"), week, ctx)
         tools.append("matchups.build_matchup_preview")
     except Exception:
         logger.debug("[assistant] matchup preview failed", exc_info=True)
-        matchups, status_by_pid, proj_map = [], {}, {}
+        _live = []
+    if _live is None:
+        # Cold cache, background rebuild still warming: pending, not
+        # "no scheduled matchup" (the week's games are scheduled; the
+        # live build simply has not landed yet).
+        return _pending_matchup_pack(pack, week), tools
+    matchups, status_by_pid, proj_map = _live
     if not matchups:
         pack["available"] = False
         pack["missing"] = f"no scheduled matchup for Week {week}"
@@ -8120,13 +8162,18 @@ def build_live(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]
     pack["week"] = week
     league_id = str(ctx.get("resolved_league_id") or bundle.get("league_id") or "")
     try:
-        matchups, status_by_pid, proj_map = live_matchups(
+        _live = live_matchups(
             bundle.get("platform") or "sleeper", league_id,
             bundle.get("season"), week, ctx)
         tools.append("matchups.build_matchup_preview")
     except Exception:
         logger.debug("[assistant] live matchups failed", exc_info=True)
-        matchups, status_by_pid, proj_map = [], {}, {}
+        _live = []
+    if _live is None:
+        # Same cold-cache pending state as build_matchup: never report
+        # a warming build as "no scheduled matchup".
+        return _pending_matchup_pack(pack, week), tools
+    matchups, status_by_pid, proj_map = _live
     if not matchups:
         pack["available"] = False
         pack["missing"] = f"no scheduled matchup for Week {week}"

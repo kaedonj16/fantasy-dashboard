@@ -124,6 +124,17 @@ def test_live_no_matchup_is_no_data(monkeypatch):
     assert "_" not in pack["missing"]
 
 
+def test_live_pending_build_is_not_no_matchup(monkeypatch):
+    # Cold-cache None from the live builder is a pending build, not an
+    # empty week: the pack must say still loading, never no matchup.
+    monkeypatch.setattr(evidence, "live_matchups", lambda *a: None)
+    pack, _tools = evidence.build_live(_bundle({"rosters": []}, week=8), {}, [])
+    assert pack["available"] is False
+    assert pack["pending"] is True
+    assert "no scheduled matchup" not in pack["missing"]
+    assert "still loading" in pack["missing"]
+
+
 def test_live_receipts_pin_both_scores():
     pack = {"type": "live",
             "matchup": {"is_mine": True,

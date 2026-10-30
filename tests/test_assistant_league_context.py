@@ -317,6 +317,44 @@ def test_matchup_no_games_is_no_data(monkeypatch):
     assert "no scheduled matchup" in pack["missing"]
 
 
+def test_matchup_pending_build_is_not_no_matchup(monkeypatch):
+    # _build_live_matchups returns None on a cold cache (background
+    # rebuild kicked, nothing built yet). That pending state must not
+    # be reported as "no scheduled matchup": Week 8's games exist, the
+    # live build simply has not landed (live bug, 2026-10-30: "Will I
+    # win this week?" answered "No scheduled matchup for Week 8.").
+    monkeypatch.setattr(evidence, "live_matchups", lambda *a: None)
+    pack, _tools = evidence.build_matchup(_bundle({"roster_map": {}}, week=8), {}, [])
+    assert pack["available"] is False
+    assert pack["pending"] is True
+    assert "no scheduled matchup" not in pack["missing"]
+    assert "still loading" in pack["missing"]
+    answer = compose_mod.no_data_answer(pack)
+    assert "No scheduled matchup" not in answer["text"]
+    assert "still loading" in answer["text"]
+
+
+def test_live_matchups_shim_waits_for_background_rebuild(monkeypatch):
+    # The shim polls the cache-only builder until the background
+    # rebuild lands, and gives up (None) after the bounded wait.
+    import routes.user_pages_bp as upb
+    calls = {"n": 0}
+
+    def _fake(*a):
+        calls["n"] += 1
+        return None if calls["n"] < 3 else ([{"left": {}, "right": {}}], {}, {})
+
+    monkeypatch.setattr(upb, "_build_live_matchups", _fake)
+    monkeypatch.setattr(evidence.time, "sleep", lambda *_a: None)
+    out = evidence.live_matchups("sleeper", "L1", 2026, 8, {})
+    assert out is not None and len(out[0]) == 1
+    assert calls["n"] == 3
+
+    monkeypatch.setattr(upb, "_build_live_matchups", lambda *a: None)
+    monkeypatch.setattr(evidence, "_LIVE_MATCHUP_WAIT_SECONDS", 0.0)
+    assert evidence.live_matchups("sleeper", "L1", 2026, 8, {}) is None
+
+
 # -- schedule ----------------------------------------------------------------------------
 
 def _schedule_inputs():
