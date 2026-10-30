@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "fix",
+        "text": "Trade calculator Player Insights: the Movers scope line under the tabs now fits on one line. It reads as the biggest BR value movers for the selected window, format and league size, in a slightly tighter label style, instead of wrapping its last word onto a second line.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "update",
         "text": "Player Rankings, reworked: player headshots now lead every row, rank movement sits right beside the rank number, and each player's age joins their position and team under their name. PPG, Total Points and Value each get their own centered column, Dynasty / Redraft and 1QB / SF toggles sit beside the title, and sorting is a sliding pill next to the position filters. On phones the controls stack cleanly with a full-width sort pill and one row of position filters.",
         "link": "/players"

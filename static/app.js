@@ -8386,31 +8386,23 @@ window.initTradePage = function initTradePage(root = document) {
 
       const data = await res.json();
       const usedDays = data?.used_days;
-      const latestDate = data?.latest_date;
 
       const sub = root.querySelector("#moversSub");
       if (sub && usedDays) {
         const leagueLabel = leagueType === "sf" ? "SF" : "1QB";
         const sizeLabel = leagueSize === 10 ? "" : ` ${leagueSize}-team`;
 
-        // Add freshness indicator
-        let freshnessText = "";
-        if (latestDate) {
-          const dataDate = new Date(latestDate);
-          const now = new Date();
-          const hoursDiff = Math.floor((now - dataDate) / (1000 * 60 * 60));
-          if (hoursDiff < 1) {
-            freshnessText = " • Updated recently";
-          } else if (hoursDiff < 24) {
-            freshnessText = ` • Updated ${hoursDiff}h ago`;
-          } else {
-            const daysDiff = Math.floor(hoursDiff / 24);
-            freshnessText = ` • Updated ${daysDiff}d ago`;
-          }
-        }
-
         const formatLabel = currentMoversFormat === "redraft" ? " redraft" : " dynasty";
-        sub.textContent = `Biggest ${usedDays}-day changes in ${leagueLabel}${sizeLabel}${formatLabel} BR value${freshnessText}`;
+        // One-line scope label for the 360px rail: "changes in ... value"
+        // phrasing measured 336px at the old 11px/0.08em styling and wrapped
+        // ("VALUE" alone on line 2). The compact "value movers" phrasing
+        // plus the .otc-mini-sub nowrap/10px styling fits every variant
+        // (days x 1QB/SF x team size x dynasty/redraft) on one line.
+        // No freshness suffix: /api/value-movers never returns latest_date
+        // (the route rebuilds the payload with only used_days/risers/
+        // fallers), so the old "Updated ... ago" suffix could never render
+        // and would break the one line if it ever did.
+        sub.textContent = `Biggest ${usedDays}-day ${leagueLabel}${sizeLabel}${formatLabel} BR value movers`;
       }
 
       renderMovers(data);
@@ -8601,7 +8593,7 @@ window.initTradePage = function initTradePage(root = document) {
             const leagueLabel = leagueType === "sf" ? "SF" : "1QB";
             const sizeLabel = leagueSize === 10 ? "" : ` ${leagueSize}-team`;
             const formatLabel = currentMoversFormat === "redraft" ? " redraft" : " dynasty";
-            moversSub.textContent = `Biggest ${currentMoversDays}-day changes in ${leagueLabel}${sizeLabel}${formatLabel} BR value`;
+            moversSub.textContent = `Biggest ${currentMoversDays}-day ${leagueLabel}${sizeLabel}${formatLabel} BR value movers`;
           }
           if (dayFilters) dayFilters.style.display = "flex";
           if (formatFilters) formatFilters.style.display = "flex";
