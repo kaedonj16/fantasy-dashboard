@@ -19,6 +19,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "fix",
+        "text": "Top Movers: changing the timeframe or the Dynasty and Redraft toggle now updates the board in place instead of reloading the whole page. Your scroll position stays put, the address bar still updates so a filtered view can be shared or bookmarked, and the back button steps through the filters you viewed.",
+        "link": "/top-movers"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "fix",
         "text": "Trade calculator Player Insights: the Movers filters now sit on one line. The 7d, 14d and 30d time range and the Dynasty and Redraft format toggle share a single row, with the format pinned to the right, instead of stacking as two rows of chips.",
         "link": "/trade"
     },
