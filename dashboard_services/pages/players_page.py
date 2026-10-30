@@ -693,6 +693,165 @@ def build_players_shell() -> str:
       .pr-legend-tiers i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; }
       .pr-legend-note { font-size: 12.5px; line-height: 1.55; color: var(--text-muted); margin: 0; }
 
+      /* Hover quick-look card (rankings.js prQl*): a fixed horizontal
+         strip that opens below/above the hovered row on desktop pointers.
+         Five zones share one height; footers pin to the column bottom so
+         no column ends in dead space. Colors come from the page vars so
+         the card follows light/dark like the board under it. */
+      .ql-card {
+        position: fixed; z-index: 240; display: none;
+        width: min(980px, calc(100vw - 24px));
+        grid-template-columns: 168px 146px minmax(120px, 1fr) 240px 178px;
+        align-items: stretch;
+        background: var(--card-bg); color: var(--text);
+        border: 1px solid var(--border); border-radius: var(--radius-card, 14px);
+        box-shadow: 0 18px 44px rgba(2, 6, 23, 0.28);
+        padding: 16px 18px;
+        font-variant-numeric: tabular-nums;
+      }
+      .ql-card.ql-open { display: grid; animation: qlIn 0.16s ease-out; }
+      .ql-card.ql-solo { grid-template-columns: 168px 146px minmax(120px, 1fr); }
+      @keyframes qlIn {
+        from { opacity: 0; transform: translateY(4px) scale(0.99); }
+        to { opacity: 1; transform: none; }
+      }
+      .ql-card::before {
+        content: ""; position: absolute; top: -6px; left: var(--ql-caret-x, 120px);
+        width: 11px; height: 11px; margin-left: -6px;
+        background: var(--card-bg);
+        border-left: 1px solid var(--border); border-top: 1px solid var(--border);
+        transform: rotate(45deg);
+      }
+      .ql-card.ql-above::before {
+        top: auto; bottom: -6px;
+        border-left: none; border-top: none;
+        border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      }
+      .pr-player-row.ql-on { box-shadow: inset 3px 0 0 var(--accent); }
+      .ql-col {
+        display: flex; flex-direction: column; min-width: 0;
+        padding: 0 14px;
+      }
+      .ql-col:first-child { padding-left: 0; }
+      .ql-col:last-child { padding-right: 0; }
+      .ql-col + .ql-col { border-left: 1px solid var(--border); }
+      .ql-zone-title {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.09em;
+        text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px;
+      }
+      .ql-empty { font-size: 12.5px; color: var(--text-muted); margin-top: auto; margin-bottom: auto; }
+      .ql-skel {
+        flex: 1; min-height: 74px; border-radius: var(--radius-sm, 8px);
+        background: linear-gradient(100deg, var(--surface) 40%, var(--bg-alt) 50%, var(--surface) 60%);
+        background-size: 200% 100%;
+        animation: qlShimmer 1.2s linear infinite;
+      }
+      @keyframes qlShimmer { to { background-position: -200% 0; } }
+      .ql-up { color: #22c55e; font-weight: 700; }
+      .ql-down { color: #ef4444; font-weight: 700; }
+      /* Identity zone */
+      .ql-photo {
+        position: relative; display: block; width: 100%; height: 96px;
+        overflow: hidden; border-radius: var(--radius-sm, 8px);
+        background: var(--surface); margin-bottom: 10px; flex: none;
+      }
+      .ql-hs {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: cover; object-position: top center; display: block;
+      }
+      .ql-mono {
+        position: absolute; inset: 0; display: none;
+        align-items: center; justify-content: center;
+        font-size: 30px; font-weight: 800; letter-spacing: 0.03em;
+        background: var(--accent-soft); color: var(--accent);
+      }
+      .ql-mono.ql-mono-on { display: flex; position: static; height: 100%; }
+      .ql-photo-pick {
+        display: flex; align-items: center; justify-content: center;
+        font-size: 30px; color: var(--text-muted);
+      }
+      .ql-name {
+        font-size: 18px; font-weight: 800; line-height: 1.16;
+        letter-spacing: -0.01em; color: var(--text);
+      }
+      .ql-name-lg { font-size: 16.5px; }
+      .ql-name-xl { font-size: 15px; }
+      .ql-nw { white-space: nowrap; }
+      .ql-meta {
+        display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+        margin-top: 6px; font-size: 12px; color: var(--text-muted); font-weight: 600;
+      }
+      .ql-pospill {
+        background: var(--accent-soft); color: var(--accent);
+        font-size: 11px; font-weight: 800; padding: 2.5px 8px;
+        border-radius: var(--radius-pill);
+      }
+      .ql-move {
+        margin-top: auto; padding-top: 10px;
+        border-top: 1px solid var(--border);
+        display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+        font-size: 12.5px;
+      }
+      .ql-move-label {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+        text-transform: uppercase; color: var(--text-muted); flex: none;
+      }
+      .ql-move > span:last-child { white-space: nowrap; }
+      .ql-move-flat { color: var(--text-muted); font-weight: 600; }
+      /* Value zone */
+      .ql-values { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+      .ql-vbox {
+        flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 2px;
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-sm, 8px); padding: 8px 11px; min-width: 0;
+      }
+      .ql-vlab {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+        text-transform: uppercase; color: var(--text-muted);
+      }
+      .ql-vnum { font-size: 21px; font-weight: 800; line-height: 1.1; color: var(--text); }
+      .ql-vsub { font-size: 11.5px; color: var(--text-muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* Trend zone */
+      .ql-chart { flex: 1; min-height: 54px; position: relative; }
+      .ql-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .ql-trend-foot {
+        display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+        font-size: 11.5px; color: var(--text-muted); font-weight: 600; margin-top: 8px;
+      }
+      .ql-trend-flat { color: var(--text-muted); font-weight: 600; }
+      /* Games zone */
+      .ql-game { padding: 7px 0; border-top: 1px solid var(--border); }
+      .ql-zone-title + .ql-game { border-top: none; padding-top: 0; }
+      .ql-game-top {
+        display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+      }
+      .ql-game-wk { font-size: 12px; font-weight: 800; color: var(--text); }
+      .ql-game-pts { font-size: 14.5px; font-weight: 800; color: var(--text); }
+      .ql-game-line { font-size: 12px; color: var(--text-muted); line-height: 1.45; margin-top: 2px; }
+      .ql-col-games .ql-game { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+      /* Next matchup zone */
+      .ql-next-panel {
+        flex: 1; display: flex; flex-direction: column;
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-sm, 8px); padding: 11px 12px;
+      }
+      .ql-next-head { display: flex; align-items: center; gap: 10px; }
+      .ql-next-vs { font-size: 15.5px; font-weight: 800; color: var(--text); line-height: 1.15; }
+      .ql-next-when { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-top: 2px; white-space: nowrap; }
+      .ql-next-bye { font-size: 11.5px; color: var(--text-muted); font-weight: 600; margin-top: 8px; }
+      .ql-next-stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+      .ql-next-num { font-size: 20px; font-weight: 800; color: var(--text); line-height: 1; }
+      .ql-next-cap { font-size: 10.5px; color: var(--text-muted); font-weight: 600; line-height: 1.3; }
+      .ql-next-rank { font-size: 12px; font-weight: 700; color: var(--text); margin-top: 9px; }
+      .ql-next-pill {
+        margin-top: auto; text-align: center; font-size: 12px; font-weight: 800;
+        padding: 6px 8px; border-radius: var(--radius-pill);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ql-card.ql-open { animation: none; }
+        .ql-skel { animation: none; }
+      }
+
       @media (max-width: 600px) {
         .filter-positions {
           flex-wrap: nowrap;
