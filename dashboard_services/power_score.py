@@ -6,16 +6,20 @@ Two scoring modes share the same z-score math:
    views, career/tour graphs). Reconstructible from weekly scores alone.
 2. ``blended_team_scores`` -- canonical live power rankings: true strength.
 
-Live in-season rank blends the all-play ``record`` term (0.80) with
-injury-adjusted roster strength (0.20, ``starter_value_available``). All-play
-remains the dominant signal -- a walk-forward backtest of the previous
-eight-term ``PHASE_WEIGHTS`` table did not beat all-play out of sample -- but
-a team missing its stars to injury no longer reads as weak as its all-play
-record claims. PPG breaks ties. Playoff / SoS / momentum / consistency remain
-on the team payload as display chips but do not vote on order. Preseason is
-still value-heavy (roster strength is the only real signal before games) and
-now uses the injury-adjusted value so an IR'd starter no longer counts at
-full value.
+Live in-season rank blends the all-play ``record`` term (0.60) with the
+current roster's projected lineup points (0.40, ``starter_ppg_available``:
+the injury-adjusted optimal lineup's Sleeper-projected points in league
+scoring, averaged over the remaining regular-season weeks). The roster term
+is points, not trade value, and it reads today's roster -- a mid-season
+trade for a top scorer moves the ranking on the next load, before the new
+roster plays a game, while the all-play side still only moves with played
+games. When no projection maps are available the blend falls back to the
+legacy form (0.80 all-play + 0.20 injury-adjusted starter value,
+``starter_value_available``). PPG breaks ties. Playoff / SoS / momentum /
+consistency remain on the team payload as display chips but do not vote on
+order. Preseason is still value-heavy (roster strength is the only real
+signal before games) and uses the injury-adjusted value so an IR'd starter
+no longer counts at full value.
 """
 from __future__ import annotations
 
@@ -38,13 +42,26 @@ PERFORMANCE_WEIGHTS = {
 # z-score (AVG/PPG). Weights sum to 1.0; missing optional components
 # (playoff / ros / momentum) redistribute onto the remaining terms.
 #
-# In-season (early/mid/late): all-play record dominates (0.80) with
-# injury-adjusted roster strength voting at 0.20 -- true strength, not pure
-# results. PPG is applied as a sort tie-break in ``blended_team_scores``, not
-# as a competing z-weight -- a tiny pf weight would still reorder teams when
-# all-play disagrees with PPG. Zero-weight keys are still computed and
-# returned on ``power_components``.
+# In-season (early/mid/late): all-play record (0.60) with the current
+# roster's projected lineup points voting at 0.40 -- true strength now, not
+# just results banked with rosters that may no longer exist. PPG is applied
+# as a sort tie-break in ``blended_team_scores``, not as a competing
+# z-weight -- a tiny pf weight would still reorder teams when all-play
+# disagrees with PPG. Zero-weight keys are still computed and returned on
+# ``power_components``. The legacy table below is the fallback used only
+# when no team carries a points term (projection maps unavailable).
 _IN_SEASON_WEIGHTS = {
+    "pf": 0.00,
+    "record": 0.60,
+    "points": 0.40,
+    "value": 0.00,
+    "momentum": 0.00,
+    "consistency": 0.00,
+    "sos": 0.00,
+    "ros": 0.00,
+    "playoff": 0.00,
+}
+_IN_SEASON_LEGACY_WEIGHTS = {
     "pf": 0.00,
     "record": 0.80,
     "value": 0.20,
@@ -232,6 +249,96 @@ def available_starter_lineup_value(
     )
 
 
+# ── Starter points ────────────────────────────────────────────────────────────
+
+
+def starter_lineup_points(
+    player_ids: Sequence[Any],
+    points_by_pid: Mapping[str, float],
+    pos_by_pid: Mapping[str, str],
+    *,
+    roster_positions: Optional[Sequence[Any]] = None,
+) -> float:
+    """Projected points of the slot-legal optimal lineup for one week.
+
+    ``points_by_pid`` holds one week's projected points per player in the
+    league's own scoring (players absent from the map -- a bye week, no
+    published projection -- cannot be picked, so their slots refill from
+    the bench exactly like a real lineup). Falls back to the top-8 core
+    (QB/RB/WR/TE) sum when lineup slots are missing or produce an empty
+    fill, mirroring ``starter_lineup_value``.
+    """
+    score_by_pid: dict[str, float] = {}
+    pos_clean: dict[str, str] = {}
+    for raw in player_ids or []:
+        pid = str(raw or "").strip()
+        if not pid or pid not in (points_by_pid or {}):
+            continue
+        try:
+            score_by_pid[pid] = float(points_by_pid.get(pid) or 0.0)
+        except (TypeError, ValueError):
+            score_by_pid[pid] = 0.0
+        pos_clean[pid] = str((pos_by_pid or {}).get(pid) or "").upper()
+
+    if not score_by_pid:
+        return 0.0
+
+    if roster_positions:
+        try:
+            from utils.starter_lineup import derive_starters_from_slots
+
+            starters = derive_starters_from_slots(
+                list(score_by_pid),
+                roster_positions,
+                pos_by_pid=pos_clean,
+                score_by_pid=score_by_pid,
+            )
+            if starters:
+                return round(sum(score_by_pid.get(pid, 0.0) for pid in starters), 2)
+        except Exception:
+            pass
+
+    core = sorted(
+        (pts for pid, pts in score_by_pid.items() if pos_clean.get(pid) in _CORE_POS),
+        reverse=True,
+    )
+    return round(sum(core[:8]), 2)
+
+
+def available_starter_lineup_points(
+    player_ids: Sequence[Any],
+    points_by_pid: Mapping[str, float],
+    pos_by_pid: Mapping[str, str],
+    *,
+    roster_positions: Optional[Sequence[Any]] = None,
+    injury_by_pid: Optional[Mapping[Any, Any]] = None,
+) -> float:
+    """Injury-adjusted ``starter_lineup_points``: the lineup you can field.
+
+    Same availability rule as ``available_starter_lineup_value``: Out / IR /
+    Doubtful players are removed before the slot-legal fill (bench refills,
+    unfilled slot = 0); Questionable counts in full. With no injury data
+    anywhere this returns the raw lineup points unchanged.
+    """
+    statuses = injury_by_pid or {}
+    pids = [str(p) for p in (player_ids or []) if str(p or "").strip()]
+    has_any = any(_norm_injury_status(statuses.get(p)) for p in pids)
+    if not has_any:
+        return starter_lineup_points(
+            player_ids,
+            points_by_pid,
+            pos_by_pid,
+            roster_positions=roster_positions,
+        )
+    eligible = [p for p in pids if not player_is_unavailable(statuses.get(p))]
+    return starter_lineup_points(
+        eligible,
+        points_by_pid,
+        pos_by_pid,
+        roster_positions=roster_positions,
+    )
+
+
 def performance_component_z(
     *,
     win_pct: Sequence[float],
@@ -353,17 +460,21 @@ def blended_team_scores(
 
     Each team may carry raw fields:
       avg (preferred) or pf, luck_adj_win, starter_value,
-      starter_value_available, momentum, consistency,
+      starter_value_available, starter_ppg_available, momentum, consistency,
       sos, ros_ease (higher = easier remaining schedule), playoff_pct
 
-    The ``value`` term reads ``starter_value_available`` (injury-adjusted
-    roster strength) when the caller computed it, falling back to the raw
-    ``starter_value`` for historical rows and callers without injury data.
+    The in-season roster term is ``points``: it reads
+    ``starter_ppg_available`` (the current roster's injury-adjusted
+    projected lineup points) when any team carries it. When no team does
+    (projection maps unavailable, historical rows), the blend falls back to
+    the legacy ``value`` term, which reads ``starter_value_available``
+    (injury-adjusted roster value), itself falling back to the raw
+    ``starter_value``. Preseason always uses the ``value`` term.
 
     Writes ``power_score``, ``power_components``, and ``rank``.
     Component key ``pf`` is the scoring-volume z-score (AVG/PPG based).
-    In-season ``power_score`` is 0.80 all-play (record) + 0.20
-    injury-adjusted roster strength; PPG breaks ties.
+    In-season ``power_score`` is 0.60 all-play (record) + 0.40 current
+    lineup points; PPG breaks ties.
     """
     if not teams:
         return teams
@@ -388,9 +499,24 @@ def blended_team_scores(
                     pass
         return 0.0
 
+    def _points_of(t: dict) -> float:
+        for key in ("starter_ppg_available", "starter_ppg"):
+            if t.get(key) is not None:
+                try:
+                    return float(t.get(key))
+                except (TypeError, ValueError):
+                    pass
+        return 0.0
+
+    has_points = any(
+        t.get("starter_ppg_available") is not None or t.get("starter_ppg") is not None
+        for t in teams
+    )
+
     scoring_z = z_scores([_avg_of(t) for t in teams])
     record_z = z_scores([float(t.get("luck_adj_win") or 0.0) for t in teams])
     value_z = z_scores([_value_of(t) for t in teams])
+    points_z = z_scores([_points_of(t) for t in teams])
     mom_z = z_scores([float(t.get("momentum") or 0.0) for t in teams])
     con_z = z_scores([float(t.get("consistency") or 0.0) for t in teams])
     sos_z = z_scores([
@@ -418,14 +544,19 @@ def blended_team_scores(
     )
 
     base_weights = PHASE_WEIGHTS.get(phase) or PHASE_WEIGHTS["mid"]
+    if phase != "preseason" and not has_points:
+        # No projection maps anywhere: legacy 0.80 all-play + 0.20 value.
+        base_weights = _IN_SEASON_LEGACY_WEIGHTS
     available = {"pf", "record", "value", "momentum", "consistency", "sos"}
+    if has_points:
+        available.add("points")
     if has_ros:
         available.add("ros")
     if has_playoff:
         available.add("playoff")
     available = {
         k for k in available
-        if float(base_weights.get(k, 0.0)) > 0 or k in ("pf", "record", "value")
+        if float(base_weights.get(k, 0.0)) > 0 or k in ("pf", "record", "value", "points")
     }
     weights = _normalize_weights(base_weights, available)
 
@@ -438,6 +569,8 @@ def blended_team_scores(
             "consistency": round(con_z[i], 2),
             "sos": round(sos_z[i], 2),
         }
+        if has_points:
+            comps["points"] = round(points_z[i], 2)
         if has_ros:
             comps["ros"] = round(ros_z[i], 2)
         if has_playoff:

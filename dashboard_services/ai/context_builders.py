@@ -2482,11 +2482,15 @@ def _power_static_bundle(ctx: dict, rosters: list, *, scoring_type: str,
         id(rosters), id(model_table), id(players_index), id(players_map),
         id(picks_by_roster), tuple(roster_positions or ()),
         scoring_type, bool(is_sf),
+        int(ctx.get("season") or ctx.get("current_season") or 0),
+        int(ctx.get("current_week") or 0),
+        int((ctx.get("league_settings") or {}).get("playoff_week_start") or 0),
     )
     if _POWER_STATIC_CACHE["key"] == key:
         return _POWER_STATIC_CACHE["data"]
 
     from dashboard_services.power_score import (
+        available_starter_lineup_points,
         available_starter_lineup_value,
         starter_lineup_value,
     )
@@ -2530,6 +2534,43 @@ def _power_static_bundle(ctx: dict, rosters: list, *, scoring_type: str,
         {} if is_redraft else picks_by_roster
     )
 
+    # ── Projected lineup points per remaining week (the points term) ──
+    # Sleeper weekly projections in this league's scoring, the same maps the
+    # playoff sim builds (disk-cached there). Only in-season: preseason
+    # ranks on value, and with no games played there is no current week to
+    # anchor the remaining slate. Any failure leaves _week_ppg_maps None
+    # and every profile's points term None, so the blend falls back to the
+    # legacy value term instead of inventing points.
+    _week_ppg_maps: dict | None = None
+    _games_played_static = 0
+    for _r in rosters:
+        _s = _r.get("settings") or {}
+        _games_played_static = max(
+            _games_played_static,
+            _safe_int(_s.get("wins")) + _safe_int(_s.get("losses")),
+        )
+    if _games_played_static > 0:
+        try:
+            from data_building.simulate_playoff_odds import (
+                _build_week_ppg_maps,
+                build_ppg_map,
+            )
+
+            _season = int(ctx.get("season") or ctx.get("current_season") or 0)
+            if _season > 0:
+                _season_ppg_map, _pos_map = build_ppg_map(ctx)
+                _cur_wk = max(1, int(ctx.get("current_week") or 1))
+                _pws = int((ctx.get("league_settings") or {}).get("playoff_week_start") or 15)
+                _weeks = list(range(_cur_wk, max(_pws, _cur_wk + 1)))
+                _maps = _build_week_ppg_maps(
+                    _season, _weeks, ctx.get("raw_scoring_settings") or {},
+                    _pos_map, _season_ppg_map,
+                )
+                _usable = {w: m for w, m in (_maps or {}).items() if m}
+                _week_ppg_maps = _usable or None
+        except Exception:
+            _week_ppg_maps = None
+
     profiles: dict = {}
     for roster in rosters:
         rid = str(roster.get("roster_id") or "")
@@ -2567,6 +2608,31 @@ def _power_static_bundle(ctx: dict, rosters: list, *, scoring_type: str,
             roster_positions=roster_positions,
             injury_by_pid=_injury_by_pid,
         )
+        # Points term: this roster's injury-adjusted optimal lineup,
+        # projected per remaining week and averaged. A player with no
+        # projection that week (bye) cannot be picked, so the bench refills
+        # the slot, exactly like the value fill above.
+        starter_ppg_available = None
+        if _week_ppg_maps:
+            _wk_vals: list[float] = []
+            for _wmap in _week_ppg_maps.values():
+                _pts_by_pid = {
+                    _pid: _safe_float((_e or {}).get("ppg"))
+                    for _pid, _e in _wmap.items()
+                }
+                _pos_by_pid = {
+                    _pid: str((_e or {}).get("pos") or (model_value_lookup.get(_pid) or {}).get("position") or "")
+                    for _pid, _e in _wmap.items()
+                }
+                _wk_vals.append(available_starter_lineup_points(
+                    roster_players,
+                    _pts_by_pid,
+                    _pos_by_pid,
+                    roster_positions=roster_positions,
+                    injury_by_pid=_injury_by_pid,
+                ))
+            if _wk_vals and any(v > 0 for v in _wk_vals):
+                starter_ppg_available = round(sum(_wk_vals) / len(_wk_vals), 2)
 
         players_summary = summarize_roster_players(
             roster=roster,
@@ -2605,6 +2671,7 @@ def _power_static_bundle(ctx: dict, rosters: list, *, scoring_type: str,
             "avg_value": avg_value,
             "starter_value": starter_value,
             "starter_value_available": starter_value_available,
+            "starter_ppg_available": starter_ppg_available,
             "players_summary": players_summary,
             "future_picks": future_picks,
             "direction": direction,
@@ -2636,11 +2703,17 @@ def build_power_rankings_context(ctx: dict) -> dict:
     Build context for AI-generated power rankings.
 
     PowerScore comes from ``dashboard_services.power_score.blended_team_scores``.
-    In-season blends all-play win % (0.80) with injury-adjusted roster
-    strength (0.20), PPG as the tie-break. Momentum, consistency, SoS, ROS
-    ease, and playoff odds are still computed for chips / narrative; they do
-    not vote on in-season order. Preseason remains value-weighted, now on the
-    injury-adjusted value so an IR'd starter no longer counts at full.
+    In-season blends all-play win % (0.60) with the current roster's
+    projected lineup points (0.40), PPG as the tie-break. The points term
+    (``starter_ppg_available``, computed in ``_power_static_bundle``) is the
+    injury-adjusted optimal lineup's Sleeper-projected points in league
+    scoring, averaged over the remaining regular-season weeks, so a trade
+    moves the ranking before the new roster plays. When projection maps are
+    unavailable the blend falls back to 0.80 all-play + 0.20 injury-adjusted
+    starter value. Momentum, consistency, SoS, ROS ease, and playoff odds
+    are still computed for chips / narrative; they do not vote on in-season
+    order. Preseason remains value-weighted, on the injury-adjusted value
+    so an IR'd starter no longer counts at full.
     Starter value fills real lineup slots when ``roster_positions`` are known.
     """
 
@@ -2853,6 +2926,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
         avg_value = _prof.get("avg_value", 0.0)
         starter_value = _prof.get("starter_value")
         starter_value_available = _prof.get("starter_value_available")
+        starter_ppg_available = _prof.get("starter_ppg_available")
         players_summary = _prof.get("players_summary") or []
         future_picks = _prof.get("future_picks") or []
         direction = _prof.get("direction")
@@ -2891,6 +2965,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "avg_value": round(avg_value, 1),
             "starter_value": starter_value,
             "starter_value_available": starter_value_available,
+            "starter_ppg_available": starter_ppg_available,
             "momentum": momentum,
             "momentum_label": momentum_label,
             "consistency": consistency,
@@ -2913,8 +2988,8 @@ def build_power_rankings_context(ctx: dict) -> dict:
     if not team_data:
         return {"teams": []}
 
-    # Canonical PowerScore (shared engine: in-season all-play + availability,
-    # preseason injury-adjusted value).
+    # Canonical PowerScore (shared engine: in-season all-play + current
+    # lineup points, legacy value fallback, preseason injury-adjusted value).
     _games_played = max((t["wins"] + t["losses"] for t in team_data), default=0)
     _phase = season_phase_from_progress(
         games_played=_games_played,

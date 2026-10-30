@@ -1,10 +1,12 @@
 """Guards the true-strength power rankings rebuild.
 
-In-season rank is 0.80 all-play + 0.20 injury-adjusted roster strength
-(``starter_value_available``), not pure all-play. Out / IR / Doubtful players
-cannot be fielded: their slots refill from the bench via the same slot-legal
-derivation; Questionable counts at full value. With no injury data anywhere,
-the adjusted value equals the raw starter value exactly.
+The legacy in-season blend (kept as the fallback when no projection maps
+are available) is 0.80 all-play + 0.20 injury-adjusted roster strength
+(``starter_value_available``), not pure all-play; the primary points-based
+blend lives in test_power_rankings_points_term.py. Out / IR / Doubtful
+players cannot be fielded: their slots refill from the bench via the same
+slot-legal derivation; Questionable counts at full value. With no injury
+data anywhere, the adjusted value equals the raw starter value exactly.
 """
 import pytest
 
