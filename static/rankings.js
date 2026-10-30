@@ -497,7 +497,13 @@ function prUpdateSortHeaders() {
   var col = null;
   if (prSortKey === 'name') col = 'player';
   else if (prSortKey === 'ppg') col = 'ppg';
-  else if (prSortKey === 'total_pts') col = 'total_pts';
+  else if (prSortKey === 'total_pts') {
+    // On phones the Total Points column is hidden and the trailing header
+    // is renamed "Total" to carry this sort (prRender), so the arrow
+    // belongs on that header, not the hidden column.
+    var sortHead = document.getElementById('prSortHeader');
+    col = (sortHead && sortHead.textContent.trim() === 'Total') ? 'sort' : 'total_pts';
+  }
   else if (prSortKey === 'value' || prSortKey === 'rank') col = 'sort';
   header.querySelectorAll('[data-pr-sort-col]').forEach(function(el) {
     var on = el.getAttribute('data-pr-sort-col') === col;
@@ -1667,7 +1673,19 @@ if (!window.__prDocBound) {
   }
   function _prHeaderSortKey(cell) {
     var col = cell.getAttribute('data-pr-sort-col');
-    return col === 'player' ? 'name' : col === 'sort' ? prSortKey : col;
+    if (col === 'player') return 'name';
+    if (col === 'sort') {
+      // The trailing header IS the Value column: clicking it must sort by
+      // Value (or flip Value if already active), never flip whatever sort
+      // happens to be active -- the legacy mapping returned prSortKey, so
+      // clicking "Value" during a PPG sort just flipped PPG to ascending.
+      // Sole exception: on phones a Total Points sort renames this header
+      // to "Total" (the Total column itself is hidden there), so while it
+      // carries that label it keeps carrying the Total Points sort.
+      return (prSortKey === 'total_pts' && cell.textContent.trim() === 'Total')
+        ? 'total_pts' : 'value';
+    }
+    return col;
   }
   document.addEventListener('click', function(e) {
     var cell = _prHeaderCellFromEvent(e);

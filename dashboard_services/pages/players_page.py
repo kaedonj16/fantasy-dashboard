@@ -623,12 +623,30 @@ def build_players_shell() -> str:
       }
 
       /* Merged header rows (approved rework) */
-      .pr-head-row1 { justify-content: flex-start; gap: 14px; }
+      /* Row 1 is a grid with fixed tracks for the format segments and the
+         search box: the title/subtitle column is 1fr, so the subtitle
+         getting longer in Redraft ("this-season redraft value") can no
+         longer push the Dynasty/Redraft + 1QB/SF toggles and the search
+         sideways when switching scoring type. The subtitle itself is
+         pinned to one line so it can never wrap and push Row 2 down. */
+      .pr-head-row1 {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto minmax(190px, 240px);
+        align-items: center;
+        justify-content: stretch;
+        gap: 14px;
+      }
       .pr-titleblock { min-width: 0; }
+      .pr-titleblock .page-head-sub {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
       .pr-head-row1 .filter-search {
-        margin-left: auto;
-        flex: 0 1 240px;
-        min-width: 190px;
+        margin-left: 0;
+        flex: none;
+        min-width: 0;
+        width: 100%;
       }
       .pr-seg {
         display: inline-flex;
@@ -837,7 +855,12 @@ def build_players_shell() -> str:
            row of six equal-flex position pills, then the count line.
            No settings/tags row on phones. */
         .pr-head-row1 .page-title { font-size: 20px; }
-        .pr-head-row1 { gap: 8px; }
+        /* Phone stack stays the flex layout it was approved as; the
+           fixed-track grid above is for the wider header only. The
+           subtitle also goes back to wrapping here: at phone widths it
+           cannot fit one line next to the scoring segment either way. */
+        .pr-head-row1 { display: flex; flex-wrap: wrap; gap: 8px; }
+        .pr-titleblock .page-head-sub { white-space: normal; overflow: visible; text-overflow: clip; }
         .pr-titleblock { flex: 1 1 auto; }
         #prFormatSeg { display: none; }
         .pr-head-row1 .filter-search {
