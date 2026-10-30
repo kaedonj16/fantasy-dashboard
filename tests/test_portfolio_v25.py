@@ -168,6 +168,36 @@ def test_board_card_shell_and_bootstrap():
     assert "__pfBoardWeek=8" in html
 
 
+def test_board_card_paints_a_loading_state_not_a_hidden_card():
+    # Regression (2026-10-30): the card rendered `hidden` and its only
+    # in-progress content was one static muted line, while the scan does
+    # not even start until the league cards settle (or 8s) and then runs
+    # the heaviest read on the page. The section read as missing for the
+    # whole cold scan. It must paint visible, with a real loading state
+    # whose sub-line the JS can update with scan progress.
+    html = _render([_league()])
+    assert "id='pfMovesCard' style='margin-bottom:14px;' hidden" not in html
+    assert "Scanning your leagues" in html
+    assert "id='pfLoadSub'" in html
+    assert "pf-load-skel" in html
+    assert "<div class='pf-moves-loading'>Checking lineups…</div>" not in html
+
+
+def test_board_js_reports_scan_progress_and_reinits_per_card():
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    # Incomplete passes surface their scanned/total counts into the
+    # loading sub-line instead of being discarded until the final render.
+    assert "pfLoadProgress(scan)" in js
+    assert "pfLoadProgress(null)" in js
+    assert "function pfLoadingHtml()" in js
+    # The one-shot init guard is per card element, so a soft-nav return
+    # (fresh card, surviving closure) re-initialises instead of leaving
+    # the new card dead for the visit.
+    assert "startedCard === card" in js
+    # A final failure offers an in-place Retry, not only "refresh".
+    assert "__pfRefreshBoard" in js and ">Retry</button>" in js
+
+
 def test_insights_heatmap_rooting_bye_and_tabs(monkeypatch):
     # The Rooting Guide row renders only on game days: the shared schedule
     # check reads the real calendar, so an unpinned render drops the row on

@@ -30930,6 +30930,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   var COMPLETED_OPEN = false;  // "Show completed" section expanded
   var CAP_EXPANDED = false;    // height cap lifted (in-session only)
   var started = false;
+  var startedCard = null;  // the #pfMovesCard element `started` belongs to
 
   function byeMoves() {
     try { return JSON.parse(localStorage.getItem('pfByeMoves') || '[]'); } catch (e) { return []; }
@@ -31712,10 +31713,48 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     }
   }
 
+  // Loading state for the board: the server paints this exact markup in
+  // pfMovesBody (app.py build_portfolio_body) so the section is visible
+  // from first paint; this copy re-arms it when a retry starts from the
+  // error state. Keep the two in sync.
+  function pfLoadingHtml() {
+    return '<div class="pf-moves-loading"><div class="pf-load" role="status">' +
+      '<span class="pf-load-dot"></span><div>' +
+      '<div class="pf-load-title">Scanning your leagues…</div>' +
+      '<div class="pf-load-sub" id="pfLoadSub">Checking lineups, waivers and deadlines across your leagues.</div>' +
+      '</div></div>' +
+      '<div class="pf-load-skel" aria-hidden="true">' +
+      '<div class="pf-load-row"><span class="pf-load-chip"></span><span class="pf-load-bar w-lg"></span></div>' +
+      '<div class="pf-load-row"><span class="pf-load-chip"></span><span class="pf-load-bar w-md"></span></div>' +
+      '<div class="pf-load-row"><span class="pf-load-chip"></span><span class="pf-load-bar w-sm"></span></div>' +
+      '</div></div>';
+  }
+
+  // Surface real scan progress while the retry ladder waits: an
+  // incomplete pass returns scanned/total counts that used to be thrown
+  // away until the final render, leaving one static line up for the
+  // whole cold scan. Only touches the loading block; a rendered board
+  // (refresh case) is never overwritten.
+  function pfLoadProgress(scan) {
+    var sub = document.getElementById('pfLoadSub');
+    if (!sub) return;
+    if (scan && scan.total) {
+      sub.textContent = 'Scanned ' + (scan.scanned || 0) + ' of ' + scan.total +
+        ' leagues so far. Still checking the rest…';
+    } else {
+      sub.textContent = 'Still scanning. This can take a moment on a cold load…';
+    }
+  }
+
   function __pfMovesGo(attempt) {
     var card = document.getElementById('pfMovesCard');
     var body = document.getElementById('pfMovesBody');
     if (!card || !body) return;
+    // Re-arm the loading state when starting over from the error state.
+    // A board already on screen stays up during a refresh instead.
+    if (!body.querySelector('#pfLoadSub') && !body.querySelector('.pf-groups-wrap')) {
+      body.innerHTML = pfLoadingHtml();
+    }
     var PF_RETRY = [6000, 15000, 30000];
     attempt = (typeof attempt === 'number' && attempt > 0) ? Math.floor(attempt) : 0;
     // The scan is the heaviest read on the page (13s for 4 leagues
@@ -31743,6 +31782,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           throw new Error('portfolio-actions: no scan payload (HTTP ' + res.status + ')');
         }
         if (scan.incomplete && attempt < PF_RETRY.length) {
+          pfLoadProgress(scan);
           setTimeout(function () { __pfMovesGo(attempt + 1); }, PF_RETRY[attempt]);
           return;
         }
@@ -31753,18 +31793,27 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       })
       .catch(function () {
         if (attempt < PF_RETRY.length) {
+          pfLoadProgress(null);
           setTimeout(function () { __pfMovesGo(attempt + 1); }, PF_RETRY[attempt]);
           return;
         }
         body.innerHTML = '<div class="pf-moves-empty"><strong>Could not load your moves.</strong> ' +
-          'Check your connection and refresh.</div>';
+          'Check your connection, or try the scan again.</div>' +
+          '<div style="padding:0 4px 12px;"><button type="button" class="pf-gen-btn" ' +
+          'onclick="if(window.__pfRefreshBoard)window.__pfRefreshBoard()">Retry</button></div>';
       });
   }
 
   window.__pfBoardInit = function () {
     var card = document.getElementById('pfMovesCard');
     var body = document.getElementById('pfMovesBody');
-    if (!card || !body || started) return;
+    if (!card || !body) return;
+    // One-shot per card ELEMENT, not per page session: a soft-nav return
+    // to /portfolio swaps in a fresh card while this closure (and its
+    // `started` flag) survives, and the old guard left that new card
+    // uninitialised (and, before the visible loading state, hidden) for
+    // the whole visit.
+    if (started && startedCard === card) return;
     var prem = (window.__brctx && window.__brctx.isPremium) ||
       (document.getElementById('page-root') &&
         document.getElementById('page-root').getAttribute('data-premium') === 'true');
@@ -31774,6 +31823,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       return;
     }
     started = true;
+    startedCard = card;
     card.hidden = false;
     // Lazy: start after the league cards settle, or after a bounded wait,
     // so this best-effort scan never competes with the initial render.
@@ -31803,6 +31853,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           document.getElementById('page-root').getAttribute('data-premium') === 'true');
       if (!prem) { window.__pfBoardInit(); return; }
       started = true;
+      startedCard = card;
       card.hidden = false;
     }
     __pfMovesGo(0);
