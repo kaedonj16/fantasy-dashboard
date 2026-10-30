@@ -1,6 +1,9 @@
 # dashboard_services/external_values_scraper.py
 
 import csv
+import json
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict
 
@@ -22,6 +25,25 @@ DYNASTYPROCESS_VALUES_URL = (
 # replacing the retired usage-engine size ratios.
 FANTASYCALC_SIZE_VALUES_PATH = DATA_DIR / "fantasycalc_size_values.csv"
 FANTASYCALC_LEAGUE_SIZES = (8, 10, 12, 14)
+
+# KeepTradeCut dynasty values. KTC is the primary second market source in the
+# dynasty blend (DynastyProcess is the fallback). The rankings page embeds
+# the full dataset as JSON in a <script id="ktc-players"> block; each player
+# carries Crowdsourced ("value"), Tradesourced ("vftValue") and Crowd+Trade
+# blended ("blendValue") values in oneQBValues and superflexValues blocks.
+KEEPTRADECUT_RANKINGS_URL = "https://keeptradecut.com/dynasty-rankings"
+KEEPTRADECUT_VALUES_PATH = DATA_DIR / "keeptradecut_values.csv"
+KEEPTRADECUT_MIN_PLAYERS = 400        # parse must cover at least this many NFL players
+KEEPTRADECUT_MIN_BLEND_COVERAGE = 0.90  # blendValue populated share, per format
+KEEPTRADECUT_MAX_PLAUSIBLE = (9000.0, 10001.0)  # top blend value band (0-9999 scale)
+KEEPTRADECUT_MAX_AGE_HOURS = 48.0     # blend treats an older file as absent
+KEEPTRADECUT_FIELDNAMES = [
+    "name", "team", "position", "age",
+    "value_1qb_blend", "value_sf_blend",
+    "value_1qb_crowd", "value_sf_crowd",
+    "value_1qb_trade", "value_sf_trade",
+    "fetched_at",
+]
 
 HEADERS = {
     "User-Agent": (
@@ -253,6 +275,184 @@ def load_dynastyprocess_values(
 
 
 # ============================================================
+# KeepTradeCut
+# ============================================================
+
+def parse_keeptradecut_players(html: str) -> List[dict]:
+    """Parse the embedded KTC dataset out of the dynasty rankings page.
+
+    Returns one row per NFL player (QB/RB/WR/TE; the page dataset also
+    carries pick entries, which are not players and are dropped). Raises
+    ValueError when the expected JSON block or its structure is missing,
+    so callers can keep the last good CSV instead of writing garbage.
+    """
+    if not html:
+        raise ValueError("KTC page HTML is empty")
+    m = re.search(
+        r'<script[^>]*id="ktc-players"[^>]*>(.*?)</script>', html, re.S)
+    if not m:
+        raise ValueError("ktc-players JSON block not found in KTC page")
+    try:
+        entries = json.loads(m.group(1))
+    except Exception as e:
+        raise ValueError(f"ktc-players block is not valid JSON: {e}") from e
+    if not isinstance(entries, list):
+        raise ValueError("ktc-players payload is not a list")
+
+    def _num(block: dict, field: str):
+        v = (block or {}).get(field)
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    rows: List[dict] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        pos = str(entry.get("position") or "").upper()
+        if pos not in ("QB", "RB", "WR", "TE"):
+            continue
+        name = str(entry.get("playerName") or "").strip()
+        if not name:
+            continue
+        one_qb = entry.get("oneQBValues") or {}
+        sf = entry.get("superflexValues") or {}
+        rows.append({
+            "name": name,
+            "team": str(entry.get("team") or "").strip(),
+            "position": pos,
+            "age": entry.get("age"),
+            "value_1qb_blend": _num(one_qb, "blendValue"),
+            "value_sf_blend": _num(sf, "blendValue"),
+            "value_1qb_crowd": _num(one_qb, "value"),
+            "value_sf_crowd": _num(sf, "value"),
+            "value_1qb_trade": _num(one_qb, "vftValue"),
+            "value_sf_trade": _num(sf, "vftValue"),
+        })
+    return rows
+
+
+def validate_keeptradecut_rows(rows: List[dict]) -> List[str]:
+    """Guardrails for a fresh KTC parse. Returns a list of problems
+    (empty list = the parse is safe to write over the last good CSV)."""
+    problems: List[str] = []
+    if not rows:
+        return ["no player rows parsed"]
+    if len(rows) < KEEPTRADECUT_MIN_PLAYERS:
+        problems.append(
+            f"only {len(rows)} NFL players parsed "
+            f"(< {KEEPTRADECUT_MIN_PLAYERS})")
+    for col in ("value_1qb_blend", "value_sf_blend"):
+        vals = [float(r[col]) for r in rows if r.get(col)]
+        if not vals:
+            problems.append(f"{col} is empty for every player")
+            continue
+        coverage = len(vals) / len(rows)
+        if coverage < KEEPTRADECUT_MIN_BLEND_COVERAGE:
+            problems.append(
+                f"{col} populated for {coverage:.0%} of players "
+                f"(< {KEEPTRADECUT_MIN_BLEND_COVERAGE:.0%})")
+        top = max(vals)
+        lo, hi = KEEPTRADECUT_MAX_PLAUSIBLE
+        if not (lo <= top <= hi):
+            problems.append(
+                f"{col} top value {top} outside plausible band {lo}-{hi}")
+    return problems
+
+
+def fetch_keeptradecut_values() -> List[dict]:
+    """Fetch and parse the live KTC dynasty rankings dataset."""
+    resp = requests.get(KEEPTRADECUT_RANKINGS_URL, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    return parse_keeptradecut_players(resp.text)
+
+
+def write_keeptradecut_values_csv(
+        rows: List[dict],
+        out_csv: Path = KEEPTRADECUT_VALUES_PATH,
+        *,
+        fetched_at: Optional[datetime] = None,
+) -> bool:
+    """Validate, then write the KTC CSV. On any validation problem the
+    existing file is left untouched (last good wins) and False returned."""
+    problems = validate_keeptradecut_rows(rows)
+    if problems:
+        print(f"[KeepTradeCut] Validation failed, keeping last good CSV: "
+              f"{'; '.join(problems)}")
+        return False
+    out_csv = Path(out_csv)
+    stamp = (fetched_at or datetime.now(timezone.utc)).isoformat()
+    tmp_csv = out_csv.with_suffix(out_csv.suffix + ".tmp")
+    with tmp_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=KEEPTRADECUT_FIELDNAMES)
+        writer.writeheader()
+        for r in rows:
+            row = {k: r.get(k) for k in KEEPTRADECUT_FIELDNAMES}
+            row["fetched_at"] = stamp
+            writer.writerow(row)
+    tmp_csv.replace(out_csv)
+    print(f"[KeepTradeCut] Writing {len(rows)} rows to {out_csv}")
+    return True
+
+
+def refresh_keeptradecut_values(
+        out_csv: Path = KEEPTRADECUT_VALUES_PATH,
+) -> bool:
+    """Fetch KTC and rewrite its CSV, failure-isolated: any fetch, parse
+    or validation failure keeps the last good file and returns False."""
+    try:
+        rows = fetch_keeptradecut_values()
+    except Exception as e:
+        print(f"[KeepTradeCut] Fetch/parse failed, keeping last good CSV: {e}")
+        return False
+    return write_keeptradecut_values_csv(rows, out_csv=Path(out_csv))
+
+
+def load_keeptradecut_values(
+        csv_path: Path = None,
+        *,
+        max_age_hours: float = KEEPTRADECUT_MAX_AGE_HOURS,
+        now: Optional[datetime] = None,
+) -> Optional[List[dict]]:
+    """Load the KTC CSV for the blend, or None when it should count as
+    absent: file missing, unreadable, missing its fetch timestamp, or
+    older than max_age_hours (the blend then falls back to
+    DynastyProcess, exactly as if KTC did not exist)."""
+    if csv_path is None:
+        csv_path = KEEPTRADECUT_VALUES_PATH
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        return None
+    try:
+        with csv_path.open("r", newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    except Exception as e:
+        print(f"[KeepTradeCut] CSV load failed ({e}); treating as absent")
+        return None
+    if not rows:
+        return None
+    stamp_raw = (rows[0].get("fetched_at") or "").strip()
+    if not stamp_raw:
+        print("[KeepTradeCut] CSV has no fetched_at stamp; treating as absent")
+        return None
+    try:
+        stamp = datetime.fromisoformat(stamp_raw.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+    except ValueError:
+        print(f"[KeepTradeCut] Unparseable fetched_at {stamp_raw!r}; "
+              "treating as absent")
+        return None
+    age_hours = ((now or datetime.now(timezone.utc)) - stamp).total_seconds() / 3600.0
+    if age_hours > max_age_hours:
+        print(f"[KeepTradeCut] CSV is {age_hours:.1f}h old "
+              f"(> {max_age_hours}h); treating as absent")
+        return None
+    return rows
+
+
+# ============================================================
 # Convenience: scrape both vendors
 # ============================================================
 
@@ -314,6 +514,13 @@ def scrape_all_vendor_values(
         print(f"[external_values] FC size values: {n_size} players saved.")
     except Exception as _e:
         print(f"[external_values] FC size-values fetch failed (non-fatal): {_e}")
+
+    print("[external_values] Fetching KeepTradeCut dynasty values…")
+    try:
+        ok = refresh_keeptradecut_values()
+        print(f"[external_values] KTC refresh {'saved' if ok else 'kept last good CSV'}.")
+    except Exception as _e:
+        print(f"[external_values] KTC fetch failed (non-fatal): {_e}")
 
     print("[external_values] Downloading DynastyProcess values.csv…")
     download_dynastyprocess_values_csv(out_csv=path_dynastyprocess_values())

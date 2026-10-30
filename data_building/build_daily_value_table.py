@@ -55,7 +55,7 @@ def build_daily_data(season: int, week: int, force: bool = False):
     from datetime import date as _date
     _data_dir = Path(__file__).resolve().parents[1] / "data"
     def _csvs_fresh_today():
-        for _name in ("fantasycalc_api_values.csv", "fantasycalc_sf_api_values.csv", "dynastyprocess_values.csv"):
+        for _name in ("fantasycalc_api_values.csv", "fantasycalc_sf_api_values.csv", "dynastyprocess_values.csv", "keeptradecut_values.csv"):
             _p = _data_dir / _name
             if not _p.exists() or _date.fromtimestamp(_p.stat().st_mtime) != _date.today():
                 return False

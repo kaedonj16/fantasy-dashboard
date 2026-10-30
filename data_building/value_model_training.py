@@ -669,6 +669,116 @@ DP_STALE_WEIGHT = 0.10   # weight when the newest scrape is stale
 DP_STALE_DAYS = 5        # scrape age (days) beyond which DP counts as stale
 
 
+# ------------------------------------------------
+# Second market source matching (KTC primary, DP fallback)
+# ------------------------------------------------
+# KeepTradeCut is the primary second source in the dynasty market blend;
+# DynastyProcess fills only the players KTC does not cover (or the whole
+# board when the KTC file is missing/stale). Neither source carries
+# Sleeper IDs, so both match on (name, team). The match must be
+# canonicalized on BOTH sides: DP spells names with suffixes the site
+# drops ("Kenneth Walker III", "Patrick Mahomes II", "Marvin Harrison
+# Jr.") and uses "JAC" where the site uses "JAX" — the old exact-match
+# lookup silently missed 13 of DP's top 100, leaving those players
+# effectively FC-only.
+# Team spellings also differ by source: DP uses "JAC" for the site's
+# "JAX", and KTC uses its own 3-letter forms (KCC, GBP, NEP, NOS, SFO,
+# TBB, LVR) for the site's KC/GB/NE/NO/SF/TB/LV. (Verified against the
+# live KTC dataset 2026-10-30: without these, every Chief, Packer,
+# Patriot, Saint, 49er, Buccaneer and Raider silently missed KTC.)
+_MARKET_TEAM_CANON = {
+    "JAC": "JAX", "WSH": "WAS", "LA": "LAR",
+    "KCC": "KC", "GBP": "GB", "NEP": "NE", "NOS": "NO",
+    "SFO": "SF", "TBB": "TB", "LVR": "LV",
+}
+
+# Weight the second source carries when KTC supplies the value (the same
+# slot DP held: 0.20 in the 1QB blend; SF uses its own 0.30 below).
+KTC_FRESH_WEIGHT = 0.20
+
+
+def market_match_key(name, team) -> tuple[str, str]:
+    """Canonical (name, team) key for name-matched market sources.
+
+    normalize_name strips suffixes (Jr/Sr/II/III/IV/V), periods,
+    apostrophes and hyphens, so "Kenneth Walker III" (DP/KTC spelling)
+    and "Kenneth Walker" (site spelling) land on the same key.
+    """
+    team_key = str(team or "").strip().upper()
+    team_key = _MARKET_TEAM_CANON.get(team_key, team_key)
+    return (normalize_name(str(name or "")), team_key)
+
+
+def market_map_lookup(value_map: dict, key) -> float:
+    """Look a player up in a name+team keyed market map.
+
+    Exact key first. When the team leg misses (a mid-season trade one
+    source has registered and the other has not), fall back to the name
+    alone, but ONLY when that name is unambiguous in the map: a shared
+    name (Josh Allen the QB vs Josh Allen the LB) never guesses.
+    """
+    if key in value_map:
+        return float(value_map[key])
+    name = key[0]
+    vals = [v for (n, _t), v in value_map.items() if n == name]
+    return float(vals[0]) if len(vals) == 1 else 0.0
+
+
+def second_source_pick(ktc_norm: float, dp_norm: float) -> tuple[float, bool]:
+    """Pick the second-source normalized value for one player.
+
+    Returns (value, from_ktc): KTC wins when it covers the player,
+    otherwise DP fills in, otherwise 0.0 (absent; the blend renormalizes
+    over present sources).
+    """
+    if ktc_norm and float(ktc_norm) > 0:
+        return float(ktc_norm), True
+    if dp_norm and float(dp_norm) > 0:
+        return float(dp_norm), False
+    return 0.0, False
+
+
+def market_blend_value(fc_val: float, ktc_norm: float, dp_norm: float,
+                       *, dp_weight: float) -> tuple[float, float]:
+    """The 1QB market blend for one player.
+
+    FantasyCalc at 0.40 plus the second source at 0.20, renormalized over
+    the sources that cover the player. KTC supplies the second source at
+    the full weight when present; a DP fill carries DP's staleness-aware
+    weight instead, so with no fresh KTC anywhere this is exactly the
+    old FC+DP blend. Returns (blended_value, second_source_value_used).
+    """
+    sec_val, from_ktc = second_source_pick(ktc_norm, dp_norm)
+    w_sec = KTC_FRESH_WEIGHT if from_ktc else dp_weight
+    weighted_sum = 0.0
+    total_weight = 0.0
+    if fc_val and float(fc_val) > 0:
+        weighted_sum += 0.40 * float(fc_val)
+        total_weight += 0.40
+    if sec_val > 0:
+        weighted_sum += w_sec * sec_val
+        total_weight += w_sec
+    blended = weighted_sum / total_weight if total_weight > 0 else 0.0
+    return blended, sec_val
+
+
+def sf_market_blend_value(fc_for_sf: float, ktc_sf_norm: float,
+                          dp_2qb_norm: float) -> float:
+    """The Superflex market blend for one player: FC SF at 0.50 plus the
+    second source (KTC superflex, DP 2QB fallback) at 0.30, renormalized
+    over the sources that cover the player."""
+    sec_val, _from_ktc = second_source_pick(ktc_sf_norm, dp_2qb_norm)
+    weighted_sum = 0.0
+    total_weight = 0.0
+    if fc_for_sf and float(fc_for_sf) > 0:
+        weighted_sum += 0.50 * float(fc_for_sf)
+        total_weight += 0.50
+    if sec_val > 0:
+        weighted_sum += 0.30 * sec_val
+        total_weight += 0.30
+    return weighted_sum / total_weight if total_weight > 0 else 0.0
+
+
 def dp_effective_weight(dp_frame=None, *, today: date | None = None) -> tuple[float, Optional[date]]:
     """Effective DynastyProcess weight for the 1QB market blend.
 
@@ -906,11 +1016,11 @@ def rewrite_value_table_with_model() -> Path:
                         fc_sf_by_sid[_sid] = (float(_v) - _fc_sf_min) / _fc_sf_range * 999.9
             print(f"[rewrite_value_table] Loaded {len(fc_sf_by_sid)} FC SF values (numQbs=2)")
         else:
-            print("[rewrite_value_table] FC SF CSV missing — SF QB premium will use DP 2QB only")
+            print("[rewrite_value_table] FC SF CSV missing — SF QB premium will use the second source only")
     except Exception as _e:
         print(f"[rewrite_value_table] FC SF load failed: {_e}")
 
-    # Build Superflex vendor value lookup from FC SF + DP 2QB (market sources only)
+    # Build Superflex vendor value lookup from FC SF + second source (KTC SF, DP 2QB fallback)
     sf_vendor_values: dict[str, float] = {}
 
     # Per-league-size FantasyCalc values drive the market-based league-size curve
@@ -965,18 +1075,79 @@ def rewrite_value_table_with_model() -> Path:
 
     # NOTE: dp_df_full intentionally kept from the load above - it is used below
     # to look up per-player DP value_1qb for vendor consensus.  Do NOT reset it here.
+    # Canonical-keyed DP maps for both formats (see market_match_key: the
+    # old exact name+team match silently missed suffixed names and JAC).
+    dp_1qb_map: dict[tuple[str, str], float] = {}
     try:
         dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
         dp_df_full = dp_raw.copy()  # Populate dp_df_full with the actual data
-        if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
+        if "player" in dp_raw.columns:
             for _, row in dp_raw.iterrows():
-                name = str(row.get("player", "")).strip()
-                team = str(row.get("team", "")).strip()
-                val_2qb = row.get("value_2qb")
-                if name and pd.notna(val_2qb):
-                    dp_2qb_map[(name, team)] = float(val_2qb)
+                key = market_match_key(row.get("player", ""), row.get("team", ""))
+                if not key[0]:
+                    continue
+                if "value_2qb" in dp_raw.columns:
+                    val_2qb = row.get("value_2qb")
+                    if pd.notna(val_2qb) and float(val_2qb) > 0:
+                        dp_2qb_map.setdefault(key, float(val_2qb))
+                if "value_1qb" in dp_raw.columns:
+                    val_1qb = row.get("value_1qb")
+                    if pd.notna(val_1qb) and float(val_1qb) > 0:
+                        dp_1qb_map.setdefault(key, float(val_1qb))
     except Exception as e:
-        print(f"[ERROR] Failed to load value_2qb from dynastyprocess: {e}")
+        print(f"[ERROR] Failed to load DP value maps from dynastyprocess: {e}")
+
+    # Load KeepTradeCut values (primary second source; DP is the fallback).
+    # load_keeptradecut_values returns None when the CSV is missing or
+    # older than 48h, in which case every player falls back to DP below.
+    ktc_1qb_map: dict[tuple[str, str], float] = {}
+    ktc_sf_map: dict[tuple[str, str], float] = {}
+    try:
+        from data_building.external_data.external_values_scraper import (
+            load_keeptradecut_values,
+        )
+        _ktc_rows = load_keeptradecut_values() or []
+        for _r in _ktc_rows:
+            _key = market_match_key(_r.get("name", ""), _r.get("team", ""))
+            if not _key[0]:
+                continue
+            try:
+                _v1 = float(_r.get("value_1qb_blend") or 0)
+            except (TypeError, ValueError):
+                _v1 = 0.0
+            try:
+                _vsf = float(_r.get("value_sf_blend") or 0)
+            except (TypeError, ValueError):
+                _vsf = 0.0
+            if _v1 > 0:
+                ktc_1qb_map.setdefault(_key, _v1)
+            if _vsf > 0:
+                ktc_sf_map.setdefault(_key, _vsf)
+        if ktc_1qb_map or ktc_sf_map:
+            print(f"[rewrite_value_table] Loaded KTC values: "
+                  f"{len(ktc_1qb_map)} 1QB, {len(ktc_sf_map)} SF "
+                  f"(DP fills gaps)")
+        else:
+            print("[rewrite_value_table] No fresh KTC values — "
+                  "second source is DynastyProcess throughout")
+    except Exception as _e:
+        print(f"[rewrite_value_table] KTC load failed (DP fallback): {_e}")
+
+    # KTC normalization bounds (min-max to 0-999.9 per format, same as DP).
+    _ktc_1qb_vals = list(ktc_1qb_map.values())
+    KTC_1QB_MIN: float = min(_ktc_1qb_vals) if _ktc_1qb_vals else 0.0
+    KTC_1QB_RANGE: float = max((max(_ktc_1qb_vals) - KTC_1QB_MIN), 1.0) if _ktc_1qb_vals else 1.0
+    _ktc_sf_vals = list(ktc_sf_map.values())
+    KTC_SF_MIN: float = min(_ktc_sf_vals) if _ktc_sf_vals else 0.0
+    KTC_SF_RANGE: float = max((max(_ktc_sf_vals) - KTC_SF_MIN), 1.0) if _ktc_sf_vals else 1.0
+
+    def _ktc_1qb_norm(key) -> float:
+        _v = market_map_lookup(ktc_1qb_map, key)
+        return ((_v - KTC_1QB_MIN) / KTC_1QB_RANGE * 999.9) if _v > 0 else 0.0
+
+    def _ktc_sf_norm(key) -> float:
+        _v = market_map_lookup(ktc_sf_map, key)
+        return ((_v - KTC_SF_MIN) / KTC_SF_RANGE * 999.9) if _v > 0 else 0.0
 
     # Calculate Superflex vendor values: blend FC SF (50%) + DP 2QB (30%), renormalized.
     # Min-max normalize DP 2QB to 0-999.9 so it shares the scale of the other source.
@@ -997,28 +1168,22 @@ def rewrite_value_table_with_model() -> Path:
         fc_sf_norm = fc_sf_by_sid.get(pid, 0.0)
         fc_for_sf  = fc_sf_norm if fc_sf_norm > 0 else vendor_values.get(pid, 0.0)
 
-        # Get DP 2QB value (min-max normalized to 0-999.9)
-        dp_2qb_raw = dp_2qb_map.get((name, team), 0.0)
+        # Second source for SF: KTC superflex blend when KTC covers the
+        # player, else DP 2QB (both min-max normalized to 0-999.9). The
+        # blend itself lives in sf_market_blend_value (FC SF directly
+        # encodes QB scarcity, so it stays the primary signal).
+        _key = market_match_key(name, team)
+        dp_2qb_raw = market_map_lookup(dp_2qb_map, _key)
         dp_2qb_norm = ((dp_2qb_raw - dp_2qb_min) / dp_2qb_range * 999.9) if dp_2qb_raw > 0 else 0.0
+        sf_value = sf_market_blend_value(fc_for_sf, _ktc_sf_norm(_key), dp_2qb_norm)
 
-        # Superflex blend: FC SF (numQbs=2) + DP 2QB, weighted 50/30 and
-        # renormalized over the present sources (the usage engine's former 20% SF
-        # term was removed — SF is now purely market-derived). FC SF directly
-        # encodes QB scarcity, so it stays the primary signal.
-        if fc_for_sf > 0 or dp_2qb_norm > 0:
-            SF_W_VENDOR, SF_W_DP = 0.50, 0.30
-            sf_wsum = 0.0
-            sf_wtot = 0.0
-            if fc_for_sf > 0:
-                sf_wsum += SF_W_VENDOR * fc_for_sf; sf_wtot += SF_W_VENDOR
-            if dp_2qb_norm > 0:
-                sf_wsum += SF_W_DP * dp_2qb_norm;   sf_wtot += SF_W_DP
-            sf_value = sf_wsum / sf_wtot if sf_wtot > 0 else 0.0
-
+        if sf_value > 0:
             sf_vendor_values[pid] = sf_value
 
     # DynastyProcess staleness: halve DP's 1QB blend weight when the loaded
-    # scrape is more than DP_STALE_DAYS old (see dp_effective_weight).
+    # scrape is more than DP_STALE_DAYS old (see dp_effective_weight). This
+    # weight now applies only where DP fills in for a missing KTC value;
+    # KTC-supplied players carry KTC_FRESH_WEIGHT instead.
     _DP_WEIGHT, _DP_SCRAPE_SEEN = dp_effective_weight(dp_df_full)
     print(f"[rewrite_value_table] DynastyProcess weight={_DP_WEIGHT} "
           f"(newest scrape_date={_DP_SCRAPE_SEEN})")
@@ -1045,48 +1210,33 @@ def rewrite_value_table_with_model() -> Path:
         # source is missing); there is no separate outlier rule.
         player_position = str(player.get("position") or "").upper()
 
-        # Resolve DP value for this player (matched by name + team, no sleeper_id in DP)
-        dp_val_raw = 0.0
+        # Resolve the second-source value for this player. KTC and DP
+        # carry no Sleeper ID, so both match on the canonical name+team
+        # key (suffix-stripped, JAC->JAX). KTC wins when it covers the
+        # player; DP fills the gap. (The old per-player exact-match frame
+        # filter silently missed suffixed DP names entirely.)
         player_row = df_by_id.get(pid)
         if player_row is not None:
-            p_name = str(player_row.get('name', '')).strip()
-            p_team = str(player_row.get('team', '')).strip()
-            if not dp_df_full.empty:
-                dp_match = dp_df_full[
-                    (dp_df_full['player'].str.lower() == p_name.lower()) &
-                    (dp_df_full['team'].str.lower() == p_team.lower())
-                ]
-                if not dp_match.empty:
-                    dp_val_raw = float(dp_match.iloc[0]['value_1qb'])
+            p_name = str(player_row.get('name', '') or player.get('name', ''))
+            p_team = str(player_row.get('team', '') or player.get('team', ''))
+        else:
+            p_name = str(player.get('name', ''))
+            p_team = str(player.get('team', ''))
+        _key = market_match_key(p_name, p_team)
+        dp_val_raw = market_map_lookup(dp_1qb_map, _key)
         # Normalise DP to 0-999.9 (min → 0, max → 999.9), matching the other sources.
         dp_norm = ((dp_val_raw - DP_1QB_MIN) / DP_1QB_RANGE * 999.9) if dp_val_raw > 0 else 0.0
 
         fc_val  = vendor_values.get(pid, 0.0)
-        # DP is now included for every position (including TE). What looked like
-        # "DP undervalues TEs" was a min-max normalization artifact that lowers DP
-        # across all positions, plus DP's aggressive age-discounting on veteran TEs;
-        # it's a legitimate second market source, so TEs get it too.
-        dp_val  = dp_norm if dp_norm > 0 else 0.0
-
-        # Market-consensus blend: FantasyCalc + DynastyProcess, weighted 2:1 and
-        # renormalized over the present sources (the usage engine's former 40% term
-        # was removed — the board is now purely market-derived). A source is dropped
-        # only when it doesn't cover the player.
-        W_VENDOR, W_DP = 0.40, _DP_WEIGHT
-        weighted_sum = 0.0
-        total_weight = 0.0
-        if fc_val > 0:
-            weighted_sum += W_VENDOR * fc_val
-            total_weight += W_VENDOR
-        if dp_val > 0:
-            weighted_sum += W_DP * dp_val
-            total_weight += W_DP
-
-        if total_weight > 0:
-            final_value = weighted_sum / total_weight
-        else:
-            # Neither market source covers this player — no signal to value them.
-            final_value = 0.0
+        # Market-consensus blend: FantasyCalc + second source (KTC, DP
+        # fallback), weighted 2:1 and renormalized over the present
+        # sources (the usage engine's former 40% term was removed — the
+        # board is now purely market-derived). The math lives in
+        # market_blend_value; with no fresh KTC it reproduces today's
+        # FC+DP blend exactly, including DP's staleness-aware weight.
+        # Neither source covering the player means no signal: value 0.
+        final_value, sec_val = market_blend_value(
+            fc_val, _ktc_1qb_norm(_key), dp_norm, dp_weight=_DP_WEIGHT)
 
         # Confidence-weighted WLS blend (1QB): lean on the trade market in
         # proportion to how much trade history backs this player. Heavy backing →
@@ -1098,14 +1248,15 @@ def rewrite_value_table_with_model() -> Path:
             k=_WLS_BLEND_K)
 
         # Over-market guardrail (1QB). Reuses the same trusted external reads the
-        # blend uses: fc_val (normalized FC) and dp_val (normalized DP, now included
-        # for all positions). See data_building/value_guardrails.py.
+        # blend uses: fc_val (normalized FC) and sec_val (normalized second
+        # source: KTC when it covers the player, else DP). See
+        # data_building/value_guardrails.py.
         if player_position != "PICK":
             final_value = overmarket_capped(
-                final_value, fc_val, dp_val,
+                final_value, fc_val, sec_val,
                 trigger=_OVERMARKET_TRIGGER, min_gap=_OVERMARKET_MIN_GAP)
 
-        # Superflex value: the market vendor blend (FC SF + DP 2QB). The usage
+        # Superflex value: the market vendor blend (FC SF + second source). The usage
         # engine's former SF-primary role was removed — SF is now purely market-derived.
         sf_value = sf_vendor_values.get(pid, 0.0)
 
@@ -1130,7 +1281,7 @@ def rewrite_value_table_with_model() -> Path:
         if position != "QB":
             sf_value = sf_nonqb_floor(sf_value, final_value)
 
-        _mkt_refs[pid] = (fc_val, dp_val, fc_sf_by_sid.get(pid, 0.0))
+        _mkt_refs[pid] = (fc_val, sec_val, fc_sf_by_sid.get(pid, 0.0))
 
         age = player.get("age")
         if age is None and row is not None:
