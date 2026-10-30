@@ -1243,14 +1243,16 @@ def build_trade_calculator_body(
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day 1QB dynasty BR value movers</div>
-              <div class="otc-day-filters">
-                <button class="otc-day-filter active" data-days="7" onclick="changeMoversDays(7)">7d</button>
-                <button class="otc-day-filter" data-days="14" onclick="changeMoversDays(14)">14d</button>
-                <button class="otc-day-filter" data-days="30" onclick="changeMoversDays(30)">30d</button>
-              </div>
-              <div class="otc-day-filters otc-movers-format-filters" role="group" aria-label="Movers value format">
-                <button class="otc-day-filter otc-movers-format active" data-movers-format="dynasty" onclick="changeMoversFormat('dynasty')">Dynasty</button>
-                <button class="otc-day-filter otc-movers-format" data-movers-format="redraft" onclick="changeMoversFormat('redraft')">Redraft</button>
+              <div class="otc-movers-filter-row">
+                <div class="otc-day-filters">
+                  <button class="otc-day-filter active" data-days="7" onclick="changeMoversDays(7)">7d</button>
+                  <button class="otc-day-filter" data-days="14" onclick="changeMoversDays(14)">14d</button>
+                  <button class="otc-day-filter" data-days="30" onclick="changeMoversDays(30)">30d</button>
+                </div>
+                <div class="otc-day-filters otc-movers-format-filters" role="group" aria-label="Movers value format">
+                  <button class="otc-day-filter otc-movers-format active" data-movers-format="dynasty" onclick="changeMoversFormat('dynasty')">Dynasty</button>
+                  <button class="otc-day-filter otc-movers-format" data-movers-format="redraft" onclick="changeMoversFormat('redraft')">Redraft</button>
+                </div>
               </div>
             </div>
 

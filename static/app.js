@@ -8570,8 +8570,9 @@ window.initTradePage = function initTradePage(root = document) {
     const breakoutsContent = root.querySelector("#breakoutsTabContent");
     const targetsContent = root.querySelector("#targetsTabContent");
     const moversSub = root.querySelector("#moversSub");
-    const dayFilters = root.querySelector(".otc-movers-panel .otc-day-filters");
-    const formatFilters = root.querySelector(".otc-movers-panel .otc-movers-format-filters");
+    // Time range + format live on one shared row; tab switches show and
+    // hide the row as a unit (the two groups always toggled together).
+    const filterRow = root.querySelector(".otc-movers-panel .otc-movers-filter-row");
 
     tabButtons.forEach(btn => {
       btn.addEventListener("click", () => {
@@ -8595,8 +8596,7 @@ window.initTradePage = function initTradePage(root = document) {
             const formatLabel = currentMoversFormat === "redraft" ? " redraft" : " dynasty";
             moversSub.textContent = `Biggest ${currentMoversDays}-day ${leagueLabel}${sizeLabel}${formatLabel} BR value movers`;
           }
-          if (dayFilters) dayFilters.style.display = "flex";
-          if (formatFilters) formatFilters.style.display = "flex";
+          if (filterRow) filterRow.style.display = "flex";
 
         } else if (tab === "breakouts") {
           breakoutsContent?.classList.add("is-active");
@@ -8604,8 +8604,7 @@ window.initTradePage = function initTradePage(root = document) {
             moversSub.style.display = "block";
             moversSub.textContent = "Top 5 breakouts from Breakout Engine ";
           }
-          if (dayFilters) dayFilters.style.display = "none";
-          if (formatFilters) formatFilters.style.display = "none";
+          if (filterRow) filterRow.style.display = "none";
           if (breakoutsContent && !breakoutsContent.dataset.loaded) {
             breakoutsContent.dataset.loaded = "true";
             loadBreakouts();
@@ -8617,8 +8616,7 @@ window.initTradePage = function initTradePage(root = document) {
             moversSub.style.display = "block";
             moversSub.textContent = "Players to pursue based on your roster gaps";
           }
-          if (dayFilters) dayFilters.style.display = "none";
-          if (formatFilters) formatFilters.style.display = "none";
+          if (filterRow) filterRow.style.display = "none";
           if (targetsContent) {
             loadTradeTargets();
           }

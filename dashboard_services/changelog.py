@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "fix",
+        "text": "Trade calculator Player Insights: the Movers filters now sit on one line. The 7d, 14d and 30d time range and the Dynasty and Redraft format toggle share a single row, with the format pinned to the right, instead of stacking as two rows of chips.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "fix",
         "text": "Trade calculator Player Insights: the Movers scope line under the tabs now fits on one line. It reads as the biggest BR value movers for the selected window, format and league size, in a slightly tighter label style, instead of wrapping its last word onto a second line.",
         "link": "/trade"
     },
