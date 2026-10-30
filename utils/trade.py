@@ -1099,8 +1099,17 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
                 worst = (lo, hi)
         if worst is not None:
             lo, hi = worst
+            # The top segment's upper piece is T1, which _valid already
+            # allows down to ELITE_MIN players; the search must use that
+            # same inset for a segment starting at the list top. With the
+            # MIN_SIZE inset the biggest gap at the very top (e.g. a
+            # 3-player elite cliff) is structurally unreachable, the split
+            # lands too deep, and the discretionary path is then blocked
+            # because the piece below the cliff would be under MIN_SIZE -
+            # leaving an oversized T1 that itself violates MAX_SPAN.
+            top_min = ELITE_MIN if lo == 0 else MIN_SIZE
             best_i, best_g = None, -1.0
-            for j in range(lo + MIN_SIZE - 1, hi - MIN_SIZE + 1):
+            for j in range(lo + top_min - 1, hi - MIN_SIZE + 1):
                 g = vals[j] - vals[j + 1]
                 if g > best_g:
                     best_g = g

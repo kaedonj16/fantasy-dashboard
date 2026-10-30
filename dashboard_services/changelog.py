@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "update",
+        "text": "Player Rankings, reworked: player headshots now lead every row, rank movement sits right beside the rank number, and each player's age joins their position and team under their name. PPG, Total Points and Value each get their own centered column, Dynasty / Redraft and 1QB / SF toggles sit beside the title, and sorting is a sliding pill next to the position filters. On phones the controls stack cleanly with a full-width sort pill and one row of position filters.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "update",
         "text": "PRO pricing page refresh: the plan picker now leads with the free trial strip and the billing toggle beside the heading, the All-Pro card stands out with a lifted, tinted treatment, and a new PRO metrics section groups the gated metrics under Efficiency, Opportunity, Consistency, and Value. What remains free now sits in its own styled panel, and the plan coverage FAQ reads as one card with the first answer open. Plans, prices, and coverage are unchanged.",
         "link": "/pricing"
     },

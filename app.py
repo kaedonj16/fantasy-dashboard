@@ -19133,23 +19133,68 @@ def _rankings_ssr_content(limit: int = 150):
             age = "–"
         _val_v = float(p.get("value") or 0)
         val = f"{_val_v:.1f}" if _val_v > 0 else "-"
-        # Phone subline (pos rank + team), mirroring rankings.js: the team
-        # segment drops out when there is no team to show.
+        # Subline (pos rank + team), mirroring rankings.js: the team
+        # segment drops out when there is no team to show; the age rides
+        # after a muted middle-dot separator when the payload carries one.
         _sub = pos_rank + (f" · {team}" if team not in ("", "–") else "")
+        _sub_html = f"<span>{_sub}</span>"
+        if age != "–":
+            _sub_html += (
+                '<span class="pr-age-sep" aria-hidden="true">·</span>'
+                f'<span class="pr-age-inline">Age {age}</span>'
+            )
         _ppg_v = p.get("ppg")
         try:
             ppg = f"{float(_ppg_v):.1f}" if _ppg_v not in (None, "") else "–"
         except (TypeError, ValueError):
             ppg = "–"
+        _tot_v = p.get("total_pts")
+        try:
+            tot = f"{float(_tot_v):.1f}" if _tot_v not in (None, "") else "–"
+        except (TypeError, ValueError):
+            tot = "–"
+        # Headshot cell, mirroring prHeadshotHTML in rankings.js: ESPN
+        # combiner first, then the raw ESPN URL, then Sleeper, then the
+        # initials disc (hidden while any source loads).
+        _pid = str(p.get("id") or "")
+        _espn = str(p.get("espnHeadshot") or "")
+        _hi = _hires_headshot_url(_espn, 128) if _espn else ""
+        _sleeper = (
+            f"https://sleepercdn.com/content/nfl/players/thumb/{_pid}.jpg"
+            if _pid else ""
+        )
+        _toks = [t for t in str(p.get("name") or "").split() if t]
+        _initials = (
+            (_toks[0][0] + (_toks[-1][0] if len(_toks) > 1 else "")).upper()
+            if _toks else "?"
+        )
+        _mono = (
+            f'<span class="pr-mono" style="display:none" aria-hidden="true">'
+            f"{html.escape(_initials)}</span>"
+        )
+        _src = _hi or _sleeper
+        if _src:
+            _fb = "|".join(x for x in (_espn if _hi and _espn and _hi != _espn else "", _sleeper if _sleeper and _sleeper != _src else "") if x)
+            # Inline fallback chain (same steps as prImgFallback): the SSR
+            # paint can error before the deferred rankings.js has run.
+            _onerr = (
+                "var f=(this.getAttribute('data-fb')||'').split('|').filter(Boolean);"
+                "if(f.length){this.setAttribute('data-fb',f.slice(1).join('|'));this.src=f[0];}"
+                "else{this.style.display='none';var m=this.nextElementSibling;if(m)m.style.display='flex';}"
+            )
+            _photo = (
+                f'<span class="pr-photo"><img class="pr-hs" src="{html.escape(_src, quote=True)}" '
+                f'data-fb="{html.escape(_fb, quote=True)}" onerror="{_onerr}" alt="" loading="lazy" decoding="async" width="62" height="56">'
+                f"{_mono}</span>"
+            )
+        else:
+            _photo = f'<span class="pr-photo">{_mono.replace("display:none", "display:flex")}</span>'
         rows.append(
             '<div class="pr-player-row pr-grid-row">'
             f'<span class="pr-rank">#{i}</span>'
-            '<span class="pr-arrows"></span>'
-            f'<span class="pr-name player-clickable"><span class="pr-name-main">{name}</span><span class="pr-sub">{_sub}</span></span>'
-            f'<span class="pr-pos-cell">{pos_rank}</span>'
-            f'<span class="pr-age">{age}</span>'
-            f'<span class="pr-team">{team}</span>'
+            f'<span class="pr-name player-clickable">{_photo}<span class="pr-name-text"><span class="pr-name-main">{name}</span><span class="pr-sub">{_sub_html}</span></span></span>'
             f'<span class="pr-ppg">{ppg}</span>'
+            f'<span class="pr-total">{tot}</span>'
             f'<span class="pr-value">{val}</span>'
             '</div>'
         )

@@ -323,12 +323,120 @@ var prSortDir = 'desc';    // 'asc' | 'desc' -- flipped by clicking a column hea
 // Default direction when a sort key is first chosen (AM-table convention:
 // names, ages, ADPs and ranks ascend; values and point totals descend).
 var PR_SORT_DIRS = { value: 'desc', adp: 'asc', age: 'asc', pos_rank: 'asc', ppg: 'desc', total_pts: 'desc', name: 'asc' };
-// Sort dropdown: choosing a key resets to that key's default direction.
+// Sort control: choosing a key resets to that key's default direction.
 function prSetSortKey(key) {
   prSortKey = key;
   prSortDir = PR_SORT_DIRS[key] || 'desc';
+  var sel = document.getElementById('prSort');
+  if (sel) sel.value = prSortKey;
+  prSyncSortToggle();
   prPage = 1;
   prFlipRender();
+}
+// Sliding-pill sort (Teams page .teams-mode-toggle mechanism): the thumb
+// measures the active button, exactly like _modeThumb on the Teams page.
+function prSortThumb() {
+  var wrap = document.getElementById('prSortToggle');
+  if (!wrap) return;
+  var thumb = wrap.querySelector('.teams-mode-thumb');
+  var btn = wrap.querySelector('button.on');
+  if (!thumb) return;
+  if (!btn) { thumb.style.width = '0px'; return; }
+  // Measure the active button (the _modeThumb mechanism from the Teams
+  // page) with rect math instead of offsetWidth/offsetLeft: the offset
+  // values are integer-rounded, which left the thumb up to 0.45px off
+  // the button on fractional layouts.
+  var wr = wrap.getBoundingClientRect();
+  var br = btn.getBoundingClientRect();
+  var borderL = parseFloat(getComputedStyle(wrap).borderLeftWidth) || 0;
+  thumb.style.width = br.width + 'px';
+  thumb.style.transform = 'translateX(' + (br.left - wr.left - borderL) + 'px)';
+  wrap.classList.add('js-thumb');
+}
+function prSyncSortToggle() {
+  var wrap = document.getElementById('prSortToggle');
+  if (!wrap) return;
+  wrap.querySelectorAll('button').forEach(function(b) {
+    var on = b.getAttribute('data-sortkey') === prSortKey;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  prSortThumb();
+}
+// Header format segments (Dynasty / Redraft + 1QB / SF in Row 1) mirror the
+// same state the Settings panel toggles carry.
+function prSyncHeaderSegs() {
+  document.querySelectorAll('#prScoringSeg .pr-segbtn').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-value') === prScoringType);
+  });
+  document.querySelectorAll('#prFormatSeg .pr-segbtn').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-value') === prLeagueType);
+  });
+}
+// Legend panel toggle (Row 2, pinned right next to Settings).
+function prToggleLegend() {
+  var panel = document.getElementById('prLegendPanel');
+  var btn = document.getElementById('prLegendBtn');
+  if (!panel || !btn) return;
+  var isOpen = panel.style.display === 'block';
+  panel.style.display = isOpen ? 'none' : 'block';
+  btn.classList.toggle('active', !isOpen);
+  if (!isOpen) {
+    var sp = document.getElementById('prSettingsPanel');
+    var sb = document.getElementById('prSettingsBtn');
+    if (sp) sp.style.display = 'none';
+    if (sb) sb.classList.remove('active');
+  }
+}
+// Headshot fallback chain: ESPN combiner (hi-res) -> raw ESPN URL -> Sleeper
+// CDN -> initials disc. The disc stays hidden while any source loads.
+function prImgFallback(img) {
+  var fb = (img.getAttribute('data-fb') || '').split('|').filter(Boolean);
+  if (fb.length) {
+    img.setAttribute('data-fb', fb.slice(1).join('|'));
+    img.src = fb[0];
+  } else {
+    img.style.display = 'none';
+    var mono = img.nextElementSibling;
+    if (mono) mono.style.display = 'flex';
+  }
+}
+window.prImgFallback = prImgFallback;
+// The shared ESPN combiner treatment (_hiResHeadshot in app.js, PR #2454).
+// It lives in the features half of app.js, which lite (guest) pages lazy
+// load, so fall back to a local mirror of the same transform (the same
+// mirror app.py keeps as _hires_headshot_url) when it is not on the page.
+function prHiResHeadshot(url, width) {
+  if (typeof _hiResHeadshot === 'function') return _hiResHeadshot(url, width);
+  if (!url || typeof url !== 'string') return url || '';
+  if (url.indexOf('/combiner/') !== -1) return url;
+  var m = url.match(/espncdn\.com(\/i\/headshots\/[^?]+\.(?:png|jpg|jpeg))/i);
+  if (!m) return url;
+  var w = Math.max(1, Math.round(width || 200));
+  return 'https://a.espncdn.com/combiner/i?img=' + m[1] + '&w=' + w + '&scale=crop&cquality=100';
+}
+// One headshot cell for a row: the shared ESPN combiner treatment
+// (_hiResHeadshot in app.js, PR #2454) with the Sleeper CDN as fallback and
+// initials only when no photo exists or every source fails.
+function prHeadshotHTML(p, isPick) {
+  if (isPick) return '<span class="pr-photo"></span>';
+  var name = String(p.name || '');
+  var toks = name.split(/\s+/).filter(Boolean);
+  var initials = toks.length
+    ? (toks[0].charAt(0) + (toks.length > 1 ? toks[toks.length - 1].charAt(0) : '')).toUpperCase()
+    : '?';
+  var mono = '<span class="pr-mono" style="display:none" aria-hidden="true">' + initials + '</span>';
+  var espn = String(p.espnHeadshot || '');
+  var sleeper = p.id ? ('https://sleepercdn.com/content/nfl/players/thumb/' + encodeURIComponent(p.id) + '.jpg') : '';
+  if (!espn && !sleeper) return '<span class="pr-photo">' + mono.replace('display:none', 'display:flex') + '</span>';
+  // Combiner width 128: the cell displays 62px desktop / 50px phone, so
+  // 128 is ~2x (retina-sharp) without shipping the 600px original.
+  var hi = espn ? prHiResHeadshot(espn, 128) : '';
+  var src = hi || sleeper;
+  var fb = [];
+  if (hi && espn && hi !== espn) fb.push(espn);
+  if (sleeper && sleeper !== src) fb.push(sleeper);
+  return '<span class="pr-photo"><img class="pr-hs" src="' + src + '" data-fb="' + fb.join('|') + '" onerror="prImgFallback(this)" alt="" loading="lazy" decoding="async" width="62" height="56">' + mono + '</span>';
 }
 // Clickable column headers (AM-table pattern): clicking the active key flips
 // direction, clicking a new key takes its default direction. The dropdown is
@@ -338,6 +446,7 @@ function prHeaderSort(key) {
   else { prSortKey = key; prSortDir = PR_SORT_DIRS[key] || 'desc'; }
   var sel = document.getElementById('prSort');
   if (sel) sel.value = prSortKey;
+  prSyncSortToggle();
   prPage = 1;
   prFlipRender();
 }
@@ -382,13 +491,14 @@ function prSortIsNull(p, sortBy) {
 function prUpdateSortHeaders() {
   var header = document.getElementById('prTableHeader');
   if (!header || header.dataset.adpMode === '1') return;
-  var isMobile = window.innerWidth <= 768;
-  // On mobile the Age column is hidden (its metric moves into the trailing
-  // sort column), so the arrow follows it there.
-  var col = 'sort';
+  // The reworked header carries Player / PPG / Total Points / Value
+  // columns; Age and Pos Rank sorts live on the sliding pill, which carries
+  // their active state, so they get no column arrow.
+  var col = null;
   if (prSortKey === 'name') col = 'player';
-  else if (prSortKey === 'age' && !isMobile) col = 'age';
   else if (prSortKey === 'ppg') col = 'ppg';
+  else if (prSortKey === 'total_pts') col = 'total_pts';
+  else if (prSortKey === 'value' || prSortKey === 'rank') col = 'sort';
   header.querySelectorAll('[data-pr-sort-col]').forEach(function(el) {
     var on = el.getAttribute('data-pr-sort-col') === col;
     el.classList.toggle('sorted-asc', on && prSortDir === 'asc');
@@ -624,6 +734,10 @@ function prToggleSettings() {
   } else {
     panel.style.display = 'block';
     btn.classList.add('active');
+    const lp = document.getElementById('prLegendPanel');
+    const lb = document.getElementById('prLegendBtn');
+    if (lp) lp.style.display = 'none';
+    if (lb) lb.classList.remove('active');
     if (window.innerWidth <= 768) {
       const rect = btn.getBoundingClientRect();
       panel.style.position = 'fixed';
@@ -682,6 +796,7 @@ function prSetScoringType(type) {
   if (type === 'redraft' && (prPosFilters.has('PICK') || prPosFilters.has('ROOKIE'))) {
     prPosFilters.clear();
   }
+  prSyncHeaderSegs();
   updateSettingsIndicator();
   prPage = 1;
   if (prLoaded) prRender();
@@ -698,6 +813,7 @@ function prSetLeagueType(type) {
     }
   });
 
+  prSyncHeaderSegs();
   updateSettingsIndicator();
   prPage = 1;
   prRender();
@@ -1244,16 +1360,21 @@ function prRender() {
       arrowCell = `<canvas class="pr-sparkline" data-pid="${p.id}" title="7-day value trend"></canvas>`;
     }
 
-    // Phone subline: mini sparkline + pos rank + team, rendered inside the
-    // name cell and shown only at the phone breakpoint, where the separate
-    // spark / pos / team columns are hidden (see players_page.py @640).
+    // Subline: mini sparkline + pos rank + team (plain text, the live
+    // "POSRANK · TEAM" join), then a muted middle-dot separator and the
+    // age (from the payload bDay via calculateAgeFromBirthday; omitted
+    // for a row whose payload carries neither).
     let sublineHTML = '';
     if (!isPick) {
       const _subParts = [posRank, (p.team && p.team !== '–') ? p.team : ''].filter(Boolean).join(' · ');
       const _subSpark = (sparkData && sparkData.length >= 2)
         ? `<canvas class="pr-spark-sub-canvas" data-pid="${p.id}" title="7-day value trend"></canvas>` : '';
-      if (_subParts || _subSpark) {
-        sublineHTML = `<span class="pr-sub">${_subSpark}<span>${_subParts}</span></span>`;
+      const _ageSeg = (p.age != null)
+        ? ((_subParts ? '<span class="pr-age-sep" aria-hidden="true">·</span>' : '')
+           + `<span class="pr-age-inline">Age ${Number(p.age).toFixed(1)}</span>`)
+        : '';
+      if (_subParts || _subSpark || _ageSeg) {
+        sublineHTML = `<span class="pr-sub">${_subSpark}<span>${_subParts}</span>${_ageSeg}</span>`;
       }
     }
 
@@ -1269,26 +1390,30 @@ function prRender() {
 
     const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '–' : valueMeta.cell(p);
     let sortDisplayHTML;
-    if (p.position !== 'PICK' && sortBy === 'total_pts' && p.total_pts != null) {
-      if (isMobile) {
-        // Phone (approved mock): the sorted-by metric is the big number --
-        // Total Points on top, Value underneath as a labeled sublabel.
-        sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
-          + `<span>${Number(p.total_pts).toFixed(1)}</span>`
-          + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">VAL ${sortDisplay}</span>`
-          + `</span>`;
-      } else {
-        // Desktop: Value stays the main figure; the total that drives this
-        // sort (with its positional rank) rides underneath as a sublabel.
-        const tRank = p.total_pts_rank ? (p.position + p.total_pts_rank) : '';
-        const tSub = Number(p.total_pts).toFixed(1) + (tRank ? ' ' + tRank : '');
-        sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
-          + `<span>${sortDisplay}</span>`
-          + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${tSub}</span>`
-          + `</span>`;
-      }
+    if (p.position !== 'PICK' && sortBy === 'total_pts' && p.total_pts != null && isMobile) {
+      // Phone (shipped #2716 semantics): the sorted-by metric is the big
+      // number -- Total Points on top, Value underneath as a labeled
+      // sublabel. Desktop keeps both numbers in their own columns instead.
+      sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:center;line-height:1.2;">`
+        + `<span>${Number(p.total_pts).toFixed(1)}</span>`
+        + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">VAL ${sortDisplay}</span>`
+        + `</span>`;
     } else {
       sortDisplayHTML = sortDisplay;
+    }
+
+    // Total Points column: always the player's total in its own column;
+    // while sorting by Total Points its positional rank rides underneath.
+    let totalCellHTML = '–';
+    if (p.position !== 'PICK' && p.total_pts != null) {
+      if (sortBy === 'total_pts' && p.total_pts_rank) {
+        totalCellHTML = `<span style="display:flex;flex-direction:column;align-items:center;line-height:1.2;">`
+          + `<span>${Number(p.total_pts).toFixed(1)}</span>`
+          + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${p.position}${p.total_pts_rank}</span>`
+          + `</span>`;
+      } else {
+        totalCellHTML = Number(p.total_pts).toFixed(1);
+      }
     }
 
     // Dedicated PPG column: always visible next to Value so both read at a
@@ -1298,7 +1423,7 @@ function prRender() {
     if (p.position !== 'PICK' && p.ppg != null) {
       if (sortBy === 'ppg') {
         const pRank = p.ppg_rank ? (p.position + p.ppg_rank) : '-';
-        ppgCellHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
+        ppgCellHTML = `<span style="display:flex;flex-direction:column;align-items:center;line-height:1.2;">`
           + `<span>${Number(p.ppg).toFixed(1)}</span>`
           + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${pRank}</span>`
           + `</span>`;
@@ -1322,7 +1447,7 @@ function prRender() {
       const _activeAdp = prAdpSourceVal(p, adpActive);
       row.innerHTML =
         '<span class="pr-rank pr-adp-pin pr-adp-pin-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
-        '<span class="pr-name pr-adp-pin pr-adp-pin-player' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + wlStar + badges + '</span>' +
+        '<span class="pr-name pr-adp-pin pr-adp-pin-player' + (isPick ? '' : ' player-clickable') + '">'  + prHeadshotHTML(p, isPick) + '<span class="pr-name-text">' + (p.name || 'Unknown') + wlStar + badges + '</span></span>' +
         metaCells +
         adpCols.map(function (c) {
           const v = prAdpSourceVal(p, c.value);
@@ -1346,17 +1471,12 @@ function prRender() {
     } else {
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
-        '<span class="pr-arrows">' + arrowCell + '</span>' +
-        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '"><span class="pr-name-main">'  + (p.name || 'Unknown') + wlStar + badges + '</span>' + sublineHTML + '</span>' +
-        '<span class="pr-pos-cell">' + posRank + '</span>' +
-        '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
-        '<span class="pr-team">'  + (p.team || '–') + '</span>' +
+        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">' + prHeadshotHTML(p, isPick) + '<span class="pr-name-text"><span class="pr-name-main">'  + (p.name || 'Unknown') + wlStar + badges + '</span>' + sublineHTML + '</span></span>' +
         '<span class="pr-ppg">' + ppgCellHTML + '</span>' +
+        '<span class="pr-total">' + totalCellHTML + '</span>' +
         '<span class="pr-value">' + sortDisplayHTML + '</span>';
 
       if (sparkData && sparkData.length >= 2) {
-        const cnv = row.querySelector('.pr-sparkline');
-        if (cnv) _prDrawSparkline(cnv, sparkData, _prSparkAnimate);
         const cnvSub = row.querySelector('.pr-spark-sub-canvas');
         if (cnvSub) _prDrawSparkline(cnvSub, sparkData, _prSparkAnimate, 26, 14);
       }
@@ -1524,6 +1644,14 @@ if (!window.__prDocBound) {
         btn.classList.remove('active');
       }
     }
+    const lpanel = document.getElementById('prLegendPanel');
+    const lbtn = document.getElementById('prLegendBtn');
+    if (lpanel && lbtn && lpanel.style.display === 'block') {
+      if (!lpanel.contains(e.target) && !lbtn.contains(e.target)) {
+        lpanel.style.display = 'none';
+        lbtn.classList.remove('active');
+      }
+    }
   });
 
   // Clickable sort headers (AM-table pattern): click a column to sort by it,
@@ -1668,6 +1796,11 @@ Promise.all([
         name:             p.name || p.full_name || 'Unknown',
         team:             p.team || '',
         position:         String(p.position || '').toUpperCase(),
+        // The payload carries both (stamped from the players index server
+        // side): bDay drives the precise age above, espnHeadshot drives the
+        // row headshot. Both used to be dropped by this whitelist map.
+        bDay:             p.bDay || null,
+        espnHeadshot:     p.espnHeadshot || '',
         age:              preciseAge !== null ? preciseAge : (p.age != null ? Number(p.age) : null),
         value:            Number(p.value    || 0),
         value_8:          Number(p.value_8  || p.value    || 0),
@@ -1773,5 +1906,12 @@ Promise.all([
 }
 if (prScoringType === 'redraft') {
   try { prSetScoringType('redraft'); } catch (e) {}
+}
+prSyncHeaderSegs();
+prSyncSortToggle();
+if (!window.__prSortThumbBound) {
+  window.__prSortThumbBound = true;
+  window.addEventListener('resize', prSortThumb);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(prSortThumb);
 }
 prLoadData();

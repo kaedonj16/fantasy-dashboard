@@ -91,6 +91,26 @@ def test_respects_max_display_tiers():
     assert len(out) <= MAX_DISPLAY_TIERS - 1
 
 
+def test_top_cliff_at_elite_min_splits_t1_at_three():
+    # Regression (Kaedon's 2026-10-30 rankings screenshot): the real board's
+    # top was Gibbs 1143.0, Bijan 1101.2, JSN 1037.3, then a 158.3 cliff to
+    # Chase 879.0 - yet T1 held SEVEN players (through Walker 776.7, span
+    # 366 > MAX_SPAN 220). The mandatory span split searched with a
+    # MIN_SIZE inset even for the top segment, so it could not split at
+    # index 2 despite ELITE_MIN allowing a 3-player T1; it split after
+    # Walker instead, after which _valid blocked the real cliff (the piece
+    # below it would have been 4 players). Fixed function: T1 = top 3.
+    top = [1143.0, 1101.2, 1037.3, 879.0, 837.7, 793.3, 776.7, 719.6]
+    tail = [700.0 - 12.0 * i for i in range(40)]  # dense plausible tail
+    vals = top + tail
+    out = compute_tier_thresholds(_table(vals))
+    assert out is not FALLBACK_THRESHOLDS
+    # First boundary falls between #3 (1037.3) and #4 (879.0)...
+    assert 879.0 < out[0] < 1037.3
+    # ...so exactly the top 3 players sit above it.
+    assert sum(1 for v in vals if v > out[0]) == 3
+
+
 def test_flat_wall_gets_span_split():
     # A single long flat ramp with no gaps should still be broken up by the
     # mandatory MAX_SPAN rule rather than collapsing to one tier.

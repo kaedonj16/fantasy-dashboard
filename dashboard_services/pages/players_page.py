@@ -10,20 +10,28 @@ TE-premium + league-context scripts) around this shell.
 def build_players_shell() -> str:
     body_html = """
     <div class="card central">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
-        <div>
-          <h2>Player Rankings</h2>
-          <div style="font-size: 15px; color: var(--text-muted); margin-top: 4px;">
-            <span id="prSubtitle">All players ranked by dynasty value.</span>
-          </div>
-        </div>
-      </div>
       <div class="card-body" style="padding-top:0;">
 
-        <!-- Controls -->
+        <!-- Controls: merged header rows (approved rework). Row 1 pairs the
+             title with the Dynasty / Redraft + 1QB / SF toggles and search;
+             Row 2 pairs the sliding-pill sort with the position pills and
+             Legend / Settings pinned right. On phones the stack collapses to
+             title row, search, full-width sort pill, position pills, count. -->
         <div class="filter-controls-container">
-          <!-- Row 1: Primary filters -->
-          <div class="filter-row filter-row-primary">
+          <!-- Row 1: title, format toggles, search -->
+          <div class="filter-row filter-row-primary pr-head-row1">
+            <div class="pr-titleblock">
+              <h2 class="page-title">Player Rankings</h2>
+              <p class="page-head-sub"><span id="prSubtitle">All players ranked by dynasty value.</span></p>
+            </div>
+            <div class="pr-seg" role="group" aria-label="Scoring type" id="prScoringSeg">
+              <button type="button" class="pr-segbtn active" data-value="dynasty" onclick="prSetScoringType('dynasty')">Dynasty</button>
+              <button type="button" class="pr-segbtn" data-value="redraft" onclick="prSetScoringType('redraft')">Redraft</button>
+            </div>
+            <div class="pr-seg pr-seg-sm" role="group" aria-label="League format" id="prFormatSeg">
+              <button type="button" class="pr-segbtn active" data-value="1qb" onclick="prSetLeagueType('1qb')">1QB</button>
+              <button type="button" class="pr-segbtn" data-value="sf" onclick="prSetLeagueType('sf')">SF</button>
+            </div>
             <!-- Search -->
             <div class="filter-search">
               <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
@@ -40,6 +48,20 @@ def build_players_shell() -> str:
                        font-size:15px;line-height:1;padding:2px;">&#x2715;</button>
             </div>
 
+          </div>
+
+          <!-- Row 2: sliding-pill sort, position filters, Legend / Settings -->
+          <div class="filter-row filter-row-secondary pr-head-row2">
+            <span class="pr-grouplab" id="prSortLabel">Sort</span>
+            <div class="teams-mode-toggle pr-sort-toggle" role="group" aria-label="Sort by" id="prSortToggle">
+              <span class="teams-mode-thumb" aria-hidden="true"></span>
+              <button type="button" class="on" data-sortkey="value" aria-pressed="true" onclick="prSetSortKey('value')">Value</button>
+              <button type="button" data-sortkey="ppg" aria-pressed="false" onclick="prSetSortKey('ppg')">PPG</button>
+              <button type="button" data-sortkey="total_pts" aria-pressed="false" onclick="prSetSortKey('total_pts')"><span class="pr-sort-full">Total Points</span><span class="pr-sort-short">Total</span></button>
+              <button type="button" data-sortkey="age" aria-pressed="false" onclick="prSetSortKey('age')">Age</button>
+              <button type="button" data-sortkey="pos_rank" aria-pressed="false" onclick="prSetSortKey('pos_rank')">Pos Rank</button>
+            </div>
+            <span class="pr-vdiv" aria-hidden="true"></span>
             <!-- Position filters -->
             <div class="otc-day-filters filter-positions br-chip-pop" role="group" aria-label="Filter by position">
               <button type="button" class="otc-day-filter pos-pill active" data-pos="ALL" aria-pressed="true" onclick="prTogglePos('ALL')">All</button>
@@ -49,9 +71,52 @@ def build_players_shell() -> str:
               <button type="button" class="otc-day-filter pos-pill" data-pos="TE" aria-pressed="false" onclick="prTogglePos('TE')">TE</button>
               <button type="button" class="otc-day-filter pos-pill" data-pos="PICK" aria-pressed="false" onclick="prTogglePos('PICK')">Picks</button>
             </div>
-
-            <!-- Settings button -->
-            <div style="position:relative;">
+            <!-- ADP source: only appears when sorting by ADP (per-source
+                 columns replace it whenever the server sends them). -->
+            <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
+              <label class="filter-label" for="prAdpSource">ADP source</label>
+              <select id="prAdpSource" onchange="prReloadAdpSource()"></select>
+            </div>
+            <!-- Hidden sort select: kept as the sync target for column-header
+                 clicks and the ADP / Name sorts the pill does not carry. -->
+            <div class="filter-sort" style="display:none;">
+              <label class="filter-label" for="prSort">Sort by</label>
+              <select id="prSort" onchange="prSetSortKey(this.value)">
+                <option value="value">Value</option>
+                <option value="adp">ADP</option>
+                <option value="age">Age</option>
+                <option value="pos_rank">Pos Rank</option>
+                <option value="ppg">PPG</option>
+                <option value="total_pts">Total Points</option>
+                <option value="name">Name (A-Z)</option>
+              </select>
+            </div>
+            <span class="pr-pinright">
+              <span style="position:relative;">
+                <button id="prLegendBtn" class="filter-settings-btn" onclick="prToggleLegend()" type="button">Legend</button>
+                <div id="prLegendPanel" class="filter-settings-panel" style="display:none;">
+                  <div class="settings-section">
+                    <span class="settings-section-label">Value tiers</span>
+                    <div class="pr-legend-tiers">
+                      <span><i style="background:#10b981"></i>T1 Elite</span>
+                      <span><i style="background:#22d3ee"></i>T2 Star</span>
+                      <span><i style="background:#3b82f6"></i>T3 High-End Starter</span>
+                      <span><i style="background:#8b5cf6"></i>T4 Starter</span>
+                      <span><i style="background:#a855f7"></i>T5 Flex</span>
+                      <span><i style="background:#f59e0b"></i>T6 Bench</span>
+                      <span><i style="background:#f97316"></i>T7 Deep Bench</span>
+                      <span><i style="background:#94a3b8"></i>T8 Handcuff</span>
+                      <span><i style="background:#64748b"></i>T9 Fringe</span>
+                    </div>
+                  </div>
+                  <div class="settings-section">
+                    <span class="settings-section-label">Row marks</span>
+                    <p class="pr-legend-note"><span class="pr-rank-delta up">&#9650;3</span> / <span class="pr-rank-delta down">&#9660;3</span> spots moved in the overall rankings over the last 7 days. The small line beside the player is the 7-day value trend.</p>
+                  </div>
+                </div>
+              </span>
+              <!-- Settings button -->
+              <span style="position:relative;">
               <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
                 Settings
               </button>
@@ -90,38 +155,8 @@ def build_players_shell() -> str:
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <!-- Row 2: Secondary filters -->
-          <div class="filter-row filter-row-secondary">
-            <div id="prActiveSettings" class="active-settings-indicator">
-              <span class="active-setting-tag">10-Team</span>
-              <span class="active-setting-tag">1QB</span>
-              <span class="active-setting-tag">Dynasty</span>
-              <span class="active-setting-tag" id="prTepTag" style="display:none;">TE+</span>
-            </div>
-            <!-- ADP source + Sort: a paired control group (side by side on
-                 mobile). The ADP source only appears when sorting by ADP, and
-                 sits to the LEFT so the Sort control stays on the far right. -->
-            <div class="filter-sort-group">
-              <div class="filter-sort" id="prAdpSrcWrap" style="display:none;">
-                <label class="filter-label" for="prAdpSource">ADP source</label>
-                <select id="prAdpSource" onchange="prReloadAdpSource()"></select>
-              </div>
-              <div class="filter-sort">
-                <label class="filter-label" for="prSort">Sort by</label>
-                <select id="prSort" onchange="prSetSortKey(this.value)">
-                  <option value="value">Value</option>
-                  <option value="adp">ADP</option>
-                  <option value="age">Age</option>
-                  <option value="pos_rank">Pos Rank</option>
-                  <option value="ppg">PPG</option>
-                  <option value="total_pts">Total Points</option>
-                  <option value="name">Name (A-Z)</option>
-                </select>
-              </div>
-            </div>
+              </span>
+            </span>
           </div>
         </div>
 
@@ -154,19 +189,16 @@ def build_players_shell() -> str:
         <div id="prTableScroll">
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:88px 42px 1fr 52px 46px 46px 52px 60px;
-             gap:0;padding:6px 12px;border-radius:6px;
+             grid-template-columns:50px minmax(0,1fr) 64px 96px 108px;
+             padding:7px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
              text-transform:uppercase;" class="pr-grid-row">
           <span>#</span>
-          <span style="text-align:center;"></span>
           <span data-pr-sort-col="player" role="button" tabindex="0" title="Sort by player name">Player</span>
-          <span style="text-align:center;">Pos</span>
-          <span id="prAgeHeader" data-pr-sort-col="age" role="button" tabindex="0" title="Sort by age" style="text-align:center;">Age</span>
-          <span style="text-align:right;">Team</span>
-          <span id="prPpgHeader" data-pr-sort-col="ppg" role="button" tabindex="0" title="Sort by fantasy points per game" style="text-align:right;">PPG</span>
-          <span id="prSortHeader" data-pr-sort-col="sort" role="button" tabindex="0" title="Sort direction: click to flip" style="text-align:right;">Value</span>
+          <span id="prPpgHeader" data-pr-sort-col="ppg" role="button" tabindex="0" title="Sort by fantasy points per game" style="text-align:center;">PPG</span>
+          <span id="prTotalHeader" data-pr-sort-col="total_pts" role="button" tabindex="0" title="Sort by total points" style="text-align:center;">Total Points</span>
+          <span id="prSortHeader" data-pr-sort-col="sort" role="button" tabindex="0" title="Sort direction: click to flip" style="text-align:center;">Value</span>
         </div>
 
         <!-- Player rows -->
@@ -186,19 +218,78 @@ def build_players_shell() -> str:
     </div>
 
     <style>
+      /* One grid for header + rows (approved rework): rank | player |
+         PPG | Total Points | Value. Pos / team / age / sparkline live in
+         the player subline now, so the numeric columns are wide enough to
+         center exactly under their headers. */
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 88px 42px 1fr 52px 46px 46px 52px 60px;
+        grid-template-columns: 50px minmax(0, 1fr) 64px 96px 108px;
         align-items: center;
-        gap: 0;
+        column-gap: 8px;
       }
+      .pr-grid-row.pr-adp-mode { column-gap: 0; }
       .pr-player-row {
-        padding: 9px 12px;
+        padding: 0 12px;
+        min-height: 56px;
+        align-items: stretch;
         cursor: pointer;
         transition: background 0.12s ease;
       }
       .pr-player-row:hover { background: var(--accent-soft); }
-      .pr-ppg { text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .pr-ppg { text-align: center; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; align-self: center; }
+      .pr-total { text-align: center; font-size: 13px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; align-self: center; }
+      /* Headshot cell (player-modal treatment): full row height, square
+         corners, bust flush on the row's bottom hairline. The initials
+         disc is the fallback only, revealed when every image source
+         fails (see prImgFallback in rankings.js). */
+      .pr-photo {
+        flex: none;
+        align-self: stretch;
+        display: flex;
+        align-items: flex-end;
+        width: 62px;
+      }
+      .pr-hs {
+        width: 62px;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        object-position: top;
+        border-radius: 0;
+        background: transparent;
+      }
+      .pr-mono {
+        width: 38px;
+        height: 38px;
+        flex: none;
+        border-radius: 50%;
+        align-items: center;
+        justify-content: center;
+        align-self: center;
+        margin: 0 auto;
+        background: var(--accent);
+        color: #fff;
+        font-size: 12.5px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      .pr-name-text {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 2px;
+        min-width: 0;
+        align-self: center;
+      }
+      .pr-age-sep {
+        color: var(--text-muted);
+        opacity: 0.6;
+        font-weight: 600;
+        flex: none;
+      }
+      .pr-age-inline { font-weight: 600; color: var(--text-muted); white-space: nowrap; }
       .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
       #prTableScroll.pr-adp-scroll {
         overflow-x: auto;
@@ -224,14 +315,17 @@ def build_players_shell() -> str:
         position: static;
       }
       .pr-rank {
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 700;
         color: var(--text-muted);
-        display: flex;
-        align-items: center;
-        gap: 6px;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 4px;
         justify-content: flex-start;
         white-space: nowrap;
+        align-self: center;
+        line-height: 1.25;
+        font-variant-numeric: tabular-nums;
       }
       .pr-rank-arrow {
         font-size: 15px;
@@ -240,9 +334,9 @@ def build_players_shell() -> str:
       }
       .pr-rank-arrow.up   { color: #22c55e; }
       .pr-rank-arrow.down { color: #ef4444; }
-      /* Overall rank movement shown beside the rank number. */
+      /* Overall rank movement, inline to the RIGHT of the rank number. */
       .pr-rank-delta {
-        font-size: 11px;
+        font-size: 10.5px;
         font-weight: 800;
         line-height: 1;
         white-space: nowrap;
@@ -256,15 +350,15 @@ def build_players_shell() -> str:
         font-size: 11px;
       }
       .pr-name {
-        font-size: 13px;
+        font-size: 14.5px;
         font-weight: 600;
         color: var(--text);
         display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        justify-content: center;
-        gap: 2px;
+        flex-direction: row;
+        align-items: stretch;
+        gap: 11px;
         min-width: 0;
+        height: 100%;
       }
       .pr-name-main {
         display: flex;
@@ -273,10 +367,11 @@ def build_players_shell() -> str:
         flex-wrap: wrap;
         min-width: 0;
       }
-      /* Phone-only subline under the name (sparkline + pos rank + team); the
-         separate spark/pos/team columns take over above the phone breakpoint. */
+      /* Subline under the name at every width (approved rework): sparkline,
+         then "POSRANK · TEAM" as plain text exactly like the live join,
+         then a muted middle-dot separator, then the age. */
       .pr-sub {
-        display: none;
+        display: flex;
         align-items: center;
         gap: 6px;
         font-size: 11px;
@@ -284,27 +379,14 @@ def build_players_shell() -> str:
         color: var(--text-muted);
         white-space: nowrap;
       }
-      .pr-pos-cell {
-        text-align: center;
-        font-size: 11px;
-        font-weight: 700;
-        color: var(--text-muted);
-      }
-      .pr-age {
-        text-align: center;
-        font-size: 13px;
-        color: var(--text-muted);
-      }
-      .pr-team {
-        text-align: right;
-        font-size: 11px;
-        color: var(--text-muted);
-      }
       .pr-value {
-        text-align: right;
-        font-size: 13px;
-        font-weight: 700;
+        text-align: center;
+        font-size: 19px;
+        font-weight: 800;
         color: var(--accent);
+        line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+        align-self: center;
       }
       /* Per-source ADP columns (sort-by-ADP view) */
       .pr-adp-head {
@@ -540,25 +622,65 @@ def build_players_shell() -> str:
         letter-spacing: 0.04em;
       }
 
+      /* Merged header rows (approved rework) */
+      .pr-head-row1 { justify-content: flex-start; gap: 14px; }
+      .pr-titleblock { min-width: 0; }
+      .pr-head-row1 .filter-search {
+        margin-left: auto;
+        flex: 0 1 240px;
+        min-width: 190px;
+      }
+      .pr-seg {
+        display: inline-flex;
+        gap: 3px;
+        padding: 3px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-alt, #f4f6f8);
+        flex: none;
+      }
+      .pr-segbtn {
+        border: 0;
+        background: transparent;
+        color: var(--text-muted);
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 700;
+        padding: 6px 12px;
+        border-radius: 7px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .pr-segbtn.active { background: var(--accent); color: #fff; }
+      .pr-seg-sm .pr-segbtn { padding: 6px 10px; font-size: 12px; }
+      .pr-head-row2 { justify-content: flex-start; gap: 6px; flex-wrap: wrap; }
+      .pr-head-row2 .filter-positions { gap: 4px; }
+      .pr-head-row2 .pr-vdiv { margin: 0; }
+      .pr-grouplab {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-right: 1px;
+      }
+      /* Sliding-pill sort: the Teams page .teams-mode-toggle /
+         .teams-mode-thumb treatment from dashboard.css, verbatim mechanism
+         (thumb positioned by prSortThumb in rankings.js). */
+      .pr-sort-toggle { flex: none; }
+      .pr-sort-short { display: none; }
+      .pr-vdiv { width: 1px; height: 22px; background: var(--border); margin: 0 3px; flex: none; }
+      .pr-pinright { margin-left: auto; display: flex; gap: 8px; flex: none; align-items: flex-start; }
+      .pr-legend-tiers { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--text); }
+      .pr-legend-tiers i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; }
+      .pr-legend-note { font-size: 12.5px; line-height: 1.55; color: var(--text-muted); margin: 0; }
+
       @media (max-width: 600px) {
-        .filter-row-primary {
-          display: grid;
-          grid-template-columns: 1fr auto;
-          grid-template-rows: auto auto;
-          gap: 8px;
-        }
-        .filter-search {
-          grid-column: 1 / -1;
-          min-width: 0;
-        }
         .filter-positions {
           flex-wrap: nowrap;
-          overflow-x: auto;
-          scrollbar-width: none;
           min-width: 0;
           align-items: center;
         }
-        .filter-positions::-webkit-scrollbar { display: none; }
         .filter-row-secondary { gap: 8px; }
       }
 
@@ -585,8 +707,9 @@ def build_players_shell() -> str:
       /* Mobile responsive */
       @media (max-width: 768px) {
         .filter-row-primary {
-          flex-direction: column;
-          align-items: stretch;
+          flex-direction: row;
+          flex-wrap: wrap;
+          align-items: center;
         }
         .filter-search {
           max-width: 100%;
@@ -598,23 +721,11 @@ def build_players_shell() -> str:
         .filter-label {
           white-space: nowrap;
         }
-        /* Approved mobile mock: Row 2 stays ONE row -- the setting tags
-           scroll on the left and Sort by sits compact on the right (inline
-           label, slim select). The old stacked layout put the tags centered
-           on their own line and Sort by full-width underneath, pushing the
-           list ~70px down the phone. */
+        /* Row 2 at tablet widths: sort pill + position pills wrap as one
+           group, Legend / Settings stay pinned right. */
         .filter-row-secondary {
-          flex-wrap: nowrap;
+          flex-wrap: wrap;
           gap: 8px;
-        }
-        .active-settings-indicator {
-          justify-content: flex-start;
-        }
-        .filter-sort-group {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          width: auto;
         }
         .filter-sort {
           min-width: 0;
@@ -635,11 +746,8 @@ def build_players_shell() -> str:
           padding-top: 0;
           padding-bottom: 0;
         }
-        /* Table: hide Age on tablets - rank | arrow | name | pos | team | ppg | value.
-           The ADP-source view (.pr-adp-mode) manages its own columns inline, so
-           exclude it from these fixed overrides. */
-        .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 78px 38px 1fr 40px 40px 46px 52px !important; }
-        .pr-age,  #prAgeHeader  { display: none !important; }
+        /* The ADP-source view (.pr-adp-mode) manages its own columns inline,
+           so it is excluded from the fixed grid overrides. */
 
         /* ADP board (mobile): pin # + Player like schedule rankings; source
            columns scroll horizontally in #prTableScroll. left offsets match
@@ -696,37 +804,56 @@ def build_players_shell() -> str:
         }
       }
       @media (max-width: 640px) {
-        /* Phone (approved mock): ONE grid for header + rows --
-           rank | player | PPG | Value, 10px gaps. The rank delta stacks
-           under the #, and the sparkline + pos rank + team move into the
-           player subline, so the name gets the width the old separate
-           36px spark column and 76px rank cell used to eat. This page's
-           inline sheet is the ONLY source of phone grid rules for this
-           table (the stale copies in dashboard.css are gone). */
+        /* Phone (approved rework): ONE grid for header + rows --
+           rank | player | PPG | Value, tight 3px gaps. The Total Points
+           header hides (its sort flips the Value column instead, the
+           shipped #2716 semantics), and the rank delta sits inline to the
+           RIGHT of the rank number. This page's inline sheet is the ONLY
+           source of phone grid rules for this table (dashboard.css carries
+           none). */
         .pr-grid-row:not(.pr-adp-mode) {
-          grid-template-columns: 40px minmax(0, 1fr) 46px 70px !important;
-          /* !important: the header carries an inline gap:0, which would
-             otherwise leave its tracks one gap narrower than the rows'. */
-          column-gap: 10px !important;
+          grid-template-columns: 40px minmax(0, 1fr) 34px 60px !important;
+          column-gap: 3px !important;
         }
-        .pr-arrows, .pr-pos-cell, .pr-age, .pr-team,
-        #prTableHeader:not(.pr-adp-mode) span:nth-child(2),
-        #prTableHeader:not(.pr-adp-mode) span:nth-child(4),
-        #prTableHeader:not(.pr-adp-mode) span:nth-child(5),
-        #prTableHeader:not(.pr-adp-mode) span:nth-child(6) { display: none !important; }
-        .pr-player-row { padding: 10px 12px; }
-        .pr-rank {
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 0;
-          font-size: 14px;
-          line-height: 1.25;
-        }
+        #prTableHeader:not(.pr-adp-mode) span:nth-child(4) { display: none !important; }
+        /* Phone rows pad 0 10px, so the header pads to 10px too or its
+           tracks sit 2px right of the rows'. */
+        #prTableHeader:not(.pr-adp-mode) { padding: 7px 10px !important; }
+        /* The Total Points cell hides too: on phones its sort flips the
+           Value column (total on top, VAL sublabel), it is not a column. */
+        .pr-total { display: none !important; }
+        .pr-player-row { padding: 0 10px; min-height: 52px; }
+        .pr-photo { width: 50px; }
+        .pr-hs { width: 50px; }
+        .pr-name { gap: 7px; }
+        .pr-name-main { font-size: 13px; }
+        .pr-sub { gap: 4px; font-size: 10.5px; }
+        .pr-rank { font-size: 14px; }
         .pr-rank-delta { font-size: 10px; }
-        .pr-name { font-size: 14px; }
-        .pr-sub { display: flex; }
         .pr-ppg { font-size: 14px; }
         .pr-value { font-size: 15px; }
+        /* Phone control stack (approved rework): title row, search,
+           full-width sliding sort pill with equal segments, one nowrap
+           row of six equal-flex position pills, then the count line.
+           No settings/tags row on phones. */
+        .pr-head-row1 .page-title { font-size: 20px; }
+        .pr-head-row1 { gap: 8px; }
+        .pr-titleblock { flex: 1 1 auto; }
+        #prFormatSeg { display: none; }
+        .pr-head-row1 .filter-search {
+          order: 3;
+          flex: 1 1 100%;
+          min-width: 0;
+          margin-left: 0;
+        }
+        .filter-row-secondary { flex-wrap: wrap; gap: 8px; }
+        .pr-grouplab, .pr-vdiv, .pr-pinright { display: none; }
+        .pr-sort-toggle { flex: 1 1 100%; }
+        .pr-sort-toggle button { flex: 1; padding: 7px 0; font-size: 12px; }
+        .pr-sort-full { display: none; }
+        .pr-sort-short { display: inline; }
+        .filter-positions { flex: 1 1 100%; flex-wrap: nowrap; overflow: visible; }
+        .filter-positions .pos-pill { flex: 1; min-height: 40px; }
         /* ADP-source view on phones: compact header labels so "Sleeper" /
            "BR Fantasy" / "Consensus" read clearly in the scrollable pane. */
         #prTableHeader.pr-adp-mode .pr-adp-head {
