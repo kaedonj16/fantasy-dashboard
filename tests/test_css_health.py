@@ -152,9 +152,20 @@ def test_drive_bar_dark_chrome_scoped_to_dark_theme():
     data-theme="dark"; light mode removes the attribute, so the old
     :root:not([data-theme="light"]) branch matched light pages too. The dark
     track / red-zone values must be reachable ONLY under [data-theme="dark"],
-    the light track is the approved slate #edf1f5, and the fill is the flat
-    team color (treatment B) -- no gradient into a black color-mix, no dark
-    drop shadow."""
+    and the light track base is the approved slate #edf1f5. Those guards stand.
+
+    Intentional change (Kaedon, 2026-10-30): the bar was redesigned in the
+    ScoreZone field board's language (her pick from the field-board artifact),
+    superseding treatment B's flat fill. The fill is now a gradient that fades
+    from transparent at the goal line to the flat team colour at the ball --
+    still no gradient into a black color-mix and no dark drop shadow, which
+    were the actual 2026-10-25 complaints.
+
+    Second intentional change (same day): Kaedon found the redesign too
+    bulky in line and picked the S1 ultra-slim bar -- a 10px track with the
+    end labels outside it and the spot as plain text. The red-zone element
+    (.mb-fld-rz) no longer exists at all, so its dark-scoping assertions are
+    replaced by a total-absence pin; the track guards below stand."""
     css = _css()
     assert ':root:not([data-theme="light"]) .mb-fld-track' not in css
     assert ':root:not([data-theme="light"]) .mb-fld-rz' not in css
@@ -162,19 +173,24 @@ def test_drive_bar_dark_chrome_scoped_to_dark_theme():
         r':root\[data-theme="dark"\]\s+\.mb-fld-track\s*\{([^}]+)\}', css)
     assert dark_track, "dark drive-bar track rule missing"
     assert "#1e293b" in dark_track.group(1)
-    dark_rz = re.search(
-        r':root\[data-theme="dark"\]\s+\.mb-fld-rz\s*\{([^}]+)\}', css)
-    assert dark_rz, "dark drive-bar red-zone rule missing"
-    assert "rgba(248, 113, 113, .16)" in dark_rz.group(1)
+    # S1 has no red-zone element: the class is gone from the stylesheet.
+    assert ".mb-fld-rz" not in css
     track = re.search(r"\.mb-fld-track\s*\{([^}]+)\}", css)
     assert track, ".mb-fld-track rule missing"
     assert "background: #edf1f5" in track.group(1)
     fill = re.search(r"\.mb-fld-fill\s*\{([^}]+)\}", css)
     assert fill, ".mb-fld-fill rule missing"
     assert "background: var(--mb-tc" in fill.group(1)
-    assert "linear-gradient" not in fill.group(1)
-    assert "#000000" not in fill.group(1)
     assert "box-shadow" not in fill.group(1)
+    # The gradient lives on the directional rules: transparent -> team colour,
+    # never into black.
+    for cls in (".mb-fld-fill.mb-away", ".mb-fld-fill.mb-home"):
+        rule = re.search(re.escape(cls) + r"\s*\{([^}]+)\}", css)
+        assert rule, cls + " rule missing"
+        assert "linear-gradient" in rule.group(1)
+        assert "var(--mb-tc" in rule.group(1)
+        assert "#000000" not in rule.group(1)
+        assert "box-shadow" not in rule.group(1)
 
 
 def test_rz_sync_bar_styles_exist():

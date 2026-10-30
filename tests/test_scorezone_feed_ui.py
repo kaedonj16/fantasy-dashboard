@@ -824,3 +824,207 @@ console.log(JSON.stringify({{ wr: wrRows, qb: qbRows, html: html }}));
     assert "No target credited" in html and "not counted" in html
     # Chronological order: Q1 reception renders before the Q2 pick.
     assert html.index("10-yard reception") < html.index("intercepted")
+
+
+# ── Drive-bar redesign (2026-10-30) ─────────────────────────────────────────
+# The classic bar (shared board path via _rzRenderGameBoard, Matchups page
+# via driveBarHtml) was restyled in the ScoreZone field board's language.
+# Kaedon then found the first redesign too bulky in line and picked the S1
+# ultra-slim inline bar: ONE line -- micro end-zone labels outside a 10px
+# striped pill track, gradient fill from the goal line to a small solid
+# ball, yellow first-down tick, and the spot as plain team-colour text at
+# the end of the line. No in-track caps, no floating flag, no arrowhead.
+# Geometry includes both end zones (x = 10 + spot * 0.8), as the field
+# board. (The player modal's ScoreZone tab renders the field board --
+# it passes fieldBoard:true -- so this bar has no modal variant; pinned
+# separately below.)
+
+def test_drive_bar_s1_slim_markup_present_in_both_renderers():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    # Board bar (ScoreZone classic path).
+    assert "rz-field-line" in app_js
+    assert "rz-field-ezl" in app_js
+    assert "rz-field-spot" in app_js
+    assert "rz-field-ball" in app_js
+    assert "rz-field-top" in app_js
+    assert "rz-field-live" in app_js
+    # The drive summary is caller-supplied only -- never derived or invented
+    # inside the renderer.
+    assert "options.driveSummary" in app_js
+    # Matchups bar.
+    assert "mb-fld-bar" in app_js
+    assert "mb-fld-ezl" in app_js
+    assert "mb-fld-spot" in app_js
+    assert "mb-fld-ball" in app_js
+    # The bulky first-redesign pieces are gone from both renderers, and the
+    # pre-redesign line marker stays gone.
+    for gone in ("mb-fld-flag", "mb-fld-twrap", "mb-fld-ez mb-fld-ez-a",
+                 "mb-fld-ez-h", "rz-field-ez is-away", "mb-fld-mark"):
+        assert gone not in app_js, gone
+    # CSS for both bars.
+    for cls in (".rz-field-line", ".rz-field-ezl", ".rz-field-spot",
+                ".rz-field-ball", ".rz-field-top", ".rz-field-live",
+                ".mb-fld-bar", ".mb-fld-ezl", ".mb-fld-spot", ".mb-fld-ball"):
+        assert cls in DASHBOARD_CSS, cls
+    # ... and the bulky CSS is gone too.
+    for gone in (".mb-fld-flag", ".mb-fld-twrap", ".mb-fld-ez {", ".rz-field-ez {"):
+        assert gone not in DASHBOARD_CSS, gone
+
+
+_NODE_DOM_STUB = """
+var document = {
+  createElement: function() { var v = ''; return {
+    set textContent(x) { v = String(x); },
+    get innerHTML() { return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  }; },
+  documentElement: { getAttribute: function() { return null; } }
+};
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_board_bar_geometry_and_context_row():
+    """The S1 slim bar renders on the shared ScoreZone board path
+    (scorezone.js's {id:'rz-nfl-board'} call). Away spot 36 -> ball x 38.8,
+    fill exactly 28.8% (goal line to ball, no arrowhead overshoot), FD line
+    at the 46 (46.8); home spot (GB 36) mirrors: ball 61.2, fill from the
+    right. End labels sit outside the track, the spot is plain text at the
+    end of the line (no caps, no flag, no red-zone tint), and the context
+    row carries DRIVE + down & distance, plus a summary only when a caller
+    passes a real one."""
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    seg = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("// Build a player's modal log")]
+    script = f"""
+var window = {{}};
+{_NODE_DOM_STUB}
+window.brTeamBadge = function(t) {{ return '<span class="rz-nfl-badge">' + t + '</span>'; }};
+{seg}
+var CAR = {{away:'CAR', home:'GB', away_pts:13, home_pts:27, status:'live', possession:'CAR',
+  yard_line:'CAR 36', field_position_reliable:true, down:1, distance:10, game_quarter:'Q4', game_clock:'14:28'}};
+var GB = {{away:'CAR', home:'GB', away_pts:13, home_pts:27, status:'live', possession:'GB',
+  yard_line:'GB 36', field_position_reliable:true, down:2, distance:3, game_quarter:'Q4', game_clock:'9:41'}};
+console.log(JSON.stringify({{
+  car: window._rzRenderGameBoard(CAR, {{id:'rz-nfl-board'}}),
+  carSum: window._rzRenderGameBoard(CAR, {{id:'rz-nfl-board', driveSummary:'3 plays · 24 yds'}}),
+  gb: window._rzRenderGameBoard(GB, {{id:'rz-nfl-board'}})
+}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    car, gb = out["car"], out["gb"]
+    # Slim line: micro end labels outside the track (away left, home right),
+    # spot as plain text at the end of the line.
+    assert 'rz-field-line' in car
+    assert 'rz-field-ezl">CAR<' in car and 'rz-field-ezl">GB<' in car
+    assert 'rz-field-spot">CAR 36<' in car
+    # CAR (away) geometry: ball 38.8, fill from the left goal line ending
+    # exactly on the ball, FD at 46.8.
+    assert 'rz-field-ball" style="left:38.8%"' in car
+    assert 'rz-field-fill is-away" style="width:28.8%"' in car
+    assert 'rz-field-fd" style="left:46.8%"' in car
+    # None of the bulky pieces: no caps, no flag, no red-zone tint.
+    for absent in ("rz-field-ez ", "rz-field-flag", "rz-field-rz"):
+        assert absent not in car, absent
+    # Context row: DRIVE + situation, no summary unless a caller passes one.
+    assert 'rz-field-live"><i></i>DRIVE' in car
+    assert 'rz-field-sit">1st &amp; 10<' in car
+    assert "rz-field-sum" not in car
+    assert 'rz-field-sum">3 plays · 24 yds<' in out["carSum"]
+    # GB (home) mirrors: ball 61.2, fill from the right, FD behind the ball at
+    # 58.8 (line to gain toward the away goal), spot text follows the ball.
+    assert 'rz-field-ball" style="left:61.2%"' in gb
+    assert 'rz-field-fill is-home' in gb and 'style="width:28.8%"' in gb
+    assert 'rz-field-fd" style="left:58.8%"' in gb
+    assert 'rz-field-spot">GB 36<' in gb
+    assert 'rz-field-sit">2nd &amp; 3<' in gb
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_matchup_bar_geometry_flag_and_defense_state():
+    """driveBarHtml (Matchups page) renders the S1 slim bar with the same
+    geometry as the board bar: end labels outside the track, the spot as
+    plain text at the end of the line (no flag, no caps), and the compact
+    defense label when the viewed team does not have the ball. The league
+    payload in scope has no play-by-play, so no plays/yards summary appears."""
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    helpers = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("window._rzRenderGameBoard")]
+    fn = _extract_js_function(app_js, "function driveBarHtml(")
+    script = f"""
+var window = {{}};
+{_NODE_DOM_STUB}
+{helpers}
+var TEAM_COLORS = {{CAR:'#0085CA', GB:'#203731'}};
+var norm = function(t) {{ return window._rzNormalizeTeam(t).toUpperCase(); }};
+var esc = function(v) {{ var d = document.createElement('div'); d.textContent = String(v == null ? '' : v); return d.innerHTML; }};
+var scorezoneGameUrl = function() {{ return ''; }};
+var driveBarHtml = {fn};
+var CAR = {{away:'CAR', home:'GB', status:'live', possession:'CAR', yard_line:'CAR 36',
+  field_position_reliable:true, down:1, distance:10}};
+var GB = {{away:'CAR', home:'GB', status:'live', possession:'GB', yard_line:'GB 36',
+  field_position_reliable:true, down:2, distance:3}};
+console.log(JSON.stringify({{
+  car: driveBarHtml(CAR, 'CAR'),
+  gb: driveBarHtml(GB, 'GB'),
+  def: driveBarHtml(GB, 'CAR')
+}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    car, gb = out["car"], out["gb"]
+    assert 'mb-fld-live"><i></i>DRIVE' in car
+    assert 'mb-fld-dd">1st &amp; 10<' in car
+    # Slim line: labels outside the track, spot as plain text at the end.
+    assert 'mb-fld-bar' in car
+    assert 'mb-fld-ezl">CAR<' in car and 'mb-fld-ezl">GB<' in car
+    assert 'mb-fld-spot">CAR 36<' in car
+    assert 'mb-fld-ball" style="left:38.8%"' in car
+    assert 'mb-fld-fill mb-away" style="width:28.8%"' in car
+    assert 'mb-fld-fd" style="left:46.8%"' in car
+    # None of the bulky pieces: no flag, no wrap, no in-track caps.
+    for absent in ("mb-fld-flag", "mb-fld-twrap", "mb-fld-ez "):
+        assert absent not in car, absent
+    # No invented drive summary on this surface.
+    assert "plays" not in car and "yds" not in car
+    assert 'mb-fld-ball" style="left:61.2%"' in gb
+    assert 'mb-fld-fill mb-home' in gb and 'style="width:28.8%"' in gb
+    assert 'mb-fld-spot">GB 36<' in gb
+    assert out["def"] == '<div class="mb-fld-def">CAR on Defense</div>'
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_modal_scorezone_tab_has_no_legacy_bar_gate():
+    """Reconciled with the field board (#2901): the player modal's ScoreZone
+    tab is the ONLY {modal:true} caller of _rzRenderGameBoard (inside
+    _rzBuildLiveHtml) and it passes fieldBoard:true, so the tab renders the
+    field board. The redesign's original modal gate -- a pre-redesign bar
+    kept for the modal under .rz-field--legacy -- is gone: no caller can
+    reach it, and a plain {modal:true} render without the fieldBoard
+    opt-in falls through to the same S1 slim bar as the shared board path."""
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    # The modal's live-tab call opts into the field board.
+    assert "window._rzRenderGameBoard(game, { modal:true, fieldBoard: true, pbpPlays: (state.pbp_by_game || {})[info.game_id] || [] })" in app_js
+    # No legacy gate or legacy variant survives in JS or CSS.
+    assert "rz-field--legacy" not in app_js
+    assert "rz-field--legacy" not in DASHBOARD_CSS
+    seg = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("// Build a player's modal log")]
+    assert "!options.modal" not in seg
+    script = f"""
+var window = {{}};
+{_NODE_DOM_STUB}
+window.brTeamBadge = function(t) {{ return '<span class="rz-nfl-badge">' + t + '</span>'; }};
+{seg}
+var CAR = {{away:'CAR', home:'GB', away_pts:13, home_pts:27, status:'live', possession:'CAR',
+  yard_line:'CAR 36', field_position_reliable:true, down:1, distance:10, game_quarter:'Q4', game_clock:'14:28'}};
+console.log(JSON.stringify({{ modal: window._rzRenderGameBoard(CAR, {{modal:true}}) }}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    m = out["modal"]
+    # Plain modal render = the shared path's S1 slim bar (same geometry as
+    # the board test above), inside the modal board wrapper -- no field
+    # board (no opt-in) and no legacy variant.
+    assert "rz-nfl-board--modal" in m
+    assert "rz-field-line" in m
+    assert 'rz-field-fill is-away" style="width:28.8%"' in m
+    assert 'rz-field-ball" style="left:38.8%"' in m
+    assert 'rz-field-fd" style="left:46.8%"' in m
+    assert 'rz-field-spot">CAR 36<' in m
+    for absent in ("rz-field--legacy", "rz-fb", "rz-field-flag"):
+        assert absent not in m, absent
