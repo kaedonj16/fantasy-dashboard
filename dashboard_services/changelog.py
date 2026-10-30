@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "fix",
+        "text": "Player Rankings sorting: clicking the Value column header now actually sorts by value. It used to flip whatever sort was already active, so clicking Value during a PPG sort just flipped PPG to ascending and surfaced the lowest-PPG players. The header controls also stay put when switching between Dynasty and Redraft: the longer Redraft subtitle no longer pushes the format toggles and search sideways.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "fix",
         "text": "Trade calculator Player Insights: the Movers filters now sit on one line. The 7d, 14d and 30d time range and the Dynasty and Redraft format toggle share a single row, with the format pinned to the right, instead of stacking as two rows of chips.",
         "link": "/trade"
     },
