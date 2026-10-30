@@ -518,7 +518,8 @@ body {
     /* App-like scrolling: keep the rubber-band bounce inside the app instead of
      revealing a blank void past the content, and stop a downward overscroll at
      the top from triggering the browser's pull-to-refresh (which reloads the
-     whole page and shatters the SPA feel). */
+     whole page and shatters the SPA feel). Pull-to-refresh is custom instead:
+     the br-ptr controller in app.js, on pages that register brPageRefresh. */
     overscroll-behavior-y: contain;
 }
 
@@ -54618,6 +54619,63 @@ html:has(.home-page) { scroll-behavior: smooth; }
     background: linear-gradient(135deg, #9a5b2e, #7c4522);
     color: #fed7aa;
     box-shadow: 0 3px 10px rgba(194, 128, 63, .2);
+}
+
+/* Pull-to-refresh indicator (PWA): a flat hairline chip at top center that
+   follows the pull, driven by the br-ptr controller in app.js. It renders
+   only on pages that register window.brPageRefresh (ScoreZone, Weekly Hub).
+   The spinner is a pure CSS border ring: no icon font, no emoji. */
+.br-ptr {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 10px rgba(2, 6, 23, .12);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -64px);
+    transition: transform .18s ease, opacity .18s ease;
+}
+.br-ptr.br-ptr-visible {
+    opacity: 1;
+    transition: none;
+}
+.br-ptr-spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--text);
+    opacity: .45;
+}
+.br-ptr.br-ptr-armed .br-ptr-spinner {
+    opacity: 1;
+}
+.br-ptr.br-ptr-refreshing {
+    transition: transform .18s ease, opacity .18s ease;
+}
+.br-ptr.br-ptr-refreshing .br-ptr-spinner {
+    opacity: 1;
+    animation: br-ptr-spin .7s linear infinite;
+}
+@keyframes br-ptr-spin {
+    to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .br-ptr {
+        transition: none;
+    }
+    .br-ptr.br-ptr-refreshing .br-ptr-spinner {
+        animation-duration: 1.6s;
+    }
 }
 
 /* ============================================================

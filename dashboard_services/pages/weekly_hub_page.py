@@ -684,6 +684,46 @@ def build_weekly_hub_body(ctx: dict) -> str:
         if (mySeq === requestSeq) hideLoading();
       }});
   }});
+
+  // Pull-to-refresh (PWA): the core controller in app.js calls
+  // window.brPageRefresh() when a top-of-page pull passes its threshold.
+  // There is no parallel loader here: the hook re-invokes the EXISTING
+  // week-change handler above with the currently selected week (same
+  // /api/weekly-week fetch, same render, same failover), then waits for
+  // that load to settle. The change handler flips sel.disabled on in
+  // showLoading() and back off in hideLoading() (its fetch .finally), so
+  // disabled is the settle signal. Week/league selection is untouched and
+  // the scroll position is restored when the refresh completes. A
+  // soft-nav-detached selector drops the registration instead of
+  // refreshing a dead page.
+  window.brPageRefresh = function() {{
+    if (sel.isConnected === false) {{
+      delete window.brPageRefresh;
+      return Promise.resolve();
+    }}
+    var y = Math.max(window.scrollY || window.pageYOffset || 0,
+      (document.documentElement && document.documentElement.scrollTop) || 0,
+      (document.body && document.body.scrollTop) || 0);
+    return new Promise(function(resolve) {{
+      var started = Date.now();
+      try {{ sel.dispatchEvent(new Event('change')); }}
+      catch (e) {{ resolve(); return; }}
+      var iv = setInterval(function() {{
+        var elapsed = Date.now() - started;
+        // Settle = the handler's loading state has ended. The elapsed
+        // floor keeps a no-op dispatch (nothing was loading) from
+        // resolving before showLoading() has had its synchronous say,
+        // and the cap mirrors the handler's own 25 s fetch timeout.
+        if ((elapsed > 200 && !sel.disabled) || elapsed > 30000) {{
+          clearInterval(iv);
+          try {{ window.scrollTo(0, y); }} catch (e) {{}}
+          if (document.documentElement) document.documentElement.scrollTop = y;
+          if (document.body) document.body.scrollTop = y;
+          resolve();
+        }}
+      }}, 100);
+    }});
+  }};
 }})();
 
 // ── Weekly: game-day auto-refresh ──────────────────────────────────────────────

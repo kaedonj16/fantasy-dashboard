@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "new",
+        "text": "Pull to refresh in the app: on ScoreZone and the Weekly Hub, pull down from the top of the page to refresh the scores in place. Your week, league and scroll position stay exactly where they were, and the refresh uses the same path as the ScoreZone timer tap.",
+        "link": "/scorezone"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "update",
         "text": "Matchups and ScoreZone's classic drive view: the live drive bar is now a slim one-line bar that sits comfortably inside a matchup row. A thin striped track with both teams' end-zone labels, a gradient possession fill ending at a small ball marker, a yellow first-down tick, the spot written in the possessing team's colour, and the down and distance above it. Dark mode lifts dark team colours (Green Bay, Chicago, Las Vegas) so the bar stays readable. The field board itself and the player-profile game board are unchanged.",
         "link": "/"
