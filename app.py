@@ -23805,6 +23805,12 @@ def api_weekly_week():
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             is_gotw=is_gotw,
             gotw_selection=_api_gotw,
+            # Slot list drives the centre-rail chips (FLEX / SF read the
+            # slot, not the player's position). The initial hub render
+            # passes it; this API re-render (week change, auto-refresh,
+            # pull-to-refresh) must too, or FLEX rows fall back to the
+            # player's real position after the first refresh.
+            roster_positions=ctx.get("roster_positions") or [],
             league_id=ctx.get("resolved_league_id") or league_id,
             rzm_hub_html=_api_rzm_for_matchup(m),
             div_by_rid=_api_div_by_rid,
