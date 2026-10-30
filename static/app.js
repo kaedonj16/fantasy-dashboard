@@ -28933,18 +28933,56 @@ window._rzRenderGameBoard = function(game, options) {
     field=window._rzFieldBoardHtml(game,fp,fbDrive,colors,fbAnim);
   } else if(fp){
     var tc=colors[poss]||'#334155', atkR=fp.side==='away';
-    var dim=(function(h){h=String(h).replace('#','');if(h.length!==6)return false;var r=parseInt(h.slice(0,2),16),gc=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (0.299*r+0.587*gc+0.114*b)<66;})(tc);
-    var ticks=''; for(var _y=10;_y<=90;_y+=10){ticks+='<span class="rz-field-tick'+(_y===50?' is-mid':'')+'" style="left:'+_y+'%"></span>';}
-    var labels=[[20,'20'],[40,'40'],[50,'50'],[60,'40'],[80,'20']].map(function(p){return '<span style="left:'+p[0]+'%">'+p[1]+'</span>';}).join('');
-    var rzTint='<span class="rz-field-rz" style="'+(atkR?'right':'left')+':0"></span>';
-    var fillW=atkR?('calc('+fp.spot+'% + 9px)'):('calc('+(100-fp.spot)+'% + 9px)');
+    var lum=function(h){h=String(h).replace('#','');if(h.length!==6)return 255;return 0.299*parseInt(h.slice(0,2),16)+0.587*parseInt(h.slice(2,4),16)+0.114*parseInt(h.slice(4,6),16);};
+    var dim=lum(tc)<66;
+    // Dark theme: dark primaries (GB #203731, CHI navy, LV black) vanish on the
+    // dark card, so lift the colour's HSL lightness to a 0.45 floor (hue and
+    // saturation untouched) and run the possession story on the lifted colour.
+    // Same treatment as the ScoreZone field board, so both bars agree.
+    var dark=false; try{dark=document.documentElement.getAttribute('data-theme')==='dark';}catch(e){}
+    var lift=function(hex){
+      var h=String(hex).replace('#',''); if(h.length!==6)return hex;
+      var r=parseInt(h.slice(0,2),16)/255,g=parseInt(h.slice(2,4),16)/255,b=parseInt(h.slice(4,6),16)/255;
+      var mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2;
+      if(l>=0.45)return hex;
+      var d=mx-mn, s=d===0?0:(l<0.5?d/(mx+mn):d/(2-mx-mn)), hue=0;
+      if(d!==0){ if(mx===r)hue=((g-b)/d)%6; else if(mx===g)hue=(b-r)/d+2; else hue=(r-g)/d+4; hue*=60; if(hue<0)hue+=360; }
+      l=0.45;
+      var c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs(((hue/60)%2)-1)), m=l-c/2, rr=0, gg=0, bb=0;
+      if(hue<60){rr=c;gg=x;}else if(hue<120){rr=x;gg=c;}else if(hue<180){gg=c;bb=x;}
+      else if(hue<240){gg=x;bb=c;}else if(hue<300){rr=x;bb=c;}else{rr=c;bb=x;}
+      var to=function(v){var n2=Math.round((v+m)*255).toString(16);return n2.length===1?'0'+n2:n2;};
+      return '#'+to(rr)+to(gg)+to(bb);
+    };
+    var tcEff=dark?lift(tc):tc;
+    // Field geometry includes both end zones: goal-to-goal spot 0..100 maps to
+    // x = 10 + spot * 0.8, so the outer 10% at each end is that team's end zone.
+    var xOf=function(a){return Math.round((10+a*0.8)*10)/10;};
+    var ballX=xOf(fp.spot);
+    var labels=[[20,'20'],[40,'40'],[50,'50'],[60,'40'],[80,'20']].map(function(p){return '<span style="left:'+xOf(p[0])+'%">'+p[1]+'</span>';}).join('');
+    // S1 slim bar: the fill runs from the goal line to the ball exactly (no
+    // arrowhead overshoot) and the spot rides as plain text at the end of the
+    // line -- no caps, no floating flag.
+    var fillW=(Math.round((atkR?fp.spot:(100-fp.spot))*8)/10)+'%';
     var fill='<span class="rz-field-fill is-'+fp.side+(dim?' is-dim':'')+'" style="width:'+fillW+'"></span>';
-    var fd=(fp.ltg!=null)?'<span class="rz-field-fd" style="left:'+Math.min(Math.max(fp.ltg,1),99)+'%"></span>':'';
-    var flagPos=Math.min(Math.max(fp.spot,9),91);
-    var flag='<span class="rz-field-flag" style="left:'+flagPos+'%">'+esc(fp.label)+'</span>';
-    field='<div class="rz-field" style="--rz-team-color:'+tc+';" role="img" aria-label="Ball at '+esc(fp.label)+', '+esc(poss)+' ball">'
-      +'<div class="rz-field-track"><div class="rz-field-clip">'+rzTint+ticks+fill+fd+'</div>'+flag+'</div>'
-      +'<div class="rz-field-scale">'+labels+'</div></div>';
+    var fd=(fp.ltg!=null)?'<span class="rz-field-fd" style="left:'+xOf(Math.min(Math.max(fp.ltg,1),99))+'%"></span>':'';
+    var ball='<span class="rz-field-ball" style="left:'+ballX+'%"></span>';
+    // Context row: DRIVE + down & distance, plus the drive summary only when a
+    // caller passes a real one (options.driveSummary) -- never invented here.
+    var ddStr='';
+    if(game.down){ var dl2=({1:'1st',2:'2nd',3:'3rd',4:'4th'})[game.down]||game.down;
+      var dLab2=(fp.goalToGo||/goal/i.test(String(game.distance||'')))?'Goal':(game.distance||'?');
+      ddStr=dl2+' & '+dLab2; }
+    var sum=options.driveSummary?String(options.driveSummary):'';
+    var top='<div class="rz-field-top"><span class="rz-field-live"><i></i>DRIVE</span>'
+      +(ddStr?'<span class="rz-field-sit">'+esc(ddStr)+'</span>':'')
+      +(sum?'<span class="rz-field-sum">'+esc(sum)+'</span>':'')+'</div>';
+    field='<div class="rz-field" style="--rz-team-color:'+tcEff+';" role="img" aria-label="Ball at '+esc(fp.label)+', '+esc(poss)+' ball">'
+      +top+'<div class="rz-field-line"><span class="rz-field-ezl">'+esc(away)+'</span>'
+      +'<div class="rz-field-mid"><div class="rz-field-track">'+fill+fd+ball+'</div>'
+      +'<div class="rz-field-scale">'+labels+'</div></div>'
+      +'<span class="rz-field-ezl">'+esc(home)+'</span>'
+      +'<span class="rz-field-spot">'+esc(fp.label)+'</span></div></div>';
   }
   return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(options.modal?' rz-nfl-board--modal':'')+'"'+(options.id?' id="'+esc(options.id)+'"':'')+'><div class="rz-nfl-score-row">'+team(away,game.away_pts,'away')+center+team(home,game.home_pts,'home')+'</div>'+field+'</div>';
 };
@@ -29528,23 +29566,52 @@ window.__brSzLiveCache = (function () {
     var fp = window._rzFieldPosition(game);
     if (!fp || fp.spot == null) return '';
     var atkAway = fp.side === 'away';
-    var ticks = [20, 40, 50, 60, 80].map(function (x) { return '<span class="mb-fld-tick" style="left:' + x + '%"></span>'; }).join('');
-    var rz = '<span class="mb-fld-rz" style="' + (atkAway ? 'right' : 'left') + ':0"></span>';
-    var fillW = 'calc(' + (atkAway ? fp.spot : (100 - fp.spot)) + '% + 8px)';
-    var fd = (fp.ltg != null) ? '<span class="mb-fld-fd" style="left:' + Math.min(Math.max(fp.ltg, 1), 99) + '%"></span>' : '';
-    var markPos = Math.min(Math.max(fp.spot, 3), 97);
+    // Field geometry includes both end zones (x = 10 + spot * 0.8), matching
+    // the redesigned board bar: outer 10% at each end is that team's end zone.
+    var xOf = function (a) { return Math.round((10 + a * 0.8) * 10) / 10; };
+    var ballX = xOf(fp.spot);
+    // Dark theme: lift dark primaries (GB, CHI, LV) to a 0.45 HSL lightness
+    // floor so the possession story stays readable on the dark card -- the
+    // same treatment as the board bars.
+    var dark = false; try { dark = document.documentElement.getAttribute('data-theme') === 'dark'; } catch (e) {}
+    var lift = function (hex) {
+      var h = String(hex).replace('#', ''); if (h.length !== 6) return hex;
+      var r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
+      var mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+      if (l >= 0.45) return hex;
+      var d = mx - mn, s = d === 0 ? 0 : (l < 0.5 ? d / (mx + mn) : d / (2 - mx - mn)), hue = 0;
+      if (d !== 0) { if (mx === r) hue = ((g - b) / d) % 6; else if (mx === g) hue = (b - r) / d + 2; else hue = (r - g) / d + 4; hue *= 60; if (hue < 0) hue += 360; }
+      l = 0.45;
+      var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((hue / 60) % 2) - 1)), m = l - c / 2, rr = 0, gg = 0, bb = 0;
+      if (hue < 60) { rr = c; gg = x; } else if (hue < 120) { rr = x; gg = c; } else if (hue < 180) { gg = c; bb = x; }
+      else if (hue < 240) { gg = x; bb = c; } else if (hue < 300) { rr = x; bb = c; } else { rr = c; bb = x; }
+      var to = function (v) { var n2 = Math.round((v + m) * 255).toString(16); return n2.length === 1 ? '0' + n2 : n2; };
+      return '#' + to(rr) + to(gg) + to(bb);
+    };
+    var awayT = norm(game.away), homeT = norm(game.home);
+    // S1 slim bar: the fill runs from the goal line to the ball exactly (no
+    // arrowhead overshoot) and the end labels sit outside the track.
+    var fillW = (Math.round((atkAway ? fp.spot : (100 - fp.spot)) * 8) / 10) + '%';
+    var fd = (fp.ltg != null) ? '<span class="mb-fld-fd" style="left:' + xOf(Math.min(Math.max(fp.ltg, 1), 99)) + '%"></span>' : '';
     var dd = '';
     if (game.down) {
       var dl = ({1: '1st', 2: '2nd', 3: '3rd', 4: '4th'})[game.down] || game.down;
       var dist = (fp.goalToGo || /goal/i.test(String(game.distance || ''))) ? 'Goal' : String(game.distance || '');
       dd = dl + (dist ? (' & ' + dist) : '');
     }
-    var tc = TEAM_COLORS[norm(team)] || '#334155';
-    var bar = '<div class="mb-fld-in"><div class="mb-fld-head"><span>' + esc(dd) + '</span>'
-      + '<span class="mb-fld-spot">' + esc(fp.label || '') + '</span></div>'
-      + '<div class="mb-fld-track" style="--mb-tc:' + tc + '">' + rz + ticks
-      + '<span class="mb-fld-fill ' + (atkAway ? 'mb-away' : 'mb-home') + '" style="width:' + fillW + '"></span>' + fd
-      + '<span class="mb-fld-mark" style="left:' + markPos + '%"></span></div></div>';
+    var tcRaw = TEAM_COLORS[norm(team)] || '#334155';
+    var tc = dark ? lift(tcRaw) : tcRaw;
+    // Context row: DRIVE + down & distance. The league payload in scope here
+    // carries no play-by-play, so no plays/yards summary is shown -- the spot
+    // rides as plain text at the end of the slim bar line instead.
+    var bar = '<div class="mb-fld-in"><div class="mb-fld-head"><span class="mb-fld-live"><i></i>DRIVE</span>'
+      + '<span class="mb-fld-dd">' + esc(dd) + '</span></div>'
+      + '<div class="mb-fld-bar" style="--mb-tc:' + tc + '"><span class="mb-fld-ezl">' + esc(awayT) + '</span>'
+      + '<div class="mb-fld-track">'
+      + '<span class="mb-fld-fill ' + (atkAway ? 'mb-away' : 'mb-home') + '" style="width:' + fillW + '"></span>'
+      + fd + '<span class="mb-fld-ball" style="left:' + ballX + '%"></span></div>'
+      + '<span class="mb-fld-ezl">' + esc(homeT) + '</span>'
+      + '<span class="mb-fld-spot">' + esc(fp.label || '') + '</span></div></div>';
     return href ? '<a class="mb-fld-link" href="' + esc(href) + '" aria-label="Open this game in ScoreZone">' + bar + '</a>' : bar;
   }
 

@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "update",
+        "text": "Matchups and ScoreZone's classic drive view: the live drive bar is now a slim one-line bar that sits comfortably inside a matchup row. A thin striped track with both teams' end-zone labels, a gradient possession fill ending at a small ball marker, a yellow first-down tick, the spot written in the possessing team's colour, and the down and distance above it. Dark mode lifts dark team colours (Green Bay, Chicago, Las Vegas) so the bar stays readable. The field board itself and the player-profile game board are unchanged.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "feature",
         "text": "ScoreZone game boards get a field view: the selected NFL game now shows a perspective field with both end zones in team colours, the current drive drawn as a trail of play dots ending at the ball, a flag with the exact spot, the first-down line, and a live drive summary with play count, net yards and where the drive started. Negative plays track backwards honestly, and the board falls back to the familiar drive bar whenever the field position is not reliable. Play dots carry a quiet pass and run cue: runs are solid dots, passes are hollow rings in the same team colour, and sacks count as passes. The field view also appears in the ScoreZone tab of player profiles. On live updates each new play animates onto the field as it arrives, and a touchdown flashes the end zone it was scored in; bulk updates simply show the finished board.",
         "link": "/scorezone"

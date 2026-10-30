@@ -42614,49 +42614,69 @@ a.rz-demo-link:hover {
     align-items: center;
     gap: 10px;
 }
-/* Field-position row: a yard field with a seamless single-color bar that ends in
-   an arrow point overhanging the ball, plus a yard-line flag, red-zone tint,
-   yard ticks/labels, and a first-down line. Shared by the ScoreZone board and the
-   player modal via _rzRenderGameBoard, so tokens carry site-wide fallbacks. */
+/* Field-position row: context row on top (DRIVE + down & distance + any
+   real drive summary), then the S1 ultra-slim inline bar (Kaedon's slimming
+   pick over the first 2026-10-30 redesign, whose 24px track + floating flag
+   read too bulky in line): ONE line -- micro end-zone labels outside a 10px
+   striped pill track, a gradient possession fill running from the goal line
+   to a small solid ball, a yellow first-down tick, and the spot as plain
+   team-colour text at the end of the line. No caps, no flag, no arrowhead.
+   Renders via _rzRenderGameBoard's classic path (the shared ScoreZone
+   board); the player modal's ScoreZone tab renders the field board instead
+   (the fieldBoard option), so this classic path has no modal variant.
+   Tokens carry site-wide fallbacks. Geometry includes both end zones: spot 0..100 maps to
+   x = 10 + spot * 0.8. */
 .rz-field { margin-top: 10px; }
+/* context row: three-column grid so the situation stays centred whether or
+   not a drive summary rides on the right */
+.rz-field-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; }
+.rz-field-live { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 900; letter-spacing: .07em; color: var(--rz-live, #16a34a); white-space: nowrap; }
+.rz-field-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--rz-live, #16a34a); flex: 0 0 auto; }
+.rz-field-sit { font-size: 13px; font-weight: 800; color: var(--rz-text, var(--text)); white-space: nowrap; }
+.rz-field-sum { justify-self: end; font-size: 11.5px; font-weight: 700; color: var(--rz-muted, var(--text-muted)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* the slim bar line: [away label] [track + scale] [home label] [spot] */
+.rz-field-line { display: flex; align-items: flex-start; gap: 7px; margin-top: 8px; }
+.rz-field-mid { flex: 1; min-width: 0; }
+.rz-field-ezl { height: 10px; display: flex; align-items: center; font-size: 8.5px; font-weight: 900; color: #7d8ea6; white-space: nowrap; }
+:root[data-theme="dark"] .rz-field-ezl { color: #93a7c0; }
+.rz-field-spot { height: 10px; display: flex; align-items: center; font-size: 11px; font-weight: 900; color: var(--rz-team-color); white-space: nowrap; }
 .rz-field-track {
     position: relative;
-    height: 18px;
-    margin-top: 19px; /* headroom for the yard-line flag above the track */
-    border-radius: var(--radius-pill);
+    height: 10px;
+    border-radius: 99px;
     border: 1px solid var(--rz-border, var(--border));
-    background: color-mix(in srgb, var(--rz-muted, var(--text-muted)) 16%, transparent);
+    background: repeating-linear-gradient(90deg, #e6ecf4 0 10%, #dfe7f1 10% 20%);
 }
+:root[data-theme="dark"] .rz-field-track { background: repeating-linear-gradient(90deg, rgba(255, 255, 255, .05) 0 10%, rgba(255, 255, 255, .10) 10% 20%); }
 .rz-field-clip { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
-/* opponent red zone -- the attacked final 20 */
-.rz-field-rz { position: absolute; top: 0; bottom: 0; width: 20%; background: var(--rz-red-soft, rgba(220, 38, 38, .10)); }
-/* yard ticks every 10, emphasised at midfield */
+/* opponent red zone -- the attacked final 20 (pre-redesign chrome; the
+   slim track's stripes carry the field rhythm, so no tint rides on it) */
+.rz-field-rz { position: absolute; top: 0; bottom: 0; width: 16%; background: var(--rz-red-soft, rgba(220, 38, 38, .10)); }
+/* yard ticks every 10, emphasised at midfield (pre-redesign chrome) */
 .rz-field-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--rz-border, var(--border)) 70%, transparent); }
 .rz-field-tick.is-mid { background: color-mix(in srgb, var(--rz-muted, var(--text-muted)) 45%, transparent); }
-/* seamless bar + arrowhead: one element, one colour, no outline. Width overshoots
-   the spot by the 9px point depth so the body ends on the mark and the tip overhangs. */
+/* gradient fill: fades in from the goal line (25% team colour) to the full
+   team colour at the ball, ending exactly on the spot -- pill-rounded at
+   the goal end, square under the ball. */
 .rz-field-fill { position: absolute; top: 0; bottom: 0; background: var(--rz-team-color); transition: width .4s ease; }
-.rz-field-fill.is-away { left: 0; clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%); }
-.rz-field-fill.is-home { right: 0; clip-path: polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%); }
+.rz-field-fill.is-away { left: 10%; background: linear-gradient(90deg, color-mix(in srgb, var(--rz-team-color) 25%, transparent), var(--rz-team-color)); border-radius: 99px 0 0 99px; }
+.rz-field-fill.is-home { right: 10%; background: linear-gradient(270deg, color-mix(in srgb, var(--rz-team-color) 25%, transparent), var(--rz-team-color)); border-radius: 0 99px 99px 0; }
 /* near-black team colours (LV, CHI, ...) vanish on the dark card -- a top sheen
    restores contrast without an outline. Dark theme only; light already contrasts. */
 :root[data-theme="dark"] .rz-field-fill.is-dim { box-shadow: inset 0 3px 3px -1px rgba(255, 255, 255, .4); }
 /* first-down line-to-gain marker */
 .rz-field-fd { position: absolute; top: -2px; bottom: -2px; width: 2px; transform: translateX(-50%); background: #eab308; border-radius: var(--radius-sm); z-index: 3; box-shadow: 0 0 0 1px rgba(15, 23, 42, .15); }
-/* yard-line flag above the ball */
-.rz-field-flag { position: absolute; top: -18px; transform: translateX(-50%); background: var(--rz-text, var(--text)); color: var(--rz-card, var(--card)); font-size: 11px; font-weight: 800; letter-spacing: .02em; padding: 2px 6px; border-radius: var(--radius-sm); white-space: nowrap; transition: left .4s ease; }
-.rz-field-flag::after { content: ""; position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%); border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 3px solid var(--rz-text, var(--text)); }
-/* Light pages: the inverted near-black pill is the same black accent Kaedon
-   rejected on the matchup drive bar -- swap to the light chrome (card-white
-   pill, navy text, hairline outline). Scoped :not([data-theme="dark"])
-   because light mode carries NO data-theme attribute. Dark keeps the
-   inverted pill, which is correct on the dark card. */
-:root:not([data-theme="dark"]) .rz-field-flag { background: var(--rz-card, var(--card)); color: var(--rz-text, var(--text)); box-shadow: inset 0 0 0 1px var(--rz-border, var(--border)); }
-:root:not([data-theme="dark"]) .rz-field-flag::after { border-top-color: var(--rz-card, var(--card)); }
+/* solid ball on the spot: team colour with a white ring, overflowing the
+   10px track slightly (intended -- the line reads ~14px tall in total) */
+.rz-field-ball { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 11px; height: 11px; border-radius: 50%; background: var(--rz-team-color); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .3); z-index: 5; transition: left .4s ease; }
+/* yard-line flag above the ball (pre-redesign chrome -- the slim bar's
+   spot is inline text, so no current markup emits this). */
+.rz-field-flag { position: absolute; top: -21px; transform: translateX(-50%); background: var(--rz-team-color); color: #fff; font-size: 11px; font-weight: 800; letter-spacing: .02em; padding: 3px 8px; border-radius: var(--radius-pill); white-space: nowrap; box-shadow: 0 2px 6px rgba(15, 23, 42, .22); z-index: 6; transition: left .4s ease; }
+.rz-field-flag::after { content: ""; position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%); border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 3.5px solid var(--rz-team-color); }
 /* yard labels 20/40/50/40/20 below the track */
 .rz-field-scale { position: relative; height: 12px; margin-top: 3px; }
 .rz-field-scale span { position: absolute; transform: translateX(-50%); font-size: 11px; font-weight: 700; color: var(--rz-muted, var(--text-muted)); font-variant-numeric: tabular-nums; }
-@media (prefers-reduced-motion: reduce) { .rz-field-fill, .rz-field-flag { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .rz-field-fill, .rz-field-flag, .rz-field-ball { transition: none; } }
 /* ScoreZone field board (ScoreZone page only, via _rzRenderGameBoard's
    fieldBoard option): a perspective field with the current drive drawn as a
    trail of uniform play dots ending at a solid ball. Static by design -- no
@@ -42737,6 +42757,7 @@ a.rz-demo-link:hover {
     .rz-fb-anim-td .rz-fb-tdflash, .rz-fb-anim-td .rz-fb-td,
     .rz-nfl-score.rz-fb-score-pop { animation: none; }
 }
+
 .rz-nfl-board--modal { margin: 10px 12px 8px; }
 .rz-pm-injury-row { padding: 0 16px 4px; }
 .rz-nfl-board.is-live {
@@ -43363,8 +43384,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     }
     .rz-nfl-score-row { gap: 6px; }
     .rz-field { margin-top: 8px; }
-    .rz-field-track { height: 16px; margin-top: 17px; } /* keep flag headroom */
-    .rz-field-flag { font-size: 11px; padding: 1.5px 5px; }
     .rz-nfl-badge { width: 28px; height: 28px; }
     .rz-nfl-abv { font-size: 13px; }
     .rz-nfl-score { font-size: 22px; }
@@ -48815,25 +48834,41 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-fld { min-width: 0; }
 .mb-fld:empty { display: none; }
 .mb-fld-in { display: flex; flex-direction: column; gap: 3px; padding: 0 1px; }
-.mb-fld-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* context row (redesign 2026-10-30): DRIVE label + down & distance, mirroring
+   the board bar's top row; the spot rides as plain text on the bar line */
+.mb-fld-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .mb-cell-r .mb-fld-head { flex-direction: row-reverse; }
-.mb-fld-head .mb-fld-spot { color: var(--text-subtle); }
-/* Drive-bar chrome (treatment B, Kaedon 2026-10-25): light slate track and a
-   FLAT team-color fill in both themes. The dark track / RZ values must stay
-   scoped to [data-theme="dark"] ONLY -- the shell never sets
-   data-theme="light" (light = attribute absent), so a
-   :not([data-theme="light"]) branch matches light pages too and painted the
-   near-black #1e293b track on them. */
-.mb-fld-track { position: relative; height: 12px; border-radius: 6px; background: #edf1f5; box-shadow: inset 0 1px 3px rgba(15, 23, 42, .08); }
-:root[data-theme="dark"] .mb-fld-track { background: #1e293b; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .30); }
-.mb-fld-rz { position: absolute; top: 0; bottom: 0; width: 20%; background: rgba(220, 38, 38, .12); }
-:root[data-theme="dark"] .mb-fld-rz { background: rgba(248, 113, 113, .16); }
-.mb-fld-tick { position: absolute; top: 2px; bottom: 2px; width: 1px; background: color-mix(in srgb, var(--text-muted) 22%, transparent); }
-.mb-fld-fill { position: absolute; top: 2px; bottom: 2px; background: var(--mb-tc, #1e3a5f); border-radius: 4px; }
-.mb-fld-fill.mb-away { left: 0; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%); }
-.mb-fld-fill.mb-home { right: 0; clip-path: polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%); }
+.mb-fld-live { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 900; letter-spacing: .07em; color: #16a34a; white-space: nowrap; }
+.mb-fld-live i { width: 6px; height: 6px; border-radius: 50%; background: #16a34a; flex: 0 0 auto; }
+:root[data-theme="dark"] .mb-fld-live { color: #22c55e; }
+:root[data-theme="dark"] .mb-fld-live i { background: #22c55e; }
+.mb-fld-dd { font-size: 12.5px; font-weight: 800; color: var(--text); white-space: nowrap; }
+/* S1 ultra-slim inline bar (Kaedon's slimming pick over the first redesign):
+   ONE line -- [away label] [10px track] [home label] [spot text]. The labels
+   are pinned to the track's 10px height so they centre on the track itself. */
+.mb-fld-bar { display: flex; align-items: center; gap: 7px; }
+.mb-fld-ezl { height: 10px; display: flex; align-items: center; font-size: 8.5px; font-weight: 900; color: #7d8ea6; white-space: nowrap; }
+:root[data-theme="dark"] .mb-fld-ezl { color: #93a7c0; }
+.mb-fld-spot { height: 10px; display: flex; align-items: center; font-size: 11px; font-weight: 900; color: var(--mb-tc, #1e3a5f); white-space: nowrap; }
+/* Drive-bar chrome (treatment B, Kaedon 2026-10-25): light slate track in
+   both themes. The dark track values must stay scoped to [data-theme="dark"]
+   ONLY -- the shell never sets data-theme="light" (light = attribute
+   absent), so a :not([data-theme="light"]) branch matches light pages too
+   and painted the near-black #1e293b track on them. The S1 track keeps the
+   #edf1f5 light base under the approved pale stripe bands (#e6ecf4/#dfe7f1);
+   overflow is visible so the ball and first-down tick can overhang. */
+.mb-fld-track { position: relative; flex: 1; min-width: 0; height: 10px; border-radius: 99px; background: #edf1f5; background-image: repeating-linear-gradient(90deg, #e6ecf4 0 10%, #dfe7f1 10% 20%); box-shadow: inset 0 1px 3px rgba(15, 23, 42, .08); }
+:root[data-theme="dark"] .mb-fld-track { background: #1e293b; background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, .04) 0 10%, rgba(255, 255, 255, .085) 10% 20%); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .30); }
+/* gradient fill (S1): fades from the goal line (25% team colour) to the full
+   team colour at the ball, ending exactly on the spot -- pill-rounded at the
+   goal end, square under the ball; the flat base below is the fallback */
+.mb-fld-fill { position: absolute; top: 0; bottom: 0; background: var(--mb-tc, #1e3a5f); z-index: 2; }
+.mb-fld-fill.mb-away { left: 10%; background: linear-gradient(90deg, color-mix(in srgb, var(--mb-tc, #1e3a5f) 25%, transparent), var(--mb-tc, #1e3a5f)); border-radius: 99px 0 0 99px; }
+.mb-fld-fill.mb-home { right: 10%; background: linear-gradient(270deg, color-mix(in srgb, var(--mb-tc, #1e3a5f) 25%, transparent), var(--mb-tc, #1e3a5f)); border-radius: 0 99px 99px 0; }
 .mb-fld-fd { position: absolute; top: -2px; bottom: -2px; width: 2px; transform: translateX(-50%); background: #eab308; border-radius: 1px; z-index: 3; }
-.mb-fld-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; transform: translateX(-50%); background: #fff; box-shadow: 0 0 0 1.5px #122d4b; border-radius: 1px; z-index: 4; }
+/* solid ball on the spot: team colour with a white ring, overflowing the
+   10px track slightly (the line reads ~14px tall in total) */
+.mb-fld-ball { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 11px; height: 11px; border-radius: 50%; background: var(--mb-tc, #1e3a5f); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .3); z-index: 5; }
 @media (prefers-reduced-motion: reduce) { .mb-fld-fill { transition: none; } }
 .mb-fld-def { font-size: 11px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 0 1px; }
 .mb-cell-r .mb-fld-def { text-align: right; }
@@ -48897,13 +48932,11 @@ a, button, [role="button"], [role="tab"], summary, label,
     /* Specificity must beat the phone .m-combo .meta rule (11px). */
     .m-combo .mb-game--final { font-size: 8px; }
 }
-.mb-fld-track { height: 12px; }
 .mb-fld-head { font-size: 10px; }
 .mb-fld-def { font-size: 10px; }
 .mb-cell { padding: 8px 12px; }
 
 @media (min-width: 641px) {
-    .mb-fld-track { height: 12px; }
     .mb-stat-row .mb-stat { font-size: 11.5px; }
 }
 
