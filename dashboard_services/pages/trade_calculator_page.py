@@ -1242,7 +1242,7 @@ def build_trade_calculator_body(
                   <button class="otc-mini-tab" data-tab="targets">Targets</button>
                 </div>
               </div>
-              <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
+              <div class="otc-mini-sub" id="moversSub">Biggest 7-day 1QB dynasty BR value movers</div>
               <div class="otc-day-filters">
                 <button class="otc-day-filter active" data-days="7" onclick="changeMoversDays(7)">7d</button>
                 <button class="otc-day-filter" data-days="14" onclick="changeMoversDays(14)">14d</button>
