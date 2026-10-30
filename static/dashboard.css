@@ -38501,6 +38501,14 @@ button:disabled {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
+    transition: opacity .15s ease;
+}
+
+/* In-place filter swap on /top-movers: dim the board while the new
+   window/format loads instead of reloading the page. */
+.rf-page.rf-loading .rf-grid {
+    opacity: .45;
+    pointer-events: none;
 }
 
 @media (max-width: 640px) {

@@ -1934,7 +1934,9 @@ input[type="search"] {
 
 .rf-timeframe { margin-top: 14px; }
 
-.rf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.rf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; transition: opacity .15s ease; }
+
+.rf-page.rf-loading .rf-grid { opacity: .45; pointer-events: none; }
 
 @media (max-width: 640px) {
     .rf-grid { grid-template-columns: 1fr; }

@@ -434,6 +434,102 @@ def _top_movers_editorial_redraft_html() -> str:
 """
 
 
+# Filter changes on /top-movers swap in place instead of reloading the
+# page. The toggle links stay real crawlable hrefs (SEO + no-JS fallback);
+# this script intercepts plain clicks, fetches the same URL, and swaps the
+# title, subtitle, toggle groups, grid and explainer from the returned
+# page, which is rendered by the exact same server path, so the numbers
+# can never drift from a full load. Any failure falls back to the old
+# behaviour: a normal navigation to the href. Document-level delegation
+# plus the window guard keep it working (exactly once) across the app.js
+# soft-nav swaps that re-run inline page scripts; no top-level let/const,
+# per the soft-nav re-execution rule in static/app.js.
+_TOP_MOVERS_SWAP_SCRIPT = """
+<script>
+(function () {
+  if (window.__brTopMoversSwap) return;
+  window.__brTopMoversSwap = 1;
+  var seq = 0;
+
+  function page() { return document.querySelector(".rf-page"); }
+
+  function copyHtml(sel, from, to) {
+    var s = from.querySelector(sel);
+    var d = to.querySelector(sel);
+    if (s && d) d.innerHTML = s.innerHTML;
+  }
+
+  function swap(url, push) {
+    var pg = page();
+    if (!pg || !window.fetch || !window.DOMParser) {
+      window.location.href = url;
+      return;
+    }
+    var my = ++seq;
+    pg.classList.add("rf-loading");
+    var grid = pg.querySelector(".rf-grid");
+    if (grid) grid.setAttribute("aria-busy", "true");
+    fetch(url, { credentials: "same-origin" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("top movers fetch failed");
+        return r.text();
+      })
+      .then(function (html) {
+        if (my !== seq) return;
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var np = doc.querySelector(".rf-page");
+        if (!np) throw new Error("top movers page missing");
+        var newTitle = np.querySelector(".rf-title");
+        var curTitle = pg.querySelector(".rf-title");
+        if (newTitle && curTitle) curTitle.textContent = newTitle.textContent;
+        copyHtml(".rf-subtitle", np, pg);
+        ["days", "format"].forEach(function (g) {
+          var s = np.querySelector('[data-rf-group="' + g + '"]');
+          var d = pg.querySelector('[data-rf-group="' + g + '"]');
+          if (s && d) d.innerHTML = s.innerHTML;
+        });
+        copyHtml(".rf-grid", np, pg);
+        copyHtml("#rfWhy", np, pg);
+        if (doc.title) document.title = doc.title;
+        var newDesc = doc.querySelector('meta[name="description"]');
+        var curDesc = document.querySelector('meta[name="description"]');
+        if (newDesc && curDesc) {
+          curDesc.setAttribute("content", newDesc.getAttribute("content") || "");
+        }
+        if (push && window.history) {
+          history.pushState({ brTopMovers: 1 }, "", url);
+        }
+        pg.classList.remove("rf-loading");
+        var doneGrid = pg.querySelector(".rf-grid");
+        if (doneGrid) doneGrid.removeAttribute("aria-busy");
+      })
+      .catch(function () {
+        if (my === seq) window.location.href = url;
+      });
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||
+        e.shiftKey || e.altKey) return;
+    var a = e.target && e.target.closest ? e.target.closest("a.rf-tf-opt") : null;
+    if (!a) return;
+    var pg = page();
+    if (!pg || !pg.contains(a)) return;
+    e.preventDefault();
+    if (a.classList.contains("is-active")) return;
+    swap(a.href, true);
+  });
+
+  window.addEventListener("popstate", function () {
+    if (window.location.pathname === "/top-movers" && page()) {
+      swap(window.location.href, false);
+    }
+  });
+})();
+</script>
+"""
+
+
 def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
                               signed_in: bool = False, days: int = 7,
                               scoring_format: str = "dynasty") -> str:
@@ -446,6 +542,8 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
 
     days: active timeframe window (7/30/90). Drives the timeframe toggle so the
     selected range is highlighted; each option is a crawlable ?days= link.
+    With JS, _TOP_MOVERS_SWAP_SCRIPT swaps the filtered board in place on
+    click instead of reloading; the hrefs remain the no-JS fallback.
 
     scoring_format: "dynasty" (default) or "redraft". Redraft swaps the
     title, subtitle and explanatory copy to the redraft frame, and every
@@ -552,7 +650,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
         return f'<a class="{cls}" href="/top-movers?days={d}{_fmt_query}"{aria}>{lbl}</a>'
 
     _toggle = "".join(_tf_opt(d, lbl) for d, lbl in ((7, "7d"), (30, "30d"), (90, "90d")))
-    toggle_html = f'<div class="otc-day-filters rf-timeframe" role="group" aria-label="Timeframe">{_toggle}</div>'
+    toggle_html = f'<div class="otc-day-filters rf-timeframe" role="group" aria-label="Timeframe" data-rf-group="days">{_toggle}</div>'
 
     def _fmt_opt(fmt: str, lbl: str) -> str:
         active = (fmt == "redraft") == _redraft
@@ -564,7 +662,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
     _fmt_toggle = _fmt_opt("dynasty", "Dynasty") + _fmt_opt("redraft", "Redraft")
     fmt_toggle_html = (
         f'<div class="otc-day-filters rf-timeframe" role="group" '
-        f'aria-label="Value format">{_fmt_toggle}</div>'
+        f'aria-label="Value format" data-rf-group="format">{_fmt_toggle}</div>'
     )
 
     if _redraft:
@@ -632,13 +730,13 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
     </div>
   </div>
 
-{_why_section}
+<div id="rfWhy">{_why_section}</div>
   <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
     <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to track movers on your roster</a>
     <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Free for your first league</p>
   </div>
 </div>
-"""
+""" + _TOP_MOVERS_SWAP_SCRIPT
 
 
 # ── Position analysis ─────────────────────────────────────────────────────────
