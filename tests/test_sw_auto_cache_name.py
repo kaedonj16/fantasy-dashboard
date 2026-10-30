@@ -143,6 +143,18 @@ def test_sw_route_serves_the_derived_name():
     pytest.importorskip("pandas")
     import app as app_module
 
+    # Both sides of the comparison must describe the SAME tree state.
+    # App boot builds the served worker (_ensure_sw_js) BEFORE
+    # _load_critical_css() regenerates static/critical-home.css -- a
+    # hashed input -- so in a fresh checkout the worker an earlier boot
+    # in this process built can predate the tree as it now stands (in
+    # the full suite, collection boots the app long before this test
+    # runs). Re-run the boot's own build step so the route serves
+    # exactly what a fresh boot would serve for the current tree, then
+    # compare against the name derived from that same tree
+    # (EXPECTED_SW_CACHE_NAME is evaluated at import, i.e. now).
+    sw_cache.ensure_sw_js(STATIC)
+
     client = app_module.app.test_client()
     resp = client.get("/sw.js")
     assert resp.status_code == 200

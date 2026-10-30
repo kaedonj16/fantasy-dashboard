@@ -234,7 +234,9 @@ def test_nfl_board_hides_score_until_kickoff():
         "function _gamePillStatus", 1
     )[0]
     assert "var showScore = !isPre;" in board
-    assert "showScore ? '<span class=\"rz-nfl-score\">'" in board
+    assert "showScore ? '<span class=\"rz-nfl-score'" in board
+    # The possessing team's score carries the TD pop hook on a TD arrival.
+    assert "rz-fb-score-pop" in board
     assert "rz-nfl-kick-time" in board
     assert "rz-nfl-live-pill" in board
     # No leftover em-dash score placeholder.
@@ -312,7 +314,9 @@ console.log(JSON.stringify({{
 
 def test_shared_board_and_modal_refresh_contract():
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    assert "window._rzRenderGameBoard(game, { modal:true })" in app_js
+    # The modal board call is the ScoreZone (live) tab's header: it opts into
+    # the field board and passes the game's PBP rows from the payload state.
+    assert "window._rzRenderGameBoard(game, { modal:true, fieldBoard: true, pbpPlays: (state.pbp_by_game || {})[info.game_id] || [] })" in app_js
     assert "field_position_reliable" in app_js
     # Board + modal live fetches share one window-level cache keyed by
     # league path, so a response can only land in its own league's entry
@@ -432,6 +436,275 @@ console.log(JSON.stringify({{qb:qb,wr:wr,legacy:legacy}}));
     assert qb["nullified"]["pts"] == 0 and qb["nullified"]["isNullified"] is True
     assert qb["nullified"]["desc"] == "Play nullified by penalty"
     assert len(out["legacy"]) == 1
+
+
+def test_field_board_is_scorezone_only_and_falls_back_to_the_bar():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    # The shared renderer grows an opt-in field board. Only ScoreZone
+    # surfaces pass it (the ScoreZone page board and the modal's ScoreZone
+    # tab); a plain { modal:true } render keeps the current drive bar.
+    assert "window._rzDeriveDrive = function(game, fp, plays)" in app_js
+    assert "window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim)" in app_js
+    assert "if(fp&&options.fieldBoard){" in app_js
+    assert "window._rzRenderGameBoard(game, { modal:true, fieldBoard: true, pbpPlays: (state.pbp_by_game || {})[info.game_id] || [] })" in app_js
+    # Pass/run cue: pass plays render a hollow dot, in both field-board
+    # renderers; the cue class exists only in the field-board CSS block.
+    assert "drive.kinds && drive.kinds[i] === 'pass'" in app_js
+    assert "drive.kinds && drive.kinds[i] === 'pass'" in SCOREZONE_JS
+    assert ".rz-fb-dot.is-pass {" in DASHBOARD_CSS
+    assert "border: 2px solid var(--rz-fb-color)" in DASHBOARD_CSS
+    assert "box-sizing: border-box" in DASHBOARD_CSS
+    # Live-arrival animation gating: the ScoreZone page passes its live
+    # single-play signal into the renderer, which keeps a drive-signature
+    # registry; the modal never passes it and stays static.
+    assert "fbLive: _animationMode === 'live'" in SCOREZONE_JS
+    assert "window._rzFbSig" in app_js
+    assert "_fbPrevSig" in SCOREZONE_JS
+    assert ".rz-fb-td {" in DASHBOARD_CSS and ".rz-fb-tdflash {" in DASHBOARD_CSS
+    assert "@keyframes rz-fb-ball-slide" in DASHBOARD_CSS
+    assert "@keyframes rz-fb-tdflash" in DASHBOARD_CSS
+    # ScoreZone passes the option plus the game's raw PBP rows, on both its
+    # shared-renderer call and its app.js-less fallback renderer.
+    assert "fieldBoard: true, fbLive: _animationMode === 'live', pbpPlays: (_state.pbp_by_game || {})[_filters.nfl] || []" in SCOREZONE_JS
+    assert "function _nflFieldBoardHtml(g, plays)" in SCOREZONE_JS
+    assert "fbHtml" in SCOREZONE_JS
+    # Presentation contract (approved mock): perspective field, uniform dots,
+    # the first-down line is the only yellow.
+    assert ".rz-fb-field {" in DASHBOARD_CSS
+    assert "rotateX(22deg)" in DASHBOARD_CSS
+    assert ".rz-fb-dot {" in DASHBOARD_CSS
+    assert "width: 7px; height: 7px" in DASHBOARD_CSS
+    assert ".rz-fb-ball {" in DASHBOARD_CSS
+    assert "width: 11px; height: 11px" in DASHBOARD_CSS
+    assert ".rz-fb-fd {" in DASHBOARD_CSS
+    assert ".rz-fb-drive {" in DASHBOARD_CSS
+    fb_css = DASHBOARD_CSS.split(".rz-fb {", 1)[1].split(".rz-nfl-board--modal", 1)[0]
+    assert fb_css.count("#eab308") == 1  # first-down line only, no other yellow
+    # The reduced-motion kill switch lives inside the field-board block.
+    assert "@media (prefers-reduced-motion: reduce)" in fb_css
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_field_board_derives_current_drive_and_renders_it():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    helpers = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("// Build a player's modal log")]
+    script = f"""
+var window={{}};
+var document={{createElement:function(){{var o={{_t:''}};
+  Object.defineProperty(o,'textContent',{{set:function(v){{this._t=String(v);}}}});
+  Object.defineProperty(o,'innerHTML',{{get:function(){{return this._t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}}}});
+  return o;}}}};
+{helpers}
+function row(playId, seq, team, yl, sl, extra) {{
+  return Object.assign({{play_id: playId, seq: seq, team: team, pid: 'x', name: 'P',
+    yard_line: yl, end_yard_line: '', play_text: '', play_state: 'VALID', stat_line: sl}}, extra || {{}});
+}}
+var game = {{away: 'CAR', home: 'GB', away_pts: 13, home_pts: 27, status: 'live',
+  possession: 'CAR', yard_line: 'CAR 36', field_position_reliable: true,
+  down: 1, distance: 10, game_quarter: 'Q4', game_clock: '14:28'}};
+var fp = window._rzFieldPosition(game);
+var plays = [
+  row('g1', 1, 'GB', 'GB 25', {{carries: 1, rush_yds: 3}}),
+  row('c1', 3, 'CAR', 'CAR 12', {{carries: 1, rush_yds: 8}}),
+  row('c2', 4, 'CAR', 'CAR 20', {{pass_att: 1, pass_yds: 12}}),
+  row('c2', 4, 'CAR', 'CAR 20', {{targets: 1, rec: 1, rec_yds: 12}}),
+  row('c3', 5, 'CAR', 'CAR 32', {{carries: 1, rush_yds: 4}})
+];
+var drive = window._rzDeriveDrive(game, fp, plays);
+var neg = window._rzDeriveDrive(game, fp, [
+  row('c1', 3, 'CAR', 'CAR 12', {{carries: 1, rush_yds: 8}}),
+  row('c2', 4, 'CAR', 'CAR 20', {{carries: 1, rush_yds: 12}}),
+  row('c3', 5, 'CAR', 'CAR 32', {{carries: 1, rush_yds: -3}}),
+  row('c4', 6, 'CAR', 'CAR 29', {{carries: 1, rush_yds: 7}})
+]);
+var sackGame = Object.assign({{}}, game, {{yard_line: 'CAR 29', down: 2, distance: 17}});
+var sack = window._rzDeriveDrive(sackGame, window._rzFieldPosition(sackGame), [
+  row('s1', 1, 'CAR', 'CAR 25', {{carries: 1, rush_yds: 11}}),
+  row('s2', 2, 'CAR', 'CAR 36', {{}}, {{play_text: 'QB sacked at CAR 29 for -7 yards'}}),
+  row('s2', 2, 'GB', 'CAR 36', {{sacks: 1}})
+]);
+var mixed = window._rzDeriveDrive(game, fp, [
+  row('m1', 1, 'CAR', 'CAR 12', {{carries: 1, rush_yds: 8}}),
+  row('m2', 2, 'CAR', 'CAR 20', {{pass_att: 1, pass_yds: 12}}),
+  row('m2', 2, 'CAR', 'CAR 20', {{targets: 1, rec: 1, rec_yds: 12}}),
+  row('m3', 3, 'CAR', 'CAR 32', {{}}, {{play_text: 'QB sacked at CAR 29 for -3 yards'}}),
+  row('m3', 3, 'GB', 'CAR 32', {{sacks: 1}}),
+  row('m4', 4, 'CAR', 'CAR 29', {{targets: 1}})
+]);
+var none = window._rzDeriveDrive(game, fp, [row('g1', 1, 'GB', 'GB 25', {{carries: 1, rush_yds: 3}})]);
+var fbHtml = window._rzRenderGameBoard(game, {{fieldBoard: true, pbpPlays: plays}});
+var fbBare = window._rzRenderGameBoard(game, {{fieldBoard: true, pbpPlays: []}});
+var modalHtml = window._rzRenderGameBoard(game, {{modal: true}});
+var unrelHtml = window._rzRenderGameBoard(Object.assign({{}}, game, {{field_position_reliable: false}}), {{fieldBoard: true, pbpPlays: plays}});
+console.log(JSON.stringify({{drive: drive, neg: neg, sack: sack, mixed: mixed, none: none,
+  fbHtml: fbHtml, fbBare: fbBare, modalHtml: modalHtml, unrelHtml: unrelHtml}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    # The approved mock drive: start CAR 12, +8, +12, +4 to CAR 36.
+    assert out["drive"] == {"count": 3, "points": [20, 32, 36], "kinds": ["run", "pass", "run"],
+                            "firstSeq": 3, "lastSeq": 5, "td": False,
+                            "startAbs": 12, "startLabel": "CAR 12", "net": 24, "chip": "+4 run"}
+    # Negative plays backtrack: the -3 dot lands behind the +12 dot.
+    assert out["neg"]["points"] == [20, 32, 29, 36] and out["neg"]["net"] == 24
+    assert out["neg"]["kinds"] == ["run", "run", "run", "run"]
+    assert out["sack"]["chip"] == "−7 sack" and out["sack"]["points"] == [36, 29]
+    # A sack counts as a pass play for the cue.
+    assert out["sack"]["kinds"] == ["run", "pass"]
+    # Mixed drive: run solid, pass hollow, sack hollow, and a target-only
+    # play has no clean run/pass read, so it stays null (solid default dot).
+    assert out["mixed"]["points"] == [20, 32, 29, 36]
+    assert out["mixed"]["kinds"] == ["run", "pass", "pass", None]
+    # No possessing-team scrimmage plays -> no drive (ball + flag only).
+    assert out["none"] is None
+    fb = out["fbHtml"]
+    assert "rz-fb-field" in fb and fb.count("rz-fb-dot") == 3
+    # The mock drive's one pass play renders the hollow cue dot.
+    assert fb.count("rz-fb-dot is-pass") == 1
+    assert "LIVE DRIVE" in fb and "3 plays" in fb and "24 yds" in fb
+    assert "started CAR 12" in fb and "+4 run" in fb and ">CAR 36<" in fb
+    # The field-board centre line is down & distance only; the flag owns the spot.
+    assert ">1st & 10<" in fb and " · CAR 36" not in fb
+    bare = out["fbBare"]
+    assert "rz-fb-field" in bare and "rz-fb-dot" not in bare and "LIVE DRIVE" not in bare
+    # A plain modal render (no fieldBoard opt-in) keeps the current drive
+    # bar byte-for-byte in behaviour, cue included: no field board at all.
+    modal = out["modalHtml"]
+    assert "rz-fb" not in modal and "is-pass" not in modal
+    # The bar renders, so PR #2899's rule applies here too: the yard line
+    # lives only on the bar's flag, never repeated in the centre line.
+    assert "rz-field-fill" in modal and " · CAR 36" not in modal
+    # Unreliable field position: no field of either kind, exactly as today.
+    assert "rz-fb" not in out["unrelHtml"] and "rz-field" not in out["unrelHtml"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_modal_scorezone_tab_renders_the_field_board():
+    """The modal's ScoreZone (live) tab is a ScoreZone surface: its board is
+    the field board (cue included) fed by the payload's own PBP rows, while
+    the board keeps its modal wrapper. Without PBP rows in scope it degrades
+    to ball + flag, never an invented trail."""
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    helpers = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("window._rzSyncTabLive")]
+    script = f"""
+var window = {{ location: {{ pathname: '/sleeper/2026/123/scorezone' }} }};
+var document = {{createElement:function(){{var o={{_t:''}};
+  Object.defineProperty(o,'textContent',{{set:function(v){{this._t=String(v);}}}});
+  Object.defineProperty(o,'innerHTML',{{get:function(){{return this._t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}}}});
+  return o;}}, getElementById: function() {{ return {{}}; }} }};
+var _rzFgPts = function() {{ return 0; }};
+{helpers}
+function row(playId, seq, team, yl, sl, extra) {{
+  return Object.assign({{play_id: playId, seq: seq, team: team, pid: 'x', name: 'P',
+    yard_line: yl, end_yard_line: '', play_text: '', play_state: 'VALID', stat_line: sl}}, extra || {{}});
+}}
+var plays = [
+  row('g1', 1, 'GB', 'GB 25', {{carries: 1, rush_yds: 3}}),
+  row('c1', 3, 'CAR', 'CAR 12', {{carries: 1, rush_yds: 8}}),
+  row('c2', 4, 'CAR', 'CAR 20', {{pass_att: 1, pass_yds: 12}}),
+  row('c2', 4, 'CAR', 'CAR 20', {{targets: 1, rec: 1, rec_yds: 12}}),
+  row('c3', 5, 'CAR', 'CAR 32', {{carries: 1, rush_yds: 4}})
+];
+var game = {{away: 'CAR', home: 'GB', away_pts: 13, home_pts: 27, status: 'live',
+  possession: 'CAR', yard_line: 'CAR 36', field_position_reliable: true,
+  down: 1, distance: 10, game_quarter: 'Q4', game_clock: '14:28'}};
+var state = {{
+  player_info: {{ '9': {{ name: 'Wide Receiver', pos: 'WR', team: 'CAR',
+    home: 'GB', away: 'CAR', away_pts: '13', home_pts: '27', game_id: 'g1',
+    game_code: '1', game_status: 'In Progress',
+    stat_line: {{ carries: 0, rush_yds: 0, rush_td: 0, targets: 5, rec: 4, rec_yds: 40, rec_td: 0 }} }} }},
+  scoring: {{ rec: 1, rec_yd: 0.1, rec_td: 6, rush_yd: 0.1, rush_td: 6 }},
+  matchups: [], games: {{ g1: game }}, pbp_by_game: {{ g1: plays }}
+}};
+var html = window._rzBuildLiveHtml('9', state, []);
+var degraded = window._rzBuildLiveHtml('9', Object.assign({{}}, state, {{pbp_by_game: {{}}}}), []);
+console.log(JSON.stringify({{html: html, degraded: degraded}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    html = out["html"]
+    # Field board inside the modal wrapper, trail + cue from the real rows.
+    assert "rz-nfl-board--modal" in html
+    assert "rz-fb-field" in html and "LIVE DRIVE" in html and "started CAR 12" in html
+    assert html.count("rz-fb-dot") == 3 and html.count("rz-fb-dot is-pass") == 1
+    # No PBP rows in scope: field board degrades to ball + flag, no trail.
+    degraded = out["degraded"]
+    assert "rz-fb-field" in degraded and ">CAR 36<" in degraded
+    assert "rz-fb-dot" not in degraded and "LIVE DRIVE" not in degraded
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_field_board_animation_only_for_single_live_arrivals():
+    """Animation gating: the renderer keeps the last drive signature per
+    game and emits animation classes only when a live-gated render grows
+    the same drive by exactly one play. Bulk jumps, repeat renders and
+    non-gated (modal) renders are static; a TD arrival celebrates."""
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    helpers = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("// Build a player's modal log")]
+    script = f"""
+var window={{}};
+var document={{createElement:function(){{var o={{_t:''}};
+  Object.defineProperty(o,'textContent',{{set:function(v){{this._t=String(v);}}}});
+  Object.defineProperty(o,'innerHTML',{{get:function(){{return this._t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}}}});
+  return o;}}}};
+{helpers}
+function row(playId, seq, team, yl, sl, extra) {{
+  return Object.assign({{play_id: playId, seq: seq, team: team, pid: 'x', name: 'P',
+    yard_line: yl, end_yard_line: '', play_text: '', play_state: 'VALID', stat_line: sl}}, extra || {{}});
+}}
+function gameAt(gid, yl, down, dist) {{
+  return {{game_id: gid, away: 'CAR', home: 'GB', away_pts: 13, home_pts: 27, status: 'live',
+    possession: 'CAR', yard_line: yl, field_position_reliable: true,
+    down: down, distance: dist, game_quarter: 'Q4', game_clock: '14:28'}};
+}}
+var a1 = row('a1', 1, 'CAR', 'CAR 12', {{carries: 1, rush_yds: 8}});
+var a2q = row('a2', 2, 'CAR', 'CAR 20', {{pass_att: 1, pass_yds: 12}});
+var a2w = row('a2', 2, 'CAR', 'CAR 20', {{targets: 1, rec: 1, rec_yds: 12}});
+var a3 = row('a3', 3, 'CAR', 'CAR 32', {{carries: 1, rush_yds: 4}});
+var a4q = row('a4', 4, 'CAR', 'CAR 36', {{pass_att: 1, pass_yds: 9}});
+var a4w = row('a4', 4, 'CAR', 'CAR 36', {{targets: 1, rec: 1, rec_yds: 9}});
+var a5 = row('a5', 5, 'CAR', 'CAR 45', {{carries: 1, rush_yds: 5}});
+var v1 = [a1, a2q, a2w], v2 = [a1, a2q, a2w, a3], vBulk = [a1, a2q, a2w, a3, a4q, a4w];
+function board(gid, yl, plays, opts) {{
+  return window._rzRenderGameBoard(gameAt(gid, yl, 1, 10),
+    Object.assign({{fieldBoard: true, pbpPlays: plays}}, opts || {{}}));
+}}
+var out = {{}};
+out.first = board('gA', 'CAR 32', v1, {{fbLive: false}});
+out.arrival = board('gA', 'CAR 36', v2, {{fbLive: true}});
+out.repeat = board('gA', 'CAR 36', v2, {{fbLive: true}});
+out.bulkBase = board('gB', 'CAR 32', v1, {{fbLive: false}});
+out.bulkJump = board('gB', 'CAR 45', vBulk, {{fbLive: true}});
+out.afterBulk = board('gB', 'CAR 50', vBulk.concat([a5]), {{fbLive: true}});
+var t1q = row('t1', 1, 'CAR', 'GB 20', {{pass_att: 1, pass_yds: 14}});
+var t1w = row('t1', 1, 'CAR', 'GB 20', {{targets: 1, rec: 1, rec_yds: 14}});
+var t2 = row('t2', 2, 'CAR', 'GB 6', {{carries: 1, rush_yds: 6, rush_td: 1}});
+function tdBoard(plays, opts) {{
+  return window._rzRenderGameBoard(gameAt('gC', 'GB 6', 2, 6),
+    Object.assign({{fieldBoard: true, pbpPlays: plays}}, opts || {{}}));
+}}
+out.tdBase = tdBoard([t1q, t1w], {{fbLive: false}});
+out.tdArrival = tdBoard([t1q, t1w, t2], {{fbLive: true}});
+out.tdRepeat = tdBoard([t1q, t1w, t2], {{fbLive: true}});
+console.log(JSON.stringify(out));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    # First render: baseline only, never animated.
+    assert "rz-fb-anim" not in out["first"]
+    # Exactly one new play on a live render: the arrival animates in.
+    arr = out["arrival"]
+    assert "rz-fb-anim-play" in arr and "rz-fb-seg-new" in arr
+    assert "rz-fb-dot is-new" in arr and "--rz-fb-ball-from:35.6%" in arr
+    assert "TOUCHDOWN" not in arr and "rz-fb-score-pop" not in arr
+    # The same state re-rendered does not replay.
+    assert "rz-fb-anim" not in out["repeat"]
+    # A two-play jump never animates, even on a live-gated render...
+    assert "rz-fb-anim" not in out["bulkJump"]
+    # ...but it moves the baseline, so the next single arrival animates.
+    assert "rz-fb-anim-play" in out["afterBulk"]
+    # TD arrival: celebration markup, flash + pill + score pop, once.
+    td = out["tdArrival"]
+    assert "rz-fb-anim-td" in td and "rz-fb-tdflash" in td
+    assert ">TOUCHDOWN<" in td and "rz-fb-score-pop" in td
+    assert "rz-fb-anim" not in out["tdRepeat"] and "TOUCHDOWN" not in out["tdRepeat"]
 
 
 def test_modal_history_comes_from_uncapped_latest_play_groups():

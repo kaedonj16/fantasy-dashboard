@@ -19,6 +19,12 @@ serve the boot-built ``static/sw.built.js``). So:
   in sync; it is the derived name for the current tree, computed by
   the same function production uses. A frontend change moves the
   expectation and the served name together, with no test edits.
+  It is evaluated lazily, on every access (PEP 562), never frozen at
+  import time: app boot regenerates ``static/critical-home.css`` -- a
+  hashed input -- AFTER building the served worker, so in a fresh
+  checkout the tree a collection-time import would snapshot is not
+  the tree the rest of the run sees. Deriving the expectation at
+  assert time keeps both sides of every comparison on the same tree.
 * Every former pin site calls :func:`assert_sw_cache_current`, which
   verifies the mechanism end to end: the template carries exactly one
   ``CACHE_NAME`` definition, the built (served) worker carries the
@@ -53,9 +59,21 @@ def _sw_cache():
 
 
 # The derived expectation: whatever name the current tree's asset set
-# hashes to (or the SW_CACHE_NAME override). Computed, never edited.
+# hashes to (or the SW_CACHE_NAME override). Computed, never edited --
+# and computed at access time, not import time (see the module
+# docstring: boot's critical-CSS regeneration can move the tree
+# mid-run, so a frozen snapshot can straddle it).
 _build_sw_text, _effective_cache_name = _sw_cache()
-EXPECTED_SW_CACHE_NAME = _effective_cache_name(ROOT / "static")
+
+
+def _expected_sw_cache_name() -> str:
+    return _effective_cache_name(ROOT / "static")
+
+
+def __getattr__(name: str):
+    if name == "EXPECTED_SW_CACHE_NAME":
+        return _expected_sw_cache_name()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def sw_cache_name(sw_text: str | None = None) -> str:
@@ -97,9 +115,10 @@ def assert_sw_cache_current(sw_text: str | None = None) -> str:
     )
     served = _build_sw_text(ROOT / "static")
     name = sw_cache_name(served)
-    assert name == EXPECTED_SW_CACHE_NAME, (
+    expected = _expected_sw_cache_name()
+    assert name == expected, (
         f"served CACHE_NAME is {name!r}, derived expectation is "
-        f"{EXPECTED_SW_CACHE_NAME!r}: the served worker must be built "
+        f"{expected!r}: the served worker must be built "
         "from the current asset set (utils/sw_cache.py)"
     )
     for text in (template, served, sw_text):

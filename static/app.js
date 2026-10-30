@@ -28578,6 +28578,288 @@ window._rzFieldPosition = function(game) {
   return { spot: spot, side: side, ltg: ltg, label: label, toGoal: toGoal, goalToGo: goalToGo };
 };
 
+// ── ScoreZone field board: current-drive derivation from raw PBP rows ──
+// The ScoreZone payload ships per-player rows (pbp_by_game); grouping them
+// back into plays and taking the maximal trailing run of scrimmage plays by
+// the possessing team reconstructs the current drive. Spots use the same
+// absolute axis as _rzFieldPosition: 0 at the away goal line, 100 at the home
+// goal line. Nothing is invented: a play whose end spot cannot be chained
+// from its own end spot, the next drive play's snap spot, or the game's
+// current spot drops out of the trail.
+window._rzSpotAbs = function(label, away, home) {
+  var raw = String(label || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (/^(50|MIDFIELD)$/.test(raw)) return 50;
+  var m = raw.match(/^([A-Z]{2,3})\s+(\d{1,2})$/);
+  if (!m) return null;
+  var terr = window._rzNormalizeTeam(m[1]), yard = Number(m[2]);
+  if (yard < 0 || yard > 50) return null;
+  if (terr === away) return yard;
+  if (terr === home) return 100 - yard;
+  return null;
+};
+
+window._rzSpotLabel = function(a, away, home) {
+  if (a == null || isNaN(a)) return '';
+  var y = Math.round(a);
+  if (y === 50) return '50';
+  return y < 50 ? away + ' ' + y : home + ' ' + (100 - y);
+};
+
+window._rzDeriveDrive = function(game, fp, plays) {
+  if (!game || !fp || !plays || !plays.length) return null;
+  var away = window._rzNormalizeTeam(game.away), home = window._rzNormalizeTeam(game.home);
+  var poss = fp.side === 'away' ? away : home;
+  var dir = fp.side === 'away' ? 1 : -1;
+  var invalid = { NO_PLAY: true, NULLIFIED: true, OVERTURNED: true };
+  var num = function(v) { var n = Number(v || 0); return isFinite(n) ? n : 0; };
+  // Group per-player rows into plays (a play's rows share play_id / seq).
+  var groups = {}, order = [];
+  plays.forEach(function(row, idx) {
+    if (!row) return;
+    var key = (row.play_id != null && row.play_id !== '') ? 'p:' + row.play_id
+      : 's:' + (row.seq != null ? row.seq : idx);
+    var g = groups[key];
+    if (!g) {
+      var sq = Number(row.seq);
+      g = groups[key] = { rows: [], seq: isFinite(sq) ? sq : idx, idx: idx };
+      order.push(g);
+    }
+    g.rows.push(row);
+  });
+  order.sort(function(a, b) { return (a.seq - b.seq) || (a.idx - b.idx); });
+  var candidates = [];
+  order.forEach(function(g) {
+    var head = g.rows[0];
+    var state = String(head.play_state || 'VALID').toUpperCase();
+    if (invalid[state] || head.is_no_play) return;
+    var text = String(head.play_text || '');
+    if (/kickoff|kicks off|onside/i.test(text)) return;
+    var carries = 0, rushYds = 0, passAtt = 0, passYds = 0, tdScore = 0, scrimmage = false;
+    var sacked = /sack/i.test(text);
+    var offVotes = {}, allVotes = {}, sackTeams = {};
+    g.rows.forEach(function(r) {
+      var sl = r.stat_line || {};
+      var c = num(sl.carries), pa = num(sl.pass_att);
+      carries += c; rushYds += num(sl.rush_yds);
+      passAtt += pa; passYds += num(sl.pass_yds);
+      tdScore += num(sl.pass_td) + num(sl.rec_td) + num(sl.rush_td);
+      var off = !!(c || pa || num(sl.targets) || num(sl.rec)
+        || num(sl.rush_yds) || num(sl.pass_yds) || num(sl.int));
+      if (off) scrimmage = true;
+      var t = window._rzNormalizeTeam(r.team);
+      if (t !== away && t !== home) return;
+      allVotes[t] = (allVotes[t] || 0) + 1;
+      if (off) offVotes[t] = (offVotes[t] || 0) + 1;
+      if (num(sl.sacks)) sackTeams[t] = true;
+    });
+    // Narrative rows, PAT / field goal / punt and conversion-only plays carry
+    // no scrimmage markers and never join a drive.
+    if (!scrimmage && !sacked) return;
+    var pick = function(votes) {
+      var best = '', n = 0;
+      Object.keys(votes).forEach(function(t) { if (votes[t] > n) { n = votes[t]; best = t; } });
+      return best;
+    };
+    var team = pick(offVotes) || pick(allVotes);
+    if (!team && sacked) {
+      // A sack credited only to the defence: the offence is the other team named.
+      var others = Object.keys(allVotes).filter(function(t) { return !sackTeams[t]; });
+      if (others.length === 1) team = others[0];
+    }
+    if (!team) return;
+    candidates.push({
+      team: team, seq: g.seq,
+      snapAbs: window._rzSpotAbs(head.yard_line, away, home),
+      endAbs: window._rzSpotAbs(head.end_yard_line, away, home),
+      carries: carries, rushYds: rushYds, passAtt: passAtt, passYds: passYds,
+      tdScore: tdScore, sacked: sacked
+    });
+  });
+  // Maximal trailing run of plays by the possessing team.
+  var run = [];
+  for (var i = candidates.length - 1; i >= 0; i--) {
+    if (candidates[i].team !== poss) break;
+    run.unshift(candidates[i]);
+  }
+  if (!run.length) return null;
+  // Chain end spots: the play's own end spot, else the next drive play's snap
+  // spot, else (last play only) the game's current spot.
+  for (var j = 0; j < run.length; j++) {
+    if (run[j].endAbs == null) {
+      run[j].endAbs = (j + 1 < run.length) ? run[j + 1].snapAbs : fp.spot;
+    }
+  }
+  run = run.filter(function(p) { return p.endAbs != null; });
+  while (run.length && run[0].snapAbs == null) run.shift();
+  if (!run.length) return null;
+  var startAbs = run[0].snapAbs;
+  var last = run[run.length - 1], chip = null;
+  if (last.carries > 0) chip = { yards: Math.round(last.rushYds), kind: 'run' };
+  else if (last.sacked && last.snapAbs != null) {
+    chip = { yards: Math.round((last.endAbs - last.snapAbs) * dir), kind: 'sack' };
+  } else if (last.passAtt > 0 || last.passYds !== 0) {
+    chip = { yards: Math.round(last.passYds), kind: 'pass' };
+  }
+  var chipText = null;
+  if (chip) {
+    var y = chip.yards;
+    chipText = (y > 0 ? '+' + y : (y < 0 ? '−' + Math.abs(y) : '0')) + ' ' + chip.kind;
+  }
+  return {
+    count: run.length,
+    points: run.map(function(p) { return p.endAbs; }),
+    // Per-play kind for the pass/run dot cue, classified with the same
+    // signals as the last-play chip: carries -> run; a sack counts as a
+    // pass; pass attempts / passing yards -> pass. Anything without a
+    // clean read stays null and renders as the solid default dot.
+    kinds: run.map(function(p) {
+      if (p.carries > 0) return 'run';
+      if (p.sacked || p.passAtt > 0 || p.passYds !== 0) return 'pass';
+      return null;
+    }),
+    firstSeq: run[0].seq, lastSeq: last.seq,
+    // Touchdown on the drive's latest play, from real signals only: a TD
+    // in its stat rows, or its end spot reaching the goal line it attacks.
+    td: !!(last.tdScore > 0 || (dir === 1 ? last.endAbs >= 100 : last.endAbs <= 0)),
+    startAbs: startAbs,
+    startLabel: window._rzSpotLabel(startAbs, away, home),
+    net: Math.round((fp.spot - startAbs) * dir),
+    chip: chipText
+  };
+};
+
+// Field board markup (ScoreZone surfaces only, via _rzRenderGameBoard's
+// fieldBoard option): perspective field, drive trail, play dots (pass
+// plays hollow via the pass/run cue), solid ball, spot flag, last-play
+// chip, LIVE DRIVE summary.
+window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
+  var esc = function(v) { var d = document.createElement('div'); d.textContent = String(v == null ? '' : v); return d.innerHTML; };
+  var away = window._rzNormalizeTeam(game.away), home = window._rzNormalizeTeam(game.home);
+  var poss = fp.side === 'away' ? away : home;
+  colors = colors || {};
+  var tc = colors[poss] || '#334155';
+  var lum = function(h) {
+    h = String(h).replace('#', '');
+    if (h.length !== 6) return 255;
+    return 0.299 * parseInt(h.slice(0, 2), 16) + 0.587 * parseInt(h.slice(2, 4), 16) + 0.114 * parseInt(h.slice(4, 6), 16);
+  };
+  // Light end-zone tints of each team's colour (darker colours get less alpha
+  // so both ends read at the same weight).
+  var dark = false;
+  try { dark = document.documentElement.getAttribute('data-theme') === 'dark'; } catch (e) {}
+  // Dark theme: a dark primary tinted raw vanishes on the dark field (GB's
+  // #203731, CHI navy, LV black), so lift the colour's HSL lightness to a
+  // floor -- hue and saturation untouched, still recognisably the team's
+  // colour -- and tint from the lifted colour at the light-colour alpha.
+  var lift = function(hex) {
+    var h = String(hex).replace('#', '');
+    if (h.length !== 6) return hex;
+    var r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    if (l >= 0.45) return hex;
+    var d = mx - mn;
+    var s = d === 0 ? 0 : (l < 0.5 ? d / (mx + mn) : d / (2 - mx - mn));
+    var hue = 0;
+    if (d !== 0) {
+      if (mx === r) hue = ((g - b) / d) % 6;
+      else if (mx === g) hue = (b - r) / d + 2;
+      else hue = (r - g) / d + 4;
+      hue *= 60; if (hue < 0) hue += 360;
+    }
+    l = 0.45;
+    var c = (1 - Math.abs(2 * l - 1)) * s;
+    var x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+    var m = l - c / 2, rr = 0, gg = 0, bb = 0;
+    if (hue < 60) { rr = c; gg = x; }
+    else if (hue < 120) { rr = x; gg = c; }
+    else if (hue < 180) { gg = c; bb = x; }
+    else if (hue < 240) { gg = x; bb = c; }
+    else if (hue < 300) { rr = x; bb = c; }
+    else { rr = c; bb = x; }
+    var to = function(v) { var n2 = Math.round((v + m) * 255).toString(16); return n2.length === 1 ? '0' + n2 : n2; };
+    return '#' + to(rr) + to(gg) + to(bb);
+  };
+  var tint = function(hex) {
+    if (dark) return lift(hex) + '59';
+    return hex + (lum(hex) < 66 ? '38' : '59');
+  };
+  // Dark theme: the possession story (shade, trail, ball, flag) runs on the
+  // lifted colour too -- a raw dark primary is invisible on the dark field.
+  var tcEff = dark ? lift(tc) : tc;
+  var xOf = function(a) { return 10 + a * 0.8; };
+  var ballX = xOf(fp.spot);
+  var shade = fp.side === 'away'
+    ? '<span class="rz-fb-shade" style="left:10%;width:' + (ballX - 10) + '%;background:' + tcEff + '29"></span>'
+    : '<span class="rz-fb-shade" style="left:' + ballX + '%;width:' + (90 - ballX) + '%;background:' + tcEff + '29"></span>';
+  var trail = '';
+  if (drive) {
+    var pts = [drive.startAbs].concat(drive.points);
+    var n = pts.length - 1;
+    for (var k = 0; k < n; k++) {
+      var x1 = xOf(pts[k]), x2 = xOf(pts[k + 1]);
+      if (x1 === x2) continue;
+      var t = n === 1 ? 1 : k / (n - 1);
+      var lo = Math.min(x1, x2), hi = Math.max(x1, x2);
+      var L = Math.max(9.5, lo - (k === 0 ? 0 : 0.5));
+      var W = Math.min(90.5, hi + 0.5) - L;
+      var segCls = 'rz-fb-seg';
+      if (fbAnim && k === n - 1) segCls += ' rz-fb-seg-new ' + (x2 > x1 ? 'is-fwd' : 'is-back');
+      trail += '<span class="' + segCls + '" style="left:' + L + '%;width:' + W + '%;height:'
+        + (3 + 2 * t * t).toFixed(1) + 'px;opacity:' + (0.4 + 0.6 * t).toFixed(2) + '"></span>';
+    }
+    drive.points.forEach(function(p, i) {
+      var pass = drive.kinds && drive.kinds[i] === 'pass';
+      var isNew = !!fbAnim && i === drive.points.length - 1;
+      trail += '<span class="rz-fb-dot' + (pass ? ' is-pass' : '') + (isNew ? ' is-new' : '')
+        + '" style="left:' + xOf(p) + '%"></span>';
+    });
+  }
+  var fd = (fp.ltg != null) ? '<span class="rz-fb-fd" style="left:' + xOf(fp.ltg) + '%"></span>' : '';
+  var flagX = Math.min(Math.max(ballX, 15), 85);
+  var pillInk = lum(tcEff) >= 66 ? ';color:#0f2440' : '';
+  var flag = '<span class="rz-fb-flag" style="left:' + flagX + '%' + pillInk + '">' + esc(fp.label) + '</span>';
+  var chip = (drive && drive.chip)
+    ? '<span class="rz-fb-chip" style="left:' + flagX + '%' + pillInk + '">' + esc(drive.chip) + '</span>' : '';
+  var labels = [[20, '20'], [40, '40'], [50, '50'], [60, '40'], [80, '20']].map(function(p) {
+    return '<span style="left:' + xOf(p[0]) + '%">' + p[1] + '</span>';
+  }).join('');
+  var driveRow = '';
+  if (drive) {
+    driveRow = '<div class="rz-fb-drive"><span class="rz-fb-live"><span class="rz-fb-live-dot"></span>LIVE DRIVE</span>'
+      + '<span><b>' + drive.count + ' ' + (drive.count === 1 ? 'play' : 'plays') + '</b> · <b>'
+      + drive.net + ' ' + (Math.abs(drive.net) === 1 ? 'yd' : 'yds') + '</b></span>'
+      + '<span>started ' + esc(drive.startLabel) + '</span></div>';
+  }
+  var aria = 'Ball at ' + fp.label + ', ' + poss + ' ball' + (drive
+    ? '. Drive: ' + drive.count + ' plays, ' + drive.net + ' yards, started ' + drive.startLabel : '');
+  // Touchdown celebration: the flash + pill exist only on the arrival
+  // render (fbAnim 'td'); under reduced motion the pill instead shows
+  // statically for as long as the TD is the drive's latest play. The pill
+  // is the board's only TD announcement.
+  var tdHtml = '';
+  if (drive && drive.td) {
+    var tdArrival = !!(fbAnim && fbAnim.type === 'td');
+    var reduced = false;
+    try { reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+    if (tdArrival) {
+      tdHtml += '<span class="rz-fb-tdflash" style="' + (fp.side === 'away' ? 'left:90%' : 'left:0')
+        + ';background:' + tcEff + '"></span>';
+    }
+    if (tdArrival || reduced) {
+      tdHtml += '<span class="rz-fb-td"' + (pillInk ? ' style="' + pillInk.slice(1) + '"' : '') + '>TOUCHDOWN</span>';
+    }
+  }
+  return '<div class="rz-fb' + (fbAnim ? ' rz-fb-anim rz-fb-anim-' + fbAnim.type : '') + '"><div class="rz-fb-persp"><div class="rz-fb-field" style="--rz-fb-color:' + tcEff + '" role="img" aria-label="' + esc(aria) + '">'
+    + '<span class="rz-fb-ez" style="left:0;background:' + tint(colors[away] || '#334155') + '"><span>' + esc(away) + '</span></span>'
+    + '<span class="rz-fb-ez" style="right:0;background:' + tint(colors[home] || '#334155') + '"><span>' + esc(home) + '</span></span>'
+    + shade + trail + fd + flag
+    + '<span class="rz-fb-ball" style="left:' + ballX + '%' + (fbAnim ? ';--rz-fb-ball-from:' + xOf(fbAnim.fromAbs) + '%' : '') + '"></span>'
+    + chip + tdHtml
+    + '</div></div>'
+    + driveRow
+    + '<div class="rz-field-scale">' + labels + '</div></div>';
+};
+
 window._rzRenderGameBoard = function(game, options) {
   options = options || {};
   if (!game || (!game.away && !game.home)) return '';
@@ -28597,9 +28879,39 @@ window._rzRenderGameBoard = function(game, options) {
   // corner instead, and only when the field bar below is absent -- when the
   // bar renders, its team-color fill + flag already show who has the ball.
   // No separate abbreviation text either: the badge chip already carries it,
-  // so each team name appears exactly once (chip + score).
-  var team=function(t,pts,side){var ball=live&&poss===t;var dot=ball&&!fp;return '<div class="rz-nfl-team rz-nfl-'+side+(ball?' has-ball':'')+'"><span class="rz-nfl-logo-wrap">'+logo(t)+(dot?'<span class="rz-nfl-poss" title="Has possession" aria-label="Has possession"></span>':'')+'</span>'+(showScore?'<span class="rz-nfl-score">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+'</div>';};
+  // so each team name appears exactly once (chip + score). On a TD arrival
+  // the possessing team's score pops (field-board celebration hook).
+  var fbTdPop=false;
+  var team=function(t,pts,side){var ball=live&&poss===t;var dot=ball&&!fp;return '<div class="rz-nfl-team rz-nfl-'+side+(ball?' has-ball':'')+'"><span class="rz-nfl-logo-wrap">'+logo(t)+(dot?'<span class="rz-nfl-poss" title="Has possession" aria-label="Has possession"></span>':'')+'</span>'+(showScore?'<span class="rz-nfl-score'+(ball&&fbTdPop?' rz-fb-score-pop':'')+'">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+'</div>';};
   var fp=window._rzFieldPosition(Object.assign({},game,{status:status}));
+  // Field board (ScoreZone page only): the flag on the field owns the yard
+  // line, so the centre line drops it in this presentation.
+  var fbOn=!!(fp&&options.fieldBoard);
+  var fbDrive=fbOn?window._rzDeriveDrive(game,fp,options.pbpPlays):null;
+  // Live-arrival animation decision. Only the ScoreZone page passes fbLive
+  // (true exactly when its refresh detected one new play on a live update);
+  // the registry holds the last field-board drive signature per game, and
+  // an animation is emitted only when the same drive grew by exactly one
+  // play with every earlier spot unchanged. Bulk loads, backfills, revised
+  // plays and first renders just move the baseline. Callers that never
+  // pass fbLive (the modal) never touch the registry and stay static.
+  var fbAnim=null;
+  if(fbOn&&options.fbLive!==undefined){
+    var fbReg=window._rzFbSig||(window._rzFbSig={});
+    var fbKey=String(game.game_id||game.id||(away+'@'+home));
+    var fbPrev=fbReg[fbKey]||null;
+    if(fbDrive){
+      var fbSig={firstSeq:fbDrive.firstSeq,lastSeq:fbDrive.lastSeq,count:fbDrive.count,
+        points:fbDrive.points,startAbs:fbDrive.startAbs,poss:poss,td:!!fbDrive.td};
+      if(options.fbLive&&fbPrev&&fbPrev.firstSeq===fbSig.firstSeq&&fbPrev.startAbs===fbSig.startAbs
+        &&fbPrev.poss===fbSig.poss&&fbSig.count===fbPrev.count+1
+        &&fbPrev.points.every(function(p,i){return p===fbSig.points[i];})){
+        fbAnim={type:fbSig.td?'td':'play',fromAbs:fbPrev.points[fbPrev.points.length-1]};
+      }
+      fbReg[fbKey]=fbSig;
+    } else fbReg[fbKey]=null;
+    fbTdPop=!!(fbAnim&&fbAnim.type==='td');
+  }
   var sit='';
   if(live){
     var down=String(game.down||''), dist=String(game.distance||'');
@@ -28617,7 +28929,9 @@ window._rzRenderGameBoard = function(game, options) {
   if(live){var clock=[game.game_quarter?(/^Q/i.test(String(game.game_quarter))?game.game_quarter:'Q'+game.game_quarter):'',game.game_clock].filter(Boolean).join(' · ');center='<div class="rz-nfl-mid"><span class="rz-nfl-live-pill"><span class="rz-nfl-live-dot"></span>'+esc(clock||'LIVE')+'</span>'+(sit?'<span class="rz-nfl-sit">'+sit+'</span>':'')+'</div>';}
   else center='<div class="rz-nfl-mid"><span class="rz-nfl-state">'+esc(status==='final'?'FINAL':status==='halftime'?'HALFTIME':game.game_status||'Upcoming')+'</span></div>';
   var field='';
-  if(fp){
+  if(fp&&options.fieldBoard){
+    field=window._rzFieldBoardHtml(game,fp,fbDrive,colors,fbAnim);
+  } else if(fp){
     var tc=colors[poss]||'#334155', atkR=fp.side==='away';
     var dim=(function(h){h=String(h).replace('#','');if(h.length!==6)return false;var r=parseInt(h.slice(0,2),16),gc=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (0.299*r+0.587*gc+0.114*b)<66;})(tc);
     var ticks=''; for(var _y=10;_y<=90;_y+=10){ticks+='<span class="rz-field-tick'+(_y===50?' is-mid':'')+'" style="left:'+_y+'%"></span>';}
@@ -28764,7 +29078,11 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
   var inj = info.injury_status || '';
   var injBadge = inj ? '<span class="rz-pm-inj">' + inj + '</span>' : '';
   var game = (state.games || {})[info.game_id] || Object.assign({}, info, { status: gsType === 'pre' ? 'pregame' : gsType });
-  var gameHdr = (gsLabel || gameLine) ? window._rzRenderGameBoard(game, { modal:true }) + (injBadge ? '<div class="rz-pm-injury-row">'+injBadge+'</div>' : '') : '';
+  // This is the modal's ScoreZone (live) tab -- a ScoreZone surface, so its
+  // board opts into the field board with the game's PBP rows when the state
+  // carries them. The renderer falls back to the classic bar when the spot
+  // is not live/reliable, and to ball + flag when no drive can be derived.
+  var gameHdr = (gsLabel || gameLine) ? window._rzRenderGameBoard(game, { modal:true, fieldBoard: true, pbpPlays: (state.pbp_by_game || {})[info.game_id] || [] }) + (injBadge ? '<div class="rz-pm-injury-row">'+injBadge+'</div>' : '') : '';
 
   var sl = info.stat_line, pos = info.pos || '';
   // Box-score total under this player's league scoring. This is the old stat
