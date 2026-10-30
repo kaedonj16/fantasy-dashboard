@@ -393,6 +393,93 @@ def test_game_pill_team_row_has_no_duplicate_abv_text():
     assert "rz-nfl-abv" not in board
 
 
+def test_game_pills_use_versus_line_with_day_status_for_pregame():
+    """V2 versus line (Kaedon's 2026-10-30 pick): one line per pill --
+    away chip, away score, @, home score, home chip -- with the status as
+    a small line underneath. Pregame status gains the kickoff day from the
+    same epoch ("SUN · 1:00 PM") while aria labels keep the time-only
+    wording they have always had."""
+    sz = (ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
+    row = sz[sz.index("function _gamePillTeamRow") : sz.index("// ESPN-style horizontal NFL game selector")]
+    # Home score precedes the home chip; away score follows the away chip.
+    assert "side === 'home' ? score + logo : logo + score" in row
+    assert "rz-gp-abv" not in row
+    status = sz[sz.index("function _gamePillStatus") : sz.index("function _gamePillLogo")]
+    assert "function _gamePillStatus(g, norm, includeDay)" in status
+    assert "day + ' · ' + time" in status
+    for segment in (
+        sz[sz.index("function _renderGameStrip()") : sz.index("function _renderFilterChips")],
+        sz[sz.index("function _pregameScheduleHtml()") : sz.index("function _syncFeed")],
+    ):
+        assert "rz-gp-versus" in segment
+        assert "_gamePillTeamRow" in segment
+        assert '<span class="rz-gp-at" aria-hidden="true">@</span>' in segment
+        # Versus order inside the line, status line after it.
+        assert segment.index("_gamePillTeamRow") < segment.index("rz-gp-at") < segment.rindex("_gamePillTeamRow")
+        assert segment.index("rz-gp-versus") < segment.index("rz-gp-status")
+        assert "_gamePillStatus" in segment and ", true)" in segment
+    strip = sz[sz.index("function _renderGameStrip()") : sz.index("function _renderFilterChips")]
+    # Aria keeps the original time-only status; the visible line adds the day.
+    assert "var ariaStatus = _gamePillStatus(g, norm);" in strip
+    assert "var status = _gamePillStatus(g, norm, true);" in strip
+    assert "', ' + ariaStatus" in strip
+    # Scores still obey the existing showScore rule (absent pregame).
+    assert "var showScore = norm !== 'pregame' && norm !== 'unknown';" in strip
+    # CSS: versus line exists in both .rz-game-pill definitions (ScoreZone
+    # page + homepage preview), status is left-aligned, pills size to content.
+    assert ".rz-gp-versus {" in DASHBOARD_CSS
+    assert ".hp-rz .rz-gp-versus {" in DASHBOARD_CSS
+    assert ".rz-gp-at {" in DASHBOARD_CSS and ".hp-rz .rz-gp-at {" in DASHBOARD_CSS
+    main_status = DASHBOARD_CSS.split(".rz-gp-status {", 1)[1].split("}", 1)[0]
+    hp_status = DASHBOARD_CSS.split(".hp-rz .rz-gp-status {", 1)[1].split("}", 1)[0]
+    assert "text-align: left" in main_status and "text-align: left" in hp_status
+    assert ".rz-gp-versus .rz-gp-score { margin-left: 0; }" in DASHBOARD_CSS
+    assert ".hp-rz .rz-gp-versus .rz-gp-score { margin-left: 0; }" in DASHBOARD_CSS
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_pregame_board_header_is_centered_b1_and_live_final_keep_score_row():
+    """B1 pregame header (Kaedon's 2026-10-30 pick): a centered matchup
+    unit (badge, code, AT, code, badge) with the game's own status string
+    centered underneath, replacing the edge-stranded score row. Live and
+    final boards keep the score row. The Box score control compacts only
+    next to / inside a pregame board (CSS state selectors)."""
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    seg = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("// Build a player's modal log")]
+    script = f"""
+var window = {{}};
+{_NODE_DOM_STUB}
+window.brTeamBadge = function(t) {{ return '<span class="rz-nfl-badge">' + t + '</span>'; }};
+{seg}
+function board(x){{ return window._rzRenderGameBoard(Object.assign({{away:'ARI',home:'DAL',away_pts:0,home_pts:0,game_status:'11/1 · 1:00 PM EST'}},x)); }}
+console.log(JSON.stringify({{
+  pre: board({{status:'pregame'}}),
+  live: board({{status:'live',away_pts:13,home_pts:27,game_quarter:'Q4',game_clock:'2:41'}}),
+  fin: board({{status:'final',away_pts:13,home_pts:27}})
+}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    pre = out["pre"]
+    assert "rz-nfl-board--pregame" in pre
+    assert "rz-nfl-pregame-head" in pre and "rz-nfl-pregame-matchup" in pre
+    assert "rz-nfl-score-row" not in pre and "rz-nfl-score" not in pre
+    # Centered unit order: away badge, away code, AT, home code, home badge,
+    # then the game's own status string underneath.
+    assert pre.index("rz-nfl-badge") < pre.index("rz-nfl-pregame-code")
+    assert pre.index(">ARI<") < pre.index("rz-nfl-pregame-at") < pre.index(">DAL<")
+    assert "11/1 · 1:00 PM EST" in pre
+    assert pre.index("rz-nfl-pregame-at") < pre.index("rz-nfl-pregame-status")
+    for html in (out["live"], out["fin"]):
+        assert "rz-nfl-score-row" in html and "rz-nfl-pregame-head" not in html
+    # Box score: compact pill only in the pregame state.
+    assert ".rz-nfl-board--pregame + .rz-boxscore-btn" in DASHBOARD_CSS
+    assert ".rz-nfl-board--pregame .rz-boxscore-btn" in DASHBOARD_CSS
+    box = DASHBOARD_CSS.split(".rz-boxscore-btn {", 1)[1].split("}", 1)[0]
+    assert "width: 100%" in box  # live/final keep the full-width control
+    compact = DASHBOARD_CSS.split(".rz-nfl-board--pregame + .rz-boxscore-btn,", 1)[1].split("}", 1)[0]
+    assert "width: max-content" in compact and "padding: 7px 14px" in compact
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
 def test_player_modal_log_uses_each_players_latest_canonical_contribution():
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")

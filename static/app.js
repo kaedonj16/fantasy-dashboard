@@ -29103,6 +29103,20 @@ window._rzRenderGameBoard = function(game, options) {
   var center;
   if(live){var clock=[game.game_quarter?(/^Q/i.test(String(game.game_quarter))?game.game_quarter:'Q'+game.game_quarter):'',game.game_clock].filter(Boolean).join(' · ');center='<div class="rz-nfl-mid"><span class="rz-nfl-live-pill"><span class="rz-nfl-live-dot"></span>'+esc(clock||'LIVE')+'</span>'+(sit?'<span class="rz-nfl-sit">'+sit+'</span>':'')+'</div>';}
   else center='<div class="rz-nfl-mid"><span class="rz-nfl-state">'+esc(status==='final'?'FINAL':status==='halftime'?'HALFTIME':game.game_status||'Upcoming')+'</span></div>';
+  // Pregame board header (B1): one centered matchup unit -- badge, code,
+  // AT, code, badge -- with the game's own status line underneath, instead
+  // of two badges stranded at the edges of an otherwise empty score row.
+  // Live and final headers keep the score-row layout below.
+  var header;
+  if(pre){
+    header='<div class="rz-nfl-pregame-head"><div class="rz-nfl-pregame-matchup">'
+      +logo(away)+'<span class="rz-nfl-pregame-code">'+esc(away)+'</span>'
+      +'<span class="rz-nfl-pregame-at">AT</span>'
+      +'<span class="rz-nfl-pregame-code">'+esc(home)+'</span>'+logo(home)
+      +'</div><div class="rz-nfl-pregame-status">'+esc(game.game_status||'Upcoming')+'</div></div>';
+  } else {
+    header='<div class="rz-nfl-score-row">'+team(away,game.away_pts,'away')+center+team(home,game.home_pts,'home')+'</div>';
+  }
   var field='';
   if(fp&&options.fieldBoard){
     field=window._rzFieldBoardHtml(game,fp,fbDrive,colors,fbAnim);
@@ -29159,7 +29173,7 @@ window._rzRenderGameBoard = function(game, options) {
       +'<span class="rz-field-ezl">'+esc(home)+'</span>'
       +'<span class="rz-field-spot">'+esc(fp.label)+'</span></div></div>';
   }
-  return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(options.modal?' rz-nfl-board--modal':'')+'"'+(options.id?' id="'+esc(options.id)+'"':'')+'><div class="rz-nfl-score-row">'+team(away,game.away_pts,'away')+center+team(home,game.home_pts,'home')+'</div>'+field+'</div>';
+  return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(pre?' rz-nfl-board--pregame':'')+(options.modal?' rz-nfl-board--modal':'')+'"'+(options.id?' id="'+esc(options.id)+'"':'')+'>'+header+field+'</div>';
 };
 
 // Build a player's modal log from canonical grouped plays. A feed card has one
