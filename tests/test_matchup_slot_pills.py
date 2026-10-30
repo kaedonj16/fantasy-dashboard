@@ -284,7 +284,7 @@ def test_right_column_reads_name_before_team_pos():
                 "left-column header should keep the name-first order"
 
 
-def test_tour_matchup_styles_are_scoped_to_hp_mb():
+def test_hero_board_styles_are_scoped_to_hp_mb():
     """The guest-home tour duplicates the .mb-* / .m-win-bar / .pos-badge
     rules for its static mockups. Those duplicates once sat unscoped AFTER
     the phone @media block and (equal specificity, later source order)
@@ -293,11 +293,11 @@ def test_tour_matchup_styles_are_scoped_to_hp_mb():
     duplicate must live under .hp-mb so it can never leak onto the live
     board again."""
     css = _CSS.read_text(encoding="utf-8")
-    tour_start = css.find("Tour visuals:")
-    assert tour_start != -1, "tour visuals section missing"
+    tour_start = css.find("/* ---- Hero board preview")
+    assert tour_start != -1, "hero board preview section missing"
     tour = css[tour_start:]
-    # End of the matchup-mockup section: the ScoreZone mockups start next.
-    tour_mb = tour[: tour.find("ScoreZone: .rz-*")]
+    # End of the hero board section: the free tools band starts next.
+    tour_mb = tour[: tour.find("/* Free tools band */")]
     tour_mb = re.sub(r"/\*.*?\*/", "", tour_mb, flags=re.S)
     for m in re.finditer(r"^([^{}]+)\{", tour_mb, re.M):
         selector = m.group(1).strip()

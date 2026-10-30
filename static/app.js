@@ -1537,7 +1537,15 @@ window.brHaptic = function (pattern) {
         if (name === 'getting-started' && typeof window.startSiteTour === 'function') {
           setOpen(false); window.startSiteTour();
         }
-        if (name === 'help-tours') showSheetPanel('help-tours', false, action);
+        if (name === 'help-tours') {
+          showSheetPanel('help-tours', false, action);
+          if (typeof window.brPopulateSheetGuides === 'function') window.brPopulateSheetGuides();
+        }
+        if (name === 'feature-guide') {
+          var gid2 = action.getAttribute('data-guide');
+          setOpen(false);
+          if (gid2 && window.FeatureOnboarding) window.FeatureOnboarding.start(gid2);
+        }
         return;
       }
       if (e.target.closest('.br-sheet-link, .nav-search-result')) setOpen(false);
@@ -14614,6 +14622,8 @@ function initRecapPage(root = document) {
 // ------------------------------------------------------------
 
 window.initPageRoot = function initPageRoot(root = document) {
+  // Per-page coach marks re-check after every soft-nav swap.
+  setTimeout(function () { if (window.FeatureOnboarding) window.FeatureOnboarding.check(); }, 700);
   initManagerPills(root);
   initCardTabs(root);
   // Unread alert dots (Weekly Recap / Breakouts): re-evaluate on every swap.
@@ -27255,6 +27265,13 @@ window.showSubWelcome = function (opts) {
 
   function _openMoreSheet() {
     var sheet = document.getElementById('brMoreSheet');
+    // Reset to the root panel (same reset the sheet's own setOpen does):
+    // a sheet left on a sub-panel hides root-only targets like the search
+    // row, and the step would be silently auto-skipped.
+    if (sheet) {
+      sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) { p.hidden = p.dataset.brSheetPanel !== 'root'; });
+      sheet.dataset.brSheetLevel = 'root';
+    }
     var scrim = document.getElementById('brSheetScrim');
     var tab = document.getElementById('brMoreTab');
     if (sheet) {
@@ -27282,6 +27299,21 @@ window.showSubWelcome = function (opts) {
     }
   }
 
+  function _openMarketIntel() {
+    // The Market Intel panel lives inside the Trade Hub's Suggestions tab,
+    // two taps deep; open both layers so the step's target is on screen.
+    var hubTab = document.querySelector('.otc-main-tab[data-tab="suggestions"]');
+    var sugg = document.getElementById('otcSuggestionsTab');
+    if (hubTab && sugg && sugg.getClientRects().length === 0) {
+      try { hubTab.click(); } catch (e) {}
+    }
+    var marketBtn = document.getElementById('otcSubtabMarket');
+    var panel = document.getElementById('otcMarketIntelPanel');
+    if (marketBtn && panel && panel.getClientRects().length === 0) {
+      try { marketBtn.click(); } catch (e) {}
+    }
+  }
+
   var DESKTOP_STEPS = [
     {
       page: 'dashboard', selector: null,
@@ -27290,8 +27322,8 @@ window.showSubWelcome = function (opts) {
     },
     Object.assign({
       page: 'dashboard', selector: '#tradesNavDropdown',
-      title: 'Trades & Trade Intel',
-      body: 'Grade any deal in the Trade Calculator, get AI suggestions, and open Trade Intel for live market values on your roster.',
+      title: 'Trades & Trade Hub',
+      body: 'Grade any deal in the Trade Calculator, or open Trade Hub for suggested packages and live market values on your roster.',
       interactive: true,
     }, _navDropStep('tradesNavDropdown')),
     {
@@ -27303,19 +27335,19 @@ window.showSubWelcome = function (opts) {
     {
       page: 'dashboard', selector: '.os-waiver-row, .player-row, .otc-player-row, .wv-player-row, [data-player-id], .player-clickable',
       title: 'Player cards',
-      body: 'Click any player to open dynasty value history, advanced metrics, and breakout score.',
+      body: 'Click any player to open dynasty value history, advanced metrics, and their start/sit outlook.',
       interactive: true,
     },
     {
       page: 'history', selector: '.card, .page-shell',
       title: 'League history',
-      body: 'Season awards, standings trends, AI recaps, and rivalry records for every past year.',
+      body: 'Season awards, scoring trends, AI recaps, and rivalry records for every completed season.',
       navigate: 'history',
     },
     {
       page: 'dashboard', selector: null,
       title: "You're all set",
-      body: 'Explore from here. Replay this tour or the PRO welcome anytime from the settings gear.',
+      body: 'Explore from here. Replay this tour anytime from Help & Tours in the settings gear.',
     },
   ];
 
@@ -27329,13 +27361,13 @@ window.showSubWelcome = function (opts) {
     {
       page: 'dashboard', selector: '.br-tabbar',
       title: 'Bottom navigation',
-      body: 'Jump between Home, Matchups, Trades, and Teams from the dock at the bottom of every league page.',
+      body: 'Jump between your main pages from the dock at the bottom of every league page.',
       interactive: true,
     },
     {
       page: 'dashboard', selector: '#brMoreTab',
       title: 'More',
-      body: 'Open More for rankings, breakouts, history, graphs, search, and settings.',
+      body: 'Open More for search, rankings, breakouts, history, graphs, and your account and settings.',
       interactive: true,
     },
     {
@@ -27368,17 +27400,18 @@ window.showSubWelcome = function (opts) {
     Object.assign({
       page: 'dashboard', selector: '#tradesNavDropdown',
       title: 'Trade Suggestions',
-      body: 'Open Trades → Suggestions for archetype packages with playoff-odds impact. Playoff Impact lives on the Trade Calculator.',
+      body: 'Open Trades, then Trade Hub, for archetype packages with playoff-odds impact. Playoff Impact lives on the Trade Calculator.',
       interactive: true,
     }, _navDropStep('tradesNavDropdown')),
     {
-      page: 'trade', selector: '.card, .page-shell, main',
+      page: 'trade', selector: '#otcMarketIntelPanel, .card, .page-shell, main',
       title: 'Market Intel',
-      body: 'Live market values, momentum, and real trade frequency now live in the Trade Hub under the Market Intel tab.',
+      body: 'Live market values, momentum, and real trade frequency, in the Trade Hub under the Market Intel tab.',
+      beforeShow: _openMarketIntel,
       navigate: 'trade',
     },
     {
-      page: 'breakouts', selector: '.card, .page-shell, .breakouts-root, main',
+      page: 'breakouts', selector: '.card, .page-shell, main',
       title: 'Breakout Engine',
       body: 'Opportunity projections and breakout candidates -- ranked for your format.',
       navigate: 'breakouts',
@@ -27386,7 +27419,7 @@ window.showSubWelcome = function (opts) {
     {
       page: 'dashboard', selector: null,
       title: "You're all set",
-      body: 'Replay this PRO tour or the PRO welcome anytime from the settings gear.',
+      body: 'Replay this PRO tour or the PRO welcome anytime from Help & Tours in the settings gear.',
     },
   ];
 
@@ -27405,19 +27438,20 @@ window.showSubWelcome = function (opts) {
     {
       page: 'dashboard', selector: '#brMoreTab',
       title: 'More → PRO tools',
-      body: 'Open More for Breakouts, Front Office, and the rest of PRO.',
+      body: 'Open More for Breakouts, rankings, graphs, and the rest of PRO.',
       interactive: true,
     },
     {
-      page: 'trade', selector: '.card, .page-shell, main',
+      page: 'trade', selector: '#otcMarketIntelPanel, .card, .page-shell, main',
       title: 'Market Intel',
       body: 'Market values and real trade frequency for players on your roster, now a tab in the Trade Hub.',
+      beforeShow: _openMarketIntel,
       navigate: 'trade',
     },
     {
       page: 'dashboard', selector: null,
       title: "You're all set",
-      body: 'Replay the PRO tour or PRO welcome from Settings whenever you like.',
+      body: 'Replay this PRO tour or the PRO welcome anytime from Help & Tours in the settings gear.',
     },
   ];
 
@@ -27880,6 +27914,18 @@ window.brAvailableFeatureGuides = function () {
   });
 };
 
+window.brPopulateSheetGuides = function () {
+  var box = document.querySelector('[data-br-feature-guides]');
+  if (!box) return;
+  var guides = window.brAvailableFeatureGuides();
+  if (!guides.length) { box.hidden = true; box.innerHTML = ''; return; }
+  box.innerHTML = guides.map(function (g) {
+    return '<button type="button" class="br-sheet-link" data-br-action="feature-guide" data-guide="' +
+      g.id + '"><span>' + g.title + ' tour</span></button>';
+  }).join('');
+  box.hidden = false;
+};
+
 window.brOpenHelpTours = function () {
   var old = document.getElementById('brHelpToursDialog');
   if (old) old.remove();
@@ -27893,7 +27939,8 @@ window.brOpenHelpTours = function () {
     '<button type="button" class="br-help-close" aria-label="Close Help and Tours">&times;</button>' +
     '<h2 id="brHelpTitle">Help &amp; Tours</h2>' +
     '<button type="button" class="br-help-start" data-help-start><strong>Getting Started</strong><small>Learn the BR Fantasy basics</small></button>' +
-    (isPremium ? '<button type="button" class="br-help-start" data-help-welcome><strong>PRO Welcome</strong><small>Replay the PRO welcome tour</small></button>' : '') +
+    (isPremium ? '<button type="button" class="br-help-start" data-help-welcome><strong>PRO Welcome</strong><small>Replay the PRO welcome tour</small></button>' +
+      '<button type="button" class="br-help-start" data-help-pro-tour><strong>PRO Tour</strong><small>Tour the PRO tools</small></button>' : '') +
     (guides.length ? '<h3>Feature Guides</h3>' + guides.map(function (g) {
       return '<button type="button" class="br-help-start" data-guide="' + g.id + '"><strong>' + g.title + '</strong><small>' + g.description + '</small></button>';
     }).join('') : '') +
@@ -27903,6 +27950,13 @@ window.brOpenHelpTours = function () {
     if (e.target === overlay || e.target.closest('.br-help-close')) close();
     if (e.target.closest('[data-help-start]')) { close(); if (window.startSiteTour) window.startSiteTour(); }
     if (e.target.closest('[data-help-welcome]')) { close(); if (window.startSubWelcome) window.startSubWelcome(); }
+    if (e.target.closest('[data-help-pro-tour]')) { close(); if (window.startSiteTour) window.startSiteTour({ mode: 'pro' }); }
+    var guideBtn = e.target.closest('[data-guide]');
+    if (guideBtn) {
+      var gid = guideBtn.getAttribute('data-guide');
+      close();
+      if (gid && window.FeatureOnboarding) window.FeatureOnboarding.start(gid);
+    }
   });
   document.body.appendChild(overlay);
   overlay.querySelector('.br-help-close').focus();
@@ -32451,40 +32505,116 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
 
 // ── Feature onboarding coach marks ──────────────────────────────────────────
 // Lightweight per-feature coach marks. No dependencies. One-time per feature,
-// persisted in localStorage. Triggered on first visit to each feature page.
+// persisted in localStorage (versioned keys: bumping the version re-shows a
+// fixed tour once to users an older, broken tour already burned). Triggered
+// on first visit to each feature page, including soft-nav arrivals and
+// in-page tab switches (see check() triggers at the bottom).
 // Inline page scripts must avoid top-level let/const/class, so this uses var.
 (function () {
   var LS_KEYS = {
-    'trade-hub': 'onboarded-trade-hub',
-    'advanced-metrics': 'onboarded-advanced-metrics',
-    'start-sit': 'onboarded-start-sit'
+    'trade-hub': 'onboarded-trade-hub-v2',
+    'trade-calc': 'onboarded-trade-calc-v1',
+    'advanced-metrics': 'onboarded-advanced-metrics-v2',
+    'start-sit': 'onboarded-start-sit-v2',
+    'waivers': 'onboarded-waivers-v1',
+    'portfolio': 'onboarded-portfolio-v1',
+    'teams': 'onboarded-teams-v1',
+    'rankings': 'onboarded-rankings-v1',
+    'player-modal': 'onboarded-player-modal-v1'
   };
 
-  // Step: { selector, text, round (bool, circular spotlight), waitVisible (bool) }
+  function isPremiumUser() {
+    if (window.__brctx && window.__brctx.isPremium) return true;
+    var root = document.getElementById('page-root');
+    return !!(root && root.dataset && root.dataset.premium === 'true');
+  }
+
+  function openHubTab() {
+    var tab = document.querySelector('.otc-main-tab[data-tab="suggestions"]');
+    var panel = document.getElementById('otcSuggestionsTab');
+    if (tab && panel && !isVisible(panel)) {
+      try { tab.click(); } catch (e) {}
+    }
+  }
+
+  // Step: { selector, text, round (bool, circular spotlight),
+  //         waitVisible (container that must be visible first),
+  //         autoOpen (selector clicked once to open that container),
+  //         beforeShow (fn run before each probe of this step) }
   var TOUR_DEFS = {
     'trade-hub': [
+      { selector: '.otc-main-tab[data-tab="suggestions"]',
+        text: 'Open Trade Hub: Suggestions builds trades for your team, with playoff impact.' },
       { selector: '.otc-sugg-subtab-toggle',
-        text: 'Start here: Suggestions finds trades for your team.' },
-      { selector: '.otc-sugg-package',
-        text: 'Tap Analyze to see the full breakdown.' },
-      { selector: '.otc-main-tabs .otc-main-tab:first-child',
-        text: 'Or build your own trade from scratch.' }
+        beforeShow: openHubTab,
+        text: 'Suggestions finds a graded package for any player. Tap Analyze on one to load it into the calculator and see the full breakdown. Targets and Market Intel live here too.' },
+      { selector: '.otc-main-tab[data-tab="calculator"]',
+        text: 'Or build your own trade from scratch in the Calculator.' }
     ],
     'advanced-metrics': [
       { selector: '.am-table, #amTable',
-        text: 'Every row is a metric. Tap a column to sort, search to filter.' },
+        text: 'Every row is a player and every column is a metric. Tap a column header to sort, or search to filter by name.' },
       { selector: '#amGraphBtn',
-        text: 'Tap Graph Metrics to visualize any two metrics as a scatter plot.',
+        text: 'Tap the graph icon to visualize any two metrics as a scatter plot.',
         round: true },
-      { selector: '#amGraphModal .gdot, #amGraphModal circle.dot',
-        text: 'Tap any dot for the player card. Quadrants show elite vs bust.',
+      { selector: '#amGraphModal circle.am-graph-dot',
+        text: 'Tap any dot to pin its stat card. Quadrants show elite vs bust.',
         round: true, waitVisible: '#amGraphModal', autoOpen: '#amGraphBtn' }
     ],
     'start-sit': [
-      { selector: '.ss-verdict',
-        text: 'Green means start, red means sit. The number is confidence.' },
-      { selector: '.ss-compare-hint, [data-ss-compare]',
-        text: 'Tap two players to compare them head-to-head.' }
+      { selector: '.wv-cx-badge.wv-cx-start, .wv-cx-badge.wv-cx-sit, .wv-cx-verdict',
+        text: 'Every row gets a verdict: green means start, red means sit. The big number is projected points for the week.' },
+      { selector: '.wv-cx-quickcmp',
+        text: 'Tap + Compare on two players to see them head-to-head.' }
+    ],
+    // The Calculator is free; the Hub behind the other tab is PRO. Free
+    // users get this tour instead of the Hub tour (see detectFeature).
+    'trade-calc': [
+      { selector: '.otc-search-input',
+        text: 'Search to add players to each side. Every player carries his BR value for your league.' },
+      { selector: '#tradeVerdict',
+        text: 'The balance updates as you build. It totals both sides and calls the deal fair or lopsided.' },
+      { selector: '.otc-side-title-link',
+        text: 'Player Values lists everyone on the side, filterable by position, handy while you build.' }
+    ],
+    'portfolio': [
+      { selector: '.pf-lg-card[data-href]',
+        text: 'Tap a card to open that league. The whole card is the link, there is no button.' },
+      { selector: '.pf-lg-fav',
+        text: 'Star pins a league to the top. The menu beside it is where Remove league lives.' },
+      { selector: '.pf-done-btn',
+        text: 'Front Office moves: Done files an action under Show completed. Evidence shows why it was suggested.' }
+    ],
+    'teams': [
+      { selector: '.teams-mode-toggle',
+        text: 'Dynasty and This Season re-grade every team. Flip it and every number changes.' },
+      { selector: '.team-strength-card',
+        text: 'Tap any team card for the full breakdown. Position rooms and Roster Intel open inside the drawer.' },
+      { selector: '.teams-ptabs',
+        text: 'Value and Schedule are separate views, behind these tabs.' }
+    ],
+    'rankings': [
+      { selector: '#prSettingsBtn',
+        text: 'Your league format lives in Settings: Dynasty or Redraft, 1QB or Superflex, league size, TE Premium.' },
+      { selector: '.filter-positions .pos-pill[data-pos="QB"]',
+        text: 'Position pills stack. Tap QB and RB to see both at once.' },
+      { selector: '#prSortHeader',
+        text: 'Click a column header to sort. Click Value again to flip the order.' }
+    ],
+    'waivers': [
+      { selector: '#wvSectionWaivers .wv-cx-row',
+        text: 'Tap a row. The drop, the evidence, and Compare are all inside.' },
+      { selector: '.wv-horizon-btn[data-h="four_week"]',
+        text: 'This Week, Next 4, and Stash do not just relabel the board. They re-rank it.' }
+    ],
+    // The modal does not exist at page load; this tour is triggered by the
+    // first successful modal render (see the observer near the bottom),
+    // never by detectFeature.
+    'player-modal': [
+      { selector: '#pmContextActions .pm-actions-trigger',
+        text: 'Actions changes with whose player this is: Trade Away, Trade For, Waiver Analysis, Compare.' },
+      { selector: '#pmTabBar',
+        text: 'Tabs appear only when they apply. Rookie, Breakout, and the live tab come and go per player.' }
     ]
   };
 
@@ -32506,13 +32636,14 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   }
 
   function findTarget(step) {
-    // If the step needs a container visible first (e.g. graph modal), check it.
-    // If autoOpen is set, click it once to open the container.
+    if (typeof step.beforeShow === 'function') step.beforeShow();
+    // If the step needs a container visible first (e.g. graph modal), check
+    // it. If autoOpen is set, click it once to open the container.
     if (step.waitVisible) {
       var container = document.querySelector(step.waitVisible);
       if (!isVisible(container)) {
-        if (step.autoOpen && !step._autoOpened) {
-          step._autoOpened = true;
+        if (step.autoOpen && activeTour && !activeTour.autoOpened) {
+          activeTour.autoOpened = step.waitVisible;
           var opener = document.querySelector(step.autoOpen);
           if (opener) {
             try { opener.click(); } catch (e) {}
@@ -32531,6 +32662,10 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   function buildDom() {
     var overlay = document.createElement('div');
     overlay.className = 'fob-overlay';
+    // Hidden until the first step actually renders: a slow first target
+    // (async rows) must not leave a dimmed page with an empty tooltip
+    // sitting over the page while the step retries.
+    overlay.style.display = 'none';
     overlay.innerHTML =
       '<div class="fob-spotlight"></div>' +
       '<div class="fob-tooltip">' +
@@ -32545,38 +32680,64 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     document.body.appendChild(overlay);
     overlay.querySelector('.fob-skip').addEventListener('click', function () { endTour(true); });
     overlay.querySelector('.fob-next').addEventListener('click', function () { nextStep(); });
-    // Tapping outside the tooltip dismisses (treat as Skip).
+    // Tapping the dimmed area outside the tooltip dismisses (treat as Skip).
     overlay.addEventListener('click', function (e) {
       if (e.target === overlay) endTour(true);
     });
     return overlay;
   }
 
-  function positionSpotlight(overlay, target, round) {
-    var sp = overlay.querySelector('.fob-spotlight');
+  var lastTarget = null;
+
+  function positionCoach(target, round, scroll) {
+    var tour = activeTour;
+    if (!tour || !target) return;
+    lastTarget = target;
+    if (scroll) {
+      // Instant scroll BEFORE measuring: smooth scrolling is async, so a
+      // synchronous getBoundingClientRect() after it would read the
+      // pre-scroll position and strand the spotlight (the site tour fixed
+      // the same bug in PR #2283).
+      target.scrollIntoView({ behavior: 'auto', block: 'center' });
+    }
+    var sp = tour.overlay.querySelector('.fob-spotlight');
+    var tip = tour.overlay.querySelector('.fob-tooltip');
     var r = target.getBoundingClientRect();
     var pad = 6;
     sp.style.top = (r.top + window.scrollY - pad) + 'px';
     sp.style.left = (r.left + window.scrollX - pad) + 'px';
     sp.style.width = (r.width + pad * 2) + 'px';
     sp.style.height = (r.height + pad * 2) + 'px';
-    if (round) {
-      sp.classList.add('round');
+    if (round) sp.classList.add('round');
+    else sp.classList.remove('round');
+    // Tooltip: below the target when there is room, otherwise above. On
+    // narrow screens the CSS pins it as a bottom sheet instead.
+    if (window.innerWidth <= 640) {
+      tip.style.top = '';
+      tip.style.left = '';
     } else {
-      sp.classList.remove('round');
+      var tipH = tip.offsetHeight || 170;
+      var top = r.bottom + pad + 8;
+      if (top + tipH > window.innerHeight - 8) top = Math.max(8, r.top - tipH - pad - 8);
+      var left = Math.max(8, Math.min(r.left, window.innerWidth - 316));
+      tip.style.top = top + 'px';
+      tip.style.left = left + 'px';
     }
-    // Keep the target visible above the overlay cutout.
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   function renderStep() {
     var tour = activeTour;
     if (!tour) return;
     var step = tour.steps[tour.idx];
+    // Retry budget is per step: reset whenever the step index changes, so
+    // one slow step cannot starve every later step of its probes.
+    if (tour.retryIdx !== tour.idx) {
+      tour.retryIdx = tour.idx;
+      tour.retries = 0;
+    }
     var target = findTarget(step);
     if (!target) {
-      // Target not ready yet; retry a few times, then skip the step.
-      tour.retries = (tour.retries || 0) + 1;
+      tour.retries += 1;
       if (tour.retries < 20) {
         setTimeout(renderStep, 300);
         return;
@@ -32584,8 +32745,8 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       nextStep();
       return;
     }
-    tour.retries = 0;
-    positionSpotlight(tour.overlay, target, !!step.round);
+    tour.shown += 1;
+    positionCoach(target, !!step.round, true);
     var total = tour.steps.length;
     tour.overlay.querySelector('.fob-step').textContent = (tour.idx + 1) + ' of ' + total;
     tour.overlay.querySelector('.fob-msg').textContent = step.text;
@@ -32598,6 +32759,8 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       dots.appendChild(d);
     }
     tour.overlay.style.display = 'block';
+    // The tooltip height feeds its placement; re-place once text is in.
+    positionCoach(target, !!step.round, false);
   }
 
   function nextStep() {
@@ -32614,11 +32777,28 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   function endTour(skipped) {
     var tour = activeTour;
     activeTour = null;
-    if (tour) {
-      if (tour.overlay && tour.overlay.parentNode) {
-        tour.overlay.parentNode.removeChild(tour.overlay);
-      }
-      lsSet(LS_KEYS[tour.feature], '1');
+    lastTarget = null;
+    if (!tour) return;
+    window.removeEventListener('resize', onReposition);
+    window.removeEventListener('scroll', onReposition, true);
+    if (tour.overlay && tour.overlay.parentNode) {
+      tour.overlay.parentNode.removeChild(tour.overlay);
+    }
+    // If this tour auto-opened a container (the AM graph modal), close it
+    // again so the tour never leaves UI open behind it.
+    if (tour.autoOpened) {
+      var modal = document.querySelector(tour.autoOpened);
+      if (modal && isVisible(modal)) modal.style.display = 'none';
+    }
+    // Only a tour the user actually saw counts as done. A tour whose steps
+    // all failed to render must not burn the user's one showing.
+    if (tour.shown > 0) lsSet(LS_KEYS[tour.feature], '1');
+  }
+
+  function onReposition() {
+    if (activeTour && lastTarget) {
+      var step = activeTour.steps[activeTour.idx];
+      positionCoach(lastTarget, !!(step && step.round), false);
     }
   }
 
@@ -32627,39 +32807,100 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (lsGet(LS_KEYS[feature])) return;
     var steps = TOUR_DEFS[feature];
     if (!steps || !steps.length) return;
-    activeTour = { feature: feature, steps: steps, idx: 0, overlay: buildDom() };
+    activeTour = {
+      feature: feature, steps: steps, idx: 0, overlay: buildDom(),
+      retries: 0, retryIdx: -1, shown: 0, autoOpened: null
+    };
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
     // Small delay so the page finishes its initial render.
     setTimeout(renderStep, 600);
   }
 
   function detectFeature() {
-    // Trade Hub: the .otc-layout host from initTradePage.
-    if (document.querySelector('.otc-layout .otc-sugg-subtab-toggle, .otc-sugg-subtab-toggle')) {
-      return 'trade-hub';
+    // Trade page: the main tab bar is always rendered, unlike the hub
+    // panel itself. PRO users get the Hub tour; everyone else gets the
+    // Calculator tour, because the Hub is behind the paywall for them.
+    if (document.querySelector('.otc-main-tabs .otc-main-tab')) {
+      return isPremiumUser() ? 'trade-hub' : 'trade-calc';
     }
-    // Advanced Metrics: command bar or metrics section.
-    if (document.querySelector('#advancedMetricsSection, .am-cmdbar')) {
+    // Advanced Metrics: the page command bar. (#advancedMetricsSection also
+    // exists inside the player modal, so it must not trigger this tour.)
+    if (document.querySelector('.am-cmdbar')) {
       return 'advanced-metrics';
     }
-    // Start/Sit: waivers page with the startsit tab active.
-    var params = new URLSearchParams(window.location.search);
-    if (params.get('tab') === 'startsit' && document.querySelector('.ss-verdict, #wvSectionStartSit')) {
+    // My Leagues portfolio (the signed-in home).
+    if (document.querySelector('.pf-lg-card')) {
+      return 'portfolio';
+    }
+    // Teams page.
+    if (document.querySelector('.teams-mode-toggle')) {
+      return 'teams';
+    }
+    // Rankings page.
+    if (document.getElementById('prSettingsBtn')) {
+      return 'rankings';
+    }
+    // Waiver Wire: its section, once it is actually visible (it is the
+    // default tab; Start/Sit below fires on the tab switch).
+    var wvSection = document.getElementById('wvSectionWaivers');
+    if (wvSection && isVisible(wvSection)) {
+      return 'waivers';
+    }
+    // Start/Sit: the waivers Start/Sit section, once it is actually visible
+    // (direct load with ?tab=startsit, or an in-page tab switch).
+    var ssSection = document.getElementById('wvSectionStartSit');
+    if (ssSection && isVisible(ssSection)) {
       return 'start-sit';
     }
     return null;
   }
 
-  function init() {
-    var feature = detectFeature();
-    if (!feature) return;
-    // Don't fight other overlays (site tour, modals already open except AM graph).
+  function check() {
+    if (activeTour) return;
+    // Don't fight other overlays (site tour, PRO welcome, open modals).
     if (document.querySelector('.tour-overlay-piece')) return;
-    startTour(feature);
+    if (window.__brWelcomeActive || window.__brWelcomePending) return;
+    var feature = detectFeature();
+    if (feature) startTour(feature);
   }
 
-  // Public API for manual triggers (e.g. a "replay tour" affordance later).
+  // Public API: manual triggers and the Help & Tours replay affordance.
   window.FeatureOnboarding = {
-    start: startTour,
+    start: function (feature) {
+      // Explicit replay ignores the completion key.
+      try { window.localStorage.removeItem(LS_KEYS[feature]); } catch (e) {}
+      // An explicit start wins over a tour already on screen (e.g. an
+      // auto-fired tour still stepping when the user taps a guide).
+      if (activeTour) endTour(true);
+      // The Start/Sit tour's targets live in a tab; open it first.
+      if (feature === 'start-sit') {
+        var ssSection = document.getElementById('wvSectionStartSit');
+        var ssTabBtn = document.getElementById('wvTabStartSit');
+        if (ssSection && ssTabBtn && !isVisible(ssSection)) {
+          try { ssTabBtn.click(); } catch (e) {}
+        }
+      }
+      // Same for the Waiver Wire tour.
+      if (feature === 'waivers') {
+        var wvSection = document.getElementById('wvSectionWaivers');
+        var wvTabBtn = document.getElementById('wvTabWaivers');
+        if (wvSection && wvTabBtn && !isVisible(wvSection)) {
+          try { wvTabBtn.click(); } catch (e) {}
+        }
+      }
+      // The Calculator tour needs the Calculator tab in front (a PRO user
+      // replaying it may be sitting in the Hub).
+      if (feature === 'trade-calc') {
+        var suggPanel = document.getElementById('otcSuggestionsTab');
+        var calcTab = document.querySelector('.otc-main-tab[data-tab="calculator"]');
+        if (suggPanel && calcTab && isVisible(suggPanel)) {
+          try { calcTab.click(); } catch (e) {}
+        }
+      }
+      startTour(feature);
+    },
+    check: check,
     reset: function (feature) {
       try { window.localStorage.removeItem(LS_KEYS[feature]); } catch (e) {}
     },
@@ -32670,9 +32911,99 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     }
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { setTimeout(init, 400); });
-  } else {
-    setTimeout(init, 400);
+  // Register the per-page guides so Help & Tours lists the one for the
+  // page the user is on (available() gates each to its own page).
+  window.brFeatureGuides = window.brFeatureGuides || {};
+  window.brFeatureGuides['trade-hub'] = {
+    id: 'trade-hub', title: 'Trade Hub',
+    description: 'Suggestions, packages, and Market Intel',
+    steps: TOUR_DEFS['trade-hub'],
+    available: function () { return !!document.querySelector('.otc-main-tabs'); }
+  };
+  window.brFeatureGuides['advanced-metrics'] = {
+    id: 'advanced-metrics', title: 'Advanced Metrics',
+    description: 'Sorting, search, and graph metrics',
+    steps: TOUR_DEFS['advanced-metrics'],
+    available: function () { return !!document.querySelector('.am-cmdbar'); }
+  };
+  window.brFeatureGuides['start-sit'] = {
+    id: 'start-sit', title: 'Start/Sit',
+    description: 'Verdicts and head-to-head compare',
+    steps: TOUR_DEFS['start-sit'],
+    available: function () { return !!document.getElementById('wvSectionStartSit'); }
+  };
+  window.brFeatureGuides['trade-calc'] = {
+    id: 'trade-calc', title: 'Trade Calculator',
+    description: 'Build a trade and read the balance',
+    steps: TOUR_DEFS['trade-calc'],
+    available: function () { return !!document.querySelector('.otc-main-tabs'); }
+  };
+  window.brFeatureGuides['portfolio'] = {
+    id: 'portfolio', title: 'My Leagues',
+    description: 'League cards, starring, and Front Office moves',
+    steps: TOUR_DEFS['portfolio'],
+    available: function () { return !!document.querySelector('.pf-lg-card'); }
+  };
+  window.brFeatureGuides['teams'] = {
+    id: 'teams', title: 'Teams',
+    description: 'Grading modes, the team drawer, and views',
+    steps: TOUR_DEFS['teams'],
+    available: function () { return !!document.querySelector('.teams-mode-toggle'); }
+  };
+  window.brFeatureGuides['rankings'] = {
+    id: 'rankings', title: 'Rankings',
+    description: 'Format settings, position filters, and sorting',
+    steps: TOUR_DEFS['rankings'],
+    available: function () { return !!document.getElementById('prSettingsBtn'); }
+  };
+  window.brFeatureGuides['waivers'] = {
+    id: 'waivers', title: 'Waiver Wire',
+    description: 'Expand a row, and the horizon re-rank',
+    steps: TOUR_DEFS['waivers'],
+    available: function () { return !!document.getElementById('wvSectionWaivers'); }
+  };
+  window.brFeatureGuides['player-modal'] = {
+    id: 'player-modal', title: 'Player Card',
+    description: 'The Actions menu and per-player tabs',
+    steps: TOUR_DEFS['player-modal'],
+    available: function () {
+      var bar = document.getElementById('pmTabBar');
+      return !!(bar && isVisible(bar));
+    }
+  };
+
+  // Player modal tour trigger: the modal is injected and rendered async,
+  // so watch for its first successful render (tab bar visible with a
+  // player bound) instead of the page-load detection the other tours use.
+  var modalTourArmed = false;
+  function maybeStartModalTour() {
+    if (modalTourArmed || activeTour) return;
+    if (lsGet(LS_KEYS['player-modal'])) return;
+    if (document.querySelector('.tour-overlay-piece')) return;
+    if (window.__brWelcomeActive || window.__brWelcomePending) return;
+    var bar = document.getElementById('pmTabBar');
+    if (!bar || !bar.dataset || !bar.dataset.pmPlayerId) return;
+    if (!isVisible(bar)) return;
+    var trigger = document.querySelector('#pmContextActions .pm-actions-trigger');
+    if (!trigger || !isVisible(trigger)) return;
+    modalTourArmed = true;
+    setTimeout(function () { startTour('player-modal'); }, 500);
   }
+  if (window.MutationObserver && document.body) {
+    var modalObserver = new MutationObserver(function () { maybeStartModalTour(); });
+    modalObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(check, 400); });
+  } else {
+    setTimeout(check, 400);
+  }
+  // In-page tab switches (Start/Sit tab, Trade Hub tab) and other first
+  // interactions can make a tour's page appear long after load.
+  var checkTimer = null;
+  document.addEventListener('click', function () {
+    if (checkTimer) return;
+    checkTimer = setTimeout(function () { checkTimer = null; check(); }, 700);
+  }, true);
 })();
