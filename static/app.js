@@ -28592,7 +28592,13 @@ window._rzRenderGameBoard = function(game, options) {
   var poss=window._rzNormalizeTeam(game.possession), showScore=!pre;
   var colors={ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
   var logo=function(t){return window.brTeamBadge?window.brTeamBadge(t,'xs'):'<span class="rz-nfl-badge">'+esc(String(t||'').slice(0,3))+'</span>';};
-  var team=function(t,pts,side){var ball=live&&poss===t;return '<div class="rz-nfl-team rz-nfl-'+side+(ball?' has-ball':'')+'">'+logo(t)+'<span class="rz-nfl-abv">'+esc(t)+'</span>'+(showScore?'<span class="rz-nfl-score">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+(ball?'<span class="rz-nfl-poss" title="Has possession" aria-label="Has possession"></span>':'')+'</div>';};
+  // Possession dot: never a flow item past the score (that put it in the middle
+  // column, stacked on the live dot at phone width). It overlays the badge
+  // corner instead, and only when the field bar below is absent -- when the
+  // bar renders, its team-color fill + flag already show who has the ball.
+  // No separate abbreviation text either: the badge chip already carries it,
+  // so each team name appears exactly once (chip + score).
+  var team=function(t,pts,side){var ball=live&&poss===t;var dot=ball&&!fp;return '<div class="rz-nfl-team rz-nfl-'+side+(ball?' has-ball':'')+'"><span class="rz-nfl-logo-wrap">'+logo(t)+(dot?'<span class="rz-nfl-poss" title="Has possession" aria-label="Has possession"></span>':'')+'</span>'+(showScore?'<span class="rz-nfl-score">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+'</div>';};
   var fp=window._rzFieldPosition(Object.assign({},game,{status:status}));
   var sit='';
   if(live){
@@ -28603,7 +28609,9 @@ window._rzRenderGameBoard = function(game, options) {
       var dLabel=(fp&&fp.goalToGo)||/goal/i.test(dist)?'Goal':(dist||'?');
       sit=({1:'1st',2:'2nd',3:'3rd',4:'4th'}[down]||down)+' & '+dLabel;
     }
-    if(game.yard_line) sit+=(sit?' · ':'')+esc(game.yard_line);
+    // Yard line lives on the field flag when the bar renders; the centre line
+    // repeats it only when there is no bar (approved board, 2026-10-30).
+    if(game.yard_line && !fp) sit+=(sit?' · ':'')+esc(game.yard_line);
   }
   var center;
   if(live){var clock=[game.game_quarter?(/^Q/i.test(String(game.game_quarter))?game.game_quarter:'Q'+game.game_quarter):'',game.game_clock].filter(Boolean).join(' · ');center='<div class="rz-nfl-mid"><span class="rz-nfl-live-pill"><span class="rz-nfl-live-dot"></span>'+esc(clock||'LIVE')+'</span>'+(sit?'<span class="rz-nfl-sit">'+sit+'</span>':'')+'</div>';}

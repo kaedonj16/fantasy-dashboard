@@ -168,8 +168,19 @@ def test_board_card_shell_and_bootstrap():
     assert "__pfBoardWeek=8" in html
 
 
-def test_insights_heatmap_rooting_bye_and_tabs():
+def test_insights_heatmap_rooting_bye_and_tabs(monkeypatch):
+    # The Rooting Guide row renders only on game days: the shared schedule
+    # check reads the real calendar, so an unpinned render drops the row on
+    # non-game days and this test went red every Fri/Sat. Pin the check to a
+    # game day for the presence assertions, then pin it off to prove the
+    # gate still hides the row.
+    import app as _app_module
+    monkeypatch.setattr(_app_module, "_games_scheduled_today",
+                        lambda *a, **k: True)
     html = _render([_league()])
+    monkeypatch.setattr(_app_module, "_games_scheduled_today",
+                        lambda *a, **k: False)
+    assert "id='pfSecRooting'" not in _render([_league()])
     assert "id='pfSecHeat'" in html
     assert "pf-hm-chip" in html
     assert "id='pfSecRooting'" in html

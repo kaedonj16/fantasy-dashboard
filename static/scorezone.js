@@ -2709,14 +2709,15 @@
         + ' onerror="var t=this.getAttribute(\'data-team\');if(t&&!this._espnFallback){this._espnFallback=1;this.src=(window.brTeamLogoEspn?window.brTeamLogoEspn(t):\'\');}else{this.style.display=\'none\';}">';
     };
     var team = function(abv, pts, hasBall, align) {
+      // Possession dot overlays the badge corner (see app.js shared renderer);
+      // never a flow item that can drift into the middle column.
       var ballHtml = hasBall
         ? '<span class="rz-nfl-poss" title="Possession" aria-label="Has possession"></span>' : '';
       var scoreHtml = showScore ? '<span class="rz-nfl-score">' + pts + '</span>' : '';
       // Score sits toward the center; the home block reverses so its logo stays
       // outermost (CSS row-reverse), keeping both scores flanking the middle.
       return '<div class="rz-nfl-team rz-nfl-' + align + (hasBall ? ' has-ball' : '') + '">'
-        + logo(abv)
-        + '<span class="rz-nfl-abv">' + abv + ballHtml + '</span>'
+        + '<span class="rz-nfl-logo-wrap">' + logo(abv) + ballHtml + '</span>'
         + scoreHtml
         + '</div>';
     };
@@ -2781,10 +2782,11 @@
       + ' onerror="var t=this.getAttribute(\'data-team\');if(t&&!this._espnFallback){this._espnFallback=1;this.src=(window.brTeamLogoEspn?window.brTeamLogoEspn(t):\'\');}else{this.style.display=\'none\';}">';
   }
 
+  // Badge chip already carries the abbreviation, so no separate abv text:
+  // chip + score only (the board does the same; name appears exactly once).
   function _gamePillTeamRow(abv, pts, side, showScore) {
     return '<span class="rz-gp-team ' + side + '">'
       + _gamePillLogo(abv)
-      + '<span class="rz-gp-abv">' + abv + '</span>'
       + (showScore ? '<span class="rz-gp-score">' + (pts === '' ? '' : pts) + '</span>' : '')
       + '</span>';
   }

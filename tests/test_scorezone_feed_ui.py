@@ -338,6 +338,58 @@ def test_shared_board_and_modal_refresh_contract():
     assert ".rz-nfl-poss" in DASHBOARD_CSS
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_board_possession_dot_never_sits_in_middle_column():
+    """Regression (2026-10-29 screenshot): the possession dot was the last flow
+    child past the score, so at phone width it landed in the middle column and
+    stacked on the live dot. Now: no dot at all when the field bar renders
+    (its fill + flag already show possession); otherwise the dot overlays the
+    badge corner inside .rz-nfl-logo-wrap, before any score."""
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    segment = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("// Build a player's modal log")]
+    script = f"""
+var window={{}};
+var document={{createElement:function(){{var el={{_t:''}};Object.defineProperty(el,'textContent',{{set:function(v){{this._t=String(v);}},get:function(){{return this._t;}}}});Object.defineProperty(el,'innerHTML',{{get:function(){{return this._t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}}}});return el;}}}};
+{segment}
+function board(x){{ return window._rzRenderGameBoard(Object.assign({{away:'CAR',home:'GB',away_pts:13,home_pts:27,status:'live',down:1,distance:10,game_quarter:'Q4',game_clock:'14:28'}},x)); }}
+console.log(JSON.stringify({{
+ withBar: board({{possession:'CAR',yard_line:'CAR 36',field_position_reliable:true}}),
+ noBar: board({{possession:'CAR',yard_line:'CAR 36',field_position_reliable:false}}),
+ homeBar: board({{possession:'GB',yard_line:'CAR 36',field_position_reliable:true}}),
+ homeNoBar: board({{possession:'GB',yard_line:'CAR 36',field_position_reliable:false}})
+}}));
+"""
+    out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
+    # Field bar present: possession already encoded by fill/flag, dot must go.
+    assert "rz-field" in out["withBar"] and "rz-nfl-poss" not in out["withBar"]
+    assert "rz-field" in out["homeBar"] and "rz-nfl-poss" not in out["homeBar"]
+    # No field bar: exactly one dot, inside the badge wrap, before the last score
+    # (i.e. on the possessing team's badge, never past a score toward the middle).
+    for html in (out["noBar"], out["homeNoBar"]):
+        assert html.count("rz-nfl-poss") == 1
+        assert "rz-nfl-logo-wrap" in html
+        assert html.index("rz-nfl-poss") < html.rindex("rz-nfl-score")
+    assert ".rz-nfl-logo-wrap" in DASHBOARD_CSS
+    # Team name appears exactly once per side: badge chip carries the
+    # abbreviation, so the board emits no separate abv text element.
+    for html in (out["withBar"], out["noBar"], out["homeBar"], out["homeNoBar"]):
+        assert "rz-nfl-abv" not in html
+    # Yard line appears exactly once too: on the field flag when the bar
+    # renders (centre line is down-and-distance only), otherwise in the
+    # centre line, which is then the only place it can appear.
+    assert '<span class="rz-nfl-sit">1st &amp; 10</span>' in out["withBar"] or \
+        '<span class="rz-nfl-sit">1st & 10</span>' in out["withBar"]
+    assert "1st & 10 · CAR 36" in out["noBar"]
+
+
+def test_game_pill_team_row_has_no_duplicate_abv_text():
+    sz = (ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
+    row = sz[sz.index("function _gamePillTeamRow") : sz.index("// ESPN-style horizontal NFL game selector")]
+    assert "rz-gp-abv" not in row
+    board = sz[sz.index("function _renderNflBoard(") : sz.index("function _gamePillStatus")]
+    assert "rz-nfl-abv" not in board
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
 def test_player_modal_log_uses_each_players_latest_canonical_contribution():
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     helper = app_js[app_js.index("window._rzPlayerLogEvents") : app_js.index("// Player summary renderer.")]
