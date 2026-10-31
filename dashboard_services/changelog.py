@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "fix",
+        "text": "Player Rankings loads in one pass now: the board's data request is less than half its old size, and the 7-day trend lines and player chips load alongside the board instead of arriving in a second wave seconds later. Tiers, trends, and hover quick look are all there when the board settles.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "new",
         "text": "Guides: a Latest strip now leads the guides index with the three newest articles, and category chips stick at the top of the index and jump straight to each category section. The first Trade Case Study is also live: two receivers for an elite running back, pricing Drake London and Tetairoa McMillan for Bijan Robinson with live values in both 1QB and Superflex.",
         "link": "/guides"

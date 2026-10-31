@@ -291,3 +291,54 @@ def slim_search_payload(payload: Mapping[str, Any]) -> dict:
         if row is not None:
             players.append(row)
     return {"players": players}
+
+
+# ── Rankings view ─────────────────────────────────────────────────────────
+# The Player Rankings board (static/rankings.js) maps every payload row
+# through a fixed whitelist and discards the rest, so the full view ships
+# ~2.3MB of per-player JSON the page parses and immediately throws away
+# (historical, projection, VORP columns, calibration provenance). This
+# view keeps exactly the fields that whitelist reads, for every row
+# (the board filters positions client-side, rookies included), and keeps
+# the top-level blocks (tier thresholds, ADP source metadata) intact.
+# Measured on the 2026-10-30 production payload: players 4.31MB -> 1.95MB.
+RANKINGS_PLAYER_KEYS = (
+    "id", "name", "full_name", "team", "position", "bDay", "espnHeadshot",
+    "age",
+    "value", "value_8", "value_12", "value_14",
+    "sf_value", "sf_value_8", "sf_value_12", "sf_value_14",
+    "redraft_value_1qb", "redraft_value_sf",
+    "redraft_value_8", "redraft_value_12", "redraft_value_14",
+    "redraft_sf_value_8", "redraft_sf_value_12", "redraft_sf_value_14",
+    "avg_pick", "sf_avg_pick", "redraft_avg_pick", "sf_redraft_avg_pick",
+    "rookie_avg_pick", "sf_rookie_avg_pick",
+    "adp_by_source",
+    "sf_rank_change_7d", "rank_change_7d",
+    "pos_rank_label", "sf_pos_rank_label", "pos_rank", "sf_pos_rank",
+    "search_name", "is_rookie",
+    "ppg", "total_pts", "ppg_raw", "total_pts_raw",
+    "ppg_rank", "total_pts_rank", "ppg_ovr_rank", "total_pts_ovr_rank",
+    "ppg_season",
+)
+
+
+def slim_rankings_player(player: Mapping[str, Any]) -> dict:
+    """One rankings row: only the fields the board's whitelist reads."""
+    row = {}
+    for key in RANKINGS_PLAYER_KEYS:
+        value = player.get(key)
+        if value is not None:
+            row[key] = value
+    return row
+
+
+def slim_rankings_payload(payload: Mapping[str, Any]) -> dict:
+    """Return a rankings-sized copy. Does not mutate ``payload``."""
+    out = dict(payload)
+    players = []
+    for player in payload.get("players") or []:
+        if not isinstance(player, Mapping):
+            continue
+        players.append(slim_rankings_player(player))
+    out["players"] = players
+    return out
