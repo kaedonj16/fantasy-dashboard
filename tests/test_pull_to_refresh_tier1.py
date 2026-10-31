@@ -158,10 +158,9 @@ def test_changelog_prepend_names_the_tier1_pages():
     block = CHANGELOG_PY[CHANGELOG_PY.index(entry):CHANGELOG_PY.index(entry) + 400]
     for page in ("My Leagues", "Waivers", "Standings", "Player Rankings"):
         assert page in block
-    # Prepended: it is the newest entry (first text in the list).
-    first_text = CHANGELOG_PY.index('"text":')
-    assert CHANGELOG_PY.index(entry) < first_text + 500
-    assert entry in CHANGELOG_PY[first_text:CHANGELOG_PY.index('"link"', first_text)]
+    # Found by content, never by position: any later PR that prepends its
+    # own entry pushes this one down the list, and that must not fail here
+    # (the repo's changelog pins are content lookups, not index pins).
 
 
 # ── Behavioral harness (Node) ─────────────────────────────────────────────────

@@ -54847,7 +54847,13 @@ body.otc-sticky-on { padding-bottom: 72px; }
        UI anchors to it + a gap (the pill group / assistant pattern). A
        flat offset hid the bar's lower half behind the dock on
        home-indicator phones, where the safe-area inset alone is ~34px. */
-    .otc-sticky-bar { left: 12px; right: 12px; bottom: calc(var(--dock-safe-bottom) + 14px); border: 1px solid var(--border); border-radius: 12px; }
+    /* The BR Assistant launcher owns the right end of this same band:
+       it anchors at the same bottom (dock-safe + 14px) with right: 16px
+       and a 56px width (.br-asst-launcher), at z-index 9995 above the
+       bar's 9991. Reserve its footprint plus a 12px gap on the bar's
+       right so the totals, Fit slot, and verdict pill all end before
+       the launcher begins instead of sliding under it. */
+    .otc-sticky-bar { left: 12px; right: calc(16px + 56px + 12px); bottom: calc(var(--dock-safe-bottom) + 14px); border: 1px solid var(--border); border-radius: 12px; }
 }
 
 /* ============================================================
