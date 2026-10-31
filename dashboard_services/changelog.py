@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "fix",
+        "text": "Trade Calculator on phones: the pinned balance bar now floats above the bottom tab bar instead of sliding behind it, and the Trade Fit grade shows a grading state while a new package is being scored instead of holding up the previous trade's number. The acceptance read and the bar's verdict wait for the current trade's grade too, and if scoring fails they clear instead of spinning forever.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "new",
         "text": "Trade Calculator: the summary now grades the deal with a Trade Fit score from 0 to 10, built from value balance, roster fit, playoff impact, and how likely the other team is to accept, and the acceptance read sits beside the verdict. Playoff Impact adds a Your Lineup After block: your starting lineup's projected points before and after the deal, who enters and leaves the lineup, and how the room you upgraded ranks in your league. When your side is light beyond the fair range, a Counter card names the pick or player that evens the deal out and applies it in one tap. An asset with no calibrated value now shows a dash on its chip and a warning strip above the summary instead of silently counting as zero, and a balance bar stays pinned to the bottom of the screen while you build.",
         "link": "/trade"

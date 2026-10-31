@@ -9410,9 +9410,22 @@ window.initTradePage = function initTradePage(root = document) {
     return giveIds.join(",") + "|" + getIds.join(",") + "|" + (getCurrentRosterId() || "");
   }
 
+  function _currentEvalSig() {
+    // The eval signature of the trade currently on screen: both sides'
+    // player + pick ids, built exactly as recomputeTrade builds the
+    // _evalSig it stamps on a landing payload. Fit surfaces only ever
+    // read a payload stamped with this signature, so a previous
+    // package's grade can never paint over the current selection.
+    return state.sideAPlayers.map(p => String(p.id)).join(",") + "|" +
+      state.sideBPlayers.map(p => String(p.id)).join(",") + "|" +
+      state.sideAPicks.map(p => String(p.id)).join(",") + "|" +
+      state.sideBPicks.map(p => String(p.id)).join(",");
+  }
+
   function _fitComponents() {
     const data = state._lastEvalData;
     if (!data || data.graded === false) return null;
+    if (state._lastEvalSig !== _currentEvalSig()) return null;
     const fit = data.fit || {};
     const comps = {
       value_balance: typeof fit.value_balance === "number" ? fit.value_balance : null,
@@ -9443,10 +9456,11 @@ window.initTradePage = function initTradePage(root = document) {
     const chip = root.querySelector("#tradeAcceptChip");
     const comps = _fitComponents();
     const score = comps ? computeTradeFitScore(comps) : null;
+    const grading = !!state._fitPending;
     if (tile && grid && scoreEl) {
-      if (!comps || score === null) {
-        tile.style.display = "none";
-      } else {
+      if (comps && score !== null) {
+        tile.classList.remove("otc-fit--grading");
+        tile.removeAttribute("aria-busy");
         scoreEl.textContent = score.toFixed(1);
         grid.innerHTML = _FIT_COMPONENTS
           .filter(([key]) => typeof comps[key] === "number")
@@ -9457,10 +9471,30 @@ window.initTradePage = function initTradePage(root = document) {
               `<span class="otc-fit-num">${v}</span></div>`;
           }).join("");
         tile.style.display = "flex";
+      } else if (grading) {
+        // The eval for the trade on screen is still in flight: show the
+        // tile's grading skeleton instead of the previous package's
+        // grade. Cleared by the landing render (or the terminal-failure
+        // render in recomputeTrade), so it can never strand.
+        tile.classList.add("otc-fit--grading");
+        tile.setAttribute("aria-busy", "true");
+        scoreEl.textContent = "…";
+        grid.innerHTML = _FIT_COMPONENTS
+          .map(([, label]) =>
+            `<div class="otc-fit-row"><span class="otc-fit-name">${label}</span>` +
+            `<span class="otc-fit-track skeleton"></span>` +
+            `<span class="otc-fit-num"></span></div>`)
+          .join("");
+        tile.style.display = "flex";
+      } else {
+        tile.classList.remove("otc-fit--grading");
+        tile.removeAttribute("aria-busy");
+        tile.style.display = "none";
       }
     }
     const data = state._lastEvalData;
-    const label = (data && data.graded !== false && data.fit) ? data.fit.acceptance_label : null;
+    const label = (!grading && data && state._lastEvalSig === _currentEvalSig() &&
+      data.graded !== false && data.fit) ? data.fit.acceptance_label : null;
     if (chip) {
       if (label) {
         chip.textContent = "Acceptance: " + label;
@@ -9486,18 +9520,33 @@ window.initTradePage = function initTradePage(root = document) {
     }
     const totals = root.querySelector("#tradeStickyTotals");
     const verdictSpan = root.querySelector("#tradeStickyVerdict");
+    const grading = !!state._fitPending;
+    const fresh = state._lastEvalSig === _currentEvalSig();
     const comps = _fitComponents();
     const score = comps ? computeTradeFitScore(comps) : null;
     const parts = [`<strong>${(Number(state._lastEffA) || 0).toFixed(1)} vs ${(Number(state._lastEffB) || 0).toFixed(1)}</strong>`];
     if (score !== null) parts.push(`<span>Fit ${score.toFixed(1)}</span>`);
-    const accLabel = (data.graded !== false && data.fit) ? data.fit.acceptance_label : null;
+    else if (grading) parts.push(`<span>Fit &hellip;</span>`);
+    const accLabel = (!grading && fresh && data.graded !== false && data.fit) ? data.fit.acceptance_label : null;
     if (accLabel) parts.push(`<span>Acceptance: ${accLabel}</span>`);
     if (totals) totals.innerHTML = parts.join("<span>&middot;</span>");
     if (verdictSpan) {
-      const v = data.verdict || "";
-      verdictSpan.textContent = v;
-      verdictSpan.title = v;
-      verdictSpan.style.display = v ? "" : "none";
+      if (grading) {
+        // Same staleness as the grade: the summary verdict belongs to
+        // the previous package until this eval lands.
+        verdictSpan.textContent = "Grading…";
+        verdictSpan.title = "";
+        verdictSpan.style.display = "";
+      } else if (fresh) {
+        const v = data.verdict || "";
+        verdictSpan.textContent = v;
+        verdictSpan.title = v;
+        verdictSpan.style.display = v ? "" : "none";
+      } else {
+        verdictSpan.textContent = "";
+        verdictSpan.title = "";
+        verdictSpan.style.display = "none";
+      }
     }
     bar.style.display = "flex";
     document.body.classList.add("otc-sticky-on");
@@ -9679,6 +9728,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (_tradeIntelAbort) _tradeIntelAbort.abort();
       _tradeIntelAbort = null;
       state._lastEvalData = null;
+      state._lastEvalSig = "";
+      state._fitPending = false;
       state._lastPiData = null;
       state._lastPiSig = "";
       updateTradeChrome(null);
@@ -9717,6 +9768,12 @@ window.initTradePage = function initTradePage(root = document) {
       opponent_roster_id: (typeof rosterFilter !== "undefined" && rosterFilter.sideBRid) || "",
       skip_ai: true,
     };
+
+    // The Fit surfaces enter their grading state for this selection:
+    // until this eval lands they show the skeleton and placeholders
+    // instead of the previous package's grade, chip, and verdict.
+    state._fitPending = true;
+    renderTradeFit();
 
     try {
       const res = await fetch("/api/trade-eval", {
@@ -9800,6 +9857,8 @@ window.initTradePage = function initTradePage(root = document) {
 
       _applyTierBadges(data);
       renderTradeBalancer(data);
+      state._lastEvalSig = _evalSig;
+      state._fitPending = false;
       state._lastEvalData = data;
       updateTradeChrome(data);
 
@@ -9828,8 +9887,9 @@ window.initTradePage = function initTradePage(root = document) {
       // Retry the SAME trade a bounded number of times while this recompute
       // is still the latest; an edit supersedes via the generation counter
       // and the signature reset at the top of this function.
-      if (gen === _tradeGeneration && _evalRetryAttempts < 2 &&
-          (sideAIds.length || sideBIds.length || sideAPickIds.length || sideBPickIds.length)) {
+      const _willRetry = gen === _tradeGeneration && _evalRetryAttempts < 2 &&
+        (sideAIds.length || sideBIds.length || sideAPickIds.length || sideBPickIds.length);
+      if (_willRetry) {
         _evalRetryAttempts += 1;
         if (_evalRetryTimer) clearTimeout(_evalRetryTimer);
         const _retryGen = gen;
@@ -9837,6 +9897,16 @@ window.initTradePage = function initTradePage(root = document) {
           _evalRetryTimer = null;
           if (_retryGen === _tradeGeneration) recomputeTrade();
         }, _evalRetryAttempts === 1 ? 1500 : 4000);
+      } else if (gen === _tradeGeneration) {
+        // Terminal failure (retry budget spent): end the grading state
+        // so the Fit tile and sticky bar resolve to their no-Fit state
+        // instead of shimmering forever. The stale payload keeps its old
+        // signature stamp, so the signature guard in _fitComponents
+        // keeps its grade out even after this render. While a retry is
+        // still scheduled the grading state stays up: the retry's own
+        // recompute owns it.
+        state._fitPending = false;
+        renderTradeFit();
       }
       if (errorBox) {
         errorBox.style.display = "block";
@@ -13506,6 +13576,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (!res.ok) throw new Error("Trade eval failed (" + res.status + ").");
 
       const data = await res.json();
+      state._lastEvalSig = _currentEvalSig();
+      state._fitPending = false;
       state._lastEvalData = data;
       updateTradeChrome(data);
 
