@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "new",
+        "text": "Trade Calculator: the summary now grades the deal with a Trade Fit score from 0 to 10, built from value balance, roster fit, playoff impact, and how likely the other team is to accept, and the acceptance read sits beside the verdict. Playoff Impact adds a Your Lineup After block: your starting lineup's projected points before and after the deal, who enters and leaves the lineup, and how the room you upgraded ranks in your league. When your side is light beyond the fair range, a Counter card names the pick or player that evens the deal out and applies it in one tap. An asset with no calibrated value now shows a dash on its chip and a warning strip above the summary instead of silently counting as zero, and a balance bar stays pinned to the bottom of the screen while you build.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "fix",
         "text": "Teams: with a team's detail drawer open, the floating Discord and data-freshness pills and the BR Assistant button now sit behind the drawer instead of floating on top of it and covering player values. They come back as soon as the drawer closes.",
         "link": "/teams"

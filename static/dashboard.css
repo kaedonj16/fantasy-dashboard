@@ -54760,6 +54760,87 @@ html:has(.home-page) { scroll-behavior: smooth; }
     }
 }
 
+/* ── Trade Calculator improvements: Fit tile, acceptance chip, unvalued
+   strip, counter card, sticky balance bar, lineup-after text ─────────── */
+.otc-unvalued-strip {
+    display: flex; align-items: flex-start; gap: 6px; margin-top: 14px;
+    padding: 8px 11px; border-radius: 8px; font-size: 12px; line-height: 1.5;
+    background: color-mix(in srgb, var(--warning) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+}
+.otc-unvalued-strip i { color: var(--warning); margin-top: 2px; flex-shrink: 0; }
+
+/* The top two cards align stretch, so the Summary card is a flex column
+   and auto top-margins on its groups split the slack evenly between the
+   card's own sections instead of leaving a void at the bottom. */
+.otc-lower-grid--top2 .otc-summary-card { display: flex; flex-direction: column; }
+.otc-lower-grid--top2 .otc-summary-card .otc-summary-stats { margin-top: auto; }
+.otc-lower-grid--top2 .otc-summary-card .otc-fit { margin-top: auto; }
+.otc-lower-grid--top2 .otc-summary-card .otc-balance-wrap { margin-top: auto; }
+.otc-lower-grid--top2 .otc-summary-card .otc-verdict-shell { margin-top: auto; }
+
+/* Trade Fit tile: score block left, 2x2 component mini-bars right. */
+.otc-fit {
+    display: flex; align-items: center; gap: 16px; text-align: left;
+    border-radius: var(--radius); background: var(--row);
+    border: 1px solid var(--border); padding: 12px 14px; margin-bottom: 12px;
+}
+.otc-fit-score-block { display: flex; flex-direction: column; gap: 1px; flex-shrink: 0; }
+.otc-fit-score { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1.05; }
+.otc-fit-max { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.otc-fit-grid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; min-width: 0; }
+.otc-fit-row { display: flex; align-items: center; gap: 8px; }
+.otc-fit-name { font-size: 11px; color: var(--text-muted); width: 88px; flex-shrink: 0; }
+.otc-fit-track { flex: 1; height: 6px; border-radius: 3px; background: var(--bg-alt, rgba(0,0,0,.06)); overflow: hidden; }
+.otc-fit-fill { display: block; height: 100%; background: #38bdf8; border-radius: 3px; }
+.otc-fit-num { font-size: 12px; font-weight: 800; width: 14px; text-align: right; color: var(--text); }
+@media (max-width: 640px) {
+    .otc-fit { flex-direction: column; align-items: stretch; gap: 8px; }
+    .otc-fit-score-block { flex-direction: row; align-items: baseline; justify-content: space-between; }
+}
+
+/* Verdict row with the acceptance chip riding beside the verdict line. */
+.otc-verdict-row { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.otc-verdict-row .otc-verdict { margin-top: 0; }
+.otc-accept-chip {
+    display: inline-block; padding: 4px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--text);
+    background: var(--bg-alt, rgba(0,0,0,.02));
+}
+
+/* Counter card (under the Analyst) */
+.otc-apply-btn {
+    margin-top: 10px; padding: 8px 18px; border-radius: 8px;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.otc-apply-btn[disabled] { opacity: .55; cursor: default; }
+.otc-counter-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.5; }
+
+/* Your Lineup After block inside the Playoff Impact card */
+.otc-lineup-stat { display: block; }
+.otc-lineup-text { font-size: 12.5px; font-weight: 700; color: var(--text); line-height: 1.35; margin-top: 5px; }
+
+/* Sticky balance bar: pinned to the viewport bottom while a trade is
+   being built; body padding keeps it from covering page content. */
+.otc-sticky-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 9991;
+    background: var(--card-bg, var(--card)); border-top: 1px solid var(--border);
+    padding: 10px 16px; align-items: center; justify-content: space-between; gap: 12px;
+    box-shadow: 0 -4px 16px rgba(0,0,0,.06);
+}
+body.otc-sticky-on { padding-bottom: 72px; }
+.otc-sticky-totals { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); min-width: 0; }
+.otc-sticky-totals strong { font-size: 15px; color: var(--text); }
+.otc-sticky-verdict {
+    background: #475569; color: #fff; font-size: 12px; font-weight: 700;
+    padding: 5px 14px; border-radius: 8px; letter-spacing: .02em; flex-shrink: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%;
+}
+@media (max-width: 768px) {
+    .otc-sticky-bar { left: 12px; right: 12px; bottom: 88px; border: 1px solid var(--border); border-radius: 12px; }
+}
+
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
