@@ -9534,6 +9534,24 @@ window.initTradePage = function initTradePage(root = document) {
     renderStickyBar();
   }
 
+  // The balance bar's geometry, shared by the Trade Summary's full bar
+  // and the sticky bar's mini band so the two can never disagree: the
+  // bar spans normalizedDiff [-1, +1] across its full width, so the
+  // marker sits ((1 - diff/maxSide) / 2) * 100 percent across, and the
+  // centered fair zone is (fair_threshold / maxSide) * 100 wide, lining
+  // up exactly with where the verdict flips from "fair" to "favored".
+  // Uses the server's fair_threshold (which already applies the
+  // 25-point floor) rather than fair_pct alone.
+  function _balanceGeometry(diff, aEff, bEff, fairThreshold, fairPct) {
+    const maxSideTotal = Math.max(Math.abs(aEff), Math.abs(bEff), 1);
+    let normalizedDiff = (Number(diff) || 0) / maxSideTotal;
+    normalizedDiff = Math.max(-1, Math.min(1, normalizedDiff));
+    const leftPct = ((1 - normalizedDiff) / 2) * 100;
+    const ft = Number(fairThreshold) || ((Number(fairPct) || 0) * maxSideTotal);
+    const fairWidthPct = Math.max(0, Math.min(100, (ft / maxSideTotal) * 100));
+    return { leftPct, fairWidthPct };
+  }
+
   function renderStickyBar() {
     const bar = root.querySelector("#tradeStickyBar");
     if (!bar) return;
@@ -9545,38 +9563,56 @@ window.initTradePage = function initTradePage(root = document) {
       document.body.classList.remove("otc-sticky-on");
       return;
     }
-    const totals = root.querySelector("#tradeStickyTotals");
-    const verdictSpan = root.querySelector("#tradeStickyVerdict");
-    const grading = !!state._fitPending;
-    const fresh = state._lastEvalSig === _currentEvalSig();
-    const comps = _fitComponents();
-    const score = comps ? computeTradeFitScore(comps) : null;
-    const parts = [`<strong>${(Number(state._lastEffA) || 0).toFixed(1)} vs ${(Number(state._lastEffB) || 0).toFixed(1)}</strong>`];
-    if (score !== null) parts.push(`<span>Fit ${score.toFixed(1)}</span>`);
-    else if (grading) parts.push(`<span>Fit &hellip;</span>`);
-    const accLabel = (!grading && fresh && data.graded !== false && data.fit) ? data.fit.acceptance_label : null;
-    if (accLabel) parts.push(`<span>Acceptance: ${accLabel}</span>`);
-    if (totals) totals.innerHTML = parts.join("<span>&middot;</span>");
-    if (verdictSpan) {
-      if (grading) {
-        // Same staleness as the grade: the summary verdict belongs to
-        // the previous package until this eval lands.
-        verdictSpan.textContent = "Grading…";
-        verdictSpan.title = "";
-        verdictSpan.style.display = "";
-      } else if (fresh) {
-        const v = data.verdict || "";
-        verdictSpan.textContent = v;
-        verdictSpan.title = v;
-        verdictSpan.style.display = v ? "" : "none";
-      } else {
-        verdictSpan.textContent = "";
-        verdictSpan.title = "";
-        verdictSpan.style.display = "none";
-      }
-    }
-    bar.style.display = "flex";
+    // Armed. The body padding stays reserved even while the summary
+    // card is on screen and the bar itself is hidden: releasing it
+    // would grow/shrink the page by 72px as the bar toggles, and the
+    // reserve is what keeps the last page content clear of the dock
+    // band when the bar returns at max scroll.
     document.body.classList.add("otc-sticky-on");
+    if (state._summaryInView) {
+      // The summary itself is on screen; a strip repeating it earns
+      // nothing. The IntersectionObserver in bindStickyBar owns this
+      // flag and re-renders as the card enters/leaves.
+      bar.style.display = "none";
+      return;
+    }
+    // The bar is a glanceable balance strip only: the two side values
+    // and a mini balance band between them, both read from the same
+    // landed eval payload the summary paints from (totals stamped in
+    // state, diff/fair fields on the payload), so bar and summary can
+    // never tell different stories. Fit and the verdict sentence live
+    // in the summary card; tapping the bar scrolls there.
+    const aEff = Number(state._lastEffA) || 0;
+    const bEff = Number(state._lastEffB) || 0;
+    const valA = root.querySelector("#tradeStickyValueA");
+    const valB = root.querySelector("#tradeStickyValueB");
+    if (valA) valA.textContent = aEff.toFixed(1);
+    if (valB) valB.textContent = bEff.toFixed(1);
+    const geo = _balanceGeometry(Number(data.diff) || 0, aEff, bEff,
+                                 data.fair_threshold, data.fair_pct);
+    const fair = root.querySelector("#tradeStickyBandFair");
+    const marker = root.querySelector("#tradeStickyBandMarker");
+    if (fair) fair.style.width = geo.fairWidthPct + "%";
+    if (marker) marker.style.left = geo.leftPct + "%";
+    bar.style.display = "flex";
+  }
+
+  function scrollStickyBarToSummary() {
+    const card = root.querySelector(".otc-summary-card");
+    if (!card) return;
+    // scroll-margin-top is zeroed by the global <=1280px reset, so the
+    // header offset is explicit (the landing page's pattern): measure
+    // the sticky top nav and land the summary just below it.
+    const nav = document.querySelector(".top-nav");
+    const navH = nav ? (nav.offsetHeight || 0) : 0;
+    if (typeof window !== "undefined" && window.scrollTo &&
+        typeof card.getBoundingClientRect === "function") {
+      const top = card.getBoundingClientRect().top +
+        (window.scrollY || window.pageYOffset || 0) - navH - 8;
+      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    } else if (card.scrollIntoView) {
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   function renderUnvaluedStrip(data) {
@@ -9848,28 +9884,19 @@ window.initTradePage = function initTradePage(root = document) {
         if (Math.abs(diff - _prevD) >= 0.05) window.brFlash(tradeDiffEl, diff >= _prevD ? 'up' : 'down');
       }
 
-      const maxSideTotal = Math.max(Math.abs(aEff), Math.abs(bEff), 1);
-      let normalizedDiff = diff / maxSideTotal;
-      normalizedDiff = Math.max(-1, Math.min(1, normalizedDiff));
-      // Invert the calculation: when diff > 0 (Team 1 favored), move bar left; when diff < 0 (Team 2 favored), move bar right
-      const leftPct = ((1 - normalizedDiff) / 2) * 100;
+      // Shared with the sticky bar's mini band (_balanceGeometry):
+      // when diff > 0 (Team 1 favored) the marker moves left of center;
+      // when diff < 0 (Team 2 favored), right.
+      const _geo = _balanceGeometry(diff, aEff, bEff,
+                                    data.fair_threshold, data.fair_pct);
 
       if (barIndicator) {
-        barIndicator.style.left = leftPct + "%";
+        barIndicator.style.left = _geo.leftPct + "%";
       }
 
       const fairZoneEl = root.querySelector(".otc-balance-fair");
       if (fairZoneEl) {
-        // The bar spans normalizedDiff [-1, +1] across its full width, so a diff
-        // of `d` sits (d / maxSide) * 50% from center. The fair zone is centered,
-        // so its full width must be (fair_threshold / maxSide) * 100 to line up
-        // exactly with where the verdict flips from "fair" to "favored". Use the
-        // server's fair_threshold (which already applies the 25-point floor)
-        // rather than fair_pct alone.
-        const ft = Number(data.fair_threshold) ||
-                   ((Number(data.fair_pct) || 0) * maxSideTotal);
-        const fairWidthPct = Math.max(0, Math.min(100, (ft / maxSideTotal) * 100));
-        fairZoneEl.style.width = fairWidthPct + "%";
+        fairZoneEl.style.width = _geo.fairWidthPct + "%";
       }
 
       if (verdictEl) {
@@ -14228,6 +14255,40 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  function bindStickyBar() {
+    const bar = root.querySelector("#tradeStickyBar");
+    if (!bar) return;
+    // The whole bar is the jump control (role="button" in the markup):
+    // click, Enter, and Space all scroll to the Trade Summary card.
+    bindOnce(bar, "stickyBarClick", "click", () => {
+      scrollStickyBarToSummary();
+    });
+    bindOnce(bar, "stickyBarKeys", "keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        scrollStickyBarToSummary();
+      }
+    });
+    // Hide the bar while the Trade Summary card itself is on screen:
+    // the bar only earns its place when the summary is out of view.
+    // The 24px rootMargin dead band is the hysteresis: the bar hides
+    // just before the summary enters and returns just after it has
+    // fully left, so the boundary never flickers. Tapping the bar
+    // scrolls the summary in, and this observer hides the bar as it
+    // arrives.
+    const summaryCard = root.querySelector(".otc-summary-card");
+    if (summaryCard && window.IntersectionObserver && !bar.__brSummaryObserver) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((en) => {
+          state._summaryInView = !!en.isIntersecting;
+          renderStickyBar();
+        });
+      }, { rootMargin: "24px 0px 24px 0px", threshold: 0 });
+      io.observe(summaryCard);
+      bar.__brSummaryObserver = io;
+    }
+  }
+
   // ------------------------------------------------------------
   // Button handlers - lean; analyzeTrade() owns all state logic
   // ------------------------------------------------------------
@@ -14657,6 +14718,7 @@ window.initTradePage = function initTradePage(root = document) {
   bindSetupButton();
   bindClearTradeButton();
   bindShareButton();
+  bindStickyBar();
   initMoversBreakoutsTabs();
   // Search inputs bind immediately too -- renderSide() lazily awaits
   // ensurePlayersLoaded() at query time, so they must not be gated behind the
