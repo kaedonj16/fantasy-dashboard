@@ -104,6 +104,10 @@ def env(monkeypatch):
                 "roster_positions": ["QB", "RB", "WR", "TE"]}
 
     monkeypatch.setattr(papi, "get_league", _get_league)
+    # Background format resolution enriches bare provider shapes from
+    # league globals; default to none so tests stay hermetic/offline.
+    monkeypatch.setattr(papi, "get_league_globals",
+                        lambda platform, league_id, season: {})
     return monkeypatch
 
 
@@ -173,6 +177,29 @@ def test_value_drops_redraft_league_silent_without_redraft_baseline(env, monkeyp
     _stub_movers(monkeypatch, [_DYN_FALLER], [])
     sends = _run_value_drops(monkeypatch, [("R1", "sleeper")])
     assert sends == []
+
+
+def test_value_drops_yahoo_sf_12team_priced_from_globals(env, monkeypatch):
+    # Yahoo get_league is bare, so without globals the format resolves to
+    # 1QB / 10-team. A 12-team Superflex Yahoo league's globals carry the
+    # real shape; its movers must be the redraft SF 12-team board.
+    import dashboard_services.platform_api as papi
+
+    monkeypatch.setattr(papi, "get_league_globals",
+                        lambda platform, league_id, season: {
+                            "league_settings": {"type": 0, "num_teams": 12},
+                            "roster_positions": ["QB", "RB", "WR", "TE",
+                                                 "SUPER_FLEX"],
+                            "total_rosters": 12,
+                        })
+    calls = _stub_movers(monkeypatch, [_DYN_FALLER], [_RD_FALLER])
+    sends = _run_value_drops(monkeypatch, [("1307110", "yahoo")])
+    assert len(sends) == 1
+    assert "losing redraft value" in sends[0]["body"]
+    rd_calls = [c for c in calls if c.get("scoring_type") == "redraft"]
+    assert rd_calls, calls
+    assert rd_calls[0].get("league_type") == "sf", rd_calls
+    assert rd_calls[0].get("league_size") == 12, rd_calls
 
 
 def test_value_drops_yahoo_league_uses_redraft_movers(env, monkeypatch):

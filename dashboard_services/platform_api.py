@@ -40,6 +40,13 @@ def get_league(platform: str, league_id: str, season: int) -> Dict[str, Any]:
     return get_provider(platform).get_league(league_id, season)
 
 
+def get_league_globals(platform: str, league_id: str, season: int) -> Dict[str, Any]:
+    """Provider league globals: {scoring_settings, roster_positions,
+    league_settings, total_rosters}. Yahoo/ESPN get_league is bare, so
+    background format resolution needs this to see type / SF / size."""
+    return get_provider(platform).get_league_globals(league_id, season)
+
+
 def get_users(platform: str, league_id: str, season: int) -> List[Dict[str, Any]]:
     return get_provider(platform).get_users(league_id, season)
 

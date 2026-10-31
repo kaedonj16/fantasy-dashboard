@@ -1625,11 +1625,18 @@ def _league_format(platform, league_id, season):
         return _league_format_cache[key]
     fmt = None
     try:
-        from utils.league import classify_league_roster_format
+        from utils.league import (
+            classify_league_roster_format, enrich_league_with_globals,
+        )
         league = {}
         if season:
             from dashboard_services.platform_api import get_league
             league = get_league(platform, str(league_id), int(season)) or {}
+            # Yahoo/ESPN get_league is bare ({league_id, season, name}):
+            # merge globals so SF / league size / Yahoo keeper type are
+            # visible instead of defaulting to 1QB / 10-team pricing.
+            league = enrich_league_with_globals(
+                platform, league_id, season, league)
         fmt = classify_league_roster_format(league=league, platform=platform)
         if isinstance(league, dict):
             size = league.get("total_rosters")

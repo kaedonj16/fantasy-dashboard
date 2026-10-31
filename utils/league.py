@@ -320,6 +320,57 @@ _REDRAFT_LABELS = {"redraft", "re-draft"}
 _KEEPER_LABELS = {"keeper", "redraft_keeper"}
 
 
+def enrich_league_with_globals(
+    platform: str,
+    league_id: Any,
+    season: Any,
+    league: Optional[dict],
+) -> dict:
+    """Fill the format fields a bare provider ``get_league`` omits.
+
+    Yahoo and ESPN ``get_league`` return only {league_id, season, name};
+    their league globals carry ``league_settings`` (type / num_teams),
+    ``roster_positions`` and ``total_rosters``. A background consumer that
+    classifies from ``get_league`` alone (push ``_league_format``, the
+    email digest bundle) therefore cannot see Superflex, league size, or
+    Yahoo's keeper-derived type for those platforms, and prices them as
+    1QB / 10-team. This merges globals into ONLY the fields the league
+    dict lacks (a complete shape -- Sleeper / MFL / Fleaflicker -- costs
+    no extra provider call), never overwrites a present field, and never
+    raises: any globals failure returns the league dict unchanged.
+    """
+    lg = league if isinstance(league, dict) else {}
+    has_settings = isinstance(lg.get("settings") or lg.get("league_settings"), dict) \
+        and bool(lg.get("settings") or lg.get("league_settings"))
+    has_positions = bool(lg.get("roster_positions"))
+    has_size = lg.get("total_rosters") is not None
+    if has_settings and has_positions and has_size:
+        return lg
+    try:
+        from dashboard_services.platform_api import get_league_globals
+        globals_ = get_league_globals(platform, str(league_id), int(season)) or {}
+    except Exception:
+        return lg
+    if not isinstance(globals_, dict) or not globals_:
+        return lg
+    out = dict(lg)
+    if not has_settings:
+        settings = globals_.get("league_settings")
+        if isinstance(settings, dict) and settings:
+            out["settings"] = settings
+    if not has_positions:
+        positions = globals_.get("roster_positions")
+        if positions:
+            out["roster_positions"] = positions
+    if not has_size:
+        size = globals_.get("total_rosters")
+        if size is not None:
+            out["total_rosters"] = size
+    if not out.get("scoring_settings") and globals_.get("scoring_settings"):
+        out["scoring_settings"] = globals_["scoring_settings"]
+    return out
+
+
 def classify_league_roster_format(
     *,
     league: Optional[dict] = None,

@@ -139,3 +139,73 @@ def test_unknown_sleeper_league_still_defaults_dynasty():
     from utils.league_format import classify_league_roster_format
     fmt = classify_league_roster_format(league={}, platform="sleeper")
     assert fmt["is_dynasty"] is True
+
+
+# ── enrich_league_with_globals: bare Yahoo/ESPN shapes ───────────────────────
+
+_YAHOO_GLOBALS = {
+    "league_settings": {"type": 0, "league_type": "redraft", "num_teams": 12},
+    "roster_positions": ["QB", "RB", "WR", "TE", "SUPER_FLEX"],
+    "total_rosters": 12,
+    "scoring_settings": {"rec": 1.0},
+}
+
+
+def _stub_globals(monkeypatch, payload):
+    import dashboard_services.platform_api as papi
+    calls = []
+
+    def _globals(platform, league_id, season):
+        calls.append((platform, league_id, season))
+        if isinstance(payload, Exception):
+            raise payload
+        return payload
+
+    monkeypatch.setattr(papi, "get_league_globals", _globals)
+    return calls
+
+
+def test_enrich_bare_yahoo_league_merges_globals(monkeypatch):
+    from utils.league_format import (
+        classify_league_roster_format, enrich_league_with_globals,
+    )
+    calls = _stub_globals(monkeypatch, dict(_YAHOO_GLOBALS))
+    bare = {"league_id": "1307110", "season": 2026, "name": "Yahoo H2H-Pts"}
+    out = enrich_league_with_globals("yahoo", "1307110", 2026, bare)
+    assert calls == [("yahoo", "1307110", 2026)]
+    assert out["total_rosters"] == 12
+    assert out["settings"]["type"] == 0
+    fmt = classify_league_roster_format(league=out, platform="yahoo")
+    assert fmt["is_redraft"] is True
+    assert fmt["is_superflex"] is True
+    assert fmt["qb_format"] == "sf"
+    # The caller's dict is not mutated.
+    assert "settings" not in bare
+
+
+def test_enrich_complete_league_costs_no_globals_call(monkeypatch):
+    from utils.league_format import enrich_league_with_globals
+    calls = _stub_globals(monkeypatch, dict(_YAHOO_GLOBALS))
+    full = {"settings": {"type": 2}, "total_rosters": 10,
+            "roster_positions": ["QB", "RB"]}
+    out = enrich_league_with_globals("sleeper", "L1", 2026, full)
+    assert calls == []
+    assert out is full
+
+
+def test_enrich_never_overwrites_present_fields(monkeypatch):
+    from utils.league_format import enrich_league_with_globals
+    _stub_globals(monkeypatch, dict(_YAHOO_GLOBALS))
+    partial = {"settings": {"type": 2}, "total_rosters": 10}
+    out = enrich_league_with_globals("yahoo", "L9", 2026, partial)
+    assert out["settings"] == {"type": 2}          # present: untouched
+    assert out["total_rosters"] == 10              # present: untouched
+    assert out["roster_positions"] == _YAHOO_GLOBALS["roster_positions"]
+
+
+def test_enrich_globals_failure_returns_league_unchanged(monkeypatch):
+    from utils.league_format import enrich_league_with_globals
+    _stub_globals(monkeypatch, RuntimeError("provider down"))
+    bare = {"league_id": "1307110", "season": 2026}
+    out = enrich_league_with_globals("yahoo", "1307110", 2026, bare)
+    assert out == bare
