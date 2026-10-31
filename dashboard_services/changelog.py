@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-31",
         "tag": "fix",
+        "text": "Trade Calculator: tapping the pinned balance bar now actually jumps to the Trade Summary. The tap was aiming at the wrong scroller, so it landed nowhere.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-31",
+        "tag": "fix",
         "text": "Trade Calculator: the pinned bar is now a slim balance strip with just the two side values and the fair range, so nothing in it gets cut off. Tap the bar to jump straight to the full Trade Summary, and the bar steps aside on its own while the summary is on screen.",
         "link": "/trade"
     },

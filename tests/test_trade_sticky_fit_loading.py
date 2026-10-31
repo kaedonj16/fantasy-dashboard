@@ -192,6 +192,17 @@ def test_sticky_bar_scrolls_to_summary():
     assert '".otc-summary-card"' in scroll_body, "scroll target is the summary card"
     assert '".top-nav"' in scroll_body, "offset measured from the sticky top nav"
     assert 'behavior: "smooth"' in scroll_body
+    # This app scrolls the <body>, not the window (the getScroll /
+    # setScroll contract in the soft-nav block): window.scrollY stays
+    # 0 and a window-only scrollTo is inert, which was the dead tap
+    # Kaedon hit live after #2929. The scroll must read the offset
+    # from the candidate scrollers and write to body/documentElement
+    # as well, so the write lands on the element that actually moves.
+    assert "document.body.scrollTop" in scroll_body, (
+        "offset must be read from the body scroller, not window.scrollY alone")
+    assert "document.body.scrollTo" in scroll_body, (
+        "the body is the scroller that must receive the scroll")
+    assert "document.documentElement.scrollTo" in scroll_body
 
 
 def test_sticky_bar_hides_while_summary_visible():

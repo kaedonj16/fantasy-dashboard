@@ -9605,11 +9605,26 @@ window.initTradePage = function initTradePage(root = document) {
     // the sticky top nav and land the summary just below it.
     const nav = document.querySelector(".top-nav");
     const navH = nav ? (nav.offsetHeight || 0) : 0;
-    if (typeof window !== "undefined" && window.scrollTo &&
-        typeof card.getBoundingClientRect === "function") {
-      const top = card.getBoundingClientRect().top +
-        (window.scrollY || window.pageYOffset || 0) - navH - 8;
-      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    if (typeof card.getBoundingClientRect === "function") {
+      // This app scrolls the <body>, not the window (the getScroll /
+      // setScroll contract in the soft-nav block): window.scrollY
+      // stays 0 and window.scrollTo is inert while the page actually
+      // moves on body.scrollTop, so a window-only scroll silently
+      // does nothing. Read the offset from whichever candidate
+      // actually holds it and write to all of them; the
+      // non-scrollers no-op.
+      const off = Math.max(
+        (typeof window !== "undefined" && (window.scrollY || window.pageYOffset)) || 0,
+        (document.documentElement && document.documentElement.scrollTop) || 0,
+        (document.body && document.body.scrollTop) || 0);
+      const top = Math.max(0, card.getBoundingClientRect().top + off - navH - 8);
+      try { window.scrollTo({ top, behavior: "smooth" }); } catch (_) {}
+      if (document.documentElement && document.documentElement.scrollTo) {
+        document.documentElement.scrollTo({ top, behavior: "smooth" });
+      }
+      if (document.body && document.body.scrollTo) {
+        document.body.scrollTo({ top, behavior: "smooth" });
+      }
     } else if (card.scrollIntoView) {
       card.scrollIntoView({ behavior: "smooth", block: "start" });
     }
