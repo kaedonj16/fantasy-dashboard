@@ -48,7 +48,9 @@ def test_do_refresh_uses_timed_fetch():
     start = APP_JS.index("// ── Discord + data-freshness")
     block = APP_JS[start: APP_JS.index("window.addEventListener('beforeunload'", start)]
     assert "brFetchWithTimeout('/api/refresh-league'" in block
-    assert "brFetchWithTimeout(location.href" in block
+    # The fresh-document fetch goes through the timed fetch at the URL the
+    # refresh run started on (pinned as `target` in fetchFreshDocument).
+    assert "brFetchWithTimeout(target, opts, 60000)" in block
     assert "60000" in block
     assert "} finally {" in block
 

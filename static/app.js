@@ -1858,6 +1858,11 @@ window.brHaptic = function (pattern) {
     var mine = ++token;
     var curRoot = document.getElementById('page-root');
     if (!curRoot) { location.href = url; return; }
+    // A refresh (manual or the silent auto-revalidate) belongs to the page
+    // it started on. Navigating away must cancel it: left running, its
+    // fetch lands after this swap and writes the OLD page's document into
+    // the new page's root, which reads as being thrown back to that page.
+    if (window.brCancelRefresh) window.brCancelRefresh();
     // The global click handler started the top #page-load-bar, but this soft-nav
     // preventDefaults the navigation, so no pageshow/DOMContentLoaded will ever
     // fire to finish it. Retire it now and let .br-nav-progress own the feedback.
@@ -4761,15 +4766,22 @@ function showLoginGate(target, opts) {
     return { html: html, cacheTs: nextTs };
   }
 
-  function fetchFreshDocument(beforeTs, signal) {
+  function fetchFreshDocument(beforeTs, signal, url) {
+    // Fetch the URL the refresh run STARTED on, never the live location:
+    // the user may have navigated to another page while the league was
+    // expiring, and refetching (then swapping in) whatever page they are
+    // on now -- or worse, swapping the START page's document into it --
+    // is how a background refresh used to throw them back to the page
+    // they first landed on.
+    var target = url || location.href;
     var opts = {
       cache: 'reload', signal: signal,
       credentials: 'same-origin',
       headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'X-BR-Refresh': '1' }
     };
     var request = typeof window.brFetchWithTimeout === 'function'
-      ? window.brFetchWithTimeout(location.href, opts, 60000)
-      : fetch(location.href, opts);
+      ? window.brFetchWithTimeout(target, opts, 60000)
+      : fetch(target, opts);
     return request.then(function (res) {
       if (!res.ok) throw new Error('page ' + res.status);
       return res.text();
@@ -4800,6 +4812,7 @@ function showLoginGate(target, opts) {
     doRefresh._controller = controller;
     var runId = doRefresh._run = (doRefresh._run || 0) + 1;
     var beforeTs = cacheTs();
+    var startHref = location.href;
     var acceptedTs = 0;
     var reloadStarted = false;
     setRefreshingLabel();
@@ -4822,8 +4835,12 @@ function showLoginGate(target, opts) {
       }
       await expireLeague(controller ? controller.signal : undefined);
       if (runId !== doRefresh._run) throw new Error('refresh cancelled');
-      var fresh = await fetchFreshDocument(beforeTs, controller ? controller.signal : undefined);
+      var fresh = await fetchFreshDocument(beforeTs, controller ? controller.signal : undefined, startHref);
       if (runId !== doRefresh._run) throw new Error('refresh cancelled');
+      // The user navigated while this ran: the fetched document belongs to
+      // the page they left. Never swap it into (or reload over) the page
+      // they are reading now; the expire above still warmed the cache.
+      if (location.href !== startHref) { updateLabels(); return; }
       acceptedTs = fresh.cacheTs;
       if (canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
         // brSwapPageRoot copies the authoritative server build timestamp.
@@ -4908,11 +4925,21 @@ function showLoginGate(target, opts) {
     doRefresh._controller = controller;
     var runId = doRefresh._run = (doRefresh._run || 0) + 1;
     var beforeTs = cacheTs();
+    // The page this pass started on. On first launch the served snapshot is
+    // stale, so this pass fires immediately -- exactly when the user is most
+    // likely to tap straight into another page. If they do, the document
+    // fetched below belongs to the page they left (usually the dashboard)
+    // and must never be swapped into the page they are reading now: that
+    // swap is the "app sent me back to the dashboard" bounce. The expire
+    // still warms the league cache, so the pass is not wasted.
+    var startHref = location.href;
     try {
       await expireLeague(controller ? controller.signal : undefined);
       if (runId !== doRefresh._run) return;
-      var fresh = await fetchFreshDocument(beforeTs, controller ? controller.signal : undefined);
+      if (location.href !== startHref) return;
+      var fresh = await fetchFreshDocument(beforeTs, controller ? controller.signal : undefined, startHref);
       if (runId !== doRefresh._run) return;
+      if (location.href !== startHref) return;
       // Swap in place when the page allows it; otherwise leave the cache warmed
       // so the next load is fresh. A silent pass must never yank the page out
       // from under the reader with a full reload the way an explicit Refresh may.

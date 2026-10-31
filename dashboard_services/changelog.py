@@ -11,6 +11,12 @@ CHANGELOG = [
         "link": "/portfolio"
     },
     {
+        "date": "2026-10-31",
+        "tag": "fix",
+        "text": "Fixed the app sending you back to the dashboard right after you opened it and tapped into a page: the background data refresh that runs on the first page you land on could finish after you had already moved on, and it would swap the first page back in over the one you were reading. A refresh now belongs to the page it started on: navigating away cancels it, and a refresh that finishes after you have moved on warms the data without touching your screen.",
+        "link": "/dashboard"
+    },
+    {
         "date": "2026-10-30",
         "tag": "fix",
         "text": "Trade Calculator on phones: the pinned balance bar now floats above the bottom tab bar instead of sliding behind it, and the Trade Fit grade shows a grading state while a new package is being scored instead of holding up the previous trade's number. The acceptance read and the bar's verdict wait for the current trade's grade too, and if scoring fails they clear instead of spinning forever.",
