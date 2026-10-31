@@ -51370,6 +51370,19 @@ em.gneg { background: var(--loss); }
     border-left: 1px solid var(--border);
 }
 .td-drawer.open { transform: none; }
+/* While the team drawer is open (body.td-lock, set by teams.js), the
+   ambient floating chrome sits behind the drawer scrim like the rest of
+   the page: the Discord / data-freshness pill group (same z-index as the
+   drawer, but appended to the body later, so it won the tie) and the BR
+   Assistant launcher, teaser and intro bubble (z-index 9994-9995). They
+   dim under the scrim and stop covering drawer rows; closing the drawer
+   removes td-lock and their normal stacking returns untouched. */
+body.td-lock #floating-pill-group,
+body.td-lock .br-asst-launcher,
+body.td-lock .br-asst-teaser,
+body.td-lock .br-asst-bubble {
+    z-index: 30;
+}
 .td-head { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
 .td-head-row { display: flex; align-items: center; gap: 14px; }
 .td-ava {
