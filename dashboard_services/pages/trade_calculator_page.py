@@ -436,6 +436,8 @@ def build_trade_calculator_body(
             </section>
           </div>
 
+          <div id="tradeUnvaluedStrip" class="otc-unvalued-strip" style="display:none;" role="note"></div>
+
           <div class="otc-lower-grid otc-lower-grid--top2">
             <section class="otc-summary-card">
               <div class="otc-summary-head">
@@ -473,6 +475,14 @@ def build_trade_calculator_body(
                 </div>
               </div>
 
+              <div id="tradeFitTile" class="otc-fit" style="display:none;">
+                <div class="otc-fit-score-block">
+                  <span class="otc-stat-label">Trade Fit</span>
+                  <span class="otc-fit-score"><span id="tradeFitScore">-</span><span class="otc-fit-max">/10</span></span>
+                </div>
+                <div class="otc-fit-grid" id="tradeFitGrid"></div>
+              </div>
+
               <div class="otc-balance-wrap">
                 <div class="otc-balance-bar">
                   <div class="otc-balance-fair" title="Fair range"></div>
@@ -486,8 +496,11 @@ def build_trade_calculator_body(
               </div>
 
               <div class="otc-verdict-shell">
-                <div id="tradeVerdict" class="otc-verdict">
-                  Add players to both sides to see the trade balance.
+                <div class="otc-verdict-row">
+                  <div id="tradeVerdict" class="otc-verdict">
+                    Add players to both sides to see the trade balance.
+                  </div>
+                  <span id="tradeAcceptChip" class="otc-accept-chip" style="display:none;"></span>
                 </div>
                 {sample_trade_block}
                 <div id="tradeScarcityNotes" style="display:none;"></div>
@@ -545,6 +558,29 @@ def build_trade_calculator_body(
                 <div id="aiAnalysisResult" style="display:none;"></div>
               </div>
             </section>
+
+            <section id="tradeCounterCard" class="otc-ai-card otc-ai-card--fullrow" style="display:none;">
+              <div class="otc-ai-head">
+                <div>
+                  <h2 class="otc-ai-title">Counter</h2>
+                  <div class="otc-ai-sub">The adjustment that evens this deal out</div>
+                </div>
+                <div class="trade-ai-verdict-frag" data-verdict="COUNTER">
+                  <div class="trade-ai-verdict-badge trade-ai-verdict-badge-counter">&#8646; COUNTER</div>
+                </div>
+              </div>
+              <div class="trade-ai-block">
+                <div class="trade-ai-label">Advice</div>
+                <div class="trade-ai-copy-line" id="tradeCounterText"></div>
+                <button type="button" class="otc-apply-btn" id="tradeCounterApply">Apply counter</button>
+                <div class="otc-counter-note" id="tradeCounterNote" style="display:none;"></div>
+              </div>
+            </section>
+          </div>
+
+          <div id="tradeStickyBar" class="otc-sticky-bar" style="display:none;">
+            <span class="otc-sticky-totals" id="tradeStickyTotals"></span>
+            <span class="otc-sticky-verdict" id="tradeStickyVerdict"></span>
           </div>
 
           <div id="similarTradesSection" style="display:none;margin-top:28px;">

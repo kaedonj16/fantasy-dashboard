@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "new",
+        "text": "Trade Calculator: the summary now grades the deal with a Trade Fit score from 0 to 10, built from value balance, roster fit, playoff impact, and how likely the other team is to accept, and the acceptance read sits beside the verdict. Playoff Impact adds a Your Lineup After block: your starting lineup's projected points before and after the deal, who enters and leaves the lineup, and how the room you upgraded ranks in your league. When your side is light beyond the fair range, a Counter card names the pick or player that evens the deal out and applies it in one tap. An asset with no calibrated value now shows a dash on its chip and a warning strip above the summary instead of silently counting as zero, and a balance bar stays pinned to the bottom of the screen while you build.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "fix",
         "text": "Trade calculator consistency: three fixes so every surface tells the same story. The Playoff Impact verdict no longer calls a trade a Future Lean when the player coming back is older and gives up prime years: banking value alone is not a future gain. The Trade Analyst now speaks in tiers for role language (a WR2-type producer) and saves exact ranks for rank claims, instead of gluing a value rank onto the word type. And when the player pool refreshes in the background, the calculator rebuilds its rows from the new data instead of keeping the older cached values on screen while the summary and modals already showed the current ones.",
         "link": "/trade"

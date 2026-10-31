@@ -9304,7 +9304,10 @@ window.initTradePage = function initTradePage(root = document) {
       box = document.createElement("div");
       box.id = "tradeBalancer";
       box.className = "otc-balancer";
-      verdictEl.parentNode.insertBefore(box, verdictEl.nextSibling);
+      // The verdict now sits in a row with the acceptance chip; the
+      // balancer belongs under the whole row, not inside it.
+      const anchor = verdictEl.closest(".otc-verdict-row") || verdictEl;
+      anchor.parentNode.insertBefore(box, anchor.nextSibling);
     }
     const hide = () => { box.innerHTML = ""; box.style.display = "none"; };
 
@@ -9370,6 +9373,241 @@ window.initTradePage = function initTradePage(root = document) {
         recomputeTrade();
       });
     });
+  }
+
+  // ── Trade Fit / acceptance / counter / sticky bar ─────────────────────
+  // Components arrive from two responses: the eval (value balance,
+  // roster fit, acceptance) and the playoff sim (playoff impact). Any
+  // component the server could not compute is null: its bar is hidden
+  // and the composite averages whatever is present. An ungraded trade
+  // (graded:false) shows no Fit and no counter at all - its totals
+  // exclude real assets, so a score built on them would be fiction.
+  const _FIT_COMPONENTS = [
+    ["value_balance", "Value balance"],
+    ["roster_fit", "Roster fit"],
+    ["playoff_impact", "Playoff impact"],
+    ["acceptance", "Acceptance"],
+  ];
+
+  function computeTradeFitScore(components) {
+    const vals = _FIT_COMPONENTS
+      .map(([key]) => (components ? components[key] : null))
+      .filter(v => typeof v === "number" && !isNaN(v));
+    if (!vals.length) return null;
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return Math.round(avg * 10) / 10;
+  }
+
+  function _currentPiSig() {
+    // Mirror fetchPlayoffImpact's give/get construction so the playoff
+    // component is only ever read for the exact trade the sim ran on.
+    const viewerSide = root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
+    const mySidePlayers  = viewerSide === "a" ? state.sideAPlayers : state.sideBPlayers;
+    const oppSidePlayers = viewerSide === "a" ? state.sideBPlayers : state.sideAPlayers;
+    const isPickId = id => id.startsWith("pick_") || id.startsWith("PICK");
+    const getIds  = mySidePlayers .map(p => String(p.id)).filter(id => !isPickId(id));
+    const giveIds = oppSidePlayers.map(p => String(p.id)).filter(id => !isPickId(id));
+    return giveIds.join(",") + "|" + getIds.join(",") + "|" + (getCurrentRosterId() || "");
+  }
+
+  function _fitComponents() {
+    const data = state._lastEvalData;
+    if (!data || data.graded === false) return null;
+    const fit = data.fit || {};
+    const comps = {
+      value_balance: typeof fit.value_balance === "number" ? fit.value_balance : null,
+      roster_fit: typeof fit.roster_fit === "number" ? fit.roster_fit : null,
+      playoff_impact: null,
+      acceptance: typeof fit.acceptance === "number" ? fit.acceptance : null,
+    };
+    const pi = state._lastPiData;
+    if (pi && pi.available && typeof pi.fit_playoff_impact === "number" &&
+        state._lastPiSig && state._lastPiSig === _currentPiSig()) {
+      comps.playoff_impact = pi.fit_playoff_impact;
+    }
+    return comps;
+  }
+
+  function _clearPiFit() {
+    // Drop the stashed sim so a locked/unavailable Playoff Impact never
+    // leaves a stale playoff component in the Fit grade.
+    state._lastPiData = null;
+    state._lastPiSig = "";
+    renderTradeFit();
+  }
+
+  function renderTradeFit() {
+    const tile = root.querySelector("#tradeFitTile");
+    const grid = root.querySelector("#tradeFitGrid");
+    const scoreEl = root.querySelector("#tradeFitScore");
+    const chip = root.querySelector("#tradeAcceptChip");
+    const comps = _fitComponents();
+    const score = comps ? computeTradeFitScore(comps) : null;
+    if (tile && grid && scoreEl) {
+      if (!comps || score === null) {
+        tile.style.display = "none";
+      } else {
+        scoreEl.textContent = score.toFixed(1);
+        grid.innerHTML = _FIT_COMPONENTS
+          .filter(([key]) => typeof comps[key] === "number")
+          .map(([key, label]) => {
+            const v = comps[key];
+            return `<div class="otc-fit-row"><span class="otc-fit-name">${label}</span>` +
+              `<span class="otc-fit-track"><span class="otc-fit-fill" style="width:${v * 10}%"></span></span>` +
+              `<span class="otc-fit-num">${v}</span></div>`;
+          }).join("");
+        tile.style.display = "flex";
+      }
+    }
+    const data = state._lastEvalData;
+    const label = (data && data.graded !== false && data.fit) ? data.fit.acceptance_label : null;
+    if (chip) {
+      if (label) {
+        chip.textContent = "Acceptance: " + label;
+        chip.style.display = "inline-block";
+      } else {
+        chip.style.display = "none";
+        chip.textContent = "";
+      }
+    }
+    renderStickyBar();
+  }
+
+  function renderStickyBar() {
+    const bar = root.querySelector("#tradeStickyBar");
+    if (!bar) return;
+    const data = state._lastEvalData;
+    const hasAssets = (state.sideAPlayers.length + state.sideAPicks.length +
+                       state.sideBPlayers.length + state.sideBPicks.length) > 0;
+    if (!data || !hasAssets) {
+      bar.style.display = "none";
+      document.body.classList.remove("otc-sticky-on");
+      return;
+    }
+    const totals = root.querySelector("#tradeStickyTotals");
+    const verdictSpan = root.querySelector("#tradeStickyVerdict");
+    const comps = _fitComponents();
+    const score = comps ? computeTradeFitScore(comps) : null;
+    const parts = [`<strong>${(Number(state._lastEffA) || 0).toFixed(1)} vs ${(Number(state._lastEffB) || 0).toFixed(1)}</strong>`];
+    if (score !== null) parts.push(`<span>Fit ${score.toFixed(1)}</span>`);
+    const accLabel = (data.graded !== false && data.fit) ? data.fit.acceptance_label : null;
+    if (accLabel) parts.push(`<span>Acceptance: ${accLabel}</span>`);
+    if (totals) totals.innerHTML = parts.join("<span>&middot;</span>");
+    if (verdictSpan) {
+      const v = data.verdict || "";
+      verdictSpan.textContent = v;
+      verdictSpan.title = v;
+      verdictSpan.style.display = v ? "" : "none";
+    }
+    bar.style.display = "flex";
+    document.body.classList.add("otc-sticky-on");
+  }
+
+  function renderUnvaluedStrip(data) {
+    const strip = root.querySelector("#tradeUnvaluedStrip");
+    if (!strip) return;
+    const unvalued = (data && Array.isArray(data.unvalued_assets)) ? data.unvalued_assets : [];
+    if (!data || data.graded !== false || unvalued.length === 0) {
+      strip.style.display = "none";
+      strip.innerHTML = "";
+      return;
+    }
+    const n = unvalued.length;
+    const text = n === 1
+      ? "1 asset has no calibrated value and is priced at 0. Totals exclude it."
+      : `${n} assets have no calibrated value and are priced at 0. Totals exclude them.`;
+    strip.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>${text}</span>`;
+    strip.style.display = "flex";
+  }
+
+  function applyChipValueDashes(data) {
+    // The server is the source of truth for "unvalued": those chips show
+    // a dash instead of a number (their priced-at-0 client value would
+    // read as "worthless"). Runs on every eval response, so a chip
+    // restores its real value as soon as it prices again.
+    const unvaluedBySide = { A: new Set(), B: new Set() };
+    if (data && data.graded === false) {
+      ((data.side_a || {}).unvalued_assets || []).forEach(a => unvaluedBySide.A.add(String(a.id)));
+      ((data.side_b || {}).unvalued_assets || []).forEach(a => unvaluedBySide.B.add(String(a.id)));
+    }
+    [["A", state.sideAPlayers, state.sideAPicks],
+     ["B", state.sideBPlayers, state.sideBPicks]].forEach(([side, players, picks]) => {
+      const container = root.querySelector(side === "A" ? "#sideAChips" : "#sideBChips");
+      if (!container) return;
+      const chips = container.querySelectorAll(".otc-chip");
+      const items = [...players, ...picks];
+      chips.forEach((chip, i) => {
+        const item = items[i];
+        const valEl = chip.querySelector(".otc-chip-value");
+        if (!item || !valEl) return;
+        if (unvaluedBySide[side].has(String(item.id))) {
+          valEl.textContent = "—";
+          valEl.title = "No calibrated value";
+        } else if (valEl.textContent === "—") {
+          if (chip.classList.contains("otc-chip-pick")) {
+            const pickData = allPlayers.find(p => p.id === item.id && p.position === "PICK");
+            valEl.textContent = formatValue(pickData ? getPlayerValue(pickData) : 0);
+          } else {
+            valEl.textContent = formatValue(getPlayerValue(item));
+          }
+          valEl.removeAttribute("title");
+        }
+      });
+    });
+  }
+
+  function renderCounterCard(data) {
+    const card = root.querySelector("#tradeCounterCard");
+    if (!card) return;
+    const textEl = root.querySelector("#tradeCounterText");
+    const btn = root.querySelector("#tradeCounterApply");
+    const note = root.querySelector("#tradeCounterNote");
+    const s = (data && data.graded !== false) ? data.counter_suggestion : null;
+    if (!s || !textEl || !btn) {
+      card.style.display = "none";
+      return;
+    }
+    const applied = !!(state._appliedCounters &&
+      state._appliedCounters.has(s.type + ":" + s.id + ":" + s.add_to_side));
+    textEl.textContent = (s.type === "pick" ? `Ask for a ${s.name} on top. ` : `Ask for ${s.name} on top. `) +
+      `Worth ${(Number(s.value) || 0).toFixed(1)} against a ${(Number(s.gap) || 0).toFixed(1)} gap.`;
+    btn.disabled = applied;
+    btn.textContent = applied ? "Applied" : "Apply counter";
+    btn.onclick = () => applyCounterSuggestion(s);
+    if (note) {
+      note.textContent = "Added to the trade. The summary, Fit grade, and Playoff Impact re-run on the new package.";
+      note.style.display = applied ? "block" : "none";
+    }
+    card.style.display = "";
+  }
+
+  function applyCounterSuggestion(s) {
+    if (!s) return;
+    const side = s.add_to_side === "b" ? "B" : "A";
+    if (s.type === "pick") {
+      const picks = getSidePicks(side);
+      if (!picks.find(p => String(p.id) === String(s.id))) {
+        picks.push({ id: String(s.id), display: formatPickId(String(s.id)) });
+      }
+    } else {
+      const players = getSidePlayers(side);
+      if (!players.find(p => String(p.id) === String(s.id))) {
+        const obj = allPlayers.find(p => String(p.id) === String(s.id) && (p.position || "") !== "PICK");
+        if (!obj) return;
+        players.push(obj);
+      }
+    }
+    state._appliedCounters = state._appliedCounters || new Set();
+    state._appliedCounters.add(s.type + ":" + s.id + ":" + s.add_to_side);
+    saveState();
+    renderChips(side);  // fires recomputeTrade(); the card re-renders applied
+  }
+
+  function updateTradeChrome(data) {
+    renderUnvaluedStrip(data);
+    applyChipValueDashes(data);
+    renderTradeFit();
+    renderCounterCard(data);
   }
 
   async function recomputeTrade() {
@@ -9440,6 +9678,10 @@ window.initTradePage = function initTradePage(root = document) {
       // leaving the last trade's simulated numbers on screen.
       if (_tradeIntelAbort) _tradeIntelAbort.abort();
       _tradeIntelAbort = null;
+      state._lastEvalData = null;
+      state._lastPiData = null;
+      state._lastPiSig = "";
+      updateTradeChrome(null);
       fetchPlayoffImpact(gen, null);
       return;
     }
@@ -9466,6 +9708,14 @@ window.initTradePage = function initTradePage(root = document) {
       roster_filter_on: _rfActive,
       t1_team_name: _t1Name,
       t2_team_name: _t2Name,
+      // Fit/counter context: which side is the viewer's and which rosters
+      // are bound, so the server can score roster fit and acceptance and
+      // name a counter asset. skip_ai keeps this live path from ever
+      // triggering the LLM analyst on an edit (only Analyze runs that).
+      viewer_side: _rfActive ? "a" : (root.querySelector('input[name="viewerSide"]:checked')?.value || "a"),
+      viewer_roster_id: (root.querySelector("#teamSelect")?.value) || getCurrentRosterId() || "",
+      opponent_roster_id: (typeof rosterFilter !== "undefined" && rosterFilter.sideBRid) || "",
+      skip_ai: true,
     };
 
     try {
@@ -9550,6 +9800,8 @@ window.initTradePage = function initTradePage(root = document) {
 
       _applyTierBadges(data);
       renderTradeBalancer(data);
+      state._lastEvalData = data;
+      updateTradeChrome(data);
 
       // A newer recompute aborts the previous generation's intel fetches so
       // rapid edits don't pile up overlapping server work.
@@ -9802,6 +10054,7 @@ window.initTradePage = function initTradePage(root = document) {
       // A newer recompute started while this fetch was in flight - discard.
       if (gen !== undefined && gen !== _tradeGeneration) return;
       if (res.status === 403) {
+        _clearPiFit();
         body.innerHTML = _piMessage(
           "fa-lock",
           "Pro Feature",
@@ -9848,9 +10101,13 @@ window.initTradePage = function initTradePage(root = document) {
       if (_piRetryTimer) { clearTimeout(_piRetryTimer); _piRetryTimer = null; }
 
       // Stash for share-card inclusion
-      if (data && data.available) state._lastPiData = data;
+      if (data && data.available) {
+        state._lastPiData = data;
+        state._lastPiSig = giveIds.join(",") + "|" + getIds.join(",") + "|" + rosterId;
+      }
 
       if (!data || !data.available) {
+        _clearPiFit();
         body.innerHTML = _piMessage(
           "fa-circle-info",
           "Not available",
@@ -10024,6 +10281,34 @@ window.initTradePage = function initTradePage(root = document) {
           ${stat("Proj. PPG",     _pp.before.avg_ppg,        _pp.after.avg_ppg,        _pp.delta.avg_ppg,        "")}
         </div>` : "";
 
+      // ── Your Lineup After: optimal-lineup PPG and who enters/leaves
+      // the starting lineup, computed server-side from this same sim.
+      const _escHtml = s => String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const lineup = data.lineup_after;
+      const lineupBlock = (lineup && lineup.ppg_before != null && lineup.ppg_after != null) ? (() => {
+        const dPpg = Number(lineup.ppg_after) - Number(lineup.ppg_before);
+        const col = dPpg > 0 ? "#10b981" : dPpg < 0 ? "#ef4444" : "var(--text-muted)";
+        const phrases = [];
+        (lineup.enters || []).forEach(e => phrases.push(`${_escHtml(e.name)} in at ${_escHtml(e.slot)}.`));
+        (lineup.leaves || []).forEach(l => phrases.push(`${_escHtml(l.name)} out of ${_escHtml(l.slot)}.`));
+        if (lineup.room) {
+          phrases.push(`${_escHtml(lineup.room.position)} room #${lineup.room.rank_before} \u2192 #${lineup.room.rank_after}.`);
+        }
+        const text = phrases.length ? `<div class="otc-lineup-text">${phrases.join(" ")}</div>` : "";
+        return `
+        <div class="pi-section-label">Your Lineup After</div>
+        <div class="pi-stat otc-lineup-stat">
+          <div class="pi-stat-label">Starting Lineup PPG</div>
+          <div class="pi-stat-values">
+            <span class="pi-stat-before">${Number(lineup.ppg_before).toFixed(1)}</span>
+            <i class="fa-solid fa-arrow-right-long pi-stat-arrow"></i>
+            <span class="pi-stat-after" style="color:${col};">${Number(lineup.ppg_after).toFixed(1)}</span>
+          </div>
+          ${text}
+        </div>`;
+      })() : "";
+
       body.innerHTML = `
         ${verdict}
         <div class="pi-grid">
@@ -10033,7 +10318,10 @@ window.initTradePage = function initTradePage(root = document) {
         </div>
         ${partnerGrid}
         ${outlookGrid}
+        ${lineupBlock}
         ${missingWarn}`;
+      // The sim landed: the Fit tile gains its playoff component.
+      renderTradeFit();
     } catch (e) {
       // Aborted by a newer recompute, or superseded: stay quiet.
       if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
@@ -13218,6 +13506,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (!res.ok) throw new Error("Trade eval failed (" + res.status + ").");
 
       const data = await res.json();
+      state._lastEvalData = data;
+      updateTradeChrome(data);
 
       // Hide loading, show result panel
       if (loadingState) loadingState.style.display = "none";

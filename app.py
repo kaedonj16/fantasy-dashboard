@@ -26063,7 +26063,11 @@ def api_trade_eval():
         _user_id, session.get("viewer_user_id"), league_id, platform, season
     ) if league_id else False
 
-    if graded and league_id and viewer_roster_id and _has_premium:
+    # skip_ai: the live recompute path sends roster ids too (its Fit and
+    # counter math needs them) but must never trigger the LLM analysis on
+    # every edit - only the Analyze button's POST runs the analyst.
+    _skip_ai = bool(payload.get("skip_ai"))
+    if graded and league_id and viewer_roster_id and _has_premium and not _skip_ai:
         try:
             from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup, \
                 _ctx_is_sf
@@ -26203,6 +26207,189 @@ def api_trade_eval():
         and abs_diff > max(_veto_baseline * 0.30, 150)
     )
 
+    # ── Trade Fit components + deterministic counter ─────────────────────
+    # Every component is computed from signals this endpoint (or its
+    # sibling surfaces) already produces; a component that cannot be
+    # computed for this trade stays None and the client hides that bar.
+    # An ungraded trade gets no Fit and no counter: its totals exclude
+    # real assets, so any score built on them would be fiction.
+    fit = {
+        "value_balance": None,
+        "roster_fit": None,
+        "acceptance": None,
+        "acceptance_rate": None,
+        "acceptance_label": None,
+    }
+    counter_suggestion = None
+    _viewer_gets = side_b if viewer_side == "b" else side_a
+    _viewer_gives = side_a if viewer_side == "b" else side_b
+    if graded and both_sides_filled:
+        fit["value_balance"] = _fit_value_balance(abs_diff, baseline)
+
+        # Roster-context components (roster fit, acceptance, and the
+        # counter's partner-player pool) need the league context under
+        # the same premium gate as the analyst block above.
+        _fit_ctx = None
+        _viewer_roster = None
+        _partner_roster = None
+        _mv_lookup = None
+        if league_id and viewer_roster_id and _has_premium:
+            try:
+                from dashboard_services.ai.context_builders import (
+                    calculate_roster_depth_warning as _drw,
+                    build_model_value_lookup as _bmvl,
+                    _ctx_is_sf as _is_sf_ctx,
+                )
+                _fit_ctx = get_league_ctx_from_cache(
+                    platform=platform, league_id=league_id, season=season)
+                _rosters = _fit_ctx.get("rosters") or []
+                _viewer_roster = next(
+                    (r for r in _rosters
+                     if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+                _opp_rid = str(payload.get("opponent_roster_id") or "").strip()
+                if _opp_rid and _opp_rid != str(viewer_roster_id):
+                    _partner_roster = next(
+                        (r for r in _rosters
+                         if str(r.get("roster_id")) == _opp_rid), None)
+                _mv_lookup = _bmvl(
+                    _fit_ctx.get("model_value_table") or [],
+                    is_sf=_is_sf_ctx(_fit_ctx), scoring_type=scoring_type)
+            except Exception:
+                logger.debug("[trade-eval] fit ctx skipped", exc_info=True)
+                _fit_ctx = None
+
+        if _fit_ctx is not None and _viewer_roster is not None \
+                and _mv_lookup is not None:
+            try:
+                from utils.trade import (
+                    derive_league_thresholds as _dlt,
+                    roster_position_counts as _rpc,
+                    starter_gap_needs as _sgn,
+                    startable_surplus as _ssu,
+                )
+                _rosters = _fit_ctx.get("rosters") or []
+                _n_teams = len(_rosters) or 12
+                _is_sf = _is_sf_ctx(_fit_ctx)
+                _thr, _floor = _dlt(
+                    _fit_ctx.get("roster_positions") or [], _n_teams,
+                    is_sf=_is_sf)
+
+                def _counts(roster):
+                    return _rpc(
+                        (
+                            (str((_mv_lookup.get(str(pid)) or {}).get("position") or ""),
+                             float((_mv_lookup.get(str(pid)) or {}).get("value") or 0))
+                            for pid in (roster.get("players") or [])
+                        ),
+                        _thr,
+                    )
+
+                _sending = [a for a in (_viewer_gives.get("assets") or [])
+                            if str(a.get("position") or "").upper() != "PICK"]
+                _receiving = [a for a in (_viewer_gets.get("assets") or [])
+                              if str(a.get("position") or "").upper() != "PICK"]
+
+                # Roster fit: neutral 5, +1.5 per received player who
+                # fills a starter-gap need of the viewer's (cap +3), -3
+                # per danger and -1.5 per caution from the depth model
+                # run on the post-trade roster. Inputs are the depth
+                # model's own outputs, nothing invented.
+                _viewer_needs = set(_sgn(_counts(_viewer_roster), _floor))
+                _fit_score = 5.0
+                _fills = sum(
+                    1 for a in _receiving
+                    if str(a.get("position") or "").upper() in _viewer_needs)
+                _fit_score += min(3.0, 1.5 * _fills)
+                _dw = _drw(
+                    _viewer_roster, _mv_lookup, _sending, _receiving,
+                    roster_positions=_fit_ctx.get("roster_positions") or [],
+                    num_teams=_n_teams, is_sf=_is_sf,
+                )
+                for _w in (_dw or {}).values():
+                    if _w.get("severity") == "danger":
+                        _fit_score -= 3.0
+                    elif _w.get("severity") == "caution":
+                        _fit_score -= 1.5
+                fit["roster_fit"] = int(max(0, min(10, round(_fit_score))))
+
+                # Acceptance: the suggestions engine's own estimate - the
+                # archetype engine's logistic on the depth-adjusted value
+                # ratio from the partner's side, nudged by how the send
+                # package fits the partner's needs/surplus.
+                if _partner_roster is not None:
+                    from dashboard_services.archetype_engine import (
+                        _acceptance_fit as _afit,
+                        _estimate_acceptance as _eacc,
+                    )
+                    _p_counts = _counts(_partner_roster)
+                    _p_needs = set(_sgn(_p_counts, _floor))
+                    _p_surplus = set(_ssu(_p_counts, _floor))
+                    _fit_nudge = _afit(
+                        _viewer_gives.get("assets") or [], _p_needs, _p_surplus)
+                    _rate = _eacc(
+                        float(_viewer_gives.get("effective_total") or 0),
+                        float(_viewer_gets.get("effective_total") or 0),
+                        is_preferred=False, fit=_fit_nudge)
+                    fit["acceptance_rate"] = _rate
+                    fit["acceptance_label"] = _fit_acceptance_label(_rate)
+                    fit["acceptance"] = int(max(0, min(10, round(_rate / 10.0))))
+            except Exception:
+                logger.debug("[trade-eval] fit components skipped",
+                             exc_info=True)
+
+        # Deterministic counter: when the viewer is light beyond the fair
+        # band, name the single asset whose calibrated value best closes
+        # the gap - a future pick from the calibrated table (dynasty
+        # only) or a player off the partner's roster when the context
+        # loaded. Same closest-to-gap cost as the client Trade Balancer,
+        # and the asset must actually close most of the gap to be named.
+        _gap = float(_viewer_gives.get("effective_total") or 0) - \
+            float(_viewer_gets.get("effective_total") or 0)
+        if _gap > fair_band:
+            _cands = []  # (cost, kind order, id, name, value, type)
+            if scoring_type != "redraft":
+                for _yr in (season + 1, season + 2, season + 3):
+                    for _rnd in (1, 2, 3, 4):
+                        for _bucket in ("early", "mid", "late"):
+                            _pk = f"{_yr}_{_rnd}_{_bucket}"
+                            _v = value_pick(_pk)
+                            if _v:
+                                _v = float(_v)
+                                _cands.append((
+                                    abs(_v - _gap) + 0.15 * max(0.0, _v - _gap),
+                                    0, _pk, _pick_display_name(_pk), _v, "pick"))
+            if _partner_roster is not None:
+                _in_trade = {str(x) for x in side_a_players + side_b_players}
+                for _pid in (_partner_roster.get("players") or []):
+                    _pid = str(_pid)
+                    if _pid in _in_trade:
+                        continue
+                    _prow = players_by_id.get(_pid)
+                    if not _prow:
+                        continue
+                    _pv = player_trade_value(
+                        _prow, league_type=league_type,
+                        league_size=league_size, scoring_format=scoring_format,
+                        scoring_type=scoring_type, te_premium=te_premium)
+                    if _pv and float(_pv) > 0:
+                        _pv = float(_pv)
+                        _cands.append((
+                            abs(_pv - _gap) + 0.15 * max(0.0, _pv - _gap),
+                            1, _pid, str(_prow.get("name") or _pid), _pv,
+                            "player"))
+            _cands = [c for c in _cands if 0.4 * _gap <= c[4] <= 1.6 * _gap]
+            if _cands:
+                _cands.sort(key=lambda c: (c[0], c[1]))
+                _best = _cands[0]
+                counter_suggestion = {
+                    "type": _best[5],
+                    "id": _best[2],
+                    "name": _best[3],
+                    "value": round(_best[4], 1),
+                    "gap": round(_gap, 1),
+                    "add_to_side": viewer_side,
+                }
+
     return jsonify({
         "side_a": side_a,
         "side_b": side_b,
@@ -26214,6 +26401,8 @@ def api_trade_eval():
         "graded": graded,
         "unvalued_assets": unvalued_assets,
         "veto_risk": veto_risk,
+        "fit": fit,
+        "counter_suggestion": counter_suggestion,
         "analysis_html": analysis_html,
         "analysis_error": analysis_error,
         "depth_warnings": depth_warnings,
@@ -26317,6 +26506,19 @@ def api_trade_eval_playoff_impact():
             except Exception:
                 logger.warning("[trade-eval/playoff-impact] partner sim failed", exc_info=True)
 
+        # Trade Fit's playoff component: a 0-10 read of this sim's own
+        # deltas, computed beside the numbers it summarizes.
+        result["fit_playoff_impact"] = _fit_playoff_score(result.get("delta"))
+
+        # Your Lineup After: optimal-lineup PPG and who enters/leaves the
+        # starting lineup, from the same sim state (never blocks the card).
+        try:
+            _lineup = _lineup_after_block(sim_state, roster_id, give_ids, get_ids, ctx)
+            if _lineup:
+                result["lineup_after"] = _lineup
+        except Exception:
+            logger.debug("[trade-eval/playoff-impact] lineup-after failed", exc_info=True)
+
         return jsonify(result)
 
     except Exception:
@@ -26411,6 +26613,305 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
         "value_delta": value_delta,  # > 0 means banking value
         "roster_age_before": roster_age_before,  # value-weighted roster age pre-swap
         "roster_age_after": roster_age_after,  # value-weighted roster age post-swap
+    }
+
+
+# ── Trade Fit / counter / lineup-after helpers ─────────────────────────────
+# Presentation scores (0-10) computed ONLY from signals the trade surfaces
+# already produce: the eval's value diff, the archetype engine's acceptance
+# estimate, the roster-depth model, and the playoff sim's deltas. A
+# component that cannot be computed for a given trade stays None and the
+# client hides that bar and averages the rest - never a plausible default
+# in its place.
+
+def _fit_value_balance(abs_diff, baseline):
+    """0-10 from the eval's own numbers: 10 for an even swap, sliding to 0
+    once the gap reaches 40% of the larger side (past the 30% veto line)."""
+    try:
+        pct = float(abs_diff or 0) / max(float(baseline or 0), 1.0)
+    except (TypeError, ValueError):
+        return None
+    return int(max(0, min(10, round(10 * (1 - pct / 0.40)))))
+
+
+def _fit_acceptance_label(rate):
+    """Front Office acceptance scale (front_office_report._acceptance_label):
+    Likely at 60+, Possible at 40-59, Long shot below 40."""
+    try:
+        r = int(rate)
+    except (TypeError, ValueError):
+        return None
+    if r >= 60:
+        return "Likely"
+    if r >= 40:
+        return "Possible"
+    return "Long shot"
+
+
+def _fit_playoff_score(delta):
+    """0-10 from the sim's own deltas: 5 when the deal is flat, +1 per
+    playoff-odds point and +0.8 per projected-PPG point the viewer gains."""
+    if not isinstance(delta, dict):
+        return None
+    try:
+        po = float(delta.get("playoff_pct") or 0)
+        ppg = float(delta.get("avg_ppg") or 0)
+    except (TypeError, ValueError):
+        return None
+    return int(max(0, min(10, round(5 + po + 0.8 * ppg))))
+
+
+def _pick_display_name(pick_id):
+    """'2027_2_mid' -> '2027 2nd (Mid)'. Mirrors formatPickId in app.js."""
+    raw = str(pick_id or "")
+    parts = raw.split("_")
+    if len(parts) < 3:
+        return raw.replace("_", " ")
+    year, rnd, third = parts[0], parts[1], "_".join(parts[2:])
+    try:
+        rnd_i = int(rnd)
+    except (TypeError, ValueError):
+        return raw.replace("_", " ")
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd_i, "th")
+    bucket = {"early": "Early", "mid": "Mid", "late": "Late"}.get(third.lower())
+    if bucket:
+        return f"{year} {rnd_i}{suffix} ({bucket})"
+    if third.isdigit():
+        return f"{year} {rnd_i}.{int(third):02d}"
+    return raw.replace("_", " ")
+
+
+def _lineup_slot_labels(starter_ids, ppg_by_pid, pos_by_pid, roster_positions):
+    """Display labels for a chosen optimal starter set.
+
+    The exact solver's slot assignment is points-optimal but its
+    tie-breaking is arbitrary (the star can land in the FLEX while a
+    lesser player holds the dedicated slot, same total). For the
+    reader-facing "in at WR1" line, relabel the SAME set greedily:
+    most restrictive slots first (fewest eligible positions), best
+    remaining player per slot, dedicated slots numbered in order.
+    """
+    from utils.lineups import slot_eligible_positions, starting_slots
+
+    slots = starting_slots(roster_positions)
+    order = sorted(
+        range(len(slots)),
+        key=lambda i: (len(slot_eligible_positions(slots[i])), i),
+    )
+    remaining = list(starter_ids)
+    counts: dict = {}
+    labels: dict = {}
+    for i in order:
+        slot = slots[i]
+        eligible = slot_eligible_positions(slot)
+        best = None
+        for pid in remaining:
+            if pos_by_pid.get(pid) in eligible:
+                if best is None or ppg_by_pid.get(pid, 0.0) > ppg_by_pid.get(best, 0.0):
+                    best = pid
+        if best is None:
+            continue
+        remaining.remove(best)
+        if slot in ("FLEX", "REC_FLEX", "WRRB_FLEX"):
+            labels[best] = "FLEX"
+        elif slot == "SUPER_FLEX":
+            labels[best] = "Superflex"
+        else:
+            counts[slot] = counts.get(slot, 0) + 1
+            labels[best] = f"{slot}{counts[slot]}"
+    return labels
+
+
+def _lineup_after_block(sim_state, roster_id, give_ids, get_ids, ctx=None):
+    """Your Lineup After: optimal-lineup PPG before/after the swap, who
+    enters and leaves the starting lineup, and the headline room's
+    league rank change.
+
+    PPG is PR #2916's starter-lineup definition (power_score.
+    starter_lineup_points): the slot-legal optimal lineup's projected
+    points in league scoring, averaged over the sim's remaining-week
+    projection maps. Enters/leaves come from the exact optimal assignment
+    (utils.lineups.assign_optimal_lineup) on the sim's season projection
+    map, the same projections the sim runs on. Room rank reuses the
+    Teams page's ranking (utils.trade.rank_rosters_by_position) over the
+    league context's value table, for the room of the highest-projected
+    incoming player; it is reported only when the rank actually moves.
+    Returns None when the sim state can't support the block.
+    """
+    if not sim_state:
+        return None
+    from dashboard_services.power_score import starter_lineup_points
+
+    ppg_map = sim_state.get("ppg_map") or {}
+    pos_map = sim_state.get("pos_map") or {}
+    roster_positions = sim_state.get("roster_positions") or []
+    roster_pid_map = sim_state.get("roster_pid_map") or {}
+    current_pids = [str(p) for p in roster_pid_map.get(roster_id, [])]
+    if not current_pids or not ppg_map:
+        return None
+    give_set = {str(p) for p in (give_ids or [])}
+    get_set = {str(p) for p in (get_ids or [])}
+    after_pids = [p for p in current_pids if p not in give_set]
+    for p in get_set:
+        if p not in after_pids:
+            after_pids.append(p)
+
+    def _avg_lineup_ppg(pids):
+        week_maps = sim_state.get("week_ppg_maps") or {}
+        totals = []
+        for wmap in week_maps.values():
+            pts = {}
+            for pid, info in (wmap or {}).items():
+                try:
+                    pts[str(pid)] = float((info or {}).get("ppg") or 0)
+                except (TypeError, ValueError):
+                    continue
+            t = starter_lineup_points(pids, pts, pos_map,
+                                      roster_positions=roster_positions)
+            if t > 0:
+                totals.append(t)
+        if totals:
+            return round(sum(totals) / len(totals), 1)
+        pts = {}
+        for pid, info in ppg_map.items():
+            try:
+                pts[str(pid)] = float((info or {}).get("ppg") or 0)
+            except (TypeError, ValueError):
+                continue
+        t = starter_lineup_points(pids, pts, pos_map,
+                                  roster_positions=roster_positions)
+        return round(t, 1) if t > 0 else None
+
+    ppg_before = _avg_lineup_ppg(current_pids)
+    ppg_after = _avg_lineup_ppg(after_pids)
+    if ppg_before is None or ppg_after is None:
+        return None
+
+    # Enters / leaves with slot labels from the exact assignment.
+    enters, leaves = [], []
+    try:
+        from utils.lineups import assign_optimal_lineup
+        season_pts = {}
+        for pid, info in ppg_map.items():
+            try:
+                season_pts[str(pid)] = float((info or {}).get("ppg") or 0)
+            except (TypeError, ValueError):
+                continue
+
+        before_assign = assign_optimal_lineup(
+            season_pts, pos_map, roster_positions, current_pids)
+        after_assign = assign_optimal_lineup(
+            season_pts, pos_map, roster_positions, after_pids)
+        # Labels: the solver's starter SETS are exact, but its slot
+        # tie-breaking is arbitrary on points ties (the star can land in
+        # the FLEX). Relabel each set greedily, most restrictive first.
+        before_labels = _lineup_slot_labels(
+            [str(p) for p in (before_assign.get("starters") or set())],
+            season_pts, pos_map, roster_positions)
+        after_labels = _lineup_slot_labels(
+            [str(p) for p in (after_assign.get("starters") or set())],
+            season_pts, pos_map, roster_positions)
+        from utils.utils import load_players_index
+        players_index = load_players_index() or {}
+
+        def _name(pid):
+            meta = players_index.get(str(pid)) or {}
+            return str(meta.get("name") or pid)
+
+        for pid in (after_assign.get("starters") or set()) - \
+                (before_assign.get("starters") or set()):
+            enters.append({"id": str(pid), "name": _name(pid),
+                           "slot": after_labels.get(str(pid), "")})
+        for pid in (before_assign.get("starters") or set()) - \
+                (after_assign.get("starters") or set()):
+            leaves.append({"id": str(pid), "name": _name(pid),
+                           "slot": before_labels.get(str(pid), "")})
+        # Stable, readable order: lineup order (assignment order), not set order.
+        _order = {str(p): i for i, p in enumerate(after_assign.get("assignment") or [])}
+        enters.sort(key=lambda e: _order.get(e["id"], 99))
+        _border = {str(p): i for i, p in enumerate(before_assign.get("assignment") or [])}
+        leaves.sort(key=lambda e: _border.get(e["id"], 99))
+        enters, leaves = enters[:2], leaves[:2]
+    except Exception:
+        logger.debug("[trade-eval/playoff-impact] lineup diff skipped",
+                     exc_info=True)
+        enters, leaves = [], []
+
+    # Room rank change for the headline incoming player's room (Teams page
+    # ranking over the ctx value table). Only reported when it moves.
+    room = None
+    try:
+        focus_pid = None
+        focus_ppg = -1.0
+        for pid in get_set:
+            info = ppg_map.get(pid) or {}
+            try:
+                v = float(info.get("ppg") or 0)
+            except (TypeError, ValueError):
+                v = 0.0
+            if v > focus_ppg:
+                focus_ppg, focus_pid = v, pid
+        focus_pos = str(pos_map.get(focus_pid) or "").upper() if focus_pid else ""
+        rosters = (ctx or {}).get("rosters") or []
+        mv_table = (ctx or {}).get("model_value_table") or []
+        if focus_pos in ("QB", "RB", "WR", "TE") and rosters and mv_table:
+            from dashboard_services.ai.context_builders import (
+                build_model_value_lookup, _ctx_is_sf,
+            )
+            from utils.trade import rank_rosters_by_position, roster_pos_value_lists
+            from utils.lineup_slots import canonicalize_slots, count_lineup_slots
+            lookup = build_model_value_lookup(
+                mv_table, is_sf=_ctx_is_sf(ctx),
+                scoring_type="redraft" if _league_is_redraft(ctx) else "dynasty",
+            )
+            slot_counts = count_lineup_slots(
+                canonicalize_slots((ctx or {}).get("roster_positions") or []))
+            before_lists = roster_pos_value_lists(rosters, lookup, rid_cast=str)
+            # After lists: the viewer's roster swaps, and the roster that
+            # owned the incoming players (the sim's counterparty rule)
+            # swaps the other way, so neither room double-counts a player.
+            _cp_rid = None
+            _cp_best = 0
+            for r in rosters:
+                if str(r.get("roster_id")) == str(roster_id):
+                    continue
+                _held = len(get_set & {str(p) for p in (r.get("players") or [])})
+                if _held > _cp_best:
+                    _cp_best, _cp_rid = _held, str(r.get("roster_id"))
+            after_rosters = []
+            for r in rosters:
+                r2 = dict(r)
+                rid_s = str(r.get("roster_id"))
+                if rid_s == str(roster_id):
+                    r2["players"] = after_pids
+                elif _cp_rid is not None and rid_s == _cp_rid:
+                    _cp = [str(p) for p in (r.get("players") or [])
+                           if str(p) not in get_set]
+                    for p in give_set:
+                        if p not in _cp:
+                            _cp.append(p)
+                    r2["players"] = _cp
+                after_rosters.append(r2)
+            after_lists = roster_pos_value_lists(after_rosters, lookup, rid_cast=str)
+            _, ranks_before = rank_rosters_by_position(
+                before_lists, slot_counts, positions=[focus_pos])
+            _, ranks_after = rank_rosters_by_position(
+                after_lists, slot_counts, positions=[focus_pos])
+            rb = (ranks_before.get(focus_pos) or {}).get(str(roster_id))
+            ra = (ranks_after.get(focus_pos) or {}).get(str(roster_id))
+            if rb and ra and rb != ra:
+                room = {"position": focus_pos, "rank_before": rb, "rank_after": ra}
+    except Exception:
+        logger.debug("[trade-eval/playoff-impact] room rank skipped",
+                     exc_info=True)
+        room = None
+
+    return {
+        "ppg_before": ppg_before,
+        "ppg_after": ppg_after,
+        "enters": enters,
+        "leaves": leaves,
+        "room": room,
     }
 
 
