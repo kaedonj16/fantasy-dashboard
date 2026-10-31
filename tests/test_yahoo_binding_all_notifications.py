@@ -199,16 +199,23 @@ def test_yahoo_value_drops_route_by_binding(monkeypatch):
     # notifier itself imports it lazily at call time, so the stub is what
     # its `from ... import get_top_movers` resolves to).
     pvh = types.ModuleType("dashboard_services.player_value_history")
-    pvh.get_top_movers = lambda days=7, limit=50: {
+    pvh.get_top_movers = lambda days=7, limit=50, **kw: {
         "fallers": [
             {"player_id": "p4", "delta": -80, "name": "Her Guy"},
             {"player_id": "p6", "delta": -70, "name": "Their Guy"},
         ], "risers": []}
     monkeypatch.setitem(sys.modules, "dashboard_services.player_value_history", pvh)
+    # League 1307110 is Kaedon's REDRAFT Yahoo league: Yahoo's get_league
+    # returns only {league_id, season, name}, and an unlabelled Yahoo
+    # league classifies as redraft, so the alert is priced on redraft
+    # movers and titled accordingly (regression fix, PR #2927).
+    monkeypatch.setattr(papi, "get_league", lambda *a: {
+        "league_id": LEAGUE, "season": SEASON, "name": "Yahoo League"})
+    pn._league_format_cache.clear()
     monkeypatch.setattr(papi, "get_rosters", lambda *a: _rosters())
 
     pn.notify_value_drops()
-    _assert_only_her_device(sends, title="Dynasty value dropping")
+    _assert_only_her_device(sends, title="Redraft value dropping")
     assert "Her Guy" in sends[0]["body"]
 
 
