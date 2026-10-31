@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-30",
+        "tag": "new",
+        "text": "Guides: a Latest strip now leads the guides index with the three newest articles, and category chips stick at the top of the index and jump straight to each category section. The first Trade Case Study is also live: two receivers for an elite running back, pricing Drake London and Tetairoa McMillan for Bijan Robinson with live values in both 1QB and Superflex.",
+        "link": "/guides"
+    },
+    {
+        "date": "2026-10-30",
         "tag": "update",
         "text": "Dynasty values: the market blend behind the dynasty board now uses KeepTradeCut as its second source alongside FantasyCalc, replacing DynastyProcess. KeepTradeCut values are crowdsourced and trade based and refresh through the day, so the board tracks the live dynasty market more closely. DynastyProcess still fills in for any player KeepTradeCut does not cover.",
         "link": "/players"

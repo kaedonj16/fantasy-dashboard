@@ -1031,6 +1031,246 @@ GUIDES = {
             </div>
         """,
     },
+    "two-for-one-consolidation-trade-case": {
+        "title": "Two Receivers for an Elite Running Back: Pricing a Consolidation Trade",
+        "summary": "A worked consolidation case: Drake London, Tetairoa McMillan and a "
+                   "throw-in quarterback for Bijan Robinson, priced live in 1QB and "
+                   "Superflex, and what the gap in each format actually means.",
+        "published": "2026-10-30",
+        "updated": "2026-10-30",
+        "category": "Trade Case Studies",
+        "body": """
+            <p>
+              Every dynasty manager eventually faces the same shape of offer: two good
+              players for one great one. The two-for-one consolidation trade is the most
+              common deal in the format and the one managers grade worst, because the
+              math feels simple (add up both sides) while the actual decision is not.
+              This case study prices one real version of that offer with live values, in
+              both major formats, and shows exactly where the raw math stops being the
+              answer.
+            </p>
+            <div class="highlight-box">
+              The finding: priced live on October 30, 2026, Drake London, Tetairoa
+              McMillan and throw-in quarterback Justin Fields add up to Bijan Robinson
+              in both formats: the package leads by 7 points in 1QB and sits 23 points
+              short in Superflex, both inside the noise band. The quarterback who looks
+              like nothing in 1QB is the piece that makes the Superflex side work.
+            </div>
+            <h2 class="static-section-title">The offer on the table</h2>
+            <p>
+              A manager deep at receiver offers <strong>Drake London and Tetairoa
+              McMillan</strong> for <strong>Bijan Robinson</strong>, and throws in
+              <strong>Justin Fields</strong>, a 27.6 year old bench quarterback, to
+              close it. No picks change hands. Here is what each asset costs on the
+              live chart, in 1QB value:
+            </p>
+            <table style="border-collapse:collapse;width:100%;font-size:15px;">
+              <tr>
+                <th style="text-align:left;padding:6px 8px;">Player</th>
+                <th style="text-align:left;padding:6px 8px;">Position</th>
+                <th style="text-align:left;padding:6px 8px;">Age</th>
+                <th style="text-align:left;padding:6px 8px;">1QB value</th>
+                <th style="text-align:left;padding:6px 8px;">Overall rank</th>
+              </tr>
+              <tr>
+                <td style="padding:6px 8px;">Bijan Robinson</td>
+                <td style="padding:6px 8px;">RB</td>
+                <td style="padding:6px 8px;">24.7</td>
+                <td style="padding:6px 8px;">1,101</td>
+                <td style="padding:6px 8px;">2</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 8px;">Drake London</td>
+                <td style="padding:6px 8px;">WR</td>
+                <td style="padding:6px 8px;">25.2</td>
+                <td style="padding:6px 8px;">604</td>
+                <td style="padding:6px 8px;">17</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 8px;">Tetairoa McMillan</td>
+                <td style="padding:6px 8px;">WR</td>
+                <td style="padding:6px 8px;">23.5</td>
+                <td style="padding:6px 8px;">494</td>
+                <td style="padding:6px 8px;">22</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 8px;">Justin Fields</td>
+                <td style="padding:6px 8px;">QB</td>
+                <td style="padding:6px 8px;">27.6</td>
+                <td style="padding:6px 8px;">10</td>
+                <td style="padding:6px 8px;">QB40</td>
+              </tr>
+            </table>
+            <p>
+              London and McMillan sum to 1,098, and Fields adds 10, for a package of
+              1,108. Robinson alone is 1,101. The package side leads by 7 points, which
+              is 0.6% of the price of the player being bought. Fields carries no overall
+              chart rank at a value of 10 in 1QB; QB40 is his rank on the quarterback
+              board, and in this format he is priced like what he is here: a throw-in.
+              For context at the top of the board, Jahmyr Gibbs leads at 1,143 and
+              Robinson sits second, 42 points behind him, with Jaxon Smith-Njigba third
+              at 1,037. A 7 point gap at this level is ordinary daily movement, not a
+              meaningful edge.
+            </p>
+            <h2 class="static-section-title">What the raw math says, and what it cannot say</h2>
+            <p>
+              By the addition alone, this deal is dead even with a 7 point lean to the
+              package, and that lean is where the beginner mistake starts: treating
+              value as a verdict. Our
+              <a href="/guides/evaluating-a-trade">trade evaluation guide</a> warns
+              against exactly that. A value is a price, and prices have to be read
+              against roster spots.
+            </p>
+            <p>
+              The side receiving London and McMillan spends an extra starting spot to
+              hold them, and a bench spot on Fields, to win the addition by only 7
+              points. The side receiving Robinson gains the second most valuable player
+              on the board and frees spots, which in practice become the best player on
+              that manager's bench or a waiver spot that stays flexible. Starting spots
+              are a real cost, and a 0.6% edge that needs extra spots to realize is not
+              an edge at all: it is the consolidation premium, priced. Elite players
+              cost more per point of value than merely good players, because there is
+              exactly one spot in your lineup where a 1,101-value season fits and twenty
+              ways to assemble 1,108 across two starting spots and a bench.
+            </p>
+            <p>
+              Our standing rule applies here: a 42 and a 28 is a meaningful gap, a 42.1
+              and a 41.8 is noise. Scaled to this chart, 7 points on a 1,101 base is the
+              second kind. If your process cannot call this offer close to even in 1QB,
+              the process is rounding harder than the market does.
+            </p>
+            <h2 class="static-section-title">The same trade in Superflex is a different trade</h2>
+            <p>
+              Now price the identical offer with Superflex values, the way a Superflex
+              league must:
+            </p>
+            <table style="border-collapse:collapse;width:100%;font-size:15px;">
+              <tr>
+                <th style="text-align:left;padding:6px 8px;">Player</th>
+                <th style="text-align:left;padding:6px 8px;">Superflex value</th>
+              </tr>
+              <tr>
+                <td style="padding:6px 8px;">Bijan Robinson</td>
+                <td style="padding:6px 8px;">1,011</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 8px;">Drake London</td>
+                <td style="padding:6px 8px;">529</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 8px;">Tetairoa McMillan</td>
+                <td style="padding:6px 8px;">438</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 8px;">Justin Fields</td>
+                <td style="padding:6px 8px;">21</td>
+              </tr>
+            </table>
+            <p>
+              Start with the receivers alone: they sum to 967 against Robinson at
+              1,011, a gap of 44 points, or 4.4%, which sits outside the noise band
+              this chart teaches you to ignore. The two-for-one by itself is not a fair
+              Superflex deal. Fields is what brings it back. He adds 21 of those 44
+              points, more than double his 1QB price, and the full package lands at 988
+              against 1,011: 23 points short, or 2.3%, back inside the band where fit
+              decides. Priced on 1QB math, Fields looks like a nothing throw-in, 10
+              points on an 1,101 price. In Superflex he is worth more than twice that,
+              and he is the reason the same offer grades fair in both leagues.
+              Superflex pricing pulls value toward quarterbacks and compresses the top
+              of the running back and receiver market (Robinson's own price drops from
+              1,101 to 1,011 between formats, while a top quarterback like Josh Allen
+              rises from 599 to 1,038).
+            </p>
+            <p>
+              This is the practical lesson behind our
+              <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a> guide: never grade
+              a deal on the wrong format's numbers. A manager who screenshots the 1QB
+              math into a Superflex league chat is arguing from a price list his league
+              does not use. Here the two formats do not even agree on the sign of the
+              margin: the package leads by 7 in 1QB and trails by 23 in Superflex, a 30
+              point swing hiding inside one throw-in quarterback.
+            </p>
+            <h2 class="static-section-title">Age and position change the risk, not the price</h2>
+            <p>
+              The values already price in age, but the two sides carry different kinds of
+              risk, and a good manager names it before accepting either side.
+            </p>
+            <p>
+              Robinson is 24.7, a running back in his prime window, at the position with
+              the earliest decline curve in the format. His price assumes several more
+              elite seasons and no major injury; running back prices fall faster than
+              any other position when either assumption breaks. London (25.2) and
+              McMillan (23.5) are receivers, the position that holds value longest, and
+              there are two of them: if one loses his quarterback or his target share,
+              the other still starts for you. Fields (27.6) carries the third kind of
+              risk: a bench quarterback is one injury or job change away from his price
+              moving sharply in either direction, and the market prices him like it,
+              which is exactly why he can be had as a throw-in. The package side is
+              diversified. The Robinson side is concentrated in one of the two best
+              assets on the board and the single most fragile aging curve.
+            </p>
+            <p>
+              None of that overturns the price. It tells you who should be on which side.
+              A contender with a thin running back room and receivers to spare takes
+              Robinson and the freed spots, because his window is now and concentration
+              is what contenders buy. A rebuilder, or a contender whose second running
+              back spot is a weekly guess, takes the two receivers, the extra starter
+              and the bench quarterback, because his problem is total lineup value
+              across the next three seasons, not one ceiling slot.
+            </p>
+            <h2 class="static-section-title">How to run this check on your own offer</h2>
+            <p>
+              First, pull all four players on the
+              <a href="/dynasty-trade-value-chart">dynasty trade value chart</a> with
+              your league's format selected, and add each side yourself. Second, convert
+              the gap to a percentage of the best player's value: under roughly 3%, treat
+              the deal as even on price and decide it on fit, because daily recalculation
+              moves prices by that much on ordinary news; above it, settle the price
+              before you talk about fit. The two receivers alone were 4.4% light in
+              Superflex here, and the throw-in exists because of that check. Third,
+              count the roster spots each side consumes, and charge the side using more
+              spots for it. Fourth, check direction before you decide the market is
+              wrong: the <a href="/top-movers">top movers</a> page shows whether the
+              players involved are rising or falling on role, and a receiver whose value
+              is climbing on target share is a different asset from the same value built
+              on touchdown luck. Our
+              <a href="/guides/evaluating-a-trade">trade evaluation guide</a> walks the
+              full process, and the <a href="/trade">trade calculator</a> runs this
+              exact math on your league's settings when you are ready to send a counter.
+            </p>
+            <h2 class="static-section-title">The verdict on this one</h2>
+            <p>
+              Priced live, this offer is fair in both formats, and the formats still
+              grade it differently. In 1QB the package leads by 7 points, 0.6%. In
+              Superflex it trails by 23 points, 2.3%, and only gets that close because
+              the throw-in quarterback is worth more than double there. Both gaps sit
+              inside the noise band, so the value cannot make the decision for you and
+              roster shape does. If you need the points in one spot, pay for the star
+              and take the freed spots. If you need starters, keep the pair, the
+              flexibility, and a bench quarterback whose price can only really move in
+              one format. What you should not do is accept it, or reject it, in one
+              format using the other format's spreadsheet: without Fields, the
+              Superflex version of this deal is 4.4% light and is not fair at all.
+            </p>
+            <p>
+              <em>Data and method: every value in this article was pulled on October 30,
+              2026, from the BR Fantasy dynasty rankings, the dynasty quarterback
+              rankings, and the dynasty trade value chart, and the pages were
+              cross-checked against each other for every player named (1QB value,
+              Superflex value, age, and rank). Fields sits outside the overall chart's
+              top 150 in 1QB, so his rank shown is his quarterback board rank. Values
+              recalculate daily, so read the tables as a dated snapshot of one real
+              price structure, not a permanent price list.</em>
+            </p>
+            <div class="highlight-box">
+              Bottom line: add the values, convert the gap to a percentage, charge for
+              the extra roster spots, and re-price in your own format before you judge
+              any two-for-one. A throw-in worth 10 in one format can be worth 21 in
+              the other. Under a 3% gap in your format, you are not trading value, you
+              are trading roster shape.
+            </div>
+        """,
+    },
     "dynasty-rebuild-strategy": {
         "title": "How to Rebuild a Dynasty Roster",
         "summary": "When to tear it down, which assets to sell, and how to restock with youth "
@@ -2248,6 +2488,7 @@ GUIDE_ORDER = [
     "rookie-draft-strategy",
     "buy-low-sell-high",
     "evaluating-a-trade",
+    "two-for-one-consolidation-trade-case",
     "dynasty-rebuild-strategy",
     "contending-in-dynasty",
     "te-premium-leagues",

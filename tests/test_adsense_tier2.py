@@ -20,7 +20,7 @@ def _guide_words(body: str) -> int:
     return len(re.sub(r"\s+", " ", text).split())
 
 
-# Per-article metadata for the 14 legacy guides, keyed by slug:
+# Per-article metadata for every guide, keyed by slug:
 # (category, published, updated). Dates are the honest ones, not varied
 # for show: the first six guides carry the site's declared published date
 # of 2026-06-15 (the GUIDE_PUBLISHED value in place since the guides were
@@ -33,6 +33,7 @@ EXPECTED_GUIDE_META = {
     "rookie-draft-strategy": ("Roster Construction", "2026-06-15", "2026-10-02"),
     "buy-low-sell-high": ("Market Movement", "2026-06-15", "2026-10-02"),
     "evaluating-a-trade": ("Trade Case Studies", "2026-06-15", "2026-10-02"),
+    "two-for-one-consolidation-trade-case": ("Trade Case Studies", "2026-10-30", "2026-10-30"),
     "dynasty-rebuild-strategy": ("Roster Construction", "2026-10-02", "2026-10-02"),
     "contending-in-dynasty": ("Roster Construction", "2026-10-02", "2026-10-02"),
     "te-premium-leagues": ("Roster Construction", "2026-10-02", "2026-10-02"),
@@ -52,7 +53,7 @@ def test_guides_are_long_form_with_sections():
         guide_read_minutes,
     )
 
-    assert len(GUIDE_ORDER) == 14
+    assert len(GUIDE_ORDER) == 15
     assert set(GUIDE_ORDER) == set(GUIDES) == set(EXPECTED_GUIDE_META)
     for slug in GUIDE_ORDER:
         category, published, updated = EXPECTED_GUIDE_META[slug]
