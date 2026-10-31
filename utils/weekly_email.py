@@ -981,6 +981,9 @@ def _collect_league_digest(
             rosters = get_rosters(platform, league_id, season) or []
             league = get_league(platform, league_id, season) or {}
             users = get_users(platform, league_id, season) or []
+            from utils.league import enrich_league_with_globals
+            league = enrich_league_with_globals(
+                platform, league_id, season, league)
         except Exception:
             return None
         if not rosters:

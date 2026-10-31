@@ -18,11 +18,12 @@ from utils.league import (  # noqa: F401,F403
     _DYNASTY_TYPE_INTS,
     _REDRAFT_LABELS,
     _KEEPER_LABELS,
+    enrich_league_with_globals,
     classify_league_roster_format,
     detect_league_format,
 )
 
-__all__ = ['_truthy', '_norm_type', '_SNAKE_DRAFT_TYPES', '_AUCTION_DRAFT_TYPES', '_draft_rounds', '_primary_draft', 'is_auction_draft', 'auction_budget', 'is_best_ball', '_REDRAFT_TYPE_INTS', '_KEEPER_TYPE_INTS', '_DYNASTY_TYPE_INTS', '_REDRAFT_LABELS', '_KEEPER_LABELS', 'classify_league_roster_format', 'detect_league_format']
+__all__ = ['_truthy', '_norm_type', '_SNAKE_DRAFT_TYPES', '_AUCTION_DRAFT_TYPES', '_draft_rounds', '_primary_draft', 'is_auction_draft', 'auction_budget', 'is_best_ball', '_REDRAFT_TYPE_INTS', '_KEEPER_TYPE_INTS', '_DYNASTY_TYPE_INTS', '_REDRAFT_LABELS', '_KEEPER_LABELS', 'enrich_league_with_globals', 'classify_league_roster_format', 'detect_league_format']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---

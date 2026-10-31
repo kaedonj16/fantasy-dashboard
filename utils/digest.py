@@ -1071,9 +1071,14 @@ class DigestRunCache:
 
 def _load_league_bundle(platform: str, season: int, league_id: str, cache: DigestRunCache) -> dict:
     from dashboard_services.platform_api import get_league, get_rosters, get_users
-    from utils.league import classify_league_roster_format
+    from utils.league import (
+        classify_league_roster_format, enrich_league_with_globals,
+    )
 
     league = get_league(platform, league_id, season) or {}
+    # Yahoo/ESPN get_league is bare: merge globals so an SF Yahoo/ESPN
+    # league's digest movers/values are priced SF, not silently 1QB.
+    league = enrich_league_with_globals(platform, league_id, season, league)
     rosters = get_rosters(platform, league_id, season) or []
     users = get_users(platform, league_id, season) or []
     fmt = classify_league_roster_format(league=league, platform=platform)
