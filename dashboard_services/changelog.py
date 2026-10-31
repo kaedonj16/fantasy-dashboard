@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "fix",
+        "text": "Trade calculator consistency: three fixes so every surface tells the same story. The Playoff Impact verdict no longer calls a trade a Future Lean when the player coming back is older and gives up prime years: banking value alone is not a future gain. The Trade Analyst now speaks in tiers for role language (a WR2-type producer) and saves exact ranks for rank claims, instead of gluing a value rank onto the word type. And when the player pool refreshes in the background, the calculator rebuilds its rows from the new data instead of keeping the older cached values on screen while the summary and modals already showed the current ones.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "fix",
         "text": "Player Rankings loads in one pass now: the board's data request is less than half its old size, and the 7-day trend lines and player chips load alongside the board instead of arriving in a second wave seconds later. Tiers, trends, and hover quick look are all there when the board settles.",
         "link": "/players"
     },

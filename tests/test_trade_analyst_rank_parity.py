@@ -77,23 +77,28 @@ def _run_trade_eval(offline_client, monkeypatch, **overrides):
     response = offline_client.post("/api/trade-eval", json=payload)
     assert response.status_code == 200
     labels = {}
+    tiers = {}
     for side_key in ("side_a", "side_b"):
         for asset in captured[side_key]["assets"]:
             if asset.get("position") != "PICK":
                 labels[asset["id"]] = asset["pos_rank_label"]
-    return labels
+                tiers[asset["id"]] = asset["pos_tier_label"]
+    return labels, tiers
 
 
 def test_trade_eval_dynasty_1qb_labels_recomputed_from_served_values(
         offline_client, monkeypatch):
-    labels = _run_trade_eval(offline_client, monkeypatch)
+    labels, tiers = _run_trade_eval(offline_client, monkeypatch)
     # By value: Alpha 500 > Beta 400 > Gamma 300.
     assert labels == {"w1": "WR1", "w2": "WR2", "w3": "WR3"}
+    # Every asset also carries its tier label (12 ranks per tier: ranks
+    # 1-3 are all tier 1) for the analyst's role/type language.
+    assert tiers == {"w1": "WR1", "w2": "WR1", "w3": "WR1"}
 
 
 def test_trade_eval_dynasty_sf_labels_follow_sf_values(
         offline_client, monkeypatch):
-    labels = _run_trade_eval(offline_client, monkeypatch, league_type="sf")
+    labels, _tiers = _run_trade_eval(offline_client, monkeypatch, league_type="sf")
     # By sf_value: Beta 520 > Alpha 480 > Gamma 300. The old code always
     # sent the 1QB label, so SF analysts cited 1QB ranks.
     assert labels == {"w1": "WR2", "w2": "WR1", "w3": "WR3"}
@@ -101,8 +106,8 @@ def test_trade_eval_dynasty_sf_labels_follow_sf_values(
 
 def test_trade_eval_redraft_labels_follow_redraft_values(
         offline_client, monkeypatch):
-    labels = _run_trade_eval(offline_client, monkeypatch,
-                             scoring_type="redraft")
+    labels, _tiers = _run_trade_eval(offline_client, monkeypatch,
+                                     scoring_type="redraft")
     # By redraft value: Beta 90 > Gamma 70 > Alpha 50.
     assert labels == {"w1": "WR3", "w2": "WR1", "w3": "WR2"}
 
@@ -167,3 +172,73 @@ def test_scrub_no_labels_is_a_noop():
     data = {"summary": "Garrett Wilson, a proven WR12, headlines it."}
     assert enforce_trade_rank_labels(data, {"trade": {}}) == data
     assert enforce_trade_rank_labels(data, {}) == data
+
+
+# ── Tier language: exact ranks must not pose as "-type" roles ──────────────
+_SMITH_PAYLOAD = {
+    "trade": {
+        "viewer_gets": {"assets": [
+            {"name": "DeVonta Smith", "position": "WR",
+             "pos_rank_label": "WR23", "pos_tier_label": "WR2"},
+        ]},
+        "viewer_gives": {"assets": [
+            {"name": "Quinshon Judkins", "position": "RB",
+             "pos_rank_label": "RB22", "pos_tier_label": "RB2"},
+        ]},
+    },
+}
+
+
+def test_pos_tier_label_math():
+    from utils.value_helpers import pos_tier_label
+
+    assert pos_tier_label("WR23") == "WR2"   # Kaedon's case
+    assert pos_tier_label("WR16") == "WR2"   # the chip rank in her screenshot
+    assert pos_tier_label("RB22") == "RB2"
+    assert pos_tier_label("WR12") == "WR1"
+    assert pos_tier_label("WR13") == "WR2"
+    assert pos_tier_label("QB25") == "QB3"
+    assert pos_tier_label("TE1") == "TE1"
+    assert pos_tier_label("") == ""
+    assert pos_tier_label("PICK") == ""
+    assert pos_tier_label(None) == ""
+
+
+def test_scrub_collapses_exact_rank_type_language_to_the_tier():
+    """The screenshot sentence: 'a proven WR23-type producer' must come
+    out as WR2-type. The exact rank stays available for rank claims."""
+    data = {
+        "summary": (
+            "You're turning Quinshon Judkins and a 2027 mid-third into "
+            "DeVonta Smith, a proven WR23-type producer who still carries "
+            "strong dynasty insulation at age 27."
+        ),
+        "helps": [], "risks": [], "counter": "", "confidence": "high",
+    }
+    out = enforce_trade_rank_labels(data, _SMITH_PAYLOAD)
+    assert "WR2-type producer" in out["summary"]
+    assert "WR23-type" not in out["summary"]
+
+
+def test_scrub_collapses_untied_type_mentions_and_keeps_true_tiers():
+    data = {
+        "summary": "Judkins profiles as an RB22-type runner.",
+        "helps": ["Smith fits as a WR2-type producer in this build."],
+        "risks": [], "counter": "", "confidence": "high",
+    }
+    out = enforce_trade_rank_labels(data, _SMITH_PAYLOAD)
+    # Untied exact-rank "-type" mention collapses to its tier form.
+    assert out["summary"] == "Judkins profiles as an RB2-type runner."
+    # Correct tier language (number already a tier) is left alone.
+    assert out["helps"] == ["Smith fits as a WR2-type producer in this build."]
+
+
+def test_scrub_exact_appositive_still_wins_over_type_collapse():
+    """A wrong exact rank in an appositive is corrected to the true
+    label first (WR15 -> WR23); only '-type' constructions collapse."""
+    data = {
+        "summary": "DeVonta Smith, a WR15, is the prize piece here.",
+        "helps": [], "risks": [], "counter": "", "confidence": "high",
+    }
+    out = enforce_trade_rank_labels(data, _SMITH_PAYLOAD)
+    assert out["summary"] == "DeVonta Smith, a WR23, is the prize piece here."

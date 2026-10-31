@@ -15,11 +15,12 @@ from utils.trade import (  # noqa: F401,F403
     row_format_value,
     row_format_rank_label,
     rerank_pos_labels,
+    pos_tier_label,
     fill_unpriced_redraft_values,
     apply_redraft_display_fields,
 )
 
-__all__ = ['_SKILL_POS', 'scoring_format_from_settings', 'te_premium_from_settings', 'apply_te_premium', '_num', 'format_value_keys', 'format_rank_label_key', 'format_rank_key', 'row_format_value', 'row_format_rank_label', 'rerank_pos_labels', 'fill_unpriced_redraft_values', 'apply_redraft_display_fields']
+__all__ = ['_SKILL_POS', 'scoring_format_from_settings', 'te_premium_from_settings', 'apply_te_premium', '_num', 'format_value_keys', 'format_rank_label_key', 'format_rank_key', 'row_format_value', 'row_format_rank_label', 'rerank_pos_labels', 'pos_tier_label', 'fill_unpriced_redraft_values', 'apply_redraft_display_fields']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---
