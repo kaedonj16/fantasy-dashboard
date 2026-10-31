@@ -266,6 +266,19 @@ function __brLPWriteLS(key, etag, data) {
       JSON.stringify({ etag: etag || "", ts: Date.now(), data: data }));
   } catch (e) { /* quota/private mode: in-memory cache still works */ }
 }
+// Consumers that already rendered from a stale copy (the trade calculator's
+// chips) register for this event so a background revalidation that lands
+// with NEW data rebuilds them in place. Without it the refresh used to land
+// silently and the page kept showing the old values/ranks while the server
+// (Trade Summary, Analyst, player modals) showed the current ones.
+function __brLPNotifyRefreshed(key, data) {
+  try {
+    if (typeof window === "undefined" || !window.dispatchEvent) return;
+    window.dispatchEvent(new CustomEvent("br:league-players-refreshed", {
+      detail: { key: key || "", data: data },
+    }));
+  } catch (e) { /* best-effort: the shared cache above is already updated */ }
+}
 function brGetLeaguePlayersData(forceKey) {
   var now = Date.now();
   var key = forceKey || "";
@@ -291,9 +304,19 @@ function brGetLeaguePlayersData(forceKey) {
     return res.json().then(function (data) { return { etag: newEtag, data: data }; });
   }).then(function (result) {
     if (result) {
+      // A stale copy was served for THIS call and the network brought
+      // genuinely new data (ETag changed, or there was no ETag to compare):
+      // tell rendered consumers to rebuild. A 304 resolves with null and
+      // never reaches here, and a cold fetch (no stale copy) is awaited by
+      // its caller directly, so neither notifies.
+      var _lpHadStale = !!best;
+      var _lpEtagChanged = !etag || result.etag !== etag;
       __brLeaguePlayersPromise = Promise.resolve(result.data);
       __brLeaguePlayersEtag = result.etag;
       __brLPWriteLS(key, result.etag, result.data);
+      if (_lpHadStale && _lpEtagChanged && typeof __brLPNotifyRefreshed === "function") {
+        __brLPNotifyRefreshed(key, result.data);
+      }
     } else if (best) {
       __brLeaguePlayersPromise = best; // 304: our copy is current
     }
@@ -302,8 +325,9 @@ function brGetLeaguePlayersData(forceKey) {
     return result;
   });
   if (best) {
-    // Serve stale immediately; background refresh lands silently. On failure
-    // keep serving the stale copy.
+    // Serve stale immediately; when the background refresh lands with new
+    // data it notifies rendered consumers (see __brLPNotifyRefreshed). On
+    // failure keep serving the stale copy.
     net.catch(function () {});
     return best;
   }
@@ -7445,6 +7469,10 @@ window.initTradePage = function initTradePage(root = document) {
   host.__tradeInitDone = true;
 
   let allPlayers = [];
+  // Which brGetLeaguePlayersData feed built allPlayers ("" = the default
+  // feed, otherwise "league_type=..&league_size=.."). Background refresh
+  // events for any other feed are ignored by the handler below.
+  let _lpFeedKey = "";
   let activePosFilter = "ALL";
   let playerDeltas = {}; // Cache of player_id -> 7-day delta
   let playerIndicators = { rookies: [], breakouts: [] }; // Rookie and breakout flags
@@ -7947,6 +7975,34 @@ window.initTradePage = function initTradePage(root = document) {
       recomputeTrade();
     }
   }
+
+  // The shared league-players fetch serves a stale copy immediately and
+  // revalidates in the background; when that refresh lands with new data
+  // it fires "br:league-players-refreshed". Rebuild the pool through the
+  // same builder as the initial load and swap the current selections to
+  // the live objects (by id, so the trade the user built is preserved),
+  // instead of leaving the chips on the stale vintage the page opened
+  // with while the server surfaces already show the new values.
+  function applyRefreshedPlayerPool(data) {
+    if (!allPlayers.length) return; // initial load still owns the pool
+    const fresh = buildPlayerPool(data);
+    if (!fresh.length) return;
+    allPlayers = fresh;
+    refreshPicksWithLiveData();
+    renderAllPlayersList();
+  }
+
+  // One live handler per page: a soft-nav re-init replaces the previous
+  // registration instead of stacking a second closure over a dead root.
+  if (window.__brTradeLPRefreshHandler) {
+    window.removeEventListener("br:league-players-refreshed", window.__brTradeLPRefreshHandler);
+  }
+  window.__brTradeLPRefreshHandler = function (e) {
+    const detail = (e && e.detail) || {};
+    if ((detail.key || "") !== _lpFeedKey) return;
+    if (detail.data) applyRefreshedPlayerPool(detail.data);
+  };
+  window.addEventListener("br:league-players-refreshed", window.__brTradeLPRefreshHandler);
 
   function shareTradeToClipboard() {
     const btn = root.querySelector("#shareTradeBtn");
@@ -8673,6 +8729,31 @@ window.initTradePage = function initTradePage(root = document) {
     return tbl.length + 1;
   }
 
+  // The one normalize/sort path every pool (re)build goes through: the
+  // initial load, a league-type change, and a background refresh of the
+  // shared fetch. Keeping a single builder means a refreshed pool can
+  // never drift from what a fresh page load would show.
+  function buildPlayerPool(data) {
+    const rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
+    if (!Array.isArray(data) && data.tier_thresholds) _tierThresholds = data.tier_thresholds;
+
+    const players = rawData.filter(p => p.position !== "PICK");
+    const picks = rawData.filter(p => p.position === "PICK");
+
+    return [
+      ...players
+        .filter(p => p && typeof p === "object" && p.id != null)
+        .map(normalizePlayerRow)
+        .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
+      ...picks.map(p => ({ ...p, name: formatPickId(p.id) })),
+    ].sort((a, b) => {
+      const vb = Number(b.value || 0);
+      const va = Number(a.value || 0);
+      if (vb !== va) return vb - va;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+  }
+
   async function ensurePlayersLoaded() {
     if (allPlayers.length > 0) return;
 
@@ -8686,24 +8767,8 @@ window.initTradePage = function initTradePage(root = document) {
         // payload, so this usually reuses its in-flight/completed request
         // instead of downloading the ~1MB list a second time.
         const data = await brGetLeaguePlayersData();
-        const rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
-        if (!Array.isArray(data) && data.tier_thresholds) _tierThresholds = data.tier_thresholds;
-
-        const players = rawData.filter(p => p.position !== "PICK");
-        const picks = rawData.filter(p => p.position === "PICK");
-
-        allPlayers = [
-          ...players
-            .filter(p => p && typeof p === "object" && p.id != null)
-            .map(normalizePlayerRow)
-            .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie),
-          ...picks.map(p => ({ ...p, name: formatPickId(p.id) })),
-        ].sort((a, b) => {
-          const vb = Number(b.value || 0);
-          const va = Number(a.value || 0);
-          if (vb !== va) return vb - va;
-          return String(a.name || "").localeCompare(String(b.name || ""));
-        });
+        _lpFeedKey = "";
+        allPlayers = buildPlayerPool(data);
 
         lastErr = null;
         break;
@@ -8900,24 +8965,10 @@ window.initTradePage = function initTradePage(root = document) {
     allPlayers = [];
     var lt = getLeagueType();
     var ls = getLeagueSize();
+    _lpFeedKey = "league_type=" + lt + "&league_size=" + ls;
     try {
-      var data = await brGetLeaguePlayersData("league_type=" + lt + "&league_size=" + ls);
-      var rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
-      if (!Array.isArray(data) && data.tier_thresholds) _tierThresholds = data.tier_thresholds;
-      var players = rawData.filter(function (p) { return p.position !== "PICK"; });
-      var picks = rawData.filter(function (p) { return p.position === "PICK"; });
-      allPlayers = [
-        ...players
-          .filter(function (p) { return p && typeof p === "object" && p.id != null; })
-          .map(normalizePlayerRow)
-          .filter(function (p) { return ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie; }),
-        ...picks.map(function (p) { return Object.assign({}, p, { name: formatPickId(p.id) }); }),
-      ].sort(function (a, b) {
-        var vb = Number(b.value || 0);
-        var va = Number(a.value || 0);
-        if (vb !== va) return vb - va;
-        return String(a.name || "").localeCompare(String(b.name || ""));
-      });
+      var data = await brGetLeaguePlayersData(_lpFeedKey);
+      allPlayers = buildPlayerPool(data);
     } catch (err) {
       console.warn("[trade] onLeagueTypeChange reload failed:", err.message);
     }
@@ -9853,6 +9904,18 @@ window.initTradePage = function initTradePage(root = document) {
       const pickUp      = pickD != null && pickD >= 1;
       const pickDown    = pickD != null && pickD <= -1;
 
+      // Prime years left on the traded players themselves (value-weighted
+      // avg of max(0, 30 - age) per side; the Prime Yrs stat below renders
+      // these same numbers). Banking raw value is not a future gain when
+      // the return is older AND sheds a full prime year or more: a 27.9
+      // year old for a 23 year old plus a pick banks value on paper while
+      // the future window shrinks (7.0 -> 2.1 prime years), so the future
+      // labels below must not fire on bankingVal alone in that case.
+      const primeOut = outlook.outgoing ? outlook.outgoing.avg_prime_years : null;
+      const primeIn  = outlook.incoming ? outlook.incoming.avg_prime_years  : null;
+      const primeDelta = (primeOut != null && primeIn != null) ? primeIn - primeOut : null;
+      const agingCost  = older && primeDelta != null && primeDelta <= -1.0;
+
       // Classify the deal so the user reads the trade-off, not just the red.
       let vTitle, vSub, vColor, vIcon;
       if (isRedraft) {
@@ -9870,7 +9933,7 @@ window.initTradePage = function initTradePage(root = document) {
         const gains = [];
         if (pickUp)     gains.push("better draft positioning");
         if (younger)    gains.push("a younger core");
-        if (bankingVal) gains.push("long-term value");
+        if (bankingVal && !agingCost) gains.push("long-term value");
         if (gains.length) {
           vColor = "#7c3aed"; vIcon = "fa-chart-line"; vTitle = "Building Move";
           vSub = `Trades some win-now equity for ${listPhrase(gains)}.`;
@@ -9888,9 +9951,12 @@ window.initTradePage = function initTradePage(root = document) {
           ? `Boosts this season's odds at the cost of ${listPhrase(costs)}.`
           : "Boosts this season's odds with no real downside.";
       } else {
-        if (younger || bankingVal) {
+        if ((younger || bankingVal) && !agingCost) {
           vColor = "#7c3aed"; vIcon = "fa-chart-line"; vTitle = "Future Lean";
           vSub = "Roughly flat for this season, but builds for later.";
+        } else if (bankingVal && agingCost) {
+          vColor = "#475569"; vIcon = "fa-scale-balanced"; vTitle = "Balanced";
+          vSub = "Banks long-term value, but the return is older with fewer prime years left.";
         } else {
           vColor = "#475569"; vIcon = "fa-scale-balanced"; vTitle = "Balanced";
           vSub = "Little change to your win-now or future outlook.";
@@ -9921,11 +9987,9 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
         </div>` : "";
 
-      // Prime years left: value-weighted avg of max(0, 30 - age) for traded players.
+      // Prime years left (primeIn / primeOut / primeDelta are computed with
+      // the verdict signals above, where the aging-cost gate reads them).
       // More prime years incoming = positive signal (green).
-      const primeOut = outlook.outgoing ? outlook.outgoing.avg_prime_years : null;
-      const primeIn  = outlook.incoming ? outlook.incoming.avg_prime_years  : null;
-      const primeDelta = (primeOut != null && primeIn != null) ? primeIn - primeOut : null;
       const primeColor = primeDelta != null && primeDelta >= 0.3 ? "#10b981"
                        : primeDelta != null && primeDelta <= -0.3 ? "#ef4444"
                        : "var(--text-muted)";

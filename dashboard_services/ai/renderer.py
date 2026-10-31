@@ -359,6 +359,7 @@ def get_trade_ai_analysis(
             "age": a.get("age"),
             "value": safe_float(a.get("value")),
             "pos_rank_label": a.get("pos_rank_label") or "",
+            "pos_tier_label": a.get("pos_tier_label") or "",
             "rank_change_7d": a.get("rank_change_7d"),
             "injury_status": injury_status,
             "injury_body_part": injury_body_part,
@@ -585,10 +586,12 @@ def get_trade_ai_analysis(
         "opponent_team": opponent_ctx or None,
     }
 
-    # Build cache key for trade analysis. v10: asset rank labels are now the
-    # recomputed format labels and prose ranks are pinned to them; cached
-    # v9 analyses can carry the old mismatched ranks, so they must not hit.
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v10")
+    # Build cache key for trade analysis. v11: assets now also carry a
+    # pos_tier_label and prose "-type" language is pinned to the tier, not
+    # the exact rank; cached v10 analyses can still say "WR23-type", so
+    # they must not hit. (v10: asset rank labels became the recomputed
+    # format labels and prose ranks were pinned to them.)
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v11")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)

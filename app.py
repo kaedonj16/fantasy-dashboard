@@ -25811,6 +25811,15 @@ def api_trade_eval():
         return float(val) if val and float(val) > 0 else None
 
     def build_side(players_ids, picks_ids, side_label):
+        # Tier form of an exact rank label (12 ranks per tier: WR23 -> WR2)
+        # for the analyst's role/type language. The exact label stays the
+        # rank claim; prose must never turn it into "WR23-type".
+        try:
+            from utils.value_helpers import pos_tier_label as _pos_tier_label
+        except Exception:
+            def _pos_tier_label(_label):  # noqa: ANN202
+                return ""
+
         raw_players_total = 0.0
         raw_picks_total = 0.0
         player_values = []
@@ -25893,6 +25902,7 @@ def api_trade_eval():
                     "team": team,
                     "age": age,
                     "pos_rank_label": player.get("pos_rank_label") or "",
+                    "pos_tier_label": _pos_tier_label(player.get("pos_rank_label")),
                     "rank_change_7d": player.get("rank_change_7d"),
                 })
                 continue
@@ -25913,6 +25923,8 @@ def api_trade_eval():
                 "team": team,
                 "age": age,
                 "pos_rank_label": _rank_labels.get(pid_str) or player.get("pos_rank_label") or "",
+                "pos_tier_label": _pos_tier_label(
+                    _rank_labels.get(pid_str) or player.get("pos_rank_label")),
                 "rank_change_7d": player.get("rank_change_7d"),
             })
 

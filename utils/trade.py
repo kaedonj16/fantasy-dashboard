@@ -2031,6 +2031,30 @@ def rerank_pos_labels(
     return table
 
 
+def pos_tier_label(label) -> str:
+    """Tier label for an exact rank-by-value label: 12 ranks per tier.
+
+    "WR23" -> "WR2", "WR16" -> "WR2", "RB22" -> "RB2", "WR12" -> "WR1".
+    Role/type language ("a WR2-type producer") must use this tier form;
+    the exact label stays a rank claim ("the WR23 overall by value").
+    Returns "" for anything that is not a QB/RB/WR/TE rank label.
+    """
+    text = str(label or "").strip().upper().replace("#", "").replace(" ", "")
+    pos = ""
+    for cand in ("QB", "RB", "WR", "TE"):
+        if text.startswith(cand):
+            pos = cand
+            text = text[len(cand):]
+            break
+    if not pos or not text.isdigit():
+        return ""
+    rank = int(text)
+    if rank < 1:
+        return ""
+    tier = -(-rank // 12)  # ceil(rank / 12)
+    return f"{pos}{tier}"
+
+
 def fill_unpriced_redraft_values(table: list) -> list:
     """Give skill players with no redraft price a value scaled below the priced floor.
 
