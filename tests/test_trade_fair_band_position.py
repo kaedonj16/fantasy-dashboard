@@ -236,8 +236,15 @@ def test_band_markup_still_ships_with_its_title():
 def test_js_still_sizes_band_from_fair_threshold():
     js = _read(_JS)
     assert 'root.querySelector(".otc-balance-fair")' in js
-    assert "(ft / maxSideTotal) * 100" in js
-    assert "fairZoneEl.style.width = fairWidthPct" in js
+    # The geometry now lives in _balanceGeometry, extracted from this
+    # handler so the summary bar and the sticky bar's mini band share
+    # one computation; the handler applies the helper's results.
+    helper = js.split("function _balanceGeometry(", 1)[1].split(
+        "function renderStickyBar", 1)[0]
+    assert "(ft / maxSideTotal) * 100" in helper
+    assert "fairWidthPct" in helper and "leftPct" in helper
+    assert "fairZoneEl.style.width = _geo.fairWidthPct" in js
+    assert "barIndicator.style.left = _geo.leftPct" in js
 
 
 # ── Intended geometry (the component's own math) ─────────────────────────

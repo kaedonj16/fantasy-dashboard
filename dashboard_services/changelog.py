@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-31",
         "tag": "fix",
+        "text": "Trade Calculator: the pinned bar is now a slim balance strip with just the two side values and the fair range, so nothing in it gets cut off. Tap the bar to jump straight to the full Trade Summary, and the bar steps aside on its own while the summary is on screen.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-31",
+        "tag": "fix",
         "text": "Trade Calculator on phones: the pinned balance bar now ends before the BR Assistant button instead of sliding underneath it, so the totals, the Trade Fit grade, and the verdict stay fully visible while you build a trade.",
         "link": "/trade"
     },

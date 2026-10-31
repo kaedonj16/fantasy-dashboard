@@ -578,9 +578,13 @@ def build_trade_calculator_body(
             </section>
           </div>
 
-          <div id="tradeStickyBar" class="otc-sticky-bar" style="display:none;">
-            <span class="otc-sticky-totals" id="tradeStickyTotals"></span>
-            <span class="otc-sticky-verdict" id="tradeStickyVerdict"></span>
+          <div id="tradeStickyBar" class="otc-sticky-bar" style="display:none;" role="button" tabindex="0" aria-label="Go to trade summary">
+            <span class="otc-sticky-value" id="tradeStickyValueA"></span>
+            <span class="otc-sticky-band" aria-hidden="true">
+              <span class="otc-sticky-band-fair" id="tradeStickyBandFair"></span>
+              <span class="otc-sticky-band-marker" id="tradeStickyBandMarker"></span>
+            </span>
+            <span class="otc-sticky-value" id="tradeStickyValueB"></span>
           </div>
 
           <div id="similarTradesSection" style="display:none;margin-top:28px;">
