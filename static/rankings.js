@@ -1720,6 +1720,19 @@ function prGetTier(p) {
 // Load data
 function prLoadData() {
   var gen = ++_prLoadGen;
+  // Sparklines and indicators do not depend on the players payload, so
+  // start both NOW, in parallel with it. They used to be fetched only
+  // after the board rendered (sparklines) or deferred to idle
+  // (indicators), which serialized three round trips and made the board
+  // visibly assemble in stages: rows first, then the 7-day trend and
+  // chips seconds later. The handlers below apply each as soon as it
+  // lands after the first render.
+  var _prSparkPromise = fetch('/api/sparklines?v=4')
+    .then(function(r) { return r.json(); })
+    .catch(function() { return null; });
+  var _prIndPromise = fetch('/api/player-indicators?league_type=1qb&league_size=10')
+    .then(function(r) { return r.json(); })
+    .catch(function() { return null; });
   var loading = document.getElementById('prLoading');
   var list = document.getElementById('prList');
   // The /players route SSR-fills #prList and hides #prLoading. Unhiding the
@@ -1748,7 +1761,10 @@ Promise.all([
   // leagues (Yahoo ADP needs a league id + token).
   (function () {
     let _u = '/api/league-players';
-    const _q = [];
+    // view=rankings: the server slims each player to the fields this
+    // page's whitelist map actually reads (the full view ships ~2.3MB
+    // more per-player JSON that is parsed and immediately discarded).
+    const _q = ['view=rankings'];
     if (window.__leagueId) _q.push('league_id=' + encodeURIComponent(window.__leagueId));
     if (window.__platform) _q.push('platform=' + encodeURIComponent(window.__platform));
     if (_q.length) _u += '?' + _q.join('&');
@@ -1882,28 +1898,20 @@ Promise.all([
   }
   prLoaded = true;
   prRender();
-  // Lazy-load sparklines - re-render with sparkline data once ready
-  fetch('/api/sparklines?v=4').then(r => r.json()).then(function(data) {
-    prSparklines = data || {};
+  // Sparklines and indicators were fetched in parallel with the players
+  // payload (top of prLoadData); apply each as soon as it lands.
+  _prSparkPromise.then(function(data) {
+    if (gen !== _prLoadGen || !data) return;
+    prSparklines = data;
     _prSparkAnimate = true;   // sweep the lines on for this first reveal only
     prRender();
     _prSparkAnimate = false;
-  }).catch(function() {});
-  // Lazy-load indicators - row chips (rookie/breakout/elite/prospect) update
-  // once they arrive. Deferred out of the critical path via idle callback.
-  var _loadIndicators = function() {
-    fetch('/api/player-indicators?league_type=1qb&league_size=10')
-      .then(function(r) { return r.json(); }).then(function(d) {
-        if (gen !== _prLoadGen) return;
-        prIndicators = d || {};
-        prRender();
-      }).catch(function() {});
-  };
-  if ('requestIdleCallback' in window) {
-    requestIdleCallback(_loadIndicators, { timeout: 3000 });
-  } else {
-    setTimeout(_loadIndicators, 100);
-  }
+  });
+  _prIndPromise.then(function(d) {
+    if (gen !== _prLoadGen || !d) return;
+    prIndicators = d;
+    prRender();
+  });
 }).catch(err => {
   if (gen !== _prLoadGen) return;
   // A reload/navigation aborts the in-flight hydrate. Don't replace the SSR

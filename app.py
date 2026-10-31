@@ -28572,6 +28572,39 @@ def _board_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
     return resp
 
 
+def _rankings_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
+                                      version_key=None):
+    """Rankings JSON: every row, only the fields the board reads.
+
+    Mirrors _board_league_players_response (ETag + shared body cache),
+    with its own cache namespace so the two views never serve each
+    other's bodies.
+    """
+    if version_key is not None:
+        etag = _lp_etag_for(version_key)
+        not_modified = _lp_not_modified_response(etag)
+        if not_modified is not None:
+            return not_modified
+    cache_key = ("rankings", overlay_key, bool(is_sf))
+    cached = _LP_BOARD_JSON_CACHE.get(cache_key)
+    if cached is not None:
+        body = cached
+    else:
+        from dashboard_services.league_players_board import slim_rankings_payload
+        # The full view stamps espnHeadshot from the players index; the
+        # base payload only carries it for some rows, so stamp before
+        # slimming or rankings rows lose headshots the full view has.
+        payload = _stamp_espn_headshot(payload)
+        body = _dumps_league_players(slim_rankings_payload(payload))
+        _LP_BOARD_JSON_CACHE[cache_key] = body
+        _prune_ttl_cache(_LP_BOARD_JSON_CACHE, 64)
+    if version_key is not None:
+        return _lp_cacheable_response(body, version_key)
+    resp = app.response_class(body, mimetype="application/json")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 def _trade_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
                                        league_type: str, league_size: int,
                                        version_key=None,
@@ -28675,6 +28708,7 @@ def api_league_players():
     _view_board = _view_arg == "board"
     _view_trade = _view_arg == "trade"
     _view_search = _view_arg == "search"
+    _view_rankings = _view_arg == "rankings"
     # Nav-search view: 5 fields per player, no overlays. Short-circuit before
     # the projection/scoring/ADP overlay work below; the base payload already
     # carries id, name, position, team, and espnHeadshot.
@@ -28708,7 +28742,8 @@ def api_league_players():
     _lp_version_key = _lp_response_version_key(
         overlay_key=overlay_key, is_sf=_mi_is_sf,
         view=(f"trade-{_trade_league_type}-{_trade_league_size}" if _view_trade
-              else ("board" if _view_board else "full")),
+              else ("board" if _view_board
+                    else ("rankings" if _view_rankings else "full"))),
     )
 
     def _finish(result, *, board_cacheable=True):
@@ -28727,6 +28762,17 @@ def api_league_players():
                 )
             from dashboard_services.league_players_board import slim_board_payload
             slim = slim_board_payload(result, is_superflex=_mi_is_sf)
+            resp = app.response_class(_dumps_league_players(slim), mimetype="application/json")
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
+        if _view_rankings:
+            if board_cacheable:
+                return _rankings_league_players_response(
+                    result, overlay_key=overlay_key, is_sf=_mi_is_sf,
+                    version_key=_lp_version_key,
+                )
+            from dashboard_services.league_players_board import slim_rankings_payload
+            slim = slim_rankings_payload(_stamp_espn_headshot(result))
             resp = app.response_class(_dumps_league_players(slim), mimetype="application/json")
             resp.headers["Cache-Control"] = "no-store"
             return resp
