@@ -54832,14 +54832,30 @@ html:has(.home-page) { scroll-behavior: smooth; }
     background: var(--card-bg, var(--card)); border-top: 1px solid var(--border);
     padding: 10px 16px; align-items: center; justify-content: space-between; gap: 12px;
     box-shadow: 0 -4px 16px rgba(0,0,0,.06);
+    cursor: pointer;
 }
+.otc-sticky-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 body.otc-sticky-on { padding-bottom: 72px; }
-.otc-sticky-totals { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); min-width: 0; }
-.otc-sticky-totals strong { font-size: 15px; color: var(--text); }
-.otc-sticky-verdict {
-    background: #475569; color: #fff; font-size: 12px; font-weight: 700;
-    padding: 5px 14px; border-radius: 8px; letter-spacing: .02em; flex-shrink: 1;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%;
+/* Bar anatomy: value, mini balance band, value. The band is a slim
+   clone of the summary's .otc-balance-bar (same track, fair zone, and
+   marker colors) whose geometry comes from the same _balanceGeometry
+   computation in app.js, so the two bars always agree. */
+.otc-sticky-value { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; flex-shrink: 0; }
+.otc-sticky-band {
+    position: relative; flex: 1 1 auto; min-width: 48px; height: 8px;
+    border-radius: 4px; background: var(--row); border: 1px solid var(--border);
+    overflow: hidden;
+}
+.otc-sticky-band-fair {
+    position: absolute; top: 0; bottom: 0; left: 50%;
+    transform: translateX(-50%); width: 7%; min-width: 4px;
+    background: rgba(14, 40, 71, 0.92);
+}
+.otc-sticky-band-marker {
+    position: absolute; top: 0; bottom: 0; left: 50%; width: 8px;
+    transform: translateX(-50%); border-radius: 4px; background: #38bdf8;
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
+    transition: left 0.22s ease-out;
 }
 @media (max-width: 768px) {
     /* Float above the mobile dock: --dock-safe-bottom is the space the
@@ -54851,8 +54867,8 @@ body.otc-sticky-on { padding-bottom: 72px; }
        it anchors at the same bottom (dock-safe + 14px) with right: 16px
        and a 56px width (.br-asst-launcher), at z-index 9995 above the
        bar's 9991. Reserve its footprint plus a 12px gap on the bar's
-       right so the totals, Fit slot, and verdict pill all end before
-       the launcher begins instead of sliding under it. */
+       right so the values and the balance band all end before the
+       launcher begins instead of sliding under it. */
     .otc-sticky-bar { left: 12px; right: calc(16px + 56px + 12px); bottom: calc(var(--dock-safe-bottom) + 14px); border: 1px solid var(--border); border-radius: 12px; }
 }
 
