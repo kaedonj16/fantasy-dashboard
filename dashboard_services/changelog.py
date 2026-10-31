@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-31",
+        "tag": "new",
+        "text": "Pull to refresh now works on more pages in the app: My Leagues, Waivers, Standings, and Player Rankings join ScoreZone and the Weekly Hub. Pull down from the top of any of them to refresh in place. Your filters, toggles, selected week, and scroll position stay exactly where they were.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-10-30",
         "tag": "fix",
         "text": "Trade Calculator on phones: the pinned balance bar now floats above the bottom tab bar instead of sliding behind it, and the Trade Fit grade shows a grading state while a new package is being scored instead of holding up the previous trade's number. The acceptance read and the bar's verdict wait for the current trade's grade too, and if scoring fails they clear instead of spinning forever.",

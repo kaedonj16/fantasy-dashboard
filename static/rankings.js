@@ -1753,7 +1753,10 @@ function prLoadData() {
       }
     }
   }
-Promise.all([
+// Returned (behavior unchanged: existing callers ignore the value) so the
+// pull-to-refresh hook at the bottom of this file can wait for the load to
+// settle; the chain's own .catch below handles errors, so it resolves.
+return Promise.all([
   // Fail loud on a non-2xx: the server can return a 500 whose body is still
   // valid JSON (the _api_err shape), which would otherwise parse into an empty
   // players list and render a blank table with no error shown.
@@ -2388,3 +2391,24 @@ if (!window.__prSortThumbBound) {
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(prSortThumb);
 }
 prLoadData();
+
+// Pull-to-refresh (PWA): the core controller in app.js calls
+// window.brPageRefresh() when a top-of-page pull passes its threshold.
+// This board IS the Players page (Player Rankings), so this one hook
+// covers both. There is no parallel loader here: the hook re-runs
+// prLoadData(), the page's primary list load, which reads the current
+// scoring/format/sort/search/position state from the same globals and
+// DOM the toggles write, so every selection is preserved. prLoadData
+// returns its load chain (see the return there), which resolves once
+// the fresh rows have rendered; the sparkline/indicator side-loads it
+// also starts keep applying on their own, as on first load. A
+// soft-nav-detached list drops the registration instead of refreshing
+// a dead page.
+window.brPageRefresh = function () {
+  var list = document.getElementById('prList');
+  if (!list || list.isConnected === false) {
+    delete window.brPageRefresh;
+    return Promise.resolve();
+  }
+  return prLoadData();
+};

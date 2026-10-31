@@ -12205,6 +12205,44 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
           .catch(function(err) {{ if (err && err.name === 'AbortError') return; }})
           .finally(function() {{ if (my === seq) setLoading(false); }});
       }});
+
+      // Pull-to-refresh (PWA): the core controller in app.js calls
+      // window.brPageRefresh() when a top-of-page pull passes its
+      // threshold. There is no parallel loader here: the hook re-invokes
+      // the EXISTING change handler above with the currently selected
+      // week (same /api/standings-week fetch, same panel swap, same
+      // detail-toggle re-apply), then waits for that load to settle.
+      // setLoading() toggles .st-week-loading on every panel for the
+      // duration of the fetch (its .finally clears it), so the class is
+      // the settle signal. The selected week is untouched and the scroll
+      // position is restored when the refresh completes. A
+      // soft-nav-detached selector drops the registration instead of
+      // refreshing a dead page.
+      window.brPageRefresh = function() {{
+        if (sel.isConnected === false) {{
+          delete window.brPageRefresh;
+          return Promise.resolve();
+        }}
+        var y = Math.max(window.scrollY || window.pageYOffset || 0,
+          (document.documentElement && document.documentElement.scrollTop) || 0,
+          (document.body && document.body.scrollTop) || 0);
+        return new Promise(function(resolve) {{
+          var started = Date.now();
+          try {{ sel.dispatchEvent(new Event('change')); }}
+          catch (e) {{ resolve(); return; }}
+          var iv = setInterval(function() {{
+            var elapsed = Date.now() - started;
+            var loading = !!document.querySelector('.st-week-loading');
+            if ((elapsed > 200 && !loading) || elapsed > 30000) {{
+              clearInterval(iv);
+              try {{ window.scrollTo(0, y); }} catch (e) {{}}
+              if (document.documentElement) document.documentElement.scrollTop = y;
+              if (document.body) document.body.scrollTop = y;
+              resolve();
+            }}
+          }}, 100);
+        }});
+      }};
     }})();
     </script>
     """

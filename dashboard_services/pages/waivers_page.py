@@ -2492,6 +2492,49 @@ function wvLoad() {{
   }}
 }}
 
+// Pull-to-refresh (PWA): the core controller in app.js calls
+// window.brPageRefresh() when a top-of-page pull passes its threshold.
+// There is no parallel loader here: the hook re-runs wvLoad(), the page's
+// main load (candidates with the current position/horizon filters kept,
+// big games, trending adds, and Start/Sit when its tab is visible).
+// wvLoad's sections return no promises, so settle is polled off the main
+// section: wvLoadCandidates replaces #wvWaiverList's skeleton when it
+// renders or errors, and its own failsafe forces the error state by 25 s;
+// the cap below mirrors that failsafe. Scroll is restored on settle, and
+// a soft-nav-detached list drops the registration instead of refreshing
+// a dead page.
+window.brPageRefresh = function() {{
+  var list = document.getElementById('wvWaiverList');
+  if (!list || list.isConnected === false) {{
+    delete window.brPageRefresh;
+    return Promise.resolve();
+  }}
+  var y = Math.max(window.scrollY || window.pageYOffset || 0,
+    (document.documentElement && document.documentElement.scrollTop) || 0,
+    (document.body && document.body.scrollTop) || 0);
+  wvLoad();
+  var seq = wvCandidateRequestSeq;
+  return new Promise(function(resolve) {{
+    var started = Date.now();
+    var iv = setInterval(function() {{
+      var elapsed = Date.now() - started;
+      var el = document.getElementById('wvWaiverList');
+      var settled = !el || !el.querySelector('.skeleton');
+      // The elapsed floor keeps a same-tick read from resolving before
+      // the skeleton wvLoadCandidates puts up synchronously has landed.
+      // A changed seq means a newer load superseded this one; its render
+      // is the fresher settle.
+      if ((elapsed > 250 && settled) || wvCandidateRequestSeq !== seq || elapsed > 26000) {{
+        clearInterval(iv);
+        try {{ window.scrollTo(0, y); }} catch (e) {{}}
+        if (document.documentElement) document.documentElement.scrollTop = y;
+        if (document.body) document.body.scrollTop = y;
+        resolve();
+      }}
+    }}, 100);
+  }});
+}};
+
 function wvLoadBigGames() {{
   // Abort if the backend hangs so the section falls through to the error
   // state with a retry instead of skeletons forever (matches wvLoadStartSit).
