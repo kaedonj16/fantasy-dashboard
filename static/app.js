@@ -30925,6 +30925,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     // awaiting them observes the dead owner and aborts, as before.)
     owner.trackers = {};
     if (window.brRefreshCurrentPage === owner.refresh) delete window.brRefreshCurrentPage;
+    if (window.brPageRefresh === owner.ptrRefresh) delete window.brPageRefresh;
   }
   function createOwner(root) {
     var owner = { id: ++generation, root: root, dead: false, controller: typeof AbortController === 'undefined' ? null : new AbortController(), timers: new Set(), queue: [], queued: new Set(), inflight: new Set(), active: 0, pollTimer: null, countdownTimer: null, trackers: {} };
@@ -31221,6 +31222,22 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   function bind(owner) {
     owner.refresh = refresh;
     window.brRefreshCurrentPage = refresh;
+    // Pull-to-refresh (PWA): the core controller in app.js calls
+    // window.brPageRefresh() when a top-of-page pull passes its threshold.
+    // The hook is exactly the user-triggered refresh flow above (the sheet
+    // Refresh button reaches refresh() through brRefreshCurrentPage): the
+    // POST batches plus the per-card tracker phase, so the returned promise
+    // settles only when every card has terminally settled, not when the
+    // POST returns. A dead owner (soft-nav swapped the page out) drops the
+    // registration instead of refreshing a page that no longer exists.
+    owner.ptrRefresh = function () {
+      if (!owner.alive()) {
+        if (window.brPageRefresh === owner.ptrRefresh) delete window.brPageRefresh;
+        return Promise.resolve();
+      }
+      return refresh();
+    };
+    window.brPageRefresh = owner.ptrRefresh;
     window.__pfRenderSummary = renderSummary;
     window.__pfRenderMatchup = renderMatchup;
     window.__pfQueueCard = function (card) { schedule(owner, card, 0, true); };
