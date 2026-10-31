@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-31",
+        "tag": "fix",
+        "text": "Trade Calculator on phones: the pinned balance bar now ends before the BR Assistant button instead of sliding underneath it, so the totals, the Trade Fit grade, and the verdict stay fully visible while you build a trade.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-31",
         "tag": "new",
         "text": "Pull to refresh now works on more pages in the app: My Leagues, Waivers, Standings, and Player Rankings join ScoreZone and the Weekly Hub. Pull down from the top of any of them to refresh in place. Your filters, toggles, selected week, and scroll position stay exactly where they were.",
         "link": "/portfolio"
