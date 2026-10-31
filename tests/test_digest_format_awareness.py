@@ -94,6 +94,12 @@ def env(monkeypatch):
         if league_id == "R1":
             return {"settings": {"type": 0}, "total_rosters": 10,
                     "roster_positions": ["QB", "RB", "WR", "TE"]}
+        if league_id == "1307110":
+            # Real Yahoo get_league shape: {league_id, season, name} only --
+            # no settings, no type. Yahoo is a redraft league (Kaedon's
+            # Yahoo H2H-Pts 1307110) and must not fall to the dynasty default.
+            return {"league_id": "1307110", "season": SEASON,
+                    "name": "Yahoo H2H-Pts 1307110"}
         return {"settings": {"type": 2}, "total_rosters": 10,
                 "roster_positions": ["QB", "RB", "WR", "TE"]}
 
@@ -169,6 +175,21 @@ def test_value_drops_redraft_league_silent_without_redraft_baseline(env, monkeyp
     assert sends == []
 
 
+def test_value_drops_yahoo_league_uses_redraft_movers(env, monkeypatch):
+    # Regression (2026-10-31): Kaedon's redraft Yahoo league 1307110 got
+    # "DK Metcalf is losing dynasty value" digest alerts because Yahoo's
+    # get_league carries no settings and the classifier defaulted the
+    # unknown format to dynasty.
+    calls = _stub_movers(monkeypatch, [_DYN_FALLER], [_RD_FALLER])
+    sends = _run_value_drops(monkeypatch, [("1307110", "yahoo")])
+    assert len(sends) == 1
+    assert sends[0]["title"] == "Redraft value dropping"
+    assert "Redraft Dropper" in sends[0]["body"]
+    assert "losing redraft value" in sends[0]["body"]
+    assert "dynasty" not in sends[0]["body"]
+    assert any(c.get("scoring_type") == "redraft" for c in calls)
+
+
 # ── Waiver candidates ─────────────────────────────────────────────────────────
 
 _WAIVER_ROWS = [
@@ -179,11 +200,11 @@ _WAIVER_ROWS = [
 ]
 
 
-def _run_waivers(monkeypatch, league_id):
+def _run_waivers(monkeypatch, league_id, platform="sleeper"):
     import dashboard_services.platform_api as papi
 
     monkeypatch.setattr(pn, "_get_subscribed_leagues",
-                        lambda: [(league_id, "sleeper")])
+                        lambda: [(league_id, platform)])
     monkeypatch.setattr(papi, "get_rosters", lambda *a: [
         {"roster_id": 1, "owner_id": "o1", "players": []}])
     app_stub = types.ModuleType("app")
@@ -210,6 +231,13 @@ def test_waiver_candidate_dynasty_league_picks_dynasty_top(env, monkeypatch):
     sends = _run_waivers(monkeypatch, "D1")
     assert len(sends) == 1
     assert "Dynasty Star" in sends[0]["body"]
+
+
+def test_waiver_candidate_yahoo_league_picks_redraft_top(env, monkeypatch):
+    _value_table(monkeypatch, _WAIVER_ROWS)
+    sends = _run_waivers(monkeypatch, "1307110", platform="yahoo")
+    assert len(sends) == 1
+    assert "Redraft Star" in sends[0]["body"]
 
 
 # ── Rival trades: threshold 600 on the format-correct value ──────────────────
@@ -255,6 +283,18 @@ def test_rival_trades_priced_on_league_format(env, monkeypatch):
     ])
     sends = _run_rival_trades(monkeypatch, [("R1", "sleeper")], {
         "R1": [_trade("t1", "vet"), _trade("t2", "now")],
+    })
+    assert len(sends) == 1
+    assert "Win Now" in sends[0]["body"]
+
+
+def test_rival_trades_yahoo_league_priced_on_redraft_value(env, monkeypatch):
+    _value_table(monkeypatch, [
+        {"id": "vet", "name": "Old Vet", "value": 700, "redraft_value_1qb": 500},
+        {"id": "now", "name": "Win Now", "value": 500, "redraft_value_1qb": 650},
+    ])
+    sends = _run_rival_trades(monkeypatch, [("1307110", "yahoo")], {
+        "1307110": [_trade("t1", "vet"), _trade("t2", "now")],
     })
     assert len(sends) == 1
     assert "Win Now" in sends[0]["body"]

@@ -1617,8 +1617,8 @@ def _league_format(platform, league_id, season):
 
     Resolved via platform_api.get_league + the same classifier the weekly
     email digest uses. Any failure (or an unresolvable league) falls back
-    to the classifier's own default -- dynasty -- and never raises into a
-    notify loop.
+    to the classifier's own platform default (redraft for ESPN/Yahoo,
+    dynasty elsewhere) and never raises into a notify loop.
     """
     key = (str(platform or ""), str(league_id or ""), str(season or ""))
     if key in _league_format_cache:
@@ -1644,10 +1644,16 @@ def _league_format(platform, league_id, season):
     except Exception:
         fmt = None
     if not isinstance(fmt, dict) or not fmt:
-        fmt = {
-            "type": "dynasty", "is_dynasty": True, "is_redraft": False,
-            "is_keeper": False, "is_superflex": False, "qb_format": "1qb",
-        }
+        if str(platform or "").strip().lower() in ("espn", "yahoo"):
+            fmt = {
+                "type": "redraft", "is_dynasty": False, "is_redraft": True,
+                "is_keeper": False, "is_superflex": False, "qb_format": "1qb",
+            }
+        else:
+            fmt = {
+                "type": "dynasty", "is_dynasty": True, "is_redraft": False,
+                "is_keeper": False, "is_superflex": False, "qb_format": "1qb",
+            }
     _league_format_cache[key] = fmt
     return fmt
 

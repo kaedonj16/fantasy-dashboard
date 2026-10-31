@@ -332,8 +332,12 @@ def classify_league_roster_format(
 
     Matches the rest of the app: ESPN football is treated as redraft; Sleeper
     ``settings.type`` 0/1/2 is redraft/keeper/dynasty; string ``league_type``
-    (MFL/Flea) is honored when the numeric type is absent. Unknown non-ESPN
-    leagues default to dynasty, which is the historical product default.
+    (MFL/Flea) is honored when the numeric type is absent. Yahoo publishes no
+    dynasty flag and its ``get_league`` carries no settings at all, so an
+    unlabelled Yahoo league is redraft (explicit ``settings.type`` /
+    ``league_type`` signals, e.g. the keeper mapping Yahoo's league globals
+    derive from max_keepers, still win). Unknown leagues on other platforms
+    default to dynasty, which is the historical product default.
     """
     lg = league or {}
     st = settings if settings is not None else (lg.get("settings") or lg.get("league_settings") or {})
@@ -371,6 +375,14 @@ def classify_league_roster_format(
                 kind = "redraft"
             elif "dynasty" in lt:
                 kind = "dynasty"
+            elif plat == "yahoo":
+                # Yahoo's get_league returns only {league_id, season, name}
+                # -- no settings, no type -- so the dynasty default below
+                # priced every Yahoo league on dynasty values (a redraft
+                # Yahoo league got "losing dynasty value" digest alerts).
+                # Yahoo is a redraft product; explicit keeper/dynasty
+                # signals above still win when a caller supplies them.
+                kind = "redraft"
             else:
                 kind = "dynasty"
 
