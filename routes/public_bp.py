@@ -1184,6 +1184,12 @@ _GUIDE_STYLE = """
 .guide-toc a{font-size:12.5px;font-weight:700;color:var(--accent);
   text-decoration:none;border:1px solid var(--border);border-radius:999px;
   padding:5px 11px;background:var(--card-soft);}
+.guide-catnav{position:sticky;top:8px;z-index:6;display:flex;gap:6px;
+  flex-wrap:wrap;padding:8px 0;background:var(--bg);}
+.guide-catnav a{font-size:12.5px;font-weight:700;color:var(--accent);
+  text-decoration:none;border:1px solid var(--border);border-radius:999px;
+  padding:5px 11px;background:var(--card-soft);}
+.guide-cat-anchor{display:block;height:0;scroll-margin-top:72px;}
 </style>
 """
 
@@ -1211,6 +1217,41 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
             </a>
         """
 
+    def _cat_anchor(category: str) -> str:
+        return "guide-cat-" + category.lower().replace(" ", "-")
+
+    # Latest strip: the 3 newest articles by published date; ties keep
+    # GUIDE_ORDER order so the strip is deterministic.
+    latest_slugs = [
+        slug for _i, slug in sorted(
+            enumerate(_GUIDE_ORDER),
+            key=lambda p: ((GUIDES[p[1]].get("published") or ""), -p[0]),
+            reverse=True,
+        )[:3]
+    ]
+    latest_html = f"""
+            <div class="guide-cathead"><h3>Latest</h3><i></i></div>
+            <div class="guide-grid">{''.join(_card(slug) for slug in latest_slugs)}</div>
+        """
+
+    # Sticky category chip nav: one chip per rendered category, each
+    # jumping to that category section's anchor.
+    rendered_categories = [
+        category for category in GUIDE_CATEGORY_ORDER
+        if any(
+            (GUIDES[slug].get("category") or "Guides") == category
+            for slug in _GUIDE_ORDER
+        )
+    ]
+    catnav_html = (
+        '<nav class="guide-catnav">'
+        + "".join(
+            f'<a href="#{_cat_anchor(category)}">{category}</a>'
+            for category in rendered_categories
+        )
+        + "</nav>"
+    )
+
     # One section per category, in GUIDE_CATEGORY_ORDER; guides keep
     # their GUIDE_ORDER order inside a group, and any category outside
     # the known order falls back to the plain "Guides" grouping.
@@ -1224,6 +1265,7 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
             continue
         cards = "".join(_card(slug) for slug in members)
         groups.append(f"""
+            <span class="guide-cat-anchor" id="{_cat_anchor(category)}"></span>
             <div class="guide-cathead"><h3>{category}</h3><i></i></div>
             <div class="guide-grid">{cards}</div>
         """)
@@ -1247,6 +1289,8 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
                 account is required to read the guides or use the public rankings.
               </p>
             </div>
+            {catnav_html}
+            {latest_html}
             {''.join(groups)}
           </div>
         </div>
