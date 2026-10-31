@@ -99,5 +99,5 @@ def test_build_failure_clears_force_marker():
 
 def test_client_refresh_timeout_is_60s():
     src = _read("static/app.js")
-    assert "brFetchWithTimeout(location.href, opts, 60000)" in src
-    assert "brFetchWithTimeout(location.href, opts, 30000)" not in src
+    assert "brFetchWithTimeout(target, opts, 60000)" in src
+    assert "brFetchWithTimeout(target, opts, 30000)" not in src

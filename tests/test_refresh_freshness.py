@@ -209,7 +209,7 @@ def test_refresh_requires_new_authoritative_document_timestamp():
     assert "nextTs <= beforeTs" in src
     assert "stale refreshed document" in src
     assert "attempts = 3" not in src
-    assert "function fetchFreshDocument(beforeTs, signal)" in src
+    assert "function fetchFreshDocument(beforeTs, signal, url)" in src
     assert "cache: 'reload'" in src
     assert "cacheTs() !== acceptedTs" in src
 
@@ -535,6 +535,114 @@ window.brFetchWithTimeout = function(url, opts){
 """
     with tempfile.TemporaryDirectory() as td:
         fp = os.path.join(td, "auto_revalidate_metrics.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
+
+
+def test_refresh_runs_are_bound_to_the_page_they_started_on():
+    """A refresh run must never write into a page the user navigated to.
+
+    Regression for the bounce back to the dashboard on first launch: the
+    silent auto-revalidate fires on the landing page (its snapshot is
+    stale), the user taps into another page while the fetch is in flight,
+    and the landing page's document used to swap into the new page's root.
+    """
+    src = _freshness_iife()
+    # Both refresh paths pin the URL they started on...
+    assert src.count("var startHref = location.href;") == 2
+    assert "fetchFreshDocument(beforeTs, controller ? controller.signal : undefined, startHref)" in src
+    # ...fetch that pinned URL instead of the live location...
+    assert "function fetchFreshDocument(beforeTs, signal, url)" in src
+    assert "var target = url || location.href;" in src
+    # ...and refuse to swap when the location moved mid-run.
+    assert src.count("if (location.href !== startHref)") >= 3
+    # Soft navigation cancels a running refresh outright (the same call the
+    # league switcher and beforeunload already make).
+    softnav = APP_JS.index("function softNav(url, isPop)")
+    softnav_body = APP_JS[softnav:softnav + 3000]
+    assert "if (window.brCancelRefresh) window.brCancelRefresh();" in softnav_body
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_auto_revalidate_does_not_swap_after_navigation_away_node():
+    """Behavioral: start the silent pass on the dashboard, navigate to
+    Standings while its page fetch is in flight, and the dashboard document
+    must not be swapped in when the fetch lands. Staying put still swaps."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _freshness_iife()
+    harness = r"""
+var window = globalThis;
+var DASH = 'http://x/sleeper/2026/abc/dashboard';
+var STAND = 'http://x/sleeper/2026/abc/standings';
+var location = { href: DASH, pathname: '/sleeper/2026/abc/dashboard', reload: function(){} };
+window.location = location;
+var navigator = { serviceWorker: null };
+var postCount = 0, getUrls = [], swapCount = 0;
+var root = { dataset: { cacheTs: String(Date.now() - 120000), season: String(new Date().getFullYear()) }, querySelectorAll: function(){ return []; } };
+var sheetTime = { textContent: '', classList: { toggle: function(){} } };
+var button = { disabled: false, _brWired: false, setAttribute: function(){}, removeAttribute: function(){}, addEventListener: function(){} };
+var elements = { 'page-root': root, 'brSheetRefreshTime': sheetTime, 'brSheetRefresh': button };
+var document = {
+  visibilityState: 'visible',
+  getElementById: function(id){ return elements[id] || null; },
+  querySelector: function(){ return null; },
+  addEventListener: function(){},
+  createElement: function(){ return { style: {}, setAttribute: function(){}, innerHTML: '' }; },
+  body: { appendChild: function(el){ elements[el.id] = el; } }
+};
+window.matchMedia = function(){ return { matches: true }; };
+var setInterval = function(){ return 0; };
+var realSetTimeout = globalThis.setTimeout;
+var DOMParser = function(){};
+DOMParser.prototype.parseFromString = function(html){
+  var m = /data-cache-ts=["'](\d+)/.exec(html);
+  return { getElementById: function(id){ return id === 'page-root' && m ? { dataset: { cacheTs: m[1] } } : null; } };
+};
+window.brSwapPageRoot = function(html){ swapCount++; return true; };
+function response(ok, body){ return { ok: ok, status: ok ? 200 : 500, text: function(){ return Promise.resolve(body || ''); } }; }
+var resolveGet = null;
+window.brFetchWithTimeout = function(url, opts){
+  if (url === '/api/refresh-league') { postCount++; return Promise.resolve(response(true)); }
+  getUrls.push(url);
+  return new Promise(function(res){ resolveGet = function(){ res(response(true, '<main id="page-root" data-cache-ts="' + Date.now() + '"></main>')); }; });
+};
+""" + src + r"""
+function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve, ms); }); }
+(async function(){
+  var p = window.brMaybeAutoRevalidate();
+  await wait(50);
+  if (!resolveGet) process.exit(9);
+  // The fetch went out for the page the pass started on.
+  if (getUrls.length !== 1 || getUrls[0] !== DASH) process.exit(8);
+  // User taps into Standings while the dashboard fetch is in flight.
+  location.href = STAND;
+  location.pathname = '/sleeper/2026/abc/standings';
+  resolveGet();
+  await p;
+  if (postCount !== 1) process.exit(2);
+  if (swapCount !== 0) process.exit(3);
+  if (window.brRefreshLeague._busy) process.exit(4);
+  // Control: same stale snapshot, no navigation -- the swap still happens.
+  location.href = DASH;
+  location.pathname = '/sleeper/2026/abc/dashboard';
+  root.dataset.cacheTs = String(Date.now() - 120000);
+  var p2 = window.brMaybeAutoRevalidate();
+  await wait(50);
+  if (!resolveGet) process.exit(7);
+  resolveGet();
+  await p2;
+  if (swapCount !== 1) process.exit(5);
+  process.exit(0);
+})().catch(function(e){ console.error(e); process.exit(6); });
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "auto_revalidate_nav_race.js")
         with open(fp, "w", encoding="utf-8") as fh:
             fh.write(harness)
         res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
