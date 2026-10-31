@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-30",
         "tag": "fix",
+        "text": "Teams: with a team's detail drawer open, the floating Discord and data-freshness pills and the BR Assistant button now sit behind the drawer instead of floating on top of it and covering player values. They come back as soon as the drawer closes.",
+        "link": "/teams"
+    },
+    {
+        "date": "2026-10-30",
+        "tag": "fix",
         "text": "Trade calculator consistency: three fixes so every surface tells the same story. The Playoff Impact verdict no longer calls a trade a Future Lean when the player coming back is older and gives up prime years: banking value alone is not a future gain. The Trade Analyst now speaks in tiers for role language (a WR2-type producer) and saves exact ranks for rank claims, instead of gluing a value rank onto the word type. And when the player pool refreshes in the background, the calculator rebuilds its rows from the new data instead of keeping the older cached values on screen while the summary and modals already showed the current ones.",
         "link": "/trade"
     },
