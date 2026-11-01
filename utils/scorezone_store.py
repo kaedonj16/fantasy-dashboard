@@ -396,6 +396,160 @@ def set_watermark(ts: float) -> None:
         logger.warning("[scorezone-store] watermark write failed: %s", exc)
 
 
+# ---------------------------------------------------------------------------
+# TD play clips (utils.scorezone_clips matcher writes, feed payloads read)
+#
+# One row per play: the official X clip matched to that exact touchdown.
+# Keyed by the same (season, game_id, play_id) identity redzone_plays uses,
+# so serving joins on the ids the play payloads already carry. First match
+# wins (the matcher gate is precision-first); re-runs are idempotent.
+# ---------------------------------------------------------------------------
+
+_CLIPS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS redzone_play_clips (
+    season     INTEGER NOT NULL,
+    game_id    TEXT NOT NULL,
+    play_id    TEXT NOT NULL,
+    tweet_id   TEXT NOT NULL,
+    tweet_url  TEXT NOT NULL,
+    author     TEXT NOT NULL DEFAULT '',
+    scorer     TEXT NOT NULL DEFAULT '',
+    tweet_ts   TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (season, game_id, play_id)
+)
+"""
+
+_ENSURED_CLIP_TABLES: set = set()
+
+
+def _ensure_clips_table(conn) -> None:
+    try:
+        dbname = getattr(getattr(conn, "info", None), "dbname", None)
+    except Exception:
+        dbname = None
+    key = dbname or "default"
+    if key in _ENSURED_CLIP_TABLES:
+        return
+    conn.execute(_CLIPS_TABLE_DDL)
+    _ENSURED_CLIP_TABLES.add(key)
+
+
+def upsert_play_clip(season: int, game_id: str, play_id: str, clip: dict) -> bool:
+    """Store one matched clip. Returns True when a new row was written.
+
+    ON CONFLICT DO NOTHING: the first verified match for a play sticks, so
+    re-running the matcher over the same tweets can never churn the row.
+    """
+    from dashboard_services.db import get_conn
+
+    tweet_id = str((clip or {}).get("tweet_id") or "")
+    if not tweet_id or not game_id or not play_id:
+        return False
+    tweet_ts = (clip or {}).get("tweet_ts")
+    try:
+        with get_conn() as conn:
+            _ensure_clips_table(conn)
+            row = conn.execute(
+                """INSERT INTO redzone_play_clips
+                       (season, game_id, play_id, tweet_id, tweet_url,
+                        author, scorer, tweet_ts)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s,
+                           CASE WHEN %s IS NULL THEN NULL
+                                ELSE to_timestamp(%s) END)
+                   ON CONFLICT (season, game_id, play_id) DO NOTHING
+                   RETURNING play_id""",
+                (
+                    int(season), str(game_id), str(play_id), tweet_id,
+                    str(clip.get("tweet_url")
+                        or f"https://x.com/i/status/{tweet_id}"),
+                    str(clip.get("author") or ""),
+                    str(clip.get("scorer") or ""),
+                    tweet_ts, tweet_ts,
+                ),
+            ).fetchone()
+            conn.commit()
+        return bool(row)
+    except Exception as exc:
+        logger.warning("[scorezone-store] clip upsert failed: %s", exc)
+        return False
+
+
+def get_play_clips(season: int, game_ids: list[str]) -> dict:
+    """Return {(game_id, play_id): clip dict} for the given games."""
+    from dashboard_services.db import get_conn
+
+    gids = [str(g) for g in (game_ids or []) if g]
+    if not gids:
+        return {}
+    try:
+        with get_conn() as conn:
+            _ensure_clips_table(conn)
+            rows = conn.execute(
+                """SELECT game_id, play_id, tweet_id, tweet_url, author,
+                          scorer, EXTRACT(EPOCH FROM tweet_ts) AS ts
+                   FROM redzone_play_clips
+                   WHERE season = %s AND game_id = ANY(%s)""",
+                (int(season), gids),
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("[scorezone-store] clip read failed: %s", exc)
+        return {}
+    out: dict = {}
+    for r in rows:
+        if isinstance(r, dict):
+            gid, pid = r["game_id"], r["play_id"]
+            clip = {
+                "tweet_id": r["tweet_id"], "tweet_url": r["tweet_url"],
+                "author": r["author"], "scorer": r["scorer"],
+                "tweet_ts": r["ts"],
+            }
+        else:
+            gid, pid = r[0], r[1]
+            clip = {
+                "tweet_id": r[2], "tweet_url": r[3], "author": r[4],
+                "scorer": r[5], "tweet_ts": r[6],
+            }
+        out[(str(gid), str(pid))] = clip
+    return out
+
+
+def attach_clips_to_plays(plays_by_game: dict, clips: dict) -> int:
+    """Stamp clip fields onto TD play rows in a {game_id: [plays]} map.
+
+    Pure: mutates the play dicts in place, returns how many rows gained a
+    clip. Rows without a stored clip are left exactly as they were, so the
+    payload (and the client) cannot tell clips exist for unmatched plays.
+    """
+    n = 0
+    for gid, plays in (plays_by_game or {}).items():
+        for play in plays or []:
+            if not isinstance(play, dict) or not play.get("is_td"):
+                continue
+            clip = (clips or {}).get((str(gid), str(play.get("play_id") or "")))
+            if clip:
+                play["clip_tweet_id"] = clip.get("tweet_id") or ""
+                play["clip_url"] = clip.get("tweet_url") or ""
+                n += 1
+    return n
+
+
+def attach_clips_to_moments(moments: list, clips: dict) -> int:
+    """Stamp clip fields onto TD moments (routes payload shape). Pure."""
+    n = 0
+    for m in moments or []:
+        if not isinstance(m, dict) or m.get("kind") != "td":
+            continue
+        clip = (clips or {}).get(
+            (str(m.get("game_id") or ""), str(m.get("play_id") or ""))
+        )
+        if clip:
+            m["clip_tweet_id"] = clip.get("tweet_id") or ""
+            m["clip_url"] = clip.get("tweet_url") or ""
+            n += 1
+    return n
+
+
 def prune_plays(retention_days: int = 7) -> int:
     """Delete plays older than ``retention_days``. Returns rows deleted."""
     from dashboard_services.db import get_conn
@@ -671,6 +825,17 @@ def poll_once() -> dict:
         n = upsert_plays(season, gid, plays, week=g.get("week") or week)
         stats["games"] += 1
         stats["plays"] += n
+    # TD clip pass: match official X clips to the TD plays just stored.
+    # Self-gated (bearer token env, per-process throttle, open windows only)
+    # and fail-soft by contract: it can never break the play poll.
+    try:
+        from utils.scorezone_clips import maybe_run_clip_pass
+
+        clip_stats = maybe_run_clip_pass(season, games, nfl_players)
+        if clip_stats:
+            stats["clips"] = clip_stats.get("matched", 0)
+    except Exception as exc:
+        logger.debug("[scorezone-store] clip pass failed: %s", exc)
     return stats
 
 

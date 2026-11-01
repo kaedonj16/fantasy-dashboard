@@ -37,6 +37,7 @@
   var _pbpGames = {}; // game_id → true once we have real PBP for that game
   var _pbpHistory = []; // full PBP contribution history (not capped)
   var _playGroupsByKey = {}; // canonical play groups: nflPlayKey → {contributionsByKey, primaryEvent, playState}
+  var _openClipKey = null; // playId of the TD clip embed currently open (one at a time)
   var _contributionsByKey = {}; // global contribution storage: contribKey → contribution (for revisions)
   var _alertsArmed = false; // suppress TD beep/push until the first hydration seeds the feed
   var _slideDir   = 'none';
@@ -199,6 +200,15 @@
   // on the Top Scorers rows and position-leader tiles).
   root.addEventListener('click', function(e) {
     var target = e.target;
+    // TD clip Watch/Close on feed cards. Delegated for the same reason as
+    // the box score button, and handled BEFORE the data-pid walk below so a
+    // tap on Watch never opens the player modal for the card's player.
+    var clipBtn = target && target.closest ? target.closest('[data-clip-toggle]') : null;
+    if (clipBtn && root.contains(clipBtn)) {
+      _toggleClip(clipBtn);
+      e.stopPropagation();
+      return;
+    }
     // Box score button on the filtered-game board. Delegated because the board
     // re-renders on every poll; the sheet itself mounts on document.body so a
     // re-render never destroys an open sheet.
@@ -1840,6 +1850,9 @@
           // send one, in which case _scoreStrForEvent derives it.
           scoreHome: (play.score_home != null ? play.score_home : null),
           scoreAway: (play.score_away != null ? play.score_away : null),
+          // Matched TD clip (server-side matcher), empty when no clip exists.
+          clipTweetId: play.clip_tweet_id || '',
+          clipUrl: play.clip_url || '',
           totalPts: totalPts,
           scoring: scoring,
           playState: playState,
@@ -1929,6 +1942,11 @@
           stamped = contribs[_ci];
           break;
         }
+      }
+      // Matched TD clip, from any of the play's rows (same stamp logic).
+      var clipSrc = null;
+      for (var _ki = 0; _ki < contribs.length; _ki++) {
+        if (contribs[_ki].clipTweetId) { clipSrc = contribs[_ki]; break; }
       }
 
       // If all contributions are invalid, mark play as nullified
@@ -2037,6 +2055,8 @@
         scoreHome: stamped ? stamped.scoreHome : null,
         scoreAway: stamped ? stamped.scoreAway : null,
         totalPts: primary.totalPts,
+        clipTweetId: clipSrc ? clipSrc.clipTweetId : '',
+        clipUrl: clipSrc ? clipSrc.clipUrl : '',
         playId: playKey,
         fromPbp: true,
         contributions: validContribs,
@@ -3841,6 +3861,53 @@
     return '';
   }
 
+  // ── TD clips ────────────────────────────────────────────────────────────
+  // A TD card whose play has a matched official X clip gets a quiet Watch
+  // button; tapping lazy-loads the X embed inside the card. Only one embed
+  // is open at a time (phone memory), and cards without a clip render
+  // exactly as before: no button, no placeholder.
+  function _clipFrameHtml(ev) {
+    return '<iframe class="rz-clip-frame" src="https://platform.twitter.com/embed/Tweet.html?id='
+      + encodeURIComponent(ev.clipTweetId) + '&dnt=true" loading="lazy" scrolling="no" '
+      + 'allowfullscreen title="Play clip"></iframe>'
+      + (ev.clipUrl ? '<div class="rz-clip-src"><a href="' + ev.clipUrl
+        + '" target="_blank" rel="noopener">View on X</a></div>' : '');
+  }
+
+  function _toggleClip(btn) {
+    var card = btn.closest ? btn.closest('.rz-event') : null;
+    if (!card) return;
+    var panel = card.querySelector('[data-clip-panel]');
+    var key = btn.getAttribute('data-clip-toggle');
+    var wasOpen = panel && panel.classList.contains('is-open');
+    // Collapse whatever is open anywhere in the feed first.
+    root.querySelectorAll('.rz-clip-panel.is-open').forEach(function(p) {
+      p.classList.remove('is-open');
+      p.innerHTML = '';
+    });
+    root.querySelectorAll('[data-clip-toggle]').forEach(function(b) {
+      b.innerHTML = _clipBtnLabel(false);
+    });
+    if (wasOpen) {
+      _openClipKey = null;
+      return;
+    }
+    _openClipKey = key;
+    if (panel) {
+      panel.innerHTML = _clipFrameHtml({
+        clipTweetId: btn.getAttribute('data-tweet') || '',
+        clipUrl: btn.getAttribute('data-clip-url') || ''
+      });
+      panel.classList.add('is-open');
+    }
+    btn.innerHTML = _clipBtnLabel(true);
+  }
+
+  function _clipBtnLabel(open) {
+    return open ? 'Close'
+      : '<svg class="rz-clip-ico" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>Watch';
+  }
+
   function _eventHtml(ev, animate) {
     var tagLabel = ev.mine ? (_scope === 'user' && ev.league ? ev.league : 'MY TEAM')
                  : ev.opp  ? (_scope === 'user' && ev.league ? ('OPP · ' + ev.league) : 'OPP')
@@ -3929,8 +3996,17 @@
       : '<img class="rz-headshot' + (isDef ? ' rz-team-logo' : '') + '" src="' + avSrc + '" alt=""'
         + (isDef && defTeam ? ' data-team="' + String(defTeam).replace(/"/g, '') + '"' : '')
         + ' onerror="' + avOnErr + '">';
+    var hasClip = !!(ev.clipTweetId && ev.kind === 'td');
+    var clipOpen = hasClip && _openClipKey === ev.playId;
+    var clipHtml = hasClip
+      ? '<div class="rz-clip-row"><button type="button" class="rz-clip-btn" data-clip-toggle="'
+        + _esc(ev.playId) + '" data-tweet="' + _esc(ev.clipTweetId) + '" data-clip-url="' + _esc(ev.clipUrl || '') + '">'
+        + _clipBtnLabel(clipOpen) + '</button></div>'
+        + '<div class="rz-clip-panel' + (clipOpen ? ' is-open' : '') + '" data-clip-panel="'
+        + _esc(ev.playId) + '">' + (clipOpen ? _clipFrameHtml(ev) : '') + '</div>'
+      : '';
     return (
-      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (_isBigPlay(ev) ? ' is-big' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
+      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (_isBigPlay(ev) ? ' is-big' : '') + (hasClip ? ' has-clip' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
       + '<div class="rz-event-avatar rz-av-' + posKey + '" data-init="' + initials + '">'
       + avInner
       + '</div>'
@@ -3948,6 +4024,7 @@
       + '<div class="rz-event-delta-pts">' + (deltaPrimary || '') + '</div>'
       + (deltaSecondary ? '<div class="rz-event-total"><span>' + deltaSecondary + '</span> total</div>' : '')
       + '</div>'
+      + clipHtml
       + '</div>'
     );
   }
@@ -4201,11 +4278,21 @@
       var wrap = document.createElement('div');
       wrap.innerHTML = _eventHtml(ev, false);
       var fresh = wrap.firstChild;
+      // Preserve an open clip embed across the content swap: replacing
+      // innerHTML would destroy the loaded X iframe on every feed sync.
+      // Detach the live panel first and swap it into the fresh card.
+      var openPanel = node.querySelector('.rz-clip-panel.is-open');
+      if (openPanel) openPanel.remove();
       // Preserve the card node (focus, listeners, and FLIP identity), while a
       // provider revision updates its semantic content and ordinary classes.
       node.className = fresh.className;
       node.innerHTML = fresh.innerHTML;
       node.dataset.pid = fresh.dataset.pid;
+      if (openPanel) {
+        var freshPanel = node.querySelector('.rz-clip-panel');
+        if (freshPanel) freshPanel.replaceWith(openPanel);
+        else openPanel = null;
+      }
     }
 
     var oldPositions = {};

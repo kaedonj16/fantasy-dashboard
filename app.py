@@ -18142,6 +18142,24 @@ def _scorezone_collect(platform, league_id, season, week):
                 logger.debug("[scorezone] alt pbp failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
 
+    # TD clips: stamp matched official X clips onto TD play rows so the
+    # client can offer a Watch button. Plays without a stored clip are
+    # untouched, so the payload is identical when no clip exists.
+    if pbp_by_game:
+        try:
+            from utils.scorezone_store import (
+                attach_clips_to_plays as _attach_clips,
+            )
+            from utils.scorezone_store import (
+                get_play_clips as _get_play_clips,
+            )
+
+            _clips = _get_play_clips(season, list(pbp_by_game.keys()))
+            if _clips:
+                _attach_clips(pbp_by_game, _clips)
+        except Exception:
+            logger.debug("[scorezone] clip attach failed", exc_info=True)
+
     # Add unrostered players that appeared in PBP to player_info so frontend can display them
     for gid, plays in pbp_by_game.items():
         for play in plays:

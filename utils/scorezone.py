@@ -2435,6 +2435,13 @@ def extract_espn_pbp_plays(
             if _sh is not None and _sa is not None:
                 base["score_home"] = _sh
                 base["score_away"] = _sa
+            # Real-world time the play happened (ESPN summary payloads carry
+            # an ISO ``wallclock`` per play). The TD clip matcher anchors its
+            # tweet window on this; omitted when the source did not send one
+            # so a missing anchor can never be faked from the game clock.
+            _wc = _s(play.get("wallclock"))
+            if _wc:
+                base["wallclock"] = _wc
             seq += 1
             is_no_play = bool(re.search(r"\bno play\b", parse_text, re.IGNORECASE))
             if is_no_play:
