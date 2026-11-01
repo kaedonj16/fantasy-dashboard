@@ -7807,7 +7807,8 @@ window.initTradePage = function initTradePage(root = document) {
           redraft_value_1qb: p.redraft_value_1qb,
           redraft_value_sf: p.redraft_value_sf,
           pos_rank_label: p.pos_rank_label,
-          sf_pos_rank_label: p.sf_pos_rank_label
+          sf_pos_rank_label: p.sf_pos_rank_label,
+          espnHeadshot: p.espnHeadshot || ""
         })),
         sideBPlayers: state.sideBPlayers.map(p => ({
           id: p.id,
@@ -7819,7 +7820,8 @@ window.initTradePage = function initTradePage(root = document) {
           redraft_value_1qb: p.redraft_value_1qb,
           redraft_value_sf: p.redraft_value_sf,
           pos_rank_label: p.pos_rank_label,
-          sf_pos_rank_label: p.sf_pos_rank_label
+          sf_pos_rank_label: p.sf_pos_rank_label,
+          espnHeadshot: p.espnHeadshot || ""
         })),
         sideAPicks: state.sideAPicks.map(p => ({
           id: p.id,
@@ -8736,6 +8738,10 @@ window.initTradePage = function initTradePage(root = document) {
       sf_pos_rank_label: p.sf_pos_rank_label || "",
       is_rookie: p.is_rookie === true,
       search_name: p.search_name || "",
+      // Carried through so selected-player chips can render the same ESPN
+      // headshot the pool/board rows use (the trade view's slim key list
+      // already ships it; the normalizer used to drop it).
+      espnHeadshot: p.espnHeadshot || "",
       // Folded in from ?view=trade (replaces /api/player-deltas + /api/player-indicators)
       delta_7d: p.delta_7d != null ? Number(p.delta_7d) : null,
       is_breakout: p.is_breakout === true,
@@ -9042,6 +9048,77 @@ window.initTradePage = function initTradePage(root = document) {
     syncViewerSideLabels();
   }
 
+  function chipInitials(name) {
+    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : "")).toUpperCase();
+  }
+
+  // Chip headshot: the pool's ESPN photo over an initials disc, the same
+  // fallback shape the rankings board uses (.rc-badge/.rc-face). A failed
+  // photo retries once on the raw URL, then hides itself so the initials
+  // show through; a player with no photo renders the disc alone.
+  function buildChipFace(p) {
+    const face = document.createElement("span");
+    face.className = "otc-chip-face";
+    face.setAttribute("aria-hidden", "true");
+
+    const initials = document.createElement("span");
+    initials.className = "otc-chip-face-initials";
+    initials.textContent = chipInitials(p.name);
+    face.appendChild(initials);
+
+    const url = p.espnHeadshot || p.headshot || "";
+    if (url) {
+      const img = document.createElement("img");
+      img.className = "otc-chip-face-img";
+      img.alt = "";
+      img.loading = "lazy";
+      img.dataset.raw = url;
+      img.src = (typeof _hiResHeadshot === "function") ? _hiResHeadshot(url, 110) : url;
+      img.onerror = function () {
+        if (this.dataset.raw && this.src !== this.dataset.raw) {
+          this.src = this.dataset.raw;
+        } else {
+          this.style.visibility = "hidden";
+        }
+      };
+      face.appendChild(img);
+    }
+    return face;
+  }
+
+  // Pick chips keep their simpler anatomy; the tile carries the round
+  // ("3rd") the way the pick's own display string names it.
+  function pickRoundLabel(pk) {
+    const parts = String((pk && pk.id) || "").split("_");
+    const round = parseInt(parts[1], 10);
+    if (!isNaN(round)) {
+      const suffix = { 1: "st", 2: "nd", 3: "rd" }[round] || "th";
+      return round + suffix;
+    }
+    const m = String((pk && pk.display) || "").match(/\b(\d+)(st|nd|rd|th)\b/);
+    return m ? m[1] + m[2] : "Pick";
+  }
+
+  function buildPickTile(pk) {
+    const tile = document.createElement("span");
+    tile.className = "otc-chip-pick-tile";
+    tile.setAttribute("aria-hidden", "true");
+    tile.textContent = pickRoundLabel(pk);
+    return tile;
+  }
+
+  // Phone side-header line: "gets · N pieces" beside the team title. The
+  // header total itself mirrors #sideATotal/#sideBTotal (see
+  // bindMobileChrome); the piece count is state, so it syncs here.
+  function syncSideHeadMeta(side) {
+    const piecesEl = root.querySelector(side === "A" ? "#sideAHeadPieces" : "#sideBHeadPieces");
+    if (!piecesEl) return;
+    const n = getSidePlayers(side).length + getSidePicks(side).length;
+    piecesEl.textContent = n === 1 ? "· 1 piece" : "· " + n + " pieces";
+  }
+
   function renderChips(side) {
     const container = root.querySelector(side === "A" ? "#sideAChips" : "#sideBChips");
     const players = getSidePlayers(side);
@@ -9159,6 +9236,7 @@ window.initTradePage = function initTradePage(root = document) {
       rightWrap.appendChild(valueEl);
       rightWrap.appendChild(removeBtn);
 
+      chip.appendChild(buildChipFace(p));
       chip.appendChild(leftWrap);
       chip.appendChild(rightWrap);
       container.appendChild(chip);
@@ -9206,11 +9284,13 @@ window.initTradePage = function initTradePage(root = document) {
       rightWrap.appendChild(valueEl);
       rightWrap.appendChild(removeBtn);
 
+      chip.appendChild(buildPickTile(pk));
       chip.appendChild(leftWrap);
       chip.appendChild(rightWrap);
       container.appendChild(chip);
     });
 
+    syncSideHeadMeta(side);
     syncEmptyState(side);
     recomputeTrade();
   }
@@ -9598,7 +9678,14 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   function scrollStickyBarToSummary() {
-    const card = root.querySelector(".otc-summary-card");
+    // On phones the balance section lives in the builder-end balance
+    // block, not the summary card; land there. Desktop (and any phone
+    // state where the block is empty) keeps the summary card target.
+    const mobileBalance = root.querySelector("#otcMobileBalance");
+    const card = (mobileBalance && mobileBalance.childElementCount &&
+      window.matchMedia("(max-width: 640px)").matches)
+      ? mobileBalance
+      : root.querySelector(".otc-summary-card");
     if (!card) return;
     // scroll-margin-top is zeroed by the global <=1280px reset, so the
     // header offset is explicit (the landing page's pattern): measure
@@ -14269,23 +14356,106 @@ window.initTradePage = function initTradePage(root = document) {
         scrollStickyBarToSummary();
       }
     });
-    // Hide the bar while the Trade Summary card itself is on screen:
-    // the bar only earns its place when the summary is out of view.
-    // The 24px rootMargin dead band is the hysteresis: the bar hides
-    // just before the summary enters and returns just after it has
-    // fully left, so the boundary never flickers. Tapping the bar
-    // scrolls the summary in, and this observer hides the bar as it
-    // arrives.
-    const summaryCard = root.querySelector(".otc-summary-card");
-    if (summaryCard && window.IntersectionObserver && !bar.__brSummaryObserver) {
-      const io = new IntersectionObserver((entries) => {
-        entries.forEach((en) => {
-          state._summaryInView = !!en.isIntersecting;
-          renderStickyBar();
-        });
-      }, { rootMargin: "24px 0px 24px 0px", threshold: 0 });
-      io.observe(summaryCard);
-      bar.__brSummaryObserver = io;
+    // Hide the bar while the balance it mirrors is on screen: the bar
+    // only earns its place when that section is out of view. The 24px
+    // rootMargin dead band is the hysteresis: the bar hides just before
+    // the section enters and returns just after it has fully left, so
+    // the boundary never flickers. Tapping the bar scrolls the section
+    // in, and this observer hides the bar as it arrives.
+    syncStickyObserver();
+    if (!bar.__brStickyMq) {
+      bar.__brStickyMq = window.matchMedia("(max-width: 640px)");
+      const onFlip = () => syncStickyObserver();
+      if (bar.__brStickyMq.addEventListener) bar.__brStickyMq.addEventListener("change", onFlip);
+      else if (bar.__brStickyMq.addListener) bar.__brStickyMq.addListener(onFlip);
+    }
+  }
+
+  // The observed section follows the layout: the summary card on
+  // desktop; on phones the card no longer holds the balance (it moved
+  // to the builder-end balance block), so the block is observed there.
+  function syncStickyObserver() {
+    const bar = root.querySelector("#tradeStickyBar");
+    if (!bar || !window.IntersectionObserver) return;
+    const mobile = window.matchMedia("(max-width: 640px)").matches;
+    const target = mobile
+      ? (root.querySelector("#otcMobileBalance") || root.querySelector(".otc-summary-card"))
+      : root.querySelector(".otc-summary-card");
+    if (!target) return;
+    if (bar.__brSummaryObserver && bar.__brSummaryTarget === target) return;
+    if (bar.__brSummaryObserver) bar.__brSummaryObserver.disconnect();
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        state._summaryInView = !!en.isIntersecting;
+        renderStickyBar();
+      });
+    }, { rootMargin: "24px 0px 24px 0px", threshold: 0 });
+    io.observe(target);
+    bar.__brSummaryObserver = io;
+    bar.__brSummaryTarget = target;
+  }
+
+  // ------------------------------------------------------------
+  // Phone chrome: slim-head context line, side-header totals, Clear
+  // ------------------------------------------------------------
+
+  // The phone side headers show the SAME totals the summary shows: the
+  // header spans mirror #sideATotal/#sideBTotal text, so the eval's
+  // count-up animation, the empty-state reset, and the landed effective
+  // totals all reach the headers from the single source instead of a
+  // second client-side sum that could drift from the eval.
+  function syncSideHeadTotals() {
+    [["#sideATotal", "#sideAHeadTotal"], ["#sideBTotal", "#sideBHeadTotal"]].forEach(([src, dst]) => {
+      const s = root.querySelector(src);
+      const d = root.querySelector(dst);
+      if (s && d && d.textContent !== s.textContent) d.textContent = s.textContent;
+    });
+  }
+
+  // The slim head's quiet line under the title: league name (the same
+  // nav-chrome name the top bar shows), then the values the head's own
+  // controls currently hold: scoring type, scoring format, QB setting.
+  // Re-synced on every one of those controls' change events.
+  function syncContextLine() {
+    const el = root.querySelector("#otcContextLine");
+    if (!el) return;
+    const parts = [];
+    const chromeName = document.querySelector("#brLeagueChrome .br-ctx-name");
+    const leagueName = ((window.__brctx && window.__brctx.leagueName) ||
+      (chromeName && chromeName.textContent) || "").trim();
+    if (leagueName && leagueName !== "This league") parts.push(leagueName);
+    parts.push(getScoringType() === "redraft" ? "Redraft" : "Dynasty");
+    const fmtSel = root.querySelector("#scoringFormatSelect");
+    const fmtLabel = (fmtSel && fmtSel.selectedOptions && fmtSel.selectedOptions[0])
+      ? fmtSel.selectedOptions[0].textContent.trim() : "";
+    if (fmtLabel) parts.push(fmtLabel);
+    parts.push(getLeagueType() === "sf" ? "SF" : "1QB");
+    el.textContent = parts.join(" · ");
+  }
+
+  function bindMobileChrome() {
+    const totalEls = ["#sideATotal", "#sideBTotal"]
+      .map(sel => root.querySelector(sel)).filter(Boolean);
+    if (totalEls.length && window.MutationObserver) {
+      const mo = new MutationObserver(syncSideHeadTotals);
+      totalEls.forEach(el => mo.observe(el, { childList: true, characterData: true, subtree: true }));
+    }
+    syncSideHeadTotals();
+    syncSideHeadMeta("A");
+    syncSideHeadMeta("B");
+    syncContextLine();
+    ["#scoringTypeSelect", "#scoringFormatSelect", "#leagueTypeToggle"].forEach(sel => {
+      const ctl = root.querySelector(sel);
+      if (ctl) bindOnce(ctl, "otcContextLineSync", "change", syncContextLine);
+    });
+    // The phone pair's Clear runs the page's own reset path (the same
+    // window._clearTrade the sample-trade "Clear and try your own" link
+    // uses): clears both sides, saves, re-renders, re-analyzes empty.
+    const clearBtn = root.querySelector("#otcMobileClearBtn");
+    if (clearBtn) {
+      bindOnce(clearBtn, "otcMobileClear", "click", () => {
+        if (window._clearTrade) window._clearTrade();
+      });
     }
   }
 
@@ -14719,6 +14889,7 @@ window.initTradePage = function initTradePage(root = document) {
   bindClearTradeButton();
   bindShareButton();
   bindStickyBar();
+  bindMobileChrome();
   initMoversBreakoutsTabs();
   // Search inputs bind immediately too -- renderSide() lazily awaits
   // ensurePlayersLoaded() at query time, so they must not be gated behind the

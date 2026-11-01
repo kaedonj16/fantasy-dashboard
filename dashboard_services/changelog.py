@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-31",
+        "tag": "new",
+        "text": "Trade Calculator on phones: a slimmer header with your league settings behind the gear, flat full-width sides with each side's running total in its header, and Analyze plus the balance bar right under the sides. Player chips now show headshots on phone and desktop, with initials when a player has no photo.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-10-31",
         "tag": "fix",
         "text": "Trade Calculator: the pinned bar is now a slim balance strip with just the two side values and the fair range, so nothing in it gets cut off. Tap the bar to jump straight to the full Trade Summary, and the bar steps aside on its own while the summary is on screen.",
         "link": "/trade"

@@ -284,6 +284,14 @@ def build_trade_calculator_body(
                   <div class="otc-settings-field" id="otcSideSlot">
                     <span class="otc-settings-field-label">Trade side</span>
                   </div>
+                  <div class="otc-settings-grid2 otc-mobile-only-slots" id="otcMobileControlSlots">
+                    <div class="otc-settings-field" id="otcFormatSlot">
+                      <span class="otc-settings-field-label">Format</span>
+                    </div>
+                    <div class="otc-settings-field" id="otcScoringSlot">
+                      <span class="otc-settings-field-label">Scoring</span>
+                    </div>
+                  </div>
                   <div class="otc-settings-grid2">
                     <div class="otc-settings-field">
                       <span class="otc-settings-field-label">League Size</span>
@@ -345,7 +353,8 @@ def build_trade_calculator_body(
                   </div>
                 </div>
               </div>
-              <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">Values calibrated from <span data-trade-count>…</span> real Sleeper trades</div>
+              <div class="otc-page-subtitle" style="font-size:13px;color:var(--text-muted);margin-top:2px;">Values calibrated from <span data-trade-count>…</span> real Sleeper trades</div>
+              <div class="otc-context-line" id="otcContextLine"></div>
             </div>
             <div class="otc-page-head-controls">
               <div class="otc-settings-row">
@@ -369,10 +378,12 @@ def build_trade_calculator_body(
           <div class="otc-builder-grid">
             <section class="otc-team-card">
               <div class="otc-team-head">
-                <div>
+                <div class="otc-team-title-cell">
                   <h2 class="otc-team-title" id="sideATitle">Team 1 gets...</h2>
+                  <span class="otc-side-head-pieces" id="sideAHeadPieces"></span>
                 </div>
                 <div class="otc-team-head-right">
+                  <span class="otc-side-head-total" id="sideAHeadTotal">0.0</span>
                   {side_a_owner_tag}
                 </div>
               </div>
@@ -405,8 +416,10 @@ def build_trade_calculator_body(
               <div class="otc-team-head">
                 <div class="otc-team-title-row">
                   <h2 class="otc-team-title" id="sideBTitle"><span id="sideBTeamFallback">Team 2</span>{side_b_team_block} gets...</h2>
+                  <span class="otc-side-head-pieces" id="sideBHeadPieces"></span>
                 </div>
                 <div class="otc-team-head-right">
+                  <span class="otc-side-head-total" id="sideBHeadTotal">0.0</span>
                   {side_b_owner_tag}
                 </div>
               </div>
@@ -438,6 +451,19 @@ def build_trade_calculator_body(
 
           <div id="tradeUnvaluedStrip" class="otc-unvalued-strip" style="display:none;" role="note"></div>
 
+          <!-- Phone flow (CSS shows it only at phone widths): the relocation
+               script at the end of this page moves Analyze, the summary's
+               balance section, and Share into these slots so the builder
+               closes with its actions; the Clear button is static here and
+               calls the page's own window._clearTrade reset path. -->
+          <div class="otc-mobile-flow" id="otcMobileFlow">
+            <div class="otc-mobile-analyze" id="otcMobileAnalyze"></div>
+            <div class="otc-mobile-balance" id="otcMobileBalance"></div>
+            <div class="otc-mobile-pair" id="otcMobilePair">
+              <button type="button" class="otc-mobile-clear-btn" id="otcMobileClearBtn">Clear Calculator</button>
+            </div>
+          </div>
+
           <div class="otc-lower-grid otc-lower-grid--top2">
             <section class="otc-summary-card">
               <div class="otc-summary-head">
@@ -456,6 +482,7 @@ def build_trade_calculator_body(
                       <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
                       <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
                     </svg>
+                    <span class="otc-share-label">Share Trade</span>
                   </button>
                 </div>
               </div>
@@ -1397,20 +1424,56 @@ def build_trade_calculator_body(
       </div>
     </div>
     <script>
-      /* Mobile: relocate the Team 1 / Team 2 toggle into the Settings dropdown
-         so the toolbar isn't crowded. Reparents the same element (state and
-         change-bindings stay intact) rather than duplicating the radios. */
+      /* Phone layout: reparent the toolbar controls into the Settings
+         dropdown and the summary's balance section to the end of the
+         builder, so the phone page reads: slim head (title, context line,
+         gear), flat sides, Analyze, balance, Share/Clear, then the summary
+         card carrying Trade Fit. The SAME elements move (ids, state and
+         change-bindings stay intact) rather than being duplicated, and
+         widening back past the breakpoint restores every node to its
+         recorded home slot. Restores run in reverse move order so each
+         recorded next-sibling is back in its parent before it is used as
+         an insertBefore anchor. */
       (function () {{
-        var mq = window.matchMedia('(max-width:600px)');
+        var mq = window.matchMedia('(max-width:640px)');
+        var moves = [
+          ['.otc-page-head-controls .otc-viewer-toggles', 'otcSideSlot'],
+          ['#scoringTypeControl', 'otcFormatSlot'],
+          ['#scoringFormatControl', 'otcScoringSlot'],
+          ['#clearTradeBtn', 'otcMobileAnalyze'],
+          ['#shareTradeBtn', 'otcMobilePair'],
+          ['.otc-summary-stats', 'otcMobileBalance'],
+          ['.otc-balance-wrap', 'otcMobileBalance'],
+          ['.otc-verdict-shell', 'otcMobileBalance']
+        ];
+        var homes = null;
+        function recordHomes() {{
+          homes = moves.map(function (m) {{
+            var el = document.querySelector(m[0]);
+            return el ? {{ el: el, parent: el.parentElement, next: el.nextElementSibling }} : null;
+          }});
+        }}
         function place() {{
-          var toggle = document.querySelector('.otc-page-head-controls .otc-viewer-toggles');
-          var slot = document.getElementById('otcSideSlot');
-          var row = document.querySelector('.otc-page-head-controls .otc-settings-row');
-          if (!toggle || !slot || !row) return;
+          if (!homes) recordHomes();
           if (mq.matches) {{
-            if (toggle.parentElement !== slot) slot.appendChild(toggle);
-          }} else if (toggle.parentElement !== row) {{
-            row.insertBefore(toggle, row.firstChild);
+            moves.forEach(function (m, i) {{
+              var home = homes[i];
+              if (!home || !home.el) return;
+              var slot = document.getElementById(m[1]);
+              if (!slot || home.el.parentElement === slot) return;
+              if (m[0] === '#shareTradeBtn') {{
+                /* Share leads the pair; the static Clear button follows. */
+                slot.insertBefore(home.el, slot.firstChild);
+              }} else {{
+                slot.appendChild(home.el);
+              }}
+            }});
+          }} else {{
+            for (var i = moves.length - 1; i >= 0; i--) {{
+              var home = homes[i];
+              if (!home || !home.el || home.el.parentElement === home.parent) continue;
+              home.parent.insertBefore(home.el, home.next);
+            }}
           }}
         }}
         place();

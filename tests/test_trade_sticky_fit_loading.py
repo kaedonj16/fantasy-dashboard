@@ -195,16 +195,23 @@ def test_sticky_bar_scrolls_to_summary():
 
 
 def test_sticky_bar_hides_while_summary_visible():
-    # An IntersectionObserver on the same .otc-summary-card the tap
-    # scrolls to owns state._summaryInView; renderStickyBar composes
-    # it with the armed gate. The 24px rootMargin dead band is the
-    # hysteresis: hide just before the card enters, return just after
-    # it has fully left, so the boundary cannot flicker.
+    # An IntersectionObserver on the section the tap scrolls to owns
+    # state._summaryInView; renderStickyBar composes it with the armed
+    # gate. The 24px rootMargin dead band is the hysteresis: hide just
+    # before the section enters, return just after it has fully left,
+    # so the boundary cannot flicker.
+    # Updated for the phone redesign: the observed section follows the
+    # layout (syncStickyObserver). On desktop it is still the summary
+    # card; on phones the card no longer holds the balance (it moved to
+    # the builder-end #otcMobileBalance block), so the block is the
+    # target there. The observer contract (owner flag, rootMargin,
+    # renderer gate) is unchanged.
     bind_body = APP_JS.split("function bindStickyBar()", 1)[1].split(
         "function bindClearTradeButton", 1)[0]
     assert "new IntersectionObserver" in bind_body
     assert '".otc-summary-card"' in bind_body, "observer watches the summary card"
-    assert "io.observe(summaryCard)" in bind_body
+    assert '"#otcMobileBalance"' in bind_body, "on phones it watches the balance block"
+    assert "io.observe(target);" in bind_body
     assert "state._summaryInView = !!en.isIntersecting;" in bind_body
     assert 'rootMargin: "24px 0px 24px 0px"' in bind_body, (
         "the rootMargin dead band is the anti-flicker hysteresis")
