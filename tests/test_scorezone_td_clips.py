@@ -831,3 +831,60 @@ def test_upsert_replaces_graphic_row_with_broadcast(fake_clips_db):
     other = dict(broadcast, tweet_id="902",
                  video_url="https://video.twimg.com/amplify_video/9/vid/avc1/1280x720/c.mp4")
     assert store.upsert_play_clip(2026, RAMS_GAME, "404", other) is False
+
+
+def test_clip_pass_fills_media_for_pending_clip_via_lookup(monkeypatch):
+    # A clip matched while its video was still transcoding is stored
+    # media-less; the timeline never returns that tweet again (since_id),
+    # so the pass must re-ask for it by id and fill the media in.
+    rows = _rams_rows()
+    existing = {
+        (RAMS_GAME, "404"): {
+            "game_id": RAMS_GAME, "play_id": "404", "tweet_id": "111",
+            "tweet_url": "https://x.com/NFL/status/111", "author": "NFL",
+            "scorer": "Kyren Williams", "ts": 1761438000.0,
+            "video_url": "", "poster_url": "",
+        }
+    }
+    upserts = []
+    monkeypatch.setattr(store, "get_plays",
+                        lambda season, gids: {RAMS_GAME: rows})
+    monkeypatch.setattr(store, "get_play_clips",
+                        lambda season, gids: existing)
+    monkeypatch.setattr(
+        store, "upsert_play_clip",
+        lambda season, gid, pid, clip: upserts.append((gid, pid, clip)) or True)
+
+    class _FakeFetcher:
+        def __init__(self):
+            self.user_ids = {}
+            self.looked_up = []
+
+        def user_tweets(self, username, since_id=None, max_results=25):
+            return []
+
+        def lookup_media(self, tweet_ids):
+            self.looked_up = list(tweet_ids)
+            return {"111": {
+                "video_url": "https://video.twimg.com/amplify_video/9/vid/avc1/1280x720/a.mp4",
+                "poster_url": "https://pbs.twimg.com/thumb/a.jpg",
+            }}
+
+    fetcher = _FakeFetcher()
+    from utils.scorezone import _iso_to_epoch
+
+    now = _iso_to_epoch("2026-10-25T21:50:00Z")
+    stats = clips.maybe_run_clip_pass(
+        2026,
+        [{"game_id": RAMS_GAME, "live": True, "final": False}],
+        {pid: {"full_name": name, "position": "WR"}
+         for pid, name in PID_TO_NAME.items()},
+        now=float(now), fetcher=fetcher,
+    )
+    assert fetcher.looked_up == ["111"]
+    assert stats["filled"] == 1
+    assert len(upserts) == 1
+    gid, pid, clip = upserts[0]
+    assert (gid, pid) == (RAMS_GAME, "404")
+    assert clip["tweet_id"] == "111"
+    assert clip["video_url"].endswith("1280x720/a.mp4")
