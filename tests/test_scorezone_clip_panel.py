@@ -89,3 +89,11 @@ def test_open_panel_upgrades_to_video_when_media_lands():
     # A panel that fell back after a video error is not re-upgraded
     # (that would loop on every sync).
     assert "data-clip-fell-back" in seg
+
+
+def test_clip_panel_taps_do_not_open_player_modal():
+    js = _js()
+    # The root click delegation must bail on taps inside an open clip
+    # panel before the data-pid walk that opens the player modal.
+    seg = js.split("root.addEventListener('click'")[1].split("data-boxscore-game")[0]
+    assert "closest('.rz-clip-panel')" in seg

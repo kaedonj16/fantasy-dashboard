@@ -235,6 +235,10 @@ class _FakeClipConn:
         pass
 
     def execute(self, sql, params=None):
+        if "SELECT video_url FROM redzone_play_clips" in sql:
+            key = (params[0], params[1], params[2])
+            row = self.table.get(key)
+            return _Res([(row["video_url"],)] if row else [])
         if "INSERT INTO redzone_play_clips" in sql:
             key = (params[0], params[1], params[2])
             if key in self.table:
@@ -248,6 +252,17 @@ class _FakeClipConn:
             }
             return _Res([{"play_id": params[2]}])
         if "UPDATE redzone_play_clips" in sql:
+            if "replace-graphic" in sql:
+                key = (params[8], params[9], params[10])
+                row = self.table.get(key)
+                if row is not None and row.get("video_url"):
+                    row.update({
+                        "video_url": params[0], "poster_url": params[1],
+                        "tweet_id": params[2], "tweet_url": params[3],
+                        "author": params[4], "scorer": params[5],
+                    })
+                    return _Res([{"play_id": params[10]}])
+                return _Res([])
             key = (params[2], params[3], params[4])
             row = self.table.get(key)
             if row is not None and not row.get("video_url"):
@@ -737,3 +752,82 @@ def test_attach_stamps_proxied_stream_url(fake_clips_db):
     # same-origin stream URL (twimg 403s foreign-Referer hotlinks).
     assert row["clip_video_url"].startswith("/api/clip-stream?u=https%3A%2F%2Fvideo.twimg.com")
     assert row["clip_poster_url"] == "https://pbs.twimg.com/amplify_video_thumb/9/img/p.jpg"
+
+
+# ---------------------------------------------------------------------------
+# Graphic posts are not clips: team accounts post square "TOUCHDOWN"
+# graphics seconds after a score; the broadcast highlight is landscape.
+# ---------------------------------------------------------------------------
+
+def _media_entry(variant_dims, mtype="video"):
+    return {
+        "type": mtype,
+        "preview_image_url": "https://pbs.twimg.com/thumb/p.jpg",
+        "variants": [
+            {"content_type": "video/mp4", "bit_rate": br,
+             "url": f"https://video.twimg.com/amplify_video/9/vid/avc1/{d}/x{br}.mp4"}
+            for br, d in variant_dims
+        ],
+    }
+
+
+def test_best_video_rejects_square_graphic():
+    media = {"k1": _media_entry([(432000, "320x320"), (1280000, "720x720")])}
+    tweet = {"attachments": {"media_keys": ["k1"]}}
+    out = clips._best_video(tweet, media)
+    assert out.get("graphic_media") is True
+    assert "video_url" not in out
+
+
+def test_best_video_accepts_landscape_broadcast():
+    media = {"k1": _media_entry([(832000, "640x360"), (2176000, "1280x720")])}
+    tweet = {"attachments": {"media_keys": ["k1"]}}
+    out = clips._best_video(tweet, media)
+    assert out["video_url"].endswith("1280x720/x2176000.mp4")
+    assert not out.get("graphic_media")
+
+
+def test_video_url_qualifies():
+    assert clips.video_url_qualifies(
+        "https://video.twimg.com/amplify_video/1/vid/avc1/1280x720/a.mp4")
+    assert not clips.video_url_qualifies(
+        "https://video.twimg.com/amplify_video/1/vid/avc1/720x720/a.mp4")
+    assert not clips.video_url_qualifies(
+        "https://video.twimg.com/amplify_video/1/vid/avc1/720x1280/a.mp4")
+    assert clips.video_url_qualifies("https://video.twimg.com/plain.mp4")
+    assert not clips.video_url_qualifies("")
+
+
+def test_graphic_tweet_never_matches():
+    graphic = dict(BACKTEST_TWEETS[0], graphic_media=True)
+    matches = clips.match_tweets([graphic], _wanted())
+    assert matches == []
+    real = dict(BACKTEST_TWEETS[0],
+                video_url="https://video.twimg.com/amplify_video/9/vid/avc1/1280x720/a.mp4")
+    matches = clips.match_tweets([graphic, real], _wanted())
+    assert len(matches) == 1
+    assert matches[0]["video_url"].endswith("1280x720/a.mp4")
+
+
+def test_upsert_replaces_graphic_row_with_broadcast(fake_clips_db):
+    graphic = {
+        "tweet_id": "900", "tweet_url": "https://x.com/Chiefs/status/900",
+        "author": "Chiefs", "scorer": "Rashee Rice", "tweet_ts": 1761438000.0,
+        "video_url": "https://video.twimg.com/amplify_video/9/vid/avc1/720x720/g.mp4",
+        "poster_url": "https://pbs.twimg.com/thumb/g.jpg",
+    }
+    assert store.upsert_play_clip(2026, RAMS_GAME, "404", graphic) is True
+    broadcast = {
+        "tweet_id": "901", "tweet_url": "https://x.com/NFL/status/901",
+        "author": "NFL", "scorer": "Rashee Rice", "tweet_ts": 1761438120.0,
+        "video_url": "https://video.twimg.com/amplify_video/9/vid/avc1/1280x720/b.mp4",
+        "poster_url": "https://pbs.twimg.com/thumb/b.jpg",
+    }
+    assert store.upsert_play_clip(2026, RAMS_GAME, "404", broadcast) is True
+    got = store.get_play_clips(2026, [RAMS_GAME])[(RAMS_GAME, "404")]
+    assert got["tweet_id"] == "901"
+    assert got["video_url"].endswith("1280x720/b.mp4")
+    # A qualifying row is never replaced by another qualifying match.
+    other = dict(broadcast, tweet_id="902",
+                 video_url="https://video.twimg.com/amplify_video/9/vid/avc1/1280x720/c.mp4")
+    assert store.upsert_play_clip(2026, RAMS_GAME, "404", other) is False

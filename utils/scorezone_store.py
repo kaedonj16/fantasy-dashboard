@@ -452,10 +452,12 @@ def upsert_play_clip(season: int, game_id: str, play_id: str, clip: dict) -> boo
 
     First match wins for the tweet identity (ON CONFLICT DO NOTHING), so
     re-running the matcher over the same tweets can never churn the row.
-    One deliberate exception: a row stored before native-player media
+    Two deliberate exceptions: a row stored before native-player media
     existed (or from a tweet whose media the fetch missed) gets its
     empty video/poster filled by a later match of the SAME play, so a
-    backfill re-run upgrades old clips to the instant player.
+    backfill re-run upgrades old clips to the instant player; and a row
+    whose stored video is a square/portrait social graphic is replaced
+    outright when a later match brings the landscape broadcast clip.
     """
     from dashboard_services.db import get_conn
 
@@ -498,6 +500,43 @@ def upsert_play_clip(season: int, game_id: str, play_id: str, clip: dict) -> boo
                      int(season), str(game_id), str(play_id)),
                 ).fetchone()
                 changed = bool(row)
+            if not changed and video_url:
+                from utils.scorezone_clips import video_url_qualifies
+
+                if video_url_qualifies(video_url):
+                    cur = conn.execute(
+                        """SELECT video_url FROM redzone_play_clips
+                           WHERE season = %s AND game_id = %s AND play_id = %s""",
+                        (int(season), str(game_id), str(play_id)),
+                    ).fetchone()
+                    if isinstance(cur, dict):
+                        cur_url = str(cur.get("video_url") or "")
+                    elif cur:
+                        cur_url = str(cur[0] or "")
+                    else:
+                        cur_url = ""
+                    if cur_url and not video_url_qualifies(cur_url):
+                        row = conn.execute(
+                            """UPDATE redzone_play_clips /* replace-graphic */
+                               SET video_url = %s, poster_url = %s,
+                                   tweet_id = %s, tweet_url = %s,
+                                   author = %s, scorer = %s,
+                                   tweet_ts = CASE WHEN %s IS NULL THEN NULL
+                                                   ELSE to_timestamp(%s) END
+                               WHERE season = %s AND game_id = %s AND play_id = %s
+                                 AND video_url <> ''
+                               RETURNING play_id""",
+                            (
+                                video_url, poster_url, tweet_id,
+                                str(clip.get("tweet_url")
+                                    or f"https://x.com/i/status/{tweet_id}"),
+                                str(clip.get("author") or ""),
+                                str(clip.get("scorer") or ""),
+                                tweet_ts, tweet_ts,
+                                int(season), str(game_id), str(play_id),
+                            ),
+                        ).fetchone()
+                        changed = bool(row)
             conn.commit()
         return changed
     except Exception as exc:
