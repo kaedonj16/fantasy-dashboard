@@ -4849,6 +4849,67 @@ def _moment_fantasy_pts(stat, scoring):
     return round(pts * 10) / 10
 
 
+@user_pages_bp.route("/api/clip-stream")
+@limiter.limit("240/minute")
+def api_clip_stream():
+    """Stream a ScoreZone TD clip's MP4 through this origin.
+
+    video.twimg.com 403s amplify video when the browser's Referer is a
+    foreign site, so the native <video> player cannot hotlink the file.
+    The server-side fetch sends no Referer (allowed) and the bytes stream
+    straight through with Range support for seeking. The allowlist keeps
+    this a clip proxy, not an open proxy: https video.twimg.com
+    /amplify_video/ URLs only (the shape the matcher stores).
+    """
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    from flask import Response, stream_with_context
+
+    raw = request.args.get("u") or ""
+    parsed = urllib.parse.urlparse(raw)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "video.twimg.com"
+        or not parsed.path.startswith("/amplify_video/")
+    ):
+        return jsonify({"error": "bad clip url"}), 400
+    headers = {"User-Agent": "Mozilla/5.0"}
+    range_header = request.headers.get("Range")
+    if range_header:
+        headers["Range"] = range_header
+    upstream_req = urllib.request.Request(raw, headers=headers)
+    try:
+        upstream = urllib.request.urlopen(upstream_req, timeout=20)
+    except urllib.error.HTTPError:
+        return jsonify({"error": "clip unavailable"}), 502
+    except Exception:
+        return jsonify({"error": "clip unavailable"}), 502
+
+    def _gen():
+        try:
+            while True:
+                chunk = upstream.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            upstream.close()
+
+    resp = Response(
+        stream_with_context(_gen()),
+        status=upstream.status,
+        content_type=upstream.headers.get("Content-Type", "video/mp4"),
+    )
+    for name in ("Content-Length", "Content-Range", "Accept-Ranges"):
+        value = upstream.headers.get(name)
+        if value:
+            resp.headers[name] = value
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @user_pages_bp.route("/api/redzone/moments")
 @user_pages_bp.route("/api/scorezone/moments")
 def api_scorezone_moments():

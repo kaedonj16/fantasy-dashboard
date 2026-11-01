@@ -563,10 +563,12 @@ def attach_clips_to_plays(plays_by_game: dict, clips: dict) -> int:
                 continue
             clip = (clips or {}).get((str(gid), str(play.get("play_id") or "")))
             if clip:
+                from utils.scorezone_clips import clip_stream_url
+
                 play["clip_tweet_id"] = clip.get("tweet_id") or ""
                 play["clip_url"] = clip.get("tweet_url") or ""
                 if clip.get("video_url"):
-                    play["clip_video_url"] = clip.get("video_url") or ""
+                    play["clip_video_url"] = clip_stream_url(clip.get("video_url"))
                     play["clip_poster_url"] = clip.get("poster_url") or ""
                 n += 1
     return n
@@ -582,10 +584,12 @@ def attach_clips_to_moments(moments: list, clips: dict) -> int:
             (str(m.get("game_id") or ""), str(m.get("play_id") or ""))
         )
         if clip:
+            from utils.scorezone_clips import clip_stream_url
+
             m["clip_tweet_id"] = clip.get("tweet_id") or ""
             m["clip_url"] = clip.get("tweet_url") or ""
             if clip.get("video_url"):
-                m["clip_video_url"] = clip.get("video_url") or ""
+                m["clip_video_url"] = clip_stream_url(clip.get("video_url"))
                 m["clip_poster_url"] = clip.get("poster_url") or ""
             n += 1
     return n

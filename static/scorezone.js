@@ -3878,7 +3878,7 @@
       // the poster paints immediately and playback starts on tap, with no
       // X embed app to boot. (The embed iframe below remains the fallback
       // for clips stored before media capture.)
-      return '<video class="rz-clip-video" controls playsinline preload="metadata"'
+      return '<video class="rz-clip-video" controls playsinline preload="metadata" referrerpolicy="no-referrer"'
         + (ev.clipPosterUrl ? ' poster="' + ev.clipPosterUrl + '"' : '')
         + ' src="' + ev.clipVideoUrl + '"></video>' + srcLink;
     }
