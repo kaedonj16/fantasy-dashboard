@@ -415,10 +415,20 @@ CREATE TABLE IF NOT EXISTS redzone_play_clips (
     author     TEXT NOT NULL DEFAULT '',
     scorer     TEXT NOT NULL DEFAULT '',
     tweet_ts   TIMESTAMPTZ,
+    video_url  TEXT NOT NULL DEFAULT '',
+    poster_url TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (season, game_id, play_id)
 )
 """
+
+# Columns added after the table first shipped (native player media).
+_CLIPS_COLUMN_DDL = [
+    "ALTER TABLE redzone_play_clips "
+    "ADD COLUMN IF NOT EXISTS video_url TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE redzone_play_clips "
+    "ADD COLUMN IF NOT EXISTS poster_url TEXT NOT NULL DEFAULT ''",
+]
 
 _ENSURED_CLIP_TABLES: set = set()
 
@@ -432,14 +442,20 @@ def _ensure_clips_table(conn) -> None:
     if key in _ENSURED_CLIP_TABLES:
         return
     conn.execute(_CLIPS_TABLE_DDL)
+    for ddl in _CLIPS_COLUMN_DDL:
+        conn.execute(ddl)
     _ENSURED_CLIP_TABLES.add(key)
 
 
 def upsert_play_clip(season: int, game_id: str, play_id: str, clip: dict) -> bool:
-    """Store one matched clip. Returns True when a new row was written.
+    """Store one matched clip. Returns True when the row changed.
 
-    ON CONFLICT DO NOTHING: the first verified match for a play sticks, so
+    First match wins for the tweet identity (ON CONFLICT DO NOTHING), so
     re-running the matcher over the same tweets can never churn the row.
+    One deliberate exception: a row stored before native-player media
+    existed (or from a tweet whose media the fetch missed) gets its
+    empty video/poster filled by a later match of the SAME play, so a
+    backfill re-run upgrades old clips to the instant player.
     """
     from dashboard_services.db import get_conn
 
@@ -447,16 +463,18 @@ def upsert_play_clip(season: int, game_id: str, play_id: str, clip: dict) -> boo
     if not tweet_id or not game_id or not play_id:
         return False
     tweet_ts = (clip or {}).get("tweet_ts")
+    video_url = str((clip or {}).get("video_url") or "")
+    poster_url = str((clip or {}).get("poster_url") or "")
     try:
         with get_conn() as conn:
             _ensure_clips_table(conn)
             row = conn.execute(
                 """INSERT INTO redzone_play_clips
                        (season, game_id, play_id, tweet_id, tweet_url,
-                        author, scorer, tweet_ts)
+                        author, scorer, tweet_ts, video_url, poster_url)
                    VALUES (%s, %s, %s, %s, %s, %s, %s,
                            CASE WHEN %s IS NULL THEN NULL
-                                ELSE to_timestamp(%s) END)
+                                ELSE to_timestamp(%s) END, %s, %s)
                    ON CONFLICT (season, game_id, play_id) DO NOTHING
                    RETURNING play_id""",
                 (
@@ -465,11 +483,23 @@ def upsert_play_clip(season: int, game_id: str, play_id: str, clip: dict) -> boo
                         or f"https://x.com/i/status/{tweet_id}"),
                     str(clip.get("author") or ""),
                     str(clip.get("scorer") or ""),
-                    tweet_ts, tweet_ts,
+                    tweet_ts, tweet_ts, video_url, poster_url,
                 ),
             ).fetchone()
+            changed = bool(row)
+            if not changed and video_url:
+                row = conn.execute(
+                    """UPDATE redzone_play_clips
+                       SET video_url = %s, poster_url = %s
+                       WHERE season = %s AND game_id = %s AND play_id = %s
+                         AND video_url = ''
+                       RETURNING play_id""",
+                    (video_url, poster_url,
+                     int(season), str(game_id), str(play_id)),
+                ).fetchone()
+                changed = bool(row)
             conn.commit()
-        return bool(row)
+        return changed
     except Exception as exc:
         logger.warning("[scorezone-store] clip upsert failed: %s", exc)
         return False
@@ -487,7 +517,8 @@ def get_play_clips(season: int, game_ids: list[str]) -> dict:
             _ensure_clips_table(conn)
             rows = conn.execute(
                 """SELECT game_id, play_id, tweet_id, tweet_url, author,
-                          scorer, EXTRACT(EPOCH FROM tweet_ts) AS ts
+                          scorer, EXTRACT(EPOCH FROM tweet_ts) AS ts,
+                          video_url, poster_url
                    FROM redzone_play_clips
                    WHERE season = %s AND game_id = ANY(%s)""",
                 (int(season), gids),
@@ -503,12 +534,16 @@ def get_play_clips(season: int, game_ids: list[str]) -> dict:
                 "tweet_id": r["tweet_id"], "tweet_url": r["tweet_url"],
                 "author": r["author"], "scorer": r["scorer"],
                 "tweet_ts": r["ts"],
+                "video_url": r.get("video_url") or "",
+                "poster_url": r.get("poster_url") or "",
             }
         else:
             gid, pid = r[0], r[1]
             clip = {
                 "tweet_id": r[2], "tweet_url": r[3], "author": r[4],
                 "scorer": r[5], "tweet_ts": r[6],
+                "video_url": (r[7] if len(r) > 7 else "") or "",
+                "poster_url": (r[8] if len(r) > 8 else "") or "",
             }
         out[(str(gid), str(pid))] = clip
     return out
@@ -530,6 +565,9 @@ def attach_clips_to_plays(plays_by_game: dict, clips: dict) -> int:
             if clip:
                 play["clip_tweet_id"] = clip.get("tweet_id") or ""
                 play["clip_url"] = clip.get("tweet_url") or ""
+                if clip.get("video_url"):
+                    play["clip_video_url"] = clip.get("video_url") or ""
+                    play["clip_poster_url"] = clip.get("poster_url") or ""
                 n += 1
     return n
 
@@ -546,6 +584,9 @@ def attach_clips_to_moments(moments: list, clips: dict) -> int:
         if clip:
             m["clip_tweet_id"] = clip.get("tweet_id") or ""
             m["clip_url"] = clip.get("tweet_url") or ""
+            if clip.get("video_url"):
+                m["clip_video_url"] = clip.get("video_url") or ""
+                m["clip_poster_url"] = clip.get("poster_url") or ""
             n += 1
     return n
 

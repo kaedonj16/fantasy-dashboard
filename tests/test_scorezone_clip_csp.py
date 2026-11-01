@@ -35,6 +35,23 @@ def test_frame_src_allows_x_clip_embeds(offline_client):
     assert "https://*.twimg.com" in frame_src
 
 
+def test_media_src_allows_native_clip_video(offline_client):
+    # The native TD clip player streams MP4s from X's media CDN; without a
+    # media-src entry the browser blocks the video the same way the CSP
+    # frame-src gap blocked the embed iframe.
+    response = offline_client.get("/")
+    policy = (
+        response.headers.get("Content-Security-Policy")
+        or response.headers.get("Content-Security-Policy-Report-Only")
+        or ""
+    )
+    media = next(
+        (d.strip() for d in policy.split(";") if d.strip().startswith("media-src")),
+        "",
+    )
+    assert "https://video.twimg.com" in media
+
+
 def test_frame_src_still_scoped(offline_client):
     # The fix widens frame-src for X embeds only; it must not open framing
     # up to the whole web.

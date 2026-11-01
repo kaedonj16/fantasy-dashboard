@@ -243,8 +243,18 @@ class _FakeClipConn:
                 "game_id": params[1], "play_id": params[2],
                 "tweet_id": params[3], "tweet_url": params[4],
                 "author": params[5], "scorer": params[6], "ts": 1761438000.0,
+                "video_url": params[9] if len(params) > 9 else "",
+                "poster_url": params[10] if len(params) > 10 else "",
             }
             return _Res([{"play_id": params[2]}])
+        if "UPDATE redzone_play_clips" in sql:
+            key = (params[2], params[3], params[4])
+            row = self.table.get(key)
+            if row is not None and not row.get("video_url"):
+                row["video_url"] = params[0]
+                row["poster_url"] = params[1]
+                return _Res([{"play_id": params[4]}])
+            return _Res([])
         if "FROM redzone_play_clips" in sql:
             gids = set(params[1])
             return _Res([
@@ -271,6 +281,72 @@ def test_clip_upsert_is_idempotent_and_first_match_wins(fake_clips_db):
     assert store.upsert_play_clip(2026, RAMS_GAME, "404", other) is False
     got = store.get_play_clips(2026, [RAMS_GAME])
     assert got[(RAMS_GAME, "404")]["tweet_id"] == "111"
+
+
+def test_clip_upsert_fills_media_on_existing_row(fake_clips_db):
+    clip = {"tweet_id": "111", "tweet_url": "https://x.com/NFL/status/111",
+            "author": "NFL", "scorer": "Kyren Williams", "tweet_ts": 1761438000.0}
+    assert store.upsert_play_clip(2026, RAMS_GAME, "404", clip) is True
+    assert store.get_play_clips(2026, [RAMS_GAME])[(RAMS_GAME, "404")]["video_url"] == ""
+    with_media = dict(
+        clip,
+        video_url="https://video.twimg.com/amplify_video/1/vid/avc1/1280x720/x.mp4",
+        poster_url="https://pbs.twimg.com/amplify_video_thumb/1/img/x.jpg",
+    )
+    # Same play, media arrives later (backfill re-run): fills, and the
+    # tweet identity still cannot change.
+    assert store.upsert_play_clip(2026, RAMS_GAME, "404", with_media) is True
+    got = store.get_play_clips(2026, [RAMS_GAME])[(RAMS_GAME, "404")]
+    assert got["tweet_id"] == "111"
+    assert got["video_url"].endswith("1280x720/x.mp4")
+    assert got["poster_url"].endswith("img/x.jpg")
+    # Once media is filled, further upserts are no-ops again.
+    assert store.upsert_play_clip(2026, RAMS_GAME, "404", with_media) is False
+
+
+# Real response shape captured from GET /2/tweets/:id with media
+# expansions on an @NFL TD post (2026-11-01): one video, HLS + 4 MP4s.
+_MEDIA_PAYLOAD = {
+    "data": [{
+        "id": "900", "text": "Flournoy TD", "created_at": "2026-11-01T19:01:00Z",
+        "attachments": {"media_keys": ["16_1"]},
+    }],
+    "includes": {"media": [{
+        "media_key": "16_1", "type": "video",
+        "preview_image_url": "https://pbs.twimg.com/amplify_video_thumb/1/img/p.jpg",
+        "variants": [
+            {"content_type": "application/x-mpegURL", "url": "https://video.twimg.com/x/pl.m3u8"},
+            {"bit_rate": 256000, "content_type": "video/mp4", "url": "https://video.twimg.com/x/480x270/a.mp4"},
+            {"bit_rate": 2176000, "content_type": "video/mp4", "url": "https://video.twimg.com/x/1280x720/b.mp4"},
+            {"bit_rate": 10368000, "content_type": "video/mp4", "url": "https://video.twimg.com/x/1920x1080/c.mp4"},
+            {"bit_rate": 832000, "content_type": "video/mp4", "url": "https://video.twimg.com/x/640x360/d.mp4"},
+        ],
+    }]},
+}
+
+
+def test_fetcher_extracts_phone_sized_mp4_and_poster():
+    def _http(url, params, bearer):
+        if "/users/by/username/" in url:
+            return {"data": {"id": "44196397"}}
+        assert params["expansions"] == "attachments.media_keys"
+        return _MEDIA_PAYLOAD
+
+    fetcher = clips.XClipFetcher("test-bearer", http_get=_http)
+    out = fetcher.user_tweets("NFL")
+    assert len(out) == 1
+    # Largest MP4 at or under the 2.5 Mbps cap: the 720p variant.
+    assert out[0]["video_url"] == "https://video.twimg.com/x/1280x720/b.mp4"
+    assert out[0]["poster_url"] == "https://pbs.twimg.com/amplify_video_thumb/1/img/p.jpg"
+
+
+def test_match_output_carries_media():
+    tweets = [dict(BACKTEST_TWEETS[0], video_url="https://video.twimg.com/v.mp4",
+                   poster_url="https://pbs.twimg.com/p.jpg")]
+    matches = clips.match_tweets(tweets, _wanted())
+    assert matches
+    assert matches[0]["video_url"] == "https://video.twimg.com/v.mp4"
+    assert matches[0]["poster_url"] == "https://pbs.twimg.com/p.jpg"
 
 
 def test_attach_helpers_stamp_only_matched_td_plays(fake_clips_db):
@@ -508,6 +584,13 @@ class _StatefulClipStore:
         self.upserts.append((gid, play_id, clip))
         key = (gid, play_id)
         if key in self.clips:
+            # Mirror prod: only an empty-media row can still change,
+            # by gaining the media a later match carries.
+            row = self.clips[key]
+            if not row.get("video_url") and clip.get("video_url"):
+                row["video_url"] = clip["video_url"]
+                row["poster_url"] = clip.get("poster_url") or ""
+                return True
             return False
         self.clips[key] = dict(clip)
         return True
@@ -528,7 +611,11 @@ def _backfill_setup(monkeypatch):
     store_fake = _StatefulClipStore()
     monkeypatch.setattr(store, "get_play_clips", store_fake.get)
     monkeypatch.setattr(store, "upsert_play_clip", store_fake.upsert)
-    fetcher = _WindowFetcher({"NFL": [BACKTEST_TWEETS[-1]]})
+    fetcher = _WindowFetcher({"NFL": [dict(
+        BACKTEST_TWEETS[-1],
+        video_url="https://video.twimg.com/amplify_video/golden.mp4",
+        poster_url="https://pbs.twimg.com/amplify_video_thumb/golden.jpg",
+    )]})
     players = {
         "love": {"full_name": "Jordan Love", "position": "QB"},
         "golden": {"full_name": "Matthew Golden", "position": "WR"},
@@ -584,6 +671,28 @@ def test_backfill_second_run_is_idempotent(monkeypatch):
     assert game["stored"] == 0
     assert len(fetcher.calls) == calls_after_first
     assert len(store_fake.upserts) == 1
+
+
+def test_backfill_upgrades_medialess_clip_then_goes_idle(monkeypatch):
+    # A clip stored before media capture (tweet read without video) is
+    # re-wanted once, gains its MP4/poster, and then skips like any
+    # complete clip. This is how the Thursday clips already in prod pick
+    # up the native player.
+    store_fake, fetcher, players = _backfill_setup(monkeypatch)
+    bare = _WindowFetcher({"NFL": [BACKTEST_TWEETS[-1]]})
+    kwargs = dict(nfl_players=players,
+                  rows_for_game=lambda gid: _tnf_summary_rows())
+    first = clips.run_clip_backfill(2026, [TNF_GAME], fetcher=bare, **kwargs)
+    assert first["games"][0]["stored"] == 1
+    key = next(iter(store_fake.clips))
+    assert not store_fake.clips[key].get("video_url")
+    second = clips.run_clip_backfill(2026, [TNF_GAME], fetcher=fetcher, **kwargs)
+    assert second["games"][0]["wanted"] == 1
+    assert second["games"][0]["stored"] == 1  # the media fill counts
+    assert store_fake.clips[key]["video_url"].endswith("golden.mp4")
+    third = clips.run_clip_backfill(2026, [TNF_GAME], fetcher=fetcher, **kwargs)
+    assert third["games"][0]["wanted"] == 0
+    assert third["games"][0]["stored"] == 0
 
 
 def test_backfill_script_requires_bearer_token(monkeypatch):
