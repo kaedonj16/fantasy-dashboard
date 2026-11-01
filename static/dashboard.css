@@ -55185,6 +55185,69 @@ body.otc-sticky-on { padding-bottom: 72px; }
     }
 }
 
+/* ── ScoreZone TD clips ─────────────────────────────────────────────
+   A TD card with a matched official X clip wraps so the Watch row and
+   the embed panel take a full-width line under the play row. Cards
+   without a clip are untouched (no flex-wrap, no extra height). */
+.rz-event.has-clip {
+    flex-wrap: wrap;
+}
+.rz-clip-row {
+    flex: 1 1 100%;
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+}
+.rz-clip-btn {
+    appearance: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    background: transparent;
+    border: 1px solid #122d4b;
+    border-radius: var(--radius);
+    color: #122d4b;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+}
+.rz-clip-btn:active { background: rgba(18, 45, 75, .08); }
+.rz-clip-btn:focus-visible {
+    outline: 2px solid var(--rz-accent, #6366f1);
+    outline-offset: 2px;
+}
+.rz-clip-ico { flex: none; }
+.rz-clip-panel {
+    flex: 1 1 100%;
+    display: none;
+}
+.rz-clip-panel.is-open {
+    display: block;
+    margin-top: 8px;
+}
+.rz-clip-frame {
+    width: 100%;
+    height: 460px;
+    border: 0;
+    border-radius: var(--radius);
+    background: var(--rz-card);
+}
+.rz-clip-src {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--rz-muted);
+}
+.rz-clip-src a {
+    color: var(--rz-muted);
+    text-decoration: underline;
+}
+[data-theme="dark"] .rz-clip-btn {
+    border-color: #38bdf8;
+    color: #38bdf8;
+}
+
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.

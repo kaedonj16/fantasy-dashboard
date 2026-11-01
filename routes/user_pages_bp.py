@@ -5023,6 +5023,24 @@ def api_scorezone_moments():
             "observed_ts": play.get("_observed_ts") or 0,
         })
 
+    # TD clips: stamp the matched official X clip onto TD moments so the
+    # client can offer a Watch button. Unmatched moments stay untouched.
+    if moments:
+        try:
+            from utils.scorezone_store import (
+                attach_clips_to_moments,
+                get_play_clips,
+            )
+
+            _clip_map = get_play_clips(
+                season,
+                sorted({m.get("game_id") for m in moments if m.get("game_id")}),
+            )
+            if _clip_map:
+                attach_clips_to_moments(moments, _clip_map)
+        except Exception:
+            logger.debug("[scorezone-moments] clip attach failed", exc_info=True)
+
     # Sort: TDs first, then big gains, then turnovers; newest first within kind.
     kind_order = {"td": 0, "big_gain": 1, "turnover": 2}
     moments.sort(key=lambda m: (kind_order.get(m["kind"], 3), -(m.get("observed_ts") or 0)))

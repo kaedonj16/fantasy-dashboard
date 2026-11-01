@@ -394,6 +394,10 @@ services:
         fromDatabase:
           name: brfantasy-db
           property: connectionString
+      # TD clip matcher (utils/scorezone_clips): app bearer token for the
+      # X API reads that fetch official TD clips. No token = pass disabled.
+      - key: X_BEARER_TOKEN
+        sync: false
       - key: TZ
         value: America/New_York
       - key: PYTHON_ENV
