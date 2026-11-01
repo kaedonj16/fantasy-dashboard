@@ -399,6 +399,27 @@ class XClipFetcher:
                 out.append(_tweet_dict(tw, username, media_by_key))
         return out
 
+    def lookup_media(self, tweet_ids: list[str]) -> dict:
+        """{tweet_id: media dict} for specific tweets, via the lookup
+        endpoint. Fills media onto clips matched while X was still
+        transcoding the video: the timeline read that matched them is
+        since_id-based and never returns the same tweet again, so the
+        fill has to ask for those tweets by id."""
+        ids = [str(t) for t in (tweet_ids or []) if t][:100]
+        if not ids:
+            return {}
+        data = self._http(
+            f"{_X_API}/tweets",
+            {"ids": ",".join(ids), **_MEDIA_PARAMS},
+            self._bearer,
+        )
+        media_by_key = _media_map(data)
+        out = {}
+        for tw in (data or {}).get("data") or []:
+            if isinstance(tw, dict) and tw.get("id"):
+                out[str(tw["id"])] = _best_video(tw, media_by_key)
+        return out
+
     def user_tweets_window(
         self,
         username: str,
@@ -714,6 +735,7 @@ def maybe_run_clip_pass(
         rows_by_game = get_plays(int(season), gids)
         existing = get_play_clips(int(season), gids)
         wanted: list[dict] = []
+        pending: dict = {}
         for gid in gids:
             try:
                 _date, away, home = parse_tank_game_id(gid)
@@ -730,6 +752,10 @@ def maybe_run_clip_pass(
                     w["wallclock"] + _WINDOW_S + _FETCH_GRACE_S
                 ):
                     wanted.append(w)
+                    if prev and prev.get("tweet_id"):
+                        # Matched already, but its video was still
+                        # transcoding when the matching fetch saw it.
+                        pending[(gid, w["play_id"])] = prev
         if not wanted:
             return {"wanted": 0}
 
@@ -761,15 +787,42 @@ def maybe_run_clip_pass(
         for clip in matches:
             if upsert_play_clip(int(season), clip["game_id"], clip["play_id"], clip):
                 matched += 1
+        filled = 0
+        if pending:
+            # The since_id timeline never returns a matched tweet again,
+            # so ask for the pending clips' tweets by id and fill the
+            # media that has finished transcoding since the match.
+            try:
+                media = fetcher.lookup_media(
+                    [p.get("tweet_id") for p in pending.values()])
+            except Exception as exc:
+                logger.warning("[scorezone-clips] media lookup failed: %s", exc)
+                media = {}
+            for (gid, pid), prev in pending.items():
+                info = media.get(str(prev.get("tweet_id") or "")) or {}
+                if not info.get("video_url"):
+                    continue
+                clip = {
+                    "tweet_id": prev.get("tweet_id"),
+                    "tweet_url": prev.get("tweet_url"),
+                    "author": prev.get("author"),
+                    "scorer": prev.get("scorer"),
+                    "tweet_ts": prev.get("tweet_ts") or prev.get("ts"),
+                    "video_url": info["video_url"],
+                    "poster_url": info.get("poster_url") or "",
+                }
+                if upsert_play_clip(int(season), gid, pid, clip):
+                    filled += 1
         if own_fetcher:
             state["user_ids"] = fetcher.user_ids
             state["since"] = since
             _save_state(state)
         logger.info(
-            "[scorezone-clips] wanted=%s tweets=%s matched=%s",
-            len(wanted), len(tweets), matched,
+            "[scorezone-clips] wanted=%s tweets=%s matched=%s filled=%s",
+            len(wanted), len(tweets), matched, filled,
         )
-        return {"wanted": len(wanted), "tweets": len(tweets), "matched": matched}
+        return {"wanted": len(wanted), "tweets": len(tweets),
+                "matched": matched, "filled": filled}
     except Exception as exc:
         logger.warning("[scorezone-clips] pass failed: %s", exc)
         return {}
