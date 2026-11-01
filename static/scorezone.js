@@ -3899,8 +3899,36 @@
 
   var _CLIP_STILL_LOADING_MS = 12000; // when the loading row turns to "Still loading"
 
+  function _clipFallbackToEmbed(panel) {
+    // The native stream failed: a stale cached page shell can still carry
+    // the pre-fix content policy that blocks video.twimg.com, or the
+    // network dropped the file. Swap this panel to the X embed so the
+    // play still shows instead of a dead black box.
+    var card = panel.closest ? panel.closest('.rz-event') : null;
+    var btn = card ? card.querySelector('[data-clip-toggle]') : null;
+    var tweet = btn ? btn.getAttribute('data-tweet') : '';
+    if (!tweet) return;
+    panel.innerHTML = _clipFrameHtml({
+      clipTweetId: tweet,
+      clipUrl: btn.getAttribute('data-clip-url') || '',
+      clipVideoUrl: '', clipPosterUrl: ''
+    });
+    panel.setAttribute('data-clip-fell-back', '1');
+    _wireClipPanel(panel);
+  }
+
+  function _wireClipVideo(panel) {
+    var video = panel.querySelector('.rz-clip-video');
+    if (!video || panel.getAttribute('data-clip-video-wired')) return;
+    if (panel.getAttribute('data-clip-fell-back')) return;
+    panel.setAttribute('data-clip-video-wired', '1');
+    if (video.error || video.networkState === 3) _clipFallbackToEmbed(panel);
+    else video.addEventListener('error', function() { _clipFallbackToEmbed(panel); });
+  }
+
   function _wireClipPanel(panel) {
     if (!panel) return;
+    _wireClipVideo(panel);
     var frame = panel.querySelector('.rz-clip-frame');
     var loading = panel.querySelector('[data-clip-loading]');
     if (!frame || !loading || frame.getAttribute('data-clip-wired')) return;

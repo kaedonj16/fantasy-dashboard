@@ -60,3 +60,17 @@ def test_native_video_is_the_primary_player():
     assert frame_html.index("rz-clip-video") < frame_html.index("rz-clip-frame")
     css = CSS.read_text(encoding="utf-8")
     assert ".rz-clip-video" in css
+
+
+def test_video_error_falls_back_to_embed():
+    js = _js()
+    # A native <video> that errors (stale page policy blocking the stream,
+    # network drop) swaps its panel to the X embed instead of sitting as a
+    # dead black box.
+    assert "_clipFallbackToEmbed" in js
+    assert "video.addEventListener('error'" in js
+    assert "data-clip-fell-back" in js
+    assert "_wireClipVideo" in js
+    # The error may fire before wiring runs; the wired check catches
+    # already-failed elements too.
+    assert "video.networkState === 3" in js
