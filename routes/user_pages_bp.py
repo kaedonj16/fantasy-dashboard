@@ -1810,13 +1810,31 @@ def api_portfolio_actions():
         def _worker():
             try:
                 if _ACTIONS_COMPUTE_SEM.acquire(blocking=False):
-                    try:
-                        _holder["payload"] = _run_actions_compute()
-                    except Exception:
-                        logger.exception(
-                            "[portfolio-actions] background scan failed")
-                    finally:
+                    # Aggregate heavy cap (app.py's _BG_HEAVY_SEM, via the
+                    # lazy app shim pattern): the scan is one of the heavy
+                    # background kicks the per-worker ceiling covers, on
+                    # top of this mechanism's own cap. A drop here still
+                    # lands in the finally below, which clears the inflight
+                    # marks so the client's next retry re-kicks.
+                    from app import (
+                        _heavy_job_end,
+                        _heavy_job_start,
+                        _heavy_kick_acquire,
+                    )
+
+                    agg_token = _heavy_kick_acquire()
+                    if agg_token is None:
                         _ACTIONS_COMPUTE_SEM.release()
+                    else:
+                        prev = _heavy_job_start(agg_token)
+                        try:
+                            _holder["payload"] = _run_actions_compute()
+                        except Exception:
+                            logger.exception(
+                                "[portfolio-actions] background scan failed")
+                        finally:
+                            _ACTIONS_COMPUTE_SEM.release()
+                            _heavy_job_end(agg_token, prev)
             finally:
                 _holder["event"].set()
                 with _ACTIONS_LOCK:
@@ -3115,8 +3133,25 @@ def _pf_kick_background(kind, key, identity):
     def _worker():
         owned = [key]
         try:
+            # Aggregate heavy cap (app.py's _BG_HEAVY_SEM, via the lazy app
+            # shim pattern): this compute is one of the heavy background
+            # kicks the per-worker ceiling covers, on top of the insights
+            # cap. A drop lands in the finally below, which clears the
+            # inflight marks so the next read re-kicks.
+            from app import (
+                _heavy_job_end,
+                _heavy_job_start,
+                _heavy_kick_acquire,
+                _heavy_kick_release,
+            )
+
+            agg_token = _heavy_kick_acquire()
+            if agg_token is None:
+                return  # over the aggregate cap: dropped, re-kicked next read
             if not _INSIGHTS_COMPUTE_SEM.acquire(blocking=False):
+                _heavy_kick_release(agg_token)
                 return  # over the global cap: dropped, re-kicked next read
+            prev = _heavy_job_start(agg_token)
             try:
                 base = _pf_light_base(identity=identity)
                 if base is None:
@@ -3145,6 +3180,7 @@ def _pf_kick_background(kind, key, identity):
                     "[portfolio-%s] background compute failed", kind)
             finally:
                 _INSIGHTS_COMPUTE_SEM.release()
+                _heavy_job_end(agg_token, prev)
         finally:
             with inflight_lock:
                 for _k in owned:

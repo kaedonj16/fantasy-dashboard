@@ -421,16 +421,74 @@ _PLAYOFF_SIM_MAX_CONCURRENT = 2
 _PLAYOFF_SIM_SEM = threading.BoundedSemaphore(_PLAYOFF_SIM_MAX_CONCURRENT)
 
 # Aggregate per-worker ceiling for heavy background kicks, non-blocking,
-# drop on contention. The per-mechanism caps above/below bound each kick
-# type on its own, but never in aggregate: a cold My Leagues / page load
-# can fire page builds, teams/activity builds, activity-section fills and
-# history preloads at once, on top of the capped sim/modal/context-build
-# work. Every previously-uncapped heavy kick now acquires this first
-# (blocking=False); a kick that cannot get a slot is dropped, its dedupe /
-# in-flight mark is cleared, and a later read re-kicks it. Slots are
-# released in the worker body's finally, so a finished/failed build always
-# frees its slot.
+# drop on contention. The per-mechanism caps bound each kick type on its
+# own (playoff sims 2, impact warms 2, league warms 2, modal warms 2,
+# assistant digests 2, portfolio actions 2, portfolio insights 1) but they
+# STACK: a cold My Leagues / page load can fire several mechanisms at
+# once and reach ~11 simultaneous full-context builds -- the peak-memory
+# shape behind the recurring web OOM restarts (steady state already sits
+# at ~450-650 MB per worker on the 2 GB instance, so three concurrent
+# heavy builds is what the headroom above that baseline can carry).
+# Every heavy background kick -- page builds, teams/activity builds,
+# activity-section fills, history preloads, playoff sims, impact warms,
+# league warms, roster-freshness rebuilds, modal warms, assistant
+# digests, portfolio actions and insights -- acquires this ONE semaphore
+# first (blocking=False), on top of its per-mechanism cap; a kick that
+# cannot get a slot is dropped, its dedupe / in-flight mark is cleared,
+# and a later read re-kicks it. Callers that wait for their own result
+# (e.g. _playoff_sim_cached(block=True)) never take this gate.
+#
+# Nesting: get_league_ctx_from_cache kicks the modal warm, the freshness
+# rebuild and the league warm, and it is itself called from INSIDE heavy
+# jobs (league warms, page builds, portfolio scans). A kick attempted on
+# a thread that is already executing a heavy job therefore passes
+# through WITHOUT consuming a second slot (token "nested"): the
+# outermost kick owns the slot, inner work is part of its tree, and the
+# per-mechanism caps still bound each inner fan-out. Worker bodies mark
+# their thread via _heavy_job_start/_heavy_job_end for exactly this.
 _BG_HEAVY_SEM = threading.BoundedSemaphore(3)
+_BG_HEAVY_LOCAL = threading.local()
+
+
+def _heavy_kick_acquire():
+    """Try to admit one heavy background kick on this worker.
+
+    Returns "slot" when a new aggregate slot was taken (the worker body
+    must hand the token to _heavy_job_end), "nested" when the calling
+    thread is already executing a heavy job (pass-through: no slot taken,
+    nothing to release), or None when the aggregate cap is full and the
+    kick must be dropped (the caller clears its dedupe mark so a later
+    read re-kicks).
+    """
+    if getattr(_BG_HEAVY_LOCAL, "depth", 0) > 0:
+        return "nested"
+    if not _BG_HEAVY_SEM.acquire(blocking=False):
+        return None
+    return "slot"
+
+
+def _heavy_kick_release(token) -> None:
+    """Undo a _heavy_kick_acquire when the kicked thread never starts."""
+    if token == "slot":
+        _BG_HEAVY_SEM.release()
+
+
+def _heavy_job_start(token) -> int:
+    """Mark the current (worker) thread as executing a heavy job so kicks
+    it makes pass through the aggregate gate. Returns the previous depth
+    for _heavy_job_end. Call at the top of the worker body."""
+    prev = getattr(_BG_HEAVY_LOCAL, "depth", 0)
+    _BG_HEAVY_LOCAL.depth = prev + 1
+    return prev
+
+
+def _heavy_job_end(token, prev: int) -> None:
+    """End a _heavy_job_start: restore the thread depth and, when the job
+    owned an aggregate slot, release it. Call in the worker body's
+    finally, alongside the per-mechanism semaphore release."""
+    _BG_HEAVY_LOCAL.depth = prev
+    if token == "slot":
+        _BG_HEAVY_SEM.release()
 
 
 def _bg_heavy_target(fn, *args) -> None:
@@ -442,10 +500,11 @@ def _bg_heavy_target(fn, *args) -> None:
     through a wrapper -- instead of releasing inside fn itself -- keeps
     direct / synchronous callers of fn (which never acquired a slot)
     unaffected."""
+    prev = _heavy_job_start("slot")
     try:
         fn(*args)
     finally:
-        _BG_HEAVY_SEM.release()
+        _heavy_job_end("slot", prev)
 
 # In-flight dedupe for the history preload kicked from index() on a league
 # select: keyed by (platform, league_id, season), the identity that kick
@@ -542,7 +601,10 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             if fresh and hit.get("sig") == sig:
                 return hit["data"] or []
 
+        agg_token = None  # aggregate-cap token for the background branch
+
         def _run(snapshot=dict(ctx)):
+            prev = _heavy_job_start(agg_token)
             try:
                 snap_sig = _playoff_sim_sig(snapshot, platform)
                 odds = simulate_playoff_odds(snapshot, platform=platform) or []
@@ -558,6 +620,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                 logger.debug("background playoff sim failed", exc_info=True)
             finally:
                 _PLAYOFF_SIM_SEM.release()
+                _heavy_job_end(agg_token, prev)
                 with _PLAYOFF_SIM_BUILDING_LOCK:
                     _PLAYOFF_SIM_BUILDING.discard(key)
 
@@ -566,10 +629,19 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                 if key in _PLAYOFF_SIM_BUILDING:
                     return []
                 _PLAYOFF_SIM_BUILDING.add(key)
+            agg_token = _heavy_kick_acquire()
+            if agg_token is None:
+                # Aggregate heavy slots are full: drop this kick (see the
+                # cap note at _BG_HEAVY_SEM). Un-mark the key so a later
+                # read can re-kick once a running build finishes.
+                with _PLAYOFF_SIM_BUILDING_LOCK:
+                    _PLAYOFF_SIM_BUILDING.discard(key)
+                return []
             if not _PLAYOFF_SIM_SEM.acquire(blocking=False):
                 # Sim slots are full: drop this kick (see the cap note at
                 # _PLAYOFF_SIM_SEM). Un-mark the key so a later read can
                 # re-kick once a running sim finishes.
+                _heavy_kick_release(agg_token)
                 with _PLAYOFF_SIM_BUILDING_LOCK:
                     _PLAYOFF_SIM_BUILDING.discard(key)
                 return []
@@ -577,6 +649,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                 threading.Thread(target=_run, daemon=True).start()
             except Exception:
                 _PLAYOFF_SIM_SEM.release()
+                _heavy_kick_release(agg_token)
                 with _PLAYOFF_SIM_BUILDING_LOCK:
                     _PLAYOFF_SIM_BUILDING.discard(key)
                 raise
@@ -633,9 +706,17 @@ def _kick_impact_sim_warm(ctx: dict, platform: str, league_id: str, season) -> s
             return "recent"
         if not _IMPACT_SIM_WARM_SEM.acquire(blocking=False):
             return "busy"
+        agg_token = _heavy_kick_acquire()
+        if agg_token is None:
+            # Aggregate heavy slots are full: drop this kick (see the cap
+            # note at _BG_HEAVY_SEM); no mark was set, so a later read
+            # re-kicks once a running build finishes.
+            _IMPACT_SIM_WARM_SEM.release()
+            return "busy"
         _IMPACT_SIM_BUILDING.add(key)
 
-    def _warm(snapshot=dict(ctx), warm_key=key):
+    def _warm(snapshot=dict(ctx), warm_key=key, agg_token=agg_token):
+        prev = _heavy_job_start(agg_token)
         try:
             from data_building.simulate_playoff_odds import (
                 build_sim_state as _build_state,
@@ -653,6 +734,7 @@ def _kick_impact_sim_warm(ctx: dict, platform: str, league_id: str, season) -> s
             with _IMPACT_SIM_WARM_LOCK:
                 _IMPACT_SIM_BUILDING.discard(warm_key)
             _IMPACT_SIM_WARM_SEM.release()
+            _heavy_job_end(agg_token, prev)
 
     try:
         threading.Thread(target=_warm, daemon=True).start()
@@ -660,6 +742,7 @@ def _kick_impact_sim_warm(ctx: dict, platform: str, league_id: str, season) -> s
         with _IMPACT_SIM_WARM_LOCK:
             _IMPACT_SIM_BUILDING.discard(key)
         _IMPACT_SIM_WARM_SEM.release()
+        _heavy_kick_release(agg_token)
         raise
     return "kicked"
 
@@ -9112,6 +9195,7 @@ def _fill_activity_section_async(platform: str, league_id: str, season: int) -> 
         return
 
     def _run() -> None:
+        _prev = _heavy_job_start("slot")
         try:
             entry = DASHBOARD_CACHE.get(key)
             if entry and entry.get("ctx"):
@@ -9119,7 +9203,7 @@ def _fill_activity_section_async(platform: str, league_id: str, season: int) -> 
         except Exception:
             logger.debug("[activity-fill] background fill failed", exc_info=True)
         finally:
-            _BG_HEAVY_SEM.release()
+            _heavy_job_end("slot", _prev)
             with _ACTIVITY_FILL_LOCK:
                 _ACTIVITY_FILL_INFLIGHT.discard(key)
 
@@ -14365,7 +14449,17 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
         _LEAGUE_FRESH_CHECK[key] = now
         _LEAGUE_FRESH_BUILDING.add(key)
 
+    agg_token = _heavy_kick_acquire()
+    if agg_token is None:
+        # Aggregate heavy slots are full: drop this kick (see the cap note
+        # at _BG_HEAVY_SEM). Un-mark the key so a later cached read
+        # re-kicks it (the 90s per-league throttle still applies).
+        with _LEAGUE_FRESH_LOCK:
+            _LEAGUE_FRESH_BUILDING.discard(key)
+        return
+
     def _run():
+        prev = _heavy_job_start(agg_token)
         try:
             fresh = get_rosters(platform, league_id, season) or []
             if not fresh:
@@ -14399,8 +14493,15 @@ def _maybe_check_roster_freshness(platform: str, league_id: str, season: int,
         finally:
             with _LEAGUE_FRESH_LOCK:
                 _LEAGUE_FRESH_BUILDING.discard(key)
+            _heavy_job_end(agg_token, prev)
 
-    threading.Thread(target=_run, daemon=True).start()
+    try:
+        threading.Thread(target=_run, daemon=True).start()
+    except Exception:
+        _heavy_kick_release(agg_token)
+        with _LEAGUE_FRESH_LOCK:
+            _LEAGUE_FRESH_BUILDING.discard(key)
+        raise
 
 
 # Best-effort background warm so latency-sensitive readers (the live matchup
@@ -14443,28 +14544,42 @@ def _warm_league_ctx_async(platform: str, league_id: str, season: int) -> None:
             return
         _LEAGUE_WARM_INFLIGHT.add(key)
 
+    agg_token = _heavy_kick_acquire()
+    if agg_token is None:
+        # Aggregate heavy slots are full: drop this kick (see the cap note
+        # at _BG_HEAVY_SEM). Un-mark the key so the next client poll
+        # re-requests the warm once a running build finishes.
+        with _LEAGUE_WARM_LOCK:
+            _LEAGUE_WARM_INFLIGHT.discard(key)
+        return
+
     def _run() -> None:
-        # Drop the warm rather than queue unbounded work if too many cold builds
-        # are already running; the next client poll re-requests it.
-        if not _LEAGUE_WARM_SEM.acquire(timeout=25):
-            with _LEAGUE_WARM_LOCK:
-                _LEAGUE_WARM_INFLIGHT.discard(key)
-            return
+        prev = _heavy_job_start(agg_token)
         try:
-            with app.test_request_context():
-                get_league_ctx_from_cache(platform, league_id, season)
-        except Exception:
-            logger.debug("[warm] league ctx warm failed", exc_info=True)
+            # Drop the warm rather than queue unbounded work if too many cold builds
+            # are already running; the next client poll re-requests it.
+            if not _LEAGUE_WARM_SEM.acquire(timeout=25):
+                with _LEAGUE_WARM_LOCK:
+                    _LEAGUE_WARM_INFLIGHT.discard(key)
+                return
+            try:
+                with app.test_request_context():
+                    get_league_ctx_from_cache(platform, league_id, season)
+            except Exception:
+                logger.debug("[warm] league ctx warm failed", exc_info=True)
+            finally:
+                _LEAGUE_WARM_SEM.release()
+                with _LEAGUE_WARM_LOCK:
+                    _LEAGUE_WARM_INFLIGHT.discard(key)
         finally:
-            _LEAGUE_WARM_SEM.release()
-            with _LEAGUE_WARM_LOCK:
-                _LEAGUE_WARM_INFLIGHT.discard(key)
+            _heavy_job_end(agg_token, prev)
 
     try:
         threading.Thread(
             target=_run, name=f"warm-{platform}-{league_id}", daemon=True,
         ).start()
     except Exception:
+        _heavy_kick_release(agg_token)
         with _LEAGUE_WARM_LOCK:
             _LEAGUE_WARM_INFLIGHT.discard(key)
 
@@ -23645,6 +23760,7 @@ def index():
             _preload_kick = False
         if _preload_kick:
             def _preload_history(p: str, lid: str, s: int) -> None:
+                _prev = _heavy_job_start("slot")
                 try:
                     time.sleep(3)  # let the foreground redirect complete first
                     hist_seasons = get_available_history_seasons(p, lid, s)
@@ -23655,7 +23771,7 @@ def index():
                 except Exception:
                     logger.debug("suppressed exception", exc_info=True)
                 finally:
-                    _BG_HEAVY_SEM.release()
+                    _heavy_job_end("slot", _prev)
                     with _PRELOAD_HISTORY_LOCK:
                         _PRELOAD_HISTORY_INFLIGHT.discard(
                             (str(p), str(lid), int(s))
@@ -44356,6 +44472,16 @@ def _kick_modal_league_warm(platform: str, league_id: str, season: int, ctx) -> 
                 _MODAL_LEAGUE_WARMED.discard(key)
             return
 
+        agg_token = _heavy_kick_acquire()
+        if agg_token is None:
+            # Aggregate heavy slots are full: drop this kick (see the cap
+            # note at _BG_HEAVY_SEM). Un-mark the key so a later context
+            # read can re-kick once a running build finishes.
+            _MODAL_WARM_SEM.release()
+            with _MODAL_LEAGUE_WARM_LOCK:
+                _MODAL_LEAGUE_WARMED.discard(key)
+            return
+
         plat = str(platform)
         lid = str(league_id)
         yr = int(season)
@@ -44430,15 +44556,18 @@ def _kick_modal_league_warm(platform: str, league_id: str, season: int, ctx) -> 
                 logger.debug("modal league warm: trades failed", exc_info=True)
 
         def _run() -> None:
+            prev = _heavy_job_start(agg_token)
             try:
                 _run_warm()
             finally:
                 _MODAL_WARM_SEM.release()
+                _heavy_job_end(agg_token, prev)
 
         try:
             threading.Thread(target=_run, daemon=True, name="modal-league-warm").start()
         except Exception:
             _MODAL_WARM_SEM.release()
+            _heavy_kick_release(agg_token)
             with _MODAL_LEAGUE_WARM_LOCK:
                 _MODAL_LEAGUE_WARMED.discard(key)
             raise

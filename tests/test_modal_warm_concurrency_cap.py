@@ -61,6 +61,14 @@ def _wait_for(predicate, timeout=10.0):
 
 @pytest.fixture()
 def _warm_mocks(monkeypatch):
+    # Modal kicks now also take the aggregate cap (_BG_HEAVY_SEM), and
+    # tests share one process per CI shard where an earlier test can
+    # permanently hold an aggregate slot (test_activity_deferral's fake
+    # threading.Thread never runs the build it kicks, so its slot is
+    # never released in-process). Isolate the aggregate semaphore for
+    # this test; every mechanism reads the module global at call time.
+    monkeypatch.setattr(
+        appmod, "_BG_HEAVY_SEM", threading.BoundedSemaphore(3))
     svc_api = importlib.import_module("dashboard_services.api")
     plt = importlib.import_module("dashboard_services.player_league_trades")
     svc = importlib.import_module("dashboard_services.service")
