@@ -707,3 +707,33 @@ def test_backfill_script_requires_bearer_token(monkeypatch):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert mod.main(["--game", TNF_GAME]) == 2
+
+
+def test_clip_stream_url_transform():
+    raw = "https://video.twimg.com/amplify_video/123/vid/avc1/1280x720/x.mp4"
+    out = clips.clip_stream_url(raw)
+    assert out.startswith("/api/clip-stream?u=")
+    import urllib.parse as _up
+    assert _up.unquote(out.split("?u=", 1)[1]) == raw
+    # Non-twimg and empty values pass through untouched.
+    assert clips.clip_stream_url("https://example.com/v.mp4") == "https://example.com/v.mp4"
+    assert clips.clip_stream_url("") == ""
+
+
+def test_attach_stamps_proxied_stream_url(fake_clips_db):
+    store.upsert_play_clip(2026, RAMS_GAME, "404", {
+        "tweet_id": "2114474206234918976",
+        "tweet_url": "https://x.com/NFL/status/2114474206234918976",
+        "author": "NFL", "scorer": "Kyren Williams",
+        "tweet_ts": 1761438000.0,
+        "video_url": "https://video.twimg.com/amplify_video/9/vid/avc1/1280x720/a.mp4",
+        "poster_url": "https://pbs.twimg.com/amplify_video_thumb/9/img/p.jpg",
+    })
+    clips_map = store.get_play_clips(2026, [RAMS_GAME])
+    plays_by_game = {RAMS_GAME: [{"play_id": "404", "is_td": True, "pid": "kyren"}]}
+    assert store.attach_clips_to_plays(plays_by_game, clips_map) == 1
+    row = plays_by_game[RAMS_GAME][0]
+    # The store keeps the raw twimg URL; the payload carries the
+    # same-origin stream URL (twimg 403s foreign-Referer hotlinks).
+    assert row["clip_video_url"].startswith("/api/clip-stream?u=https%3A%2F%2Fvideo.twimg.com")
+    assert row["clip_poster_url"] == "https://pbs.twimg.com/amplify_video_thumb/9/img/p.jpg"

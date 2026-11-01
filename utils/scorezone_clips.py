@@ -404,6 +404,21 @@ class XClipFetcher:
         return out
 
 
+def clip_stream_url(raw_url: str) -> str:
+    """Same-origin stream URL for a stored twimg video URL.
+
+    video.twimg.com refuses amplify video to browsers whose Referer is a
+    foreign site (403, verified 2026-11-01; X's own hosts and requests
+    with no Referer pass), so the native player cannot hotlink the file
+    from our pages. Payloads therefore carry /api/clip-stream?u=... and
+    the raw URL stays in the store untouched.
+    """
+    u = str(raw_url or "")
+    if u.startswith("https://video.twimg.com/"):
+        return "/api/clip-stream?u=" + urllib.parse.quote(u, safe="")
+    return u
+
+
 def _epoch_to_iso(ts: float) -> str:
     """Epoch seconds -> the ISO-8601 UTC form the X API time params take."""
     return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime(
