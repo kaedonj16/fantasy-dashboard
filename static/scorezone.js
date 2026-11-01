@@ -1853,6 +1853,8 @@
           // Matched TD clip (server-side matcher), empty when no clip exists.
           clipTweetId: play.clip_tweet_id || '',
           clipUrl: play.clip_url || '',
+          clipVideoUrl: play.clip_video_url || '',
+          clipPosterUrl: play.clip_poster_url || '',
           totalPts: totalPts,
           scoring: scoring,
           playState: playState,
@@ -2057,6 +2059,8 @@
         totalPts: primary.totalPts,
         clipTweetId: clipSrc ? clipSrc.clipTweetId : '',
         clipUrl: clipSrc ? clipSrc.clipUrl : '',
+        clipVideoUrl: clipSrc ? (clipSrc.clipVideoUrl || '') : '',
+        clipPosterUrl: clipSrc ? (clipSrc.clipPosterUrl || '') : '',
         playId: playKey,
         fromPbp: true,
         contributions: validContribs,
@@ -3867,11 +3871,61 @@
   // is open at a time (phone memory), and cards without a clip render
   // exactly as before: no button, no placeholder.
   function _clipFrameHtml(ev) {
-    return '<iframe class="rz-clip-frame" src="https://platform.twitter.com/embed/Tweet.html?id='
-      + encodeURIComponent(ev.clipTweetId) + '&dnt=true" loading="lazy" scrolling="no" '
+    var srcLink = ev.clipUrl ? '<div class="rz-clip-src"><a href="' + ev.clipUrl
+      + '" target="_blank" rel="noopener">View on X</a></div>' : '';
+    if (ev.clipVideoUrl) {
+      // Native player: the matcher stored the post's own MP4 + poster, so
+      // the poster paints immediately and playback starts on tap, with no
+      // X embed app to boot. (The embed iframe below remains the fallback
+      // for clips stored before media capture.)
+      return '<video class="rz-clip-video" controls playsinline preload="metadata"'
+        + (ev.clipPosterUrl ? ' poster="' + ev.clipPosterUrl + '"' : '')
+        + ' src="' + ev.clipVideoUrl + '"></video>' + srcLink;
+    }
+    // The X embed app boots slowly (measured: several seconds of blank
+    // white before the tweet paints), so the panel carries a loading row
+    // that _wireClipPanel retires once the frame has actually loaded.
+    // No lazy-loading attribute: the frame is only injected on tap or for
+    // the one open clip, and lazy frames inside a toggled panel can stall
+    // in mobile Safari.
+    return '<div class="rz-clip-loading" data-clip-loading role="status">'
+      + '<span class="rz-clip-spin" aria-hidden="true"></span>'
+      + '<span data-clip-load-text>Loading clip…</span></div>'
+      + '<iframe class="rz-clip-frame" src="https://platform.twitter.com/embed/Tweet.html?id='
+      + encodeURIComponent(ev.clipTweetId) + '&dnt=true" scrolling="no" '
       + 'allowfullscreen title="Play clip"></iframe>'
-      + (ev.clipUrl ? '<div class="rz-clip-src"><a href="' + ev.clipUrl
-        + '" target="_blank" rel="noopener">View on X</a></div>' : '');
+      + srcLink;
+  }
+
+  var _CLIP_STILL_LOADING_MS = 12000; // when the loading row turns to "Still loading"
+
+  function _wireClipPanel(panel) {
+    if (!panel) return;
+    var frame = panel.querySelector('.rz-clip-frame');
+    var loading = panel.querySelector('[data-clip-loading]');
+    if (!frame || !loading || frame.getAttribute('data-clip-wired')) return;
+    frame.setAttribute('data-clip-wired', '1');
+    var wiredAt = Date.now();
+    frame.addEventListener('load', function() {
+      // The shell document loads before the tweet paints; keep the
+      // loading row up briefly so it does not flash out and leave a
+      // shorter, equally blank gap.
+      var wait = Math.max(0, 1600 - (Date.now() - wiredAt));
+      setTimeout(function() { loading.classList.add('is-done'); }, wait);
+    });
+    setTimeout(function() {
+      if (loading.isConnected && !loading.classList.contains('is-done')) {
+        var text = loading.querySelector('[data-clip-load-text]');
+        if (text) text.textContent = 'Still loading. X clips can take a few seconds…';
+      }
+    }, _CLIP_STILL_LOADING_MS);
+  }
+
+  function _wireOpenClipPanels() {
+    // Fresh cards built by _eventHtml (page rebuilds, first paint) carry a
+    // new, unwired frame; panels preserved across feed syncs keep their
+    // element and are skipped via the data-clip-wired flag.
+    root.querySelectorAll('.rz-clip-panel.is-open').forEach(_wireClipPanel);
   }
 
   function _toggleClip(btn) {
@@ -3896,9 +3950,17 @@
     if (panel) {
       panel.innerHTML = _clipFrameHtml({
         clipTweetId: btn.getAttribute('data-tweet') || '',
-        clipUrl: btn.getAttribute('data-clip-url') || ''
+        clipUrl: btn.getAttribute('data-clip-url') || '',
+        clipVideoUrl: btn.getAttribute('data-clip-video') || '',
+        clipPosterUrl: btn.getAttribute('data-clip-poster') || ''
       });
       panel.classList.add('is-open');
+      _wireClipPanel(panel);
+      var vid = panel.querySelector('.rz-clip-video');
+      if (vid && vid.play) {
+        var pr = vid.play();
+        if (pr && pr.catch) pr.catch(function() {});
+      }
     }
     btn.innerHTML = _clipBtnLabel(true);
   }
@@ -4000,7 +4062,8 @@
     var clipOpen = hasClip && _openClipKey === ev.playId;
     var clipHtml = hasClip
       ? '<div class="rz-clip-row"><button type="button" class="rz-clip-btn" data-clip-toggle="'
-        + _esc(ev.playId) + '" data-tweet="' + _esc(ev.clipTweetId) + '" data-clip-url="' + _esc(ev.clipUrl || '') + '">'
+        + _esc(ev.playId) + '" data-tweet="' + _esc(ev.clipTweetId) + '" data-clip-url="' + _esc(ev.clipUrl || '')
+        + '" data-clip-video="' + _esc(ev.clipVideoUrl || '') + '" data-clip-poster="' + _esc(ev.clipPosterUrl || '') + '">'
         + _clipBtnLabel(clipOpen) + '</button></div>'
         + '<div class="rz-clip-panel' + (clipOpen ? ' is-open' : '') + '" data-clip-panel="'
         + _esc(ev.playId) + '">' + (clipOpen ? _clipFrameHtml(ev) : '') + '</div>'
@@ -4256,6 +4319,7 @@
       container.innerHTML = '';
       container.appendChild(frag2);
       _renderPagination(totalPages);
+      _wireOpenClipPanels();
       // Click handlers now managed by root event delegation
       return;
     }
@@ -4368,6 +4432,7 @@
     for (var i = _PAGE_SIZE; i < items.length; i++) items[i].remove();
 
     _renderPagination(totalPages);
+    _wireOpenClipPanels();
 
     // Live feed header
     var hdr = document.getElementById('rz-feed-hdr');

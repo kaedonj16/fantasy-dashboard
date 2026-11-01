@@ -1356,6 +1356,8 @@ _CSP_POLICY = "; ".join([
     "https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: https://*.gstatic.com",
+    # Native <video> for ScoreZone TD clips streams from X's media CDN.
+    "media-src 'self' https://video.twimg.com",
     # XHR/fetch/beacon: Sentry ingest + the ad / CMP reporting endpoints.
     "connect-src 'self' https://*.sentry.io https://*.google.com "
     "https://*.googlesyndication.com https://*.doubleclick.net "

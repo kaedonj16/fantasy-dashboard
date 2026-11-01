@@ -55234,6 +55234,42 @@ body.otc-sticky-on { padding-bottom: 72px; }
     border-radius: var(--radius);
     background: var(--rz-card);
 }
+.rz-clip-video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: 0;
+    border-radius: var(--radius);
+    background: #000;
+}
+.rz-clip-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 2px 6px;
+    font-size: 12.5px;
+    color: var(--rz-muted);
+}
+.rz-clip-loading.is-done { display: none; }
+.rz-clip-spin {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(18, 45, 75, .18);
+    border-top-color: #122d4b;
+    animation: rz-clip-spin .8s linear infinite;
+}
+@keyframes rz-clip-spin {
+    to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .rz-clip-spin { animation: none; }
+}
+[data-theme="dark"] .rz-clip-spin {
+    border-color: rgba(56, 189, 248, .25);
+    border-top-color: #38bdf8;
+}
 .rz-clip-src {
     margin-top: 6px;
     font-size: 11px;

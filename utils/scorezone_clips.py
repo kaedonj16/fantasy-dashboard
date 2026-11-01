@@ -241,6 +241,8 @@ def match_tweets(tweets: list[dict], wanted: list[dict]) -> list[dict]:
             "author": author,
             "scorer": scorer,
             "tweet_ts": ts,
+            "video_url": str(tweet.get("video_url") or ""),
+            "poster_url": str(tweet.get("poster_url") or ""),
         })
     return out
 
@@ -261,6 +263,62 @@ def _http_get_json(url: str, params: dict, bearer: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=20) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+_MEDIA_PARAMS = {
+    "expansions": "attachments.media_keys",
+    "media.fields": "variants,preview_image_url,type",
+    "tweet.fields": "created_at,attachments",
+}
+
+# The native player wants a phone-sized progressive MP4: the largest
+# variant at or under this bitrate (720p on NFL posts), else the
+# smallest available. HLS variants are skipped (mp4 plays everywhere).
+_VIDEO_MAX_BITRATE = 2_500_000
+
+
+def _media_map(data) -> dict:
+    out = {}
+    for md in ((data or {}).get("includes") or {}).get("media") or []:
+        if isinstance(md, dict) and md.get("media_key"):
+            out[md["media_key"]] = md
+    return out
+
+
+def _best_video(tweet: dict, media_by_key: dict) -> dict:
+    """{video_url, poster_url} for the tweet's first video, else {}."""
+    keys = ((tweet.get("attachments") or {}).get("media_keys")) or []
+    for key in keys:
+        md = media_by_key.get(key) or {}
+        if md.get("type") != "video":
+            continue
+        mp4s = [
+            v for v in md.get("variants") or []
+            if v.get("content_type") == "video/mp4" and v.get("url")
+        ]
+        if not mp4s:
+            continue
+        mp4s.sort(key=lambda v: int(v.get("bit_rate") or 0))
+        pick = mp4s[0]
+        for v in mp4s:
+            if int(v.get("bit_rate") or 0) <= _VIDEO_MAX_BITRATE:
+                pick = v
+        return {
+            "video_url": pick["url"],
+            "poster_url": md.get("preview_image_url") or "",
+        }
+    return {}
+
+
+def _tweet_dict(tw: dict, username: str, media_by_key: dict) -> dict:
+    out = {
+        "id": str(tw["id"]),
+        "text": tw.get("text") or "",
+        "created_at": tw.get("created_at") or "",
+        "author": username,
+    }
+    out.update(_best_video(tw, media_by_key))
+    return out
 
 
 class XClipFetcher:
@@ -291,21 +349,17 @@ class XClipFetcher:
             return []
         params = {
             "max_results": max(5, min(100, int(max_results))),
-            "tweet.fields": "created_at",
             "exclude": "retweets,replies",
+            **_MEDIA_PARAMS,
         }
         if since_id:
             params["since_id"] = str(since_id)
         data = self._http(f"{_X_API}/users/{uid}/tweets", params, self._bearer)
+        media_by_key = _media_map(data)
         out = []
         for tw in (data or {}).get("data") or []:
             if isinstance(tw, dict) and tw.get("id"):
-                out.append({
-                    "id": str(tw["id"]),
-                    "text": tw.get("text") or "",
-                    "created_at": tw.get("created_at") or "",
-                    "author": username,
-                })
+                out.append(_tweet_dict(tw, username, media_by_key))
         return out
 
     def user_tweets_window(
@@ -327,10 +381,10 @@ class XClipFetcher:
             return []
         base = {
             "max_results": 100,
-            "tweet.fields": "created_at",
             "exclude": "retweets,replies",
             "start_time": _epoch_to_iso(start_ts),
             "end_time": _epoch_to_iso(end_ts),
+            **_MEDIA_PARAMS,
         }
         out: list[dict] = []
         token = None
@@ -340,14 +394,10 @@ class XClipFetcher:
                 params["pagination_token"] = token
             data = self._http(
                 f"{_X_API}/users/{uid}/tweets", params, self._bearer)
+            media_by_key = _media_map(data)
             for tw in (data or {}).get("data") or []:
                 if isinstance(tw, dict) and tw.get("id"):
-                    out.append({
-                        "id": str(tw["id"]),
-                        "text": tw.get("text") or "",
-                        "created_at": tw.get("created_at") or "",
-                        "author": username,
-                    })
+                    out.append(_tweet_dict(tw, username, media_by_key))
             token = ((data or {}).get("meta") or {}).get("next_token")
             if not token:
                 break
@@ -492,7 +542,10 @@ def run_clip_backfill(
                     gid, rows or [], pid_to_name,
                     def_pids=def_pids, away=away, home=home,
                 )
-                if (gid, w["play_id"]) not in existing
+                if not (
+                    (gid, w["play_id"]) in existing
+                    and existing[(gid, w["play_id"])].get("video_url")
+                )
             ]
             gstats["wanted"] = len(wanted)
             if wanted:
@@ -617,7 +670,8 @@ def maybe_run_clip_pass(
                 gid, rows_by_game.get(gid) or [], pid_to_name,
                 def_pids=def_pids, away=away, home=home,
             ):
-                if (gid, w["play_id"]) in existing:
+                prev = existing.get((gid, w["play_id"]))
+                if prev and prev.get("video_url"):
                     continue
                 if w["wallclock"] - 120 <= ts_now <= (
                     w["wallclock"] + _WINDOW_S + _FETCH_GRACE_S
