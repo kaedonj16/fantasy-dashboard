@@ -3899,6 +3899,27 @@
 
   var _CLIP_STILL_LOADING_MS = 12000; // when the loading row turns to "Still loading"
 
+  function _upgradeOpenClipPanel(panel, ev) {
+    // Media can land a poll after the tweet match (the clip is stored
+    // first, its video file filled in shortly after). An open panel is
+    // preserved across feed syncs, so without this it would keep showing
+    // the tweet until the user closes and reopens. When the fresh event
+    // carries the native file and the panel does not, swap the panel to
+    // the video in place. A panel that already fell back after a video
+    // error is left alone (no swap loop); close/reopen retries it.
+    if (!panel || !ev || !ev.clipVideoUrl) return;
+    if (panel.getAttribute('data-clip-fell-back')) return;
+    if (panel.querySelector('.rz-clip-video')) return;
+    panel.innerHTML = _clipFrameHtml(ev);
+    panel.removeAttribute('data-clip-video-wired');
+    _wireClipPanel(panel);
+    var vid = panel.querySelector('.rz-clip-video');
+    if (vid && vid.play) {
+      var pr = vid.play();
+      if (pr && pr.catch) pr.catch(function() {});
+    }
+  }
+
   function _clipFallbackToEmbed(panel) {
     // The native stream failed: a stale cached page shell can still carry
     // the pre-fix content policy that blocks video.twimg.com, or the
@@ -4384,6 +4405,7 @@
         var freshPanel = node.querySelector('.rz-clip-panel');
         if (freshPanel) freshPanel.replaceWith(openPanel);
         else openPanel = null;
+        if (openPanel) _upgradeOpenClipPanel(openPanel, ev);
       }
     }
 

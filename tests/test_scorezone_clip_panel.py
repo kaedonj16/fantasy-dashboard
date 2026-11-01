@@ -74,3 +74,18 @@ def test_video_error_falls_back_to_embed():
     # The error may fire before wiring runs; the wired check catches
     # already-failed elements too.
     assert "video.networkState === 3" in js
+
+
+def test_open_panel_upgrades_to_video_when_media_lands():
+    js = _js()
+    # An open embed panel preserved across a feed sync must swap to the
+    # native video in place when the fresh event gains the media file,
+    # instead of showing the tweet until a close/reopen.
+    assert "_upgradeOpenClipPanel" in js
+    assert "_upgradeOpenClipPanel(openPanel, ev)" in js
+    seg = js.split("function _upgradeOpenClipPanel")[1].split("function _clipFallbackToEmbed")[0]
+    assert "ev.clipVideoUrl" in seg
+    assert "panel.querySelector('.rz-clip-video')" in seg
+    # A panel that fell back after a video error is not re-upgraded
+    # (that would loop on every sync).
+    assert "data-clip-fell-back" in seg
