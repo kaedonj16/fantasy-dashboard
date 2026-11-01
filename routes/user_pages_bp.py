@@ -182,15 +182,10 @@ def _kick_summary_refresh(account_id, membership, _attempt=0):
         return
 
     def _run():
-        try:
-            from dashboard_services.portfolio_summary import (
-                ContextPending, build_league_summary,
-            )
-            build_league_summary(
-                account_id, dict(membership or {}),
-                lambda p, i, s: get_league_ctx_from_cache(p, i, s, allow_build=False),
-            )
-        except ContextPending:
+        def _retry_later():
+            # Same re-kick cadence as the ContextPending path below: the
+            # rebuild is deferred, never dropped on the floor and never
+            # run inline to fill the value.
             if _attempt < 10:
                 timer = threading.Timer(
                     3.0, _kick_summary_refresh,
@@ -199,6 +194,38 @@ def _kick_summary_refresh(account_id, membership, _attempt=0):
                 )
                 timer.daemon = True
                 timer.start()
+
+        try:
+            # Aggregate heavy cap (app.py's _BG_HEAVY_SEM, via the lazy app
+            # shim pattern): a summary build walks a full league context,
+            # so this pool is one of the heavy background mechanisms the
+            # per-worker ceiling covers, on top of its own 2 workers. An
+            # over-cap run retries on the ContextPending cadence instead
+            # of stacking on the capped builds; the inflight mark clears
+            # in the finally below, so a later read re-kicks regardless.
+            from app import (
+                _heavy_job_end,
+                _heavy_job_start,
+                _heavy_kick_acquire,
+            )
+
+            agg_token = _heavy_kick_acquire()
+            if agg_token is None:
+                _retry_later()
+                return
+            prev = _heavy_job_start(agg_token)
+            try:
+                from dashboard_services.portfolio_summary import (
+                    ContextPending, build_league_summary,
+                )
+                build_league_summary(
+                    account_id, dict(membership or {}),
+                    lambda p, i, s: get_league_ctx_from_cache(p, i, s, allow_build=False),
+                )
+            except ContextPending:
+                _retry_later()
+            finally:
+                _heavy_job_end(agg_token, prev)
         except Exception:
             logger.debug("portfolio background refresh failed league=%s", lid,
                          exc_info=True)
@@ -4056,13 +4083,34 @@ def _schedule_live_matchup_rebuild(key, platform, resolved_league_id, season, we
     def _run():
         lock = _live_matchup_lock(key)
         try:
-            with lock:
-                hit = _LIVE_MATCHUP_CACHE.get(key)
-                if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
-                    return
-                _compute_live_matchups(
-                    key, platform, resolved_league_id, season, week, ctx,
-                )
+            # Aggregate heavy cap (app.py's _BG_HEAVY_SEM, via the lazy app
+            # shim pattern): this rebuild runs a provider matchup build +
+            # projections, and it is kicked per card -- an 11-league My
+            # Leagues load could previously run 11 of these at once, on top
+            # of every other mechanism's cap, because the only bound was
+            # one-in-flight PER KEY. An over-cap rebuild is dropped: the
+            # rebuilding mark clears in the finally below, callers keep
+            # serving the stale entry, and the next card poll re-kicks.
+            from app import (
+                _heavy_job_end,
+                _heavy_job_start,
+                _heavy_kick_acquire,
+            )
+
+            agg_token = _heavy_kick_acquire()
+            if agg_token is None:
+                return
+            prev = _heavy_job_start(agg_token)
+            try:
+                with lock:
+                    hit = _LIVE_MATCHUP_CACHE.get(key)
+                    if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
+                        return
+                    _compute_live_matchups(
+                        key, platform, resolved_league_id, season, week, ctx,
+                    )
+            finally:
+                _heavy_job_end(agg_token, prev)
         except Exception:
             logger.debug("[portfolio] live matchup background rebuild failed",
                          exc_info=True)

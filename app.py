@@ -432,7 +432,8 @@ _PLAYOFF_SIM_SEM = threading.BoundedSemaphore(_PLAYOFF_SIM_MAX_CONCURRENT)
 # Every heavy background kick -- page builds, teams/activity builds,
 # activity-section fills, history preloads, playoff sims, impact warms,
 # league warms, roster-freshness rebuilds, modal warms, assistant
-# digests, portfolio actions and insights -- acquires this ONE semaphore
+# digests, portfolio actions, insights, summary refreshes and
+# live-matchup rebuilds -- acquires this ONE semaphore
 # first (blocking=False), on top of its per-mechanism cap; a kick that
 # cannot get a slot is dropped, its dedupe / in-flight mark is cleared,
 # and a later read re-kicks it. Callers that wait for their own result

@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-01",
         "tag": "fix",
+        "text": "Closed the last two gaps in the app's memory limit on My Leagues: refreshing your league cards and rebuilding live matchup scores now share the same strict per-worker limit as every other heavy background job. Before this, opening My Leagues with 11 leagues could run 11 live matchup rebuilds at once on top of everything else. Anything over the limit now waits for the next refresh instead of piling up and restarting the app.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-11-01",
+        "tag": "fix",
         "text": "Fixed the app restarting under load: background work like playoff simulations, league refreshes and page builds now shares one strict per-worker limit, so opening My Leagues with many leagues can no longer stack a dozen heavy builds at once and exhaust memory. Anything over the limit simply finishes on a later load instead of taking the app down.",
         "link": "/portfolio"
     },
