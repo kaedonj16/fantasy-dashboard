@@ -204,6 +204,11 @@ def match_tweets(tweets: list[dict], wanted: list[dict]) -> list[dict]:
         text = str(tweet.get("text") or "")
         if not text or is_roundup_caption(text):
             continue
+        if tweet.get("graphic_media"):
+            # Square/portrait social graphic ("TOUCHDOWN" card), not the
+            # play. Skipping it leaves the play wantable for the real
+            # broadcast clip instead of locking the graphic in.
+            continue
         author = str(tweet.get("author") or "")
         if not author:
             continue
@@ -285,8 +290,37 @@ def _media_map(data) -> dict:
     return out
 
 
+def _variant_dims(url: str):
+    m = re.search(r"/(\d{2,5})x(\d{2,5})/", str(url or ""))
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def video_url_qualifies(url: str) -> bool:
+    """True when a stored clip video is the landscape broadcast cut.
+
+    Team social graphics are square or portrait (their variant URLs carry
+    the dims, e.g. /vid/avc1/720x720/); the actual play highlight is
+    landscape. A graphic URL must not count as "has video": the play
+    stays re-wantable so the real clip can replace it.
+    """
+    u = str(url or "")
+    if not u:
+        return False
+    dims = _variant_dims(u)
+    if dims is None:
+        return True
+    return dims[0] > dims[1]
+
+
 def _best_video(tweet: dict, media_by_key: dict) -> dict:
-    """{video_url, poster_url} for the tweet's first video, else {}."""
+    """{video_url, poster_url} for the tweet's first video, else {}.
+
+    A video whose variants are square/portrait is a social graphic, not
+    the play: it returns {"graphic_media": True} so the matcher skips
+    the tweet entirely and the real broadcast clip can win instead.
+    """
     keys = ((tweet.get("attachments") or {}).get("media_keys")) or []
     for key in keys:
         md = media_by_key.get(key) or {}
@@ -303,6 +337,9 @@ def _best_video(tweet: dict, media_by_key: dict) -> dict:
         for v in mp4s:
             if int(v.get("bit_rate") or 0) <= _VIDEO_MAX_BITRATE:
                 pick = v
+        dims = _variant_dims(pick["url"])
+        if dims is not None and dims[0] <= dims[1]:
+            return {"graphic_media": True}
         return {
             "video_url": pick["url"],
             "poster_url": md.get("preview_image_url") or "",
@@ -559,7 +596,8 @@ def run_clip_backfill(
                 )
                 if not (
                     (gid, w["play_id"]) in existing
-                    and existing[(gid, w["play_id"])].get("video_url")
+                    and video_url_qualifies(
+                        existing[(gid, w["play_id"])].get("video_url"))
                 )
             ]
             gstats["wanted"] = len(wanted)
@@ -686,7 +724,7 @@ def maybe_run_clip_pass(
                 def_pids=def_pids, away=away, home=home,
             ):
                 prev = existing.get((gid, w["play_id"]))
-                if prev and prev.get("video_url"):
+                if prev and video_url_qualifies(prev.get("video_url")):
                     continue
                 if w["wallclock"] - 120 <= ts_now <= (
                     w["wallclock"] + _WINDOW_S + _FETCH_GRACE_S

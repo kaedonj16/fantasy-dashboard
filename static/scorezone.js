@@ -209,6 +209,13 @@
       e.stopPropagation();
       return;
     }
+    // Taps inside an open clip panel belong to the video itself (play,
+    // pause, seek, fullscreen); they must never fall through to the
+    // data-pid walk that opens the player modal for the card's player.
+    var clipPanel = target && target.closest ? target.closest('.rz-clip-panel') : null;
+    if (clipPanel && root.contains(clipPanel)) {
+      return;
+    }
     // Box score button on the filtered-game board. Delegated because the board
     // re-renders on every poll; the sheet itself mounts on document.body so a
     // re-render never destroys an open sheet.
