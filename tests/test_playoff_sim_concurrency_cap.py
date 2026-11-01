@@ -62,6 +62,13 @@ def sim_gate(monkeypatch):
     import data_building.simulate_playoff_odds as sim_mod
 
     assert _drain_sim_slots(app), "background sim slots never freed"
+    # Background sim kicks now also take the aggregate cap
+    # (_BG_HEAVY_SEM), and an earlier test in the shared process can
+    # permanently hold an aggregate slot (test_activity_deferral's fake
+    # threading.Thread never runs the build it kicks, so its slot is
+    # never released in-process). Isolate the aggregate semaphore for
+    # this test; every mechanism reads the module global at call time.
+    monkeypatch.setattr(app, "_BG_HEAVY_SEM", threading.BoundedSemaphore(3))
     # The cache signature normally fingerprints the published schedule,
     # which can do slow provider/DB I/O; it is irrelevant to the cap, so
     # pin it to keep this test about concurrency only.

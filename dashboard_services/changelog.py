@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-01",
+        "tag": "fix",
+        "text": "Fixed the app restarting under load: background work like playoff simulations, league refreshes and page builds now shares one strict per-worker limit, so opening My Leagues with many leagues can no longer stack a dozen heavy builds at once and exhaust memory. Anything over the limit simply finishes on a later load instead of taking the app down.",
+        "link": "/portfolio"
+    },
+    {
         "date": "2026-10-31",
         "tag": "new",
         "text": "Trade Calculator on phones: a slimmer header with your league settings behind the gear, flat full-width sides with each side's running total in its header, and Analyze plus the balance bar right under the sides. Player chips now show headshots on phone and desktop, with initials when a player has no photo.",

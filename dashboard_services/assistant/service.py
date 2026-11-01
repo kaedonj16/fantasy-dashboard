@@ -938,13 +938,33 @@ def _kick_digest(account_key: str, bundle: dict) -> None:
             _DIGEST_INFLIGHT.discard(key)
         return
 
+    # Aggregate heavy cap (app.py's _BG_HEAVY_SEM, resolved lazily like
+    # the other app internals this package uses at request time): a
+    # digest build is one of the heavy background kicks the per-worker
+    # ceiling covers, on top of this mechanism's own cap.
+    from app import (
+        _heavy_job_end,
+        _heavy_job_start,
+        _heavy_kick_acquire,
+        _heavy_kick_release,
+    )
+
+    agg_token = _heavy_kick_acquire()
+    if agg_token is None:
+        _DIGEST_SEM.release()
+        with _DIGEST_LOCK:
+            _DIGEST_INFLIGHT.discard(key)
+        return
+
     def _run():
+        prev = _heavy_job_start(agg_token)
         try:
             _build_digest(account_key, bundle)
         except Exception:
             logger.debug("[assistant] background digest build failed", exc_info=True)
         finally:
             _DIGEST_SEM.release()
+            _heavy_job_end(agg_token, prev)
             with _DIGEST_LOCK:
                 _DIGEST_INFLIGHT.discard(key)
 
@@ -952,6 +972,7 @@ def _kick_digest(account_key: str, bundle: dict) -> None:
         _spawn_digest_thread(_run)
     except Exception:
         _DIGEST_SEM.release()
+        _heavy_kick_release(agg_token)
         with _DIGEST_LOCK:
             _DIGEST_INFLIGHT.discard(key)
 
