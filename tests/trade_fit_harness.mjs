@@ -26,6 +26,12 @@
 //      it hides while the Trade Summary card itself is on screen
 //      (state._summaryInView, owned by the IntersectionObserver wired
 //      in bindStickyBar), and activating it scrolls to the summary.
+//      The scroll targets this app's real scroller: the <body>, not
+//      the window (the getScroll/setScroll contract in app.js). The
+//      fake DOM below models that faithfully: window.scrollY is 0
+//      and only body.scrollTop holds the offset, so a window-only
+//      scrollTo (the original #2929 code) computes the wrong target
+//      AND writes it to an element that never moves.
 //
 // This harness extracts the SHIPPED functions by source and drives them
 // with stub state -- not string matching.
@@ -117,8 +123,21 @@ const root = {
   },
 };
 const navEl = { offsetHeight: 68 };
+// This app scrolls the <body>, not the window (app.js getScroll /
+// setScroll): model the real shell, where the 200px offset lives on
+// body.scrollTop and the window/documentElement offsets stay 0.
+const bodyScrollCalls = [];
+const docElScrollCalls = [];
 const document = {
-  body: { classList: { add() {}, remove() {} } },
+  body: {
+    classList: { add() {}, remove() {} },
+    scrollTop: 200,
+    scrollTo(opts) { bodyScrollCalls.push(opts); },
+  },
+  documentElement: {
+    scrollTop: 0,
+    scrollTo(opts) { docElScrollCalls.push(opts); },
+  },
   querySelector(sel) { return sel === '.top-nav' ? navEl : null; },
 };
 const getCurrentRosterId = () => '7';
@@ -127,8 +146,8 @@ const getCurrentRosterId = () => '7';
 // global so the extracted function resolves it like the browser does.
 const windowScrollCalls = [];
 globalThis.window = {
-  scrollY: 200,
-  pageYOffset: 200,
+  scrollY: 0,
+  pageYOffset: 0,
   scrollTo(opts) { windowScrollCalls.push(opts); },
 };
 
@@ -312,9 +331,16 @@ renderTradeFit();
 assert.equal(els['#tradeStickyBar'].style.display, 'none', 'no eval payload -> bar hides');
 
 scrollStickyBarToSummary();
-assert.equal(windowScrollCalls.length, 1, 'activation smooth-scrolls the window');
-assert.deepEqual(windowScrollCalls[0], { top: 624, behavior: 'smooth' },
-  'summary lands below the top nav: 500 rect + 200 scroll - 68 nav - 8 gap');
+// The target is computed from the offset that actually exists (the
+// body's 200, not the window's 0) and written to the app's real
+// scroller. The #2929 original read window.scrollY (0) and wrote only
+// window.scrollTo: wrong target, inert element, dead tap.
+assert.deepEqual(bodyScrollCalls, [{ top: 624, behavior: 'smooth' }],
+  'activation smooth-scrolls the body: 500 rect + 200 body offset - 68 nav - 8 gap');
+assert.deepEqual(docElScrollCalls, [{ top: 624, behavior: 'smooth' }],
+  'documentElement is written too (whichever candidate scrolls, the others no-op)');
+assert.deepEqual(windowScrollCalls, [{ top: 624, behavior: 'smooth' }],
+  'window is written with the same corrected target, never as the only write');
 assert.equal(summaryScrollIntoViewCalls, 0, 'explicit offset path, not bare scrollIntoView');
 
 // ── 6. Sticky bar: hidden while the summary itself is on screen ─────
