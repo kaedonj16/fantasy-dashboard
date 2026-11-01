@@ -1365,10 +1365,14 @@ _CSP_POLICY = "; ".join([
     "https://*.grow.me https://*.mediavine.com",
     # 'self' lets the app embed its own pages (the Draft Room's in-draft cheat
     # sheet overlay iframes /draft/cheat-sheet/embed). Ads and Google's consent
-    # messaging render inside iframes from Google ad / CMP hosts.
+    # messaging render inside iframes from Google ad / CMP hosts. The X hosts
+    # are for ScoreZone's TD clip embeds (platform.twitter.com serves the
+    # embed document; its player nests syndication / twimg frames).
     "frame-src 'self' https://*.googlesyndication.com https://*.doubleclick.net "
     "https://*.google.com https://fundingchoicesmessages.google.com "
-    "https://*.googleadservices.com https://*.grow.me",
+    "https://*.googleadservices.com https://*.grow.me "
+    "https://platform.twitter.com https://syndication.twitter.com "
+    "https://*.twimg.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
