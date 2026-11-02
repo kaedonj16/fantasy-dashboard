@@ -7402,6 +7402,477 @@ window.brandPlotlyLayout = function (extra) {
   }, extra || {});
 };
 
+// ── BRValueChart: hand-built SVG value-history chart ───────────────────────
+// Canonical renderer for the VALUE HISTORY charts only (player modal,
+// compare 2p/3p, public player page). It replaces Plotly on those surfaces;
+// every other chart on the site keeps its own renderer. Defined in core,
+// before the public bundle's split point, so every shell that draws a
+// value chart can reach this one implementation: the full app bundle, the lite public
+// bundle (player page), the features bundle (player_modal.js) and
+// player_page.js. Callers in player_modal.js / player_page.js use
+// window.BRValueChart.render; this file is its canonical home.
+//
+// LINE RULE (locked design): the stored values are plotted exactly. There
+// is NO data smoothing or averaging anywhere in this renderer. Lines only
+// look soft because paths use Fritsch-Carlson monotone cubic interpolation,
+// which passes through every point and can never overshoot a segment's
+// endpoints, so it invents no highs or lows. Fills follow the same path.
+window.BRValueChart = (function () {
+  var FONT = 'Archivo, InterVariable, Inter, system-ui, -apple-system, sans-serif';
+  var SKY = '#38bdf8';
+  var HERO = { light: '#122d4b', dark: '#60a5fa' };
+
+  function _n(v) { return Math.round(v * 100) / 100; }
+  function _esc(s) {
+    if (typeof escapeHtml === 'function') return escapeHtml(s);
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function _fmtVal(v) { return Math.round(v).toLocaleString('en-US'); }
+
+  // Fritsch-Carlson monotone tangents for strictly increasing xs.
+  function _tangents(xs, ys) {
+    var n = xs.length, d = [], m = [], i, a, b, s, t;
+    for (i = 0; i < n - 1; i++) d.push((ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]));
+    m.push(d[0]);
+    for (i = 1; i < n - 1; i++) m.push((d[i - 1] + d[i]) / 2);
+    m.push(d[n - 2]);
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] === 0 || d[i] === 0 || (d[i - 1] < 0) !== (d[i] < 0)) m[i] = 0;
+    }
+    for (i = 0; i < n - 1; i++) {
+      if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+      a = m[i] / d[i]; b = m[i + 1] / d[i]; s = a * a + b * b;
+      if (s > 9) { t = 3 / Math.sqrt(s); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+    }
+    return m;
+  }
+  // Monotone cubic path through pixel points [{x, y}] (x increasing).
+  function _monoPath(pts) {
+    if (!pts || pts.length < 2) return '';
+    var xs = pts.map(function (p) { return p.x; });
+    var ys = pts.map(function (p) { return p.y; });
+    var m = _tangents(xs, ys);
+    var out = 'M' + _n(xs[0]) + ',' + _n(ys[0]), i, dx;
+    for (i = 0; i < pts.length - 1; i++) {
+      dx = (xs[i + 1] - xs[i]) / 3;
+      out += 'C' + _n(xs[i] + dx) + ',' + _n(ys[i] + m[i] * dx) + ' '
+        + _n(xs[i + 1] - dx) + ',' + _n(ys[i + 1] - m[i + 1] * dx) + ' '
+        + _n(xs[i + 1]) + ',' + _n(ys[i + 1]);
+    }
+    return out;
+  }
+  // Consecutive non-null runs of a value array, as index lists.
+  function _runs(vals) {
+    var runs = [], cur = null;
+    for (var i = 0; i < vals.length; i++) {
+      var v = vals[i];
+      if (v == null || isNaN(v)) { cur = null; continue; }
+      if (!cur) { cur = []; runs.push(cur); }
+      cur.push(i);
+    }
+    return runs;
+  }
+  function _theme() {
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    var cs = getComputedStyle(document.documentElement);
+    function tok(name, fb) { var v = cs.getPropertyValue(name).trim(); return v || fb; }
+    return {
+      dark: dark,
+      text: tok('--text', dark ? '#e5e7eb' : '#122d4b'),
+      muted: tok('--text-muted', dark ? '#94a3b8' : '#6b7280'),
+      border: tok('--border', dark ? '#1f2937' : '#e8eef4'),
+      surface: tok('--row', dark ? '#0b1220' : '#f8fafc'),
+      win: tok('--win', dark ? '#4ade80' : '#16a34a'),
+      loss: tok('--loss', dark ? '#f87171' : '#ef4444'),
+    };
+  }
+  function _color(c, th) {
+    if (!c) return th.text;
+    if (typeof c === 'object') return th.dark ? (c.dark || c.light) : (c.light || c.dark);
+    return c;
+  }
+  function _niceStep(raw) {
+    var pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    var f = raw / pow;
+    var nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+    return nf * pow;
+  }
+
+  // render(container, opts)
+  //   opts.height   px height of the svg
+  //   opts.mode     'index' (series share opts.labels) | 'time' (own points)
+  //   opts.labels   per-index date labels (index mode)
+  //   opts.series   [{ name, color ({light,dark}|string), width, dash,
+  //                    hero, values[] (index) | points[{t,v,label}] (time) }]
+  //   opts.band     fill between series 0 and 1 where both exist (index mode)
+  //   opts.bands    [{ min, max, fill }] value-range rects (behind lines)
+  //   opts.refLines [{ value, color, name }] dashed flat reference lines
+  //   opts.peakLow  label peak/low of series 0 on the visible window
+  //   opts.fmtVal   value formatter (default: rounded, comma-grouped)
+  function render(container, opts) {
+    if (!container) return;
+    opts = opts || {};
+    var th = _theme();
+    var fmtVal = typeof opts.fmtVal === 'function' ? opts.fmtVal : _fmtVal;
+    var mode = opts.mode === 'time' ? 'time' : 'index';
+    var series = (opts.series || []).map(function (s) {
+      var vals, labels, units;
+      if (mode === 'time') {
+        var pts = (s.points || []).filter(function (p) { return p && p.t != null; })
+          .slice().sort(function (a, b) { return a.t - b.t; });
+        units = pts.map(function (p) { return p.t; });
+        vals = pts.map(function (p) { return p.v != null && !isNaN(p.v) ? Number(p.v) : null; });
+        labels = pts.map(function (p) { return p.label || ''; });
+      } else {
+        vals = (s.values || []).map(function (v) { return v != null && !isNaN(v) ? Number(v) : null; });
+        units = vals.map(function (_, i) { return i; });
+        labels = opts.labels || [];
+      }
+      return {
+        name: s.name || '', color: _color(s.color, th), width: s.width || 2.5,
+        dash: s.dash || null, hero: !!s.hero, vals: vals, units: units, labels: labels,
+      };
+    });
+    // Shared x axis (index mode: the index itself; time mode: union scale,
+    // each series keeps its own units for its path).
+    var xMin = Infinity, xMax = -Infinity;
+    series.forEach(function (s) {
+      s.units.forEach(function (u) { if (u < xMin) xMin = u; if (u > xMax) xMax = u; });
+    });
+    if (!isFinite(xMin)) { xMin = 0; xMax = 1; }
+    if (xMax === xMin) { xMax = xMin + 1; }
+    var axisLabels = mode === 'index' ? (opts.labels || [])
+      : series.reduce(function (acc, s) {
+          s.units.forEach(function (u, i) { acc.push({ u: u, label: s.labels[i] || '' }); });
+          return acc;
+        }, []).sort(function (a, b) { return a.u - b.u; })
+        .filter(function (e, i, arr) { return i === 0 || e.u !== arr[i - 1].u; });
+
+    // Y extent: honest padded range over everything drawn.
+    var yLo = Infinity, yHi = -Infinity;
+    function _see(v) { if (v != null && isFinite(v)) { if (v < yLo) yLo = v; if (v > yHi) yHi = v; } }
+    series.forEach(function (s) { s.vals.forEach(_see); });
+    (opts.refLines || []).forEach(function (r) { _see(r.value); });
+    (opts.bands || []).forEach(function (b) { _see(b.min); _see(b.max); });
+    if (!isFinite(yLo)) { yLo = 0; yHi = 1; }
+    var yRange = yHi - yLo;
+    var yPad = yRange > 0 ? yRange * 0.12 : Math.max(Math.abs(yHi) * 0.02, 20);
+    yLo -= yPad; yHi += yPad;
+    if (yLo < 0 && (yLo + yPad) >= 0) yLo = 0; // values are non-negative trade values
+
+    var W = container.clientWidth || 0;
+    if (W < 200) W = Math.max((container.parentNode && container.parentNode.clientWidth) || 0, 320);
+    var H = opts.height || 250;
+
+    // Right padding fits the stacked end labels (name over value).
+    var endJobs = [];
+    series.forEach(function (s) {
+      var last = -1;
+      for (var i = s.vals.length - 1; i >= 0; i--) { if (s.vals[i] != null) { last = i; break; } }
+      if (last < 0) return;
+      endJobs.push({ s: s, idx: last, val: s.vals[last] });
+    });
+
+    // Peak/low on the primary series (visible window = what was passed in).
+    var pk = null;
+    if (opts.peakLow && series.length && endJobs.length) {
+      var pv = series[0].vals, pIdx = -1, fIdx = -1, pV = -Infinity, fV = Infinity, cnt = 0;
+      pv.forEach(function (v, i) {
+        if (v == null) return;
+        cnt++;
+        if (v > pV) { pV = v; pIdx = i; }
+        if (v < fV) { fV = v; fIdx = i; }
+      });
+      var lastReal = endJobs[0].idx;
+      if (cnt > 2 && pIdx !== fIdx) {
+        pk = {
+          peakIdx: pIdx, peakV: pV, floorIdx: fIdx, floorV: fV,
+          peakMerged: pIdx === lastReal, floorMerged: fIdx === lastReal,
+        };
+      }
+    }
+
+    var maxEndChars = 0;
+    endJobs.forEach(function (j) {
+      var vtxt = fmtVal(j.val);
+      if (pk && j.s === series[0]) {
+        if (pk.peakMerged) vtxt += ' · Peak';
+        if (pk.floorMerged) vtxt += ' · Low';
+      }
+      j.valueText = vtxt;
+      maxEndChars = Math.max(maxEndChars, j.s.name.length, vtxt.length);
+    });
+    var padR = Math.min(Math.max(maxEndChars * 6.8 + 18, 58), 190);
+    // Left padding fits the widest y tick label.
+    var step0 = _niceStep((yHi - yLo) / 3 || 1);
+    var firstTick = Math.ceil(yLo / step0) * step0;
+    var widestTick = 0;
+    for (var tv = firstTick; tv <= yHi && widestTick < 12; tv += step0) {
+      widestTick = Math.max(widestTick, fmtVal(tv).length);
+    }
+    var padL = Math.max(widestTick * 6.4 + 14, 38);
+    var padT = 20, padB = 26;
+    var plotW = Math.max(W - padL - padR, 40);
+    var plotH = Math.max(H - padT - padB, 40);
+    var plotR = padL + plotW, plotB = padT + plotH;
+    function X(u) { return padL + (u - xMin) / (xMax - xMin) * plotW; }
+    function Y(v) { return padT + (yHi - v) / (yHi - yLo) * plotH; }
+
+    var uid = 'brvh' + Math.random().toString(36).slice(2, 8);
+    var out = [];
+    out.push('<svg class="br-vh-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" '
+      + 'style="font-family:' + FONT + ';" role="img" aria-label="Value history chart">');
+    // Gradient defs for hero fills.
+    out.push('<defs>');
+    series.forEach(function (s, si) {
+      if (!s.hero) return;
+      out.push('<linearGradient id="' + uid + 'g' + si + '" x1="0" y1="0" x2="0" y2="1">'
+        + '<stop offset="0" stop-color="' + s.color + '" stop-opacity="0.12"/>'
+        + '<stop offset="1" stop-color="' + s.color + '" stop-opacity="0"/>'
+        + '</linearGradient>');
+    });
+    out.push('</defs>');
+    // Value-range bands (compare tier bands), behind everything.
+    (opts.bands || []).forEach(function (b) {
+      out.push('<rect x="' + _n(padL) + '" y="' + _n(Y(b.max)) + '" width="' + _n(plotW) + '" '
+        + 'height="' + _n(Math.max(Y(b.min) - Y(b.max), 0)) + '" fill="' + b.fill + '"/>');
+    });
+    // Grid + y ticks (max ~4, hairline, border color at reduced opacity).
+    var tickV = firstTick;
+    for (var ti = 0; ti < 6 && tickV <= yHi; ti++, tickV += step0) {
+      var ty = Y(tickV);
+      out.push('<line x1="' + padL + '" y1="' + _n(ty) + '" x2="' + plotR + '" y2="' + _n(ty) + '" '
+        + 'stroke="' + th.border + '" stroke-opacity="0.55" stroke-width="1"/>');
+      out.push('<text x="' + (padL - 8) + '" y="' + _n(ty + 3.5) + '" text-anchor="end" '
+        + 'font-size="11" fill="' + th.muted + '">' + _esc(fmtVal(tickV)) + '</text>');
+    }
+    // X ticks: 3-5 evenly spaced axis labels + hairline baseline.
+    out.push('<line x1="' + padL + '" y1="' + _n(plotB) + '" x2="' + plotR + '" y2="' + _n(plotB) + '" '
+      + 'stroke="' + th.border + '" stroke-width="1"/>');
+    if (axisLabels.length) {
+      var want = Math.max(2, Math.min(5, Math.floor(plotW / 110) || 2, axisLabels.length));
+      var seenU = {};
+      for (var xi = 0; xi < want; xi++) {
+        var ai = Math.round(xi * (axisLabels.length - 1) / Math.max(want - 1, 1));
+        var e = axisLabels[ai];
+        if (!e || seenU[e.u]) continue;
+        seenU[e.u] = 1;
+        out.push('<text x="' + _n(X(e.u)) + '" y="' + (H - 8) + '" text-anchor="middle" '
+          + 'font-size="11" fill="' + th.muted + '">' + _esc(e.label) + '</text>');
+      }
+    }
+    function ptsOf(s, runIdxs) {
+      return runIdxs.map(function (i) { return { x: X(s.units[i]), y: Y(s.vals[i]) }; });
+    }
+    // Band fill between series 0 and 1 (index mode, where both exist).
+    if (opts.band && mode === 'index' && series.length > 1) {
+      var a = series[0], b = series[1], bi = 0;
+      while (bi < a.vals.length) {
+        if (a.vals[bi] == null || b.vals[bi] == null) { bi++; continue; }
+        var bj = bi;
+        while (bj + 1 < a.vals.length && a.vals[bj + 1] != null && b.vals[bj + 1] != null) bj++;
+        if (bj > bi) {
+          var top = [], bot = [];
+          for (var bk = bi; bk <= bj; bk++) {
+            top.push({ x: X(a.units[bk]), y: Y(a.vals[bk]) });
+            bot.unshift({ x: X(b.units[bk]), y: Y(b.vals[bk]) });
+          }
+          // Outline: along series A left-to-right, then back along series B
+          // right-to-left (bot is already in decreasing-x order from the
+          // unshift build; the monotone path is direction-symmetric).
+          out.push('<path d="' + _monoPath(top)
+            + _monoPath(bot).replace(/^M/, 'L') + 'Z" fill="' + SKY + '" fill-opacity="0.07" stroke="none"/>');
+        }
+        bi = bj + 1;
+      }
+    }
+    // Hero gradient fills (to the padded axis baseline, never to zero).
+    series.forEach(function (s, si) {
+      if (!s.hero) return;
+      _runs(s.vals).forEach(function (run) {
+        if (run.length < 2) return;
+        var pts = ptsOf(s, run);
+        var d = _monoPath(pts)
+          + 'L' + _n(pts[pts.length - 1].x) + ',' + _n(Y(yLo))
+          + 'L' + _n(pts[0].x) + ',' + _n(Y(yLo)) + 'Z';
+        out.push('<path d="' + d + '" fill="url(#' + uid + 'g' + si + ')" stroke="none"/>');
+      });
+    });
+    // Dashed flat reference lines (tier averages).
+    (opts.refLines || []).forEach(function (r) {
+      out.push('<line x1="' + padL + '" y1="' + _n(Y(r.value)) + '" x2="' + plotR + '" y2="' + _n(Y(r.value)) + '" '
+        + 'stroke="' + _color(r.color, th) + '" stroke-width="2" stroke-dasharray="6 4"/>');
+    });
+    // Series lines (nulls break the line into runs; never a plunge).
+    series.forEach(function (s) {
+      _runs(s.vals).forEach(function (run) {
+        if (run.length < 2) return;
+        out.push('<path d="' + _monoPath(ptsOf(s, run)) + '" fill="none" stroke="' + s.color + '" '
+          + 'stroke-width="' + s.width + '" stroke-linecap="round" stroke-linejoin="round"'
+          + (s.dash ? ' stroke-dasharray="' + s.dash + '"' : '') + '/>');
+      });
+    });
+    // Discrete points on short series (flat dots, no rings anywhere).
+    series.forEach(function (s) {
+      var cnt = s.vals.filter(function (v) { return v != null; }).length;
+      if (cnt === 0 || cnt > 14) return;
+      s.vals.forEach(function (v, i) {
+        if (v == null) return;
+        out.push('<circle cx="' + _n(X(s.units[i])) + '" cy="' + _n(Y(v)) + '" r="3" fill="' + s.color + '"/>');
+      });
+    });
+    // Peak / low markers + one-line labels on the primary series.
+    if (pk) {
+      var prim = series[0];
+      function extreme(idx, val, isPeak, merged) {
+        if (merged) return;
+        var cx = X(prim.units[idx]), cy = Y(val);
+        var col = isPeak ? th.win : th.loss;
+        var word = isPeak ? 'Peak ' : 'Low ';
+        var label = word + fmtVal(val);
+        var date = (prim.labels[idx] || (opts.labels || [])[idx] || '');
+        var halfEst = (label.length + (date ? date.length + 3 : 0)) * 3.2;
+        var tx = Math.min(Math.max(cx, padL + halfEst), Math.max(plotR - halfEst, padL + halfEst));
+        var ly = isPeak ? cy - 10 : cy + 18;
+        out.push('<circle cx="' + _n(cx) + '" cy="' + _n(cy) + '" r="4.5" fill="' + col + '"/>');
+        out.push('<text x="' + _n(tx) + '" y="' + _n(ly) + '" text-anchor="middle" font-size="11" '
+          + 'style="paint-order:stroke;stroke:' + th.surface + ';stroke-width:3px;stroke-linejoin:round;">'
+          + '<tspan font-weight="700" fill="' + col + '">' + _esc(label) + '</tspan>'
+          + (date ? '<tspan fill="' + th.muted + '"> · ' + _esc(date) + '</tspan>' : '')
+          + '</text>');
+      }
+      extreme(pk.peakIdx, pk.peakV, true, pk.peakMerged);
+      extreme(pk.floorIdx, pk.floorV, false, pk.floorMerged);
+    }
+    // End dots + stacked end labels (name over value, plain text, no pill).
+    var centers = endJobs.map(function (j) { return Y(j.val); });
+    var order = centers.map(function (c, i) { return i; }).sort(function (p, q) { return centers[p] - centers[q]; });
+    var adj = centers.slice();
+    for (var oi = 1; oi < order.length; oi++) {
+      var prev = adj[order[oi - 1]], curI = order[oi];
+      if (adj[curI] - prev < 30) adj[curI] = prev + 30;
+    }
+    for (var oj = order.length - 1; oj >= 0; oj--) {
+      var jj = order[oj];
+      if (adj[jj] > plotB - 8) adj[jj] = plotB - 8;
+      if (oj < order.length - 1 && adj[order[oj + 1]] - adj[jj] < 30) adj[jj] = adj[order[oj + 1]] - 30;
+    }
+    endJobs.forEach(function (j, ji) {
+      var cx = X(j.s.units[j.idx]), cy = Y(j.val);
+      out.push('<circle cx="' + _n(cx) + '" cy="' + _n(cy) + '" r="' + (j.s.hero ? 5 : 4) + '" fill="' + j.s.color + '"/>');
+      var ly = adj[ji];
+      var vFill = j.s.color;
+      var valHtml = _esc(fmtVal(j.val));
+      if (pk && j.s === series[0] && pk.peakMerged) {
+        valHtml += '<tspan fill="' + th.win + '"> · Peak</tspan>';
+      }
+      if (pk && j.s === series[0] && pk.floorMerged) {
+        valHtml += '<tspan fill="' + th.loss + '"> · Low</tspan>';
+      }
+      out.push('<text x="' + _n(plotR + 10) + '" y="' + _n(ly - 2) + '" font-size="11" font-weight="700" '
+        + 'fill="' + th.text + '">' + _esc(j.s.name) + '</text>');
+      out.push('<text x="' + _n(plotR + 10) + '" y="' + _n(ly + 13) + '" font-size="12" font-weight="700" '
+        + 'fill="' + vFill + '">' + valHtml + '</text>');
+    });
+    // Crosshair + hover dots (hidden until hover).
+    out.push('<g class="br-vh-hover" style="display:none;">'
+      + '<line class="br-vh-cross" x1="0" y1="' + padT + '" x2="0" y2="' + plotB + '" '
+      + 'stroke="' + th.muted + '" stroke-width="1" stroke-dasharray="4 3" stroke-opacity="0.6"/>'
+      + '<g class="br-vh-hdots"></g></g>');
+    out.push('<rect class="br-vh-overlay" x="' + padL + '" y="' + padT + '" width="' + _n(plotW) + '" '
+      + 'height="' + _n(plotH) + '" fill="transparent"/>');
+    out.push('</svg>');
+    out.push('<div class="br-vh-tip" style="display:none;"></div>');
+    container.innerHTML = out.join('');
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+
+    var svg = container.querySelector('svg.br-vh-svg');
+    var tip = container.querySelector('.br-vh-tip');
+    var hoverG = container.querySelector('.br-vh-hover');
+    var cross = container.querySelector('.br-vh-cross');
+    var hdots = container.querySelector('.br-vh-hdots');
+    var overlay = container.querySelector('.br-vh-overlay');
+    // Union axis for hover snapping.
+    var union = axisLabels.map(function (e) { return e.u; });
+    function nearestSeriesPoint(s, u) {
+      var best = -1, bd = Infinity;
+      s.units.forEach(function (uu, i) {
+        if (s.vals[i] == null) return;
+        var dd = Math.abs(uu - u);
+        if (dd < bd) { bd = dd; best = i; }
+      });
+      return best;
+    }
+    function onMove(evt) {
+      if (!union.length || !svg) return;
+      var rect = svg.getBoundingClientRect();
+      var mx = (evt.touches ? evt.touches[0].clientX : evt.clientX) - rect.left;
+      var frac = (mx - padL) / plotW;
+      var u = xMin + frac * (xMax - xMin);
+      var snap = union[0], sd = Infinity;
+      union.forEach(function (uu) { var dd = Math.abs(uu - u); if (dd < sd) { sd = dd; snap = uu; } });
+      var cxp = X(snap);
+      cross.setAttribute('x1', cxp); cross.setAttribute('x2', cxp);
+      var dotsHtml = '', rows = '', dateLbl = '';
+      series.forEach(function (s) {
+        var ii = mode === 'index' ? (s.units.indexOf(snap) >= 0 && s.vals[s.units.indexOf(snap)] != null ? s.units.indexOf(snap) : -1)
+          : nearestSeriesPoint(s, snap);
+        if (ii < 0) return;
+        var v = s.vals[ii];
+        dotsHtml += '<circle cx="' + _n(X(s.units[ii])) + '" cy="' + _n(Y(v)) + '" r="4" fill="' + s.color + '"/>';
+        rows += '<div class="br-vh-tip-row"><span class="br-vh-tip-sq" style="background:' + s.color + '"></span>'
+          + _esc(s.name) + '<b>' + _esc(fmtVal(v)) + '</b></div>';
+        if (!dateLbl) dateLbl = s.labels[ii] || '';
+      });
+      if (!rows) { hoverG.style.display = 'none'; tip.style.display = 'none'; return; }
+      hdots.innerHTML = dotsHtml;
+      hoverG.style.display = '';
+      tip.innerHTML = '<div class="br-vh-tip-date">' + _esc(dateLbl) + '</div>' + rows;
+      tip.style.display = '';
+      var flip = cxp > padL + plotW * 0.55;
+      var tw = tip.offsetWidth || 140;
+      tip.style.left = (flip ? Math.max(cxp - tw - 12, 0) : Math.min(cxp + 12, W - tw)) + 'px';
+      tip.style.top = (padT + 4) + 'px';
+    }
+    function onLeave() { hoverG.style.display = 'none'; tip.style.display = 'none'; }
+    if (overlay) {
+      overlay.addEventListener('mousemove', onMove);
+      overlay.addEventListener('touchmove', onMove, { passive: true });
+      overlay.addEventListener('mouseleave', onLeave);
+      overlay.addEventListener('touchend', onLeave);
+    }
+    container._brVhRedraw = function () { render(container, opts); };
+    if (!container._brVhWired) {
+      container._brVhWired = true;
+      var lastW = container.clientWidth, rT = null;
+      window.addEventListener('resize', function () {
+        if (!container.isConnected) return;
+        if (Math.abs(container.clientWidth - lastW) < 3) return;
+        lastW = container.clientWidth;
+        clearTimeout(rT);
+        rT = setTimeout(function () { if (container._brVhRedraw) container._brVhRedraw(); }, 120);
+      });
+      if (typeof MutationObserver === 'function') {
+        var mo = new MutationObserver(function () {
+          if (!container.isConnected) { mo.disconnect(); return; }
+          if (container._brVhRedraw) container._brVhRedraw();
+        });
+        mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      }
+    }
+  }
+
+  return {
+    render: render,
+    monotonePath: _monoPath,
+    tangents: _tangents,
+    heroColor: HERO,
+    sky: SKY,
+  };
+})();
+
 function _fixOnePlotly(gd) {
   const P = window.Plotly;
   if (!P || !gd) return;
@@ -22479,6 +22950,22 @@ function _cmpHistSeries(p) {
 function _cmpHistLabel() {
   return _cmpIsRedraft() ? 'Redraft Value History' : 'Dynasty Value History';
 }
+// Shared point builder for the SVG compare charts (BRValueChart time mode):
+// one {t, v, label} point per history row with a parseable date.
+function _cmpHistPoints(p) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return (_cmpHistSeries(p) || []).map(h => {
+    const d = h && (h.as_of_date || h.date);
+    const t = d ? Date.parse(d) : NaN;
+    if (isNaN(t)) return null;
+    const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return {
+      t: t,
+      v: _cmpHistValue(h),
+      label: m ? months[parseInt(m[2], 10) - 1] + ' ' + parseInt(m[3], 10) : String(d),
+    };
+  }).filter(Boolean);
+}
 function _cmpToggleChartBlock(div, show) {
   if (!div) return;
   div.style.display = show ? '' : 'none';
@@ -24492,7 +24979,11 @@ function _compareWireView(p1, p2) {
   window._cmpLazy = { p1: p1, p2: p2, b1: b1, b2: b2, statsDone: false, metricsDone: false };
 
   // Draw (or redraw, on a Dynasty/Redraft toggle flip) the two-player
-  // value-history chart from the ACTIVE format's series per player.
+  // value-history chart from the ACTIVE format's series per player, with
+  // the shared BRValueChart SVG renderer (same system as the player modal
+  // chart): player 1 gets the navy hero treatment with its gradient, player
+  // 2 the solid sky line, stacked end labels with the player's name over
+  // the current value, and a unified hover over both series.
   const _drawCmpChart = () => {
     const chartDiv = document.getElementById('compareValueChart');
     if (!chartDiv) return;
@@ -24501,17 +24992,26 @@ function _compareWireView(p1, p2) {
     const _anyActive = [p1, p2].some(p => (_cmpHistSeries(p) || []).length > 0);
     _cmpToggleChartBlock(chartDiv, _anyActive);
     if (!_anyActive) return;
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const _ct = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
-    const gridColor = _ct.grid || (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)');
-    const textColor = _ct.text || (isDark ? '#9ca3af' : '#6b7280');
-    // Shared date axis from whichever side(s) have real history, so a tier
-    // average can be drawn as a flat dashed reference line across the same span.
-    let _axis = [];
-    [p1, p2].forEach(p => (_cmpHistSeries(p) || []).forEach(h => { const d = h.as_of_date || h.date; if (d) _axis.push(d); }));
-    _axis = Array.from(new Set(_axis)).sort();
-    if (!_axis.length) _axis = [new Date().toISOString().slice(0, 10)];
-    const makeTrace = (p, isB, color) => {
+    if (!window.BRValueChart) return;
+    // A tier average draws as a shaded value band (its min-max dynasty
+    // value across the tier) with a dashed reference line at the average,
+    // so it reads as a range rather than a single hard line. The bands are
+    // dynasty ranges, so they are skipped in redraft mode.
+    const _bands = [];
+    const _refLines = [];
+    const _cmpColors = [window.BRValueChart.heroColor, window.BRValueChart.sky];
+    const _pair = [[p1, b1], [p2, b2]];
+    if (!_cmpIsRedraft()) {
+      const _bandRgb = ['59,130,246', '245,158,11'];
+      _pair.forEach(([p, isB], i) => {
+        const band = _cmpIsSf() ? (p.sf_value_band || p.value_band) : p.value_band;
+        if (isB && Array.isArray(band) && band.length === 2) {
+          _bands.push({ min: band[0], max: band[1], fill: `rgba(${_bandRgb[i]},0.10)` });
+        }
+      });
+    }
+    const _cmpSeries = [];
+    _pair.forEach(([p, isB], i) => {
       if (isB) {
         // Tier averages carry no redraft stats, so in redraft mode the
         // reference line simply does not draw (never a dynasty value
@@ -24521,58 +25021,23 @@ function _compareWireView(p1, p2) {
           : _cmpIsSf()
           ? ((p.stats && p.stats.sf_value) != null ? p.stats.sf_value : (p.stats && p.stats.value))
           : ((p.stats && p.stats.value) != null ? p.stats.value : null);
-        return {
-          x: _axis, y: _axis.map(() => v), mode: 'lines', name: p.name,
-          line: { color, width: 2, dash: 'dash' },
-          hovertemplate: `<b>${p.name}</b><br>tier average<br>Value: ${v}<extra></extra>`,
-        };
-      }
-      const _series = _cmpHistSeries(p) || [];
-      const dates = _series.map(h => h.as_of_date || h.date);
-      const vals  = _series.map(h => _cmpHistValue(h));
-      return {
-        x: dates, y: vals, mode: 'lines', name: p.name,
-        line: { color, width: 2.5 },
-        hovertemplate: `<b>${p.name}</b><br>%{x}<br>Value: %{y}<extra></extra>`,
-      };
-    };
-    const traces = [
-      makeTrace(p1, b1, '#3b82f6'),
-      makeTrace(p2, b2, '#f59e0b'),
-    ];
-    // Draw a tier average as a shaded value band (its min-max dynasty value across
-    // the tier) with the average as the dashed line through it, so it reads as a
-    // range rather than a single hard line. The bands are dynasty ranges, so
-    // they are skipped in redraft mode.
-    const _bandShapes = [];
-    if (!_cmpIsRedraft()) {
-      [[p1, b1, '59,130,246'], [p2, b2, '245,158,11']].forEach(([p, isB, rgb]) => {
-        const band = _cmpIsSf() ? (p.sf_value_band || p.value_band) : p.value_band;
-        if (isB && Array.isArray(band) && band.length === 2) {
-          _bandShapes.push({
-            type: 'rect', xref: 'paper', x0: 0, x1: 1, yref: 'y',
-            y0: band[0], y1: band[1],
-            fillcolor: `rgba(${rgb},0.10)`, line: { width: 0 }, layer: 'below',
-          });
+        if (v != null && isFinite(Number(v))) {
+          _refLines.push({ value: Number(v), color: _cmpColors[i], name: p.name });
         }
+        return;
+      }
+      _cmpSeries.push({
+        name: p.name,
+        points: _cmpHistPoints(p),
+        color: _cmpColors[i],
+        width: i === 0 ? 3 : 2.5,
+        hero: i === 0,
       });
-    }
-    const _cmpLayout = {
-      paper_bgcolor: 'transparent',
-      plot_bgcolor: 'transparent',
-      font: { family: window.brandPlotlyFont, color: textColor },
-      margin: { t: 10, r: 16, b: 40, l: 46 },
-      xaxis: { showgrid: false, tickfont: { size: 11, color: textColor }, zeroline: false },
-      yaxis: { showgrid: true, gridcolor: gridColor, tickfont: { size: 11, color: textColor }, zeroline: false },
-      legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
-      hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 }, bgcolor: _ct.hoverBg, bordercolor: _ct.hoverBorder },
-      hovermode: 'x unified',
-      showlegend: true,
-      shapes: _bandShapes,
-    };
-    if (window.ensurePlotly) window.ensurePlotly().then(function () {
-      Plotly.newPlot(chartDiv, traces, _cmpLayout, { responsive: true, displayModeBar: false });
-    }).catch(function () {});
+    });
+    window.BRValueChart.render(chartDiv, {
+      height: 250, mode: 'time',
+      series: _cmpSeries, bands: _bands, refLines: _refLines,
+    });
   };
   _drawCmpChart();
   window._cmpRedrawValueCharts = function () {
@@ -25109,40 +25574,30 @@ function _cmp3UsageTable(players, weeksArr) {
     + '<div class="cmp3-meta" style="text-align:right;padding:8px 4px 0;">Season avg &middot; &#9650;&#9660; = last-3-wk trend</div></div>';
 }
 
-// Three-line value-history chart for the 3-way compare. Mirrors the two-player
-// #compareValueChart (same Plotly theming + hover), one line per player.
-// Plots the ACTIVE Dynasty/Redraft format's series per player, like the
-// two-player chart; the triple view registers its own toggle redraw below.
+// Three-line value-history chart for the 3-way compare. Mirrors the
+// two-player #compareValueChart (same BRValueChart SVG system + hover),
+// one line per player: navy hero, sky, then the existing third color
+// #22c55e. Plots the ACTIVE Dynasty/Redraft format's series per player,
+// like the two-player chart; the triple view registers its own toggle
+// redraw below.
 function _renderTripleValueChart(players) {
   const chartDiv = document.getElementById('compareTripleChart');
   if (!chartDiv) return;
   const _anyActive = (players || []).some(p => (_cmpHistSeries(p) || []).length > 0);
   _cmpToggleChartBlock(chartDiv, _anyActive);
   if (!_anyActive) return;
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const _ct = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
-  const gridColor = _ct.grid || (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)');
-  const textColor = _ct.text || (isDark ? '#9ca3af' : '#6b7280');
-  const traces = players.map((p, i) => ({
-    x: (_cmpHistSeries(p) || []).map(h => h.as_of_date || h.date),
-    y: (_cmpHistSeries(p) || []).map(h => _cmpHistValue(h)),
-    mode: 'lines', name: p.name,
-    line: { color: _CMP3_COLORS[i], width: 2.5 },
-    hovertemplate: '<b>' + (p.name || '') + '</b><br>%{x}<br>Value: %{y}<extra></extra>',
+  if (!window.BRValueChart) return;
+  const _colors = [window.BRValueChart.heroColor, window.BRValueChart.sky, '#22c55e'];
+  const _series = players.map((p, i) => ({
+    name: p.name,
+    points: _cmpHistPoints(p),
+    color: _colors[i],
+    width: i === 0 ? 3 : 2.5,
+    hero: i === 0,
   }));
-  const layout = {
-    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
-    font: { family: window.brandPlotlyFont, color: textColor },
-    margin: { t: 10, r: 16, b: 40, l: 46 },
-    xaxis: { showgrid: false, tickfont: { size: 11, color: textColor }, zeroline: false },
-    yaxis: { showgrid: true, gridcolor: gridColor, tickfont: { size: 11, color: textColor }, zeroline: false },
-    legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
-    hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 }, bgcolor: _ct.hoverBg, bordercolor: _ct.hoverBorder },
-    hovermode: 'x unified', showlegend: true,
-  };
-  if (window.ensurePlotly) window.ensurePlotly().then(function () {
-    Plotly.newPlot(chartDiv, traces, layout, { responsive: true, displayModeBar: false });
-  }).catch(function () {});
+  window.BRValueChart.render(chartDiv, {
+    height: 250, mode: 'time', series: _series,
+  });
 }
 
 function openComparisonView(p1, p2) {

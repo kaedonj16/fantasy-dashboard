@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
+        "tag": "new",
+        "text": "Value History charts rebuilt: the player card, compare and player page value history graphs are now drawn in the site's own style instead of the old chart library. The main line runs in deep navy with a soft gradient under it, Superflex shows as a dashed sky line with the space between the two lines shaded, each line ends with its name and current value stacked beside it, and Peak and Low are marked in green and red with their dates. Lines pass through every real value exactly, with smooth corners and no invented highs or lows, and hovering shows the true values for that date.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-11-02",
         "tag": "fix",
         "text": "Player Rankings freshness and hover fixes: Total Points and PPG now count each player's own finished games as soon as they end, matching the player card instead of waiting for the next full update. The hover quick look opens even while the board is still loading if you are already resting on a row, its trend, game log, and matchup sections time out and retry cleanly instead of spinning forever, and repeat visits skip work the server has already done so the board settles faster.",
         "link": "/players"

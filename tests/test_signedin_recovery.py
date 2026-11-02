@@ -8,8 +8,9 @@ popstate then tore down the freshly reopened modal, so the button read as
 
 Item 2: the modal's RECENT NEWS section gets its own in-section error +
 Retry (its bounded fetch layer shipped in #2704), and the VALUE HISTORY
-chart can no longer fail silently into a grey box when the lazy Plotly
-load rejects / is absent / draws nothing.
+chart can no longer fail silently into a grey box: it renders through the
+shared BRValueChart SVG renderer, and a missing helper / thrown draw /
+empty result lands on the same compact error + Retry.
 
 Item 3: the waivers "Best moves" candidates loader gained its 20s abort
 in #2704; this adds the sibling sections' 25s DOM failsafe so a skeleton
@@ -93,22 +94,25 @@ def test_news_failure_lands_on_section_error_with_retry():
 # ── Item 2b: value-history chart guard ───────────────────────────────────
 
 def test_chart_draw_failures_land_on_error_with_redraw():
-    block = _block(MODAL, "const _vhDrawFailed = function ()", "if (window.ensurePlotly)")
+    # A failed SVG draw (helper missing / draw throws) lands on the compact
+    # in-section error, whose Retry redraws against the same history.
+    block = _block(MODAL, "const _vhDrawFailed = function ()", "// Time-range filter")
     assert "chartDiv.isConnected" in block
     assert "window.brErrorState(chartDiv, 'Could not load value history.'" in block
     assert "renderChart(_vhLastHistory)" in block
 
 
 def test_chart_draw_is_verified_and_never_swallowed():
-    # The draw result is returned and verified to have produced a plot.
-    assert "return Plotly.newPlot('playerValueChart', traces, layout, {" in MODAL
-    assert "if (!chartDiv.querySelector('.main-svg') && !chartDiv._fullLayout) _vhDrawFailed();" in MODAL
-    assert "}).catch(_vhDrawFailed);" in MODAL
-    # Missing ensurePlotly also lands on the guard, and the old silent
-    # swallow after the Plotly load is gone.
-    chart_region = _block(MODAL, "const _vhDrawFailed = function ()", "// Time-range filter")
-    assert "} else {" in chart_region and "_vhDrawFailed();" in chart_region
-    assert "}).catch(function () {});" not in chart_region
+    # The draw goes through the shared BRValueChart SVG renderer and its
+    # result is verified to have produced a chart; every failure path is
+    # routed to _vhDrawFailed instead of landing silently.
+    region = _block(MODAL, "function renderChart(history) {", "// Time-range filter")
+    assert "window.BRValueChart.render(chartDiv, {" in region
+    assert "if (!window.BRValueChart) throw new Error('BRValueChart unavailable');" in region
+    assert "if (!chartDiv.querySelector('svg.br-vh-svg')) _vhDrawFailed();" in region
+    assert "} catch (e) {\n              _vhDrawFailed();" in region
+    # The modal's value-history path carries no Plotly at all anymore.
+    assert "Plotly" not in MODAL
     # The redraw target tracks the last rendered subset (range switches).
     assert "let _vhLastHistory = fullHistory;" in MODAL
     assert "_vhLastHistory = history;" in MODAL

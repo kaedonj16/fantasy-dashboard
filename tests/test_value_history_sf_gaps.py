@@ -128,7 +128,10 @@ def test_modal_chart_maps_sf_nulls_to_gaps_and_pins_height():
 
 
 def test_player_page_chart_maps_sf_nulls_to_gaps_and_pins_height():
+    # BRValueChart rewrite: the SF series still maps a missing SF value to
+    # null (a line gap, never the 1QB value) and the container height is
+    # still pinned before render; only the expression's shape changed.
     src = (ROOT / "static" / "player_page.js").read_text()
-    assert "d.value_sf != null ? d.value_sf : null" in src
+    assert "d.value_sf != null ? Number(d.value_sf) : null" in src
     assert "d.value_sf : d.value_1qb" not in src
-    assert "div.style.height = chartH + 'px'" in src
+    assert 'div.style.height = chartH + "px"' in src

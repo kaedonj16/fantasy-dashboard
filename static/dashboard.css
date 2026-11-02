@@ -23023,9 +23023,54 @@ img, svg, canvas {
     margin-top: 3px;
     font-variant-numeric: tabular-nums;
 }
+/* Summary Peak/Floor take the win/loss tokens, matching the chart markers. */
+.pm-vh-ext-peak .pm-vh-ext-k,
+.pm-vh-ext-peak .pm-vh-ext-v { color: var(--win); }
+.pm-vh-ext-floor .pm-vh-ext-k,
+.pm-vh-ext-floor .pm-vh-ext-v { color: var(--loss); }
 @media (max-width: 768px) {
     .pm-vh-extremes { margin-left: 0; }
     .pm-vh-now-val { font-size: 22px; }
+}
+
+/* Hand-built SVG value-history chart (BRValueChart in app.js): tooltip card
+   shared by the player modal, compare and player-page charts. */
+.br-vh-svg {
+    display: block;
+}
+.br-vh-tip {
+    position: absolute;
+    z-index: 6;
+    pointer-events: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: nowrap;
+}
+.br-vh-tip-date {
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+.br-vh-tip-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.br-vh-tip-row b {
+    margin-left: auto;
+    padding-left: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.br-vh-tip-sq {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex: 0 0 auto;
 }
 
 .player-modal-loading {
