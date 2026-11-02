@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -228,23 +229,124 @@ _TOP_THREE_POS_NAMES = {
 }
 
 
-def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = None) -> str:
-    """Per-position scorer cards for the Weekly Hub Scorers tab.
+# Position hues for the Scorers panel: solid (points bar) + soft tint
+# (#1 row only). Mirrors the .pos-badge palette (QB blue / RB green /
+# WR amber / TE purple / K pink / DEF slate).
+_SCORER_POS_COLORS = {
+    "QB": ("#2563eb", "rgba(37, 99, 235, 0.07)"),
+    "RB": ("#22c55e", "rgba(34, 197, 94, 0.08)"),
+    "WR": ("#f59e0b", "rgba(245, 158, 11, 0.09)"),
+    "TE": ("#8b5cf6", "rgba(139, 92, 246, 0.08)"),
+    "K": ("#c92c68", "rgba(201, 44, 104, 0.07)"),
+    "DEF": ("#475569", "rgba(71, 85, 105, 0.08)"),
+}
 
+_ESPN_HEADSHOT_PATH_RE = re.compile(
+    r"espncdn\.com(/i/headshots/[^?]+\.(?:png|jpg|jpeg))", re.IGNORECASE)
+
+
+def _scorer_headshot_url(row: dict) -> str:
+    """Canonical ESPN headshot URL for a scorer row, or "" when the player
+    has none. Rows built by the hub chain carry only a pid, so resolve the
+    stored espnHeadshot / espnID from the players index exactly like
+    _stamp_espn_headshot does for the league-players payloads, then apply
+    the same combiner transform as app.py's _hires_headshot_url (the
+    combiner serves the native 600x436 source; nothing is upscaled)."""
+    pid = str(row.get("pid") or "")
+    espn = str(row.get("espnHeadshot") or row.get("headshot") or "").strip()
+    espn_id = str(row.get("espnID") or row.get("espn_id") or "").strip()
+    if not espn and pid:
+        try:
+            from utils.utils import load_players_index
+            meta = (load_players_index() or {}).get(pid) or {}
+            espn = str(meta.get("espnHeadshot") or "").strip()
+            if not espn_id:
+                espn_id = str(meta.get("espnID") or "").strip()
+        except Exception:
+            pass
+    if not espn and espn_id:
+        espn = f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png"
+    if not espn:
+        return ""
+    if "/combiner/" in espn:
+        return espn
+    m = _ESPN_HEADSHOT_PATH_RE.search(espn)
+    if not m:
+        return espn
+    return (f"https://a.espncdn.com/combiner/i?img={m.group(1)}"
+            f"&w=160&scale=crop&cquality=100")
+
+
+def _scorer_team_badge(team) -> str:
+    """Her two-tone NFL team badge, server-side mirror of
+    window.brTeamBadge (static/app.js): rounded rect in the team primary
+    (var --badge-primary), secondary-colour stripe on the left edge
+    (.team-badge::before), bold white abbreviation. Colours come from
+    utils.rb_usage.TEAM_COLORS, whose primary/secondary pairs are
+    identical to BR_TEAM_COLORS for all 32 teams."""
+    abbr = ""
+    try:
+        from utils.nfl import canon_team
+        abbr = canon_team(team) or ""
+    except Exception:
+        abbr = str(team or "").strip().upper()
+    if not abbr:
+        return ""
+    try:
+        from utils.rb_usage import TEAM_COLORS
+        colors = TEAM_COLORS.get(abbr) or ["#334155", "#64748b"]
+    except Exception:
+        colors = ["#334155", "#64748b"]
+    return (f'<span class="team-badge team-badge-md wk-badge" '
+            f'style="--badge-primary:{colors[0]};--badge-secondary:{colors[1]}" '
+            f'aria-label="{abbr}">{abbr}</span>')
+
+
+def _scorer_identity_html(pos: str, row: dict, team: str) -> str:
+    """Identity slot for one scorer row. A player with an ESPN headshot
+    gets the bust image (transparent combiner PNG, flush with the row
+    bottom via .wk-face; no disc or badge behind it). A DEF row has no
+    person, so it always gets the two-tone team badge as a rounded rect;
+    any other row with no headshot available (a kicker without one, a
+    pid the index cannot resolve) falls back to that same badge for his
+    NFL team, never an initials disc."""
+    if pos != "DEF":
+        url = _scorer_headshot_url(row)
+        if url:
+            return (f"<img class='wk-face' src='{html.escape(url, quote=True)}' "
+                    f"alt='' loading='lazy' decoding='async' "
+                    f"onerror='this.remove()'>")
+    return _scorer_team_badge(team or row.get("pid") or "")
+
+
+def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = None) -> str:
+    """Per-position scorers for the Weekly Hub Scorers tab: ONE unified
+    panel (.wk-scorers-panel) holding a .wk-pos-section per position
+    (pos-badge chip + full position name header, one .wk-srow per
+    scorer on a shared rank | identity | name+meta | points grid, the
+    points column carrying a bar scaled to the position leader).
     Renders however many rows each position list in top_by_pos carries
-    (the hub's pool builders pass the top 5; the shared default depth is
-    3). Markup is a .wk-scorers-grid of .wk-pos-card cards (pos-badge chip
-    + full position name header, one .wk-srow per scorer). On desktop the
-    hub CSS fills the panel with the grid and shares each card's height
-    evenly across its rows; on mobile the grid is a single column list.
+    (the hub's pool builders pass the top 5; the shared default depth
+    is 3). The #1 row of each section steps up (taller, bigger bust,
+    name and points) on a soft position-colour tint. On desktop the
+    hub CSS fills the panel height and shares it evenly across rows;
+    on mobile the panel is a single column of natural-height rows.
     """
     def card(pos, rows):
         title = _TOP_THREE_POS_NAMES.get(pos, pos)
+        color, tint = _SCORER_POS_COLORS.get(pos, ("#64748b", "rgba(100, 116, 139, 0.08)"))
         head = (f"<div class='wk-pos-head'><span class='pos-badge {pos}'>{pos}</span>"
                 f"<h3>{title}</h3></div>")
         if not rows:
-            return (f"<div class='wk-pos-card'>{head}"
-                    f"<div class='wk-pos-rows'><div class='wk-nodata'>No data</div></div></div>")
+            return (f"<section class='wk-pos-section' style='--wk-pos:{color};--wk-tint:{tint}'>"
+                    f"{head}"
+                    f"<div class='wk-pos-rows'><div class='wk-nodata'>No data</div></div></section>")
+        leader = 0.0
+        for r in rows:
+            try:
+                leader = max(leader, float(r.get("pts") or r.get("points") or 0.0))
+            except (TypeError, ValueError):
+                pass
         lis = []
         for i, r in enumerate(rows, start=1):
             team = r.get("nfl") or r.get("team", "")
@@ -263,21 +365,32 @@ def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = No
             # Make team name clickable
             team_clickable = f"<span class='team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{owner}'>{owner}</span>" if roster_id else owner
 
+            try:
+                bar_pct = (float(pts) / leader * 100.0) if leader > 0 else 0.0
+            except (TypeError, ValueError):
+                bar_pct = 0.0
+            top_attr = " data-top='1'" if i == 1 else ""
+            identity = _scorer_identity_html(pos, r, team)
+
             lis.append(
-                f"<div class='wk-srow'>"
+                f"<div class='wk-srow'{top_attr}>"
                 f"  <span class='wk-rk'>{i}</span>"
+                f"  <span class='wk-id'>{identity}</span>"
                 f"  <span class='wk-who'>"
                 f"    <span{clickable_attrs}>{player_name}</span>"
                 f"    <span class='wk-tm'>{team} · {team_clickable}</span>"
                 f"  </span>"
-                f"  <span class='wk-pt'>{pts:.1f}</span>"
+                f"  <span class='wk-pts'><span class='wk-pt'>{pts:.1f}</span>"
+                f"  <span class='wk-sbar'><span class='wk-sbar-fill' style='width:{bar_pct:.1f}%'></span></span></span>"
                 f"</div>"
             )
-        return f"<div class='wk-pos-card'>{head}<div class='wk-pos-rows'>{''.join(lis)}</div></div>"
+        return (f"<section class='wk-pos-section' style='--wk-pos:{color};--wk-tint:{tint}'>"
+                f"{head}<div class='wk-pos-rows'>{''.join(lis)}</div></section>")
 
     _render_positions = positions if positions else ["QB", "RB", "WR", "TE", "K", "DEF"]
     blocks = [card(pos, top_by_pos.get(pos, [])) for pos in _render_positions]
-    return "<div class='wk-scorers-grid'>" + "".join(blocks) + "</div>"
+    return ("<div class='wk-scorers-panel'><div class='wk-scorers-grid'>"
+            + "".join(blocks) + "</div></div>")
 
 
 def _seed_zero_standings(owner_avatar: dict) -> pd.DataFrame:

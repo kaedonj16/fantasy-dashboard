@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
+        "tag": "new",
+        "text": "Weekly Hub Scorers rebuilt as one clean panel instead of four separate cards: every position lines up on the same grid, each player carries his real headshot, the top scorer at each position steps up a size on a soft tint, and a thin bar under each score shows how close it sits to that position's best. Defenses show their two-tone team badge in place of a headshot, and a kicker without a photo gets his team's badge too.",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-02",
         "tag": "fix",
         "text": "Prospect percentiles are now graded only against drafted players from the 2016 to 2024 classes, never against the current class, and the historical pool behind them is rebuilt with full games played data, so the season and per-game stat percentiles that used to show a dash now fill in with real numbers.",
         "link": "/prospects"
