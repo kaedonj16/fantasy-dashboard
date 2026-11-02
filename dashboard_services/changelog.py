@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-01",
         "tag": "fix",
+        "text": "Trade Calculator: player chips had the name and value flipped on phones, with the value sitting beside the headshot and the name pushed to the right edge. Chips now read headshot, name, then value, chip values repaint from the same trade evaluation that prices the summary so a chip can never show a different value than the Trade Summary totals, and on phones a divider line separates the Team 1 and Team 2 sides so the two sides no longer run together.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-11-01",
+        "tag": "fix",
         "text": "Closed the last two gaps in the app's memory limit on My Leagues: refreshing your league cards and rebuilding live matchup scores now share the same strict per-worker limit as every other heavy background job. Before this, opening My Leagues with 11 leagues could run 11 live matchup rebuilds at once on top of everything else. Anything over the limit now waits for the next refresh instead of piling up and restarting the app.",
         "link": "/portfolio"
     },

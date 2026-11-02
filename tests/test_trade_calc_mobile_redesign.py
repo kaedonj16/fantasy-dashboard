@@ -261,6 +261,41 @@ def test_redesign_css_uses_no_new_breakpoints_or_pill_radius():
     assert "999px" not in block
 
 
+def test_chip_columns_are_pinned_not_auto_placed():
+    # Regression (2026-11-01 screenshot): the legacy phone blocks pin
+    # .otc-chip-main to column 1 and .otc-chip-value-wrap to column 2, so
+    # once the face was prepended the auto-placed name block landed in
+    # column 3 and the value in column 2: name and value read flipped.
+    # The redesign section must pin face/name/value to 1/2/3 explicitly,
+    # in the all-widths rules AND the phone block (whose .otc-chip-main
+    # rule used to reset grid-column to auto).
+    block = _redesign_css()
+    base, phone = block.split("@media (max-width: 640px)", 1)
+    for chunk in (base, phone):
+        main = chunk.split(".otc-chip-main {", 1)[1].split("}", 1)[0]
+        assert "grid-column: 2" in main
+        wrap = chunk.split(".otc-chip-value-wrap {", 1)[1].split("}", 1)[0]
+        assert "grid-column: 3" in wrap
+    face = base.split(".otc-chip-face {", 1)[1].split("}", 1)[0]
+    assert "grid-column: 1" in face
+    tile = base.split(".otc-chip-pick-tile {", 1)[1].split("}", 1)[0]
+    assert "grid-column: 1" in tile
+
+
+def test_phone_sides_are_separated_by_a_divider():
+    phone = _redesign_css().split("@media (max-width: 640px)", 1)[1]
+    divider = phone.split(".otc-team-card + .otc-team-card {", 1)[1].split("}", 1)[0]
+    assert "border-top: 1px solid var(--border)" in divider
+
+
+def test_changelog_announces_the_chip_flip_fix():
+    from pin_helpers import changelog_entry
+
+    entry = changelog_entry("name and value flipped", tag="fix", link="/trade")
+    assert entry["date"] == "2026-11-01"
+    assert "—" not in entry["text"]  # no em dashes in UI copy
+
+
 def test_changelog_announces_the_redesign():
     from pin_helpers import changelog_entry
 

@@ -54886,7 +54886,20 @@ body.otc-sticky-on { padding-bottom: 72px; }
 .otc-chip {
     grid-template-columns: auto minmax(0, 1fr) auto;
 }
+/* Chip columns are pinned, never auto-placed: the legacy phone blocks
+   above pin .otc-chip-main to column 1 and .otc-chip-value-wrap to
+   column 2, so with the face prepended the auto-placed name block slid
+   into column 3 and the value into column 2 (name and value flipped on
+   phones). Face left, name middle, value right, at every width. */
+.otc-chip-main {
+    grid-column: 2;
+}
+.otc-chip-value-wrap {
+    grid-column: 3;
+}
 .otc-chip-face {
+    grid-column: 1;
+    grid-row: 1;
     position: relative;
     width: 36px;
     height: 40px;
@@ -54914,6 +54927,8 @@ body.otc-sticky-on { padding-bottom: 72px; }
     display: block;
 }
 .otc-chip-pick-tile {
+    grid-column: 1;
+    grid-row: 1;
     width: 36px;
     height: 40px;
     border-radius: 8px;
@@ -54996,6 +55011,12 @@ body.otc-sticky-on { padding-bottom: 72px; }
         border-radius: 0;
         box-shadow: none;
     }
+    /* The flat sides run together without a break, so the second side
+       opens under a hairline divider. */
+    .otc-team-card + .otc-team-card {
+        border-top: 1px solid var(--border);
+        padding-top: 18px;
+    }
     .otc-team-head {
         padding: 0 2px;
         margin-bottom: 8px;
@@ -55059,9 +55080,13 @@ body.otc-sticky-on { padding-bottom: 72px; }
         background: transparent;
     }
     .otc-chip-main {
-        grid-column: auto;
-        grid-row: auto;
+        grid-column: 2;
+        grid-row: 1;
         gap: 3px;
+    }
+    .otc-chip-value-wrap {
+        grid-column: 3;
+        grid-row: 1;
     }
     .otc-chip-name {
         font-size: 15px;
