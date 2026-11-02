@@ -310,3 +310,26 @@ def test_hero_board_styles_are_scoped_to_hp_mb():
             "tour duplicate escapes its scope and can stomp the live board: "
             + selector
         )
+
+
+def test_pos_badge_label_centers_in_chip_not_content_box():
+    """Kaedon's Week 8 screenshot: the FLEX label sat left inside its chip.
+
+    "FLEX" at 11px measures ~28px of glyphs, wider than the chip's padded
+    content box (34 - 8 = 26px desktop, 22px at the old 30px phone width).
+    A word wider than its content box under text-align: center pins to
+    the left padding edge and spills right (measured: 4.0px left offset
+    vs 1.9px right on desktop, and a -2.1px right offset, i.e. overflow,
+    on phones). Flex centering centres the word in the chip itself, and
+    the phone chip keeps the desktop 34px width so the word fits.
+    """
+    css = _CSS.read_text(encoding="utf-8")
+    rules = re.findall(r"\.mb-pos \.pos-badge\s*\{([^}]*)\}", css)
+    assert rules, "expected .mb-pos .pos-badge rules"
+    desktop = rules[0]
+    assert "display: inline-flex" in desktop
+    assert "align-items: center" in desktop
+    assert "justify-content: center" in desktop
+    # No rule may shrink the chip below the width its longest label needs.
+    for body in rules:
+        assert "width: 30px" not in body

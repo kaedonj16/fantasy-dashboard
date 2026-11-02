@@ -2489,9 +2489,36 @@ def render_matchup_slide(
         proj_val = _pid_proj(pid, pos)
         is_bye = False
 
+        # Resolve this player's NFL game once, up front, so the bye verdicts
+        # below and the live-projection blend / game / stats lines further
+        # down all share it. The schedule is the bye authority: when the
+        # player's team has a game this week he is not on a bye, whatever
+        # the metadata says.
+        game = resolve_team_game(nfl, _slide_game_lookup, team_schedule_lookup)
+
         player_index = players.get(pid) or teams.get(pid)
         if player_index:
-            if proj_val == 0.0 and player_index.get("byeWeek") == w:
+            # Metadata fallback only: the player index's byeWeek still
+            # carries prior-season values in production (ARI reads week 8,
+            # its 2025 bye; the real 2026 bye is week 14), and a zero
+            # projection is what a mid-game injury leaves behind once the
+            # feed flips the player to Out. Together they stamped BYE on
+            # Jeremiyah Love's Week 8 row (2026-11-02) even though ARI
+            # played DAL and he banked 2.3 pts before leaving hurt. Only
+            # trust the metadata when no game resolved for his team and
+            # he has no banked points this week.
+            _banked = p.get("pts")
+            _has_banked = (
+                isinstance(_banked, (int, float))
+                and not isinstance(_banked, bool)
+                and _banked > 0
+            )
+            if (
+                game is None
+                and not _has_banked
+                and proj_val == 0.0
+                and player_index.get("byeWeek") == w
+            ):
                 is_bye = True
 
         status = status_by_pid.get(pid)
@@ -2508,10 +2535,6 @@ def render_matchup_slide(
 
         if status == "BYE":
             is_bye = True
-
-        # Resolve this player's NFL game once, up front, so the live-projection
-        # blend below and the game/stats lines further down share it.
-        game = resolve_team_game(nfl, _slide_game_lookup, team_schedule_lookup)
 
         # Schedule-based bye detection: this week's schedule loaded and the
         # player's team is not in it (and no live game resolved either), so
