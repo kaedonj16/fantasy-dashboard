@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-01",
         "tag": "fix",
+        "text": "Trade Calculator: the Trade Fit grade now grades the trade from your side. Value balance follows which way the value breaks (an even swap is a 7, gaining value climbs from there, losing it slides toward the veto line), a partner rated Long shot to accept caps the headline grade at 4.0 no matter how good the rest looks, the playoff score counts your odds change once instead of paying the same signal twice, and the acceptance read now weighs the other team's window, so picks and young players count for more to a rebuilding partner and proven players count for more to a contender.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-11-01",
+        "tag": "fix",
         "text": "Trade Calculator: player chips had the name and value flipped on phones, with the value sitting beside the headshot and the name pushed to the right edge. Chips now read headshot, name, then value, chip values repaint from the same trade evaluation that prices the summary so a chip can never show a different value than the Trade Summary totals, and on phones a divider line separates the Team 1 and Team 2 sides so the two sides no longer run together.",
         "link": "/trade"
     },

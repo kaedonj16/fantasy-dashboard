@@ -365,4 +365,20 @@ renderTradeFit();
 assert.equal(els['#tradeStickyBar'].style.display, 'flex', 'summary leaves -> bar returns');
 assert.equal(els['#tradeStickyValueA'].textContent, '315.7', 'values intact across the toggle');
 
+// ── 7. Long shot acceptance caps the headline; bars stay honest ─────
+state._lastEvalData = {
+  graded: true,
+  diff: 0, abs_diff: 0, fair_threshold: 25.0, fair_pct: 0.07,
+  fit: { value_balance: 9, roster_fit: 9, acceptance: 2, acceptance_label: 'Long shot' },
+};
+state._lastEvalSig = _currentEvalSig();
+state._lastPiData = null;
+state._lastPiSig = '';
+renderTradeFit();
+assert.equal(els['#tradeFitScore'].textContent, '4.0',
+  'Long shot caps the headline at 4.0 (raw average would be 6.7)');
+assert.ok(els['#tradeFitGrid'].innerHTML.includes('>9<'),
+  'component bars stay uncapped under the headline cap');
+assert.equal(els['#tradeAcceptChip'].textContent, 'Acceptance: Long shot');
+
 console.log('CHECKS PASSED');

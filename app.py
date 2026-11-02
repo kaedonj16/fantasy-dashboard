@@ -26403,7 +26403,11 @@ def api_trade_eval():
     _viewer_gets = side_b if viewer_side == "b" else side_a
     _viewer_gives = side_a if viewer_side == "b" else side_b
     if graded and both_sides_filled:
-        fit["value_balance"] = _fit_value_balance(abs_diff, baseline)
+        fit["value_balance"] = _fit_value_balance(
+            float(_viewer_gets.get("effective_total") or 0)
+            - float(_viewer_gives.get("effective_total") or 0),
+            baseline,
+        )
 
         # Roster-context components (roster fit, acceptance, and the
         # counter's partner-player pool) need the league context under
@@ -26472,7 +26476,11 @@ def api_trade_eval():
                 # fills a starter-gap need of the viewer's (cap +3), -3
                 # per danger and -1.5 per caution from the depth model
                 # run on the post-trade roster. Inputs are the depth
-                # model's own outputs, nothing invented.
+                # model's own outputs, nothing invented. The fill credit
+                # stays flat on purpose: weighting it by lineup PPG gain
+                # needs the sim's projection maps, which only exist in
+                # the playoff-impact endpoint, and this context's value
+                # table carries no projected-PPG field to weight by.
                 _viewer_needs = set(_sgn(_counts(_viewer_roster), _floor))
                 _fit_score = 5.0
                 _fills = sum(
@@ -26505,6 +26513,13 @@ def api_trade_eval():
                     _p_surplus = set(_ssu(_p_counts, _floor))
                     _fit_nudge = _afit(
                         _viewer_gives.get("assets") or [], _p_needs, _p_surplus)
+                    # Partner window: a rebuilder prices picks and youth
+                    # up, a contender prices proven age up. Zero whenever
+                    # the context cannot support the read.
+                    _window_nudge = _fit_partner_window(
+                        _viewer_gives.get("assets") or [], _rosters,
+                        _mv_lookup, _partner_roster)[1]
+                    _fit_nudge += _window_nudge
                     _rate = _eacc(
                         float(_viewer_gives.get("effective_total") or 0),
                         float(_viewer_gets.get("effective_total") or 0),
@@ -26803,14 +26818,95 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
 # client hides that bar and averages the rest - never a plausible default
 # in its place.
 
-def _fit_value_balance(abs_diff, baseline):
-    """0-10 from the eval's own numbers: 10 for an even swap, sliding to 0
-    once the gap reaches 40% of the larger side (past the 30% veto line)."""
+def _fit_value_balance(viewer_net, baseline):
+    """0-10, viewer-signed: the grade follows whose way the value breaks.
+
+    ``viewer_net`` is the viewer's effective gain (gets minus gives) and
+    ``baseline`` the larger side's effective total. An even swap is 7;
+    gaining value climbs to 10 at +15% of the larger side; losing value
+    slides to 0 at the 30% veto line, so the component's scale matches
+    the fair band and veto the verdict itself uses instead of the old
+    unsigned 40% curve that scored a 15% loss the same as a 15% gain.
+    """
     try:
-        pct = float(abs_diff or 0) / max(float(baseline or 0), 1.0)
+        net = float(viewer_net or 0)
+        base = max(float(baseline or 0), 1.0)
     except (TypeError, ValueError):
         return None
-    return int(max(0, min(10, round(10 * (1 - pct / 0.40)))))
+    pct = net / base
+    if pct >= 0:
+        score = 7.0 + 3.0 * min(pct / 0.15, 1.0)
+    else:
+        score = 7.0 * (1.0 - abs(pct) / 0.30)
+    return int(max(0, min(10, round(score))))
+
+
+def _fit_partner_window(sending_assets, rosters, mv_lookup, partner_roster):
+    """(posture, nudge) for the acceptance estimate, from league context.
+
+    Posture compares the partner roster against the league medians of
+    total value and average age (both from the model value lookup):
+    below both medians is "rebuilding", above both is "contending",
+    anything else (or any input unavailable) is "neutral" with a zero
+    nudge, never an invented one. The nudge prices what the viewer SENDS
+    the way that partner's window would: picks and youth tilt toward a
+    rebuilder, proven age toward a contender. Clamped to [-6, +6] so it
+    tilts the value-based estimate without dominating it.
+    """
+    def _roster_totals(roster):
+        total = 0.0
+        ages = []
+        seen = False
+        for pid in (roster or {}).get("players") or []:
+            row = (mv_lookup or {}).get(str(pid)) or {}
+            try:
+                val = float(row.get("value") or 0)
+            except (TypeError, ValueError):
+                val = 0.0
+            if val or row:
+                seen = True
+            total += val
+            age = row.get("age")
+            if isinstance(age, (int, float)) and age > 0:
+                ages.append(float(age))
+        return (total if seen else None), (sum(ages) / len(ages) if ages else None)
+
+    if partner_roster is None or not mv_lookup:
+        return "neutral", 0
+    totals, age_avgs = [], []
+    for roster in rosters or []:
+        t, a = _roster_totals(roster)
+        if t is not None:
+            totals.append(t)
+        if a is not None:
+            age_avgs.append(a)
+    p_total, p_age = _roster_totals(partner_roster)
+    if p_total is None or p_age is None or not totals or not age_avgs:
+        return "neutral", 0
+    from statistics import median as _median
+    med_total = _median(totals)
+    med_age = _median(age_avgs)
+    if p_total < med_total and p_age < med_age:
+        posture = "rebuilding"
+    elif p_total > med_total and p_age > med_age:
+        posture = "contending"
+    else:
+        return "neutral", 0
+
+    nudge = 0
+    for asset in sending_assets or []:
+        pos = str((asset or {}).get("position") or "").upper()
+        if pos == "PICK":
+            nudge += 2 if posture == "rebuilding" else -1
+            continue
+        age = (asset or {}).get("age")
+        if not isinstance(age, (int, float)):
+            continue
+        if age <= 24 and posture == "rebuilding":
+            nudge += 1
+        elif age >= 28:
+            nudge += 1 if posture == "contending" else -1
+    return posture, int(max(-6, min(6, nudge)))
 
 
 def _fit_acceptance_label(rate):
@@ -26828,16 +26924,17 @@ def _fit_acceptance_label(rate):
 
 
 def _fit_playoff_score(delta):
-    """0-10 from the sim's own deltas: 5 when the deal is flat, +1 per
-    playoff-odds point and +0.8 per projected-PPG point the viewer gains."""
+    """0-10 from the sim's playoff-odds delta only: 5 when the deal is
+    flat, +1 per odds point the viewer gains. The projected-PPG term
+    was dropped: PPG is largely what moves the odds, so paying both
+    double-counted a single signal."""
     if not isinstance(delta, dict):
         return None
     try:
         po = float(delta.get("playoff_pct") or 0)
-        ppg = float(delta.get("avg_ppg") or 0)
     except (TypeError, ValueError):
         return None
-    return int(max(0, min(10, round(5 + po + 0.8 * ppg))))
+    return int(max(0, min(10, round(5 + po))))
 
 
 def _pick_display_name(pick_id):

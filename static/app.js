@@ -9563,7 +9563,16 @@ window.initTradePage = function initTradePage(root = document) {
     const scoreEl = root.querySelector("#tradeFitScore");
     const chip = root.querySelector("#tradeAcceptChip");
     const comps = _fitComponents();
-    const score = comps ? computeTradeFitScore(comps) : null;
+    let score = comps ? computeTradeFitScore(comps) : null;
+    // A partner who would never accept caps the headline at 4.0: the
+    // component bars stay uncapped and honest, but a dead trade cannot
+    // average its way to a good grade. Reads only the current eval
+    // payload under the same signature guard _fitComponents applies.
+    if (score !== null && state._lastEvalSig === _currentEvalSig()) {
+      const _fitLabel = (state._lastEvalData && state._lastEvalData.fit)
+        ? state._lastEvalData.fit.acceptance_label : null;
+      if (_fitLabel === "Long shot") score = Math.min(score, 4.0);
+    }
     const grading = !!state._fitPending;
     if (tile && grid && scoreEl) {
       if (comps && score !== null) {

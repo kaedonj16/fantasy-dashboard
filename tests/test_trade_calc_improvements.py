@@ -3,9 +3,9 @@ unvalued honesty, and the Playoff Impact lineup-after block.
 
 Contracts pinned here:
 
-- fit.value_balance is a pure function of the eval's own diff vs the
-  larger side (10 even, 0 at a 40% gap), present for any graded
-  two-sided trade with no league context at all.
+- fit.value_balance is a pure function of the eval's own totals,
+  viewer-signed (even swap 7, +15% gain 10, 30% loss 0), present for
+  any graded two-sided trade with no league context at all.
 - An ungraded trade (any unvalued asset) gets NO fit components and NO
   counter: its totals exclude real assets, so a score would be fiction.
   This extends the can't-grade gate from test_trade_eval_ungraded_veto.
@@ -93,10 +93,13 @@ def _post(client, **payload):
 
 def test_fit_value_balance_anchors(env):
     f = env._fit_value_balance
-    assert f(0, 1000) == 10
-    assert f(400, 1000) == 0
-    assert f(200, 1000) == 5
-    assert f(1000, 1000) == 0  # clamped, never negative
+    assert f(0, 1000) == 7       # even swap
+    assert f(150, 1000) == 10    # +15% gain caps the climb
+    assert f(400, 1000) == 10    # larger gains stay clamped at 10
+    assert f(-300, 1000) == 0    # the 30% veto line
+    assert f(-1000, 1000) == 0   # clamped, never negative
+    assert f(56.6, 1000) == 8    # +5.66% gain (the Javonte shape)
+    assert f(-56.6, 1000) == 6   # the mirror loss scores lower
 
 
 def test_fit_acceptance_label_scale(env):
@@ -113,7 +116,9 @@ def test_fit_acceptance_label_scale(env):
 def test_fit_playoff_score(env):
     f = env._fit_playoff_score
     assert f({"playoff_pct": 0.0, "avg_ppg": 0.0}) == 5
-    assert f({"playoff_pct": 0.1, "avg_ppg": 0.6}) == 6
+    # Odds-only since grading v2: the PPG term no longer pays twice.
+    assert f({"playoff_pct": 0.1, "avg_ppg": 0.6}) == 5
+    assert f({"playoff_pct": 2.0, "avg_ppg": -9.0}) == 7
     assert f({"playoff_pct": 5.0, "avg_ppg": 2.0}) == 10  # clamped
     assert f({"playoff_pct": -6.0, "avg_ppg": -2.0}) == 0  # clamped
     assert f(None) is None
@@ -135,7 +140,7 @@ def test_pick_display_name(env):
 def test_value_balance_even_trade(client):
     data = _post(client, side_a_players=["1"], side_b_players=["3"])
     assert data["graded"] is True
-    assert data["fit"]["value_balance"] == 10
+    assert data["fit"]["value_balance"] == 7  # signed curve: even swap
     # No league context: roster components stay hidden, never defaulted.
     assert data["fit"]["roster_fit"] is None
     assert data["fit"]["acceptance"] is None
@@ -149,8 +154,12 @@ def test_value_balance_matches_response_numbers(client):
     a = data["side_a"]["effective_total"]
     b = data["side_b"]["effective_total"]
     baseline = max(a, b, 1.0)
-    pct = abs(a - b) / baseline
-    expected = int(max(0, min(10, round(10 * (1 - pct / 0.40)))))
+    pct = (a - b) / baseline  # viewer is side A: signed gain
+    if pct >= 0:
+        raw = 7.0 + 3.0 * min(pct / 0.15, 1.0)
+    else:
+        raw = 7.0 * (1.0 - abs(pct) / 0.30)
+    expected = int(max(0, min(10, round(raw))))
     assert data["fit"]["value_balance"] == expected
 
 
