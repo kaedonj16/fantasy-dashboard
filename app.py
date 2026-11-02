@@ -29415,8 +29415,11 @@ def _stamp_espn_headshot(payload: dict) -> dict:
     payload (the Draft Room pool). Visual data only: no ranking, value, ADP,
     or projection input is touched. Builds the URL from the players_index
     espnID exactly like routes/players_bp.py. Returns a copy, never mutating
-    the memoized base payload. Board / trade / search views are untouched
-    (their slim key lists already carry espnHeadshot where wanted)."""
+    the memoized base payload. The board view is untouched (its slim key
+    list carries no headshot); the trade and search views stamp here too,
+    because their slim key lists pass espnHeadshot through and the base
+    payload only carries the stored string, which newer players_index
+    entries (rookie classes added with an espnID only) do not have."""
     players = (payload or {}).get("players")
     if not players:
         return payload
@@ -29559,7 +29562,12 @@ def _trade_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
             indicator_sets = _compute_player_indicators(league_type, league_size, season) or {}
         except Exception:
             logger.debug("[api/league-players] trade indicator fold-in skipped", exc_info=True)
-        slim = slim_trade_payload(payload, delta_map=delta_map,
+        # The base payload only carries the stored espnHeadshot string;
+        # stamp from the players_index espnID before slimming or trade
+        # chips lose headshots the full view has (rookies especially:
+        # their index entries carry an espnID but no stored URL string).
+        slim = slim_trade_payload(_stamp_espn_headshot(payload),
+                                  delta_map=delta_map,
                                   indicator_sets=indicator_sets)
         body = _dumps_league_players(slim)
         _LP_BOARD_JSON_CACHE[cache_key] = body
@@ -29618,10 +29626,12 @@ def api_league_players():
     _view_rankings = _view_arg == "rankings"
     # Nav-search view: 5 fields per player, no overlays. Short-circuit before
     # the projection/scoring/ADP overlay work below; the base payload already
-    # carries id, name, position, team, and espnHeadshot.
+    # carries id, name, position, team, and espnHeadshot. Stamp headshots
+    # from the players_index espnID first: the base payload only carries
+    # the stored string, which newer index entries (rookies) lack.
     if _view_search:
         from dashboard_services.league_players_board import slim_search_payload
-        slim = slim_search_payload(payload)
+        slim = slim_search_payload(_stamp_espn_headshot(payload))
         body = _dumps_league_players(slim)
         _lp_version_key = _lp_response_version_key(
             overlay_key="search", is_sf=False, view="search",
