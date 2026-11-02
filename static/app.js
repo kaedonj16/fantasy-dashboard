@@ -30824,6 +30824,10 @@ window._rzPlayerLogEvents = function(pid, events) {
       kind: invalid ? 'nullified' : (isIntPlay && (iAmTarget || iAmQb) ? 'int' : (contribution.kind || ev.kind || 'gain')),
       desc: invalid ? (ev.desc || 'Play nullified') : desc,
       statLine: invalid ? {} : line,
+      clipTweetId: ev.clipTweetId || '',
+      clipUrl: ev.clipUrl || '',
+      clipVideoUrl: ev.clipVideoUrl || '',
+      clipPosterUrl: ev.clipPosterUrl || '',
       pts: invalid ? 0 : Number(contribution.pts || 0),
       isNullified: invalid,
       isIntPlay: isIntPlay
@@ -31050,11 +31054,16 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
           + '<br><span class="rz-pm-cume">' + fmt(ev.runTotal) + ' total</span>';
       }
       var chip = ev.notCounted ? ' <span class="rz-pm-chip-notcounted">No target credited</span>' : '';
+      var clipRow = (ev.kind === 'td' && ev.clipTweetId && window.brClip)
+        ? window.brClip.rowHtml('pm' + ev.playId, {
+            tweetId: ev.clipTweetId, url: ev.clipUrl,
+            video: ev.clipVideoUrl, poster: ev.clipPosterUrl })
+        : '';
       return head + '<div class="rz-pm-trow' + (ev.kind === 'int' ? ' int' : '') + (ev.isNullified ? ' nullified' : '') + '">'
         + '<span class="rz-pm-dot ' + dot + '"></span>'
         + '<span class="rz-pm-lclock">' + (ev.gameClock || '') + '</span>'
         + '<span class="rz-pm-ldesc">' + ev.desc + chip + '</span>'
-        + '<span class="rz-pm-tright">' + right + '</span></div>';
+        + '<span class="rz-pm-tright">' + right + '</span></div>' + clipRow;
     }).join('') + '</div>';
   } else {
     tlHtml = '<div style="font-size:12px;color:var(--text-muted);padding:10px 16px 6px;">No plays recorded yet.</div>';
@@ -31073,6 +31082,12 @@ window._rzSyncTabLive = function(panel) {
   var isLive = inner && inner.dataset.gs === 'live';
   var btn = document.querySelector('.pm-tab[data-tab="live"]');
   if (btn) btn.classList.toggle('pm-rz-is-live', !!isLive);
+  // Clip panels: wire the Watch toggles on the (persistent) panel element
+  // once, and restore any open clip after this re-render replaced the HTML.
+  if (panel && window.brClip) {
+    window.brClip.wire(panel);
+    window.brClip.restore(panel);
+  }
 };
 
 // ── Off-ScoreZone-page player game log ─────────────────────────────────────────
@@ -31146,6 +31161,10 @@ window._rzStubPbpEvents = function(pid, state) {
         kind: invalid ? 'nullified' : (play.is_td ? 'td' : 'gain'),
         desc: invalid ? (play.play_text || 'Play nullified') : (play.play_text || 'Play'),
         statLine: sline,
+        clipTweetId: play.clip_tweet_id || '',
+        clipUrl: play.clip_url || '',
+        clipVideoUrl: play.clip_video_url || '',
+        clipPosterUrl: play.clip_poster_url || '',
         isIntPlay: isIntPlay,
         pts: invalid ? 0 : _rzStubLinePts(play.stat_line, sc),
         isNullified: invalid,
@@ -31475,6 +31494,150 @@ window.__brSzLiveCache = (function () {
   }, 20000);
 }());
 
+/* ── Shared TD clip panels (player modal Live tab + ScoreZone Moments) ──────
+   The ScoreZone feed has its own clip machinery in scorezone.js; surfaces
+   that live in the global bundle (the player modal's Live tab, the Moments
+   modal) use this one. Same contract as the feed: a quiet Watch button,
+   the panel opens with the native video (or the navy processing state
+   while X finishes transcoding), the tweet embed exists only as the
+   fallback after a stream fails twice, and an open panel is restored
+   when its host re-renders around it. Clips arrive pre-stamped on the
+   payload rows (clip_tweet_id / clip_url / clip_video_url /
+   clip_poster_url server-side); callers pass a normalized clip object. */
+window.brClip = (function () {
+  'use strict';
+  var _open = {};
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function handleOf(url) {
+    var m = /x\.com\/([A-Za-z0-9_]+)\/status\//.exec(url || '');
+    return m ? m[1] : '';
+  }
+  function btnLabel(open) {
+    return open ? 'Close'
+      : '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v14l11-7z"/></svg> Watch';
+  }
+  function frameHtml(c) {
+    if (c.video) {
+      return '<video class="rz-clip-video" src="' + esc(c.video) + '"'
+        + (c.poster ? ' poster="' + esc(c.poster) + '"' : '')
+        + ' controls playsinline preload="metadata"></video>'
+        + (c.url ? '<a class="rz-clip-xlink" href="' + esc(c.url) + '" target="_blank" rel="noopener">View on X</a>' : '');
+    }
+    return '<div class="rz-clip-processing" role="status">'
+      + '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v14l11-7z"/></svg>'
+      + '<span class="rz-clip-processing-title">Clip is processing</span>'
+      + '<span class="rz-clip-processing-sub">X is still preparing this video. It swaps in here on its own.</span></div>'
+      + (c.url ? '<a class="rz-clip-xlink" href="' + esc(c.url) + '" target="_blank" rel="noopener">View on X</a>' : '');
+  }
+  function embedHtml(c) {
+    return '<div class="rz-clip-frame-wrap">'
+      + '<iframe class="rz-clip-frame" src="https://platform.twitter.com/embed/Tweet.html?id='
+      + esc(c.tweetId) + '" title="Play clip" loading="lazy"></iframe></div>'
+      + (c.url ? '<a class="rz-clip-xlink" href="' + esc(c.url) + '" target="_blank" rel="noopener">View on X</a>' : '');
+  }
+  function rowHtml(key, c) {
+    if (!c || !c.tweetId) return '';
+    var handle = handleOf(c.url);
+    return '<div class="rz-clip-row"><button type="button" class="rz-clip-btn" data-brclip-toggle="' + esc(key) + '"'
+      + ' data-tweet="' + esc(c.tweetId) + '" data-clip-url="' + esc(c.url || '') + '"'
+      + ' data-clip-video="' + esc(c.video || '') + '" data-clip-poster="' + esc(c.poster || '') + '">'
+      + btnLabel(!!_open[key]) + '</button>'
+      + (handle ? '<span class="rz-clip-card-src">@' + esc(handle) + ' · clip from X</span>' : '')
+      + '</div>'
+      + '<div class="rz-clip-panel' + (_open[key] ? ' is-open' : '') + '" data-brclip-panel="' + esc(key) + '">'
+      + (_open[key] ? frameHtml(c) : '') + '</div>';
+  }
+  function clipOf(btn) {
+    return {
+      tweetId: btn.getAttribute('data-tweet') || '',
+      url: btn.getAttribute('data-clip-url') || '',
+      video: btn.getAttribute('data-clip-video') || '',
+      poster: btn.getAttribute('data-clip-poster') || ''
+    };
+  }
+  function wireVideo(panel, c) {
+    var video = panel.querySelector('.rz-clip-video');
+    if (!video) return;
+    var onErr = function () {
+      // Same rule as the feed: retry a transient stream failure once
+      // before the panel is allowed to fall back to the tweet embed.
+      if (panel.getAttribute('data-clip-retried')) {
+        panel.setAttribute('data-clip-fell-back', '1');
+        panel.innerHTML = embedHtml(c);
+        return;
+      }
+      panel.setAttribute('data-clip-retried', '1');
+      setTimeout(function () {
+        if (!video.isConnected || panel.getAttribute('data-clip-fell-back')) return;
+        var src = video.getAttribute('src');
+        if (!src) { panel.setAttribute('data-clip-fell-back', '1'); panel.innerHTML = embedHtml(c); return; }
+        video.removeAttribute('src');
+        video.load();
+        video.setAttribute('src', src);
+        video.load();
+        var pr = video.play ? video.play() : null;
+        if (pr && pr.catch) pr.catch(function () {});
+      }, 1200);
+    };
+    if (video.error || video.networkState === 3) onErr();
+    else video.addEventListener('error', onErr);
+  }
+  function setBtn(scope, key, open) {
+    var btn = scope.querySelector('[data-brclip-toggle="' + key + '"]');
+    if (btn) btn.innerHTML = btnLabel(open);
+  }
+  function openPanel(scope, key, c, autoplay) {
+    var panel = scope.querySelector('[data-brclip-panel="' + key + '"]');
+    if (!panel) return;
+    _open[key] = c;
+    panel.innerHTML = frameHtml(c);
+    panel.classList.add('is-open');
+    wireVideo(panel, c);
+    setBtn(scope, key, true);
+    var vid = panel.querySelector('.rz-clip-video');
+    if (vid && autoplay && vid.play) {
+      var pr = vid.play();
+      if (pr && pr.catch) pr.catch(function () {});
+    }
+  }
+  function closePanel(scope, key) {
+    var panel = scope.querySelector('[data-brclip-panel="' + key + '"]');
+    delete _open[key];
+    if (!panel) return;
+    var vid = panel.querySelector('.rz-clip-video');
+    if (vid && vid.pause) { try { vid.pause(); } catch (e) {} }
+    panel.innerHTML = '';
+    panel.classList.remove('is-open');
+    setBtn(scope, key, false);
+  }
+  function wire(scope) {
+    if (!scope || scope.dataset.brclipWired) return;
+    scope.dataset.brclipWired = '1';
+    scope.addEventListener('click', function (ev) {
+      var btn = ev.target.closest ? ev.target.closest('[data-brclip-toggle]') : null;
+      if (!btn || !scope.contains(btn)) return;
+      ev.stopPropagation();
+      var key = btn.getAttribute('data-brclip-toggle');
+      if (_open[key]) closePanel(scope, key);
+      else {
+        Object.keys(_open).forEach(function (k) { if (k !== key) closePanel(scope, k); });
+        openPanel(scope, key, clipOf(btn), true);
+      }
+    });
+  }
+  function restore(scope) {
+    if (!scope) return;
+    Object.keys(_open).forEach(function (key) {
+      var panel = scope.querySelector('[data-brclip-panel="' + key + '"]');
+      if (panel && !panel.classList.contains('is-open')) openPanel(scope, key, _open[key], false);
+    });
+  }
+  return { rowHtml: rowHtml, wire: wire, restore: restore };
+})();
+
 /* ── Shared ScoreZone Moments (portfolio cards + weekly hub) ───────────────────
    The moments modal machinery is shared so the weekly hub (matchup page) can
    offer the same moments without depending on portfolio markup. fetchMoments
@@ -31567,6 +31730,11 @@ window.brRzm = (function () {
     var teamPos = [];
     if (play.team) teamPos.push(play.team);
     if (play.pos) teamPos.push(play.pos);
+    var clipRow = (play.clip_tweet_id && window.brClip)
+      ? window.brClip.rowHtml('rzm' + (play.play_id || play.seq || ''), {
+          tweetId: play.clip_tweet_id, url: play.clip_url,
+          video: play.clip_video_url, poster: play.clip_poster_url })
+      : '';
     return '<div class="rzm-tl-row">'
       + '<span class="rzm-tl-dot ' + dotCls + '"></span>'
       + '<span class="rzm-tl-body">'
@@ -31576,7 +31744,7 @@ window.brRzm = (function () {
       + '<span class="rzm-tl-what">' + escapeHtml(play.play_text || '') + '</span>'
       + '</span>'
       + '<span class="rzm-tl-meta">' + escapeHtml(whenStr) + (ptsHtml ? '<br>' + ptsHtml : '') + '</span>'
-      + '</div>';
+      + '</div>' + clipRow;
   }
   function openModal(payload, ctx) {
     if (!payload || !(payload.plays || []).length) return;
@@ -31627,6 +31795,7 @@ window.brRzm = (function () {
     overlay._rzmCtx = ctx || {};
     document.body.appendChild(overlay);
     document.body.style.overflow = 'hidden';
+    if (window.brClip) window.brClip.wire(overlay);
   }
   function closeModal() {
     var el = document.getElementById('rzmModalOverlay');
