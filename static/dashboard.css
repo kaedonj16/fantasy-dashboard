@@ -54257,13 +54257,25 @@ html:has(.home-page) { scroll-behavior: smooth; }
     white-space: nowrap;
 }
 
-/* Scorers: position cards grid (top 5 per position). On desktop the grid
-   fills the panel and each card shares its height evenly across its
-   rows; mobile is one column of natural-height cards. */
+/* Scorers: ONE unified panel (Direction B), not per-position cards.
+   Position sections share the panel surface and one strict row grid
+   (rank | identity | name+meta | points with a leader-scaled bar),
+   hairline row dividers, muted ranks, and a stepped-up #1 row on a
+   soft position tint. Natural row heights are 54px (64px for #1);
+   on desktop the hub stretches the panel to the column height and
+   the rows share it evenly, so no blank space pools in the panel. */
+.wk-scorers-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 4px 16px 10px;
+    box-sizing: border-box;
+}
+
 .wk-scorers-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
+    column-gap: 28px;
 }
 
 #weeklyLeftTabs.wk-desktop .week-main-panels {
@@ -54280,15 +54292,28 @@ html:has(.home-page) { scroll-behavior: smooth; }
     min-height: 0;
 }
 
+#weeklyLeftTabs.wk-desktop .wk-scorers-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 #weeklyLeftTabs.wk-desktop .wk-scorers-grid {
     flex: 1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-auto-rows: 1fr;
 }
 
-/* Desktop fill: the card header stays at natural height and the scorer
-   rows share the rest of the card evenly (content centered in each
-   share), so no blank space pools anywhere in the card. */
+/* Desktop fill: the section header stays at natural height and the
+   scorer rows share the rest of the section evenly (content centered
+   in each share), so no blank space pools anywhere in the panel. */
+#weeklyLeftTabs.wk-desktop .wk-pos-section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 #weeklyLeftTabs.wk-desktop .wk-pos-rows {
     flex: 1;
 }
@@ -54297,14 +54322,11 @@ html:has(.home-page) { scroll-behavior: smooth; }
     flex: 1;
 }
 
-.wk-pos-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 12px 14px;
+.wk-pos-section {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    min-width: 0;
+    padding: 6px 0 8px;
     box-sizing: border-box;
 }
 
@@ -54312,7 +54334,8 @@ html:has(.home-page) { scroll-behavior: smooth; }
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 4px;
+    height: 46px;
+    flex: 0 0 auto;
 }
 
 .wk-pos-head h3 {
@@ -54326,23 +54349,87 @@ html:has(.home-page) { scroll-behavior: smooth; }
 }
 
 .wk-srow {
-    display: flex;
+    display: grid;
+    grid-template-columns: 16px 50px minmax(0, 1fr) 64px;
     align-items: center;
-    gap: 10px;
-    padding: 7px 0;
+    column-gap: 10px;
+    height: 54px;
+    padding: 0 4px;
     min-width: 0;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--border);
+}
+
+.wk-srow:last-child {
+    border-bottom: none;
+}
+
+/* #1 steps up: taller row, bigger bust, name and points, soft tint. */
+.wk-srow[data-top] {
+    height: 64px;
+    background: var(--wk-tint);
+    border-bottom: none;
+    border-radius: 10px;
 }
 
 .wk-rk {
-    color: var(--warning);
+    color: var(--text-muted);
     font-weight: 800;
     font-size: 12.5px;
-    width: 14px;
-    flex: 0 0 auto;
+    text-align: center;
+}
+
+.wk-srow[data-top] .wk-rk {
+    color: var(--text);
+    font-size: 14px;
+}
+
+/* Identity slot: ESPN bust flush with the row bottom (transparent
+   combiner image, no circle crop, no disc behind a photo). A DEF row,
+   or a player with no headshot, gets the two-tone .team-badge as a
+   rounded rect centred in the same slot instead. */
+.wk-id {
+    width: 44px;
+    height: 54px;
+    align-self: end;
+    justify-self: center;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.wk-srow[data-top] .wk-id {
+    width: 50px;
+    height: 64px;
+}
+
+.wk-face {
+    display: block;
+    width: 44px;
+    height: 54px;
+    object-fit: cover;
+    object-position: top center;
+}
+
+.wk-srow[data-top] .wk-face {
+    width: 50px;
+    height: 64px;
+}
+
+.wk-id .team-badge.wk-badge {
+    width: 44px;
+    height: 36px;
+    font-size: 12px;
+    border-radius: 10px;
+    align-self: center;
+}
+
+.wk-srow[data-top] .wk-id .team-badge.wk-badge {
+    width: 50px;
+    height: 42px;
 }
 
 .wk-who {
-    flex: 1 1 auto;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -54350,9 +54437,15 @@ html:has(.home-page) { scroll-behavior: smooth; }
 
 .wk-nm {
     font-weight: 700;
+    font-size: 14.5px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.wk-srow[data-top] .wk-nm {
+    font-weight: 800;
+    font-size: 16px;
 }
 
 .wk-tm {
@@ -54363,16 +54456,91 @@ html:has(.home-page) { scroll-behavior: smooth; }
     text-overflow: ellipsis;
 }
 
+.wk-pts {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    min-width: 0;
+}
+
 .wk-pt {
     font-weight: 800;
     font-size: 16px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
+}
+
+.wk-srow[data-top] .wk-pt {
+    font-size: 19.5px;
+}
+
+.wk-sbar {
+    display: block;
+    width: 64px;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.wk-sbar-fill {
+    display: block;
+    height: 100%;
+    background: var(--wk-pos);
+    border-radius: 2px;
 }
 
 .wk-nodata {
     color: var(--text-muted);
     font-size: 13px;
-    padding: 7px 0;
+    padding: 12px 4px;
+}
+
+@media (max-width: 640px) {
+    .wk-scorers-panel {
+        padding: 4px 12px 8px;
+    }
+
+    .wk-srow {
+        grid-template-columns: 14px 46px minmax(0, 1fr) 58px;
+        column-gap: 8px;
+    }
+
+    .wk-srow[data-top] {
+        height: 60px;
+    }
+
+    .wk-id {
+        width: 40px;
+    }
+
+    .wk-face {
+        width: 40px;
+    }
+
+    .wk-srow[data-top] .wk-id {
+        width: 46px;
+        height: 60px;
+    }
+
+    .wk-srow[data-top] .wk-face {
+        width: 46px;
+        height: 60px;
+    }
+
+    .wk-id .team-badge.wk-badge {
+        width: 40px;
+    }
+
+    .wk-srow[data-top] .wk-id .team-badge.wk-badge {
+        width: 46px;
+    }
+
+    .wk-sbar {
+        width: 58px;
+    }
 }
 
 /* Lineup This Week / History segmented switch + this-week view. */

@@ -68,7 +68,10 @@ def test_render_top_three_emits_scorers_grid():
     html = render_top_three(top_by_pos, rosters, roster_map,
                             positions=["QB", "RB", "TE"])
     assert "wk-scorers-grid" in html
-    assert "wk-pos-card" in html
+    # Direction B: one unified panel of sections, not per-position cards.
+    assert "wk-scorers-panel" in html
+    assert "wk-pos-section" in html
+    assert "wk-pos-card" not in html
     assert "pos-badge QB" in html
     assert "Quarterbacks" in html and "Running backs" in html
     assert "wk-srow" in html and "wk-rk" in html
