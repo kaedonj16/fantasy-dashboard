@@ -9245,6 +9245,7 @@ window.initTradePage = function initTradePage(root = document) {
     picks.forEach((pk, idx) => {
       const chip = document.createElement("div");
       chip.className = "otc-chip otc-chip-pick";
+      if (pk.id) chip.dataset.chipPid = String(pk.id);
 
       const leftWrap = document.createElement("div");
       leftWrap.className = "otc-chip-main";
@@ -9824,6 +9825,31 @@ window.initTradePage = function initTradePage(root = document) {
     renderCounterCard(data);
   }
 
+  // Chips price client-side from the cached player pool, but the summary
+  // totals are priced by /api/trade-eval from the DB, so after a value
+  // update the two vintages disagree (chip 404.6 vs summary 397.4). The
+  // eval response already carries per-asset values in each side's
+  // breakdown, so when an eval lands, repaint the chips from that same
+  // response: a chip then always shows the number the summary on screen
+  // was priced from. Unvalued breakdown items are skipped; their chips
+  // keep the dash treatment applyChipValueDashes owns.
+  function paintChipValuesFromEval(data) {
+    if (!data) return;
+    [["A", data.side_a], ["B", data.side_b]].forEach(([side, sideData]) => {
+      const container = root.querySelector(side === "A" ? "#sideAChips" : "#sideBChips");
+      if (!container || !sideData || !Array.isArray(sideData.breakdown)) return;
+      sideData.breakdown.forEach(item => {
+        if (!item || item.id == null || item.unvalued === true) return;
+        const val = Number(item.value);
+        if (!Number.isFinite(val)) return;
+        const chip = container.querySelector(`.otc-chip[data-chip-pid="${String(item.id)}"]`);
+        if (!chip) return;
+        const valEl = chip.querySelector(".otc-chip-value");
+        if (valEl) valEl.textContent = formatValue(val);
+      });
+    });
+  }
+
   async function recomputeTrade() {
     // Coalesce same-tick bursts (see _recomputeBurst): yield one microtask
     // so sibling calls from the same user action register; only the last
@@ -9985,6 +10011,10 @@ window.initTradePage = function initTradePage(root = document) {
         window.brCountUp(tradeDiffEl, { to: diff, from: _prevD, dp: 1, dur: 600 });
         if (Math.abs(diff - _prevD) >= 0.05) window.brFlash(tradeDiffEl, diff >= _prevD ? 'up' : 'down');
       }
+
+      // Chips repaint from this same response, so they can never show a
+      // different value vintage than the totals just painted above.
+      paintChipValuesFromEval(data);
 
       // Shared with the sticky bar's mini band (_balanceGeometry):
       // when diff > 0 (Team 1 favored) the marker moves left of center;
