@@ -54873,16 +54873,18 @@ body.otc-sticky-on { padding-bottom: 72px; }
 }
 
 /* ── Trade Calculator: chip headshots (all widths) + phone redesign ──────
-   Chips gain a headshot face at every width: the ESPN photo over an
-   initials disc, so a missing or failed photo falls back to the disc.
+   Chips gain a headshot face at every width: the ESPN photo on a
+   transparent slot, with no colored tile or initials behind it, so a
+   missing or failed photo leaves the slot empty. Side headers carry
+   the team title only; piece counts and totals live in the summary.
    The phone layout (max-width: 640px, the page's existing phone
    breakpoint) is structural, not just styling: the page's relocation
    script moves the head controls into the Settings dropdown and the
    summary's balance section + Analyze + Share to the builder's end
    (the .otc-mobile-flow slots), and these rules style that arrangement:
-   slim head, flat full-width sides with header-line totals, hairline
-   chip rows, then the balance block. Desktop keeps its layout; only
-   the chip grid gains the face column. */
+   slim head, flat full-width sides, hairline chip rows, then the
+   balance block. Desktop keeps its layout; only the chip grid gains
+   the face column. */
 .otc-chip {
     grid-template-columns: auto minmax(0, 1fr) auto;
 }
@@ -54904,18 +54906,12 @@ body.otc-sticky-on { padding-bottom: 72px; }
     width: 36px;
     height: 40px;
     border-radius: 8px;
-    background: #dbe4ee;
+    background: transparent;
     overflow: hidden;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-.otc-chip-face-initials {
-    font-size: 13px;
-    font-weight: 800;
-    color: var(--accent);
-    line-height: 1;
 }
 .otc-chip-face-img {
     position: absolute;
@@ -54925,6 +54921,43 @@ body.otc-sticky-on { padding-bottom: 72px; }
     object-fit: cover;
     object-position: top center;
     display: block;
+}
+/* Player search: a softly filled field with a leading icon and a sky
+   focus ring; on focus the fill lifts to the card color. The selectors
+   are scoped through .otc-search-wrap for two reasons: the shared
+   .search-wrapper elsewhere stays untouched, and the extra class lifts
+   them over the generic input[type="text"] rules, whose attribute
+   selector outranks a lone .otc-search-input class. */
+.otc-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 13px;
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+}
+.otc-search-icon svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+}
+.otc-search-wrap .otc-search-input {
+    background: var(--card-soft);
+    border: 1px solid var(--border);
+    padding-left: 38px;
+}
+.otc-search-wrap .otc-search-input::placeholder {
+    color: var(--text-muted);
+}
+.otc-search-wrap .otc-search-input:focus {
+    background: var(--card);
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
 }
 .otc-chip-pick-tile {
     grid-column: 1;
@@ -54943,8 +54976,6 @@ body.otc-sticky-on { padding-bottom: 72px; }
 }
 /* Phone-only pieces: hidden wherever the phone layout is not active. */
 .otc-context-line,
-.otc-side-head-total,
-.otc-side-head-pieces,
 .otc-share-label,
 .otc-mobile-flow,
 .otc-mobile-only-slots {
@@ -55035,23 +55066,8 @@ body.otc-sticky-on { padding-bottom: 72px; }
         text-overflow: ellipsis;
         min-width: 0;
     }
-    .otc-side-head-pieces {
-        display: inline;
-        font-size: 12.5px;
-        color: var(--text-muted);
-        white-space: nowrap;
-        flex-shrink: 0;
-    }
     .otc-team-head-right .otc-team-owner-tag {
         display: none;
-    }
-    .otc-side-head-total {
-        display: block;
-        font-size: 16px;
-        font-weight: 800;
-        font-variant-numeric: tabular-nums;
-        color: var(--text);
-        line-height: 1.2;
     }
     .otc-slot {
         padding: 0;
@@ -55059,6 +55075,9 @@ body.otc-sticky-on { padding-bottom: 72px; }
     }
     .otc-search-input {
         height: 40px;
+    }
+    .otc-search-icon {
+        top: 12px;
     }
 
     /* Chip rows: full width, hairline-divided, ~53px. */

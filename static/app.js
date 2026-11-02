@@ -9048,25 +9048,14 @@ window.initTradePage = function initTradePage(root = document) {
     syncViewerSideLabels();
   }
 
-  function chipInitials(name) {
-    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
-    if (!parts.length) return "?";
-    return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : "")).toUpperCase();
-  }
-
-  // Chip headshot: the pool's ESPN photo over an initials disc, the same
-  // fallback shape the rankings board uses (.rc-badge/.rc-face). A failed
-  // photo retries once on the raw URL, then hides itself so the initials
-  // show through; a player with no photo renders the disc alone.
+  // Chip headshot: the pool's ESPN photo on a transparent slot, no
+  // colored tile and no initials behind it. A failed photo retries once
+  // on the raw URL, then hides itself; a player with no photo renders
+  // the empty slot alone, so the row layout never shifts.
   function buildChipFace(p) {
     const face = document.createElement("span");
     face.className = "otc-chip-face";
     face.setAttribute("aria-hidden", "true");
-
-    const initials = document.createElement("span");
-    initials.className = "otc-chip-face-initials";
-    initials.textContent = chipInitials(p.name);
-    face.appendChild(initials);
 
     const url = p.espnHeadshot || p.headshot || "";
     if (url) {
@@ -9107,16 +9096,6 @@ window.initTradePage = function initTradePage(root = document) {
     tile.setAttribute("aria-hidden", "true");
     tile.textContent = pickRoundLabel(pk);
     return tile;
-  }
-
-  // Phone side-header line: "gets · N pieces" beside the team title. The
-  // header total itself mirrors #sideATotal/#sideBTotal (see
-  // bindMobileChrome); the piece count is state, so it syncs here.
-  function syncSideHeadMeta(side) {
-    const piecesEl = root.querySelector(side === "A" ? "#sideAHeadPieces" : "#sideBHeadPieces");
-    if (!piecesEl) return;
-    const n = getSidePlayers(side).length + getSidePicks(side).length;
-    piecesEl.textContent = n === 1 ? "· 1 piece" : "· " + n + " pieces";
   }
 
   function renderChips(side) {
@@ -9291,7 +9270,6 @@ window.initTradePage = function initTradePage(root = document) {
       container.appendChild(chip);
     });
 
-    syncSideHeadMeta(side);
     syncEmptyState(side);
     recomputeTrade();
   }
@@ -14450,21 +14428,8 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
-  // Phone chrome: slim-head context line, side-header totals, Clear
+  // Phone chrome: slim-head context line, Clear
   // ------------------------------------------------------------
-
-  // The phone side headers show the SAME totals the summary shows: the
-  // header spans mirror #sideATotal/#sideBTotal text, so the eval's
-  // count-up animation, the empty-state reset, and the landed effective
-  // totals all reach the headers from the single source instead of a
-  // second client-side sum that could drift from the eval.
-  function syncSideHeadTotals() {
-    [["#sideATotal", "#sideAHeadTotal"], ["#sideBTotal", "#sideBHeadTotal"]].forEach(([src, dst]) => {
-      const s = root.querySelector(src);
-      const d = root.querySelector(dst);
-      if (s && d && d.textContent !== s.textContent) d.textContent = s.textContent;
-    });
-  }
 
   // The slim head's quiet line under the title: league name (the same
   // nav-chrome name the top bar shows), then the values the head's own
@@ -14488,15 +14453,6 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   function bindMobileChrome() {
-    const totalEls = ["#sideATotal", "#sideBTotal"]
-      .map(sel => root.querySelector(sel)).filter(Boolean);
-    if (totalEls.length && window.MutationObserver) {
-      const mo = new MutationObserver(syncSideHeadTotals);
-      totalEls.forEach(el => mo.observe(el, { childList: true, characterData: true, subtree: true }));
-    }
-    syncSideHeadTotals();
-    syncSideHeadMeta("A");
-    syncSideHeadMeta("B");
     syncContextLine();
     ["#scoringTypeSelect", "#scoringFormatSelect", "#leagueTypeToggle"].forEach(sel => {
       const ctl = root.querySelector(sel);
