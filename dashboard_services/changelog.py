@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
+        "tag": "update",
+        "text": "Player cards open faster on the Overview: news and Recent Form now start loading the moment you tap a player instead of waiting for the rest of the card, and players you linger on in a list warm up their Recent Form ahead of the tap. Hover, focus or tap a Recent Form bar to see that game's basic stats: the passing, rushing and receiving lines, snap share and fumbles, right alongside the points the bar already shows.",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-02",
         "tag": "fix",
         "text": "Trade Calculator: fixed player headshots that would not load on trade chips, most often for rookies. Those players had a photo on their player page all along; the trade and search lists were the only views not filling it in. Chips and search results now show the same headshot as everywhere else on the site.",
         "link": "/trade"
