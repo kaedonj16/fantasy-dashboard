@@ -7,9 +7,7 @@ import math
 from html import escape as _esc
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 from flask import url_for
-from plotly.offline import plot as plotly_plot
 
 from dashboard_services.platform_api import get_bracket
 from dashboard_services.service import playoff_bracket as _render_playoff_bracket
@@ -579,38 +577,55 @@ def _build_summary(history_ctx: dict) -> dict:
 
 
 def _history_chart(df_weekly: pd.DataFrame) -> str:
+    """Scoring Trends mount for the prerendered (tour) history page.
+
+    Emits a .br-history-chart mount carrying the same BRGraphsRender line
+    payload the live page builds from the sections API, so there is ONE
+    Scoring Trends renderer (shared SVG, team palette, no Plotly, no
+    white default-theme block in dark mode). Palette slots are assigned by
+    sorted owner name, which keeps a team's color stable across seasons.
+    """
     chart_df = _filtered_season_df(df_weekly)
     if chart_df.empty or not {"week", "owner", "points"}.issubset(chart_df.columns):
         return "<div class='history-empty'>No weekly scoring data available for this season.</div>"
 
-    fig = go.Figure()
+    from dashboard_services.pages.graphs_page import owner_slot_map
 
+    teams = []
     for owner, grp in chart_df.groupby("owner"):
         grp = grp.sort_values("week")
-        fig.add_trace(
-            go.Scatter(
-                x=grp["week"],
-                y=grp["points"],
-                mode="lines+markers",
-                name=str(owner),
-                hovertemplate="%{fullData.name}<br>Week %{x}<br>%{y:.1f} pts<extra></extra>",
-            )
-        )
-
-    fig.update_layout(
-        template="plotly_white",
-        height=430,
-        margin=dict(l=20, r=20, t=55, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.03, x=0),
-        xaxis=dict(title="Week", dtick=1),
-        yaxis=dict(title="Points"),
-    )
-
-    return plotly_plot(
-        fig,
-        include_plotlyjs=False,
-        output_type="div",
-        config={"displayModeBar": False},
+        teams.append({
+            "name": str(owner),
+            "x": [int(w) for w in grp["week"].tolist()],
+            "y": [float(v) for v in grp["points"].tolist()],
+        })
+    if not teams:
+        return "<div class='history-empty'>No weekly scoring data available for this season.</div>"
+    slots = owner_slot_map(sorted(t["name"] for t in teams))
+    weeks = sorted({w for t in teams for w in t["x"]})
+    series = []
+    for t in teams:
+        by_week = dict(zip(t["x"], t["y"]))
+        series.append({
+            "name": t["name"],
+            "slot": slots.get(t["name"]),
+            "width": 2,
+            "opacity": 0.9,
+            "values": [by_week.get(w) for w in weeks],
+        })
+    payload = {
+        "kind": "line",
+        "height": 430,
+        "fmt": "pts1",
+        "dots": "none",
+        "sortTip": True,
+        "labels": [f"W{w}" for w in weeks],
+        "series": series,
+    }
+    payload_json = json.dumps(payload).replace("</", "<\\/")
+    return (
+        '<div class="br-history-chart" style="width:100%;height:430px;" '
+        f"data-chart='{_esc(payload_json, quote=True)}'></div>"
     )
 
 

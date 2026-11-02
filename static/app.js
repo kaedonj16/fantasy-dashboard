@@ -7463,6 +7463,14 @@ window.BRValueChart = (function () {
     }
     return out;
   }
+  // Straight-segment path (rank/bump lines: ranks are integers, curving
+  // them would invent fractional ranks between weeks).
+  function _straightPath(pts) {
+    if (!pts || !pts.length) return '';
+    var out = 'M' + _n(pts[0].x) + ',' + _n(pts[0].y);
+    for (var i = 1; i < pts.length; i++) out += 'L' + _n(pts[i].x) + ',' + _n(pts[i].y);
+    return out;
+  }
   // Consecutive non-null runs of a value array, as index lists.
   function _runs(vals) {
     var runs = [], cur = null;
@@ -7533,6 +7541,8 @@ window.BRValueChart = (function () {
       return {
         name: s.name || '', color: _color(s.color, th), width: s.width || 2.5,
         dash: s.dash || null, hero: !!s.hero, vals: vals, units: units, labels: labels,
+        endName: s.endName || null, endLabel: s.endLabel !== false,
+        opacity: s.opacity != null ? s.opacity : null,
       };
     });
     // Shared x axis (index mode: the index itself; time mode: union scale,
@@ -7557,9 +7567,12 @@ window.BRValueChart = (function () {
     (opts.refLines || []).forEach(function (r) { _see(r.value); });
     (opts.bands || []).forEach(function (b) { _see(b.min); _see(b.max); });
     if (!isFinite(yLo)) { yLo = 0; yHi = 1; }
+    if (opts.yMin != null) yLo = opts.yMin;
+    if (opts.yMax != null) yHi = opts.yMax;
     var yRange = yHi - yLo;
     var yPad = yRange > 0 ? yRange * 0.12 : Math.max(Math.abs(yHi) * 0.02, 20);
-    yLo -= yPad; yHi += yPad;
+    if (opts.yMin == null) yLo -= yPad;
+    if (opts.yMax == null) yHi += yPad;
     if (yLo < 0 && (yLo + yPad) >= 0) yLo = 0; // values are non-negative trade values
 
     var W = container.clientWidth || 0;
@@ -7574,6 +7587,20 @@ window.BRValueChart = (function () {
       if (last < 0) return;
       endJobs.push({ s: s, idx: last, val: s.vals[last] });
     });
+    // Multi-series charts can cap end labels (hero always labeled, plus the
+    // top-N by final value); unlabeled series stay hover-identified.
+    if (opts.endLabelTop != null) {
+      var chosen = {};
+      endJobs.forEach(function (j, ix) { if (j.s.hero) chosen[ix] = 1; });
+      var slotsLeft = opts.endLabelTop;
+      endJobs.slice().sort(function (a, b) { return b.val - a.val; }).forEach(function (j) {
+        if (slotsLeft <= 0) return;
+        var ix = endJobs.indexOf(j);
+        if (!chosen[ix]) { chosen[ix] = 1; slotsLeft--; }
+      });
+      endJobs = endJobs.filter(function (j, ix) { return !!chosen[ix]; });
+    }
+    endJobs = endJobs.filter(function (j) { return j.s.endLabel; });
 
     // Peak/low on the primary series (visible window = what was passed in).
     var pk = null;
@@ -7602,11 +7629,11 @@ window.BRValueChart = (function () {
         if (pk.floorMerged) vtxt += ' · Low';
       }
       j.valueText = vtxt;
-      maxEndChars = Math.max(maxEndChars, j.s.name.length, vtxt.length);
+      maxEndChars = Math.max(maxEndChars, (j.s.endName || j.s.name).length, vtxt.length);
     });
     var padR = Math.min(Math.max(maxEndChars * 6.8 + 18, 58), 190);
     // Left padding fits the widest y tick label.
-    var step0 = _niceStep((yHi - yLo) / 3 || 1);
+    var step0 = opts.yStep || _niceStep((yHi - yLo) / 3 || 1);
     var firstTick = Math.ceil(yLo / step0) * step0;
     var widestTick = 0;
     for (var tv = firstTick; tv <= yHi && widestTick < 12; tv += step0) {
@@ -7618,7 +7645,12 @@ window.BRValueChart = (function () {
     var plotH = Math.max(H - padT - padB, 40);
     var plotR = padL + plotW, plotB = padT + plotH;
     function X(u) { return padL + (u - xMin) / (xMax - xMin) * plotW; }
-    function Y(v) { return padT + (yHi - v) / (yHi - yLo) * plotH; }
+    function Y(v) {
+      return opts.yReverse
+        ? padT + (v - yLo) / (yHi - yLo) * plotH
+        : padT + (yHi - v) / (yHi - yLo) * plotH;
+    }
+    var pathFn = opts.straight ? _straightPath : _monoPath;
 
     var uid = 'brvh' + Math.random().toString(36).slice(2, 8);
     var out = [];
@@ -7641,7 +7673,8 @@ window.BRValueChart = (function () {
     });
     // Grid + y ticks (max ~4, hairline, border color at reduced opacity).
     var tickV = firstTick;
-    for (var ti = 0; ti < 6 && tickV <= yHi; ti++, tickV += step0) {
+    var maxTicks = opts.yStep ? 16 : 6;
+    for (var ti = 0; ti < maxTicks && tickV <= yHi; ti++, tickV += step0) {
       var ty = Y(tickV);
       out.push('<line x1="' + padL + '" y1="' + _n(ty) + '" x2="' + plotR + '" y2="' + _n(ty) + '" '
         + 'stroke="' + th.border + '" stroke-opacity="0.55" stroke-width="1"/>');
@@ -7682,8 +7715,8 @@ window.BRValueChart = (function () {
           // Outline: along series A left-to-right, then back along series B
           // right-to-left (bot is already in decreasing-x order from the
           // unshift build; the monotone path is direction-symmetric).
-          out.push('<path d="' + _monoPath(top)
-            + _monoPath(bot).replace(/^M/, 'L') + 'Z" fill="' + SKY + '" fill-opacity="0.07" stroke="none"/>');
+          out.push('<path d="' + pathFn(top)
+            + pathFn(bot).replace(/^M/, 'L') + 'Z" fill="' + SKY + '" fill-opacity="0.07" stroke="none"/>');
         }
         bi = bj + 1;
       }
@@ -7694,30 +7727,40 @@ window.BRValueChart = (function () {
       _runs(s.vals).forEach(function (run) {
         if (run.length < 2) return;
         var pts = ptsOf(s, run);
-        var d = _monoPath(pts)
+        var d = pathFn(pts)
           + 'L' + _n(pts[pts.length - 1].x) + ',' + _n(Y(yLo))
           + 'L' + _n(pts[0].x) + ',' + _n(Y(yLo)) + 'Z';
         out.push('<path d="' + d + '" fill="url(#' + uid + 'g' + si + ')" stroke="none"/>');
       });
     });
-    // Dashed flat reference lines (tier averages).
+    // Dashed flat reference lines (tier averages, playoff line, league avg).
     (opts.refLines || []).forEach(function (r) {
       out.push('<line x1="' + padL + '" y1="' + _n(Y(r.value)) + '" x2="' + plotR + '" y2="' + _n(Y(r.value)) + '" '
         + 'stroke="' + _color(r.color, th) + '" stroke-width="2" stroke-dasharray="6 4"/>');
+      if (r.label) {
+        var atLeft = r.labelAt !== 'right';
+        out.push('<text x="' + _n(atLeft ? padL + 4 : plotR - 4) + '" y="' + _n(Y(r.value) - 5) + '" '
+          + 'text-anchor="' + (atLeft ? 'start' : 'end') + '" font-size="10" font-weight="700" '
+          + 'fill="' + th.muted + '" style="paint-order:stroke;stroke:' + th.surface + ';stroke-width:3px;">'
+          + _esc(r.label) + '</text>');
+      }
     });
     // Series lines (nulls break the line into runs; never a plunge).
     series.forEach(function (s) {
       _runs(s.vals).forEach(function (run) {
         if (run.length < 2) return;
-        out.push('<path d="' + _monoPath(ptsOf(s, run)) + '" fill="none" stroke="' + s.color + '" '
+        out.push('<path d="' + pathFn(ptsOf(s, run)) + '" fill="none" stroke="' + s.color + '" '
           + 'stroke-width="' + s.width + '" stroke-linecap="round" stroke-linejoin="round"'
+          + (s.opacity != null ? ' stroke-opacity="' + s.opacity + '"' : '')
           + (s.dash ? ' stroke-dasharray="' + s.dash + '"' : '') + '/>');
       });
     });
-    // Discrete points on short series (flat dots, no rings anywhere).
+    // Flat dots, no rings anywhere. opts.dots: 'auto' (default: short
+    // series only), 'all' (every point), 'none'.
     series.forEach(function (s) {
       var cnt = s.vals.filter(function (v) { return v != null; }).length;
-      if (cnt === 0 || cnt > 14) return;
+      var showDots = opts.dots === 'all' || (opts.dots !== 'none' && cnt > 0 && cnt <= 14);
+      if (!showDots) return;
       s.vals.forEach(function (v, i) {
         if (v == null) return;
         out.push('<circle cx="' + _n(X(s.units[i])) + '" cy="' + _n(Y(v)) + '" r="3" fill="' + s.color + '"/>');
@@ -7772,7 +7815,7 @@ window.BRValueChart = (function () {
         valHtml += '<tspan fill="' + th.loss + '"> · Low</tspan>';
       }
       out.push('<text x="' + _n(plotR + 10) + '" y="' + _n(ly - 2) + '" font-size="11" font-weight="700" '
-        + 'fill="' + th.text + '">' + _esc(j.s.name) + '</text>');
+        + 'fill="' + th.text + '">' + _esc(j.s.endName || j.s.name) + '</text>');
       out.push('<text x="' + _n(plotR + 10) + '" y="' + _n(ly + 13) + '" font-size="12" font-weight="700" '
         + 'fill="' + vFill + '">' + valHtml + '</text>');
     });
@@ -7815,17 +7858,26 @@ window.BRValueChart = (function () {
       union.forEach(function (uu) { var dd = Math.abs(uu - u); if (dd < sd) { sd = dd; snap = uu; } });
       var cxp = X(snap);
       cross.setAttribute('x1', cxp); cross.setAttribute('x2', cxp);
-      var dotsHtml = '', rows = '', dateLbl = '';
+      var dotsHtml = '', dateLbl = '';
+      var rowObjs = [];
       series.forEach(function (s) {
         var ii = mode === 'index' ? (s.units.indexOf(snap) >= 0 && s.vals[s.units.indexOf(snap)] != null ? s.units.indexOf(snap) : -1)
           : nearestSeriesPoint(s, snap);
         if (ii < 0) return;
         var v = s.vals[ii];
         dotsHtml += '<circle cx="' + _n(X(s.units[ii])) + '" cy="' + _n(Y(v)) + '" r="4" fill="' + s.color + '"/>';
-        rows += '<div class="br-vh-tip-row"><span class="br-vh-tip-sq" style="background:' + s.color + '"></span>'
-          + _esc(s.name) + '<b>' + _esc(fmtVal(v)) + '</b></div>';
+        rowObjs.push({ s: s, v: v });
         if (!dateLbl) dateLbl = s.labels[ii] || '';
+        if (!dateLbl && opts.pointNotes && s === series[0]) { /* note attaches below */ }
+        if (opts.pointNotes && s === series[0] && opts.pointNotes[ii]) {
+          dateLbl = (dateLbl ? dateLbl + ' · ' : '') + opts.pointNotes[ii];
+        }
       });
+      if (opts.sortTip) rowObjs.sort(function (a, b) { return b.v - a.v; });
+      var rows = rowObjs.map(function (r) {
+        return '<div class="br-vh-tip-row"><span class="br-vh-tip-sq" style="background:' + r.s.color + '"></span>'
+          + _esc(r.s.name) + '<b>' + _esc(fmtVal(r.v)) + '</b></div>';
+      }).join('');
       if (!rows) { hoverG.style.display = 'none'; tip.style.display = 'none'; return; }
       hdots.innerHTML = dotsHtml;
       hoverG.style.display = '';
@@ -7867,11 +7919,454 @@ window.BRValueChart = (function () {
   return {
     render: render,
     monotonePath: _monoPath,
+    straightPath: _straightPath,
     tangents: _tangents,
     heroColor: HERO,
     sky: SKY,
+    theme: _theme,
+    esc: _esc,
   };
 })();
+
+// ── BRTeamPalette: one fixed color per team, site-wide ─────────────────────
+// The same team keeps the same slot on every multi-team chart and, in
+// League History, across seasons, so a viewer can follow one team's story
+// across the whole site. Assignment is by team identity: the viewer's team
+// always takes slot 0 (navy); other teams take the remaining slots in the
+// deterministic order the caller supplies (server payloads carry the slot
+// computed once per page; client-only surfaces assign by sorted name).
+window.BRTeamPalette = (function () {
+  var SLOTS = ['#122d4b', '#38bdf8', '#0d9488', '#16a34a', '#65a30d', '#d97706',
+    '#ea580c', '#dc2626', '#db2777', '#7c3aed', '#4f46e5', '#64748b'];
+  function isDark() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+  function color(slot) {
+    var s = ((Number(slot) || 0) % SLOTS.length + SLOTS.length) % SLOTS.length;
+    if (isDark() && s === 0) return '#60a5fa';
+    return SLOTS[s];
+  }
+  // assign(keysInOrder, viewerKey) -> { keyString: slotIndex }
+  function assign(keys, viewerKey) {
+    var map = {}, uniq = [];
+    (keys || []).forEach(function (k) {
+      k = String(k);
+      if (uniq.indexOf(k) < 0) uniq.push(k);
+    });
+    var next = 1;
+    if (viewerKey != null && uniq.indexOf(String(viewerKey)) >= 0) map[String(viewerKey)] = 0;
+    uniq.forEach(function (k) {
+      if (!(k in map)) { map[k] = next % SLOTS.length; next++; }
+    });
+    return map;
+  }
+  function colorFor(map, key) { return color(map ? map[String(key)] : 0); }
+  return { slots: SLOTS, color: color, assign: assign, colorFor: colorFor, isDark: isDark };
+})();
+
+// ── BRCharts: generic SVG renderers for the non-line chart geometries ─────
+// Scatter, vertical/horizontal bars, heatmap and z-bars in the same design
+// system as BRValueChart: honest axes, flat marks with no rings, direct
+// labels instead of legends, and a site-card tooltip on every mark (hover
+// or tap). Each renderer registers a redraw so theme changes and tab
+// reveals re-render at the right size.
+window.BRCharts = (function () {
+  var FONT = 'Archivo, InterVariable, Inter, system-ui, -apple-system, sans-serif';
+  function _n(v) { return Math.round(v * 100) / 100; }
+  function _esc(s) { return window.BRValueChart.esc(s); }
+  function _theme() { return window.BRValueChart.theme(); }
+  var _live = [];
+  var _themeWired = false;
+  function _register(container, redraw) {
+    container._brVhRedraw = redraw;
+    _live = _live.filter(function (e) { return e.el !== container && e.el.isConnected; });
+    _live.push({ el: container, fn: redraw });
+    if (!_themeWired && typeof MutationObserver === 'function') {
+      _themeWired = true;
+      new MutationObserver(function () {
+        _live.slice().forEach(function (e) { if (e.el.isConnected) e.fn(); });
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    }
+  }
+  // Shared tooltip wiring: marks carry data-tip (plain text, \n = new row).
+  function _wireTips(container) {
+    var tip = container.querySelector('.br-vh-tip');
+    if (!tip) return;
+    function show(el, evt) {
+      var t = el.getAttribute('data-tip');
+      if (!t) return;
+      tip.innerHTML = t.split('\n').map(function (ln, i) {
+        return '<div' + (i === 0 ? ' class="br-vh-tip-date"' : '') + '>' + _esc(ln) + '</div>';
+      }).join('');
+      tip.style.display = '';
+      var crect = container.getBoundingClientRect();
+      var cx = (evt.touches ? evt.touches[0].clientX : evt.clientX) - crect.left;
+      var tw = tip.offsetWidth || 150;
+      tip.style.left = Math.max(0, Math.min(cx + 12, crect.width - tw)) + 'px';
+      tip.style.top = '8px';
+      var hl = el.getAttribute('data-hl');
+      if (hl) {
+        var bg = container.querySelector('.br-hl-' + hl);
+        if (bg) bg.setAttribute('opacity', '1');
+      }
+    }
+    function hide() {
+      tip.style.display = 'none';
+      container.querySelectorAll('.br-rowhl').forEach(function (r) { r.setAttribute('opacity', '0'); });
+    }
+    container.querySelectorAll('[data-tip]').forEach(function (el) {
+      el.addEventListener('mousemove', function (e) { show(el, e); });
+      el.addEventListener('touchstart', function (e) { show(el, e); }, { passive: true });
+      el.addEventListener('mouseleave', hide);
+    });
+    container.addEventListener('mouseleave', hide);
+  }
+  function _mount(container, svgHtml, redraw) {
+    container.innerHTML = svgHtml + '<div class="br-vh-tip" style="display:none;"></div>';
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    _wireTips(container);
+    _register(container, redraw);
+  }
+  function _width(container, fallback) {
+    var W = container.clientWidth || 0;
+    if (W < 200) W = Math.max((container.parentNode && container.parentNode.clientWidth) || 0, fallback || 320);
+    return W;
+  }
+  function _fmt0(v) { return Math.round(v).toLocaleString('en-US'); }
+  function _fmt1(v) { return (Math.round(v * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+
+  // ── Scatter ── points: [{x, y, label, color, viewer, tip}]
+  function scatter(container, opts) {
+    opts = opts || {};
+    var redraw = function () { scatter(container, opts); };
+    var th = _theme();
+    var pts = opts.points || [];
+    if (!pts.length) { container.innerHTML = ''; return; }
+    var W = _width(container, 480), H = opts.height || 350;
+    var xs = pts.map(function (p) { return p.x; }), ys = pts.map(function (p) { return p.y; });
+    if (opts.trend) { xs.push(opts.trend[0], opts.trend[2]); ys.push(opts.trend[1], opts.trend[3]); }
+    var xLo = Math.min.apply(null, xs), xHi = Math.max.apply(null, xs);
+    var yLo = Math.min.apply(null, ys), yHi = Math.max.apply(null, ys);
+    var xPad = Math.max((xHi - xLo) * 0.12, 1), yPad = Math.max((yHi - yLo) * 0.12, 1);
+    xLo -= xPad; xHi += xPad; yLo -= yPad; yHi += yPad;
+    var padL = 46, padR = 16, padT = 14, padB = 26;
+    var plotW = Math.max(W - padL - padR, 40), plotH = Math.max(H - padT - padB, 40);
+    function X(v) { return padL + (v - xLo) / (xHi - xLo) * plotW; }
+    function Y(v) { return padT + (yHi - v) / (yHi - yLo) * plotH; }
+    var out = ['<svg class="br-scatter-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="font-family:' + FONT + ';" role="img" aria-label="Scatter chart">'];
+    for (var ti = 0; ti <= 3; ti++) {
+      var tv = yLo + (yHi - yLo) * ti / 3, ty = Y(tv);
+      out.push('<line x1="' + padL + '" y1="' + _n(ty) + '" x2="' + (padL + plotW) + '" y2="' + _n(ty) + '" stroke="' + th.border + '" stroke-opacity="0.55"/>');
+      out.push('<text x="' + (padL - 8) + '" y="' + _n(ty + 3.5) + '" text-anchor="end" font-size="11" fill="' + th.muted + '">' + _esc(_fmt0(tv)) + '</text>');
+      var xv = xLo + (xHi - xLo) * ti / 3;
+      out.push('<text x="' + _n(X(xv)) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="' + th.muted + '">' + _esc(_fmt0(xv)) + '</text>');
+    }
+    if (opts.avgX != null) {
+      out.push('<line x1="' + _n(X(opts.avgX)) + '" y1="' + padT + '" x2="' + _n(X(opts.avgX)) + '" y2="' + (padT + plotH) + '" stroke="' + th.muted + '" stroke-width="1.5" stroke-dasharray="6 4" stroke-opacity="0.7"/>');
+    }
+    if (opts.avgY != null) {
+      out.push('<line x1="' + padL + '" y1="' + _n(Y(opts.avgY)) + '" x2="' + (padL + plotW) + '" y2="' + _n(Y(opts.avgY)) + '" stroke="' + th.muted + '" stroke-width="1.5" stroke-dasharray="6 4" stroke-opacity="0.7"/>');
+    }
+    if (opts.trend) {
+      out.push('<line x1="' + _n(X(opts.trend[0])) + '" y1="' + _n(Y(opts.trend[1])) + '" x2="' + _n(X(opts.trend[2])) + '" y2="' + _n(Y(opts.trend[3])) + '" stroke="' + th.muted + '" stroke-width="1.5" stroke-dasharray="6 4" stroke-opacity="0.8"/>');
+    }
+    // Labels: every team labeled, nudged apart vertically (min 13px gap).
+    var jobs = pts.map(function (p) { return { p: p, cy: Y(p.y) }; }).sort(function (a, b) { return a.cy - b.cy; });
+    for (var li = 1; li < jobs.length; li++) { if (jobs[li].cy - jobs[li - 1].cy < 13) jobs[li].cy = jobs[li - 1].cy + 13; }
+    jobs.forEach(function (j) {
+      var p = j.p, cx = X(p.x), cy = Y(p.y);
+      out.push('<circle class="br-scatter-dot" cx="' + _n(cx) + '" cy="' + _n(cy) + '" r="' + (p.viewer ? 8 : 6.5) + '" fill="' + p.color + '" data-tip="' + _esc(p.tip || p.label) + '" style="cursor:pointer;transition:r .12s;"/>');
+      out.push('<text x="' + _n(cx + (p.viewer ? 12 : 10)) + '" y="' + _n(j.cy + 3.5) + '" font-size="11" font-weight="' + (p.viewer ? '800' : '600') + '" fill="' + th.text + '" style="paint-order:stroke;stroke:' + th.surface + ';stroke-width:3px;">' + _esc(p.label) + '</text>');
+    });
+    out.push('</svg>');
+    _mount(container, out.join(''), redraw);
+    container.querySelectorAll('.br-scatter-dot').forEach(function (d) {
+      d.addEventListener('mouseenter', function () { d.setAttribute('r', String(parseFloat(d.getAttribute('r')) + 2.5)); });
+      d.addEventListener('mouseleave', function () { d.setAttribute('r', String(parseFloat(d.getAttribute('r')) - 2.5)); });
+    });
+  }
+
+  // ── Vertical bars ── bars: [{label, sub, value, tone|color, tip}], refValue/refLabel
+  function barsV(container, opts) {
+    opts = opts || {};
+    var redraw = function () { barsV(container, opts); };
+    var th = _theme();
+    var bars = opts.bars || [];
+    if (!bars.length) { container.innerHTML = ''; return; }
+    var W = _width(container, 480), H = opts.height || 350;
+    var maxV = Math.max.apply(null, bars.map(function (b) { return b.value; }).concat([opts.refValue || 0]));
+    var yHi = maxV * 1.08 || 1;
+    var padL = 46, padR = 14, padT = 16, padB = 40;
+    var plotW = Math.max(W - padL - padR, 40), plotH = Math.max(H - padT - padB, 40);
+    function Y(v) { return padT + (yHi - v) / yHi * plotH; }
+    var hero = window.BRValueChart.heroColor;
+    var heroCol = th.dark ? hero.dark : hero.light;
+    var slot = plotW / bars.length;
+    var bw = Math.min(slot * 0.62, 44);
+    var out = ['<svg class="br-bars-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="font-family:' + FONT + ';" role="img" aria-label="Bar chart">'];
+    for (var ti = 0; ti <= 3; ti++) {
+      var tv = yHi * ti / 3, ty = Y(tv);
+      out.push('<line x1="' + padL + '" y1="' + _n(ty) + '" x2="' + (padL + plotW) + '" y2="' + _n(ty) + '" stroke="' + th.border + '" stroke-opacity="0.55"/>');
+      out.push('<text x="' + (padL - 8) + '" y="' + _n(ty + 3.5) + '" text-anchor="end" font-size="11" fill="' + th.muted + '">' + _esc(_fmt0(tv)) + '</text>');
+    }
+    bars.forEach(function (b, i) {
+      var cx = padL + slot * i + slot / 2;
+      var col = b.tone === 'sky' ? window.BRValueChart.sky : (b.tone === 'navy' ? heroCol : (b.color || heroCol));
+      out.push('<rect x="' + _n(cx - bw / 2) + '" y="' + _n(Y(b.value)) + '" width="' + _n(bw) + '" height="' + _n(Y(0) - Y(b.value)) + '" rx="3" fill="' + col + '" data-tip="' + _esc(b.tip || (b.label + ': ' + b.value)) + '" style="cursor:pointer;"/>');
+      out.push('<text x="' + _n(cx) + '" y="' + (padT + plotH + 16) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + th.text + '">' + _esc(b.label) + '</text>');
+      if (b.sub) out.push('<text x="' + _n(cx) + '" y="' + (padT + plotH + 30) + '" text-anchor="middle" font-size="9.5" fill="' + th.muted + '">' + _esc(b.sub) + '</text>');
+    });
+    if (opts.refValue != null) {
+      out.push('<line x1="' + padL + '" y1="' + _n(Y(opts.refValue)) + '" x2="' + (padL + plotW) + '" y2="' + _n(Y(opts.refValue)) + '" stroke="' + th.muted + '" stroke-width="1.5" stroke-dasharray="6 4"/>');
+      if (opts.refLabel) out.push('<text x="' + (padL + plotW - 2) + '" y="' + _n(Y(opts.refValue) - 5) + '" text-anchor="end" font-size="10" font-weight="700" fill="' + th.muted + '">' + _esc(opts.refLabel) + '</text>');
+    }
+    out.push('<line x1="' + padL + '" y1="' + _n(Y(0)) + '" x2="' + (padL + plotW) + '" y2="' + _n(Y(0)) + '" stroke="' + th.border + '"/>');
+    out.push('</svg>');
+    _mount(container, out.join(''), redraw);
+  }
+
+  // ── Horizontal bars ── rows: [{label, value, color, tip}], refValue/refLabel
+  function barsH(container, opts) {
+    opts = opts || {};
+    var redraw = function () { barsH(container, opts); };
+    var th = _theme();
+    var rows = opts.rows || [];
+    if (!rows.length) { container.innerHTML = ''; return; }
+    var W = _width(container, 480);
+    var rowH = 26, padT = 8, padB = 22, padL = 118, padR = 46;
+    var H = opts.height || (padT + padB + rows.length * rowH);
+    var maxV = Math.max.apply(null, rows.map(function (r) { return r.value; }).concat([opts.refValue || 0])) * 1.05 || 1;
+    var plotW = Math.max(W - padL - padR, 40);
+    function X(v) { return padL + v / maxV * plotW; }
+    var out = ['<svg class="br-bars-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="font-family:' + FONT + ';" role="img" aria-label="Bar chart">'];
+    rows.forEach(function (r, i) {
+      var cy = padT + i * rowH + rowH / 2;
+      out.push('<text x="' + (padL - 8) + '" y="' + _n(cy + 3.5) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + th.text + '">' + _esc(r.label) + '</text>');
+      out.push('<rect x="' + padL + '" y="' + _n(cy - 6) + '" width="' + _n(Math.max(X(r.value) - padL, 1)) + '" height="12" rx="3" fill="' + r.color + '" data-tip="' + _esc(r.tip || (r.label + ': ' + r.value)) + '" style="cursor:pointer;"/>');
+      out.push('<text x="' + _n(X(r.value) + 6) + '" y="' + _n(cy + 3.5) + '" font-size="11" fill="' + th.muted + '">' + _esc(_fmt1(r.value)) + '</text>');
+    });
+    if (opts.refValue != null) {
+      out.push('<line x1="' + _n(X(opts.refValue)) + '" y1="' + padT + '" x2="' + _n(X(opts.refValue)) + '" y2="' + (H - padB) + '" stroke="' + th.muted + '" stroke-width="1.5" stroke-dasharray="6 4"/>');
+      out.push('<text x="' + _n(X(opts.refValue)) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="10" font-weight="700" fill="' + th.muted + '">' + _esc(opts.refLabel || 'League avg') + '</text>');
+    }
+    out.push('</svg>');
+    _mount(container, out.join(''), redraw);
+  }
+
+  // ── Heatmap ── rows: [{label, avg, cells: [v|null]}], weeks: []
+  function heatmap(container, opts) {
+    opts = opts || {};
+    var redraw = function () { heatmap(container, opts); };
+    var th = _theme();
+    var rows = opts.rows || [], weeks = opts.weeks || [];
+    if (!rows.length || !weeks.length) { container.innerHTML = ''; return; }
+    var W = _width(container, 520);
+    var all = [];
+    rows.forEach(function (r) { r.cells.forEach(function (v) { if (v != null) all.push(v); }); });
+    var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+    var padL = 118, padR = 52, padT = 20, cellH = 27, gap = 2;
+    var plotW = Math.max(W - padL - padR, 60);
+    var cw = (plotW - gap * (weeks.length - 1)) / weeks.length;
+    var H = padT + rows.length * (cellH + gap) + 30;
+    var loCol = th.dark ? '#1e293b' : '#e8eef4';
+    var hiCol = th.dark ? '#60a5fa' : '#122d4b';
+    function mix(v) {
+      var t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
+      function hx(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+      var a = hx(loCol), b = hx(hiCol);
+      var rgb = a.map(function (c, i) { return Math.round(c + (b[i] - c) * t); });
+      return { bg: 'rgb(' + rgb.join(',') + ')', dark: t > 0.55 };
+    }
+    var out = ['<svg class="br-heatmap-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="font-family:' + FONT + ';" role="img" aria-label="Scoring heatmap">'];
+    weeks.forEach(function (w, wi) {
+      out.push('<text x="' + _n(padL + wi * (cw + gap) + cw / 2) + '" y="' + (padT - 7) + '" text-anchor="middle" font-size="10.5" font-weight="700" fill="' + th.muted + '">W' + _esc(String(w)) + '</text>');
+    });
+    rows.forEach(function (r, ri) {
+      var y = padT + ri * (cellH + gap);
+      out.push('<text x="' + (padL - 8) + '" y="' + _n(y + cellH / 2 + 3.5) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + th.text + '">' + _esc(r.label) + '</text>');
+      r.cells.forEach(function (v, wi) {
+        var x = padL + wi * (cw + gap);
+        if (v == null) {
+          out.push('<g data-tip="' + _esc(r.label + '\nW' + weeks[wi] + ': Bye') + '">'
+            + '<rect class="br-hm-bye" x="' + _n(x) + '" y="' + _n(y) + '" width="' + _n(cw) + '" height="' + cellH + '" rx="4" fill="none" stroke="' + th.border + '" stroke-width="1"/>'
+            + '<circle cx="' + _n(x + cw / 2) + '" cy="' + _n(y + cellH / 2) + '" r="2.2" fill="' + th.muted + '"/></g>');
+        } else {
+          var m = mix(v);
+          out.push('<g data-tip="' + _esc(r.label + '\nW' + weeks[wi] + ': ' + _fmt1(v) + ' pts') + '" style="cursor:pointer;">'
+            + '<rect class="br-hm-cell" x="' + _n(x) + '" y="' + _n(y) + '" width="' + _n(cw) + '" height="' + cellH + '" rx="4" fill="' + m.bg + '"/>'
+            + '<text x="' + _n(x + cw / 2) + '" y="' + _n(y + cellH / 2 + 3.5) + '" text-anchor="middle" font-size="10.5" font-weight="600" fill="' + (m.dark ? '#ffffff' : th.text) + '">' + _esc(_fmt0(v)) + '</text></g>');
+        }
+      });
+      out.push('<text x="' + (padL + plotW + 8) + '" y="' + _n(y + cellH / 2 + 3.5) + '" font-size="11" font-weight="700" fill="' + th.muted + '">' + _esc(_fmt1(r.avg)) + '</text>');
+    });
+    out.push('</svg>');
+    var legend = '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:10.5px;color:' + th.muted + ';">'
+      + '<span>' + _esc(_fmt0(lo)) + '</span>'
+      + '<span style="flex:0 0 140px;height:8px;border-radius:4px;background:linear-gradient(90deg,' + loCol + ',' + hiCol + ');"></span>'
+      + '<span>' + _esc(_fmt0(hi)) + '</span><span style="margin-left:6px;">points per week</span></div>';
+    container.innerHTML = out.join('') + legend + '<div class="br-vh-tip" style="display:none;"></div>';
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    _wireTips(container);
+    _register(container, redraw);
+  }
+
+  // ── Z-bars (single team) ── rows: [{label, z, raw}]
+  function zbars(container, opts) {
+    opts = opts || {};
+    var redraw = function () { zbars(container, opts); };
+    var th = _theme();
+    var rows = opts.rows || [];
+    if (!rows.length) { container.innerHTML = ''; return; }
+    var W = _width(container, 320);
+    var hero = window.BRValueChart.heroColor;
+    var heroCol = th.dark ? hero.dark : hero.light;
+    var maxAbs = Math.max(1, Math.ceil(Math.max.apply(null, rows.map(function (r) { return Math.abs(r.z || 0); }))));
+    var padL = 86, padR = 92, rowH = 30, padT = 16, padB = 8;
+    var H = opts.height || (padT + padB + rows.length * rowH);
+    var plotW = Math.max(W - padL - padR, 40);
+    var cx = padL + plotW / 2;
+    function X(z) { return cx + z / maxAbs * (plotW / 2); }
+    var out = ['<svg class="br-zbars-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="font-family:' + FONT + ';" role="img" aria-label="Team breakdown versus league average">'];
+    out.push('<text x="' + _n(cx) + '" y="11" text-anchor="middle" font-size="9.5" font-weight="700" fill="' + th.muted + '">League avg</text>');
+    rows.forEach(function (r, i) {
+      var y = padT + i * rowH;
+      var z = r.z || 0;
+      var col = z >= 0 ? heroCol : th.loss;
+      var tip = r.label + '\n' + (r.raw != null ? r.raw : '') + ' · z ' + (z >= 0 ? '+' : '') + z.toFixed(2);
+      out.push('<rect class="br-rowhl br-hl-z' + i + '" x="0" y="' + _n(y) + '" width="' + W + '" height="' + rowH + '" fill="' + th.surface + '" opacity="0"/>');
+      out.push('<text x="' + (padL - 8) + '" y="' + _n(y + rowH / 2 + 3.5) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + th.text + '">' + _esc(r.label) + '</text>');
+      out.push('<rect x="' + _n(Math.min(cx, X(z))) + '" y="' + _n(y + rowH / 2 - 6) + '" width="' + _n(Math.max(Math.abs(X(z) - cx), 1.5)) + '" height="12" rx="3" fill="' + col + '"' + (z < 0 ? ' fill-opacity="0.6"' : '') + ' data-tip="' + _esc(tip) + '" data-hl="z' + i + '" style="cursor:pointer;"/>');
+      out.push('<text x="' + (padL + plotW + 8) + '" y="' + _n(y + rowH / 2 + 3.5) + '" font-size="11" font-variant-numeric="tabular-nums" fill="' + th.text + '">' + _esc((r.raw != null ? r.raw : '') + ' · ' + (z >= 0 ? '+' : '') + z.toFixed(1)) + '</text>');
+    });
+    out.push('<line x1="' + _n(cx) + '" y1="' + padT + '" x2="' + _n(cx) + '" y2="' + (padT + rows.length * rowH) + '" stroke="' + th.muted + '" stroke-width="1.5"/>');
+    out.push('</svg>');
+    _mount(container, out.join(''), redraw);
+  }
+
+  // ── Paired z-bars (two teams) ── rows: [{label, a: {z, raw}, b: {z, raw}}]
+  function zbarPairs(container, opts) {
+    opts = opts || {};
+    var redraw = function () { zbarPairs(container, opts); };
+    var th = _theme();
+    var rows = opts.rows || [];
+    if (!rows.length) { container.innerHTML = ''; return; }
+    var W = _width(container, 480);
+    var maxAbs = Math.max(1, Math.ceil(Math.max.apply(null, rows.map(function (r) { return Math.max(Math.abs(r.a.z || 0), Math.abs(r.b.z || 0)); }))));
+    var padL = 52, padR = 118, rowH = 38, padT = 16, padB = 8;
+    var H = opts.height || (padT + padB + rows.length * rowH);
+    var plotW = Math.max(W - padL - padR, 40);
+    var cx = padL + plotW / 2;
+    function X(z) { return cx + z / maxAbs * (plotW / 2); }
+    function bar(team, z, y, col, name, first) {
+      var tip = name + '\n' + (team.raw != null ? team.raw : '') + ' · z ' + (z >= 0 ? '+' : '') + z.toFixed(2);
+      var s = '<rect x="' + _n(Math.min(cx, X(z))) + '" y="' + _n(y) + '" width="' + _n(Math.max(Math.abs(X(z) - cx), 1.5)) + '" height="11" rx="3" fill="' + col + '" data-tip="' + _esc(tip) + '" style="cursor:pointer;"/>';
+      var tx = z >= 0 ? X(z) + 6 : X(z) - 6;
+      s += '<text x="' + _n(tx) + '" y="' + _n(y + 9.5) + '" text-anchor="' + (z >= 0 ? 'start' : 'end') + '" font-size="10.5" font-variant-numeric="tabular-nums" fill="' + th.text + '">'
+        + _esc((z >= 0 ? '+' : '') + z.toFixed(1) + (first ? ' · ' + name : '')) + '</text>';
+      return s;
+    }
+    var out = ['<svg class="br-zbars-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="font-family:' + FONT + ';" role="img" aria-label="Team comparison versus league average">'];
+    out.push('<text x="' + _n(cx) + '" y="11" text-anchor="middle" font-size="9.5" font-weight="700" fill="' + th.muted + '">League avg</text>');
+    rows.forEach(function (r, i) {
+      var y = padT + i * rowH;
+      out.push('<text x="' + (padL - 8) + '" y="' + _n(y + rowH / 2 + 3.5) + '" text-anchor="end" font-size="11" font-weight="700" fill="' + th.text + '">' + _esc(r.label) + '</text>');
+      out.push(bar(r.a, r.a.z || 0, y + 2, opts.colorA, opts.nameA, i === 0));
+      out.push(bar(r.b, r.b.z || 0, y + rowH / 2 + 1, opts.colorB, opts.nameB, i === 0));
+    });
+    out.push('<line x1="' + _n(cx) + '" y1="' + padT + '" x2="' + _n(cx) + '" y2="' + (padT + rows.length * rowH) + '" stroke="' + th.muted + '" stroke-width="1.5"/>');
+    out.push('</svg>');
+    _mount(container, out.join(''), redraw);
+  }
+
+  return { scatter: scatter, barsV: barsV, barsH: barsH, heatmap: heatmap, zbars: zbars, zbarPairs: zbarPairs };
+})();
+
+// ── BRGraphsRender: payload dispatcher for the server-driven chart pages ──
+// graphs_page.py and history_page.py now emit plain chart payloads
+// ({kind, ...}) instead of Plotly figures; this maps them onto BRValueChart
+// and BRCharts. Series may carry a palette "slot" (resolved here through
+// BRTeamPalette so dark mode gets the right navy) or an explicit color.
+window.BRGraphsRender = function (container, payload) {
+  if (!container || !payload || !window.BRValueChart) return;
+  var P = window.BRTeamPalette;
+  function seriesColor(s) {
+    if (s.slot != null) return P.color(s.slot);
+    if (s.tone === 'muted') return { light: '#94a3b8', dark: '#64748b' };
+    if (s.tone === 'sky') return window.BRValueChart.sky;
+    return s.color || undefined;
+  }
+  function mapSeries(list) {
+    return (list || []).map(function (s) {
+      var o = { name: s.name, values: s.values, color: seriesColor(s), width: s.width || 2.5 };
+      if (s.hero) o.hero = true;
+      if (s.dash) o.dash = s.dash;
+      if (s.opacity != null) o.opacity = s.opacity;
+      if (s.endName) o.endName = s.endName;
+      if (s.endLabel === false) o.endLabel = false;
+      return o;
+    });
+  }
+  var fmt = payload.fmt === 'pct' ? function (v) { return Math.round(v) + '%'; }
+    : payload.fmt === 'pts1' ? function (v) { return (Math.round(v * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+    : function (v) { return Math.round(v).toLocaleString('en-US'); };
+  if (payload.kind === 'line') {
+    window.BRValueChart.render(container, {
+      height: payload.height || 350,
+      labels: payload.labels || [],
+      series: mapSeries(payload.series),
+      straight: !!payload.straight,
+      yReverse: !!payload.yReverse,
+      yStep: payload.yStep || null,
+      yMin: payload.yMin != null ? payload.yMin : null,
+      yMax: payload.yMax != null ? payload.yMax : null,
+      dots: payload.dots || 'auto',
+      endLabelTop: payload.endLabelTop != null ? payload.endLabelTop : null,
+      sortTip: !!payload.sortTip,
+      pointNotes: payload.pointNotes || null,
+      refLines: (payload.refLines || []).map(function (r) {
+        return { value: r.value, label: r.label || null, labelAt: r.labelAt || 'left', color: { light: '#94a3b8', dark: '#64748b' } };
+      }),
+      fmtVal: fmt,
+    });
+  } else if (payload.kind === 'scatter') {
+    window.BRCharts.scatter(container, {
+      height: payload.height || 350,
+      points: (payload.points || []).map(function (p) {
+        return { x: p.x, y: p.y, label: p.label, viewer: !!p.viewer, color: p.slot != null ? P.color(p.slot) : (p.color || '#64748b'), tip: p.tip || (p.label + '\nPF ' + Math.round(p.y) + ' · PA ' + Math.round(p.x)) };
+      }),
+      trend: payload.trend || null, avgX: payload.avgX, avgY: payload.avgY,
+    });
+  } else if (payload.kind === 'barsV') {
+    window.BRCharts.barsV(container, { height: payload.height || 350, bars: payload.bars || [], refValue: payload.refValue, refLabel: payload.refLabel });
+  } else if (payload.kind === 'barsH') {
+    window.BRCharts.barsH(container, {
+      height: payload.height || null,
+      rows: (payload.rows || []).map(function (r) { return { label: r.label, value: r.value, color: r.slot != null ? P.color(r.slot) : (r.color || '#64748b'), tip: r.tip }; }),
+      refValue: payload.refValue, refLabel: payload.refLabel,
+    });
+  } else if (payload.kind === 'heatmap') {
+    window.BRCharts.heatmap(container, { rows: payload.rows || [], weeks: payload.weeks || [] });
+  }
+};
+
+// Hydrate server-prerendered history chart mounts (.br-history-chart with a
+// JSON payload in data-chart). Used by the tour/prerender path; the live
+// page renders the same payload shape straight from the sections API.
+window.BRRenderHistoryCharts = function (root) {
+  (root || document).querySelectorAll('.br-history-chart').forEach(function (el) {
+    if (el._brRendered) return;
+    try {
+      var payload = JSON.parse(el.getAttribute('data-chart') || '{}');
+      el._brRendered = true;
+      window.BRGraphsRender(el, payload);
+    } catch (e) { /* leave the mount empty rather than breaking the page */ }
+  });
+};
+if (typeof document !== 'undefined' && document.querySelectorAll) {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { window.BRRenderHistoryCharts(document); });
+  } else {
+    window.BRRenderHistoryCharts(document);
+  }
+}
 
 function _fixOnePlotly(gd) {
   const P = window.Plotly;
@@ -19523,47 +20018,37 @@ document.addEventListener('DOMContentLoaded', function() {
               window.brErrorState(standingsContent, 'Failed to load standings.', null, { compact: true });
             }
           }
-          // Chart section
+          // Chart section: ONE renderer for both API shapes. The sections
+          // endpoint returns chart.data; a prerendered chart.html (tour
+          // mode) carries the same payload in a .br-history-chart mount.
+          // Both render through BRGraphsRender (palette colors keyed by
+          // owner name, stable across seasons) instead of Plotly.
           if (chartContent) {
             const chartData = (data.chart && data.chart.data) || [];
             if (data.chart && data.chart.html) {
               chartContent.innerHTML = data.chart.html;
-            } else if (chartData.length > 0) {
-              chartContent.innerHTML = '<div id="historyChartPlotly" style="width: 100%; height: 430px;"></div>';
-              const traces = chartData.map(team => ({
-                x: team.x,
-                y: team.y,
-                mode: 'lines+markers',
-                name: team.name,
-                line: { width: 2, shape: 'spline', smoothing: 0.6 },
-                marker: { size: 4 },
-                hovertemplate: '%{fullData.name}<br>Week %{x}<br>%{y:.1f} pts<extra></extra>'
-              }));
-              const _t = window.brandPlotlyTheme();
-              const layout = {
-                colorway: window.brandPlotlyColorway,
-                font: { family: window.brandPlotlyFont, size: 12.5, color: _t.text },
-                height: 430,
-                paper_bgcolor: 'transparent',
-                plot_bgcolor: 'transparent',
-                margin: { l: 44, r: 20, t: 20, b: 40 },
-                legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, x: 0, font: { size: 11, color: _t.text } },
-                hoverlabel: { font: { family: window.brandPlotlyFont, size: 12 }, bgcolor: _t.hoverBg, bordercolor: _t.hoverBorder },
-                hovermode: 'closest',
-                xaxis: {
-                  title: { text: 'Week', font: { size: 11, color: _t.text } },
-                  showgrid: false, zeroline: false,
-                  tickfont: { size: 11, color: _t.text },
-                  tickmode: 'auto',
-                  nticks: Math.min(10, Math.max(...chartData.flatMap(team => team.x)) || 18)
-                },
-                yaxis: {
-                  title: { text: 'Points', font: { size: 11, color: _t.text } },
-                  showgrid: true, gridcolor: _t.grid, zeroline: false,
-                  tickfont: { size: 11, color: _t.text }
-                }
-              };
-              if (window.ensurePlotly) window.ensurePlotly().then(function () { Plotly.newPlot('historyChartPlotly', traces, layout, { responsive: true, displayModeBar: false }); }).catch(function () {});
+              if (window.BRRenderHistoryCharts) window.BRRenderHistoryCharts(chartContent);
+            } else if (chartData.length > 0 && window.BRGraphsRender) {
+              chartContent.innerHTML = '<div id="historyChartSvg" style="width: 100%; height: 430px;"></div>';
+              var histEl = document.getElementById('historyChartSvg');
+              var histNames = chartData.map(function (t) { return t.name; }).sort();
+              var histSlots = window.BRTeamPalette.assign(histNames, null);
+              var histWeeks = chartData.reduce(function (acc, t) {
+                (t.x || []).forEach(function (w) { if (acc.indexOf(w) < 0) acc.push(w); });
+                return acc;
+              }, []).sort(function (a, b) { return a - b; });
+              window.BRGraphsRender(histEl, {
+                kind: 'line', height: 430, fmt: 'pts1', dots: 'none', sortTip: true,
+                labels: histWeeks.map(function (w) { return 'W' + w; }),
+                series: chartData.map(function (t) {
+                  var byWeek = {};
+                  (t.x || []).forEach(function (w, i) { byWeek[w] = t.y[i]; });
+                  return {
+                    name: t.name, slot: histSlots[t.name], width: 2, opacity: 0.9,
+                    values: histWeeks.map(function (w) { return byWeek[w] != null ? byWeek[w] : null; }),
+                  };
+                }),
+              });
             } else {
               window.brEmptyState(chartContent, {
                 icon: 'chart',
@@ -25975,6 +26460,14 @@ function _tmBuildEffChart(weeks) {
   const xAt = i => padL + (n === 1 ? (W - padL - padR) / 2 : i * (W - padL - padR) / (n - 1));
   const yAt = v => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
   const pts = key => good.map((w, i) => `${xAt(i).toFixed(1)},${yAt(Number(w[key])).toFixed(1)}`).join(' ');
+  // Soft corners, same rule as the shared chart system: a monotone curve
+  // through the true points (no data smoothing, no invented highs or lows).
+  const pathOf = key => {
+    const arr = good.map((w, i) => ({ x: xAt(i), y: yAt(Number(w[key])) }));
+    return (window.BRValueChart && window.BRValueChart.monotonePath)
+      ? window.BRValueChart.monotonePath(arr)
+      : ('M' + arr.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L'));
+  };
   const gridY = [lo + (hi - lo) * 0.15, (lo + hi) / 2, hi - (hi - lo) * 0.15];
   const grid = gridY.map(v =>
     `<line x1="${padL}" y1="${yAt(v).toFixed(1)}" x2="${W - padR}" y2="${yAt(v).toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>` +
@@ -25985,6 +26478,13 @@ function _tmBuildEffChart(weeks) {
   ).join('');
   const lastActual = good[good.length - 1];
   const endDot = `<circle cx="${xAt(n - 1).toFixed(1)}" cy="${yAt(Number(lastActual.actual)).toFixed(1)}" r="3.5" fill="var(--brand-blue)"/>`;
+  const lastOptY = yAt(Number(lastActual.optimal));
+  const lastActY = yAt(Number(lastActual.actual));
+  const optAbove = lastOptY < lastActY;
+  const endLabels =
+    `<text x="${(W - 2).toFixed(1)}" y="${(lastActY + (optAbove ? 12 : -6)).toFixed(1)}" font-size="9.5" font-weight="700" fill="var(--brand-blue)" text-anchor="end">${Number(lastActual.actual).toFixed(1)}</text>` +
+    `<circle cx="${xAt(n - 1).toFixed(1)}" cy="${lastOptY.toFixed(1)}" r="3" fill="var(--text-subtle)"/>` +
+    `<text x="${(W - 2).toFixed(1)}" y="${(lastOptY + (optAbove ? -6 : 12)).toFixed(1)}" font-size="9.5" font-weight="700" fill="var(--text-subtle)" text-anchor="end">${Number(lastActual.optimal).toFixed(1)}</text>`;
   const seasonActual = good.reduce((s, w) => s + Number(w.actual), 0);
   const seasonOpt = good.reduce((s, w) => s + Number(w.optimal), 0);
   const effPct = seasonOpt > 0 ? (seasonActual / seasonOpt * 100).toFixed(0) : '--';
@@ -25999,9 +26499,9 @@ function _tmBuildEffChart(weeks) {
     // instead of stretching it).
     `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;height:auto;" role="img" aria-label="Weekly actual versus optimal points">` +
     grid +
-    `<polyline points="${pts('optimal')}" fill="none" stroke="var(--text-subtle)" stroke-width="2" stroke-dasharray="4 3"/>` +
-    `<polyline points="${pts('actual')}" fill="none" stroke="var(--brand-blue)" stroke-width="2.5"/>` +
-    endDot + xlabels +
+    `<path d="${pathOf('optimal')}" fill="none" stroke="var(--text-subtle)" stroke-width="2" stroke-dasharray="4 3"/>` +
+    `<path d="${pathOf('actual')}" fill="none" stroke="var(--brand-blue)" stroke-width="2.5"/>` +
+    endDot + endLabels + xlabels +
     '</svg></div>'
   );
 }
@@ -26137,18 +26637,16 @@ function tmSwitchTab(tab) {
     tmLoadTrades(window._tmRosterId);
   }
 
-  // Plotly charts are created while their panel is display:none (roster is the
-  // default tab), so they measure a 0-width container and fall back to a wide
-  // default that overflows the column. Resize them once the panel is visible.
-  if (tab === 'charts' && window.ensurePlotly) {
-    window.ensurePlotly().then(function () {
-      requestAnimationFrame(() => {
-        ['teamWeeklyChart', 'teamRadarChart'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) { try { Plotly.Plots.resize(el); } catch (_) {} }
-        });
+  // The SVG charts are created while their panel is display:none (roster is
+  // the default tab), so they measure a 0-width container. Redraw them once
+  // the panel is visible so they take the column's real width.
+  if (tab === 'charts') {
+    requestAnimationFrame(() => {
+      ['teamWeeklyChart', 'teamRadarChart'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el._brVhRedraw) { try { el._brVhRedraw(); } catch (_) {} }
       });
-    }).catch(function () {});
+    });
   }
 }
 
@@ -27586,172 +28084,56 @@ function renderTeamDetails(data) {
     catch (e) { agesPanel.innerHTML = '<div class="team-modal-empty">Age data unavailable</div>'; }
   }
 
-  // Helper function to get theme-appropriate Plotly styling. Aligned with the
-  // brand chart system (soft muted text instead of harsh pure black/white, a
-  // subtle grid, transparent background so charts blend into their card).
-  function getPlotlyTheme() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const t = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
-    return {
-      template: isDark ? 'plotly_dark' : 'plotly_white',
-      textColor: t.text || (isDark ? '#9aa7b8' : '#7c8798'),
-      gridColor: t.grid || (isDark ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)'),
-      lineColor: isDark ? '#64748b' : '#94a3b8',
-      hoverBg: t.hoverBg || (isDark ? '#0f172a' : '#ffffff'),
-      hoverBorder: t.hoverBorder || (isDark ? '#334155' : '#e5e7eb'),
-      paper: 'transparent',
-      plot: 'transparent'
-    };
-  }
-
-  // Render charts using Plotly (loaded on demand)
-  if (data.graphs && window.ensurePlotly) {
-    // Render weekly scores chart
-    if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
-      const weeks = data.graphs.weekly_scores.map(d => d.week);
-      const points = data.graphs.weekly_scores.map(d => d.points);
-
-      const theme = getPlotlyTheme();
-      const traces = [{
-        x: weeks,
-        y: points,
-        type: 'scatter',
-        mode: 'lines+markers',
-        name: data.team_name,
-        line: { color: (window.brandPlotlyColorway || ['#3b82f6'])[0], width: 2.5, shape: 'spline', smoothing: 0.6 },
-        marker: { size: 6 },
-        hovertemplate: `<b>${data.team_name}</b><br>Week: %{x}<br>Points: %{y:.1f}<extra></extra>`
+  // Render the charts panel graphs in the shared SVG chart system
+  // (BRValueChart for Weekly Scoring, BRCharts z-bars for Team Breakdown).
+  if (data.graphs) {
+    // Weekly Scoring: team = navy hero with gradient, league average = thin
+    // dashed muted reference, stacked end labels, no legend, no spline.
+    var weeklyEl = document.getElementById('teamWeeklyChart');
+    if (weeklyEl && window.BRValueChart && data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
+      var ws = data.graphs.weekly_scores;
+      var wkLabels = ws.map(function (d) { return 'W' + d.week; });
+      var wkSeries = [{
+        name: data.team_name, hero: true, width: 3,
+        color: window.BRValueChart.heroColor,
+        values: ws.map(function (d) { return d.points; }),
       }];
-
-      // Add league average if available
       if (data.graphs.league_avg_scores && data.graphs.league_avg_scores.length > 0) {
-        const avgWeeks = data.graphs.league_avg_scores.map(d => d.week);
-        const avgPoints = data.graphs.league_avg_scores.map(d => d.points);
-        traces.push({
-          x: avgWeeks,
-          y: avgPoints,
-          type: 'scatter',
-          mode: 'lines',
-          name: 'League Avg',
-          line: { dash: 'dash', color: '#9ca3af', width: 2 },
-          opacity: 0.7,
-          hovertemplate: `<b>League Average</b><br>Week: %{x}<br>Points: %{y:.1f}<extra></extra>`
+        var avgByIdx = ws.map(function (d) {
+          var hit = data.graphs.league_avg_scores.filter(function (a) { return a.week === d.week; })[0];
+          return hit ? hit.points : null;
         });
+        if (avgByIdx.some(function (v) { return v != null; })) {
+          wkSeries.push({
+            name: 'Lg Avg', width: 1.5, dash: '8 5',
+            color: { light: '#9ca3af', dark: '#64748b' },
+            values: avgByIdx,
+          });
+        }
       }
-
-      const weeklyLayout = {
-        template: theme.template,
-        paper_bgcolor: theme.paper,
-        plot_bgcolor: theme.plot,
-        font: { family: window.brandPlotlyFont, size: 12.5, color: theme.textColor },
-        xaxis: {
-          // Whole-week ticks (W1, W2, ...) instead of Plotly's fractional
-          // auto ticks (1, 1.5, 2, ...). Axis titles are redundant with the
-          // section header and tick labels, so they are dropped.
-          tickmode: 'array',
-          tickvals: weeks,
-          ticktext: weeks.map(function (w) { return 'W' + w; }),
-          color: theme.textColor,
-          showgrid: false,
-          zeroline: false
-        },
-        yaxis: {
-          color: theme.textColor,
-          gridcolor: theme.gridColor,
-          zeroline: false
-        },
-        hovermode: 'x unified',
-        hoverlabel: {
-          bgcolor: theme.hoverBg,
-          bordercolor: theme.hoverBorder,
-          font: { color: theme.textColor }
-        },
-        margin: { l: 44, r: 20, t: 48, b: 36 },
-        showlegend: true,
-        // Legend floats above the plot, anchored top-left, so it never
-        // overlaps the data area.
-        legend: {
-          orientation: 'h',
-          x: 0,
-          xanchor: 'left',
-          y: 1.02,
-          yanchor: 'bottom',
-          font: { color: theme.textColor }
-        },
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(0,0,0,0)'
-      };
-
-      window.ensurePlotly().then(function () { Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true, displayModeBar: false }); }).catch(function () {});
+      window.BRValueChart.render(weeklyEl, {
+        height: 250, labels: wkLabels, series: wkSeries, dots: 'all',
+        fmtVal: function (v) { return (Math.round(v * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); },
+      });
     }
 
-    // Render radar chart
-    if (data.graphs.radar && data.graphs.radar.z_scores) {
-      const metrics = data.graphs.radar.metrics;
-      const zScores = data.graphs.radar.z_scores;
-      const rawStats = data.graphs.radar.raw_stats;
-
-      // Close the ring
-      const closedMetrics = [...metrics, metrics[0]];
-      const closedZScores = [...zScores, zScores[0]];
-
-      // Create hover text with raw stats
-      const hoverText = metrics.map((metric, i) =>
-        `${metric}: ${rawStats[metric]} (z: ${zScores[i] != null && !isNaN(zScores[i]) ? zScores[i].toFixed(2) : 'N/A'})`
-      );
-      hoverText.push(hoverText[0]); // Close the ring for hover text too
-
-      const radarTrace = {
-        type: 'scatterpolar',
-        r: closedZScores,
-        theta: closedMetrics,
-        fill: 'toself',
-        fillcolor: 'rgba(59, 130, 246, 0.22)',
-        line: { color: '#3b82f6', width: 2 },
-        marker: { size: 6, color: '#3b82f6' },
-        name: data.team_name,
-        text: hoverText,
-        hoverinfo: 'text'
-      };
-
-      const theme = getPlotlyTheme();
-      const radarLayout = {
-        font: { family: window.brandPlotlyFont, size: 12.5 },
-        template: theme.template,
-        polar: {
-          domain: { x: [0.05, 0.95], y: [0.05, 0.95] },
-          radialaxis: {
-            visible: true,
-            range: [-3, 3],
-            tickvals: [-3, -2, -1, 0, 1, 2, 3],
-            tickcolor: theme.textColor,
-            gridcolor: theme.gridColor,
-            linecolor: theme.lineColor
-          },
-          angularaxis: {
-            tickcolor: theme.textColor,
-            gridcolor: theme.gridColor,
-            linecolor: theme.lineColor
-          },
-          bgcolor: 'rgba(0,0,0,0)'
-        },
-        margin: { l: 40, r: 40, t: 24, b: 24 },
-        showlegend: false,
-        autosize: true,
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        font: {
-          color: theme.textColor,
-          size: 11,
-        }
-      };
-
-      window.ensurePlotly().then(function () {
-        Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, {
-          responsive: true,
-          displayModeBar: false,
-        });
-      }).catch(function () {});
+    // Team Breakdown: z-bars against the league-average zero line (the
+    // radar replacement). Raw value + z at each row end; hover/tap a row
+    // for the same read.
+    var radarEl = document.getElementById('teamRadarChart');
+    if (radarEl && window.BRCharts && data.graphs.radar && data.graphs.radar.z_scores) {
+      var metrics = data.graphs.radar.metrics || [];
+      var zScores = data.graphs.radar.z_scores || [];
+      var rawStats = data.graphs.radar.raw_stats || {};
+      var zRows = metrics.map(function (metric, i) {
+        var raw = rawStats[metric];
+        return {
+          label: metric,
+          z: (zScores[i] != null && !isNaN(zScores[i])) ? Number(zScores[i]) : 0,
+          raw: (raw != null && !isNaN(Number(raw))) ? (Math.round(Number(raw) * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : String(raw == null ? '' : raw),
+        };
+      }).filter(function (r) { return r.label; });
+      if (zRows.length) window.BRCharts.zbars(radarEl, { rows: zRows, height: 250 });
     }
   }
 }

@@ -73,10 +73,12 @@ def test_no_plotly_on_the_three_value_history_paths():
 
 
 def test_other_plotly_charts_untouched():
-    # Later waves: team modal weekly scores + radar, league history chart.
-    assert "Plotly.newPlot('teamWeeklyChart'" in APP
-    assert "Plotly.newPlot('teamRadarChart'" in APP
-    assert "Plotly.newPlot('historyChartPlotly'" in APP
+    # Wave 1 scope guard, updated for wave 2: the three surfaces wave 1
+    # left on Plotly (team weekly, team radar, history) have since been
+    # converted by wave 2, so none of their Plotly calls remain either.
+    assert "Plotly.newPlot('teamWeeklyChart'" not in APP
+    assert "Plotly.newPlot('teamRadarChart'" not in APP
+    assert "Plotly.newPlot('historyChartPlotly'" not in APP
 
 
 # ── Modal chart spec ─────────────────────────────────────────────────────

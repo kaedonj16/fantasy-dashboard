@@ -1182,34 +1182,6 @@ def build_teams_body(ctx: dict) -> str:
         floatViewer();
       }})();
 
-      // Lazy-render Plotly charts as they scroll into view
-      (function() {{
-        function renderChart(el) {{
-          if (el.dataset.rendered) return;
-          el.dataset.rendered = '1';
-          try {{
-            var trace  = JSON.parse(el.getAttribute('data-chart'));
-            var layout = JSON.parse(el.getAttribute('data-layout'));
-            el.innerHTML = '';
-            Plotly.newPlot(el.id, trace, layout, {{responsive: true, displayModeBar: false}});
-          }} catch(e) {{}}
-        }}
-        function tryRender(el) {{
-          if (window.ensurePlotly) {{ window.ensurePlotly().then(function() {{ renderChart(el); }}).catch(function() {{}}); }}
-        }}
-        var charts = document.querySelectorAll('.team-chart-lazy');
-        if ('IntersectionObserver' in window) {{
-          var obs = new IntersectionObserver(function(entries) {{
-            entries.forEach(function(e) {{
-              if (e.isIntersecting) {{ tryRender(e.target); obs.unobserve(e.target); }}
-            }});
-          }}, {{ rootMargin: '300px' }});
-          charts.forEach(function(el) {{ obs.observe(el); }});
-        }} else {{
-          charts.forEach(tryRender);
-        }}
-      }})();
-
       // Window legend toggles (one per grading mode when the toggle exists)
       document.querySelectorAll('.window-legend-toggle').forEach(function(btn) {{
         btn.addEventListener('click', function() {{
