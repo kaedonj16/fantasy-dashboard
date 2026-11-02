@@ -136,16 +136,13 @@ def test_toggle_clip_prefers_freshest_feed_event():
     assert "_feed" in seg
 
 
-def test_clip_row_is_button_left_source_right():
+def test_video_error_retries_stream_before_embed_fallback():
     js = _js()
-    # Kaedon's pick (mock option B): the Watch button no longer sits
-    # alone at the right of a full-width row; the row is space-between
-    # with the posting account's handle as muted source text on the
-    # right, parsed from the tweet URL.
-    assert "rz-clip-card-src" in js
-    assert "clip from X" in js
-    assert "clipHandle" in js
-    css = CSS.read_text(encoding="utf-8")
-    row = css.split(".rz-clip-row {")[1].split("}")[0]
-    assert "space-between" in row
-    assert ".rz-clip-card-src" in css
+    # Reproduced in a clean browser profile (2026-11-02): first open
+    # errored the stream and landed on the tweet embed, close/reopen
+    # played the same stream fine. A transient failure must retry the
+    # source once before the panel gives up to the embed.
+    seg = js.split("function _wireClipVideo")[1].split("\n  function ")[0]
+    assert "data-clip-retried" in seg
+    assert "video.addEventListener('error', onErr)" in seg
+    assert seg.index("data-clip-retried") < seg.index("_clipFallbackToEmbed(panel);", seg.index("data-clip-retried"))
