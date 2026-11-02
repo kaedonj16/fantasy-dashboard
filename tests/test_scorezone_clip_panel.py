@@ -134,3 +134,15 @@ def test_toggle_clip_prefers_freshest_feed_event():
     seg = js.split("function _toggleClip")[1].split("\n  function ")[0]
     assert "freshEv" in seg
     assert "_feed" in seg
+
+
+def test_video_error_retries_stream_before_embed_fallback():
+    js = _js()
+    # Reproduced in a clean browser profile (2026-11-02): first open
+    # errored the stream and landed on the tweet embed, close/reopen
+    # played the same stream fine. A transient failure must retry the
+    # source once before the panel gives up to the embed.
+    seg = js.split("function _wireClipVideo")[1].split("\n  function ")[0]
+    assert "data-clip-retried" in seg
+    assert "video.addEventListener('error', onErr)" in seg
+    assert seg.index("data-clip-retried") < seg.index("_clipFallbackToEmbed(panel);", seg.index("data-clip-retried"))

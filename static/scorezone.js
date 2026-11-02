@@ -3971,8 +3971,33 @@
     if (!video || panel.getAttribute('data-clip-video-wired')) return;
     if (panel.getAttribute('data-clip-fell-back')) return;
     panel.setAttribute('data-clip-video-wired', '1');
-    if (video.error || video.networkState === 3) _clipFallbackToEmbed(panel);
-    else video.addEventListener('error', function() { _clipFallbackToEmbed(panel); });
+    var onErr = function() {
+      // The embed is the last resort, not the first response to an
+      // error: a transient stream failure (a proxy hiccup, the web
+      // worker restarting mid-request) errored the video on first open
+      // and stranded the panel on the tweet until a close/reopen, even
+      // though the same stream played fine seconds later (reproduced
+      // in a clean browser profile, 2026-11-02). Reload the same
+      // source once before giving up to the embed.
+      if (panel.getAttribute('data-clip-retried')) {
+        _clipFallbackToEmbed(panel);
+        return;
+      }
+      panel.setAttribute('data-clip-retried', '1');
+      setTimeout(function() {
+        if (!video.isConnected || panel.getAttribute('data-clip-fell-back')) return;
+        var src = video.getAttribute('src');
+        if (!src) { _clipFallbackToEmbed(panel); return; }
+        video.removeAttribute('src');
+        video.load();
+        video.setAttribute('src', src);
+        video.load();
+        var pr = video.play ? video.play() : null;
+        if (pr && pr.catch) pr.catch(function() {});
+      }, 1200);
+    };
+    if (video.error || video.networkState === 3) onErr();
+    else video.addEventListener('error', onErr);
   }
 
   function _wireClipPanel(panel) {
