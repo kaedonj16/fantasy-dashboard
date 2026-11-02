@@ -255,19 +255,24 @@ class TestBacktestFlag:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Percentile pool: stored v4 rows count toward the board population
+# Percentile pool: historical-only since 2026-11-02; v4 enters via the
+# population rebuild under the new model, not via stored rows
 # ─────────────────────────────────────────────────────────────────────
 
 class TestPercentilePoolVersions:
-    def test_v4_rows_count_toward_the_pool(self):
+    def test_pool_is_historical_only_registry_keeps_v4(self):
         from dashboard_services import rookie_api as ra
+        # The comparable-version registry keeps "4.0": when v4 ships,
+        # the historical population is rebuilt under it (the go-live
+        # chain's re-grade step keys off this set).
         assert "4.0" in ra._PCT_MODEL_VERSIONS
-        # The reference-population query binds the same version set via
-        # the constant (single source of truth since #2710's refactor);
-        # keep the two from drifting apart again.
+        # The pools read ONLY the migration-050 historical rows
+        # (Kaedon's spec: never the current class), so stored v4 rows
+        # no longer enter the pool directly and the population builder
+        # must not read rookie_rankings at all.
         import inspect
         src = inspect.getsource(ra.reference_population)
-        assert "list(_PCT_MODEL_VERSIONS)" in src
+        assert "FROM rookie_rankings" not in src
 
 
 # ─────────────────────────────────────────────────────────────────────

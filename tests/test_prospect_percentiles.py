@@ -65,7 +65,7 @@ class TestComponentPercentile:
 
 class TestReferencePopulation:
     def test_values_classes_and_size(self):
-        pop = ra.reference_population("WR", rows=_pop_rows(35, year=2025))
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(35, year=2025))
         assert pop["n"] == 35
         assert pop["classes"] == [2025]
         assert len(pop["values"]["production"]) == 35
@@ -75,22 +75,22 @@ class TestReferencePopulation:
     def test_athleticism_population_tested_only(self):
         # Untested players carry a floor athleticism score in v3.x; they
         # must never anchor the athleticism scale.
-        pop = ra.reference_population("WR", rows=_pop_rows(40, tested=12))
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(40, tested=12))
         assert len(pop["values"]["athleticism"]) == 12
         assert len(pop["values"]["production"]) == 40
 
     def test_position_scoping_via_injected_rows(self):
         # The DB path filters by position in SQL; injected rows are already
         # one position's rows, and each position builds its own population.
-        wr = ra.reference_population("WR", rows=_pop_rows(40, base=50.0))
-        te = ra.reference_population("TE", rows=_pop_rows(40, base=10.0))
+        wr = ra.reference_population("WR", ref_rows=_pop_rows(40, base=50.0))
+        te = ra.reference_population("TE", ref_rows=_pop_rows(40, base=10.0))
         assert wr["values"]["production"][0] == 50.0
         assert te["values"]["production"][0] == 10.0
 
 
 class TestComponentPercentiles:
     def test_untested_player_gets_no_athleticism(self):
-        pop = ra.reference_population("WR", rows=_pop_rows(40, tested=40))
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(40, tested=40))
         row = {"production_score": 89.0, "efficiency_score": 59.5,
                "breakout_profile_score": 69.0, "competition_score": 59.0,
                "athleticism_score": 99.0,
@@ -100,7 +100,7 @@ class TestComponentPercentiles:
         assert out["production"] == 100
 
     def test_tested_player_gets_athleticism(self):
-        pop = ra.reference_population("RB", rows=_pop_rows(40, tested=40))
+        pop = ra.reference_population("RB", ref_rows=_pop_rows(40, tested=40))
         row = {"production_score": 50.0, "efficiency_score": 40.0,
                "breakout_profile_score": 30.0, "competition_score": 20.0,
                "athleticism_score": 99.0,
@@ -109,7 +109,7 @@ class TestComponentPercentiles:
         assert out["athleticism"] == 100
 
     def test_thin_position_population_hides_all(self):
-        pop = ra.reference_population("TE", rows=_pop_rows(12))
+        pop = ra.reference_population("TE", ref_rows=_pop_rows(12))
         row = {"production_score": 89.0, "forty_yard": 4.5}
         out = ra.component_percentiles(row, pop)
         assert all(v is None for v in out.values())
@@ -189,22 +189,22 @@ class TestPoolLine:
         }
         monkeypatch.setattr(
             ra, "reference_population",
-            lambda pos, rows=None: pops[pos])
+            lambda pos, ref_rows=None: pops[pos])
         assert ra.percentile_pool_line() == (
-            "Percentiles vs graded prospects at the position, "
+            "Percentiles vs drafted players at the position, "
             "classes 2025-2027")
 
     def test_single_class(self, monkeypatch):
         monkeypatch.setattr(
             ra, "reference_population",
-            lambda pos, rows=None: {"classes": [2027]})
+            lambda pos, ref_rows=None: {"classes": [2027]})
         assert ra.percentile_pool_line() == (
-            "Percentiles vs graded prospects at the position, classes 2027")
+            "Percentiles vs drafted players at the position, classes 2027")
 
     def test_no_population_no_line(self, monkeypatch):
         monkeypatch.setattr(
             ra, "reference_population",
-            lambda pos, rows=None: {"classes": []})
+            lambda pos, ref_rows=None: {"classes": []})
         assert ra.percentile_pool_line() is None
 
 
@@ -286,7 +286,7 @@ class TestNoGradeRendered:
         # Everything the board/modal renders for a player is derived from
         # these fields; none of them may contain his grade.
         import json
-        pop = ra.reference_population("WR", rows=_pop_rows(40, tested=40))
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(40, tested=40))
         row = {"production_score": 89.0, "efficiency_score": 59.5,
                "breakout_profile_score": 69.0, "competition_score": 59.0,
                "athleticism_score": 70.0, "forty_yard": None,
