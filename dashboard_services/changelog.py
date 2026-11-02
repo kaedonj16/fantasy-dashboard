@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-02",
+        "tag": "fix",
+        "text": "Player Rankings freshness and hover fixes: Total Points and PPG now count each player's own finished games as soon as they end, matching the player card instead of waiting for the next full update. The hover quick look opens even while the board is still loading if you are already resting on a row, its trend, game log, and matchup sections time out and retry cleanly instead of spinning forever, and repeat visits skip work the server has already done so the board settles faster.",
+        "link": "/players"
+    },
+    {
         "date": "2026-11-01",
         "tag": "fix",
         "text": "Trade Calculator: each side's header is now just the team name, without the piece count and running total that repeated the Trade Summary below. Player headshots on trade chips sit clean with no colored backing and no initials when a player has no photo, and the player search boxes have a cleaner look with a soft fill and a search icon.",

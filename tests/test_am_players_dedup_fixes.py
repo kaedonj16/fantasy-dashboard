@@ -166,7 +166,8 @@ def test_league_players_disk_tier_serves_after_recycle(monkeypatch, tmp_path):
         adp_service, "global_adp_snapshot_signature", lambda: 7.0)
     disk_path = tmp_path / "lp_payload.json"
     monkeypatch.setattr(
-        appmod, "_lp_payload_disk_path", lambda key, ts, sig: str(disk_path))
+        appmod, "_lp_payload_disk_path",
+        lambda key, ts, sig, weekly_sig=(): str(disk_path))
 
     appmod._LP_PAYLOAD_CACHE.clear()
     first = appmod._build_league_players_payload()
@@ -179,6 +180,22 @@ def test_league_players_disk_tier_serves_after_recycle(monkeypatch, tmp_path):
     second = appmod._build_league_players_payload()
     assert second == payload
     assert len(builds) == 1, "rebuild ran even though the disk tier had the signature"
+
+    # A finished game changes the weekly signature: the memo must miss
+    # even though model values and ADP are unchanged, so per-player
+    # PPG / totals refresh instead of freezing until the daily rebuild.
+    # (In production the signature is hashed into the disk filename, so
+    # the new signature's file does not exist yet; the stub re-points
+    # to a fresh path to mirror that.)
+    monkeypatch.setattr(
+        appmod, "_lp_weekly_signature", lambda: (2026, (1, 2), 3, 4, (10, 20)))
+    monkeypatch.setattr(
+        appmod, "_lp_payload_disk_path",
+        lambda key, ts, sig, weekly_sig=(): str(tmp_path / "lp_payload_wk2.json"))
+    appmod._LP_PAYLOAD_CACHE.clear()
+    third = appmod._build_league_players_payload()
+    assert third == payload
+    assert len(builds) == 2, "weekly signature change did not force a rebuild"
 
 
 # ── Sparklines: one DB query per model signature ────────────────────────────

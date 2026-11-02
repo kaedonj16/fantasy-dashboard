@@ -1494,6 +1494,7 @@ function prRender() {
   });
 
   prRenderPagination(prPage, totalPages);
+  if (typeof prQlTryPending === 'function') prQlTryPending();
 }
 
 function prRenderPagination(page, totalPages) {
@@ -1949,6 +1950,12 @@ var prQlEl = null;
 var prQlPid = null;
 var prQlRow = null;
 var prQlShowTimer = null;
+// Hover that arrived before the players payload landed (the SSR rows
+// carry no data-pid, so there is nothing to look up yet). Remembered by
+// player name and fulfilled by prQlTryPending once prRender has real
+// rows, so the card still opens for a user who is simply holding the
+// cursor on a row while the page finishes loading.
+var _prQlPending = null;
 var prQlHideTimer = null;
 var prQlCache = {};
 var prQlRankCache = { sig: '', by: {} };
@@ -2161,11 +2168,49 @@ function prQlKey(pid) {
 // Zones fill independently as their source lands: the quicklook fetch
 // (trend + next) must never wait on the game-logs fetch, which can be
 // slow on a cold cache.
-function prQlFillQuick(p, q) {
+var PR_QL_FETCH_TIMEOUT_MS = 10000;
+
+// Fetch JSON with a hard timeout. The quicklook and game-logs endpoints
+// can stall for a long time on a cold server cache; without a timeout
+// the card's zones sat on their loading skeletons forever, and the old
+// failure path then marked the zone "done" with null data, so it
+// rendered a plausible empty state ("Not enough history yet") and never
+// retried for that player. Resolves {ok:true, data} on success and
+// {ok:false} on any failure (HTTP error, parse error, timeout).
+function prQlFetchJSON(url, timeoutMs) {
+  var ctrl = ('AbortController' in window) ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function() { ctrl.abort(); }, timeoutMs) : null;
+  return fetch(url, ctrl ? { signal: ctrl.signal } : {})
+    .then(function(r) {
+      if (timer) clearTimeout(timer);
+      if (!r.ok) return { ok: false };
+      return r.json().then(
+        function(d) { return { ok: true, data: d }; },
+        function() { return { ok: false }; });
+    })
+    .catch(function() {
+      if (timer) clearTimeout(timer);
+      return { ok: false };
+    });
+}
+
+var QL_RETRY_HTML = '<div class="ql-empty">Couldn\'t load. Hover again to retry.</div>';
+
+function prQlFillQuick(p, q, failed) {
   if (!prQlEl || prQlPid !== String(p.id)) return;
   var trendEl = prQlEl.querySelector('[data-ql-zone="trend"]');
   var nextEl = prQlEl.querySelector('[data-ql-zone="next"]');
   q = q || null;
+  if (failed) {
+    if (trendEl) {
+      trendEl.innerHTML = '<div class="ql-zone-title">Value trend · 30d</div>' + QL_RETRY_HTML;
+    }
+    if (nextEl) {
+      nextEl.innerHTML = '<div class="ql-zone-title">Next matchup</div>' + QL_RETRY_HTML;
+    }
+    prQlPosition();
+    return;
+  }
   if (trendEl) {
     var hist = (q && q.history) || [];
     if (hist.length >= 2) {
@@ -2189,12 +2234,12 @@ function prQlFillQuick(p, q) {
   prQlPosition();
 }
 
-function prQlFillGames(p, payload) {
+function prQlFillGames(p, payload, failed) {
   if (!prQlEl || prQlPid !== String(p.id)) return;
   var gamesEl = prQlEl.querySelector('[data-ql-zone="games"]');
   if (gamesEl) {
     gamesEl.innerHTML = '<div class="ql-zone-title">Last 3 games</div>'
-      + prQlGamesHTML(p, payload);
+      + (failed ? QL_RETRY_HTML : prQlGamesHTML(p, payload));
   }
   prQlPosition();
 }
@@ -2203,35 +2248,47 @@ function prQlFetch(p) {
   var key = prQlKey(p.id);
   var entry = prQlCache[key] || (prQlCache[key] = {});
   if (entry.quickDone) {
-    prQlFillQuick(p, entry.quick);
+    prQlFillQuick(p, entry.quick, false);
   } else if (!entry.quickBusy) {
     entry.quickBusy = true;
     var qs = '?league_type=' + encodeURIComponent(prLeagueType)
       + '&league_size=' + encodeURIComponent(prLeagueSize)
       + '&scoring_type=' + encodeURIComponent(prScoringType);
-    fetch('/api/player-quicklook/' + encodeURIComponent(p.id) + qs)
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .catch(function() { return null; })
-      .then(function(q) {
-        entry.quick = q;
-        entry.quickDone = true;
+    prQlFetchJSON('/api/player-quicklook/' + encodeURIComponent(p.id) + qs,
+      PR_QL_FETCH_TIMEOUT_MS)
+      .then(function(res) {
         entry.quickBusy = false;
-        prQlFillQuick(p, q);
+        if (res.ok) {
+          entry.quick = res.data;
+          entry.quickDone = true;
+          entry.quickError = false;
+          prQlFillQuick(p, res.data, false);
+        } else {
+          // NOT marked done: the next hover retries, and the open card
+          // says so instead of sitting on a skeleton or a fake empty.
+          entry.quickError = true;
+          prQlFillQuick(p, null, true);
+        }
       });
   }
   if (p.position === 'PICK') return;
   if (entry.gamesDone) {
-    prQlFillGames(p, entry.games);
+    prQlFillGames(p, entry.games, false);
   } else if (!entry.gamesBusy) {
     entry.gamesBusy = true;
-    fetch('/api/player-game-logs/' + encodeURIComponent(p.id))
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .catch(function() { return null; })
-      .then(function(g) {
-        entry.games = g;
-        entry.gamesDone = true;
+    prQlFetchJSON('/api/player-game-logs/' + encodeURIComponent(p.id),
+      PR_QL_FETCH_TIMEOUT_MS)
+      .then(function(res) {
         entry.gamesBusy = false;
-        prQlFillGames(p, g);
+        if (res.ok) {
+          entry.games = res.data;
+          entry.gamesDone = true;
+          entry.gamesError = false;
+          prQlFillGames(p, res.data, false);
+        } else {
+          entry.gamesError = true;
+          prQlFillGames(p, null, true);
+        }
       });
   }
 }
@@ -2332,10 +2389,32 @@ function prQlScheduleHide(ms) {
 function prQlHide() {
   prQlCancelShow();
   prQlCancelHide();
+  _prQlPending = null;
   if (prQlRow) prQlRow.classList.remove('ql-on');
   prQlRow = null;
   prQlPid = null;
   if (prQlEl) prQlEl.classList.remove('ql-open');
+}
+
+// Fulfill a hover that was registered before the players data arrived.
+// Called at the end of every prRender: once real rows exist, find the
+// pending player by name, and if the cursor is still on their (new)
+// row, open the card after a short beat. Any other outcome clears the
+// pending hover so a stale one can never fire later.
+function prQlTryPending() {
+  if (!_prQlPending || !prQlCanHover) return;
+  var pend = _prQlPending;
+  var p = null;
+  for (var i = 0; i < prAllPlayers.length; i++) {
+    if (prAllPlayers[i].name === pend.name) { p = prAllPlayers[i]; break; }
+  }
+  if (!p) { _prQlPending = null; return; }
+  var row = document.querySelector(
+    '#prList .pr-player-row[data-pid="' + String(p.id) + '"]');
+  _prQlPending = null;
+  if (!row || !row.matches(':hover')) return;
+  prQlCancelShow();
+  prQlShowTimer = setTimeout(function() { prQlShow(p, row); }, 150);
 }
 
 if (!window.__prQlBound) {
@@ -2344,13 +2423,26 @@ if (!window.__prQlBound) {
     if (!prQlCanHover) return;
     var row = e.target && e.target.closest
       ? e.target.closest('#prList .pr-player-row') : null;
-    if (!row || !row.dataset.pid) return;
+    if (!row) return;
     if (e.relatedTarget && row.contains(e.relatedTarget)) return;
     prQlCancelHide();
+    if (!row.dataset.pid) {
+      // SSR row, players payload still in flight: remember the hover
+      // by name so prQlTryPending can open the card once data lands.
+      var nameEl = row.querySelector('.pr-name');
+      var nm = nameEl ? nameEl.textContent.trim() : '';
+      if (nm) _prQlPending = { name: nm, row: row };
+      return;
+    }
     var pid = row.dataset.pid;
     if (prQlPid === pid) return;
     var p = prAllPlayers.find(function(x) { return String(x.id) === pid; });
-    if (!p) return;
+    if (!p) {
+      var nameEl2 = row.querySelector('.pr-name');
+      var nm2 = nameEl2 ? nameEl2.textContent.trim() : '';
+      if (nm2) _prQlPending = { name: nm2, row: row };
+      return;
+    }
     prQlCancelShow();
     prQlShowTimer = setTimeout(function() { prQlShow(p, row); }, PR_QL_DELAY);
   });
@@ -2364,6 +2456,7 @@ if (!window.__prQlBound) {
       prQlCancelHide();
       return;
     }
+    if (_prQlPending && _prQlPending.row === row) _prQlPending = null;
     if (prQlPid === row.dataset.pid) prQlScheduleHide(220);
     else prQlCancelShow();
   });
