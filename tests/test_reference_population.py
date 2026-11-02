@@ -1,14 +1,16 @@
-"""Tests for the enlarged graded reference population (migration 050).
+"""Tests for the historical graded reference population (migration 050).
 
-The percentile pool used to be only the stored graded classes
-(2025-2027, ~34 WRs), so the pool's best player printed 100 on every
-component. The population is now the UNION of the stored prospects and
-the reference rows graded from the drafted classes 2016-2024 by
-scripts/build_reference_population.py. These tests cover the union
-math, the Advanced per-metric coverage rule (>= 30 values or a dash),
-the pool line over the enlarged span, the backfill script's row
-assembly / resumability / fail-closed behavior, the migration, and
-the guard that reference rows never surface as board prospects.
+The percentile pools are the drafted classes 2016-2024 ONLY, graded by
+scripts/build_reference_population.py (Kaedon's spec: percentiles are
+graded against the historical drafted population, never against the
+current class). An earlier union with stored pipeline prospects let
+current prospects anchor their own percentiles; it was removed
+2026-11-02. These tests cover the historical-only pool math, the
+Advanced per-metric coverage rule (>= 30 values or a dash), the pool
+line, the backfill script's row assembly / resumability / fail-closed
+behavior (including the games-played loader flags the season-rate
+pools depend on), the migration, and the guard that reference rows
+never surface as board prospects.
 
 Synthetic data only; no DB needed.
 """
@@ -36,18 +38,6 @@ refpop = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(refpop)
 
 
-def _stored_rows(n=20, year=2026, base=40.0, tested=0):
-    return [{
-        "draft_class_year": year,
-        "production_score": base + i,
-        "efficiency_score": 40.0 + i * 0.5,
-        "breakout_profile_score": 30.0 + i,
-        "competition_score": 20.0 + i,
-        "athleticism_score": 60.0 + i,
-        "tested": i < tested,
-    } for i in range(n)]
-
-
 def _ref_rows(n=30, year=2020, base=10.0, tested=0):
     return [{
         "player_name": f"Ref {year}-{i}",
@@ -64,29 +54,30 @@ def _ref_rows(n=30, year=2020, base=10.0, tested=0):
     } for i in range(n)]
 
 
-class TestUnionPopulation:
-    def test_union_size_classes_and_merge(self):
-        stored = _stored_rows(20, year=2027) + _stored_rows(14, year=2026)
+class TestHistoricalOnlyPopulation:
+    def test_population_counts_reference_rows_only(self):
         refs = _ref_rows(30, year=2019) + _ref_rows(25, year=2022)
-        pop = ra.reference_population("WR", rows=stored, ref_rows=refs)
-        assert pop["n"] == 89
-        assert pop["classes"] == [2019, 2022, 2026, 2027]
+        pop = ra.reference_population("WR", ref_rows=refs)
+        assert pop["n"] == 55
+        assert pop["classes"] == [2019, 2022]
         prod = pop["values"]["production"]
         assert prod == sorted(prod)
-        assert len(prod) == 89
+        assert len(prod) == 55
 
-    def test_injecting_one_side_keeps_the_other_empty(self):
-        # Existing callers inject stored rows only: no DB read, no
-        # reference rows, exactly the pre-union behavior.
-        pop = ra.reference_population("WR", rows=_stored_rows(35))
-        assert pop["n"] == 35
-        assert pop["classes"] == [2026]
+    def test_no_reference_rows_no_population(self):
+        # Historical-only means no stored-prospects fallback: an empty
+        # reference table yields an empty population and every
+        # percentile hides.
+        pop = ra.reference_population("WR", ref_rows=[])
+        assert pop["n"] == 0
+        assert pop["classes"] == []
+        assert pop["values"]["production"] == []
 
-    def test_star_no_longer_prints_100(self):
-        # The production complaint: 34 stored WRs, the star tops the
-        # pool and prints 100 on production. Against the drafted
-        # 2016-2024 reference pool his same score lands mid-90s.
-        stored = _stored_rows(34, year=2027, base=30.0)  # 30..63
+    def test_star_faces_the_full_historical_pool(self):
+        # The production complaint that built the union: against a
+        # 34-player current-class pool the star printed 100. Against
+        # the drafted 2016-2024 pool alone his same score lands
+        # mid-90s, and no current-class rows are needed for that.
         refs = []
         for i in range(200):
             refs.append({
@@ -96,20 +87,25 @@ class TestUnionPopulation:
                 "competition_score": None, "athleticism_score": None,
                 "tested": False,
             })
-        pop = ra.reference_population("WR", rows=stored, ref_rows=refs)
-        stored_only = ra.reference_population("WR", rows=stored)
-        assert ra.component_percentile(95.0, stored_only["values"]
-                                       ["production"]) == 100
-        # 34 stored (all <= 63) + 191 reference values <= 95.0, of 234.
+        pop = ra.reference_population("WR", ref_rows=refs)
+        # 191 of 200 reference values at or below 95.0 -> 95.5 -> 96.
         assert ra.component_percentile(95.0, pop["values"]
                                        ["production"]) == 96
 
-    def test_athleticism_tested_only_across_the_union(self):
-        stored = _stored_rows(40, tested=10)
+    def test_athleticism_tested_only(self):
         refs = _ref_rows(30, tested=20)
-        pop = ra.reference_population("RB", rows=stored, ref_rows=refs)
-        assert len(pop["values"]["athleticism"]) == 30
-        assert len(pop["values"]["production"]) == 70
+        pop = ra.reference_population("RB", ref_rows=refs)
+        assert len(pop["values"]["athleticism"]) == 20
+        assert len(pop["values"]["production"]) == 30
+
+    def test_population_source_reads_no_stored_rankings(self):
+        # The guard on the spec itself: the pool builder must not read
+        # stored pipeline prospects, and the old stored-side loader is
+        # gone, so the union cannot creep back.
+        src = inspect.getsource(ra.reference_population)
+        assert "FROM rookie_rankings" not in src
+        assert "JOIN rookie_prospects" not in src
+        assert not hasattr(ra, "_population_player_rows")
 
     def test_version_set_includes_34(self):
         assert ra._PCT_MODEL_VERSIONS == ("3.2", "3.3", "3.4", "4.0")
@@ -125,13 +121,13 @@ class TestPoolLineEnlarged:
             ra, "reference_population",
             lambda pos, rows=None, ref_rows=None: pops[pos])
         assert ra.percentile_pool_line() == (
-            "Percentiles vs graded prospects at the position, "
+            "Percentiles vs drafted players at the position, "
             "classes 2016-2027")
 
 
-class TestAdvancedUnionCoverage:
-    """Advanced per-metric percentiles read from the same union: a
-    metric prints a percentile only when the union holds >= 30 values
+class TestAdvancedHistoricalCoverage:
+    """Advanced per-metric percentiles read from the historical pool:
+    a metric prints a percentile only when the pool holds >= 30 values
     for it at the position; otherwise the fill leaves None (dash)."""
 
     SEASONS = [
@@ -152,12 +148,11 @@ class TestAdvancedUnionCoverage:
             ref.append({"player_name": f"Ref {i}",
                         "advanced_marks": marks,
                         "season_rates": [], "testing_marks": {}})
-        monkeypatch.setattr(ra, "_population_player_rows", lambda pos: [])
         monkeypatch.setattr(ra, "_reference_rows", lambda pos: ref)
         ra._advanced_dist_cache.pop("WR", None)
         return ra._advanced_distributions("WR")
 
-    def test_distribution_union(self, monkeypatch):
+    def test_distribution_historical(self, monkeypatch):
         dist = self._dist(monkeypatch)
         assert len(dist["Yds/Rec"]) == 35
         assert len(dist["Mkt Share"]) == 40
@@ -176,31 +171,29 @@ class TestAdvancedUnionCoverage:
         assert by_label["Yds/Rec"]["percentile"] == 71
         # 26 of 40 pool values at or below his 0.295 share -> 65.
         assert by_label["Mkt Share"]["percentile"] == 65
-        # Only 12 Dominator values in the union: dash, never faked.
+        # Only 12 Dominator values in the pool: dash, never faked.
         assert by_label["Dominator"]["percentile"] is None
         # Component rows never get a percentile.
         assert by_label["Efficiency"]["percentile"] is None
         ra._advanced_dist_cache.pop("WR", None)
 
 
-class TestSeasonAndTestingUnion:
-    def test_season_rates_union(self, monkeypatch):
+class TestSeasonAndTestingHistorical:
+    def test_season_rates_historical(self, monkeypatch):
         ref = [{"player_name": "Ref",
                 "season_rates": [40.0 + 2.0 * i for i in range(50)],
                 "testing_marks": {}, "advanced_marks": {}}]
-        monkeypatch.setattr(ra, "_population_player_rows", lambda pos: [])
         monkeypatch.setattr(ra, "_reference_rows", lambda pos: ref)
         ra._season_rate_cache.pop("WR", None)
         dist = ra._season_rate_distributions("WR")
         assert dist == [40.0 + 2.0 * i for i in range(50)]
         ra._season_rate_cache.pop("WR", None)
 
-    def test_testing_union_and_percentile(self, monkeypatch):
+    def test_testing_historical_and_percentile(self, monkeypatch):
         ref = [{"player_name": f"Ref {i}", "season_rates": [],
                 "advanced_marks": {},
                 "testing_marks": {"forty_yard": 4.40 + 0.01 * i}}
                for i in range(40)]
-        monkeypatch.setattr(ra, "_population_player_rows", lambda pos: [])
         monkeypatch.setattr(ra, "_reference_rows", lambda pos: ref)
         ra._testing_dist_cache.pop("RB", None)
         rows = ra._testing_rows({"forty_yard": 4.42}, "RB")
@@ -348,3 +341,50 @@ class TestReferenceRowsNeverOnTheBoard:
                 "prospect_reference_population")
         assert "prospect_reference_population" in \
             inspect.getsource(ra._reference_rows)
+
+
+class TestBackfillGamesPlayed:
+    """The pools' season rates and per-game marks exist only if the
+    backfill loads games played. The loader must be called with the
+    stateless GP flags the v4 path uses: the tracked GP system belongs
+    to the live pipeline, while a backfill's totals persist in the
+    reference rows themselves (the derive v1.3 failure mode was a
+    backtest trusting tracker marks whose totals existed nowhere)."""
+
+    def test_run_year_loads_games_played_stateless(self, monkeypatch):
+        import scripts.backtest_prospect_model as bt
+        from data_building.rookie_pipeline import prospect_model as pm
+
+        calls = {}
+
+        def fake_stats(year, draft_class, **kwargs):
+            calls.update(kwargs)
+            return {}
+
+        monkeypatch.setattr(bt, "_load_cfbd_college_stats", fake_stats)
+        monkeypatch.setattr(bt, "_load_draft_class", lambda year: [
+            {"gsis_id": "00-1", "name": "Tested Wideout",
+             "position": "WR", "draft_pick": 15}])
+        monkeypatch.setattr(bt, "_load_combine_athleticism",
+                            lambda year: {})
+        monkeypatch.setattr(bt, "_build_prospect_dicts",
+                            lambda dc, ath, year, stats: ([
+                                {"player_id": "00-1",
+                                 "name": "Tested Wideout",
+                                 "position": "WR", "age": 21.0,
+                                 "weight_lbs": 205, "seasons": [],
+                                 "athleticism": {}}], {}))
+        monkeypatch.setattr(pm, "score_all_prospects",
+                            lambda prospects, cmap, skip_sagarin=True: [
+                                {"player_id": "00-1", "position": "WR",
+                                 "production_score": 50.0,
+                                 "efficiency_score": 50.0,
+                                 "breakout_profile_score": 50.0,
+                                 "competition_score": 50.0,
+                                 "athleticism_score": 50.0}])
+        monkeypatch.setattr(refpop, "_upsert_rows",
+                            lambda rows: len(rows))
+        n = refpop._run_year(2024, force=True)
+        assert calls.get("fetch_games_played") is True
+        assert calls.get("gp_stateless") is True
+        assert n == 1

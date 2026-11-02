@@ -281,7 +281,8 @@ def _run_year(draft_year: int, force: bool = False) -> int:
                   f"stored; completing the year.")
 
     athleticism = _load_combine_athleticism(draft_year)
-    college_stats = _load_cfbd_college_stats(draft_year, draft_class)
+    college_stats = _load_cfbd_college_stats(
+        draft_year, draft_class, fetch_games_played=True, gp_stateless=True)
     prospects, consensus_map = _build_prospect_dicts(
         draft_class, athleticism, draft_year, college_stats)
     n_stats = sum(1 for p in prospects if p.get("seasons"))
