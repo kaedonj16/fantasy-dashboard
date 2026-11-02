@@ -27578,18 +27578,86 @@ _LP_PAYLOAD_LOCK = threading.Lock()
 _LP_DISK_KEEP = 4
 
 
-def _lp_payload_disk_path(key: bool, model_ts, adp_sig) -> str:
+_LP_WEEKLY_SIG_MEMO: dict = {"ts": 0.0, "sig": ()}
+
+
+def _lp_weekly_signature() -> tuple:
+    """Freshness signature for the played-game data baked into the payload.
+
+    The payload's PPG / total-points map is computed per player from each
+    player's OWN finished games, but the payload itself is memoized on
+    model values + ADP only, so the totals used to sit frozen until the
+    daily value refresh: a player whose Sunday game ended kept last
+    week's total on the rankings board until the next rebuild, while his
+    player modal (computed per request from the same files) already
+    counted the finished game. This signature captures the events that
+    change those numbers:
+
+    - the league-wide completed weeks (qualification_policy),
+    - how many games are final in the live (next) week, from the same
+      schedule store and finality rule the per-player weeks use,
+    - the stat-file sizes of the completed weeks (immutable once final;
+      the live week's size is excluded on purpose, because its stats
+      keep growing while its games are in progress).
+
+    It is folded into the payload memo key, the disk-tier filename, the
+    overlay cache key, and the response ETag version key, so a finished
+    game invalidates every layer at once. Memoized for 20 seconds: the
+    inputs are file stats plus the cached schedule, and 20s sits well
+    inside the modal's own live-week refresh cadence. Never raises; ()
+    means "unknown" and simply keys consistently.
+    """
+    now = time.time()
+    if now - _LP_WEEKLY_SIG_MEMO["ts"] < 20:
+        return _LP_WEEKLY_SIG_MEMO["sig"]
+    sig: tuple = ()
+    try:
+        season = int((get_nfl_state() or {}).get("season") or 0)
+        if season:
+            from utils.season_qualification import qualification_policy
+            completed = tuple(
+                int(w) for w in qualification_policy(season).completed_weeks)
+            live_week = (max(completed) + 1) if completed else 1
+            finals = 0
+            if 1 <= live_week <= 18:
+                from utils.projections import _is_final
+                from utils.utils import load_week_schedule
+                for g in load_week_schedule(season, live_week) or []:
+                    if isinstance(g, dict) and _is_final(g):
+                        finals += 1
+            sizes = []
+            for w in completed:
+                try:
+                    sizes.append(os.path.getsize(os.path.join(
+                        CACHE_DIR, "sleeper_stats",
+                        f"sleeper_stats_s{season}_w{w}.json")))
+                except OSError:
+                    sizes.append(-1)
+            sig = (season, completed, live_week, finals, tuple(sizes))
+    except Exception:
+        logger.debug("[league-players] weekly signature failed", exc_info=True)
+        sig = ()
+    _LP_WEEKLY_SIG_MEMO["ts"] = now
+    _LP_WEEKLY_SIG_MEMO["sig"] = sig
+    return sig
+
+
+def _lp_payload_disk_path(key: bool, model_ts, adp_sig, weekly_sig=()) -> str:
     import tempfile
 
-    name = "br_lp_payload_%s_%s_%s.json" % (
-        "kdef" if key else "std", model_ts, adp_sig)
+    import hashlib
+
+    weekly_part = hashlib.sha1(
+        repr(tuple(weekly_sig)).encode()).hexdigest()[:10] if weekly_sig else "wk0"
+    name = "br_lp_payload_%s_%s_%s_%s.json" % (
+        "kdef" if key else "std", model_ts, adp_sig, weekly_part)
     return os.path.join(tempfile.gettempdir(), name.replace("/", "_"))
 
 
-def _lp_payload_read_disk(key: bool, model_ts, adp_sig):
+def _lp_payload_read_disk(key: bool, model_ts, adp_sig, weekly_sig=()):
     """Payload from the shared disk tier, or None (fail soft to rebuild)."""
     try:
-        path = _lp_payload_disk_path(key, model_ts, adp_sig)
+        path = _lp_payload_disk_path(key, model_ts, adp_sig, weekly_sig)
         with open(path, encoding="utf-8") as f:
             payload = json.load(f)
         if isinstance(payload, dict) and isinstance(payload.get("players"), list):
@@ -27599,14 +27667,14 @@ def _lp_payload_read_disk(key: bool, model_ts, adp_sig):
     return None
 
 
-def _lp_payload_write_disk(key: bool, model_ts, adp_sig, payload) -> None:
+def _lp_payload_write_disk(key: bool, model_ts, adp_sig, payload, weekly_sig=()) -> None:
     """Persist a freshly built payload to the shared disk tier (fail soft)."""
     try:
         body = json.dumps(payload)
     except (TypeError, ValueError):
         return  # non-JSON-native payload: skip the disk tier, as before
     try:
-        path = _lp_payload_disk_path(key, model_ts, adp_sig)
+        path = _lp_payload_disk_path(key, model_ts, adp_sig, weekly_sig)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(body)
@@ -28279,23 +28347,31 @@ def _build_league_players_payload(kdef: bool = False) -> dict:
             adp_sig = global_adp_snapshot_signature()
         except Exception:
             adp_sig = 0.0
+        # Also key on the played-game signature: PPG / total points are
+        # baked into the build from each player's own finished games, so
+        # a game going final must rebuild even when values/ADP are
+        # unchanged (otherwise totals freeze until the daily refresh).
+        weekly_sig = _lp_weekly_signature()
         cached = _LP_PAYLOAD_CACHE.get(key)
-        if cached and model_ts and cached["ts"] == model_ts and cached.get("adp_sig") == adp_sig:
+        if cached and model_ts and cached["ts"] == model_ts and cached.get("adp_sig") == adp_sig and cached.get("weekly_sig") == weekly_sig:
             return cached["payload"]
         # Shared disk tier: after a worker recycle the in-process memo is
         # empty, but a sibling worker (or this one before recycling) may have
         # persisted this exact signature. Only consulted when model_ts is
         # known, mirroring the in-process hit condition above.
         if model_ts:
-            disk_payload = _lp_payload_read_disk(key, model_ts, adp_sig)
+            disk_payload = _lp_payload_read_disk(key, model_ts, adp_sig, weekly_sig)
             if disk_payload is not None:
                 _LP_PAYLOAD_CACHE[key] = {
-                    "ts": model_ts, "adp_sig": adp_sig, "payload": disk_payload}
+                    "ts": model_ts, "adp_sig": adp_sig,
+                    "weekly_sig": weekly_sig, "payload": disk_payload}
                 return disk_payload
         payload = _build_league_players_payload_uncached(kdef=kdef)
-        _LP_PAYLOAD_CACHE[key] = {"ts": model_ts, "adp_sig": adp_sig, "payload": payload}
+        _LP_PAYLOAD_CACHE[key] = {
+            "ts": model_ts, "adp_sig": adp_sig,
+            "weekly_sig": weekly_sig, "payload": payload}
         if model_ts:
-            _lp_payload_write_disk(key, model_ts, adp_sig, payload)
+            _lp_payload_write_disk(key, model_ts, adp_sig, payload, weekly_sig)
         return payload
 
 
@@ -29150,6 +29226,10 @@ def _lp_overlay_cache_key(kdef, projection_settings, projection_season, scoring_
     return (
         bool(kdef), model_ts, adp_sig, _scoring_fp(projection_settings or {}),
         int(projection_season), str(scoring_type or "redraft"),
+        # Played-game freshness: bodies built from this key embed the
+        # payload's PPG / totals, so a finished game must miss the
+        # serialized-body caches too, not just the payload memo.
+        _lp_weekly_signature(),
     )
 
 
@@ -29520,6 +29600,39 @@ def api_league_players():
     overlay_key = _lp_overlay_cache_key(
         kdef, _projection_settings, _projection_season, _mi_scoring,
     )
+    # Rankings warm path: _rankings_league_players_response serializes the
+    # slim body once per (overlay_key, is_sf) into _LP_BOARD_JSON_CACHE.
+    # When that body already exists, the projection overlay below cannot
+    # change a single byte of it (the overlay writes projection /
+    # market-vs-ADP / historical fields, none of which the rankings slim
+    # keeps), so serve the cached body now and skip the overlay's
+    # per-request pass over ~2,000 players. Gated to exactly the requests
+    # that would reach the cacheable rankings _finish below: no historical
+    # season, no explicit ADP source, no Yahoo league overlay.
+    if _view_rankings:
+        try:
+            _sc_season = int(request.args.get("season") or 0)
+        except (TypeError, ValueError):
+            _sc_season = 0
+        _sc_cur = int((get_nfl_state() or {}).get("season") or 0)
+        from dashboard_services.adp_service import ADP_SOURCE_LABELS as _sc_labels
+        _sc_adp = (request.args.get("adp_source") or "").strip().lower()
+        _sc_plat = (request.args.get("platform")
+                    or session.get("last_platform") or "").strip().lower()
+        _sc_lg = (request.args.get("league_id")
+                  or session.get("last_league_id") or "").strip()
+        if ((not _sc_season or not _sc_cur or _sc_season == _sc_cur)
+                and _sc_adp not in _sc_labels
+                and not (_sc_plat == "yahoo" and _sc_lg)):
+            _sc_body = _LP_BOARD_JSON_CACHE.get(
+                ("rankings", overlay_key, bool(_mi_is_sf)))
+            if _sc_body is not None:
+                return _lp_cacheable_response(
+                    _sc_body,
+                    _lp_response_version_key(
+                        overlay_key=overlay_key, is_sf=_mi_is_sf,
+                        view="rankings"),
+                )
     payload = _overlay_league_players_payload(
         payload,
         kdef=kdef,
