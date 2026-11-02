@@ -60,6 +60,11 @@ TEAM_X_HANDLES = {
 
 _WINDOW_S = 12 * 60          # tweet must land within 12 min of the play
 _FETCH_GRACE_S = 5 * 60      # keep polling a play a bit past its window
+_FILL_WINDOW_S = 48 * 3600   # a matched clip stays fill-eligible 48h: X's
+                             # media transcoding has been observed lagging
+                             # the post by 30+ min, far past the match
+                             # window, and a media-less clip otherwise
+                             # never gains its video outside a backfill
 _THROTTLE_S = 50.0           # min seconds between passes per process
 _STATE_KEY = "scorezone_clips_x_state"
 
@@ -736,6 +741,7 @@ def maybe_run_clip_pass(
         existing = get_play_clips(int(season), gids)
         wanted: list[dict] = []
         pending: dict = {}
+        wallclocks: dict = {}
         for gid in gids:
             try:
                 _date, away, home = parse_tank_game_id(gid)
@@ -745,6 +751,7 @@ def maybe_run_clip_pass(
                 gid, rows_by_game.get(gid) or [], pid_to_name,
                 def_pids=def_pids, away=away, home=home,
             ):
+                wallclocks[(gid, w["play_id"])] = w["wallclock"]
                 prev = existing.get((gid, w["play_id"]))
                 if prev and video_url_qualifies(prev.get("video_url")):
                     continue
@@ -756,7 +763,19 @@ def maybe_run_clip_pass(
                         # Matched already, but its video was still
                         # transcoding when the matching fetch saw it.
                         pending[(gid, w["play_id"])] = prev
-        if not wanted:
+        # The match window closes 17 minutes after the play, but X has
+        # been observed finishing a clip's video 30+ minutes after the
+        # post. Any stored clip still missing its video stays
+        # fill-eligible for 48h, long past the window above.
+        for (gid, play_id), prev in existing.items():
+            if (gid, play_id) in pending or not prev.get("tweet_id"):
+                continue
+            if video_url_qualifies(prev.get("video_url")):
+                continue
+            wallclock = wallclocks.get((gid, play_id))
+            if wallclock is not None and ts_now - wallclock <= _FILL_WINDOW_S:
+                pending[(gid, play_id)] = prev
+        if not wanted and not pending:
             return {"wanted": 0}
 
         accounts = sorted({a for w in wanted for a in w["accounts"]})
