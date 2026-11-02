@@ -338,3 +338,93 @@ def test_trend_arrow_shows_once_a_game_starts(monkeypatch):
     matchup["left"]["starters"][0]["pts"] = 4.0
     html = _render_trend_slide(mmod, matchup, status_by_pid={"p1": mmod.STATUS_IN_PROGRESS})
     assert "mb-trend-down" in html
+
+
+def _love_week8_slide(mmod, monkeypatch, schedule_lookup, pts=2.3):
+    """Kaedon's 2026-11-02 case: Jeremiyah Love (ARI) played Week 8 at DAL,
+    banked points, then left hurt; the feed flipped him to Out and his week
+    projection went to 0.0. The player index still carries ARI's prior-season
+    byeWeek (8), so the old metadata gate (proj == 0 and byeWeek == week)
+    stamped his row BYE and hid the 2.3 he actually scored. Trey McBride,
+    same team and same stale byeWeek, escaped only because his projection
+    was not zero."""
+    from datetime import datetime, timedelta
+
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+    games = {
+        "ari": {
+            "home": "DAL", "away": "ARI", "gameDate": yesterday,
+            "gameTime": "1:00p", "gameStatusCode": "2",
+        },
+        "det": {
+            "home": "DET", "away": "GB", "gameDate": yesterday,
+            "gameTime": "1:00p", "gameStatusCode": "2",
+        },
+    }
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(
+        mmod, "build_team_schedule_lookup",
+        lambda *_a, **_k: schedule_lookup(games),
+    )
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: False)
+    monkeypatch.setattr(mmod, "get_nfl_scores_for_date", lambda *_a, **_k: None)
+    monkeypatch.setattr(mmod, "_sleeper_skill_stat_line", lambda *_a, **_k: None)
+    monkeypatch.setattr("utils.utils.load_week_projection", lambda *_a, **_k: {})
+
+    matchup = {
+        "left": {
+            "name": "Team A", "roster_id": "1", "record": "6-2", "username": "a",
+            "avatar": "", "pts_total": None,
+            "starters": [{"pid": "13287", "name": "Jeremiyah Love", "pos": "RB", "nfl": "ARI", "pts": pts}],
+        },
+        "right": {
+            "name": "Team B", "roster_id": "2", "record": "5-3", "username": "b",
+            "avatar": "", "pts_total": None,
+            "starters": [{"pid": "r2", "name": "Detroit Back", "pos": "RB", "nfl": "DET", "pts": 23.3}],
+        },
+    }
+    return mmod.render_matchup_slide(
+        "2026", matchup, w=8, proj_week=8,
+        status_by_pid={"13287": mmod.STATUS_FINAL, "r2": mmod.STATUS_FINAL},
+        projections={8: {"projections": {"13287": 0.0, "r2": 16.0}}},
+        players={
+            "13287": {"name": "Jeremiyah Love", "team": "ARI", "byeWeek": 8},
+            "r2": {"name": "Detroit Back", "team": "DET", "byeWeek": 5},
+        },
+        teams={},
+        team_game_lookup={},
+        scoring_settings={"rec": 1.0},
+        roster_positions=["FLEX", "BN"],
+    )
+
+
+def test_played_player_with_stale_bye_metadata_renders_score_not_bye(monkeypatch):
+    mmod = _matchups()
+    html = _love_week8_slide(
+        mmod, monkeypatch,
+        # Both starters' teams have a Week 8 game: nobody is on a bye.
+        lambda gs: {"ARI": gs["ari"], "DAL": gs["ari"],
+                    "DET": gs["det"], "GB": gs["det"]},
+    )
+    assert "<span class='mb-a mb-bye'>BYE</span>" not in html
+    assert "mb-info--bye" not in html
+    assert "mb-matchup'>BYE</span>" not in html
+    # His real banked points render as a final score.
+    assert ">2.3<" in html
+
+
+def test_bye_metadata_still_applies_when_no_game_and_no_points(monkeypatch):
+    """The metadata gate is a fallback for missing schedule data, not the
+    authority: with no game resolved and no banked points it still reads
+    BYE, so a genuine bye starter keeps the BYE treatment in previews."""
+    mmod = _matchups()
+    html = _love_week8_slide(
+        mmod, monkeypatch,
+        lambda g: {},  # schedule data unavailable
+        pts=0.0,
+    )
+    assert "<span class='mb-a mb-bye'>BYE</span>" in html
+    assert "mb-info--bye" in html

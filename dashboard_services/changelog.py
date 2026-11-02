@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-11-02",
         "tag": "fix",
+        "text": "Matchup board fixes: a starter who played and got hurt mid-game no longer shows as BYE when the injury zeroes out his projection, so his real points and final score line stay on the board, and the label inside the position chip in the middle of each matchup row is now properly centered in the chip (FLEX used to sit off to the left and crowd the chip's right edge).",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-02",
+        "tag": "fix",
         "text": "Prospect percentiles are now graded only against drafted players from the 2016 to 2024 classes, never against the current class, and the historical pool behind them is rebuilt with full games played data, so the season and per-game stat percentiles that used to show a dash now fill in with real numbers.",
         "link": "/prospects"
     },

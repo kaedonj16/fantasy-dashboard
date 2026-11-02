@@ -49082,7 +49082,14 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 
 .mb-pos { display: flex; align-items: center; justify-content: center; align-self: center; }
-.mb-pos .pos-badge { width: 34px; height: 20px; font-size: 11px; padding: 1px 4px; }
+/* The label centres in the whole chip via flex, not text-align: "FLEX"
+   at 11px is ~28px wide, wider than the chip's padded content box
+   (34 - 8 = 26px), and an over-wide word under text-align: center pins
+   to the left padding edge and spills right (Kaedon's Week 8 board:
+   FLEX sat left in its chip, the X crowding the right edge; on phones
+   the 30px chip made it overflow outright). Flex centering centres the
+   word in the chip itself, overflow and all. */
+.mb-pos .pos-badge { width: 34px; height: 20px; font-size: 11px; padding: 1px 4px; display: inline-flex; align-items: center; justify-content: center; }
 /* Drive-bar mounts span the player's cell plus their points column. */
 .mb-fld-span-l { grid-column: 1 / 3; }
 .mb-fld-span-r { grid-column: 4 / 6; }
@@ -49272,7 +49279,11 @@ a, button, [role="button"], [role="tab"], summary, label,
 @media (max-width: 640px) {
     .mb-cell { padding: 7px 8px; }
     .mb-a { font-size: 15px; }
-    .mb-pos .pos-badge { width: 30px; height: 19px; font-size: 11px; }
+    /* Keep the desktop chip width: at 30px the FLEX label (~28px of
+       glyphs) had under 1px per side even centred. The centre column
+       is 44px at every width, so 34px fits the same way it does on
+       desktop. */
+    .mb-pos .pos-badge { width: 34px; height: 19px; font-size: 11px; }
 
     /* Cardless phone board: the tab container IS the visible "matchup card"
        on the Weekly Hub (the carousel's own chrome is already stripped inside
