@@ -134,3 +134,18 @@ def test_toggle_clip_prefers_freshest_feed_event():
     seg = js.split("function _toggleClip")[1].split("\n  function ")[0]
     assert "freshEv" in seg
     assert "_feed" in seg
+
+
+def test_clip_row_is_button_left_source_right():
+    js = _js()
+    # Kaedon's pick (mock option B): the Watch button no longer sits
+    # alone at the right of a full-width row; the row is space-between
+    # with the posting account's handle as muted source text on the
+    # right, parsed from the tweet URL.
+    assert "rz-clip-card-src" in js
+    assert "clip from X" in js
+    assert "clipHandle" in js
+    css = CSS.read_text(encoding="utf-8")
+    row = css.split(".rz-clip-row {")[1].split("}")[0]
+    assert "space-between" in row
+    assert ".rz-clip-card-src" in css
