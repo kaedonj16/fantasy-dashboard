@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
+        "tag": "fix",
+        "text": "Two polish fixes: the Player Rankings hover trend graph now draws with the same soft curve, gradient fill and clean end dot as the new value history charts, and it is drawn at its zone's real size so it fills the space instead of floating in a small band with empty room around it. And the player card's Recent Form game tooltips no longer list stat lines a player never touched (no more Pass 0 att, 0 yd on a running back's game) and read tighter, with receiving shown as catches over targets.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-11-02",
         "tag": "new",
         "text": "Value History charts rebuilt: the player card, compare and player page value history graphs are now drawn in the site's own style instead of the old chart library. The main line runs in deep navy with a soft gradient under it, Superflex shows as a dashed sky line with the space between the two lines shaded, each line ends with its name and current value stacked beside it, and Peak and Low are marked in green and red with their dates. Lines pass through every real value exactly, with smooth corners and no invented highs or lows, and hovering shows the true values for that date.",
         "link": "/players"

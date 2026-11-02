@@ -2105,7 +2105,7 @@ function prQlGamesHTML(p, payload) {
   }).join('');
 }
 
-function prQlTrendSVG(vals) {
+function prQlTrendSVG(vals, boxW, boxH) {
   var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
   // Pad the domain (15% of the range on each side) so peaks never slam
   // the chart edges, and give a flat series a synthetic range so its
@@ -2114,7 +2114,14 @@ function prQlTrendSVG(vals) {
   var padV = rawSpan > 0 ? rawSpan * 0.15 : 1;
   min -= padV; max += padV;
   var span = max - min;
-  var W = 200, H = 64, PAD = 5;
+  // Draw in the chart box's own pixel size (the caller measures it):
+  // the zone is taller than the old fixed 200x64 drawing, and a fixed
+  // viewBox letterboxed the graph into a floating band with empty
+  // space above and below it. Box-matched coordinates fill the zone
+  // exactly, with no stretch, so the dot stays round.
+  var W = boxW > 0 ? Math.round(boxW) : 200;
+  var H = boxH > 0 ? Math.round(boxH) : 64;
+  var PAD = 5;
   var coords = vals.map(function(v, i) {
     var x = PAD + (W - 2 * PAD) * (vals.length === 1 ? 0.5 : i / (vals.length - 1));
     var y = H - PAD - (H - 2 * PAD) * ((v - min) / span);
@@ -2124,20 +2131,42 @@ function prQlTrendSVG(vals) {
   var lastPt = coords[coords.length - 1];
   var up = vals[vals.length - 1] >= vals[0];
   var color = up ? '#22c55e' : '#ef4444';
-  // Soft area fill under the line, down to the bottom of the plot, so
-  // the shape reads as a trend graph rather than a floating wire.
-  var area = 'M' + coords[0][0] + ',' + (H - 1) + ' L' + pts.replace(/ /g, ' L')
-    + ' L' + lastPt[0] + ',' + (H - 1) + ' Z';
-  // No preserveAspectRatio="none": the chart box is taller than the
-  // 200x64 viewBox, and stretching it non-uniformly turned the end dot
-  // into an oval and steepened every slope. The default meet fit keeps
-  // the dot round and the stroke even; the line just centers in the box.
+  // Same line rule as the value-history charts (BRValueChart): no data
+  // smoothing or averaging, but the path is a soft monotone curve
+  // through every true point, so the daily value steps stop reading as
+  // a jagged zigzag. Falls back to the raw polyline if the shared
+  // renderer is somehow unavailable.
+  var linePath = '';
+  if (typeof window !== 'undefined' && window.BRValueChart
+      && typeof window.BRValueChart.monotonePath === 'function'
+      && coords.length >= 2) {
+    linePath = window.BRValueChart.monotonePath(
+      coords.map(function(p) { return { x: p[0], y: p[1] }; }));
+  }
+  // Gradient fill under the line, strongest at the line and fading
+  // down, like the value-history charts. A flat tint read as a pale
+  // washed-out block under the line.
+  var area = linePath
+    ? linePath + ' L' + lastPt[0] + ',' + (H - 1) + ' L' + coords[0][0] + ',' + (H - 1) + ' Z'
+    : 'M' + coords[0][0] + ',' + (H - 1) + ' L' + pts.replace(/ /g, ' L')
+      + ' L' + lastPt[0] + ',' + (H - 1) + ' Z';
+  // No preserveAspectRatio="none" either: stretching the drawing
+  // non-uniformly turned the end dot into an oval and steepened every
+  // slope. Because the viewBox is the box's own size, the default meet
+  // fit is exact and the dot stays round. The end dot is a flat solid
+  // circle with no ring, matching the value-history charts' markers.
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">'
-    + '<path d="' + area + '" fill="' + color + '" opacity="0.13" stroke="none"/>'
-    + '<polyline points="' + pts + '" fill="none" stroke="' + color
-    + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
-    + '<circle cx="' + lastPt[0] + '" cy="' + lastPt[1] + '" r="3.2" fill="' + color
-    + '" stroke="var(--card-bg)" stroke-width="1.6"/></svg>';
+    + '<defs><linearGradient id="' + (up ? 'qlTrendFillUp' : 'qlTrendFillDn') + '" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0" stop-color="' + color + '" stop-opacity="0.30"/>'
+    + '<stop offset="1" stop-color="' + color + '" stop-opacity="0.03"/>'
+    + '</linearGradient></defs>'
+    + '<path d="' + area + '" fill="url(#' + (up ? 'qlTrendFillUp' : 'qlTrendFillDn') + ')" stroke="none"/>'
+    + (linePath
+      ? '<path d="' + linePath + '" fill="none" stroke="' + color
+        + '" stroke-width="2.5" stroke-linecap="round"/>'
+      : '<polyline points="' + pts + '" fill="none" stroke="' + color
+        + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>')
+    + '<circle cx="' + lastPt[0] + '" cy="' + lastPt[1] + '" r="3.4" fill="' + color + '"/></svg>';
 }
 
 var PR_QL_TIERS = {
@@ -2235,9 +2264,17 @@ function prQlFillQuick(p, q, failed) {
         : '<span class="' + (pct >= 0 ? 'ql-up' : 'ql-down') + '">'
           + (pct >= 0 ? '+' : '') + Number(pct).toFixed(1) + '% in 7d</span>';
       trendEl.innerHTML = '<div class="ql-zone-title">Value trend · 30d</div>'
-        + '<div class="ql-chart">' + prQlTrendSVG(hist.map(function(h) { return h.v; }))
-        + '</div><div class="ql-trend-foot"><span>' + prQlEsc(hist[0].d.slice(5))
+        + '<div class="ql-chart"></div>'
+        + '<div class="ql-trend-foot"><span>' + prQlEsc(hist[0].d.slice(5))
         + '</span>' + pctHTML + '<span>Today</span></div>';
+      // Measure the laid-out chart box and draw the graph at exactly
+      // that size, so it fills the zone with no empty bands around it.
+      var chartEl = trendEl.querySelector('.ql-chart');
+      if (chartEl) {
+        chartEl.innerHTML = prQlTrendSVG(
+          hist.map(function(h) { return h.v; }),
+          chartEl.clientWidth, chartEl.clientHeight);
+      }
     } else {
       trendEl.innerHTML = '<div class="ql-zone-title">Value trend · 30d</div>'
         + '<div class="ql-empty">Not enough history yet</div>';

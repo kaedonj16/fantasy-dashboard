@@ -160,7 +160,33 @@ def test_tip_rb_rush_and_rec_plus_fumble():
          "adv": {"snap_pct": 72}},
         "vs KC",
     ]])
-    assert tip == "Week 3 vs KC · 18.2 pts · Rush 18 att, 92 yd, 1 TD · Rec 4 of 6 tgt, 31 yd · Snap 72% · 1 fum lost"
+    assert tip == "Week 3 vs KC · 18.2 pts · Rush 18 att, 92 yd, 1 TD · Rec 4/6 tgt, 31 yd · Snap 72% · 1 fum lost"
+
+
+@pytestmark_node
+def test_tip_zero_activity_segments_are_omitted():
+    # The stat dict carries zeroed fields for categories a player never
+    # touched (an RB's pass_att 0 / pass_yd 0): those segments must not
+    # render as "Pass 0 att, 0 yd" noise. Same for a zeroed Rec line.
+    (tip,) = _run_tips([[
+        {"week": 8, "fantasy_pts": 24.8,
+         "stats": {"pass_att": 0, "pass_yd": 0, "pass_td": 0,
+                   "rush_att": 23, "rush_yd": 153, "rush_td": 1,
+                   "rec": 2, "rec_tgt": 4, "rec_yd": 15, "rec_td": 0},
+         "adv": None},
+        "vs MIN",
+    ]])
+    assert tip == "Week 8 vs MIN · 24.8 pts · Rush 23 att, 153 yd, 1 TD · Rec 2/4 tgt, 15 yd"
+    assert "Pass" not in tip
+    (tip2,) = _run_tips([[
+        {"week": 9, "fantasy_pts": 11.0,
+         "stats": {"rush_att": 10, "rush_yd": 40, "rush_td": 0,
+                   "rec": 0, "rec_tgt": 0, "rec_yd": 0},
+         "adv": None},
+        "vs KC",
+    ]])
+    assert tip2 == "Week 9 vs KC · 11.0 pts · Rush 10 att, 40 yd"
+    assert "Rec" not in tip2
 
 
 @pytestmark_node

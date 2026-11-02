@@ -2584,10 +2584,12 @@ function _pmRecentFormSkeleton() {
 function _pmRecentGameTip(g, oppText) {
   // Basic-stats line for one Recent Form game, shown as the column's
   // tooltip. Segments are joined with " · " and omitted when their
-  // data is absent; nothing is invented (there is no completions
-  // field, so passing shows attempts only). TD, INT and fumble
-  // segments appear only when greater than zero, to keep the line
-  // short. Position shapes emerge from which segments exist.
+  // data is absent OR all zero (a back with pass_att 0 in his stat
+  // line must not read "Pass 0 att, 0 yd"); nothing is invented
+  // (there is no completions field, so passing shows attempts only).
+  // TD, INT and fumble segments appear only when greater than zero,
+  // to keep the line short. Position shapes emerge from which
+  // segments exist.
   var s = (g && g.stats) || {};
   var a = (g && g.adv) || {};
   var parts = [];
@@ -2596,7 +2598,8 @@ function _pmRecentGameTip(g, oppText) {
   parts.push(header);
   var pts = Number(g && g.fantasy_pts) || 0;
   parts.push(pts.toFixed(1) + ' pts');
-  if (s.pass_att != null || s.pass_yd != null) {
+  if ((s.pass_att != null && Number(s.pass_att) > 0)
+      || (s.pass_yd != null && Number(s.pass_yd) > 0)) {
     var passBits = [];
     if (s.pass_att != null) passBits.push(s.pass_att + ' att');
     if (s.pass_yd != null) passBits.push(s.pass_yd + ' yd');
@@ -2605,7 +2608,8 @@ function _pmRecentGameTip(g, oppText) {
     if (s.pass_int != null && Number(s.pass_int) > 0) passStr += ', ' + s.pass_int + ' INT';
     parts.push(passStr);
   }
-  if ((s.rush_att != null && Number(s.rush_att) > 0) || s.rush_yd != null) {
+  if ((s.rush_att != null && Number(s.rush_att) > 0)
+      || (s.rush_yd != null && Number(s.rush_yd) > 0)) {
     var rushBits = [];
     if (s.rush_att != null) rushBits.push(s.rush_att + ' att');
     if (s.rush_yd != null) rushBits.push(s.rush_yd + ' yd');
@@ -2613,9 +2617,10 @@ function _pmRecentGameTip(g, oppText) {
     if (s.rush_td != null && Number(s.rush_td) > 0) rushStr += ', ' + s.rush_td + ' TD';
     parts.push(rushStr);
   }
-  if (s.rec_tgt != null || s.rec != null) {
+  if ((s.rec_tgt != null && Number(s.rec_tgt) > 0)
+      || (s.rec != null && Number(s.rec) > 0)) {
     var recStr = 'Rec';
-    if (s.rec != null && s.rec_tgt != null) recStr += ' ' + s.rec + ' of ' + s.rec_tgt + ' tgt';
+    if (s.rec != null && s.rec_tgt != null) recStr += ' ' + s.rec + '/' + s.rec_tgt + ' tgt';
     else if (s.rec != null) recStr += ' ' + s.rec;
     else recStr += ' ' + s.rec_tgt + ' tgt';
     if (s.rec_yd != null) recStr += ', ' + s.rec_yd + ' yd';
