@@ -3886,24 +3886,13 @@
   // button; tapping lazy-loads the X embed inside the card. Only one embed
   // is open at a time (phone memory), and cards without a clip render
   // exactly as before: no button, no placeholder.
-  function _clipFrameHtml(ev) {
+  function _clipEmbedHtml(ev) {
+    // The X embed, kept ONLY as the error fallback for a native stream
+    // that failed to load. It is never the first thing a panel shows:
+    // the embed app boots slowly and paints the whole tweet, which is
+    // exactly what Kaedon rejected (2026-11-01/02).
     var srcLink = ev.clipUrl ? '<div class="rz-clip-src"><a href="' + ev.clipUrl
       + '" target="_blank" rel="noopener">View on X</a></div>' : '';
-    if (ev.clipVideoUrl) {
-      // Native player: the matcher stored the post's own MP4 + poster, so
-      // the poster paints immediately and playback starts on tap, with no
-      // X embed app to boot. (The embed iframe below remains the fallback
-      // for clips stored before media capture.)
-      return '<video class="rz-clip-video" controls playsinline preload="metadata" referrerpolicy="no-referrer"'
-        + (ev.clipPosterUrl ? ' poster="' + ev.clipPosterUrl + '"' : '')
-        + ' src="' + ev.clipVideoUrl + '"></video>' + srcLink;
-    }
-    // The X embed app boots slowly (measured: several seconds of blank
-    // white before the tweet paints), so the panel carries a loading row
-    // that _wireClipPanel retires once the frame has actually loaded.
-    // No lazy-loading attribute: the frame is only injected on tap or for
-    // the one open clip, and lazy frames inside a toggled panel can stall
-    // in mobile Safari.
     return '<div class="rz-clip-loading" data-clip-loading role="status">'
       + '<span class="rz-clip-spin" aria-hidden="true"></span>'
       + '<span data-clip-load-text>Loading clip…</span></div>'
@@ -3911,6 +3900,29 @@
       + encodeURIComponent(ev.clipTweetId) + '&dnt=true" scrolling="no" '
       + 'allowfullscreen title="Play clip"></iframe>'
       + srcLink;
+  }
+
+  function _clipFrameHtml(ev) {
+    var srcLink = ev.clipUrl ? '<div class="rz-clip-src"><a href="' + ev.clipUrl
+      + '" target="_blank" rel="noopener">View on X</a></div>' : '';
+    if (ev.clipVideoUrl) {
+      // Native player: the matcher stored the post's own MP4 + poster, so
+      // the poster paints immediately and playback starts on tap, with no
+      // X embed app to boot.
+      return '<video class="rz-clip-video" controls playsinline preload="metadata" referrerpolicy="no-referrer"'
+        + (ev.clipPosterUrl ? ' poster="' + ev.clipPosterUrl + '"' : '')
+        + ' src="' + ev.clipVideoUrl + '"></video>' + srcLink;
+    }
+    // Matched but X is still processing the video file (yesterday the
+    // media variants lagged the post by many minutes). Show a processing
+    // state, never the tweet: the open panel upgrades itself to the
+    // video in place when the file lands (_upgradeOpenClipPanel), and
+    // the heavy embed app never boots at all.
+    return '<div class="rz-clip-processing" role="status">'
+      + '<span class="rz-clip-spin rz-clip-spin-light" aria-hidden="true"></span>'
+      + '<div class="rz-clip-processing-title">Clip is processing</div>'
+      + '<div class="rz-clip-processing-sub">The video lands a few minutes after the play and swaps in here on its own.</div>'
+      + '</div>' + srcLink;
   }
 
   var _CLIP_STILL_LOADING_MS = 12000; // when the loading row turns to "Still loading"
@@ -3945,7 +3957,7 @@
     var btn = card ? card.querySelector('[data-clip-toggle]') : null;
     var tweet = btn ? btn.getAttribute('data-tweet') : '';
     if (!tweet) return;
-    panel.innerHTML = _clipFrameHtml({
+    panel.innerHTML = _clipEmbedHtml({
       clipTweetId: tweet,
       clipUrl: btn.getAttribute('data-clip-url') || '',
       clipVideoUrl: '', clipPosterUrl: ''
