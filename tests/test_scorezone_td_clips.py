@@ -888,3 +888,59 @@ def test_clip_pass_fills_media_for_pending_clip_via_lookup(monkeypatch):
     assert (gid, pid) == (RAMS_GAME, "404")
     assert clip["tweet_id"] == "111"
     assert clip["video_url"].endswith("1280x720/a.mp4")
+
+
+def test_clip_pass_fills_pending_clip_after_match_window_closes(monkeypatch):
+    # X has been observed finishing a clip's video 30+ minutes after the
+    # post, long after the 17-minute match window closes. A stored
+    # media-less clip must stay fill-eligible (48h) instead of being
+    # stranded until someone runs a backfill.
+    rows = _rams_rows()
+    existing = {
+        (RAMS_GAME, "404"): {
+            "game_id": RAMS_GAME, "play_id": "404", "tweet_id": "111",
+            "tweet_url": "https://x.com/NFL/status/111", "author": "NFL",
+            "scorer": "Kyren Williams", "ts": 1761438000.0,
+            "video_url": "", "poster_url": "",
+        }
+    }
+    upserts = []
+    monkeypatch.setattr(store, "get_plays",
+                        lambda season, gids: {RAMS_GAME: rows})
+    monkeypatch.setattr(store, "get_play_clips",
+                        lambda season, gids: existing)
+    monkeypatch.setattr(
+        store, "upsert_play_clip",
+        lambda season, gid, pid, clip: upserts.append((gid, pid, clip)) or True)
+
+    class _FakeFetcher:
+        def __init__(self):
+            self.user_ids = {}
+            self.looked_up = []
+
+        def user_tweets(self, username, since_id=None, max_results=25):
+            return []
+
+        def lookup_media(self, tweet_ids):
+            self.looked_up = list(tweet_ids)
+            return {"111": {
+                "video_url": "https://video.twimg.com/amplify_video/9/vid/avc1/1280x720/a.mp4",
+                "poster_url": "https://pbs.twimg.com/thumb/a.jpg",
+            }}
+
+    fetcher = _FakeFetcher()
+    pid_to_name = {pid: {"full_name": name, "position": "WR"}
+                   for pid, name in PID_TO_NAME.items()}
+    wanted_plays = clips.build_wanted_td_plays(
+        RAMS_GAME, rows, pid_to_name, away="LAR", home="LV")
+    wallclock = {w["play_id"]: w["wallclock"] for w in wanted_plays}["404"]
+    stats = clips.maybe_run_clip_pass(
+        2026,
+        [{"game_id": RAMS_GAME, "live": False, "final": True}],
+        pid_to_name,
+        now=float(wallclock + 2 * 3600), fetcher=fetcher,
+    )
+    assert stats["wanted"] == 0  # match window long closed
+    assert fetcher.looked_up == ["111"]
+    assert stats["filled"] == 1
+    assert len(upserts) == 1
