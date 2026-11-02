@@ -58,10 +58,11 @@ def test_bump_chart_has_traces_without_win_column():
     assert "Standings Bump Chart" in html
     assert "chart-bump" in figs
     fig = json.loads(figs["chart-bump"])
-    assert len(fig["data"]) == 10
-    for trace in fig["data"]:
-        assert trace["x"], "bump trace has no weeks"
-        assert trace["y"], "bump trace has no seeds"
+    assert fig["kind"] == "line" and fig["straight"] is True
+    assert len(fig["series"]) == 10
+    for s in fig["series"]:
+        assert s["values"], "bump series has no seeds"
+        assert len(s["values"]) == len(fig["labels"]), "bump series not aligned to weeks"
     # The caller's frame must not be mutated.
     assert "win" not in df.columns
 
@@ -120,7 +121,7 @@ def _division_weekly():
 
 def _bump_y_by_owner(figs):
     fig = json.loads(figs["chart-bump"])
-    return {t["name"]: list(t["y"]) for t in fig["data"]}
+    return {s["name"]: list(s["values"]) for s in fig["series"]}
 
 
 def test_bump_chart_division_winner_seeds_ahead_of_better_wild_card():
@@ -197,16 +198,16 @@ def test_floor_ceiling_card_uses_one_shared_scale():
     assert OWNERS[0] in html
 
 
-def test_heatmap_fig_registered_with_hover_bg_and_env_insight_merged():
+def test_heatmap_payload_registered_with_env_insight_merged():
     from dashboard_services.pages.graphs_page import _heatmap_card
     df = _real_shape_weekly()
     figs = {}
     html = _heatmap_card(df, _colors(), figs)
     assert "Scoring Heatmap" in html
     fig = json.loads(figs["chart-heatmap"])
-    assert fig["data"][0]["type"] == "heatmap"
-    assert len(fig["data"][0]["z"]) == 10
-    assert fig["layout"]["hoverlabel"]["bgcolor"] == "#ffffff"
+    assert fig["kind"] == "heatmap"
+    assert len(fig["rows"]) == 10
+    assert all(len(r["cells"]) == len(fig["weeks"]) for r in fig["rows"])
     # The removed League Scoring by Week card's one unique fact (the
     # league's biggest scoring week) is merged into this insight.
     assert "biggest scoring week" in html
@@ -225,16 +226,6 @@ def test_career_wins_card_lists_all_owners():
     assert "Career Wins by Team" in html
     for o in OWNERS:
         assert o in html
-
-
-def test_plotly_theme_hoverlabel_is_opaque():
-    import plotly.graph_objs as go
-    from dashboard_services.plotly_theme import apply_brand_layout
-    fig = apply_brand_layout(go.Figure(go.Scatter(x=[1], y=[2])))
-    hl = fig.to_dict()["layout"]["hoverlabel"]
-    assert hl["bgcolor"] == "#ffffff"
-    assert hl["bordercolor"] == "#e5e7eb"
-    assert hl["font"]["color"] == "#334155"
 
 
 def test_luck_analysis_computed_once_per_season_build(monkeypatch):
@@ -293,7 +284,7 @@ def test_no_spacer_gap_mechanism_and_fill_classes_present():
     assert ".gs-rows{" in html
     assert 'class="gs-rows"' in html
     assert 'class="gs-plot" id="chart-pfpa"' in html
-    assert "ResizeObserver" in html
+    assert "IntersectionObserver" in html
 
 
 def test_every_season_card_title_renders_exactly_once():
@@ -370,36 +361,43 @@ def test_heatmap_cells_equal_owner_week_points():
     figs = {}
     _heatmap_card(df, _colors(), figs)
     fig = json.loads(figs["chart-heatmap"])
-    owners_y = fig["data"][0]["y"]
-    z = fig["data"][0]["z"]
+    owners_y = [r["label"] for r in fig["rows"]]
+    z = [r["cells"] for r in fig["rows"]]
     for oi, owner in enumerate(owners_y):
-        for wi, wk in enumerate(fig["data"][0]["x"]):
+        for wi, wk in enumerate(fig["weeks"]):
             expected = float(df[(df["owner"] == owner) & (df["week"] == wk)]["points"].iloc[0])
             assert z[oi][wi] == expected
 
 
-def test_pfpa_yaxis_padded_like_xaxis():
+def test_pfpa_payload_points_trend_and_averages():
     from dashboard_services.pages.graphs_page import _pf_pa_card
     ts = _team_stats()
     figs = {}
     _pf_pa_card(ts, _colors(), OWNERS[0], figs)
     fig = json.loads(figs["chart-pfpa"])
-    yr = fig["layout"]["yaxis"]["range"]
+    assert fig["kind"] == "scatter"
     pfs = [float(v) for v in ts["PF"]]
-    assert yr[0] < min(pfs) and yr[1] > max(pfs)
+    pas = [float(v) for v in ts["PA"]]
+    ys = [p["y"] for p in fig["points"]]
+    xs = [p["x"] for p in fig["points"]]
+    assert sorted(ys) == sorted(pfs) and sorted(xs) == sorted(pas)
+    # Trend endpoints span the padded x range the old figure used.
+    assert fig["trend"][0] < min(pas) and fig["trend"][2] > max(pas)
+    assert abs(fig["avgY"] - sum(pfs) / len(pfs)) < 1e-6
 
 
-def test_all_teams_viewer_line_emphasized_and_y_padded():
+def test_all_teams_viewer_line_emphasized_and_data_complete():
     from dashboard_services.pages.graphs_page import _all_teams_trend_card
     df = _real_shape_weekly()
     figs = {}
     html = _all_teams_trend_card(df, _colors(), figs, OWNERS[0])
     fig = json.loads(figs["chart-allteams"])
-    mine = [t for t in fig["data"] if t.get("name") == OWNERS[0]][0]
-    assert mine["line"]["width"] == 3.5
-    yr = fig["layout"]["yaxis"]["range"]
+    assert fig["kind"] == "line"
+    mine = [s for s in fig["series"] if s.get("name") == OWNERS[0]][0]
+    assert mine["width"] == 3 and mine["hero"] is True
     pts = [float(v) for v in df["points"]]
-    assert yr[0] < min(pts) and yr[1] > max(pts)
+    all_vals = [v for s in fig["series"] for v in s["values"] if v is not None]
+    assert min(all_vals) == min(pts) and max(all_vals) == max(pts)
     assert "trending" in html  # the removed Trend card's viewer insight
 
 
@@ -409,8 +407,9 @@ def test_sos_viewer_chart_uses_own_points_against():
     figs = {}
     _sos_card(df, OWNERS[0], _colors(), figs)
     fig = json.loads(figs["chart-sos"])
+    assert fig["kind"] == "barsV"
     g = df[df["owner"] == OWNERS[0]].sort_values("week")
-    assert [float(v) for v in fig["data"][0]["y"]] == [float(v) for v in g["points_against"]]
+    assert [float(b["value"]) for b in fig["bars"]] == [float(v) for v in g["points_against"]]
 
 
 def test_career_wins_falls_back_to_points_without_wins():

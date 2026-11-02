@@ -19,35 +19,33 @@ def _app_js() -> str:
     return (REPO / "static" / "app.js").read_text()
 
 
-def _weekly_layout_block() -> str:
+def _weekly_block() -> str:
+    """The Weekly Scoring render block (BRValueChart since wave 2)."""
     src = _app_js()
-    start = src.index("const weeklyLayout = {")
-    # The block ends at the first "};" at line start after the declaration.
-    end = src.index("\n      };", start)
-    return src[start:end]
+    start = src.index("var weeklyEl = document.getElementById('teamWeeklyChart');")
+    end = src.index("window.BRValueChart.render(weeklyEl, {", start)
+    return src[start:end] + src[end:src.index("});", end)]
 
 
 def test_weekly_chart_uses_whole_week_ticks():
-    block = _weekly_layout_block()
-    assert "tickmode: 'array'" in block
-    assert "tickvals: weeks" in block
-    # Tick labels read W1, W2, W3 (matching the Actual vs Optimal chart).
-    assert re.search(r"ticktext:\s*weeks\.map\(function\s*\(w\)\s*\{\s*return\s*'W'\s*\+\s*w;", block)
+    block = _weekly_block()
+    # X labels are built per data point as W1, W2, W3 (matching the Actual
+    # vs Optimal chart): whole weeks only, never fractional auto ticks.
+    assert "ws.map(function (d) { return 'W' + d.week; })" in block
+    assert "labels: wkLabels" in block
 
 
-def test_weekly_chart_legend_floats_above_plot():
-    block = _weekly_layout_block()
-    legend = block[block.index("legend:"):]
-    assert "orientation: 'h'" in legend
-    # Anchored above the plot area (bottom edge at/above y=1 in paper coords)
-    # so it cannot overlap the data.
-    assert "yanchor: 'bottom'" in legend
-    m = re.search(r"\by:\s*([\d.]+)", legend)
-    assert m and float(m.group(1)) >= 1.0
+def test_weekly_chart_has_no_detached_legend():
+    # The old floating Plotly legend is gone entirely: series identity is
+    # carried by the stacked end labels, so nothing can overlap the data.
+    block = _weekly_block()
+    assert "legend" not in block
+    assert "Plotly" not in block
+    assert "showlegend" not in _app_js()
 
 
 def test_weekly_chart_has_no_redundant_axis_titles():
-    block = _weekly_layout_block()
+    block = _weekly_block()
     assert "title: 'Week'" not in block
     assert "title: 'Points'" not in block
 

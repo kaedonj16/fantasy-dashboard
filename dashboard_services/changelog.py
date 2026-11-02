@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-11-02",
         "tag": "new",
+        "text": "Every other league graph rebuilt in the same site style: team Weekly Scoring and the League Stats and League History charts are now drawn by the site's own chart system instead of the old chart library. The team radar is now a set of bars against the league average line, so each stat reads at a glance with its value beside it, and the two-team comparison uses paired bars the same way. Every team now keeps one fixed color on every chart and across seasons, so you can follow a single team's story from the standings bump chart to the scoring trends, the bump chart labels each team's final rank at the right edge, the scoring heatmap prints its values with a scale and marks byes clearly, and every point on every chart can be hovered or tapped for its exact numbers.",
+        "link": "/graphs"
+    },
+    {
+        "date": "2026-11-02",
+        "tag": "new",
         "text": "Value History charts rebuilt: the player card, compare and player page value history graphs are now drawn in the site's own style instead of the old chart library. The main line runs in deep navy with a soft gradient under it, Superflex shows as a dashed sky line with the space between the two lines shaded, each line ends with its name and current value stacked beside it, and Peak and Low are marked in green and red with their dates. Lines pass through every real value exactly, with smooth corners and no invented highs or lows, and hovering shows the true values for that date.",
         "link": "/players"
     },
