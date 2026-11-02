@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-02",
         "tag": "fix",
+        "text": "Player Rankings hover quick look: the 30-day value trend graph no longer stretches to fill its box, which had turned the end dot into an oval and made gentle moves look like cliffs. The graph now keeps its proportions with a round end dot, leaves headroom above and below the line so peaks stop slamming the edges, centers a flat trend instead of pinning it to the bottom, and shades the area under the line so the shape is easier to read.",
+        "link": "/players"
+    },
+    {
+        "date": "2026-11-02",
+        "tag": "fix",
         "text": "Player Rankings freshness and hover fixes: Total Points and PPG now count each player's own finished games as soon as they end, matching the player card instead of waiting for the next full update. The hover quick look opens even while the board is still loading if you are already resting on a row, its trend, game log, and matchup sections time out and retry cleanly instead of spinning forever, and repeat visits skip work the server has already done so the board settles faster.",
         "link": "/players"
     },
