@@ -2107,17 +2107,33 @@ function prQlGamesHTML(p, payload) {
 
 function prQlTrendSVG(vals) {
   var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
-  var span = (max - min) || 1;
+  // Pad the domain (15% of the range on each side) so peaks never slam
+  // the chart edges, and give a flat series a synthetic range so its
+  // line sits at mid-height instead of pinned to the bottom edge.
+  var rawSpan = max - min;
+  var padV = rawSpan > 0 ? rawSpan * 0.15 : 1;
+  min -= padV; max += padV;
+  var span = max - min;
   var W = 200, H = 64, PAD = 5;
-  var pts = vals.map(function(v, i) {
-    var x = PAD + (W - 2 * PAD) * (vals.length === 1 ? 0 : i / (vals.length - 1));
+  var coords = vals.map(function(v, i) {
+    var x = PAD + (W - 2 * PAD) * (vals.length === 1 ? 0.5 : i / (vals.length - 1));
     var y = H - PAD - (H - 2 * PAD) * ((v - min) / span);
-    return x.toFixed(1) + ',' + y.toFixed(1);
-  }).join(' ');
-  var lastPt = pts.split(' ').pop().split(',');
+    return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
+  });
+  var pts = coords.map(function(p) { return p[0] + ',' + p[1]; }).join(' ');
+  var lastPt = coords[coords.length - 1];
   var up = vals[vals.length - 1] >= vals[0];
   var color = up ? '#22c55e' : '#ef4444';
-  return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">'
+  // Soft area fill under the line, down to the bottom of the plot, so
+  // the shape reads as a trend graph rather than a floating wire.
+  var area = 'M' + coords[0][0] + ',' + (H - 1) + ' L' + pts.replace(/ /g, ' L')
+    + ' L' + lastPt[0] + ',' + (H - 1) + ' Z';
+  // No preserveAspectRatio="none": the chart box is taller than the
+  // 200x64 viewBox, and stretching it non-uniformly turned the end dot
+  // into an oval and steepened every slope. The default meet fit keeps
+  // the dot round and the stroke even; the line just centers in the box.
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">'
+    + '<path d="' + area + '" fill="' + color + '" opacity="0.13" stroke="none"/>'
     + '<polyline points="' + pts + '" fill="none" stroke="' + color
     + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
     + '<circle cx="' + lastPt[0] + '" cy="' + lastPt[1] + '" r="3.2" fill="' + color
