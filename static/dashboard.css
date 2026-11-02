@@ -55292,6 +55292,18 @@ body.otc-sticky-on { padding-bottom: 72px; }
     font-size: 11px;
     color: var(--rz-muted);
 }
+/* Clip rows inside the player modal's Live timeline and the Moments
+   list: indent under the play text instead of spanning the card. */
+.rz-pm-tl .rz-clip-row, .rzm-tl .rz-clip-row {
+    flex: none;
+    margin: 2px 14px 8px 46px;
+}
+.rz-pm-tl .rz-clip-panel, .rzm-tl .rz-clip-panel {
+    margin: 0 14px 10px 46px;
+}
+.rzm-tl .rz-clip-row, .rzm-tl .rz-clip-panel {
+    margin-left: 30px;
+}
 .rz-clip-btn {
     appearance: none;
     cursor: pointer;
