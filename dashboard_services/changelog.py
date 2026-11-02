@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-02",
         "tag": "fix",
+        "text": "Trade Calculator: fixed player headshots that would not load on trade chips, most often for rookies. Those players had a photo on their player page all along; the trade and search lists were the only views not filling it in. Chips and search results now show the same headshot as everywhere else on the site.",
+        "link": "/trade"
+    },
+    {
+        "date": "2026-11-02",
+        "tag": "fix",
         "text": "Player Rankings freshness and hover fixes: Total Points and PPG now count each player's own finished games as soon as they end, matching the player card instead of waiting for the next full update. The hover quick look opens even while the board is still loading if you are already resting on a row, its trend, game log, and matchup sections time out and retry cleanly instead of spinning forever, and repeat visits skip work the server has already done so the board settles faster.",
         "link": "/players"
     },
