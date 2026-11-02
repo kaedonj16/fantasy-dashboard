@@ -12666,7 +12666,11 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
     if not viewer_roster_id:
         return actions
     try:
-        from utils.lineup_issues import find_lineup_issues, projection_upgrades
+        from utils.lineup_issues import (
+            find_lineup_issues,
+            locked_teams_from_games,
+            projection_upgrades,
+        )
 
         rosters = ctx.get("rosters") or []
         roster = next(
@@ -12692,6 +12696,35 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
         fix_url = url_for(
             "league_pages.page_waivers", platform=platform, season=season, league_id=league_id
         ) + "?tab=startsit"
+
+        # Teams whose game has already kicked off: those players' slots are
+        # locked, so no Next steps action may tell the viewer to bench or
+        # start them. A mid-game injury craters a locked starter's live
+        # projection (Love: 0.0), which otherwise reads as a huge swap gain
+        # for a bench player the viewer can no longer start. Fail-open: a
+        # schedule problem leaves the set empty and behavior unchanged.
+        _locked_teams = set()
+        try:
+            _locked_teams = locked_teams_from_games(
+                load_week_schedule(season, current_week) or []
+            )
+        except Exception:
+            _locked_teams = set()
+
+        def _locked_pids(pids) -> set:
+            out = set()
+            for _pid in pids or []:
+                _pid = str(_pid)
+                _team = str(
+                    (players_map.get(_pid) or {}).get("team")
+                    or (full_players.get(_pid) or {}).get("team")
+                    or ""
+                ).upper()
+                if _team and _team in _locked_teams:
+                    out.add(_pid)
+            return out
+
+        _locked_starter_pids = _locked_pids(starters)
 
         # Projection-based swaps: the highest-impact lineup actions.
         try:
@@ -12722,6 +12755,7 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
             swaps = projection_upgrades(
                 starters, eligible, proj_map, pos_map, roster_positions or [],
                 injury_status=injury_status,
+                locked_pids=_locked_pids(eligible),
             )
             # Track players already covered by a swap suggestion so the
             # generic "Address:" alerts below don't duplicate them.
@@ -12783,6 +12817,10 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
                 # (e.g. "Start X over Y" for a bye-week player makes the
                 # generic "Address: Y" alert redundant).
                 if str(i.get("pid") or "") in _swap_covered_pids:
+                    continue
+                # A locked starter cannot be addressed either: if he was
+                # hurt mid-game there is no lineup move left to make.
+                if str(i.get("pid") or "") in _locked_starter_pids:
                     continue
                 _detail = i.get("detail") or ""
                 _name = i.get("name") or ""
