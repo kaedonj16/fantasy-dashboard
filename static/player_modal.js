@@ -348,9 +348,6 @@ function _pmRenderValueHistoryChart(data) {
         // format's label, and clear any stale summary from the last draw.
         const _vhSum = document.getElementById('pmVhSummary');
         if (_vhSum) { _vhSum.innerHTML = ''; _vhSum.style.display = 'none'; }
-        if (window.Plotly && _vhDiv._fullLayout) {
-          try { Plotly.purge(_vhDiv); } catch (e) { /* non-fatal */ }
-        }
         _vhDiv.style.height = '';
         _vhDiv.innerHTML = '<div class="pm-vh-note" style="padding:10px 0;font-size:13px;color:var(--text-muted);">'
           + (_vhFmt === 'redraft'
@@ -443,8 +440,8 @@ function _pmRenderValueHistoryChart(data) {
                 ${rangeLbl ? `<span class="pm-vh-range">over ${rangeLbl}</span>` : ''}
               </div>
               <div class="pm-vh-extremes">
-                <div class="pm-vh-ext"><span class="pm-vh-ext-k">Peak</span><span class="pm-vh-ext-v">${_fmtVal(peak)}</span></div>
-                <div class="pm-vh-ext"><span class="pm-vh-ext-k">Floor</span><span class="pm-vh-ext-v">${_fmtVal(floor)}</span></div>
+                <div class="pm-vh-ext pm-vh-ext-peak"><span class="pm-vh-ext-k">Peak</span><span class="pm-vh-ext-v">${_fmtVal(peak)}</span></div>
+                <div class="pm-vh-ext pm-vh-ext-floor"><span class="pm-vh-ext-k">Floor</span><span class="pm-vh-ext-v">${_fmtVal(floor)}</span></div>
               </div>`;
           }
 
@@ -452,185 +449,63 @@ function _pmRenderValueHistoryChart(data) {
           function renderChart(history) {
             _vhLastHistory = history;
             updateSummary(history);
-            const n = history.length;
-            const xIdx  = history.map((_, i) => i);            // numeric x for clean tick control
             const dates = history.map(d => formatDateLabel(d.as_of_date));
 
-            // A date with no SF value stays a gap (null) so Plotly breaks
-            // the SF line there. Substituting the primary value (the old
-            // ?? d.value fallback) drew invented plunges to the 1QB line.
+            // A date with no SF value stays a gap (null) so the line breaks
+            // there. Substituting the primary value (the old ?? d.value
+            // fallback) drew invented plunges to the 1QB line.
             const y1qb = history.map(d => (d.value_1qb ?? d.value) != null ? Number(d.value_1qb ?? d.value) : null);
             const ysf  = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
 
-            // Show both 1QB and Superflex lines whenever they genuinely diverge.
-            // Both columns are EMA-smoothed at the data layer (smooth_value_history.py),
-            // so the SF series is already clean; for players where SF tracks 1QB the
-            // two coincide and we fall back to a single "Value" line.
+            // Show both 1QB and Superflex lines whenever they genuinely
+            // diverge. Both columns are EMA-smoothed at the data layer
+            // (smooth_value_history.py); the chart plots the stored values
+            // exactly and never averages them itself. For players where SF
+            // tracks 1QB the two coincide and we fall back to a single
+            // "Value" line.
             const hasDualSeries = y1qb.some((v, i) => v != null && ysf[i] != null && Math.abs(v - ysf[i]) > 1);
-
-            const allY = (hasDualSeries ? [...y1qb, ...ysf] : y1qb).filter(v => v != null);
-            const yMin = Math.min(...allY);
-            const yMax = Math.max(...allY);
-            const yRange = yMax - yMin;
-            const yPad = Math.max(yRange * 0.15, 20);
-            // Floor: no tighter than (currentValue - 200), so small wiggles don't look huge
-            const currentVal = (hasDualSeries ? ysf[ysf.length - 1] : y1qb[y1qb.length - 1]) ?? yMax;
-            const yFloor = Math.max(0, currentVal - 200);
-
-            // 3-4 evenly spaced date ticks (deduped) so labels never collide.
-            const tickCount = Math.max(2, Math.min(4, n));
-            const tickvals = [];
-            if (n <= 1) { tickvals.push(0); }
-            else {
-              for (let i = 0; i < tickCount; i++) {
-                const idx = Math.round(i * (n - 1) / (tickCount - 1));
-                if (!tickvals.includes(idx)) tickvals.push(idx);
-              }
-            }
-            const ticktext = tickvals.map(i => dates[i]);
-
-            const rootStyle = getComputedStyle(document.documentElement);
-            const mutedColor = rootStyle.getPropertyValue('--text-muted').trim() || '#6b7280';
-            const gridColor = rootStyle.getPropertyValue('--border').trim() || 'rgba(127,127,127,.18)';
-            // Matches the .pm-adp-dot border (source-card surface) so the chart's
-            // end markers read like the ADP dots.
-            const rowColor = rootStyle.getPropertyValue('--row').trim() || '#ffffff';
-
-            const hover1qb = dates.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`);
-            const hoverSF  = dates.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`);
-
-            const trace1qb = {
-              x: xIdx, y: y1qb,
-              type: 'scatter', mode: 'lines', name: '1QB',
-              line: { color: '#3b82f6', width: 2.5, shape: 'spline', smoothing: 1.3 },
-              fill: hasDualSeries ? 'none' : 'tozeroy',
-              fillcolor: 'rgba(59, 130, 246, 0.08)',
-              hovertemplate: '%{text}<extra></extra>',
-              text: hover1qb,
-            };
-            const traceSF = {
-              x: xIdx, y: ysf,
-              type: 'scatter', mode: 'lines', name: 'SF',
-              line: { color: '#f59e0b', width: 2.5, shape: 'spline', smoothing: 1.3 },
-              fill: 'none',
-              hovertemplate: '%{text}<extra></extra>',
-              text: hoverSF,
-            };
-
-            const lineTraces = hasDualSeries ? [trace1qb, traceSF] : [
-              { ...trace1qb, name: 'Value', text: dates.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`) }
-            ];
-            // A single marker at the latest point of each line -- echoes the
-            // ADP source dots (colored fill, surface-colored ring) so the two
-            // blocks share a visual language. A series ending in gap dates
-            // marks its last real point instead.
-            const endDot = (color, yArr) => {
-              let idx = yArr.length - 1;
-              while (idx > 0 && yArr[idx] == null) idx--;
-              return {
-                x: [xIdx[idx]], y: [yArr[idx]],
-                type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
-                marker: { color, size: 8, line: { color: rowColor, width: 2 } },
-              };
-            };
-            // Peak & floor markers on the primary (1QB) series -- Direction 1
-            // "momentum": make the high-water mark and the trough self-evident.
-            // Skipped when they land on the current point (the end dot already
-            // marks it) or when the series is flat / too short.
-            const winC  = rootStyle.getPropertyValue('--win').trim()  || '#16a34a';
-            const lossC = rootStyle.getPropertyValue('--loss').trim() || '#ef4444';
-            let peakIdx = -1, floorIdx = -1, peakV = -Infinity, floorV = Infinity;
-            y1qb.forEach((v, i) => {
-              if (v == null) return;
-              if (v > peakV) { peakV = v; peakIdx = i; }
-              if (v < floorV) { floorV = v; floorIdx = i; }
-            });
-            const extremeDot = (idx, color) => ({
-              x: [xIdx[idx]], y: [y1qb[idx]],
-              type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
-              marker: { color, size: 7, line: { color: rowColor, width: 2 } },
-            });
-            const extremeMarkers = [];
-            if (n > 2 && peakIdx !== floorIdx) {
-              if (peakIdx  !== n - 1) extremeMarkers.push(extremeDot(peakIdx, winC));
-              if (floorIdx !== n - 1) extremeMarkers.push(extremeDot(floorIdx, lossC));
-            }
-
-            const traces = lineTraces.concat(
-              hasDualSeries
-                ? [endDot('#3b82f6', y1qb), endDot('#f59e0b', ysf)]
-                : [endDot('#3b82f6', y1qb)]
-            ).concat(extremeMarkers);
 
             const isMobile = window.innerWidth <= 768;
             const chartHeight = isMobile ? 200 : 250;
-            const xPad = Math.max(n * 0.02, 0.5);
 
-            const layout = {
-              // r needs to fit half of the last (right-most) date label, which is
-              // centered on the final data point at the plot's right edge -- too
-              // small and the last date clips off.
-              margin: { l: 36, r: 34, t: 10, b: 26 },
-              height: chartHeight,
-              paper_bgcolor: 'transparent',
-              plot_bgcolor: 'transparent',
-              showlegend: hasDualSeries,
-              legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.14, font: { size: 11, color: mutedColor } },
-              xaxis: {
-                showgrid: false,
-                zeroline: false,
-                tickmode: 'array',
-                tickvals: tickvals,
-                ticktext: ticktext,
-                tickangle: 0,
-                tickfont: { size: 11, color: mutedColor },
-                fixedrange: true,
-                range: [-xPad, (n - 1) + xPad],
-              },
-              yaxis: {
-                showgrid: true,
-                gridcolor: gridColor,
-                griddash: 'dot',
-                gridwidth: 1,
-                zeroline: false,
-                showticklabels: true,
-                range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
-                tickfont: { size: 11, color: mutedColor },
-                nticks: 4,
-              },
-              hovermode: 'closest',
-            };
-
-            // A failed draw must never leave a silent grey box: the lazy
-            // Plotly load can reject (CDN stall) or be absent, and newPlot
-            // itself can throw on a degenerate container. Every failure
-            // path lands on a compact in-section error + Retry that
-            // redraws, and a resolved draw is verified to have actually
-            // produced a plot before it counts as success.
+            // A failed draw must never leave a silent grey box: the SVG
+            // render is synchronous, so any throw lands on a compact
+            // in-section error + Retry that redraws, and a resolved draw is
+            // verified to have actually produced a chart before it counts
+            // as success.
             const _vhDrawFailed = function () {
               if (!chartDiv.isConnected) return;
               if (window.brErrorState) {
                 window.brErrorState(chartDiv, 'Could not load value history.', function () { renderChart(_vhLastHistory); }, { compact: true });
               }
             };
-            if (window.ensurePlotly) {
-              window.ensurePlotly().then(function () {
-                // Pin the container to the chart height before drawing. With
-                // responsive: true Plotly runs autosize, so any later resize
-                // (tab switch, window resize) re-derives the plot height from
-                // the container's current box, padding included, and a
-                // first-open drawing could come out at the wrong height with
-                // the x labels pushed below the card. A pinned height makes
-                // the draw and every later resize measure the same height.
-                chartDiv.style.height = chartHeight + 'px';
-                return Plotly.newPlot('playerValueChart', traces, layout, {
-                  displayModeBar: false,
-                  responsive: true
+            try {
+              if (!window.BRValueChart) throw new Error('BRValueChart unavailable');
+              // Pin the container to the chart height before drawing so a
+              // first open on a hidden panel and every later redraw measure
+              // the same height (the SVG redraws itself on resize and on
+              // Overview activation via pmSwitchTab).
+              chartDiv.style.height = chartHeight + 'px';
+              const vhSeries = [{
+                name: hasDualSeries ? '1QB' : 'Value', values: y1qb,
+                color: window.BRValueChart.heroColor, width: 3, hero: true,
+              }];
+              if (hasDualSeries) {
+                vhSeries.push({
+                  name: 'SF', values: ysf,
+                  color: window.BRValueChart.sky, width: 1.5, dash: '8 5',
                 });
-              }).then(function () {
-                if (!chartDiv.querySelector('.main-svg') && !chartDiv._fullLayout) _vhDrawFailed();
-              }).catch(_vhDrawFailed);
-            } else {
+              }
+              window.BRValueChart.render(chartDiv, {
+                height: chartHeight,
+                labels: dates,
+                series: vhSeries,
+                band: hasDualSeries,
+                peakLow: true,
+                fmtVal: _fmtVal,
+              });
+              if (!chartDiv.querySelector('svg.br-vh-svg')) _vhDrawFailed();
+            } catch (e) {
               _vhDrawFailed();
             }
           }
@@ -3166,16 +3041,17 @@ function pmSwitchTab(tab, clickEvent) {
     btn.classList.add('active');
     btn.setAttribute('aria-selected', 'true');
   }
-  // Value History chart: Plotly measures its container once at build time.
-  // If the modal first opened on another tab, the Overview panel was
-  // display:none then and the chart kept a fallback width that spills over
-  // the rail; a tab switch is not a window resize, so re-measure now that
-  // the panel is active. No-op when the player has no chart.
+  // Value History chart: the SVG measures its container at draw time. If
+  // the modal first opened on another tab, the Overview panel was
+  // display:none then and the chart was drawn at a fallback width; a tab
+  // switch is not a window resize, so redraw now that the panel is active
+  // and the container has its real width. No-op when the player has no
+  // chart (the redraw hook is only set by a successful BRValueChart draw).
   if (tab === 'overview') {
     requestAnimationFrame(() => {
       try {
         const cd = document.getElementById('playerValueChart');
-        if (cd && window.Plotly && cd._fullLayout) Plotly.Plots.resize(cd);
+        if (cd && cd._brVhRedraw) cd._brVhRedraw();
       } catch (e) {}
     });
   }

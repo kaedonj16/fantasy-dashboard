@@ -6,15 +6,9 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
-        "tag": "update",
-        "text": "Player cards open faster on the Overview: news and Recent Form now start loading the moment you tap a player instead of waiting for the rest of the card, and players you linger on in a list warm up their Recent Form ahead of the tap. Hover, focus or tap a Recent Form bar to see that game's basic stats: the passing, rushing and receiving lines, snap share and fumbles, right alongside the points the bar already shows.",
-        "link": "/"
-    },
-    {
-        "date": "2026-11-02",
-        "tag": "fix",
-        "text": "Trade Calculator: fixed player headshots that would not load on trade chips, most often for rookies. Those players had a photo on their player page all along; the trade and search lists were the only views not filling it in. Chips and search results now show the same headshot as everywhere else on the site.",
-        "link": "/trade"
+        "tag": "new",
+        "text": "Value History charts rebuilt: the player card, compare and player page value history graphs are now drawn in the site's own style instead of the old chart library. The main line runs in deep navy with a soft gradient under it, Superflex shows as a dashed sky line with the space between the two lines shaded, each line ends with its name and current value stacked beside it, and Peak and Low are marked in green and red with their dates. Lines pass through every real value exactly, with smooth corners and no invented highs or lows, and hovering shows the true values for that date.",
+        "link": "/players"
     },
     {
         "date": "2026-11-02",

@@ -66,7 +66,12 @@ def test_compare_search_shows_league_type_value():
 
 def test_compare_charts_and_triple_follow_league_type():
     chart = _slice(APP_JS, "function _compareWireView(p1, p2)", "function renderCompareInline")
-    assert "_cmpHistValue(h)" in chart
+    # Both charts build their points through the shared helper, which is
+    # what reads each row's value through the league-type-aware picker.
+    assert "points: _cmpHistPoints(p)," in chart
+    points = _slice(APP_JS, "function _cmpHistPoints(p)", "function _cmpToggleChartBlock")
+    assert "_cmpHistValue(h)" in points
+    assert "_cmpHistSeries(p)" in points
     assert "p.sf_value_band || p.value_band" in chart
     assert "_cmpIsSf()" in chart
 
@@ -91,7 +96,7 @@ def test_compare_charts_and_triple_follow_league_type():
     assert "function _cmpRerenderOverview()" in APP_JS
 
     triple_chart = _slice(APP_JS, "function _renderTripleValueChart(players)", "function openComparisonView")
-    assert "_cmpHistValue(h)" in triple_chart
+    assert "points: _cmpHistPoints(p)," in triple_chart
 
 
 def test_compare_baselines_include_sf_value_band():

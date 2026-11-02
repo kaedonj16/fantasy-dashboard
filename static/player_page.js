@@ -19,19 +19,12 @@
     }
   }
 
-  // Standalone player pages don't bundle Plotly; prefer the site's on-demand
-  // loader when present, otherwise fetch it directly from jsDelivr.
-  function loadPlotlyFallback() {
-    return new Promise(function (res, rej) {
-      if (window.Plotly) { res(window.Plotly); return; }
-      var s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js";
-      s.onload = function () { res(window.Plotly); };
-      s.onerror = function () { rej(new Error("plotly load failed")); };
-      document.head.appendChild(s);
-    });
-  }
-
+  // The chart is drawn by the shared BRValueChart SVG renderer (canonical
+  // copy in static/app.js core, which this page's lite shell loads). Same
+  // system as the player modal chart: navy hero line with its gradient,
+  // dashed sky SF line, sky band between them, stacked end labels, and
+  // green Peak / red Low markers on the primary series. No chart library
+  // is loaded for this chart anymore.
   function renderChart() {
     var hist = window.__ppHistory || [];
     var div = document.getElementById("ppValueChart");
@@ -40,66 +33,43 @@
       showChartMessage("Not enough value history yet for a chart");
       return;
     }
-    var ensure = window.ensurePlotly ? window.ensurePlotly() : loadPlotlyFallback();
-    ensure.then(function () { drawChart(div, hist); }).catch(function () {
-      showChartMessage("Could not load the chart library");
-    });
-  }
-
-  function drawChart(div, hist) {
-    if (typeof Plotly === "undefined") {
+    if (!window.BRValueChart) {
       showChartMessage("Could not load the chart library");
       return;
     }
+    drawChart(div, hist);
+  }
 
-    var xData = hist.map(function (d) { return formatDateLabel(d.as_of_date); });
-    var n = xData.length;
-    var y1qb = hist.map(function (d) { return d.value_1qb != null ? d.value_1qb : null; });
-    // A date with no SF value stays a gap (null) so Plotly breaks the SF
-    // line there; substituting the 1QB value drew invented plunges.
-    var ysf  = hist.map(function (d) { return d.value_sf != null ? d.value_sf : null; });
+  function drawChart(div, hist) {
+    var labels = hist.map(function (d) { return formatDateLabel(d.as_of_date); });
+    var y1qb = hist.map(function (d) { return d.value_1qb != null ? Number(d.value_1qb) : null; });
+    // A date with no SF value stays a gap (null) so the line breaks there;
+    // substituting the 1QB value drew invented plunges.
+    var ysf = hist.map(function (d) { return d.value_sf != null ? Number(d.value_sf) : null; });
     var hasDual = y1qb.some(function (v, i) { return v != null && ysf[i] != null && Math.abs(v - ysf[i]) > 1; });
-
-    var muted = getComputedStyle(document.documentElement)
-      .getPropertyValue("--text-muted").trim() || "#6b7280";
-
-    var midIdx = Math.floor((n - 1) / 2);
-    var tickvals = n <= 2 ? [xData[0], xData[n - 1]] : [xData[0], xData[midIdx], xData[n - 1]];
-    var ticktext = n <= 2
-      ? [formatDateLabel(hist[0].as_of_date), formatDateLabel(hist[n - 1].as_of_date)]
-      : [formatDateLabel(hist[0].as_of_date), formatDateLabel(hist[midIdx].as_of_date), formatDateLabel(hist[n - 1].as_of_date)];
-
-    var trace1qb = {
-      x: xData, y: y1qb, type: "scatter", mode: "lines", name: hasDual ? "1QB" : "Value",
-      line: { color: "#3b82f6", width: 2, shape: "spline", smoothing: 1.2 },
-      fill: hasDual ? "none" : "tozeroy", fillcolor: "rgba(59,130,246,0.1)",
-      hovertemplate: "%{x}<br>" + (hasDual ? "1QB" : "Value") + ": %{y:.0f}<extra></extra>"
-    };
-    var traceSF = {
-      x: xData, y: ysf, type: "scatter", mode: "lines", name: "SF",
-      line: { color: "#f59e0b", width: 2, shape: "spline", smoothing: 1.2 }, fill: "none",
-      hovertemplate: "%{x}<br>SF: %{y:.0f}<extra></extra>"
-    };
 
     var isMobile = window.innerWidth <= 768;
     var chartH = isMobile ? 210 : 250;
-    var layout = {
-      margin: { l: 34, r: 18, t: 10, b: 34 },
+    // Pin the container to the chart height so later resizes redraw the
+    // SVG at the same height (BRValueChart redraws itself on resize).
+    div.style.height = chartH + "px";
+    var series = [{
+      name: hasDual ? "1QB" : "Value", values: y1qb,
+      color: window.BRValueChart.heroColor, width: 3, hero: true,
+    }];
+    if (hasDual) {
+      series.push({
+        name: "SF", values: ysf,
+        color: window.BRValueChart.sky, width: 1.5, dash: "8 5",
+      });
+    }
+    window.BRValueChart.render(div, {
       height: chartH,
-      paper_bgcolor: "transparent", plot_bgcolor: "transparent",
-      showlegend: hasDual,
-      legend: { orientation: "h", x: 0.5, xanchor: "center", y: 1.12, font: { size: 11, color: muted } },
-      xaxis: { showgrid: false, type: "category", tickmode: "array", tickvals: tickvals, ticktext: ticktext,
-               tickfont: { size: 11, color: muted }, fixedrange: true },
-      yaxis: { showgrid: true, gridcolor: "rgba(128,128,128,0.12)", tickfont: { size: 11, color: muted },
-               fixedrange: true, zeroline: false }
-    };
-    // Pin the container to the chart height: with responsive: true Plotly
-    // autosizes from the container box on later resizes, which could redraw
-    // the chart at a different height than the first draw.
-    div.style.height = chartH + 'px';
-    Plotly.newPlot(div, hasDual ? [trace1qb, traceSF] : [trace1qb], layout,
-      { displayModeBar: false, responsive: true });
+      labels: labels,
+      series: series,
+      band: hasDual,
+      peakLow: true,
+    });
   }
 
   function escapeHtml(s) {

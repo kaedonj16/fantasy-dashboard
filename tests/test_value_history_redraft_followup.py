@@ -212,8 +212,13 @@ def test_compare_chart_selects_series_by_toggle():
     assert "_cmpRedrawValueCharts = function" in src
     # Two-player chart block is actually interpolated into the body now.
     assert "${_chartBlock}" in src
-    # Triple chart plots the active format's series too.
-    assert "(_cmpHistSeries(p) || []).map(h => h.as_of_date || h.date)" in src
+    # Triple chart plots the active format's series too, through the
+    # shared point builder both compare charts use.
+    points = src[src.index("function _cmpHistPoints(p)"):src.index("function _cmpToggleChartBlock")]
+    assert "(_cmpHistSeries(p) || []).map(h => {" in points
+    assert "h.as_of_date || h.date" in points
+    triple = src[src.index("function _renderTripleValueChart(players)"):src.index("function openComparisonView")]
+    assert "points: _cmpHistPoints(p)," in triple
     # Tier-average reference lines never use a dynasty value in redraft mode.
     assert "p.stats.redraft_value_1qb" in src
 

@@ -166,12 +166,14 @@ def test_breakout_offseason_builder_untouched_shape():
 # Value History chart resize on Overview activation
 # ---------------------------------------------------------------------------
 
-def test_overview_switch_resizes_value_history_chart():
+def test_overview_switch_redraws_value_history_chart():
     seg = _segment("function pmSwitchTab", "function _pmTradePathCtx")
-    # The hook runs only for Overview, after the panel is activated.
+    # The hook runs only for Overview, after the panel is activated: the
+    # SVG chart drawn under a hidden panel (fallback width) redraws at the
+    # real width via the hook BRValueChart leaves on the container.
     assert "if (tab === 'overview')" in seg
-    assert seg.find("panel.classList.add('pm-panel-active')") < seg.find("Plotly.Plots.resize")
+    assert seg.find("panel.classList.add('pm-panel-active')") < seg.find("cd._brVhRedraw()")
     assert "requestAnimationFrame" in seg
     assert "document.getElementById('playerValueChart')" in seg
-    assert "cd._fullLayout" in seg
-    assert "Plotly.Plots.resize(cd)" in seg
+    assert "if (cd && cd._brVhRedraw) cd._brVhRedraw();" in seg
+    assert "Plotly" not in JS
