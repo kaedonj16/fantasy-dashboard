@@ -4169,11 +4169,21 @@
         + ' onerror="' + avOnErr + '">';
     var hasClip = !!(ev.clipTweetId && ev.kind === 'td');
     var clipOpen = hasClip && _openClipKey === ev.playId;
+    // The clip row is button-left / source-right (Kaedon's pick over the
+    // old right-pushed button with dead space beside it): the source is
+    // the posting account's handle parsed from the tweet URL.
+    var clipHandle = '';
+    if (hasClip && ev.clipUrl) {
+      var _hm = /x\.com\/([A-Za-z0-9_]+)\/status\//.exec(ev.clipUrl);
+      if (_hm) clipHandle = _hm[1];
+    }
     var clipHtml = hasClip
       ? '<div class="rz-clip-row"><button type="button" class="rz-clip-btn" data-clip-toggle="'
         + _esc(ev.playId) + '" data-tweet="' + _esc(ev.clipTweetId) + '" data-clip-url="' + _esc(ev.clipUrl || '')
         + '" data-clip-video="' + _esc(ev.clipVideoUrl || '') + '" data-clip-poster="' + _esc(ev.clipPosterUrl || '') + '">'
-        + _clipBtnLabel(clipOpen) + '</button></div>'
+        + _clipBtnLabel(clipOpen) + '</button>'
+        + (clipHandle ? '<span class="rz-clip-card-src">@' + _esc(clipHandle) + ' · clip from X</span>' : '')
+        + '</div>'
         + '<div class="rz-clip-panel' + (clipOpen ? ' is-open' : '') + '" data-clip-panel="'
         + _esc(ev.playId) + '">' + (clipOpen ? _clipFrameHtml(ev) : '') + '</div>'
       : '';

@@ -55284,8 +55284,13 @@ body.otc-sticky-on { padding-bottom: 72px; }
 .rz-clip-row {
     flex: 1 1 100%;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
     margin-top: 4px;
+}
+.rz-clip-card-src {
+    font-size: 11px;
+    color: var(--rz-muted);
 }
 .rz-clip-btn {
     appearance: none;
