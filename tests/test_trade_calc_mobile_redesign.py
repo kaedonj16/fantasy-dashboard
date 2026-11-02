@@ -8,14 +8,17 @@ What shipped, and what these pins hold:
   settings dropdown at phone widths; every control keeps its id and
   bindings because the same elements move.
 - FLAT SIDES (phones): team cards lose their chrome; each side header is
-  one quiet line (title, "gets · N pieces", running total). The header
-  total mirrors #sideATotal/#sideBTotal, the summary's own elements, so
-  it can never drift from the eval the summary and sticky bar use.
+  one quiet line, the team title with its "gets..." label. Piece counts
+  and running totals live only in the Trade Summary (and sticky bar);
+  the side headers never repeat them.
 - FULL CHIPS WITH HEADSHOTS (all widths): renderChips prepends a face
-  (ESPN photo over an initials disc, the rankings board's fallback
-  shape) to player chips and a round tile to pick chips. The trade
-  payload already carried espnHeadshot; normalizePlayerRow used to drop
-  it.
+  (the ESPN photo on a transparent slot, no colored tile and no
+  initials fallback) to player chips and a round tile to pick chips.
+  The trade payload already carried espnHeadshot; normalizePlayerRow
+  used to drop it.
+- SEARCH (all widths): the player search inputs carry a leading search
+  icon over a soft --card-soft fill, lifting to the card color with a
+  sky ring on focus.
 - BUILDER'S END (phones): Analyze (production's #clearTradeBtn), the
   summary's balance section (stats + balance bar + verdict shell), and
   Share relocate to the .otc-mobile-flow slots under the sides; Clear
@@ -63,10 +66,6 @@ def test_template_ships_the_phone_structure():
         'id="otcMobileBalance"',
         'id="otcMobilePair"',
         'id="otcMobileClearBtn"',
-        'id="sideAHeadTotal"',
-        'id="sideBHeadTotal"',
-        'id="sideAHeadPieces"',
-        'id="sideBHeadPieces"',
         'class="otc-share-label"',
         'class="otc-page-subtitle"',
     ):
@@ -83,9 +82,13 @@ def test_rendered_page_carries_the_slots_once_each():
         viewer_roster_id="3", has_premium=True, is_superflex=False,
         platform="sleeper", scoring_type="dynasty",
     )
-    for el_id in ("otcContextLine", "otcMobileBalance", "otcMobileClearBtn",
-                  "sideAHeadTotal", "sideBHeadTotal"):
+    for el_id in ("otcContextLine", "otcMobileBalance", "otcMobileClearBtn"):
         assert html.count(f'id="{el_id}"') == 1, el_id
+    # Side headers carry no piece count and no total; the summary does.
+    for gone in ("sideAHeadTotal", "sideBHeadTotal",
+                 "sideAHeadPieces", "sideBHeadPieces"):
+        assert gone not in html, gone
+    assert html.count('class="otc-search-icon"') == 2
     # Guest variant keeps production's disabled Analyze label.
     guest = build_trade_calculator_body(None, 2026)
     assert "Connect League to Analyze" in guest
@@ -131,12 +134,15 @@ def test_render_chips_builds_faces_and_pick_tiles():
     assert "chip.appendChild(buildPickTile(pk));" in chips
     face = _body(js, "function buildChipFace(p)", "function pickRoundLabel")
     assert 'face.className = "otc-chip-face"' in face
-    assert "chipInitials(p.name)" in face
+    # No initials fallback anywhere: a photoless player gets the empty
+    # transparent slot, never a disc with letters.
+    assert "chipInitials" not in js
+    assert "otc-chip-face-initials" not in face
     assert "p.espnHeadshot || p.headshot" in face
     assert "_hiResHeadshot(url, 110)" in face
-    # Failed photo hides itself after the raw-URL retry; initials show.
+    # Failed photo hides itself after the raw-URL retry.
     assert 'this.style.visibility = "hidden"' in face
-    tile = _body(js, "function buildPickTile(pk)", "function syncSideHeadMeta")
+    tile = _body(js, "function buildPickTile(pk)", "function renderChips")
     assert 'tile.className = "otc-chip-pick-tile"' in tile
     assert "pickRoundLabel(pk)" in tile
 
@@ -145,25 +151,53 @@ def test_chip_face_css_is_desktop_and_phone():
     css = _read(_CSS)
     base = css.split(".otc-chip-face {", 1)[1].split("}", 1)[0]
     assert "width: 36px" in base and "height: 40px" in base
-    assert "background: #dbe4ee" in base  # initials disc under the photo
+    assert "background: transparent" in base  # no colored tile behind the photo
+    assert ".otc-chip-face-initials" not in css
     phone = css[css.index("chip headshots (all widths)"):].split("@media (max-width: 640px)", 1)[1]
     assert ".otc-chip-face" in phone and "width: 38px" in phone and "height: 42px" in phone
     tile = css.split(".otc-chip-pick-tile {", 1)[1].split("}", 1)[0]
     assert "background: #122d4b" in tile
 
 
-# ── Header totals + context line wiring ──────────────────────────────
+# ── Side headers: title only; totals live in the summary ─────────────
 
-def test_head_totals_mirror_the_summary_totals():
+def test_side_headers_carry_no_totals_or_piece_counts():
+    page = _read(_PAGE)
     js = _read(_JS)
-    mirror = _body(js, "function syncSideHeadTotals()", "function syncContextLine()")
-    assert '"#sideATotal", "#sideAHeadTotal"' in mirror
-    assert '"#sideBTotal", "#sideBHeadTotal"' in mirror
-    bind = _body(js, "function bindMobileChrome()", "Button handlers - lean")
-    assert "MutationObserver(syncSideHeadTotals)" in bind
-    # Piece counts sync from the same render path that rebuilds chips.
-    chips = _body(js, "function renderChips(side)", "function formatPickId")
-    assert "syncSideHeadMeta(side);" in chips
+    for gone in ('id="sideAHeadTotal"', 'id="sideBHeadTotal"',
+                 'id="sideAHeadPieces"', 'id="sideBHeadPieces"',
+                 "otc-side-head-total", "otc-side-head-pieces"):
+        assert gone not in page, gone
+    # Nothing paints them anymore: no mirror sync, no piece-count sync.
+    assert "syncSideHeadTotals" not in js
+    assert "syncSideHeadMeta" not in js
+    assert "HeadTotal" not in js and "HeadPieces" not in js
+    # The summary totals themselves are untouched.
+    assert 'id="sideATotal"' in page and 'id="sideBTotal"' in page
+
+
+# ── Search: icon, filled field, sky focus ────────────────────────────
+
+def test_search_inputs_have_icon_fill_and_sky_focus():
+    page = _read(_PAGE)
+    assert page.count('class="otc-search-icon"') == 2
+    assert page.count('class="otc-search-input"') == 2
+    block = _redesign_css()
+    icon = block.split(".otc-search-icon {", 1)[1].split("}", 1)[0]
+    assert "position: absolute" in icon
+    assert "color: var(--text-muted)" in icon
+    # Scoped through .otc-search-wrap: the extra class is what outranks
+    # the generic input[type="text"] rule (an attribute selector beats a
+    # lone class), so the scoping itself is part of the contract.
+    search = block.split(".otc-search-wrap .otc-search-input {", 1)[1].split("}", 1)[0]
+    assert "background: var(--card-soft)" in search
+    assert "border: 1px solid var(--border)" in search
+    assert "padding-left: 38px" in search
+    focus = block.split(".otc-search-wrap .otc-search-input:focus {", 1)[1].split("}", 1)[0]
+    assert "border-color: #38bdf8" in focus
+    assert "background: var(--card)" in focus
+    placeholder = block.split(".otc-search-wrap .otc-search-input::placeholder {", 1)[1].split("}", 1)[0]
+    assert "color: var(--text-muted)" in placeholder
 
 
 def test_context_line_reads_chrome_name_and_control_state():
@@ -249,9 +283,12 @@ def test_phone_css_flattens_and_reflows():
     assert "min-height: 52px" in chip
     # Phone-only pieces stay hidden off-phone.
     base = block.split("@media (max-width: 640px)", 1)[0]
-    for cls in (".otc-context-line", ".otc-mobile-flow", ".otc-side-head-total"):
+    for cls in (".otc-context-line", ".otc-mobile-flow"):
         assert cls in base
     assert "display: none" in base
+    # The removed header pieces leave no CSS behind.
+    assert ".otc-side-head-total" not in block
+    assert ".otc-side-head-pieces" not in block
 
 
 def test_redesign_css_uses_no_new_breakpoints_or_pill_radius():
@@ -286,6 +323,15 @@ def test_phone_sides_are_separated_by_a_divider():
     phone = _redesign_css().split("@media (max-width: 640px)", 1)[1]
     divider = phone.split(".otc-team-card + .otc-team-card {", 1)[1].split("}", 1)[0]
     assert "border-top: 1px solid var(--border)" in divider
+
+
+def test_changelog_announces_the_header_search_polish():
+    from pin_helpers import changelog_entry
+
+    entry = changelog_entry("no colored backing", "search icon",
+                            tag="fix", link="/trade")
+    assert entry["date"] == "2026-11-01"
+    assert "—" not in entry["text"]  # no em dashes in UI copy
 
 
 def test_changelog_announces_the_chip_flip_fix():

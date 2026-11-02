@@ -380,10 +380,8 @@ def build_trade_calculator_body(
               <div class="otc-team-head">
                 <div class="otc-team-title-cell">
                   <h2 class="otc-team-title" id="sideATitle">Team 1 gets...</h2>
-                  <span class="otc-side-head-pieces" id="sideAHeadPieces"></span>
                 </div>
                 <div class="otc-team-head-right">
-                  <span class="otc-side-head-total" id="sideAHeadTotal">0.0</span>
                   {side_a_owner_tag}
                 </div>
               </div>
@@ -398,6 +396,7 @@ def build_trade_calculator_body(
 
                 <div class="otc-search-wrap">
                   <div class="search-wrapper">
+                    <span class="otc-search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
                     <input
                       id="sideASearch"
                       class="otc-search-input"
@@ -416,10 +415,8 @@ def build_trade_calculator_body(
               <div class="otc-team-head">
                 <div class="otc-team-title-row">
                   <h2 class="otc-team-title" id="sideBTitle"><span id="sideBTeamFallback">Team 2</span>{side_b_team_block} gets...</h2>
-                  <span class="otc-side-head-pieces" id="sideBHeadPieces"></span>
                 </div>
                 <div class="otc-team-head-right">
-                  <span class="otc-side-head-total" id="sideBHeadTotal">0.0</span>
                   {side_b_owner_tag}
                 </div>
               </div>
@@ -434,6 +431,7 @@ def build_trade_calculator_body(
 
                 <div class="otc-search-wrap">
                   <div class="search-wrapper">
+                    <span class="otc-search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
                     <input
                       id="sideBSearch"
                       class="otc-search-input"
