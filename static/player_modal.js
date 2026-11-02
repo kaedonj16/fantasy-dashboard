@@ -127,6 +127,21 @@ function _pmTakeEarlyResponse(url) {
   if (p) _pmEarlyResp.delete(url);
   return p || null;
 }
+function _pmRecentFormUrl(playerId, season) {
+  // Recent Form URL construction, shared by the click-time early fetch
+  // and the speculative warmer so the two can never drift: the loader's
+  // registry lookup (_pmTakeEarlyResponse) depends on exact string
+  // equality with the URL _pmLoadRecentForm builds.
+  var pathParts = window.location.pathname.split('/').filter(function (x) { return x; });
+  var _season = pathParts[1] || season || new Date().getFullYear();
+  var _leagueId = pathParts[2] || null;
+  var _lt = (typeof brLeagueType === 'function') ? brLeagueType() : '';
+  var _ls = (typeof brLeagueSize === 'function') ? brLeagueSize() : '';
+  var rfUrl = '/api/player-recent-form/' + encodeURIComponent(playerId)
+    + '?season=' + _season + '&league_type=' + _lt + '&league_size=' + _ls;
+  if (_leagueId) rfUrl += '&league_id=' + _leagueId + '&platform=' + (pathParts[0] || 'sleeper');
+  return rfUrl;
+}
 function _pmStartEarlyFetches(playerId, descriptor) {
   try {
     var ctx = (descriptor && descriptor.ctx) || {};
@@ -138,18 +153,13 @@ function _pmStartEarlyFetches(playerId, descriptor) {
     // to the loader.)
     _pmSmallFetch('adp:' + playerId + ':' + season,
       '/api/player-adp/' + encodeURIComponent(playerId) + '?season=' + encodeURIComponent(season));
-    // Recent Form: mirror _pmLoadRecentForm's URL construction
-    // exactly (pathname league, page league type/size) so the loader's
-    // registry lookup hits.
-    var pathParts = window.location.pathname.split('/').filter(function (x) { return x; });
-    var _season = pathParts[1] || season || new Date().getFullYear();
-    var _leagueId = pathParts[2] || null;
-    var _lt = (typeof brLeagueType === 'function') ? brLeagueType() : '';
-    var _ls = (typeof brLeagueSize === 'function') ? brLeagueSize() : '';
-    var rfUrl = '/api/player-recent-form/' + encodeURIComponent(playerId)
-      + '?season=' + _season + '&league_type=' + _lt + '&league_size=' + _ls;
-    if (_leagueId) rfUrl += '&league_id=' + _leagueId + '&platform=' + (pathParts[0] || 'sleeper');
-    _pmEarlyResponseFetch(rfUrl);
+    // News through the shared small-fetch cache, with exactly the key
+    // and URL _pmLoadNews uses, so the Overview news loader adopts this
+    // in-flight request instead of starting after the core render.
+    _pmSmallFetch('news:' + playerId, '/api/player-news/' + encodeURIComponent(playerId));
+    // Recent Form: shared URL helper (see _pmRecentFormUrl) so the
+    // loader's registry lookup hits.
+    _pmEarlyResponseFetch(_pmRecentFormUrl(playerId, season));
     if (leagueId) {
       var qs = '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId)
         + '&season=' + encodeURIComponent(season);
@@ -2696,6 +2706,51 @@ function _pmRecentFormSkeleton() {
     + `<div class="pm-recent-bars">${cols}</div>`;
 }
 
+function _pmRecentGameTip(g, oppText) {
+  // Basic-stats line for one Recent Form game, shown as the column's
+  // tooltip. Segments are joined with " · " and omitted when their
+  // data is absent; nothing is invented (there is no completions
+  // field, so passing shows attempts only). TD, INT and fumble
+  // segments appear only when greater than zero, to keep the line
+  // short. Position shapes emerge from which segments exist.
+  var s = (g && g.stats) || {};
+  var a = (g && g.adv) || {};
+  var parts = [];
+  var header = 'Week ' + (g && g.week != null ? g.week : '');
+  if (oppText) header += ' ' + oppText;
+  parts.push(header);
+  var pts = Number(g && g.fantasy_pts) || 0;
+  parts.push(pts.toFixed(1) + ' pts');
+  if (s.pass_att != null || s.pass_yd != null) {
+    var passBits = [];
+    if (s.pass_att != null) passBits.push(s.pass_att + ' att');
+    if (s.pass_yd != null) passBits.push(s.pass_yd + ' yd');
+    var passStr = 'Pass ' + passBits.join(', ');
+    if (s.pass_td != null && Number(s.pass_td) > 0) passStr += ', ' + s.pass_td + ' TD';
+    if (s.pass_int != null && Number(s.pass_int) > 0) passStr += ', ' + s.pass_int + ' INT';
+    parts.push(passStr);
+  }
+  if ((s.rush_att != null && Number(s.rush_att) > 0) || s.rush_yd != null) {
+    var rushBits = [];
+    if (s.rush_att != null) rushBits.push(s.rush_att + ' att');
+    if (s.rush_yd != null) rushBits.push(s.rush_yd + ' yd');
+    var rushStr = 'Rush ' + rushBits.join(', ');
+    if (s.rush_td != null && Number(s.rush_td) > 0) rushStr += ', ' + s.rush_td + ' TD';
+    parts.push(rushStr);
+  }
+  if (s.rec_tgt != null || s.rec != null) {
+    var recStr = 'Rec';
+    if (s.rec != null && s.rec_tgt != null) recStr += ' ' + s.rec + ' of ' + s.rec_tgt + ' tgt';
+    else if (s.rec != null) recStr += ' ' + s.rec;
+    else recStr += ' ' + s.rec_tgt + ' tgt';
+    if (s.rec_yd != null) recStr += ', ' + s.rec_yd + ' yd';
+    if (s.rec_td != null && Number(s.rec_td) > 0) recStr += ', ' + s.rec_td + ' TD';
+    parts.push(recStr);
+  }
+  if (a && a.snap_pct != null) parts.push('Snap ' + Math.round(Number(a.snap_pct)) + '%');
+  if (s.fum_lost != null && Number(s.fum_lost) > 0) parts.push(s.fum_lost + ' fum lost');
+  return parts.join(' · ');
+}
 function _pmLoadRecentForm(playerId, season, pos) {
   // Recent Form bars on the Overview: the player's last 5 real games of the
   // current season, oldest to newest. Bars only (no trend line, per spec).
@@ -2764,7 +2819,8 @@ function _pmLoadRecentForm(playerId, season, pos) {
         const _oppRaw = String(g.opponent || '').trim();
         const _opp = !_oppRaw || _oppRaw === 'BYE' ? ''
           : _oppRaw.charAt(0) === '@' ? '@ ' + _oppRaw.slice(1) : 'vs ' + _oppRaw;
-        return '<div class="pm-recent-col">'
+        const _tip = _pmEsc(_pmRecentGameTip(g, _opp));
+        return '<div class="pm-recent-col" tabindex="0" data-tooltip="' + _tip + '" aria-label="' + _tip + '">'
           + `<span class="pm-recent-val${_best ? ' pm-recent-val-best' : ''}">${pts.toFixed(1)}</span>`
           + `<div class="pm-recent-track"><div class="pm-recent-bar${_best ? ' pm-recent-bar-best' : ''}" style="height:${h}%"></div></div>`
           + `<span class="pm-recent-wk">W${g.week != null ? g.week : ''}</span>`
@@ -8611,7 +8667,7 @@ if (window.openPlayerModal) {
     if(s!==state||s.running||s.attempts>=MAX_ATTEMPTS||paused())return;
     while(s.queue.length){
       const x=s.queue.shift();s.queued.delete(x.key);
-      if(x.el&&!hidden(x.el)){s.running=true;s.attempts++;window.pmPlayerDetails.load(x.id,x.opts).catch(()=>{}).finally(()=>{s.running=false;setTimeout(()=>pump(s),0);});return;
+      if(x.el&&!hidden(x.el)){s.running=true;s.attempts++;try{if(typeof _pmEarlyResponseFetch==='function'&&typeof _pmRecentFormUrl==='function')_pmEarlyResponseFetch(_pmRecentFormUrl(x.id,x.opts&&x.opts.season));}catch(_){}window.pmPlayerDetails.load(x.id,x.opts).catch(()=>{}).finally(()=>{s.running=false;setTimeout(()=>pump(s),0);});return;
       }
     }
   }

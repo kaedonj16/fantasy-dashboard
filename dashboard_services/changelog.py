@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
+        "tag": "update",
+        "text": "Player cards open faster on the Overview: news and Recent Form now start loading the moment you tap a player instead of waiting for the rest of the card, and players you linger on in a list warm up their Recent Form ahead of the tap. Hover, focus or tap a Recent Form bar to see that game's basic stats: the passing, rushing and receiving lines, snap share and fumbles, right alongside the points the bar already shows.",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-02",
         "tag": "fix",
         "text": "Player Rankings freshness and hover fixes: Total Points and PPG now count each player's own finished games as soon as they end, matching the player card instead of waiting for the next full update. The hover quick look opens even while the board is still loading if you are already resting on a row, its trend, game log, and matchup sections time out and retry cleanly instead of spinning forever, and repeat visits skip work the server has already done so the board settles faster.",
         "link": "/players"
