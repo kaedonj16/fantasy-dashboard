@@ -55295,6 +55295,27 @@ body.otc-sticky-on { padding-bottom: 72px; }
     color: var(--rz-muted);
 }
 .rz-clip-loading.is-done { display: none; }
+.rz-clip-processing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius);
+    background: #122d4b;
+    color: #fff;
+    text-align: center;
+    padding: 16px;
+    box-sizing: border-box;
+}
+.rz-clip-processing-title { font-size: 13.5px; font-weight: 600; }
+.rz-clip-processing-sub { font-size: 12px; color: rgba(255, 255, 255, .72); max-width: 32ch; }
+.rz-clip-spin-light {
+    border-color: rgba(56, 189, 248, .25);
+    border-top-color: #38bdf8;
+}
 .rz-clip-spin {
     flex: none;
     width: 14px;

@@ -1,10 +1,13 @@
-"""ScoreZone clip panel loading state (frontend contract).
+"""ScoreZone clip panel contract (frontend).
 
-The X embed sits blank white for several seconds while it boots, which
-read as 'broken' on Kaedon's phone (2026-11-01). The panel must carry a
-loading row that retires when the frame loads, and the frame must not be
-loading="lazy" (it is injected on tap; lazy frames in toggled panels can
-stall in mobile Safari). Pin the contract against static/scorezone.js.
+Watch is the video, never the tweet: clips with media render the native
+player, clips still processing on X render a processing state that the
+open panel swaps out when the file lands, and the X embed survives only
+as the fallback for a native stream that errors. The embed sits blank
+white for several seconds while it boots and loads X's whole web app,
+which read as 'broken' on Kaedon's phone (2026-11-01) and doubled the
+panel's memory cost when it was discarded for the video a moment later.
+Pin the contract against static/scorezone.js.
 """
 from __future__ import annotations
 
@@ -27,9 +30,23 @@ def test_clip_panel_has_loading_row():
 
 def test_clip_frame_is_not_lazy():
     js = _js()
+    embed_html = js.split("function _clipEmbedHtml")[1].split("\n  function _clipFrameHtml")[0]
+    assert 'loading="lazy"' not in embed_html
+    assert "platform.twitter.com/embed/Tweet.html?id=" in embed_html
+
+
+def test_panel_never_opens_with_the_tweet():
+    js = _js()
+    # Kaedon's standing call: Watch is the video, not the tweet. A clip
+    # whose media is still processing renders a processing state; the
+    # embed exists only inside _clipEmbedHtml (the video-error fallback).
     frame_html = js.split("function _clipFrameHtml")[1].split("\n  function _wireClipPanel")[0]
-    assert 'loading="lazy"' not in frame_html
-    assert "platform.twitter.com/embed/Tweet.html?id=" in frame_html
+    assert "platform.twitter.com" not in frame_html
+    assert "rz-clip-frame" not in frame_html
+    assert "rz-clip-processing" in frame_html
+    assert "_clipEmbedHtml({" in js.split("function _clipFallbackToEmbed")[1].split("\n  function ")[0]
+    css = CSS.read_text(encoding="utf-8")
+    assert ".rz-clip-processing" in css
 
 
 def test_loading_row_retires_on_frame_load():
@@ -52,12 +69,14 @@ def test_loading_styles_exist():
 def test_native_video_is_the_primary_player():
     js = _js()
     # Clips with stored media render a native <video> (poster paints
-    # instantly); the iframe remains only as the no-media fallback.
+    # instantly); media-less clips render the processing state, never
+    # the embed.
     assert "rz-clip-video" in js
     assert "clipVideoUrl" in js
     assert "clipPosterUrl" in js
     frame_html = js.split("function _clipFrameHtml")[1].split("\n  function _wireClipPanel")[0]
-    assert frame_html.index("rz-clip-video") < frame_html.index("rz-clip-frame")
+    assert "rz-clip-video" in frame_html
+    assert "rz-clip-processing" in frame_html
     css = CSS.read_text(encoding="utf-8")
     assert ".rz-clip-video" in css
 
