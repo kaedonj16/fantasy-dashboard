@@ -7372,7 +7372,7 @@ window.resetMatchupCarousels = function (root) {
 // Plotly Fixes (hover offset + axis title placement)
 // ------------------------------------------------------------
 
-// Brand look for client-built Plotly charts (mirror of dashboard_services/plotly_theme.py).
+// Brand look for client-built Plotly charts.
 window.brandPlotlyFont = 'Archivo, InterVariable, Inter, system-ui, -apple-system, sans-serif';
 // Categorical series palette, assigned in fixed order. Ordered for adjacent-hue
 // separation so a multi-line chart (e.g. league standings) stays distinguishable.

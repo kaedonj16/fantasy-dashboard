@@ -228,16 +228,6 @@ def test_career_wins_card_lists_all_owners():
         assert o in html
 
 
-def test_plotly_theme_hoverlabel_is_opaque():
-    import plotly.graph_objs as go
-    from dashboard_services.plotly_theme import apply_brand_layout
-    fig = apply_brand_layout(go.Figure(go.Scatter(x=[1], y=[2])))
-    hl = fig.to_dict()["layout"]["hoverlabel"]
-    assert hl["bgcolor"] == "#ffffff"
-    assert hl["bordercolor"] == "#e5e7eb"
-    assert hl["font"]["color"] == "#334155"
-
-
 def test_luck_analysis_computed_once_per_season_build(monkeypatch):
     import dashboard_services.pages.graphs_page as gp
 
