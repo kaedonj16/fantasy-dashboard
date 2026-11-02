@@ -97,3 +97,21 @@ def test_clip_panel_taps_do_not_open_player_modal():
     # panel before the data-pid walk that opens the player modal.
     seg = js.split("root.addEventListener('click'")[1].split("data-boxscore-game")[0]
     assert "closest('.rz-clip-panel')" in seg
+
+
+def test_contribution_change_detection_includes_clip_fields():
+    js = _js()
+    # Clip stamps arrive minutes after the play and change no stat or
+    # text; unless they count as a change, the contribution is skipped
+    # forever and the card never learns about the clip or its video.
+    seg = js.split("function _contributionDataChanged")[1].split("\n  function ")[0]
+    assert "clip_tweet_id" in seg
+    assert "clip_video_url" in seg
+    assert "clip_poster_url" in seg
+
+
+def test_toggle_clip_prefers_freshest_feed_event():
+    js = _js()
+    seg = js.split("function _toggleClip")[1].split("\n  function ")[0]
+    assert "freshEv" in seg
+    assert "_feed" in seg

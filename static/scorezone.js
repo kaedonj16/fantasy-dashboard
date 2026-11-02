@@ -1547,7 +1547,16 @@
         return true;
       }
     }
-    
+
+    // Clip stamps land minutes after the play (the matcher, then the
+    // media fill) and change nothing above, so without this the
+    // contribution is skipped forever and the card keeps whatever clip
+    // state it first rendered with: no button, or the tweet embed long
+    // after the native video exists.
+    if ((existingContrib.clipTweetId || '') !== (newPlay.clip_tweet_id || '')) return true;
+    if ((existingContrib.clipVideoUrl || '') !== (newPlay.clip_video_url || '')) return true;
+    if ((existingContrib.clipPosterUrl || '') !== (newPlay.clip_poster_url || '')) return true;
+
     return false;
   }
   
@@ -4004,11 +4013,18 @@
     }
     _openClipKey = key;
     if (panel) {
+      // The button's data attributes are a render-time snapshot; the
+      // feed's current event for this play is fresher (its clip video
+      // may have landed since the card last rebuilt).
+      var freshEv = null;
+      for (var _fi = 0; _fi < _feed.length; _fi++) {
+        if (_feed[_fi] && _feed[_fi].playId === key) { freshEv = _feed[_fi]; break; }
+      }
       panel.innerHTML = _clipFrameHtml({
-        clipTweetId: btn.getAttribute('data-tweet') || '',
-        clipUrl: btn.getAttribute('data-clip-url') || '',
-        clipVideoUrl: btn.getAttribute('data-clip-video') || '',
-        clipPosterUrl: btn.getAttribute('data-clip-poster') || ''
+        clipTweetId: (freshEv && freshEv.clipTweetId) || btn.getAttribute('data-tweet') || '',
+        clipUrl: (freshEv && freshEv.clipUrl) || btn.getAttribute('data-clip-url') || '',
+        clipVideoUrl: (freshEv && freshEv.clipVideoUrl) || btn.getAttribute('data-clip-video') || '',
+        clipPosterUrl: (freshEv && freshEv.clipPosterUrl) || btn.getAttribute('data-clip-poster') || ''
       });
       panel.classList.add('is-open');
       _wireClipPanel(panel);
