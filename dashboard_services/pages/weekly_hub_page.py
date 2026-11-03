@@ -477,7 +477,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     return f"""
     <div class="page-layout weekly-hub">
       <main class="page-main">
-        <div class="card">
+        <div class="card weekly-hub-head-card">
           <div class="card-header-row">
             <div>
               <h2>Weekly Hub</h2>

@@ -13923,49 +13923,83 @@ def _render_weekly_highlights(
     if not rows:
         return ""
 
-    def _hl_single(title: str, team: dict, big: bool = False) -> str:
+    # ------------------------------------------------------------------
+    # Week Leaders segments: one uniform skeleton for all four cards
+    # (head row, hero row, score-share bar, team zone), in that order.
+    # Closest Game and Biggest Blowout emit identical structure.
+    # ------------------------------------------------------------------
+    _AVA_STOPWORDS = {"in", "the", "and", "to", "of"}
+
+    def _ava_initials(name: str) -> str:
+        words = [w for w in str(name).split() if w.lower() not in _AVA_STOPWORDS]
+        return "".join(w[0] for w in words[:2]).upper()
+
+    def _score_share(focal: float, opp: float):
+        total = focal + opp
+        if total <= 0:
+            return None
+        return max(0.0, min(100.0, focal / total * 100.0))
+
+    def _team_row(team: dict, show_score: bool, loser: bool = False) -> str:
+        row_cls = "whl-row whl-loser" if loser else "whl-row"
+        pts = f'<span class="whl-pts">{team["use_score"]:.1f}</span>' if show_score else ""
+        return f"""
+          <div class="{row_cls}">
+            <span class="whl-ava" aria-hidden="true">{_ava_initials(team['owner'])}</span>
+            <span class="whl-name team-clickable" data-roster-id="{team['roster_id']}" data-team-name="{team['owner']}">{team['owner']}</span>
+            {pts}
+          </div>"""
+
+    def _seg_head(icon: str, title: str) -> str:
+        return (f'<div class="whl-head"><span class="whl-ico">'
+                f'<i class="fa-solid {icon}"></i></span>'
+                f'<span class="whl-label">{title}</span></div>')
+
+    def _seg_bar(share) -> str:
+        if share is None:
+            return ""
+        return f'<div class="whl-bar"><i style="width:{share:.1f}%"></i></div>'
+
+    def _hl_single(seg: str, icon: str, title: str, team: dict,
+                   summary: Optional[dict], big: bool = False) -> str:
         # The highest score is a "big moment": the number counts up from zero and
         # the card glows once as it scrolls in (wired by brPlayMoment in app.js).
-        card_cls = "whl-card br-hs" if big else "whl-card"
+        card_cls = f"whl-card whl-seg whl-seg-{seg}" + (" br-hs" if big else "")
         card_attr = ' data-br-moment="highscore" data-mo-dur="1100"' if big else ""
-        pts_attr = f' data-mo-count="{team["use_score"]:.1f}" data-mo-dp="1"' if big else ""
+        hero_attr = f' data-mo-count="{team["use_score"]:.1f}" data-mo-dp="1"' if big else ""
+        bar_html = ""
+        cap_html = ""
+        if summary is not None:
+            won = summary["winner"]["roster_id"] == team["roster_id"]
+            opp = summary["loser"] if won else summary["winner"]
+            bar_html = _seg_bar(_score_share(team["use_score"], opp["use_score"]))
+            if bar_html:
+                cap_text = (f"Beat {opp['owner']} {opp['use_score']:.1f}" if won
+                            else f"Lost to {opp['owner']} {opp['use_score']:.1f}")
+                cap_html = f'\n          <div class="whl-cap">{cap_text}</div>'
         return f"""
         <div class="{card_cls}"{card_attr}>
-          <div class="whl-label">{title}</div>
-          <div class="whl-row">
-            <span class="whl-name team-clickable" data-roster-id="{team['roster_id']}" data-team-name="{team['owner']}">{team['owner']}</span>
-            <span class="whl-pts"{pts_attr}>{team['use_score']:.1f}</span>
-          </div>
+          {_seg_head(icon, title)}
+          <div class="whl-hero"{hero_attr}>{team['use_score']:.1f}</div>
+          {bar_html}
+          <div class="whl-teams">{_team_row(team, show_score=False)}
+          </div>{cap_html}
         </div>"""
 
-    def _hl_matchup(title: str, win: dict, lose: dict, margin: float) -> str:
+    def _hl_matchup(seg: str, icon: str, title: str, win: dict, lose: dict, margin: float) -> str:
+        bar_html = _seg_bar(_score_share(win["use_score"], lose["use_score"]))
         return f"""
-        <div class="whl-card">
-          <div class="whl-label">{title}</div>
-          <div class="whl-row whl-winner">
-            <span class="whl-name team-clickable" data-roster-id="{win['roster_id']}" data-team-name="{win['owner']}">{win['owner']}</span>
-            <span class="whl-pts">{win['use_score']:.1f}</span>
+        <div class="whl-card whl-seg whl-seg-{seg}">
+          {_seg_head(icon, title)}
+          <div class="whl-hero">{margin:.1f}<small>pt margin</small></div>
+          {bar_html}
+          <div class="whl-teams">{_team_row(win, show_score=True)}{_team_row(lose, show_score=True, loser=True)}
           </div>
-          <div class="whl-row whl-loser">
-            <span class="whl-name team-clickable" data-roster-id="{lose['roster_id']}" data-team-name="{lose['owner']}">{lose['owner']}</span>
-            <span class="whl-pts">{lose['use_score']:.1f}</span>
-          </div>
-          <div class="whl-margin">{margin:.1f} pt margin</div>
         </div>"""
 
     # ------------------------------------------------------------------
-    # Highest / Lowest Score
-    # ------------------------------------------------------------------
-    rows_sorted_desc = sorted(rows, key=lambda r: r["use_score"], reverse=True)
-    rows_sorted_asc = sorted(rows, key=lambda r: r["use_score"])
-    top = rows_sorted_desc[0]
-    low = rows_sorted_asc[0]
-
-    highest_card = _hl_single("Highest Score", top, big=True)
-    lowest_card = _hl_single("Lowest Score", low)
-
-    # ------------------------------------------------------------------
-    # Closest Game / Blowout
+    # Matchup summaries first: the single-team cards need their opponent
+    # (bar share + caption) from the same summaries.
     # ------------------------------------------------------------------
     by_matchup: dict = {}
     for r in rows:
@@ -13982,14 +14016,35 @@ def _render_weekly_highlights(
             "margin": win["use_score"] - lose["use_score"],
         })
 
+    summary_by_roster: dict = {}
+    for s in matchup_summaries:
+        summary_by_roster[s["winner"]["roster_id"]] = s
+        summary_by_roster[s["loser"]["roster_id"]] = s
+
+    # ------------------------------------------------------------------
+    # Highest / Lowest Score
+    # ------------------------------------------------------------------
+    rows_sorted_desc = sorted(rows, key=lambda r: r["use_score"], reverse=True)
+    rows_sorted_asc = sorted(rows, key=lambda r: r["use_score"])
+    top = rows_sorted_desc[0]
+    low = rows_sorted_asc[0]
+
+    highest_card = _hl_single("high", "fa-trophy", "Highest Score", top,
+                              summary_by_roster.get(top["roster_id"]), big=True)
+    lowest_card = _hl_single("low", "fa-arrow-trend-down", "Lowest Score", low,
+                             summary_by_roster.get(low["roster_id"]))
+
+    # ------------------------------------------------------------------
+    # Closest Game / Blowout
+    # ------------------------------------------------------------------
     closest_card = ""
     blowout_card = ""
 
     if matchup_summaries:
         closest = min(matchup_summaries, key=lambda m: abs(m["margin"]))
         blowout = max(matchup_summaries, key=lambda m: abs(m["margin"]))
-        closest_card = _hl_matchup("Closest Game", closest["winner"], closest["loser"], closest["margin"])
-        blowout_card = _hl_matchup("Biggest Blowout", blowout["winner"], blowout["loser"], blowout["margin"])
+        closest_card = _hl_matchup("close", "fa-bolt", "Closest Game", closest["winner"], closest["loser"], closest["margin"])
+        blowout_card = _hl_matchup("blow", "fa-fire", "Biggest Blowout", blowout["winner"], blowout["loser"], blowout["margin"])
 
     return highest_card + lowest_card + closest_card + blowout_card
 

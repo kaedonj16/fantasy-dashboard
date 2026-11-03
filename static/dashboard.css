@@ -14129,6 +14129,126 @@ select:focus {
     padding-top: 4px;
 }
 
+/* Week Leaders segments (2026-11-03 redesign): one uniform skeleton per
+   segment (head row, hero row, score-share bar, team zone). Identity comes
+   from the per-segment accent only: icon medallion, label and hero color,
+   bar fill. */
+.whl-seg {
+    --whl-accent: var(--accent);
+    --whl-tint: var(--accent-soft);
+}
+
+.whl-seg-high {
+    --whl-accent: var(--gold);
+    --whl-tint: rgba(202, 138, 4, 0.13);
+}
+
+.whl-seg-low {
+    --whl-accent: #64748b;
+    --whl-tint: rgba(100, 116, 139, 0.13);
+}
+
+.whl-seg-close {
+    --whl-accent: #2563eb;
+    --whl-tint: rgba(37, 99, 235, 0.11);
+}
+
+.whl-seg-blow {
+    --whl-accent: var(--orange);
+    --whl-tint: rgba(234, 88, 12, 0.11);
+}
+
+.whl-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.whl-ico {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--whl-tint);
+    color: var(--whl-accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.whl-seg .whl-label {
+    color: var(--whl-accent);
+    margin-bottom: 0;
+}
+
+.whl-hero {
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    color: var(--whl-accent);
+    height: 42px;
+    display: flex;
+    align-items: baseline;
+}
+
+.whl-hero small {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0;
+    margin-left: 4px;
+}
+
+.whl-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--grid);
+    margin: 2px 0 10px;
+    overflow: hidden;
+}
+
+.whl-bar i {
+    display: block;
+    height: 100%;
+    background: var(--whl-accent);
+    border-radius: 3px;
+}
+
+.whl-seg .whl-name {
+    flex: 1 1 auto;
+}
+
+.whl-ava {
+    width: 21px;
+    height: 21px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 9px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.whl-loser .whl-ava {
+    background: var(--card-soft);
+    color: var(--text-muted);
+}
+
+.whl-cap {
+    font-size: 11.5px;
+    color: var(--text-subtle);
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .home-bullets {
     list-style: none;
     margin: 0;
@@ -44687,7 +44807,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     animation: brHsWave .8s ease-out .06s forwards;
 }
 
-.br-mo-play.br-hs .whl-pts {
+.br-mo-play.br-hs .whl-hero {
     display: inline-block;
     animation: brHsNum .7s var(--ease-spring) .12s both;
 }
@@ -55127,14 +55247,15 @@ body.otc-sticky-on { padding-bottom: 72px; }
 
     /* Leaders: one compact card under the matchup board (the hub
        reflow moves the band into the Matchups panel at this width).
-       Four tight rows: label left, team(s) + score right. */
+       The four segments stack as plain blocks split by hairlines,
+       keeping the desktop segment skeleton at a smaller scale. */
     .weekly-hub .week-leaders-band {
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: var(--radius);
         box-shadow: var(--shadow-sm);
-        padding: 10px 12px;
-        margin: 12px 0 2px;
+        padding: 6px 12px 10px;
+        margin: 4px 0 2px;
     }
     .weekly-hub .wk-leaders-strip .week-leaders-title {
         display: block;
@@ -55149,42 +55270,43 @@ body.otc-sticky-on { padding-bottom: 72px; }
         grid-template-columns: minmax(0, 1fr);
         gap: 0;
     }
-    .weekly-hub .wk-leaders-strip .whl-card {
-        display: grid;
-        grid-template-columns: 92px minmax(0, 1fr);
-        column-gap: 10px;
+    .weekly-hub .wk-leaders-strip .whl-seg {
         background: transparent;
         border: none;
         border-bottom: 1px solid var(--border);
         border-radius: 0;
         box-shadow: none;
-        padding: 7px 0;
+        padding: 8px 0;
         margin-bottom: 0;
     }
-    .weekly-hub .wk-leaders-strip .whl-card:last-child {
+    .weekly-hub .wk-leaders-strip .whl-seg:first-child {
+        padding-top: 2px;
+    }
+    .weekly-hub .wk-leaders-strip .whl-seg:last-child {
         border-bottom: none;
         padding-bottom: 3px;
     }
-    .weekly-hub .wk-leaders-strip .whl-label {
-        grid-row: 1 / span 3;
-        margin-bottom: 0;
-        padding-top: 2px;
+    .weekly-hub .wk-leaders-strip .whl-hero {
+        font-size: 22px;
+        height: auto;
+    }
+    .weekly-hub .wk-leaders-strip .whl-bar {
+        margin: 6px 0 8px;
     }
     .weekly-hub .wk-leaders-strip .whl-row {
-        grid-column: 2;
         padding: 2px 0;
     }
     .weekly-hub .wk-leaders-strip .whl-name {
+        font-size: 12.5px;
         white-space: normal;
         overflow: visible;
         text-overflow: clip;
     }
-    .weekly-hub .wk-leaders-strip .whl-margin {
-        grid-column: 2;
-        border-top: none;
-        margin-top: 0;
-        padding-top: 0;
-        text-align: right;
+    .weekly-hub .wk-leaders-strip .whl-pts {
+        font-size: 12.5px;
+    }
+    .weekly-hub .wk-leaders-strip .whl-cap {
+        white-space: normal;
     }
 }
 
@@ -55285,7 +55407,7 @@ body.otc-sticky-on { padding-bottom: 72px; }
        down the right edge); position dots sit under each slide's
        preview head (the slide markup carries them there -- a single
        container after the track rendered under the whole board). */
-    .weekly-hub .matchup-carousel { margin-bottom: 14px !important; }
+    .weekly-hub .matchup-carousel { margin-bottom: 6px !important; }
     .weekly-hub .matchup-carousel .m-nav { display: none; }
     .weekly-hub .matchup-carousel .m-track { gap: 10px; }
     .weekly-hub .matchup-carousel .m-slide { flex: 0 0 100%; }
@@ -56021,6 +56143,51 @@ body.otc-sticky-on { padding-bottom: 72px; }
     border-top: 1px solid var(--border);
     margin-top: 6px;
     padding-top: 12px;
+}
+
+/* Week Leaders combined panel (desktop only, 2026-11-03): the Weekly Hub
+   header card and the leaders band read as ONE panel: header card loses its
+   bottom border/radius/shadow, the band becomes the panel's lower half with
+   hairline dividers between segments. Below 1101px nothing here applies:
+   the header stays its own card and the band keeps its compact card. */
+@media (min-width: 1101px) {
+    .weekly-hub .weekly-hub-head-card {
+        margin-bottom: 0;
+        border-bottom: none;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        box-shadow: none;
+    }
+
+    .weekly-hub .week-leaders-band.wk-leaders-strip {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-top: 1px solid var(--border);
+        border-radius: 0 0 var(--radius) var(--radius);
+        box-shadow: var(--shadow-sm);
+        padding: 0;
+        /* .page-main is a 12px-gap flex column; pull the band up over the
+           gap so it physically touches the header card. */
+        margin-top: -12px;
+        margin-bottom: 14px;
+    }
+
+    .weekly-hub .week-leaders-band.wk-leaders-strip .week-side-panel.active {
+        gap: 0;
+    }
+
+    .weekly-hub .wk-leaders-strip .whl-seg {
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        margin: 0;
+        padding: 12px 14px;
+    }
+
+    .weekly-hub .week-leaders-band.wk-leaders-strip .week-side-panel.active .whl-seg:not(:first-child) {
+        border-left: 1px solid var(--border);
+    }
 }
 
 /* ============================================================

@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-03",
+        "tag": "update",
+        "text": "Weekly Hub: the header and Week Leaders now form one panel on desktop, and the four leader cards have a cleaner, more uniform design.",
+        "link": "/weekly"
+    },
+    {
+        "date": "2026-11-03",
         "tag": "fix",
         "text": "Fleaflicker matchup previews are fixed. The board no longer grows six empty 0.0 rows under the real starters, team records in the preview header show the real standings instead of 0-0 for everyone, and a starter whose name is listed differently on Fleaflicker than in our player index (Kenny Gainwell, for one) no longer renders as a blank slot, so his projection counts in the header total again. The Lineup Lab also works for Fleaflicker leagues again: a player who scored exactly zero, or who was on bye, used to be read as missing data and the whole week was withheld as incomplete.",
         "link": "/weekly"
