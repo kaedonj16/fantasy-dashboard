@@ -5,6 +5,50 @@ in pandas/numpy/DB. Used by value_model_training.rewrite_value_table_with_model.
 """
 from __future__ import annotations
 
+def quantile_map_to_reference(source_values, reference_values):
+    """Map raw values from one market source onto a reference source's
+    value distribution, by rank (quantile normalization).
+
+    Market sources publish values on incompatible scales: FantasyCalc's
+    values decay steeply by rank while KeepTradeCut's are comparatively
+    flat, so a linear min-max stretch of both to 0-999.9 leaves the same
+    player at wildly different normalized values (2026-11-03: Terrance
+    Ferguson normalized to 126 from FC but 351 from KTC, and the blend
+    inherited the inflated read — FC TE15 / KTC TE14 became board TE8).
+    Mapping each source through the reference distribution instead —
+    the player at rank N in the source receives the reference's value
+    at rank N — makes the sources commensurable before they are
+    blended: only the source's ORDER carries across, priced in
+    reference units.
+
+    Ties in the source share the mean of the reference values across
+    their rank span, so ordering inside a tie never matters. Source
+    ranks beyond the reference's depth clamp to its tail values. An
+    empty reference maps everything to 0.0 (the source then contributes
+    nothing and the blend renormalizes over the sources that remain).
+    Returns a list aligned with ``source_values``.
+    """
+    src = [float(v) for v in (source_values or [])]
+    if not src:
+        return []
+    ref = sorted((float(v) for v in (reference_values or [])), reverse=True)
+    if not ref:
+        return [0.0] * len(src)
+    order = sorted(range(len(src)), key=lambda i: src[i], reverse=True)
+    out = [0.0] * len(src)
+    i = 0
+    while i < len(order):
+        j = i + 1
+        while j < len(order) and src[order[j]] == src[order[i]]:
+            j += 1
+        span = [ref[min(k, len(ref) - 1)] for k in range(i, j)]
+        avg = sum(span) / len(span)
+        for k in range(i, j):
+            out[order[k]] = avg
+        i = j
+    return out
+
+
 # Defaults — see rewrite_value_table_with_model for rationale.
 OVERMARKET_TRIGGER = 2.5     # model must be >= this x the external consensus to act
 OVERMARKET_MIN_GAP = 100.0   # ...and at least this many points above it (skip low-stakes)

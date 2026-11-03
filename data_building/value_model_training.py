@@ -17,7 +17,7 @@ from dashboard_services.api import get_nfl_state
 from dashboard_services.picks import load_pick_value_table
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
-from data_building.value_guardrails import blend_wls_value, overmarket_capped, sf_nonqb_floor
+from data_building.value_guardrails import blend_wls_value, overmarket_capped, quantile_map_to_reference, sf_nonqb_floor
 from utils.paths import DATA_DIR
 from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_players_index, load_model_value_table
 from utils.coerce import safe_int as _safe_int
@@ -992,7 +992,9 @@ def rewrite_value_table_with_model() -> Path:
             pid = str(row.get("sleeper_id"))
             fc_val = row.get("fc_value")
             if pid and pd.notna(fc_val) and float(fc_val) > 0:
-                # Min-max normalization to 0-999.9 (consistent with engine + DP sources).
+                # Min-max normalization to 0-999.9. FC is the reference
+                # distribution: the second sources are quantile-mapped
+                # onto this scale below, not min-max stretched themselves.
                 vendor_values[pid] = (float(fc_val) - fc_min) / fc_range * 999.9
     else:
         print("[DEBUG] vendor_values section SKIPPED due to missing conditions")
@@ -1066,13 +1068,6 @@ def rewrite_value_table_with_model() -> Path:
     except Exception as e:
         print(f"[ERROR] Failed to load dp_df_full: {e}")
 
-    # Pre-compute DP normalisation bounds (floor-at-100: min→100, max→999.9)
-    _dp_1qb_vals = dp_df_full["value_1qb"].dropna() if not dp_df_full.empty and "value_1qb" in dp_df_full.columns else pd.Series(dtype=float)
-    _dp_1qb_vals = _dp_1qb_vals[_dp_1qb_vals > 0]
-    DP_1QB_MIN: float = float(_dp_1qb_vals.min()) if len(_dp_1qb_vals) else 1.0
-    DP_1QB_MAX: float = float(_dp_1qb_vals.max()) if len(_dp_1qb_vals) else 10256.0
-    DP_1QB_RANGE: float = max(DP_1QB_MAX - DP_1QB_MIN, 1.0)
-
     # NOTE: dp_df_full intentionally kept from the load above - it is used below
     # to look up per-player DP value_1qb for vendor consensus.  Do NOT reset it here.
     # Canonical-keyed DP maps for both formats (see market_match_key: the
@@ -1133,28 +1128,41 @@ def rewrite_value_table_with_model() -> Path:
     except Exception as _e:
         print(f"[rewrite_value_table] KTC load failed (DP fallback): {_e}")
 
-    # KTC normalization bounds (min-max to 0-999.9 per format, same as DP).
-    _ktc_1qb_vals = list(ktc_1qb_map.values())
-    KTC_1QB_MIN: float = min(_ktc_1qb_vals) if _ktc_1qb_vals else 0.0
-    KTC_1QB_RANGE: float = max((max(_ktc_1qb_vals) - KTC_1QB_MIN), 1.0) if _ktc_1qb_vals else 1.0
-    _ktc_sf_vals = list(ktc_sf_map.values())
-    KTC_SF_MIN: float = min(_ktc_sf_vals) if _ktc_sf_vals else 0.0
-    KTC_SF_RANGE: float = max((max(_ktc_sf_vals) - KTC_SF_MIN), 1.0) if _ktc_sf_vals else 1.0
+    # ── Second-source normalization: quantile-map onto the FC distribution ──
+    # FC stays the reference scale (its linear min-max values above are the
+    # board's native units). KTC and DP publish on differently-shaped
+    # scales — KTC's is far flatter by rank — so the old linear min-max
+    # stretch of every source to 0-999.9 systematically inflated the flat
+    # source's mid-tier players (2026-11-03: Terrance Ferguson, FC TE15 /
+    # KTC TE14, normalized to 126 from FC but 351 from KTC and landed at
+    # board TE8). Instead, each second source is mapped through the FC
+    # distribution by rank (see quantile_map_to_reference in
+    # value_guardrails): a player's second-source read is the FC value at
+    # his rank in that source, so only the source's ORDER carries across.
+    _fc_ref_1qb = sorted(vendor_values.values(), reverse=True)
+    _fc_ref_sf = sorted(fc_sf_by_sid.values(), reverse=True)
+
+    def _quantile_map_dict(raw_map: dict, reference: list[float]) -> dict:
+        if not raw_map or not reference:
+            return {}
+        _keys = list(raw_map.keys())
+        _mapped = quantile_map_to_reference(
+            [raw_map[_k] for _k in _keys], reference)
+        return {_k: _m for _k, _m in zip(_keys, _mapped) if _m > 0}
+
+    ktc_1qb_qmap = _quantile_map_dict(ktc_1qb_map, _fc_ref_1qb)
+    dp_1qb_qmap = _quantile_map_dict(dp_1qb_map, _fc_ref_1qb)
+    # If the FC SF file ever fails to load, the SF second sources map
+    # onto the 1QB FC distribution rather than dropping out entirely.
+    _fc_ref_sf_eff = _fc_ref_sf or _fc_ref_1qb
+    ktc_sf_qmap = _quantile_map_dict(ktc_sf_map, _fc_ref_sf_eff)
+    dp_2qb_qmap = _quantile_map_dict(dp_2qb_map, _fc_ref_sf_eff)
 
     def _ktc_1qb_norm(key) -> float:
-        _v = market_map_lookup(ktc_1qb_map, key)
-        return ((_v - KTC_1QB_MIN) / KTC_1QB_RANGE * 999.9) if _v > 0 else 0.0
+        return market_map_lookup(ktc_1qb_qmap, key)
 
     def _ktc_sf_norm(key) -> float:
-        _v = market_map_lookup(ktc_sf_map, key)
-        return ((_v - KTC_SF_MIN) / KTC_SF_RANGE * 999.9) if _v > 0 else 0.0
-
-    # Calculate Superflex vendor values: blend FC SF (50%) + DP 2QB (30%), renormalized.
-    # Min-max normalize DP 2QB to 0-999.9 so it shares the scale of the other source.
-    _dp_2qb_vals = [v for v in dp_2qb_map.values() if v > 0]
-    dp_2qb_max = max(_dp_2qb_vals) if _dp_2qb_vals else 1.0
-    dp_2qb_min = min(_dp_2qb_vals) if _dp_2qb_vals else 0.0
-    dp_2qb_range = max(dp_2qb_max - dp_2qb_min, 1.0)
+        return market_map_lookup(ktc_sf_qmap, key)
 
     # Build sf_vendor_values for each player
     players_index = load_players_index() or {}
@@ -1169,12 +1177,12 @@ def rewrite_value_table_with_model() -> Path:
         fc_for_sf  = fc_sf_norm if fc_sf_norm > 0 else vendor_values.get(pid, 0.0)
 
         # Second source for SF: KTC superflex blend when KTC covers the
-        # player, else DP 2QB (both min-max normalized to 0-999.9). The
-        # blend itself lives in sf_market_blend_value (FC SF directly
-        # encodes QB scarcity, so it stays the primary signal).
+        # player, else DP 2QB (both quantile-mapped onto the FC SF
+        # distribution above). The blend itself lives in
+        # sf_market_blend_value (FC SF directly encodes QB scarcity, so
+        # it stays the primary signal).
         _key = market_match_key(name, team)
-        dp_2qb_raw = market_map_lookup(dp_2qb_map, _key)
-        dp_2qb_norm = ((dp_2qb_raw - dp_2qb_min) / dp_2qb_range * 999.9) if dp_2qb_raw > 0 else 0.0
+        dp_2qb_norm = market_map_lookup(dp_2qb_qmap, _key)
         sf_value = sf_market_blend_value(fc_for_sf, _ktc_sf_norm(_key), dp_2qb_norm)
 
         if sf_value > 0:
@@ -1204,10 +1212,11 @@ def rewrite_value_table_with_model() -> Path:
         pid = str(player.get("id"))
         row = df_by_id.get(pid)
 
-        # Gather all three value sources, now all on the same 0-999.9 scale:
-        #   FC (vendor), DP (vendor, non-TEs only), internal engine.
-        # They are combined with the fixed weighted blend below (renormalized when a
-        # source is missing); there is no separate outlier rule.
+        # Gather the value sources, now all on the FC 0-999.9 scale:
+        #   FC directly, the second source (KTC, DP fallback) quantile-
+        #   mapped onto the FC distribution. They are combined with
+        # the fixed weighted blend below (renormalized when a source
+        # is missing); there is no separate outlier rule.
         player_position = str(player.get("position") or "").upper()
 
         # Resolve the second-source value for this player. KTC and DP
@@ -1223,17 +1232,17 @@ def rewrite_value_table_with_model() -> Path:
             p_name = str(player.get('name', ''))
             p_team = str(player.get('team', ''))
         _key = market_match_key(p_name, p_team)
-        dp_val_raw = market_map_lookup(dp_1qb_map, _key)
-        # Normalise DP to 0-999.9 (min → 0, max → 999.9), matching the other sources.
-        dp_norm = ((dp_val_raw - DP_1QB_MIN) / DP_1QB_RANGE * 999.9) if dp_val_raw > 0 else 0.0
+        # DP's read for this player, quantile-mapped onto the FC
+        # distribution (see the second-source normalization block above).
+        dp_norm = market_map_lookup(dp_1qb_qmap, _key)
 
         fc_val  = vendor_values.get(pid, 0.0)
         # Market-consensus blend: FantasyCalc + second source (KTC, DP
         # fallback), weighted 2:1 and renormalized over the present
         # sources (the usage engine's former 40% term was removed — the
         # board is now purely market-derived). The math lives in
-        # market_blend_value; with no fresh KTC it reproduces today's
-        # FC+DP blend exactly, including DP's staleness-aware weight.
+        # market_blend_value; with no fresh KTC the second leg is the
+        # quantile-mapped DP read at DP's staleness-aware weight.
         # Neither source covering the player means no signal: value 0.
         final_value, sec_val = market_blend_value(
             fc_val, _ktc_1qb_norm(_key), dp_norm, dp_weight=_DP_WEIGHT)
