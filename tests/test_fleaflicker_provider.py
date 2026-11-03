@@ -498,7 +498,7 @@ def test_positions_skips_bench_even_when_start_is_set():
 
 
 def test_positions_treats_start_group_with_omitted_start_as_one_slot():
-    # Protobuf omits zero-valued ints; START rows with no ``start`` are one slot.
+    # A START row with neither ``start`` nor a roster cap is one slot.
     slots = FleaflickerProvider._positions({
         "rosterPositions": [
             {"label": "QB", "group": "START"},
@@ -507,6 +507,70 @@ def test_positions_treats_start_group_with_omitted_start_as_one_slot():
         ],
     })
     assert slots == ["QB", "FLEX"]
+
+
+def test_positions_drops_capped_position_universe_rows_without_start():
+    """Real-shape regression (captured FetchLeagueRules, league 92916).
+
+    The rules payload lists every position Fleaflicker supports as
+    START-group rows with a ``max`` roster cap but no ``start`` (P, CB, S,
+    EDR, IL, LB here). Those positions do not start in this league, and
+    counting them expanded the board from 10 slots to 16, painting six
+    phantom 0.0 rows under the matchup.
+    """
+    slots = FleaflickerProvider._positions({
+        "rosterPositions": [
+            {"label": "QB", "group": "START", "start": 1, "min": 2, "max": 4,
+             "eligibility": ["QB"]},
+            {"label": "RB", "group": "START", "start": 2, "min": 2, "max": 6,
+             "eligibility": ["RB"]},
+            {"label": "WR", "group": "START", "start": 2, "min": 2, "max": 6,
+             "eligibility": ["WR"]},
+            {"label": "TE", "group": "START", "start": 1, "min": 2, "max": 4,
+             "eligibility": ["TE"]},
+            {"label": "QB/WR/TE", "group": "START", "start": 1,
+             "eligibility": ["QB", "WR", "TE"]},
+            {"label": "RB/WR/TE", "group": "START", "start": 1,
+             "eligibility": ["RB", "WR", "TE"]},
+            {"label": "K", "group": "START", "start": 1, "min": 1, "max": 3,
+             "eligibility": ["K"]},
+            {"label": "D/ST", "group": "START", "start": 1, "min": 1, "max": 3,
+             "eligibility": ["D/ST"]},
+            {"label": "IR", "group": "INJURED", "start": 3,
+             "eligibility": ["QB", "RB"]},
+            {"label": "BN", "max": 10},
+            {"label": "P", "group": "START", "max": 1, "eligibility": ["P"]},
+            {"label": "CB", "group": "START", "max": 1, "eligibility": ["CB"]},
+            {"label": "S", "group": "START", "max": 1, "eligibility": ["S"]},
+            {"label": "EDR", "group": "START", "max": 1, "eligibility": ["EDR"]},
+            {"label": "IL", "group": "START", "max": 1, "eligibility": ["IL"]},
+            {"label": "LB", "group": "START", "max": 1, "eligibility": ["LB"]},
+            {"label": "TAXI", "group": "TAXI", "eligibility": ["QB", "RB"]},
+        ],
+    })
+    assert slots == [
+        "QB", "RB", "RB", "WR", "WR", "TE", "SUPER_FLEX", "FLEX", "K", "DEF",
+    ]
+
+
+def test_pick_canonical_resolves_diminutive_first_name_on_exact_miss():
+    """Fleaflicker says "Kenny Gainwell"; the index says Kenneth Gainwell."""
+    by_name = {"kenneth gainwell": [("RB", "TB", "7567")]}
+    assert _pick_canonical(by_name, "kenny gainwell", "RB", "TB") == "7567"
+    # The variant path still arbitrates on position: a same-name player at
+    # another position must not steal the match.
+    by_name = {
+        "kenneth gainwell": [("DB", "TB", "9999"), ("RB", "TB", "7567")],
+    }
+    assert _pick_canonical(by_name, "kenny gainwell", "RB", "TB") == "7567"
+
+
+def test_pick_canonical_exact_name_beats_diminutive_variant():
+    by_name = {
+        "kenny gainwell": [("RB", "TB", "1111")],
+        "kenneth gainwell": [("RB", "TB", "7567")],
+    }
+    assert _pick_canonical(by_name, "kenny gainwell", "RB", "TB") == "1111"
 
 
 def test_positions_restricted_flex_labels_stay_distinct():
@@ -1467,6 +1531,174 @@ def test_get_rosters_keeps_bulk_list_after_fetchroster_outage(mock_get):
     assert result[1]["players"] == ["canon-8"]
     roster_calls = [c for c in mock_get.call_args_list if "FetchRoster" in c.args[0]]
     assert len(roster_calls) == 1
+
+
+@patch("dashboard_services.providers.fleaflicker_api._request_get")
+def test_get_rosters_carries_standings_record_into_settings(mock_get):
+    """Real-shape regression (captured standings, league 92916).
+
+    FetchLeagueStandings carries recordOverall / pointsFor / pointsAgainst /
+    waiverPosition per team. get_rosters used to keep only the team name and
+    ship settings {}, so matchup headers showed every Fleaflicker team at
+    0-0 all season (Spartyhater was 5-3, Tua in the Pink 3-5 in Week 9).
+    """
+    rosters = response({
+        "rosters": [
+            {"team": {"id": 1020439, "name": "Spartyhater"}, "players": []},
+            {"team": {"id": 643462, "name": "Tua in the Pink"}, "players": []},
+        ],
+    })
+    standings = response({
+        "divisions": [{"teams": [
+            {"id": 1020439, "name": "Spartyhater",
+             "recordOverall": {"wins": 5, "losses": 3,
+                               "winPercentage": {"value": 0.625},
+                               "formatted": "5-3"},
+             "pointsFor": {"value": 898.3, "formatted": "898.3"},
+             "pointsAgainst": {"value": 790.75, "formatted": "790.75"},
+             "streak": {"value": -1.0, "formatted": "L1"},
+             "waiverPosition": 9},
+            {"id": 643462, "name": "Tua in the Pink",
+             "recordOverall": {"wins": 3, "losses": 5, "formatted": "3-5"},
+             "pointsFor": {"value": 983.25},
+             "pointsAgainst": {"value": 936.95},
+             "waiverPosition": 5},
+        ]}],
+    })
+
+    def side_effect(url, **kwargs):
+        if "FetchLeagueRosters" in url:
+            return rosters
+        if "FetchLeagueStandings" in url:
+            return standings
+        raise ProviderUnavailableError("Fleaflicker is temporarily unavailable.")
+
+    mock_get.side_effect = side_effect
+    provider = FleaflickerProvider()
+    provider._canonical_map = lambda *a, **k: {}
+    provider._build_name_index = lambda: {}
+    result = {r["roster_id"]: r for r in provider.get_rosters("92916", 2026)}
+    sparty = result[1020439]["settings"]
+    assert (sparty["wins"], sparty["losses"], sparty["ties"]) == (5, 3, 0)
+    assert sparty["fpts"] == 898 and sparty["fpts_decimal"] == 30
+    assert sparty["fpts_against"] == 790 and sparty["fpts_against_decimal"] == 75
+    assert sparty["waiver_position"] == 9
+    tua = result[643462]["settings"]
+    assert (tua["wins"], tua["losses"]) == (3, 5)
+    assert tua["fpts"] == 983 and tua["fpts_decimal"] == 25
+
+
+def test_boxscore_diminutive_starter_resolves_instead_of_blank_slot(monkeypatch):
+    """Week 9, league 92916: Spartyhater's RB2 rendered as a blank 0.0 row
+    because Fleaflicker's "Kenny Gainwell" never matched the index's
+    "Kenneth Gainwell", leaving a "0" placeholder in the starters list."""
+    provider = FleaflickerProvider()
+    payloads = {
+        "FetchLeagueScoreboard": {"games": [{
+            "id": 77, "home": {"id": 1}, "away": {"id": 2},
+            "homeScore": {"score": {"value": 0}},
+            "awayScore": {"score": {"value": 0}},
+        }]},
+        "FetchLeagueBoxscore": {"lineups": [{"group": "START", "slots": [
+            {"position": {"label": "RB", "group": "START"},
+             "home": {"proPlayer": {"id": 16480, "nameFull": "Kenny Gainwell",
+                                    "position": "RB",
+                                    "proTeamAbbreviation": "TB"}},
+             "away": {"proPlayer": {"id": 11, "nameFull": "Breece Hall",
+                                    "position": "RB",
+                                    "proTeamAbbreviation": "NYJ"}}},
+        ]}]},
+        "FetchLeagueRosters": {"rosters": [
+            {"team": {"id": 1}, "players": [
+                {"proPlayer": {"id": 16480, "nameFull": "Kenny Gainwell",
+                               "position": "RB", "proTeamAbbreviation": "TB"}},
+            ]},
+            {"team": {"id": 2}, "players": [
+                {"proPlayer": {"id": 11, "nameFull": "Breece Hall",
+                               "position": "RB", "proTeamAbbreviation": "NYJ"}},
+            ]},
+        ]},
+    }
+    monkeypatch.setattr(provider, "_call", lambda method, *a, **k: payloads[method])
+    monkeypatch.setattr(provider, "_build_name_index", lambda: {
+        "kenneth gainwell": [("RB", "TB", "7567")],
+        "breece hall": [("RB", "NYJ", "breece")],
+    })
+    rows = provider.get_matchups("14153", 2026, 1)
+    home = next(r for r in rows if r["roster_id"] == 1)
+    assert home["starters"] == ["7567"]
+
+
+def _boxscore_lineups(home_entry):
+    return [{"group": "START", "slots": [
+        {"position": {"label": "WR", "group": "START"}, "home": home_entry},
+    ]}]
+
+
+def _pro(pid, name="Zay Flowers"):
+    return {"id": pid, "nameFull": name, "position": "WR",
+            "proTeamAbbreviation": "BAL"}
+
+
+def test_boxscore_zero_score_without_value_is_zero_not_unavailable():
+    """Real-shape regression (Week 8 2026, league 92916).
+
+    Protobuf omits zero-valued fields, so a player who scored exactly 0.0
+    (Flowers: 0 catches on 5 targets; Folk: 0-for-1 FG) arrives with
+    viewingActualPoints {"formatted": "0"} and no numeric value. Reading
+    only the value marked the score unavailable, and the Lineup Lab then
+    withheld the whole team-week as "Incomplete scoring data".
+    """
+    provider = FleaflickerProvider()
+    entry = {"proPlayer": _pro(17595),
+             "viewingActualPoints": {"formatted": "0"},
+             "requestedGames": [{"game": {"status": "FINAL_SCORE"},
+                                 "pointsActual": {"formatted": "0"}}]}
+    out = provider._starters_from_boxscore(
+        _boxscore_lineups(entry), "home", {"17595": "9997"}, {})
+    assert out["players_points"] == {"9997": 0.0}
+    assert out["unavailable_points"] == []
+
+
+def test_boxscore_bye_player_is_zero_not_unavailable():
+    """A bye player's entry has no points object; requestedGames flags
+    isBye instead. His score for the week is 0.0 (his team's official
+    total reconciles only that way), not missing data."""
+    provider = FleaflickerProvider()
+    entry = {"proPlayer": _pro(20001, "Jaxson Dart"),
+             "requestedGames": [{"isBye": True, "stats": []}]}
+    out = provider._starters_from_boxscore(
+        _boxscore_lineups(entry), "home", {"20001": "12508"}, {})
+    assert out["players_points"] == {"12508": 0.0}
+    assert out["unavailable_points"] == []
+
+
+def test_boxscore_dash_score_counts_zero_only_when_game_final():
+    provider = FleaflickerProvider()
+    base = {"proPlayer": _pro(17625, "Tank Bigsby"),
+            "viewingActualPoints": {"formatted": "—"}}
+    final = dict(base, requestedGames=[{
+        "game": {"status": "FINAL_SCORE"}, "pointsActual": {"formatted": "—"}}])
+    out = provider._starters_from_boxscore(
+        _boxscore_lineups(final), "home", {"17625": "9225"}, {})
+    assert out["players_points"] == {"9225": 0.0}
+
+    scheduled = dict(base, requestedGames=[{
+        "game": {"status": "SCHEDULED"}, "pointsActual": {"formatted": "—"}}])
+    out = provider._starters_from_boxscore(
+        _boxscore_lineups(scheduled), "home", {"17625": "9225"}, {})
+    assert out["players_points"] == {}
+    assert out["unavailable_points"] == ["9225"]
+
+
+def test_boxscore_numeric_value_still_wins_over_formatted():
+    provider = FleaflickerProvider()
+    entry = {"proPlayer": _pro(17595),
+             "viewingActualPoints": {"value": 19.8, "formatted": "19.8"}}
+    out = provider._starters_from_boxscore(
+        _boxscore_lineups(entry), "home", {"17595": "9997"}, {})
+    assert out["players_points"] == {"9997": 19.8}
+    assert out["unavailable_points"] == []
 
 
 @patch("dashboard_services.providers.fleaflicker_api._request_get")
