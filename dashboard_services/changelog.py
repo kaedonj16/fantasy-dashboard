@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-02",
         "tag": "fix",
+        "text": "The app now updates itself when you open it. If a new version or a fresher copy of the page lands while the app is loading in, it swaps in on its own, so opening the installed app no longer needs a manual refresh or a tap on the update banner. Coming back to the app after a while away counts as opening it again. An update that arrives later, while you are in the middle of using a page, still waits for your tap so it never reloads a page out from under you.",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-02",
+        "tag": "fix",
         "text": "Lineup lock reminders no longer tell you to bench a starter whose game already kicked off. A player who got hurt mid-game on Sunday and was later listed Out was still named in the Monday night lock push, with a sit-and-start swap you could not make, because the reminder only looked at that day's games when working out who was locked. Locked players are now worked out from the full week's games, and a locked starter's injury is no longer raised as something to fix before a later kickoff.",
         "link": "/"
     },

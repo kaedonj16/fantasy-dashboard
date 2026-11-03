@@ -81,12 +81,16 @@ def _nav_fresh_block() -> str:
     return APP_JS[start:end]
 
 
-def test_nav_fresh_only_reloads_for_explicit_user_refresh():
-    """The stale-page auto-reload is gone; nav-fresh only swaps in the fresh
-    copy after an EXPLICIT user refresh (iOS paints the cached shell first),
-    or when the SW flags viewerChanged (the painted shell's identity marker
-    differs from the fresh copy's, e.g. a guest paint served to a signed-in
-    manager). The viewer swap is rate-limited per URL (brViewerSwapAt)."""
+def test_nav_fresh_reload_rules():
+    """nav-fresh swaps in the fresh copy in exactly three cases: after an
+    EXPLICIT user refresh (iOS paints the cached shell first), when the SW
+    flags viewerChanged (the painted shell's identity marker differs from
+    the fresh copy's, e.g. a guest paint served to a signed-in manager), and
+    on load, when the fresh copy lands within LOAD_SWAP_WINDOW_MS of the
+    page loading and the user has not interacted yet (opening the PWA must
+    not need a manual refresh). The viewer and load swaps are rate-limited
+    per URL (brViewerSwapAt / brLoadSwapAt); once the user is interacting,
+    a stale paint never auto-reloads."""
     block = _nav_fresh_block()
     assert "d.type !== 'nav-fresh'" in block
     assert "brUserRefresh" in block
@@ -94,6 +98,9 @@ def test_nav_fresh_only_reloads_for_explicit_user_refresh():
     assert "location.reload();" in block
     assert "d.viewerChanged === true" in block
     assert "brViewerSwapAt" in block
+    assert "LOAD_SWAP_WINDOW_MS" in block
+    assert "brLoadSwapAt" in block
+    assert "brInteracted" in block
     # None of the removed auto-reload machinery may come back.
     for dead in ("STALE_MS", "reloadOnce", "maybeResumeReload", "hiddenSince",
                  "brAutoRefreshTs", "liveSurface", "visibilitychange",
@@ -103,9 +110,11 @@ def test_nav_fresh_only_reloads_for_explicit_user_refresh():
 
 @pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
 def test_nav_fresh_explicit_refresh_swap_behavior_node():
-    """Behavioral: nav-fresh reloads only when the explicit-refresh flag is
-    set, or when the SW flags a viewer-state change (rate-limited per URL).
-    No flag and no viewer change, no reload; another URL is ignored."""
+    """Behavioral: with the user already interacting, nav-fresh reloads only
+    when the explicit-refresh flag is set, or when the SW flags a viewer-state
+    change (rate-limited per URL). No flag and no viewer change, no reload;
+    another URL is ignored. The load-time auto swap for a not-yet-touched
+    page is pinned by the two tests below."""
     import shutil
     import subprocess
 
@@ -123,6 +132,8 @@ var sessionStorage = {
 };
 var document = { visibilityState: 'visible' };
 var swListeners = {};
+var winListeners = {};
+var addEventListener = function(t, fn) { winListeners[t] = fn; };
 var navigator = { serviceWorker: { addEventListener: function(n, fn) { swListeners[n] = fn; } } };
 var location = { href: 'http://x/advanced-metrics', reload: function() { reloads++; } };
 """ + src + r"""
@@ -132,6 +143,10 @@ function navFresh(url, extra) {
   swListeners['message']({ data: data });
 }
 if (typeof swListeners['message'] !== 'function') process.exit(2);
+// The user is already interacting with the painted shell, so the load-time
+// auto swap stands down for every case exercised below.
+if (winListeners['pointerdown']) winListeners['pointerdown']();
+else process.exit(11);
 // No explicit-refresh flag: nav-fresh must not reload.
 navFresh('http://x/advanced-metrics');
 if (reloads !== 0) process.exit(3);
@@ -159,6 +174,115 @@ process.exit(0);
 """
     with tempfile.TemporaryDirectory() as td:
         fp = os.path.join(td, "nav_fresh_swap_check.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+        assert res.returncode == 0, (res.stderr or res.stdout)
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_nav_fresh_load_window_auto_swap_node():
+    """Behavioral: on a fresh load the user has not touched yet, nav-fresh
+    swaps the stale shell for the fresh copy on its own (opening the PWA
+    needs no manual refresh). The swap is rate-limited per URL, and the
+    first interaction stands it down."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _nav_fresh_block()
+    harness = r"""
+var window = globalThis;
+var reloads = 0;
+var store = {};
+var sessionStorage = {
+  getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+  setItem: function(k, v) { store[k] = String(v); },
+  removeItem: function(k) { delete store[k]; }
+};
+var document = { visibilityState: 'visible' };
+var swListeners = {};
+var winListeners = {};
+var addEventListener = function(t, fn) { winListeners[t] = fn; };
+var navigator = { serviceWorker: { addEventListener: function(n, fn) { swListeners[n] = fn; } } };
+var location = { href: 'http://x/advanced-metrics', reload: function() { reloads++; } };
+var fakeNow = 5000000;
+Date.now = function() { return fakeNow; };
+""" + src + r"""
+function navFresh(url, extra) {
+  var data = { type: 'nav-fresh', url: url };
+  if (extra) { for (var k in extra) data[k] = extra[k]; }
+  swListeners['message']({ data: data });
+}
+if (typeof swListeners['message'] !== 'function') process.exit(2);
+// Fresh load, untouched, fresh copy lands inside the window: one swap.
+navFresh('http://x/advanced-metrics');
+if (reloads !== 1) process.exit(3);
+// An immediate duplicate is rate-limited: no reload loop.
+navFresh('http://x/advanced-metrics');
+if (reloads !== 1) process.exit(4);
+// The user starts interacting; once the rate limit lapses (31s on, still
+// inside the 90s load window) a further nav-fresh still must not swap,
+// because interaction stands the load swap down.
+if (winListeners['pointerdown']) winListeners['pointerdown']();
+else process.exit(5);
+fakeNow += 31000;
+navFresh('http://x/advanced-metrics');
+if (reloads !== 1) process.exit(6);
+process.exit(0);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "nav_fresh_load_swap_check.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+        assert res.returncode == 0, (res.stderr or res.stdout)
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_nav_fresh_after_load_window_no_swap_node():
+    """Behavioral: nav-fresh arriving after the load window (the user has
+    been reading the painted shell for a while, even without a recorded
+    interaction) must not reload the page out from under them."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _nav_fresh_block()
+    harness = r"""
+var window = globalThis;
+var reloads = 0;
+var store = {};
+var sessionStorage = {
+  getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+  setItem: function(k, v) { store[k] = String(v); },
+  removeItem: function(k) { delete store[k]; }
+};
+var document = { visibilityState: 'visible' };
+var swListeners = {};
+var winListeners = {};
+var addEventListener = function(t, fn) { winListeners[t] = fn; };
+var navigator = { serviceWorker: { addEventListener: function(n, fn) { swListeners[n] = fn; } } };
+var location = { href: 'http://x/advanced-metrics', reload: function() { reloads++; } };
+var fakeNow = 5000000;
+Date.now = function() { return fakeNow; };
+""" + src + r"""
+function navFresh(url, extra) {
+  var data = { type: 'nav-fresh', url: url };
+  if (extra) { for (var k in extra) data[k] = extra[k]; }
+  swListeners['message']({ data: data });
+}
+if (typeof swListeners['message'] !== 'function') process.exit(2);
+// Two minutes after load, no interaction recorded: outside the window.
+fakeNow += 120000;
+navFresh('http://x/advanced-metrics');
+if (reloads !== 0) process.exit(3);
+process.exit(0);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "nav_fresh_late_check.js")
         with open(fp, "w", encoding="utf-8") as fh:
             fh.write(harness)
         res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
