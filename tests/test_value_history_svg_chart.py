@@ -216,6 +216,11 @@ for (const n of ['<svg class="br-vh-svg"', 'Peak 8,610', 'Low 7,880', '>1QB<', '
   if (!h1.includes(n)) { console.error('MISSING ' + n); process.exit(1); }
 }
 if (/stroke="#ffffff"|stroke="#fff"/.test(h1)) { console.error('RING'); process.exit(1); }
+// X-axis ticks must land at real positions with real labels: the index-mode
+// axis entries are {u, label} objects, never undefined-u strings (a string
+// entry put the tick at x="NaN" with empty text and killed hover snapping).
+if (h1.includes('x="NaN"')) { console.error('NAN TICK'); process.exit(1); }
+if (!/<text x="[0-9.]+" y="242"[^>]*>[^<]+<\/text>/.test(h1)) { console.error('NO X TICKS'); process.exit(1); }
 console.log('RENDER_OK');
 
 // Short redraft-shape series: discrete point dots + merged peak suffix.
@@ -242,3 +247,122 @@ def test_monotone_path_never_overshoots_and_render_matches_spec(tmp_path):
     assert "MONOTONE_OK" in res.stdout
     assert "RENDER_OK" in res.stdout
     assert "SHORT_OK" in res.stdout
+
+
+# ── Behavioral: hover events (regression for the dead modal hover) ───────
+# The modal chart was not hoverable on the live site: index mode passed
+# plain string labels where the hover snap expected {u, label} entries, so
+# the snap stayed undefined, every series lookup missed, and onMove hid the
+# tooltip on every mousemove. The render-only tests above could not see it
+# (their shim's addEventListener was a no-op). This driver records the real
+# listeners BRValueChart binds and dispatches real events at them, with an
+# innerHTML setter that models the browser replacing the chart's nodes on
+# every render (a re-render must rebind hover on the fresh overlay).
+
+_HOVER_DRIVER = r"""
+const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const start = src.indexOf('window.BRValueChart = (function () {');
+const end = src.indexOf('\nfunction _fixOnePlotly', start);
+if (start < 0 || end < 0) { console.error('EXTRACT FAIL'); process.exit(1); }
+function fakeEl() {
+  const el = { style: {}, offsetWidth: 140, isConnected: true, attrs: {}, _handlers: {},
+    setAttribute(k, v) { el.attrs[k] = v; },
+    addEventListener(t, fn) { (el._handlers[t] = el._handlers[t] || []).push(fn); },
+    dispatch(t, evt) { (el._handlers[t] || []).forEach(fn => fn(evt)); },
+    getBoundingClientRect() { return { left: 0, top: 0 }; } };
+  return el;
+}
+function makeContainer(w) {
+  const c = fakeEl();
+  c.clientWidth = w; c.parentNode = { clientWidth: w };
+  let kids = {}, html = '';
+  c.querySelector = (sel) => (kids[sel] || (kids[sel] = fakeEl()));
+  Object.defineProperty(c, 'innerHTML', {
+    get() { return html; },
+    set(v) { html = v; kids = {}; } });  // node replacement, like a browser
+  c._html = () => html;
+  return c;
+}
+const sandbox = { window: {}, console,
+  document: { documentElement: { getAttribute: () => null } },
+  getComputedStyle: () => ({ getPropertyValue: () => '', position: 'static' }) };
+sandbox.window.addEventListener = () => {};
+vm.createContext(sandbox);
+vm.runInContext(src.slice(start, end), sandbox);
+const B = sandbox.window.BRValueChart;
+if (!B) { console.error('NO HELPER'); process.exit(1); }
+
+const labels = [], qb = [], sf = [];
+for (let i = 0; i < 30; i++) { labels.push('Oct ' + (i + 1)); qb.push(8000 + i * 10); sf.push(qb[i] + 1400); }
+qb[29] = 8420; sf[29] = 9910;
+const c = makeContainer(760);
+function draw(vals, labs) {
+  B.render(c, { height: 250, labels: labs, band: true, peakLow: true, series: [
+    { name: '1QB', values: vals[0], color: B.heroColor, width: 3, hero: true },
+    { name: 'SF', values: vals[1], color: B.sky, width: 1.5, dash: '8 5' } ] });
+}
+draw([qb, sf], labels);
+
+// Sweep the pointer across the plot: the tooltip must track point to
+// point (many distinct dates), and the point at index 14 must show its
+// exact date + both series' true values with the crosshair on a real x.
+let overlay = c.querySelector('.br-vh-overlay');
+let tip = c.querySelector('.br-vh-tip');
+let hoverG = c.querySelector('.br-vh-hover');
+let cross = c.querySelector('.br-vh-cross');
+let hitX = null, seenDates = {};
+for (let mx = 55; mx <= 700; mx += 3) {
+  overlay.dispatch('mousemove', { clientX: mx });
+  if (tip.style.display !== '') { console.error('TIP NOT SHOWN at ' + mx); process.exit(1); }
+  const m = tip.innerHTML.match(/Oct \d+/);
+  if (m) seenDates[m[0]] = 1;
+  if (tip.innerHTML.includes('Oct 15') && tip.innerHTML.includes('8,140')) hitX = mx;
+}
+if (Object.keys(seenDates).length < 20) { console.error('HOVER DOES NOT TRACK: ' + Object.keys(seenDates).length); process.exit(1); }
+if (hitX == null) { console.error('POINT 14 TOOLTIP NEVER SHOWN'); process.exit(1); }
+overlay.dispatch('mousemove', { clientX: hitX });
+if (hoverG.style.display !== '') { console.error('HOVER GROUP NOT SHOWN'); process.exit(1); }
+for (const want of ['Oct 15', '1QB', '8,140', 'SF', '9,540']) {
+  if (!tip.innerHTML.includes(want)) { console.error('TIP MISSING ' + want + ': ' + tip.innerHTML); process.exit(1); }
+}
+const cx1 = Number(cross.attrs.x1);
+if (!isFinite(cx1) || cx1 < 40 || cx1 > 720) { console.error('CROSS BAD: ' + cross.attrs.x1); process.exit(1); }
+console.log('HOVER_OK');
+overlay.dispatch('mouseleave', {});
+if (tip.style.display !== 'none' || hoverG.style.display !== 'none') { console.error('NOT HIDDEN'); process.exit(1); }
+console.log('LEAVE_OK');
+// Touch goes through the same handler.
+overlay.dispatch('touchmove', { touches: [{ clientX: hitX }] });
+if (tip.style.display !== '' || !tip.innerHTML.includes('Oct 15')) { console.error('TOUCH FAIL'); process.exit(1); }
+console.log('TOUCH_OK');
+// A re-render (range pill / format toggle path) replaces the nodes; hover
+// must work on the fresh overlay with the new window's values.
+draw([qb.slice(20), sf.slice(20)], labels.slice(20));
+overlay = c.querySelector('.br-vh-overlay');
+tip = c.querySelector('.br-vh-tip');
+let rrHit = false;
+for (let mx = 55; mx <= 720 && !rrHit; mx += 3) {
+  overlay.dispatch('mousemove', { clientX: mx });
+  if (tip.style.display === '' && tip.innerHTML.includes('Oct 30')
+      && tip.innerHTML.includes('8,420') && tip.innerHTML.includes('9,910')) rrHit = true;
+}
+if (!rrHit) { console.error('RERENDER HOVER FAIL: ' + tip.innerHTML); process.exit(1); }
+console.log('RERENDER_HOVER_OK');
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+def test_hover_events_drive_tooltip_and_crosshair(tmp_path):
+    driver = tmp_path / "vh_hover_driver.js"
+    driver.write_text(_HOVER_DRIVER, encoding="utf-8")
+    res = subprocess.run(
+        ["node", str(driver), str(ROOT / "static" / "app.js")],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert res.returncode == 0, res.stderr + res.stdout
+    assert "HOVER_OK" in res.stdout
+    assert "LEAVE_OK" in res.stdout
+    assert "TOUCH_OK" in res.stdout
+    assert "RERENDER_HOVER_OK" in res.stdout
