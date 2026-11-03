@@ -39,10 +39,26 @@ log = logging.getLogger(__name__)
 # ── Sim-state cache (keyed by platform:league_id:season, 5-min TTL) ──────────
 _SIM_CACHE: Dict[str, Any] = {}
 _SIM_CACHE_TTL = 300  # seconds
+# Keys are platform:league_id:season -- finite per league but unbounded
+# across every league a visitor opens, and each value holds a full sim
+# state (the largest values in this module), only TTL-checked when its
+# exact key is re-requested. 32 bounds the worst case well past the
+# handful of leagues a worker actively serves.
+_SIM_CACHE_MAX = 32
 # Per-league lock so two concurrent cold requests (e.g. clicking between strategy
 # chips) don't each run the base simulation - the second waits and reuses it.
 _SIM_LOCKS: Dict[str, threading.Lock] = {}
 _SIM_LOCKS_GUARD = threading.Lock()
+
+
+def _prune_sim_cache() -> None:
+    """Evict oldest-by-ts entries until _SIM_CACHE is within _SIM_CACHE_MAX.
+
+    Same eviction shape as the _TARGET_SIM_CACHE cap below.
+    """
+    while len(_SIM_CACHE) > _SIM_CACHE_MAX:
+        oldest = min(_SIM_CACHE, key=lambda k: _SIM_CACHE[k].get("ts", 0))
+        _SIM_CACHE.pop(oldest, None)
 
 # ── Full-result cache ────────────────────────────────────────────────────────
 # The whole pipeline (base sim + per-target/per-package Monte Carlo swaps) is
@@ -2359,6 +2375,7 @@ def _acquire_sim_state(
                         "ts": _time.time(),
                         "sched_sig": _sched_sig,
                     }
+                    _prune_sim_cache()
                     log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
         if sim_state:
             ppg_map = sim_state["ppg_map"]
