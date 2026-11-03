@@ -110,7 +110,7 @@ def test_nav_hides_trade_intel_everywhere():
     assert 'if platform == "sleeper" and not offseason' not in APP_PY
     assert "Trade Intel uses Sleeper trade data - not applicable for ESPN" not in APP_PY
     assert 'if platform == "sleeper":\n                _weekly_items.append((_rz_label' not in APP_PY
-    assert '_weekly_items.append((_rz_label, "page_scorezone", "scorezone", False))' in APP_PY
+    assert '_rz_item = (_rz_label, "page_scorezone", "scorezone", False)' in APP_PY
     # The standalone page is gone: both routes redirect into the Trade Hub.
     assert 'return redirect(f"/{platform}/{season}/{league_id}/trade?tab=suggestions", code=302)' in TRADE_BP
     assert 'return redirect("/trade?tab=suggestions", code=302)' in TRADE_BP

@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
+        "tag": "update",
+        "text": "Navigation tidied up: the Weekly menu is now grouped into Play (Matchups, ScoreZone, Waivers & Start/Sit, Lineup Lab, Opponent Scout, Schedule Rankings) and Review (Weekly Recap, Lineup Efficiency), with ScoreZone up second where game day needs it, and NFL Team Rankings has moved from the Players menu to the Stats menu, since it ranks teams, not players. The mobile More menu mirrors the same groups and order.",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-02",
         "tag": "new",
         "text": "Weekly Hub on phones is rebuilt compact: the page opens straight into your matchup under a slimmer header, with one row of five tabs (Matchups, League, Scorers, Scout, Lineup) and League Scores on its own tab instead of a second row. The preview is swipe-only now, with the next matchup peeking in from the edge and dots underneath showing where you are. Preview headers run denser: smaller avatars and scores, the win percentage rides on the projection line, over a slim 4px track. Board rows sit tighter, the ScoreZone Moments card is smaller, and the week leaders move into one compact card under the board instead of a grid up top. The bottom dock is slimmer across the whole site on phones too: a shorter bar with smaller icons and labels.",
         "link": "/weekly"

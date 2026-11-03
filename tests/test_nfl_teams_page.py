@@ -104,7 +104,11 @@ def test_nav_entries_in_all_sheets_and_dropdowns():
     assert '_sl("history", "League History")' in APP_SRC  # mobile league sheet
     assert '("League History", "league_pages.page_history", "history", False)' in APP_SRC
     for grp in (
-        '"Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams"',
+        # League sheet: NFL Team Rankings moved from Players to Stats.
+        '"Players": {"players", "compare", "top-movers", "advanced-metrics", "breakouts", "prospects"}',
+        '"Stats": {"awards", "graphs", "history", "nfl-teams"}',
+        # Guest sheet keeps it under Players (guests have no Stats panel).
+        '"Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"}',
     ):
         assert grp in APP_SRC
 
