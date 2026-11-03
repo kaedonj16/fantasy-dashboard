@@ -482,11 +482,13 @@ def _projected_starter_avgs(rosters, ctx: dict, season: int, current_week: int) 
 def api_schedule_strength():
     """
     Remaining-schedule difficulty for each team, using the same SOS formula
-    as standings: opponent scoring average (65%) blended with win rate (35%).
+    as standings: opponent strength from scoring average blended with
+    all-play win rate, centered per team.
 
     Higher ``avg_opp_points`` is a tougher remaining slate (SOS Future index,
-    100 = league average). Playoff weeks are excluded. Projected starter
-    scoring is a 4-game prior that fades as real results come in.
+    100 = the draw a team would expect given it cannot play itself). Playoff
+    weeks are excluded. Projected starter scoring is a 4-game prior that
+    fades as real results come in.
 
     Query params: platform, league_id, season
     """

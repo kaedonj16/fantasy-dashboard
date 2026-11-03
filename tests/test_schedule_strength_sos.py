@@ -80,10 +80,13 @@ def test_remaining_schedule_matches_standings_sos_future():
         {"owner": "3", "AVG": 90.0, "Win%": 0.0},
         {"owner": "4", "AVG": 110.0, "Win%": 1.0},
     ])
-    # Team 1 scored 118 but lost; team 2 scored 120 and won.
+    # Team 1 scored 118 but lost; team 2 scored 120 and won. The standings
+    # path rates opponents on all-play, and so does the remaining-schedule
+    # path: week 1 scores 118/120/90/110 give all-play 2/3, 1, 0, 1/3.
+    all_play = {"1": 2 / 3, "2": 1.0, "3": 0.0, "4": 1 / 3}
     expected = compute_sos_by_team(
         matchups,
-        build_team_strength(stats),
+        build_team_strength(stats, all_play_pct=all_play),
         weeks_past=1,
         users=[],
         regular_season_weeks=2,
@@ -93,18 +96,25 @@ def test_remaining_schedule_matches_standings_sos_future():
 
 
 def test_remaining_schedule_ranks_by_sos_blend_not_ppg_only():
-    """High win% / slightly lower PPG is a tougher SOS opponent than PPG-only."""
+    """All-play separates equal-PPG opponents that PPG-only cannot.
+
+    Teams 1 and 2 both average 130, but 1 put up 130/130 (all-play 5/6)
+    while 2 went 90/170 (all-play 1/2). Facing 1 is the tougher remaining
+    game even though the two score the same per week on average.
+    """
     rosters = _rosters("1", "2", "3", "4")
     matchups = {
-        1: _week_pair(1, "1", 118, "3", 90) + _week_pair(2, "2", 120, "4", 130),
-        2: _week_pair(1, "3", 0, "1", 0) + _week_pair(2, "4", 0, "2", 0),
+        1: _week_pair(1, "1", 130, "3", 100) + _week_pair(2, "2", 90, "4", 110),
+        2: _week_pair(1, "1", 130, "4", 110) + _week_pair(2, "2", 170, "3", 100),
+        3: _week_pair(1, "3", 0, "1", 0) + _week_pair(2, "4", 0, "2", 0),
     }
     rows, source = remaining_schedule_strength(
-        rosters, matchups, current_week=1, regular_season_weeks=2,
+        rosters, matchups, current_week=2, regular_season_weeks=3,
     )
     assert source == "actual"
     by_id = {r["roster_id"]: r for r in rows}
-    # PPG-only: 3 faces 118, 4 faces 120 → 4 harder. SOS: 1 won at 118, 2 lost at 120.
+    # Week 3: 3 faces 1, 4 faces 2. PPG-only rates those opponents equal.
+    assert by_id["1"]["my_avg_points"] == by_id["2"]["my_avg_points"] == 130.0
     assert by_id["3"]["avg_opp_points"] > by_id["4"]["avg_opp_points"]
     order = [r["roster_id"] for r in rows]
     assert order.index("3") < order.index("4")
