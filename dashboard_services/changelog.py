@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-03",
+        "tag": "new",
+        "text": "Tuesday mornings now bring two pushes, staggered, and each one is combined across your leagues. At 9am a new weekly results roundup lands: one notification covering every league you play in, leading with your record for the week (for example, Week 9: you went 7-4) and the new season records in your best leagues, with the full list one tap away in your portfolio. At 11am the recap-ready notification arrives as one combined push per account too, naming your leagues instead of sending one push per league. Both have their own toggles in notification settings. Morning notifications also move later: quiet hours now end at 9am by default instead of 7am, so anything held overnight arrives with the 9am digest.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-11-03",
         "tag": "fix",
         "text": "Matchup win odds now respect the endgame. When only a few players are left to play, the odds are priced from the players who are actually still out there, including how boom or bust each one is, so a team that needs one more big play from its last receiver is no longer shown as nearly finished. A quarterback and his pass catchers on the same NFL team now move the odds together instead of counting as independent, live odds take the real NFL score into account in one sided games, and the win percentage in the weekly digest email now comes from the same model as the matchup page, so the numbers agree.",
         "link": "/weekly"

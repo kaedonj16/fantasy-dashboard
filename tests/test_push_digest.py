@@ -127,7 +127,7 @@ def _row(endpoint, prefs=None, account_key=None, league_id="L1"):
 
 ALL_TYPE_KEYS = {
     "redzone_scores", "lineup_lock", "injury", "close_game",
-    "matchup_preview", "recap_ready", "standings_update", "rival_trades",
+    "matchup_preview", "recap_ready", "week_results", "standings_update", "rival_trades",
     "transaction", "waiver_candidates", "watchlist", "value_drops",
     "breakout_roster", "playoff_odds", "top_movers", "breakout_weekly",
 }

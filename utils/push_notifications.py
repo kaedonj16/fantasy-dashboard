@@ -197,6 +197,7 @@ PUSH_TYPE_BUCKETS = [
         "blurb": "Weekly recaps and alerts on your starred players",
         "types": [
             {"key": "recap_ready", "label": "Weekly recap available"},
+            {"key": "week_results", "label": "Weekly results across your leagues"},
             {"key": "watchlist", "label": "Watchlist alerts"},
         ],
     },
@@ -228,7 +229,7 @@ PUSH_DELIVERY_GROUPS = [
     {
         "id": "digest",
         "label": "Morning digest",
-        "tag": "7:00 AM",
+        "tag": "9:00 AM",
         "types": [
             {"key": "injury", "label": "Injury updates",
              "desc": "Starter status changes across your rosters."},
@@ -242,6 +243,8 @@ PUSH_DELIVERY_GROUPS = [
              "desc": "Your players land on the new breakout board."},
             {"key": "recap_ready", "label": "Weekly recap ready",
              "desc": "Your recap is ready on Tuesday morning."},
+            {"key": "week_results", "label": "Weekly results across your leagues",
+             "desc": "Your record for the week across all your leagues."},
         ],
     },
     {
@@ -275,7 +278,7 @@ _QUIET_EXEMPT_TYPES = frozenset({"redzone_scores", "close_game", "lineup_lock"})
 # ── Quiet hours ──────────────────────────────────────────────────────────────
 # Per-account prefs (mirrored to every device by /api/push/preferences):
 # prefs["quiet_hours"] is True and prefs["quiet_start"] / prefs["quiet_end"]
-# are "HH:MM" in Eastern (defaults 23:00 to 07:00). While the window is
+# are "HH:MM" in Eastern (defaults 23:00 to 09:00). While the window is
 # active, non-live types are buffered with a hold_until at the window's end
 # and the digest flush delivers them as the morning digest. Injury alerts
 # join the held set ONLY here: with quiet hours off they keep their
@@ -283,7 +286,7 @@ _QUIET_EXEMPT_TYPES = frozenset({"redzone_scores", "close_game", "lineup_lock"})
 # _DIGEST_ELIGIBLE_TYPES, so digest mode alone never holds them).
 
 _QUIET_DEFAULT_START = "23:00"
-_QUIET_DEFAULT_END = "07:00"
+_QUIET_DEFAULT_END = "09:00"
 
 
 def _hhmm_minutes(value, fallback):
@@ -561,7 +564,7 @@ _DIGEST_ELIGIBLE_TYPES = frozenset({
     "lineup_lock", "transaction", "close_game",
     "waiver_candidates", "breakout_roster", "value_drops", "watchlist",
     "rival_trades", "playoff_odds", "standings_update",
-    "recap_ready", "matchup_preview",
+    "recap_ready", "week_results", "matchup_preview",
 })
 
 # (singular, plural) nouns for the digest summary line, keyed by notif_type.
@@ -578,6 +581,7 @@ _DIGEST_LABELS = {
     "playoff_odds": ("playoff odds update", "playoff odds updates"),
     "standings_update": ("standings update", "standings updates"),
     "recap_ready": ("recap ready", "recaps ready"),
+    "week_results": ("weekly results roundup", "weekly results roundups"),
     "matchup_preview": ("matchup preview", "matchup previews"),
 }
 
@@ -993,6 +997,37 @@ def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update", no
                                  notif_type=notif_type, league_id=str(league_id))
     except Exception as exc:
         logger.warning("[push] broadcast_owner failed: %s", exc)
+        return 0
+
+
+def _broadcast_account(account_key, title, body, url="/", tag="update",
+                       notif_type=None, league_id=None, platform=None):
+    """Send to every device of ONE account (DISTINCT endpoints).
+
+    A device can carry several push_subscriptions rows for the same account
+    (one per league it subscribed from); DISTINCT ON (endpoint) keeps the
+    account-wide send to one push per device. Routes through
+    _send_with_digest, so per-device type prefs, digest mode, quiet hours
+    and inbox-history recording all behave exactly like the other senders.
+    """
+    if not account_key:
+        return 0
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs, platform, account_key "
+                "FROM push_subscriptions WHERE account_key = %s ORDER BY endpoint",
+                (str(account_key),)
+            ).fetchall()
+        if not rows:
+            return 0
+        return _send_with_digest(rows, title, body, url, tag,
+                                 notif_type=notif_type,
+                                 league_id=str(league_id) if league_id else None,
+                                 platform=platform)
+    except Exception as exc:
+        logger.warning("[push] broadcast_account failed: %s", exc)
         return 0
 
 
@@ -2872,23 +2907,101 @@ def _recap_completed_week(state):
     return week - 1 if week > 1 else 0
 
 
-def notify_recap_ready(today=None):
-    """Push 'Your Week N recap is ready' on Tuesdays, once per league+week.
+# ── Tuesday stagger: the two Tuesday pushes have separate target hours ────
+# week_results lands first (9am ET), recap_ready follows (11am ET). They are
+# staggered on purpose, never both in the same hour. The weekly-recap-push
+# cron fires at every UTC hour that can be one of these ET hours (13,14,
+# 15,16 UTC), and each notifier self-gates on its own target BEFORE any
+# app_state claim is consumed, so an early run is a clean no-op for that
+# type. Flip the order by swapping these two constants.
+_WEEK_RESULTS_TARGET_ET_HOUR = 9
+_RECAP_READY_TARGET_ET_HOUR = 11
 
-    Fired by the weekly-recap-push Render cron (Tuesdays ~9am ET) through the
-    /api/cron/notifications hook (kind='recap'). Idempotency is per league:
-    each league's send is gated on the atomic app_state claim
-    ``recap_ready:{league}:{season}:{week}`` (the same primitive behind the
-    ScoreZone ``redzone_td:`` keys), so a re-run the same Tuesday, or any
-    overlap with another caller, never double-sends a league. ``today`` is
-    injectable for tests; production callers pass nothing.
+
+def _tuesday_gate(today, now, target_hour):
+    """(run_date, due) for a Tuesday-morning notifier.
+
+    ``now`` (an ET datetime, naive treated as ET) pins the clock when given;
+    ``today`` alone (the historical test injection) counts as a run at the
+    target hour, so date-only callers keep working. With neither, the real
+    ET clock decides. ``due`` is False before ``target_hour`` ET, and the
+    gate is evaluated before any claim so a held run consumes nothing.
+    """
+    if now is not None:
+        now_et = _et_now(now)
+        run_date = today if today is not None else now_et.date()
+        return run_date, now_et.hour >= target_hour
+    if today is not None:
+        return today, True
+    now_et = _et_now()
+    return now_et.date(), now_et.hour >= target_hour
+
+
+def _get_legacy_subscribed_leagues():
+    """Leagues whose subscription rows carry NO account_key.
+
+    The recap_ready split is by subscription row: account-backed rows are
+    covered by the combined per-account send, so the legacy per-league
+    path must only ever see leagues with account-less rows, or a device
+    would get both pushes for the same league. Fails closed to no leagues
+    on a query error: a missed generic push beats a duplicate.
     """
     try:
-        from datetime import date as _date
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT league_id, COALESCE(platform, 'sleeper') AS platform "
+                "FROM push_subscriptions "
+                "WHERE league_id IS NOT NULL AND league_id != '' "
+                "AND (account_key IS NULL OR account_key = '')"
+            ).fetchall()
+        return [(r["league_id"], r["platform"]) for r in rows]
+    except Exception:
+        return []
+
+
+def _recaps_ready_body(names, total):
+    """League-name line for the combined recap_ready push.
+
+    Names the first leagues (three when that covers the account, else two)
+    and counts the rest: 'Blackedraw, League of Greatness and 9 more
+    leagues.' / 'A, B and C.' / 'A and B.'
+    """
+    names = [n for n in names if n]
+    if not names:
+        return "See how your matchups shook out."
+    named = names[:3] if total <= 3 else names[:2]
+    rest = total - len(named)
+    if rest > 0:
+        return (f"{', '.join(named)} and {rest} more "
+                f"league{'s' if rest != 1 else ''}.")
+    if len(named) > 1:
+        return f"{', '.join(named[:-1])} and {named[-1]}."
+    return f"{named[0]}."
+
+
+def notify_recap_ready(today=None, now=None):
+    """Push 'Your Week N recap is ready' on Tuesdays, combined per account.
+
+    Fired by the weekly-recap-push Render cron through the
+    /api/cron/notifications hook (kind='recap'), staggered to 11am ET (see
+    _RECAP_READY_TARGET_ET_HOUR; the aggregated week_results push goes at
+    9am ET). Account-backed subscriptions get ONE push per account per
+    week (claim ``recap_ready_acct:{account}:{season}:{week}``): the
+    classic single-league version when the account has one league, else
+    'Your Week N recaps are ready' naming the first leagues. Legacy
+    subscriptions with no account_key keep the per-league generic send
+    with its ``recap_ready:{league}:{season}:{week}`` claim, and only for
+    leagues whose rows carry no account_key, so no device ever gets both
+    shapes for the same league. ``today``/``now`` are injectable for
+    tests; production callers pass nothing.
+    """
+    try:
         from dashboard_services.api import get_nfl_state
         from dashboard_services.db import get_conn
 
-        if (today or _date.today()).weekday() != 1:
+        run_date, due = _tuesday_gate(today, now, _RECAP_READY_TARGET_ET_HOUR)
+        if run_date.weekday() != 1 or not due:
             return 0
 
         state  = get_nfl_state() or {}
@@ -2899,11 +3012,81 @@ def notify_recap_ready(today=None):
         if week < 1:
             return 0
 
-        leagues = _get_subscribed_leagues()
-        if not leagues:
-            return 0
-
         sent = 0
+
+        # Account path: one combined push per account.
+        for account_key in _get_subscribed_account_keys():
+            claim_key = f"recap_ready_acct:{account_key}:{season}:{week}"
+            try:
+                with get_conn() as conn:
+                    claimed = _app_state_claim(conn, claim_key)
+                    conn.commit()
+            except Exception as exc:
+                logger.debug("[notify] recap_ready_acct claim %s failed: %s",
+                             claim_key, exc)
+                continue
+            if not claimed:
+                continue
+            acct_leagues = _recap_account_leagues(account_key, season)
+            if not acct_leagues:
+                # Fall back to the account's own subscription rows so a
+                # subscribed league the account link missed still gets its
+                # one combined send instead of none.
+                try:
+                    with get_conn() as conn:
+                        sub_rows = conn.execute(
+                            "SELECT DISTINCT league_id, "
+                            "COALESCE(platform, 'sleeper') AS platform "
+                            "FROM push_subscriptions WHERE account_key = %s "
+                            "AND league_id IS NOT NULL AND league_id != ''",
+                            (str(account_key),),
+                        ).fetchall()
+                    acct_leagues = [{
+                        "platform": r["platform"],
+                        "league_id": str(r["league_id"]),
+                        "season": int(season),
+                        "roster_id": "",
+                        "name": "",
+                    } for r in sub_rows]
+                except Exception:
+                    acct_leagues = []
+            if not acct_leagues:
+                continue
+            names = [
+                lg.get("name") or _league_display_name(
+                    lg["platform"], lg["league_id"], season)
+                for lg in acct_leagues
+            ]
+            tag = f"recap-ready-{season}-{week}"
+            if len(acct_leagues) == 1:
+                lg = acct_leagues[0]
+                league_name = names[0]
+                recap_body = (
+                    "See how your matchup shook out"
+                    f"{' in ' + league_name if league_name else ''}."
+                )
+                sent += _broadcast_account(
+                    account_key,
+                    title=f"Your Week {week} recap is ready",
+                    body=recap_body,
+                    url=f"/{lg['platform']}/{season}/{lg['league_id']}/recap",
+                    tag=tag,
+                    notif_type="recap_ready",
+                    league_id=lg["league_id"],
+                    platform=lg["platform"],
+                ) or 0
+            else:
+                sent += _broadcast_account(
+                    account_key,
+                    title=f"Your Week {week} recaps are ready",
+                    body=_recaps_ready_body(names, len(acct_leagues)),
+                    url="/portfolio",
+                    tag=tag,
+                    notif_type="recap_ready",
+                ) or 0
+
+        # Legacy path: per-league generic, account-less rows only.
+        leagues = _get_legacy_subscribed_leagues()
         for league_id, platform in leagues:
             claim_key = f"recap_ready:{league_id}:{season}:{week}"
             try:
@@ -2918,7 +3101,7 @@ def notify_recap_ready(today=None):
                 continue
             league_name = _league_display_name(platform, league_id, season)
             recap_body = (
-                "Scores are final. See how your matchup shook out"
+                "See how your matchup shook out"
                 f"{' in ' + league_name if league_name else ''}."
             )
             sent += _broadcast_league(
@@ -2933,6 +3116,422 @@ def notify_recap_ready(today=None):
         return sent
     except Exception as exc:
         logger.warning("[notify] recap_ready failed: %s", exc)
+        return 0
+
+
+# ── Notification 8b: Weekly results across all your leagues (Tuesday) ─────
+
+_RECAP_RESULTS_LEAGUE_CAP = 20
+
+
+def _get_subscribed_account_keys():
+    """Distinct account_keys with at least one push subscription row."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT account_key FROM push_subscriptions "
+                "WHERE account_key IS NOT NULL AND account_key != ''"
+            ).fetchall()
+        return [r["account_key"] for r in rows]
+    except Exception:
+        return []
+
+
+def _recap_account_leagues(account_key, season):
+    """Every league linked to an account, for the aggregated results push.
+
+    Mirrors utils/weekly_email.other_leagues_for_account: leagues come from
+    dashboard_services.accounts.list_user_leagues (the account_key IS the
+    account id), deduped per (platform, league_id), newest first, capped at
+    _RECAP_RESULTS_LEAGUE_CAP, and the roster_id prefers the
+    account_league_visits row over the saved team_id.
+    """
+    try:
+        account_id = int(account_key)
+    except (TypeError, ValueError):
+        return []
+    try:
+        from dashboard_services.accounts import list_user_leagues
+        leagues = list_user_leagues(account_id) or []
+    except Exception:
+        logger.debug("[notify] week_results list_user_leagues failed",
+                     exc_info=True)
+        return []
+    out = []
+    seen = set()
+    for lg in leagues:
+        plat = str(lg.get("platform") or "").strip().lower()
+        lid = str(lg.get("league_id") or "").strip()
+        try:
+            lg_season = int(lg.get("season") or 0)
+        except (TypeError, ValueError):
+            lg_season = 0
+        if not plat or not lid or (plat, lid) in seen:
+            continue
+        seen.add((plat, lid))
+        roster_id = str(lg.get("team_id") or "") or ""
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                row = conn.execute(
+                    """SELECT roster_id FROM account_league_visits
+                       WHERE account_id=%s AND platform=%s AND league_id=%s
+                       AND season=%s""",
+                    (account_id, plat, lid, lg_season or int(season)),
+                ).fetchone()
+            if row and row.get("roster_id"):
+                roster_id = str(row["roster_id"])
+        except Exception:
+            pass
+        out.append({
+            "platform": plat,
+            "league_id": lid,
+            "season": lg_season or int(season),
+            "roster_id": roster_id,
+            "name": lg.get("name") or "",
+        })
+        if len(out) >= _RECAP_RESULTS_LEAGUE_CAP:
+            break
+    return out
+
+
+def _recap_league_result(platform, league_id, season, week, roster_id):
+    """One roster's completed-week result in one league, or None.
+
+    Uses the same matchup pairing as notify_close_game / the weekly recap:
+    get_matchups rows for the completed week, paired by matchup_id, W/L/T
+    from the two rows' points. In a median-match league (the site's
+    league_average_match setting, via utils.standings.median_match_enabled)
+    the weekly game against the league median is folded in as a second
+    outcome, the same rule utils.standings.median_game_outcomes applies to
+    the recap's standings. The season record comes from the roster's own
+    settings line (the fallback utils.weekly_email._collect_league_digest
+    uses when the canonical standings cache is cold), with
+    _canonical_standing as a last resort when settings carry no record.
+    None when the roster, its matchup, or its points cannot be resolved:
+    callers count only resolved leagues and never guess.
+    """
+    if not roster_id:
+        return None
+    from dashboard_services.platform_api import (
+        get_league, get_matchups, get_rosters, get_users,
+    )
+
+    matchups = get_matchups(platform, str(league_id), int(week),
+                            int(season)) or []
+    rid = str(roster_id)
+    mine = next((m for m in matchups
+                 if str(m.get("roster_id")) == rid), None)
+    if mine is None:
+        return None
+
+    def _pts(row):
+        try:
+            v = row.get("points")
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    my_pts = _pts(mine)
+    if my_pts is None:
+        return None
+
+    opp = None
+    mid = mine.get("matchup_id")
+    if mid is not None:
+        opp = next((m for m in matchups
+                    if m is not mine and m.get("matchup_id") == mid), None)
+    opp_pts = _pts(opp) if opp is not None else None
+
+    wins = losses = ties = 0
+    h2h = None
+    if opp is not None and opp_pts is not None:
+        if my_pts > opp_pts:
+            h2h = "W"
+        elif my_pts < opp_pts:
+            h2h = "L"
+        else:
+            h2h = "T"
+
+    rosters = []
+    users = []
+    league = {}
+    try:
+        rosters = get_rosters(platform, str(league_id), int(season)) or []
+    except Exception:
+        rosters = []
+    try:
+        users = get_users(platform, str(league_id), int(season)) or []
+    except Exception:
+        users = []
+    try:
+        league = get_league(platform, str(league_id), int(season)) or {}
+    except Exception:
+        league = {}
+
+    # Median game: same outcome rule as the recap standings (points vs the
+    # week's league median of every roster's points).
+    if h2h:
+        if h2h == "W":
+            wins += 1
+        elif h2h == "L":
+            losses += 1
+        else:
+            ties += 1
+    try:
+        from utils.standings import median_match_enabled
+        if median_match_enabled(league.get("settings") or {}):
+            import statistics as _statistics
+            all_pts = [p for p in (_pts(m) for m in matchups)
+                       if p is not None]
+            if all_pts:
+                med = _statistics.median(all_pts)
+                if my_pts > med:
+                    wins += 1
+                elif my_pts < med:
+                    losses += 1
+                else:
+                    ties += 1
+    except Exception:
+        logger.debug("[notify] week_results median check failed",
+                     exc_info=True)
+
+    opp_name = ""
+    if opp is not None:
+        roster_by_id = {str(r.get("roster_id")): r for r in rosters}
+        opp_roster = roster_by_id.get(str(opp.get("roster_id"))) or {}
+        if _is_yahoo(platform):
+            opp_name = next(
+                (u.get("display_name") or u.get("username") or ""
+                 for u in users
+                 if str(u.get("roster_id")) == str(opp.get("roster_id"))),
+                "",
+            )
+        else:
+            user_name = {
+                str(u.get("user_id")): (
+                    u.get("display_name") or u.get("username") or "")
+                for u in users
+            }
+            opp_name = user_name.get(str(opp_roster.get("owner_id") or ""), "")
+        opp_name = str(opp_name or "").strip()
+
+    season_wins = season_losses = season_ties = None
+    my_roster = next((r for r in rosters
+                      if str(r.get("roster_id")) == rid), None)
+    settings = (my_roster or {}).get("settings") or {}
+    if any(k in settings for k in ("wins", "losses", "ties")):
+        try:
+            season_wins = int(settings.get("wins") or 0)
+            season_losses = int(settings.get("losses") or 0)
+            season_ties = int(settings.get("ties") or 0)
+        except (TypeError, ValueError):
+            season_wins = season_losses = season_ties = None
+    if season_wins is None:
+        try:
+            from utils.weekly_email import _canonical_standing
+            _rank, cw, cl = _canonical_standing(
+                platform, str(league_id), int(season), rid)
+            if cw or cl:
+                season_wins, season_losses, season_ties = cw, cl, 0
+        except Exception:
+            pass
+
+    return {
+        "platform": platform,
+        "league_id": str(league_id),
+        "season": int(season),
+        "name": str(league.get("name") or "").strip(),
+        "wins": wins,
+        "losses": losses,
+        "ties": ties,
+        "h2h": h2h,
+        "my_pts": my_pts,
+        "opp_pts": opp_pts,
+        "opp_name": opp_name,
+        "season_wins": season_wins,
+        "season_losses": season_losses,
+        "season_ties": season_ties,
+    }
+
+
+def _recap_record_str(wins, losses, ties):
+    rec = f"{int(wins)}-{int(losses)}"
+    if ties:
+        rec += f"-{int(ties)}"
+    return rec
+
+
+def _fmt_points(value):
+    return f"{float(value):.1f}"
+
+
+def _week_results_copy(results, week):
+    """(title, body, single_result_or_None) for the aggregated push.
+
+    2+ resolved leagues: week record across leagues as the title, up to two
+    notable leagues named with their new season record (best first), and a
+    tap line when more leagues resolved than were named. Exactly 1: that
+    league's own result with the actual score. Counts cover ONLY the
+    resolved leagues handed in; unresolved leagues never reach this copy.
+    """
+    if len(results) == 1:
+        r = results[0]
+        outcome = r.get("h2h")
+        if outcome is None:
+            # No head-to-head row (median-only resolution): use the folded
+            # weekly outcomes for the verb.
+            if r["wins"] > r["losses"]:
+                outcome = "W"
+            elif r["losses"] > r["wins"]:
+                outcome = "L"
+            else:
+                outcome = "T"
+        verb = {"W": "won", "L": "lost", "T": "tied"}[outcome]
+        name = r.get("name") or "your league"
+        title = f"Week {week}: You {verb} in {name}"
+        parts = []
+        if r.get("opp_pts") is not None and r.get("opp_name"):
+            parts.append(
+                f"{_fmt_points(r['my_pts'])} to {_fmt_points(r['opp_pts'])}"
+                f" vs {r['opp_name']}.")
+        elif r.get("my_pts") is not None:
+            parts.append(f"You scored {_fmt_points(r['my_pts'])}.")
+        if r.get("season_wins") is not None and r.get("name"):
+            parts.append(
+                f"{r['name']} is now "
+                f"{_recap_record_str(r['season_wins'], r['season_losses'], r['season_ties'])}.")
+        return title, " ".join(parts), r
+
+    total_w = sum(r["wins"] for r in results)
+    total_l = sum(r["losses"] for r in results)
+    total_t = sum(r["ties"] for r in results)
+    title = (f"Week {week}: You went "
+             f"{_recap_record_str(total_w, total_l, total_t)}")
+
+    def _notable_key(r):
+        w = r.get("season_wins") or 0
+        l = r.get("season_losses") or 0
+        t = r.get("season_ties") or 0
+        games = w + l + t
+        pct = (w + 0.5 * t) / games if games else -1.0
+        return (pct, w)
+
+    parts = []
+    named = 0
+    for r in sorted(results, key=_notable_key, reverse=True):
+        if named >= 2:
+            break
+        if not r.get("name"):
+            continue
+        if r.get("season_wins") is not None:
+            parts.append(
+                f"{r['name']} is now "
+                f"{_recap_record_str(r['season_wins'], r['season_losses'], r['season_ties'])}.")
+            named += 1
+        elif r.get("h2h"):
+            verb = {"W": "won", "L": "lost", "T": "tied"}[r["h2h"]]
+            parts.append(f"{r['name']} {verb} this week.")
+            named += 1
+    if len(results) > named:
+        parts.append(f"Tap for all {len(results)} leagues.")
+    return title, " ".join(parts), None
+
+
+def notify_week_results(today=None, now=None):
+    """Push each account ONE results roundup for the completed week.
+
+    Additional to (never replacing) the per-league recap_ready push: title
+    is the account's record for the week across ALL their leagues, e.g.
+    'Week 9: You went 7-4'. Fired by the same weekly-recap-push cron
+    through the kind='recap' hook, staggered to 9am ET (see
+    _WEEK_RESULTS_TARGET_ET_HOUR; recap_ready follows at 11am ET).
+    Idempotency is per account: the atomic app_state claim
+    ``recap_results_acct:{account}:{season}:{week}`` is consumed before
+    that account's results are computed, so no run can double-send an
+    account. Accounts whose leagues all fail to resolve get nothing.
+    ``today``/``now`` are injectable for tests.
+    """
+    try:
+        from dashboard_services.api import get_nfl_state
+        from dashboard_services.db import get_conn
+
+        run_date, due = _tuesday_gate(today, now, _WEEK_RESULTS_TARGET_ET_HOUR)
+        if run_date.weekday() != 1 or not due:
+            return 0
+
+        state = get_nfl_state() or {}
+        season = state.get("season")
+        if not season or state.get("season_type") not in ("reg", "post"):
+            return 0
+        week = _recap_completed_week(state)
+        if week < 1:
+            return 0
+
+        accounts = _get_subscribed_account_keys()
+        if not accounts:
+            return 0
+
+        sent = 0
+        for account_key in accounts:
+            claim_key = f"recap_results_acct:{account_key}:{season}:{week}"
+            try:
+                with get_conn() as conn:
+                    claimed = _app_state_claim(conn, claim_key)
+                    conn.commit()
+            except Exception as exc:
+                logger.debug("[notify] week_results claim %s failed: %s",
+                             claim_key, exc)
+                continue
+            if not claimed:
+                continue
+            leagues = _recap_account_leagues(account_key, season)
+            results = []
+            unresolved = 0
+            for lg in leagues:
+                try:
+                    res = _recap_league_result(
+                        lg["platform"], lg["league_id"], lg["season"],
+                        week, lg["roster_id"])
+                except Exception:
+                    res = None
+                if res is None:
+                    unresolved += 1
+                    continue
+                if not res.get("name") and lg.get("name"):
+                    res["name"] = lg["name"]
+                results.append(res)
+            if unresolved:
+                logger.info(
+                    "[notify] week_results account %s: %d of %d leagues "
+                    "unresolved for week %s",
+                    account_key, unresolved, len(leagues), week)
+            if not results:
+                continue
+            title, body, single = _week_results_copy(results, week)
+            if single is not None:
+                url = (f"/{single['platform']}/{single['season']}/"
+                       f"{single['league_id']}/weekly")
+                sent += _broadcast_account(
+                    account_key,
+                    title=title, body=body, url=url,
+                    tag=f"week-results-{season}-{week}",
+                    notif_type="week_results",
+                    league_id=single["league_id"],
+                    platform=single["platform"],
+                ) or 0
+            else:
+                sent += _broadcast_account(
+                    account_key,
+                    title=title, body=body, url="/portfolio",
+                    tag=f"week-results-{season}-{week}",
+                    notif_type="week_results",
+                ) or 0
+        logger.info("[notify] week_results week %s sent %d", week, sent)
+        return sent
+    except Exception as exc:
+        logger.warning("[notify] week_results failed: %s", exc)
         return 0
 
 
@@ -3541,6 +4140,7 @@ def run_all_daily():
         "breakout_roster": notify_breakout_roster() or 0,
         "top_movers": notify_top_movers() or 0,
         "recap_ready": notify_recap_ready() or 0,
+        "week_results": notify_week_results() or 0,
         "matchup_preview": notify_matchup_preview() or 0,
         "standings_update": notify_standings_update() or 0,
         "watchlist_alerts": notify_watchlist_alerts() or 0,
