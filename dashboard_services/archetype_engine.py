@@ -580,6 +580,69 @@ def _acceptance_fit(pkg: List[Dict], need: Optional[set], stacked: Optional[set]
     return max(-12, min(12, bonus))
 
 
+def _partner_acceptance_cap(
+    pkg: List[Dict], target_pid: Any, target_val: float,
+    partner_pids: List[str], values_by_id: Dict[str, Any],
+    league_type: str, partner_arch: str = "", season: int = 0,
+    eff_ratio: Optional[float] = None,
+) -> Optional[int]:
+    """Cap on acceptance when a deal guts the partner's starting lineup.
+
+    The value-ratio logistic alone calls any package that sums to the target
+    "fair" - including two bench pieces for a producing starter. A manager
+    whose starting lineup gets materially worse does not accept that at par,
+    so when the partner's optimal lineup (same value-based optimizer the
+    viewer-side math uses) drops by 3%+ of its total, acceptance is capped:
+    a real hit reads as a long shot no matter how the raw values sum.
+
+    Exempt, because the lineup hit is compensated or is the point:
+    - rebuilding partners (selling production for future value is the deal),
+    - packages carrying a 1st-rounder within two drafts (liquid, near-term
+      capital a manager can actually spend),
+    - packages returning a near-equal headliner (>= 80% of the target),
+    - a genuine overpay: at >= 1.15x effective value the value makes the
+      partner whole (a championship-push overpay is logical for both
+      sides); at >= 1.10x the cap softens one tier instead of reading as a
+      hard long shot.
+    """
+    if not pkg or not partner_pids or target_val <= 0:
+        return None
+    if str(partner_arch or "").strip().lower() == "rebuilding":
+        return None
+    for a in pkg:
+        if a.get("is_pick") or a.get("position") == "PICK":
+            try:
+                yr = int(a.get("pick_season") or 0)
+                rnd = int(a.get("pick_round") or 0)
+            except (TypeError, ValueError):
+                continue
+            if rnd == 1 and season and 1 <= yr - season <= 2:
+                return None
+        elif _f(a.get("value")) >= 0.80 * target_val:
+            return None
+    before = _optimal_lineup_value(partner_pids, values_by_id, league_type)
+    if before <= 0:
+        return None
+    incoming = [str(a.get("player_id")) for a in pkg
+                if not (a.get("is_pick") or a.get("position") == "PICK")
+                and a.get("player_id")]
+    after_pids = [p for p in partner_pids if str(p) != str(target_pid)] + incoming
+    after = _optimal_lineup_value(after_pids, values_by_id, league_type)
+    drop = (before - after) / before
+    if drop >= 0.06:
+        cap = 20
+    elif drop >= 0.03:
+        cap = 35
+    else:
+        return None
+    if eff_ratio is not None:
+        if eff_ratio >= 1.15:
+            return None
+        if eff_ratio >= 1.10:
+            return 35 if cap == 20 else 50
+    return cap
+
+
 def _fit_note(pkg: List[Dict], need: Optional[set], target_pos: str,
               partner_counts: Optional[Dict[str, int]]) -> str:
     """Short, human explanation of why a package suits the partner's roster:
@@ -1010,8 +1073,12 @@ def _acquire_band(target_val: float, archetype: str) -> Tuple[float, float]:
             star = 0.0
         return (1.00 + star, 1.14 + star)
     # Win-now / lateral swaps: fair effective value, no premium. The depth
-    # penalty baked into effective value already keeps multi-asset offers honest.
-    return (0.96, 1.08)
+    # penalty baked into effective value already keeps multi-asset offers
+    # honest. The 1.12 top leaves deliberate headroom for a championship-push
+    # overpay - priced and visible on the card, a conscious push rather than
+    # a robbery - while _dist still prefers par-value packages, so overpays
+    # surface only when they are the structure that gets the player.
+    return (0.96, 1.12)
 
 
 # ── Team archetype inference ──────────────────────────────────────────────────
@@ -1243,6 +1310,7 @@ def _select_packages(
     sorted_vals: Optional[List[float]] = None, league_size: int = 10,
     need_positions: Optional[set] = None, stacked_positions: Optional[set] = None,
     tier_thresholds: Optional[List[float]] = None, stretch: bool = False,
+    current_season: int = 0,
 ) -> List[List[Dict]]:
     """Return up to max_pkgs distinct send packages whose *depth-adjusted* value
     lands in the acquire band for this target (see _acquire_band).
@@ -1258,6 +1326,9 @@ def _select_packages(
     closest-match fallbacks - is also held to a tier guard: the package's
     headliner must sit within _CONSOLIDATE_MAX_TIER_DROP tiers of the target, so
     no path can quietly assemble a wall of low-tier depth to reach a stud.
+    Two more shape guards ride along: a multi-player package with no piece
+    near the target pays a best-player premium (see _premium_mult), and a
+    pick 3+ drafts out cannot carry a package (see _far_pick_blocked).
 
     Selection also respects the *partner's* roster: within the value band, a
     package is preferred when it sends a position the partner is thin at
@@ -1310,9 +1381,33 @@ def _select_packages(
         """Closeness metric (lower is better): effective-value gap, nudged by fit."""
         return abs(_eff(*assets) - target_val) + _fit_adj(assets)
 
+    def _premium_mult(*assets) -> float:
+        """Best-player premium for multi-player packages (0 = none).
+
+        When the partner gives up the deal's clear best player and the send
+        side is 2+ players whose best piece is under 75% of the target, raw
+        value parity is not a real offer - the receiving side consolidates
+        quality and the sending side takes on roster spots. Such packages
+        must clear 1.06x effective value instead of the plain fair band.
+        Pick packages are exempt (picks are liquid capital and price at par),
+        and the consolidate archetype already pays its own star premium in
+        _acquire_band, so it is exempt here to avoid double-charging.
+        """
+        if archetype == "consolidate":
+            return 0.0
+        players = [a for a in assets
+                   if not (a.get("is_pick") or a.get("position") == "PICK")]
+        if len(players) < 2:
+            return 0.0
+        headliner = max(a.get("value", 0) for a in players)
+        if headliner >= 0.75 * target_val:
+            return 0.0
+        return 1.06
+
     def _in_band(*assets) -> bool:
         e = _eff(*assets)
-        return lo <= e <= hi
+        lo_p = max(lo, target_val * _premium_mult(*assets))
+        return lo_p <= e <= hi
 
     # Tier guard, applied to every package: a fair offer trades comparable-quality
     # assets, not a pile of low-tier depth summed up to a stud's price. Require the
@@ -1330,7 +1425,41 @@ def _select_packages(
     # fair value rather than a lowball - it just costs more, lesser pieces.
     _tier_drop = _CONSOLIDATE_MAX_TIER_DROP + (_STRETCH_TIER_SLACK if stretch else 0)
 
+    def _far_pick_blocked(*assets) -> bool:
+        """A pick 3+ drafts out cannot carry a package for a real target.
+
+        Far-future picks price off the same generic bucket table as near
+        picks, so without this guard a 2029 1st co-headlines deals for
+        producing starters at full freight - capital no manager selling a
+        starter actually accepts as the centerpiece. Blocked when the far
+        pick is at least 35% of the package's raw value and no player piece
+        reaches 65% of the target (a genuine headliner can still use a far
+        pick as a sweetener). Disabled when the season is unknown.
+        """
+        if not current_season:
+            return False
+        raw = sum(a.get("value", 0) for a in assets)
+        if raw <= 0:
+            return False
+        headliner = max((a.get("value", 0) for a in assets
+                         if not (a.get("is_pick") or a.get("position") == "PICK")),
+                        default=0)
+        if headliner >= 0.65 * target_val:
+            return False
+        for a in assets:
+            if not (a.get("is_pick") or a.get("position") == "PICK"):
+                continue
+            try:
+                yr = int(a.get("pick_season") or 0)
+            except (TypeError, ValueError):
+                continue
+            if yr - current_season >= 3 and a.get("value", 0) >= 0.35 * raw:
+                return True
+        return False
+
     def _tier_ok(*assets) -> bool:
+        if _far_pick_blocked(*assets):
+            return False
         tiers = [asset_tier(a.get("value", 0), _thr) for a in assets
                  if not (a.get("is_pick") or a.get("position") == "PICK")]
         if not tiers:
@@ -1355,7 +1484,17 @@ def _select_packages(
                    if not (a.get("is_pick") or a.get("position") == "PICK"))
 
     def _drop_underpays(pkgs: List[List[Dict]]) -> List[List[Dict]]:
-        return [p for p in pkgs if _eff(*p) >= eff_floor]
+        # Premium packages face a higher fallback floor (par value, not the
+        # 0.90x hard floor): the closest-match fallback must not resurrect a
+        # quantity-for-quality offer the band just rejected for lacking the
+        # best-player premium.
+        out = []
+        for p in pkgs:
+            pm = _premium_mult(*p)
+            floor = max(eff_floor, target_val * (pm - 0.06)) if pm else eff_floor
+            if _eff(*p) >= floor:
+                out.append(p)
+        return out
 
     def _dedup(pkgs: List[List[Dict]]) -> List[List[Dict]]:
         # Drop structurally identical packages (same asset set) so the surfaced
@@ -1472,7 +1611,7 @@ def _select_packages(
         best_pp, best_pp_d = None, float("inf")
         for pk in pick_pool:
             # Just the pick alone
-            if _in_band(pk) and _dist(pk) < best_pp_d:
+            if _in_band(pk) and _tier_ok(pk) and _dist(pk) < best_pp_d:
                 best_pp_d, best_pp = _dist(pk), [pk]
             for c in mp:
                 if _in_band(c, pk) and _tier_ok(c, pk) and _dist(c, pk) < best_pp_d:
@@ -3525,7 +3664,16 @@ def _get_archetype_suggestions_impl(
             sorted_vals=sorted_vals, league_size=num_teams,
             need_positions=_pm.get("need"), stacked_positions=_pm.get("stacked"),
             tier_thresholds=tier_thresholds, stretch=bool(t.get("is_stretch")),
+            current_season=season,
         )
+
+    # Partner rosters for the acceptance lineup gate (see
+    # _partner_acceptance_cap): acceptance must price what the deal does to
+    # the partner's starting lineup, not just the value sum.
+    partner_pids_by_roster: Dict[str, List[str]] = {
+        str(r.get("roster_id")): [str(p) for p in (r.get("players") or [])]
+        for r in rosters
+    }
 
     # Per-target impact rosters, stashed on the result so the progressive
     # sim phase can fill off the cached slate without rebuilding them (the
@@ -3586,6 +3734,18 @@ def _get_archetype_suggestions_impl(
             acpt     = _estimate_acceptance(
                 eff_send, recv_val, is_preferred=t["is_pref"],
                 fit=_acceptance_fit(pkg, _p_need, _p_stacked))
+            # Partner-side lineup gate: a package that sums to fair value but
+            # leaves the partner's starting lineup materially worse is not a
+            # ~50% accept, whatever the ratio says. Cap it so the card and
+            # the ranking stop floating those deals.
+            _cap = _partner_acceptance_cap(
+                pkg, pid, recv_val,
+                partner_pids_by_roster.get(str(t["owner_roster_id"]), []),
+                values_by_id, league_type,
+                partner_arch=_pmeta.get("arch", ""), season=season,
+                eff_ratio=eff_send / max(recv_val, 1.0))
+            if _cap is not None:
+                acpt = min(acpt, _cap)
 
             # Per-package net odds: build the exact post-trade roster (drop the
             # sent players, add the target) and re-run the SAME Monte Carlo

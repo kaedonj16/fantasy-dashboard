@@ -67,7 +67,7 @@ def test_consolidate_band_carries_star_premium():
     lo_star, hi_star = _acquire_band(950, "consolidate")
     lo_mid, _ = _acquire_band(500, "consolidate")
     assert lo_star > lo_mid >= 1.0
-    assert _acquire_band(950, "contending") == (0.96, 1.08)
+    assert _acquire_band(950, "contending") == (0.96, 1.12)
 
 
 def test_lopsided_star_steal_is_rejected():
