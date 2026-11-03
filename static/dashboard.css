@@ -25336,21 +25336,25 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     line-height: 20px; text-align: center; }
 
 /* Player modal "In this league" acquisition/ownership timeline. */
-/* Player modal Start/Sit strip: one line, verdict + slot chip + reason. */
-.pm-ss-strip { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 9px 14px; margin: 0 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); font-size: 13px; }
+/* Player modal Start/Sit verdict line: one slim line of text on the modal
+   surface -- verdict + plain slot + the reason's facts divided by hairlines.
+   No filled box, no tint, no pills (declutter spec; the boxed strip with its
+   slot/grade pills read too thick and wrapped to two rows). */
+.pm-ss-strip { display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; padding: 2px 2px 7px; margin: 0 0 8px; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.3; }
 .pm-ss-strip[hidden] { display: none; }
-.pm-ss-strip.pm-ss-start { background: color-mix(in srgb, var(--win) 10%, var(--card)); border-color: color-mix(in srgb, var(--win) 35%, var(--card)); }
-.pm-ss-strip.pm-ss-bench { background: color-mix(in srgb, var(--warning) 12%, var(--card)); border-color: color-mix(in srgb, var(--warning) 38%, var(--card)); }
-.pm-ss-verdict { font-size: 15px; font-weight: 800; color: var(--text); }
+.pm-ss-verdict { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
 .pm-ss-start .pm-ss-verdict { color: var(--win); }
 .pm-ss-bench .pm-ss-verdict { color: color-mix(in srgb, var(--warning) 72%, var(--text)); }
-.pm-ss-slot { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--card); border: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; }
-.pm-ss-grade { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--card); border: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.pm-ss-slot { font-weight: 700; color: var(--text); white-space: nowrap; }
+.pm-ss-sep { width: 1px; height: 12px; background: var(--border); flex: none; }
 .pm-ss-why { color: var(--muted, var(--text-muted)); }
 .pm-ss-why b { color: var(--text); font-weight: 700; }
 .pm-ss-text { color: var(--muted, var(--text-muted)); }
 .pm-ss-link { margin-left: auto; color: var(--accent); font-weight: 600; font-size: 13px; text-decoration: none; white-space: nowrap; }
 .pm-ss-link:hover { text-decoration: underline; }
+@media (max-width: 640px) {
+  .pm-ss-strip { gap: 4px 6px; }
+}
 .pm-inleague-list { display: flex; flex-direction: column; gap: 2px; }
 .pm-inleague-row { display: flex; align-items: baseline; gap: 9px; font-size: 13px; padding: 5px 0; }
 .pm-inleague-text { color: var(--text); }
@@ -25366,15 +25370,18 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 /* ── Player modal Overview: cross-league Availability (collapsible, lazy) ── */
 /* The global button rule paints every button with the accent fill; the
    collapsible toggles opt out explicitly (same reset as the Team tab's). */
-.pm-avail-toggle { appearance: none; width: calc(100% + 10px); background: transparent; color: inherit; border: 0; font: inherit; text-align: left; box-shadow: none; }
-.pm-avail-toggle:hover { background: var(--row); }
+.pm-avail-toggle { appearance: none; width: calc(100% + 28px); margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; background: transparent; color: inherit; border: 0; font: inherit; text-align: left; box-shadow: none; }
+.pm-avail-toggle:hover { background: var(--card); }
 .pm-avail-secnote { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .pm-avail-secnote.has-avail { color: var(--win); }
-.pm-avail-list { border: 1px solid var(--grid); border-radius: 10px; overflow: hidden; }
-.pm-avail-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; text-decoration: none; color: inherit; background: var(--card); padding: 7px 10px; min-height: 36px; }
+/* The section is a rail panel now (shared rule in the two-column section
+   below): the list drops its own border box and the rows sit transparent
+   on the panel surface. */
+.pm-avail-list { border-top: 1px solid var(--border); }
+.pm-avail-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; text-decoration: none; color: inherit; background: transparent; padding: 7px 0; min-height: 36px; }
 .pm-avail-row + .pm-avail-row { border-top: 1px solid var(--grid); }
-a.pm-avail-row:hover { background: var(--row); }
-.pm-avail-row.mine { background: color-mix(in srgb, var(--brand-blue) 4%, var(--card)); }
+a.pm-avail-row:hover { background: var(--card); }
+.pm-avail-row.mine { background: color-mix(in srgb, var(--brand-blue) 5%, transparent); }
 .pm-avail-league { flex: 1 1 150px; min-width: 0; display: flex; align-items: baseline; gap: 7px; }
 .pm-avail-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
 .pm-avail-sub { font-size: 11px; color: var(--text-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 24px; }
@@ -25382,12 +25389,12 @@ a.pm-avail-row:hover { background: var(--row); }
 .pm-avail-owner { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-avail-detail b { color: var(--text); font-weight: 600; }
 .pm-avail-detail .yours { color: var(--brand-blue); font-weight: 700; }
-.pm-avail-slot { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 5px; background: var(--row); border: 1px solid var(--grid); color: var(--text-muted); white-space: nowrap; }
+.pm-avail-slot { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 5px; background: var(--card); border: 1px solid var(--grid); color: var(--text-muted); white-space: nowrap; }
 .pm-avail-status { flex: 0 0 auto; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 6px; border-radius: 6px; line-height: 1.3; white-space: nowrap; }
 .pm-avail-status.avail { color: #047857; background: color-mix(in srgb, #10b981 15%, transparent); }
 .pm-avail-status.rost { color: var(--text-subtle); background: color-mix(in srgb, var(--text-muted) 10%, transparent); }
 .pm-avail-action { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: var(--brand-blue); white-space: nowrap; }
-.pm-avail-skrow { display: flex; align-items: center; gap: 10px; padding: 7px 10px; min-height: 36px; }
+.pm-avail-skrow { display: flex; align-items: center; gap: 10px; padding: 7px 0; min-height: 36px; }
 .pm-avail-skrow + .pm-avail-skrow { border-top: 1px solid var(--grid); }
 .pm-avail-skline { height: 11px; border-radius: 5px; }
 .pm-avail-skpill { height: 16px; width: 64px; border-radius: 6px; margin-left: auto; flex-shrink: 0; }
@@ -25395,37 +25402,31 @@ a.pm-avail-row:hover { background: var(--row); }
 .pm-avail-retry:hover { text-decoration: underline; }
 .pm-avail-error { font-size: 13px; color: var(--text-muted); padding: 4px 0; }
 @media (max-width: 600px) {
-    .pm-avail-row { flex-wrap: wrap; gap: 4px 8px; padding: 8px 10px; }
+    .pm-avail-row { flex-wrap: wrap; gap: 4px 8px; padding: 8px 0; }
     .pm-avail-league { flex: 1 1 calc(100% - 84px); }
     .pm-avail-detail { flex: 1 1 100%; justify-content: flex-start; order: 3; }
     .pm-avail-action { order: 4; margin-left: auto; }
 }
 
-/* ── Player modal Overview: Playoff schedule card + Recent form bars ────── */
-.pm-playoff-card { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
-.pm-playoff-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
-.pm-playoff-rank { text-align: right; }
-.pm-playoff-rank-big { font-size: 17px; font-weight: 800; color: var(--text); line-height: 1.15; font-variant-numeric: tabular-nums; }
-/* Color pass: the aggregate and each week's rank carry their tier color;
-   the rest of the line stays plain text. */
-.pm-playoff-rank-easy { color: #059669; }
-.pm-playoff-rank-mid { color: #b45309; }
-.pm-playoff-rank-hard { color: #dc2626; }
+/* ── Player modal Overview: Playoff schedule panel + Recent form bars ──── */
+/* Panel chrome comes from the shared rail rule in the two-column section
+   below. Header: weeks-range label + the aggregate as a muted note; rows
+   are week/opponent left, "#rank · pts allowed" bold right (declutter
+   spec -- the per-week rank bars and big rank block are gone). */
+.pm-playoff-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.pm-playoff-note { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+/* Color pass: each week's rank carries its tier color; the rest of the
+   line stays plain text. */
 .pm-rk { font-weight: 800; }
 .pm-rk-easy { color: #059669; }
 .pm-rk-mid { color: #b45309; }
 .pm-rk-hard { color: #dc2626; }
-.pm-playoff-rank-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .pm-playoff-rows { display: flex; flex-direction: column; }
-.pm-playoff-row { display: flex; flex-direction: column; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.pm-playoff-row { padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; }
 .pm-playoff-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .pm-playoff-week { font-weight: 600; color: var(--text); }
 .pm-playoff-loc { color: var(--text-muted); font-weight: 600; }
-.pm-playoff-track { height: 5px; background: var(--grid); border-radius: 3px; margin-top: 6px; overflow: hidden; }
-.pm-playoff-fill { height: 100%; border-radius: 3px; background: #f59e0b; }
-.pm-playoff-fill-easy { background: #10b981; }
-.pm-playoff-fill-hard { background: #ef4444; }
-.pm-playoff-allowed { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pm-playoff-allowed { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .pm-recent[hidden] { display: none; }
 .pm-recent-cap { font-size: 11px; color: var(--text-muted); }
@@ -25452,7 +25453,16 @@ a.pm-avail-row:hover { background: var(--row); }
 .pm-ov-main, .pm-ov-rail { min-width: 0; }
 .pm-ov-rail { display: flex; flex-direction: column; }
 .pm-ov-recent .pm-section-divider:first-child { display: none; }
-.pm-ov-role { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
+/* Overview rail panels (declutter spec): ONE quiet treatment for every
+   rail section -- Playoff, Role, Availability, In this league, Recent
+   News. Row surface, hairline border, shared padding; the sections'
+   own top dividers drop inside the box and nested fills come out. */
+.pm-ov-rail .pm-playoff-card, .pm-ov-rail .pm-ov-role, .pm-ov-rail .pm-avail,
+.pm-ov-rail .pm-inleague, .pm-ov-rail .pm-news-section {
+  background: var(--row); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.pm-ov-rail .pm-section-divider { display: none; }
 .pm-ov-role[hidden] { display: none; }
 .pm-ov-kv { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
 /* Role card share bars: tier-colored fill under the Target/Snap share rows. */

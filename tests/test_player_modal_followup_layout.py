@@ -62,6 +62,23 @@ def test_overview_two_column_structure():
     assert "grid-template-columns: minmax(0, 1fr) 300px" in CSS
 
 
+def test_overview_rail_panels_share_one_treatment():
+    # Declutter (2026-11-03): every rail section is the same quiet panel --
+    # row surface, hairline border, shared padding -- and the sections'
+    # own top dividers drop inside the box.
+    for sel in (".pm-ov-rail .pm-playoff-card", ".pm-ov-rail .pm-ov-role",
+                ".pm-ov-rail .pm-avail", ".pm-ov-rail .pm-inleague",
+                ".pm-ov-rail .pm-news-section"):
+        assert sel in CSS, sel
+    assert "background: var(--row); border: 1px solid var(--border);" in CSS
+    assert ".pm-ov-rail .pm-section-divider { display: none; }" in CSS
+    # The old per-card fills are gone (no double-boxing).
+    assert ".pm-playoff-card { background: var(--bg-alt)" not in CSS
+    assert ".pm-ov-role { background: var(--bg-alt)" not in CSS
+    # Availability's inner list no longer draws its own border box.
+    assert ".pm-avail-list { border: 1px solid var(--grid)" not in CSS
+
+
 def test_overview_phone_order():
     block = CSS[CSS.find(".pm-ov-playoff { order: 1;") - 200:]
     for cls, n in [("pm-ov-playoff", 1), ("pm-ov-recent", 2), ("pm-ov-value", 3),
