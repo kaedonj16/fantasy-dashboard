@@ -34,11 +34,12 @@ own ingestion, the same source and season format the model grades):
       consumes these tables yet; they land with the artifact so the
       Advanced tab's percentiles can move from the thin current-class
       pool to the recorded drafted pool.
-  (b) LEG KNOT MARKS: per position, the 11 tier marks (worst / p1 /
-      p5 / p10 / p25 / p50 / p75 / p90 / p97 / p99 / best) for every
+  (b) LEG KNOT MARKS: per position, the 11 tier marks (p0.5 / p1 /
+      p5 / p10 / p25 / p50 / p75 / p90 / p97 / p99 / p99.5) for every
       season-stat leg input in the round 15 pre-registered design
-      (pools: seasons with GP >= 4; breakout pools are per-player
-      peak values), plus age-at-draft marks (performance order),
+      (pools: role seasons per the model's season_has_role
+      thresholds with GP >= 4; breakout pools are per-player peak
+      values), plus age-at-draft marks (performance order),
       recruiting-composite marks (CFBD recruiting pull, best
       effort), and competition-index marks. Athleticism marks are
       the recorded drafted-tester tiers already carried by v3.3.
@@ -117,6 +118,23 @@ as a miss. scripts/cleanup_derive_gp_marks.py removes the
 derive-written week marks (kind='gp', season <= 2022 only; 2023
 is shared with the live pipeline's current-class tracking and
 is deliberately left alone).
+
+ANCHOR HYGIENE (v1.6): the v1.5 ladders let tiny-sample seasons
+set the marks - the season-leg pools admitted any season with
+GP >= 4, so a backup's four-game cameo could post the pool's
+best per-game rate (a 915 pass-yards-per-game mark sat atop the
+QB ladder) - and the ladder end rungs were the pools' raw
+min/max, so one artifact season pinned each end. Season-leg
+pools now require a real role on top of GP >= 4 (the model's
+season_has_role thresholds: QB >= 75 pass attempts, RB >= 60
+touches, WR >= 20 targets or >= 12 receptions, TE >= 15 targets
+or >= 10 receptions), and KNOT_PERCENTILES ends are trimmed to
+the pools' 0.5th / 99.5th percentiles, so the end rungs are
+recorded-population percentiles rather than single-season
+extremes. Assembly-only: CACHE_VERSION stays 2, because the
+cached class payloads are unchanged - only the pooling and the
+mark selection moved, so a rerun re-derives from cache with
+zero CFBD calls.
 """
 
 from __future__ import annotations
@@ -137,15 +155,17 @@ sys.path.insert(0, _REPO_ROOT)
 sys.path.insert(0, os.path.join(_REPO_ROOT, "scripts"))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "tests"))
 
-SCRIPT_VERSION = "1.5"
+SCRIPT_VERSION = "1.6"
 POPULATION_DEFINITION = (
     "Drafted skill-position players (QB/RB/WR/TE), classes {classes}, "
     "from the nflverse draft list; college seasons from CFBD via the "
     "pipeline's ingestion (season < draft year); season-leg pools "
-    "require GP >= 4; breakout pools are per-player peak values over "
-    "seasons with GP >= 1."
+    "require a role season (the model's season_has_role thresholds) "
+    "with GP >= 4, and knot ladders end at the pools' 0.5th / 99.5th "
+    "percentiles rather than the raw min/max; breakout pools are "
+    "per-player peak values over seasons with GP >= 1."
 )
-KNOT_PERCENTILES = [0, 1, 5, 10, 25, 50, 75, 90, 97, 99, 100]
+KNOT_PERCENTILES = [0.5, 1, 5, 10, 25, 50, 75, 90, 97, 99, 99.5]
 DISPLAY_PERCENTILES = [0, 1, 5, 10, 25, 50, 75, 90, 95, 97, 99, 100]
 COMPONENT_FIELDS = ["production_score", "efficiency_score",
                     "breakout_profile_score", "athleticism_score"]
@@ -169,7 +189,10 @@ def _percentile(sorted_vals: List[float], p: float) -> float:
 
 
 def knot_marks(values: List[float]) -> Optional[List[float]]:
-    """11 tier marks at KNOT_PERCENTILES. Ties stay tied: discrete
+    """11 tier marks at KNOT_PERCENTILES. The end rungs are the
+    pool's 0.5th / 99.5th percentiles (v1.6), never the raw
+    min/max, so a single artifact season cannot pin a ladder end.
+    Ties stay tied: discrete
     stats mass at one value in the recorded population, and the
     model's knot scorer prices a value on a tied mark at the
     highest tier that mark represents."""
@@ -267,8 +290,8 @@ def build_reference(population: List[Dict[str, Any]],
             label for label in vals_by_label
             if label in _ADV_LOWER_BETTER)
 
-    # (b) season-leg pools (GP >= 4), breakout pools (per-player peak),
-    # age, recruiting, competition index
+    # (b) season-leg pools (role seasons with GP >= 4), breakout
+    # pools (per-player peak), age, recruiting, competition index
     # Season-leg pools cover exactly the model's leg inputs per
     # position (the union of its production + efficiency sub-legs).
     def _pos_leg_keys(pos: str) -> List[str]:
@@ -286,7 +309,9 @@ def build_reference(population: List[Dict[str, Any]],
             seasons = prospect.get("seasons") or []
             for s in seasons:
                 m = v4.season_metrics(s, pos)
-                if m["games_played"] is not None and m["games_played"] >= 4:
+                if (m["games_played"] is not None
+                        and m["games_played"] >= 4
+                        and v4.season_has_role(s, pos)):
                     for k in pools:
                         if m.get(k) is not None:
                             pools[k].append(float(m[k]))
@@ -798,8 +823,10 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
                          "gp_stateless=True: the DB week tracker is "
                          "ignored - no reads, no marks - because "
                          "the derive persists no GP totals); "
-                         "season-leg pools gate on GP >= 4 and no "
-                         "games-played value is ever defaulted"),
+                         "season-leg pools gate on GP >= 4 plus a "
+                         "real role (the model's season_has_role "
+                         "thresholds) and no games-played value is "
+                         "ever defaulted"),
         "coverage_gate": ("artifact refused when any class's "
                           "stat-matched fraction (prospects with "
                           "college seasons / class prospects) is "
