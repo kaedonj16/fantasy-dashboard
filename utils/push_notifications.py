@@ -1748,9 +1748,10 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
     specific push; clean lineups are skipped (R06.2).
 
     Args:
-        games: the day's games (lock logic is scoped to these).
-        week_games: the full week's games, used only to build the set of
-            teams playing this week for bye detection. Defaults to games.
+        games: the day's games (the ones locking soon).
+        week_games: the full week's games, used to build the set of teams
+            playing this week for bye detection and the set of teams whose
+            game already kicked off for lock detection. Defaults to games.
     """
     from dashboard_services.db import get_conn
 
@@ -1770,7 +1771,7 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
 
         # Bye detection needs the full week's team set: a day-scoped set
         # (e.g. just {TB, DAL} on Thursday) would falsely flag every other
-        # starter as on bye. Lock logic stays day-scoped below.
+        # starter as on bye.
         _bye_games = week_games if week_games is not None else games
         teams_playing = set()
         for g in _bye_games:
@@ -1781,7 +1782,18 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
 
         # Players whose NFL game already kicked off are locked and cannot be
         # moved, so swap suggestions must not involve them on either side.
-        locked_teams = locked_teams_from_games(games)
+        # Lock detection needs the full week's games too: the day's games
+        # are all still in the future by construction (notify_lineup_lock
+        # drops past games before grouping by day), so a day-scoped lock
+        # set is always empty. On Monday's reminder a starter who played
+        # Sunday, got hurt mid-game and is now listed Out (his live
+        # projection cratered) therefore read as movable, and the push
+        # told his owner to sit him for a bench player hours after his
+        # slot locked.
+        locked_teams = (
+            locked_teams_from_games(_bye_games)
+            | locked_teams_from_games(games)
+        )
 
         # This week's projections (once, league-agnostic) so owners with a legal
         # lineup can still be told they're leaving points on the bench. Best
@@ -1846,6 +1858,21 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
                             "injury_status": pl.get("injury_status") or "",
                         }
                     issues = find_lineup_issues(starters, player_info, teams_playing)
+                    # A locked starter cannot be addressed either: if he was
+                    # hurt mid-game and flipped to Out, naming him in the
+                    # lock reminder is unactionable noise (same rule as the
+                    # Next Steps fix). Empty slots and unlocked starters'
+                    # issues still surface.
+                    _locked_starters = {
+                        pid for pid in starters
+                        if str(player_info.get(pid, {}).get("team") or "").upper()
+                        in locked_teams
+                    }
+                    if _locked_starters:
+                        issues = [
+                            i for i in issues
+                            if str(i.get("pid") or "") not in _locked_starters
+                        ]
                     if issues:
                         issue_summary_by_owner[scan_key] = summarize_issues(issues)
                     # Always scan for material bench upgrades (even when there is

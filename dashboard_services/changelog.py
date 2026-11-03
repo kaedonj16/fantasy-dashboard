@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
+        "tag": "fix",
+        "text": "Lineup lock reminders no longer tell you to bench a starter whose game already kicked off. A player who got hurt mid-game on Sunday and was later listed Out was still named in the Monday night lock push, with a sit-and-start swap you could not make, because the reminder only looked at that day's games when working out who was locked. Locked players are now worked out from the full week's games, and a locked starter's injury is no longer raised as something to fix before a later kickoff.",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-02",
         "tag": "new",
         "text": "Weekly Hub Scorers rebuilt as one clean panel instead of four separate cards: every position lines up on the same grid, each player carries his real headshot, the top scorer at each position steps up a size on a soft tint, and a thin bar under each score shows how close it sits to that position's best. Defenses show their two-tone team badge in place of a headshot, and a kicker without a photo gets his team's badge too.",
         "link": "/"
