@@ -13,8 +13,8 @@ CHANGELOG = [
     {
         "date": "2026-11-03",
         "tag": "fix",
-        "text": "Fleaflicker matchup previews are fixed. The board no longer grows six empty 0.0 rows under the real starters, team records in the preview header show the real standings instead of 0-0 for everyone, and a starter whose name is listed differently on Fleaflicker than in our player index (Kenny Gainwell, for one) no longer renders as a blank slot, so his projection counts in the header total again. The Lineup Lab also works for Fleaflicker leagues again: a player who scored exactly zero, or who was on bye, used to be read as missing data and the whole week was withheld as incomplete.",
-        "link": "/weekly"
+        "text": "Two playoff fixes for Fleaflicker and MFL leagues. The Playoff Picture on the standings page now shows the full playoff field: in a six-team playoff it counts all six teams (it showed four, because the bye teams were missing) and the opening round is no longer labelled as the Finals. And Playoff Odds can no longer slip into a preseason projection in the middle of the season, which showed every team at 0-0 with a full season left to play; the odds now always build from your real records, or show nothing rather than a made-up projection.",
+        "link": "/standings"
     },
     {
         "date": "2026-11-03",

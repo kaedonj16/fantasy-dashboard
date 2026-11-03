@@ -33,7 +33,10 @@ def test_mfl_bracket_projects_from_seeds(monkeypatch):
     monkeypatch.setattr(provider, "get_matchups", lambda *a, **k: [])
     monkeypatch.setattr(provider, "_playoff_seeds", lambda *a, **k: [1, 2, 3, 4])
     games = provider.get_bracket("1", 2026, "winners")
-    assert len(games) == 2
+    # Complete projected bracket for a 4-team field: 2 semifinals + final.
+    assert len(games) == 3
+    field = {g[s] for g in games for s in ("t1", "t2") if g[s] is not None}
+    assert field == {1, 2, 3, 4}
     assert all(g.get("projected") for g in games)
     assert provider.get_bracket("1", 2026, "losers") == []
 

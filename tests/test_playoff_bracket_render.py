@@ -11,7 +11,7 @@ pytest.importorskip("pandas")
 pytest.importorskip("numpy")
 
 from dashboard_services.service import playoff_bracket  # noqa: E402
-from utils.standings import build_full_bracket  # noqa: E402
+from utils.standings import build_full_bracket, derive_or_project_bracket  # noqa: E402
 
 
 NAMES = {
@@ -253,6 +253,32 @@ def test_desktop_names_wrap_not_truncate():
     # Equal-height matches are a base rule now, not phone-only, so a
     # wrapped name never shifts a connector center.
     assert css.count(".pb-col .pb-match {") == 1
+
+
+def test_projected_six_team_picture_counts_full_field():
+    # Regression (Fleaflicker/MFL): the projected bracket used to contain
+    # only the first round (3v6, 4v5), so the ctx line counted the bye-less
+    # first-round teams and read "4 playoff teams" for a 6-team field, and
+    # the lone round was labelled "Finals".
+    bracket = derive_or_project_bracket(
+        matchups_by_week={},
+        playoff_week_start=15,
+        seed_roster_ids=list(range(1, 11)),
+        playoff_teams=6,
+    )
+    html = playoff_bracket(bracket, NAMES, {}, seed_map=SEEDS,
+                           team_meta=META, playoff_week_start=15)
+    assert "6 playoff teams" in html
+    assert "Top 2 get a bye" in html
+    for rid in ("1", "2", "3", "4", "5", "6"):
+        assert NAMES[rid] in html
+    assert "Semifinals" in html
+    assert "Finals" in html
+    # The first round is not the Finals: three round heads, Finals last.
+    heads = html.split("pb-head-rd'>")[1:]
+    labels = [h.split("<")[0] for h in heads]
+    assert labels[-1] == "Finals"
+    assert labels[0] != "Finals"
 
 
 def test_tiles_gate_by_round_count():

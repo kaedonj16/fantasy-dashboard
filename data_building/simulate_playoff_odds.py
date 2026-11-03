@@ -898,6 +898,19 @@ def simulate_playoff_odds(
 
     # ── Case 1: no game data yet (preseason / offseason / Week-1 seed) ───────
     if not has_games:
+        # Fail closed when the ctx contradicts itself: team_stats says no
+        # games, but the weekly data / season state in the same ctx proves
+        # the season already started. That is a broken (stale or partially
+        # built) ctx, not a preseason league -- running the projection here
+        # would fabricate a 0-0 season and cache it as the league's odds.
+        if season_started_evidence(ctx):
+            logger.warning(
+                "[playoff_odds] gameless team_stats but season already "
+                "started (league=%s season=%s current_week=%s); refusing "
+                "the preseason projection path",
+                league_id, season, current_week,
+            )
+            return []
         # Build the PPG map Sleeper-first (same source as in-season / swap sims)
         # so projections come from Sleeper at all points.
         season_ppg_map, pos_map = build_ppg_map(ctx)
@@ -1575,6 +1588,59 @@ def team_stats_have_played_games(team_stats) -> bool:
                 return True
         except Exception:
             pass
+    return False
+
+
+def season_started_evidence(ctx: dict) -> bool:
+    """Hard evidence the season has already started, from the ctx itself.
+
+    The preseason projection path (Case 1 in ``simulate_playoff_odds``) is
+    keyed on ``team_stats`` alone, but a worker can hold a league ctx whose
+    ``team_stats`` was seeded 0-0 (e.g. built while the provider's weekly
+    fetch came back empty) long after real games were played. Serving the
+    projection then fabricates a full 0-0 season in Week 9. This checks
+    the independent signals the same ctx carries, strongest first:
+
+    1. ``df_weekly`` rows flagged finalized that carry scored points.
+    2. ``df_weekly`` scored rows in weeks before the current week (covers
+       a missing/stale finalized flag).
+    3. The ctx marks the season complete.
+    4. ``current_week`` >= 2 for a season that is not in the future (the
+       gameless-ctx shape seen live: weekly data empty at build time, but
+       the NFL-state week had long since advanced).
+
+    A genuine preseason ctx has none of these: no weekly rows, week 0/1,
+    season not complete.
+    """
+    if not isinstance(ctx, dict):
+        return False
+    df_weekly = ctx.get("df_weekly")
+    try:
+        if df_weekly is not None and not getattr(df_weekly, "empty", True):
+            cols = set(df_weekly.columns)
+            if "points" in cols:
+                pts = df_weekly["points"].fillna(0)
+                if "finalized" in cols:
+                    fin = df_weekly["finalized"] == True  # noqa: E712
+                    if bool((pts[fin] > 0).any()):
+                        return True
+                current_week = int(ctx.get("current_week") or 0)
+                if current_week > 1 and "week" in cols:
+                    prior = df_weekly["week"] < current_week
+                    if bool((pts[prior] > 0).any()):
+                        return True
+    except Exception:
+        pass
+    if ctx.get("season_complete"):
+        return True
+    try:
+        current_week = int(ctx.get("current_week") or 0)
+        season = int(ctx.get("season") or 0)
+        current_season = int(ctx.get("current_season") or 0)
+        if current_week >= 2 and season and current_season and season <= current_season:
+            return True
+    except (TypeError, ValueError):
+        pass
     return False
 
 
