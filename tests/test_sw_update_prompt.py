@@ -1,9 +1,12 @@
-"""Tap-to-update prompt tests.
+"""App update tests (auto-apply on load, tap prompt mid-session).
 
 Verifies the initUpdatePrompt IIFE in static/app.js:
-- Shows a dismissible prompt when the server version differs from the running bundle
-- Does NOT show the prompt when versions match
-- Never reloads on its own; reloads only when the user taps the prompt
+- A version mismatch found while the page is loading in applies itself
+  (auto reload, no tap, no prompt), at most once per version per window
+- A mismatch found later, mid-session, shows a dismissible prompt and
+  reloads only when the user taps it
+- Does NOT show the prompt or reload when versions match
+- A service-worker controllerchange with no update requested never reloads
 - The service worker handles SKIP_WAITING messages
 
 Runs the actual JS in Node with mocked browser globals.
@@ -140,11 +143,117 @@ MOCK_PREAMBLE = textwrap.dedent("""
 """)
 
 
-def test_prompt_shows_on_version_mismatch():
+_MATCHING_MARK = "globalThis.__serverVersion = { app_js: 'serverhash999', git_sha: '' };"
+
+_FLUSH_JS = (
+    "function flush(n){ return n <= 0 ? Promise.resolve() : "
+    "new Promise(function(res){ setImmediate(function(){ flush(n-1).then(res); }); }); }\n"
+)
+
+# JS run after the IIFE has loaded with matching versions: flip the server
+# version, jump the clock past the load window and the recheck throttle, and
+# fire the foreground recheck, so the mismatch is discovered mid-session.
+_FLIP_TO_MISMATCH_JS = textwrap.dedent("""
+    globalThis.__serverVersion = { app_js: 'serverhash999', git_sha: '' };
+    var __realNow = Date.now();
+    Date.now = function(){ return __realNow + 400000; };
+    (__docListeners['visibilitychange'] || []).forEach(function(fn){ fn(); });
+""")
+
+
+def _matching_preamble():
+    assert _MATCHING_MARK in MOCK_PREAMBLE
+    return MOCK_PREAMBLE.replace(
+        _MATCHING_MARK,
+        "globalThis.__serverVersion = { app_js: 'oldhash111', git_sha: '' };",
+    )
+
+
+def test_auto_applies_on_load():
+    # A mismatch found by the load-time check applies itself: the page
+    # reloads with no tap and no prompt, so opening the PWA never needs a
+    # manual refresh to land on the new version.
     iife = _extract_iife("initUpdatePrompt")
     out = _run_node(iife, MOCK_PREAMBLE, textwrap.dedent("""
-        function flush(n){ return n <= 0 ? Promise.resolve() : new Promise(function(res){ setImmediate(function(){ flush(n-1).then(res); }); }); }
+        %s
         flush(8).then(function(){
+          console.log(JSON.stringify({
+            fetchUrl: globalThis.__fetchUrl,
+            bannerShown: !!document.querySelector('.br-update-banner'),
+            reloadsWithoutTap: globalThis.__reloads,
+          }));
+        });
+    """) % _FLUSH_JS)
+    import json
+    data = json.loads(out)
+    assert data["fetchUrl"] == "/healthz/version", data
+    assert data["reloadsWithoutTap"] >= 1, "load-time mismatch must auto-reload: %s" % data
+    assert data["bannerShown"] is False, "auto-applied update needs no prompt: %s" % data
+
+
+def test_auto_apply_once_per_version_then_prompt():
+    # The reload an auto-apply triggers lands as a NEW page (a fresh IIFE)
+    # sharing the tab's sessionStorage. If the server still reports a
+    # different bundle, the guard recorded by the first attempt makes the
+    # second load fall back to the tap prompt instead of looping.
+    iife = _extract_iife("initUpdatePrompt")
+    preamble = MOCK_PREAMBLE + textwrap.dedent("""
+        var __ssStore = {};
+        globalThis.sessionStorage = {
+          getItem: function(k){ return Object.prototype.hasOwnProperty.call(__ssStore, k) ? __ssStore[k] : null; },
+          setItem: function(k, v){ __ssStore[k] = String(v); },
+          removeItem: function(k){ delete __ssStore[k]; },
+        };
+    """)
+    # Run the IIFE twice, sequentially: the first eval is the first load
+    # (auto-applies), the second eval is the page that reload landed on.
+    # Sequential eval matters: the second load must observe the guard the
+    # first load's auto-apply recorded in the shared sessionStorage.
+    import json as _json
+    driver = textwrap.dedent("""
+        %s
+        var __IIFE_SRC = %s;
+        var __first = null;
+        Promise.resolve()
+          .then(function(){ eval(__IIFE_SRC); return flush(10); })
+          .then(function(){
+            __first = { reloads: globalThis.__reloads, banner: !!document.querySelector('.br-update-banner') };
+            eval(__IIFE_SRC);
+            return flush(10);
+          })
+          .then(function(){
+            console.log(JSON.stringify({
+              firstReloads: __first.reloads,
+              firstBanner: __first.banner,
+              totalReloads: globalThis.__reloads,
+              bannerAfterSecondLoad: !!document.querySelector('.br-update-banner'),
+            }));
+          })
+          .catch(function(e){ console.error(e); process.exit(3); });
+    """) % (_FLUSH_JS, _json.dumps(iife))
+    full = preamble + "\n" + driver
+    proc = subprocess.run(["node", "-e", full], capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, "node failed:\n%s\n%s" % (proc.stdout, proc.stderr)
+    import json
+    data = json.loads(proc.stdout.strip())
+    assert data["firstReloads"] >= 1, "first load must auto-apply: %s" % data
+    assert data["firstBanner"] is False, data
+    assert data["totalReloads"] == data["firstReloads"], \
+        "second load of the same version must not auto-reload again: %s" % data
+    assert data["bannerAfterSecondLoad"] is True, \
+        "second load must fall back to the tap prompt: %s" % data
+
+
+def test_prompt_shows_on_mismatch_after_load_window():
+    # A mismatch first discovered mid-session (here: on a foreground recheck
+    # long after load) shows the dismissible prompt and does NOT reload.
+    iife = _extract_iife("initUpdatePrompt")
+    out = _run_node(iife, _matching_preamble(), textwrap.dedent("""
+        %s
+        flush(8).then(function(){
+          %s
+          return flush(8);
+        }).then(function(){
           var banner = document.querySelector('.br-update-banner');
           var dismiss = null;
           if (banner) banner.children.forEach(function(c){ if (c.className === 'br-update-dismiss') dismiss = c; });
@@ -155,12 +264,12 @@ def test_prompt_shows_on_version_mismatch():
             dismissPresent: !!dismiss,
           }));
         });
-    """))
+    """) % (_FLUSH_JS, _FLIP_TO_MISMATCH_JS))
     import json
     data = json.loads(out)
     assert data["fetchUrl"] == "/healthz/version", data
-    assert data["bannerShown"] is True, "prompt must appear on version mismatch: %s" % data
-    assert data["reloadsWithoutTap"] == 0, "must never auto-reload: %s" % data
+    assert data["bannerShown"] is True, "prompt must appear on a mid-session mismatch: %s" % data
+    assert data["reloadsWithoutTap"] == 0, "mid-session mismatch must not auto-reload: %s" % data
     assert data["dismissPresent"] is True, "prompt must be dismissible: %s" % data
 
 
@@ -187,9 +296,12 @@ def test_no_prompt_when_versions_match():
 
 def test_tap_reloads_and_dismiss_hides():
     iife = _extract_iife("initUpdatePrompt")
-    out = _run_node(iife, MOCK_PREAMBLE, textwrap.dedent("""
-        function flush(n){ return n <= 0 ? Promise.resolve() : new Promise(function(res){ setImmediate(function(){ flush(n-1).then(res); }); }); }
+    out = _run_node(iife, _matching_preamble(), textwrap.dedent("""
+        %s
         flush(8).then(function(){
+          %s
+          return flush(8);
+        }).then(function(){
           var banner = document.querySelector('.br-update-banner');
           var main = null, dismiss = null;
           banner.children.forEach(function(c){
@@ -204,7 +316,7 @@ def test_tap_reloads_and_dismiss_hides():
           };
           console.log(JSON.stringify(afterDismiss));
         });
-    """))
+    """) % (_FLUSH_JS, _FLIP_TO_MISMATCH_JS))
     import json
     data = json.loads(out)
     assert data["bannerGone"] is True, "dismiss X must remove the prompt: %s" % data
@@ -213,9 +325,12 @@ def test_tap_reloads_and_dismiss_hides():
 
 def test_tap_main_triggers_reload():
     iife = _extract_iife("initUpdatePrompt")
-    out = _run_node(iife, MOCK_PREAMBLE, textwrap.dedent("""
-        function flush(n){ return n <= 0 ? Promise.resolve() : new Promise(function(res){ setImmediate(function(){ flush(n-1).then(res); }); }); }
+    out = _run_node(iife, _matching_preamble(), textwrap.dedent("""
+        %s
         flush(8).then(function(){
+          %s
+          return flush(8);
+        }).then(function(){
           var banner = document.querySelector('.br-update-banner');
           var main = null;
           banner.children.forEach(function(c){ if (c.className === 'br-update-main') main = c; });
@@ -226,7 +341,7 @@ def test_tap_main_triggers_reload():
         }).then(function(){
           console.log(JSON.stringify({ reloadsAfterTap: globalThis.__reloads }));
         });
-    """))
+    """) % (_FLUSH_JS, _FLIP_TO_MISMATCH_JS))
     import json
     data = json.loads(out)
     assert data["reloadsAfterTap"] >= 1, "tapping the prompt must reload: %s" % data
@@ -246,7 +361,8 @@ def test_no_em_dashes_in_prompt_copy():
 
 
 def test_no_bare_location_reload_outside_tap():
-    # The only location.reload() calls must be inside tap/applyUpdate flows,
+    # The only location.reload() calls must be inside applyUpdate flows
+    # (a user tap, or the load-time auto-apply that calls applyUpdate),
     # never at IIFE top level or in the version-check promise chain.
     iife = _extract_iife("initUpdatePrompt")
     # Find all reload() occurrences and ensure they're inside functions named
@@ -263,15 +379,17 @@ def test_no_bare_location_reload_outside_tap():
         # or the controllerchange onmessage handler; check enclosing named fn.
 
 
-# --- Regression: controllerchange must not reload without a tap -------------
+# --- Regression: controllerchange must not reload without a request --------
 # sw.js calls skipWaiting() on install, so a new worker takes control on its
 # own whenever a deploy lands (checks run on load, on foreground/focus/online,
 # and every 30 min). waitingSw is armed automatically by armRegistration /
-# trackWorker with no tap involved, so a controllerchange that finds
-# waitingSw set is NOT proof the user tapped "Tap to update". The old handler
+# trackWorker with no request involved, so a MID-SESSION controllerchange
+# that finds waitingSw set is NOT proof of an update request. The old handler
 # treated it as proof and reloaded the page mid-view (on mobile, where in-app
 # navigation from the dashboard is a same-document swap, the reload throws
-# the user back to the dashboard they started from).
+# the user back to the dashboard they started from). These tests therefore
+# discover the mismatch mid-session (after the load window); the load-time
+# auto-apply path is pinned separately below.
 
 _WAITING_PREAMBLE_MARK = "waiting: null,"
 
@@ -286,6 +404,15 @@ def _waiting_preamble():
     )
 
 
+def _waiting_matching_preamble():
+    preamble = _waiting_preamble()
+    assert _MATCHING_MARK in preamble
+    return preamble.replace(
+        _MATCHING_MARK,
+        "globalThis.__serverVersion = { app_js: 'oldhash111', git_sha: '' };",
+    )
+
+
 _FIRE_CC = (
     "(__swListeners['controllerchange'] || []).forEach(function(fn){ fn(); });\n"
 )
@@ -297,11 +424,13 @@ _FLUSH = (
 
 def test_controllerchange_without_tap_never_reloads():
     iife = _extract_iife("initUpdatePrompt")
-    out = _run_node(iife, _waiting_preamble(), textwrap.dedent("""\
+    out = _run_node(iife, _waiting_matching_preamble(), textwrap.dedent("""\
         %s
         flush(8).then(function(){
-          // A new worker took control on its own (deploy + skipWaiting).
-          // Nobody tapped the update prompt.
+          // Mid-session: the deploy is discovered on a foreground recheck,
+          // then a new worker takes control on its own (skipWaiting).
+          // Nobody requested the update.
+          %s
           %s
           return flush(4);
         }).then(function(){
@@ -310,19 +439,22 @@ def test_controllerchange_without_tap_never_reloads():
             skipWaitingPosted: !!globalThis.__skipWaitingPosted,
           }));
         });
-    """ % (_FLUSH, _FIRE_CC)))
+    """ % (_FLUSH, _FLIP_TO_MISMATCH_JS, _FIRE_CC)))
     import json
     data = json.loads(out)
     assert data["reloads"] == 0, \
-        "controllerchange without a tap must not reload: %s" % data
+        "mid-session controllerchange without a request must not reload: %s" % data
     assert data["skipWaitingPosted"] is False, data
 
 
 def test_controllerchange_after_tap_reloads():
     iife = _extract_iife("initUpdatePrompt")
-    out = _run_node(iife, _waiting_preamble(), textwrap.dedent("""\
+    out = _run_node(iife, _waiting_matching_preamble(), textwrap.dedent("""\
         %s
         flush(8).then(function(){
+          %s
+          return flush(8);
+        }).then(function(){
           var banner = document.querySelector('.br-update-banner');
           var main = null;
           banner.children.forEach(function(c){ if (c.className === 'br-update-main') main = c; });
@@ -337,7 +469,7 @@ def test_controllerchange_after_tap_reloads():
             skipWaitingPosted: !!globalThis.__skipWaitingPosted,
           }));
         });
-    """ % (_FLUSH, _FIRE_CC)))
+    """ % (_FLUSH, _FLIP_TO_MISMATCH_JS, _FIRE_CC)))
     import json
     data = json.loads(out)
     assert data["skipWaitingPosted"] is True, \
@@ -348,9 +480,12 @@ def test_controllerchange_after_tap_reloads():
 
 def test_tap_after_auto_takeover_reloads_directly():
     iife = _extract_iife("initUpdatePrompt")
-    out = _run_node(iife, _waiting_preamble(), textwrap.dedent("""\
+    out = _run_node(iife, _waiting_matching_preamble(), textwrap.dedent("""\
         %s
         flush(8).then(function(){
+          %s
+          return flush(8);
+        }).then(function(){
           // Worker took control on its own first: no reload (pinned above).
           %s
           return flush(4);
@@ -367,10 +502,40 @@ def test_tap_after_auto_takeover_reloads_directly():
             reloadsAfterTap: globalThis.__reloads,
           }));
         });
-    """ % (_FLUSH, _FIRE_CC)))
+    """ % (_FLUSH, _FLIP_TO_MISMATCH_JS, _FIRE_CC)))
     import json
     data = json.loads(out)
     assert data["reloadsBeforeTap"] == 0, \
         "auto takeover must not reload before the tap: %s" % data
     assert data["reloadsAfterTap"] >= 1, \
         "tapping update after an auto takeover must still reload: %s" % data
+
+
+def test_auto_apply_on_load_with_waiting_worker():
+    # Load-time mismatch with a worker already waiting: the auto-apply posts
+    # SKIP_WAITING itself (no tap), and the worker's takeover then reloads.
+    iife = _extract_iife("initUpdatePrompt")
+    out = _run_node(iife, _waiting_preamble(), textwrap.dedent("""\
+        %s
+        flush(8).then(function(){
+          var beforeCc = {
+            reloads: globalThis.__reloads,
+            skipWaitingPosted: !!globalThis.__skipWaitingPosted,
+          };
+          %s
+          return flush(4).then(function(){ return beforeCc; });
+        }).then(function(beforeCc){
+          console.log(JSON.stringify({
+            reloadsBeforeTakeover: beforeCc.reloads,
+            skipWaitingPosted: beforeCc.skipWaitingPosted,
+            reloadsAfterTakeover: globalThis.__reloads,
+          }));
+        });
+    """ % (_FLUSH, _FIRE_CC)))
+    import json
+    data = json.loads(out)
+    assert data["skipWaitingPosted"] is True, \
+        "load-time auto-apply must post SKIP_WAITING without a tap: %s" % data
+    assert data["reloadsBeforeTakeover"] == 0, data
+    assert data["reloadsAfterTakeover"] >= 1, \
+        "takeover after a load-time auto-apply must reload: %s" % data

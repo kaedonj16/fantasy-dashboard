@@ -429,20 +429,35 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
 }
 
 
-// ── Service-worker nav-fresh: explicit-refresh swap-in ───────────────────────
+// ── Service-worker nav-fresh: load-time and explicit-refresh swap-in ─────────
 // An explicit Refresh (doRefresh/hardReload) asks the SW to wait for the
 // network; on iOS the SW may still paint the cached shell first (location.reload
 // cache mode is often ignored), then the SW posts nav-fresh when the fresh
-// copy lands. Swap it in for the explicit-refresh case, and for ONE more:
-// the SW flags viewerChanged when the painted shell's identity marker
-// (<meta name="br-viewer-state">) differs from the fresh copy's, meaning the
-// cached page was rendered for a different identity state (a guest paint
-// showing "link your team" to a signed-in manager). Any other stale paint
-// still does NOT auto-reload: dashboard data updates on cron schedules
-// (daily/weekly), not minute by minute, and a background reload wipes view
-// state (graph settings, scroll position) for no benefit. The viewer swap
-// is rate-limited per URL so a flapping session can never reload-loop.
+// copy lands. Swap it in for the explicit-refresh case, for the case where
+// the SW flags viewerChanged (the painted shell's identity marker
+// <meta name="br-viewer-state"> differs from the fresh copy's, meaning the
+// cached page was rendered for a different identity state, e.g. a guest paint
+// showing "link your team" to a signed-in manager), and for ONE more case:
+// the fresh copy landing while the page is still loading in. Opening the
+// PWA paints the cached shell so launch is instant; when the real page
+// lands within LOAD_SWAP_WINDOW_MS of load and the user has not started
+// interacting yet, swap it in on its own so opening the app never needs a
+// manual refresh. Once the user is interacting, a stale paint never
+// auto-reloads: a background reload wipes view state (graph settings,
+// scroll position) for no benefit, and league pages already update their
+// data silently through the auto-revalidate pass. The viewer and load
+// swaps are rate-limited per URL so a flapping session can never loop.
 if (navigator.serviceWorker) {
+  var LOAD_SWAP_WINDOW_MS = 90 * 1000;
+  var brLoadAt = Date.now();
+  var brInteracted = false;
+  if (typeof addEventListener === 'function') {
+    var brMarkInteracted = function () { brInteracted = true; };
+    addEventListener('pointerdown', brMarkInteracted, { passive: true });
+    addEventListener('touchstart', brMarkInteracted, { passive: true });
+    addEventListener('wheel', brMarkInteracted, { passive: true });
+    addEventListener('keydown', brMarkInteracted);
+  }
   navigator.serviceWorker.addEventListener('message', function (e) {
     var d = e.data || {};
     if (d.type !== 'nav-fresh') return;
@@ -457,6 +472,16 @@ if (navigator.serviceWorker) {
       var nowTs = Date.now();
       if (lastSwap.url === location.href && nowTs - (lastSwap.ts || 0) < 30000) return;
       try { sessionStorage.setItem(swapKey, JSON.stringify({ url: location.href, ts: nowTs })); } catch (e) {}
+      location.reload();
+      return;
+    }
+    if (!userRefresh && !brInteracted && Date.now() - brLoadAt < LOAD_SWAP_WINDOW_MS) {
+      var loadSwapKey = 'brLoadSwapAt';
+      var lastLoadSwap = {};
+      try { lastLoadSwap = JSON.parse(sessionStorage.getItem(loadSwapKey) || '{}'); } catch (e) {}
+      var loadNowTs = Date.now();
+      if (lastLoadSwap.url === location.href && loadNowTs - (lastLoadSwap.ts || 0) < 30000) return;
+      try { sessionStorage.setItem(loadSwapKey, JSON.stringify({ url: location.href, ts: loadNowTs })); } catch (e) {}
       location.reload();
       return;
     }
@@ -1115,11 +1140,19 @@ window.brHaptic = function (pattern) {
 };
 
 /**
- * Tap-to-update prompt. Detects when the server is serving a newer deploy than
+ * App update handling. Detects when the server is serving a newer deploy than
  * the bundle this page is running (our ?v= hash vs /healthz/version), and when
- * a service worker update is waiting. Shows one dismissible toast per new
- * version; tapping it (not the X) swaps in the update with a cache-bypassing
- * reload. Never reloads on its own and never blocks the UI.
+ * a service worker update is waiting.
+ *
+ * An update found while the page is still loading in (LOAD_AUTO_MS from load,
+ * or from returning to the PWA after a real absence) applies ITSELF with a
+ * cache-bypassing reload: opening the app should never need a manual refresh
+ * or a tap. An update found later, mid-session, shows one dismissible toast
+ * per new version instead; tapping it (not the X) swaps in the update the
+ * same way, so a reload never wipes a page the user is actively using.
+ * Auto-apply is attempted at most once per version per AUTO_RETRY_MS, so a
+ * reload that lands on a still-mismatched server falls back to the toast
+ * rather than looping.
  *
  * Checks run on load, when the app returns to the foreground, when the browser
  * comes back online, and every 30 minutes while visible. The service worker
@@ -1133,13 +1166,18 @@ window.brHaptic = function (pattern) {
   var VERSION_URL = '/healthz/version';
   var CHECK_INTERVAL_MS = 30 * 60 * 1000;
   var MIN_RECHECK_MS = 5 * 60 * 1000;
+  var LOAD_AUTO_MS = 90 * 1000;
+  var RESUME_AUTO_MS = 60 * 1000;
+  var AUTO_RETRY_MS = 10 * 60 * 1000;
 
   var lastCheck = 0;
+  var loadAt = Date.now();   // start of the current load-in window
+  var hiddenAt = 0;          // when the page last went to the background
   var promptedFor = '';    // server version we've already shown the prompt for
   var dismissedFor = '';   // server version the user dismissed
-  var waitingSw = null;    // worker waiting for our tap to activate
-  var updateRequested = false;   // set ONLY by applyUpdate (a real tap)
-  var swActivated = false;       // a worker took control with no tap
+  var waitingSw = null;    // worker waiting to activate
+  var updateRequested = false;   // set ONLY by applyUpdate (a tap, or an auto-apply on load)
+  var swActivated = false;       // a worker took control with no request
   var hadController = !!navigator.serviceWorker.controller;
   var timer = null;
 
@@ -1184,19 +1222,43 @@ window.brHaptic = function (pattern) {
   }
 
   function applyUpdate() {
-    // A worker is waiting for our tap: let it activate, then the
-    // controllerchange handler below reloads. Otherwise bypass the HTTP cache
-    // so the reload fetches the new HTML instead of the stale shell.
+    // A worker is waiting: let it activate, then the controllerchange
+    // handler below reloads. Otherwise bypass the HTTP cache so the reload
+    // fetches the new HTML instead of the stale shell.
     if (waitingSw && !swActivated) {
-      // Record the tap BEFORE asking the worker to activate: sw.js
+      // Record the request BEFORE asking the worker to activate: sw.js
       // skipWaiting()s on install, so a worker can also take control with
-      // no tap at all, and the controllerchange handler must be able to
-      // tell the two apart. Only a recorded tap may reload the page.
+      // no request at all, and the controllerchange handler must be able to
+      // tell the two apart. Only a recorded request may reload the page.
       updateRequested = true;
       try { waitingSw.postMessage({ type: 'SKIP_WAITING' }); return; }
       catch (_) { updateRequested = false; }
     }
     bypassReload();
+  }
+
+  function withinLoadWindow() {
+    return Date.now() - loadAt < LOAD_AUTO_MS;
+  }
+
+  function tryAutoApply(serverVersion) {
+    // One auto attempt per version per AUTO_RETRY_MS. If the reload lands
+    // and the server still reports a different bundle (a deploy still
+    // rolling out, a stale edge copy), the next check falls back to the
+    // tap prompt instead of reloading forever.
+    var key = 'brAutoUpdateAt';
+    var last = {};
+    try { last = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch (e) {}
+    var now = Date.now();
+    if (last.v === serverVersion && now - (last.ts || 0) < AUTO_RETRY_MS) return false;
+    try { sessionStorage.setItem(key, JSON.stringify({ v: serverVersion, ts: now })); } catch (e) {}
+    applyUpdate();
+    return true;
+  }
+
+  function onVersionMismatch(serverVersion) {
+    if (withinLoadWindow() && tryAutoApply(serverVersion)) return;
+    showPrompt(serverVersion);
   }
 
   function bypassReload() {
@@ -1230,7 +1292,7 @@ window.brHaptic = function (pattern) {
       .then(function (r) { return (r && r.ok) ? r.json() : null; })
       .then(function (data) {
         if (!data || !data.app_js) return;
-        if (data.app_js !== mine) showPrompt(data.git_sha || data.app_js);
+        if (data.app_js !== mine) onVersionMismatch(data.git_sha || data.app_js);
       })
       .catch(function () {});
   }
@@ -1245,7 +1307,8 @@ window.brHaptic = function (pattern) {
 
   navigator.serviceWorker.addEventListener('controllerchange', function () {
     if (updateRequested) {
-      // We tapped "update" and the worker just took over: load the new page.
+      // An update was requested (a tap, or an auto-apply on load) and the
+      // worker just took over: load the new page.
       updateRequested = false;
       waitingSw = null;
       bypassReload();
@@ -1254,10 +1317,11 @@ window.brHaptic = function (pattern) {
     if (!hadController) { hadController = true; return; }  // first claim, not an update
     // A new worker took control on its own: sw.js skipWaiting()s on install
     // and waitingSw is armed automatically (armRegistration / trackWorker),
-    // so a waiting worker is not proof of a tap. Never reload a page the
-    // user is looking at. Remember the takeover so a later tap on the
-    // update prompt reloads directly instead of waiting for a second
-    // controllerchange that will never come, and surface the prompt.
+    // so a waiting worker is not proof of a request. Never reload a page the
+    // user is looking at from here. Remember the takeover so a later tap on
+    // the update prompt reloads directly instead of waiting for a second
+    // controllerchange that will never come, and run the version check,
+    // which auto-applies inside the load window and prompts otherwise.
     swActivated = true;
     checkVersion();
   });
@@ -1291,7 +1355,19 @@ window.brHaptic = function (pattern) {
   }
 
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') recheckSoon();
+    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+    if (document.visibilityState === 'visible') {
+      // Returning to the PWA after a real absence counts as loading onto it
+      // again: restart the load window (and skip the recheck throttle) so an
+      // update found by this recheck applies itself instead of asking for a
+      // tap or a manual refresh. A quick app-switch does not qualify.
+      if (hiddenAt && Date.now() - hiddenAt >= RESUME_AUTO_MS) {
+        loadAt = Date.now();
+        lastCheck = 0;
+      }
+      hiddenAt = 0;
+      recheckSoon();
+    }
   });
   window.addEventListener('online', recheckSoon);
   window.addEventListener('focus', recheckSoon);
