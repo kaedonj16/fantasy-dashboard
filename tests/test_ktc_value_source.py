@@ -264,3 +264,46 @@ def test_second_source_pick_order():
     assert vmt.second_source_pick(500.0, 300.0) == (500.0, True)
     assert vmt.second_source_pick(0.0, 300.0) == (300.0, False)
     assert vmt.second_source_pick(0.0, 0.0) == (0.0, False)
+
+
+# ---------------------------------------------------------------
+# 4. Second-source normalization: quantile map, not linear min-max
+# ---------------------------------------------------------------
+# Captured live 2026-11-03 (FC API + KTC dataset): the top-15 TE
+# ladders of both sources. FC's scale decays steeply (top TE 635
+# normalized, TE15 126); KTC's is flat (top TE blend 7986, TE14
+# Ferguson 3652 — still 46% of its top). The old linear min-max of
+# KTC to 0-999.9 read Ferguson at 350.8 vs FC's 126.1 for the same
+# player, and the blend served him at TE8. Quantile-mapping KTC onto
+# the FC distribution reads him at FC's rank-14 value instead.
+
+_FC_TE_NORM_LIVE = [635.2, 590.7, 351.3, 314.3, 261.5, 254.8, 252.0,
+                    235.2, 230.0, 185.9, 185.0, 169.6, 146.3, 129.0, 126.1]
+_KTC_TE_BLEND_LIVE = [7986.0, 7420.0, 5724.0, 5613.0, 5217.0, 5216.0,
+                      5068.0, 4836.0, 4721.0, 4358.0, 4254.0, 4053.0,
+                      3723.0, 3652.0, 3455.0]  # index 13 = Terrance Ferguson
+
+
+def test_quantile_mapped_ktc_read_for_ferguson_matches_fc_scale():
+    from data_building.value_guardrails import quantile_map_to_reference
+    mapped = quantile_map_to_reference(_KTC_TE_BLEND_LIVE, _FC_TE_NORM_LIVE)
+    ferguson_read = mapped[13]
+    assert ferguson_read == 129.0  # FC's value at KTC rank 14
+    # The old linear stretch of the same raw value, for contrast: the
+    # blend normalized over the FULL KTC pool (live min 252, max 9943),
+    # which is what priced him at 350.8 on the served board.
+    linear = (3652.0 - 252.0) / (9943.0 - 252.0) * 999.9
+    assert linear == pytest.approx(350.8, abs=0.5)
+    assert ferguson_read < linear / 2
+
+
+def test_blend_with_quantile_mapped_ktc_lands_near_fc_for_ferguson():
+    # FC prices Ferguson at 126.1 normalized; the quantile-mapped KTC
+    # read is 129.0, so the blend stays ~127 — not the ~201 the linear
+    # stretch produced (which the anchor then lifted to the served 225).
+    blended, sec = vmt.market_blend_value(126.1, 129.0, 0.0, dp_weight=0.20)
+    assert sec == 129.0
+    assert blended == pytest.approx((0.40 * 126.1 + 0.20 * 129.0) / 0.60)
+    assert blended < 140.0
+    old_blend, _ = vmt.market_blend_value(126.1, 350.8, 0.0, dp_weight=0.20)
+    assert old_blend == pytest.approx(201.0, abs=0.5)

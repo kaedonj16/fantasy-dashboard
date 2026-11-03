@@ -1,5 +1,11 @@
 """Unit tests for the over-market value guardrail (pure, no DB/deps)."""
-from data_building.value_guardrails import blend_wls_value, overmarket_capped
+import pytest
+
+from data_building.value_guardrails import (
+    blend_wls_value,
+    overmarket_capped,
+    quantile_map_to_reference,
+)
 
 
 def test_chubb_case_pulled_down():
@@ -69,3 +75,49 @@ def test_min_gap_skips_low_stakes():
 
 def test_zero_or_negative_value_noop():
     assert overmarket_capped(0.0, fc_val=100.0, dp_val=100.0) == 0.0
+
+
+# ── Quantile normalization (second-source scale fix, 2026-11-03) ────────────
+
+def test_quantile_map_same_order_returns_reference_values():
+    # A flat source (KTC-shaped) covering the same players in the same
+    # order as a skewed reference (FC-shaped) maps rank-for-rank onto
+    # the reference — NOT onto its own linear min-max stretch.
+    reference = [999.9, 900.0, 700.0, 500.0, 350.0, 250.0, 180.0, 148.0, 126.0, 90.0]
+    flat_source = [9943.0, 9500.0, 8900.0, 8200.0, 7400.0, 6500.0, 5600.0, 4600.0, 3652.0, 252.0]
+    assert quantile_map_to_reference(flat_source, reference) == reference
+
+
+def test_quantile_map_fixes_the_ferguson_distortion():
+    # The 2026-11-03 case in miniature: the source's rank-9 player
+    # (raw 3652, Ferguson's live KTC blend) linear-min-maxes to ~351 on
+    # the reference's 0-999.9 scale while the reference prices its own
+    # rank-9 player at 126. Quantile mapping must give 126.
+    reference = [999.9, 900.0, 700.0, 500.0, 350.0, 250.0, 180.0, 148.0, 126.0, 90.0]
+    flat_source = [9943.0, 9500.0, 8900.0, 8200.0, 7400.0, 6500.0, 5600.0, 4600.0, 3652.0, 252.0]
+    linear = (3652.0 - 252.0) / (9943.0 - 252.0) * 999.9
+    assert linear == pytest.approx(350.8, abs=0.5)  # the old stretch, Ferguson's live KTC read
+    mapped = quantile_map_to_reference(flat_source, reference)
+    assert mapped[8] == 126.0
+
+
+def test_quantile_map_aligns_with_input_order():
+    # Output stays aligned with the input list, not the sorted order.
+    reference = [900.0, 600.0, 300.0]
+    assert quantile_map_to_reference([10.0, 99.0, 50.0], reference) == [300.0, 900.0, 600.0]
+
+
+def test_quantile_map_ties_share_the_span_mean():
+    reference = [900.0, 600.0, 300.0]
+    assert quantile_map_to_reference([100.0, 100.0, 50.0], reference) == [750.0, 750.0, 300.0]
+
+
+def test_quantile_map_source_deeper_than_reference_clamps_to_tail():
+    reference = [900.0, 600.0]
+    assert quantile_map_to_reference([5.0, 4.0, 3.0, 2.0], reference) == [900.0, 600.0, 600.0, 600.0]
+
+
+def test_quantile_map_empty_inputs():
+    assert quantile_map_to_reference([], [1.0]) == []
+    assert quantile_map_to_reference([3.0, 2.0], []) == [0.0, 0.0]
+    assert quantile_map_to_reference(None, None) == []
