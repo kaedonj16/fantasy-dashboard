@@ -18869,6 +18869,74 @@ h2.static-section-title:first-child {
     box-shadow: var(--tooltip-shadow);
 }
 
+/* Structured card variant of the shared tooltip singleton, used by the
+   Recent Form game columns. The positioner swaps this class in only for
+   triggers carrying a data-tooltip-card payload; all other bubbles keep
+   the plain .br-tip treatment above. */
+.br-tip--card {
+    width: 230px;
+    max-width: min(230px, calc(100vw - 16px));
+    padding: 12px 14px;
+    background: var(--card);
+    color: var(--text);
+    border-color: var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.35;
+}
+.br-tip-card-head {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+.br-tip-card-hero {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-top: 3px;
+}
+.br-tip-card-hero strong {
+    color: var(--text);
+    font-size: 26px;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.br-tip-card-hero span {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+.br-tip-card-rows { margin-top: 7px; }
+.br-tip-card-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 5px 0;
+    border-top: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
+.br-tip-card-row span { color: var(--text-muted); }
+.br-tip-card-row b {
+    color: var(--text);
+    font-weight: 600;
+    text-align: right;
+}
+.br-tip-card-note {
+    margin-top: 7px;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+.br-tip-card-foot {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
 html.br-tips-js [data-tooltip]:not(.pm-adp-dot):hover::after,
 html.br-tips-js [data-tooltip]:not(.pm-adp-dot):focus-visible::after {
     content: none;

@@ -2582,54 +2582,98 @@ function _pmRecentFormSkeleton() {
 }
 
 function _pmRecentGameTip(g, oppText) {
-  // Basic-stats line for one Recent Form game, shown as the column's
-  // tooltip. Segments are joined with " · " and omitted when their
-  // data is absent OR all zero (a back with pass_att 0 in his stat
-  // line must not read "Pass 0 att, 0 yd"); nothing is invented
+  // Plain-text form of one Recent Form game, retained as the column's
+  // aria-label and no-JS tooltip fallback. Segments are omitted when
+  // their data is absent OR all zero (a back with pass_att 0 in his
+  // stat line must not read "Pass 0 att, 0 yd"); nothing is invented
   // (there is no completions field, so passing shows attempts only).
-  // TD, INT and fumble segments appear only when greater than zero,
-  // to keep the line short. Position shapes emerge from which
-  // segments exist.
+  // TD, INT and fumble segments appear only when greater than zero.
+  // Receiving uses labeled counts ("2 rec, 4 tgt"), never a fraction.
+  // Snap/target share are deliberately not part of this feature.
   var s = (g && g.stats) || {};
-  var a = (g && g.adv) || {};
   var parts = [];
   var header = 'Week ' + (g && g.week != null ? g.week : '');
   if (oppText) header += ' ' + oppText;
   parts.push(header);
   var pts = Number(g && g.fantasy_pts) || 0;
   parts.push(pts.toFixed(1) + ' pts');
-  if ((s.pass_att != null && Number(s.pass_att) > 0)
-      || (s.pass_yd != null && Number(s.pass_yd) > 0)) {
-    var passBits = [];
-    if (s.pass_att != null) passBits.push(s.pass_att + ' att');
+  if (s.pass_att != null && Number(s.pass_att) > 0) {
+    var passBits = [s.pass_att + ' att'];
     if (s.pass_yd != null) passBits.push(s.pass_yd + ' yd');
     var passStr = 'Pass ' + passBits.join(', ');
     if (s.pass_td != null && Number(s.pass_td) > 0) passStr += ', ' + s.pass_td + ' TD';
     if (s.pass_int != null && Number(s.pass_int) > 0) passStr += ', ' + s.pass_int + ' INT';
     parts.push(passStr);
   }
-  if ((s.rush_att != null && Number(s.rush_att) > 0)
-      || (s.rush_yd != null && Number(s.rush_yd) > 0)) {
-    var rushBits = [];
-    if (s.rush_att != null) rushBits.push(s.rush_att + ' att');
+  if (s.rush_att != null && Number(s.rush_att) > 0) {
+    var rushBits = [s.rush_att + ' att'];
     if (s.rush_yd != null) rushBits.push(s.rush_yd + ' yd');
     var rushStr = 'Rush ' + rushBits.join(', ');
     if (s.rush_td != null && Number(s.rush_td) > 0) rushStr += ', ' + s.rush_td + ' TD';
     parts.push(rushStr);
   }
-  if ((s.rec_tgt != null && Number(s.rec_tgt) > 0)
-      || (s.rec != null && Number(s.rec) > 0)) {
-    var recStr = 'Rec';
-    if (s.rec != null && s.rec_tgt != null) recStr += ' ' + s.rec + '/' + s.rec_tgt + ' tgt';
-    else if (s.rec != null) recStr += ' ' + s.rec;
-    else recStr += ' ' + s.rec_tgt + ' tgt';
-    if (s.rec_yd != null) recStr += ', ' + s.rec_yd + ' yd';
+  if ((s.rec != null && Number(s.rec) > 0)
+      || (s.rec_tgt != null && Number(s.rec_tgt) > 0)) {
+    var recBits = [];
+    if (s.rec != null) recBits.push(s.rec + ' rec');
+    if (s.rec_tgt != null) recBits.push(s.rec_tgt + ' tgt');
+    if (s.rec_yd != null) recBits.push(s.rec_yd + ' yd');
+    var recStr = 'Rec ' + recBits.join(', ');
     if (s.rec_td != null && Number(s.rec_td) > 0) recStr += ', ' + s.rec_td + ' TD';
     parts.push(recStr);
   }
-  if (a && a.snap_pct != null) parts.push('Snap ' + Math.round(Number(a.snap_pct)) + '%');
   if (s.fum_lost != null && Number(s.fum_lost) > 0) parts.push(s.fum_lost + ' fum lost');
   return parts.join(' · ');
+}
+
+function _pmRecentGameRows(g) {
+  // Structured stat rows for the Recent Form hover card. The order and
+  // activity gates mirror the plain-text line above, but the rendered
+  // card uses labeled values joined by middle dots.
+  var s = (g && g.stats) || {};
+  var rows = [];
+  if (s.pass_att != null && Number(s.pass_att) > 0) {
+    var passBits = [s.pass_att + ' att'];
+    if (s.pass_yd != null) passBits.push(s.pass_yd + ' yd');
+    if (s.pass_td != null && Number(s.pass_td) > 0) passBits.push(s.pass_td + ' TD');
+    if (s.pass_int != null && Number(s.pass_int) > 0) passBits.push(s.pass_int + ' INT');
+    rows.push(['Pass', passBits.join(' · ')]);
+  }
+  if (s.rush_att != null && Number(s.rush_att) > 0) {
+    var rushBits = [s.rush_att + ' att'];
+    if (s.rush_yd != null) rushBits.push(s.rush_yd + ' yd');
+    if (s.rush_td != null && Number(s.rush_td) > 0) rushBits.push(s.rush_td + ' TD');
+    rows.push(['Rush', rushBits.join(' · ')]);
+  }
+  if ((s.rec != null && Number(s.rec) > 0)
+      || (s.rec_tgt != null && Number(s.rec_tgt) > 0)) {
+    var recBits = [];
+    if (s.rec != null) recBits.push(s.rec + ' rec');
+    if (s.rec_tgt != null) recBits.push(s.rec_tgt + ' tgt');
+    if (s.rec_yd != null) recBits.push(s.rec_yd + ' yd');
+    if (s.rec_td != null && Number(s.rec_td) > 0) recBits.push(s.rec_td + ' TD');
+    rows.push(['Rec', recBits.join(' · ')]);
+  }
+  return rows;
+}
+
+function _pmRecentGameCard(g, oppText, recentAvg) {
+  // Data consumed by the shared tooltip positioner's card renderer.
+  // Only box-score fields are used; the payload's adv fields (snap and
+  // target share) are intentionally excluded from this surface.
+  var s = (g && g.stats) || {};
+  var header = 'Week ' + (g && g.week != null ? g.week : '');
+  if (oppText) header += ' · ' + oppText;
+  var avg = Number(recentAvg);
+  return {
+    header: header,
+    points: (Number(g && g.fantasy_pts) || 0).toFixed(1),
+    pointsUnit: 'pts',
+    rows: _pmRecentGameRows(g),
+    note: (s.fum_lost != null && Number(s.fum_lost) > 0)
+      ? 'Fum lost ' + s.fum_lost : '',
+    footer: isFinite(avg) ? 'Recent avg ' + avg.toFixed(1) : ''
+  };
 }
 function _pmLoadRecentForm(playerId, season, pos) {
   // Recent Form bars on the Overview: the player's last 5 real games of the
@@ -2685,6 +2729,7 @@ function _pmLoadRecentForm(playerId, season, pos) {
       }).slice().sort((a, b) => (Number(a.week) || 0) - (Number(b.week) || 0));
       if (!real.length) { el.hidden = true; return; }
       const shown = real.slice(-5);
+      const _recentAvg = shown.reduce((sum, g) => sum + (Number(g.fantasy_pts) || 0), 0) / shown.length;
       const max = Math.max.apply(null, shown.map(g => Number(g.fantasy_pts) || 0));
       let _bestUsed = false;
       const cols = shown.map(g => {
@@ -2700,7 +2745,8 @@ function _pmLoadRecentForm(playerId, season, pos) {
         const _opp = !_oppRaw || _oppRaw === 'BYE' ? ''
           : _oppRaw.charAt(0) === '@' ? '@ ' + _oppRaw.slice(1) : 'vs ' + _oppRaw;
         const _tip = _pmEsc(_pmRecentGameTip(g, _opp));
-        return '<div class="pm-recent-col" tabindex="0" data-tooltip="' + _tip + '" aria-label="' + _tip + '">'
+        const _card = _pmEsc(JSON.stringify(_pmRecentGameCard(g, _opp, _recentAvg)));
+        return '<div class="pm-recent-col" tabindex="0" data-tooltip="' + _tip + '" data-tooltip-card="' + _card + '" aria-label="' + _tip + '">'
           + `<span class="pm-recent-val${_best ? ' pm-recent-val-best' : ''}">${pts.toFixed(1)}</span>`
           + `<div class="pm-recent-track"><div class="pm-recent-bar${_best ? ' pm-recent-bar-best' : ''}" style="height:${h}%"></div></div>`
           + `<span class="pm-recent-wk">W${g.week != null ? g.week : ''}</span>`

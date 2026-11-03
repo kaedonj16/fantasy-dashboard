@@ -20551,13 +20551,53 @@ if (document.readyState === 'loading') {
     tip.style.top = top + 'px';
   }
 
+  function _appendText(parent, tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    node.textContent = text == null ? '' : String(text);
+    parent.appendChild(node);
+    return node;
+  }
+
+  // Opt-in structured card variant. Only triggers carrying a valid
+  // data-tooltip-card JSON payload get this rendering; every other
+  // [data-tooltip] trigger keeps the plain-text path byte-for-byte.
+  // Nodes are built with textContent, never innerHTML.
+  function _renderCard(t, el) {
+    var raw = el.getAttribute('data-tooltip-card');
+    if (!raw) return false;
+    var card;
+    try { card = JSON.parse(raw); } catch (e) { return false; }
+    if (!card || card.header == null || card.points == null ||
+        !Array.isArray(card.rows)) return false;
+    t.className = 'br-tip br-tip--card';
+    t.textContent = '';
+    _appendText(t, 'div', 'br-tip-card-head', card.header);
+    var hero = _appendText(t, 'div', 'br-tip-card-hero', '');
+    _appendText(hero, 'strong', '', card.points);
+    _appendText(hero, 'span', '', card.pointsUnit || 'pts');
+    var rows = _appendText(t, 'div', 'br-tip-card-rows', '');
+    card.rows.forEach(function (row) {
+      if (!Array.isArray(row) || row.length !== 2) return;
+      var line = _appendText(rows, 'div', 'br-tip-card-row', '');
+      _appendText(line, 'span', '', row[0]);
+      _appendText(line, 'b', '', row[1]);
+    });
+    if (card.note) _appendText(t, 'div', 'br-tip-card-note', card.note);
+    if (card.footer) _appendText(t, 'div', 'br-tip-card-foot', card.footer);
+    return true;
+  }
+
   function _show(el) {
     var text = el.getAttribute('data-tooltip');
     if (!text) return;
     if (typeof _cancelPending === 'function') _cancelPending();
     anchor = el;
     var t = _tipEl();
-    t.textContent = text;
+    if (!_renderCard(t, el)) {
+      t.className = 'br-tip';
+      t.textContent = text;
+    }
     t.style.display = 'block';
     _position();
   }
