@@ -197,7 +197,7 @@ class TestCoverageGate:
         assert os.path.exists(out)
         assert counts["cfbd_loads"] == 1
         prov = artifact["provenance"]
-        assert prov["script"].endswith("v1.5")
+        assert prov["script"].endswith("v1.6")
         assert prov["class_coverage"] == {"2016": 1.0}
         assert "derive_cache" in prov and "coverage_gate" in prov
 
@@ -327,9 +327,12 @@ class TestSeasonLegPools:
         assert pools["rec_tds_pg"] == 12
         marks = artifact["anchors"]["WR"]["rec_yds_pg"]
         assert len(marks) == len(drv.KNOT_PERCENTILES)
-        # 600/12 .. 1425/12 across the twelve fixtures.
-        assert marks[0] == pytest.approx(50.0)
-        assert marks[-1] == pytest.approx(118.75)
+        # Raw rates run 600/12 .. 1425/12 across the twelve
+        # fixtures; since v1.6 the ladder ends are the pool's
+        # 0.5th / 99.5th percentiles, strictly inside that range.
+        assert marks[0] == pytest.approx(50.3438)
+        assert marks[-1] == pytest.approx(118.4062)
+        assert 50.0 < marks[0] and marks[-1] < 118.75
 
     def test_seasons_without_gp_pool_nothing(self):
         prospects, rows = self._population(gp=None)
@@ -338,3 +341,74 @@ class TestSeasonLegPools:
         pools = artifact["populations"]["season_legs"]["WR"]
         assert pools["rec_yds_pg"] == 0
         assert "rec_yds_pg" not in artifact["anchors"]["WR"]
+
+
+def _qb_prospect(pid, pass_attempts, pass_yards, gp=12):
+    """One QB prospect in the extracted cache shape, with a single
+    season of `gp` games, `pass_attempts` attempts and `pass_yards`
+    yards (pass_yds_pg = pass_yards / gp)."""
+    p = _prospect(pid, pos="QB")
+    p["seasons"] = [{
+        "season": 2022, "games_played": gp, "team": "State",
+        "conference": "SEC",
+        "dominator_rating": 0.30, "market_share_yards": 0.30,
+        "market_share_tds": 0.28, "receptions": 0, "targets": 0,
+        "receiving_yards": 0, "receiving_tds": 0,
+        "yds_per_reception": 0.0,
+        "rush_attempts": 20, "rush_yards": 100, "rush_tds": 1,
+        "pass_attempts": pass_attempts, "pass_yards": pass_yards,
+        "pass_tds": 20, "completions": int(pass_attempts * 0.65),
+        "interceptions": 5,
+        "team_pass_yards": 3200, "team_total_yards": 5200,
+    }]
+    return drv._extract_prospect(p)
+
+
+class TestAnchorHygiene:
+    """v1.6: knot ladders end at the pools' 0.5th / 99.5th
+    percentiles (never the raw min/max, so one glitch season
+    cannot pin an end), and season-leg pools admit only role
+    seasons on top of the GP >= 4 gate (the model's
+    season_has_role thresholds), so a backup's cameo cannot post
+    the pool's best per-game rate."""
+
+    def test_knot_marks_trim_glitch_ends(self):
+        # 200 recorded values, 100..299, plus one glitch value.
+        vals = [float(100 + i) for i in range(200)] + [9999.0]
+        marks = drv.knot_marks(vals)
+        assert len(marks) == len(drv.KNOT_PERCENTILES) == 11
+        # The ends are exactly the pool's 0.5th / 99.5th
+        # percentiles (ranks 1.0 and 199.0 of 201 values land on
+        # recorded values), strictly inside the raw min/max; the
+        # median rung is untouched.
+        assert marks[0] == pytest.approx(101.0)
+        assert marks[5] == pytest.approx(200.0)
+        assert marks[-1] == pytest.approx(299.0)
+        assert marks[0] > min(vals)
+        assert marks[-1] < max(vals)
+
+    def test_non_role_season_stays_out_of_leg_pools(self):
+        # Eleven QBs with real roles (300 attempts, GP 12): rates
+        # 200..250 pass yards per game in steps of 5.
+        prospects = [_qb_prospect(f"Q{i}", 300, 2400 + 60 * i)
+                     for i in range(11)]
+        # One cameo: GP 6 clears the old GP >= 4 gate, but 10
+        # pass attempts is no role - and its 5490 yards are the
+        # 915-per-game glitch that topped the v1.5 QB ladder.
+        prospects.append(_qb_prospect("GLITCH", 10, 5490, gp=6))
+        rows = {p["player_id"]: drv._extract_component_row(
+                    _score_row({"player_id": p["player_id"]}))
+                for p in prospects}
+        artifact = drv.build_reference(prospects, rows, {},
+                                       {"fixture_sample": True})
+        pools = artifact["populations"]["season_legs"]["QB"]
+        # All twelve seasons have GP >= 4; only the eleven role
+        # seasons pooled.
+        assert pools["pass_yds_pg"] == 11
+        marks = artifact["anchors"]["QB"]["pass_yds_pg"]
+        # The ladder is built from the role seasons alone: ends
+        # are their trimmed percentiles (200.25 / 249.75), and the
+        # glitch's 915.0 per game is nowhere in it.
+        assert marks[0] == pytest.approx(200.25)
+        assert marks[-1] == pytest.approx(249.75)
+        assert marks[-1] < 915.0
