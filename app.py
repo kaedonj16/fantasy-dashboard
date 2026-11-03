@@ -13872,6 +13872,7 @@ def _render_weekly_highlights(
         week: int,
         proj_by_roster: Optional[dict] = None,
         matchups_by_week: Optional[dict] = None,
+        avatars_by_roster: Optional[dict] = None,
 ) -> str:
     """Render sidebar highlight cards for a given week.
 
@@ -13931,8 +13932,27 @@ def _render_weekly_highlights(
     _AVA_STOPWORDS = {"in", "the", "and", "to", "of"}
 
     def _ava_initials(name: str) -> str:
+        # First alphanumeric char of each of the first two real words, so a
+        # name like "Hit the (Sa)Quon" reads HS, never "H(".
         words = [w for w in str(name).split() if w.lower() not in _AVA_STOPWORDS]
-        return "".join(w[0] for w in words[:2]).upper()
+        chars = []
+        for w in words:
+            ch = next((c for c in w if c.isalnum()), "")
+            if ch:
+                chars.append(ch.upper())
+            if len(chars) == 2:
+                break
+        return "".join(chars) or "?"
+
+    def _ava_html(team: dict) -> str:
+        # Real team picture (resolved by the caller via team_avatar, the
+        # same resolver the Matchups page uses) beats the initials disc.
+        url = (avatars_by_roster or {}).get(str(team["roster_id"])) or ""
+        if url:
+            return (f'<img class="whl-ava whl-ava-img" '
+                    f'src="{html.escape(str(url), quote=True)}" alt="" loading="lazy">')
+        return (f'<span class="whl-ava" aria-hidden="true">'
+                f'{_ava_initials(team["owner"])}</span>')
 
     def _score_share(focal: float, opp: float):
         total = focal + opp
@@ -13945,7 +13965,7 @@ def _render_weekly_highlights(
         pts = f'<span class="whl-pts">{team["use_score"]:.1f}</span>' if show_score else ""
         return f"""
           <div class="{row_cls}">
-            <span class="whl-ava" aria-hidden="true">{_ava_initials(team['owner'])}</span>
+            {_ava_html(team)}
             <span class="whl-name team-clickable" data-roster-id="{team['roster_id']}" data-team-name="{team['owner']}">{team['owner']}</span>
             {pts}
           </div>"""
@@ -24139,10 +24159,15 @@ def api_weekly_week():
         top_n=5,
     )
     _api_proj_by_roster = ctx.get("proj_by_roster") or {}
+    _api_avatars = {
+        str(r.get("roster_id")): team_avatar(platform, r, users) or ""
+        for r in rosters
+    }
     highlights_html = _render_weekly_highlights(
         df_weekly, week,
         proj_by_roster=_api_proj_by_roster,
         matchups_by_week=matchups_by_week,
+        avatars_by_roster=_api_avatars,
     )
 
     _api_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")

@@ -121,3 +121,27 @@ def test_avatar_initials_skip_stopwords(html):
 
 def test_no_old_margin_markup(html):
     assert "whl-margin" not in html
+
+
+def test_avatar_initials_skip_punctuation():
+    df = pd.DataFrame([
+        {"week": 9, "owner": "Hit the (Sa)Quon", "roster_id": "1",
+         "matchup_id": 1, "points": 121.3, "finalized": True},
+        {"week": 9, "owner": "Other Team", "roster_id": "2",
+         "matchup_id": 1, "points": 74.2, "finalized": True},
+    ])
+    out = _render_weekly_highlights(df, 9)
+    assert ">HS<" in out  # Hit (Sa)Quon -> HS, never "H("
+    assert ">H(<" not in out
+
+
+def test_real_avatar_images_when_resolved():
+    out = _render_weekly_highlights(
+        _fixture_df(), 9,
+        avatars_by_roster={"1": "https://sleepercdn.com/avatars/thumbs/abc"},
+    )
+    high = _card(out, "high")
+    assert ('<img class="whl-ava whl-ava-img" '
+            'src="https://sleepercdn.com/avatars/thumbs/abc"') in high
+    # A roster with no resolved picture keeps the initials disc.
+    assert ">FR<" in _card(out, "low")

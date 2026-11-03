@@ -14085,11 +14085,11 @@ select:focus {
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    padding: 3px 0;
+    padding: 2px 0;
 }
 
 .whl-name {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--text);
     white-space: nowrap;
@@ -14104,7 +14104,7 @@ select:focus {
 }
 
 .whl-pts {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--text);
     flex-shrink: 0;
@@ -14161,20 +14161,20 @@ select:focus {
 .whl-head {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
+    gap: 6px;
+    margin-bottom: 3px;
 }
 
 .whl-ico {
-    width: 26px;
-    height: 26px;
-    border-radius: 8px;
+    width: 19px;
+    height: 19px;
+    border-radius: 6px;
     background: var(--whl-tint);
     color: var(--whl-accent);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 10px;
     flex-shrink: 0;
 }
 
@@ -14184,18 +14184,18 @@ select:focus {
 }
 
 .whl-hero {
-    font-size: 30px;
+    font-size: 21px;
     font-weight: 800;
     letter-spacing: -0.02em;
     line-height: 1.05;
     color: var(--whl-accent);
-    height: 42px;
+    height: 27px;
     display: flex;
     align-items: baseline;
 }
 
 .whl-hero small {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);
     letter-spacing: 0;
@@ -14203,10 +14203,10 @@ select:focus {
 }
 
 .whl-bar {
-    height: 6px;
-    border-radius: 3px;
+    height: 4px;
+    border-radius: 2px;
     background: var(--grid);
-    margin: 2px 0 10px;
+    margin: 2px 0 6px;
     overflow: hidden;
 }
 
@@ -14214,7 +14214,7 @@ select:focus {
     display: block;
     height: 100%;
     background: var(--whl-accent);
-    border-radius: 3px;
+    border-radius: 2px;
 }
 
 .whl-seg .whl-name {
@@ -14222,12 +14222,12 @@ select:focus {
 }
 
 .whl-ava {
-    width: 21px;
-    height: 21px;
+    width: 17px;
+    height: 17px;
     border-radius: 50%;
     background: var(--accent-soft);
     color: var(--accent);
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 800;
     display: inline-flex;
     align-items: center;
@@ -14240,10 +14240,20 @@ select:focus {
     color: var(--text-muted);
 }
 
+/* Real team picture in the avatar slot: fill the disc, no monogram bg. */
+img.whl-ava {
+    object-fit: cover;
+    background: none;
+}
+
+.whl-loser img.whl-ava {
+    opacity: 0.75;
+}
+
 .whl-cap {
-    font-size: 11.5px;
+    font-size: 11px;
     color: var(--text-subtle);
-    margin-top: 3px;
+    margin-top: 2px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -55276,7 +55286,7 @@ body.otc-sticky-on { padding-bottom: 72px; }
         border-bottom: 1px solid var(--border);
         border-radius: 0;
         box-shadow: none;
-        padding: 8px 0;
+        padding: 7px 0;
         margin-bottom: 0;
     }
     .weekly-hub .wk-leaders-strip .whl-seg:first-child {
@@ -55287,7 +55297,7 @@ body.otc-sticky-on { padding-bottom: 72px; }
         padding-bottom: 3px;
     }
     .weekly-hub .wk-leaders-strip .whl-hero {
-        font-size: 22px;
+        font-size: 20px;
         height: auto;
     }
     .weekly-hub .wk-leaders-strip .whl-bar {
@@ -56157,6 +56167,11 @@ body.otc-sticky-on { padding-bottom: 72px; }
         border-bottom-left-radius: 0;
         border-bottom-right-radius: 0;
         box-shadow: none;
+        padding: 8px 12px;
+    }
+
+    .weekly-hub .weekly-hub-head-card h2 {
+        font-size: 15px;
     }
 
     .weekly-hub .week-leaders-band.wk-leaders-strip {
@@ -56182,7 +56197,7 @@ body.otc-sticky-on { padding-bottom: 72px; }
         border-radius: 0;
         box-shadow: none;
         margin: 0;
-        padding: 12px 14px;
+        padding: 7px 12px;
     }
 
     .weekly-hub .week-leaders-band.wk-leaders-strip .week-side-panel.active .whl-seg:not(:first-child) {
