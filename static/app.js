@@ -5034,6 +5034,35 @@ function showLoginGate(target, opts) {
   }
   window.brMaybeAutoRevalidate = autoRevalidate;
 
+  // ── Auto-revalidate on resume (PWA reopen / bfcache restore) ───────────────
+  // The load-time pass above only runs when a page actually loads. Opening
+  // the installed PWA usually does NOT load anything: iOS resumes the page
+  // it kept alive from the last visit (or restores it from the back-forward
+  // cache), so the data, and the "Updated x ago" label with it, stay as old
+  // as that visit until the user navigates or taps Refresh Data. Treat a
+  // return after a real absence the same as a fresh landing: run the same
+  // eligibility-gated pass (league routes only, stale snapshots only, live
+  // surfaces excluded). A quick app-switch does not qualify, matching the
+  // app-version resume window in initUpdatePrompt.
+  var RESUME_REVALIDATE_MS = 60 * 1000;
+  var resumeHiddenAt = 0;
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') { resumeHiddenAt = Date.now(); return; }
+      if (document.visibilityState !== 'visible') return;
+      var awayMs = resumeHiddenAt ? Date.now() - resumeHiddenAt : 0;
+      resumeHiddenAt = 0;
+      if (awayMs >= RESUME_REVALIDATE_MS) autoRevalidate();
+    });
+  }
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('pageshow', function (e) {
+      // A bfcache restore repaints the exact page the user left, however
+      // long ago; the load-time pass never ran for it.
+      if (e && e.persisted) autoRevalidate();
+    });
+  }
+
   // Mobile More-sheet Refresh row (persists across soft-navs, so wire once).
   function wireSheetRefresh() {
     var btn = document.getElementById('brSheetRefresh');

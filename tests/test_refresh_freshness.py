@@ -771,3 +771,110 @@ function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve,
             fh.write(harness)
         res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
     assert res.returncode == 0, res.stderr or res.stdout
+
+
+def test_resume_revalidate_hooks_present():
+    """Opening the PWA usually RESUMES the page iOS kept alive instead of
+    loading it, so the load-time auto-revalidate never runs and the data
+    (and its Updated label) stay as old as the last visit. The freshness
+    IIFE must therefore re-run the same pass on a real resume: returning
+    visible after RESUME_REVALIDATE_MS hidden, or a bfcache pageshow."""
+    src = _freshness_iife()
+    assert "RESUME_REVALIDATE_MS = 60 * 1000" in src
+    assert "document.addEventListener('visibilitychange'" in src
+    assert "if (awayMs >= RESUME_REVALIDATE_MS) autoRevalidate();" in src
+    assert "window.addEventListener('pageshow'" in src
+    assert "if (e && e.persisted) autoRevalidate();" in src
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_resume_revalidate_behavior_node():
+    """Behavioral: a quick app-switch (30s away) does not revalidate; a
+    return after 60s+ away runs the silent pass (expire + refetch + swap);
+    a bfcache pageshow revalidates, a plain pageshow does not."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _freshness_iife()
+    harness = r"""
+var window = globalThis;
+var location = { href: 'http://x/sleeper/2026/abc/dashboard', pathname: '/sleeper/2026/abc/dashboard', reload: function(){} };
+window.location = location;
+var navigator = { serviceWorker: null };
+var postCount = 0, getCount = 0, swapCount = 0;
+var fakeNow = 1700000000000;
+Date.now = function() { return fakeNow; };
+var root = { dataset: { cacheTs: String(fakeNow - 9 * 3600000), season: '2026' }, querySelectorAll: function(){ return []; } };
+var sheetTime = { textContent: '', classList: { toggle: function(){} } };
+var button = { disabled: false, _brWired: false, setAttribute: function(){}, removeAttribute: function(){}, addEventListener: function(){} };
+var elements = { 'page-root': root, 'brSheetRefreshTime': sheetTime, 'brSheetRefresh': button };
+var docListeners = {};
+var winListeners = {};
+var document = {
+  visibilityState: 'visible',
+  getElementById: function(id){ return elements[id] || null; },
+  querySelector: function(){ return null; },
+  addEventListener: function(t, fn){ docListeners[t] = fn; },
+  createElement: function(){ return { style: {}, setAttribute: function(){}, innerHTML: '' }; },
+  body: { appendChild: function(el){ elements[el.id] = el; } }
+};
+window.addEventListener = function(t, fn){ winListeners[t] = fn; };
+window.matchMedia = function(){ return { matches: true }; };
+var setInterval = function(){ return 0; };
+var realSetTimeout = globalThis.setTimeout;
+var DOMParser = function(){};
+DOMParser.prototype.parseFromString = function(html){
+  var m = /data-cache-ts=[\"'](\d+)/.exec(html);
+  return { getElementById: function(id){ return id === 'page-root' && m ? { dataset: { cacheTs: m[1] } } : null; } };
+};
+window.brSwapPageRoot = function(html){
+  swapCount++;
+  var m = /data-cache-ts=[\"'](\d+)/.exec(html);
+  if (!m) return false;
+  root.dataset.cacheTs = m[1];
+  return true;
+};
+function response(ok, body){ return { ok: ok, status: ok ? 200 : 500, text: function(){ return Promise.resolve(body || ''); } }; }
+window.brFetchWithTimeout = function(url, opts){
+  if (url === '/api/refresh-league') { postCount++; return Promise.resolve(response(true)); }
+  getCount++;
+  return Promise.resolve(response(true, '<main id="page-root" data-cache-ts="' + fakeNow + '"></main>'));
+};
+""" + src + r"""
+function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve, ms); }); }
+function vis(state){
+  document.visibilityState = state;
+  if (docListeners['visibilitychange']) docListeners['visibilitychange']();
+}
+(async function(){
+  if (typeof docListeners['visibilitychange'] !== 'function') process.exit(2);
+  if (typeof winListeners['pageshow'] !== 'function') process.exit(3);
+  // Quick app-switch: 30s away is not a reopen, no revalidate.
+  vis('hidden'); fakeNow += 30000; vis('visible');
+  await wait(30);
+  if (postCount !== 0 || getCount !== 0) process.exit(4);
+  // Away over an hour (the 9h-old label case): returning runs the pass.
+  vis('hidden'); fakeNow += 3600000; vis('visible');
+  await wait(50);
+  if (postCount !== 1 || getCount !== 1 || swapCount !== 1) process.exit(5);
+  if (root.dataset.cacheTs !== String(fakeNow)) process.exit(6);
+  // Plain pageshow (not a bfcache restore): no pass.
+  root.dataset.cacheTs = String(fakeNow - 3600000);
+  winListeners['pageshow']({ persisted: false });
+  await wait(30);
+  if (postCount !== 1) process.exit(7);
+  // bfcache restore: the pass runs for the repainted old page.
+  winListeners['pageshow']({ persisted: true });
+  await wait(50);
+  if (postCount !== 2 || getCount !== 2 || swapCount !== 2) process.exit(8);
+  process.exit(0);
+})().catch(function(e){ console.error(e); process.exit(9); });
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "resume_revalidate_check.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
