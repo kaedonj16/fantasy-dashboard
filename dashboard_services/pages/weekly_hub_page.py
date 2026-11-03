@@ -324,10 +324,17 @@ def build_weekly_hub_body(ctx: dict) -> str:
         top_n=5,
     )
     proj_by_roster = ctx.get("proj_by_roster") or {}
+    from dashboard_services.api import team_avatar as _team_avatar
+
+    highlights_avatars = {
+        str(r.get("roster_id")): _team_avatar(platform, r, users) or ""
+        for r in rosters
+    }
     highlights_html = _render_weekly_highlights(
         df_weekly, default_week,
         proj_by_roster=proj_by_roster,
         matchups_by_week=matchups_by_week,
+        avatars_by_roster=highlights_avatars,
     )
 
     proj_warn_html = ""
