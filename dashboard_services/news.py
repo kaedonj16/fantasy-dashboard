@@ -34,6 +34,35 @@ SRC_REDDIT = "reddit"
 _CACHE: dict = {}
 _TTL = 900        # 15 min per-athlete
 _GENERAL_TTL = 600  # 10 min for bulk headline cache
+# Keys are per-athlete / per-player-name across three sources, so the key
+# space is effectively unbounded even though every entry carries a TTL --
+# entries are only expired when their exact key is requested again. The
+# 15-min working set is a few hundred athletes at most; 512 bounds it.
+_CACHE_MAX = 512
+
+
+def _prune_cache() -> None:
+    """Evict the oldest ~10% of _CACHE once it exceeds _CACHE_MAX entries.
+
+    Entry shape is (ts, items) tuples throughout this module. Mirrors the
+    _prune_ttl_cache semantics used for the app.py TTL caches.
+    """
+    if len(_CACHE) < _CACHE_MAX:
+        return
+
+    def _age(k):
+        e = _CACHE.get(k)
+        if isinstance(e, tuple) and e and isinstance(e[0], (int, float)):
+            return e[0]
+        return 0.0
+
+    for k in sorted(list(_CACHE), key=_age)[: max(1, _CACHE_MAX // 10)]:
+        _CACHE.pop(k, None)
+
+
+def _cache_put(key, now, items) -> None:
+    _CACHE[key] = (now, items)
+    _prune_cache()
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; fantasy-dashboard/1.0)"}
 _TIMEOUT = 6
 
@@ -142,7 +171,7 @@ async def _async_fetch_athlete(client: httpx.AsyncClient, espn_id: str) -> tuple
             return espn_id, [], SRC_ESPN
         data = r.json()
         items = [_parse(a) for a in (data.get("feed") or data.get("articles") or []) if a.get("headline")]
-        _CACHE[key] = (now, items)
+        _cache_put(key, now, items)
         return espn_id, items, None
     except Exception as e:
         logger.warning("[news] ESPN athlete feed failed for espn_id=%s: %s: %s",
@@ -170,7 +199,7 @@ async def _async_fetch_general() -> tuple[list, Optional[str]]:
             logger.warning("[news] ESPN general NFL feed failed: HTTP %s", r.status_code)
             return [], SRC_ESPN
         items = [_parse(a) for a in (r.json().get("articles") or []) if a.get("headline")]
-        _CACHE[key] = (now, items)
+        _cache_put(key, now, items)
         return items, None
     except Exception as e:
         logger.warning("[news] ESPN general NFL feed failed: %s: %s", type(e).__name__, e)
@@ -338,7 +367,7 @@ async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> tuple
         if r.is_success:
             children = ((r.json() or {}).get("data") or {}).get("children") or []
             items = _parse_reddit_children(children, require_substr=last)[:limit]
-            _CACHE[key] = (now, items)
+            _cache_put(key, now, items)
             return items, None
         json_err = f"HTTP {r.status_code}"
     except Exception as e:
@@ -355,7 +384,7 @@ async def _async_fetch_reddit(client, player_name: str, limit: int = 8) -> tuple
         logger.warning("[news] Reddit search JSON failed for %r (%s); using RSS fallback",
                        player_name, json_err)
         items = rss_items[:limit]
-        _CACHE[key] = (now, items)
+        _cache_put(key, now, items)
         return items, None
     logger.warning("[news] Reddit search failed for %r: %s (RSS fallback also failed)",
                    player_name, json_err)
@@ -381,7 +410,7 @@ async def _async_fetch_reddit_hot(client, limit: int = 12) -> tuple[list, Option
         if r.is_success:
             children = ((r.json() or {}).get("data") or {}).get("children") or []
             items = _parse_reddit_children(children)[:limit]
-            _CACHE[key] = (now, items)
+            _cache_put(key, now, items)
             return items, None
         json_err = f"HTTP {r.status_code}"
     except Exception as e:
@@ -393,7 +422,7 @@ async def _async_fetch_reddit_hot(client, limit: int = 12) -> tuple[list, Option
     if rss_items is not None:
         logger.warning("[news] Reddit hot-posts JSON failed (%s); using RSS fallback", json_err)
         items = rss_items[:limit]
-        _CACHE[key] = (now, items)
+        _cache_put(key, now, items)
         return items, None
     logger.warning("[news] Reddit hot-posts feed failed: %s (RSS fallback also failed)", json_err)
     return [], SRC_REDDIT
@@ -481,7 +510,7 @@ async def _async_fetch_gnews(client, player_name: str, limit: int = 6) -> tuple[
             return [], SRC_GNEWS
         last = player_name.lower().split()[-1] if player_name.split() else ""
         items = _parse_gnews_xml(r.text, require_substr=last)[:limit]
-        _CACHE[key] = (now, items)
+        _cache_put(key, now, items)
         return items, None
     except Exception as e:
         logger.warning("[news] Google News RSS failed for %r: %s: %s",
@@ -509,7 +538,7 @@ async def _async_fetch_gnews_general(limit: int = 12) -> tuple[list, Optional[st
             logger.warning("[news] Google News general RSS failed: HTTP %s", r.status_code)
             return [], SRC_GNEWS
         items = _parse_gnews_xml(r.text)[:limit]
-        _CACHE[key] = (now, items)
+        _cache_put(key, now, items)
         return items, None
     except Exception as e:
         logger.warning("[news] Google News general RSS failed: %s: %s", type(e).__name__, e)

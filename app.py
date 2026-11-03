@@ -17296,6 +17296,13 @@ def page_weekly(platform: str, season: int, league_id: str):
 
 _RZ_BOX_CACHE: dict = {}  # game_id -> (ts, boxscore)
 _RZ_BOX_TTL = 15.0
+# Key space is season-finite (game ids, plain + ":pbp" shapes): a full slate
+# is 16 games x 2 shapes = 32 hot entries, but ids accumulate across weeks
+# and entries are only TTL-checked when their exact key is re-requested, so
+# without a cap the dict grows one boxscore per game forever. 128 covers
+# several slates of churn while bounding the boxscore-sized values; pruned
+# on write with the shared _prune_ttl_cache helper.
+_RZ_BOX_CACHE_MAX = 128
 _RZ_LIVE_CACHE_TTL = 12.0
 # Bound the scoreboard upstream wait on the live path. The client aborts a
 # ScoreZone poll after _RZ_FETCH_DEADLINE_MS (25s in static/scorezone.js); the
@@ -17370,6 +17377,7 @@ def _scorezone_boxscore(
     # Plain boxscore callers can reuse a PBP response (it is a superset).
     if play_by_play and box and game_id not in _RZ_BOX_CACHE:
         _RZ_BOX_CACHE[game_id] = (now, box)
+    _prune_ttl_cache(_RZ_BOX_CACHE, _RZ_BOX_CACHE_MAX)
     return box
 
 

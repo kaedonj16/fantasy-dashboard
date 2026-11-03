@@ -19,6 +19,26 @@ logger = logging.getLogger(__name__)
 DEFAULT_TTL_SECONDS = 12 * 60 * 60
 _STORE_LOCK = threading.Lock()
 _STORE: Dict[str, Dict[str, Any]] = {}
+# Keys are platform:league_id:season for every draft ever relayed to this
+# worker -- one entry per draft, forever, unless bounded. Only live drafts
+# matter and they rotate within the TTL window; 64 is generous headroom.
+_STORE_MAX = 64
+
+
+def _prune_store_locked() -> None:
+    """Caller must hold _STORE_LOCK. Drop TTL-expired entries, then evict
+    oldest by updated_at until the local store is within _STORE_MAX."""
+    now = time.time()
+    expired = [
+        k
+        for k, e in _STORE.items()
+        if now - float(e.get("updated_at") or 0) >= DEFAULT_TTL_SECONDS
+    ]
+    for k in expired:
+        _STORE.pop(k, None)
+    while len(_STORE) > _STORE_MAX:
+        oldest = min(_STORE, key=lambda k: float(_STORE[k].get("updated_at") or 0))
+        _STORE.pop(oldest, None)
 
 
 def _store_key(league_id: str, season: int, *, platform: str = "espn") -> str:
@@ -45,6 +65,7 @@ def put_relay_snapshot(
     }
     with _STORE_LOCK:
         _STORE[key] = entry
+        _prune_store_locked()
     _redis_put(key, entry)
     return entry
 
@@ -55,6 +76,14 @@ def get_relay_snapshot(
     key = _store_key(league_id, season, platform=platform)
     with _STORE_LOCK:
         local = _STORE.get(key)
+        if local is not None and (
+            time.time() - float(local.get("updated_at") or 0) >= DEFAULT_TTL_SECONDS
+        ):
+            # The advertised TTL was only ever enforced by Redis's setex;
+            # the local dict ignored it, so a stale snapshot could be
+            # served from memory forever. Expire it and fall through.
+            _STORE.pop(key, None)
+            local = None
     if local:
         return local
     return _redis_get(key)
@@ -100,6 +129,7 @@ def _redis_get(key: str) -> Optional[Dict[str, Any]]:
         if isinstance(data, dict):
             with _STORE_LOCK:
                 _STORE[key] = data
+                _prune_store_locked()
             return data
     except Exception as exc:
         logger.info("[espn-relay] redis get skipped error_type=%s", type(exc).__name__)
