@@ -4,7 +4,8 @@ Prospect model v4 - the production prospect grader (go-live flip).
 Governing spec: ~/workspace/prospect-model-v4-design.md (Kaedon, 2026-10-17).
 The v2.0/v3.x scoring architecture is scrapped; this module is the clean
 rebuild. It was built as a "4.0-dev" skeleton behind the incumbent and
-flipped to MODEL_VERSION "4.0" by the go-live PR, whose merge is gated
+flipped to MODEL_VERSION "4.0" by the go-live PR, and bumped to "4.1"
+by calibration pass 1 (2026-11-03). Its merge is gated
 on the recorded reference artifact (built on Render by
 scripts/derive_v4_reference.py) being committed and the v4 backtest
 beating the incumbent on the same harness. Production runs load the
@@ -64,8 +65,12 @@ What this module implements (the design's architecture):
   the receipt prints talent, capital score, and capital_delta.
 
 Deliberate skeleton simplifications (named, to be settled in the
-calibration follow-on, not silently): leg weights below are stated
-starting weights, not backtest-calibrated; the capital layer uses
+calibration follow-on, not silently): leg weights below started as
+stated starting weights and are calibrated in passes against the
+backtest (pass 1, 2026-11-03, from gate 2: the QB rushing sub-leg
+raised inside production, TE leg weight moved toward traits, and the
+knot ladder's top end aligned to the approved combine ladder shape);
+the capital layer uses
 the consensus map's precomputed capital score with no round
 multipliers or day-3 penalties (v3.3's capital machinery is part of
 the scrapped architecture); utilization and QB experience are not
@@ -73,8 +78,9 @@ separate legs (opportunity lives in production's share legs, and
 attempts live in the efficiency reliability factor); TE catch rate
 is not an efficiency sub-leg because no recorded targets
 distribution exists (round 15). The knot score vector is unified on
-the round 15 pre-registered vector for every leg, athleticism
-included; the athleticism MARKS are the recorded drafted-tester
+one ladder for every leg, athleticism
+included (the round 15 pre-registered vector, top end realigned in
+calibration pass 1); the athleticism MARKS are the recorded drafted-tester
 tiers carried over from v3.3, and the three-zone transform is
 carried over unchanged.
 """
@@ -94,7 +100,7 @@ except ImportError:  # direct module import
         _conf_quality, DEFAULT_CONF_QUALITY,
     )
 
-MODEL_VERSION = "4.0"
+MODEL_VERSION = "4.1"
 
 # ─────────────────────────────────────────────────────────────────────
 # Scale semantics (design section 1)
@@ -124,7 +130,11 @@ def band_for(score: Optional[float]) -> Tuple[Optional[str], Optional[str]]:
 
 KNOT_TIERS = ["worst", "p1", "p5", "p10", "p25", "p50",
               "p75", "p90", "p97", "p99", "best"]
-KNOT_SCORES = [0, 5, 12, 22, 38, 56, 74, 85, 92, 95, 100]
+# Pass 1 (2026-11-03): the p75/p90/p97/p99 rungs (77/88/93/96) are the
+# approved round 11/12 combine ladder shape; the round 15 vector's
+# stingier top end (74/85/92/95) capped composites at ~90 in gate 2.
+# The lower rungs are the round 15 vector unchanged.
+KNOT_SCORES = [0, 5, 12, 22, 38, 56, 77, 88, 93, 96, 100]
 KNOT_PERCENTILES = [0, 1, 5, 10, 25, 50, 75, 90, 97, 99, 100]
 DISPLAY_PERCENTILES = [0, 1, 5, 10, 25, 50, 75, 90, 95, 97, 99, 100]
 
@@ -533,15 +543,18 @@ def _rate_leg(sel: Dict[str, Any], specs: List[Tuple[str, float]],
     return _blend_priced(sel, per_season, pos, leg)
 
 
-# Sub-leg specs (metric, weight within the leg). Starting weights for
-# the skeleton; the calibration follow-on arbitrates them against the
-# backtest. A sub-leg with no recorded anchor in the reference simply
+# Sub-leg specs (metric, weight within the leg). Skeleton starting
+# weights, on calibration pass 1 (2026-11-03, from gate 2): the QB
+# rushing sub-leg is raised inside production (rushing was 1.5% of
+# the talent grade and the rushing translators pooled far below
+# actual); every other spec is the skeleton weight. A sub-leg with
+# no recorded anchor in the reference simply
 # does not fire (requirement 8 is enforced at reference-build time by
 # reporting every table's n and firing coverage).
 PRODUCTION_SPECS: Dict[str, List[Tuple[str, float]]] = {
-    "QB": [("pass_yds_pg", 0.30), ("pass_tds_pg", 0.20),
-           ("completion_pct", 0.15), ("ypa", 0.15), ("td_int", 0.10),
-           ("rush_yds_pg", 0.05), ("qb_share", 0.05)],
+    "QB": [("pass_yds_pg", 0.25), ("pass_tds_pg", 0.17),
+           ("completion_pct", 0.13), ("ypa", 0.13), ("td_int", 0.07),
+           ("rush_yds_pg", 0.20), ("qb_share", 0.05)],
     "RB": [("rush_yds_pg", 0.30), ("scrimmage_yds_pg", 0.25),
            ("tds_pg", 0.15), ("dominator_rating", 0.15), ("ypc", 0.10),
            ("market_share_yards", 0.05)],
@@ -560,7 +573,7 @@ EFFICIENCY_SPECS: Dict[str, List[Tuple[str, float]]] = {
     "WR": [("ypr", 0.55), ("market_share_yards", 0.45)],
     # No catch-rate sub-leg: college targets are not an official stat
     # and no recorded distribution exists for them (round 15).
-    "TE": [("ypr", 0.50), ("market_share_yards", 0.50)],
+    "TE": [("ypr", 0.65), ("market_share_yards", 0.35)],
 }
 
 
@@ -935,11 +948,13 @@ def detect_lifecycle_state(prospect: Dict[str, Any],
 # calibration edit.
 # ─────────────────────────────────────────────────────────────────────
 
-# Talent-frame leg weights (skeleton starting weights; the
-# calibration follow-on arbitrates them against the backtest).
-# QB is efficiency-first per the 2026-10-16 ruling. TE carries real
-# traits weight (athleticism + age + efficiency = 0.42) alongside
-# production, per requirement 10.
+# Talent-frame leg weights (skeleton starting weights, on
+# calibration pass 1). QB is efficiency-first per the 2026-10-16
+# ruling. TE carries real traits weight (athleticism + age +
+# efficiency = 0.50) alongside production, per requirement 10;
+# pass 1 (2026-11-03, from gate 2) moved TE weight out of production
+# and breakout into efficiency and athleticism, after Howard and
+# Hockenson priced as day-3 prospects on volume legs alone.
 LEG_WEIGHTS: Dict[str, Dict[str, float]] = {
     "QB": {"production": 0.30, "efficiency": 0.35, "breakout": 0.00,
            "age": 0.08, "athleticism": 0.10, "competition": 0.09,
@@ -950,8 +965,8 @@ LEG_WEIGHTS: Dict[str, Dict[str, float]] = {
     "WR": {"production": 0.32, "efficiency": 0.16, "breakout": 0.16,
            "age": 0.08, "athleticism": 0.10, "competition": 0.08,
            "recruiting": 0.05, "durability": 0.05},
-    "TE": {"production": 0.28, "efficiency": 0.16, "breakout": 0.12,
-           "age": 0.12, "athleticism": 0.14, "competition": 0.06,
+    "TE": {"production": 0.22, "efficiency": 0.20, "breakout": 0.10,
+           "age": 0.12, "athleticism": 0.18, "competition": 0.06,
            "recruiting": 0.05, "durability": 0.07},
 }
 for _pos, _w in LEG_WEIGHTS.items():

@@ -1071,7 +1071,7 @@ PCT_MIN_POPULATION = 30
 # The percentile pools are historical-only and no longer read stored
 # rows, so nothing binds this set at runtime today; it stays as the
 # registry the v4 population rebuild (and its go-live tests) key off.
-_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "4.0")
+_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "4.1")
 
 _population_cache: dict = {}
 _reference_cache: dict = {}
