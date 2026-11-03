@@ -265,17 +265,37 @@ def _positive_env_int(name: str, default: int) -> int:
         return default
 
 
-DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 4)
+# Split 2026-11-03 (cleanup Batch 1): this constant used to be
+# DASHBOARD_CACHE_MAX, one env name shared with dashboard_services/api.py's
+# provider TTL cache (default 75 entries) -- setting it tuned BOTH caches at
+# once, in opposite directions from what either default intends. The league
+# ctx cache now reads LEAGUE_CTX_CACHE_MAX. The old DASHBOARD_CACHE_MAX name
+# still works as a deprecated alias for THIS cache only (api.py no longer
+# reads it); when it is set, a startup warning is logged so the operator can
+# migrate. DASHBOARD_CACHE_MAX is kept as a module attribute alias for the
+# literal-pin tests / external readers that referenced the old name.
+if os.getenv("DASHBOARD_CACHE_MAX") is not None and os.getenv("LEAGUE_CTX_CACHE_MAX") is None:
+    logger.warning(
+        "DASHBOARD_CACHE_MAX is deprecated: it now applies ONLY to the "
+        "league context cache (set LEAGUE_CTX_CACHE_MAX instead). The "
+        "provider TTL cache in dashboard_services/api.py has its own knob, "
+        "PROVIDER_TTL_CACHE_MAX_ENTRIES."
+    )
+LEAGUE_CTX_CACHE_MAX = _positive_env_int(
+    "LEAGUE_CTX_CACHE_MAX",
+    _positive_env_int("DASHBOARD_CACHE_MAX", 4),
+)
+DASHBOARD_CACHE_MAX = LEAGUE_CTX_CACHE_MAX
 _DASHBOARD_CACHE_LOCK = threading.RLock()
 
 
 def _prune_dashboard_cache(keep: Optional[str] = None) -> None:
     """Evict the oldest ~10% of DASHBOARD_CACHE entries once it exceeds
-    DASHBOARD_CACHE_MAX. Called on every entry-creation path so total memory
+    LEAGUE_CTX_CACHE_MAX. Called on every entry-creation path so total memory
     stays bounded regardless of how many distinct leagues get looked up. ``keep``
     is the key about to be written; it is never evicted, so a caller updating a
     hot entry can't lose the ctx it's building on."""
-    limit = max(1, int(DASHBOARD_CACHE_MAX or 1))
+    limit = max(1, int(LEAGUE_CTX_CACHE_MAX or 1))
     def _age(k):
         e = DASHBOARD_CACHE.get(k) or {}
         ts = e.get("ts")
@@ -3349,6 +3369,13 @@ _PLAYERS_GLOBAL_TS = 0.0
 # dead code.
 _PLAYERS_GLOBAL_TTL = 3600.0
 _PLAYERS_INDEX_GLOBAL = None
+_PLAYERS_INDEX_GLOBAL_TS = 0.0
+# Same hourly cadence as _PLAYERS_GLOBAL_TTL: the players index (~1.1MB) was
+# previously set-once with NO TTL, so ~10 callers read the first index this
+# process ever loaded forever -- a correctness bug (stale teams/injuries),
+# not just memory. It now reloads through load_players_index() on the same
+# schedule as the players global it indexes.
+_PLAYERS_INDEX_GLOBAL_TTL = 3600.0
 _players_global_lock = threading.Lock()
 _players_index_lock = threading.Lock()
 
@@ -3378,11 +3405,21 @@ def get_players_global():
 
 
 def get_players_index_global():
-    global _PLAYERS_INDEX_GLOBAL
-    if _PLAYERS_INDEX_GLOBAL is None:
-        with _players_index_lock:
-            if _PLAYERS_INDEX_GLOBAL is None:
-                _PLAYERS_INDEX_GLOBAL = load_players_index()
+    global _PLAYERS_INDEX_GLOBAL, _PLAYERS_INDEX_GLOBAL_TS
+    now = time.time()
+    if _PLAYERS_INDEX_GLOBAL is not None and now - _PLAYERS_INDEX_GLOBAL_TS < _PLAYERS_INDEX_GLOBAL_TTL:
+        return _PLAYERS_INDEX_GLOBAL
+    with _players_index_lock:
+        now = time.time()
+        if _PLAYERS_INDEX_GLOBAL is not None and now - _PLAYERS_INDEX_GLOBAL_TS < _PLAYERS_INDEX_GLOBAL_TTL:
+            return _PLAYERS_INDEX_GLOBAL
+        fresh = load_players_index()
+        if fresh:
+            _PLAYERS_INDEX_GLOBAL = fresh
+            _PLAYERS_INDEX_GLOBAL_TS = time.time()
+        elif _PLAYERS_INDEX_GLOBAL is None:
+            _PLAYERS_INDEX_GLOBAL = fresh
+            _PLAYERS_INDEX_GLOBAL_TS = time.time()
     return _PLAYERS_INDEX_GLOBAL
 
 
@@ -14701,6 +14738,35 @@ def _league_ctx_reattach_globals(ctx: dict) -> dict:
     return ctx
 
 
+def _league_ctx_refresh_players(ctx: dict) -> dict:
+    """Re-point a valid cached ctx at the CURRENT players generation.
+
+    build_league_context stores the players global current at build time, so
+    without this a ctx served for hours pins that ~38MB generation (and keeps
+    serving its stale injury/team data) until eviction. The pre-ship mutation
+    audit (cleanup Batch 1) found no serve path mutating ctx["players"] /
+    ctx["players_map"] contents -- get_players_map's documented contract is
+    already "shared, treat as read-only", and the only writes anywhere are to
+    local copies / test fixtures -- so replacing the two references on serve
+    is safe. It mirrors what the Redis hydrate path
+    (_league_ctx_reattach_globals) already does on load. Identity checks
+    first: the common case is already current and costs two `is` compares.
+    Stale-if-error serves deliberately do NOT swap (a degraded serve must not
+    pay a 38MB reload or change its failure semantics).
+    """
+    try:
+        players = get_players_global()
+        if players:
+            if ctx.get("players") is not players:
+                ctx["players"] = players
+            players_map = get_players_map(players)
+            if ctx.get("players_map") is not players_map:
+                ctx["players_map"] = players_map
+    except Exception:
+        logger.debug("[league-ctx] players generation swap failed", exc_info=True)
+    return ctx
+
+
 def _league_ctx_redis_store(platform, season, league_id, ctx, built_at, generation) -> None:
     """Best-effort: persist a freshly built ctx for sibling workers."""
     try:
@@ -14818,6 +14884,7 @@ def get_league_ctx_from_cache(
     entry = DASHBOARD_CACHE.get(key)
     if _league_ctx_cache_valid(entry, platform, season, league_id):
         ctx = entry["ctx"]
+        _league_ctx_refresh_players(ctx)
         ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
         ctx["_cache_stale"] = False
         ctx["viewer"] = get_viewer_session_for_league(
@@ -14879,6 +14946,7 @@ def get_league_ctx_from_cache(
         entry = DASHBOARD_CACHE.get(key)
         if _league_ctx_cache_valid(entry, platform, season, league_id):
             ctx = entry["ctx"]
+            _league_ctx_refresh_players(ctx)
             ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
             ctx["_cache_stale"] = False
             ctx["viewer"] = get_viewer_session_for_league(
@@ -14920,6 +14988,7 @@ def get_league_ctx_from_cache(
             entry = DASHBOARD_CACHE.get(key)
             if _league_ctx_cache_valid(entry, platform, season, league_id):
                 ctx = entry["ctx"]
+                _league_ctx_refresh_players(ctx)
                 ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
                 ctx["_cache_stale"] = False
                 return _stamp_viewer(ctx)

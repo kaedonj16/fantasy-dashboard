@@ -20,7 +20,7 @@ def _isolate_dashboard_cache():
     these tests.
 
     app.DASHBOARD_CACHE outlives monkeypatch and is capped at
-    DASHBOARD_CACHE_MAX (4) entries: every entry-creation path calls
+    LEAGUE_CTX_CACHE_MAX (4) entries: every entry-creation path calls
     app._prune_dashboard_cache, which evicts the oldest-by-ts entries
     once the cap is reached. In the full suite the cache is already
     full of earlier tests' league contexts when this module runs, and

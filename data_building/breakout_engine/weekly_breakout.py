@@ -46,6 +46,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from utils.core import clamp as _clamp
+
 # Bump when the scoring math changes so persisted rows are self-identifying and a
 # stale row can be told apart from a current-version one.
 SCORING_VERSION = "weekly-v6"
@@ -140,8 +142,7 @@ def _mean_present(rows: Sequence[Dict], key: str) -> Tuple[Optional[float], int]
     return sum(present) / len(present), len(present)
 
 
-def _clamp(v: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, v))
+# _clamp imported from utils.core (cleanup Batch 1 dedup).
 
 
 def _initial_persistent_cap(supporting_signals: int) -> float:

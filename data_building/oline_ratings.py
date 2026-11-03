@@ -128,6 +128,7 @@ import os
 from collections import defaultdict
 from datetime import datetime, timezone
 
+from utils.core import safe_float_or_none as _f
 from utils.paths import CACHE_DIR
 
 EXCLUDE_WEEKS = {18}            # modern analog of the old week-17 "rest" week
@@ -232,14 +233,7 @@ def out_path(season: int) -> str:
     return os.path.join(str(CACHE_DIR), f"oline_ratings_s{season}.json")
 
 
-def _f(v):
-    try:
-        if v is None:
-            return None
-        f = float(v)
-        return f if f == f else None   # drop NaN
-    except (TypeError, ValueError):
-        return None
+# _f imported from utils.core as safe_float_or_none (cleanup Batch 1 dedup).
 
 
 def _line_yards(yards: float) -> float:

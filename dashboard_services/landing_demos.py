@@ -23,6 +23,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from utils.core import ordinal as _ordinal
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 MODEL_VALUES_PATH = ROOT_DIR / "data" / "model_values.json"
 CACHE_DIR = ROOT_DIR / "cache"
@@ -173,12 +175,8 @@ def _fpts_rank(ratings: dict, opp: str, pos: str):
     return None, None
 
 
-def _ordinal(n: int) -> str:
-    if 11 <= n % 100 <= 13:
-        suf = "th"
-    else:
-        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suf}"
+# _ordinal imported from utils.core (cleanup Batch 1 dedup); the local
+# 11-13 teens check was behaviorally identical to core.ordinal.
 
 
 def _demo_season_week():

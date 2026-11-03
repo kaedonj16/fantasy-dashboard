@@ -187,6 +187,7 @@ import time
 from decimal import Decimal
 
 from dashboard_services.assistant import aliases
+from utils.core import clamp as _clamp
 
 logger = logging.getLogger(__name__)
 
@@ -3999,8 +4000,7 @@ _VALUE_PEER_OPP_TOL = 0.30
 _VALUE_PEER_GAP_NAMED = 0.15
 
 
-def _clamp(x, lo, hi):
-    return max(lo, min(hi, x))
+# _clamp imported from utils.core (cleanup Batch 1 dedup).
 
 
 def _weekly_line(pid, season, position):

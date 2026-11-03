@@ -143,9 +143,19 @@ def _positive_env_int(name: str, default: int) -> int:
         return default
 
 
-DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 75)
+# Split 2026-11-03 (cleanup Batch 1): this budget used to read the SAME env
+# name as app.py's league-context cache (DASHBOARD_CACHE_MAX, ctx default 4),
+# so one operator setting tuned two unrelated caches at once. The provider
+# TTL budget now has its own name, PROVIDER_TTL_CACHE_MAX_ENTRIES (entries,
+# not bytes). DASHBOARD_CACHE_MAX no longer applies here; in app.py it is a
+# deprecated alias for the ctx cache only. The module attribute
+# DASHBOARD_CACHE_MAX is kept below as an import-time snapshot for external
+# readers/diagnostics; nothing internal reads it.
+PROVIDER_TTL_CACHE_MAX_ENTRIES = _positive_env_int("PROVIDER_TTL_CACHE_MAX_ENTRIES", 75)
+DASHBOARD_CACHE_MAX = PROVIDER_TTL_CACHE_MAX_ENTRIES
 DASHBOARD_CACHE_STALE_TTL = _positive_env_int("DASHBOARD_CACHE_STALE_TTL", 900)
 _TTL_CACHES: list[dict] = []
+_TTL_CACHES_SEGREGATED: list[dict] = []
 _CACHE_BUDGET_LOCK = threading.Lock()
 
 
@@ -167,13 +177,19 @@ def _freeze(obj):
 _TTL_SINGLEFLIGHT_WAIT_SECONDS = 30.0
 
 
-def ttl_cache(ttl: int = 300):
+def ttl_cache(ttl: int = 300, *, own_max_entries: int | None = None):
     """
     Simple in-memory TTL cache.
     Keyed by (function name, args, kwargs).
 
     This version is lightweight and works fine for the simple
     argument types used by the functions below.
+
+    ``own_max_entries`` segregates a function from the shared provider
+    budget: its cache is capped at that many entries of its own and never
+    counts against (or gets evicted by) PROVIDER_TTL_CACHE_MAX_ENTRIES.
+    Used by get_nfl_players, whose single ~38MB payload otherwise counts as
+    just 1 entry in the shared budget while dwarfing everything else in it.
     """
 
     def decorator(func):
@@ -188,12 +204,22 @@ def ttl_cache(ttl: int = 300):
             for old_key, (created, _) in list(_cache.items()):
                 if now - created > stale_limit:
                     _cache.pop(old_key, None)
-            while len(_cache) > DASHBOARD_CACHE_MAX:
+            cap = own_max_entries if own_max_entries is not None else PROVIDER_TTL_CACHE_MAX_ENTRIES
+            while len(_cache) > cap:
                 _cache.popitem(last=False)
 
         def _store(key, result, now: float) -> None:
-            # One budget spans every @ttl_cache in this worker; otherwise N
-            # decorated functions could each retain DASHBOARD_CACHE_MAX values.
+            if own_max_entries is not None:
+                # Segregated slot: store under this function's own cap only;
+                # the shared-budget accounting below must never see it.
+                with _cache_lock:
+                    _cache[key] = (now, result)
+                    _cache.move_to_end(key)
+                    _prune(now)
+                return
+            # One budget spans every shared @ttl_cache in this worker;
+            # otherwise N decorated functions could each retain
+            # PROVIDER_TTL_CACHE_MAX_ENTRIES values.
             with _CACHE_BUDGET_LOCK:
                 with _cache_lock:
                     _cache[key] = (now, result)
@@ -222,7 +248,7 @@ def ttl_cache(ttl: int = 300):
                             if (item["cache"] is not _cache and size and
                                     (largest_other is None or size > largest_other[0])):
                                 largest_other = (size, item)
-                    if total <= DASHBOARD_CACHE_MAX or largest is None:
+                    if total <= PROVIDER_TTL_CACHE_MAX_ENTRIES or largest is None:
                         break
                     _, item = largest_other or largest
                     with item["lock"]:
@@ -314,7 +340,13 @@ def ttl_cache(ttl: int = 300):
                 _cache_changed.notify_all()
 
         wrapper.clear_cache = clear_cache
-        _TTL_CACHES.append({"name": func.__name__, "cache": _cache, "lock": _cache_lock})
+        if own_max_entries is None:
+            _TTL_CACHES.append({"name": func.__name__, "cache": _cache, "lock": _cache_lock})
+        else:
+            # Segregated caches stay out of _TTL_CACHES (the shared-budget
+            # loop must never evict or count them) but remain visible to
+            # ttl_cache_entry_counts diagnostics via their own registry.
+            _TTL_CACHES_SEGREGATED.append({"name": func.__name__, "cache": _cache, "lock": _cache_lock})
 
         return wrapper
 
@@ -324,7 +356,7 @@ def ttl_cache(ttl: int = 300):
 def ttl_cache_entry_counts() -> Dict[str, int]:
     """Small, credential-free snapshot for startup memory diagnostics."""
     counts: Dict[str, int] = {}
-    for item in _TTL_CACHES:
+    for item in _TTL_CACHES + _TTL_CACHES_SEGREGATED:
         with item["lock"]:
             name = item["name"]
             counts[name] = counts.get(name, 0) + len(item["cache"])
@@ -639,7 +671,12 @@ def get_nfl_state() -> dict:
     return normalize_nfl_state(state or _LAST_NFL_STATE)
 
 
-@ttl_cache(ttl=300)
+# Segregated from the shared provider budget (own_max_entries=1): the parsed
+# Sleeper players payload is ~38MB, so counting it as 1 of the shared
+# budget's 75 entries understated its cost and let budget evictions treat it
+# like any small provider response. It keeps its own single slot; app.py's
+# get_players_global() layers the hourly generation cache on top of this.
+@ttl_cache(ttl=300, own_max_entries=1)
 def get_nfl_players() -> dict:
     return fetch_json("/players/nfl") or {}
 

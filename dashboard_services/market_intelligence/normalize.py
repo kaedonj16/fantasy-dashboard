@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from .models import MarketRecord
+from utils.core import safe_float_or_none as _num
 
 STAT_ALIASES = {
     "passingyards": "passing_yards", "passingtouchdowns": "passing_touchdowns",
@@ -22,11 +23,9 @@ def _dt(value) -> datetime | None:
         return None
 
 
-def _num(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+# _num imported from utils.core as safe_float_or_none (cleanup Batch 1
+# dedup). Sole delta: a NaN input now returns None instead of NaN, which
+# matches how both modules already treat missing/unparseable stats.
 
 
 def _stat_type(odd: dict) -> tuple[str, str | None]:

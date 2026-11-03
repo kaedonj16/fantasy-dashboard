@@ -67,9 +67,11 @@ def test_postgres_contention_never_falls_back_to_a_second_lock_domain(monkeypatc
 
 def test_dashboard_cache_limit_and_lock_registry_are_conservative():
     import app
-    assert app.DASHBOARD_CACHE_MAX >= 1
-    assert app.DASHBOARD_CACHE_MAX == 4
-    assert app._CTX_LOCKS_MAX >= app.DASHBOARD_CACHE_MAX
+    assert app.LEAGUE_CTX_CACHE_MAX >= 1
+    assert app.LEAGUE_CTX_CACHE_MAX == 4
+    # Deprecated alias stays in lockstep with the split constant.
+    assert app.DASHBOARD_CACHE_MAX == app.LEAGUE_CTX_CACHE_MAX
+    assert app._CTX_LOCKS_MAX >= app.LEAGUE_CTX_CACHE_MAX
 
 
 def test_context_lock_registry_prunes_after_many_releases(monkeypatch):

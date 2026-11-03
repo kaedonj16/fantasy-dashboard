@@ -76,6 +76,57 @@ def safe_int(value, default: int = 0) -> int:
         return default
 
 
+# --- Finite / None-returning variants (cleanup Batch 1) -------------------
+# safe_float above deliberately lets NaN/Inf round-trip, which is why a
+# second family of private copies drifted: some call sites need non-finite
+# values dropped. These two are the canonical homes for those contracts;
+# Batch B migrates the drifted _safe_float copies site-by-site after
+# per-site contract checks.
+import math as _math
+
+
+def safe_float_finite(value, default: float = 0.0) -> float:
+    """Like safe_float, but NaN and +/-Inf also return ``default``."""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, str) and not value.strip():
+            return default
+        out = float(value)
+    except (TypeError, ValueError):
+        return default
+    return out if _math.isfinite(out) else default
+
+
+def safe_float_or_none(value):
+    """Coerce to float, returning None for None/blank/unparseable/NaN.
+
+    Mirrors the drifted ``_f`` copies (oline_ratings / oline_talent_prior):
+    the ``f == f`` NaN check drops NaN, while Inf passes through.
+    """
+    try:
+        if value is None:
+            return None
+        f = float(value)
+        return f if f == f else None  # drop NaN
+    except (TypeError, ValueError):
+        return None
+
+
+def clamp(value, lo, hi):
+    """Clamp ``value`` into [lo, hi]: max(lo, min(hi, value))."""
+    return max(lo, min(hi, value))
+
+
+import html as _html
+
+
+def esc(s) -> str:
+    """HTML-escape a value for text/attribute contexts: None -> "",
+    everything else str()-ified, quotes escaped (attribute-safe)."""
+    return _html.escape(str(s if s is not None else ""), quote=True)
+
+
 # ======================================================================
 # From utils/validation.py
 # ======================================================================

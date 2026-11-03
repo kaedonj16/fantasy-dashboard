@@ -17,6 +17,7 @@ from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
 from dashboard_services.ai.context_builders import ctx_scoring_type
+from utils.core import ordinal as _ordinal
 from utils.lineup_slots import (
     RESTRICTED_FLEX_SLOTS,
     SLOT_ELIGIBILITY,
@@ -1508,8 +1509,8 @@ def _select_packages(
 
 # ── Pick send candidates ──────────────────────────────────────────────────────
 
-def _ordinal(n: int) -> str:
-    return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
+# _ordinal imported from utils.core (cleanup Batch 1 dedup). The local
+# copy rendered 21th/22th/23th for n > 3 (live bug); core.ordinal is right.
 
 
 def _pick_send_candidates(

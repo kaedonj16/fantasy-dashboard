@@ -1,0 +1,9 @@
+# Pre-commit hooks. Intentionally minimal: the same Ruff gate CI runs
+# (rule set lives in pyproject.toml; keep the two in sync by editing
+# pyproject + .github/workflows/ci.yml together).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff
+        args: [--select, "E9,E711,E713,E714,F63,F7,F82,F404,F50,F52,F811,W605"]

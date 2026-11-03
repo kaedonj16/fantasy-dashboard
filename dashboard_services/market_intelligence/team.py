@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from statistics import median
 
 from .config import WEEKLY_MAX_AGE
+from utils.core import safe_float_or_none as _num
 from utils.nfl_stadiums import normalize_nfl_team
 
 _FULL_GAME_PERIODS = {"game", "reg", "full", "fullgame"}
@@ -15,11 +16,9 @@ _UNAVAILABLE_STATUSES = {"suspended", "closed", "inactive", "unavailable"}
 _LIVE_STATUSES = {"live", "inprogress", "inplay", "started", "closed", "final", "completed"}
 
 
-def _num(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+# _num imported from utils.core as safe_float_or_none (cleanup Batch 1
+# dedup). Sole delta: a NaN input now returns None instead of NaN, which
+# matches how both modules already treat missing/unparseable stats.
 
 
 def _dt(value) -> datetime | None:
