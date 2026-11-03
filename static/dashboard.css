@@ -55809,6 +55809,44 @@ body.otc-sticky-on { padding-bottom: 72px; }
     color: #38bdf8;
 }
 
+/* Nav dropdown group headers (Weekly Play / Review) and the matching
+   group labels inside the mobile More sheet's Weekly panel. Headers are
+   labels, not links: no hover, no pointer events. */
+.nav-pill-dropdown-header {
+    display: block;
+    padding: 10px 14px 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.nav-pill-dropdown-header:not(:first-child) {
+    border-top: 1px solid var(--border);
+    margin-top: 6px;
+    padding-top: 10px;
+}
+
+/* The More sheet is mobile-only markup (hidden on desktop by the sheet
+   rules above), so its group labels need no media wrapper. */
+.br-sheet-group-label {
+    padding: 10px 16px 2px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.br-sheet-group-label:not(:first-child) {
+    border-top: 1px solid var(--border);
+    margin-top: 6px;
+    padding-top: 12px;
+}
+
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.

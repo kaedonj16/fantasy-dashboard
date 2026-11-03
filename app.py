@@ -4575,6 +4575,11 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             f"{_nav_icon(icon, size=20)}<span>{label}</span>{pro_html}{badge_html}</a>"
         )
 
+    def _grp(label):
+        """A non-link group label row inside a sheet panel (mirrors the
+        desktop dropdown's group headers)."""
+        return f"<div class='br-sheet-group-label'>{label}</div>"
+
     def _sec(title, rows):
         slug = title.lower().replace(" ", "-")
         return (
@@ -4606,15 +4611,10 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _bb_sheet = _nav_is_best_ball(platform, league_id, season)
         except Exception:
             _bb_sheet = False
-        rows = [
-            _sl("weekly", "Matchups"), _sl("recap", "Weekly Recap", badge_html=_recap_dot_in),
-            _sl("scout", "Opponent Scout"), _sl("optimal", "Lineup Efficiency"),
-            _sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"),
-            _sl("schedule", "Schedule Rankings"),
-        ]
-        if not _bb_sheet:
-            # The Lab is a Start/Sit mode: best-ball leagues have neither.
-            rows.insert(5, _sl("lineup-lab", "Lineup Lab"))
+        # Same Play / Review grouping and order as the desktop Weekly dropdown:
+        # Play is this week's live pages and lineup tools, Review is last
+        # week's recap and efficiency. ScoreZone sits second, in Play.
+        rows = [_grp("Play"), _sl("weekly", "Matchups")]
         if not offseason:
             if rz_live:
                 _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["scorezone"]
@@ -4628,6 +4628,16 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
                 )
             else:
                 rows.append(_sl("scorezone", "ScoreZone"))
+        rows.append(_sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"))
+        if not _bb_sheet:
+            # The Lab is a Start/Sit mode: best-ball leagues have neither.
+            rows.append(_sl("lineup-lab", "Lineup Lab"))
+        rows += [
+            _sl("scout", "Opponent Scout"), _sl("schedule", "Schedule Rankings"),
+            _grp("Review"),
+            _sl("recap", "Weekly Recap", badge_html=_recap_dot_in),
+            _sl("optimal", "Lineup Efficiency"),
+        ]
         weekly_html = _sec("Weekly", rows)
 
     league_html = _sec("League", [
@@ -4642,9 +4652,8 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     trades_html = _sec("Trades", trade_rows)
 
     players_html = _sec("Players", [
-        _sl("players", "Player Rankings"), _sl("compare", "Compare Players"),
-        _sl("top-movers", "Top Movers"), _sl("advanced-metrics", "Advanced Metrics"),
-        _sl("nfl-teams", "NFL Team Rankings"),
+        _sl("players", "Player Rankings"), _sl("top-movers", "Top Movers"),
+        _sl("compare", "Compare Players"), _sl("advanced-metrics", "Advanced Metrics"),
         _sl("breakouts", "Breakout Engine", pro=True, badge_html=_bo_dot_in), _sl("prospects", "Prospect Rankings"),
     ])
 
@@ -4656,6 +4665,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
 
     stats_html = _sec("Stats", [
         _sl("awards", "Awards"), _sl("graphs", "Graphs"), _sl("history", "League History"),
+        _sl("nfl-teams", "NFL Team Rankings"),
     ])
 
     portfolio_link = ""
@@ -4693,9 +4703,9 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "Trades": {"trade", "trade-suggestions", "trade-database"},
         "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "lineup-lab", "schedule", "scorezone"},
         "League": {"standings", "teams", "activity", "league_health"},
-        "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
+        "Players": {"players", "compare", "top-movers", "advanced-metrics", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history", "draft-recap"},
-        "Stats": {"awards", "graphs", "history"},
+        "Stats": {"awards", "graphs", "history", "nfl-teams"},
     }
     def _category_row(label):
         slug = label.lower()
@@ -6106,11 +6116,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown",
                           btn_extra_cls: str = "", btn_badge_html: str = "") -> str:
-        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
+        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix).
+
+        An item with endpoint None is a group header, not a page: it renders
+        as a non-link label and never counts toward the drift guard below.
+        """
         # Same drift guard as the global nav's simple_dropdown: a page that is
         # an item of this dropdown always lights the parent pill, whether or
         # not the caller's active_keys list remembered its key.
-        item_keys = {item_tuple[2] for item_tuple in items if len(item_tuple) > 2}
+        item_keys = {item_tuple[2] for item_tuple in items
+                     if len(item_tuple) > 2 and item_tuple[1] is not None}
         is_active = active in active_keys or active in item_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
         if btn_extra_cls:
@@ -6118,6 +6133,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         item_html = ""
         for item_tuple in items:
             item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
+            if endpoint is None:
+                item_html += f"<span class='nav-pill-dropdown-header'>{item_label}</span>"
+                continue
             disabled = item_tuple[3] if len(item_tuple) > 3 else False
             href_suffix = item_tuple[4] if len(item_tuple) > 4 else ""
             if disabled:
@@ -6171,25 +6189,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         except Exception:
             _bb = False
         _waiver_label = "Waivers" if _bb else "Waivers & Start/Sit"
-        _weekly_items = [
-            ("Matchups", "page_weekly", "weekly", False),
-            (f"Weekly Recap{_recap_dot_in}", "league_pages.page_recap", "recap", False),
-            ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
-            ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
-            # Roster/lineup tools live with the other weekly tools, not Players.
-            # Best Ball has no weekly Start/Sit -- keep Waivers only.
-            (_waiver_label, "league_pages.page_waivers", "waivers", False),
-            ("Schedule Rankings", "page_schedule", "schedule", False),
-        ]
-        if not _bb:
-            # The Lab is a Start/Sit mode, directly under Waivers & Start/Sit.
-            _weekly_items.insert(
-                5, ("Lineup Lab", "league_pages.page_waivers", "lineup-lab", False, "?tab=lab"))
-        # ScoreZone lives inside the Weekly dropdown. The Weekly button glows and
-        # the ScoreZone item pulses with a live dot only while games are live or
-        # about to kick off (the hour before) -- not for the whole game day.
-        # Only available during the active season.
+        # ScoreZone sits second in the Weekly dropdown's Play group. The Weekly
+        # button glows and the ScoreZone item pulses with a live dot only while
+        # games are live or about to kick off (the hour before) -- not for the
+        # whole game day. Only available during the active season.
         _rz_pulse = ""
+        _rz_item = None
         if not offseason_mode:
             # Pulse only when a game is in progress or kicks off within the hour.
             _rz_week = nfl_state.get("week") or nfl_state.get("display_week")
@@ -6200,12 +6205,37 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             )
             # Player IDs are canonicalized onto the Tank01 boxscore feed, so
             # ScoreZone works on Sleeper, ESPN, Yahoo, and MFL.
-            _weekly_items.append((_rz_label, "page_scorezone", "scorezone", False))
+            _rz_item = (_rz_label, "page_scorezone", "scorezone", False)
             # The demo is linked from the ScoreZone page itself (idle header),
             # not from the nav, so the Weekly dropdown stays focused on
             # in-season tools.
             if _rz_live:
                 _rz_pulse = "nav-pill-scorezone-live"
+        # Weekly is grouped by when you use it: Play (this week's live pages
+        # and lineup tools, in workflow order) then Review (last week's recap
+        # and efficiency). Group headers are endpoint-None items.
+        _weekly_items = [
+            ("Play", None, None),
+            ("Matchups", "page_weekly", "weekly", False),
+        ]
+        if _rz_item is not None:
+            _weekly_items.append(_rz_item)
+        _weekly_items += [
+            # Roster/lineup tools live with the other weekly tools, not Players.
+            # Best Ball has no weekly Start/Sit -- keep Waivers only.
+            (_waiver_label, "league_pages.page_waivers", "waivers", False),
+        ]
+        if not _bb:
+            # The Lab is a Start/Sit mode, directly under Waivers & Start/Sit.
+            _weekly_items.append(
+                ("Lineup Lab", "league_pages.page_waivers", "lineup-lab", False, "?tab=lab"))
+        _weekly_items += [
+            ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
+            ("Schedule Rankings", "page_schedule", "schedule", False),
+            ("Review", None, None),
+            (f"Weekly Recap{_recap_dot_in}", "league_pages.page_recap", "recap", False),
+            ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
+        ]
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
             ["weekly", "recap", "scorezone", "scout", "optimal", "waivers", "lineup-lab", "schedule"],
@@ -6219,13 +6249,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings", "page_players", "players", False),
-        ("Compare Players", "seo_pages.page_compare", "compare", False),
         ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
+        ("Compare Players", "seo_pages.page_compare", "compare", False),
         ("Advanced Metrics", "league_pages.page_advanced_metrics", "advanced-metrics", False),
-        ("NFL Team Rankings", "league_pages.page_nfl_teams", "nfl-teams", False),
         (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}{_bo_dot_in}", "page_breakouts", "breakouts", False),
         ("Prospect Rankings", "page_prospects", "prospects", False),
-    ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown",
+    ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics"], "playersNavDropdown",
         btn_badge_html=_bo_dot))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
@@ -6242,7 +6271,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Awards", "page_awards", "awards", False),
         ("Graphs", "league_pages.page_graphs", "graphs", False),
         ("League History", "league_pages.page_history", "history", False),
-    ], ["awards", "graphs", "history"], "statsNavDropdown"))
+        # NFL Team Rankings is a team-level stats page, so it lives in Stats,
+        # not Players (the guest nav has no Stats, so it stays in Players there).
+        ("NFL Team Rankings", "league_pages.page_nfl_teams", "nfl-teams", False),
+    ], ["awards", "graphs", "history", "nfl-teams"], "statsNavDropdown"))
     if session.get("viewer_username") or session.get("account_id"):
         _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
         _portfolio_href = f"/portfolio?from_league={league_id}&platform={platform}&season={season}"

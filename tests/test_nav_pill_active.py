@@ -93,7 +93,7 @@ def _assert_only_parent(html, parents, btn_id=None, anchor_label=None):
 LEAGUE_DROPDOWN_CASES = [
     ("players", "playersNavBtn"), ("compare", "playersNavBtn"),
     ("top-movers", "playersNavBtn"), ("advanced-metrics", "playersNavBtn"),
-    ("nfl-teams", "playersNavBtn"), ("breakouts", "playersNavBtn"),
+    ("nfl-teams", "statsNavBtn"), ("breakouts", "playersNavBtn"),
     ("prospects", "playersNavBtn"),
     ("trade", "tradesNavBtn"), ("trade-database", "tradesNavBtn"),
     ("standings", "teamsNavBtn"), ("teams", "teamsNavBtn"),
