@@ -413,6 +413,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         try:
             from dashboard_services.matchups import (
                 build_league_scores_list, build_slide_proj_lookups,
+                make_margin_lookup,
             )
             _ls_statuses = (statuses.get(default_week) or {}).get("statuses", {}) or {}
             # Same slide-style lookups the carousel uses (scoring-aware
@@ -426,6 +427,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             _ls_payload = build_league_scores_list(
                 default_matchups, _hub_vid, _ls_statuses, _ls_proj_map,
                 proj_lookup=_ls_pid_proj, frac_lookup=_ls_frac,
+                margin_lookup=make_margin_lookup(team_game_lookup or {}),
             )
             _ls_embedded_json = (
                 '<script type="application/json" id="ls-embedded-data">'

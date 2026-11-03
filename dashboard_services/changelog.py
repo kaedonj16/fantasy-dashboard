@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-03",
         "tag": "fix",
+        "text": "Matchup win odds now respect the endgame. When only a few players are left to play, the odds are priced from the players who are actually still out there, including how boom or bust each one is, so a team that needs one more big play from its last receiver is no longer shown as nearly finished. A quarterback and his pass catchers on the same NFL team now move the odds together instead of counting as independent, live odds take the real NFL score into account in one sided games, and the win percentage in the weekly digest email now comes from the same model as the matchup page, so the numbers agree.",
+        "link": "/weekly"
+    },
+    {
+        "date": "2026-11-03",
+        "tag": "fix",
         "text": "Reopening the app now refreshes your league data on its own too. Opening the installed app usually resumes the page from your last visit instead of loading it fresh, so the data and its Updated label could sit hours old until you tapped Refresh Data. Coming back after a minute or more away now rebuilds and swaps in the current data silently, the same way a fresh page load already did.",
         "link": "/"
     },
