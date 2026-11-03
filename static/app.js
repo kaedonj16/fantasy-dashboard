@@ -7716,7 +7716,19 @@ window.BRValueChart = (function () {
     });
     if (!isFinite(xMin)) { xMin = 0; xMax = 1; }
     if (xMax === xMin) { xMax = xMin + 1; }
-    var axisLabels = mode === 'index' ? (opts.labels || [])
+    // Axis entries are {u, label} objects in BOTH modes: the x-tick
+    // renderer and the hover snap read e.u / e.label. Index mode arrives
+    // with plain string labels, so normalize them onto their index here;
+    // leaving them as strings made every e.u undefined, which put the
+    // ticks at x=NaN and silently killed hover (snap stayed undefined,
+    // every series lookup missed, and the tooltip hid on every move).
+    var axisLabels = mode === 'index' ? (function () {
+        var maxLen = 0;
+        series.forEach(function (s) { if (s.vals.length > maxLen) maxLen = s.vals.length; });
+        var arr = [];
+        for (var ai2 = 0; ai2 < maxLen; ai2++) arr.push({ u: ai2, label: (opts.labels || [])[ai2] || '' });
+        return arr;
+      })()
       : series.reduce(function (acc, s) {
           s.units.forEach(function (u, i) { acc.push({ u: u, label: s.labels[i] || '' }); });
           return acc;
