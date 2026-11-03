@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-03",
         "tag": "fix",
+        "text": "Fleaflicker matchup previews are fixed. The board no longer grows six empty 0.0 rows under the real starters, team records in the preview header show the real standings instead of 0-0 for everyone, and a starter whose name is listed differently on Fleaflicker than in our player index (Kenny Gainwell, for one) no longer renders as a blank slot, so his projection counts in the header total again. The Lineup Lab also works for Fleaflicker leagues again: a player who scored exactly zero, or who was on bye, used to be read as missing data and the whole week was withheld as incomplete.",
+        "link": "/weekly"
+    },
+    {
+        "date": "2026-11-03",
+        "tag": "fix",
         "text": "Prospect grading comparisons got cleaner. The historical marks our prospect model measures college stats against now come only from seasons where the player actually held a real role, instead of any season with four or more games, so a backup's handful of big games can no longer set the bar for everyone else. The top and bottom of each comparison scale are also set by the recorded population as a whole instead of its single best and worst seasons, so one freak season no longer stretches the scale.",
         "link": "/prospects"
     },

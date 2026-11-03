@@ -429,6 +429,51 @@ def _name_index_from_players(index: dict, normalize_name) -> dict:
     return by_name
 
 
+# First-name diminutives the feeds disagree on: Fleaflicker lists
+# "Kenny Gainwell" while the player index carries "Kenneth Gainwell", and
+# exact-name resolution dropped him from rosters and matchup boards
+# entirely (his starting slot rendered as a blank 0.0). Consulted only
+# when the exact name has no candidate at all, so a real namesake with
+# the literal name always wins.
+_FIRST_NAME_VARIANTS: dict[str, frozenset] = {}
+for _group in (
+    {"kenneth", "kenny", "ken"},
+    {"joshua", "josh"},
+    {"michael", "mike"},
+    {"matthew", "matt"},
+    {"christopher", "chris"},
+    {"nicholas", "nick"},
+    {"william", "will", "willie", "billy"},
+    {"robert", "rob", "bobby"},
+    {"richard", "rick", "rich"},
+    {"james", "jim", "jimmy"},
+    {"john", "johnny"},
+    {"joseph", "joe", "joey"},
+    {"daniel", "dan", "danny"},
+    {"david", "dave"},
+    {"thomas", "tom", "tommy"},
+    {"charles", "charlie", "chuck"},
+    {"edward", "ed", "eddie"},
+    {"anthony", "tony"},
+    {"andrew", "andy", "drew"},
+    {"benjamin", "ben"},
+    {"samuel", "sam", "sammy"},
+    {"nathaniel", "nathan", "nate"},
+    {"zachary", "zach", "zack"},
+    {"alexander", "alex"},
+    {"jonathan", "jon"},
+    {"patrick", "pat"},
+    {"timothy", "tim"},
+    {"steven", "stephen", "steve"},
+    {"gabriel", "gabe"},
+    {"mitchell", "mitch"},
+    {"cameron", "cam"},
+):
+    for _token in _group:
+        _FIRST_NAME_VARIANTS[_token] = frozenset(_group - {_token})
+del _group, _token
+
+
 def _norm_name_candidate(cand) -> tuple[str, str, Any]:
     """Accept (pos, id), (pos, team, id), or a bare id."""
     if isinstance(cand, (list, tuple)):
@@ -463,6 +508,18 @@ def _pick_canonical(
 
     candidates = [_norm_name_candidate(c) for c in (by_name.get(name) or [])]
     candidates = [c for c in candidates if c[2] is not None]
+    if not candidates:
+        # Exact name missed: retry with a diminutive first name swapped in
+        # (same surname), e.g. "kenny gainwell" -> "kenneth gainwell". The
+        # position/team preference below still arbitrates the result.
+        parts = str(name or "").split(" ", 1)
+        if len(parts) == 2:
+            for variant in sorted(_FIRST_NAME_VARIANTS.get(parts[0], ())):
+                alt = [_norm_name_candidate(c) for c in (by_name.get(f"{variant} {parts[1]}") or [])]
+                alt = [c for c in alt if c[2] is not None]
+                if alt:
+                    candidates = alt
+                    break
     if not candidates:
         return None
     pos = (flea_pos or "").upper()
@@ -1161,11 +1218,55 @@ class FleaflickerProvider(ProviderAdapter):
             _warn_crosswalk_once(exc)
             return {}
 
+    @staticmethod
+    def _settings_from_standings_team(team: dict) -> dict:
+        """Sleeper-shaped roster settings from a standings team row.
+
+        FetchLeagueStandings carries each team's recordOverall, pointsFor /
+        pointsAgainst and waiverPosition. get_rosters used to keep only the
+        team name and ship ``settings: {}``, so every downstream record read
+        (matchup preview headers, standings rank sort) saw 0-0 for every
+        Fleaflicker team all season.
+        """
+        def _stat(blob, *keys) -> float:
+            if isinstance(blob, dict):
+                for key in keys:
+                    val = _optional_num(_get(blob, key))
+                    if val is not None:
+                        return val
+                return 0.0
+            return _optional_num(blob) or 0.0
+
+        record = team.get("recordOverall") or team.get("record_overall") or {}
+        points_for = _stat(team.get("pointsFor") or team.get("points_for"), "value")
+        points_against = _stat(
+            team.get("pointsAgainst") or team.get("points_against"), "value",
+        )
+        pf_whole = int(points_for)
+        pa_whole = int(points_against)
+        return {
+            "wins": _int(_get(record, "wins")),
+            "losses": _int(_get(record, "losses")),
+            "ties": _int(_get(record, "ties")),
+            "fpts": pf_whole,
+            "fpts_decimal": int(round((points_for - pf_whole) * 100)),
+            "fpts_against": pa_whole,
+            "fpts_against_decimal": int(round((points_against - pa_whole) * 100)),
+            "ppts": 0,
+            "ppts_decimal": 0,
+            "total_moves": 0,
+            "waiver_budget_used": 0,
+            "waiver_position": _int(
+                _get(team, "waiverPosition", "waiver_position")
+            ),
+        }
+
     def get_rosters(self, league_id, season, *, token: Optional[str] = None):
         raw = self._call("FetchLeagueRosters", league_id, season, ttl=300, token=token)
         by_name = self._build_name_index()
         xwalk = self._canonical_map(league_id, season, token=token)
         team_names = {}
+        team_settings = {}
         try:
             standings = self._call(
                 "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
@@ -1174,6 +1275,7 @@ class FleaflickerProvider(ProviderAdapter):
                 tid = _get(team, "id")
                 if tid is not None:
                     team_names[str(tid)] = _get(team, "name") or f"Team {tid}"
+                    team_settings[str(tid)] = self._settings_from_standings_team(team)
         except Exception:
             logger.debug("Fleaflicker standings unavailable for roster names", exc_info=True)
         out = []
@@ -1228,13 +1330,66 @@ class FleaflickerProvider(ProviderAdapter):
                 "league_id": str(league_id), "roster_id": _int(team_id),
                 "owner_id": str(team_id), "players": players,
                 "starters": starters, "reserve": reserve, "taxi": taxi,
-                "settings": {}, "metadata": {
+                "settings": team_settings.get(str(team_id)) or {
+                    "wins": 0, "losses": 0, "ties": 0,
+                    "fpts": 0, "fpts_decimal": 0,
+                    "fpts_against": 0, "fpts_against_decimal": 0,
+                    "ppts": 0, "ppts_decimal": 0, "total_moves": 0,
+                    "waiver_budget_used": 0, "waiver_position": 0,
+                }, "metadata": {
                     "unmapped_player_count": max(0, len(entries) - mapped_flat),
                     "provider_team_id": str(team_id),
                     "team_name": team_name,
                 },
             })
         return out
+
+    @staticmethod
+    def _actual_points(player: dict) -> Optional[float]:
+        """Fantasy points Fleaflicker published for one boxscore entry.
+
+        ``viewingActualPoints`` normally carries a numeric ``value``, but
+        the protobuf JSON omits zero-valued fields: a player who scored
+        exactly 0.0 arrives as ``{"formatted": "0"}`` with no value at all,
+        and one who recorded no stats in a finished game arrives as
+        ``{"formatted": "—"}``. A player on his NFL team's bye gets no
+        points object at all; his requestedGames entry is flagged
+        ``isBye`` instead. Reading only ``value`` filed all three as
+        unavailable, which marked the whole team-week "Incomplete scoring
+        data" in the Lineup Lab (Week 8 2026: Zay Flowers 0-for-5 targets
+        and Nick Folk 0-for-1 FG, both real zeroes, plus three started
+        bye players whose teams' official totals reconcile only at 0).
+        The formatted string is the provider's own published number, so
+        parse it; a dash counts as 0.0 only when the player's NFL game is
+        final, and an isBye flag is 0.0 outright. A missing
+        viewingActualPoints for a scheduled game stays None.
+        """
+        raw = player.get("viewingActualPoints")
+        if raw is None:
+            raw = player.get("viewing_actual_points")
+        actual = _optional_num(raw)
+        if actual is not None:
+            return actual
+        requested = player.get("requestedGames") or player.get("requested_games") or []
+        for req in requested:
+            if (req or {}).get("isBye") or (req or {}).get("is_bye"):
+                return 0.0
+        if not isinstance(raw, dict):
+            return None
+        formatted = str(raw.get("formatted") or "").strip()
+        if not formatted:
+            return None
+        try:
+            return float(formatted.replace(",", ""))
+        except ValueError:
+            pass
+        if formatted in {"—", "–", "-"}:
+            for req in requested:
+                game = (req or {}).get("game") or {}
+                status = str(_get(game, "status") or "").upper()
+                if "FINAL" in status or status in {"COMPLETE", "COMPLETED", "POST"}:
+                    return 0.0
+        return None
 
     def _starters_from_boxscore(
         self, lineups: list, side: str, xwalk: dict, by_name: dict,
@@ -1287,10 +1442,7 @@ class FleaflickerProvider(ProviderAdapter):
                     reserve.append(cid)
                 else:
                     taxi.append(cid)
-                raw_pts = player.get("viewingActualPoints")
-                if raw_pts is None:
-                    raw_pts = player.get("viewing_actual_points")
-                actual = _optional_num(raw_pts)
+                actual = self._actual_points(player)
                 if actual is None:
                     unavailable_points.append(cid)
                 else:
@@ -1929,7 +2081,12 @@ class FleaflickerProvider(ProviderAdapter):
 
         Only START-group rows (or rows with a positive ``start`` count) become
         lineup slots. Bench / IR / taxi are dropped. Protobuf omits zero-valued
-        ``start``; a START-group row with no start is one slot.
+        ``start``, so a START row whose ``start`` is missing is a slot only
+        when the row carries no roster cap either: the captured rules payload
+        lists the whole position universe (P, CB, S, EDR, IL, LB) as
+        START-group rows with a ``max`` cap but no ``start``, and those
+        positions never start in this league. Counting them painted six
+        phantom 0.0 rows under every Fleaflicker matchup board.
         """
         from utils.lineup_slots import BENCH_SLOT_NAMES
 
@@ -1946,7 +2103,7 @@ class FleaflickerProvider(ProviderAdapter):
                 continue
             raw_start = _get(pos, "start")
             if raw_start is None:
-                starts = 1 if group == "START" else 0
+                starts = 1 if group == "START" and _get(pos, "max") is None else 0
             else:
                 starts = _int(raw_start)
             if starts <= 0:
