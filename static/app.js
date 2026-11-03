@@ -3399,13 +3399,14 @@ window._brPromoEligible = function () {
       { key: 'close_game', label: 'Close game', desc: 'Your matchup is inside one score in the fourth quarter.' },
       { key: 'lineup_lock', label: 'Lineup lock', desc: 'A nudge before lock if a starter is flagged or on a bye.' },
     ] },
-    { id: 'digest', label: 'Morning digest', tag: '7:00 AM', types: [
+    { id: 'digest', label: 'Morning digest', tag: '9:00 AM', types: [
       { key: 'injury', label: 'Injury updates', desc: 'Starter status changes across your rosters.' },
       { key: 'value_drops', label: 'Value drops', desc: 'Dynasty value falls of 10% or more on your players.' },
       { key: 'playoff_odds', label: 'Playoff odds moves', desc: 'Your playoff odds swing by 15 points or more.' },
       { key: 'standings_update', label: 'Standings moves', desc: 'You change position in the standings.' },
       { key: 'breakout_roster', label: 'Breakout players', desc: 'Your players land on the new breakout board.' },
       { key: 'recap_ready', label: 'Weekly recap ready', desc: 'Your recap is ready on Tuesday morning.' },
+      { key: 'week_results', label: 'Weekly results across your leagues', desc: 'Your record for the week across all your leagues.' },
     ] },
     { id: 'more', label: 'Also available', types: [
       { key: 'matchup_preview', label: 'Matchup previews', desc: 'Your matchup, key players and win odds before kickoff.' },
@@ -3670,7 +3671,7 @@ window._brPromoEligible = function () {
       'Combine alerts across your leagues into one notification per hour.');
     var _quietOn = prefs.quiet_hours === true;
     var _quietStart = prefs.quiet_start || '23:00';
-    var _quietEnd = prefs.quiet_end || '07:00';
+    var _quietEnd = prefs.quiet_end || '09:00';
     var quietRow = _toggleHtml('data-quiet', '1', 'Quiet hours', _quietOn,
       'Alerts that are not live are held and sent as your morning digest when the window ends. Live alerts always come through.')
       + '<div id="npQuietWindow" style="display:' + (_quietOn ? 'flex' : 'none') + ';align-items:center;gap:8px;padding:8px 0 12px;border-bottom:1px solid var(--border);">'

@@ -674,11 +674,16 @@ def _run_cron_notifications(kind, account_id=None, email=None, force=False):
             logger.info("[cron/notifications] weekly digest: sent=%s (eligible=%s, failed=%s)",
                         res.get("sent", 0), res.get("eligible", 0), res.get("failed", 0))
         elif kind == "recap":
-            # Tuesday weekly-recap push. notify_recap_ready self-gates to
-            # Tuesdays and claims per league+week in app_state, so a re-fire
-            # the same Tuesday is a no-op per league.
-            from utils.push_notifications import notify_recap_ready
-            sent = notify_recap_ready() or 0
+            # Tuesday recap pushes, staggered: notify_week_results targets
+            # 9am ET and notify_recap_ready 11am ET. Both self-gate to
+            # Tuesdays and to their own target ET hour before claiming
+            # (per account+week / per league+week in app_state), so the
+            # cron's extra Tuesday runs are no-ops for whichever push is
+            # not due or already sent.
+            from utils.push_notifications import (
+                notify_recap_ready, notify_week_results,
+            )
+            sent = (notify_week_results() or 0) + (notify_recap_ready() or 0)
             logger.info("[cron/notifications] recap push: sent=%s", sent)
         else:
             run_hourly()

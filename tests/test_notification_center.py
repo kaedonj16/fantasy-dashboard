@@ -177,8 +177,10 @@ def test_quiet_window_default_wraps_midnight():
     assert pn._in_quiet_hours(prefs, datetime(2026, 10, 27, 23, 30, tzinfo=ET))
     assert pn._in_quiet_hours(prefs, datetime(2026, 10, 28, 2, 0, tzinfo=ET))
     assert not pn._in_quiet_hours(prefs, datetime(2026, 10, 27, 12, 0, tzinfo=ET))
-    # Window end is exclusive: 7:00 AM sharp is out.
-    assert not pn._in_quiet_hours(prefs, datetime(2026, 10, 28, 7, 0, tzinfo=ET))
+    # Default window now ends 9:00 AM: 7:00 AM is still inside it, and the
+    # window end is exclusive, so 9:00 AM sharp is out.
+    assert pn._in_quiet_hours(prefs, datetime(2026, 10, 28, 7, 0, tzinfo=ET))
+    assert not pn._in_quiet_hours(prefs, datetime(2026, 10, 28, 9, 0, tzinfo=ET))
 
 
 def test_quiet_window_off_and_custom():
@@ -193,9 +195,9 @@ def test_quiet_window_off_and_custom():
 def test_quiet_hold_until_from_evening_leg():
     prefs = {"quiet_hours": True}
     end = pn._quiet_hold_until(prefs, datetime(2026, 10, 27, 23, 45, tzinfo=ET))
-    assert (end.hour, end.minute, end.day) == (7, 0, 28)
+    assert (end.hour, end.minute, end.day) == (9, 0, 28)
     end = pn._quiet_hold_until(prefs, datetime(2026, 10, 28, 3, 0, tzinfo=ET))
-    assert (end.hour, end.minute, end.day) == (7, 0, 28)
+    assert (end.hour, end.minute, end.day) == (9, 0, 28)
 
 
 # ── Send path: holds, live exemption, recording ──────────────────────────────
@@ -518,7 +520,7 @@ def test_broadcast_skips_changelog_opt_out_and_records_inbox(monkeypatch):
 
 def test_delivery_groups_cover_every_settings_type_once():
     keys = [t["key"] for g in pn.PUSH_DELIVERY_GROUPS for t in g["types"]]
-    assert len(keys) == len(set(keys)) == 17
+    assert len(keys) == len(set(keys)) == 18
     bucket_keys = {t["key"] for b in pn.PUSH_TYPE_BUCKETS for t in b["types"]}
     assert set(keys) == bucket_keys | {"changelog"}
     live = next(g for g in pn.PUSH_DELIVERY_GROUPS if g["id"] == "live")
