@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-03",
+        "tag": "fix",
+        "text": "Reopening the app now refreshes your league data on its own too. Opening the installed app usually resumes the page from your last visit instead of loading it fresh, so the data and its Updated label could sit hours old until you tapped Refresh Data. Coming back after a minute or more away now rebuilds and swaps in the current data silently, the same way a fresh page load already did.",
+        "link": "/"
+    },
+    {
         "date": "2026-11-02",
         "tag": "fix",
         "text": "Weekly Hub on phones, second design pass: swiping between matchups now shows one full matchup at a time, with nothing of the next matchup visible at the edge. The all-time head-to-head record moves to its own small line under the two team records instead of the top of the preview card, the ScoreZone button in the header is a calm white outline pill, the header strip is thinner, and the matchup board rows shrink again: smaller names, scores, position chips and stat lines, with every game line and drive bar kept.",
