@@ -108,7 +108,7 @@ class TestHistoricalOnlyPopulation:
         assert not hasattr(ra, "_population_player_rows")
 
     def test_version_set_includes_34(self):
-        assert ra._PCT_MODEL_VERSIONS == ("3.2", "3.3", "3.4", "4.0")
+        assert ra._PCT_MODEL_VERSIONS == ("3.2", "3.3", "3.4", "4.1")
         src = Path(ra.__file__).read_text()
         assert "IN ('3.2', '3.3')" not in src
 

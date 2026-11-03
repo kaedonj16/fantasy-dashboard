@@ -54,7 +54,7 @@ def selected_prospect_model() -> str:
            or DEFAULT_PROSPECT_MODEL).strip().lower()
     if raw in ("v3", "3", "3.4"):
         return "v3"
-    if raw in ("v4", "4", "4.0"):
+    if raw in ("v4", "4", "4.0", "4.1"):
         return "v4"
     raise ValueError(
         f"Unrecognized {PROSPECT_MODEL_ENV}={raw!r}: expected 'v3' or 'v4'.")

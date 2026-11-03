@@ -95,7 +95,7 @@ class TestSwitchSelection:
 
     @pytest.mark.parametrize("raw,want", [
         ("v3", "v3"), ("3.4", "v3"), ("v4", "v4"), ("4.0", "v4"),
-        (" V4 ", "v4"),
+        ("4.1", "v4"), (" V4 ", "v4"),
     ])
     def test_env_values(self, monkeypatch, raw, want):
         monkeypatch.setenv("PROSPECT_MODEL", raw)
@@ -262,10 +262,11 @@ class TestBacktestFlag:
 class TestPercentilePoolVersions:
     def test_pool_is_historical_only_registry_keeps_v4(self):
         from dashboard_services import rookie_api as ra
-        # The comparable-version registry keeps "4.0": when v4 ships,
+        # The comparable-version registry keeps "4.1" (the shipped
+        # v4 stamp since calibration pass 1): when v4 ships,
         # the historical population is rebuilt under it (the go-live
         # chain's re-grade step keys off this set).
-        assert "4.0" in ra._PCT_MODEL_VERSIONS
+        assert "4.1" in ra._PCT_MODEL_VERSIONS
         # The pools read ONLY the migration-050 historical rows
         # (Kaedon's spec: never the current class), so stored v4 rows
         # no longer enter the pool directly and the population builder

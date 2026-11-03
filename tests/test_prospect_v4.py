@@ -82,8 +82,8 @@ class TestKnotHelper:
     MARKS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     def test_interpolation_midpoint(self):
-        # Between p50 (mark 5 -> 56) and p75 (mark 6 -> 74).
-        assert v4.knot_score(5.5, self.MARKS) == pytest.approx(65.0)
+        # Between p50 (mark 5 -> 56) and p75 (mark 6 -> 77).
+        assert v4.knot_score(5.5, self.MARKS) == pytest.approx(66.5)
 
     def test_edges_and_beyond(self):
         assert v4.knot_score(0, self.MARKS) == 0.0
@@ -353,7 +353,7 @@ class TestFixturesEndToEnd:
     def test_fixture_runs(self, sample_ref, fixture, dc):
         result = v4.score_prospect_v4(copy.deepcopy(fixture), dc,
                                       reference=sample_ref)
-        assert result["model_version"] == "4.0"
+        assert result["model_version"] == "4.1"
         assert isinstance(result["prospect_score"], float)
         assert result["band"] in ("elite", "great", "average", "day3")
         assert result["reference_kind"] == "fixture_sample"
@@ -373,6 +373,30 @@ class TestFixturesEndToEnd:
                                       reference=sample_ref)
         assert result["athleticism_score"] is None
         assert "athleticism" in result["legs_missing"]
+
+
+class TestCalibrationPass1:
+    """Calibration pass 1 (2026-11-03, from backtest gate 2): the QB
+    rushing sub-leg raised inside production, TE weight moved toward
+    traits, and the knot ladder's top end aligned to the approved
+    round 11/12 combine ladder shape."""
+
+    def test_knot_ladder(self):
+        assert v4.KNOT_SCORES == [0, 5, 12, 22, 38, 56, 77, 88, 93, 96, 100]
+
+    def test_qb_production_rushing_share(self):
+        specs = dict(v4.PRODUCTION_SPECS["QB"])
+        assert specs["rush_yds_pg"] == pytest.approx(0.20)
+
+    def test_te_athleticism_leg_weight(self):
+        assert v4.LEG_WEIGHTS["TE"]["athleticism"] == pytest.approx(0.18)
+
+    def test_every_spec_sums_to_one(self):
+        for table in (v4.PRODUCTION_SPECS, v4.EFFICIENCY_SPECS):
+            for pos, specs in table.items():
+                assert sum(w for _k, w in specs) == pytest.approx(1.0), pos
+        for pos, weights in v4.LEG_WEIGHTS.items():
+            assert sum(weights.values()) == pytest.approx(1.0), pos
 
 
 class TestBands:
