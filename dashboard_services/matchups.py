@@ -1219,7 +1219,6 @@ def render_matchup_carousel_weeks(
             {slides_html}
           </div>
         </div>
-        <div class="m-dots" aria-hidden="true"></div>
       </div>
     """
 
@@ -3487,6 +3486,15 @@ def render_matchup_slide(
             f"</div>"
         )
 
+    # Slide-position dots: one container per slide, directly under the
+    # preview head. The carousel template used to carry a single container
+    # after the track, but a slide is the whole matchup (head + moments +
+    # board), so that spot rendered under the entire board where nobody
+    # sees it. Per-slide containers sit where the mock has them; the
+    # client syncs every container in the card to the same active index.
+    # Compact (dashboard) slides render head-only and skip the container.
+    dots_html = "" if compact else '<div class="m-dots" aria-hidden="true"></div>'
+
     # Second home for the H2H lines: the Weekly Hub's phone layout hides
     # the badge-row centre slot and shows this copy as one small muted
     # line under the team records instead (it stays display:none at
@@ -3514,6 +3522,7 @@ def render_matchup_slide(
         </div>
         {h2h_under_html}
       </div>
+      {dots_html}
       {rzm_hub_html}
       {drama_html}
       {moments_mount}

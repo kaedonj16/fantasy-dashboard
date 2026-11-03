@@ -259,6 +259,11 @@ def test_turning_points_copy_verbs():
     assert "41%" in out and "63%" in out  # swing bar renders before/after as separate spans
     assert "Sun 1:24 PM" in out  # ET rendering of 17:24 UTC
     assert "88.2" in out and "104.6" in out and "final" in out  # score with arrow and final
+    # The arrow is a real character: the score string is html.escape()d
+    # on the way out, so an "&rarr;" entity would surface as literal
+    # text on the page (Kaedon's screenshot, 2026-11-03).
+    assert "88.2 → 104.6 final" in out
+    assert "&rarr;" not in out and "&amp;rarr;" not in out
     assert "\u2014" not in out
 
 

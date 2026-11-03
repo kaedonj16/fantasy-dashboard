@@ -1,7 +1,8 @@
 """Weekly Hub mobile compact redesign (Kaedon-approved, 2026-11-02).
 
 Phone widths only (desktop rendering unchanged):
-- slimmer hub header, global top nav hidden on the hub page,
+- slimmer hub header (the global top nav stays: Kaedon reversed its
+  hub-only hiding on 2026-11-03),
 - five tabs in the main row (Matchups, League, Scorers, Scout, Lineup)
   with the League Scores sub-tab row replaced by the League tab,
 - swipe-only matchup carousel: no heading/Prev-Next, full-width
@@ -74,17 +75,40 @@ def test_sub_tab_row_and_swaps_pill_removed_on_mobile():
 
 # --- page top ---------------------------------------------------------------
 
-def test_top_nav_hidden_only_on_hub_mobile():
+def test_top_nav_stays_visible_on_hub_mobile():
+    # Kaedon reversed the compact build's hub-only hiding (2026-11-03):
+    # the site's actual app header (logo, league pill, bell, search)
+    # belongs on the Weekly Hub like on every other page.
     css = _css()
-    assert 'body:has(.page-shell[data-page="weekly"]) .top-nav.br-mnav { display: none; }' in css
+    assert 'body:has(.page-shell[data-page="weekly"]) .top-nav' not in css
 
 
 def test_hub_header_card_is_thinner_on_mobile():
     css = _css()
     assert ".weekly-hub .card-header-row h2 { font-size: 14px; }" in css
     assert ".weekly-hub .weekly-rz-btn" in css
-    # Mock values: 6px vertical card padding, controls at 12px / 4px.
-    assert ".weekly-hub .page-main > .card {\n        padding: 6px 10px;" in css
+    # Mock values: 6px vertical card padding, no bottom margin (the
+    # tab row's own 6px top margin is the whole header-to-tabs gap).
+    assert ".weekly-hub .page-main > .card {\n        padding: 6px;" in css
+    assert "margin-bottom: 0;" in css
+
+
+def test_hub_header_fits_one_row_with_wrapped():
+    css = _css()
+    # The ScoreZone / Weekly Wrapped / week selector row never wraps,
+    # even with the Wrapped pill and the LIVE badge both present:
+    # controls run at a compact 10.5px and the badge stacks under the
+    # title instead of widening it.
+    assert "flex-wrap: nowrap;" in css
+    assert ".weekly-hub .week-selector .wrapped-launch {" in css
+    assert ".weekly-hub .card-header-row h2 {\n        display: flex;\n        flex-direction: column;" in css
+    assert ".weekly-hub .week-selector .csd-trigger {" in css
+
+
+def test_gap_between_header_and_tabs_is_six_px():
+    css = _css()
+    assert ".weekly-hub .page-main { gap: 0; }" in css
+    assert "#weeklyLeftTabs .tab-bar { margin: 6px 10px 6px; }" in css
 
 
 def test_scorezone_button_is_white_outline_pill_on_mobile():
@@ -104,9 +128,55 @@ def test_scorezone_button_is_white_outline_pill_on_mobile():
 def test_carousel_markup_has_dots_container():
     pytest.importorskip("pandas")
     from dashboard_services import matchups as m
+    # The carousel template no longer carries a track-level dots
+    # container: with full-matchup slides that spot rendered under the
+    # whole board, where the dots were effectively invisible.
     slide = "<div class='m-slide'>x</div>"
     html = m.render_matchup_carousel_weeks({7: slide}, False, active_week=7)
+    assert 'class="m-dots"' not in html
+
+
+def test_slide_carries_dots_under_its_head(monkeypatch):
+    pytest.importorskip("pandas")
+    from dashboard_services import matchups as m
+
+    monkeypatch.setattr(m, "load_teams_index", lambda: {})
+    monkeypatch.setattr(m, "build_offense_rankings", lambda *_: {})
+    monkeypatch.setattr(m, "load_week_stats", lambda season, week: {})
+    monkeypatch.setattr(m, "load_week_schedule", lambda *_: [])
+    monkeypatch.setattr(m, "build_team_schedule_lookup", lambda *_: {})
+
+    def team(name, rid):
+        return {
+            "name": name, "username": "u", "record": "2-4", "avatar": "",
+            "pts_total": 10.0, "proj_total": 10.0, "roster_id": rid,
+            "owner_id": f"u{rid}",
+            "starters": [{"pid": f"p{rid}", "name": "Some Guy", "pos": "QB",
+                          "pts": 1.0, "nfl": "KC"}],
+        }
+
+    html = m.render_matchup_slide(
+        "2026",
+        {"left": team("A Team", 1), "right": team("B Team", 2), "h2h": {}},
+        8, 7,
+        status_by_pid={"p1": m.STATUS_FINAL, "p2": m.STATUS_FINAL},
+        projections={}, players={}, teams={}, team_game_lookup={},
+    )
     assert 'class="m-dots"' in html
+    # Directly under the preview head, before the board body.
+    assert html.index('class="m-dots"') > html.index('class="m-head')
+    assert html.index('class="m-dots"') < html.index('class="m-body"')
+
+
+def test_turning_points_slim_and_board_carded_on_mobile():
+    css = _css()
+    # Turning Points: regular width (no 12px inset), single surface,
+    # no nested inner card.
+    assert ".weekly-hub .m-drama-history {\n        margin: 8px 0 2px;" in css
+    assert ".weekly-hub .m-drama-tp-item {\n        background: transparent;\n        border: none;" in css
+    # Board rows sit on a white card like the Moments card.
+    assert ".weekly-hub .m-body {\n        background: var(--card);" in css
+    assert "border-radius: var(--radius);" in css
 
 
 def test_carousel_mobile_is_swipe_only_full_width_with_dots():
@@ -124,6 +194,8 @@ def test_carousel_mobile_is_swipe_only_full_width_with_dots():
 def test_carousel_js_syncs_dots_and_uses_slide_pitch():
     js = _read("static", "app.js")
     assert "function syncCarouselDots(card)" in js
+    # Every slide carries its own dots container; all sync together.
+    assert 'card.querySelectorAll(".m-dots")' in js
     # Index from slide offsets so the track gap cannot drift the index.
     assert "slides[1].offsetLeft - slides[0].offsetLeft" in js
 
