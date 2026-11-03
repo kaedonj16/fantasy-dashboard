@@ -21,6 +21,7 @@ import json as _json_mod
 import numpy as np
 import pandas as pd
 from utils.standings import all_play_analysis
+from utils.core import ordinal as _ordinal
 from utils.standings_viz import luck_quadrant_svg, value_age_svg
 
 
@@ -80,12 +81,7 @@ def _league_name(ctx: dict) -> str:
     return str((ctx.get("league") or {}).get("name") or "")
 
 
-def _ordinal(n: int) -> str:
-    if 10 <= n % 100 <= 20:
-        suffix = "th"
-    else:
-        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
+# _ordinal imported from utils.core (cleanup Batch 1 dedup).
 
 
 # ── Shared tab shell ─────────────────────────────────────────────────────────

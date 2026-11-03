@@ -2870,7 +2870,7 @@ except Exception:
 #
 # A scan pass can only count a league whose context is readable at that
 # instant (allow_build=False), and the process-local DASHBOARD_CACHE
-# holds at most DASHBOARD_CACHE_MAX (default 4) league contexts, so for
+# holds at most LEAGUE_CTX_CACHE_MAX (default 4) league contexts, so for
 # a viewer with more leagues than that the warm carousel keeps evicting
 # contexts other leagues' builds just wrote: no single pass could ever
 # see every league, the complete-only cache never landed, and the board

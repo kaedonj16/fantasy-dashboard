@@ -28,14 +28,14 @@ from .db_helpers import (
     get_player_weekly_windows,
 )
 from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
+from utils.core import clamp as _clamp
 
 
 # ==============================================================================
 # SHARED HELPERS
 # ==============================================================================
 
-def _clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
+# _clamp imported from utils.core (cleanup Batch 1 dedup).
 
 
 def _normalize_to_one(value: float, full_value: float) -> float:

@@ -18,6 +18,7 @@ import html
 import json
 import logging
 
+from utils.core import esc as _esc
 from utils.draft_recap import CORE_POSITIONS, POS_COLORS, rank_values, verdict_for
 
 logger = logging.getLogger(__name__)
@@ -28,8 +29,7 @@ def _payload(platform, league_id, season):
     return _fn(platform, league_id, season)
 
 
-def _esc(s) -> str:
-    return html.escape(str(s if s is not None else ""), quote=True)
+# _esc imported from utils.core (cleanup Batch 1 dedup).
 
 
 _POS_FALLBACK = "#64748b"

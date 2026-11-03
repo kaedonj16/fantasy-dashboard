@@ -18,6 +18,7 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 
 from dashboard_services.admin_auth import admin_required
+from utils.core import ordinal as _ordinal
 
 log = logging.getLogger(__name__)
 
@@ -1327,12 +1328,7 @@ def _get_latest_season_map(player_ids) -> dict:
         return {}
 
 
-def _ordinal(n: int) -> str:
-    if 10 <= n % 100 <= 20:
-        suffix = "th"
-    else:
-        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
+# _ordinal imported from utils.core (cleanup Batch 1 dedup).
 
 
 _PCT_LABEL = {

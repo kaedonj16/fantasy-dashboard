@@ -814,7 +814,7 @@ def api_player_availability():
         # Reads only - never a synchronous provider build (7-28s would stall
         # the modal). Order: this worker's cache, then the shared Redis copy
         # every successful build persists. The local cache holds only a few
-        # league contexts at once (DASHBOARD_CACHE_MAX defaults to 4), so a
+        # league contexts at once (LEAGUE_CTX_CACHE_MAX defaults to 4), so a
         # full league set is never resident locally; Redis is what makes
         # all of the viewer's leagues answerable. A miss in both reports
         # unknown, and the cache layer warms the league in the background

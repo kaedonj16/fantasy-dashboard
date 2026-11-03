@@ -9,17 +9,17 @@ import dashboard_services.api as api
 @pytest.fixture(autouse=True)
 def isolate_ttl_cache_registry():
     """Keep per-test cache budgets independent of collection/execution order."""
-    for item in api._TTL_CACHES:
+    for item in api._TTL_CACHES + api._TTL_CACHES_SEGREGATED:
         with item["lock"]:
             item["cache"].clear()
     yield
-    for item in api._TTL_CACHES:
+    for item in api._TTL_CACHES + api._TTL_CACHES_SEGREGATED:
         with item["lock"]:
             item["cache"].clear()
 
 
 def test_ttl_cache_evicts_lru_and_exposes_clear(monkeypatch):
-    monkeypatch.setattr(api, "DASHBOARD_CACHE_MAX", 2)
+    monkeypatch.setattr(api, "PROVIDER_TTL_CACHE_MAX_ENTRIES", 2)
     calls = []
 
     @api.ttl_cache(ttl=60)
@@ -38,7 +38,7 @@ def test_ttl_cache_evicts_lru_and_exposes_clear(monkeypatch):
 
 
 def test_cache_budget_is_shared_across_decorated_functions(monkeypatch):
-    monkeypatch.setattr(api, "DASHBOARD_CACHE_MAX", 2)
+    monkeypatch.setattr(api, "PROVIDER_TTL_CACHE_MAX_ENTRIES", 2)
 
     @api.ttl_cache(ttl=60)
     def first(key):
@@ -56,7 +56,7 @@ def test_cache_budget_is_shared_across_decorated_functions(monkeypatch):
 
 def test_active_cache_keeps_lru_window_when_budget_shrinks(monkeypatch):
     """Previously populated caches must not evict every new active-cache row."""
-    monkeypatch.setattr(api, "DASHBOARD_CACHE_MAX", 2)
+    monkeypatch.setattr(api, "PROVIDER_TTL_CACHE_MAX_ENTRIES", 2)
 
     @api.ttl_cache(ttl=60)
     def old_cache(key):
@@ -78,7 +78,7 @@ def test_active_cache_keeps_lru_window_when_budget_shrinks(monkeypatch):
 
 
 def test_budget_eviction_is_safe_when_wall_clock_moves_backwards(monkeypatch):
-    monkeypatch.setattr(api, "DASHBOARD_CACHE_MAX", 2)
+    monkeypatch.setattr(api, "PROVIDER_TTL_CACHE_MAX_ENTRIES", 2)
     now = [2_000_000_000.0]
     monkeypatch.setattr(api.time, "time", lambda: now[0])
     calls = []
@@ -216,7 +216,10 @@ def test_singleflight_wait_timeout_serves_stale_entry(monkeypatch):
 
 
 def test_cache_max_environment_default_and_override(monkeypatch):
-    assert api.DASHBOARD_CACHE_MAX >= 1
+    # Split (cleanup Batch 1): the provider budget reads its own constant;
+    # DASHBOARD_CACHE_MAX remains only as an import-time alias snapshot.
+    assert api.PROVIDER_TTL_CACHE_MAX_ENTRIES >= 1
+    assert api.DASHBOARD_CACHE_MAX == api.PROVIDER_TTL_CACHE_MAX_ENTRIES
     assert api._positive_env_int("ABSENT_CACHE_SETTING", 75) == 75
     monkeypatch.setenv("CACHE_SETTING_TEST", "9")
     assert api._positive_env_int("CACHE_SETTING_TEST", 75) == 9

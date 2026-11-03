@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from flask import request
 
+from utils.core import esc as _esc
 from utils.optimal_lineup import analyze_lineup, analyze_team_week
 
 logger = logging.getLogger(__name__)
@@ -27,8 +28,8 @@ def verified_completed_weeks(df_weekly, *, season_complete=False, matchups_by_we
     return []
 
 
-def _esc(value) -> str:
-    return html.escape(str(value or ""), quote=True)
+# _esc imported from utils.core (cleanup Batch 1 dedup). Canonical is
+# None->"" (local was falsy->""); every call site here passes strings.
 
 
 def _player(pid, players, score) -> str:

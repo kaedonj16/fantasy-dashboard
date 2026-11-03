@@ -34,7 +34,9 @@ python3 -m data_building.breakout_engine.setup_database
 The league context cache and refresh concurrency are intentionally conservative
 for memory-limited web workers:
 
-* `DASHBOARD_CACHE_MAX` — full league contexts retained per process (default `24`, minimum `1`).
+* `LEAGUE_CTX_CACHE_MAX` — full league contexts retained per process (default `4`, minimum `1`).
+* `PROVIDER_TTL_CACHE_MAX_ENTRIES` — shared entry budget for provider TTL caches in `dashboard_services/api.py` (default `75` entries; `get_nfl_players` is segregated into its own single slot and does not count against it).
+* `DASHBOARD_CACHE_MAX` — deprecated alias for `LEAGUE_CTX_CACHE_MAX` only (minimum `1`); setting it logs a startup warning. It no longer affects the provider TTL cache.
 * `DASHBOARD_CTX_LOCKS_MAX` — idle per-league process locks retained (default `128`).
 * `LEAGUE_BUILD_LOCK_TIMEOUT_SECONDS` — maximum cross-worker single-flight wait (default `20`).
 * `LEAGUE_STALE_IF_ERROR_SECONDS` — last-known-good context window after a failed build (default `21600`).

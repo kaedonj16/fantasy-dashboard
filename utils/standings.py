@@ -26,6 +26,8 @@ cards by record — matching Sleeper / playoff-scenario behavior.
 """
 
 import logging
+
+from utils.core import esc as _esc, ordinal as _ordinal
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
@@ -478,8 +480,8 @@ _LBL = ('font-size="9.5" fill="var(--text,#334155)" paint-order="stroke" '
         'stroke="var(--card,#ffffff)" stroke-width="2.5" stroke-linejoin="round"')
 
 
-def _esc(s) -> str:
-    return html.escape(str(s))
+# _esc imported from utils.core (cleanup Batch 1 dedup). Canonical adds
+# quote escaping (attribute-safe) and renders None as "" not "None".
 
 
 def _point_label(owner, cx, cy, rad, x0, x1, y0, y1) -> str:
@@ -983,12 +985,7 @@ def bye_count(playoff_spots: int) -> int:
     return nxt - playoff_spots
 
 
-def _ordinal(n: int) -> str:
-    if 10 <= n % 100 <= 20:
-        suf = "th"
-    else:
-        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suf}"
+# _ordinal imported from utils.core (cleanup Batch 1 dedup).
 
 
 def _games_back(w_ref: int, l_ref: int, w: int, l: int) -> float:

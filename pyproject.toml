@@ -1,0 +1,39 @@
+# Project tooling configuration.
+#
+# Ruff: the default `ruff check` select mirrors EXACTLY the rule set CI runs
+# (.github/workflows/ci.yml, "Lint for real bugs") so a local run and CI can
+# never disagree. Do not widen the select here without widening CI in the
+# same change (ratchet rule from the cleanup program).
+#
+# Pytest: mirrors pytest.ini (kept as the canonical pytest config; values
+# here are the same so tools that read pyproject first behave identically).
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = [
+    # Generated / vendored trees that are not hand-maintained sources.
+    "static/app-features.js",
+]
+
+[tool.ruff.lint]
+select = [
+    "E9",    # pycodestyle errors (syntax)
+    "E711",  # comparison to None
+    "E713",  # not-in membership test
+    "E714",  # is-not identity test
+    "F63",   # invalid __all__ / format usage
+    "F7",    # pyflakes syntax-adjacent errors
+    "F82",   # undefined names
+    "F404",  # late __future__ import
+    "F50",   # %-format argument mismatch
+    "F52",   # str.format() argument mismatch
+    "F811",  # redefinition of an unused name
+    "W605",  # invalid escape sequence
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: needs Flask/pandas (CI full-stack job)",
+]

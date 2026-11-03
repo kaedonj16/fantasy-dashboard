@@ -48,6 +48,8 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
+from utils.core import safe_float_or_none as _f
+
 # Same codes oline_ratings uses, plus PFR abbreviations that show up on
 # snap-count / draft-pick dumps (GNB, KAN, NWE, ...).
 _TEAM_ALIAS = {
@@ -66,14 +68,7 @@ def _norm_team(t) -> str:
     return _TEAM_ALIAS.get(t, t)
 
 
-def _f(v):
-    try:
-        if v is None:
-            return None
-        f = float(v)
-        return f if f == f else None
-    except (TypeError, ValueError):
-        return None
+# _f imported from utils.core as safe_float_or_none (cleanup Batch 1 dedup).
 
 # PFR / nflverse offensive-line position tokens. Long-snappers and tight ends
 # are excluded: LS is not an OL grade, and TE snaps are mostly receiving.

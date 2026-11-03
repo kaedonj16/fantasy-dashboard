@@ -173,6 +173,9 @@ def test_dashboard_cache_max_is_4():
     # worst case is 2x the cap against the 2GB plan. 24 entries of full league
     # context was the dominant term in the OOM estimate; 4 keeps the hottest
     # leagues warm while bounding the worst case tighter.
+    # Split (cleanup Batch 1): the ctx cap is LEAGUE_CTX_CACHE_MAX, defaulting
+    # to 4, with DASHBOARD_CACHE_MAX kept as the deprecated fallback alias.
+    assert '"LEAGUE_CTX_CACHE_MAX"' in APP
     assert '_positive_env_int("DASHBOARD_CACHE_MAX", 4)' in APP
 
 
