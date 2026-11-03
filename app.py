@@ -24142,7 +24142,7 @@ def api_weekly_week():
     _api_ls_payload = []
     if request.args.get("ls") != "0":
         try:
-            from dashboard_services.matchups import build_league_scores_list, build_slide_proj_lookups
+            from dashboard_services.matchups import build_league_scores_list, build_slide_proj_lookups, make_margin_lookup
             _api_ls_proj_map, _api_ls_pid_proj, _api_ls_frac = build_slide_proj_lookups(
                 season, week, last_final_week, proj_by_week,
                 team_game_lookup or {},
@@ -24151,6 +24151,7 @@ def api_weekly_week():
             _api_ls_payload = build_league_scores_list(
                 matchups, _api_vid, status_by_pid, _api_ls_proj_map,
                 proj_lookup=_api_ls_pid_proj, frac_lookup=_api_ls_frac,
+                margin_lookup=make_margin_lookup(team_game_lookup or {}),
             )
         except Exception:
             logger.debug("[api_weekly_week] league-scores payload failed", exc_info=True)

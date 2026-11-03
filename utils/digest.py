@@ -1279,7 +1279,10 @@ def matchup_for_roster(bundle: dict, roster_id: str, cache: DigestRunCache) -> O
         out["user_proj"] = round(user_proj, 1)
         out["opp_proj"] = round(opp_proj, 1)
         out["margin"] = round(user_proj - opp_proj, 1)
-        wp = _win_prob_from_starters(user_starters, opp_starters, cache.week_proj)
+        wp = _win_prob_from_starters(
+            user_starters, opp_starters, cache.week_proj,
+            pos_by_pid=_pos_by_pid(getattr(cache, "pidx", None)),
+        )
         if wp is not None:
             out["win_prob"] = wp
     return out
@@ -1297,33 +1300,58 @@ def _sum_proj(pids: list[str], proj: dict[str, float]) -> Optional[float]:
     return total if any_hit else None
 
 
-def _win_prob_from_starters(starters_a: list[str], starters_b: list[str], proj: dict[str, float]) -> Optional[float]:
-    """Same projection-normal model as the in-app weekly recap. None without projs."""
+def _pos_by_pid(pidx: Optional[dict]) -> dict[str, str]:
+    """pid -> position from the run cache's players index (cheap: already
+    loaded for the digest run). Empty when the index is unavailable, in
+    which case win probability falls back to the model's default
+    position sigma."""
+    out: dict[str, str] = {}
+    for pid, row in (pidx or {}).items():
+        if isinstance(row, dict):
+            pos = row.get("pos") or row.get("position") or ""
+            if pos:
+                out[str(pid)] = str(pos)
+    return out
+
+
+def _win_prob_from_starters(starters_a: list[str], starters_b: list[str], proj: dict[str, float], pos_by_pid: Optional[dict] = None) -> Optional[float]:
+    """Win probability from the site's single engine, compute_win_prob.
+
+    Delegates to the matchup page's model (per-position sigma fit
+    2026-09-29 plus the team CV floor), the same delegation the Weekly
+    Recap made: this used to be a private copy with a flat
+    ``sigma = max(0.4 * proj, 4.0)`` and no floor, so the digest could
+    quote a different win % for the same matchup than the page shows.
+
+    Contract preserved: None when the projection map is empty or either
+    side has fewer than 3 projected starters. The digest is a pregame
+    read (pid lists + projections only, no statuses), so every starter
+    is not-yet-started -- compute_win_prob's default for pids missing
+    from the status map. Positions come from ``pos_by_pid`` when the
+    caller has an index handy; missing positions use the model's
+    WR-like default sigma.
+    """
     if not proj:
         return None
 
-    def _stats(pids):
-        total = var = 0.0
-        hits = 0
-        for pid in pids or []:
-            if pid not in proj:
-                continue
-            p = float(proj.get(pid) or 0.0)
-            total += p
-            sigma = max(0.4 * p, 4.0)
-            var += sigma * sigma
-            hits += 1
-        return total, var, hits
+    def _hits(pids):
+        return sum(1 for pid in pids or [] if pid in proj)
 
-    ta, va, ha = _stats(starters_a)
-    tb, vb, hb = _stats(starters_b)
-    if ha < 3 or hb < 3:
+    if _hits(starters_a) < 3 or _hits(starters_b) < 3:
         return None
-    cv = va + vb
-    if cv < 1e-6:
-        return 0.5 if abs(ta - tb) < 1e-9 else (1.0 if ta > tb else 0.0)
-    z = (ta - tb) / (sqrt(cv) * sqrt(2.0))
-    return max(0.01, min(0.99, 0.5 * (1.0 + erf(z))))
+
+    from dashboard_services.matchups import compute_win_prob
+
+    pos_by_pid = pos_by_pid or {}
+
+    def _team(pids):
+        return {"starters": [
+            {"pid": pid, "pos": pos_by_pid.get(str(pid), "")}
+            for pid in pids or []
+        ]}
+
+    prob = compute_win_prob(_team(starters_a), _team(starters_b), {}, proj)
+    return None if prob is None else float(prob)
 
 
 def trade_insight_for_roster(

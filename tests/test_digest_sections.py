@@ -50,6 +50,40 @@ def test_win_prob_none_without_enough_projections():
                                   {"1": 10, "2": 10, "3": 10, "4": 10, "5": 10, "6": 10}) is not None
 
 
+def test_win_prob_delegates_to_compute_win_prob():
+    # The digest used to run a private flat-sigma copy (max(0.4*proj, 4),
+    # no team CV floor) that read a 120 vs 110 game at ~67% where the
+    # matchup page says ~62%. It now delegates to compute_win_prob, so
+    # the same lineups must give the page's number exactly.
+    import pytest
+    from dashboard_services.matchups import compute_win_prob
+
+    slots = [("QB", 22), ("RB", 16), ("RB", 13), ("WR", 15), ("WR", 12),
+             ("TE", 10), ("WR", 11), ("K", 8), ("DEF", 8)]
+
+    def lineup(prefix, total):
+        base = sum(v for _, v in slots)
+        pids, proj, pos = [], {}, {}
+        for i, (p, v) in enumerate(slots):
+            pid = "%s%d" % (prefix, i)
+            pids.append(pid)
+            proj[pid] = v * total / base
+            pos[pid] = p
+        return pids, proj, pos
+
+    a, pa, posa = lineup("a", 120.0)
+    b, pb, posb = lineup("b", 110.0)
+    proj = {**pa, **pb}
+    pos_by_pid = {**posa, **posb}
+    digest = _win_prob_from_starters(a, b, proj, pos_by_pid=pos_by_pid)
+    page = compute_win_prob(
+        {"starters": [{"pid": pid, "pos": pos_by_pid[pid]} for pid in a]},
+        {"starters": [{"pid": pid, "pos": pos_by_pid[pid]} for pid in b]},
+        {}, proj)
+    assert digest == pytest.approx(page, abs=1e-9)
+    assert digest == pytest.approx(0.6206, abs=0.001)
+
+
 def test_matchup_for_roster_pairs_on_matchup_id():
     class Cache:
         week_proj = {"a": 20.0, "b": 12.0, "c": 18.0, "d": 11.0, "e": 9.0, "f": 8.0}

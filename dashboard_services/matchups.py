@@ -351,6 +351,48 @@ def make_frac_lookup(
     return _frac
 
 
+def _game_margin_for_team(game: Optional[dict], team_code: Any) -> Optional[float]:
+    """Signed NFL score margin for ``team_code`` in ``game`` (team points
+    minus opponent points), or None when the game is not live or its score
+    cannot be read. Only live games carry a meaningful script signal."""
+    if not isinstance(game, dict):
+        return None
+    if str(game.get("gameStatusCode") or "").strip() != "1":
+        return None
+    tc = str(team_code or "").upper()
+    home = str(game.get("home") or "").upper()
+    away = str(game.get("away") or "").upper()
+    try:
+        home_pts = float(game.get("homePts"))
+        away_pts = float(game.get("awayPts"))
+    except (TypeError, ValueError):
+        return None
+    if tc and tc == home:
+        return home_pts - away_pts
+    if tc and tc == away:
+        return away_pts - home_pts
+    return None
+
+
+def make_margin_lookup(
+    team_game_lookup: Optional[dict],
+    team_schedule_lookup: Optional[dict] = None,
+):
+    """Build a ``fn(starter_dict) -> Optional[float]`` that returns the signed
+    NFL score margin of that starter's team in its live game (positive when
+    his team leads). Companion to ``make_frac_lookup`` over the same game
+    lookups; schedule-fallback games carry no live score, so they yield None.
+    Used only by win probability's game-script adjustment."""
+
+    def _margin(p: Optional[dict]) -> Optional[float]:
+        game = resolve_team_game(
+            (p or {}).get("nfl"), team_game_lookup, team_schedule_lookup,
+        )
+        return _game_margin_for_team(game, (p or {}).get("nfl"))
+
+    return _margin
+
+
 def _proj_value_for_pid(
     week_proj_map: Dict[str, Any],
     pid: Any,
@@ -1322,6 +1364,247 @@ def _winprob_sigma(pos: str, proj: float) -> float:
 # representative 9-starter lineups. Slightly conservative as a floor.
 TEAM_CV_FLOOR = 0.20
 
+# Empirical same-team QB<->pass-catcher correlation, from the TEAM_CV_FLOOR
+# derivation above (the fitted per-position sigmas plus empirical same-team
+# QB<->pass-catcher correlations (~0.11) imply CV 0.17-0.19 for representative
+# 9-starter lineups). Used for the covariance term in compute_win_prob and
+# as the shared-factor loading in the small-pool simulation.
+_QB_CATCHER_RHO = 0.11
+
+# --- Game script (live NFL score margin) ------------------------------------
+# The live projections feeding compute_win_prob do NOT bake in the NFL score
+# margin: the pregame projection is a pregame number, and
+# live_final_from_frac blends it with the player's own observed scoring pace
+# plus the clock only -- the margin is never an input. (The player's pace
+# already reflects the script he has actually played under, so any margin
+# adjustment must stay small to avoid double-counting the realised part.)
+# What remains uncaptured is the *forward* script: a pass catcher whose NFL
+# team trails big late keeps getting fed; one whose team leads big gets
+# protected by the run game and clock-killing. The adjustment below is
+# deliberately conservative: pass positions only (QB/WR/TE), nothing inside
+# a 10-point margin, and at most +/-10% of the *remaining* slice.
+_SCRIPT_POSITIONS = frozenset({"QB", "WR", "TE"})
+_SCRIPT_MIN_MARGIN = 10.0
+_SCRIPT_RATE = 0.004          # per NFL point of margin, on the remaining slice
+_SCRIPT_MAX_ADJ = 0.10
+
+
+def _script_mean_factor(margin: Optional[float], pos: str) -> float:
+    """Multiplier for an in-progress player's remaining projection given his
+    NFL team's signed margin (positive = his team leads). 1.0 when the
+    margin is unknown, inside the deadband, or the position is not a
+    pass-volume position."""
+    if margin is None or (pos or "").upper() not in _SCRIPT_POSITIONS:
+        return 1.0
+    try:
+        m = float(margin)
+    except (TypeError, ValueError):
+        return 1.0
+    if abs(m) < _SCRIPT_MIN_MARGIN:
+        return 1.0
+    adj = max(-_SCRIPT_MAX_ADJ, min(_SCRIPT_MAX_ADJ, -_SCRIPT_RATE * m))
+    return 1.0 + adj
+
+
+# --- Small-pool tail simulation ----------------------------------------------
+# With a full slate pending, summing per-player normals is fine: the bumps
+# average out. With only a handful of players left it is the worst model in
+# the building -- a remaining fantasy slice is not a smooth normal drip, it
+# is mostly grind with a discrete TD-sized chunk in the tail, and the normal
+# both invents negative points and prices "one more catch" as a 4-sigma
+# event. So when the TOTAL pending pool across both teams is <= 4 players,
+# compute_win_prob replaces the final normal step with a bounded,
+# deterministic Monte Carlo over the pending players' remaining slices.
+#
+# Distribution per player (stdlib only, no profile building on this read
+# path -- data_building.player_distributions profiles are NOT cheap here:
+# a cache miss rebuilds them from multi-season week files plus a
+# league-wide target-concentration pass, and get_player_profile needs a
+# season/week this function's signature does not carry):
+#   * mean >= 0.5: a lognormal matched exactly to the player's remaining
+#     mean and the model's remaining sigma. Non-negative, right-skewed;
+#     its tail is the one-big-play chance the normal misses.
+#   * 0 < mean < 0.5: a two-point spike (0 with prob 1-q, one chunk h with
+#     prob q, matched to mean/sigma) -- the late K/DEF shape: almost
+#     always nothing more, occasionally one chunk (a FG, a pick-six).
+# QB<->pass-catcher correlation rides in through a shared gaussian factor
+# per NFL team (loading rho = _QB_CATCHER_RHO, the same empirical value the
+# analytic covariance term uses; the lognormal transform attenuates the
+# realised Pearson correlation slightly below rho, which is conservative).
+# Each team's sampled variance is scaled to the analytic pending variance
+# (per-player sum + covariance, floored by TEAM_CV_FLOOR) so the simulation
+# and the analytic model agree on spread and differ only in shape.
+_SMALL_POOL_MAX = 4
+# The simulation prices the endgame of a real matchup: a full slate of
+# starters with nearly all of them final. Partial sides (a one-player
+# comparison, a hypothetical) keep the analytic contract exactly.
+_SMALL_POOL_MIN_STARTERS = 8
+_SMALL_POOL_SIMS = 4000
+_SMALL_POOL_MAX_SCALE = 2.5
+# A remaining slice cannot outscore a historic full game by much; the cap
+# only trims the lognormal's absurd far tail (a 45-point *remainder*).
+_SMALL_POOL_DRAW_CAP = 50.0
+
+
+def _small_pool_seed(spec) -> int:
+    """Deterministic seed from the exact simulation inputs, so identical
+    calls return identical results and the win bar never jitters between
+    polls."""
+    import hashlib
+
+    digest = hashlib.sha256(repr(spec).encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big")
+
+
+def _covariance_pairs(pending):
+    """Yield (i, j) index pairs of pending players who are a same-NFL-team
+    QB<->WR/TE pair. Both players must carry an NFL team code; unknown
+    teams never pair."""
+    pairs = []
+    for i in range(len(pending)):
+        for j in range(i + 1, len(pending)):
+            a, b = pending[i], pending[j]
+            nfl_a = str(a.get("nfl") or "").upper()
+            nfl_b = str(b.get("nfl") or "").upper()
+            if not nfl_a or nfl_a != nfl_b:
+                continue
+            pos_pair = {str(a.get("pos") or "").upper(),
+                        str(b.get("pos") or "").upper()}
+            if "QB" in pos_pair and pos_pair & {"WR", "TE"}:
+                pairs.append((i, j))
+    return pairs
+
+
+def _qb_catcher_covariance(pending) -> float:
+    """Covariance added to one team's pending variance by its same-team
+    QB<->pass-catcher pending pairs: 2 * rho * sigma_i * sigma_j per pair,
+    with each player's remaining sigma (full pregame, sqrt(frac)-scaled
+    in progress -- exactly the sigmas already summed into pend_var)."""
+    total = 0.0
+    for i, j in _covariance_pairs(pending):
+        total += (2.0 * _QB_CATCHER_RHO
+                  * pending[i]["sigma"] * pending[j]["sigma"])
+    return total
+
+
+def _small_pool_win_prob(l_lock, l_pending, l_var, r_lock, r_pending, r_var):
+    """Monte Carlo left-win probability for a small pending pool.
+
+    ``l_pending`` / ``r_pending`` are lists of {pid, pos, nfl, mean, sigma}
+    remaining-slice specs; ``l_var`` / ``r_var`` are the teams' analytic
+    pending variances (post covariance + floor). Returns None when the
+    pool is not simulatable (a degenerate mean with real variance, which
+    the analytic model handles more honestly), letting the caller fall
+    back to the analytic result.
+    """
+    import random
+    from math import exp, log, sqrt
+
+    def _prep(pending, target_var):
+        entries = [e for e in pending if e["sigma"] > 0.0 or e["mean"] > 0.0]
+        for e in entries:
+            if e["mean"] <= 0.0:
+                # Mean 0 with variance > 0 cannot be drawn from a
+                # non-negative distribution; missing-projection input.
+                return None
+        implied = sum(e["sigma"] ** 2 for e in entries)
+        implied += sum(
+            2.0 * _QB_CATCHER_RHO * entries[i]["sigma"] * entries[j]["sigma"]
+            for i, j in _covariance_pairs(entries)
+        )
+        scale = 1.0
+        if implied > 1e-9 and target_var > implied:
+            scale = min(_SMALL_POOL_MAX_SCALE, sqrt(target_var / implied))
+        prepped = []
+        for e in entries:
+            mu = e["mean"]
+            sd = e["sigma"] * scale
+            if mu < 0.5:
+                # Two-point spike: h with prob q, else 0 (mean/sd matched,
+                # chunk capped so a degenerate tiny mean cannot invent a
+                # 40-point remainder).
+                h = min((mu * mu + sd * sd) / mu, 36.0) if mu > 0 else 0.0
+                prepped.append(("spike", mu, sd, h, (mu / h) if h > 0 else 0.0))
+            else:
+                cv = sd / mu
+                s2 = log(1.0 + cv * cv)
+                prepped.append(("lognorm", mu, sd, log(mu) - s2 / 2.0, sqrt(s2)))
+        return prepped
+
+    l_prep = _prep(l_pending, l_var)
+    r_prep = _prep(r_pending, r_var)
+    if l_prep is None or r_prep is None:
+        return None
+
+    # Shared-factor groups: (side, nfl team) with a QB and >= 1 catcher.
+    def _groups(pending):
+        groups = {}
+        for idx, e in enumerate(pending):
+            nfl = str(e.get("nfl") or "").upper()
+            pos = str(e.get("pos") or "").upper()
+            if nfl and pos in ("QB", "WR", "TE"):
+                groups.setdefault(nfl, []).append(idx)
+        return {
+            nfl: idxs for nfl, idxs in groups.items()
+            if any(str(pending[i].get("pos") or "").upper() == "QB" for i in idxs)
+            and len(idxs) > 1
+        }
+
+    l_groups = _groups([e for e in l_pending if e["sigma"] > 0.0 or e["mean"] > 0.0])
+    r_groups = _groups([e for e in r_pending if e["sigma"] > 0.0 or e["mean"] > 0.0])
+
+    def _spec(pending):
+        return tuple(sorted(
+            (str(e.get("pid")), str(e.get("pos") or "").upper(),
+             str(e.get("nfl") or "").upper(),
+             round(e["mean"], 4), round(e["sigma"], 4))
+            for e in pending if e["sigma"] > 0.0 or e["mean"] > 0.0
+        ))
+
+    seed = _small_pool_seed((
+        round(l_lock, 4), round(r_lock, 4), round(l_var, 4), round(r_var, 4),
+        _spec(l_pending), _spec(r_pending),
+    ))
+    rng = random.Random(seed)
+    gauss = rng.gauss
+    rand = rng.random
+    sqrt_rho = sqrt(_QB_CATCHER_RHO)
+    sqrt_rest = sqrt(1.0 - _QB_CATCHER_RHO)
+
+    def _draw_side(prepped, groups, n_entries):
+        # One shared factor per correlated group, drawn once per sim.
+        factors = {nfl: gauss(0.0, 1.0) for nfl in groups}
+        member_of = {}
+        for nfl, idxs in groups.items():
+            for idx in idxs:
+                member_of[idx] = nfl
+        total = 0.0
+        for idx in range(n_entries):
+            kind, mu, sd, a, b = prepped[idx]
+            if kind == "spike":
+                if rand() < b:
+                    total += a
+                continue
+            if idx in member_of:
+                z = sqrt_rho * factors[member_of[idx]] + sqrt_rest * gauss(0.0, 1.0)
+            else:
+                z = gauss(0.0, 1.0)
+            draw = exp(a + b * z)
+            total += draw if draw < _SMALL_POOL_DRAW_CAP else _SMALL_POOL_DRAW_CAP
+        return total
+
+    l_entries = [e for e in l_pending if e["sigma"] > 0.0 or e["mean"] > 0.0]
+    r_entries = [e for e in r_pending if e["sigma"] > 0.0 or e["mean"] > 0.0]
+    wins = 0.0
+    for _ in range(_SMALL_POOL_SIMS):
+        l_total = l_lock + _draw_side(l_prep, l_groups, len(l_entries))
+        r_total = r_lock + _draw_side(r_prep, r_groups, len(r_entries))
+        if l_total > r_total:
+            wins += 1.0
+        elif l_total == r_total:
+            wins += 0.5
+    return max(0.01, min(0.99, wins / _SMALL_POOL_SIMS))
+
 
 def compute_win_prob(
         left: dict,
@@ -1330,6 +1613,7 @@ def compute_win_prob(
         proj_map: dict[str, float],
         *,
         frac_lookup=None,
+        margin_lookup=None,
 ) -> float:
     """
     Returns left team win probability (0.0–1.0) based on locked scores
@@ -1355,6 +1639,28 @@ def compute_win_prob(
     of the standard deviation, not half of it. Without the lookup,
     in-progress players are treated as fully locked at their
     current points, the prior behaviour.
+
+    Same-team QB<->pass-catcher pending pairs add a covariance term
+    (2 * rho * sigma_i * sigma_j, rho = _QB_CATCHER_RHO) to their team's
+    pending variance before the floor: a QB and his catcher boom or bust
+    together, so treating them as independent understates a stacked
+    team's spread.
+
+    ``margin_lookup(starter) -> Optional[float]`` supplies the signed NFL
+    score margin of that starter's team in its live game. When given, an
+    in-progress pass-position player's remaining mean gets the small
+    game-script adjustment in _script_mean_factor (the live projections
+    themselves carry no margin input; see its comment). Without it, no
+    script adjustment is applied, the prior behaviour.
+
+    Small-pool tail: when the total pending pool across both teams is
+    <= _SMALL_POOL_MAX players (and the matchup carries a full slate of
+    starters, >= _SMALL_POOL_MIN_STARTERS -- the endgame of a real
+    matchup, not a partial hypothetical side), the final normal step is
+    replaced by the deterministic Monte Carlo in _small_pool_win_prob,
+    whose skewed per-player shapes price the one-big-play tail the
+    normal misses. Any failure there falls back to the analytic result.
+    Above the threshold, behaviour is exactly the analytic model.
     """
     from math import erf, sqrt
 
@@ -1363,6 +1669,7 @@ def compute_win_prob(
         pend_proj = 0.0
         pend_var = 0.0
         floor_basis = 0.0
+        pending = []
         for p in (team.get("starters") or []):
             if p is None:
                 continue  # empty slot placeholder (see _normalize_starter_slots)
@@ -1409,15 +1716,35 @@ def compute_win_prob(
                     frac = max(0.0, min(1.0, float(frac)))
                     final = live_final_from_frac(actual, proj, frac, pos)
                     remaining_proj = max(0.0, final - actual)
+                    if margin_lookup is not None:
+                        # Game script: the projections carry no NFL
+                        # margin input, so nudge the remaining mean for
+                        # pass positions in one-sided live games. Small
+                        # and capped; see _script_mean_factor.
+                        try:
+                            margin = margin_lookup(p)
+                        except Exception:
+                            margin = None
+                        if margin is not None:
+                            remaining_proj *= _script_mean_factor(margin, pos)
                     pend_proj += remaining_proj
                     sigma_full = _winprob_sigma(pos, proj)
                     pend_var += frac * sigma_full * sigma_full
                     floor_basis += proj * sqrt(frac)
+                    pending.append({
+                        "pid": pid, "pos": pos, "nfl": p.get("nfl"),
+                        "mean": remaining_proj,
+                        "sigma": sqrt(frac) * sigma_full,
+                    })
             else:
                 pend_proj += proj
                 sigma = _winprob_sigma(pos, proj)
                 pend_var += sigma * sigma
                 floor_basis += proj
+                pending.append({
+                    "pid": pid, "pos": pos, "nfl": p.get("nfl"),
+                    "mean": proj, "sigma": sigma,
+                })
         if pend_proj == 0.0 and locked == 0.0:
             try:
                 fallback = float(team.get("proj_total") or 0.0)
@@ -1431,6 +1758,15 @@ def compute_win_prob(
                 pend_proj = fallback
                 pend_var = (TEAM_CV_FLOOR * fallback) ** 2
                 floor_basis = fallback
+                pending.append({
+                    "pid": None, "pos": "", "nfl": None,
+                    "mean": fallback, "sigma": TEAM_CV_FLOOR * fallback,
+                })
+        # Same-team QB<->pass-catcher covariance, added before the floor:
+        # the pair's outcomes move together (rho from the TEAM_CV_FLOOR
+        # derivation), so the independent sum understates this team's
+        # spread whenever a stacked pair is still pending.
+        pend_var += _qb_catcher_covariance(pending)
         # Team-level variance floor. Summing independent per-player variances
         # dilutes a full lineup's spread by ~1/sqrt(n starters); the floor
         # keeps the pending distribution matched to observed team dispersion
@@ -1443,14 +1779,14 @@ def compute_win_prob(
         floor_var = (TEAM_CV_FLOOR * floor_basis) ** 2
         if floor_var > pend_var:
             pend_var = floor_var
-        return locked, pend_proj, pend_var
+        return locked, pend_proj, pend_var, pending
 
     left_stats = _stats(left)
     right_stats = _stats(right)
     if left_stats is None or right_stats is None:
         return None
-    l_lock, l_pend, l_var = left_stats
-    r_lock, r_pend, r_var = right_stats
+    l_lock, l_pend, l_var, l_pending = left_stats
+    r_lock, r_pend, r_var, r_pending = right_stats
     l_total = l_lock + l_pend
     r_total = r_lock + r_pend
     combined_var = l_var + r_var
@@ -1463,7 +1799,30 @@ def compute_win_prob(
         return 0.5
 
     z = (l_total - r_total) / (combined_var ** 0.5 * 2 ** 0.5)
-    return max(0.01, min(0.99, 0.5 * (1 + erf(z))))
+    analytic = max(0.01, min(0.99, 0.5 * (1 + erf(z))))
+
+    # Small-pool tail: with <= _SMALL_POOL_MAX pending players in total,
+    # the normal's shape (not its mean or spread) is the problem, so price
+    # the same means/spreads with skewed per-player shapes instead. Any
+    # failure falls back to the analytic result.
+    n_pending = (
+        sum(1 for e in l_pending if e["sigma"] > 0.0 or e["mean"] > 0.0)
+        + sum(1 for e in r_pending if e["sigma"] > 0.0 or e["mean"] > 0.0)
+    )
+    n_starters = (
+        sum(1 for p in (left.get("starters") or []) if p is not None)
+        + sum(1 for p in (right.get("starters") or []) if p is not None)
+    )
+    if 1 <= n_pending <= _SMALL_POOL_MAX and n_starters >= _SMALL_POOL_MIN_STARTERS:
+        try:
+            sim = _small_pool_win_prob(
+                l_lock, l_pending, l_var, r_lock, r_pending, r_var,
+            )
+        except Exception:
+            sim = None
+        if sim is not None:
+            return sim
+    return analytic
 
 
 def compute_team_projections_for_weeks(
@@ -2098,6 +2457,7 @@ def render_matchup_slide(
     else:
         _slide_game_lookup = team_game_lookup
     _frac_lookup = make_frac_lookup(_slide_game_lookup, team_schedule_lookup)
+    _margin_lookup = make_margin_lookup(_slide_game_lookup, team_schedule_lookup)
 
     def _get_fpts_rank(team: str, pos: str):
         if not _fpts_data:
@@ -2923,7 +3283,7 @@ def render_matchup_slide(
     if proj:
         l_prob = compute_win_prob(
             m["left"], m["right"], status_by_pid, week_proj_map,
-            frac_lookup=_frac_lookup,
+            frac_lookup=_frac_lookup, margin_lookup=_margin_lookup,
         )
         if l_prob is not None:
             lp = round(l_prob * 100)
@@ -3162,7 +3522,7 @@ def render_matchup_slide(
     """
 
 
-def build_league_scores_list(matchups, viewer_rid, status_by_pid, proj_map, proj_lookup=None, frac_lookup=None):
+def build_league_scores_list(matchups, viewer_rid, status_by_pid, proj_map, proj_lookup=None, frac_lookup=None, margin_lookup=None):
     """Build the League Scores payload from already-computed matchup data.
 
     The Weekly Hub carousel and the League Scores tab show the same numbers
@@ -3214,6 +3574,7 @@ def build_league_scores_list(matchups, viewer_rid, status_by_pid, proj_map, proj
             try:
                 win_prob = round(compute_win_prob(
                     left, right, status_by_pid, proj_map, frac_lookup=frac_lookup,
+                    margin_lookup=margin_lookup,
                 ) * 100.0, 1)
             except Exception:
                 win_prob = None
