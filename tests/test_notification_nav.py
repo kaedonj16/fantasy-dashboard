@@ -227,8 +227,8 @@ def test_mobile_panel_capped_by_dynamic_viewport():
     dock. The mobile rule caps by the dynamic viewport and reserves
     the dock's zone below the panel."""
     block = CSS.split(".top-nav.br-mnav .changelog-dropdown {")[1].split("}")[0]
-    assert "max-height: calc(100vh - 176px)" in block
-    assert "max-height: calc(100dvh - 176px)" in block
+    assert "max-height: calc(100vh - 166px)" in block
+    assert "max-height: calc(100dvh - 166px)" in block
     # The vh fallback must come first so dvh overrides it where supported.
     assert block.index("100vh") < block.index("100dvh")
     # Desktop base rule keeps its own cap (this fix is mobile-only).

@@ -7366,24 +7366,59 @@ function initGenericTableSort(root = document) {
 
 function getCarouselState(card) {
   const track = card.querySelector(".m-track");
-  if (!track) return { track: null, slides: [], width: 1, idx: 0 };
+  if (!track) return { track: null, slides: [], width: 1, idx: 0, pitch: 1 };
 
   const slides = track.querySelectorAll(".m-slide");
   const viewport = card.querySelector(".m-carousel");
   const width = viewport?.clientWidth || track.clientWidth || 1;
 
-  const idx = width > 0 ? Math.round(track.scrollLeft / width) : 0;
-  return { track, slides, width, idx };
+  // Index by the nearest slide offset, not scrollLeft / viewport width:
+  // on the Weekly Hub's mobile layout each slide is narrower than the
+  // viewport (the next matchup peeks at the edge), so the naive division
+  // drifts a slide behind by the last cards. Pitch = the distance between
+  // successive slide starts, which scroll-snap aligns to.
+  let idx = 0;
+  let pitch = width;
+  if (slides.length > 1) {
+    pitch = slides[1].offsetLeft - slides[0].offsetLeft || width;
+    let best = Infinity;
+    slides.forEach((s, i) => {
+      const d = Math.abs(s.offsetLeft - track.scrollLeft);
+      if (d < best) { best = d; idx = i; }
+    });
+  }
+  return { track, slides, width, idx, pitch };
+}
+
+// Position dots under the carousel (rendered only in the Weekly Hub's
+// mobile swipe layout; the .m-dots container stays empty and hidden
+// everywhere else). Rebuilt whenever the slide count changes, e.g. after
+// a week-change innerHTML swap.
+function syncCarouselDots(card) {
+  const dots = card.querySelector(".m-dots");
+  if (!dots) return;
+  const { slides, idx } = getCarouselState(card);
+  if (dots.childElementCount !== slides.length) {
+    dots.textContent = "";
+    slides.forEach(() => {
+      const d = document.createElement("span");
+      d.className = "m-dot";
+      dots.appendChild(d);
+    });
+  }
+  Array.from(dots.children).forEach((d, i) => {
+    d.classList.toggle("active", i === idx);
+  });
 }
 
 function scrollToIndex(card, newIdx) {
-  const { track, slides, width } = getCarouselState(card);
+  const { track, slides, pitch } = getCarouselState(card);
   if (!track || !slides.length) return;
 
   const maxIdx = slides.length - 1;
   const clamped = Math.max(0, Math.min(maxIdx, newIdx));
 
-  track.scrollTo({ left: clamped * width, behavior: "smooth" });
+  track.scrollTo({ left: clamped * pitch, behavior: "smooth" });
 
   const prevBtn = card.querySelector(".m-btn-prev");
   const nextBtn = card.querySelector(".m-btn-next");
@@ -7394,12 +7429,30 @@ function scrollToIndex(card, newIdx) {
   // paint them across every league matchup at once.
   const shown = slides[clamped];
   if (shown && window.brInitMatchupLive) window.brInitMatchupLive(shown);
+
+  syncCarouselDots(card);
 }
 
 function initAllCarousels(scope = document) {
   scope.querySelectorAll(".matchup-carousel").forEach(card => {
     const { idx } = getCarouselState(card);
     scrollToIndex(card, idx || 0);
+    // Keep the mobile position dots in step with native swipe scrolling
+    // (the Prev/Next buttons are hidden in that layout). Bound once per
+    // track element; a re-rendered track is a new element and rebinds.
+    const track = card.querySelector(".m-track");
+    if (track && !track.__brDotsBound) {
+      track.__brDotsBound = true;
+      let raf = 0;
+      track.addEventListener("scroll", () => {
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          syncCarouselDots(card);
+        });
+      }, { passive: true });
+    }
+    syncCarouselDots(card);
   });
 }
 

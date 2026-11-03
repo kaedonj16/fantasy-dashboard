@@ -4534,7 +4534,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         aria = " aria-current='page'" if on else ""
         items += (
             f"<a class='{cls}'{aria} href='{_href(ep, suffix)}'>"
-            f"{_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>{label}</span></a>"
+            f"{_nav_icon(icon, size=20)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
     _more_live_cls = " br-more-live" if rz_live else ""
     _more_dot = "<span class='rz-mnav-dot' aria-hidden='true'></span>" if rz_live else ""
@@ -4551,7 +4551,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     items += (
         f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}{_more_active}' id='brMoreTab' "
         f"aria-label='More navigation; current page: {_DOCK_LABELS.get(active_norm, active_norm.replace('-', ' ').title())}'{_more_current} aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span>{_more_dot}{_recap_dot}{_bo_dot}</button>"
+        f"{_nav_icon('more', size=20)}<span class='br-tabbar-lbl'>More</span>{_more_dot}{_recap_dot}{_bo_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
     # at the active slot so it rests correctly with no flash; app.js animates a
@@ -4823,12 +4823,12 @@ def _mobile_nav_guest(active: str) -> str:
         aria = " aria-current='page'" if on else ""
         items += (
             f"<a class='{cls}'{aria} href='{href}'>"
-            f"{_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>{label}</span></a>"
+            f"{_nav_icon(icon, size=20)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
     items += (
         "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span></button>"
+        f"{_nav_icon('more', size=20)}<span class='br-tabbar-lbl'>More</span></button>"
     )
     n_tabs = len(_GUEST_DOCK_TABS) + 1
     ind_hidden = "" if active_index >= 0 else " data-hidden='1'"
