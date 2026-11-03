@@ -1,7 +1,7 @@
 """Contract tests: floating mobile dock (Facebook-style pill) + pro polish.
 
 - The dock floats with side margins, rounded corners and a soft shadow.
-- Pro pass: 60px tall, 24px icons, 10px tracked labels, and ONE active signal
+- Slim pass: 50px tall, 20px icons, 10px tracked labels, and ONE active signal
   (the gliding pill; the active icon/label stay a strong neutral).
 - A mobile-only search shortcut sits top-right in the top bar and opens the
   existing full-screen search.
@@ -28,16 +28,17 @@ def test_dock_is_a_rounded_pill_with_shadow():
 
 
 def test_dock_reserve_space_accounts_for_float_gap():
-    assert "--dock-safe-bottom: calc(60px + env(safe-area-inset-bottom) + 12px)" in CSS
+    assert "--dock-safe-bottom: calc(50px + env(safe-area-inset-bottom) + 12px)" in CSS
 
 
 def test_dock_proportions():
-    assert "height: 60px;" in CSS
-    assert "font-size: 11px;" in CSS
+    assert "height: 50px;" in CSS
+    assert "font-size: 10px;" in CSS
     assert "letter-spacing: .03em;" in CSS
-    # Dock icons render at 24px in both the league and guest docks.
-    assert APP_PY.count("_nav_icon(icon, size=24)") == 2
-    assert APP_PY.count("_nav_icon('more', size=24)") == 2
+    # Dock icons render at 20px in both the league and guest docks (the
+    # tabbar-anchored call sites; More-sheet rows use their own size).
+    assert APP_PY.count("_nav_icon(icon, size=20)}<span class='br-tabbar-lbl'>") == 2
+    assert APP_PY.count("_nav_icon('more', size=20)}<span class='br-tabbar-lbl'>") == 2
 
 
 def test_active_tab_uses_pill_only():

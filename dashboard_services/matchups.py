@@ -1177,6 +1177,7 @@ def render_matchup_carousel_weeks(
             {slides_html}
           </div>
         </div>
+        <div class="m-dots" aria-hidden="true"></div>
       </div>
     """
 
@@ -2280,6 +2281,18 @@ def render_matchup_slide(
                     # Skip the proj line when it just repeats the big number.
                     if not same:
                         proj_line = f"<div class='m-espn-proj'>proj {pregame:.1f}</div>"
+        # Compact mobile header: the win percentage rides on the projection
+        # line (the bar's own end labels are hidden there). _wp_by_side is
+        # filled by the win-probability block before this helper is called
+        # from the slide template; it stays empty on completed weeks.
+        _wp = _wp_by_side.get(side)
+        if _wp:
+            _wp_span = (f"<span class='m-espn-wp' style='color:{_wp[1]}'>"
+                        f"&middot; {_wp[0]}%</span>")
+            if proj_line:
+                proj_line = proj_line[:-len("</div>")] + " " + _wp_span + "</div>"
+            else:
+                proj_line = f"<div class='m-espn-proj'>{_wp_span}</div>"
         align = "left" if side == "left" else "right"
         cls = "m-espn-score-l" if side == "left" else "m-espn-score-r"
         return (f"<div class='m-espn-score {cls}' style='text-align:{align}'>"
@@ -2902,6 +2915,11 @@ def render_matchup_slide(
     # Win probability: only for live/projection weeks (skip completed weeks)
     win_bar_html = ""
     drama_html = ""
+    # Per-side win percentages for the compact mobile header, where the
+    # percentage rides on the projection line instead of beside the bar
+    # (filled in below when a win probability exists; the span stays
+    # display:none outside the Weekly Hub's mobile layout).
+    _wp_by_side: dict = {}
     if proj:
         l_prob = compute_win_prob(
             m["left"], m["right"], status_by_pid, week_proj_map,
@@ -2925,6 +2943,7 @@ def render_matchup_slide(
   <div class="m-wp-track" style="background:{track_bg};"></div>
   <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>
 </div>"""
+            _wp_by_side = {"left": (lp, l_col), "right": (rp, r_col)}
             # Sunday drama: while games are actually live, compare this poll's
             # favorite against the last recorded snapshot. A flipped favorite
             # plays an in-page lead-change moment; the snapshot is archived for

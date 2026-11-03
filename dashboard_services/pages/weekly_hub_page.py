@@ -398,6 +398,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
         '<button class="tab-btn active" data-tab="matchups">Matchups</button>'
         if _show_matchup_preview else ""
     )
+    # Mobile-only fifth tab (hidden at desktop widths by CSS): routes to
+    # the League Scores view that lives inside the Matchups panel.
+    _wk_league_btn = (
+        '<button class="tab-btn wk-league-tab" data-tab="league">League</button>'
+        if _show_matchup_preview else ""
+    )
     _wk_scorers_cls = "tab-btn" if _show_matchup_preview else "tab-btn active"
     _wk_matchups_panel = ""
     # League Scores data, embedded so the tab renders instantly from the
@@ -485,7 +491,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         </div>
 
         <div class="week-leaders-band wk-leaders-strip">
-          <div class="week-leaders-title">Week Leaders</div>
+          <div class="week-leaders-title">Week {default_week} Leaders</div>
           <div class="week-side-panels">
             {side_panel_html}
           </div>
@@ -494,6 +500,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         <div class="card-tabs weekly-hub-tabs" id="weeklyLeftTabs">
           <div class="tab-bar">
             {_wk_matchups_btn}
+            {_wk_league_btn}
             <button class="{_wk_scorers_cls}" data-tab="scorers">Scorers</button>
             <button class="tab-btn" data-tab="scout">Scout</button>
             <button class="tab-btn" data-tab="optimal">Lineup{_lw_chip}</button>
@@ -635,6 +642,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             '</div>';
           if (window.brInitMoments) window.brInitMoments(sideContainer);
         }}
+        if (window.wkSetLeadersTitle) window.wkSetLeadersTitle(w);
 
         if (matchupsContainer && typeof data.matchups_html === 'string') {{
           matchupsContainer.innerHTML = data.matchups_html;
@@ -782,6 +790,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         sideContainer.innerHTML = '<div class="week-side-panel active" data-week="' + w + '">' + data.highlights_html + '</div>';
         if (window.brInitMoments) window.brInitMoments(sideContainer);
       }}
+      if (window.wkSetLeadersTitle) window.wkSetLeadersTitle(w);
       if (matchupsContainer && typeof data.matchups_html === 'string') {{
         var _applyMatchups = function() {{
           matchupsContainer.innerHTML = data.matchups_html;
@@ -804,6 +813,25 @@ def build_weekly_hub_body(ctx: dict) -> str:
 function wkActivateTab(tab) {{
   var container = document.getElementById('weeklyLeftTabs');
   if (!container) return;
+  // 'league' has no panel of its own: on mobile it is the League Scores
+  // view inside the Matchups panel, driven through the ls-tabs machinery.
+  // On desktop the League tab is hidden and the ls-tabs row inside the
+  // carousel column does this job, so fall back to the desktop default.
+  if (tab === 'league') {{
+    if (window.matchMedia('(min-width: 1100px)').matches) {{
+      tab = 'scorers';
+    }} else {{
+      container.querySelectorAll('.tab-btn').forEach(function(b) {{
+        b.classList.toggle('active', b.getAttribute('data-tab') === 'league');
+      }});
+      container.querySelectorAll('.tab-panel').forEach(function(p) {{
+        p.classList.toggle('active', p.getAttribute('data-tab') === 'matchups');
+      }});
+      var lsLeagueBtn = document.querySelector('[data-ls-tab="league"]');
+      if (lsLeagueBtn) lsLeagueBtn.click();
+      return;
+    }}
+  }}
   container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
   container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
   var btn   = container.querySelector('.tab-btn[data-tab="' + tab + '"]');
@@ -831,6 +859,44 @@ window.wkActivateTabFromUrl = function() {{
 (function() {{
   window.wkActivateTabFromUrl();
 }})();
+
+// The leaders card title carries the viewed week ("Week 8 Leaders"); the
+// week-change and auto-refresh handlers call this after a successful load.
+window.wkSetLeadersTitle = function(w) {{
+  var t = document.querySelector('.week-leaders-title');
+  if (t) t.textContent = 'Week ' + w + ' Leaders';
+}};
+
+// Mobile League tab routing. The generic card-tab handler toggles panels
+// by data-tab and there is no league panel, so intercept League clicks in
+// the capture phase (before the button's own handler runs) and drive
+// wkActivateTab('league') instead. Leaving League for any other tab first
+// restores the carousel view inside the Matchups panel. Bound once: the
+// hub body can be swapped in again by soft navigation.
+if (!window.__wkLeagueTabBound && document.addEventListener) {{
+  window.__wkLeagueTabBound = true;
+  document.addEventListener('click', function(e) {{
+    var btn = e.target && e.target.closest ? e.target.closest('#weeklyLeftTabs .tab-btn') : null;
+    if (!btn) return;
+    if (window.matchMedia('(min-width: 1100px)').matches) return;
+    var tab = btn.getAttribute('data-tab');
+    var leagueView = document.querySelector('[data-ls-view="league"]');
+    var leagueShown = !!(leagueView && !leagueView.hidden);
+    if (tab === 'league') {{
+      e.preventDefault();
+      e.stopPropagation();
+      wkActivateTab('league');
+      try {{
+        var u = new URL(location.href);
+        u.searchParams.set('tab', 'league');
+        history.replaceState(null, '', u.toString());
+      }} catch (err) {{}}
+    }} else if (leagueShown) {{
+      var mb = document.querySelector('[data-ls-tab="matchup"]');
+      if (mb) mb.click();
+    }}
+  }}, true);
+}}
 
 // Desktop layout (>=1100px): Week Leaders stays a full-width strip on top;
 // below it the matchup carousel takes the LEFT column (sticky, ~54% wide)
@@ -866,11 +932,23 @@ window.wkActivateTabFromUrl = function() {{
     var mcEl  = document.getElementById('weeklyMatchupsContainer');
     var shell = mcEl ? mcEl.closest('.matchups-shell') : null;
     if (!bar || !shell) return;
+    // Leaving mobile: if the League Scores view is showing inside the
+    // shell, restore the carousel (the desktop column shows the matchup,
+    // with the ls-tabs row as its league-scores route). And move the
+    // leaders band out of the Matchups panel back to its full-width
+    // strip position above the two-column row.
+    var leagueView = document.querySelector('[data-ls-view="league"]');
+    if (leagueView && !leagueView.hidden) {{
+      var mb = document.querySelector('[data-ls-tab="matchup"]');
+      if (mb) mb.click();
+    }}
+    var band = main.querySelector('.week-leaders-band');
     var two = document.createElement('div');
     two.className = 'wk-hub-two wk-desktop-two';
     var leftCol = document.createElement('div');  leftCol.className = 'wk-hub-col wk-hub-col-match';
     var rightCol = document.createElement('div'); rightCol.className = 'wk-hub-col wk-hub-col-tabs';
     main.insertBefore(two, tabs);
+    if (band && band.parentNode !== main) main.insertBefore(band, two);
     leftCol.appendChild(shell);         // matchup carousel -> left column
     rightCol.appendChild(tabs);         // tabs card -> right column
     two.appendChild(leftCol);
@@ -889,6 +967,12 @@ window.wkActivateTabFromUrl = function() {{
     var mcEl   = document.getElementById('weeklyMatchupsContainer');
     var shell  = mcEl ? mcEl.closest('.matchups-shell') : null;
     if (shell && mPanel) mPanel.appendChild(shell);           // matchup -> back in its tab
+    // Mobile: the leaders band leaves the top strip and becomes the
+    // compact card directly under the matchup board, inside the
+    // Matchups panel (its .week-side-panels content node is untouched,
+    // so week changes keep re-rendering it by selector).
+    var band = main.querySelector('.week-leaders-band');
+    if (band && mPanel) mPanel.appendChild(band);
     var two = main.querySelector('.wk-desktop-two');
     if (two) {{ main.insertBefore(tabs, two); main.removeChild(two); }}
     if (bar) {{

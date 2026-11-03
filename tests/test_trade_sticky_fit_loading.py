@@ -6,7 +6,7 @@ behavioral contracts live in tests/trade_fit_harness.mjs):
 - The sticky balance bar floated at a flat bottom offset on mobile and
   the bottom tab bar dock covered its lower half on home-indicator
   phones. Bottom-fixed UI on this site anchors to
-  --dock-safe-bottom (the space the dock owns: 60px bar + float gap +
+  --dock-safe-bottom (the space the dock owns: 50px bar + float gap +
   safe-area) plus a gap; the sticky bar now does the same.
 - While a package re-graded, the Fit tile, acceptance chip, and sticky
   bar kept painting the previous trade's grade. The eval payload is
@@ -61,7 +61,7 @@ def test_dock_safe_variable_is_the_site_pattern():
     # The variable the bar anchors to is the shared one: 0 on desktop,
     # dock height + float gap + safe-area on mobile.
     assert "--dock-safe-bottom: 0px;" in CSS
-    assert "--dock-safe-bottom: calc(60px + env(safe-area-inset-bottom) + 12px);" in CSS
+    assert "--dock-safe-bottom: calc(50px + env(safe-area-inset-bottom) + 12px);" in CSS
 
 
 def test_fit_grading_state_wiring():
