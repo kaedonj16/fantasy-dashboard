@@ -1168,7 +1168,11 @@ def test_fleaflicker_bracket_projects_from_seeds(monkeypatch):
     monkeypatch.setattr(provider, "get_matchups", lambda *a, **k: [])
     monkeypatch.setattr(provider, "_playoff_seeds", lambda *a, **k: [1, 2, 3, 4, 5, 6])
     games = provider.get_bracket("14153", 2026, "winners")
-    assert len(games) == 2
+    # Complete projected bracket for a 6-team field: 2 first-round games,
+    # 2 semifinals (bye seeds 1 and 2 enter there), 1 final.
+    assert len(games) == 5
+    field = {g[s] for g in games for s in ("t1", "t2") if g[s] is not None}
+    assert field == {1, 2, 3, 4, 5, 6}
     assert all(g.get("projected") for g in games)
     assert provider.get_bracket("14153", 2026, "losers") == []
 

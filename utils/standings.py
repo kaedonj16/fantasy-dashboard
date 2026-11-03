@@ -672,8 +672,8 @@ have paired matchups. This helper turns those rows into the
 ``{r, m, t1, t2, t1_from, t2_from, w, l}`` shape ``playoff_bracket``
 already renders.
 
-When playoff weeks have not been played yet, ``project_bracket_from_seeds``
-builds a first-round pairing from standings order so the Playoff Picture
+When playoff weeks have not been played yet, ``build_full_bracket``
+projects the complete bracket from standings order so the Playoff Picture
 tab is not empty all season.
 """
 
@@ -927,7 +927,14 @@ def derive_or_project_bracket(
     playoff_teams: int = 6,
     kind: str = "winners",
 ) -> List[Dict[str, Any]]:
-    """Prefer real playoff-week games; otherwise project the first round."""
+    """Prefer real playoff-week games; otherwise project the full bracket.
+
+    The projection must be the COMPLETE bracket (build_full_bracket), not
+    just the first round: a first-round-only projection drops the bye
+    seeds from every match, so the Playoff Picture renderer counted only
+    the first-round teams as the playoff field (a 6-team field read as
+    "4 playoff teams") and labelled its lone round "Finals".
+    """
     actual = derive_bracket_from_matchups(
         matchups_by_week or {}, playoff_week_start, kind=kind,
     )
@@ -935,7 +942,18 @@ def derive_or_project_bracket(
         return actual
     if str(kind or "winners").lower() != "winners":
         return []
-    return project_bracket_from_seeds(seed_roster_ids or [], playoff_teams=playoff_teams)
+    # seed_roster_ids arrives in standings order and may hold the whole
+    # league; the playoff field is only its first ``playoff_teams`` ids.
+    try:
+        n = int(playoff_teams or 0)
+    except (TypeError, ValueError):
+        n = 0
+    seeds = list(seed_roster_ids or [])
+    if n > 0:
+        seeds = seeds[:n]
+    if len(seeds) < 2:
+        return []
+    return build_full_bracket(seeds)
 
 
 # ======================================================================

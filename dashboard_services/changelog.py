@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-03",
         "tag": "fix",
+        "text": "Two playoff fixes for Fleaflicker and MFL leagues. The Playoff Picture on the standings page now shows the full playoff field: in a six-team playoff it counts all six teams (it showed four, because the bye teams were missing) and the opening round is no longer labelled as the Finals. And Playoff Odds can no longer slip into a preseason projection in the middle of the season, which showed every team at 0-0 with a full season left to play; the odds now always build from your real records, or show nothing rather than a made-up projection.",
+        "link": "/standings"
+    },
+    {
+        "date": "2026-11-03",
+        "tag": "fix",
         "text": "Prospect grading comparisons got cleaner. The historical marks our prospect model measures college stats against now come only from seasons where the player actually held a real role, instead of any season with four or more games, so a backup's handful of big games can no longer set the bar for everyone else. The top and bottom of each comparison scale are also set by the recorded population as a whole instead of its single best and worst seasons, so one freak season no longer stretches the scale.",
         "link": "/prospects"
     },
