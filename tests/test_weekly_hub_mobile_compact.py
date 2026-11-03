@@ -4,10 +4,12 @@ Phone widths only (desktop rendering unchanged):
 - slimmer hub header, global top nav hidden on the hub page,
 - five tabs in the main row (Matchups, League, Scorers, Scout, Lineup)
   with the League Scores sub-tab row replaced by the League tab,
-- swipe-only matchup carousel: no heading/Prev-Next, next card peeking,
-  position dots underneath,
-- Sleeper-density preview header (win % on the projection line),
-- tighter board rows, smaller ScoreZone Moments card,
+- swipe-only matchup carousel: no heading/Prev-Next, full-width
+  slides (no next-card sliver at rest), position dots underneath,
+- Sleeper-density preview header (win % on the projection line) with
+  the H2H lines as one small muted line under the team records,
+- board rows shrunk past the mock (13.5px names, 18px scores, ~6px
+  cell padding, smaller slot chips), smaller ScoreZone Moments card,
 - leaders strip as one compact card under the board.
 """
 from __future__ import annotations
@@ -81,6 +83,20 @@ def test_hub_header_card_is_thinner_on_mobile():
     css = _css()
     assert ".weekly-hub .card-header-row h2 { font-size: 14px; }" in css
     assert ".weekly-hub .weekly-rz-btn" in css
+    # Mock values: 6px vertical card padding, controls at 12px / 4px.
+    assert ".weekly-hub .page-main > .card {\n        padding: 6px 10px;" in css
+
+
+def test_scorezone_button_is_white_outline_pill_on_mobile():
+    css = _css()
+    # Even the live state matches the mock on the mobile hub header:
+    # white fill, light border, navy text; the red dot is dropped
+    # (the header already carries the LIVE badge).
+    assert "background: #fff;" in css
+    assert "border: 1.5px solid #d5dce4;" in css
+    assert "color: #3d5a7a;" in css
+    assert ".weekly-hub .weekly-rz-btn-live" in css
+    assert ".weekly-hub .weekly-rz-btn-dot { display: none; }" in css
 
 
 # --- carousel ---------------------------------------------------------------
@@ -93,10 +109,14 @@ def test_carousel_markup_has_dots_container():
     assert 'class="m-dots"' in html
 
 
-def test_carousel_mobile_is_swipe_only_with_peek_and_dots():
+def test_carousel_mobile_is_swipe_only_full_width_with_dots():
     css = _css()
     assert ".weekly-hub .matchup-carousel .m-nav { display: none; }" in css
-    assert "flex: 0 0 calc(100% - 30px)" in css
+    # Full-width slides: no part of the next matchup shows at rest
+    # (the brief peek left a broken sliver of the next board visible
+    # down the right edge; Kaedon killed it, 2026-11-02).
+    assert ".weekly-hub .matchup-carousel .m-slide { flex: 0 0 100%; }" in css
+    assert "flex: 0 0 calc(100% - 30px)" not in css
     assert ".weekly-hub .m-dots" in css
     assert ".m-dots { display: none; }" in css  # hidden outside hub mobile
 
@@ -104,7 +124,7 @@ def test_carousel_mobile_is_swipe_only_with_peek_and_dots():
 def test_carousel_js_syncs_dots_and_uses_slide_pitch():
     js = _read("static", "app.js")
     assert "function syncCarouselDots(card)" in js
-    # Index from slide offsets so the peeking layout cannot drift.
+    # Index from slide offsets so the track gap cannot drift the index.
     assert "slides[1].offsetLeft - slides[0].offsetLeft" in js
 
 
@@ -148,20 +168,78 @@ def test_preview_header_density_css():
     assert ".weekly-hub .m-wp-track { height: 4px; }" in css
     assert ".weekly-hub .m-win-bar .m-wp-pct { display: none; }" in css
     assert ".weekly-hub .m-espn-meta" in css
+    assert ".weekly-hub .m-espn-proj {\n        font-size: 11.5px;" in css
+
+
+def test_h2h_lines_sit_under_the_records_on_mobile():
+    css = _css()
+    # The duplicate under-records line is hidden everywhere else.
+    assert ".m-h2h-under { display: none; }" in css
+    # On the mobile hub the badge-row centre slot goes away and the
+    # under-records copy shows as one small muted centred line.
+    assert ".weekly-hub .m-espn-badges-c { display: none; }" in css
+    assert ".weekly-hub .m-h2h-under {" in css
+    assert "color: var(--text-subtle);" in css
+
+
+def test_slide_renders_h2h_under_copy(monkeypatch):
+    pytest.importorskip("pandas")
+    from dashboard_services import matchups as m
+
+    monkeypatch.setattr(m, "load_teams_index", lambda: {})
+    monkeypatch.setattr(m, "build_offense_rankings", lambda *_: {})
+    monkeypatch.setattr(m, "load_week_stats", lambda season, week: {})
+    monkeypatch.setattr(m, "load_week_schedule", lambda *_: [])
+    monkeypatch.setattr(m, "build_team_schedule_lookup", lambda *_: {})
+
+    def team(name, rid):
+        return {
+            "name": name, "username": "u", "record": "2-4", "avatar": "",
+            "pts_total": 10.0, "proj_total": 10.0, "roster_id": rid,
+            "owner_id": f"u{rid}",
+            "starters": [{"pid": f"p{rid}", "name": "Some Guy", "pos": "QB",
+                          "pts": 1.0, "nfl": "KC"}],
+        }
+
+    html = m.render_matchup_slide(
+        "2026",
+        {"left": team("A Team", 1), "right": team("B Team", 2),
+         "h2h": {"left_wins": 1, "right_wins": 0}},
+        8, 7,
+        status_by_pid={"p1": m.STATUS_FINAL, "p2": m.STATUS_FINAL},
+        projections={}, players={}, teams={}, team_game_lookup={},
+    )
+    assert "class='m-h2h-under'" in html
+    # Both copies carry the lines; CSS picks which one is visible.
+    assert html.count("m-rivalry") == 2
+    assert html.count("H2H this season:") == 2
 
 
 # --- board rows + moments -----------------------------------------------------
 
-def test_board_rows_tighter_on_mobile_only():
+def test_board_rows_shrunk_on_mobile_only():
     css = _css()
-    assert ".weekly-hub .mb-info > .pname { font-size: 14.5px; }" in css
-    assert ".weekly-hub .mb-a { font-size: 19px; }" in css
+    # Kaedon's shrink (2026-11-02), past the mock's 14.5px / 19px:
+    # 13.5px names, 18px scores including the .mb-final variant
+    # (its 20px base would otherwise win over the plain .mb-a rule),
+    # ~6px cell padding, 10.5px sub / game / stat / projection lines.
+    assert ".weekly-hub .mb-info > .pname { font-size: 13.5px; }" in css
+    assert ".weekly-hub .mb-a { font-size: 18px; }" in css
+    assert ".weekly-hub .mb-a.mb-final { font-size: 18px; }" in css
+    assert ".weekly-hub .m-combo .mb-cell {" in css
+    assert "padding-top: 6px;" in css
+    assert ".weekly-hub .mb-team { font-size: 10.5px; }" in css
+    assert ".weekly-hub .mb-pj { font-size: 10.5px; }" in css
+    assert ".weekly-hub .mb-pos .pos-badge {" in css
 
 
 def test_moments_card_smaller_on_mobile():
     css = _css()
-    assert ".weekly-hub .rzm-hub-launcher .rzm-row-title { font-size: 14px; }" in css
+    assert ".weekly-hub .rzm-hub-launcher .rzm-row-title {" in css
     assert ".weekly-hub .rzm-hub-launcher .rzm-row-sub { font-size: 11.5px; }" in css
+    # Mock padding/chevron: 8px vertical on the row, 14px chevron.
+    assert "padding: 8px 12px 8px 0;" in css
+    assert ".weekly-hub .rzm-hub-launcher .rzm-row-chevron { font-size: 14px; }" in css
 
 
 # --- leaders card ---------------------------------------------------------------

@@ -10,6 +10,12 @@ capped and wraps inside its pill so the badges never overlap it.
 
 Verified in a Playwright replica of the head: centre-slot centre ==
 card centre at 874px, 390px and 360px, zero overlap, zero page overflow.
+
+Scoped exception (Kaedon, 2026-11-02): in the Weekly Hub's phone
+layout only, the centre slot is hidden and a duplicate of the same
+H2H block renders under the team records (.m-h2h-under, display:none
+everywhere else). The centre slot remains the canonical home at
+every other width and surface.
 """
 import pathlib
 
@@ -22,8 +28,11 @@ MATCHUPS = (
 
 def test_h2h_renders_in_the_badge_row_centre_slot():
     assert "<div class='m-espn-badges-c'>{h2h_html}</div>" in MATCHUPS
-    # Exactly one emission site for the H2H block: the centre slot.
-    assert MATCHUPS.count("{h2h_html}") == 1
+    # Two emission sites for the H2H block: the centre slot (canonical)
+    # and the .m-h2h-under duplicate the Weekly Hub's phone layout
+    # shows under the team records instead. No third copy may appear.
+    assert MATCHUPS.count("{h2h_html}") == 2
+    assert "<div class='m-h2h-under'>{h2h_html}</div>" in MATCHUPS
     # The badge row now renders even when only the H2H lines exist
     # (no GOTW, no divisional game), so the centre is always populated.
     assert "if gotw_badge_html or div_badge_html or h2h_html:" in MATCHUPS

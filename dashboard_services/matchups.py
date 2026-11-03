@@ -3127,6 +3127,16 @@ def render_matchup_slide(
             f"</div>"
         )
 
+    # Second home for the H2H lines: the Weekly Hub's phone layout hides
+    # the badge-row centre slot and shows this copy as one small muted
+    # line under the team records instead (it stays display:none at
+    # every other width/surface). The rivalry node is duplicated, not
+    # moved, so desktop markup is untouched; the client hydrates both
+    # copies from its per-pair label cache, so no extra fetch fires.
+    h2h_under_html = ""
+    if h2h_html:
+        h2h_under_html = f"<div class='m-h2h-under'>{h2h_html}</div>"
+
     return f"""
     <div class="{slide_cls}"{win_attr}{moments_attrs}>
       <div class="m-head m-head-espn">
@@ -3142,6 +3152,7 @@ def render_matchup_slide(
           {_espn_team_info(m['left'], 'left')}
           {_espn_team_info(m['right'], 'right')}
         </div>
+        {h2h_under_html}
       </div>
       {rzm_hub_html}
       {drama_html}

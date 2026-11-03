@@ -55098,14 +55098,18 @@ body.otc-sticky-on { padding-bottom: 72px; }
 
 /* ============================================================
    Weekly Hub mobile compact (phone widths): slimmer page top,
-   five-tab row with a League tab, swipe-only matchup carousel
-   with a peeking next card and position dots, Sleeper-density
-   preview header, tighter board rows, smaller ScoreZone Moments
-   card, and the leaders strip as one compact card under the
-   board. Desktop rendering is unchanged by this section.
+   five-tab row with a League tab, swipe-only full-width matchup
+   carousel with position dots, Sleeper-density preview header
+   with the H2H lines under the team records, shrunk board rows,
+   smaller ScoreZone Moments card, and the leaders strip as one
+   compact card under the board. Desktop rendering is unchanged
+   by this section.
    ============================================================ */
 .m-dots { display: none; }
 .m-espn-wp { display: none; }
+/* Second home for the slide's H2H lines, shown only in the Weekly
+   Hub's phone layout (under the team records); hidden elsewhere. */
+.m-h2h-under { display: none; }
 
 @media (min-width: 1100px) {
     /* The League tab exists only in the mobile single-column layout;
@@ -55191,7 +55195,7 @@ body.otc-sticky-on { padding-bottom: 72px; }
     body:has(.page-shell[data-page="weekly"]) .top-nav.br-mnav { display: none; }
 
     .weekly-hub .page-main > .card {
-        padding: 8px 10px;
+        padding: 6px 10px;
         margin-bottom: 8px;
     }
     .weekly-hub .card-header-row {
@@ -55204,9 +55208,24 @@ body.otc-sticky-on { padding-bottom: 72px; }
         margin-left: 6px;
     }
     .weekly-hub .week-selector { gap: 6px; }
-    .weekly-hub .weekly-rz-btn {
-        padding: 4px 9px;
+    /* ScoreZone button matches the approved mock at phone widths: a
+       white outline pill with navy text, even in its live state (the
+       red live fill stays on desktop). The red live dot is dropped
+       here too: the header already carries the LIVE badge. */
+    .weekly-hub .weekly-rz-btn,
+    .weekly-hub .weekly-rz-btn-live {
+        padding: 4px 8px;
         font-size: 12px;
+        background: #fff;
+        border: 1.5px solid #d5dce4;
+        color: #3d5a7a;
+    }
+    .weekly-hub .weekly-rz-btn-dot { display: none; }
+    :root[data-theme="dark"] .weekly-hub .weekly-rz-btn,
+    :root[data-theme="dark"] .weekly-hub .weekly-rz-btn-live {
+        background: var(--card);
+        border-color: var(--border-strong);
+        color: var(--text);
     }
     .weekly-hub .week-selector select.search {
         font-size: 12px;
@@ -55217,17 +55236,19 @@ body.otc-sticky-on { padding-bottom: 72px; }
     /* Five-tab row: tighter bar, smaller labels, no swaps pill. */
     #weeklyLeftTabs .tab-bar { margin: 8px 10px 6px; }
     #weeklyLeftTabs .tab-btn {
-        font-size: 12px;
-        padding: 7px 3px;
+        font-size: 13px;
+        padding: 7px 2px;
     }
     #weeklyLeftTabs .wk-tab-cnt { display: none; }
 
-    /* Swipe-only carousel: no heading row or Prev/Next, the next
-       matchup peeks at the edge, position dots underneath. */
+    /* Swipe-only carousel: no heading row or Prev/Next. Each slide is
+       the full carousel width so nothing of the next matchup shows at
+       rest (the earlier peek left a broken sliver of the next board
+       down the right edge); position dots sit underneath. */
     .weekly-hub .matchup-carousel { margin-bottom: 14px !important; }
     .weekly-hub .matchup-carousel .m-nav { display: none; }
     .weekly-hub .matchup-carousel .m-track { gap: 10px; }
-    .weekly-hub .matchup-carousel .m-slide { flex: 0 0 calc(100% - 30px); }
+    .weekly-hub .matchup-carousel .m-slide { flex: 0 0 100%; }
     .weekly-hub .m-dots {
         display: flex;
         gap: 5px;
@@ -55263,7 +55284,7 @@ body.otc-sticky-on { padding-bottom: 72px; }
     }
     .weekly-hub .m-espn-num { font-size: 24px; }
     .weekly-hub .m-espn-proj {
-        font-size: 11px;
+        font-size: 11.5px;
         margin-top: 2px;
     }
     .weekly-hub .m-espn-wp { display: inline; }
@@ -55290,29 +55311,82 @@ body.otc-sticky-on { padding-bottom: 72px; }
         overflow: hidden;
         text-overflow: ellipsis;
     }
-    .weekly-hub .m-head-espn .m-rivalry {
+    /* H2H lines leave the badge row at phone widths: the same markup
+       renders again in .m-h2h-under, one small muted line centred
+       under the two record lines (mock parity). The GOTW and
+       DIVISIONAL chips keep the top row to themselves. */
+    .weekly-hub .m-espn-badges-c { display: none; }
+    .weekly-hub .m-h2h-under {
+        display: block;
+        margin-top: 3px;
+        text-align: center;
         font-size: 11px;
-        padding: 3px 8px;
+        line-height: 1.2;
+        color: var(--text-subtle);
     }
-    .weekly-hub .m-head-espn .m-h2h { font-size: 11px; }
+    .weekly-hub .m-h2h-under .m-h2h {
+        font-size: 11px;
+        color: inherit;
+    }
+    .weekly-hub .m-h2h-under .m-rivalry {
+        font-size: 11px;
+        color: inherit;
+        margin-top: 0;
+        padding: 0;
+    }
+    .weekly-hub .m-h2h-under .m-rivalry b {
+        color: inherit;
+        font-weight: 600;
+    }
     .weekly-hub .m-gotw-why-mobile { margin-top: 2px; }
 
-    /* Board rows tighter: less vertical padding, closer lines. */
-    .weekly-hub .mb-cell {
-        padding-top: 4px;
-        padding-bottom: 4px;
+    /* Board rows shrunk (Kaedon, 2026-11-02, past the mock): ~6px
+       cell padding, 13.5px names, 18px scores (finals included: the
+       .mb-final variant carries its own 20px base), a slightly
+       smaller slot chip, and the team / game / stat lines a notch
+       smaller and tighter. Density only: every line still renders. */
+    .weekly-hub .m-combo { row-gap: 4px; }
+    .weekly-hub .m-combo .mb-cell {
+        padding-top: 6px;
+        padding-bottom: 6px;
         gap: 2px;
     }
-    .weekly-hub .mb-info > .pname { font-size: 14.5px; }
-    .weekly-hub .mb-a { font-size: 19px; }
-    .weekly-hub .mb-game { line-height: 1.2; }
+    /* The drive-bar row zeroes its cells' bottom padding so the bar
+       sits tight; keep the same 6px rhythm in the hub. */
+    .weekly-hub .mb-row:has(> .mb-fld:not(:empty)) > .mb-cell { padding-bottom: 6px; }
+    .weekly-hub .mb-info > .pname { font-size: 13.5px; }
+    .weekly-hub .mb-team { font-size: 10.5px; }
+    .weekly-hub .mb-a { font-size: 18px; }
+    .weekly-hub .mb-a.mb-final { font-size: 18px; }
+    .weekly-hub .mb-a.mb-bye { font-size: 13px; }
+    .weekly-hub .mb-pj { font-size: 10.5px; }
+    .weekly-hub .mb-game {
+        font-size: 10.5px;
+        line-height: 1.2;
+    }
+    .weekly-hub .mb-stat {
+        font-size: 10.5px;
+        line-height: 1.25;
+    }
+    .weekly-hub .mb-pos .pos-badge {
+        width: 32px;
+        height: 18px;
+        font-size: 10px;
+        padding: 1px 3px;
+    }
 
-    /* ScoreZone Moments card smaller. */
+    /* ScoreZone Moments card at the mock's size. */
     .weekly-hub .rzm-hub-launcher { margin-top: 6px; }
-    .weekly-hub .rzm-hub-launcher .rzm-row-btn { padding: 7px 12px 7px 0; }
-    .weekly-hub .rzm-hub-launcher .rzm-row-title { font-size: 14px; }
+    .weekly-hub .rzm-hub-launcher .rzm-row-btn {
+        padding: 8px 12px 8px 0;
+        gap: 9px;
+    }
+    .weekly-hub .rzm-hub-launcher .rzm-row-title {
+        font-size: 14px;
+        line-height: 1.2;
+    }
     .weekly-hub .rzm-hub-launcher .rzm-row-sub { font-size: 11.5px; }
-    .weekly-hub .rzm-hub-launcher .rzm-row-chevron { font-size: 16px; }
+    .weekly-hub .rzm-hub-launcher .rzm-row-chevron { font-size: 14px; }
 }
 
 /* ── Trade Calculator: chip headshots (all widths) + phone redesign ──────

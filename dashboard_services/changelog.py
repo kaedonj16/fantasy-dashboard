@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-02",
+        "tag": "fix",
+        "text": "Weekly Hub on phones, second design pass: swiping between matchups now shows one full matchup at a time, with nothing of the next matchup visible at the edge. The all-time head-to-head record moves to its own small line under the two team records instead of the top of the preview card, the ScoreZone button in the header is a calm white outline pill, the header strip is thinner, and the matchup board rows shrink again: smaller names, scores, position chips and stat lines, with every game line and drive bar kept.",
+        "link": "/weekly"
+    },
+    {
+        "date": "2026-11-02",
         "tag": "update",
         "text": "Navigation tidied up: the Weekly menu is now grouped into Play (Matchups, ScoreZone, Waivers & Start/Sit, Lineup Lab, Opponent Scout, Schedule Rankings) and Review (Weekly Recap, Lineup Efficiency), with ScoreZone up second where game day needs it, and NFL Team Rankings has moved from the Players menu to the Stats menu, since it ranks teams, not players. The mobile More menu mirrors the same groups and order.",
         "link": "/"
