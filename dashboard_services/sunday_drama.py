@@ -323,7 +323,7 @@ def turning_points_html(points: List[Dict[str, Any]]) -> str:
         try:
             lp = float(p.get("left_pts") or 0.0)
             rp = float(p.get("right_pts") or 0.0)
-            score = f"{lp:.1f} &rarr; {rp:.1f} final"
+            score = f"{lp:.1f} → {rp:.1f} final"
         except (TypeError, ValueError):
             score = ""
         score_html = f" <span class=\"m-drama-tp-score\">{html.escape(score)}</span>" if score else ""

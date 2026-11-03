@@ -7419,24 +7419,29 @@ function getCarouselState(card) {
   return { track, slides, width, idx, pitch };
 }
 
-// Position dots under the carousel (rendered only in the Weekly Hub's
-// mobile swipe layout; the .m-dots container stays empty and hidden
-// everywhere else). Rebuilt whenever the slide count changes, e.g. after
-// a week-change innerHTML swap.
+// Position dots under each slide's preview head (rendered only in the
+// Weekly Hub's mobile swipe layout; the .m-dots containers stay empty
+// and hidden everywhere else). Every slide carries its own container --
+// a single container after the track would land under the whole board,
+// since a slide is the full matchup -- and all of them sync to the same
+// active index. Rebuilt whenever the slide count changes, e.g. after a
+// week-change innerHTML swap.
 function syncCarouselDots(card) {
-  const dots = card.querySelector(".m-dots");
-  if (!dots) return;
+  const dotsList = card.querySelectorAll(".m-dots");
+  if (!dotsList.length) return;
   const { slides, idx } = getCarouselState(card);
-  if (dots.childElementCount !== slides.length) {
-    dots.textContent = "";
-    slides.forEach(() => {
-      const d = document.createElement("span");
-      d.className = "m-dot";
-      dots.appendChild(d);
+  dotsList.forEach((dots) => {
+    if (dots.childElementCount !== slides.length) {
+      dots.textContent = "";
+      slides.forEach(() => {
+        const d = document.createElement("span");
+        d.className = "m-dot";
+        dots.appendChild(d);
+      });
+    }
+    Array.from(dots.children).forEach((d, i) => {
+      d.classList.toggle("active", i === idx);
     });
-  }
-  Array.from(dots.children).forEach((d, i) => {
-    d.classList.toggle("active", i === idx);
   });
 }
 
