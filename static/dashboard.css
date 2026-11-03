@@ -55304,8 +55304,16 @@ body.otc-sticky-on { padding-bottom: 72px; }
     .weekly-hub .m-dot.active { background: var(--accent); }
 
     /* Preview header at Sleeper density: 28px avatars, 24px scores,
-       win percentage on the projection line, slim 4px win bar. */
+       win percentage on the projection line, slim 4px win bar. The
+       header sits on a card too (Kaedon, 2026-11-03, "like the
+       mock"): the same surface as the board card below, as its own
+       separate card. Internals untouched; the position dots stay
+       directly under the card, outside it. */
     .weekly-hub .m-head {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
         padding: 8px 10px;
         margin-bottom: 8px;
     }

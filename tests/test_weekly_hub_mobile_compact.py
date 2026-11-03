@@ -179,6 +179,21 @@ def test_turning_points_slim_and_board_carded_on_mobile():
     assert "border-radius: var(--radius);" in css
 
 
+def test_score_header_carded_on_mobile():
+    css = _css()
+    # The score header gets the same card treatment as the board
+    # (Kaedon, 2026-11-03, "like the mock"): white surface, 1px
+    # border, radius and the same small shadow, as its own separate
+    # card above the dots.
+    assert ".weekly-hub .m-head {\n        background: var(--card);" in css
+    assert (
+        ".weekly-hub .m-head {\n        background: var(--card);\n"
+        "        border: 1px solid var(--border);\n"
+        "        border-radius: var(--radius);\n"
+        "        box-shadow: var(--shadow-sm);"
+    ) in css
+
+
 def test_carousel_mobile_is_swipe_only_full_width_with_dots():
     css = _css()
     assert ".weekly-hub .matchup-carousel .m-nav { display: none; }" in css

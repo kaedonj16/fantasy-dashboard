@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-03",
         "tag": "update",
+        "text": "Weekly Hub on phones: the matchup score header now sits on a white card of its own, matching the board below it, so the whole matchup stack reads as clean cards all the way down.",
+        "link": "/weekly"
+    },
+    {
+        "date": "2026-11-03",
+        "tag": "update",
         "text": "Weekly Hub on phones, third pass: the site header is back at the top of the page, the swipe dots sit under your matchup preview again, and Turning Points is now a slim full-width card instead of a tall nested one (its score line also shows a proper arrow instead of a stray code). The header fits ScoreZone, Weekly Wrapped and the week selector on one line without wrapping, the space above the tabs is tighter, and the matchup board now sits on a white card like the rest of the page.",
         "link": "/weekly"
     },
