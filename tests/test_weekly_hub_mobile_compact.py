@@ -344,6 +344,8 @@ def test_leaders_band_moves_under_the_board_on_mobile():
     assert "mPanel.appendChild(band)" in src
     assert "main.insertBefore(band, two)" in src
     css = _css()
-    # Compact card rows: label column + content column, no 2x2 grid.
-    assert "grid-template-columns: 92px minmax(0, 1fr)" in css
+    # Compact card rows: the four segments stack as plain blocks split by
+    # hairlines (2026-11-03 segment redesign replaced the old 92px
+    # label-column grid), no 2x2 grid.
+    assert ".weekly-hub .wk-leaders-strip .whl-seg" in css
     assert ".weekly-hub .wk-leaders-strip .whl-name" in css

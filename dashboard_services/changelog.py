@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-03",
+        "tag": "update",
+        "text": "Weekly Hub: the header and Week Leaders now form one panel on desktop, and the four leader cards have a cleaner, more uniform design.",
+        "link": "/weekly"
+    },
+    {
+        "date": "2026-11-03",
         "tag": "fix",
         "text": "Prospect grading comparisons got cleaner. The historical marks our prospect model measures college stats against now come only from seasons where the player actually held a real role, instead of any season with four or more games, so a backup's handful of big games can no longer set the bar for everyone else. The top and bottom of each comparison scale are also set by the recorded population as a whole instead of its single best and worst seasons, so one freak season no longer stretches the scale.",
         "link": "/prospects"
