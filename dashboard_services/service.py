@@ -535,7 +535,21 @@ def finalize_team_stats(
     team_stats["Win%"] = win_pct
     # PowerScore is applied after SOS so past_sos can enter the blend.
 
-    sos = build_team_strength(team_stats)
+    all_play = all_play_pct_by_owner(df_finalized)
+    sos = build_team_strength(team_stats, all_play_pct=all_play)
+    # Future SOS rates remaining opponents on a recency-tilted scoring
+    # estimate (season AVG with the last 3 weeks counted a second time, a
+    # 3-game prior in reverse) instead of the plain season line, so a
+    # remaining opponent is priced closer to the team it is now. The
+    # all-play record component stays the season figure for stability.
+    future_sos = None
+    if all_play and "G" in team_stats.columns:
+        _g = team_stats["G"].fillna(0.0).astype(float)
+        _fut_stats = team_stats[["owner"]].copy()
+        _fut_stats["AVG"] = (
+            ((_g * avg_pts) + 3.0 * last3_series) / (_g + 3.0)
+        ).where(_g > 0, avg_pts)
+        future_sos = build_team_strength(_fut_stats, all_play_pct=all_play)
     _reg_weeks = (
         regular_season_length()
         if regular_season_weeks is None
@@ -548,6 +562,7 @@ def finalize_team_stats(
         users,
         regular_season_weeks=_reg_weeks,
         past_pairs=owner_pairs_from_weekly(df_finalized),
+        future_strength=future_sos,
     )
     sos_df = (
         pd.DataFrame.from_dict(sos_dict, orient="index")
@@ -1339,50 +1354,124 @@ def owner_pairs_from_weekly(df: pd.DataFrame) -> List[Tuple[int, str, str]]:
     return pairs
 
 
-def _norm_series(series) -> pd.Series:
+def _z_series(series) -> pd.Series:
+    """Population z-scores; all zeros when the series has no spread."""
     s = pd.Series(series, dtype="float64")
-    min_v, max_v = float(s.min()), float(s.max())
-    if not np.isfinite(min_v) or not np.isfinite(max_v) or max_v == min_v:
-        return pd.Series(0.5, index=s.index)
-    return (s - min_v) / (max_v - min_v)
+    if not len(s):
+        return s
+    mu = float(s.mean())
+    sd = float(s.std(ddof=0))
+    if not np.isfinite(mu) or not np.isfinite(sd) or sd == 0:
+        return pd.Series(0.0, index=s.index)
+    return (s - mu) / sd
 
 
-def build_team_strength(team_stats: pd.DataFrame) -> dict[str, float]:
-    """0–1 opponent weights for SOS.
+def all_play_pct_by_owner(df_finalized: pd.DataFrame) -> Dict[str, float]:
+    """Season all-play win rate per owner from finalized weekly rows.
 
-    Uses season scoring (AVG) blended with win rate -- more stable than
+    For each week an owner earns the fraction of the *other* teams it
+    outscored that week (ties count half), averaged over its weeks. Unlike
+    head-to-head Win%, no single opponent can move this much: the game
+    against any one team is one of (n-1) comparisons per week, so a team's
+    SOS rating no longer drops just because it beat the team rating it.
+    """
+    if df_finalized is None or getattr(df_finalized, "empty", True):
+        return {}
+    if not {"owner", "week", "points"}.issubset(df_finalized.columns):
+        return {}
+    try:
+        weekly = (
+            df_finalized.groupby(["week", "owner"])["points"]
+            .sum()
+            .reset_index()
+        )
+    except Exception:
+        return {}
+    totals: Dict[str, float] = {}
+    counts: Dict[str, int] = {}
+    for _week, grp in weekly.groupby("week"):
+        pts = {
+            str(owner): float(points)
+            for owner, points in zip(grp["owner"], grp["points"])
+            if owner is not None
+        }
+        if len(pts) < 2:
+            continue
+        for owner, mine in pts.items():
+            others = [p for o, p in pts.items() if o != owner]
+            if not others:
+                continue
+            score = sum(1.0 if mine > p else 0.5 if mine == p else 0.0 for p in others)
+            totals[owner] = totals.get(owner, 0.0) + score / len(others)
+            counts[owner] = counts.get(owner, 0) + 1
+    return {
+        owner: totals[owner] / counts[owner]
+        for owner in totals
+        if counts.get(owner)
+    }
+
+
+def build_team_strength(
+        team_stats: pd.DataFrame,
+        all_play_pct: Optional[Dict[str, float]] = None,
+) -> dict[str, float]:
+    """Opponent strength weights for SOS, as z-score blends.
+
+    Strength is season scoring (AVG) blended 50/50 with all-play win rate
+    when the caller supplies it, falling back to head-to-head Win% only
+    when all-play is unavailable. Z-scores (not min-max) so one extreme
+    team does not compress everyone else's spacing. More stable than
     PowerScore, which already mixes Last3 recency and would make schedule
-    difficulty chase hot/cold streaks.
+    difficulty chase hot/cold streaks. The values are only ever compared
+    inside ``compute_sos_by_team``, which centers them per team, so their
+    absolute scale carries no meaning of its own.
     """
     if team_stats is None or getattr(team_stats, "empty", True):
         return {}
+    if "owner" not in team_stats.columns:
+        return {}
+
+    owners = [
+        None if (o is None or (isinstance(o, float) and np.isnan(o))) else str(o)
+        for o in team_stats["owner"].tolist()
+    ]
 
     parts: List[pd.Series] = []
     weights: List[float] = []
     if "AVG" in team_stats.columns:
-        parts.append(_norm_series(team_stats["AVG"].fillna(0.0)))
-        weights.append(0.65)
-    if "Win%" in team_stats.columns:
-        parts.append(_norm_series(team_stats["Win%"].fillna(0.0)))
-        weights.append(0.35)
+        parts.append(_z_series(team_stats["AVG"].fillna(0.0)))
+        weights.append(0.5)
+    record = None
+    if all_play_pct:
+        aligned = [all_play_pct.get(o) if o is not None else None for o in owners]
+        if any(v is not None for v in aligned):
+            record = pd.Series(
+                [float(v) if v is not None else np.nan for v in aligned],
+                index=team_stats.index,
+                dtype="float64",
+            )
+            record = record.fillna(record.mean())
+    if record is not None:
+        parts.append(_z_series(record))
+        weights.append(0.5)
+    elif "Win%" in team_stats.columns:
+        parts.append(_z_series(team_stats["Win%"].fillna(0.0)))
+        weights.append(0.5)
     if not parts and "PowerScore" in team_stats.columns:
-        parts.append(_norm_series(team_stats["PowerScore"].astype(float)))
+        parts.append(_z_series(team_stats["PowerScore"].astype(float)))
         weights.append(1.0)
     if not parts:
-        parts.append(pd.Series(0.5, index=team_stats.index))
+        parts.append(pd.Series(0.0, index=team_stats.index))
         weights.append(1.0)
 
     wsum = sum(weights) or 1.0
     blended = sum(w * p for w, p in zip(weights, parts)) / wsum
 
     strength_by_owner: dict[str, float] = {}
-    if "owner" not in team_stats.columns:
-        return strength_by_owner
-    for idx in team_stats.index:
-        owner = team_stats.at[idx, "owner"]
-        if owner is None or (isinstance(owner, float) and np.isnan(owner)):
+    for idx, owner in zip(team_stats.index, owners):
+        if owner is None:
             continue
-        strength_by_owner[str(owner)] = float(blended.loc[idx])
+        strength_by_owner[owner] = float(blended.loc[idx])
     return strength_by_owner
 
 
@@ -1465,12 +1554,47 @@ def _sos_accumulate(
     out[b][f"{bucket}_cnt"] += 1
 
 
-def _sos_indexify(values: List[float]) -> Tuple[float, float]:
-    if not values:
-        return 0.0, 0.0
-    mu = sum(values) / len(values)
-    var = sum((v - mu) ** 2 for v in values) / len(values)
-    return mu, var ** 0.5
+def _sos_centered_index(
+        out: dict,
+        bucket: str,
+        strength: Dict[str, float],
+) -> None:
+    """Turn accumulated opponent-strength sums into a centered SOS index.
+
+    A team's raw opponent average is compared against the average strength
+    of every *other* team -- the draw it would expect given it can never
+    play itself. Without that centering the strongest team always reads
+    "easy" (it removed the #1 opponent from its own pool) and the weakest
+    always reads "hard", even in a perfectly balanced round robin. The
+    advantage is then scaled by the standard deviation of an equally sized
+    random draw (strength sigma / sqrt(games)), so near-even schedules
+    stay near 100 instead of being stretched to fill a fixed spread, and
+    the z is capped at +/-3 (index 70-130).
+    """
+    vals = [float(v) for v in strength.values()]
+    n_teams = len(vals)
+    total = sum(vals)
+    if n_teams >= 2:
+        mu = total / n_teams
+        sigma = (sum((v - mu) ** 2 for v in vals) / n_teams) ** 0.5
+    else:
+        sigma = 0.0
+    for owner, v in out.items():
+        cnt = int(v.get(f"{bucket}_cnt") or 0)
+        key = f"{bucket}_sos"
+        if not cnt:
+            v[key] = 0.0
+            continue
+        raw = float(v[key]) / cnt
+        if n_teams < 2 or sigma <= 0:
+            v[key] = 100.0
+            continue
+        expected = (total - float(strength.get(owner, 0.0))) / (n_teams - 1)
+        advantage = raw - expected
+        draw_sd = sigma / (cnt ** 0.5)
+        z = advantage / draw_sd if draw_sd > 0 else 0.0
+        z = max(-3.0, min(3.0, z))
+        v[key] = 100.0 + 10.0 * z
 
 
 def compute_sos_by_team(
@@ -1480,19 +1604,28 @@ def compute_sos_by_team(
         users: Any = None,
         regular_season_weeks: int = 14,
         past_pairs: Optional[Iterable[tuple]] = None,
+        future_strength: Optional[Dict[str, float]] = None,
 ) -> Dict[str, dict]:
-    """Past / rest-of-season SOS indexed to 100 = league average, +10 per σ.
+    """Past / rest-of-season SOS, centered per team and indexed to 100.
 
-    Higher = tougher opponents. Regular-season only: playoff weeks in
+    100 = the schedule a team would expect to draw given it can never play
+    itself; higher = a tougher draw than that expectation (see
+    ``_sos_centered_index``). Regular-season only: playoff weeks in
     ``all_matchups`` are ignored. ``past_pairs`` (from weekly scores) is the
     preferred source for games already played because those rows share owner
-    keys with ``team_strength``.
+    keys with ``team_strength``. ``future_strength`` optionally rates
+    remaining opponents on a forward-looking strength (e.g. recency-tilted
+    scoring) instead of the season strength used for past opponents; the
+    rest-of-season index is centered and scaled on that same future map.
     """
     out: dict[str, dict[str, Any]] = {
         str(owner): {"past_sos": 0.0, "past_cnt": 0, "ros_sos": 0.0, "ros_cnt": 0}
         for owner in team_strength
     }
     strength = {str(k): float(v) for k, v in team_strength.items()}
+    ros_strength = dict(strength)
+    if future_strength:
+        ros_strength.update({str(k): float(v) for k, v in future_strength.items()})
     aliases = _sos_alias_map(strength, users, all_matchups)
 
     def _resolve(token: Any) -> Optional[str]:
@@ -1540,40 +1673,10 @@ def compute_sos_by_team(
     matchups = all_matchups or {}
     for w in range(past_end + 1, ros_end + 1):
         for a_raw, b_raw in compute_week_opponents(matchups.get(w, [])):
-            _sos_accumulate(out, strength, _resolve(a_raw), _resolve(b_raw), "ros")
+            _sos_accumulate(out, ros_strength, _resolve(a_raw), _resolve(b_raw), "ros")
 
-    past_vals: list[float] = []
-    ros_vals: list[float] = []
-    for v in out.values():
-        if v["past_cnt"]:
-            v["past_sos"] = v["past_sos"] / v["past_cnt"]
-            past_vals.append(v["past_sos"])
-        else:
-            v["past_sos"] = 0.0
-
-        if v["ros_cnt"]:
-            v["ros_sos"] = v["ros_sos"] / v["ros_cnt"]
-            ros_vals.append(v["ros_sos"])
-        else:
-            v["ros_sos"] = 0.0
-
-    mu_p, sigma_p = _sos_indexify(past_vals)
-    mu_r, sigma_r = _sos_indexify(ros_vals)
-
-    for v in out.values():
-        if v["past_cnt"] and sigma_p > 0:
-            v["past_sos"] = 100.0 + 10.0 * (v["past_sos"] - mu_p) / sigma_p
-        elif v["past_cnt"]:
-            v["past_sos"] = 100.0
-        else:
-            v["past_sos"] = 0.0
-
-        if v["ros_cnt"] and sigma_r > 0:
-            v["ros_sos"] = 100.0 + 10.0 * (v["ros_sos"] - mu_r) / sigma_r
-        elif v["ros_cnt"]:
-            v["ros_sos"] = 100.0
-        else:
-            v["ros_sos"] = 0.0
+    _sos_centered_index(out, "past", strength)
+    _sos_centered_index(out, "ros", ros_strength)
 
     return out
 
@@ -1658,11 +1761,12 @@ def remaining_schedule_strength(
 ) -> tuple[list[dict], str]:
     """Teams-page remaining-schedule rows using standings SOS Future.
 
-    Opponent weights are 65% scoring average + 35% win rate, indexed so
-    100 is league average. Playoff weeks are ignored via
-    ``regular_season_weeks``. Projected starter PPG (when provided) is a
-    4-game prior that fades as real results accumulate. Returns
-    ``(rows, source)`` where source is ``actual``, ``projected``,
+    Opponent weights are the standings strength blend (scoring average
+    with all-play win rate), centered per team so 100 is the remaining
+    draw a team would expect given it cannot play itself. Playoff weeks
+    are ignored via ``regular_season_weeks``. Projected starter PPG (when
+    provided) is a 4-game prior that fades as real results accumulate.
+    Returns ``(rows, source)`` where source is ``actual``, ``projected``,
     ``blended``, or ``even``.
     """
     names = roster_names or {}
@@ -1674,6 +1778,8 @@ def remaining_schedule_strength(
     wins = {rid: 0.0 for rid in rids}
     losses = {rid: 0.0 for rid in rids}
     ties = {rid: 0.0 for rid in rids}
+    ap_sum = {rid: 0.0 for rid in rids}
+    ap_cnt = {rid: 0 for rid in rids}
 
     try:
         past_end = min(max(0, int(current_week)), int(regular_season_weeks))
@@ -1693,6 +1799,17 @@ def remaining_schedule_strength(
             mid = _matchup_field(m, "matchup_id")
             if mid is not None:
                 by_mid.setdefault(mid, []).append(rid)
+        if len(pts_by_rid) >= 2 and any(p > 0.0 for p in pts_by_rid.values()):
+            for rid, mine in pts_by_rid.items():
+                if rid not in ap_sum:
+                    continue
+                others = [p for o, p in pts_by_rid.items() if o != rid]
+                if not others:
+                    continue
+                ap_sum[rid] += sum(
+                    1.0 if mine > p else 0.5 if mine == p else 0.0 for p in others
+                ) / len(others)
+                ap_cnt[rid] += 1
         for pair in by_mid.values():
             if len(pair) != 2:
                 continue
@@ -1746,7 +1863,10 @@ def remaining_schedule_strength(
         source = "actual"
 
     team_stats = pd.DataFrame(rows)
-    strength = build_team_strength(team_stats)
+    all_play = {
+        rid: ap_sum[rid] / ap_cnt[rid] for rid in rids if ap_cnt.get(rid)
+    }
+    strength = build_team_strength(team_stats, all_play_pct=all_play or None)
     sos = compute_sos_by_team(
         matchups_by_week,
         strength,
