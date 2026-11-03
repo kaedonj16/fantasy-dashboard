@@ -7373,10 +7373,9 @@ function getCarouselState(card) {
   const width = viewport?.clientWidth || track.clientWidth || 1;
 
   // Index by the nearest slide offset, not scrollLeft / viewport width:
-  // on the Weekly Hub's mobile layout each slide is narrower than the
-  // viewport (the next matchup peeks at the edge), so the naive division
-  // drifts a slide behind by the last cards. Pitch = the distance between
-  // successive slide starts, which scroll-snap aligns to.
+  // the track's inter-slide gap makes the naive division drift a slide
+  // behind by the last cards. Pitch = the distance between successive
+  // slide starts, which scroll-snap aligns to.
   let idx = 0;
   let pitch = width;
   if (slides.length > 1) {
