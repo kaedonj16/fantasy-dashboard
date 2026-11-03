@@ -34,12 +34,12 @@ def test_mobile_overview_column_stretches_cards():
 
 
 def test_playoff_ranks_carry_tier_colors():
-    # Aggregate gets a tier class; week ranks are wrapped in a tier span.
-    assert "pm-playoff-rank-${_rkTier(_ps.rank)}" in JS
+    # Week ranks keep their tier span in the rows. The aggregate is a
+    # muted header note since the declutter (2026-11-03) -- no tier class.
     assert 'class="pm-rk pm-rk-${_rkTier(w.opp_rank)}"' in JS
+    assert "pm-playoff-rank-big" not in JS
     for tier, color in (("easy", "#059669"), ("mid", "#b45309"), ("hard", "#dc2626")):
         assert f".pm-rk-{tier} {{ color: {color}; }}" in CSS
-        assert f".pm-playoff-rank-{tier} {{ color: {color}; }}" in CSS
 
 
 def test_role_card_share_bars():

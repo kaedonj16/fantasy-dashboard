@@ -1404,29 +1404,13 @@ function openPlayerModal(playerId, playerName, opts) {
           const _rightBits = [];
           if (w.opp_rank != null) _rightBits.push(`<span class="pm-rk pm-rk-${_rkTier(w.opp_rank)}">#${w.opp_rank}</span>`);
           if (w.opp_fpts != null && isFinite(Number(w.opp_fpts))) _rightBits.push(Number(w.opp_fpts).toFixed(1) + ' pts allowed');
-          let _bar = '';
-          if (w.opp_rank != null && isFinite(Number(w.opp_rank))) {
-            // The bar IS the rank: #1 (easiest matchup) fills the track and
-            // #32 (toughest) leaves a sliver, on the same scale as the tier
-            // colors. Pts allowed stays as the text figure only -- scaling
-            // the bar by pts drew identical bars for equal-pts weeks whose
-            // ranks differed (20.6 pts at both #26 and #24).
-            const _rk = Math.max(1, Math.min(32, Number(w.opp_rank)));
-            const _pct = Math.max(4, Math.min(100, Math.round(100 * (33 - _rk) / 32)));
-            const _tier = (_rk <= 10) ? ' pm-playoff-fill-easy'
-              : (_rk > 20) ? ' pm-playoff-fill-hard' : '';
-            _bar = `<div class="pm-playoff-track"><div class="pm-playoff-fill${_tier}" style="width:${_pct}%"></div></div>`;
-          }
-          return `<div class="pm-playoff-row"><div class="pm-playoff-line"><span class="pm-playoff-week">${_left}</span>${_rightBits.length ? `<span class="pm-playoff-allowed">${_rightBits.join(' · ')}</span>` : ''}</div>${_bar}</div>`;
+          return `<div class="pm-playoff-row"><div class="pm-playoff-line"><span class="pm-playoff-week">${_left}</span>${_rightBits.length ? `<span class="pm-playoff-allowed">${_rightBits.join(' · ')}</span>` : ''}</div></div>`;
         }).join('');
         playoffCard = `
         <div class="pm-playoff-card pm-ov-playoff">
           <div class="pm-playoff-head">
-            <span class="pm-section-label">Playoff schedule</span>
-            <div class="pm-playoff-rank">
-              <div class="pm-playoff-rank-big pm-playoff-rank-${_rkTier(_ps.rank)}">${_pmTeamOrd(Number(_ps.rank))} easiest</div>
-              ${_psPos ? `<div class="pm-playoff-rank-sub">for ${_psPos}s · Weeks ${_psFirst.week}-${_psLast.week}</div>` : ''}
-            </div>
+            <span class="pm-section-label">Playoff schedule · Weeks ${_psFirst.week}-${_psLast.week}</span>
+            <span class="pm-playoff-note">${_pmTeamOrd(Number(_ps.rank))} easiest${_psPos ? ` for ${_psPos}s` : ''}</span>
           </div>
           <div class="pm-playoff-rows">${_psRows}</div>
         </div>`;
@@ -2455,11 +2439,16 @@ function _pmLoadStartSitStrip(playerId, data, leagueId, platform, season) {
       }
       if (d.state !== 'ok') return;
       el.className = 'pm-ss-strip ' + (d.tone === 'start' ? 'pm-ss-start' : 'pm-ss-bench');
-      el.innerHTML = '<span class="pm-ss-verdict">' + esc(d.verdict || '') + '</span>'
-        + (d.slot ? '<span class="pm-ss-slot">' + esc(d.slot) + '</span>' : '')
-        + (d.grade != null ? '<span class="pm-ss-grade" title="Start/Sit grade, 0 to 100">' + esc(d.grade) + '</span>' : '')
-        + '<span class="pm-ss-why">' + why(d.reason || '') + '</span>'
-        + link;
+      // Slim verdict line (declutter spec): verdict + slot as plain text,
+      // then the reason's facts as separate segments divided by hairlines.
+      // No pills, no grade chip, no filled box. The endpoint's reason is
+      // already " · "-joined, so splitting it into segments loses nothing.
+      var _ssItems = ['<span class="pm-ss-verdict">' + esc(d.verdict || '') + '</span>'
+        + (d.slot ? '<span class="pm-ss-slot">' + esc(d.slot) + '</span>' : '')];
+      String(d.reason || '').split(' · ').forEach(function(part) {
+        if (part) _ssItems.push('<span class="pm-ss-why">' + why(part) + '</span>');
+      });
+      el.innerHTML = _ssItems.join('<span class="pm-ss-sep" aria-hidden="true"></span>') + link;
       el.hidden = false;
     })
     .catch(function() { if (timer) clearTimeout(timer); });
