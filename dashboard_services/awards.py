@@ -80,8 +80,11 @@ def render_awards_section(awards: dict, alltime: bool = False) -> str:
 
     if awards.get("most_consistent"):
         t, sd, n = awards["most_consistent"]
+        # sd is a weekly swing around the team's own average, not a score:
+        # render it as ±X.X so it never reads as points/PPG.
         rows.append(arow("Most consistent", html.escape(str(t)),
-                         f"over {n} games", aval(f"{sd:.2f}")))
+                         f"typical weekly swing \u00b7 over {n} games",
+                         aval(f"\u00b1{sd:.1f}")))
 
     if awards.get("highest_player"):
         hp = awards["highest_player"]
