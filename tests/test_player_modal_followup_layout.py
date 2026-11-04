@@ -125,27 +125,42 @@ def test_overview_hero_no_truncation_on_phones():
     assert "font-size: 8px;\n        letter-spacing: -0.03em;" in CSS
 
 
-def test_overview_vh_range_bar_shares_extremes_row():
-    # Fit fix (2026-11-04): Peak/Floor and the value-history range filter
-    # sat on two half-empty rows (extremes row, then a right-aligned
-    # filter line). The bar is re-homed into the summary's .pm-vh-subrow
-    # so they share one fitted row at every width: extremes left, filter
-    # right. Because updateSummary() rebuilds the summary's innerHTML on
-    # every render, the bar element is held in a closure and re-appended
-    # after each rebuild, and parked back before the chart when the
-    # summary hides.
+def test_overview_vh_summary_is_one_compact_cluster():
+    # Compact fix (2026-11-04): the summary's pieces were spread across
+    # the full width (empty right side on the value row, dead middle in
+    # the Peak/Floor + filter row), leaving big white gaps on phone and
+    # desktop. Now the summary is one cluster: value, delta with the
+    # range text inline, and the range bar re-homed as the summary's
+    # last flex child, uniform gaps, no spread. Peak/Floor are NOT in
+    # the summary at all (Kaedon's call): the chart's own Peak / Low
+    # callouts carry them, with dates. Because updateSummary() rebuilds
+    # the summary's innerHTML on every render, the bar element is held
+    # in a closure and re-appended after each rebuild, and parked back
+    # before the chart when the summary hides.
     assert "let _vhBarEl = null;" in JS
     assert "_vhBarEl = bar;" in JS
-    assert "class=\"pm-vh-subrow\"" in JS
-    assert "if (_vhBarEl && _vhSub) _vhSub.appendChild(_vhBarEl);" in JS
+    assert "if (_vhBarEl) el.appendChild(_vhBarEl);" in JS
     assert "el.contains(_vhBarEl)" in JS
+    assert "pm-vh-subrow" not in JS
+    assert "pm-vh-ext" not in JS
+    # Range text sits inside the move row, after the delta.
+    move_row = JS[JS.find('pm-vh-move-row'):JS.find('if (_vhBarEl) el.appendChild')]
+    assert "pm-vh-delta" in move_row and "pm-vh-range" in move_row
     # CSS scoped to the modal summary so Compare / player page keep
-    # their own .pvc-range-bar contexts.
-    assert ".pm-vh-subrow {" in CSS
-    assert "flex: 1 1 100%;" in CSS
-    assert ".pm-vh-summary .pvc-range-bar {" in CSS
-    assert "margin: 0 0 0 auto;" in CSS
-    assert ".pm-vh-summary .pvc-range-btn { padding-left: 8px; padding-right: 8px; }" in CSS
+    # their own .pvc-range-bar contexts, and the Peak/Floor chip CSS
+    # is gone.
+    assert ".pm-vh-subrow" not in CSS
+    assert "pm-vh-ext" not in CSS
+    # Tasteful pass: one line at every width; the bar is a quiet
+    # segmented control anchored to the right edge (auto left margin),
+    # active segment a light accent tint, not the solid fill; the
+    # delta is plain colored text, no pill background.
+    assert ".pm-vh-summary {\n    display: flex;\n    align-items: flex-end;\n    gap: 14px;\n    flex-wrap: nowrap;" in CSS
+    assert ".pm-vh-summary .pvc-range-bar {\n    margin: 0 0 0 auto;" in CSS
+    assert ".pm-vh-summary .pvc-range-btn + .pvc-range-btn {" in CSS
+    assert ".pm-vh-summary .pvc-range-btn.is-active {" in CSS
+    assert ".pm-vh-delta.down { color: var(--loss); }" in CSS
+    assert ".pm-vh-summary .pvc-range-btn { padding: 5px 7px; font-size: 11px; }" in CSS
 
 
 def test_overview_avail_below_in_league_in_rail():
