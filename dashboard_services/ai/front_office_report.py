@@ -53,7 +53,10 @@ from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-CACHE_VERSION = "v7"
+# v8: report prose now runs through the tier-language scrub (exact ranks
+# collapse out of spaced/tier role forms); v7 reports can still carry an
+# exact rank as role language ("RB18 type") and must not hit.
+CACHE_VERSION = "v8"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
 
 

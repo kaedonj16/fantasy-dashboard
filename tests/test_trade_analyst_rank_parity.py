@@ -19,7 +19,10 @@ pytest.importorskip("flask")
 pytest.importorskip("pandas")
 pytest.importorskip("openai")
 
-from dashboard_services.ai.prompts import enforce_trade_rank_labels  # noqa: E402
+from dashboard_services.ai.prompts import (  # noqa: E402
+    enforce_tier_language,
+    enforce_trade_rank_labels,
+)
 
 # Stored labels are deliberately stale nonsense ("WR9" everywhere): the
 # endpoint must recompute them from the values, not trust the column.
@@ -242,3 +245,107 @@ def test_scrub_exact_appositive_still_wins_over_type_collapse():
     }
     out = enforce_trade_rank_labels(data, _SMITH_PAYLOAD)
     assert out["summary"] == "DeVonta Smith, a WR23, is the prize piece here."
+
+
+# ── Tier language, round 2: spaced " type", " tier asset", tied ranks <= 12 ──
+_LONDON_PAYLOAD = {
+    "trade": {
+        "viewer_gives": {"assets": [
+            {"name": "Drake London", "position": "WR",
+             "pos_rank_label": "WR9", "pos_tier_label": "WR1"},
+            {"name": "Jeremiyah Love", "position": "RB",
+             "pos_rank_label": "RB7", "pos_tier_label": "RB1"},
+            {"name": "Jaylen Warren", "position": "RB",
+             "pos_rank_label": "RB24", "pos_tier_label": "RB2"},
+        ]},
+        "viewer_gets": {"assets": [
+            {"name": "Bijan Robinson", "position": "RB",
+             "pos_rank_label": "RB2", "pos_tier_label": "RB1"},
+            {"name": "Omarion Hampton", "position": "RB",
+             "pos_rank_label": "RB18", "pos_tier_label": "RB2"},
+        ]},
+    },
+}
+
+_QUOTED_PARAGRAPH = (
+    "You're giving up a strong young core headlined by Drake London, a "
+    "WR9 tier asset in his prime, plus Jeremiyah Love, who is already "
+    "valued as an RB1 despite the ankle IR stint, and Jaylen Warren as "
+    "additional usable backfield depth. In return, you get Bijan "
+    "Robinson, the best piece in the deal by a mile and a true "
+    "foundation runner, along with Omarion Hampton, a younger RB18 "
+    "type with upside."
+)
+
+
+def test_scrub_quoted_paragraph_collapses_spaced_and_tier_forms():
+    """Kaedon's flagged paragraph (2026-11-03): 'WR9 tier asset' and the
+    spaced 'RB18 type' both passed the old scrubber byte-for-byte. The
+    tied mentions must collapse to the players' tiers (WR9 -> WR1,
+    RB18 -> RB2); Love's true tier claim 'valued as an RB1' is already
+    tier language and must not move."""
+    data = {"summary": _QUOTED_PARAGRAPH,
+            "helps": [], "risks": [], "counter": "", "confidence": "high"}
+    out = enforce_trade_rank_labels(data, _LONDON_PAYLOAD)
+    assert "WR1 tier asset" in out["summary"]
+    assert "RB2 type" in out["summary"]
+    assert "WR9 tier" not in out["summary"]
+    assert "RB18 type" not in out["summary"]
+    assert "valued as an RB1" in out["summary"]
+
+
+def test_scrub_tied_rank_at_or_below_12_collapses_to_its_tier():
+    """The untied pass keeps <= 12 (a small number may be a true tier),
+    but tied to a named player the written number is his exact rank:
+    London WR9 written as role language collapses to his WR1 tier."""
+    data = {
+        "summary": "Drake London, a WR9-type asset, headlines the core.",
+        "helps": [], "risks": [], "counter": "", "confidence": "high",
+    }
+    out = enforce_trade_rank_labels(data, _LONDON_PAYLOAD)
+    assert out["summary"] == (
+        "Drake London, a WR1-type asset, headlines the core.")
+
+
+def test_scrub_tied_true_rank_claim_stays_exact():
+    """No type/tier suffix right after the digits = a rank claim, and a
+    correct one stays exact even for a tied player."""
+    data = {
+        "summary": "Drake London, a WR9, is the prize piece here.",
+        "helps": [], "risks": [], "counter": "", "confidence": "high",
+    }
+    out = enforce_trade_rank_labels(data, _LONDON_PAYLOAD)
+    assert out["summary"] == data["summary"]
+
+
+def test_scrub_collapses_spaced_type_and_hyphen_tier_forms_untied():
+    data = {
+        "summary": "He profiles as an RB18 type runner.",
+        "helps": ["That is a WR23-tier asset on any board."],
+        "risks": ["A WR23 tier asset is not a throw-in either."],
+        "counter": "", "confidence": "high",
+    }
+    out = enforce_trade_rank_labels(data, _SMITH_PAYLOAD)
+    assert out["summary"] == "He profiles as an RB2 type runner."
+    assert out["helps"] == ["That is a WR2-tier asset on any board."]
+    assert out["risks"] == ["A WR2 tier asset is not a throw-in either."]
+
+
+def test_enforce_tier_language_helper_needs_no_payload():
+    """The payload-free helper used by the suggestions / front-office
+    generators collapses the same untied forms anywhere in the tree,
+    and leaves presumed-true tiers (small numbers) alone."""
+    data = {
+        "suggestions": [{
+            "reasoning": "He profiles as an RB18 type runner.",
+            "notes": ["A WR23-tier asset", "a WR2-type producer stays",
+                      "an untied WR9-type mention stays"],
+        }],
+    }
+    out = enforce_tier_language(data)
+    suggestion = out["suggestions"][0]
+    assert suggestion["reasoning"] == "He profiles as an RB2 type runner."
+    assert suggestion["notes"][0] == "A WR2-tier asset"
+    assert suggestion["notes"][1] == "a WR2-type producer stays"
+    assert suggestion["notes"][2] == "an untied WR9-type mention stays"
+    assert enforce_tier_language("plain string") == "plain string"
