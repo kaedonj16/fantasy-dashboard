@@ -2326,6 +2326,38 @@ def _simulate_week_scores(
     return score_map, games_per_team, playing_weeks
 
 
+def mathematical_clinch_elimination(init_value, games_remaining, playoff_teams):
+    """Conservative mathematical clinch / elimination from win-value bounds.
+
+    ``init_value`` is each team's current standings value (wins + 0.5 per
+    tie) and ``games_remaining`` the games each team has left. A team has
+    CLINCHED a berth if, even losing out while everyone who could pass
+    them wins out, fewer than ``playoff_teams`` teams can finish ahead.
+    It is ELIMINATED if at least ``playoff_teams`` teams are guaranteed
+    ahead even if it wins out. The bounds ignore the joint schedule and
+    tiebreakers, so they never falsely declare certainty. This is the one
+    shared definition: the regular-season Monte Carlo (``_pack_mc_results``)
+    and the separate playoff-bracket sim both use it, directly or through
+    the exact 100.0 / 0.0 playoff percentages it produces there.
+
+    Returns ``(clinched, eliminated)`` boolean numpy arrays.
+    """
+    init_value = np.asarray(init_value, dtype=np.float64)
+    rem = np.asarray(games_remaining, dtype=np.float64)
+    n = len(init_value)
+    t_min = init_value                    # worst case: lose out
+    t_max = init_value + rem              # best case: win out
+    opp_max = init_value + rem
+    clinched = np.zeros(n, dtype=bool)
+    eliminated = np.zeros(n, dtype=bool)
+    for i in range(n):
+        can_be_ahead = int(np.sum(opp_max >= t_min[i])) - 1   # exclude self
+        guaranteed_ahead = int(np.sum(init_value > t_max[i]))
+        clinched[i] = can_be_ahead < playoff_teams
+        eliminated[i] = guaranteed_ahead >= playoff_teams
+    return clinched, eliminated
+
+
 def _pack_mc_results(
     teams: list[dict],
     wins: "np.ndarray",
@@ -2414,11 +2446,9 @@ def _pack_mc_results(
         # certainty rather than risk a false clinch/elimination.
         pass
     else:
-        for i in range(n):
-            can_be_ahead     = int(np.sum(opp_max >= t_min[i])) - 1   # exclude self
-            guaranteed_ahead = int(np.sum(init_value > t_max[i]))
-            clinched[i]   = can_be_ahead < playoff_teams
-            eliminated[i] = guaranteed_ahead >= playoff_teams
+        clinched, eliminated = mathematical_clinch_elimination(
+            init_value, rem, playoff_teams,
+        )
 
     # A projection should never read a literal 100% or 0% unless the spot is
     # mathematically settled: with finite sims a saturated outcome just means the

@@ -75,10 +75,17 @@ def _ensure_daily_table() -> None:
                 roster_id           INTEGER     NOT NULL,
                 playoff_probability DECIMAL(5,2),
                 avg_final_wins      DECIMAL(5,2),
+                title_probability   DECIMAL(5,2),
                 calculated_at       TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (league_id, season, snap_date, roster_id)
             )
             """
+        )
+        # Championship odds (separate playoff-bracket sim) snapshot
+        # alongside the playoff probability on the same daily row.
+        conn.execute(
+            "ALTER TABLE playoff_odds_daily "
+            "ADD COLUMN IF NOT EXISTS title_probability DECIMAL(5,2)"
         )
     _DAILY_TABLE_READY = True
 
@@ -123,17 +130,22 @@ def record_daily_and_movement(
                         """
                         INSERT INTO playoff_odds_daily (
                             league_id, season, snap_date, roster_id,
-                            playoff_probability, avg_final_wins, calculated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                            playoff_probability, avg_final_wins,
+                            title_probability, calculated_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                         ON CONFLICT (league_id, season, snap_date, roster_id)
                         DO UPDATE SET
                             playoff_probability = EXCLUDED.playoff_probability,
                             avg_final_wins = EXCLUDED.avg_final_wins,
+                            title_probability = COALESCE(
+                                EXCLUDED.title_probability,
+                                playoff_odds_daily.title_probability),
                             calculated_at = CURRENT_TIMESTAMP
                         """,
                         (
                             str(league_id), int(season), today, int(o["roster_id"]),
                             o.get("playoff_pct"), o.get("avg_final_wins"),
+                            o.get("title_pct"),
                         ),
                     )
 

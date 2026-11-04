@@ -691,6 +691,135 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         return []
 
 
+# ── Championship odds: separate playoff-bracket sim cache ──────────────────
+# The bracket sim (data_building.simulate_playoff_bracket) is a separate
+# Monte Carlo from the regular-season playoff sim. It follows the same
+# contract as _playoff_sim_cached(block=False): reads serve only a warm
+# cache, a miss kicks ONE bounded background build (aggregate heavy gate
+# plus its own semaphore), and the sim never runs inline on a read.
+_CHAMP_SIM_CACHE: dict = {}
+_CHAMP_SIM_CACHE_MAX = 200
+_CHAMP_SIM_BUILDING: set = set()
+_CHAMP_SIM_BUILDING_LOCK = threading.Lock()
+_CHAMP_SIM_SEM = threading.BoundedSemaphore(1)
+
+
+def _championship_flags(ctx: dict, platform: str, odds_rows,
+                          weeks_remaining) -> dict:
+    """Visibility gating for championship odds.
+
+    The Playoff Odds page shows the Title column when the league has at
+    most 5 regular-season weeks left; the Hub tile and team modal show
+    it at 2 weeks left or once the season is complete (playoffs under
+    way, field set). An unverified playoff format (see
+    simulate_playoff_bracket.bracket_format) hides it everywhere.
+    """
+    flags = {
+        "championship_format_ok": False,
+        "championship_page_visible": False,
+        "championship_hub_visible": False,
+    }
+    if not odds_rows:
+        return flags
+    try:
+        from data_building.simulate_playoff_bracket import bracket_format
+        if bracket_format(ctx, platform) is None:
+            return flags
+    except Exception:
+        return flags
+    flags["championship_format_ok"] = True
+    complete = bool((odds_rows[0] or {}).get("is_complete"))
+    try:
+        wr = int(weeks_remaining)
+    except (TypeError, ValueError):
+        wr = 99
+    flags["championship_page_visible"] = bool(complete or wr <= 5)
+    flags["championship_hub_visible"] = bool(complete or wr <= 2)
+    return flags
+
+
+def _championship_sim_cached(ctx: dict, platform: str, odds_rows) -> list:
+    """Championship rows behind a TTL cache, background-built on a miss.
+
+    ``odds_rows`` are the regular-season sim's rows for the same league:
+    the bracket sim's field / seed flex is weighted by them, so the
+    cache signature includes them alongside the roster fingerprint (a
+    trade busts both caches). Returns [] until the background build
+    lands; callers hide the surface meanwhile (no placeholder).
+    """
+    try:
+        if not odds_rows:
+            return []
+        key = (
+            platform,
+            str(ctx.get("league_id") or ""),
+            int(ctx.get("season") or ctx.get("current_season") or 0),
+            "v1",
+        )
+        hit = _CHAMP_SIM_CACHE.get(key)
+        fresh = bool(hit) and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL
+        odds_sig_parts = []
+        for r in sorted(odds_rows, key=lambda r: str((r or {}).get("roster_id"))):
+            odds_sig_parts.append(
+                f"{(r or {}).get('roster_id')}:{(r or {}).get('playoff_pct')}"
+                f":{(r or {}).get('bye_pct')}:{(r or {}).get('first_seed_pct')}"
+            )
+        import hashlib as _hl
+        odds_sig = _hl.md5(  # noqa: S324 (non-crypto cache key)
+            ("|".join(odds_sig_parts)).encode("utf-8")).hexdigest()
+        local_sig = f"{_roster_sig(ctx)}|w{int(ctx.get('current_week') or 0)}|{odds_sig}"
+        if fresh and hit.get("sig") == local_sig:
+            return hit["data"] or []
+
+        with _CHAMP_SIM_BUILDING_LOCK:
+            if key in _CHAMP_SIM_BUILDING:
+                return []
+            _CHAMP_SIM_BUILDING.add(key)
+        agg_token = _heavy_kick_acquire()
+        if agg_token is None:
+            with _CHAMP_SIM_BUILDING_LOCK:
+                _CHAMP_SIM_BUILDING.discard(key)
+            return []
+        if not _CHAMP_SIM_SEM.acquire(blocking=False):
+            _heavy_kick_release(agg_token)
+            with _CHAMP_SIM_BUILDING_LOCK:
+                _CHAMP_SIM_BUILDING.discard(key)
+            return []
+
+        def _run(snapshot=dict(ctx), snap_odds=[dict(r or {}) for r in odds_rows]):
+            prev = _heavy_job_start(agg_token)
+            try:
+                from data_building.simulate_playoff_bracket import (
+                    simulate_championship_odds,
+                )
+                rows = simulate_championship_odds(
+                    snapshot, snap_odds, platform=platform) or []
+                _prune_ttl_cache(_CHAMP_SIM_CACHE, _CHAMP_SIM_CACHE_MAX)
+                _CHAMP_SIM_CACHE[key] = {
+                    "data": rows, "ts": time.time(), "sig": local_sig,
+                }
+            except Exception:
+                logger.debug("background championship sim failed", exc_info=True)
+            finally:
+                _CHAMP_SIM_SEM.release()
+                _heavy_job_end(agg_token, prev)
+                with _CHAMP_SIM_BUILDING_LOCK:
+                    _CHAMP_SIM_BUILDING.discard(key)
+
+        try:
+            threading.Thread(target=_run, daemon=True).start()
+        except Exception:
+            _CHAMP_SIM_SEM.release()
+            _heavy_kick_release(agg_token)
+            with _CHAMP_SIM_BUILDING_LOCK:
+                _CHAMP_SIM_BUILDING.discard(key)
+            raise
+        return []
+    except Exception:
+        logger.debug("championship sim failed", exc_info=True)
+        return []
+
+
 # ── Trade Playoff Impact: cold-snapshot warming ──────────────────────────────
 # The impact handler serves only from the shared sim-state snapshot (state +
 # its frozen 2000-sim baseline). On a cold snapshot it kicks ONE bounded
@@ -791,7 +920,8 @@ def _fmt_playoff_pct_display(value):
         return "0"
 
 
-def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):
+def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False,
+                             title_pct=None):
     """Fill a hub playoff tile from a warm sim cache so first paint is not '-'.
 
     Returns ``(pct_display, subtitle)`` or ``None`` when this roster has no
@@ -835,12 +965,25 @@ def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):
         return pct, sub
     if row.get("is_complete"):
         sub = "Clinched" if pct_raw >= 100 else ("Eliminated" if pct_raw <= 0 else "Playoff bound")
+        if title_pct is not None and pct_raw >= 100:
+            # Playoffs under way: the title line is the point now.
+            sub = f"Title: {_fmt_playoff_pct_display(title_pct)}%"
         return pct, sub
     bye = _fmt_playoff_pct_display(_sub_pct("bye_pct"))
     sub = (
         f"{first}% top seed" if float(first) > 0
         else (f"{bye}% first-round bye" if float(bye) > 0 else "to make the playoffs")
     )
+    if title_pct is not None:
+        # Late-season Hub line (caller applies the <=2-weeks gating):
+        # championship odds lead, the bye race stays as context.
+        title = _fmt_playoff_pct_display(title_pct)
+        if float(bye) > 0:
+            sub = f"Title: {title}% · Bye: {bye}%"
+        elif float(first) > 0:
+            sub = f"Title: {title}% · {first}% top seed"
+        else:
+            sub = f"Title: {title}%"
     return pct, sub
 
 
@@ -35107,13 +35250,36 @@ def api_team_details(roster_id: str):
         # the modal paint. The tile stays hidden until the sim is warm, then
         # fills on the next open (mirrors how the hub playoff tile seeds).
         playoff_odds = None
+        title_odds = None
         try:
             _odds_ctx = get_league_ctx_from_cache(platform, league_id, season)
             if _odds_ctx:
-                for _row in (_playoff_sim_cached(_odds_ctx, platform, block=False) or []):
+                _odds_rows = _playoff_sim_cached(
+                    _odds_ctx, platform, block=False) or []
+                for _row in _odds_rows:
                     if str((_row or {}).get("roster_id")) == str(roster_id):
                         playoff_odds = (_row or {}).get("playoff_pct")
                         break
+                # Championship title odds share the Hub gating (2 weeks
+                # left or playoffs under way); warm cache only.
+                if _odds_rows:
+                    from data_building.simulate_playoff_odds import (
+                        remaining_regular_season_weeks as _rrw,
+                    )
+                    _wr_td = _rrw(
+                        _odds_rows,
+                        int((_odds_ctx.get("league_settings") or {}).get(
+                            "playoff_week_start") or 15),
+                        current_week=int(_odds_ctx.get("current_week") or 0),
+                    )
+                    if _championship_flags(
+                            _odds_ctx, platform, _odds_rows,
+                            _wr_td)["championship_hub_visible"]:
+                        for _crow in (_championship_sim_cached(
+                                _odds_ctx, platform, _odds_rows) or []):
+                            if str((_crow or {}).get("roster_id")) == str(roster_id):
+                                title_odds = (_crow or {}).get("title_pct")
+                                break
         except Exception:
             logger.debug("[api_team_details] playoff odds skipped", exc_info=True)
 
@@ -35999,6 +36165,7 @@ def api_team_details(roster_id: str):
             "points_against": points_against,
             "last_finalized_week": last_finalized_week,
             "playoff_odds": playoff_odds,
+            "title_odds": title_odds,
             "lineup_efficiency": lineup_efficiency,
             "efficiency_weeks": efficiency_weeks,
             "achievements": achievements,
@@ -36933,6 +37100,29 @@ def api_playoff_odds():
         weeks_remaining = remaining_regular_season_weeks(
             odds, playoff_week_start, current_week=current_week)
 
+        # Championship odds: the separate playoff-bracket sim, served
+        # warm-only (a miss kicks its background build and the fields
+        # simply arrive on a later load; nothing runs inline here).
+        champ_flags = _championship_flags(
+            ctx, platform, odds, weeks_remaining)
+        champ_rows = []
+        if champ_flags["championship_format_ok"]:
+            champ_rows = _championship_sim_cached(ctx, platform, odds) or []
+        odds_out = odds
+        if champ_rows:
+            _champ_by_rid = {
+                str((r or {}).get("roster_id")): r for r in champ_rows
+            }
+            odds_out = []
+            for _r in odds:
+                _r2 = dict(_r or {})
+                _c = _champ_by_rid.get(str(_r2.get("roster_id")))
+                if _c:
+                    for _k in ("semis_pct", "final_pct", "title_pct",
+                               "title_if_in_pct"):
+                        _r2[_k] = _c.get(_k)
+                odds_out.append(_r2)
+
         # Movement arrows: each team's playoff-probability change (in points) vs
         # the most recent earlier daily snapshot. Date-based, so it works in the
         # offseason too -- a trade that shifts the odds shows a ▲/▼ the next day.
@@ -36944,7 +37134,7 @@ def api_playoff_odds():
             try:
                 from dashboard_services.playoff_odds_history import record_daily_and_movement
                 movement = record_daily_and_movement(
-                    league_id, season, odds, write=_fresh_sim)
+                    league_id, season, odds_out, write=_fresh_sim)
             except Exception:
                 logger.debug("[playoff-odds] movement skipped", exc_info=True)
         # Keep the weekly snapshot table populated in-season -- it feeds the
@@ -36957,7 +37147,7 @@ def api_playoff_odds():
                 logger.debug("[playoff-odds] weekly snapshot skipped", exc_info=True)
 
         return jsonify({
-            "odds": odds,
+            "odds": odds_out,
             "movement": movement,
             "season": season,
             "current_week": current_week,
@@ -36965,6 +37155,8 @@ def api_playoff_odds():
             "playoff_week_start": playoff_week_start,
             "playoff_teams": playoff_teams,
             "is_complete": is_complete,
+            "championship_available": bool(champ_rows),
+            **champ_flags,
         })
     except Exception as exc:
         logger.exception("[playoff-odds] %s", exc)

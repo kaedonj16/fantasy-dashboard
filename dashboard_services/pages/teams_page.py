@@ -588,6 +588,31 @@ def build_teams_body(ctx: dict) -> str:
             str((row or {}).get("roster_id")): (row or {}).get("playoff_pct")
             for row in (_pk_odds or [])
         }
+        # Championship title odds for the drawer pill, Hub-gated (2 weeks
+        # left or playoffs under way), warm cache only.
+        _title_by_rid: dict = {}
+        if _pk_odds:
+            try:
+                from app import _championship_flags, _championship_sim_cached
+                from data_building.simulate_playoff_odds import (
+                    remaining_regular_season_weeks as _rrw_td,
+                )
+                _wr_tp = _rrw_td(
+                    _pk_odds,
+                    int((ctx.get("league_settings") or {}).get(
+                        "playoff_week_start") or 15),
+                    current_week=int(ctx.get("current_week") or 0),
+                )
+                if _championship_flags(
+                        ctx, platform, _pk_odds,
+                        _wr_tp)["championship_hub_visible"]:
+                    _title_by_rid = {
+                        str((row or {}).get("roster_id")): (row or {}).get("title_pct")
+                        for row in (_championship_sim_cached(
+                            ctx, platform, _pk_odds) or [])
+                    }
+            except Exception:
+                logger.debug("teams: championship odds skipped", exc_info=True)
         if is_redraft_m:
             for _rid, _g in team_grades.items():
                 _g["win_window"] = redraft_window_label(
@@ -833,6 +858,7 @@ def build_teams_body(ctx: dict) -> str:
                 "pos_index": f"{_pos_idx:+.2f}",
                 "pos_index_dir": _pi_dir,
                 "playoff_odds": _po_by_rid.get(str(rid)),
+                "title_odds": _title_by_rid.get(str(rid)),
                 "positions": _drawer_pos,
             }
 
