@@ -45,7 +45,7 @@ def env(monkeypatch):
         appmod, "get_model_value_table_cached", lambda: [dict(r) for r in TABLE]
     )
     pick_table = {"2027_2_mid": 120.0}
-    monkeypatch.setattr(picks_mod, "load_pick_value_table", lambda: pick_table)
+    monkeypatch.setattr(picks_mod, "load_pick_value_table", lambda *a, **k: pick_table)
     monkeypatch.setattr(ttv, "get_or_persist_trade_value_meta",
                         lambda pid, trade_date: None)
     monkeypatch.setattr(

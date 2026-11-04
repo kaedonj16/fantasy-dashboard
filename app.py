@@ -25959,8 +25959,9 @@ def api_trade_outcome():
             if _vn is not None:
                 values_now[str(p["id"])] = _vn
 
-        # Load pick values for pick asset handling
-        pick_values = load_pick_value_table()
+        # Load pick values for pick asset handling, on the league's own
+        # format axis (player values above already honor _oc_is_sf).
+        pick_values = load_pick_value_table(is_sf=_oc_is_sf)
 
         trade_date = str(payload.get("trade_date") or "")
 
@@ -26015,11 +26016,15 @@ def api_trade_outcome():
             return round(best_val, 1), source
 
         def get_pick_value(asset: dict):
-            """Current pick value, preferring WLS-derived bucket values.
+            """Current pick value from the shared calibrated hierarchy.
 
-            Returns None when the pick table has no entry for this
-            year/round in any form - the pick is unvalued, never priced
-            at an invented default.
+            Same resolver as the trade evaluator (calibrated_pick_value,
+            nearest_season=False): exact slot -> explicit bucket ->
+            slot-derived bucket (bucket_for_slot thirds at the league's
+            size) -> round average -> mid -> bare round key. Returns
+            None when the table cannot price this pick for its own
+            season - the pick is unvalued, never priced at an invented
+            default.
             """
             try:
                 rd = int(asset.get("pick_round") or 4)
@@ -26031,36 +26036,20 @@ def api_trade_outcome():
             except (ValueError, TypeError):
                 year = datetime.now().year
 
-            # Exact slot lookup (e.g. "2026_1_06")
             slot = asset.get("pick_slot")
-            if slot:
-                try:
-                    key = f"{year}_{rd}_{int(slot):02d}"
-                    if key in pick_values:
-                        return float(pick_values[key])
-                except (ValueError, TypeError):
-                    logger.debug("suppressed exception", exc_info=True)
+            try:
+                slot = int(slot) if slot else None
+            except (ValueError, TypeError):
+                slot = None
+            order = str(asset.get("pick_order") or "").strip().lower()
+            bucket = order if order in ("early", "mid", "late") else None
 
-            # Bucket lookup - derive bucket from slot if pick_order is absent
-            order = asset.get("pick_order")
-            if not order and slot:
-                try:
-                    s = int(slot)
-                    order = "early" if s <= 4 else ("mid" if s <= 8 else "late")
-                except (ValueError, TypeError):
-                    logger.debug("suppressed exception", exc_info=True)
-            order = order or "mid"
-
-            if order in ("early", "mid", "late"):
-                key = f"{year}_{rd}_{order}"
-                if key in pick_values:
-                    return float(pick_values[key])
-
-            key = f"{year}_{rd}"
-            if key in pick_values:
-                return float(pick_values[key])
-
-            return None
+            from dashboard_services.trade_hub import calibrated_pick_value
+            val = calibrated_pick_value(
+                pick_values, year, rd, slot=slot, bucket=bucket,
+                num_teams=_oc_league_size, nearest_season=False,
+            )
+            return float(val) if val and float(val) > 0 else None
 
         all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
         all_pids = [(side, str(a.get("id") or ""), str(a.get("name") or a.get("id") or "")) for side, a in all_assets]

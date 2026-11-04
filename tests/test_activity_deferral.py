@@ -144,7 +144,7 @@ def test_activity_page_body_fills_pending_then_renders_real_data(monkeypatch):
     }])
     monkeypatch.setattr(appmod, "build_week_activity", lambda *a, **k: activity_frame)
     monkeypatch.setattr(appmod, "build_injury_report", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(appmod, "load_pick_value_table", lambda: {})
+    monkeypatch.setattr(appmod, "load_pick_value_table", lambda **_kw: {})
 
     ctx = _pending_ctx()
     ctx.update({"standings_map": {}, "model_value_table": [], "scoring_settings": {}})
