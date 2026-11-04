@@ -8025,9 +8025,22 @@ window.BRValueChart = (function () {
     }
     function onMove(evt) {
       if (!union.length || !svg) return;
-      var rect = svg.getBoundingClientRect();
-      var mx = (evt.touches ? evt.touches[0].clientX : evt.clientX) - rect.left;
-      var frac = (mx - padL) / plotW;
+      var clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+      // The overlay spans exactly the plot area (user x padL..padL+plotW),
+      // so its rendered box gives the pointer fraction under ANY ancestor
+      // transform or zoom. Measuring clientX against the SVG box and
+      // treating the result as user units put the snap LEFT of the cursor
+      // whenever the rendered size differed from the viewBox size (the
+      // player modal entrance scales the modal from 0.95).
+      var orect = overlay ? overlay.getBoundingClientRect() : null;
+      var frac;
+      if (orect && orect.width > 0) {
+        frac = (clientX - orect.left) / orect.width;
+      } else {
+        var srect0 = svg.getBoundingClientRect();
+        frac = ((clientX - srect0.left) - padL) / plotW;
+      }
+      if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
       var u = xMin + frac * (xMax - xMin);
       var snap = union[0], sd = Infinity;
       union.forEach(function (uu) { var dd = Math.abs(uu - u); if (dd < sd) { sd = dd; snap = uu; } });
@@ -8058,10 +8071,22 @@ window.BRValueChart = (function () {
       hoverG.style.display = '';
       tip.innerHTML = '<div class="br-vh-tip-date">' + _esc(dateLbl) + '</div>' + rows;
       tip.style.display = '';
-      var flip = cxp > padL + plotW * 0.55;
+      // Tooltip placement in the container's rendered coordinate space:
+      // convert the crosshair user-x through the scale measured at event
+      // time, so the tip tracks the crosshair under the same transforms
+      // (at scale 1 this reduces to the old user-unit placement).
+      var svgRect = svg.getBoundingClientRect();
+      var cRect = container.getBoundingClientRect();
+      var scaleX = (svgRect.width > 0 && W > 0) ? svgRect.width / W : 1;
+      var scaleY = (svgRect.height > 0 && H > 0) ? svgRect.height / H : 1;
+      var offX = svgRect.left - cRect.left - (container.clientLeft || 0);
+      var offY = svgRect.top - cRect.top - (container.clientTop || 0);
+      var tipX = offX + cxp * scaleX;
+      var flip = tipX > offX + padL * scaleX + plotW * scaleX * 0.55;
       var tw = tip.offsetWidth || 140;
-      tip.style.left = (flip ? Math.max(cxp - tw - 12, 0) : Math.min(cxp + 12, W - tw)) + 'px';
-      tip.style.top = (padT + 4) + 'px';
+      var maxLeft = Math.max((cRect.width || W) - tw, 0);
+      tip.style.left = (flip ? Math.max(tipX - tw - 12, 0) : Math.min(tipX + 12, maxLeft)) + 'px';
+      tip.style.top = (offY + padT * scaleY + 4) + 'px';
     }
     function onLeave() { hoverG.style.display = 'none'; tip.style.display = 'none'; }
     if (overlay) {

@@ -366,3 +366,138 @@ def test_hover_events_drive_tooltip_and_crosshair(tmp_path):
     assert "LEAVE_OK" in res.stdout
     assert "TOUCH_OK" in res.stdout
     assert "RERENDER_HOVER_OK" in res.stdout
+
+
+# ── Behavioral: hover under a scaled ancestor (player modal entrance) ────
+# The modal that hosts this chart carries a scale(0.95) -> scale(1)
+# entrance transform. The original onMove measured clientX against the
+# SVG's rendered box and treated the pixels as SVG user units, an identity
+# that only holds at scale exactly 1: at 0.95 the snap sat LEFT of the
+# cursor, worse toward the right edge, and the tooltip was placed in user
+# units too. This driver gives the elements real getBoundingClientRect
+# boxes for a 0.95-scaled chart and dispatches at the RENDERED position of
+# a known point; the tooltip must show THAT point and the crosshair must
+# sit on its user x. An unscaled pass pins the pre-fix placement formulas.
+
+_SCALED_HOVER_DRIVER = r"""
+const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const start = src.indexOf('window.BRValueChart = (function () {');
+const end = src.indexOf('\nfunction _fixOnePlotly', start);
+if (start < 0 || end < 0) { console.error('EXTRACT FAIL'); process.exit(1); }
+function fakeEl() {
+  const el = { style: {}, offsetWidth: 140, isConnected: true, attrs: {}, _handlers: {},
+    rect: { left: 0, top: 0, width: 0, height: 0 },
+    setAttribute(k, v) { el.attrs[k] = v; },
+    addEventListener(t, fn) { (el._handlers[t] = el._handlers[t] || []).push(fn); },
+    dispatch(t, evt) { (el._handlers[t] || []).forEach(fn => fn(evt)); },
+    getBoundingClientRect() { return el.rect; } };
+  return el;
+}
+function makeContainer(w) {
+  const c = fakeEl();
+  c.clientWidth = w; c.clientLeft = 0; c.clientTop = 0;
+  c.parentNode = { clientWidth: w };
+  let kids = {}, html = '';
+  c.querySelector = (sel) => (kids[sel] || (kids[sel] = fakeEl()));
+  Object.defineProperty(c, 'innerHTML', {
+    get() { return html; },
+    set(v) { html = v; kids = {}; } });
+  c._html = () => html;
+  return c;
+}
+const sandbox = { window: {}, console,
+  document: { documentElement: { getAttribute: () => null } },
+  getComputedStyle: () => ({ getPropertyValue: () => '', position: 'static' }) };
+sandbox.window.addEventListener = () => {};
+vm.createContext(sandbox);
+vm.runInContext(src.slice(start, end), sandbox);
+const B = sandbox.window.BRValueChart;
+if (!B) { console.error('NO HELPER'); process.exit(1); }
+
+const labels = [], qb = [], sf = [];
+for (let i = 0; i < 30; i++) { labels.push('Oct ' + (i + 1)); qb.push(8000 + i * 10); sf.push(qb[i] + 1400); }
+qb[29] = 8420; sf[29] = 9910;
+const W = 760, H = 250, PAGE_L = 100, PAGE_T = 50;
+const c = makeContainer(W);
+B.render(c, { height: H, labels, band: true, peakLow: true, series: [
+  { name: '1QB', values: qb, color: B.heroColor, width: 3, hero: true },
+  { name: 'SF', values: sf, color: B.sky, width: 1.5, dash: '8 5' } ] });
+
+// Geometry straight from the rendered markup: the overlay rect spans the
+// plot in user units, so index k sits at padL + k/(n-1) * plotW.
+const html = c._html();
+const ov = html.match(/<rect class="br-vh-overlay" x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/);
+if (!ov) { console.error('NO OVERLAY IN MARKUP'); process.exit(1); }
+const padL = Number(ov[1]), padT = Number(ov[2]), plotW = Number(ov[3]), plotH = Number(ov[4]);
+const X = (k) => padL + (k / 29) * plotW;
+
+const svg = c.querySelector('svg.br-vh-svg');
+const overlay = c.querySelector('.br-vh-overlay');
+const tip = c.querySelector('.br-vh-tip');
+const cross = c.querySelector('.br-vh-cross');
+
+// Give every element the box it would render with under a uniform scale s
+// about the container's top-left page position.
+function setScale(s) {
+  c.rect = { left: PAGE_L, top: PAGE_T, width: W * s, height: H * s };
+  svg.rect = { left: PAGE_L, top: PAGE_T, width: W * s, height: H * s };
+  overlay.rect = { left: PAGE_L + padL * s, top: PAGE_T + padT * s,
+    width: plotW * s, height: plotH * s };
+}
+
+// SCALED (0.95, the modal entrance): hover the rendered position of the
+// LAST point; its date/values must show and the crosshair must equal its
+// user x. The old user-unit math snapped ~1.5 points left here.
+setScale(0.95);
+overlay.dispatch('mousemove', { clientX: PAGE_L + 0.95 * X(29) });
+if (tip.style.display !== '') { console.error('SCALED TIP NOT SHOWN'); process.exit(1); }
+for (const want of ['Oct 30', '8,420', '9,910']) {
+  if (!tip.innerHTML.includes(want)) {
+    console.error('SCALED TIP WRONG (want ' + want + '): ' + tip.innerHTML); process.exit(1); }
+}
+if (Math.abs(Number(cross.attrs.x1) - X(29)) > 0.5) {
+  console.error('SCALED CROSS OFF: ' + cross.attrs.x1 + ' vs ' + X(29)); process.exit(1); }
+// Tooltip in rendered space: flipped left of the crosshair, offset by the
+// measured scale (old code placed it in user units, ~33px too far right).
+const wantLeft = Math.max(X(29) * 0.95 - 140 - 12, 0);
+if (Math.abs(parseFloat(tip.style.left) - wantLeft) > 1) {
+  console.error('SCALED TIP LEFT OFF: ' + tip.style.left + ' vs ' + wantLeft); process.exit(1); }
+if (Math.abs(parseFloat(tip.style.top) - (padT * 0.95 + 4)) > 0.75) {
+  console.error('SCALED TIP TOP OFF: ' + tip.style.top); process.exit(1); }
+console.log('SCALED_HOVER_OK');
+// Touch follows the same rendered-space path.
+overlay.dispatch('touchmove', { touches: [{ clientX: PAGE_L + 0.95 * X(29) }] });
+if (!tip.innerHTML.includes('Oct 30')) { console.error('SCALED TOUCH FAIL'); process.exit(1); }
+console.log('SCALED_TOUCH_OK');
+
+// UNSCALED: placement must match the pre-fix formulas pixel for pixel.
+setScale(1);
+overlay.dispatch('mousemove', { clientX: PAGE_L + X(14) });
+if (!tip.innerHTML.includes('Oct 15') || !tip.innerHTML.includes('8,140')) {
+  console.error('UNSCALED TIP WRONG: ' + tip.innerHTML); process.exit(1); }
+if (Math.abs(Number(cross.attrs.x1) - X(14)) > 0.5) {
+  console.error('UNSCALED CROSS OFF: ' + cross.attrs.x1 + ' vs ' + X(14)); process.exit(1); }
+const cxp = X(14), flip = cxp > padL + plotW * 0.55;
+const wantLeft1 = flip ? Math.max(cxp - 140 - 12, 0) : Math.min(cxp + 12, W - 140);
+if (Math.abs(parseFloat(tip.style.left) - wantLeft1) > 0.6) {
+  console.error('UNSCALED TIP LEFT CHANGED: ' + tip.style.left + ' vs ' + wantLeft1); process.exit(1); }
+if (Math.abs(parseFloat(tip.style.top) - (padT + 4)) > 0.6) {
+  console.error('UNSCALED TIP TOP CHANGED: ' + tip.style.top); process.exit(1); }
+console.log('UNSCALED_HOVER_OK');
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+def test_hover_tracks_pointer_under_scaled_ancestor(tmp_path):
+    driver = tmp_path / "vh_scaled_hover_driver.js"
+    driver.write_text(_SCALED_HOVER_DRIVER, encoding="utf-8")
+    res = subprocess.run(
+        ["node", str(driver), str(ROOT / "static" / "app.js")],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert res.returncode == 0, res.stderr + res.stdout
+    assert "SCALED_HOVER_OK" in res.stdout
+    assert "SCALED_TOUCH_OK" in res.stdout
+    assert "UNSCALED_HOVER_OK" in res.stdout
