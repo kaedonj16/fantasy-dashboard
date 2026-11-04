@@ -1460,10 +1460,11 @@ function openPlayerModal(playerId, playerName, opts) {
       // Two-column Overview body (mock layout): start/sit strip, scoring
       // toggles and the hero row stay full width above the columns. Main
       // column: Recent Form, Value History, ADP. Right rail:
-      // Playoff Schedule, Role, In this league, Recent News. Every section
-      // keeps its existing id and render path; the lazy loaders find them
-      // by id. On phone the columns flatten (CSS order) to: hero, Playoff,
-      // Recent Form, Value History, Role, ADP, In this league, Recent News.
+      // Playoff Schedule, Role, In this league, Availability, Recent News.
+      // Every section keeps its existing id and render path; the lazy
+      // loaders find them by id. On phone the columns flatten (CSS order)
+      // to: hero, Recent Form, Value History, Playoff, Role, ADP,
+      // In this league, Availability, Recent News.
       let overviewHTML = `
         <div id="pmStartSitStrip" class="pm-ss-strip" hidden></div>
         ${scoringToggles}
@@ -1490,8 +1491,8 @@ function openPlayerModal(playerId, playerName, opts) {
           <div class="pm-ov-rail">
             ${playoffCard}
             <div id="pmOvRole" class="pm-ov-role" hidden></div>
-            <div id="pmAvail" class="pm-avail" hidden></div>
             <div id="pmInLeague" class="pm-inleague pm-ov-inleague" hidden></div>
+            <div id="pmAvail" class="pm-avail" hidden></div>
             ${newsBlock}
           </div>
         </div>
@@ -2239,9 +2240,10 @@ function _pmSetupAvail(playerId, data) {
     '<hr class="pm-section-divider">' +
     '<button type="button" class="pm-section-header pm-section-collapsible pm-avail-toggle" id="pmAvailToggle" aria-expanded="false" aria-controls="pmAvailBody">' +
       '<span class="pm-collapse-chevron" aria-hidden="true">&#9656;</span>' +
-      '<span class="pm-section-label">Availability</span>' +
-      '<span class="pm-avail-secnote" id="pmAvailNote">Your leagues</span>' +
-      '<span class="pm-collapse-hint">Show details</span>' +
+      '<span class="pm-avail-headtext">' +
+        '<span class="pm-section-label">Availability</span>' +
+        '<span class="pm-avail-secnote" id="pmAvailNote">Your leagues</span>' +
+      '</span>' +
     '</button>' +
     '<div id="pmAvailBody" hidden></div>';
   document.getElementById('pmAvailToggle').addEventListener('click', _pmToggleAvail);
