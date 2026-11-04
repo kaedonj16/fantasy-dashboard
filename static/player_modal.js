@@ -376,41 +376,34 @@ function _pmRenderValueHistoryChart(data) {
           const earliestD = parseHistDate(fullHistory[0].as_of_date);
           const spanDays  = (latestD && earliestD) ? (latestD - earliestD) / 86400000 : 0;
 
-          // ── Direction 1 "momentum": range-aware summary above the chart ──────
-          // Trend is derived from the visible window, so it works even when the
-          // backend value_trend field is absent (it currently is). Delta / peak /
-          // floor track the selected range, so switching 1 Mo / 3 Mo / All
-          // re-answers "where is this value going" rather than just redrawing.
+          // ── Range-aware summary above the chart ──────
+          // Delta / peak / floor track the selected range, so switching
+          // 1 Mo / 3 Mo / All re-answers "where is this value going" rather
+          // than just redrawing. (No trend pill: it restated the delta's
+          // direction, Kaedon's call 2026-11-04.)
           const _fmtVal = (v) => (typeof fmtInt === 'function')
             ? fmtInt(Math.round(v)) : Math.round(v).toLocaleString('en-US');
-          const TREND_META = {
-            rising:     { icon: '↑', label: 'Rising',      color: 'var(--win)' },
-            recovering: { icon: '↗', label: 'Recovering',  color: '#3b82f6' },
-            peaked:     { icon: '↘', label: 'Cooling off', color: '#f59e0b' },
-            declining:  { icon: '↓', label: 'Declining',   color: 'var(--loss)' },
-            stable:     { icon: '→', label: 'Stable',      color: 'var(--text-muted)' },
-          };
-          function classifyTrend(vals) {
-            const n = vals.length;
-            if (n < 2) return null;
-            const first = vals[0], last = vals[n - 1];
-            const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
-            const pct = first ? (last - first) / first : 0;
-            if (Math.abs(pct) < 0.03) return TREND_META.stable;
-            if (pct > 0) {
-              // Climbed back up from a meaningful dip → recovering, else rising.
-              return (lo < last * 0.92 && last < hi * 0.995)
-                ? TREND_META.recovering : TREND_META.rising;
-            }
-            // Net down: off a recent high but holding above the low → cooling off.
-            return (hi > last * 1.08 && last > lo * 1.02)
-              ? TREND_META.peaked : TREND_META.declining;
-          }
+          // The range bar (created below) is re-homed into the summary's
+          // .pm-vh-subrow, beside Peak/Floor, so the filter shares their
+          // row at every width instead of taking its own line.
+          // updateSummary() rewrites the summary's innerHTML on every
+          // render, which detaches the bar; this closure reference
+          // survives that, listeners intact, and the end of
+          // updateSummary() appends it back.
+          let _vhBarEl = null;
           function updateSummary(history) {
             const el = document.getElementById('pmVhSummary');
             if (!el) return;
             const vals = history.map(d => Number(d.value_1qb ?? d.value)).filter(v => !isNaN(v));
-            if (vals.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
+            if (vals.length < 2) {
+              // No extremes row to share: park the bar back before the
+              // chart (its standalone spot) rather than hiding it with the
+              // summary.
+              if (_vhBarEl && el.contains(_vhBarEl)) {
+                el.parentNode.insertBefore(_vhBarEl, document.getElementById('playerValueChart'));
+              }
+              el.style.display = 'none'; el.innerHTML = ''; return;
+            }
             el.style.display = '';
             const ysf2 = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
             const dual = vals.some((v, i) => ysf2[i] != null && Math.abs(v - ysf2[i]) > 1);
@@ -423,10 +416,6 @@ function _pmRenderValueHistoryChart(data) {
             const sign = diff > 0 ? '+' : diff < 0 ? '−' : '';
             const activeBtn = document.querySelector('.pvc-range-bar .pvc-range-btn.is-active');
             const rangeLbl = activeBtn ? activeBtn.textContent.trim() : '';
-            const t = classifyTrend(vals);
-            const trendPill = t
-              ? `<span class="pm-vh-trend" style="color:${t.color};background:color-mix(in srgb, ${t.color} 14%, transparent);">${t.icon} ${t.label}</span>`
-              : '';
             el.innerHTML = `
               <div class="pm-vh-now">
                 <span class="pm-vh-now-lbl">${dual ? '1QB value' : 'Value'}</span>
@@ -435,14 +424,19 @@ function _pmRenderValueHistoryChart(data) {
               <div class="pm-vh-move">
                 <div class="pm-vh-move-row">
                   <span class="pm-vh-delta ${dir}">${arrow} ${sign}${_fmtVal(Math.abs(diff))} · ${sign}${Math.abs(pct).toFixed(1)}%</span>
-                  ${trendPill}
                 </div>
                 ${rangeLbl ? `<span class="pm-vh-range">over ${rangeLbl}</span>` : ''}
               </div>
-              <div class="pm-vh-extremes">
-                <div class="pm-vh-ext pm-vh-ext-peak"><span class="pm-vh-ext-k">Peak</span><span class="pm-vh-ext-v">${_fmtVal(peak)}</span></div>
-                <div class="pm-vh-ext pm-vh-ext-floor"><span class="pm-vh-ext-k">Floor</span><span class="pm-vh-ext-v">${_fmtVal(floor)}</span></div>
+              <div class="pm-vh-subrow">
+                <div class="pm-vh-extremes">
+                  <div class="pm-vh-ext pm-vh-ext-peak"><span class="pm-vh-ext-k">Peak</span><span class="pm-vh-ext-v">${_fmtVal(peak)}</span></div>
+                  <div class="pm-vh-ext pm-vh-ext-floor"><span class="pm-vh-ext-k">Floor</span><span class="pm-vh-ext-v">${_fmtVal(floor)}</span></div>
+                </div>
               </div>`;
+            // Re-home the range bar into the sub-row, beside Peak/Floor:
+            // extremes left, filter right, one fitted row at every width.
+            const _vhSub = el.querySelector('.pm-vh-subrow');
+            if (_vhBarEl && _vhSub) _vhSub.appendChild(_vhBarEl);
           }
 
           let _vhLastHistory = fullHistory;
@@ -528,6 +522,7 @@ function _pmRenderValueHistoryChart(data) {
               `<button type="button" class="otc-day-filter pvc-range-btn${r.days === Infinity ? ' is-active' : ''}" data-days="${r.days}">${r.label}</button>`
             ).join('');
             chartDiv.parentNode.insertBefore(bar, chartDiv);
+            _vhBarEl = bar;
             bar.addEventListener('click', (e) => {
               const b = e.target.closest('.pvc-range-btn');
               if (!b) return;

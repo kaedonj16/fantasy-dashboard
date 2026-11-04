@@ -23140,6 +23140,18 @@ img, svg, canvas {
     margin: 0 0 8px;
 }
 
+/* In the player modal the range bar is re-homed into the summary's
+   .pm-vh-subrow (player_modal.js), so Peak/Floor and the filter share
+   one fitted row at every width: extremes left, filter right, no second
+   right-aligned line under the summary. Scoped to .pm-vh-summary, which
+   only exists in the modal; the standalone sibling rule above stays for
+   the fallback where the summary is unpopulated. */
+.pm-vh-summary .pvc-range-bar {
+    margin: 0 0 0 auto;
+    flex-wrap: nowrap;
+    align-self: center;
+}
+
 /* Value-history "momentum" summary -- sits between the section header and the
    chart. Answers the direction/magnitude of the move (range-aware) before the
    eye reaches the curve. Built in player_modal.js updateSummary(). */
@@ -23196,25 +23208,23 @@ img, svg, canvas {
 .pm-vh-delta.up   { color: var(--win);  background: color-mix(in srgb, var(--win) 13%, transparent); }
 .pm-vh-delta.down { color: var(--loss); background: color-mix(in srgb, var(--loss) 13%, transparent); }
 .pm-vh-delta.flat { color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 13%, transparent); }
-.pm-vh-trend {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: var(--radius-pill);
-    white-space: nowrap;
-}
 .pm-vh-range {
     font-size: 11px;
     font-weight: 600;
     color: var(--text-muted);
 }
+/* Second summary row, full width at every viewport: Peak/Floor left,
+   the re-homed range filter right, one fitted row on desktop too. */
+.pm-vh-subrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 100%;
+    min-width: 0;
+}
 .pm-vh-extremes {
     display: flex;
     gap: 8px;
-    margin-left: auto;
 }
 .pm-vh-ext {
     text-align: center;
@@ -23247,8 +23257,13 @@ img, svg, canvas {
 .pm-vh-ext-floor .pm-vh-ext-k,
 .pm-vh-ext-floor .pm-vh-ext-v { color: var(--loss); }
 @media (max-width: 768px) {
-    .pm-vh-extremes { margin-left: 0; }
     .pm-vh-now-val { font-size: 22px; }
+    /* Fit pass for the shared extremes + filter row: tighter summary gap
+       and chip padding so Peak/Floor and the range buttons fit the modal
+       width on one line. Font sizes and the 40px chip min-height stay. */
+    .pm-vh-summary { gap: 10px; }
+    .pm-vh-summary .pm-vh-ext { padding: 5px 8px; }
+    .pm-vh-summary .pvc-range-btn { padding-left: 8px; padding-right: 8px; }
 }
 
 /* Hand-built SVG value-history chart (BRValueChart in app.js): tooltip card

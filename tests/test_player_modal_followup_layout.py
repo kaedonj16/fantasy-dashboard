@@ -125,6 +125,29 @@ def test_overview_hero_no_truncation_on_phones():
     assert "font-size: 8px;\n        letter-spacing: -0.03em;" in CSS
 
 
+def test_overview_vh_range_bar_shares_extremes_row():
+    # Fit fix (2026-11-04): Peak/Floor and the value-history range filter
+    # sat on two half-empty rows (extremes row, then a right-aligned
+    # filter line). The bar is re-homed into the summary's .pm-vh-subrow
+    # so they share one fitted row at every width: extremes left, filter
+    # right. Because updateSummary() rebuilds the summary's innerHTML on
+    # every render, the bar element is held in a closure and re-appended
+    # after each rebuild, and parked back before the chart when the
+    # summary hides.
+    assert "let _vhBarEl = null;" in JS
+    assert "_vhBarEl = bar;" in JS
+    assert "class=\"pm-vh-subrow\"" in JS
+    assert "if (_vhBarEl && _vhSub) _vhSub.appendChild(_vhBarEl);" in JS
+    assert "el.contains(_vhBarEl)" in JS
+    # CSS scoped to the modal summary so Compare / player page keep
+    # their own .pvc-range-bar contexts.
+    assert ".pm-vh-subrow {" in CSS
+    assert "flex: 1 1 100%;" in CSS
+    assert ".pm-vh-summary .pvc-range-bar {" in CSS
+    assert "margin: 0 0 0 auto;" in CSS
+    assert ".pm-vh-summary .pvc-range-btn { padding-left: 8px; padding-right: 8px; }" in CSS
+
+
 def test_overview_avail_below_in_league_in_rail():
     # Availability moved below In this league in the desktop rail DOM
     # (hero-strip spec); its phone order 7 (above) lands it in the same
