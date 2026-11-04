@@ -169,7 +169,11 @@ def build_dashboard_body(ctx: dict) -> str:
     else:
         awards = compute_awards_season(finalized_df, players_map, league_id, platform, season, users, rosters)
         _awards_is_alltime = False
-    awards_html = render_awards_section(awards, alltime=_awards_is_alltime)
+    awards_html = render_awards_section(
+        awards, alltime=_awards_is_alltime,
+        team_rid_by_name=_owner_to_rid_map(
+            roster_map=ctx.get("roster_map"), df_weekly=df_weekly),
+    )
 
     ctx["model_value_table"] = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
 
@@ -1090,6 +1094,39 @@ def build_dashboard_body(ctx: dict) -> str:
                 return str(_pid)
             except Exception:
                 return str(_pid)
+        def _plink(_pid):
+            # Player name that opens the player modal (global delegated
+            # handler). Defenses and kickers stay plain text: their modal
+            # is not a real player profile. Unknown ids stay plain too.
+            _nm = _pname(_pid)
+            try:
+                _p = (players_map or {}).get(str(_pid)) or {}
+                if not _p:
+                    return html.escape(_nm)
+                _pos = str(_p.get("pos") or _p.get("position") or "").upper()
+                _is_def = _pos == "DEF" or (
+                    not _pos and len(str(_pid)) <= 3 and str(_pid).isupper())
+                if _is_def or _pos == "K":
+                    return html.escape(_nm)
+                return (
+                    f"<span class='player-clickable' style='cursor:pointer;' "
+                    f"data-player-id='{html.escape(str(_pid), quote=True)}' "
+                    f"data-player-name='{html.escape(_nm, quote=True)}'>"
+                    f"{html.escape(_nm)}</span>"
+                )
+            except Exception:
+                return html.escape(_nm)
+        def _tlink(_rid, _name):
+            # Team name that opens the team modal (global .team-clickable
+            # handler). Plain text when the roster id is unknown.
+            if not _rid or not _name:
+                return html.escape(str(_name or ""))
+            return (
+                f"<span class='team-clickable' style='cursor:pointer;' "
+                f"data-roster-id='{html.escape(str(_rid), quote=True)}' "
+                f"data-team-name='{html.escape(str(_name), quote=True)}'>"
+                f"{html.escape(str(_name))}</span>"
+            )
         def _rel_time(_ms):
             try:
                 import datetime
@@ -1117,32 +1154,35 @@ def build_dashboard_body(ctx: dict) -> str:
                 _sent = []
                 try:
                     for _pid, _rid in list(_adds.items())[:2]:
-                        _sent.append(_pname(_pid))
+                        _sent.append(_plink(_pid))
                 except Exception:
                     pass
                 if len(_names) >= 2 and _sent:
-                    _txt = (f"<strong>{html.escape(_names[0])}</strong> traded "
-                            f"{html.escape(', '.join(_sent))} to "
-                            f"<strong>{html.escape(_names[1])}</strong>")
+                    _txt = (f"<strong>{_tlink(_rids[0], _names[0])}</strong> traded "
+                            f"{', '.join(_sent)} to "
+                            f"<strong>{_tlink(_rids[1], _names[1])}</strong>")
                 elif len(_names) >= 2:
-                    _txt = (f"<strong>{html.escape(_names[0])}</strong> traded with "
-                            f"<strong>{html.escape(_names[1])}</strong>")
+                    _txt = (f"<strong>{_tlink(_rids[0], _names[0])}</strong> traded with "
+                            f"<strong>{_tlink(_rids[1], _names[1])}</strong>")
             elif _kind in ("waiver", "free_agent"):
                 _adds = _tx.get("adds") or {}
                 _drops = _tx.get("drops") or {}
                 try:
                     _by = ""
+                    _by_rid = ""
                     _rids = [str(x) for x in (_tx.get("roster_ids") or [])]
                     if _rids:
+                        _by_rid = _rids[0]
                         _by = _rid_to_name.get(_rids[0], "")
+                    _by_html = _tlink(_by_rid, _by) if _by else ""
                     if _adds:
-                        _pn = _pname(next(iter(_adds)))
-                        _txt = (f"<strong>{html.escape(_by)}</strong> claimed "
-                                f"{html.escape(_pn)}" if _by else f"Claimed {html.escape(_pn)}")
+                        _pn = _plink(next(iter(_adds)))
+                        _txt = (f"<strong>{_by_html}</strong> claimed "
+                                f"{_pn}" if _by else f"Claimed {_pn}")
                     elif _drops:
-                        _pn = _pname(next(iter(_drops)))
-                        _txt = (f"<strong>{html.escape(_by)}</strong> dropped "
-                                f"{html.escape(_pn)}" if _by else f"Dropped {html.escape(_pn)}")
+                        _pn = _plink(next(iter(_drops)))
+                        _txt = (f"<strong>{_by_html}</strong> dropped "
+                                f"{_pn}" if _by else f"Dropped {_pn}")
                 except Exception:
                     pass
             if _txt:
@@ -1187,9 +1227,23 @@ def build_dashboard_body(ctx: dict) -> str:
                         continue
                     _pn = str(_row.get("Player") or "")
                     _pos = str(_row.get("Pos") or "")
+                    # Player name opens the player modal when the row
+                    # carries a real player id; defenses and kickers stay
+                    # plain (their modal is not a real player profile).
+                    _pid = str(_row.get("PlayerID") or "").strip()
+                    if (_pid and _pid.lower() not in ("nan", "none")
+                            and _pos.strip().upper() not in ("DEF", "K")):
+                        _pn_html = (
+                            f"<span class='player-clickable' style='cursor:pointer;' "
+                            f"data-player-id='{html.escape(_pid, quote=True)}' "
+                            f"data-player-name='{html.escape(_pn, quote=True)}'>"
+                            f"{html.escape(_pn)}</span>"
+                        )
+                    else:
+                        _pn_html = html.escape(_pn)
                     _inj_rows.append(
                         '<div class="cc-inj-row">'
-                        f'<span><strong>{html.escape(_pn)}</strong> '
+                        f'<span><strong>{_pn_html}</strong> '
                         f'<span class="cc-muted">{html.escape(_pos)}</span></span>'
                         f'<span class="cc-inj-status">{html.escape(_st)}</span>'
                         '</div>'

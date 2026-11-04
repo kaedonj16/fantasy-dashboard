@@ -144,6 +144,7 @@ _TRADE_ROW = {
     "id": 1, "transaction_id": "tx1", "season": 2026, "week": 6,
     "created_at": datetime(2026, 10, 14, 12, 0, 0),
     "scoring_type": "ppr", "is_superflex": True, "num_teams": 12,
+    "league_type": 2,
 }
 _ASSET_ROWS = [
     {"trade_id": 1, "side": "a", "asset_type": "player", "player_id": "9221",
@@ -280,6 +281,8 @@ def test_response_carries_team_pick_fields_and_created_at(endpoint):
     data, _calls = _run(endpoint, {"season": "2026"})
     trade = data["trades"][0]
     assert trade["created_at"] == "2026-10-14T12:00:00"
+    # league_type 2 (dynasty) surfaces as the UI league-format name.
+    assert trade["league_format"] == "dynasty"
     player = trade["side_a"][0]
     assert player["team"] == "DET"
     assert player["position"] == "RB"

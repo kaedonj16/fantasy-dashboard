@@ -1021,16 +1021,27 @@ def page_trade_database(platform: str, season: int, league_id: str):
             const hs = pid
               ? `<span class="tdb-hs"><img loading="lazy" alt="" src="https://sleepercdn.com/content/nfl/players/thumb/${{encodeURIComponent(pid)}}.jpg" data-init="${{tdbInitials(a.name)}}" onerror="tdbHsFallback(this)"></span>`
               : `<span class="tdb-hs"><span class="tdb-hs-init">${{tdbInitials(a.name)}}</span></span>`;
-            return `<div class="tdb-asset${{match ? ' tdb-match' : ''}}" title="${{tdbEsc(a.name)}}">${{hs}}<span class="tdb-a-main"><span class="tdb-a-name">${{tdbEsc(tdbShortName(a.name))}}</span>${{sub ? `<span class="tdb-a-sub">${{tdbEsc(sub)}}</span>` : ''}}</span></div>`;
+            // Player names open the player modal (global delegated
+            // handler); defenses and kickers stay plain, like elsewhere.
+            const posU = String(a.position || '').toUpperCase();
+            const nameHtml = (pid && posU !== 'DEF' && posU !== 'K')
+              ? `<span class="tdb-a-name player-clickable" style="cursor:pointer;" data-player-id="${{tdbEsc(pid)}}" data-player-name="${{tdbEsc(a.name)}}">${{tdbEsc(tdbShortName(a.name))}}</span>`
+              : `<span class="tdb-a-name">${{tdbEsc(tdbShortName(a.name))}}</span>`;
+            return `<div class="tdb-asset${{match ? ' tdb-match' : ''}}" title="${{tdbEsc(a.name)}}">${{hs}}<span class="tdb-a-main">${{nameHtml}}${{sub ? `<span class="tdb-a-sub">${{tdbEsc(sub)}}</span>` : ''}}</span></div>`;
           }}
           const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
           const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
-          // Meta line: when · teams · SF/1QB · scoring · week (fields the API
-          // actually has; no TEP exists in the trade DB, so none is shown).
+          // Meta line: when · teams · league type · SF/1QB · scoring · week
+          // (fields the API actually has; no TEP exists in the trade DB, so
+          // none is shown). The league type is only spelled out when the
+          // League type filter is All: under a specific filter every card
+          // shares it, so repeating it on each card is noise.
           const scoreLabel = ({{ ppr: 'PPR', half: 'Half PPR', std: 'Standard' }})[String(t.scoring_type || '').toLowerCase()]
             || (t.scoring_type ? String(t.scoring_type).toUpperCase() : '');
+          const fmtLabel = ({{ dynasty: 'Dynasty', redraft: 'Redraft', keeper: 'Keeper' }})[String(t.league_format || '').toLowerCase()] || '';
           const metaSegs = [
             t.num_teams ? t.num_teams + '-team' : '',
+            (leagueFormat === 'all' && fmtLabel) ? fmtLabel : '',
             t.is_superflex === true ? 'SF' : t.is_superflex === false ? '1QB' : '',
             scoreLabel,
             t.week ? 'Wk ' + t.week : '',
