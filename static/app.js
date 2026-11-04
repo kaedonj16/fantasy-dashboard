@@ -4989,10 +4989,14 @@ function showLoginGate(target, opts) {
   // done since landing. Advanced Metrics is the known case: its selected
   // metric, compare columns, filters and open pickers are all in-memory, and
   // its script is inline so canSwapInPlace() cannot see it as swap-unsafe.
+  // Trade Database is the same shape: its list renders from an API fetch
+  // into in-memory filter/page state, so a swap landing after the trades
+  // painted throws them back to skeletons and refetches (and drops any
+  // filters the user set) -- the page reads as if it refreshed itself.
   // The background pass still expires and warms the league cache for these
   // pages; only the in-place swap is skipped, so the next load is fresh.
   function autoSwapBlocked() {
-    return !!document.getElementById('amCmdBar');
+    return !!document.getElementById('amCmdBar') || !!document.getElementById('tdbList');
   }
 
   async function autoRevalidate() {
