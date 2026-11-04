@@ -581,6 +581,11 @@ def test_auto_revalidate_never_swaps_advanced_metrics_page():
     src = _freshness_iife()
     assert "function autoSwapBlocked()" in src
     assert "document.getElementById('amCmdBar')" in src
+    # Trade Database is blocked for the same reason: its list renders from
+    # an API fetch into in-memory filter/page state, so a silent swap
+    # re-runs the bootstrap, drops the painted trades back to skeletons
+    # and refetches -- the page reads as if it refreshed itself.
+    assert "document.getElementById('tdbList')" in src
     # The silent pass gates its swap on the blocklist...
     assert (
         "if (!autoSwapBlocked() && canSwapInPlace() && "
@@ -659,6 +664,82 @@ window.brFetchWithTimeout = function(url, opts){
 """
     with tempfile.TemporaryDirectory() as td:
         fp = os.path.join(td, "auto_revalidate_metrics.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_auto_revalidate_warms_but_does_not_swap_trade_database_node():
+    """Behavioral: on a Trade Database page the silent pass still expires
+    and refetches (warming the cache) but never calls brSwapPageRoot, so
+    trades that already painted are not thrown back to skeletons by a
+    bootstrap re-run."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _freshness_iife()
+    harness = r"""
+var window = globalThis;
+var location = { href: 'http://x/sleeper/2026/abc/trade-database', pathname: '/sleeper/2026/abc/trade-database', reload: function(){} };
+window.location = location;
+var navigator = { serviceWorker: null };
+var postCount = 0, getCount = 0, swapCount = 0;
+var staleTs = String(Date.now() - 120000);
+var root = { dataset: { cacheTs: staleTs, season: String(new Date().getFullYear()) }, querySelectorAll: function(){ return []; } };
+var sheetTime = { textContent: '', classList: { toggle: function(){} } };
+var button = { disabled: false, _brWired: false, setAttribute: function(){}, removeAttribute: function(){}, addEventListener: function(){} };
+var elements = { 'page-root': root, 'brSheetRefreshTime': sheetTime, 'brSheetRefresh': button };
+var document = {
+  visibilityState: 'visible',
+  getElementById: function(id){ return elements[id] || null; },
+  querySelector: function(){ return null; },
+  addEventListener: function(){},
+  createElement: function(){ return { style: {}, setAttribute: function(){}, innerHTML: '' }; },
+  body: { appendChild: function(el){ elements[el.id] = el; } }
+};
+window.matchMedia = function(){ return { matches: true }; };
+var setInterval = function(){ return 0; };
+var DOMParser = function(){};
+DOMParser.prototype.parseFromString = function(html){
+  var m = /data-cache-ts=[\"'](\d+)/.exec(html);
+  return { getElementById: function(id){ return id === 'page-root' && m ? { dataset: { cacheTs: m[1] } } : null; } };
+};
+window.brSwapPageRoot = function(html){
+  swapCount++;
+  var m = /data-cache-ts=[\"'](\d+)/.exec(html);
+  if (!m) return false;
+  root.dataset.cacheTs = m[1];
+  return true;
+};
+function response(ok, body){ return { ok: ok, status: ok ? 200 : 500, text: function(){ return Promise.resolve(body || ''); } }; }
+window.brFetchWithTimeout = function(url, opts){
+  if (url === '/api/refresh-league') { postCount++; return Promise.resolve(response(true)); }
+  getCount++;
+  return Promise.resolve(response(true, '<main id="page-root" data-cache-ts="' + Date.now() + '"></main>'));
+};
+""" + src + r"""
+(async function(){
+  // Control page (no Trade Database marker): a stale snapshot swaps in place.
+  await window.brMaybeAutoRevalidate();
+  if (postCount !== 1 || getCount !== 1 || swapCount !== 1) process.exit(2);
+  if (root.dataset.cacheTs === staleTs) process.exit(3);
+  // Trade Database page: stale again, marker present. Warm but never swap.
+  root.dataset.cacheTs = staleTs;
+  elements['tdbList'] = {};
+  postCount = 0; getCount = 0;
+  await window.brMaybeAutoRevalidate();
+  if (postCount !== 1 || getCount !== 1) process.exit(4);
+  if (swapCount !== 1) process.exit(5);
+  if (root.dataset.cacheTs !== staleTs) process.exit(6);
+  process.exit(0);
+})().catch(function(e){ console.error(e); process.exit(7); });
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "auto_revalidate_tdb.js")
         with open(fp, "w", encoding="utf-8") as fh:
             fh.write(harness)
         res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)

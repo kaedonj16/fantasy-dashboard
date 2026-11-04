@@ -27569,7 +27569,8 @@ def api_players():
 
     Query params:
         page  (int, default 1)   -- 1-based page number
-        limit (int, default 0)   -- results per page; 0 = return all (legacy)
+        limit (int, default 100) -- results per page, capped at 500;
+                                    explicit 0 = return all (legacy escape)
         q     (str, optional)    -- shared name-matcher filter applied before paging
         league_type (str)        -- 1qb (default) or sf; controls sort value
     """
@@ -27585,11 +27586,19 @@ def api_players():
 
         # Parse pagination + filter first so we only build response dicts for
         # the rows actually returned (was: build 10k dicts, sort, then slice).
+        # A missing limit used to mean "return all" (~5,925 rows, 1.1MB
+        # live). Every first-party caller passes one (search 8-20, the
+        # trade-db preload 100), so the default is now one page of 100 and
+        # explicit limits are capped at 500; limit=0 remains the deliberate
+        # legacy return-all escape for any caller that truly needs it.
         try:
-            limit = max(0, int(request.args.get("limit", 0)))
+            if "limit" in request.args:
+                limit = max(0, min(int(request.args.get("limit") or 0), 500))
+            else:
+                limit = 100
             page = max(1, int(request.args.get("page", 1)))
         except (TypeError, ValueError):
-            limit, page = 0, 1
+            limit, page = 100, 1
         q = request.args.get("q", "").strip().lower()
 
         # Lightweight (pid, meta) candidates; filter by name before building.
