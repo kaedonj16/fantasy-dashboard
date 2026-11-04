@@ -80,13 +80,42 @@ def test_overview_rail_panels_share_one_treatment():
 
 
 def test_overview_phone_order():
-    block = CSS[CSS.find(".pm-ov-playoff { order: 1;") - 200:]
-    for cls, n in [("pm-ov-playoff", 1), ("pm-ov-recent", 2), ("pm-ov-value", 3),
+    block = CSS[CSS.find(".pm-ov-recent { order: 1;") - 200:]
+    for cls, n in [("pm-ov-recent", 1), ("pm-ov-value", 2), ("pm-ov-playoff", 3),
                    ("pm-ov-role", 4), ("pm-ov-adp", 5), ("pm-ov-inleague", 6),
-                   ("pm-ov-news", 7)]:
+                   ("pm-avail", 7), ("pm-ov-news", 8)]:
         assert f".{cls} {{ order: {n}; }}" in block
     # Columns flatten via display:contents so the order interleaves.
     assert ".pm-ov-main, .pm-ov-rail { display: contents; }" in CSS
+
+
+def test_overview_hero_is_one_line_strip():
+    # Hero-strip spec (2026-11-04): the row itself is the card and the
+    # cells sit inside it split by hairlines -- no per-cell boxes, and no
+    # phone 2-column wrap, so 2/3/4 stats stay on one line at any width.
+    row = CSS[CSS.find(".pm-hero-row {"):]
+    row = row[:row.find("}")]
+    assert "background: var(--bg-alt);" in row
+    assert "border: 1px solid var(--border);" in row
+    assert "overflow: hidden;" in row
+    assert "gap: 0;" in row
+    assert ".pm-hero-row .pm-hero-stat + .pm-hero-stat {" in CSS
+    assert "border-left: 1px solid var(--border);" in CSS
+    assert ".pm-hero-row {\n        grid-template-columns: 1fr 1fr !important;" not in CSS
+    # Strip type runs a step smaller than the shared tile sizes.
+    assert ".pm-hero-row .pm-hero-val {\n    font-size: 22px;\n}" in CSS
+    assert ".pm-hero-row .pm-hero-val {\n        font-size: 19px;\n    }" in CSS
+    assert ".pm-hero-row .pm-hero-stat {\n        padding: 6px 8px;\n    }" in CSS
+
+
+def test_overview_avail_below_in_league_in_rail():
+    # Availability moved below In this league in the desktop rail DOM
+    # (hero-strip spec); its phone order 7 (above) lands it in the same
+    # spot once the columns flatten.
+    ov = JS[JS.find('let overviewHTML'):]
+    assert ov.find('id="pmOvRole"') < ov.find('id="pmInLeague"')
+    assert ov.find('id="pmInLeague"') < ov.find('id="pmAvail"')
+    assert ov.find('id="pmAvail"') < ov.find('${newsBlock}')
 
 
 # ---------------------------------------------------------------------------

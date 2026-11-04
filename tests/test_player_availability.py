@@ -325,10 +325,17 @@ def test_modal_section_markup_and_lazy_loader():
     js = _read("static/player_modal.js")
     assert 'id="pmAvail"' in js
     assert "_pmSetupAvail(playerId, data)" in js
-    # Collapsed at start, chevron/hint/secnote header, hidden body.
+    # Collapsed at start, chevron + stacked label/secnote header, hidden body.
     assert 'id="pmAvailToggle" aria-expanded="false"' in js
     assert "pm-avail-toggle" in js  # opts out of the global accent button fill
     assert 'id="pmAvailBody" hidden' in js
+    # Hero-strip restyle (2026-11-04): the secnote stacks UNDER the label
+    # in .pm-avail-headtext and the hover-only collapse hint is gone from
+    # this toggle (other sections keep theirs).
+    assert "pm-avail-headtext" in js
+    setup_seg = js[js.find("function _pmSetupAvail"):js.find("function _pmAvailSkeleton")]
+    assert "pm-collapse-hint" not in setup_seg
+    assert '<span class="pm-avail-secnote" id="pmAvailNote">Your leagues</span>' in setup_seg
     # Lazy: fetch fires only from the toggle path's loader.
     assert "if (_pmAvailOpen && !body.dataset.loaded)" in js
     assert "'/api/player-availability?player_id='" in js or \
@@ -382,8 +389,14 @@ def test_nav_search_bit_waits_until_every_league_known():
 def test_availability_css_present():
     css = _read("static/dashboard.css")
     for sel in (".pm-avail-list", ".pm-avail-row", ".pm-avail-status.avail",
-                ".pm-avail-secnote", ".pm-avail-toggle", ".nav-search-avail-bit", ".nav-search-avail-sk"):
+                ".pm-avail-secnote", ".pm-avail-toggle", ".pm-avail-headtext",
+                ".nav-search-avail-bit", ".nav-search-avail-sk"):
         assert sel in css, sel
+    # The secnote is a plain muted line now, never an uppercase side note.
+    secnote = css[css.find(".pm-avail-secnote {"):]
+    secnote = secnote[:secnote.find("}")]
+    assert "text-transform: uppercase" not in secnote
+    assert "white-space: nowrap" in secnote
 
 
 def test_service_worker_bumped():

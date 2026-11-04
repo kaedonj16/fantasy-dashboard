@@ -24379,8 +24379,15 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pm-hero-row {
     display: grid;
     grid-template-columns: 1.2fr 1fr 1fr;
-    gap: 8px;
+    gap: 0;
     margin-bottom: 10px;
+    /* One-line strip (hero-strip spec): the row itself is the card --
+       surface, border and radius live here, cells sit inside it divided
+       by hairlines instead of each being its own box. */
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
 }
 
 .pm-hero-stat {
@@ -24450,16 +24457,46 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
    treatment so a hero tile reads as one component across modal tabs:
    left-aligned content and the same micro-cap label weight/tracking.
    Scoped to .pm-hero-row so Compare (.compare-hero-row) keeps its own
-   centered, win-checkmark layout. Tile surface and value size are left
-   as-is on purpose -- bg-alt keeps the tiles readable on the white modal
-   body, and the big Overview numbers keep their prominence. */
+   centered, win-checkmark layout. Inside the strip the cells drop their
+   own surface/border/radius (the row carries them), split by hairline
+   dividers, and run a step smaller than the shared .pm-hero-stat tiles
+   the Team tab still uses, so the whole strip lands ~64-70px tall. */
 .pm-hero-row .pm-hero-stat {
     text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 8px 12px;
+    min-width: 0;
+}
+
+.pm-hero-row .pm-hero-stat + .pm-hero-stat {
+    border-left: 1px solid var(--border);
+}
+
+.pm-hero-row .pm-hero-primary {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .pm-hero-row .pm-hero-label {
     font-weight: 800;
     letter-spacing: 0.06em;
+    /* One-line strip: tight leading, and a long label ellipsizes like
+       the sub instead of wrapping and tallening the strip. */
+    line-height: 1.15;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pm-hero-row .pm-hero-val {
+    font-size: 22px;
+}
+
+.pm-hero-row .pm-hero-sub {
+    line-height: 1.15;
+    margin-top: 3px;
 }
 
 /* Sleeper ADP: two format cards (Dynasty / Redraft), each with 1QB + SF. */
@@ -24889,12 +24926,24 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 }
 
 @media (max-width: 640px) {
-    .pm-hero-row {
-        grid-template-columns: 1fr 1fr !important;
+    /* Hero strip stays on one line on phones: no 2-column wrap, the
+       inline repeat(N,1fr) grid governs at every width. Scoped sizes
+       shrink the strip cells only; the shared tile rules below still
+       cover the Team tab's standalone .pm-hero-stat tiles. */
+    .pm-hero-row .pm-hero-label {
+        font-size: 10px;
     }
 
-    .pm-hero-primary {
-        grid-column: auto;
+    .pm-hero-row .pm-hero-val {
+        font-size: 19px;
+    }
+
+    .pm-hero-row .pm-hero-sub {
+        font-size: 10px;
+    }
+
+    .pm-hero-row .pm-hero-stat {
+        padding: 6px 8px;
     }
 
     .pm-hero-label {
@@ -25390,14 +25439,19 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 /* ── Player modal Overview: cross-league Availability (collapsible, lazy) ── */
 /* The global button rule paints every button with the accent fill; the
    collapsible toggles opt out explicitly (same reset as the Team tab's). */
-.pm-avail-toggle { appearance: none; width: calc(100% + 28px); margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; background: transparent; color: inherit; border: 0; font: inherit; text-align: left; box-shadow: none; }
+.pm-avail-toggle { appearance: none; width: calc(100% + 28px); margin-left: -14px; margin-right: -14px; margin-bottom: 0; padding-left: 14px; padding-right: 14px; background: transparent; color: inherit; border: 0; font: inherit; text-align: left; box-shadow: none; justify-content: flex-start; }
 .pm-avail-toggle:hover { background: var(--card); }
-.pm-avail-secnote { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+/* Header text stacks (hero-strip spec): the label on one line, the
+   secnote as a small muted line UNDER it -- never beside the label,
+   where the full-sentence summary wrapped inside the narrow rail. */
+.pm-avail-headtext { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; line-height: 1.2; }
+.pm-avail-toggle .pm-section-label { white-space: nowrap; }
+.pm-avail-secnote { font-size: 11px; font-weight: 600; letter-spacing: 0; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .pm-avail-secnote.has-avail { color: var(--win); }
 /* The section is a rail panel now (shared rule in the two-column section
    below): the list drops its own border box and the rows sit transparent
    on the panel surface. */
-.pm-avail-list { border-top: 1px solid var(--border); }
+.pm-avail-list { border-top: 1px solid var(--border); margin-top: 10px; }
 .pm-avail-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; text-decoration: none; color: inherit; background: transparent; padding: 7px 0; min-height: 36px; }
 .pm-avail-row + .pm-avail-row { border-top: 1px solid var(--grid); }
 a.pm-avail-row:hover { background: var(--card); }
@@ -25420,7 +25474,7 @@ a.pm-avail-row:hover { background: var(--card); }
 .pm-avail-skpill { height: 16px; width: 64px; border-radius: 6px; margin-left: auto; flex-shrink: 0; }
 .pm-avail-retry { margin-top: 8px; background: none; border: 0; color: var(--brand-blue); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 2px 0; }
 .pm-avail-retry:hover { text-decoration: underline; }
-.pm-avail-error { font-size: 13px; color: var(--text-muted); padding: 4px 0; }
+.pm-avail-error { font-size: 13px; color: var(--text-muted); padding: 4px 0; margin-top: 8px; }
 @media (max-width: 600px) {
     .pm-avail-row { flex-wrap: wrap; gap: 4px 8px; padding: 8px 0; }
     .pm-avail-league { flex: 1 1 calc(100% - 84px); }
@@ -25494,19 +25548,22 @@ a.pm-avail-row:hover { background: var(--card); }
 .pm-pair-usage .pm-section-header + .pm-ov-kv { border-top: none; }
 @media (max-width: 768px) {
   /* Phone: one column, mock order (hero sits above the columns):
-     Playoff, Recent Form, Value History, Role, In this league, ADP, News.
-     align-items must reset to stretch here: the desktop grid's
-     align-items: start otherwise carries into the flex column and every
-     card shrinks to its content width. */
+     Recent Form, Value History, Playoff, Role, ADP, In this league,
+     Availability, News. Availability needs an explicit order like every
+     other section: with none it defaulted to 0 and landed first, right
+     under the hero. align-items must reset to stretch here: the desktop
+     grid's align-items: start otherwise carries into the flex column
+     and every card shrinks to its content width. */
   .pm-ov-cols { display: flex; flex-direction: column; align-items: stretch; }
   .pm-ov-main, .pm-ov-rail { display: contents; }
-  .pm-ov-playoff { order: 1; }
-  .pm-ov-recent { order: 2; }
-  .pm-ov-value { order: 3; }
+  .pm-ov-recent { order: 1; }
+  .pm-ov-value { order: 2; }
+  .pm-ov-playoff { order: 3; }
   .pm-ov-role { order: 4; }
   .pm-ov-adp { order: 5; }
   .pm-ov-inleague { order: 6; }
-  .pm-ov-news { order: 7; }
+  .pm-avail { order: 7; }
+  .pm-ov-news { order: 8; }
 }
 
 /* ── Rookie tab: mock layout (hero row, components card, right stack) ──── */
