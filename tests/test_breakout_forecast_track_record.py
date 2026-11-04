@@ -408,6 +408,10 @@ def test_season_track_record_groups_by_phase_with_final_stage(monkeypatch):
                      "phase": "post_draft", "grading_stage": "final",
                      "grade": "miss", "as_of_date": date(2026, 5, 1)})
     monkeypatch.setattr(forecasts, "get_conn", lambda: _SeasonConn(True, rows))
+    # Surfaced set undeterminable in this fixture: rows stay unfiltered
+    # (the fail-soft rule), but still collapse to one call per player.
+    from data_building.breakout_engine import season_grading as sg
+    monkeypatch.setattr(sg, "surfaced_preseason_player_ids", lambda season: None)
 
     record = forecasts.season_track_record(2026)
 
@@ -417,6 +421,76 @@ def test_season_track_record_groups_by_phase_with_final_stage(monkeypatch):
     assert groups["preseason"]["hit_rate"] == pytest.approx(1.0)
     assert groups["post_draft"]["graded"] == 3
     assert groups["post_draft"]["hit_rate"] is None
+
+
+def test_season_track_record_counts_only_surfaced_calls(monkeypatch):
+    """Regression (Kaedon, 2026-11-04): live showed 180 graded preseason
+    calls because every scored player was graded; the board surfaced 15.
+    The record must base on the surfaced 15 only."""
+    from data_building.breakout_engine import season_grading as sg
+
+    rows = []
+    surfaced_ids = {f"s{i}" for i in range(15)}
+    for pid in sorted(surfaced_ids):
+        rows.append({"player_id": pid, "player_name": pid, "phase": "offseason",
+                     "grading_stage": "final", "grade": "hit",
+                     "as_of_date": date(2026, 9, 15)})
+    for i in range(165):
+        rows.append({"player_id": f"x{i}", "player_name": f"X{i}",
+                     "phase": "offseason", "grading_stage": "final",
+                     "grade": "miss", "as_of_date": date(2026, 9, 15)})
+    monkeypatch.setattr(forecasts, "get_conn", lambda: _SeasonConn(True, rows))
+    monkeypatch.setattr(
+        sg, "surfaced_preseason_player_ids", lambda season: set(surfaced_ids))
+
+    record = forecasts.season_track_record(2026)
+
+    assert record["available"] is True
+    assert record["overall"]["calls"] == 15
+    assert record["overall"]["graded"] == 15
+    assert record["overall"]["hit"] == 15
+    assert record["overall"]["hit_rate"] == pytest.approx(1.0)
+    assert record["groups"][0]["calls"] == 15
+
+
+def test_season_track_record_collapses_duplicate_snapshot_dates(monkeypatch):
+    """A surfaced player graded at two snapshot dates is one call; the
+    latest snapshot's verdict is the one counted."""
+    from data_building.breakout_engine import season_grading as sg
+
+    rows = [
+        {"player_id": "p1", "player_name": "P1", "phase": "post_draft",
+         "grading_stage": "final", "grade": "miss",
+         "as_of_date": date(2026, 5, 1)},
+        {"player_id": "p1", "player_name": "P1", "phase": "offseason",
+         "grading_stage": "final", "grade": "hit",
+         "as_of_date": date(2026, 9, 15)},
+    ]
+    monkeypatch.setattr(forecasts, "get_conn", lambda: _SeasonConn(True, rows))
+    monkeypatch.setattr(sg, "surfaced_preseason_player_ids",
+                        lambda season: {"p1"})
+
+    record = forecasts.season_track_record(2026)
+
+    assert record["overall"]["calls"] == 1
+    assert record["overall"]["hit"] == 1
+    assert [g["phase"] for g in record["groups"]] == ["offseason"]
+
+
+def test_season_track_record_pending_when_no_surfaced_grades(monkeypatch):
+    from data_building.breakout_engine import season_grading as sg
+
+    rows = [{"player_id": "x1", "player_name": "X1", "phase": "offseason",
+             "grading_stage": "final", "grade": "hit",
+             "as_of_date": date(2026, 9, 15)}]
+    monkeypatch.setattr(forecasts, "get_conn", lambda: _SeasonConn(True, rows))
+    monkeypatch.setattr(sg, "surfaced_preseason_player_ids",
+                        lambda season: {"someone-else"})
+
+    record = forecasts.season_track_record(2026)
+
+    assert record["available"] is False
+    assert record["overall"] is None
 
 
 # ---------------------------------------------------------------------------

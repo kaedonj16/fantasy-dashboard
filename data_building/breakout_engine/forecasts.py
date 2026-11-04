@@ -939,6 +939,16 @@ def season_track_record(season: int) -> Dict[str, Any]:
     empty: the section lights up on its own once season grading has run.
     When a call has both an early and a final grade row, the final verdict
     is the one counted.
+
+    Only SURFACED calls count: the preseason board shows the top 15 calls
+    from the season's final snapshot, so the record is filtered to those
+    players (``season_grading.surfaced_preseason_player_ids``, the
+    canonical set) and collapsed to one row per player - a player graded
+    at two snapshot dates was still only called once. Grades persisted
+    for the hundreds of scored-but-never-surfaced players do not count.
+    A surfaced-set lookup failure leaves the rows unfiltered rather than
+    blanking the section (the weekly loader's rule); a season whose
+    grades contain no surfaced call at all reports pending.
     """
     pending: Dict[str, Any] = {"available": False, "groups": [], "overall": None}
     try:
@@ -960,12 +970,32 @@ def season_track_record(season: int) -> Dict[str, Any]:
         return pending
     if not rows:
         return pending
-    best: Dict[Tuple[str, str], Tuple[int, Dict[str, Any]]] = {}
+    # Surfaced filter (see docstring). Imported lazily: season_grading
+    # owns the canonical surfaced definition, and a top-level import
+    # would cycle through the grading modules.
+    surfaced: Optional[set] = None
+    try:
+        from data_building.breakout_engine import season_grading as _sg
+        surfaced = _sg.surfaced_preseason_player_ids(int(season))
+    except Exception:
+        logger.warning(
+            "forecasts: surfaced preseason lookup failed", exc_info=True)
+        surfaced = None
+    if surfaced is not None:
+        rows = [r for r in rows
+                if str(r.get("player_id") or "") in surfaced]
+        if not rows:
+            return pending
+    # One counted call per player: the final stage wins; between rows of
+    # the same stage, the latest snapshot date is the call as it stood
+    # entering the season.
+    best: Dict[str, Tuple[Tuple[int, str], Dict[str, Any]]] = {}
     for row in rows:
-        key = (str(row.get("player_id") or ""), str(row.get("as_of_date") or ""))
-        rank = 1 if str(row.get("grading_stage") or "") == "final" else 0
-        if key not in best or rank > best[key][0]:
-            best[key] = (rank, row)
+        pid = str(row.get("player_id") or "")
+        rank = (1 if str(row.get("grading_stage") or "") == "final" else 0,
+                str(row.get("as_of_date") or ""))
+        if pid not in best or rank > best[pid][0]:
+            best[pid] = (rank, row)
     deduped = [row for _rank, row in best.values()]
     # Live preseason forecast values (same band the preseason cards show).
     attach_preseason_forecast_values(season, deduped)

@@ -25,6 +25,16 @@ grader, built to the same conventions:
   latest stored week has reached 17, the point past which no regular-season
   outcome can still change the picture). UNIQUE is on call identity +
   stage, so the final grade never overwrites the early one.
+* Only SURFACED calls are graded and counted: the board surfaces the top
+  ``SURFACED_BOARD_LIMIT`` calls from the season's final pre-season
+  snapshot (the latest ``as_of_date`` in ``breakout_opportunity_scores``),
+  ranked by the board's blend after its veteran-QB exclusion - see
+  :func:`select_surfaced_preseason_calls`. The engine scores hundreds of
+  players in that snapshot; grading all of them made the track record
+  report ~180 graded calls for a board that showed 15. The track record
+  read path (``forecasts.season_track_record``) filters persisted grades
+  to the same surfaced set, so grades written before this rule landed
+  stop counting without a rewrite.
 * :func:`summarize_grades` aggregates hit / partial / miss rates by phase,
   by season, and by predicted-score band, with the weekly grader's honesty
   rule: rates are None below ``MIN_SUMMARY_SAMPLE`` graded calls in a group;
@@ -62,6 +72,7 @@ early grade is flagged provisional; the PPG bar itself is unchanged.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from dashboard_services.db import get_conn
@@ -86,6 +97,18 @@ GRADING_VERSION = "season-grading-v1"
 PRESEASON_PHASES: Tuple[str, ...] = tuple(
     phase for phase in PHASE_WEIGHTS if phase != "in_season"
 )
+
+# Surfaced board cap, shared with the board in breakout_api
+# (BREAKOUT_BOARD_LIMIT). Kept as a literal here so this module never
+# imports the API layer (the weekly grader does the same for its
+# surfaced floor).
+SURFACED_BOARD_LIMIT = 15
+
+# Board ranking blend weight, mirroring breakout_api's
+# BREAKOUT_RANK_BLEND_WEIGHT (same env override, same default/clamp) so
+# the surfaced ranking here can never drift from the board's.
+SURFACED_RANK_BLEND_WEIGHT = min(1.0, max(0.0, float(
+    os.environ.get("BREAKOUT_RANK_BLEND_WEIGHT", "0.5"))))
 
 STAGE_EARLY = "early"
 STAGE_FINAL = "final"
@@ -192,6 +215,59 @@ def select_final_preseason_calls(
         if current is None or _date_key(row) >= _date_key(current):
             best[key] = row
     return [best[key] for key in sorted(best)]
+
+
+def _board_blend(row: Dict[str, Any]) -> float:
+    """The board's ranking value for one snapshot row: blend weight on
+    the aggregate breakout score (0-100) + the remainder on the model's
+    hit probability. Mirrors breakout_api._breakout_blend."""
+    score = float(_num(row.get("breakout_opportunity_score")) or 0) / 100.0
+    prob = float(_num(row.get("hit_probability")) or 0)
+    w = SURFACED_RANK_BLEND_WEIGHT
+    return round(w * score + (1.0 - w) * prob, 4)
+
+
+def _is_board_excluded(row: Dict[str, Any]) -> bool:
+    """The board's 'this is not a breakout' exclusion, mirrored from
+    breakout_api.engine_breakout_excluded: an established veteran QB
+    (26+ already carrying a real usage baseline) is never surfaced.
+    Rows may carry the extracts as ``age`` / ``readiness_usage_baseline``
+    (the DB loaders select them under those names)."""
+    try:
+        return (str(row.get("position") or "") == "QB"
+                and float(row.get("age") or 0) >= 26
+                and float(row.get("readiness_usage_baseline") or 0) >= 20)
+    except (TypeError, ValueError):
+        return False
+
+
+def select_surfaced_preseason_calls(
+    rows: Sequence[Dict[str, Any]],
+    limit: int = SURFACED_BOARD_LIMIT,
+) -> List[Dict[str, Any]]:
+    """The calls the preseason board actually surfaced, from the rows of
+    ONE snapshot (the season's final pre-season snapshot; the DB loader
+    restricts to it). Pure.
+
+    Mirrors get_breakout_candidates' preseason selection exactly: drop
+    board-excluded players, rank by (blend, hit_probability) descending,
+    cap at ``limit``. Input order is the loader's player_id order, which
+    the board's stable sort also starts from, so ties resolve the same
+    way on both surfaces. Rows with no player_id are not calls."""
+    candidates = [
+        row for row in rows
+        if str(row.get("player_id") or "") and not _is_board_excluded(row)
+    ]
+    candidates.sort(
+        key=lambda row: (
+            _board_blend(row),
+            float(_num(row.get("hit_probability")) or 0),
+        ),
+        reverse=True,
+    )
+    if limit and limit > 0:
+        candidates = candidates[: int(limit)]
+    return candidates
 
 
 def _date_key(row: Dict[str, Any]) -> str:
@@ -486,7 +562,10 @@ def summarize_grades(
 ) -> Dict[str, Any]:
     """DB accessor over persisted grades; see :func:`summarize_grade_rows`.
     Defaults to final grades (the verdict of record); pass stage='early'
-    for the provisional reads."""
+    for the provisional reads. With a season, rows are restricted to the
+    surfaced calls for that season (grades persisted before the
+    surfaced-only rule, for players the board never showed, do not
+    count); an undeterminable surfaced set leaves the rows unfiltered."""
     init_season_breakout_grades_db()
     query = f"SELECT * FROM {GRADES_TABLE} WHERE grading_stage = %s"
     params: List[Any] = [stage]
@@ -495,7 +574,13 @@ def summarize_grades(
         params.append(int(season))
     with get_conn() as conn:
         rows = conn.execute(query, params).fetchall()
-    return summarize_grade_rows([dict(r) for r in rows], min_sample=min_sample)
+    rows = [dict(r) for r in rows]
+    if season is not None:
+        surfaced = surfaced_preseason_player_ids(int(season))
+        if surfaced is not None:
+            rows = [r for r in rows
+                    if str(r.get("player_id") or "") in surfaced]
+    return summarize_grade_rows(rows, min_sample=min_sample)
 
 
 # =============================================================================
@@ -520,6 +605,58 @@ def load_final_preseason_calls(season: int) -> List[Dict[str, Any]]:
             (int(season), *PRESEASON_PHASES),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def load_surfaced_preseason_calls(season: int) -> List[Dict[str, Any]]:
+    """The preseason calls the board surfaced for a season: the top
+    ``SURFACED_BOARD_LIMIT`` rows of the season's final snapshot (the
+    latest ``as_of_date`` in the scores table - the same snapshot the
+    board's preseason query serves), selected by
+    :func:`select_surfaced_preseason_calls`.
+
+    Deliberately NOT :func:`load_final_preseason_calls`: that loader
+    takes each player's latest snapshot across every pre-season phase,
+    which counts hundreds of players the board never showed."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT ON (player_id)
+                player_id, player_name, season, as_of_date, team, position,
+                phase, breakout_opportunity_score, confidence_score,
+                hit_probability, projected_role_tag,
+                (component_details->'player_readiness'->>'age')::numeric
+                    AS age,
+                (component_details->'player_readiness'
+                    ->>'usage_baseline_score')::numeric
+                    AS readiness_usage_baseline
+            FROM {BREAKOUT_SCORES_TABLE}
+            WHERE season = %s
+              AND as_of_date = (
+                  SELECT MAX(as_of_date)
+                  FROM {BREAKOUT_SCORES_TABLE}
+                  WHERE season = %s
+              )
+            ORDER BY player_id, as_of_date DESC, calculated_at DESC
+            """,
+            (int(season), int(season)),
+        ).fetchall()
+    return select_surfaced_preseason_calls([dict(r) for r in rows])
+
+
+def surfaced_preseason_player_ids(season: int) -> Optional[Set[str]]:
+    """{player_id, ...} the preseason board surfaced for a season, or
+    None when the set cannot be determined.
+
+    The None / empty-set distinction mirrors the weekly track record's
+    surfaced filter: None means 'unknown, leave rows unfiltered' (a
+    lookup failure must not blank a working track record), while an
+    empty set is a real answer - the snapshot exists but nobody was
+    surfaced from it, so nothing counts."""
+    try:
+        calls = load_surfaced_preseason_calls(int(season))
+    except Exception:
+        return None
+    return {str(c.get("player_id") or "") for c in calls if c.get("player_id")}
 
 
 def load_call_seasons() -> List[int]:
@@ -604,7 +741,9 @@ def grade_season_breakouts(
     through_week: Optional[int] = None,
     stages: Sequence[str] = STAGES,
 ) -> Dict[str, Any]:
-    """Grade every stage-ready, not-yet-graded preseason call for a season.
+    """Grade every stage-ready, not-yet-graded SURFACED preseason call
+    for a season (see :func:`load_surfaced_preseason_calls`: the board's
+    top-``SURFACED_BOARD_LIMIT`` calls, not every scored player).
 
     A stage is graded once its outcome window has closed (see
     :func:`stage_eligible`); ``through_week`` pins that frontier and by
@@ -633,7 +772,7 @@ def grade_season_breakouts(
         summary["reason"] = "no weekly metrics for season"
         return summary
 
-    calls = load_final_preseason_calls(season)
+    calls = load_surfaced_preseason_calls(season)
     existing = load_existing_grade_keys(season)
     summary["calls_considered"] = len(calls)
 
