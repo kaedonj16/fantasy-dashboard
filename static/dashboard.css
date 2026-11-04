@@ -23140,16 +23140,44 @@ img, svg, canvas {
     margin: 0 0 8px;
 }
 
-/* In the player modal the range bar is re-homed into the summary's
-   .pm-vh-subrow (player_modal.js), so Peak/Floor and the filter share
-   one fitted row at every width: extremes left, filter right, no second
-   right-aligned line under the summary. Scoped to .pm-vh-summary, which
-   only exists in the modal; the standalone sibling rule above stays for
-   the fallback where the summary is unpopulated. */
+/* In the player modal the range bar is re-homed into the summary as
+   its last flex child (player_modal.js). Tasteful pass (Kaedon,
+   2026-11-04): the bar reads as ONE quiet segmented control anchored
+   to the summary's right edge, hairline border and dividers, active
+   segment a light accent tint instead of the solid accent fill, so
+   the control defers to the value. Scoped to .pm-vh-summary, which
+   only exists in the modal; the standalone sibling rule above stays
+   for the fallback where the summary is unpopulated, and Compare /
+   the player page keep the shared pill style. */
 .pm-vh-summary .pvc-range-bar {
     margin: 0 0 0 auto;
     flex-wrap: nowrap;
     align-self: center;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--card);
+}
+.pm-vh-summary .pvc-range-btn {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.pm-vh-summary .pvc-range-btn + .pvc-range-btn {
+    border-left: 1px solid var(--border);
+}
+.pm-vh-summary .pvc-range-btn:hover {
+    background: var(--bg-alt);
+    border-color: transparent;
+}
+.pm-vh-summary .pvc-range-btn.is-active {
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    color: var(--accent);
+    border-color: transparent;
 }
 
 /* Value-history "momentum" summary -- sits between the section header and the
@@ -23157,9 +23185,9 @@ img, svg, canvas {
    eye reaches the curve. Built in player_modal.js updateSummary(). */
 .pm-vh-summary {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 14px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     margin: 0 0 12px;
 }
 .pm-vh-now {
@@ -23168,14 +23196,14 @@ img, svg, canvas {
     gap: 2px;
 }
 .pm-vh-now-lbl {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-muted);
 }
 .pm-vh-now-val {
-    font-size: 22px;
+    font-size: 30px;
     font-weight: 800;
     letter-spacing: -0.02em;
     line-height: 1;
@@ -23192,78 +23220,41 @@ img, svg, canvas {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
+/* Tasteful pass (Kaedon, 2026-11-04): the delta is plain colored
+   text on the value's baseline, not a tinted pill. This class is
+   only used by the summary (player_modal.js updateSummary). */
 .pm-vh-delta {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
-    padding: 3px 9px;
-    border-radius: var(--radius-pill);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
-.pm-vh-delta.up   { color: var(--win);  background: color-mix(in srgb, var(--win) 13%, transparent); }
-.pm-vh-delta.down { color: var(--loss); background: color-mix(in srgb, var(--loss) 13%, transparent); }
-.pm-vh-delta.flat { color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 13%, transparent); }
+.pm-vh-delta.up   { color: var(--win); }
+.pm-vh-delta.down { color: var(--loss); }
+.pm-vh-delta.flat { color: var(--text-muted); }
 .pm-vh-range {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 500;
     color: var(--text-muted);
 }
-/* Second summary row, full width at every viewport: Peak/Floor left,
-   the re-homed range filter right, one fitted row on desktop too. */
-.pm-vh-subrow {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1 1 100%;
-    min-width: 0;
-}
-.pm-vh-extremes {
-    display: flex;
-    gap: 8px;
-}
-.pm-vh-ext {
-    text-align: center;
-    padding: 5px 11px;
-    border-radius: var(--radius);
-    background: var(--bg-alt);
-}
-[data-theme="dark"] .pm-vh-ext {
-    background: var(--card-soft);
-}
-.pm-vh-ext-k {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-}
-.pm-vh-ext-v {
-    display: block;
-    font-size: 15px;
-    font-weight: 800;
-    color: var(--text);
-    margin-top: 3px;
-    font-variant-numeric: tabular-nums;
-}
-/* Summary Peak/Floor take the win/loss tokens, matching the chart markers. */
-.pm-vh-ext-peak .pm-vh-ext-k,
-.pm-vh-ext-peak .pm-vh-ext-v { color: var(--win); }
-.pm-vh-ext-floor .pm-vh-ext-k,
-.pm-vh-ext-floor .pm-vh-ext-v { color: var(--loss); }
 @media (max-width: 768px) {
-    .pm-vh-now-val { font-size: 22px; }
-    /* Fit pass for the shared extremes + filter row: tighter summary gap
-       and chip padding so Peak/Floor and the range buttons fit the modal
-       width on one line. Font sizes and the 40px chip min-height stay. */
+    /* One line on phones too (Kaedon's call): everything tightens a
+       step so value, delta and the segmented control share the line. */
+    .pm-vh-now-val { font-size: 24px; }
     .pm-vh-summary { gap: 10px; }
-    .pm-vh-summary .pm-vh-ext { padding: 5px 8px; }
-    .pm-vh-summary .pvc-range-btn { padding-left: 8px; padding-right: 8px; }
+    .pm-vh-delta { font-size: 13px; }
+    .pm-vh-range { font-size: 11px; }
+    .pm-vh-move-row { gap: 6px; }
+    .pm-vh-summary .pvc-range-btn { padding: 5px 7px; font-size: 11px; }
+}
+@media (max-width: 380px) {
+    .pm-vh-now-val { font-size: 23px; }
+    .pm-vh-summary .pvc-range-btn { padding: 5px 6px; }
 }
 
 /* Hand-built SVG value-history chart (BRValueChart in app.js): tooltip card

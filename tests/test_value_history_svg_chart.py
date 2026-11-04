@@ -96,14 +96,13 @@ def test_modal_chart_uses_locked_series_treatment():
     assert "d.value_sf != null ? Number(d.value_sf) : null" in region
 
 
-def test_modal_summary_peak_floor_take_win_loss_colors():
-    assert "pm-vh-ext pm-vh-ext-peak" in MODAL
-    assert "pm-vh-ext pm-vh-ext-floor" in MODAL
-    assert ".pm-vh-ext-peak .pm-vh-ext-k" in CSS
-    assert ".pm-vh-ext-floor .pm-vh-ext-k" in CSS
-    peak_css = _block(CSS, ".pm-vh-ext-peak .pm-vh-ext-k,", "@media (max-width: 768px)")
-    assert "color: var(--win)" in peak_css
-    assert "color: var(--loss)" in peak_css
+def test_modal_summary_has_no_peak_floor():
+    # Peak/Floor are not in the summary (Kaedon's call, 2026-11-04):
+    # the chart's own Peak / Low callouts carry them, with dates. The
+    # summary keeps value, delta (with the range text inline) and the
+    # range filter only.
+    assert "pm-vh-ext" not in MODAL
+    assert "pm-vh-ext" not in CSS
 
 
 def test_redraft_toggle_still_swaps_series_and_label():

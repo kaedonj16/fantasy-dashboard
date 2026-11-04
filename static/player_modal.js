@@ -377,15 +377,16 @@ function _pmRenderValueHistoryChart(data) {
           const spanDays  = (latestD && earliestD) ? (latestD - earliestD) / 86400000 : 0;
 
           // ── Range-aware summary above the chart ──────
-          // Delta / peak / floor track the selected range, so switching
+          // The delta tracks the selected range, so switching
           // 1 Mo / 3 Mo / All re-answers "where is this value going" rather
           // than just redrawing. (No trend pill: it restated the delta's
           // direction, Kaedon's call 2026-11-04.)
           const _fmtVal = (v) => (typeof fmtInt === 'function')
             ? fmtInt(Math.round(v)) : Math.round(v).toLocaleString('en-US');
-          // The range bar (created below) is re-homed into the summary's
-          // .pm-vh-subrow, beside Peak/Floor, so the filter shares their
-          // row at every width instead of taking its own line.
+          // The range bar (created below) is re-homed into the summary
+          // as a direct flex child, so the whole summary reads as one
+          // compact cluster (value, delta + range, filter, uniform
+          // gaps, no spread) at every width.
           // updateSummary() rewrites the summary's innerHTML on every
           // render, which detaches the bar; this closure reference
           // survives that, listeners intact, and the end of
@@ -396,9 +397,9 @@ function _pmRenderValueHistoryChart(data) {
             if (!el) return;
             const vals = history.map(d => Number(d.value_1qb ?? d.value)).filter(v => !isNaN(v));
             if (vals.length < 2) {
-              // No extremes row to share: park the bar back before the
-              // chart (its standalone spot) rather than hiding it with the
-              // summary.
+              // No summary cluster to join: park the bar back before the
+              // chart (its standalone spot) rather than hiding it with
+              // the summary.
               if (_vhBarEl && el.contains(_vhBarEl)) {
                 el.parentNode.insertBefore(_vhBarEl, document.getElementById('playerValueChart'));
               }
@@ -408,7 +409,6 @@ function _pmRenderValueHistoryChart(data) {
             const ysf2 = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
             const dual = vals.some((v, i) => ysf2[i] != null && Math.abs(v - ysf2[i]) > 1);
             const first = vals[0], last = vals[vals.length - 1];
-            const peak = Math.max.apply(null, vals), floor = Math.min.apply(null, vals);
             const diff = last - first;
             const pct = first ? diff / first * 100 : 0;
             const dir = pct > 0.5 ? 'up' : pct < -0.5 ? 'down' : 'flat';
@@ -424,19 +424,14 @@ function _pmRenderValueHistoryChart(data) {
               <div class="pm-vh-move">
                 <div class="pm-vh-move-row">
                   <span class="pm-vh-delta ${dir}">${arrow} ${sign}${_fmtVal(Math.abs(diff))} · ${sign}${Math.abs(pct).toFixed(1)}%</span>
-                </div>
-                ${rangeLbl ? `<span class="pm-vh-range">over ${rangeLbl}</span>` : ''}
-              </div>
-              <div class="pm-vh-subrow">
-                <div class="pm-vh-extremes">
-                  <div class="pm-vh-ext pm-vh-ext-peak"><span class="pm-vh-ext-k">Peak</span><span class="pm-vh-ext-v">${_fmtVal(peak)}</span></div>
-                  <div class="pm-vh-ext pm-vh-ext-floor"><span class="pm-vh-ext-k">Floor</span><span class="pm-vh-ext-v">${_fmtVal(floor)}</span></div>
+                  ${rangeLbl ? `<span class="pm-vh-range">over ${rangeLbl}</span>` : ''}
                 </div>
               </div>`;
-            // Re-home the range bar into the sub-row, beside Peak/Floor:
-            // extremes left, filter right, one fitted row at every width.
-            const _vhSub = el.querySelector('.pm-vh-subrow');
-            if (_vhBarEl && _vhSub) _vhSub.appendChild(_vhBarEl);
+            // Peak/Floor are not in the summary (Kaedon's call
+            // 2026-11-04): the chart's own Peak / Low callouts carry
+            // them, with dates. Re-home the range bar as the summary's
+            // last item: no spread, no line of its own.
+            if (_vhBarEl) el.appendChild(_vhBarEl);
           }
 
           let _vhLastHistory = fullHistory;
