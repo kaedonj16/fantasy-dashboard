@@ -96,8 +96,7 @@ def build_schedule_body(ctx):
         <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
         <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal (bottom 25%)</span>
         <span class="sched-legend-note">Ease is the 0 to 100 score for the selected range, byes excluded. Each week cell is that defense's adjusted % for the week.</span>
-        <button type="button" class="sched-info" aria-label="About ease" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
-        <button type="button" class="sched-info" aria-label="Seasonal rating data source" title="__SOURCE_COPY__"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+        <button type="button" class="sched-info" aria-label="About ease and the rating data" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. Bye weeks are excluded. __SOURCE_COPY__"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
       </div>
 
       <div id="schedRankingsGrid" class="sched-grid-wrap">
@@ -168,6 +167,10 @@ def build_schedule_body(ctx):
       var currentView = hasAddParam ? 'myteam' : 'league';
       var rankPos     = 'QB';
       var hardFirst   = false;
+      // When a week header is clicked, sortWeek holds that week and rows
+      // order by that week's matchup instead of the whole-range rank.
+      // null = the default range sort.
+      var sortWeek    = null;
 
       // Fetch promises for the selected range, keyed by position; dropped
       // when the range changes.
@@ -222,7 +225,35 @@ def build_schedule_body(ctx):
         return { r: r, pid: pid, added: !!addedSet[pid] };
       }
 
+      // That week's matchup value for a row: the cell's adjusted % (higher
+      // = the defense allows more = easier). Byes and missing data are
+      // null, and nulls always sort last in both directions.
+      function weekVal(m) {
+        var cells = m.r.cells || [];
+        for (var i = 0; i < cells.length; i++) {
+          if (cells[i].week === sortWeek) {
+            return (cells[i].bye || cells[i].adjusted_percent == null)
+              ? null : Number(cells[i].adjusted_percent);
+          }
+        }
+        return null;
+      }
+
       function sortModels(models) {
+        if (sortWeek != null) {
+          return models.slice().sort(function(a, b) {
+            var va = weekVal(a), vb = weekVal(b);
+            if (va != null && vb != null && va !== vb) {
+              return hardFirst ? va - vb : vb - va;
+            }
+            if (va == null && vb != null) return 1;
+            if (va != null && vb == null) return -1;
+            // Tie (or both on a bye): fall back to the range rank.
+            var ra = a.r.sos_rank == null ? 999 : a.r.sos_rank;
+            var rb = b.r.sos_rank == null ? 999 : b.r.sos_rank;
+            return ra - rb;
+          });
+        }
         var dir = hardFirst ? -1 : 1;
         return models.slice().sort(function(a, b) {
           var ra = a.r.sos_rank == null ? 999 : a.r.sos_rank;
@@ -339,12 +370,18 @@ def build_schedule_body(ctx):
 
       function buildTable(sections, weeks) {
         var poIdx = poColIndex(weeks);
-        var head = '<th class="sched-th srk-th-rank">Rank</th>' +
+        var rangeBtn = '<button type="button" class="srk-wk-sort" data-sort-range="1" title="Sort by overall ease for the selected range">';
+        var head = '<th class="sched-th srk-th-rank">' + rangeBtn + 'Rank</button></th>' +
                    '<th class="sched-th sched-th-player">Player</th>' +
-                   '<th class="sched-th srk-th-ease">Ease</th>' +
+                   '<th class="sched-th srk-th-ease">' + rangeBtn + 'Ease</button></th>' +
                    '<th class="sched-th srk-th-adjavg">Adj Avg <button type="button" class="sched-info" title="Average percentage by which the selected defenses increase or suppress expected production at this position.">ⓘ</button></th>';
         weeks.forEach(function(w, i) {
-          head += '<th class="sched-th' + (i === poIdx && i > 0 ? ' srk-po-start' : '') + '">Wk ' + w +
+          var active = (sortWeek === w);
+          var arrow = active
+            ? '<span class="srk-sort-arrow" aria-hidden="true">' + (hardFirst ? '&#9650;' : '&#9660;') + '</span>'
+            : '';
+          head += '<th class="sched-th' + (i === poIdx && i > 0 ? ' srk-po-start' : '') + (active ? ' srk-th-sorted' : '') + '">' +
+                    '<button type="button" class="srk-wk-sort" data-sort-week="' + w + '" title="Sort by the Week ' + w + ' matchup, easiest or hardest first">Wk ' + w + arrow + '</button>' +
                     (w === CFG.startWeek ? '<span class="srk-now">Now</span>' : '') + '</th>';
         });
         var totalCols = 4 + weeks.length;
@@ -439,9 +476,10 @@ def build_schedule_body(ctx):
         document.querySelectorAll('.sched-rank-pos').forEach(function(b) {
           b.classList.toggle('active', b.getAttribute('data-pos') === rankPos);
         });
-        sortBtn.innerHTML = hardFirst
+        sortBtn.innerHTML = (hardFirst
           ? 'Hardest First <i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>'
-          : 'Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>';
+          : 'Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>')
+          + (sortWeek != null ? ' &middot; Wk ' + sortWeek : '');
         var note = document.getElementById('srkScopeNote');
         if (note) note.textContent = currentView === 'league'
           ? 'Every NFL team at the position, with the player who holds the schedule in this league.'
@@ -469,6 +507,9 @@ def build_schedule_body(ctx):
       }
       function onRangeChange() {
         fillWeekSelects(); persistWks(); syncPresetBtns();
+        // A week sort keyed to a week outside the new range would match
+        // no cells and silently degrade to the range order; clear it.
+        sortWeek = null;
         mainCache = {};
         render();
       }
@@ -522,6 +563,24 @@ def build_schedule_body(ctx):
         persistAdded(); render();
       }
       gridEl.addEventListener('click', onRemoveClick);
+
+      // Week header sort: first click on a week orders by that week's
+      // matchup easiest first, a second click on the same week flips to
+      // hardest first. The Rank / Ease headers return to the range sort.
+      // Re-renders come from the cached fetch promises (no refetch).
+      gridEl.addEventListener('click', function(e) {
+        var t = e.target;
+        var wkBtn = t.closest ? t.closest('[data-sort-week]') : null;
+        if (wkBtn) {
+          var w = parseInt(wkBtn.getAttribute('data-sort-week'), 10);
+          if (sortWeek === w) { hardFirst = !hardFirst; }
+          else { sortWeek = w; hardFirst = false; }
+          render();
+          return;
+        }
+        var rgBtn = t.closest ? t.closest('[data-sort-range]') : null;
+        if (rgBtn && sortWeek != null) { sortWeek = null; render(); }
+      });
 
       fillWeekSelects();
       syncPresetBtns();
