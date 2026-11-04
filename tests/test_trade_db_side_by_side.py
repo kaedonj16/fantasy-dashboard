@@ -178,7 +178,7 @@ class _FakeConn:
 
     def execute(self, query, params):
         self._rec.append((query, list(params)))
-        if "COUNT(DISTINCT" in query:
+        if "COUNT(" in query:
             return _FakeCursor()
         if "WHERE trade_id = ANY" in query:
             return _FakeCursor(_ASSET_ROWS)

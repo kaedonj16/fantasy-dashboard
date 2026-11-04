@@ -39072,11 +39072,12 @@ def api_trade_intel_players():
         return jsonify({"error": "Internal error"}), 500
 
 
-# Cache for the expensive COUNT(DISTINCT) in api_trade_database. Trade counts
-# only change when the cron ingests new trades, so a short TTL is safe and
-# avoids re-scanning ~500k rows on every page/filter change.
+# Cache for the expensive COUNT in api_trade_database. Trade counts
+# only change when the cron ingests new trades, so an hour TTL is safe
+# (same policy as /api/trade-count) and avoids re-scanning ~500k rows on
+# every page/filter change.
 _TRADE_DB_COUNT_CACHE: dict = {}
-_TRADE_DB_COUNT_TTL = 300  # seconds
+_TRADE_DB_COUNT_TTL = 3600  # seconds
 
 
 @app.route("/api/trade-database")
@@ -39223,11 +39224,25 @@ def api_trade_database():
             if _tdb_hit and (_tdb_now - _tdb_hit[0]) < _TRADE_DB_COUNT_TTL:
                 total = _tdb_hit[1]
             else:
+                # COUNT(*) unless the two-sided asset joins are present:
+                # t.id is the PK and the leagues join is 1:1 on its PK, so
+                # no duplicate trade rows can arise otherwise, while
+                # COUNT(DISTINCT) forces a dedupe aggregation over every
+                # matching trade (~545k unfiltered, 11-40s live) on a cold
+                # cache. The leagues join is only referenced by the
+                # sf/format clauses, so skip it entirely when neither is
+                # active instead of joining every trade to its league.
+                _count_expr = "COUNT(DISTINCT t.id)" if join_clauses else "COUNT(*)"
+                _count_join = (
+                    "LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id"
+                    if (sf_param is not None or lf_param is not None or join_clauses)
+                    else ""
+                )
                 count_row = conn.execute(
                     f"""
-                    SELECT COUNT(DISTINCT t.id) AS n
+                    SELECT {_count_expr} AS n
                     FROM trade_intel_trades t
-                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
+                    {_count_join}{join_sql}
                     WHERE t.season = %s {sf_clause}{lf_clause}{range_clause}{filter_sql}
                     """,
                     count_params,
@@ -39274,9 +39289,16 @@ def api_trade_database():
             # The value-join placeholder sits textually between the JOIN
             # placeholders and the WHERE placeholders.
             row_params = join_params + _value_params + [season] + sf_p + lf_p + range_p + filter_params + [limit + 1, page * limit]
+            # DISTINCT only when the two-sided asset joins can duplicate a
+            # trade row: otherwise t.id is unique across the 1:1 joins
+            # (leagues on its PK, tv grouped by trade_id) and DISTINCT
+            # forces a dedupe pass over every matching trade before the
+            # LIMIT applies. The (season, created_at, id) index from
+            # migration 052 lets date sorts stop at the LIMIT instead.
+            _distinct = "DISTINCT " if join_clauses else ""
             trade_rows = conn.execute(
                 f"""
-                SELECT DISTINCT t.id, t.transaction_id, t.season, t.week, t.created_at,
+                SELECT {_distinct}t.id, t.transaction_id, t.season, t.week, t.created_at,
                        l.scoring_type, l.is_superflex, l.num_teams{_value_select}
                 FROM trade_intel_trades t
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
