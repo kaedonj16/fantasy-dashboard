@@ -130,7 +130,14 @@ def build_activity_body(ctx: dict) -> str:
         rank_label = rank_label_by_name.get(name_lower, pos)
         return float(val), rank_label, float(val) > 0
 
-    pick_values = load_pick_value_table() or {}
+    # Price picks on the league's own format axis, like the player
+    # values above: an SF league's picks come from the SF table.
+    try:
+        from utils.lineups import is_superflex_lineup as _is_sf_lineup
+        _picks_is_sf = bool(_is_sf_lineup(ctx.get("roster_positions") or []))
+    except Exception:
+        _picks_is_sf = False
+    pick_values = load_pick_value_table(is_sf=_picks_is_sf) or {}
 
     def pick_bucket_from_seed(seed: Optional[int], num_teams: int = 10) -> Optional[str]:
         if seed is None:
@@ -185,10 +192,12 @@ def build_activity_body(ctx: dict) -> str:
             if key_generic in pick_values:
                 return float(pick_values[key_generic])
 
-        for b in ("mid", "early", "late"):
-            key = f"{year}_{rnd}_{b}"
-            if key in pick_values:
-                return float(pick_values[key])
+        # No seed (or the seed bucket is unpriced): the site-wide
+        # default bucket is mid. Never fish an early/late price that
+        # no other surface would assign to this pick.
+        key_mid = f"{year}_{rnd}_mid"
+        if key_mid in pick_values:
+            return float(pick_values[key_mid])
 
         key_generic = f"{year}_{rnd}"
         if key_generic in pick_values:
@@ -424,8 +433,8 @@ def build_activity_body(ctx: dict) -> str:
                         pick=pick,
                     )
                 pick_label = _activity_pick_label(yr, rnd, season, exact_slot)
-                subline = pick_subline(pick, rid_to_name, users)
-                val = pick_value(pick, standings_map)
+                subline = pick_subline(pick, rid_to_name, users, num_teams=_league_size)
+                val = pick_value(pick, standings_map, num_teams=_league_size)
                 if val > 0:
                     val_html = f'<div class="player-trade-value">{val:.1f}</div>'
                 else:
@@ -463,7 +472,7 @@ def build_activity_body(ctx: dict) -> str:
 
                 in_player_pairs = [player_value(p) for p in in_players]
                 in_player_vals = [v for (v, _label, _vd) in in_player_pairs]
-                in_pick_vals = [pick_value(pk, standings_map) for pk in in_picks]
+                in_pick_vals = [pick_value(pk, standings_map, num_teams=_league_size) for pk in in_picks]
 
                 side_unvalued = []
                 for p, (_v, _lbl, _vd) in zip(in_players, in_player_pairs):

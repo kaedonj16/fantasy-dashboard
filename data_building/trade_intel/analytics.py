@@ -227,22 +227,57 @@ def _trade_size_distribution(season: int) -> tuple[dict, int]:
 # Value helpers
 # ---------------------------------------------------------------------------
 
-_PICK_BASE_VALUES_1QB = {
-    (1, "early"): 800, (1, "mid"): 650, (1, "late"): 480,
-    (2, "early"): 320, (2, "mid"): 220, (2, "late"): 140,
-    (3, "early"): 90,  (3, "mid"): 60,  (3, "late"): 35,
-    (4, "early"): 25,  (4, "mid"): 15,  (4, "late"): 8,
-}
+_PICK_TABLES: dict[str, dict] = {}
 
 
-def _pick_value(asset: dict, fmt: str = "1qb") -> float:
-    rd    = asset.get("pick_round") or 4
-    order = asset.get("pick_order") or "mid"
-    base  = _PICK_BASE_VALUES_1QB.get((min(rd, 4), order), 10)
-    return base * (1.5 if fmt == "sf" else 1.0)
+def _pick_table(fmt: str) -> dict:
+    """Canonical WLS pick-value table for a format axis, loaded once."""
+    key = "sf" if fmt == "sf" else "1qb"
+    if key not in _PICK_TABLES:
+        try:
+            from dashboard_services.picks import load_pick_value_table
+            _PICK_TABLES[key] = load_pick_value_table(is_sf=(key == "sf")) or {}
+        except Exception:
+            logger.debug("trade_intel pick table load failed", exc_info=True)
+            _PICK_TABLES[key] = {}
+    return _PICK_TABLES[key]
 
 
-def _side_value(assets: list[dict], side: str, values: dict[str, dict], fmt: str = "1qb") -> float:
+def _pick_value(asset: dict, fmt: str = "1qb", season: int | None = None) -> float:
+    """Price a pick asset from the canonical WLS pick table.
+
+    Same table the rest of the site prices picks from, resolved as:
+    explicit bucket key for the pick's own season, then the shared
+    round fallback in pick_value_from_table. SF comes from the SF
+    table, not a multiplier. Returns 0.0 when the table cannot price
+    the pick - unpriced, never a flat invented constant.
+    """
+    try:
+        rd = int(asset.get("pick_round") or 4)
+    except (TypeError, ValueError):
+        return 0.0
+    year = asset.get("pick_season") or season
+    if not year:
+        return 0.0
+    try:
+        year = int(year)
+    except (TypeError, ValueError):
+        return 0.0
+    table = _pick_table(fmt)
+    if not table:
+        return 0.0
+    bucket = _normalize_pick_bucket(asset.get("pick_order"))
+    raw = table.get(f"{year}_{rd}_{bucket}")
+    if raw:
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            pass
+    from utils.draft import pick_value_from_table
+    return pick_value_from_table(table, year, rd)
+
+
+def _side_value(assets: list[dict], side: str, values: dict[str, dict], fmt: str = "1qb", season: int | None = None) -> float:
     total = 0.0
     for a in assets:
         if a["side"] != side:
@@ -250,7 +285,7 @@ def _side_value(assets: list[dict], side: str, values: dict[str, dict], fmt: str
         if a["asset_type"] == "player" and a["player_id"]:
             total += values.get(a["player_id"], {}).get(f"value_{fmt}", 0)
         elif a["asset_type"] == "pick":
-            total += _pick_value(a, fmt)
+            total += _pick_value(a, fmt, season)
     return total
 
 
@@ -378,10 +413,10 @@ def _compute_player_stats(make_trades, values: dict[str, dict], season: int) -> 
             side       = asset["side"]
             other_side = "b" if side == "a" else "a"
 
-            recv_1qb = _side_value(assets, other_side, values, "1qb")
-            recv_sf  = _side_value(assets, other_side, values, "sf")
-            pkg_1qb  = _side_value(assets, side, values, "1qb")
-            pkg_sf   = _side_value(assets, side, values, "sf")
+            recv_1qb = _side_value(assets, other_side, values, "1qb", season)
+            recv_sf  = _side_value(assets, other_side, values, "sf", season)
+            pkg_1qb  = _side_value(assets, side, values, "1qb", season)
+            pkg_sf   = _side_value(assets, side, values, "sf", season)
 
             # Scale each player's received value by their proportional share of
             # the package they're in. Without this, every player on a side gets
@@ -731,12 +766,12 @@ def _compute_pick_stats(make_trades, values: dict[str, dict], season: int) -> li
             side       = asset["side"]
             other_side = "b" if side == "a" else "a"
 
-            recv_1qb     = _side_value(assets, other_side, values, "1qb")
-            recv_sf      = _side_value(assets, other_side, values, "sf")
-            pkg_1qb      = _side_value(assets, side, values, "1qb")
-            pkg_sf       = _side_value(assets, side, values, "sf")
-            pick_val_1qb = _pick_value(asset, "1qb")
-            pick_val_sf  = _pick_value(asset, "sf")
+            recv_1qb     = _side_value(assets, other_side, values, "1qb", season)
+            recv_sf      = _side_value(assets, other_side, values, "sf", season)
+            pkg_1qb      = _side_value(assets, side, values, "1qb", season)
+            pkg_sf       = _side_value(assets, side, values, "sf", season)
+            pick_val_1qb = _pick_value(asset, "1qb", season)
+            pick_val_sf  = _pick_value(asset, "sf", season)
 
             if pick_val_1qb <= 0 or pkg_1qb <= 0:
                 continue

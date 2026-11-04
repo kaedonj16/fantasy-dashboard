@@ -64,7 +64,7 @@ def activity_env(monkeypatch):
     monkeypatch.setattr(appmod, "ensure_activity_bits", lambda ctx: None)
     monkeypatch.setattr(appmod, "get_users", lambda *a, **k: [])
     monkeypatch.setattr(
-        appmod, "load_pick_value_table", lambda: dict(PICK_VALUES)
+        appmod, "load_pick_value_table", lambda **_kw: dict(PICK_VALUES)
     )
     monkeypatch.setattr(
         appmod, "resolve_exact_pick_slot", lambda *a, **k: None
