@@ -24931,7 +24931,11 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
        shrink the strip cells only; the shared tile rules below still
        cover the Team tab's standalone .pm-hero-stat tiles. */
     .pm-hero-row .pm-hero-label {
-        font-size: 10px;
+        font-size: 9.5px;
+        /* Tracking is a real width cost in cells this narrow: the scoped
+           desktop rule's 0.06em is what pushed TOTAL PTS · 2026 off the
+           end of its cell. */
+        letter-spacing: 0.01em;
     }
 
     .pm-hero-row .pm-hero-val {
@@ -24939,11 +24943,15 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     }
 
     .pm-hero-row .pm-hero-sub {
-        font-size: 10px;
+        /* 8px + tight tracking is measured, not guessed: it is what
+           lets the longest sub the strip emits ("7G · POS 1 · OVR 12")
+           fit its cell at a 360px viewport with no ellipsis. */
+        font-size: 8px;
+        letter-spacing: -0.03em;
     }
 
     .pm-hero-row .pm-hero-stat {
-        padding: 6px 8px;
+        padding: 6px 2px;
     }
 
     .pm-hero-label {

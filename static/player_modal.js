@@ -981,7 +981,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // which reads the active format off the data object at render time.
       data.pmScoringType = pmScoringType;
       const _heroFmt = (v) => (v > 0 ? v : '-');
-      const _heroSub = (posR, ovrR) => (posR ? `POS : ${posR} · OVR : ${ovrR ?? '–'}` : '-');
+      const _heroSub = (posR, ovrR) => (posR ? `POS ${posR} · OVR ${ovrR ?? '–'}` : '-');
       const _heroActive = () => {
         const base = pmScoringType === 'redraft' ? _heroRd : _heroDyn;
         const mults = PM_SCORING_MULTS[pmScoringFormat] || PM_SCORING_MULTS.ppr;
@@ -1033,12 +1033,12 @@ function openPlayerModal(playerId, playerName, opts) {
       const ppgCard = `<div class="pm-hero-stat">
             <div class="pm-hero-label">PPG${seasonLabel}</div>
             <div class="pm-hero-val" id="pmHeroPpgVal">${ppgVal != null ? Number(ppgVal).toFixed(1) : 'N/A'}</div>
-            <div class="pm-hero-sub" id="pmHeroPpgSub">${gamesLabel}${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : 'rank N/A'}</div>
+            <div class="pm-hero-sub" id="pmHeroPpgSub">${gamesLabel}${ppgRank ? `POS ${ppgRank} · OVR ${ppgOvrRank ?? '–'}` : 'rank N/A'}</div>
           </div>`;
       const totalCard = `<div class="pm-hero-stat">
-            <div class="pm-hero-label">Total Pts${seasonLabel}</div>
+            <div class="pm-hero-label">Total${seasonLabel}</div>
             <div class="pm-hero-val" id="pmHeroTotalVal">${totalPts != null ? fmtPts(totalPts) : 'N/A'}</div>
-            <div class="pm-hero-sub" id="pmHeroTotalSub">${gamesLabel}${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '–'}` : 'rank N/A'}</div>
+            <div class="pm-hero-sub" id="pmHeroTotalSub">${gamesLabel}${totalPtsRank ? `POS ${totalPtsRank} · OVR ${totalPtsOvrRank ?? '–'}` : 'rank N/A'}</div>
           </div>`;
 
       // ── Prospect Profile tab ─────────────────────────────────────────────────
@@ -1945,11 +1945,11 @@ function openPlayerModal(playerId, playerName, opts) {
           var _tsub = document.getElementById('pmHeroTotalSub');
           if (_pv) _pv.textContent = dfd.stats.ppg != null ? Number(dfd.stats.ppg).toFixed(1) : 'N/A';
           if (_psub) _psub.textContent = _gl2 + (dfd.stats.ppg_rank
-            ? ('POS : ' + dfd.stats.ppg_rank + ' · OVR : ' + (dfd.stats.ppg_ovr_rank != null ? dfd.stats.ppg_ovr_rank : '–'))
+            ? ('POS ' + dfd.stats.ppg_rank + ' · OVR ' + (dfd.stats.ppg_ovr_rank != null ? dfd.stats.ppg_ovr_rank : '–'))
             : 'rank N/A');
           if (_tv2) _tv2.textContent = dfd.stats.total_pts != null ? fmtPts(dfd.stats.total_pts) : 'N/A';
           if (_tsub) _tsub.textContent = _gl2 + (dfd.stats.total_pts_rank
-            ? ('POS : ' + dfd.stats.total_pts_rank + ' · OVR : ' + (dfd.stats.total_pts_ovr_rank != null ? dfd.stats.total_pts_ovr_rank : '–'))
+            ? ('POS ' + dfd.stats.total_pts_rank + ' · OVR ' + (dfd.stats.total_pts_ovr_rank != null ? dfd.stats.total_pts_ovr_rank : '–'))
             : 'rank N/A');
           if (pmTabBar) {
             pmTabBar.dataset.pmPpg = dfd.stats.ppg != null ? String(dfd.stats.ppg) : '';
