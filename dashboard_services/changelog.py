@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-03",
+        "tag": "new",
+        "text": "Championship odds are here for the stretch run. A new Title column on the Playoff Odds page shows each team's chance to win it all, from a separate sim that only plays out the playoff bracket: bubble teams rotate into the open spots by their playoff odds, and the bye and top seed spots rotate the same way, so the odds flex as the race does. The same title number joins the Season Hub tile and the team modal in the final two weeks, and once the playoffs start it becomes the headline number for the teams still alive.",
+        "link": "/standings"
+    },
+    {
+        "date": "2026-11-03",
         "tag": "update",
         "text": "Weekly Hub: the header and Week Leaders now form one panel on desktop, and the four leader cards have a cleaner, more uniform design.",
         "link": "/weekly"

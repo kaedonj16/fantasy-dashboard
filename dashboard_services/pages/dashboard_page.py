@@ -14,6 +14,8 @@ def build_dashboard_body(ctx: dict) -> str:
         _owner_to_rid_map,
         _playoff_sim_cached,
         _playoff_tile_from_cache,
+        _championship_flags,
+        _championship_sim_cached,
         _render_season_review_card,
         _render_usage_movers,
         _losing_streak_trade_html,
@@ -295,7 +297,31 @@ def build_dashboard_body(ctx: dict) -> str:
     if viewer_roster_id:
         try:
             _warm = _playoff_sim_cached(ctx, platform, block=False) or []
-            _filled = _playoff_tile_from_cache(_warm, viewer_roster_id)
+            _title_pct = None
+            if _warm:
+                try:
+                    from data_building.simulate_playoff_odds import (
+                        remaining_regular_season_weeks as _rrw_hub,
+                    )
+                    _wr_hub = _rrw_hub(
+                        _warm,
+                        int((ctx.get("league_settings") or {}).get(
+                            "playoff_week_start") or 15),
+                        current_week=int(ctx.get("current_week") or 0),
+                    )
+                    if _championship_flags(
+                            ctx, platform, _warm,
+                            _wr_hub)["championship_hub_visible"]:
+                        for _crow in (_championship_sim_cached(
+                                ctx, platform, _warm) or []):
+                            if str((_crow or {}).get("roster_id")) == str(viewer_roster_id):
+                                _title_pct = (_crow or {}).get("title_pct")
+                                break
+                except Exception:
+                    logger.debug("dashboard championship prefill failed",
+                                 exc_info=True)
+            _filled = _playoff_tile_from_cache(
+                _warm, viewer_roster_id, title_pct=_title_pct)
             if _filled:
                 _po_val = f"{_filled[0]}%"
                 _po_sub = html.escape(_filled[1])
@@ -1290,11 +1316,19 @@ def build_dashboard_body(ctx: dict) -> str:
           var sub;
           if (d.is_complete || row.is_complete) {{
             sub = rawPct >= 100 ? 'Clinched' : (rawPct <= 0 ? 'Eliminated' : 'Playoff bound');
+            if (d.championship_hub_visible && row.title_pct != null && rawPct >= 100) {{
+              sub = 'Title: ' + poFmtPct(row.title_pct) + '%';
+            }}
           }} else {{
             var first = poFloorTenths(row.first_seed_pct);
             var bye = poFloorTenths(row.bye_pct);
             sub = first > 0 ? (poFmtPct(row.first_seed_pct) + '% top seed')
                 : (bye > 0 ? (poFmtPct(row.bye_pct) + '% first-round bye') : 'to make the playoffs');
+            if (d.championship_hub_visible && row.title_pct != null) {{
+              sub = bye > 0
+                ? ('Title: ' + poFmtPct(row.title_pct) + '% · Bye: ' + poFmtPct(row.bye_pct) + '%')
+                : ('Title: ' + poFmtPct(row.title_pct) + '%');
+            }}
           }}
           if (subEl) subEl.textContent = sub;
           el.classList.add('is-loaded');

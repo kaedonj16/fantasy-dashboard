@@ -590,6 +590,7 @@
             '<div class="td-head-id">' +
             '<div class="td-name">' + _tdEsc(t.name) + (t.is_viewer ? '<span class="tsc-you">YOU</span>' : '') + '</div>';
         var oddsTxt = (t.playoff_odds != null) ? _tdFmtPlayoffOdds(t.playoff_odds) : '';
+        var titleTxt = (t.title_odds != null) ? _tdFmtPlayoffOdds(t.title_odds) : '';
         if (t.window || oddsTxt) {
             head += '<div class="td-head-pills">';
             if (t.window) {
@@ -597,6 +598,9 @@
             }
             if (oddsTxt) {
                 head += '<span class="td-odds">Playoff odds <b>' + oddsTxt + '%</b></span>';
+            }
+            if (titleTxt) {
+                head += '<span class="td-odds">Title <b>' + titleTxt + '%</b></span>';
             }
             head += '</div>';
         }

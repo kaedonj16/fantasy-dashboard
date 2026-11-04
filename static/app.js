@@ -6929,6 +6929,10 @@ function _renderPlayoffOdds(data) {
       : `${weeksLeft} week${weeksLeft !== 1 ? 's' : ''} remaining · ${playoff_teams} playoff teams · ${(odds[0].n_sims || 10000).toLocaleString()} simulations`;
 
   const showBye = nByes > 0;
+  // Backend gates the Title column (final-weeks window, verified format)
+  // and only then merges title fields onto the odds rows.
+  const showTitle = !!data.championship_page_visible
+    && odds.some(t => t.title_pct != null);
 
   // Projected odds only read a literal 100% / 0% when mathematically settled
   // (the backend sends exactly 100.0 / 0.0 in that case). Otherwise show one
@@ -6975,6 +6979,14 @@ function _renderPlayoffOdds(data) {
       ? ''
       : `<td class="po-proj">${t.avg_final_wins.toFixed(1)}-${t.avg_final_losses.toFixed(1)}</td>`;
 
+    // Championship title odds from the separate playoff sim. The column
+    // arrives via the API only when the league is inside the final-weeks
+    // window (or the playoffs) and the bracket format is verified;
+    // otherwise the field is absent and no column renders at all.
+    const titleCell = showTitle
+      ? `<td class="po-title">${t.title_pct != null ? fmtProjPct(t.title_pct) + '%' : '-'}${(t.title_pct != null && t.semis_pct != null && t.final_pct != null) ? `<div class="po-title-sub">SF ${fmtProjPct(t.semis_pct)}% · F ${fmtProjPct(t.final_pct)}%</div>` : ''}</td>`
+      : '';
+
     const simAvgCell = '';
 
     // Movement: change in playoff probability (points) vs the last daily
@@ -6995,7 +7007,7 @@ function _renderPlayoffOdds(data) {
       <td class="po-team">${_teamNameSafe}${mvHtml}</td>
       <td class="po-rec">${rec}</td>
       <td class="po-odds">${oddsCell}</td>
-      ${byeCell}${topCell}${projCell}${simAvgCell}
+      ${byeCell}${topCell}${projCell}${simAvgCell}${titleCell}
     </tr>`;
   }).join('');
 
@@ -7003,15 +7015,19 @@ function _renderPlayoffOdds(data) {
   const topHdr    = '<th class="po-top">Top Seed</th>';
   const projHdr   = is_complete ? '' : '<th class="po-proj">Proj W-L</th>';
   const simAvgHdr = '';
+  const titleHdr  = showTitle ? '<th class="po-title">Title</th>' : '';
+  const champNote = showTitle
+    ? '<p class="po-champ-note">Title odds come from a separate playoff sim that only plays out the bracket. Bubble teams rotate into the open spots by their playoff odds, and the bye and top seed spots rotate the same way.</p>'
+    : '';
 
   return `<div class="po-wrap">
-    <p class="po-subtitle">${subtitle}</p>
+    <p class="po-subtitle">${subtitle}</p>${champNote}
     <table class="po-table" data-sortable>
       <thead><tr>
         <th class="po-team">Team</th>
         <th class="po-rec">Record</th>
         <th class="po-odds">Playoff %</th>
-        ${byeHdr}${topHdr}${projHdr}${simAvgHdr}
+        ${byeHdr}${topHdr}${projHdr}${simAvgHdr}${titleHdr}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -27930,6 +27946,15 @@ function renderTeamDetails(data) {
         <div class="tm-stat-tile">
           <div class="tm-stat-tile-value">${_fmtPlayoffOddsDisplay(data.playoff_odds)}%</div>
           <div class="tm-stat-tile-label">Playoff Odds</div>
+        </div>`);
+    }
+    if (data.title_odds != null && !isNaN(parseFloat(data.title_odds))) {
+      // Championship odds from the separate playoff sim; the API only
+      // sends this inside the late-season / playoffs window.
+      tiles.push(`
+        <div class="tm-stat-tile">
+          <div class="tm-stat-tile-value">${_fmtPlayoffOddsDisplay(data.title_odds)}%</div>
+          <div class="tm-stat-tile-label">Title Odds</div>
         </div>`);
     }
     if (data.lineup_efficiency != null && !isNaN(parseFloat(data.lineup_efficiency))) {

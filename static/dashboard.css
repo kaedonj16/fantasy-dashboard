@@ -11742,6 +11742,26 @@ select:focus {
     font-size: 13px;
 }
 
+.po-title {
+    text-align: center;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.po-title-sub {
+    font-weight: 400;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+.po-champ-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+    padding: 0 4px;
+}
+
 .po-bar-wrap {
     background: var(--border);
     border-radius: var(--radius-sm);
