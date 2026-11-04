@@ -586,7 +586,10 @@ def get_trade_ai_analysis(
         "opponent_team": opponent_ctx or None,
     }
 
-    # Build cache key for trade analysis. v12: the tier-label scrubber now
+    # Build cache key for trade analysis. v13: the rank/tier label prompt
+    # was rewritten (two-construction whitelist, per-trade worked examples,
+    # self-check line), so v12 analyses generated under the old note must
+    # not hit. v12: the tier-label scrubber now
     # also collapses the spaced/tier role forms ("RB18 type", "WR9 tier
     # asset") and tied exact ranks at any rank, so v11 analyses carrying
     # those forms must not hit. (v11: assets now also carry a
@@ -594,7 +597,7 @@ def get_trade_ai_analysis(
     # the exact rank; cached v10 analyses can still say "WR23-type", so
     # they must not hit. v10: asset rank labels became the recomputed
     # format labels and prose ranks were pinned to them.)
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v12")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v13")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
