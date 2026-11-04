@@ -408,10 +408,10 @@ services:
   - type: cron
     name: trade-recrawl
     runtime: python
-    # Every 4 hours. Grows the league pool (discovery) AND re-crawls known
+    # Every 2 hours. Grows the league pool (discovery) AND re-crawls known
     # leagues for fresh trades, so the pool both expands and stays current
     # instead of only crawling new leagues once at discovery time.
-    schedule: 0 */4 * * *
+    schedule: 0 */2 * * *
     # Standard (2GB) plan: discovery/crawl caps are raised via the
     # TRADE_INTEL_* env vars below. Safe at this size because Sleeper
     # payloads are stream-scanned for ids (never fully materialized) and
@@ -423,7 +423,7 @@ services:
     # batch-size 2000 with 8 workers fits the 2GB plan: crawler peak is
     # per-league JSON × in-flight workers, and transaction bodies are
     # parsed one league at a time rather than cached process-wide.
-    startCommand: python scripts/refresh_trade_intel.py --discover-target 500 --batch-size 2000 --workers 8 --crawl-mode both --recrawl-days 2 --analytics
+    startCommand: python scripts/refresh_trade_intel.py --discover-target 1000 --batch-size 2000 --workers 8 --crawl-mode both --recrawl-days 2 --analytics
     envVars:
       - key: TRADE_INTEL_DISCOVERY_WORKERS
         value: "8"
@@ -433,6 +433,28 @@ services:
         value: "400"
       - key: TRADE_INTEL_FRONTIER_CAP
         value: "8000"
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brfantasy-db
+          property: connectionString
+      - key: PYTHON_ENV
+        value: production
+
+  - type: cron
+    name: trade-history-backfill
+    runtime: python
+    # Daily at 5am UTC - crawls prior-season leagues (previous_league_id
+    # ancestors) over their FULL seasons (weeks 0..18), which the regular
+    # recrawl never completed. Self-limiting: it only selects leagues
+    # whose crawl has not reached week 18, so once the backlog drains a
+    # run is a single query and exits. HTTP-only, no Playwright.
+    schedule: 0 5 * * *
+    plan: standard
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: python scripts/backfill_historical_trades.py --batch-size 1000 --workers 8
+    envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: DATABASE_URL

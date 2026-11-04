@@ -68,12 +68,43 @@ def _get(path: str) -> list | dict | None:
         return None
 
 
-def _current_nfl_week() -> int:
+def _nfl_state() -> dict:
     state = _get("/state/nfl")
+    return state if isinstance(state, dict) else {}
+
+
+def _current_nfl_week() -> int:
+    state = _nfl_state()
     if state and "week" in state:
         week = int(state["week"])
         return week if week > 0 else _WEEKS_PER_SEASON
     return _WEEKS_PER_SEASON
+
+
+def _current_nfl_season() -> int:
+    state = _nfl_state()
+    season = state.get("league_season") or state.get("season")
+    try:
+        return int(season)
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc).year
+
+
+def _season_end_week(season, current_season: int, current_week: int) -> int:
+    """Last week to fetch for a league of ``season``.
+
+    A completed season is fetched in full (weeks through _WEEKS_PER_SEASON):
+    its trades do not stop existing at whatever week the *current* season
+    happens to be in. The current (or a future) season only exists up to
+    the current NFL week.
+    """
+    try:
+        s = int(season)
+    except (TypeError, ValueError):
+        return int(current_week)
+    if s < int(current_season):
+        return _WEEKS_PER_SEASON
+    return int(current_week)
 
 
 def _pick_order(pick: dict) -> str | None:
@@ -253,7 +284,8 @@ def crawl_league(
     a single DB connection.
     """
     if end_week is None:
-        end_week = _current_nfl_week()
+        end_week = _season_end_week(
+            season, _current_nfl_season(), _current_nfl_week())
     elif end_week == 0:
         end_week = 1
 
@@ -387,29 +419,51 @@ def _reserve_size(batch_size: int) -> int:
     return batch_size // 5
 
 
-def _merge_crawl_batches(velocity_rows, reserve_rows, batch_size: int) -> list[dict]:
+def _new_reserve_size(batch_size: int) -> int:
+    """How many slots of a 'both' batch go to never-crawled leagues (~25%).
+
+    Never-crawled leagues have no last_trade_at, so the velocity sort
+    (last_trade_at DESC NULLS LAST) ranks every one of them behind every
+    league that has ever produced a trade. Without a guaranteed slice,
+    newly discovered leagues - including prior-season ancestors walked
+    from previous_league_id chains - can starve indefinitely behind
+    recrawls of already-known leagues and their trades never land.
+    """
+    return batch_size // 4
+
+
+def _merge_crawl_batches(velocity_rows, reserve_rows, batch_size: int,
+                         new_rows=None) -> list[dict]:
     """Merge velocity-ordered and oldest-first recrawl picks into one batch.
 
     Reserve rows (the oldest-crawled eligible leagues) are guaranteed their
     ~20% of the batch so the quiet tail of the pool cannot starve behind
-    trade velocity; the remaining slots keep velocity order. Dedupes by
-    league_id, and any slot a duplicate frees is backfilled from the
-    remaining velocity rows, so the merged batch is exactly batch_size
-    whenever the pool has that many eligible leagues.
+    trade velocity; never-crawled ``new_rows`` are guaranteed their ~25%
+    for the same reason (see _new_reserve_size); the remaining slots keep
+    velocity order. Dedupes by league_id, and any slot a duplicate frees
+    is backfilled from the remaining rows, so the merged batch is exactly
+    batch_size whenever the pool has that many eligible leagues.
     """
-    reserve = []
     seen = set()
-    for row in reserve_rows:
-        lid = row["league_id"]
-        if lid in seen:
-            continue
-        seen.add(lid)
-        reserve.append(row)
-        if len(reserve) >= _reserve_size(batch_size):
-            break
+
+    def _take(rows, cap):
+        taken = []
+        for row in rows or []:
+            if len(taken) >= cap:
+                break
+            lid = row["league_id"]
+            if lid in seen:
+                continue
+            seen.add(lid)
+            taken.append(row)
+        return taken
+
+    new_slice = _take(new_rows, _new_reserve_size(batch_size))
+    reserve = _take(reserve_rows, _reserve_size(batch_size))
+    guaranteed = len(new_slice) + len(reserve)
 
     merged = []
-    velocity_target = batch_size - len(reserve)
+    velocity_target = batch_size - guaranteed
     for row in velocity_rows:
         if len(merged) >= velocity_target:
             break
@@ -418,17 +472,19 @@ def _merge_crawl_batches(velocity_rows, reserve_rows, batch_size: int) -> list[d
             continue
         seen.add(lid)
         merged.append(row)
+    merged.extend(new_slice)
     merged.extend(reserve)
 
     if len(merged) < batch_size:
-        for row in velocity_rows:
-            if len(merged) >= batch_size:
-                break
-            lid = row["league_id"]
-            if lid in seen:
-                continue
-            seen.add(lid)
-            merged.append(row)
+        for rows in (velocity_rows, new_rows, reserve_rows):
+            for row in rows or []:
+                if len(merged) >= batch_size:
+                    break
+                lid = row["league_id"]
+                if lid in seen:
+                    continue
+                seen.add(lid)
+                merged.append(row)
     return merged[:batch_size]
 
 
@@ -440,6 +496,10 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
     quiet leagues keep getting revisited even when they never win the
     velocity sort. The reserve pick runs first and the velocity pick second;
     the merge (see _merge_crawl_batches) guarantees the reserve its slots.
+    "both" adds a third pick: a guaranteed ~25% slice of never-crawled
+    leagues, oldest-discovered first, so discovery backlogs (including
+    prior-season ancestors) always drain instead of starving behind
+    velocity (see _new_reserve_size).
     """
     with get_conn() as conn:
         if crawl_mode == "new":
@@ -499,6 +559,18 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
         # both: mix new and existing leagues across all three markets. The old
         # query selected only type 2 here, silently starving redraft collection.
         # Velocity prioritization: most recently active leagues first.
+        # Never-crawled pick runs first: guaranteed ~25% of the batch,
+        # oldest-discovered first so the backlog (including prior-season
+        # ancestors) drains FIFO instead of starving behind velocity.
+        new_query = """
+            SELECT league_id, season, last_crawled_week, league_type
+            FROM trade_intel_leagues
+            WHERE crawl_enabled = TRUE
+              AND league_type IN (0, 1, 2)
+              AND last_crawled_week IS NULL
+            ORDER BY discovered_at ASC, league_id ASC
+            LIMIT %s
+        """
         reserve_query = """
             SELECT league_id, season, last_crawled_week, league_type
             FROM trade_intel_leagues
@@ -526,13 +598,17 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                      discovered_at DESC
             LIMIT %s
         """
+        new_rows = conn.execute(
+            new_query, (_new_reserve_size(batch_size),)
+        ).fetchall()
         reserve_rows = conn.execute(
             reserve_query, (recrawl_days, _reserve_size(batch_size))
         ).fetchall()
         velocity_rows = conn.execute(
             velocity_query, (recrawl_days, batch_size)
         ).fetchall()
-        return _merge_crawl_batches(velocity_rows, reserve_rows, batch_size)
+        return _merge_crawl_batches(
+            velocity_rows, reserve_rows, batch_size, new_rows=new_rows)
 
 
 def _mark_crawled_batch(updates: list[tuple[int, str, int]]) -> None:
@@ -565,6 +641,11 @@ def _crawl_one(row: dict, end_week: int, override_start_week: Optional[int] = No
     league_type = row.get("league_type", int(LeagueType.DYNASTY))
     if override_start_week is not None:
         start_week = override_start_week
+    elif row.get("last_crawled_week") is None:
+        # Never crawled: start at week 0. Sleeper buckets pre-week-1
+        # (offseason) trades into week 0, and starting at week 1 dropped
+        # them for every league's first crawl.
+        start_week = 0
     else:
         start_week = (row["last_crawled_week"] or 0) + 1
     if start_week > end_week:
@@ -588,7 +669,17 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     recrawl_days: for 'existing' mode, only re-crawl leagues not crawled in X days
     """
     current_week = _current_nfl_week()
+    current_season = _current_nfl_season()
     leagues = _leagues_to_crawl(batch_size, crawl_mode, recrawl_days)
+    # Per-league end week: a completed season is crawled in full (week 18),
+    # not truncated at the current season's week. Marking below records
+    # this same per-league week, so a historical league's
+    # last_crawled_week honestly reflects how far it was fetched.
+    end_week_by_league = {
+        row["league_id"]: _season_end_week(
+            row.get("season"), current_season, current_week)
+        for row in leagues
+    }
     dynasty_trades = 0
     redraft_trades = 0
     keeper_trades = 0
@@ -597,10 +688,11 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     keeper_leagues = 0
     mark_batch: list[tuple[int, str, int]] = []
 
-    # For existing-mode re-crawls, always start from week 1 so we pick up the
-    # full season - including any weeks whose start_week would otherwise exceed
-    # current_week (common in the offseason when last_crawled_week == 18).
-    start_week_override = 1 if crawl_mode == "existing" else None
+    # For existing-mode re-crawls, always start from week 0 so we pick up
+    # the full season including offseason trades - and any weeks whose
+    # start_week would otherwise exceed the end week (common in the
+    # offseason when last_crawled_week == 18).
+    start_week_override = 0 if crawl_mode == "existing" else None
 
     print(f"[crawler] Crawling {len(leagues)} leagues with {workers} workers, week={current_week}")
 
@@ -616,7 +708,7 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {}
         for row in league_iter:
-            futures[executor.submit(_crawl_one, row, current_week, start_week_override)] = row["league_id"]
+            futures[executor.submit(_crawl_one, row, end_week_by_league[row["league_id"]], start_week_override)] = row["league_id"]
             if len(futures) >= in_flight_cap:
                 break
 
@@ -626,7 +718,9 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
                 futures.pop(future, None)
                 completed_count += 1
                 league_id, n, league_type = future.result()
-                mark_batch.append((current_week, league_id, n))
+                mark_batch.append(
+                    (end_week_by_league.get(league_id, current_week),
+                     league_id, n))
 
                 if n > 0:
                     if league_type == LeagueType.DYNASTY:
@@ -647,7 +741,7 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
                 # Top up the in-flight set with the next queued league.
                 next_row = next(league_iter, None)
                 if next_row is not None:
-                    futures[executor.submit(_crawl_one, next_row, current_week, start_week_override)] = next_row["league_id"]
+                    futures[executor.submit(_crawl_one, next_row, end_week_by_league[next_row["league_id"]], start_week_override)] = next_row["league_id"]
 
     if mark_batch:
         _mark_crawled_batch(mark_batch)
