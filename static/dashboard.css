@@ -37230,6 +37230,44 @@ button:disabled {
     color: var(--accent);
 }
 
+/* Week headers are sort buttons: click a week to order rows by that
+   week's matchup, click it again to flip easiest/hardest. The Rank and
+   Ease headers carry the same button to return to the range sort. */
+.srk-wk-sort {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+    padding: 0;
+    white-space: nowrap;
+}
+
+.srk-wk-sort:hover {
+    color: var(--text);
+    text-decoration: underline;
+}
+
+.srk-wk-sort:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.sched-th.srk-th-sorted {
+    color: var(--text);
+    box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.srk-sort-arrow {
+    font-size: 8px;
+    margin-left: 3px;
+    vertical-align: 1px;
+}
+
 .srk-po-start {
     border-left: 2px solid var(--border);
 }

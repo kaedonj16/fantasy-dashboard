@@ -51,7 +51,7 @@ def test_week_by_week_columns_and_adj_avg_at_both_widths():
     # Playoffs stay gone, and the separate phone cards stay gone. Adj Avg
     # is a normal scrolling column on desktop and pins beside the player
     # column at <=768px (where Ease hides, it is the summary in view).
-    assert '<th class="sched-th srk-th-ease">Ease</th>' in SOURCE
+    assert '<th class="sched-th srk-th-ease">' in SOURCE
     assert '<th class="sched-th srk-th-adjavg">Adj Avg' in SOURCE
     assert "Average percentage by which the selected defenses increase or suppress" in SOURCE
     assert "srk-adjavg" in SOURCE and "r.adjusted_avg_percent" in SOURCE
@@ -68,6 +68,42 @@ def test_week_by_week_columns_and_adj_avg_at_both_widths():
     phone = css.split("@media (max-width: 768px)", 1)[1]
     assert ".schedule-card .srk-adjavg" in phone
     assert "left: 208px" in phone
+
+
+def test_legend_has_one_info_tooltip_not_two():
+    # The legend carried two identical info icons side by side (one for
+    # ease, one for the data source). They are one button now, with the
+    # source copy folded into the same tooltip.
+    assert 'aria-label="About ease and the rating data"' in SOURCE
+    assert 'aria-label="About ease"' not in SOURCE
+    assert 'aria-label="Seasonal rating data source"' not in SOURCE
+    assert "Bye weeks are excluded. __SOURCE_COPY__" in SOURCE
+    assert SOURCE.count("fa-circle-info") == 1
+
+
+def test_week_headers_sort_by_that_weeks_matchup():
+    # Week headers are buttons carrying their week; clicking orders rows
+    # by that week's adjusted % (higher = easier), a repeat click flips
+    # direction, and byes / missing cells always land last.
+    assert "var sortWeek    = null;" in SOURCE
+    assert "data-sort-week=\"' + w + '\"" in SOURCE
+    assert "function weekVal(m)" in SOURCE
+    assert "cells[i].week === sortWeek" in SOURCE
+    assert "cells[i].bye || cells[i].adjusted_percent == null" in SOURCE
+    assert "if (va == null && vb != null) return 1;" in SOURCE
+    assert "return hardFirst ? va - vb : vb - va;" in SOURCE
+    assert "if (sortWeek === w) { hardFirst = !hardFirst; }" in SOURCE
+    assert "else { sortWeek = w; hardFirst = false; }" in SOURCE
+    # The active week is marked, the sort button names it, and the
+    # Rank / Ease headers clear back to the range sort.
+    assert "srk-th-sorted" in SOURCE
+    assert "' &middot; Wk ' + sortWeek" in SOURCE
+    assert 'data-sort-range="1"' in SOURCE
+    assert "if (rgBtn && sortWeek != null) { sortWeek = null; render(); }" in SOURCE
+    # Changing the week range clears a week sort that may no longer exist.
+    assert "sortWeek = null;\n        mainCache = {};" in SOURCE
+    css = Path("static/dashboard.css").read_text()
+    assert ".srk-wk-sort" in css and ".srk-th-sorted" in css
 
 
 def test_band_spacer_splits_so_ease_hiding_cannot_shift_the_band():
