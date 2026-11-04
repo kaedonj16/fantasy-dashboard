@@ -586,12 +586,15 @@ def get_trade_ai_analysis(
         "opponent_team": opponent_ctx or None,
     }
 
-    # Build cache key for trade analysis. v11: assets now also carry a
+    # Build cache key for trade analysis. v12: the tier-label scrubber now
+    # also collapses the spaced/tier role forms ("RB18 type", "WR9 tier
+    # asset") and tied exact ranks at any rank, so v11 analyses carrying
+    # those forms must not hit. (v11: assets now also carry a
     # pos_tier_label and prose "-type" language is pinned to the tier, not
     # the exact rank; cached v10 analyses can still say "WR23-type", so
-    # they must not hit. (v10: asset rank labels became the recomputed
+    # they must not hit. v10: asset rank labels became the recomputed
     # format labels and prose ranks were pinned to them.)
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v11")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v12")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
@@ -1018,6 +1021,9 @@ def _trade_suggestions_cheap_key(ctx: dict, viewer_roster_id: str) -> str | None
         roster_hash = hashlib.md5(",".join(pids).encode()).hexdigest()[:12]
         week = ctx.get("week") or ctx.get("current_week")
         season = ctx.get("season")
+        # v15: suggestion prose now runs through the tier-language scrub
+        # (spaced/tier role forms collapse); v14 cards can still carry an
+        # exact rank as role language ("RB18 type") and must not hit.
         return build_ai_cache_key(
             "trade_suggestions",
             {
@@ -1026,7 +1032,7 @@ def _trade_suggestions_cheap_key(ctx: dict, viewer_roster_id: str) -> str | None
                 "week": week,
                 "season": season,
             },
-            "v14",
+            "v15",
         )
     except Exception:
         return None
@@ -1054,6 +1060,8 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     # the cache serves a stale card after a trade.
     _rids = ",".join(suggestions_ctx.get("viewer_roster_ids") or [])
     _roster_hash = hashlib.md5(_rids.encode()).hexdigest()[:12]
+    # v14: same tier-language scrub as the cheap key above; v13 cards can
+    # still carry an exact rank as role language and must not hit.
     cache_key = build_ai_cache_key(
         "trade_suggestions",
         {
@@ -1064,7 +1072,7 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
             "ceiling_needs": suggestions_ctx.get("viewer_ceiling_needs"),
             "direction": suggestions_ctx.get("viewer_direction"),
         },
-        "v13",
+        "v14",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:

@@ -45,8 +45,10 @@ POS_RANK_LABEL_NOTE = (
     "TIER LABELS: each asset also carries pos_tier_label (e.g. \"WR2\"), the player's "
     "value tier at 12 ranks per tier (ranks 1-12 are tier 1, 13-24 are tier 2, and so "
     "on). Role and type language must use the tier label: \"a WR2-type producer\". "
-    "Never attach an exact rank to \"-type\" (\"WR23-type\" is wrong even when WR23 is "
-    "the player's exact label), and never describe a rank by value as a production or "
+    "Never attach an exact rank to a type/tier construction, hyphenated or not "
+    "(\"WR23-type\", \"WR23 type\" and \"WR23 tier asset\" are all wrong even when "
+    "WR23 is the player's exact label), and never describe a rank by value as a "
+    "production or "
     "PPG rank: these labels say nothing about scoring rank."
 )
 
@@ -577,6 +579,9 @@ def generate_front_office_report_result(data: dict) -> dict:
         parsed.get("trade_notes"), "target_id", trade_ids)
     parsed["waiver_notes"] = normalize_note_entries(
         parsed.get("waiver_notes"), "id", waiver_ids)
+    # No trade payload to tie rank mentions to here, but exact ranks must
+    # still not pose as role/type language: collapse the untied forms.
+    parsed = enforce_tier_language(parsed)
     return parsed
 
 
@@ -985,11 +990,20 @@ def _trade_asset_rank_labels(payload: dict) -> dict:
     return out
 
 
-_TYPE_LABEL_RE = re.compile(r"\b(QB|RB|WR|TE)\s*#?\s*(\d{1,3})(-type)\b", re.IGNORECASE)
+# Role/type constructions: an exact rank wearing a role suffix, hyphenated
+# ("WR23-type"), spaced ("RB18 type"), or tiered ("WR9 tier asset"). The
+# suffix (group 3, separator included) is preserved verbatim in the rewrite.
+_TYPE_LABEL_RE = re.compile(
+    r"\b(QB|RB|WR|TE)\s*#?\s*(\d{1,3})((?:-|\s)(?:type|tier))\b", re.IGNORECASE)
+
+
+def _tier_number(rank: int) -> int:
+    """Tier of an exact rank at 12 ranks per tier: 9 -> 1, 18 -> 2, 23 -> 2."""
+    return -(-rank // 12)  # ceil(rank / 12), mirroring utils.trade.pos_tier_label
 
 
 def _tier_form(match: "re.Match") -> str:
-    """Tier form of an exact-rank "-type" mention: WR23-type -> WR2-type.
+    """Tier form of an exact-rank role mention: WR23-type -> WR2-type.
 
     Only numbers above 12 are rewritten: at 12 or below the written number
     is already a plausible tier ("a WR2-type producer" is correct role
@@ -999,8 +1013,33 @@ def _tier_form(match: "re.Match") -> str:
     rank = int(match.group(2))
     if rank <= 12:
         return match.group(0)
-    tier = -(-rank // 12)  # ceil(rank / 12), mirroring utils.trade.pos_tier_label
-    return f"{match.group(1).upper()}{tier}{match.group(3)}"
+    return f"{match.group(1).upper()}{_tier_number(rank)}{match.group(3)}"
+
+
+def _walk_strings(value, fix_text):
+    if isinstance(value, str):
+        return fix_text(value)
+    if isinstance(value, list):
+        return [_walk_strings(v, fix_text) for v in value]
+    if isinstance(value, dict):
+        return {k: _walk_strings(v, fix_text) for k, v in value.items()}
+    return value
+
+
+def enforce_tier_language(data):
+    """Collapse UNTIED exact-rank role language to its tier form.
+
+    For prose surfaces with no trade payload to tie mentions to (trade
+    suggestions, front office report): an exact rank above 12 carrying a
+    type/tier suffix ("an RB18 type runner", "a WR23-tier asset") can only
+    be role language, so it collapses to the tier form (RB2 / WR2) exactly
+    as the untied pass inside enforce_trade_rank_labels does. Small
+    numbers are presumed true tiers already and survive untouched.
+    """
+    if not isinstance(data, (dict, list)):
+        return data
+    return _walk_strings(
+        data, lambda text: _TYPE_LABEL_RE.sub(_tier_form, str(text)))
 
 
 def enforce_trade_rank_labels(data: dict, payload: dict) -> dict:
@@ -1014,11 +1053,14 @@ def enforce_trade_rank_labels(data: dict, payload: dict) -> dict:
     the name ("WR12 Garrett Wilson"). Loose role language ("a WR1 than
     Egbuka") is not a rank claim about a labelled player and is left alone.
 
-    Separately, an exact rank glued to "-type" ("a proven WR23-type
-    producer") is role language wearing a rank's clothes: it is rewritten
-    to the tier form (WR2-type) after the exact-rank pass, so a tied
-    mention first gets the player's true rank and then collapses to that
-    rank's tier.
+    Separately, an exact rank carrying a type/tier suffix ("a proven
+    WR23-type producer", "an RB18 type", "a WR9 tier asset") is role
+    language wearing a rank's clothes: it is rewritten to the tier form
+    after the exact-rank pass, so a tied mention first gets the player's
+    true rank and then collapses to that rank's tier. The tied collapse
+    fires at ANY rank (a player whose true rank is WR9 is spoken of as a
+    WR1 asset); the untied pass keeps its >12-only rule, since a small
+    number with no player to tie it to is presumed a true tier already.
     """
     labels = _trade_asset_rank_labels(payload)
     if not labels or not isinstance(data, dict):
@@ -1028,6 +1070,7 @@ def enforce_trade_rank_labels(data: dict, payload: dict) -> dict:
         out = str(text)
         for key, (pos, rank) in labels.items():
             name = re.escape(key)
+            tier = _tier_number(rank)
             # "Name, a young WR15" / "Name, the WR15" / "Name, WR15"
             out = re.sub(
                 rf"(\b{name}\b\s*,\s*(?:a\s+|an\s+|the\s+)?"
@@ -1050,21 +1093,34 @@ def enforce_trade_rank_labels(data: dict, payload: dict) -> dict:
                 out,
                 flags=re.IGNORECASE,
             )
-        # Exact ranks in "-type" constructions are role language, not rank
+            # Tied role language: the named player with a type/tier suffix
+            # right after the digits is a role claim, not a rank claim, so
+            # it collapses to the player's TIER at any rank ("Drake London,
+            # a WR9 tier asset" -> "a WR1 tier asset"). A bare rank claim
+            # ("Name, a WR9, is ...") has no suffix and stays exact.
+            out = re.sub(
+                rf"(\b{name}\b\s*,\s*(?:a\s+|an\s+|the\s+)?"
+                rf"(?:[\w'-]+\s+){{0,2}}?\b{pos}\s*#?\s*)\d{{1,3}}"
+                rf"((?:-|\s)(?:type|tier)\b)",
+                rf"\g<1>{tier}\g<2>",
+                out,
+                flags=re.IGNORECASE,
+            )
+            # Short-window form: name and role mention in the same clause
+            # ("Omarion Hampton profiles as a younger RB18 type").
+            out = re.sub(
+                rf"(\b{name}\b[^.;:!?\n]{{0,60}}?\b{pos}\s*#?\s*)\d{{1,3}}"
+                rf"((?:-|\s)(?:type|tier)\b)",
+                rf"\g<1>{tier}\g<2>",
+                out,
+                flags=re.IGNORECASE,
+            )
+        # Exact ranks in role constructions are role language, not rank
         # claims: collapse them to the tier form (WR23-type -> WR2-type).
         out = _TYPE_LABEL_RE.sub(_tier_form, out)
         return out
 
-    def walk(value):
-        if isinstance(value, str):
-            return fix_text(value)
-        if isinstance(value, list):
-            return [walk(v) for v in value]
-        if isinstance(value, dict):
-            return {k: walk(v) for k, v in value.items()}
-        return value
-
-    return walk(data)
+    return _walk_strings(data, fix_text)
 
 
 def generate_trade_ai_result(payload: dict) -> dict:
@@ -1452,7 +1508,9 @@ Trade suggestions context:
     if not isinstance(data, dict):
         raise ValueError("LLM trade suggestions did not return an object")
 
-    return data
+    # No trade payload to tie rank mentions to here, but exact ranks must
+    # still not pose as role/type language: collapse the untied forms.
+    return enforce_tier_language(data)
 
 
 def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:

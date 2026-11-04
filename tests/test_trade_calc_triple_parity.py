@@ -119,8 +119,8 @@ def test_pool_builders_share_one_normalize_sort_path():
 
 # ── Fix 2 (server plumbing): tier label reaches the analyst, cache bumped ──
 def test_trade_analysis_cache_bumped_past_the_wr23_type_era():
-    assert 'build_ai_cache_key("trade_analysis", payload, "v11")' in RENDERER_PY
-    assert 'build_ai_cache_key("trade_analysis", payload, "v10")' not in RENDERER_PY
+    assert 'build_ai_cache_key("trade_analysis", payload, "v12")' in RENDERER_PY
+    assert 'build_ai_cache_key("trade_analysis", payload, "v11")' not in RENDERER_PY
 
 
 def test_clean_asset_passes_tier_label_to_the_analyst():
