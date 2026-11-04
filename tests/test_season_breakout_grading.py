@@ -96,6 +96,61 @@ def test_selection_is_per_player_and_season():
 
 
 # ---------------------------------------------------------------------------
+# surfaced selection (the board's top-15 from one snapshot)
+# ---------------------------------------------------------------------------
+
+def _snapshot_row(pid, score, prob, **overrides):
+    row = {
+        "player_id": pid, "player_name": f"P{pid}", "season": 2026,
+        "as_of_date": "2026-09-15", "position": "RB", "phase": "offseason",
+        "breakout_opportunity_score": score, "hit_probability": prob,
+        "age": 23, "readiness_usage_baseline": 10,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_surfaced_selection_caps_at_board_limit():
+    # The live bug: the snapshot scores ~180 players, the board shows 15.
+    rows = [_snapshot_row(str(1000 + i), 50.0 + i * 0.2, 0.5)
+            for i in range(180)]
+    calls = sg.select_surfaced_preseason_calls(rows)
+    assert len(calls) == sg.SURFACED_BOARD_LIMIT == 15
+    # Highest blend first: blend is monotone in score here (same prob).
+    assert calls[0]["player_id"] == str(1000 + 179)
+    assert calls[-1]["player_id"] == str(1000 + 165)
+
+
+def test_surfaced_selection_ranks_by_blend_not_raw_score():
+    rows = [
+        _snapshot_row("a", 90.0, 0.10),   # blend .5*.90 + .5*.10 = .50
+        _snapshot_row("b", 70.0, 0.90),   # blend .5*.70 + .5*.90 = .80
+    ]
+    calls = sg.select_surfaced_preseason_calls(rows)
+    assert [c["player_id"] for c in calls] == ["b", "a"]
+
+
+def test_surfaced_selection_excludes_veteran_qb():
+    rows = [
+        _snapshot_row("qb", 99.0, 0.99, position="QB", age=28,
+                      readiness_usage_baseline=25),
+        _snapshot_row("rb", 60.0, 0.50),
+    ]
+    calls = sg.select_surfaced_preseason_calls(rows)
+    assert [c["player_id"] for c in calls] == ["rb"]
+    # A young QB with no usage baseline is not the excluded shape.
+    rows[0].update(age=23, readiness_usage_baseline=5)
+    calls = sg.select_surfaced_preseason_calls(rows)
+    assert calls[0]["player_id"] == "qb"
+
+
+def test_surfaced_selection_skips_rows_without_player_id():
+    rows = [_snapshot_row("", 99.0, 0.99), _snapshot_row("x", 60.0, 0.5)]
+    calls = sg.select_surfaced_preseason_calls(rows)
+    assert [c["player_id"] for c in calls] == ["x"]
+
+
+# ---------------------------------------------------------------------------
 # verdict math (hit definition: backtest_multitask.get_breakout_pids)
 # prior 10 games @ 8.0 PPG is a valid baseline; bar = 8.0 * 1.15 = 9.2, >= 7.0
 # ---------------------------------------------------------------------------
@@ -271,6 +326,8 @@ class _FakeDB:
         monkeypatch.setattr(
             sg, "load_final_preseason_calls", lambda season: list(self.calls))
         monkeypatch.setattr(
+            sg, "load_surfaced_preseason_calls", lambda season: list(self.calls))
+        monkeypatch.setattr(
             sg, "load_existing_grade_keys", lambda season: set(self.grades))
         monkeypatch.setattr(sg, "load_season_series", self._load_series)
         monkeypatch.setattr(sg, "save_grade_rows", self._save)
@@ -298,6 +355,19 @@ def _standard_db():
         prior_by_player={"1001": flat_series(10, 8.0)},
         outcome_by_player={"1001": flat_series(17, 10.0)},
     )
+
+
+def test_orchestrator_grades_only_surfaced_calls(monkeypatch):
+    """The grader reads the surfaced loader, never the every-player one:
+    unscored-by-the-board players must not enter the track record."""
+    db = _standard_db()
+    db.install(monkeypatch)
+    monkeypatch.setattr(
+        sg, "load_final_preseason_calls",
+        lambda season: pytest.fail("grader must not load every scored player"))
+    result = sg.grade_season_breakouts(2026, through_week=18)
+    assert result["calls_considered"] == 1
+    assert result["inserted"] == 2
 
 
 def test_orchestrator_grades_both_stages_when_season_complete(monkeypatch):
