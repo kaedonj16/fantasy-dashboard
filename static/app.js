@@ -30118,6 +30118,55 @@ function setupFunAwardsGrid() {
     return POS_COLORS[pos] || 'def';
   }
 
+  // Fantasy teams in the current league are searchable too: typing a team
+  // (or owner) name surfaces the team, and picking it opens the team modal.
+  // Scoped to the league in __brctx; on league-free pages there are no
+  // team results. The /api/teams payload is tiny and cached server-side.
+  let _teams = null;
+  let _teamsLoading = false;
+  let _teamsFailed = false;
+
+  async function loadTeams() {
+    if ((_teams !== null && !_teamsFailed) || _teamsLoading) return;
+    const c = window.__brctx || {};
+    if (!c.leagueId || !c.platform || !c.season) { _teams = []; return; }
+    _teamsLoading = true;
+    _teamsFailed = false;
+    try {
+      const res = await fetch('/api/teams?league_id=' + encodeURIComponent(c.leagueId)
+        + '&platform=' + encodeURIComponent(c.platform)
+        + '&season=' + encodeURIComponent(c.season));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      _teams = (Array.isArray(data) ? data : [])
+        .filter(t => t && t.roster_id && t.team_name)
+        .map(t => ({
+          rid: String(t.roster_id),
+          name: String(t.team_name || ''),
+          username: String(t.username || ''),
+        }));
+    } catch (e) {
+      _teams = null;
+      _teamsFailed = true;
+    }
+    _teamsLoading = false;
+    if (input.value.trim()) renderResults(input.value);
+  }
+
+  function matchTeams(query) {
+    if (!_teams || !query) return [];
+    const words = query.trim().toLowerCase().split(/\s+/);
+    return _teams.filter(t => {
+      const hay = (t.name + ' ' + t.username).toLowerCase();
+      return words.every(w => hay.includes(w));
+    }).slice(0, 4);
+  }
+
+  function nsEsc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   function matchCommands(query) {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -30132,6 +30181,7 @@ function setupFunAwardsGrid() {
     if (!q) { closeDropdown(); return; }
 
     const cmdMatches = matchCommands(q);
+    const teamMatches = matchTeams(q);
     let playerHtml = '';
     let playerCount = 0;
 
@@ -30147,7 +30197,7 @@ function setupFunAwardsGrid() {
         : _players.filter(p => p.name.toLowerCase().includes(q)).slice(0, 8);
 
       playerCount = matches.length;
-      if (!matches.length && !cmdMatches.length) {
+      if (!matches.length && !cmdMatches.length && !teamMatches.length) {
         dropdown.innerHTML = '<div class="nav-search-empty">No results found</div>';
         openDropdown();
         _flatResults = [];
@@ -30169,9 +30219,22 @@ function setupFunAwardsGrid() {
       }
     }
 
-    // Preserve overall focus order (players, then pages, then tools) while
-    // rendering pages and tools under their own labels.
-    let _cmdIdx = playerCount;
+    let teamHtml = '';
+    if (teamMatches.length) {
+      teamHtml = teamMatches.map((t, i) => `
+          <div class="nav-search-result" data-idx="${playerCount + i}" data-ns-kind="team" data-ns-rid="${nsEsc(t.rid)}" data-ns-name="${nsEsc(t.name)}">
+            <span class="nav-search-cmd-icon"><i class="fa-solid fa-users" aria-hidden="true"></i></span>
+            <div class="nav-search-info">
+              <div class="nav-search-name">${nsEsc(t.name)}</div>
+              <div class="nav-search-meta">Team${t.username ? ' - ' + nsEsc(t.username) : ''}</div>
+            </div>
+          </div>
+        `).join('');
+    }
+
+    // Preserve overall focus order (players, then teams, then pages, then
+    // tools) while rendering pages and tools under their own labels.
+    let _cmdIdx = playerCount + teamMatches.length;
     function renderCmd(cmd) {
       const idx = _cmdIdx++;
       const href = cmd.abs ? (cmd.path + (cmd.suffix || '')) : brNavLeagueUrl(cmd.path, cmd.suffix || '');
@@ -30186,6 +30249,9 @@ function setupFunAwardsGrid() {
     let html = '';
     if (playerHtml) {
       html += '<div class="nav-search-group-label">Players</div>' + playerHtml;
+    }
+    if (teamHtml) {
+      html += '<div class="nav-search-group-label">Teams</div>' + teamHtml;
     }
     if (pageMatches.length) {
       html += '<div class="nav-search-group-label">Pages</div>' + pageMatches.map(renderCmd).join('');
@@ -30221,7 +30287,11 @@ function setupFunAwardsGrid() {
     const items = dropdown.querySelectorAll('.nav-search-result, .nav-search-cmd');
     const el = _focusIdx >= 0 ? items[_focusIdx] : items[0];
     if (!el) return;
-    if (el.dataset.nsKind === 'cmd' || el.classList.contains('nav-search-cmd')) {
+    if (el.dataset.nsKind === 'team') {
+      if (typeof window.openTeamModal === 'function') {
+        window.openTeamModal(el.dataset.nsRid, el.dataset.nsName);
+      }
+    } else if (el.dataset.nsKind === 'cmd' || el.classList.contains('nav-search-cmd')) {
       window.location.href = el.getAttribute('href');
     } else {
       if (typeof window.openPlayerModal === 'function') {
@@ -30238,14 +30308,14 @@ function setupFunAwardsGrid() {
     if (document.activeElement !== input) input.focus();
   });
 
-  input.addEventListener('focus', () => { loadPlayers(); if (input.value.trim()) openDropdown(); });
+  input.addEventListener('focus', () => { loadPlayers(); loadTeams(); if (input.value.trim()) openDropdown(); });
 
   input.addEventListener('input', () => {
     const val = input.value;
     clearBtn.style.display = val ? 'block' : 'none';
     // Kick off the load on the first keystroke too (not just focus), so a fast
     // typist who never fired focus first still gets results.
-    if (val.trim()) loadPlayers();
+    if (val.trim()) { loadPlayers(); loadTeams(); }
     clearTimeout(_debounce);
     _debounce = setTimeout(() => renderResults(val), 120);
   });
@@ -30275,6 +30345,17 @@ function setupFunAwardsGrid() {
   });
 
   dropdown.addEventListener('click', e => {
+    const trow = e.target.closest('.nav-search-result[data-ns-kind="team"]');
+    if (trow) {
+      e.stopPropagation();
+      if (typeof window.openTeamModal === 'function') {
+        window.openTeamModal(trow.dataset.nsRid, trow.dataset.nsName);
+      }
+      input.value = '';
+      clearBtn.style.display = 'none';
+      closeDropdown();
+      return;
+    }
     const cmd = e.target.closest('.nav-search-cmd');
     if (cmd) {
       e.preventDefault();
@@ -30310,9 +30391,9 @@ function setupFunAwardsGrid() {
   // Warm the player list in the background so the first search is instant
   // instead of blocking on the fetch the moment the user starts typing.
   if (window.requestIdleCallback) {
-    requestIdleCallback(() => loadPlayers(), { timeout: 3000 });
+    requestIdleCallback(() => { loadPlayers(); loadTeams(); }, { timeout: 3000 });
   } else {
-    setTimeout(loadPlayers, 1500);
+    setTimeout(() => { loadPlayers(); loadTeams(); }, 1500);
   }
   }
 

@@ -17,11 +17,35 @@ _ALLTIME_AWARDS_TTL = 3600
 _ALLTIME_MAX_SEASONS = 5
 
 
-def render_awards_section(awards: dict, alltime: bool = False) -> str:
+def render_awards_section(awards: dict, alltime: bool = False,
+                          team_rid_by_name: dict | None = None) -> str:
     if not awards:
         # Offseason / week 0: hide empty weekly superlatives. All-time records
         # live on the Awards page.
         return ""
+
+    # Team names that resolve to a current roster open the team modal via
+    # the global .team-clickable handler; anything unresolved (e.g. an
+    # all-time winner no longer in the league) stays plain text. Keys are
+    # matched exactly and stripped, since Sleeper team names can carry a
+    # trailing space the awards frame has trimmed.
+    _rid_by_name: dict = {}
+    for _k, _v in (team_rid_by_name or {}).items():
+        if _k and _v:
+            _rid_by_name.setdefault(str(_k), str(_v))
+            _rid_by_name.setdefault(str(_k).strip(), str(_v))
+
+    def team_html(name) -> str:
+        esc = html.escape(str(name))
+        rid = (_rid_by_name.get(str(name))
+               or _rid_by_name.get(str(name).strip()))
+        if not rid:
+            return esc
+        return (
+            f"<span class='team-clickable' style='cursor:pointer;' "
+            f"data-roster-id='{html.escape(rid, quote=True)}' "
+            f"data-team-name='{html.escape(str(name), quote=True)}'>{esc}</span>"
+        )
 
     def _week_detail(w, s=None):
         base = f"Week {w}"
@@ -47,7 +71,7 @@ def render_awards_section(awards: dict, alltime: bool = False) -> str:
 
     def streak_winner(teams):
         # Tied teams stack one per line; a comma run-on reads as one name.
-        _esc = [html.escape(str(t)) for t in (teams or [])]
+        _esc = [team_html(t) for t in (teams or [])]
         if len(_esc) > 1:
             return "<br>".join(_esc)
         return _esc[0] if _esc else ""
@@ -58,14 +82,14 @@ def render_awards_section(awards: dict, alltime: bool = False) -> str:
         tup = awards["highest_single_week"]
         t, w, p = tup[0], tup[1], tup[2]
         s = tup[3] if len(tup) > 3 else None
-        rows.append(arow("Highest single week", html.escape(str(t)),
+        rows.append(arow("Highest single week", team_html(t),
                          _week_detail(w, s), aval(f"{p:.1f}", "cc-up")))
 
     if awards.get("lowest_single_week"):
         tup = awards["lowest_single_week"]
         t, w, p = tup[0], tup[1], tup[2]
         s = tup[3] if len(tup) > 3 else None
-        rows.append(arow("Lowest single week", html.escape(str(t)),
+        rows.append(arow("Lowest single week", team_html(t),
                          _week_detail(w, s), aval(f"{p:.1f}", "cc-dn")))
 
     if awards.get("longest_win_streak"):
@@ -82,7 +106,7 @@ def render_awards_section(awards: dict, alltime: bool = False) -> str:
         t, sd, n = awards["most_consistent"]
         # sd is a weekly swing around the team's own average, not a score:
         # render it as ±X.X so it never reads as points/PPG.
-        rows.append(arow("Most consistent", html.escape(str(t)),
+        rows.append(arow("Most consistent", team_html(t),
                          f"typical weekly swing \u00b7 over {n} games",
                          aval(f"\u00b1{sd:.1f}")))
 

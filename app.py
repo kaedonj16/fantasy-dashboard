@@ -39308,7 +39308,7 @@ def api_trade_database():
             trade_rows = conn.execute(
                 f"""
                 SELECT {_distinct}t.id, t.transaction_id, t.season, t.week, t.created_at,
-                       l.scoring_type, l.is_superflex, l.num_teams{_value_select}
+                       l.scoring_type, l.is_superflex, l.num_teams, l.league_type{_value_select}
                 FROM trade_intel_trades t
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
                 {_value_join}WHERE t.season = %s {sf_clause}{lf_clause}{range_clause}{filter_sql}
@@ -39363,9 +39363,17 @@ def api_trade_database():
                     "pick_season": a["pick_season"], "pick_round": a["pick_round"],
                     "pick_slot": slot}
 
+        # Sleeper league_type int -> UI league-format name (0/1/2); unknown
+        # or missing league rows surface as None and the client omits it.
+        _tdb_format_by_type = {0: "redraft", 1: "keeper", 2: "dynasty"}
         result = []
         for r in trade_rows:
             tid = r["id"]
+            _lt_raw = r.get("league_type") if isinstance(r, dict) else None
+            try:
+                _lt_key = int(_lt_raw)
+            except (TypeError, ValueError):
+                _lt_key = None
             sides = assets_by_trade.get(tid, {"a": [], "b": []})
             side_a_assets = [describe(a) for a in sides["a"]]
             side_b_assets = [describe(a) for a in sides["b"]]
@@ -39387,6 +39395,7 @@ def api_trade_database():
                 "scoring_type": r["scoring_type"],
                 "is_superflex": r["is_superflex"],
                 "num_teams": r["num_teams"],
+                "league_format": _tdb_format_by_type.get(_lt_key),
                 "side_a": side_a_assets,
                 "side_b": side_b_assets,
             })
