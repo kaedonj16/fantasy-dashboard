@@ -23,6 +23,7 @@ from tests.pin_helpers import changelog_entry
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = (ROOT / "app.py").read_text()
+APP_JS = (ROOT / "static" / "app.js").read_text()
 RANKINGS_JS = (ROOT / "static" / "rankings.js").read_text()
 PLAYERS_PAGE = (ROOT / "dashboard_services" / "pages" / "players_page.py").read_text()
 SCHEDULE_PAGE = (ROOT / "dashboard_services" / "pages" / "schedule_page.py").read_text()
@@ -122,6 +123,29 @@ def test_rankings_js_card_behavior():
     assert "row.dataset.pid = String(p.id);" in RANKINGS_JS
     # A re-render hides a stale card.
     assert "prQlHide();  // a re-render replaces the rows" in RANKINGS_JS
+
+
+def test_quicklook_card_cannot_orphan_on_page_change():
+    # The card is appended to document.body (outside #page-root) and its
+    # only styles are the Players page's own style block. Two guards keep
+    # it from surviving into a page that has neither the rows nor the CSS
+    # (where it rendered as a giant unstyled block at the page foot):
+    # 1. prQlHide removes the node outright instead of only un-opening it
+    #    (a class-only hide is invisible solely where the page CSS lives).
+    hide = RANKINGS_JS.split("function prQlHide()")[1].split("}")[0]
+    assert "prQlEl.remove()" in hide
+    assert "prQlEl = null" in hide
+    # prQlShow already re-creates the element when it is missing.
+    assert "if (!prQlEl) {" in RANKINGS_JS
+    assert "document.createElement('div')" in RANKINGS_JS
+    # 2. The shared soft-nav / refresh swap (applyNewRoot in app.js, used
+    #    by softNav and brSwapPageRoot alike) removes a still-open card
+    #    before replacing #page-root, because navigating away can happen
+    #    before any hide path fires.
+    swap = APP_JS.split("function applyNewRoot")[1].split("window.brSwapPageRoot")[0]
+    assert "document.getElementById('prQuicklook')" in swap
+    assert "staleQl.remove()" in swap
+    assert swap.index("staleQl.remove()") < swap.index("curRoot.innerHTML = newRoot.innerHTML")
 
 
 def test_rankings_js_matchup_uses_schedule_tiers_not_soft_mid():
