@@ -105,7 +105,24 @@ def test_overview_hero_is_one_line_strip():
     # Strip type runs a step smaller than the shared tile sizes.
     assert ".pm-hero-row .pm-hero-val {\n    font-size: 22px;\n}" in CSS
     assert ".pm-hero-row .pm-hero-val {\n        font-size: 19px;\n    }" in CSS
-    assert ".pm-hero-row .pm-hero-stat {\n        padding: 6px 8px;\n    }" in CSS
+    assert ".pm-hero-row .pm-hero-stat {\n        padding: 6px 2px;\n    }" in CSS
+
+
+def test_overview_hero_no_truncation_on_phones():
+    # Truncation fix (2026-11-04, live Gibbs modal): "TOTAL PT…" and
+    # "POS : 1 · OV…" ellipsized on phones. The subs drop the colons
+    # (compare hero in app.js keeps its own format on purpose), the
+    # Total label drops "Pts", and the phone strip type/tracking/padding
+    # shrink a step so every label and sub fits its cell.
+    assert "`POS ${posR} · OVR ${ovrR" in JS
+    assert "`POS : ${" not in JS
+    assert "'POS : '" not in JS
+    assert 'pm-hero-label">Total${seasonLabel}' in JS
+    assert "Total Pts${seasonLabel}" not in JS
+    assert ".pm-hero-row .pm-hero-label {\n        font-size: 9.5px;" in CSS
+    assert "letter-spacing: 0.01em;" in CSS
+    assert ".pm-hero-row .pm-hero-sub {" in CSS
+    assert "font-size: 8px;\n        letter-spacing: -0.03em;" in CSS
 
 
 def test_overview_avail_below_in_league_in_rail():
