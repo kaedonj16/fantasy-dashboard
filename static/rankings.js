@@ -2446,7 +2446,12 @@ function prQlHide() {
   if (prQlRow) prQlRow.classList.remove('ql-on');
   prQlRow = null;
   prQlPid = null;
-  if (prQlEl) prQlEl.classList.remove('ql-open');
+  // Remove the node, do not just un-open it: the card lives on
+  // document.body (outside #page-root) and its styles live in the
+  // Players page's own style block, so a hidden-but-present card
+  // survives a soft-nav swap and re-renders on the next page as a
+  // giant unstyled block. prQlShow re-creates it on the next hover.
+  if (prQlEl) { prQlEl.remove(); prQlEl = null; }
 }
 
 // Fulfill a hover that was registered before the players data arrived.

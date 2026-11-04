@@ -2115,6 +2115,14 @@ window.brHaptic = function (pattern) {
     if (window.brEvacuateMobileNav) window.brEvacuateMobileNav();
     if (window.pmStopVisibilityWarmup) window.pmStopVisibilityWarmup();
     if (window.pmPlayerDetails) window.pmPlayerDetails.invalidate();
+    // The rankings hover quick-look card is appended to <body>, outside
+    // #page-root, and its styles live in the Players page's own style
+    // block: left behind by a swap it re-renders as a giant unstyled
+    // block at the foot of the new page. It belongs to the page being
+    // swapped out, so remove it before the swap; rankings.js re-creates
+    // it on the next hover.
+    var staleQl = document.getElementById('prQuicklook');
+    if (staleQl) staleQl.remove();
     curRoot.innerHTML = newRoot.innerHTML;
     if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
     if (newRoot.dataset.adEligible != null) curRoot.dataset.adEligible = newRoot.dataset.adEligible;
