@@ -29,27 +29,23 @@ GROUND RULES (no exceptions):
 """.strip()
 
 # Appended to every system prompt that receives player data carrying positional
-# rank labels (pos_rank_label / sf_pos_rank_label). Without this, models read
-# "WR2" as a lineup-slot/tier instead of the player's rank-by-value.
+# labels. Each asset carries TWO labels with the same surface form — a rank
+# (pos_rank_label) and a tier (pos_tier_label) — so this note pins the only two
+# constructions prose may use for a position+number, rule-first.
 POS_RANK_LABEL_NOTE = (
-    "\n\nPOSITIONAL RANK LABELS: A label written as a position immediately followed by a "
-    "number, e.g. \"WR2\", \"TE2\", \"RB5\", \"QB1\", is that player's OVERALL positional "
-    "rank by trade value, where 1 = the single most valuable player at that position "
-    "leaguewide. So \"WR2\" means the 2nd-most-valuable WR overall (an elite, high-end "
-    "asset), NOT a WR2 starter slot or a mid-tier/role designation. Always interpret these "
-    "as rank-by-value, and when you reference one, phrase it as a ranking (e.g. \"the WR2 "
-    "overall\" or \"a top-3 WR\"), never as a lineup tier. RANK FIDELITY: when you state "
-    "a specific player's positional rank, use exactly that player's label from the JSON. "
-    "Never substitute a rank from memory or training knowledge, never round or adjust "
-    "one, and never state a positional rank for a player whose label is not in the JSON. "
-    "TIER LABELS: each asset also carries pos_tier_label (e.g. \"WR2\"), the player's "
-    "value tier at 12 ranks per tier (ranks 1-12 are tier 1, 13-24 are tier 2, and so "
-    "on). Role and type language must use the tier label: \"a WR2-type producer\". "
-    "Never attach an exact rank to a type/tier construction, hyphenated or not "
-    "(\"WR23-type\", \"WR23 type\" and \"WR23 tier asset\" are all wrong even when "
-    "WR23 is the player's exact label), and never describe a rank by value as a "
-    "production or "
-    "PPG rank: these labels say nothing about scoring rank."
+    "\n\nPOSITIONAL LABELS — EXACTLY TWO CONSTRUCTIONS: a position+number may "
+    "appear in your prose only as (1) a rank claim, \"the <pos_rank_label> "
+    "overall\" (e.g. \"the WR9 overall\"), copied exactly from pos_rank_label; "
+    "or (2) a role/tier description (e.g. \"a WR1-type asset\", \"an RB2 "
+    "type\"), copied exactly from pos_tier_label. Every other placement is "
+    "forbidden. Same player, two labels: pos_rank_label WR23 is "
+    "pos_tier_label WR2 — rank for rank claims, tier for role language. "
+    "\"WR23-type\", \"WR23 type\" and \"WR23 tier asset\" are all wrong when "
+    "WR23 is the exact rank. Rank fidelity: cite a rank only from the "
+    "player's label — never from memory, never rounded, never for an "
+    "unlabelled player. A value rank is not a production or PPG rank. "
+    "Before returning, scan your text: any position+number outside the two "
+    "constructions must be rewritten."
 )
 
 
@@ -935,6 +931,45 @@ def build_trade_ai_system_prompt(scoring_type: str = "dynasty") -> str:
     return _TRADE_AI_SYSTEM_REDRAFT if st == "redraft" else _TRADE_AI_SYSTEM_DYNASTY
 
 
+_LABEL_SELF_CHECK = (
+    "Before returning, scan your text: any position+number that is not "
+    "\"the <pos_rank_label> overall\" or a role phrase copied from "
+    "pos_tier_label must be rewritten."
+)
+
+
+def _label_examples_block(payload: dict) -> str:
+    """Worked rank/tier reference lines for THIS trade's players.
+
+    The label note states the two-construction rule in the abstract; models
+    follow concrete examples better, so each traded player with both labels
+    gets one line in the exact frames prose may use: rank claims as
+    \"the <rank> overall\", role language as \"<tier> asset\" (the article-free
+    frame avoids a/an agreement on the tier's spoken form). Assets missing a
+    name or either label are skipped; returns \"\" when none qualify.
+    """
+    trade = (payload or {}).get("trade") or {}
+    seen: set = set()
+    parts: list = []
+    for side_key in ("viewer_gives", "viewer_gets"):
+        for asset in ((trade.get(side_key) or {}).get("assets") or []):
+            if not isinstance(asset, dict):
+                continue
+            name = str(asset.get("name") or "").strip()
+            rank = str(asset.get("pos_rank_label") or "").strip().upper()
+            tier = str(asset.get("pos_tier_label") or "").strip().upper()
+            if not name or not rank or not tier or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            parts.append(
+                f"{name} — rank claim: \"the {rank} overall\"; "
+                f"role: \"{tier} asset\""
+            )
+    if not parts:
+        return ""
+    return "HOW TO REFERENCE THESE PLAYERS: " + ". ".join(parts) + "."
+
+
 def build_trade_ai_user_prompt(payload: dict, scoring_type: str = "dynasty") -> str:
     st = normalize_trade_scoring_type(scoring_type)
     if st == "redraft":
@@ -948,6 +983,8 @@ def build_trade_ai_user_prompt(payload: dict, scoring_type: str = "dynasty") -> 
         )
     else:
         lead = "Analyze this dynasty trade from the viewer team's perspective."
+    examples = _label_examples_block(payload)
+    examples_section = f"{examples}\n\n" if examples else ""
     return f"""
 {lead}
 
@@ -956,8 +993,10 @@ Focus on market value first, then roster fit as secondary.
 
 Return JSON matching the schema exactly.
 
-Trade context:
+{examples_section}Trade context:
 {json_dumps_safe(payload)}
+
+{_LABEL_SELF_CHECK}
 """.strip()
 
 
