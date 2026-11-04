@@ -75,9 +75,10 @@ def test_rows_have_label_team_detail_value():
     assert "Team Alpha, Team Gamma" not in out
     assert '<div class="cc-award-val cc-up">7</div>' in out
     assert '<div class="cc-award-val cc-dn">6</div>' in out
-    # Consistency: sigma value, "over N games" detail.
-    assert '<div class="cc-award-val">9.12</div>' in out
-    assert '<div class="cc-award-detail">over 8 games</div>' in out
+    # Consistency: std dev renders as a ± swing (never a bare score-like
+    # number), with the swing explained in the detail.
+    assert '<div class="cc-award-val">\u00b19.1</div>' in out
+    assert '<div class="cc-award-detail">typical weekly swing \u00b7 over 8 games</div>' in out
     assert "Team Epsilon" in out
     assert '<div class="cc-award-val cc-up">41.2</div>' in out
 
