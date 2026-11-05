@@ -119,6 +119,9 @@ def test_fmt_weeks_out():
     assert _fmt_weeks_out(1.0) == "~1 wk"
     assert _fmt_weeks_out(2.0) == "~2 wks"
     assert _fmt_weeks_out(2.5) == "~2.5 wks"
+    # Fractional provider estimates cap at one decimal: the live card
+    # showed "~14.57 wks" (Kaedon, 2026-11-05).
+    assert _fmt_weeks_out(14.57) == "~14.6 wks"
 
 
 def test_build_injury_rows_sorts_and_enriches(monkeypatch):
@@ -276,6 +279,25 @@ def test_card_injury_compact_caps_at_three():
     assert html_out.count("<li") == 3
     assert "+2 more in the full report" in html_out
     assert _injury_card_html([]) == ""
+
+
+def test_card_injury_row_is_two_lines():
+    # Layout fix (Kaedon screenshot, 2026-11-05): the single flex line
+    # squeezed the meta into a word-per-line column beside a long
+    # QUESTIONABLE pill. Rows now mirror the modal: name on its own
+    # line inside .for-card-inj-main, pill + meta in .for-inj-meta
+    # under it, action pinned right as a sibling.
+    rows = [
+        {"name": "Christian McCaffrey", "injury": "QUESTIONABLE",
+         "body": "Calf", "return_label": "out this week", "action": "Hold"},
+    ]
+    html_out = _injury_card_html(rows)
+    assert "for-card-inj-main" in html_out
+    assert "for-inj-meta" in html_out
+    assert html_out.index("for-inj-name") < html_out.index("for-inj-meta")
+    assert html_out.index("QUESTIONABLE") > html_out.index("for-inj-meta")
+    assert "Calf · out this week" in html_out
+    assert "for-inj-act" in html_out
 
 
 def test_card_masthead_layout():

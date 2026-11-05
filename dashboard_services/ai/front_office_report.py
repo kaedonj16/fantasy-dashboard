@@ -1631,7 +1631,7 @@ def _inj_severity(status: str) -> int:
 def _fmt_weeks_out(weeks_out) -> str:
     """'~3 wks', '~1 wk', 'this week', or '' when unknown."""
     try:
-        w = float(weeks_out)
+        w = round(float(weeks_out), 1)
     except (TypeError, ValueError):
         return ""
     if w <= 0.5:
@@ -2410,11 +2410,25 @@ def _injury_card_html(rows: list[dict]) -> str:
             f"<span class='for-inj-act'>{html.escape(str(r['action']))}</span>"
             if r.get("action") else ""
         )
+        # Same two-line grammar as the modal's injury rows: the name
+        # gets its own line, the pill + body/return meta sit under it.
+        # The old single flex line squeezed the meta into a word-per-
+        # line column next to a long pill (Kaedon, 2026-11-05).
+        pill = (
+            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
+            if r.get("injury") else ""
+        )
+        meta_inner = " ".join(
+            x for x in (pill, html.escape(meta)) if x
+        )
+        meta_html = (
+            f"<div class='for-inj-meta'>{meta_inner}</div>" if meta_inner else ""
+        )
         items.append(
             "<li class='for-card-inj-row'>"
-            f"<span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span> "
-            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
-            + (f" <span class='for-muted'>{html.escape(meta)}</span>" if meta else "")
+            "<div class='for-card-inj-main'>"
+            f"<span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span>"
+            f"{meta_html}</div>"
             + action
             + "</li>"
         )
