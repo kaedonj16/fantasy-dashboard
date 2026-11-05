@@ -1316,11 +1316,23 @@ def build_advanced_metrics_body(
          layout) stacks them in a column, controls first; the desktop
          min-width:601px block below flips it to plot-left / rail-right. */
       .am-graph-body { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
-      .am-graph-rail { display:flex; flex-direction:column; min-height:0; }
+      .am-graph-rail { display:flex; flex-direction:column; flex:0 1 auto; min-height:0; }
       .am-graph-view-label { display:none; }
+      /* The header and the mobile Settings toggle never compress; the
+         controls and the plot are the two flexible regions below them. */
+      .am-graph-card .am-legend-head { flex:0 0 auto; }
+      .am-graph-ctrl-toggle { flex:0 0 auto; }
       .am-graph-controls {
         display:flex; flex-wrap:wrap; gap:10px 12px; align-items:flex-end;
         padding:12px 18px; border-bottom:1px solid var(--border);
+        /* When the card runs out of height (mobile, Settings open) the
+           controls must SCROLL inside the rail, not shrink: a flex-shrunk
+           controls box left its wrapped rows overflowing visibly, and the
+           plot wrap painted over the spill, burying the bottom action row
+           (Download / Copy link) under the chart, untappable. Desktop's
+           rail block below sets these same properties for its column. */
+        flex:1 1 auto; min-height:0; overflow-y:auto;
+        -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
       }
       .am-graph-controls .am-gctrl { display:flex; flex-direction:column; gap:3px; flex:1 1 150px; min-width:0; }
       .am-graph-controls label {
@@ -1539,7 +1551,6 @@ def build_advanced_metrics_body(
       .am-graph-mode .am-add-stat-btn { border:none !important; border-radius:0 !important; }
       .am-graph-mode .am-add-stat-btn + .am-add-stat-btn { border-left:1px solid var(--border) !important; }
       .am-graph-mode .am-add-stat-btn.am-active { background:var(--accent); border-color:var(--accent); color:#fff; }
-
       /* og=1 social-preview render mode: turn the graph modal into a clean,
          full-bleed 1200x630 dark canvas with the scatter centered. Rather than
          hiding the modal's own ancestors (which would also hide the modal), we
@@ -4516,6 +4527,13 @@ _AM_JS = r"""
   // the svg (data-full-domain). Interactions are wired once on the plot
   // container so they survive the re-renders they trigger.
   let _amZoomWin = null, _amPanMovedAt = 0;
+  // Single-axis zoom is a GESTURE, not a setting (Kaedon, 2026-11-04:
+  // "pinching on the axis?"): a pinch that starts on the X axis band
+  // zooms X only, on the Y axis band zooms Y only, in the plot zooms
+  // both; the wheel does the same by where it hovers, and a one-finger
+  // drag that starts on an axis pans that axis only. The +/- buttons
+  // always zoom both. Which axis a gesture acts on is decided per
+  // gesture by _amAxisAt, never stored as a mode.
   let _amLastScatter = null;   // last built scatter inputs, for zoom re-renders
   let _amZoomRaf = 0;
   function _amFullDomainOf(svg) {
@@ -4528,9 +4546,12 @@ _AM_JS = r"""
     const p = (svg.getAttribute('data-plot-rect') || '').split(',').map(Number);
     return (p.length === 4 && p.every(isFinite)) ? { x: p[0], y: p[1], w: p[2], h: p[3] } : null;
   }
-  function _amZoomK() {
+  // Zoom factor of one axis ('x' or 'y') against the full domain.
+  function _amZoomKAxis(axis) {
     if (!_amZoomWin || !_amLastScatter || !_amLastScatter.full) return 1;
-    return (_amLastScatter.full.x1 - _amLastScatter.full.x0) / (_amZoomWin.x1 - _amZoomWin.x0);
+    const f = _amLastScatter.full, w = _amZoomWin;
+    return axis === 'y' ? (f.y1 - f.y0) / (w.y1 - w.y0)
+                        : (f.x1 - f.x0) / (w.x1 - w.x0);
   }
   function _amClampWin(w, full) {
     const spanX = Math.min(w.x1 - w.x0, full.x1 - full.x0);
@@ -4542,13 +4563,35 @@ _AM_JS = r"""
   // Pure window math (node-tested): zoom the current window to nk around
   // the data anchor (ax, ay), K clamped to [1, 5], window clamped inside
   // the full domain. Returns null at K=1: null IS the full graph.
-  function _amZoomWindowTo(cur, full, nk, ax, ay) {
-    const k = Math.min(5, Math.max(1, nk));
-    if (k <= 1.001) return null;
-    const spanX = (full.x1 - full.x0) / k, spanY = (full.y1 - full.y0) / k;
+  // `axis` ('x' / 'y', default 'both') restricts the zoom to one axis:
+  // nk is that axis's target K and the other axis keeps its current K,
+  // so an X-only zoom out of a both-axes zoom still leaves the Y window
+  // narrowed instead of snapping it back to full.
+  // Core window math: zoom the current window to the per-axis targets
+  // (kxT, kyT), each clamped to [1, 5], around the data anchor (ax, ay).
+  function _amZoomWindowToK(cur, full, kxT, kyT, ax, ay) {
+    const kx = Math.min(5, Math.max(1, kxT)), ky = Math.min(5, Math.max(1, kyT));
+    if (kx <= 1.001 && ky <= 1.001) return null;
+    const spanX = (full.x1 - full.x0) / kx, spanY = (full.y1 - full.y0) / ky;
     const fx = (ax - cur.x0) / (cur.x1 - cur.x0), fy = (ay - cur.y0) / (cur.y1 - cur.y0);
     return _amClampWin({ x0: ax - fx * spanX, x1: ax - fx * spanX + spanX,
                          y0: ay - fy * spanY, y1: ay - fy * spanY + spanY }, full);
+  }
+  function _amZoomWindowTo(cur, full, nk, ax, ay, axis) {
+    const kx0 = (full.x1 - full.x0) / (cur.x1 - cur.x0);
+    const ky0 = (full.y1 - full.y0) / (cur.y1 - cur.y0);
+    return _amZoomWindowToK(cur, full,
+      axis === 'y' ? kx0 : nk, axis === 'x' ? ky0 : nk, ax, ay);
+  }
+  // Factor form for gestures: multiply the CURRENT per-axis K by
+  // `factor` on the gesture's axis only (or both), so a pinch on the
+  // X axis composes with whatever window earlier gestures produced
+  // instead of re-deriving a target from one axis's K.
+  function _amZoomWindowByFactor(cur, full, factor, ax, ay, axis) {
+    const kx0 = (full.x1 - full.x0) / (cur.x1 - cur.x0);
+    const ky0 = (full.y1 - full.y0) / (cur.y1 - cur.y0);
+    return _amZoomWindowToK(cur, full,
+      axis === 'y' ? kx0 : kx0 * factor, axis === 'x' ? ky0 : ky0 * factor, ax, ay);
   }
   // Pure window math (node-tested): pan by a data-space delta, clamped so
   // the window never leaves the full domain.
@@ -4558,9 +4601,34 @@ _AM_JS = r"""
   }
   function _amSyncZoomPct() {
     const pct = document.getElementById('amGraphZoomPct');
-    if (pct) pct.textContent = Math.round(_amZoomK() * 100) + '%';
+    if (pct) {
+      // The pill reports what the window actually is: a single-axis
+      // window names its axis ("X 210%"), an even both-axes window is a
+      // plain percent, and a mixed window names both factors.
+      const kx = _amZoomKAxis('x'), ky = _amZoomKAxis('y');
+      let txt = Math.round(kx * 100) + '%';
+      if (_amZoomWin && ky <= 1.001 && kx > 1.001) txt = 'X ' + txt;
+      else if (_amZoomWin && kx <= 1.001 && ky > 1.001) txt = 'Y ' + Math.round(ky * 100) + '%';
+      else if (_amZoomWin && Math.abs(kx - ky) > 0.01) txt = 'X ' + txt + ' · Y ' + Math.round(ky * 100) + '%';
+      pct.textContent = txt;
+    }
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
     if (svg) svg.classList.toggle('am-graph-zoomed', !!_amZoomWin);
+  }
+  // Which axis band a client point falls in: 'x' below the plot rect
+  // (X ticks + axis title), 'y' left of it (Y ticks + axis title), else
+  // null. Decides single-axis zoom/pan gestures per gesture.
+  function _amAxisAt(svg, clientX, clientY) {
+    const pr = _amPlotRectOf(svg);
+    if (!pr) return null;
+    const r = svg.getBoundingClientRect();
+    const vb = (svg.getAttribute('data-base-vb') || '0 0 720 600').split(/\s+/).map(Number);
+    const sx = (clientX - r.left) / Math.max(1, r.width) * (vb[2] || 720);
+    const sy = (clientY - r.top) / Math.max(1, r.height) * (vb[3] || 600);
+    if (sx < 0 || sy < 0 || sx > (vb[2] || 720) || sy > (vb[3] || 600)) return null;
+    if (sy > pr.y + pr.h) return 'x';
+    if (sx < pr.x) return 'y';
+    return null;
   }
   function _amRerenderZoom() {
     const plot = document.getElementById('amGraphPlot');
@@ -4587,19 +4655,21 @@ _AM_JS = r"""
     return { x: w.x0 + ((sx - pr.x) / pr.w) * (w.x1 - w.x0),
              y: w.y0 + (1 - (sy - pr.y) / pr.h) * (w.y1 - w.y0) };
   }
-  function _amSetZoomAt(svg, nk, clientX, clientY) {
+  // Zoom by a factor around a client point, on `axis` ('x' / 'y' /
+  // null = both). The anchor data point stays under the cursor/finger.
+  function _amZoomByAt(svg, factor, clientX, clientY, axis) {
     const full = _amFullDomainOf(svg);
     if (!full) return;
     const at = _amDataAt(svg, clientX, clientY);
     if (!at) return;
-    _amZoomWin = _amZoomWindowTo(_amZoomWin || full, full, nk, at.x, at.y);
+    _amZoomWin = _amZoomWindowByFactor(_amZoomWin || full, full, factor, at.x, at.y, axis || 'both');
     _amScheduleZoomRender();
   }
   window.amZoomGraph = function(factor) {
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
     if (!svg) return;
     const r = svg.getBoundingClientRect();
-    _amSetZoomAt(svg, _amZoomK() * factor, r.left + r.width / 2, r.top + r.height / 2);
+    _amZoomByAt(svg, factor, r.left + r.width / 2, r.top + r.height / 2, 'both');
   };
   window.amResetGraphZoom = function() {
     if (!_amZoomWin) { _amSyncZoomPct(); return; }
@@ -4613,17 +4683,34 @@ _AM_JS = r"""
     plot.addEventListener('wheel', function(e) {
       const svg = svgEl(); if (!svg) return;
       e.preventDefault();
-      _amSetZoomAt(svg, _amZoomK() * (e.deltaY < 0 ? 1.18 : 0.85), e.clientX, e.clientY);
+      // Wheel over an axis band zooms that axis only; over the plot, both.
+      _amZoomByAt(svg, e.deltaY < 0 ? 1.18 : 0.85, e.clientX, e.clientY,
+                  _amAxisAt(svg, e.clientX, e.clientY) || 'both');
     }, { passive: false });
     const ptrs = new Map();
-    let panStart = null, pinchD0 = 0, pinchK0 = 1, pinchWin0 = null;
+    let panStart = null, pinchD0 = 0, pinchWin0 = null, pinchAxis = 'both', pinchMetric = 'hypot';
+    // Pinch size along the gesture's axis: fingers resting on the X axis
+    // spread horizontally, on the Y axis vertically; a plot pinch uses
+    // the full distance. Falls back to the full distance when the
+    // projected start distance is too small to ratio against.
+    function pinchDist(p) {
+      const dx = Math.abs(p[0].x - p[1].x), dy = Math.abs(p[0].y - p[1].y);
+      if (pinchMetric === 'x') return dx;
+      if (pinchMetric === 'y') return dy;
+      return Math.hypot(dx, dy);
+    }
     plot.addEventListener('pointerdown', function(e) {
       const svg = svgEl(); if (!svg) return;
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (ptrs.size === 2) {
         const p = Array.from(ptrs.values());
-        pinchD0 = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
-        pinchK0 = _amZoomK();
+        // Pinching ON an axis zooms that axis only: both fingers must
+        // start in the same axis band, else it is a plot pinch (both).
+        const a0 = _amAxisAt(svg, p[0].x, p[0].y), a1 = _amAxisAt(svg, p[1].x, p[1].y);
+        pinchAxis = (a0 && a0 === a1) ? a0 : 'both';
+        pinchMetric = pinchAxis;
+        pinchD0 = pinchDist(p);
+        if (pinchD0 < 4) { pinchMetric = 'hypot'; pinchD0 = pinchDist(p) || 1; }
         const full = _amFullDomainOf(svg);
         pinchWin0 = _amZoomWin ? { x0: _amZoomWin.x0, x1: _amZoomWin.x1, y0: _amZoomWin.y0, y1: _amZoomWin.y1 }
                                : (full ? { x0: full.x0, x1: full.x1, y0: full.y0, y1: full.y1 } : null);
@@ -4631,6 +4718,7 @@ _AM_JS = r"""
         try { plot.setPointerCapture(e.pointerId); } catch (_) {}
       } else if (ptrs.size === 1 && _amZoomWin) {
         panStart = { x: e.clientX, y: e.clientY,
+                     axis: _amAxisAt(svg, e.clientX, e.clientY),
                      win: { x0: _amZoomWin.x0, x1: _amZoomWin.x1, y0: _amZoomWin.y0, y1: _amZoomWin.y1 },
                      moved: false };
       }
@@ -4643,14 +4731,14 @@ _AM_JS = r"""
       if (!full || !pr) return;
       if (ptrs.size === 2 && pinchWin0) {
         const p = Array.from(ptrs.values());
-        const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+        const d = pinchDist(p) || 1;
         const r = svg.getBoundingClientRect();
         const vb = (svg.getAttribute('data-base-vb') || '0 0 720 600').split(/\s+/).map(Number);
         const sx = ((p[0].x + p[1].x) / 2 - r.left) / Math.max(1, r.width) * (vb[2] || 720);
         const sy = ((p[0].y + p[1].y) / 2 - r.top) / Math.max(1, r.height) * (vb[3] || 600);
         const ax = pinchWin0.x0 + ((sx - pr.x) / pr.w) * (pinchWin0.x1 - pinchWin0.x0);
         const ay = pinchWin0.y0 + (1 - (sy - pr.y) / pr.h) * (pinchWin0.y1 - pinchWin0.y0);
-        _amZoomWin = _amZoomWindowTo(pinchWin0, full, pinchK0 * (d / pinchD0), ax, ay);
+        _amZoomWin = _amZoomWindowByFactor(pinchWin0, full, d / pinchD0, ax, ay, pinchAxis);
         _amScheduleZoomRender();
         return;
       }
@@ -4668,7 +4756,11 @@ _AM_JS = r"""
       if (panStart.moved) {
         _amPanMovedAt = Date.now();
         const spanX = panStart.win.x1 - panStart.win.x0, spanY = panStart.win.y1 - panStart.win.y0;
-        _amZoomWin = _amPanWindow(panStart.win, full, -(dxSvg / pr.w) * spanX, (dySvg / pr.h) * spanY);
+        // A drag that STARTED on an axis band pans that axis only; a
+        // drag in the plot pans both, as before.
+        let pdx = -(dxSvg / pr.w) * spanX, pdy = (dySvg / pr.h) * spanY;
+        if (panStart.axis === 'x') pdy = 0; else if (panStart.axis === 'y') pdx = 0;
+        _amZoomWin = _amPanWindow(panStart.win, full, pdx, pdy);
         _amScheduleZoomRender();
       }
     });

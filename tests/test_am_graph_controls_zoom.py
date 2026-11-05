@@ -22,6 +22,23 @@ Root causes pinned here:
    zoom"), so zoom is now a data-domain window: the scatter re-renders
    with narrowed axes, ticks rescale to finer steps, fonts and dot radii
    stay at base size, and exports stay full-frame.
+
+Kaedon's report (2026-11-04, phone screenshot): opening Settings in the
+graph modal made it "weird": the card is a flex column capped at 92vh,
+the controls were a shrinkable flex item whose wrapped content does not
+shrink with it, so the bottom action rows spilled out of the controls
+box and the plot wrap painted over them (Light / X vals / Quadrants
+half-buried; Download / Copy link covered and untappable). The controls
+now scroll inside the rail (flex:1 1 auto; min-height:0; overflow-y:auto,
+the same properties the desktop rail already used) and the header /
+Settings toggle are flex:0 0 auto. Same report: she sometimes wants to
+zoom only the X value. First built as a Both / X / Y segmented control;
+she rejected that ("there's gotta be a better way, like pinching on the
+axis?"), so single-axis zoom is a gesture instead: a pinch starting on
+an axis band zooms that axis only (wheel over an axis band likewise,
+and a drag starting on an axis pans that axis only), the inactive axis
+keeps its current window, and the zoom pill reports the window's shape
+("X 210%", "Y 150%", or a plain percent for an even both-axes zoom).
 """
 import json
 import re
@@ -412,3 +429,97 @@ def test_axis_zoom_rescales_ticks_not_type_or_dots():
     # A point outside the window loses its label (its name survives only in
     # the clipped dot's data-info), while the full render labels it.
     assert res["outFull"] >= 2 and res["outWin"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 4. Settings open on mobile: controls scroll, never spill under the plot
+# ---------------------------------------------------------------------------
+
+def test_graph_controls_scroll_instead_of_spilling():
+    css = _style(_html())
+    # The first .am-graph-controls rule is the base (all-viewport) one.
+    base = css.split(".am-graph-controls {", 1)[1].split("}", 1)[0]
+    assert "flex:1 1 auto" in base and "min-height:0" in base
+    assert "overflow-y:auto" in base, (
+        "a shrinkable controls box without internal scrolling spills its "
+        "wrapped rows under the plot wrap, which paints over them")
+    # Header and the mobile Settings toggle are pinned; only the controls
+    # and the plot flex.
+    assert ".am-graph-card .am-legend-head { flex:0 0 auto; }" in css
+    toggle = css.split(".am-graph-ctrl-toggle {", 1)[1].split("}", 1)[0]
+    assert "flex:0 0 auto" in toggle
+    rail = css.split(".am-graph-rail {", 1)[1].split("}", 1)[0]
+    assert "min-height:0" in rail
+
+
+# ---------------------------------------------------------------------------
+# 5. Single-axis zoom (Both / X / Y)
+# ---------------------------------------------------------------------------
+
+def test_single_axis_zoom_is_a_gesture_not_a_setting():
+    html = _html()
+    # The rejected segmented control stays out of the View row.
+    assert "amGraphZoomAxis" not in html
+    assert "amSetGraphZoomAxis" not in _AM_JS
+    # Axis bands are hit-tested per gesture from the stamped plot rect.
+    assert "function _amAxisAt(svg, clientX, clientY)" in _AM_JS
+    assert "if (sy > pr.y + pr.h) return 'x';" in _AM_JS
+    assert "if (sx < pr.x) return 'y';" in _AM_JS
+    # Pinch: both fingers must start in the same axis band, and the pinch
+    # composes by factor on that axis only.
+    assert "pinchAxis = (a0 && a0 === a1) ? a0 : 'both';" in _AM_JS
+    assert "_amZoomWindowByFactor(pinchWin0, full, d / pinchD0, ax, ay, pinchAxis)" in _AM_JS
+    # Wheel over an axis band zooms that axis; a drag that starts on an
+    # axis band pans that axis only.
+    assert "_amAxisAt(svg, e.clientX, e.clientY) || 'both'" in _AM_JS
+    assert "if (panStart.axis === 'x') pdy = 0; else if (panStart.axis === 'y') pdx = 0;" in _AM_JS
+    # The pill names a single-axis window's axis.
+    assert "txt = 'X ' + txt;" in _AM_JS and "txt = 'Y ' +" in _AM_JS
+
+
+def test_single_axis_zoom_window_math():
+    script = (
+        _NODE_PREAMBLE.replace("let _amZoomWin = null;\n", "") + _zoom_js()
+        + "\nconst full = { x0: -1, y0: 3, x1: 3, y1: 7 };"
+        + "\nconst wx = _amZoomWindowTo(full, full, 2, 1, 5, 'x');"
+        + "\nconst wy = _amZoomWindowTo(full, full, 2, 1, 5, 'y');"
+        + "\nconst wxOut = _amZoomWindowTo(wx, full, 1, 1, 5, 'x');"
+        + "\nconst wb = _amZoomWindowTo(full, full, 2, 1, 5);"
+        + "\nconst wbXOut = _amZoomWindowTo(wb, full, 1, 1, 5, 'x');"
+        + "\nconst rnd = function(w) { if (!w) return null; const o = {};"
+        + " for (const k in w) o[k] = Math.round(w[k] * 10000) / 10000; return o; };"
+        + "\nconsole.log(JSON.stringify({ wx: rnd(wx), wy: rnd(wy),"
+        + " wxOut: wxOut, wbXOut: rnd(wbXOut) }));"
+    )
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    res = json.loads(out.stdout.strip().splitlines()[-1])
+    # X-only: X span halves around the anchor, Y stays the full domain.
+    assert res["wx"] == {"x0": 0, "x1": 2, "y0": 3, "y1": 7}
+    # Y-only: mirror image.
+    assert res["wy"] == {"x0": -1, "x1": 3, "y0": 4, "y1": 6}
+    # Zooming X back out to 1 from an X-only window is the full graph.
+    assert res["wxOut"] is None
+    # Zooming X out of a BOTH-axes window keeps the Y window narrowed:
+    # the result is a Y-only window, not a snap back to full.
+    assert res["wbXOut"] == {"x0": -1, "x1": 3, "y0": 4, "y1": 6}
+
+
+def test_axis_pinch_factor_composition():
+    # Gestures compose by factor on their own axis: an X pinch followed
+    # by a Y pinch narrows both axes independently, and an X pinch-out
+    # leaves the Y window exactly where the Y pinch put it.
+    script = (
+        _NODE_PREAMBLE.replace("let _amZoomWin = null;\n", "") + _zoom_js()
+        + "\nconst full = { x0: -1, y0: 3, x1: 3, y1: 7 };"
+        + "\nconst px = _amZoomWindowByFactor(full, full, 2, 1, 5, 'x');"
+        + "\nconst pxy = _amZoomWindowByFactor(px, full, 2, 1, 5, 'y');"
+        + "\nconst back = _amZoomWindowByFactor(pxy, full, 0.5, 1, 5, 'x');"
+        + "\nconst rnd = function(w) { if (!w) return null; const o = {};"
+        + " for (const k in w) o[k] = Math.round(w[k] * 10000) / 10000; return o; };"
+        + "\nconsole.log(JSON.stringify({ px: rnd(px), pxy: rnd(pxy), back: rnd(back) }));"
+    )
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    res = json.loads(out.stdout.strip().splitlines()[-1])
+    assert res["px"] == {"x0": 0, "x1": 2, "y0": 3, "y1": 7}
+    assert res["pxy"] == {"x0": 0, "x1": 2, "y0": 4, "y1": 6}
+    assert res["back"] == {"x0": -1, "x1": 3, "y0": 4, "y1": 6}
