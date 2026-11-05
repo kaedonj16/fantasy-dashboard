@@ -1786,6 +1786,111 @@ def test_get_rosters_carries_standings_record_into_settings(mock_get):
     assert tua["fpts"] == 983 and tua["fpts_decimal"] == 25
 
 
+def _division_standings():
+    """Standings payload with two named divisions (92916 shape)."""
+    def team(tid, name, wins):
+        return {
+            "id": tid, "name": name,
+            "recordOverall": {"wins": wins, "losses": 8 - wins},
+            "pointsFor": {"value": 900.0}, "pointsAgainst": {"value": 800.0},
+            "waiverPosition": 1,
+        }
+
+    return {
+        "league": {"id": 92916, "name": "All American All Star League",
+                   "size": 4},
+        "season": 2026,
+        "divisions": [
+            {"name": "East", "teams": [team(1, "Owls", 6), team(2, "Bears", 4)]},
+            {"name": "West", "teams": [team(3, "Foxes", 5), team(4, "Wolves", 3)]},
+        ],
+    }
+
+
+def test_get_rosters_stamps_divisions_from_standings(monkeypatch):
+    # Division play lives only in the standings divisions[] grouping;
+    # rosters must carry it or the standings page renders flat.
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *args, **kwargs):
+        if method == "FetchLeagueRosters":
+            return {"rosters": [
+                {"team": {"id": tid}, "players": []} for tid in (1, 2, 3, 4)
+            ]}
+        if method == "FetchLeagueStandings":
+            return _division_standings()
+        if method == "FetchRoster":
+            return {"groups": []}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {})
+    monkeypatch.setattr(provider, "_build_name_index", lambda *a, **k: {})
+    rosters = {r["roster_id"]: r for r in provider.get_rosters("92916", 2026)}
+    assert rosters[1]["settings"]["division"] == 1
+    assert rosters[2]["settings"]["division"] == 1
+    assert rosters[3]["settings"]["division"] == 2
+    assert rosters[4]["settings"]["division"] == 2
+    assert rosters[1]["metadata"]["division_name"] == "East"
+    assert rosters[4]["metadata"]["division_name"] == "West"
+
+
+def test_get_league_exposes_division_count_and_names(monkeypatch):
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *args, **kwargs):
+        if method == "FetchLeagueRules":
+            return {"rosterPositions": []}
+        return _division_standings()
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    league = provider.get_league("92916", 2026)
+    assert league["settings"]["divisions"] == 2
+    assert league["metadata"]["provider"] == "fleaflicker"
+    assert league["metadata"]["division_1"] == "East"
+    assert league["metadata"]["division_2"] == "West"
+
+
+def test_flat_standings_stay_division_free(monkeypatch):
+    # A single unnamed bucket is NOT division play (every existing
+    # Fleaflicker fixture has this shape): no settings/metadata keys.
+    provider = FleaflickerProvider()
+    flat = {
+        "league": {"id": 14153, "name": "Dynasty", "size": 2},
+        "season": 2026,
+        "divisions": [{"teams": [
+            {"id": 1, "name": "Owls",
+             "recordOverall": {"wins": 5, "losses": 3},
+             "pointsFor": {"value": 900.0}, "pointsAgainst": {"value": 800.0}},
+            {"id": 2, "name": "Bears",
+             "recordOverall": {"wins": 4, "losses": 4},
+             "pointsFor": {"value": 850.0}, "pointsAgainst": {"value": 810.0}},
+        ]}],
+    }
+
+    def fake_call(method, *args, **kwargs):
+        if method == "FetchLeagueRules":
+            return {"rosterPositions": []}
+        if method == "FetchLeagueRosters":
+            return {"rosters": [
+                {"team": {"id": 1}, "players": []},
+                {"team": {"id": 2}, "players": []},
+            ]}
+        if method == "FetchRoster":
+            return {"groups": []}
+        return flat
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {})
+    monkeypatch.setattr(provider, "_build_name_index", lambda *a, **k: {})
+    league = provider.get_league("14153", 2026)
+    assert "divisions" not in league["settings"]
+    assert "division_1" not in league["metadata"]
+    for roster in provider.get_rosters("14153", 2026):
+        assert "division" not in roster["settings"]
+        assert "division_name" not in roster["metadata"]
+
+
 def test_boxscore_diminutive_starter_resolves_instead_of_blank_slot(monkeypatch):
     """Week 9, league 92916: Spartyhater's RB2 rendered as a blank 0.0 row
     because Fleaflicker's "Kenny Gainwell" never matched the index's

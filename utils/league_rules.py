@@ -555,6 +555,26 @@ def resolve_league_rules(platform, league_id, season, provider_settings=None,
     season = int(season)
     settings = provider_settings or {}
     stored = _fetch_record(platform, league_id, season)
+    # Poison guard: a DERIVED field at league size is not a playoff
+    # field. Hosts that schedule consolation games in playoff weeks
+    # (Fleaflicker) made the scoreboard-count deriver count every
+    # roster (92916 stored 12 of 12 for a true 8-team field), and the
+    # stored record then stamped 100% odds / all-clinched over the
+    # whole league. Treat such a record as absent so normal resolution
+    # re-runs (deriver, then default_unverified, whose store overwrites
+    # the bad row). User-confirmed and feed records are untouched: a
+    # confirmed full-league field is the user's call, not poison.
+    total = _as_int(total_rosters)
+    if stored and stored.get("source") == SOURCE_DERIVED \
+            and total is not None and total >= 2:
+        stored_teams = _as_int(stored.get("playoff_teams"))
+        if stored_teams is not None and stored_teams >= total:
+            logger.warning(
+                "[league-rules] discarding derived record with "
+                "playoff_teams=%s >= total_rosters=%s for %s/%s/%s",
+                stored_teams, total, platform, league_id, season,
+            )
+            stored = None
     if stored and stored["source"] == SOURCE_USER_CONFIRMED:
         return stored
 
@@ -615,6 +635,18 @@ def resolve_league_rules(platform, league_id, season, provider_settings=None,
         except Exception:
             logger.debug("[league-rules] deriver failed", exc_info=True)
             derived = None
+        if derived and total is not None and total >= 2:
+            # Same poison guard for a fresh derivation: a derived
+            # field at league size (consolation games counted as
+            # playoff matches) must never be merged or stored.
+            derived_teams = _as_int(derived.get("playoff_teams"))
+            if derived_teams is not None and derived_teams >= total:
+                logger.warning(
+                    "[league-rules] dropping derived playoff_teams=%s "
+                    ">= total_rosters=%s for %s/%s/%s",
+                    derived_teams, total, platform, league_id, season,
+                )
+                derived = None
         if derived:
             base = stored or _blank_record(platform, league_id, season)
             if stored is None:

@@ -15468,11 +15468,31 @@ def _prior_season_rules_deriver(platform, league_id, season):
         }
         if len(teams) < 2:
             return None
-        out = {"playoff_teams": len(teams)}
+        # Fail closed when the count covers the whole league. Some hosts
+        # (Fleaflicker) schedule consolation games in playoff weeks, and
+        # the bracket derivation turns every playoff-week scoreboard game
+        # into a winners match, so a count at league size is the
+        # consolation field, not the playoff field (92916 derived 12 of
+        # 12 for a true 8-team field). The week-start scan below is
+        # polluted the same way (every roster plays the first playoff
+        # week), so derive NOTHING in that case: the record stays
+        # default_unverified and the confirmation control is the path
+        # to truth.
+        total = 0
         try:
             league = get_league(platform, league_id, prev) or {}
             total = int(league.get("total_rosters") or 0)
-            if total >= 2:
+        except Exception:
+            logger.debug(
+                "[league-rules] prior-season league lookup failed",
+                exc_info=True,
+            )
+            total = 0
+        if total >= 2 and len(teams) >= total:
+            return None
+        out = {"playoff_teams": len(teams)}
+        if total >= 2:
+            try:
                 last_full = None
                 for wk in range(12, 18):
                     rows = get_matchups(platform, league_id, wk, prev) or []
@@ -15484,11 +15504,11 @@ def _prior_season_rules_deriver(platform, league_id, season):
                         last_full = wk
                 if last_full:
                     out["playoff_week_start"] = last_full + 1
-        except Exception:
-            logger.debug(
-                "[league-rules] prior-season week-start derivation failed",
-                exc_info=True,
-            )
+            except Exception:
+                logger.debug(
+                    "[league-rules] prior-season week-start derivation failed",
+                    exc_info=True,
+                )
         return out
     except Exception:
         logger.debug(
