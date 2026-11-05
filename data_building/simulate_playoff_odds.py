@@ -236,9 +236,9 @@ def _division_adjusted_seed_key(rank_key, teams, division_map):
     """Seed key that mirrors ``utils.standings.playoff_seed_order``.
 
     With 2+ divisions (and a division for every team), each division's best
-    team by the plain wins→PF key is seeded ahead of all wild cards —
-    division winners first, sorted among themselves by wins→PF, then wild
-    cards by wins→PF. Vectorised over sims: exactly one winner per division
+    team by the seed key (wins, then division win%, then PF) is seeded
+    ahead of all wild cards — division winners first, sorted among
+    themselves by that key, then wild cards by that key. Vectorised over sims: exactly one winner per division
     per sim row gets the bonus (argmax takes the first maximum, matching
     the standings helper's stable tie-break). Non-division leagues and
     partially-mapped leagues return the plain key unchanged.
@@ -264,6 +264,49 @@ def _division_adjusted_seed_key(rank_key, teams, division_map):
         best = np.argmax(rank_key[:, members], axis=1)
         is_winner[rows, [members[int(b)] for b in best]] = True
     return rank_key + is_winner.astype(np.float64) * _DIVISION_SEED_BONUS
+
+
+def _div_record_value(team: dict) -> float:
+    """Standings value (wins + 0.5 per tie) of a team's CURRENT division
+    record, from the optional ``div_record`` (w, l, t) the ctx entry
+    points attach. Absent means no division games on the books: 0."""
+    rec = team.get("div_record") or (0, 0, 0)
+    try:
+        w, _l, t = (float(rec[0]), float(rec[1]), float(rec[2]))
+    except (TypeError, ValueError, IndexError):
+        return 0.0
+    return w + 0.5 * t
+
+
+def _div_record_games(team: dict) -> float:
+    """Games in a team's current division record (0 when unattached)."""
+    rec = team.get("div_record") or (0, 0, 0)
+    try:
+        return float(rec[0]) + float(rec[1]) + float(rec[2])
+    except (TypeError, ValueError, IndexError):
+        return 0.0
+
+
+def _attach_division_records(teams: list, ctx: dict, division_map) -> None:
+    """Attach each team's current division record (``div_record``) from
+    the league's finalized weekly rows, using the same
+    ``utils.standings.division_records`` the standings surfaces use, so
+    the sim's tiebreak starts from the real on-the-books record. Fail
+    soft: any problem leaves teams unattached and the sim falls back to
+    counting only the division games it simulates itself."""
+    if not teams or not division_map:
+        return
+    try:
+        from utils.standings import division_records
+        records = division_records(ctx.get("df_weekly"), division_map)
+    except Exception:
+        return
+    for t in teams:
+        rec = records.get(t.get("roster_id"))
+        if rec is None and t.get("roster_id") is not None:
+            rec = records.get(str(t.get("roster_id")))
+        if rec is not None:
+            t["div_record"] = rec
 
 
 # ---------------------------------------------------------------------------
@@ -469,6 +512,7 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
     strength_weights_by_rid = _strength_weights_for_teams(teams)
     if not has_games:
         completed_weeks = []
+    _attach_division_records(teams, ctx, division_map)
     _log_schedule_progress(teams, playoff_week_start, completed_weeks, remaining_weeks)
 
     matchups = _resolve_schedule(
@@ -938,6 +982,7 @@ def simulate_playoff_odds(
     teams = _build_teams(team_stats, roster_map)
     if not teams:
         return []
+    _attach_division_records(teams, ctx, division_map)
 
     # ── Case 3: in-season projection ─────────────────────────────────────────
     completed_weeks, remaining_weeks = _regular_season_progress(
@@ -1843,6 +1888,7 @@ def _actual_results(teams: list[dict], playoff_teams: int,
     # wins here dropped ties (and ignored divisions) on the completed path.
     seed_rows = [{
         "wins": t["wins"], "ties": t.get("ties", 0), "pf": t["pf"],
+        "div_record": t.get("div_record"),
         "division": (division_map or {}).get(t.get("roster_id"), t.get("division") or 0),
     } for t in teams]
     try:
@@ -2367,10 +2413,13 @@ def _pack_mc_results(
     playoff_teams: int,
     n_sims: int,
     division_map: Optional[dict] = None,
+    div_pct: "Optional[np.ndarray]" = None,
 ) -> list[dict]:
     n = len(teams)
     n_byes = _n_byes(playoff_teams)
-    # Rank by wins desc, pf desc (wins dominate). Compute in float64: wins*1e6
+    # Rank the way real standings do: overall win value first, division
+    # win% breaks overall ties, then PF — the same chain as
+    # utils.standings.playoff_seed_order. Compute in float64: wins*1e6
     # reaches ~1.3e7 in a full season, past float32's exact-integer range
     # (2^24 ≈ 1.68e7, ULP ≥ 1.0 above ~8.4e6), which silently collapses the PF
     # tiebreaker for teams within ~1 pt — flipping seeding in tight bubble races.
@@ -2378,7 +2427,15 @@ def _pack_mc_results(
     # 0.5 by _standings_from_score_map). In division leagues the seed key
     # additionally lifts each division winner ahead of the wild cards, the
     # way the standings surface seeds (utils.standings.playoff_seed_order).
-    rank_key  = wins.astype(np.float64) * 1e6 + pf.astype(np.float64)
+    if div_pct is not None:
+        # Bands: a half-win step is 5e5, division win% spans 1e3, and PF
+        # scaled by 1e-3 tops out around 3, so neither lower band can ever
+        # leak into the one above it.
+        rank_key = (wins.astype(np.float64) * 1e6
+                    + np.asarray(div_pct, dtype=np.float64) * 1e3
+                    + pf.astype(np.float64) * 1e-3)
+    else:
+        rank_key  = wins.astype(np.float64) * 1e6 + pf.astype(np.float64)
     seed_key  = _division_adjusted_seed_key(rank_key, teams, division_map)
     team_rank = np.argsort(np.argsort(-seed_key, axis=1), axis=1)  # 0 = best
 
@@ -2506,6 +2563,25 @@ def _standings_from_score_map(
     ).astype(np.float32)
     pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
     ties_gained = np.zeros((n_sims, n), dtype=np.float32)
+    # Division record per sim, for the real-standings tiebreak: seeded
+    # with each team's on-the-books division record (attached div_record,
+    # when the caller supplied one), then every simulated game against a
+    # same-division opponent adds to it. div_games never varies per sim:
+    # it is the current count plus the remaining division games scheduled.
+    div_value = np.tile(
+        [_div_record_value(t) for t in teams], (n_sims, 1),
+    ).astype(np.float32)
+    div_games = np.array(
+        [_div_record_games(t) for t in teams], dtype=np.float32,
+    )
+
+    def _div_of(rid):
+        if not division_map:
+            return None
+        d = division_map.get(rid)
+        if d is None and rid is not None:
+            d = division_map.get(str(rid))
+        return d or None
 
     def _score(week: int, rid: int) -> "np.ndarray":
         if overlays:
@@ -2532,6 +2608,15 @@ def _standings_from_score_map(
             ties_gained[:, ib] += tie_f
             pf[:, ia] += sa
             pf[:, ib] += sb
+            da, db = _div_of(rid_a), _div_of(rid_b)
+            if da is not None and da == db:
+                # Same-division game: it also moves both division
+                # records. (The median game below never does — it is
+                # not a division game.)
+                div_value[:, ia] += a_wins.astype(np.float32) + 0.5 * tie_f
+                div_value[:, ib] += b_wins.astype(np.float32) + 0.5 * tie_f
+                div_games[ia] += 1.0
+                div_games[ib] += 1.0
 
     if median_match:
         # League-median game: vectorised per week across sims. The median is
@@ -2556,9 +2641,16 @@ def _standings_from_score_map(
                 wins[:, i] += won.astype(np.float32) + 0.5 * tie_f
                 ties_gained[:, i] += tie_f
 
+    div_pct = None
+    if division_map:
+        # A team with no division games yet reads 0.0, matching
+        # utils.standings.division_win_pct.
+        div_pct = np.where(
+            div_games > 0, div_value / np.maximum(div_games, 1.0), 0.0,
+        )
     return _pack_mc_results(
         teams, wins, pf, ties_gained, games_per_team, playoff_teams, n_sims,
-        division_map=division_map,
+        division_map=division_map, div_pct=div_pct,
     )
 
 

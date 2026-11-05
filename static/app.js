@@ -7204,6 +7204,28 @@ function initStandingsSort(root = document) {
   const getVal = (cell, idx) => {
     const t = (cell?.textContent || "").trim();
     if (!NUMERIC_COLS.has(idx)) return t.toLowerCase();
+    if (idx === 3) {
+      // Record cell: "W-L[-T]" plus a "(DW-DL[-DT])" division record when
+      // the league uses divisions. Standings sort the way real standings
+      // do (Kaedon 2026-11-05): overall win value first, division win%
+      // breaks overall ties, then PF (the sort's secondary key). The key
+      // is therefore a composite: winVal * 1000 + divPct. A plain
+      // parseFloat here reads only the overall wins and silently threw
+      // the division record away, undoing the server's order on load.
+      const m = t.match(/^(\d+)-(\d+)(?:-(\d+))?(?:\s*\((\d+)-(\d+)(?:-(\d+))?\))?/);
+      if (m) {
+        const winVal = parseInt(m[1], 10) + 0.5 * parseInt(m[3] || "0", 10);
+        if (m[4] !== undefined) {
+          const dw = parseInt(m[4], 10);
+          const dl = parseInt(m[5], 10);
+          const dt = parseInt(m[6] || "0", 10);
+          const games = dw + dl + dt;
+          const divPct = games > 0 ? (dw + 0.5 * dt) / games : 0;
+          return winVal * 1000 + divPct;
+        }
+        return winVal;
+      }
+    }
     const n = parseFloat(t.replace(/,/g, ""));
     return Number.isFinite(n) ? n : -Infinity;
   };

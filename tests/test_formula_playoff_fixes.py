@@ -128,6 +128,77 @@ def test_actual_results_seed_division_winners_first():
     assert by_id[4]["playoff_pct"] == 0.0
 
 
+# ── division record tiebreak (real standings, Kaedon 2026-11-05) ────────────
+# The sim now ranks the way the standings page seeds: overall wins, then
+# division win%, then PF. It used to jump straight from wins to PF, so a
+# wild-card team tied on wins with the better division record but fewer
+# points was seeded behind the team the standings page puts it ahead of.
+
+def _with_div_rec(team, rec):
+    return dict(team, div_record=rec)
+
+
+def test_sim_division_record_breaks_wins_tie_before_pf():
+    teams = [
+        _with_div_rec(_team(1, "A", 8, 0, 0, 900.0), (2, 0, 0)),
+        _with_div_rec(_team(2, "C", 5, 3, 0, 800.0), (0, 2, 0)),
+        _with_div_rec(_team(3, "B", 8, 0, 0, 900.0), (2, 0, 0)),
+        _with_div_rec(_team(4, "D", 5, 3, 0, 700.0), (2, 0, 0)),
+    ]
+    by_id = {r["roster_id"]: r
+             for r in _no_games(teams, 3, division_map=_DIVISIONS)}
+    # Winners A and B are in. The last spot is C (5-3, PF 800, div 0-2)
+    # vs D (5-3, PF 700, div 2-0): D's division record breaks the tie
+    # before PF is ever consulted.
+    assert by_id[4]["playoff_pct"] == 100.0
+    assert by_id[2]["playoff_pct"] == 0.0
+
+
+def test_sim_division_games_accumulate_into_the_tiebreak():
+    # A (div 1) and B (div 2) enter Week 9 tied at 4-4 / 500 PF with
+    # identical 1-1 division records. A wins its division game (100-90);
+    # B wins cross-division while outscoring A (130-90). Final: both 5-4,
+    # B ahead on PF 630-600, but A's division record improves to 2-1
+    # while B's stays 1-1, so A takes the 1 seed.
+    divisions = {1: 1, 2: 1, 5: 1, 3: 2, 4: 2, 6: 2}
+    teams = [
+        _with_div_rec(_team(1, "A", 4, 4, 0, 500.0), (1, 1, 0)),
+        _with_div_rec(_team(2, "C", 0, 8, 0, 300.0), (0, 2, 0)),
+        _with_div_rec(_team(5, "E", 0, 8, 0, 300.0), (0, 2, 0)),
+        _with_div_rec(_team(3, "B", 4, 4, 0, 500.0), (1, 1, 0)),
+        _with_div_rec(_team(4, "D", 0, 8, 0, 300.0), (0, 2, 0)),
+        _with_div_rec(_team(6, "F", 0, 8, 0, 300.0), (0, 2, 0)),
+    ]
+    n_sims = 50
+    scores = {9: {1: np.full(n_sims, 100.0), 2: np.full(n_sims, 90.0),
+                  3: np.full(n_sims, 130.0), 5: np.full(n_sims, 90.0),
+                  4: np.full(n_sims, 50.0), 6: np.full(n_sims, 40.0)}}
+    rows = _standings_from_score_map(
+        teams, {9: [(1, 2), (3, 5), (4, 6)]}, scores, 2, n_sims,
+        np.zeros(6, dtype=np.float32), division_map=divisions,
+    )
+    by_id = {r["roster_id"]: r for r in rows}
+    # A finishes rank 0 in every sim; the packer caps a non-clinched
+    # percentage at 99.9, so 99.9 here means "always".
+    assert by_id[1]["first_seed_pct"] == 99.9
+    assert by_id[3]["first_seed_pct"] == 0.0
+
+
+def test_actual_results_use_division_record_tiebreak():
+    teams = [
+        _with_div_rec(_team(1, "A", 5, 3, 0, 500.0), (1, 0, 0)),
+        _with_div_rec(_team(2, "B", 5, 3, 0, 600.0), (0, 1, 0)),
+        _team(3, "E", 4, 4, 0, 400.0),
+    ]
+    by_id = {r["roster_id"]: r
+             for r in _actual_results(teams, 2, division_map={1: 1, 2: 1, 3: 2})}
+    # Division 1's winner is A: tied on wins with B, ahead on division
+    # record despite 100 fewer PF. E takes the other winner's seed.
+    assert by_id[1]["playoff_pct"] == 100.0
+    assert by_id[3]["playoff_pct"] == 100.0
+    assert by_id[2]["playoff_pct"] == 0.0
+
+
 # ── context-builder denominators ─────────────────────────────────────────────
 
 def test_record_win_pct_counts_ties_at_half():
