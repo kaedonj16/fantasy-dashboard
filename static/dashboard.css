@@ -50273,9 +50273,54 @@ a, button, [role="button"], [role="tab"], summary, label,
 .wv-cx-row-wrap.wv-cx-expanded .wv-cx-chev { transform: rotate(90deg); }
 .wv-cx-detail { max-height: 0; overflow: hidden; transition: max-height 0.25s ease; }
 .wv-cx-evidence {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 12px;
+  display: flex; flex-direction: column; gap: 10px;
   padding: 4px 14px 8px 14px;
 }
+/* Start/Sit rework: matchup and demotion are dot + plain text, never filled
+   pills. The verdict badge (.wv-cx-badge) is the only pill on the row; the
+   filled .wv-cx-chip above stays for the waiver sections that share it. */
+.wv-ss-mu { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; white-space: nowrap; }
+.wv-ss-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--text-subtle); }
+.wv-ss-mu.mt1 .wv-ss-dot { background: #22c55e; }
+.wv-ss-mu.mt2 .wv-ss-dot { background: #84cc16; }
+.wv-ss-mu.mt3 .wv-ss-dot { background: #f59e0b; }
+.wv-ss-mu.mt4 .wv-ss-dot { background: #ef4444; }
+.wv-ss-demote { display: inline-flex; align-items: center; gap: 5px; color: var(--loss); font-weight: 600; }
+.wv-ss-demote .wv-ss-dot { background: var(--loss); }
+/* Grouped evidence sections (Why this call / Range / Game context). */
+.wv-ev-sec + .wv-ev-sec { border-top: 1px solid var(--grid); padding-top: 10px; }
+.wv-ev-h { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 6px; }
+.wv-ev-sentence { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.wv-ev-factor { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.wv-ev-flabel { flex: 0 0 52px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.wv-ev-track { position: relative; flex: 1; height: 6px; border-radius: var(--radius-sm); background: var(--grid); }
+.wv-ev-track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--text-subtle); opacity: 0.5; }
+.wv-ev-fill { position: absolute; top: 0; height: 100%; border-radius: var(--radius-sm); }
+.wv-ev-fill.pos { background: var(--win); }
+.wv-ev-fill.neg { background: var(--loss); }
+.wv-ev-fval { flex: 0 0 38px; text-align: right; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
+.wv-ev-profile { font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.wv-ev-ctx-row { display: flex; gap: 12px; padding: 5px 0; font-size: 13px; }
+.wv-ev-ctx-row + .wv-ev-ctx-row { border-top: 1px solid var(--grid); }
+.wv-ev-k { flex: 0 0 118px; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: var(--text-subtle); padding-top: 2px; }
+.wv-ev-v { flex: 1; min-width: 0; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.wv-ev-v .wv-abs { display: block; font-weight: 600; }
+.wv-ev-v .wv-abs + .wv-abs { margin-top: 3px; }
+.wv-ev-v .wv-abs b { font-weight: 800; }
+.wv-ev-s { display: block; font-weight: 400; color: var(--text-muted); font-size: 11px; }
+/* Floor-to-ceiling range bar with reserved label lines (Proj above, L4
+   below) shared by the detail Range and the compare Range. */
+.wv-rg-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.wv-rg-name { font-weight: 800; }
+.wv-rg-lbl-line { position: relative; height: 16px; }
+.wv-rg-proj-lbl, .wv-rg-l4-lbl { position: absolute; transform: translateX(-50%); font-size: 11px; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wv-rg-proj-lbl { color: var(--text); }
+.wv-rg-l4-lbl { color: var(--warning); }
+.wv-rg-bar { position: relative; height: 8px; border-radius: var(--radius-sm); background: var(--grid); }
+.wv-rg-fill { position: absolute; top: 0; height: 100%; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent) 32%, transparent); }
+.wv-rg-proj-dot { position: absolute; top: 50%; width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: 2px solid var(--card); transform: translate(-50%, -50%); }
+.wv-rg-l4-dot { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: var(--warning); transform: translate(-50%, -50%); }
+.wv-rg-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .wv-cx-ev { font-size: 13px; color: var(--text); min-width: 0; }
 .wv-cx-ev .k { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 2px; }
 .wv-cx-ev .v { font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -50295,6 +50340,11 @@ a, button, [role="button"], [role="tab"], summary, label,
   padding: 7px 12px; cursor: pointer;
 }
 .wv-cx-actions button:hover { border-color: var(--text); }
+.wv-cx-actions button.wv-cx-act-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+.wv-cx-actions button.wv-cx-act-primary:hover { border-color: var(--accent); }
+.wv-cx-actions button.wv-cx-act-quiet { background: none; border-color: transparent; color: var(--text-muted); }
+.wv-cx-actions button.wv-cx-act-quiet:hover { border-color: var(--border); color: var(--text); }
+.wv-cx-actions button.wv-cx-act-quiet.selected { color: var(--accent); font-weight: 800; }
 .wv-cx-link {
   font: inherit; font-size: 13px; font-weight: 600; color: var(--accent);
   padding: 7px 4px; text-decoration: none; align-self: center;
@@ -50312,7 +50362,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* ── Verdict-first compare ─────────────────────────────────────────────── */
 .wv-cmp2-verdict {
   background: var(--accent); color: var(--on-accent); border-radius: var(--radius);
-  padding: 14px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+  padding: 8px 12px; display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
 }
 .wv-cmp2-pill {
   flex-shrink: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.8px;
@@ -50322,25 +50372,35 @@ a, button, [role="button"], [role="tab"], summary, label,
 .wv-cmp2-verdict.toss .wv-cmp2-pill { background: color-mix(in srgb, var(--warning) 22%, transparent); color: var(--warning); }
 .wv-cmp2-name { font-size: 15px; font-weight: 800; }
 .wv-cmp2-why { display: block; font-size: 13px; opacity: 0.75; margin-top: 2px; font-weight: 400; }
-.wv-cmp2-heads { display: flex; gap: 10px; margin-bottom: 12px; }
+.wv-cmp2-heads { display: flex; gap: 10px; margin-bottom: 10px; }
 .wv-cmp2-head {
   flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 12px 14px; min-width: 0;
+  padding: 8px 10px; min-width: 0;
 }
 .wv-cmp2-head.winner { border: 1.5px solid color-mix(in srgb, var(--win) 45%, transparent); }
-.wv-cmp2-head .nm { font-size: 15px; font-weight: 800; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wv-cmp2-head .mt { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-.wv-cmp2-head .pj { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; margin-top: 6px; font-variant-numeric: tabular-nums; color: var(--text); }
+.wv-cmp2-head .nm { font-size: 15px; font-weight: 800; color: var(--text); }
+.wv-cmp2-head .mt { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.wv-cmp2-head .pj { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--text); }
+.wv-cmp2-absg { margin-top: 8px; font-size: 12px; color: var(--text); }
+.wv-cmp2-absk { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 2px; }
+.wv-cmp2-absg .wv-abs { display: block; font-weight: 600; }
+.wv-cmp2-absg .wv-abs + .wv-abs { margin-top: 3px; }
+.wv-cmp2-absg .wv-abs b { font-weight: 800; }
 .wv-cmp2-head .pl { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-subtle); }
 .wv-cmp2-vs { align-self: center; flex-shrink: 0; font-size: 11px; font-weight: 800; color: var(--text-subtle); letter-spacing: 1px; }
-.wv-cmp2-factors { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 14px 12px; }
-.wv-cmp2-factor { padding: 10px 0; border-bottom: 1px solid var(--grid); }
+.wv-cmp2-factors { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 12px 6px; }
+.wv-cmp2-factor { padding: 6px 0; border-bottom: 1px solid var(--grid); }
 .wv-cmp2-factor:last-child { border-bottom: none; }
-.wv-cmp2-factor .fl { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 6px; }
+.wv-cmp2-factor .fl { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 4px; }
 .wv-cmp2-bar-row { display: flex; align-items: center; gap: 8px; }
 .wv-cmp2-bar-row .vn { font-size: 13px; font-weight: 800; width: 46px; font-variant-numeric: tabular-nums; color: var(--text); flex-shrink: 0; }
 .wv-cmp2-bar-row .vn.r { text-align: right; }
-.wv-cmp2-track { flex: 1; height: 8px; background: var(--grid); border-radius: var(--radius-sm); overflow: hidden; display: flex; }
+.wv-cmp2-track { flex: 1; height: 5px; background: var(--grid); border-radius: var(--radius-sm); overflow: hidden; display: flex; }
+/* Slim grouped sections inside the compare panel (Range / Game context). */
+.wv-cmp-sec { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-top: 10px; }
+.wv-cmp-sec-h { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 8px; }
+.wv-cmp-sec .wv-cmp { padding: 0; }
+.wv-cmp-range-row + .wv-cmp-range-row { margin-top: 12px; }
 .wv-cmp2-track i { display: block; height: 100%; }
 .wv-cmp2-track .a { background: var(--win); border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .wv-cmp2-track .b { background: var(--text-subtle); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin-left: auto; }
