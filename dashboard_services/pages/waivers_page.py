@@ -40,18 +40,25 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-mode { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 0 0 12px; background: var(--card); }
 .wv-ss-mode button { border: none; background: none; color: var(--text-muted); font-size: 13px; font-weight: 700; padding: 8px 18px; cursor: pointer; }
 .wv-ss-mode button.on { background: var(--accent); color: #fff; }
-.wv-guest-bar { margin: 0 0 12px; }
-.wv-guest-search { position: relative; max-width: 420px; }
-.wv-guest-input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font-size: 13px; }
+.wv-guest-bar { margin: 0 0 12px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.wv-guest-search { position: relative; }
+.wv-guest-ic { position: absolute; left: 13px; top: 24px; transform: translateY(-50%); color: var(--text-subtle); font-size: 14px; pointer-events: none; }
+.wv-guest-input { width: 100%; box-sizing: border-box; height: 48px; padding: 12px 12px 12px 38px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--text); font-size: 14px; }
+.wv-guest-help { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 .wv-guest-results { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 40; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.18); overflow: hidden; }
-.wv-guest-result { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: none; background: none; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
+.wv-guest-result { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: none; background: none; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
 .wv-guest-result:hover { background: var(--input-bg, rgba(127,127,127,.08)); }
-.wv-guest-rpos { font-weight: 800; font-size: 11px; color: var(--text-muted); min-width: 30px; }
-.wv-guest-rteam { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.wv-guest-av { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.wv-guest-rmeta { display: block; font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.wv-guest-rval { margin-left: auto; text-align: right; flex: 0 0 auto; }
+.wv-guest-rank { display: block; font-size: 13px; font-weight: 800; color: var(--text); }
+.wv-guest-rvalue { display: block; font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 .wv-guest-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .wv-guest-chips:empty { margin-top: 0; }
 .wv-guest-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 13px; font-weight: 600; color: var(--text); }
 .wv-guest-chip .wv-guest-owner { font-weight: 500; color: var(--text-muted); }
+.wv-guest-chip .wv-guest-verdict { font-weight: 800; color: var(--win); }
+.wv-guest-chip .wv-guest-verdict.bench { color: var(--text-muted); }
 .wv-guest-chip button { border: none; background: none; color: var(--text-muted); font-size: 15px; line-height: 1; padding: 2px 4px; cursor: pointer; }
 .wv-cx-guest { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; letter-spacing: .04em; vertical-align: 2px; }
 .wv-ss-guest-note { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
@@ -576,10 +583,32 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   margin-bottom: 16px; overflow: hidden;
 }
 .wv-compare-header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 10px 14px; border-bottom: 1px solid var(--border);
   font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
   color: var(--text-muted);
+}
+.wv-cmp-picks { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wv-cmp-pick {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px;
+  padding: 4px 6px 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  background: var(--card); color: var(--text); font-size: 12px; font-weight: 700;
+  text-transform: none; letter-spacing: 0; white-space: nowrap;
+}
+.wv-cmp-pick-x {
+  border: none; background: none; color: var(--text-muted); font-size: 14px; line-height: 1;
+  min-width: 26px; min-height: 26px; padding: 2px; cursor: pointer;
+}
+.wv-cmp-clear {
+  margin-left: auto; min-height: 36px; font-size: 11px; font-weight: 700; padding: 2px 10px;
+  border-radius: 6px; border: 1px solid var(--border); background: transparent;
+  color: var(--text-muted); cursor: pointer; text-transform: none; letter-spacing: 0;
+}
+@media (max-width: 600px) {
+  .wv-cmp-title { order: 1; }
+  .wv-cmp-clear { order: 2; margin-left: auto; }
+  .wv-cmp-picks { order: 3; flex-basis: 100%; }
+  .wv-cmp2-head .nm { white-space: normal; text-overflow: clip; overflow: visible; }
 }
 .wv-compare-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 0;
@@ -759,9 +788,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       </div>
       <div class="wv-guest-bar" id="wvGuestBar">
         <div class="wv-guest-search">
-          <input type="text" id="wvGuestInput" class="wv-guest-input" placeholder="Add any player (free agent or another team)" autocomplete="off" aria-label="Add a guest player">
+          <i class="fa-solid fa-magnifying-glass wv-guest-ic" aria-hidden="true"></i>
+          <input type="text" id="wvGuestInput" class="wv-guest-input" placeholder="Compare a player" autocomplete="off" aria-label="Add a guest player">
           <div id="wvGuestResults" class="wv-guest-results" hidden></div>
         </div>
+        <div class="wv-guest-help">Free agents and other rosters join as Guests and get a verdict.</div>
         <div id="wvGuestChips" class="wv-guest-chips"></div>
       </div>
       <!-- Compare panel (hidden until 2 players selected) -->
@@ -2350,12 +2381,29 @@ function wvRenderGuestChips() {{
   var box = document.getElementById('wvGuestChips');
   if (!box) return;
   if (!wvGuests.length) {{ box.innerHTML = ''; return; }}
+  // Once start-sit data has loaded, the guest's own row carries the real
+  // verdict (start / flex_start / would_start flags), so the chip can say
+  // Would start vs Bench instead of just naming the owner.
+  var verdictByPid = {{}};
+  var positions = (wvStartSitData && wvStartSitData.positions) || {{}};
+  for (var pos in positions) {{
+    (positions[pos] || []).forEach(function(r) {{
+      if (r.guest) verdictByPid[String(r.player_id)] =
+        (r.start || r.flex_start || r.would_start) ? 'start' : 'bench';
+    }});
+  }}
   box.innerHTML = wvGuests.map(function(g) {{
     var label = g.name ? (g.name + (g.pos ? ' · ' + g.pos : '')) : ('Player ' + g.player_id);
     var owner = g.no_slot ? 'No slot in this league'
       : (g.owner_label ? g.owner_label : 'Loading...');
+    var verdict = '';
+    if (g.no_slot) verdict = '';
+    else if (verdictByPid[String(g.player_id)] === 'start')
+      verdict = ' <span class="wv-guest-verdict">Would start</span>';
+    else if (verdictByPid[String(g.player_id)] === 'bench')
+      verdict = ' <span class="wv-guest-verdict bench">Bench</span>';
     return '<span class="wv-guest-chip">' + wvEsc(label)
-      + ' <span class="wv-guest-owner">' + wvEsc(owner) + '</span>'
+      + ' <span class="wv-guest-owner">' + wvEsc(owner) + '</span>' + verdict
       + '<button type="button" aria-label="Remove guest" onclick="wvRemoveGuest(\\'' + wvEsc(g.player_id) + '\\')">&times;</button></span>';
   }}).join('');
 }}
@@ -2463,12 +2511,27 @@ function wvGuestSearch(q) {{
         return;
       }}
       box.innerHTML = players.map(function(p) {{
+        // /api/players returns value + positional rank labels (no weekly
+        // projection or owner: those are league context), so the honest
+        // pre-add signal on the right is rank + model value.
+        var parts = String(p.name || '').trim().split(/\\s+/);
+        var initials = ((parts[0] || '').charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
+        var meta = [p.position, p.team].filter(Boolean).join(' · ');
+        var rank = p.pos_rank_label || '';
+        var val = (p.value > 0) ? ('Value ' + Math.round(p.value)) : '';
+        var right = (rank || val)
+          ? '<span class="wv-guest-rval">'
+            + (rank ? '<span class="wv-guest-rank">' + wvEsc(rank) + '</span>' : '')
+            + (val ? '<span class="wv-guest-rvalue">' + wvEsc(val) + '</span>' : '')
+            + '</span>'
+          : '';
         return '<button type="button" class="wv-guest-result" onmousedown="wvGuestPick(this)" onclick="wvGuestPick(this)"'
           + ' data-pid="' + wvEsc(p.player_id) + '" data-name="' + wvEsc(p.name || '') + '"'
           + ' data-pos="' + wvEsc(p.position || '') + '" data-team="' + wvEsc(p.team || '') + '">'
-          + '<span class="wv-guest-rpos">' + wvEsc(p.position || '') + '</span>'
-          + '<span>' + wvEsc(p.name || '') + '</span>'
-          + '<span class="wv-guest-rteam">' + wvEsc(p.team || '') + '</span></button>';
+          + '<span class="wv-guest-av" aria-hidden="true">' + wvEsc(initials) + '</span>'
+          + '<span><span>' + wvEsc(p.name || '') + '</span>'
+          + '<span class="wv-guest-rmeta">' + wvEsc(meta) + '</span></span>'
+          + right + '</button>';
       }}).join('');
       box.hidden = false;
     }})
@@ -3027,6 +3090,35 @@ function wvIsSelected(id) {{
          (wvCompare[1] && wvCompare[1].player_id === id);
 }}
 
+// Remove one picked player from its compare header chip.
+function wvRemoveCompareSlot(i) {{
+  wvCompare[i] = null;
+  wvRenderCompare();
+  wvRenderStartSit();
+}}
+
+// Absence lines for one compare head card, grouped per side. The player
+// objects handed to wvToggleCompare are the full start-sit rows, so they
+// already carry p.absences; a player without them renders nothing.
+function wvCmpAbsences(p) {{
+  const fmt = (txt) => {{
+    const i = txt.indexOf(' (');
+    if (i < 0) return `<span class="wv-abs"><b>${{txt}}</b></span>`;
+    const nm = txt.slice(0, i);
+    let st = txt.slice(i + 2);
+    if (st.endsWith(')')) st = st.slice(0, -1);
+    st = st.replace(', ', ' · ');
+    return `<span class="wv-abs"><b>${{nm}}</b> <span class="wv-abs-st">${{st}}</span></span>`;
+  }};
+  const grp = (label, list) => {{
+    const lines = (list || []).map(a => a.text).filter(Boolean).map(fmt);
+    return lines.length
+      ? `<div class="wv-cmp2-absg"><span class="wv-cmp2-absk">${{label}}</span>${{lines.join('')}}</div>` : '';
+  }};
+  const abs = p.absences || {{}};
+  return grp('TEAMMATES OUT', abs.teammates) + grp('OPP DEFENSE OUT', abs.opponents);
+}}
+
 // Derive every comparable field for one player (values + a sortable number
 // where a winner makes sense).
 function wvCmpDerive(p) {{
@@ -3050,6 +3142,7 @@ function wvCmpDerive(p) {{
     proj:     p.proj_pts > 0 ? p.proj_pts : null,
     l4:       p.last4_ppg > 0 ? p.last4_ppg : (p.season_ppg > 0 ? p.season_ppg : null),
     floorNum: cOk ? c.floor : null,
+    ceilNum:  cOk ? c.ceiling : null,
     flCeil:   cOk ? (c.floor + '–' + c.ceiling + yr) : '–',
     profile:  cOk ? `<span class="wv-ss-cons wv-ss-cons-${{pk}}">${{c.label}}</span>` : '–',
     boomBust: cOk ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : '–',
@@ -3267,8 +3360,39 @@ function wvRenderCompare() {{
       <div class="mt">${{sub(p)}}</div>
       <div class="pj">${{dp.proj != null ? dp.proj : '–'}}</div>
       <div class="pl">PROJ</div>
+      ${{wvCmpAbsences(p)}}
     </div>`;
   const winnerIdx = (v && v.idx != null) ? v.idx : -1;
+
+  // Range: both floor-to-ceiling bars on ONE shared scale, labels in the
+  // reserved lines wvRangeBar provides (Proj above, L4 below, clear gap
+  // before the next player's name line).
+  let rangeHtml = '';
+  if (da.floorNum != null && da.ceilNum != null && db.floorNum != null && db.ceilNum != null) {{
+    const rLo = Math.floor(Math.min(da.floorNum, db.floorNum)) - 2;
+    const rHi = Math.ceil(Math.max(da.ceilNum, db.ceilNum)) + 2;
+    const rangeRow = (p, dp) => `
+      <div class="wv-cmp-range-row">
+        <div class="wv-rg-head"><span class="wv-rg-name">${{p.name}}</span><span>Floor ${{dp.floorNum}} · Ceil ${{dp.ceilNum}}</span>${{p.consistency && p.consistency.label ? `<span class="wv-ev-profile">Profile ${{p.consistency.label}}</span>` : ''}}</div>
+        ${{wvRangeBar({{ floor: dp.floorNum, ceiling: dp.ceilNum, proj: dp.proj, l4: dp.l4, lo: rLo, hi: rHi }})}}
+      </div>`;
+    rangeHtml = `<div class="wv-cmp-sec"><div class="wv-cmp-sec-h">RANGE</div>`
+      + rangeRow(a, da) + rangeRow(b, db)
+      + `<div class="wv-rg-axis"><span>${{rLo}} pts</span><span>${{rHi}} pts</span></div></div>`;
+  }}
+
+  // Game context: grouped shared-label rows. Context is not the score, so
+  // these rows carry no winner highlighting (the matchup dot keeps its tier
+  // colour). The same rows leave the flat full table below.
+  const muTxtA = wvSsMatchupChip(a.def_rank, a.def_total) || da.mu;
+  const muTxtB = wvSsMatchupChip(b.def_rank, b.def_total) || db.mu;
+  const ctxRows =
+    row('Matchup', muTxtA, muTxtB) +
+    row('Venue', wvSsVenueText(a) || da.venue, wvSsVenueText(b) || db.venue) +
+    row('Opp plays faced/game', da.playsFaced != null ? da.playsFaced + '/gm' : null, db.playsFaced != null ? db.playsFaced + '/gm' : null) +
+    row('vs. NFL average', wvFmtVsAvg(da.playsVsAvg), wvFmtVsAvg(db.playsVsAvg));
+  const ctxHtml = ctxRows
+    ? `<div class="wv-cmp-sec"><div class="wv-cmp-sec-h">GAME CONTEXT</div><div class="wv-cmp">${{ctxRows}}</div></div>` : '';
 
   const fullRows =
     row('Start/Sit index', dash(idxA), dash(idxB), wIdx[0], wIdx[1]) +
@@ -3280,20 +3404,20 @@ function wvRenderCompare() {{
     row('Boom / Bust', da.boomBust, db.boomBust) +
     row('Opponent', da.opp, db.opp) +
     row('Def vs pos', da.def, db.def, da.defCls, db.defCls) +
-    row('Matchup', da.mu, db.mu) +
-    row('Opp plays faced/game', dash(da.playsFaced), dash(db.playsFaced)) +
-    row('vs. NFL average', wvFmtVsAvg(da.playsVsAvg), wvFmtVsAvg(db.playsVsAvg)) +
     row('Last 4 games', dash(da.playsL4), dash(db.playsL4)) +
     row('Vegas total', da.vegas, db.vegas, wVeg[0], wVeg[1]) +
-    row('O-Line', da.oline, db.oline, wOline[0], wOline[1]) +
-    row('Venue', da.venue, db.venue);
+    row('O-Line', da.oline, db.oline, wOline[0], wOline[1]);
   const fullCount = (fullRows.match(/wv-cmp-row/g) || []).length;
+
+  const pickChip = (p, slot) => p
+    ? `<span class="wv-cmp-pick"><span>${{p.name}}</span><button type="button" class="wv-cmp-pick-x" aria-label="Remove ${{p.name}} from comparison" onclick="wvRemoveCompareSlot(${{slot}})">&times;</button></span>` : '';
 
   panel.innerHTML = `
     <div class="wv-compare-panel">
       <div class="wv-compare-header">
-        <span>Compare</span>
-        <button type="button" onclick="wvClearCompare()" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;">Clear</button>
+        <span class="wv-cmp-title">Compare</span>
+        <span class="wv-cmp-picks">${{pickChip(a, 0)}}${{pickChip(b, 1)}}</span>
+        <button type="button" class="wv-cmp-clear" onclick="wvClearCompare()">Clear</button>
       </div>
       ${{verdictHtml}}
       <div class="wv-cmp2-heads">
@@ -3302,6 +3426,8 @@ function wvRenderCompare() {{
         ${{headCard(b, db, winnerIdx === 1)}}
       </div>
       ${{factorBars}}
+      ${{rangeHtml}}
+      ${{ctxHtml}}
       <button type="button" class="wv-cmp2-more" aria-expanded="false" data-label="Full comparison · ${{fullCount}} stats" onclick="wvToggleCmpFull(this)">Full comparison · ${{fullCount}} stats</button>
       <div class="wv-cmp2-full" id="wvCmpFull">
         <div class="wv-cmp">${{fullRows}}</div>
@@ -3373,7 +3499,9 @@ function wvSsMatchupChip(rank, total) {{
   // Four tiers on the sched_rank_color ease scale (#1 = easiest).
   const tier = pct <= 0.25 ? 1 : pct <= 0.5 ? 2 : pct <= 0.75 ? 3 : 4;
   const lbl = tier === 1 ? 'easiest' : tier === 2 ? 'favorable' : tier === 3 ? 'tough' : 'hardest';
-  return `<span class="wv-cx-chip mt${{tier}}">#${{rank}} ${{lbl}}</span>`;
+  // Dot + plain text, not a filled pill: the verdict badge is the only pill
+  // left on the row (the filled .wv-cx-chip stays for waiver rows).
+  return `<span class="wv-ss-mu mt${{tier}}"><span class="wv-ss-dot" aria-hidden="true"></span>#${{rank}} ${{lbl}}</span>`;
 }}
 
 // Demotion reasons the start/sit score can dock a player for. The row only
@@ -3421,6 +3549,62 @@ function wvSsWhyLine(p) {{
   return rows.slice(0, 4).map(r => r.txt).join(' · ');
 }};
 
+// Shared factor rows for the evidence "Why this call" section: the score
+// factors that moved this player most (>=1%), sorted by absolute impact,
+// top 4. wvSsWhyLine above is the compact text form of the same rows.
+function wvSsFactors(p) {{
+  const f = p.score_factors || {{}};
+  const rows = [];
+  for (const key of Object.keys(WV_SS_FACTOR_LABELS)) {{
+    const m = Number(f[key]);
+    if (!isFinite(m)) continue;
+    const pct = (m - 1) * 100;
+    if (Math.abs(m - 1) < 0.01) continue;
+    rows.push({{ label: WV_SS_FACTOR_LABELS[key], pct, imp: Math.abs(m - 1) }});
+  }}
+  rows.sort((a, b) => b.imp - a.imp);
+  return rows.slice(0, 4);
+}}
+
+// Plain sentence form of the factor rows: the strongest positive factors
+// carry the call, the strongest negatives drag on it.
+function wvSsWhySentence(rows) {{
+  const pos = rows.filter(r => r.pct > 0);
+  const neg = rows.filter(r => r.pct < 0);
+  const bits = [];
+  if (pos.length) {{
+    const names = pos.slice(0, 2).map(r => r.label).join(' and ');
+    bits.push(names + (pos.length > 1 ? ' carry it.' : ' carries it.'));
+  }}
+  if (neg.length) {{
+    const names = neg.slice(0, 2).map(r => r.label).join(' and ');
+    bits.push(names + (neg.length > 1 ? ' drag a little.' : ' drags a little.'));
+  }}
+  return bits.join(' ');
+}}
+
+// One floor-to-ceiling bar with reserved label lines: the Proj label sits
+// in a fixed-height line ABOVE the bar and the L4 label in a fixed-height
+// line BELOW it, so labels can never collide with a neighbouring row.
+// Label positions are clamped to the bar width.
+function wvRangeBar(o) {{
+  const span = (o.hi - o.lo) || 1;
+  const pct = (v) => Math.max(0, Math.min(100, (v - o.lo) / span * 100));
+  const lbl = (v) => Math.max(7, Math.min(93, pct(v)));
+  const fl = pct(o.floor), ce = pct(o.ceiling);
+  const projLbl = (o.proj != null && o.proj > 0)
+    ? `<span class="wv-rg-proj-lbl" style="left:${{lbl(o.proj).toFixed(1)}}%">Proj ${{o.proj}}</span>` : '';
+  const l4Lbl = (o.l4 != null && o.l4 > 0)
+    ? `<span class="wv-rg-l4-lbl" style="left:${{lbl(o.l4).toFixed(1)}}%">L4 ${{o.l4}}</span>` : '';
+  const projDot = (o.proj != null && o.proj > 0)
+    ? `<span class="wv-rg-proj-dot" style="left:${{pct(o.proj).toFixed(1)}}%"></span>` : '';
+  const l4Dot = (o.l4 != null && o.l4 > 0)
+    ? `<span class="wv-rg-l4-dot" style="left:${{pct(o.l4).toFixed(1)}}%"></span>` : '';
+  return `<div class="wv-rg"><div class="wv-rg-lbl-line">${{projLbl}}</div>`
+    + `<div class="wv-rg-bar"><span class="wv-rg-fill" style="left:${{fl.toFixed(1)}}%;width:${{Math.max(2, ce - fl).toFixed(1)}}%"></span>${{l4Dot}}${{projDot}}</div>`
+    + `<div class="wv-rg-lbl-line">${{l4Lbl}}</div></div>`;
+}}
+
 // "Home · 22 mph wind" style venue line: home/away decoded from the matchup
 // label ("vs X" = home, "@ X" = away), then the specific weather label when
 // the game has notable weather, else the static dome/cold venue tag.
@@ -3435,29 +3619,66 @@ function wvSsVenueText(p) {{
   return parts.join(' · ');
 }}
 
-// Evidence grid for one player: floor/ceiling, L4 PPG, Vegas, venue, opp plays
-// faced, profile, injury, notable absences. Only rows with data render.
+// Evidence grid for one player, regrouped into three stacked sections:
+// Why this call (sentence + factor bars), Range (one floor-to-ceiling bar),
+// Game context (one fact per row). Only sections and rows with data render.
 function wvSsEvidence(p) {{
-  const ev = [];
-  const why = wvSsWhyLine(p);
-  if (why) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">WHY</span><span class="v">${{why}}</span></div>`);
-  }}
+  const secs = [];
   const c = p.consistency;
+
+  // A. Why this call.
+  const factors = wvSsFactors(p);
+  if (factors.length) {{
+    const maxPct = Math.max(10, ...factors.map(r => Math.abs(r.pct)));
+    const bars = factors.map(r => {{
+      const w = Math.min(50, Math.abs(r.pct) / maxPct * 50);
+      const fill = r.pct >= 0
+        ? `<span class="wv-ev-fill pos" style="left:50%;width:${{w.toFixed(1)}}%"></span>`
+        : `<span class="wv-ev-fill neg" style="left:${{(50 - w).toFixed(1)}}%;width:${{w.toFixed(1)}}%"></span>`;
+      return `<div class="wv-ev-factor"><span class="wv-ev-flabel">${{r.label}}</span><span class="wv-ev-track">${{fill}}</span><span class="wv-ev-fval">${{r.pct >= 0 ? '+' : '-'}}${{Math.abs(r.pct).toFixed(0)}}%</span></div>`;
+    }}).join('');
+    const sentence = wvSsWhySentence(factors);
+    secs.push(`<div class="wv-ev-sec"><div class="wv-ev-h">WHY THIS CALL</div>`
+      + (sentence ? `<div class="wv-ev-sentence">${{sentence}}</div>` : '') + bars + `</div>`);
+  }}
+
+  // B. Range: one visual floor-to-ceiling bar, proj marker, L4 dot.
   if (c && !c.small_sample && c.floor != null && c.ceiling != null) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">FLOOR - CEIL</span><span class="v">${{c.floor}} - ${{c.ceiling}}</span></div>`);
+    const l4 = p.last4_ppg > 0 ? p.last4_ppg : null;
+    const vals = [c.floor, c.ceiling];
+    if (p.proj_pts > 0) vals.push(p.proj_pts);
+    if (l4) vals.push(l4);
+    const lo = Math.floor(Math.min(...vals)) - 3;
+    const hi = Math.ceil(Math.max(...vals)) + 3;
+    const profile = c.label ? `<span class="wv-ev-profile">Profile ${{c.label}}</span>` : '';
+    secs.push(`<div class="wv-ev-sec"><div class="wv-ev-h">RANGE</div>`
+      + `<div class="wv-rg-head"><span>Floor ${{c.floor}} · Ceil ${{c.ceiling}}</span>${{profile}}</div>`
+      + wvRangeBar({{ floor: c.floor, ceiling: c.ceiling,
+          proj: p.proj_pts > 0 ? p.proj_pts : null, l4, lo, hi }})
+      + `</div>`);
   }}
-  if (p.last4_ppg > 0) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">L4 PPG</span><span class="v">${{p.last4_ppg}}</span></div>`);
-  }}
-  if (p.implied_total != null) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">VEGAS</span><span class="v">${{p.implied_total}} implied</span></div>`);
-  }}
+
+  // C. Game context: one fact per row, label left, value right.
+  const ctxRow = (k, v, sub) =>
+    `<div class="wv-ev-ctx-row">${{k}}<span class="wv-ev-v">${{v}}${{sub || ''}}</span></div>`;
+  const ctx = [];
   // Venue: home/away from the matchup label plus specific weather when there
   // is any ("vs X" = home, "@ X" = away). Display only.
   const venueTxt = wvSsVenueText(p);
   if (venueTxt) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">VENUE</span><span class="v">${{venueTxt}}</span></div>`);
+    ctx.push(ctxRow('<span class="wv-ev-k">VENUE</span>', venueTxt));
+  }}
+  if (p.implied_total != null) {{
+    ctx.push(ctxRow('<span class="wv-ev-k">VEGAS</span>', `${{p.implied_total}} implied`));
+  }}
+  const pv = p.play_volume;
+  if (pv && pv.plays_faced_pg != null) {{
+    let sub = '';
+    if (pv.vs_avg != null) {{
+      const a = Math.abs(pv.vs_avg).toFixed(1);
+      sub = `<span class="wv-ev-s">${{pv.vs_avg > 0 ? a + ' above' : (pv.vs_avg < 0 ? a + ' below' : 'at')}} NFL avg</span>`;
+    }}
+    ctx.push(ctxRow('<span class="wv-ev-k">OPP PLAYS FACED</span>', `${{pv.plays_faced_pg}}/gm`, sub));
   }}
   // Notable absences around this player's game. Display only: the score never
   // sees these (Sleeper's projections already price teammate injuries in).
@@ -3475,30 +3696,21 @@ function wvSsEvidence(p) {{
   const absT = ((p.absences && p.absences.teammates) || []).map(a => a.text).filter(Boolean).map(wvAbsLine);
   const absO = ((p.absences && p.absences.opponents) || []).map(a => a.text).filter(Boolean).map(wvAbsLine);
   if (absT.length) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">TEAMMATES OUT</span><span class="v">${{absT.join('')}}</span></div>`);
+    ctx.push(ctxRow('<span class="wv-ev-k">TEAMMATES OUT</span>', absT.join('')));
   }}
   if (absO.length) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">OPP DEFENSE OUT</span><span class="v">${{absO.join('')}}</span></div>`);
-  }}
-  const pv = p.play_volume;
-  if (pv && pv.plays_faced_pg != null) {{
-    let sub = '';
-    if (pv.vs_avg != null) {{
-      const a = Math.abs(pv.vs_avg).toFixed(1);
-      sub = `<span class="s">${{pv.vs_avg > 0 ? a + ' above' : (pv.vs_avg < 0 ? a + ' below' : 'at')}} NFL avg</span>`;
-    }}
-    ev.push(`<div class="wv-cx-ev"><span class="k">OPP PLAYS FACED</span><span class="v">${{pv.plays_faced_pg}}/gm</span>${{sub}}</div>`);
-  }}
-  if (c && !c.small_sample && c.label) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">PROFILE</span><span class="v">${{c.label}}</span></div>`);
+    ctx.push(ctxRow('<span class="wv-ev-k">OPP DEFENSE OUT</span>', absO.join('')));
   }}
   if (p.injury_status) {{
     const plan = p.return_plan;
-    const sub = (plan && plan.verdict) ? `<span class="s">${{plan.verdict}}${{plan.weeks_label ? ' · ' + plan.weeks_label : ''}} (approx)</span>` : '';
-    ev.push(`<div class="wv-cx-ev"><span class="k">INJURY</span><span class="v">${{p.injury_status}}</span>${{sub}}</div>`);
+    const sub = (plan && plan.verdict) ? `<span class="wv-ev-s">${{plan.verdict}}${{plan.weeks_label ? ' · ' + plan.weeks_label : ''}} (approx)</span>` : '';
+    ctx.push(ctxRow('<span class="wv-ev-k">INJURY</span>', p.injury_status, sub));
   }}
-  if (!ev.length) return '';
-  return `<div class="wv-cx-evidence">${{ev.join('')}}</div>`;
+  if (ctx.length) {{
+    secs.push(`<div class="wv-ev-sec"><div class="wv-ev-h">GAME CONTEXT</div>${{ctx.join('')}}</div>`);
+  }}
+  if (!secs.length) return '';
+  return `<div class="wv-cx-evidence">${{secs.join('')}}</div>`;
 }}
 
 function wvToggleSsRow(btn) {{
@@ -3563,7 +3775,7 @@ function wvRenderStartSit() {{
         ? p.weather.label
         : WV_DEMOTION_LABELS[p.demotion];
       const demoteChip = demoteLbl
-        ? '<span class="wv-cx-chip bad">' + demoteLbl + '</span>' : '';
+        ? '<span class="wv-ss-demote"><span class="wv-ss-dot" aria-hidden="true"></span>' + demoteLbl + '</span>' : '';
       // Head-to-head win probability on the marginal call (server-flagged).
       const h2h = (isStart && p.close_call && p.close_call.win_prob != null)
         ? `<span class="wv-cx-h2h"><span class="bar"><i style="width:${{Math.round(p.close_call.win_prob * 100)}}%"></i></span><b>${{Math.round(p.close_call.win_prob * 100)}}%</b> to outscore ${{p.close_call.vs_name}}</span>`
@@ -3594,7 +3806,8 @@ function wvRenderStartSit() {{
             ${{badge}}
             <span class="wv-cx-main">
               <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}${{newsChip}}${{roleChip}}</span>
-              ${{matchup || demoteChip ? `<span class="wv-cx-why">${{matchup}}${{demoteChip}}</span>` : ''}}
+              ${{matchup ? `<span class="wv-cx-why">${{matchup}}</span>` : ''}}
+              ${{demoteChip ? `<span class="wv-cx-why">${{demoteChip}}</span>` : ''}}
               ${{p.guest && p.guest_note ? `<span class="wv-ss-guest-note">${{wvEsc(p.guest_note)}}</span>` : ''}}
               ${{p.flex_safeguard ? `<span class="wv-cx-why"><span class="wv-cx-k">Flex safeguard</span>Q tag: moved to FLEX so a late scratch can be covered by any RB/WR/TE.</span>` : ''}}
               ${{h2h}}
@@ -3607,9 +3820,9 @@ function wvRenderStartSit() {{
           <div class="wv-cx-detail">
             ${{evidence}}
             <div class="wv-cx-actions" onclick="event.stopPropagation()">
-              <button type="button" onclick="event.stopPropagation();openPlayerModal('${{p.player_id}}', '${{escName}}')">Open player</button>
-              <button type="button" onclick="event.stopPropagation();window.location.href='${{schedUrl}}'">View schedule</button>
-              <button type="button" class="${{wvIsSelected(p.player_id) ? 'selected' : ''}}"
+              <button type="button" class="wv-cx-act-primary" onclick="event.stopPropagation();openPlayerModal('${{p.player_id}}', '${{escName}}')">Open player</button>
+              <button type="button" class="wv-cx-act-quiet" onclick="event.stopPropagation();window.location.href='${{schedUrl}}'">View schedule</button>
+              <button type="button" class="wv-cx-act-quiet ${{wvIsSelected(p.player_id) ? 'selected' : ''}}"
                 onclick="event.stopPropagation();wvToggleCompare(${{JSON.stringify(p).replace(/"/g, '&quot;')}})">${{wvIsSelected(p.player_id) ? '✓' : '+'}} Compare</button>
             </div>
           </div>
@@ -3629,6 +3842,8 @@ function wvRenderStartSit() {{
   if (sections) {{ el.innerHTML = advice + sections; }}
   else if (advice) {{ el.innerHTML = advice; }}
   else {{ window.brEmptyState(el, {{ icon: 'search', title: 'No roster data', message: 'We couldn’t find a lineup to analyze for this position.' }}); }}
+  // Fresh rows may carry guest verdicts the chips could not show at add time.
+  wvRenderGuestChips();
 }}
 
 
