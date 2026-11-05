@@ -22486,12 +22486,38 @@ img, svg, canvas {
     cursor: pointer;
     padding: 4px 8px;
 }
+/* All-set state: one compact left-aligned row (check in a soft green
+   circle + headline/subline stack), not a tall centered block. */
 .ns-empty {
-    text-align: center;
-    padding: 24px 16px;
-    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 4px;
+    text-align: left;
+}
+.ns-empty-check {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--win);
+    background: color-mix(in srgb, var(--win) 13%, transparent);
+}
+.ns-empty-head {
     font-size: 15px;
-    line-height: 1.5;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.35;
+}
+.ns-empty-sub {
+    font-size: 13.5px;
+    color: var(--text-muted);
+    line-height: 1.4;
 }
 /* Quiet bench-check line at the foot of the Next steps card: the
    sub-threshold (< 5.0 left) post-week result. Not an action, so no
@@ -22531,10 +22557,17 @@ img, svg, canvas {
         margin-left: auto;
     }
 }
-.ns-empty-big {
-    font-size: 28px;
-    margin-bottom: 8px;
-    color: #22c55e;
+/* In this card the dismiss x stays on the title line: the head never
+   wraps and the actions cell never shrinks. Scoped to .ns-card so the
+   other cards sharing .os-section-head are untouched. */
+.ns-card .os-section-head {
+    flex-wrap: nowrap;
+    /* The phone touch target makes the dismiss button 44px tall; centering
+       the head row puts the x glyph on the title's optical line. */
+    align-items: center;
+}
+.ns-card .os-section-head-actions {
+    flex: 0 0 auto;
 }
 
 /* Undo toast for dismissed action cards (shared via window.brUndoToast).
@@ -25466,6 +25499,29 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     background: color-mix(in srgb, var(--warning) 10%, transparent); border-radius: var(--radius-sm);
     padding: 8px 10px; }
 .bench-check-warn .la-em { font-weight: 800; }
+
+/* Inside the Next steps card the watch is a quiet line, not a filled
+   amber box: faint background, thin amber left accent, normal-weight
+   text with only the avg-missed figure in amber. */
+.ns-card .bench-check-warn {
+    margin-top: 10px;
+    padding: 2px 0 2px 10px;
+    font-size: 13.5px;
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--text-muted);
+    background: transparent;
+    border-left: 3px solid var(--warning);
+    border-radius: 0;
+}
+.ns-card .bench-check-warn .bcw-label {
+    font-weight: 600;
+    color: var(--text);
+}
+.ns-card .bench-check-warn .la-em {
+    font-weight: 700;
+    color: color-mix(in srgb, var(--warning) 82%, var(--text));
+}
 
 /* Watchlist note in the player modal + nav alert count badge. */
 .pm-wl-note { display: flex; align-items: flex-start; gap: 5px; font-size: 13px; color: var(--text-muted);

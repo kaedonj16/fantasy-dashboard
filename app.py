@@ -11118,26 +11118,36 @@ def _next_steps_bench_check_note(ctx: dict, viewer_roster_id, last_final_week: i
             msg = (
                 f"Left <span class=\"la-em\">{left_on_bench:.1f}</span> on the bench."
             )
-        # Escalate to a warning only on a repeated pattern (not one-off weeks).
+        # Efficiency watch: only when the viewer's season lineup
+        # efficiency is the lowest in the league. Leaving some points on
+        # the bench is normal (the comparison is the hindsight-optimal
+        # lineup), so a repeated-pattern count alone is not signal; being
+        # last in the league is. Fail-soft: missing data means no watch.
         warn_html = ""
-        if m["warn"]:
-            try:
-                from dashboard_services.season_efficiency import compute_league_season_efficiency
-                _wks = ((compute_league_season_efficiency(ctx).get("by_rid") or {})
-                        .get(str(viewer_roster_id)) or {}).get("weeks") or []
+        try:
+            from dashboard_services.season_efficiency import compute_league_season_efficiency
+            _by_rid = (compute_league_season_efficiency(ctx).get("by_rid") or {})
+            _viewer = _by_rid.get(str(viewer_roster_id)) or {}
+            _viewer_eff = _viewer.get("eff")
+            _effs = [v.get("eff") for v in _by_rid.values()
+                     if isinstance(v, dict) and v.get("eff") is not None]
+            _wks = _viewer.get("weeks") or []
+            if (_viewer_eff is not None and len(_effs) >= 2 and len(_wks) >= 3
+                    and _viewer_eff <= min(_effs)):
                 _bad = [w for w in _wks if (w.get("missed") or 0) >= 5.0]
-                if len(_bad) >= 3:
-                    _avg_missed = sum(w["missed"] for w in _bad) / len(_bad)
-                    warn_html = (
-                        f'<div class="bench-check-warn">Efficiency watch: you have left meaningful '
-                        f'points on the bench in {len(_bad)} weeks (avg '
-                        f'<span class="la-em">{_avg_missed:.1f}</span> missed). Locking lineups '
-                        f'earlier would meaningfully raise your scoring.</div>'
-                    )
-            except Exception:
-                warn_html = ""
+                _avg_src = _bad or _wks
+                _avg_missed = sum(w.get("missed") or 0 for w in _avg_src) / len(_avg_src)
+                warn_html = (
+                    f'<div class="bench-check-warn"><span class="bcw-label">Efficiency watch:</span> '
+                    f'Lowest lineup efficiency in the league, avg '
+                    f'<span class="la-em">{_avg_missed:.1f} missed</span>.</div>'
+                )
+        except Exception:
+            warn_html = ""
 
-        tone_cls = " ns-bench-miss" if warn_html else (" ns-bench-ok" if left_on_bench < 1.0 else " ns-bench-miss")
+        # The note's tone is the week's own outcome: an optimal week
+        # (< 1.0 left) stays green even when the watch renders below it.
+        tone_cls = " ns-bench-ok" if left_on_bench < 1.0 else " ns-bench-miss"
         return (
             f'<div class="ns-bench-note{tone_cls}">'
             f'<span class="bench-check-msg">{msg}</span>'
@@ -14052,8 +14062,11 @@ def _render_next_steps_queue(
             </div>
           </div>
           <div class="ns-empty">
-            <div class="ns-empty-big">&#10003;</div>
-            <div>You are all set for Week {int(current_week or 0)}.<br>No urgent actions right now.</div>
+            <div class="ns-empty-check" aria-hidden="true">&#10003;</div>
+            <div class="ns-empty-text">
+              <div class="ns-empty-head">You are all set for Week {int(current_week or 0)}.</div>
+              <div class="ns-empty-sub">No urgent actions right now.</div>
+            </div>
           </div>
           {bench_note_html}
         </section>"""

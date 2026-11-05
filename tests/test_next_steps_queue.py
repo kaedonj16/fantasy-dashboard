@@ -269,3 +269,160 @@ def test_bench_check_thresholds_agree():
     note_body = src[note_start:note_end]
     assert "if left_on_bench >= 5.0:" in note_body
     assert "if left_on_bench < 1.0:" in note_body
+
+
+# --- All-set rendition cleanup (2026-11-05) ---------------------------------
+# Compact all-set row, dismiss on the title line, bench-note tone from the
+# week's own outcome, and the Efficiency watch gated to league-lowest
+# season efficiency with the short copy and quiet styling.
+
+import re
+
+import pytest
+
+
+def _import_app():
+    pytest.importorskip("pandas")
+    pytest.importorskip("flask")
+    import app as appmod
+    return appmod
+
+
+def _note_ctx():
+    """Week 8 was optimal for roster 1: starters are the top scorer at
+    every slot, so the bench check leaves 0.0 on the bench."""
+    starters = [
+        {"pid": "q1", "pos": "QB", "pts": 20.0},
+        {"pid": "r1", "pos": "RB", "pts": 15.0},
+        {"pid": "w1", "pos": "WR", "pts": 12.0},
+    ]
+    bench = [
+        {"pid": "q2", "pos": "QB", "pts": 5.0},
+        {"pid": "r2", "pos": "RB", "pts": 3.0},
+        {"pid": "w2", "pos": "WR", "pts": 2.0},
+    ]
+    return {
+        "matchups_by_week": {8: [{
+            "left": {"roster_id": 1, "starters": starters, "bench": bench},
+            "right": {"roster_id": 2, "starters": [], "bench": []},
+        }]},
+        "roster_positions": ["QB", "RB", "WR"],
+        "platform": "sleeper", "current_season": 2026, "league_id": "L1",
+    }
+
+
+def _fake_eff(viewer_eff, weeks_missed, other_effs=(91.0, 93.0)):
+    by_rid = {"1": {"eff": viewer_eff, "weeks": [
+        {"week": i + 1, "missed": m} for i, m in enumerate(weeks_missed)]}}
+    for j, e in enumerate(other_effs):
+        by_rid[str(j + 2)] = {"eff": e, "weeks": []}
+    return {"by_rid": by_rid, "state": "complete",
+            "completed_weeks": list(range(1, len(weeks_missed) + 1)),
+            "incomplete": {}}
+
+
+def _render_note(monkeypatch, viewer_eff, weeks_missed, other_effs=(91.0, 93.0)):
+    appmod = _import_app()
+    import dashboard_services.season_efficiency as eff_mod
+    fake = _fake_eff(viewer_eff, weeks_missed, other_effs)
+    monkeypatch.setattr(
+        eff_mod, "compute_league_season_efficiency", lambda ctx: fake)
+    with appmod.app.test_request_context("/"):
+        return appmod._next_steps_bench_check_note(_note_ctx(), 1, 8)
+
+
+def _plain(html_text):
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", html_text)).strip()
+
+
+def test_all_set_empty_state_uses_compact_row():
+    """The empty state is the compact row (check circle + text stack),
+    not the old tall centered block with the lone big check."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _render_next_steps_queue")
+    end = src.find("def _nfl_regular_season_kickoff_ms", start)
+    body = src[start:end]
+    assert 'class="ns-empty-check"' in body
+    assert 'class="ns-empty-head"' in body
+    assert 'class="ns-empty-sub"' in body
+    assert "ns-empty-big" not in body
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".ns-empty-check" in css
+    assert ".ns-empty-head" in css
+    # Dismiss x stays on the title line, scoped to this card only.
+    assert ".ns-card .os-section-head" in css
+    assert "flex-wrap: nowrap" in css
+
+
+def test_watch_renders_when_viewer_is_league_lowest(monkeypatch):
+    """Lowest season efficiency in the league: the watch renders with
+    the exact short copy, and the optimal week's note stays green."""
+    html_out = _render_note(monkeypatch, 80.0, [30.0, 24.0, 14.4])
+    assert "bench-check-warn" in html_out
+    assert ("Efficiency watch: Lowest lineup efficiency in the league, "
+            "avg 22.8 missed.") in _plain(html_out)
+    # Optimal week (< 1.0 left) keeps the ok/green tone even with the
+    # watch present.
+    assert "ns-bench-ok" in html_out
+    assert "Nothing left on the bench." in _plain(html_out)
+
+
+def test_watch_absent_when_viewer_is_not_league_lowest(monkeypatch):
+    """A repeated >= 5.0 pattern alone no longer triggers the watch:
+    same big missed weeks, but another roster is less efficient."""
+    html_out = _render_note(
+        monkeypatch, 91.0, [30.0, 24.0, 14.4], other_effs=(80.0, 93.0))
+    assert html_out  # the quiet Week 8 line itself still renders
+    assert "Efficiency watch" not in html_out
+    assert "bench-check-warn" not in html_out
+    assert "ns-bench-ok" in html_out
+
+
+def test_watch_avg_falls_back_to_all_completed_weeks(monkeypatch):
+    """Lowest in the league but no >= 5.0 week: the avg is taken over
+    all completed weeks so the copy never shows a bogus number."""
+    html_out = _render_note(monkeypatch, 80.0, [2.0, 3.0, 4.0])
+    assert "avg 3.0 missed." in _plain(html_out)
+
+
+def test_watch_old_copy_is_gone():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert "you have left meaningful" not in src
+    assert "Locking lineups" not in src
+    assert "meaningfully raise your scoring" not in src
+
+
+def test_watch_quiet_line_css_scoped_to_ns_card():
+    """The quiet-line styling lives under .ns-card; the global
+    .bench-check-warn rule is left as it was for other surfaces."""
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    rule = css[css.find(".ns-card .bench-check-warn {"):]
+    rule = rule[:rule.find("}")]
+    assert "border-left: 3px solid var(--warning)" in rule
+    assert "background: transparent" in rule
+    assert "font-weight: 400" in rule
+    assert ".ns-card .bench-check-warn .bcw-label" in css
+
+
+def test_empty_state_queue_render_is_compact(monkeypatch):
+    """Full empty-state render: compact row, headline/subline, dismiss
+    in the head, and the bench note at the foot of the card."""
+    appmod = _import_app()
+    for name in ("_next_steps_lineup_actions", "_next_steps_waiver_actions",
+                 "_next_steps_trade_actions", "_next_steps_roster_actions",
+                 "_next_steps_bench_check_actions"):
+        monkeypatch.setattr(appmod, name, lambda *a, **k: [])
+    import dashboard_services.gm_brief as gb
+    monkeypatch.setattr(gb, "build_gm_brief", lambda *a, **k: None)
+    monkeypatch.setattr(
+        appmod, "_next_steps_bench_check_note",
+        lambda *a, **k: '<div class="ns-bench-note ns-bench-ok">NOTE</div>')
+    with appmod.app.test_request_context("/"):
+        html_out = appmod._render_next_steps_queue(
+            {}, 1, [], season=2026, current_week=9, last_final_week=8)
+    assert 'class="ns-empty-check"' in html_out
+    assert "You are all set for Week 9." in html_out
+    assert "No urgent actions right now." in html_out
+    assert "ns-empty-big" not in html_out
+    assert 'data-dismiss-card="nextsteps"' in html_out
+    assert "ns-bench-note" in html_out
