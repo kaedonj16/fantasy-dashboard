@@ -2932,6 +2932,154 @@ def _nfl_bucket(g: dict) -> str:
     return "Primetime"
 
 
+def _compose_league_settings(pack: dict) -> dict:
+    """Deterministic league-settings answer: the deadline week, playoff
+    start / field, and waiver system are computed in the pack from the
+    league's own settings, so the text only renders them; no draft can
+    move a deadline or invent a FAAB budget."""
+    topic = pack.get("topic") or "all"
+    receipts: list[dict] = []
+    caveat = None
+
+    def _deadline_part():
+        d = pack.get("deadline") or {"kind": "unknown"}
+        kind = d.get("kind")
+        if kind == "week":
+            w = d["week"]
+            rem = d.get("weeks_remaining")
+            receipts.append({"label": "Trade deadline", "value": f"Week {w}"})
+            if d.get("passed"):
+                return (f"Trade deadline: Week {w} (passed)",
+                        f"The trade deadline in your league was Week {w}, "
+                        "so trading is closed for this season.")
+            if rem == 0:
+                return (f"Trade deadline: this week (Week {w})",
+                        f"This is deadline week: trades close at the end "
+                        f"of Week {w}.")
+            if rem is not None and rem > 0:
+                left = f"{rem} week" + ("s" if rem != 1 else "") + " left"
+                return (f"Trade deadline: Week {w}",
+                        f"Your trade deadline is Week {w}. You have {left} "
+                        "to make trades.")
+            return (f"Trade deadline: Week {w}",
+                    f"Your trade deadline is Week {w}.")
+        if kind == "date":
+            receipts.append({"label": "Trade deadline",
+                             "value": str(d.get("date_label"))})
+            if d.get("passed"):
+                return ("Trade deadline has passed",
+                        f"Your trade deadline was {d.get('date_label')}, "
+                        "so trading is closed for this season.")
+            return (f"Trade deadline: {d.get('date_label')}",
+                    f"Your trade deadline is {d.get('date_label')}.")
+        if kind == "none":
+            receipts.append({"label": "Trade deadline", "value": "None set"})
+            return ("No trade deadline",
+                    "Your league has no trade deadline set, so trades "
+                    "stay open all season.")
+        return (None, "I don't have a trade deadline for your league "
+                      "from its feed.")
+
+    def _playoffs_part():
+        nonlocal caveat
+        p = pack.get("playoffs")
+        if not p:
+            return (None, "I don't have your playoff format from your "
+                           "league's feed.")
+        bits = []
+        verdict = None
+        if p.get("week_start"):
+            receipts.append({"label": "Playoffs start",
+                             "value": f"Week {p['week_start']}"})
+            verdict = f"Playoffs start in Week {p['week_start']}"
+            until = p.get("weeks_until")
+            if p.get("started") and until is not None and until < 0:
+                bits.append(f"Playoffs started in Week {p['week_start']}")
+            elif p.get("started"):
+                bits.append(f"Playoffs start this week (Week "
+                            f"{p['week_start']})")
+            else:
+                bits.append(f"Playoffs start in Week {p['week_start']}")
+        if p.get("teams"):
+            receipts.append({"label": "Playoff teams",
+                             "value": str(p["teams"])})
+            bits.append(f"{p['teams']} teams make it")
+        if p.get("verified") is False:
+            caveat = ("Your provider does not publish the playoff format, "
+                      "so this is the site's current record for your "
+                      "league, not a feed-verified setting.")
+        return (verdict, ", ".join(bits) + "." if bits else
+                "I don't have your playoff format from your league's feed.")
+
+    def _waivers_part():
+        w = pack.get("waivers") or {}
+        system = w.get("system") or "priority"
+        process = w.get("next_process_label")
+        if system == "faab":
+            verdict = "Waivers: FAAB"
+            text = "Your league uses FAAB"
+            receipts.append({"label": "Waiver system", "value": "FAAB"})
+            if w.get("budget_total") is not None:
+                verdict = f"Waivers: FAAB (${w['budget_total']} budget)"
+                text += f" with a ${w['budget_total']} season budget"
+                receipts.append({"label": "FAAB budget",
+                                 "value": f"${w['budget_total']}"})
+            if w.get("budget_remaining") is not None:
+                text += f"; you have ${w['budget_remaining']} left"
+                receipts.append({"label": "FAAB remaining",
+                                 "value": f"${w['budget_remaining']}"})
+            text += "."
+        elif system == "rolling":
+            verdict = "Waivers: rolling priority"
+            receipts.append({"label": "Waiver system",
+                             "value": "Rolling waivers"})
+            text = ("Your league uses rolling waivers: after a successful "
+                    "claim your priority rolls to the back of the line, "
+                    "and there is no FAAB budget.")
+        elif system == "reverse_standings":
+            verdict = "Waivers: reverse standings"
+            receipts.append({"label": "Waiver system",
+                             "value": "Reverse standings"})
+            text = ("Your league sets the waiver order by reverse "
+                    "standings, with no FAAB budget.")
+        elif system == "free":
+            verdict = "Waivers: open free agency"
+            receipts.append({"label": "Waiver system",
+                             "value": "Open free agency"})
+            text = ("Your league has open free agency: players can be "
+                    "added at any time, with no waiver process or FAAB "
+                    "budget.")
+        else:
+            verdict = "Waivers: priority (no FAAB)"
+            receipts.append({"label": "Waiver system",
+                             "value": "Waiver priority"})
+            text = ("Your league uses waiver priority, not FAAB, so "
+                    "claims do not cost budget.")
+        if process:
+            text += f" Waivers next process {process}."
+            receipts.append({"label": "Next waiver run", "value": process})
+        return (verdict, text)
+
+    parts = {"deadline": _deadline_part, "playoffs": _playoffs_part,
+             "waivers": _waivers_part}
+    order = ["deadline", "playoffs", "waivers"]
+    wanted = order if topic == "all" else [topic]
+    verdicts, sentences = {}, []
+    for key in wanted:
+        v, s = parts[key]()
+        verdicts[key] = v
+        sentences.append(s)
+    verdict = verdicts.get(topic) if topic != "all" else "Your league settings"
+    followup_for = {"deadline": "When is the trade deadline?",
+                    "playoffs": "When do playoffs start?",
+                    "waivers": "How do waivers work in my league?"}
+    followups = [followup_pair(followup_for[k]) for k in order if k not in wanted]
+    return {"verdict": verdict, "text": " ".join(sentences),
+            "receipts": receipts, "caveat": caveat,
+            "followups": followups, "act_link": None,
+            "actions": [], "mentions": []}
+
+
 def _compose_nfl_schedule(pack: dict) -> dict:
     """Deterministic NFL-schedule answer: the games, days, kickoff times
     and networks are computed in the pack, so the text only renders
@@ -3192,6 +3340,12 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         # schedule question can never be answered with fantasy
         # projections or a moved kickoff.
         return _enforce_grounding(_compose_nfl_schedule(pack), intent, pack, question)
+    if intent == "league_settings":
+        # The league's rules (deadline, playoff start, waiver system)
+        # are fully computed in the pack from the league settings;
+        # render deterministically so a settings question can never be
+        # declined as out of scope or answered with invented rules.
+        return _enforce_grounding(_compose_league_settings(pack), intent, pack, question)
     # This-week actions are deterministic from the pack; build them first so
     # the citation check sees the same surfaces the scorer will.
     actions = []

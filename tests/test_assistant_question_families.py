@@ -72,7 +72,7 @@ def _route(classify, message):
     ("Will I win this week?", "matchup"),
     ("What are my chances this week?", "matchup"),
     ("Who wins the game tonight, Chiefs or Bills?", "out_of_scope"),
-    ("When is the trade deadline?", "out_of_scope"),
+    ("When is the trade deadline?", "league_settings"),
     ("Who should I target before the trade deadline?", "trade_finding"),
     ("Add a running back to win this week", "waivers"),
     ("What should I do with my team this week?", "this_week"),

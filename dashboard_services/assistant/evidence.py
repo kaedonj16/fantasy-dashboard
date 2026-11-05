@@ -9075,7 +9075,161 @@ def build_nfl_schedule(bundle, entities=None, player_ids=None) -> tuple[dict, li
     return pack, tools
 
 
+# -- league settings ------------------------------------------------------------
+
+def _settings_int(value):
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_league_settings(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """The league's own rules: trade deadline, playoff start / field, and
+    the waiver system, read from the settings the bundle's league ctx
+    already carries (provider settings plus the league-rules overlay in
+    ctx["league_settings"], the same sources Front Office's deadline
+    chip and the waiver page's FAAB gate read). Every field is whatever
+    the feed actually published: an unset deadline is reported as no
+    deadline, a missing one as unknown, and waiver process times are
+    never guessed (utils.waiver_freshness returns None without a real
+    process time in the settings)."""
+    import re as _re
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    pack = _base_pack("league_settings", bundle)
+    tools: list[str] = []
+    entities = entities or {}
+    topic = str(entities.get("settings_topic") or "all").strip().lower()
+    if topic not in ("deadline", "playoffs", "waivers", "all"):
+        topic = "all"
+    pack["topic"] = topic
+    ctx = bundle.get("ctx") or {}
+    raw = (ctx.get("league") or {}).get("settings") or {}
+    overlaid = ctx.get("league_settings") or {}
+    if not raw and not overlaid:
+        pack["available"] = False
+        pack["missing"] = "your league settings are not loaded"
+        pack["nearest"] = []
+        return pack, tools
+    tools.append("league.settings")
+    merged = {**raw, **overlaid}
+    current_week = _settings_int(bundle.get("week")) or 0
+
+    # Trade deadline: Sleeper publishes a week number on the provider
+    # settings; ESPN publishes a timestamp (trade_deadline_ts); the
+    # rules record carries a calendar date. The week read checks the
+    # provider settings first, because the overlay's date-shaped field
+    # must never shadow a real week number.
+    deadline: dict = {"kind": "unknown"}
+    dl_week = None
+    for src in (raw, overlaid):
+        v = _settings_int(src.get("trade_deadline"))
+        if v is not None and 1 <= v <= 29:
+            dl_week = v
+            break
+    if dl_week is not None:
+        deadline = {
+            "kind": "week", "week": dl_week,
+            "weeks_remaining": (dl_week - current_week) if current_week else None,
+            "passed": bool(current_week and current_week > dl_week),
+        }
+    else:
+        ts = _settings_int(merged.get("trade_deadline_ts"))
+        if ts:
+            dt = datetime.fromtimestamp(ts, ZoneInfo("America/New_York"))
+            deadline = {
+                "kind": "date", "ts": ts,
+                "date_label": f"{dt:%A, %B} {dt.day}, {dt.year}",
+                "passed": bool(ts < time.time()),
+            }
+        else:
+            dstr = overlaid.get("trade_deadline")
+            parsed = None
+            if isinstance(dstr, str) and _re.match(r"^\d{4}-\d{2}-\d{2}$", dstr.strip()):
+                try:
+                    parsed = datetime.strptime(dstr.strip(), "%Y-%m-%d")
+                except ValueError:
+                    parsed = None
+            if parsed is not None:
+                today = datetime.now(ZoneInfo("America/New_York")).date()
+                deadline = {
+                    "kind": "date", "ts": None,
+                    "date_label": f"{parsed:%A, %B} {parsed.day}, {parsed.year}",
+                    "passed": bool(parsed.date() < today),
+                }
+            elif "trade_deadline" in raw or "trade_deadline" in overlaid:
+                # The feed carries the field and it is empty / zero:
+                # the league set no deadline.
+                deadline = {"kind": "none"}
+    pack["deadline"] = deadline
+
+    # Playoffs: the overlay wins over provider settings on purpose (it
+    # exists because some adapters default these fields); the verified
+    # flag rides along so the answer can caveat an unverified format.
+    pws = _settings_int(merged.get("playoff_week_start")
+                        or merged.get("playoff_start_week"))
+    pteams = _settings_int(merged.get("playoff_teams"))
+    playoffs = None
+    if pws or pteams:
+        verified = merged.get("playoff_format_verified")
+        playoffs = {
+            "week_start": pws, "teams": pteams,
+            "verified": verified if isinstance(verified, bool) else None,
+            "weeks_until": (pws - current_week) if (pws and current_week) else None,
+            "started": bool(pws and current_week and current_week >= pws),
+        }
+    pack["playoffs"] = playoffs
+
+    # Waivers: the system label follows the site's own FAAB gate (the
+    # waiver page's context check), then the rules record's waiver_type
+    # string; the process time comes only from waiver_process_info,
+    # which returns None unless the settings carry a real one.
+    waivers: dict = {"system": "priority", "faab_enabled": False,
+                     "budget_total": None, "budget_remaining": None,
+                     "next_process_label": None}
+    fx = None
+    try:
+        fx = waiver_faab_context(ctx)
+    except Exception:
+        fx = None
+    if fx is not None:
+        tools.append("waiver_bp._waiver_faab_context")
+    type_str = merged.get("waiver_type")
+    type_str = type_str.strip().lower() if isinstance(type_str, str) else ""
+    if fx and fx.get("enabled"):
+        waivers["system"] = "faab"
+        waivers["faab_enabled"] = True
+        waivers["budget_total"] = fx.get("total")
+        used = _settings_int(((bundle.get("roster") or {}).get("settings") or {})
+                             .get("waiver_budget_used"))
+        if used is not None and fx.get("total") is not None:
+            waivers["budget_remaining"] = fx["total"] - used
+    elif type_str in ("faab", "rolling", "reverse_standings", "free"):
+        waivers["system"] = type_str
+        waivers["faab_enabled"] = type_str == "faab"
+    try:
+        from utils.waiver_freshness import waiver_process_info
+
+        info = waiver_process_info(merged)
+    except Exception:
+        info = None
+    if info and info.get("next_process_at"):
+        try:
+            ndt = datetime.fromisoformat(str(info["next_process_at"]))
+            waivers["next_process_label"] = (
+                f"{ndt:%A} at {ndt:%I:%M %p} {ndt:%Z}".replace(" 0", " "))
+        except ValueError:
+            pass
+    pack["waivers"] = waivers
+    return pack, tools
+
+
 BUILDERS = {
+    "league_settings": build_league_settings,
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
     "trade_finding": build_trade_finding,
