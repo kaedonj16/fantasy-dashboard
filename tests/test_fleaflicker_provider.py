@@ -249,6 +249,29 @@ def test_get_league_survives_rules_failure(monkeypatch):
     assert league["roster_positions"] == []
 
 
+def test_get_league_marks_playoff_format_unverified(monkeypatch):
+    # Fleaflicker's API never publishes playoff settings; the settings
+    # values are defaults and must say so (Wave 1) so the league-rules
+    # record -- not this payload -- becomes the source of truth.
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueRules":
+            return {"rosterPositions": []}
+        return {
+            "league": {"id": 14153, "name": "Dynasty", "size": 12},
+            "divisions": [{"teams": [{"id": 1, "name": "Owls",
+                                      "owners": [{"id": 9}]}]}],
+            "season": 2026,
+        }
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    league = provider.get_league("14153", 2026)
+    assert league["settings"]["playoff_format_verified"] is False
+    assert league["settings"]["playoff_teams"] == 6
+    assert league["settings"]["playoff_week_start"] == 15
+
+
 @patch("dashboard_services.providers.fleaflicker_api._request_get")
 def test_preview_survives_rules_season_html_400(mock_get):
     """Regression: rules+season HTML 400 used to 503 the whole /preview path."""

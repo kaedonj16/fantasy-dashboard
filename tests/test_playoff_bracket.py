@@ -102,6 +102,26 @@ def test_derive_or_project_six_team_field_is_complete_with_byes():
     assert all(g.get("projected") for g in games)
 
 
+def test_derive_or_project_eight_team_field_is_complete():
+    games = derive_or_project_bracket(
+        matchups_by_week={},
+        playoff_week_start=15,
+        seed_roster_ids=list(range(1, 13)),
+        playoff_teams=8,
+    )
+    by_round = {}
+    for g in games:
+        by_round.setdefault(g["r"], []).append(g)
+    assert sorted(by_round) == [1, 2, 3]
+    assert len(by_round[1]) == 4 and len(by_round[2]) == 2 \
+        and len(by_round[3]) == 1
+    r1_pairs = {(g["t1"], g["t2"]) for g in by_round[1]}
+    assert r1_pairs == {(1, 8), (4, 5), (2, 7), (3, 6)}
+    field = {g[s] for g in games for s in ("t1", "t2") if g[s] is not None}
+    assert field == set(range(1, 9))
+    assert all(g.get("projected") for g in games)
+
+
 def test_derive_or_project_too_small_field_is_empty():
     assert derive_or_project_bracket(
         matchups_by_week={}, playoff_week_start=15,

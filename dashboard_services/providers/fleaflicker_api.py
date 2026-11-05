@@ -1052,6 +1052,12 @@ class FleaflickerProvider(ProviderAdapter):
             "draft_status": _fleaflicker_draft_status(league),
             "playoff_week_start": playoff_week_start,
             "playoff_teams": playoff_teams,
+            # Fleaflicker's API never publishes playoff settings, so the
+            # two values above are unverified defaults. Say so explicitly
+            # (Wave 1): the league-rules record resolves the real format
+            # via derivation or user confirmation, and the championship
+            # gate reads this flag.
+            "playoff_format_verified": False,
         }
         if max_keepers > 0:
             settings["max_keepers"] = max_keepers
