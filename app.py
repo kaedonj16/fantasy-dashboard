@@ -13103,6 +13103,39 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         str(pid) for r in rosters for pid in (r.get("players") or [])
     }
 
+    # Transactions delta (spec §5.2A, shared with /api/waiver-candidates
+    # via utils.waiver_freshness): this selector's pool is the same
+    # value-table-minus-ctx-rosters derivation, so it inherits the same
+    # staleness. Net the provider transactions newer than the ctx build
+    # into the rostered set; fail soft to the cached rosters on any error.
+    _ns_dropped: dict = {}
+    try:
+        from utils.waiver_freshness import (
+            apply_delta_to_rostered as _ns_apply_delta,
+            dropped_within as _ns_dropped_within,
+            get_transactions_delta as _ns_get_delta,
+        )
+        _ns_delta = _ns_get_delta(
+            ctx.get("platform") or "sleeper", ctx.get("league_id") or "",
+            int(ctx.get("current_season") or ctx.get("season") or 0), ctx) or {}
+        rostered_ids = _ns_apply_delta(rostered_ids, _ns_delta)
+        _ns_dropped = _ns_dropped_within(_ns_delta, hours=48.0)
+    except Exception:
+        logger.debug("next-steps waiver delta skipped", exc_info=True)
+        _ns_dropped = {}
+
+    # Role states (Wave 2 spec §2.3), resolved fail-soft: ctx-carried
+    # states first, then the Wave 2 PR 1 module when it exists, else
+    # none: in which case only the dropped path below can admit a
+    # below-floor player, exactly as in Wave 1.
+    _ns_role_states: dict = {}
+    try:
+        from utils.waiver_role import resolve_role_states as _ns_resolve_rs
+        _ns_role_states = _ns_resolve_rs(ctx, ctx.get("current_week")) or {}
+    except Exception:
+        logger.debug("next-steps waiver role states skipped", exc_info=True)
+        _ns_role_states = {}
+
     # Rookie-class eligibility, identical to the Waiver Wire Targets card:
     # this year's rookies join the pool only once a classmate is rostered
     # (i.e. the rookie draft has happened).
@@ -13187,7 +13220,17 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         if pid in _rookie_sids and not _rookie_draft_done:
             continue
         val = value_by_pid.get(pid, 0.0)
-        if val < WEIGHTS.min_value:
+        # Starting-role admission (Wave 2 spec §2.3, absorbing the Wave 1
+        # §5.2B dropped-starter admission into the same mechanism): a
+        # below-floor player the delta says was dropped in the last 48h,
+        # or who carries any role state, enters the pool tentatively; the
+        # single starting-role verdict after the opportunity inputs are
+        # built keeps only those whose projection reaches the viewer's
+        # worst starter at the position AND who arrived via a promotion
+        # signal or the fresh drop, and the shared selector's projection
+        # gate judges the rest.
+        _ns_bypass = pid in _ns_dropped or pid in _ns_role_states
+        if val < WEIGHTS.min_value and not _ns_bypass:
             continue
         try:
             age = float(row.get("age") or 0)
@@ -13203,6 +13246,9 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
             "pos_rank_label": row.get(_rk_ns) or row.get("pos_rank_label") or "",
             "rank_change_7d": row.get("rank_change_7d"),
             "injury_status": str((players_index.get(pid) or {}).get("injury_status") or ""),
+            "dropped_at": _ns_dropped.get(pid),
+            "dropped_bypass": pid in _ns_dropped,
+            "admission_tentative": _ns_bypass,
         })
     if not pool:
         return [], names_by_pid, {}, 0
@@ -13224,7 +13270,9 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         logger.debug("suppressed exception", exc_info=True)
 
     # Bound the evaluated pool like the Waivers page does (top values plus
-    # any strong breakout) so the lineup solver stays cheap.
+    # any strong breakout) so the lineup solver stays cheap. Tentative
+    # starting-role admission candidates always evaluate: their whole case
+    # is this week's projection, which only the opportunity inputs know.
     eval_pool = pool[:48]
     _eval_ids = {c["player_id"] for c in eval_pool}
     for c in pool[48:]:
@@ -13232,7 +13280,7 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
             _bs = float((waiver_breakout or {}).get(c["player_id"]) or 0.0)
         except (TypeError, ValueError):
             _bs = 0.0
-        if _bs >= 50.0 and c["player_id"] not in _eval_ids:
+        if (_bs >= 50.0 or c.get("admission_tentative")) and c["player_id"] not in _eval_ids:
             eval_pool.append(c)
             _eval_ids.add(c["player_id"])
 
@@ -13260,6 +13308,7 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
     weekly_maps = None
     forward_pts: dict = {}
     calendar_need: dict = {}
+    _opp: dict = {}
     if season and week:
         _opp = selector_opportunity_inputs(
             season=season, week=week,
@@ -13281,6 +13330,56 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         if _opp["weekly_availability"]:
             calendar_need = _calendar_need_from_availability(
                 _opp["weekly_availability"], roster_positions) or {}
+
+    # Starting-role verdict (Wave 2 spec §2.3): one mechanism for both
+    # admission paths. Signals are computed for the whole evaluated pool
+    # from current-week projections only: a starter with no current-week
+    # projection (bye/hurt) is exactly the hole a promoted starter fills,
+    # so a later week's value must not resurrect him as the bar. A
+    # tentative below-floor admission survives only when the helper
+    # admits it (promotion signal or fresh drop, plus projection at the
+    # viewer's worst starter); without opportunity inputs there is no
+    # projection to judge, so tentative admissions fall out rather than
+    # riding in unjudged. Admitted candidates are annotated and handed
+    # to the selector, which judges them on projection, not value.
+    _ns_signals: dict = {}
+    if eval_pool and season and week:
+        try:
+            from utils.waiver_role import build_starting_role_signals as _ns_build_sr
+            _wk_by_pid = _opp.get("weekly_pts_by_pid") or {}
+            _proj_ns: dict = {}
+            for _pid, _series in (_wk_by_pid or {}).items():
+                if isinstance(_series, (list, tuple)) and _series \
+                        and _series[0] is not None:
+                    _proj_ns[str(_pid)] = float(_series[0])
+            if _proj_ns:
+                _ns_signals = _ns_build_sr(
+                    candidate_pids=[c["player_id"] for c in eval_pool],
+                    positions_by_pid=positions_by_pid,
+                    proj_by_pid=_proj_ns,
+                    roster_pids=roster_pids,
+                    roster_positions=roster_positions,
+                    role_states=_ns_role_states,
+                    dropped_ids=set(_ns_dropped.keys()),
+                    viewer_roster=viewer_roster,
+                    teams_by_pid=teams_by_pid,
+                ) or {}
+        except Exception:
+            logger.debug("next-steps starting-role check failed", exc_info=True)
+            _ns_signals = {}
+    if any(c.get("admission_tentative") for c in eval_pool):
+        _keep_bypass = set(_ns_signals.keys())
+        eval_pool = [c for c in eval_pool
+                     if not c.get("admission_tentative") or c["player_id"] in _keep_bypass]
+        pool = [c for c in pool
+                if not c.get("admission_tentative") or c["player_id"] in _keep_bypass]
+    for c in eval_pool:
+        _sig = _ns_signals.get(c["player_id"])
+        if _sig:
+            c["starting_role"] = True
+            c["signal_kind"] = _sig.get("signal_kind")
+            c["role_state"] = _sig.get("state")
+            c["role_reason"] = _sig.get("reason")
 
     results = rank_team_waiver_suggestions(
         eval_pool,
@@ -13305,6 +13404,7 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         require_team=True,
         hard_exclude_serious=True,
         limit=limit,
+        starting_role_by_pid=_ns_signals or None,
     )
     return results, names_by_pid, calendar_need, len(pool)
 
@@ -13349,6 +13449,10 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
 
             # The why-line is built only from gate outcomes.
             _bits = []
+            if res.get("role_reason"):
+                # Starting-role claim (spec §2.3): the role reason is
+                # the headline ("Starting for BAL this week").
+                _bits.append(str(res["role_reason"]))
             if _outcome in ("add", "add_drop"):
                 if _gain:
                     _bits.append(f"+{_gain:g} lineup pts this week")
@@ -13405,6 +13509,9 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
                 "score": _score,
                 "player_id": _pid,
                 "outcome": _outcome,
+                "starting_role": bool(res.get("starting_role")),
+                "signal_kind": res.get("signal_kind"),
+                "role_reason": res.get("role_reason"),
             })
     except Exception:
         logger.debug("next-steps waiver actions failed", exc_info=True)
@@ -16016,6 +16123,67 @@ def api_start_sit_options():
     return jsonify(payload), status
 
 
+def _ss_resolve_identity(pid, row=None, meta=None, full_player=None,
+                         teams_index=None, groups=None):
+    """Resolve a Start/Sit row's (position, name, team) -- spec §4.2.
+
+    The fallback chain, in order: model value table row, players_index
+    meta, the full players payload (``ctx["players"]``, Sleeper shape:
+    ``full_name`` / ``position`` / ``team``), and -- only for a pid that
+    is an NFL team code with no position from any source -- a synthesized
+    DEF identity from the teams index / full team name. The value table
+    and the players index carry no DEF rows, so without steps 3-4 a team
+    defense resolved to position "" (row dropped, "No roster data") or,
+    with a partial meta row, to the literal fallback "Player NO" for the
+    Saints (the pid IS the team code). Defenses are deliberately NOT
+    added to the model value table: those values are player values and a
+    DEF row would leak into trade/waiver value surfaces.
+
+    The synthesis guard requires that NO source carried a position, so
+    an IDP player (DB/CB/LB...) is never relabelled a team defense.
+    Returns (pos, name, team) with pos canonicalized via _start_sit_pos
+    ("" when nothing resolves to a Start/Sit group).
+    """
+    row = row or {}
+    meta = meta or {}
+    full = full_player or {}
+    pid_s = str(pid)
+    full_pos = full.get("position") or full.get("pos") or ""
+    if not full_pos:
+        _fps = full.get("fantasy_positions")
+        if isinstance(_fps, (list, tuple)) and _fps:
+            full_pos = _fps[0]
+    any_pos = (row.get("position") or row.get("pos") or meta.get("pos")
+               or meta.get("position") or full_pos or "")
+    pos = _start_sit_pos(any_pos)
+    if not pos and not any_pos:
+        code = pid_s.upper()
+        _ti = (teams_index or {}).get(code) or {}
+        _known_team = bool(_ti) or get_team_full_name(code) != code
+        if _known_team and (not groups or "DEF" in groups):
+            pos = "DEF"
+    name = (row.get("name") or meta.get("name") or meta.get("full_name")
+            or full.get("full_name") or full.get("name") or "")
+    if not name:
+        _joined = " ".join(
+            str(x) for x in (full.get("first_name"), full.get("last_name"))
+            if x)
+        name = _joined
+    if not name and pos == "DEF":
+        code = pid_s.upper()
+        _ti = (teams_index or {}).get(code) or {}
+        name = (_ti.get("name") or _ti.get("full_name")
+                or (get_team_full_name(code) if get_team_full_name(code) != code else "")
+                or "")
+    if not name:
+        name = f"Player {pid_s}"
+    team = str(row.get("team") or meta.get("team") or full.get("team")
+               or "").upper()
+    if not team and pos == "DEF":
+        team = pid_s.upper()
+    return pos, name, team
+
+
 def _build_start_sit_options(platform: str, league_id: str, season: int,
                              guest_pids=()):
     """Start/Sit options payload + HTTP status (see api_start_sit_options).
@@ -16084,6 +16252,12 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         return _owner_by_pid.get(str(pid)) or "Free Agent"
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
+    _ss_teams_index = ctx.get("teams_index") or {}
+    if not _ss_teams_index:
+        try:
+            _ss_teams_index = load_teams_index() or {}
+        except Exception:
+            _ss_teams_index = {}
     try:
         from utils.waiver_score import build_depth_index as _ss_build_depth
         _ss_depth_index = _ss_build_depth(players_full)
@@ -16139,6 +16313,24 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         # (roster and guest alike, keeping their numbers comparable).
         _ss_bundles = {}
         _ss_use_bundles = False
+    if _ss_use_bundles:
+        # DEF rows always take the live path (spec §4.2): the bundle
+        # build's universe comes from players_index, which carries no DEF
+        # entries, so a team defense can never have a bundle. The coverage
+        # check above already degrades such rosters to live today; force
+        # it explicitly so a future bundle-build change cannot silently
+        # score a DEF row from missing bundle inputs. The live path's
+        # _lookup_proj does serve DEF projections: the projections-by-week
+        # maps carry team-code entries (verified: "NO" -> 9.5 pts).
+        for _pid in list(player_ids) + list(guest_pids):
+            _pos_chk, _, _ = _ss_resolve_identity(
+                _pid, rows_by_id.get(_pid), players_index.get(_pid),
+                players_full.get(_pid), _ss_teams_index,
+                _start_sit_groups(lineup_requirements))
+            if _pos_chk == "DEF":
+                _ss_bundles = {}
+                _ss_use_bundles = False
+                break
 
     # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
@@ -16439,11 +16631,13 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         player's position has no group in this league."""
         row = rows_by_id.get(pid) or {}
         meta = players_index.get(pid) or {}
-        pos = _start_sit_pos(row.get("position") or row.get("pos") or meta.get("pos") or "")
+        # Identity fallback chain (spec §4.2): value table -> players
+        # index -> full players payload -> teams-index DEF synthesis.
+        pos, player_name, team = _ss_resolve_identity(
+            pid, row, meta, players_full.get(pid) or {},
+            _ss_teams_index, positions_out)
         if pos not in positions_out:
             return None
-        player_name = row.get("name") or meta.get("name") or f"Player {pid}"
-        team = (row.get("team") or meta.get("team") or "").upper()
         opponent = opponent_map.get(team, "")
         # Only mark as BYE/on-bye when the schedule actually loaded (opponent_map non-empty)
         on_bye = bool(opponent_map) and team not in opponent_map

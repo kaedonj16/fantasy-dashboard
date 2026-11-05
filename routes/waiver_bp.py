@@ -124,7 +124,7 @@ def _waiver_roster_signature(ctx) -> str:
 
 
 def _waiver_candidates_cache_key(platform, league_id, season, horizon,
-                                 position_filter, rid, ctx):
+                                 position_filter, rid, ctx, delta_hash=""):
     try:
         _tbl = get_model_value_table_cached() or []
         _tbl_key = (id(_tbl), len(_tbl))
@@ -146,7 +146,7 @@ def _waiver_candidates_cache_key(platform, league_id, season, horizon,
     return (
         platform, league_id, int(season), horizon, position_filter or "",
         rid or "", id(ctx), _waiver_roster_signature(ctx),
-        _tbl_key, _state_key, _prot_key,
+        _tbl_key, _state_key, _prot_key, delta_hash or "",
     )
 
 
@@ -286,6 +286,115 @@ def _resolve_forward_ppg(vals, feed_live):
     return (sum(vals) / len(vals)) if vals else 0.0
 
 
+def _starting_role_signals(ctx, rosters, rid, candidate_pids,
+                           players_index, season, dropped_pids=None) -> dict:
+    """Starting-role signals for waiver candidates (Wave 2 spec §2.3).
+
+    The single admission mechanism that generalizes Wave 1's
+    dropped-starter bypass (§5.2B): a candidate whose current-week
+    projection (the same weekly projection source the waiver path scores
+    candidates with) is at or above the viewer's worst *starter* at his
+    position: dedicated starters, the Superflex slot for QBs, or the
+    FLEX starter for RB/WR/TE: bypasses the value floor when he either
+    carries a ``promoted``/``returning`` role state or was dropped
+    within the delta window. A backup's value with a starter's
+    projection and a starter's job (the Brissett/Lock case) is exactly
+    what this admits; a healthy backup with no promotion signal (the
+    Rattler case) never enters. Never raises.
+    """
+    try:
+        if not rid:
+            return {}
+        viewer = next(
+            (r for r in (rosters or [])
+             if str(r.get("roster_id")) == str(rid)), None)
+        if viewer is None:
+            return {}
+        from utils.utils import load_week_projection
+        from utils.fantasy_scoring import weekly_projection_points as _wpp
+        from utils.waiver_role import (
+            build_starting_role_signals,
+            resolve_role_states,
+        )
+
+        try:
+            _nfl = get_nfl_state() or {}
+        except Exception:
+            _nfl = {}
+        _season = int(_nfl.get("season") or season or 0)
+        _week = int(ctx.get("current_week") or _nfl.get("week")
+                    or _nfl.get("display_week") or 1)
+        if not _season:
+            return {}
+        week_map = load_week_projection(_season, _week) or {}
+        if not week_map:
+            return {}
+        scoring = ctx.get("raw_scoring_settings") or {}
+        mvt = _waiver_value_index()
+
+        def _pos_of(pid):
+            row = mvt.get(str(pid)) or {}
+            meta = (players_index or {}).get(str(pid)) or {}
+            return str(row.get("position") or row.get("pos")
+                       or meta.get("pos") or meta.get("position")
+                       or "").upper()
+
+        def _team_of(pid):
+            row = mvt.get(str(pid)) or {}
+            meta = (players_index or {}).get(str(pid)) or {}
+            return str(row.get("team") or meta.get("team") or "").upper()
+
+        def _proj_of(pid):
+            v = _wpp(week_map, str(pid), scoring, _pos_of(pid))
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        _res = {str(p) for p in (viewer.get("reserve") or [])}
+        _tax = {str(p) for p in (viewer.get("taxi") or [])}
+        _active = [str(p) for p in (viewer.get("players") or [])
+                   if str(p) not in _res and str(p) not in _tax]
+        _watch = list(dict.fromkeys(
+            _active + [str(p) for p in (candidate_pids or [])]))
+        _proj_by_pid = {}
+        _pos_by_pid = {}
+        _team_by_pid = {}
+        for _pid in _watch:
+            _pos_by_pid[_pid] = _pos_of(_pid)
+            _team_by_pid[_pid] = _team_of(_pid)
+            _p = _proj_of(_pid)
+            if _p is not None:
+                _proj_by_pid[_pid] = _p
+        return build_starting_role_signals(
+            candidate_pids=[str(p) for p in (candidate_pids or [])],
+            positions_by_pid=_pos_by_pid,
+            proj_by_pid=_proj_by_pid,
+            roster_pids=_active,
+            roster_positions=ctx.get("roster_positions") or [],
+            role_states=resolve_role_states(ctx, _week),
+            dropped_ids={str(p) for p in (dropped_pids or set())},
+            viewer_roster=viewer,
+            teams_by_pid=_team_by_pid,
+        )
+    except Exception:
+        logger.debug("[waiver-candidates] starting-role signals skipped",
+                     exc_info=True)
+        return {}
+
+
+def _dropped_starter_bypass_ids(ctx, rosters, rid, dropped_pids,
+                                players_index, season) -> set:
+    """Wave 1 name kept for compatibility: the dropped path into the
+    single starting-role mechanism (see ``_starting_role_signals``)."""
+    if not dropped_pids:
+        return set()
+    signals = _starting_role_signals(
+        ctx, rosters, rid, set(dropped_pids), players_index, season,
+        dropped_pids=set(dropped_pids))
+    return {pid for pid, sig in signals.items() if sig.get("via_drop")}
+
+
 @waiver_bp.route("/api/waiver-candidates")
 def api_waiver_candidates():
     """
@@ -315,12 +424,39 @@ def api_waiver_candidates():
     except Exception as e:
         return _api_err("Request failed", e)
 
+    # Transactions delta (spec §5.2A): the pool below is derived from the
+    # cached ctx rosters, which can be up to 12h old, so a player dropped
+    # an hour ago would still read as rostered. The delta nets every
+    # provider transaction newer than the ctx build into the derived
+    # rostered set, cached 120s per league. Fail soft: any error derives
+    # exactly as before.
+    _wv_delta: dict = {}
+    try:
+        from utils.waiver_freshness import get_transactions_delta as _get_delta
+        _wv_delta = _get_delta(platform, league_id, season, ctx) or {}
+    except Exception:
+        logger.debug("[waiver-candidates] transactions delta skipped",
+                     exc_info=True)
+        _wv_delta = {}
+
     # Result cache (see _WAIVER_CANDIDATES_CACHE above): an identical repeat
     # request inside the TTL serves the finished payload instead of re-running
-    # the pipeline below.
+    # the pipeline below. The delta hash is part of the key so the 300s
+    # result cache can never serve a pre-delta payload.
+    _role_fp = ""
+    try:
+        _rs_fp_src = ctx.get("_role_states") or ctx.get("role_states") or {}
+        if _rs_fp_src:
+            _role_fp = hashlib.sha256(
+                repr(sorted((str(k), repr(v))
+                            for k, v in _rs_fp_src.items())).encode("utf-8")
+            ).hexdigest()
+    except Exception:
+        _role_fp = ""
     _cand_key = _waiver_candidates_cache_key(
         platform, league_id, season, horizon, position_filter,
-        (request.args.get("rid") or "").strip(), ctx)
+        (request.args.get("rid") or "").strip(), ctx,
+        delta_hash=(_wv_delta.get("hash") or "") + _role_fp)
     _cand_hit = _waiver_candidates_cache_get(_cand_key)
     if _cand_hit is not None:
         return jsonify(_cand_hit)
@@ -343,6 +479,20 @@ def api_waiver_candidates():
         for r in rosters
         for pid in (r.get("players") or [])
     }
+    # Apply the transactions delta: drops since the ctx build leave the
+    # rostered set (they are claimable now); adds since the build join it
+    # (another team's new player must stop being suggested).
+    _wv_dropped: dict = {}
+    try:
+        from utils.waiver_freshness import (
+            apply_delta_to_rostered as _apply_delta,
+            dropped_within as _dropped_within,
+        )
+        rostered_ids = _apply_delta(rostered_ids, _wv_delta)
+        _wv_dropped = _dropped_within(_wv_delta, hours=48.0)
+    except Exception:
+        logger.debug("[waiver-candidates] delta apply skipped", exc_info=True)
+        _wv_dropped = {}
 
     # Detect whether the rookie draft has happened by checking if any
     # current-year rookie Sleeper ID is already on a roster
@@ -427,6 +577,41 @@ def api_waiver_candidates():
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
+    # Starting-role floor bypass (Wave 2 spec §2.3, generalizing the
+    # Wave 1 §5.2B dropped-starter bypass into the single mechanism) +
+    # the "claim by" process info (spec §5.2C). The process is computed
+    # only when the league settings actually carry a waiver type +
+    # process time (supplied by the league-rules overlay when present);
+    # never guessed. Admission candidates are the fresh drops plus any
+    # player carrying a role state; the helper judges both paths with
+    # the same projection test, and role states resolve fail-soft (no
+    # role layer -> dropped path only, exactly as Wave 1).
+    _role_signals: dict = {}
+    _bypass_ids: set = set()
+    _waiver_process = None
+    try:
+        from utils.waiver_freshness import waiver_process_info as _wp_info
+        _wp_settings = dict((ctx.get("league") or {}).get("settings") or {})
+        _wp_settings.update(ctx.get("league_settings") or {})
+        _waiver_process = _wp_info(_wp_settings)
+    except Exception:
+        _waiver_process = None
+    try:
+        from utils.waiver_role import resolve_role_states as _resolve_rs
+        _rs_candidates = set(_wv_dropped.keys())
+        _rs_candidates |= set(_resolve_rs(ctx).keys())
+        if _rs_candidates:
+            _role_signals = _starting_role_signals(
+                ctx, rosters, (request.args.get("rid") or "").strip(),
+                _rs_candidates, players_index, season,
+                dropped_pids=set(_wv_dropped.keys()))
+            _bypass_ids = set(_role_signals.keys())
+    except Exception:
+        logger.debug("[waiver-candidates] starting-role bypass skipped",
+                     exc_info=True)
+        _role_signals = {}
+        _bypass_ids = set()
+
     candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -451,7 +636,7 @@ def api_waiver_candidates():
         # (a real usage spike or a league-wide trending-add) justifies the look
         # (#5). Age / rank-noise-only players stay filtered.
         _below_floor = val < WEIGHTS.min_value
-        if _below_floor and pid not in _signal_ids:
+        if _below_floor and pid not in _signal_ids and pid not in _bypass_ids:
             continue
         pmeta_wv = players_index.get(pid, {})
         precise_age_wv = age_from_bday(pmeta_wv.get("bDay"))
@@ -474,6 +659,17 @@ def api_waiver_candidates():
             "pos_rank_label": row.get(_rk_wv) or row.get("pos_rank_label") or "",
             "rank_change_7d": row.get("rank_change_7d"),
             "discovery": _below_floor,   # admitted on a credible signal, not value
+            # Freshness (spec §5.2): when the transactions delta says this
+            # player was dropped after the ctx build, and the league's
+            # waiver process when the rules record carries one.
+            "dropped_at": _wv_dropped.get(pid),
+            "waiver_process": _waiver_process if pid in _wv_dropped else None,
+            # Starting-role override (Wave 2 spec §2.3): the signal kind
+            # and the role reason the row renders as a chip/why-line.
+            "starting_role": pid in _role_signals,
+            "signal_kind": (_role_signals.get(pid) or {}).get("signal_kind"),
+            "role_state": (_role_signals.get(pid) or {}).get("state"),
+            "role_reason": (_role_signals.get(pid) or {}).get("reason"),
         })
 
     # Breakout scores that align with the Breakout Engine page (same season
@@ -575,7 +771,8 @@ def api_waiver_candidates():
             candidates, key=lambda c: c.get("value") or 0.0, reverse=True)
         _enrich_ids = {c["player_id"] for c in _by_value_enrich[:_WAIVER_ENRICH_POOL]}
         _enrich_ids |= {c["player_id"] for c in candidates
-                        if c.get("discovery") or str(c["player_id"]) in _signal_ids}
+                        if c.get("discovery") or c.get("starting_role")
+                        or str(c["player_id"]) in _signal_ids}
     except Exception:
         # Fail open: if the pool can't be built, enrich everyone (correct, slow)
         # rather than starving the ranking of signals.
@@ -1236,7 +1433,9 @@ def api_waiver_candidates():
                              "position": _drop["position"], "value": round(_drop["value"])}
                 _replaces = _brief(_le.replaces_pid) if _le.replaces_pid else None
                 if (_qb_covered_wv and str(c.get("position") or "").upper() == "QB"
-                        and _outcome in ("add", "add_drop")):
+                        and _outcome in ("add", "add_drop")
+                        and not (c.get("starting_role")
+                                 and (_role_signals.get(str(c["player_id"])) or {}).get("starter_gap"))):
                     # Covered QB room: kill the claim, keep the row.
                     _outcome = "hold"
                     _lineup_gain = None
@@ -1312,6 +1511,16 @@ def api_waiver_candidates():
                 "market_opportunity": _market_opp,
                 "rostered_pct": c.get("rostered_pct"),
                 "adds_48h": _adds_by_id.get(str(c["player_id"])),
+                # Freshness (spec §5.2C): drop time + waiver process for
+                # the "claim by" chip; both None for ordinary candidates.
+                "dropped_at": c.get("dropped_at"),
+                "waiver_process": c.get("waiver_process"),
+                # Starting-role override (Wave 2 spec §2.3): rows carry
+                # the role reason for the chip/why-line.
+                "starting_role": bool(c.get("starting_role")),
+                "signal_kind": c.get("signal_kind"),
+                "role_state": c.get("role_state"),
+                "role_reason": c.get("role_reason"),
                 # Injury flag: never present an injured player as a clean add.
                 # (Redraft already filtered serious designations out above;
                 # dynasty keeps them only with this flag.)

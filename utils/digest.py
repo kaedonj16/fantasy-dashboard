@@ -284,6 +284,9 @@ def recommend_waivers(
     budget_total=None,
     budget_remaining=None,
     trending_adds_by_pid: Optional[dict] = None,
+    role_states: Optional[dict] = None,
+    projection_by_pid: Optional[dict] = None,
+    dropped_ids: Optional[set] = None,
 ) -> list[dict[str, Any]]:
     """Rank unowned players via the shared selector (item 6).
 
@@ -406,6 +409,38 @@ def recommend_waivers(
         candidates.append(cand)
         cand_by_pid[pid] = cand
 
+    # Starting-role signals (Wave 2 spec §2.3), as in select_waiver_add.
+    _sr_by_pid_rec: dict = {}
+    if role_states or dropped_ids:
+        try:
+            from utils.waiver_role import build_starting_role_signals
+            _proj_rec: dict = {}
+            for _pid, _v in (projection_by_pid or {}).items():
+                if _v is not None:
+                    _proj_rec[str(_pid)] = _v
+            for _pid, _series in (weekly_pts_by_pid or {}).items():
+                if str(_pid) in _proj_rec:
+                    continue
+                if isinstance(_series, (list, tuple)) and _series:
+                    if _series[0] is not None:
+                        _proj_rec[str(_pid)] = _series[0]
+                elif _series is not None and not isinstance(_series, dict):
+                    _proj_rec[str(_pid)] = _series
+            for _pid, _v in (forward_pts_by_pid or {}).items():
+                _proj_rec.setdefault(str(_pid), _v)
+            _sr_by_pid_rec = build_starting_role_signals(
+                candidate_pids=[c["player_id"] for c in candidates],
+                positions_by_pid=positions_by_pid,
+                proj_by_pid=_proj_rec,
+                roster_pids=[str(p) for p in (roster_players or [])],
+                roster_positions=roster_positions,
+                role_states=role_states,
+                dropped_ids=dropped_ids,
+                teams_by_pid=teams_by_pid,
+            )
+        except Exception:
+            _sr_by_pid_rec = {}
+
     results = rank_team_waiver_suggestions(
         candidates,
         owned_ids=owned,
@@ -427,6 +462,7 @@ def recommend_waivers(
         forward_pts_by_pid=forward_pts_by_pid,
         waiver_type=waiver_type, budget_total=budget_total,
         budget_remaining=budget_remaining,
+        starting_role_by_pid=_sr_by_pid_rec or None,
     )
     scored: list[dict] = []
     for res in results:
@@ -440,6 +476,8 @@ def recommend_waivers(
         except Exception:
             badge = ""
         reason_bits = []
+        if res.get("role_reason"):
+            reason_bits.append(str(res["role_reason"]))
         if (cand.get("need_mult") or 1.0) > 1.05:
             reason_bits.append(f"{pos} need")
         if badge and badge.lower() not in ("target", ""):
@@ -468,6 +506,10 @@ def recommend_waivers(
             "faab": res.get("faab"),
             "horizon": res.get("horizon"),
             "starter_gap": res.get("starter_gap"),
+            "starting_role": bool(res.get("starting_role")),
+            "signal_kind": res.get("signal_kind"),
+            "role_state": res.get("role_state"),
+            "role_reason": res.get("role_reason"),
         })
     return unique_waiver_targets(scored, limit=limit)
 
@@ -2706,20 +2748,42 @@ def waiver_drop_bar_value(roster_player_ids, value_by_pid, injured_by_pid, pidx)
     return {pos: min(vals) for pos, vals in vals_by_pos.items() if vals}
 
 
-def waiver_claim_beats_roster(value, pos_bar, starter_gap) -> bool:
+def waiver_claim_beats_roster(value, pos_bar, starter_gap, *,
+                              candidate_projection=None,
+                              pos_bar_projection=None,
+                              starting_role=False) -> bool:
     """True when a waiver claim would actually improve the team at its position.
 
     Fails open when there is no bar for the position. A real starter hole
     bypasses the margin check because the claim fills a need regardless.
     Otherwise the claim must be a real upgrade over the worst rostered
     player at that position, not a lateral move.
+
+    Starting-role candidates (Wave 2 spec §2.3) are judged on
+    **projection**, not model value: when ``starting_role`` is set (or a
+    candidate projection is supplied), pass iff his projection beats
+    the worst rostered player at the position's projection, or a
+    starter hole exists (``starter_gap`` here is the combined count-
+    and role-based gap). A starting-role claim with no projection to
+    judge never passes: the override requires the projection.
     """
-    if pos_bar is None:
-        return True
     try:
         gap = float(starter_gap or 0)
     except (TypeError, ValueError):
         gap = 0.0
+    if starting_role or candidate_projection is not None:
+        if gap > 0:
+            return True
+        if candidate_projection is None:
+            return False
+        if pos_bar_projection is None:
+            return True
+        try:
+            return float(candidate_projection) > float(pos_bar_projection)
+        except (TypeError, ValueError):
+            return False
+    if pos_bar is None:
+        return True
     if gap > 0:
         return True
     try:
@@ -2825,6 +2889,9 @@ def select_waiver_add(
     budget_total=None,
     budget_remaining=None,
     trending_adds_by_pid: Optional[dict] = None,
+    role_states: Optional[dict] = None,
+    projection_by_pid: Optional[dict] = None,
+    dropped_ids: Optional[set] = None,
 ) -> Optional[dict]:
     """Pick one actually-worth-adding free agent, or None.
 
@@ -2911,6 +2978,42 @@ def select_waiver_add(
         if _n:
             name_by_pid[str(_rpid)] = _n
 
+    # Starting-role signals (Wave 2 spec §2.3): built only when the
+    # caller supplies role states / a fresh-drop set; absent both, the
+    # selector behaves exactly as before. Current-week projections come
+    # from the explicit map, else the first weekly point, else the
+    # forward average the caller already built.
+    _sr_by_pid: dict = {}
+    if role_states or dropped_ids:
+        try:
+            from utils.waiver_role import build_starting_role_signals
+            _proj_by_pid: dict = {}
+            for _pid, _v in (projection_by_pid or {}).items():
+                if _v is not None:
+                    _proj_by_pid[str(_pid)] = _v
+            for _pid, _series in (weekly_pts_by_pid or {}).items():
+                if str(_pid) in _proj_by_pid:
+                    continue
+                if isinstance(_series, (list, tuple)) and _series:
+                    if _series[0] is not None:
+                        _proj_by_pid[str(_pid)] = _series[0]
+                elif _series is not None and not isinstance(_series, dict):
+                    _proj_by_pid[str(_pid)] = _series
+            for _pid, _v in (forward_pts_by_pid or {}).items():
+                _proj_by_pid.setdefault(str(_pid), _v)
+            _sr_by_pid = build_starting_role_signals(
+                candidate_pids=[c["player_id"] for c in candidates],
+                positions_by_pid=positions_by_pid,
+                proj_by_pid=_proj_by_pid,
+                roster_pids=[str(p) for p in (roster_players or [])],
+                roster_positions=roster_positions,
+                role_states=role_states,
+                dropped_ids=dropped_ids,
+                teams_by_pid=teams_by_pid,
+            )
+        except Exception:
+            _sr_by_pid = {}
+
     results = rank_team_waiver_suggestions(
         candidates,
         owned_ids=owned,
@@ -2935,6 +3038,7 @@ def select_waiver_add(
         budget_remaining=budget_remaining,
         require_team=True,
         hard_exclude_serious=True,
+        starting_role_by_pid=_sr_by_pid or None,
     )
     if not results:
         return None
@@ -2952,6 +3056,10 @@ def select_waiver_add(
         is_redraft=is_redraft, starter_gap=gap, pos_rank=rk,
         is_sf=is_sf, n_teams=n_teams)
     extra = []
+    if res.get("role_reason"):
+        # The role reason leads: "Starting for BAL this week" is why
+        # this claim exists at all (spec §2.3).
+        extra.append(str(res["role_reason"]))
     if res.get("outcome") == "stash":
         extra.append("Stash only, no lineup gain yet")
     elif res.get("lineup_gain"):
@@ -2971,6 +3079,10 @@ def select_waiver_add(
         "starter_gap": gap,
         "severity": severity,
         "reason": reason,
+        "starting_role": bool(res.get("starting_role")),
+        "signal_kind": res.get("signal_kind"),
+        "role_state": res.get("role_state"),
+        "role_reason": res.get("role_reason"),
         "outcome": res.get("outcome"),
         "lineup_gain": res.get("lineup_gain"),
         "lineup_gain_4wk": res.get("lineup_gain_4wk"),
