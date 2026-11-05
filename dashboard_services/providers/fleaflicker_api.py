@@ -1052,6 +1052,12 @@ class FleaflickerProvider(ProviderAdapter):
             "draft_status": _fleaflicker_draft_status(league),
             "playoff_week_start": playoff_week_start,
             "playoff_teams": playoff_teams,
+            # Fleaflicker's API never publishes playoff settings, so the
+            # two values above are unverified defaults. Say so explicitly
+            # (Wave 1): the league-rules record resolves the real format
+            # via derivation or user confirmation, and the championship
+            # gate reads this flag.
+            "playoff_format_verified": False,
         }
         if max_keepers > 0:
             settings["max_keepers"] = max_keepers
@@ -1139,8 +1145,11 @@ class FleaflickerProvider(ProviderAdapter):
 
     def _parse_fetch_roster_groups(
         self, detail: dict, xwalk: dict, by_name: dict,
-    ) -> tuple[list[str], list[str], list[str], list[str], set[str]]:
+    ) -> tuple[list[str], list[str], list[str], list[str], set[str],
+               list[str], bool]:
         players, starters, reserve, taxi = [], [], [], []
+        keepers: list[str] = []
+        keeper_seen = False
         seen: set[str] = set()
         for group in detail.get("groups") or []:
             group_label = str(group.get("group") or "").upper()
@@ -1148,6 +1157,16 @@ class FleaflickerProvider(ProviderAdapter):
                 lp = slot.get("leaguePlayer") or slot.get("league_player") or {}
                 pro = lp.get("proPlayer") or lp.get("pro_player") or {}
                 bucket = self._slot_group_label(group_label, slot)
+                # Designated-keeper truth (Wave 1): the flag rides on
+                # leaguePlayer in every group (starters, bench, IR) but
+                # is only present when true in this feed. Any slot
+                # carrying the key means the league supplied designation
+                # data for this roster.
+                is_keeper = lp.get("isKeeper")
+                if is_keeper is None:
+                    is_keeper = lp.get("is_keeper")
+                if is_keeper is not None:
+                    keeper_seen = True
                 if _get(pro, "id") is None:
                     if bucket in _START_GROUPS:
                         starters.append("0")
@@ -1161,13 +1180,15 @@ class FleaflickerProvider(ProviderAdapter):
                     continue
                 seen.add(cid)
                 players.append(cid)
+                if is_keeper:
+                    keepers.append(cid)
                 if bucket in _START_GROUPS:
                     starters.append(cid)
                 elif bucket in _IR_GROUPS:
                     reserve.append(cid)
                 elif bucket in _TAXI_GROUPS:
                     taxi.append(cid)
-        return players, starters, reserve, taxi, seen
+        return players, starters, reserve, taxi, seen, keepers, keeper_seen
 
     def _canonical_map(self, league_id, season, *, token: Optional[str] = None):
         auth = resolve_credentials(str(league_id), season, token=token) or ""
@@ -1288,6 +1309,8 @@ class FleaflickerProvider(ProviderAdapter):
             team_name = team_names.get(str(team_id)) or _get(team, "name") or f"Team {team_id}"
             entries = roster.get("players") or []
             players, starters, reserve, taxi = [], [], [], []
+            keepers: list[str] = []
+            keeper_seen = False
             seen: set[str] = set()
             mapped_flat = 0
             # FetchRoster carries START/BENCH groups; the bulk roster list does not.
@@ -1298,7 +1321,8 @@ class FleaflickerProvider(ProviderAdapter):
                         "FetchRoster", league_id, season, ttl=300, token=token,
                         team_id=int(team_id),
                     )
-                    players, starters, reserve, taxi, seen = self._parse_fetch_roster_groups(
+                    (players, starters, reserve, taxi, seen,
+                     keepers, keeper_seen) = self._parse_fetch_roster_groups(
                         detail, xwalk, by_name,
                     )
                 except ProviderUnavailableError:
@@ -1319,6 +1343,21 @@ class FleaflickerProvider(ProviderAdapter):
                 if not cid:
                     continue
                 mapped_flat += 1
+                # Keeper flags on bulk entries too (same leaguePlayer
+                # shape); when the bulk payload carries none, designations
+                # come only from the FetchRoster path above.
+                entry_keeper = player.get("isKeeper")
+                if entry_keeper is None:
+                    entry_keeper = player.get("is_keeper")
+                if entry_keeper is None:
+                    nested_lp = player.get("leaguePlayer") \
+                        or player.get("league_player") or {}
+                    entry_keeper = nested_lp.get("isKeeper") \
+                        if isinstance(nested_lp, dict) else None
+                if entry_keeper is not None:
+                    keeper_seen = True
+                    if entry_keeper and cid not in keepers:
+                        keepers.append(cid)
                 if cid not in seen:
                     seen.add(cid)
                     players.append(cid)
@@ -1342,6 +1381,11 @@ class FleaflickerProvider(ProviderAdapter):
                     "team_name": team_name,
                 },
             })
+            # "keepers" is present only when the feed supplied
+            # designation data for this roster (Wave 1): key presence is
+            # the known/unknown signal downstream enforcement reads.
+            if keeper_seen:
+                out[-1]["keepers"] = keepers
         return out
 
     @staticmethod

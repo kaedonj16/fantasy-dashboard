@@ -183,6 +183,43 @@ def test_bracket_format_fails_closed_for_fleaflicker():
     assert bracket_format({"league_settings": {}}, "sleeper") is None
 
 
+def test_bracket_format_via_rules_overlay():
+    # Wave 1: the serve-time rules overlay is what produces the
+    # verification flag. A derived format (prior-season scoreboards)
+    # corrects the field the gate reads but does NOT verify it; feed
+    # and user-confirmed records do.
+    from utils.league_rules import apply_rules_overlay
+
+    def _ctx():
+        return {
+            "platform": "fleaflicker", "league_id": "92916",
+            "season": 2026,
+            "league_settings": {"playoff_teams": 6,
+                                "playoff_week_start": 15},
+            "rosters": [{"roster_id": i} for i in range(1, 13)],
+        }
+
+    derived = {"source": "derived", "playoff_teams": 8,
+               "playoff_week_start": 15,
+               "updated_at": "2026-11-04T00:00:00+00:00",
+               "keepers_known": False}
+    ctx = _ctx()
+    apply_rules_overlay(ctx, record=derived)
+    assert ctx["league_settings"]["playoff_teams"] == 8
+    assert bracket_format(ctx, "fleaflicker") is None
+
+    confirmed = dict(derived, source="user_confirmed")
+    ctx = _ctx()
+    apply_rules_overlay(ctx, record=confirmed)
+    fmt = bracket_format(ctx, "fleaflicker")
+    assert fmt is not None and fmt["playoff_teams"] == 8
+
+    feed = dict(derived, source="feed")
+    ctx = _ctx()
+    apply_rules_overlay(ctx, record=feed)
+    assert bracket_format(ctx, "fleaflicker") is not None
+
+
 def test_unknown_format_serves_no_championship_rows():
     ctx = {"league_settings": {"playoff_teams": 6, "playoff_week_start": 15}}
     odds = [{"roster_id": 1, "playoff_pct": 90.0, "is_complete": False}]

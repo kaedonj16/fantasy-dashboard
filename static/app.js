@@ -10368,6 +10368,11 @@ window.initTradePage = function initTradePage(root = document) {
       } else if (isProspect(p.id)) {
         badges.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
       }
+      // Designated keeper: this league does not allow trading them.
+      // Badge and warn only -- the manual calculator never blocks.
+      if (p.id && rosterFilter.lockedIds && rosterFilter.lockedIds.has(String(p.id))) {
+        badges.push('<span class="otc-keeper-badge" title="Designated keeper: this league does not allow trading designated keepers" style="display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:#f59e0b22;color:#b45309;border:1px solid #f59e0b44;vertical-align:middle;cursor:default;">Keeper-locked</span>');
+      }
 
       // Text meta (pos · team · age) joined with " • "; badges appended space-separated.
       const metaHtml = metaBits.map(bit =>
@@ -15095,11 +15100,18 @@ window.initTradePage = function initTradePage(root = document) {
       rosterFilter.pickRoundCountsByRid = {};
       rosterFilter.teamName = {};
       rosterFilter.username = {};
+      // Designated keepers (Wave 1): badge-only in the calculator -- a
+      // locked player can still be added, but the chip says so.
+      rosterFilter.lockedByRid = {};
+      rosterFilter.lockedIds = new Set();
       teams.forEach(t => {
         const rid = String(t.roster_id);
         const set = new Set((t.player_ids || []).map(String));
         const counts = t.pick_round_counts || {};
         rosterFilter.byRid[rid] = set;
+        const lockedSet = new Set((t.keeper_locked_ids || []).map(String));
+        rosterFilter.lockedByRid[rid] = lockedSet;
+        lockedSet.forEach(pid => rosterFilter.lockedIds.add(pid));
         rosterFilter.pickIdsByRid[rid] = new Set((t.pick_ids || []).map(String));
         rosterFilter.pickRoundCountsByRid[rid] = counts;
         rosterFilter.pickRoundsByRid[rid] = new Set(Object.keys(counts));

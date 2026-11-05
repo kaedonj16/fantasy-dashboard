@@ -182,7 +182,9 @@ def test_league_builds_are_concurrency_capped_process_wide():
     # 2026-10-27 the acquire is manual and BOUNDED (10s): a thread that
     # cannot get a build slot degrades to stale/pending instead of
     # queueing indefinitely behind builds on a 4-thread worker.
-    helper = src.split("def get_league_ctx_from_cache(")[1].split("\ndef ")[0]
+    # The public helper is a thin wrapper (Wave 1 rules overlay); the
+    # build behavior guarded here lives in the impl it delegates to.
+    helper = src.split("def _get_league_ctx_from_cache_impl(")[1].split("\ndef ")[0]
     assert "_LEAGUE_BUILD_SEM.acquire(timeout=10)" in helper
     guarded = helper.split("_LEAGUE_BUILD_SEM.acquire(timeout=10)")[1][:1200]
     assert "build_league_context(" in guarded
