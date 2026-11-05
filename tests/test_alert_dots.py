@@ -216,8 +216,12 @@ def test_alert_dot_matches_changelog_dot_spec():
     css = _read("static/dashboard.css")
     bell = _css_block(css, ".changelog-dot")
     dot = _css_block(css, ".alert-dot")
+    # Size/colour/ring parity holds; the corner OFFSETS deliberately differ
+    # now: the bell dot is centred on its 16px icon's corner inside the 36px
+    # button (6px), while .alert-dot keeps the generic button-corner offset
+    # (2px) and gets its icon anchoring from host-scoped rules (tabbar etc).
     for prop in ("width", "height", "border-radius", "background", "border",
-                 "top", "right", "pointer-events"):
+                 "pointer-events"):
         assert dot[prop] == bell[prop], prop
     assert dot["position"] == "absolute"
     hidden = _css_block(css, ".alert-dot-hidden")

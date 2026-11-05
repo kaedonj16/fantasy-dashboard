@@ -18708,14 +18708,29 @@ function _showNotifToast(entry) {
 // bell itself now -- desktop button, phone top-bar button, and the More
 // sheet's Account row; the gear proxy dot and the settings-row dot
 // migration retired with the hidden-bell design.
-function setChangelogDot(hasNew) {
+function setChangelogDot(hasNew, unreadCount) {
   // Update the global notification state
   hasNewNotifications = hasNew;
   window.__brHasNewNotifs = hasNew;
 
-  // The bell's own dot.
+  // Counted badge: when the inbox has unread items, the badge (clamped at
+  // 9+) replaces the plain dot on both bells. Callers that only know the
+  // boolean reuse the last known count.
+  const count = (typeof unreadCount === "number") ? unreadCount : (window.__brNotifUnread || 0);
+  window.__brNotifUnread = count;
+  const showBadge = count >= 1;
+  const badgeText = count > 9 ? "9+" : String(count);
+  function syncBadge(el) {
+    if (!el) return;
+    el.textContent = badgeText;
+    el.hidden = !showBadge;
+    el.setAttribute("aria-hidden", showBadge ? "false" : "true");
+  }
+
+  // The bell's own dot (hidden while the badge carries the count).
   const bellDot = document.querySelector(".changelog-dot");
-  if (bellDot) bellDot.classList.toggle("changelog-dot-hidden", !hasNew);
+  if (bellDot) bellDot.classList.toggle("changelog-dot-hidden", !hasNew || showBadge);
+  syncBadge(document.getElementById("changelogBadge"));
 
   // Account-row dot in the mobile More sheet: only while Account is
   // collapsed (the panel itself is one tap further in).
@@ -18729,9 +18744,10 @@ function setChangelogDot(hasNew) {
     acctDot.setAttribute("aria-hidden", show ? "false" : "true");
   }
 
-  // Mobile top-bar bell dot.
+  // Mobile top-bar bell dot + badge (same swap as the desktop bell).
   const topNotifDot = document.getElementById("brTopNotifDot");
-  if (topNotifDot) topNotifDot.hidden = !hasNew;
+  if (topNotifDot) topNotifDot.hidden = !hasNew || showBadge;
+  syncBadge(document.getElementById("brTopNotifBadge"));
 }
 
 // Unread alert dots (Weekly Recap + Breakout Engine). Same mechanism as the
@@ -18797,7 +18813,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // The bell dot is the union: unread inbox items OR an unseen changelog.
   function refreshNotifDot() {
-    setChangelogDot(inboxUnread > 0 || changelogUnseen());
+    setChangelogDot(inboxUnread > 0 || changelogUnseen(), inboxUnread);
   }
 
   // Fetch changelog + inbox and initialize the notification center
@@ -21737,7 +21753,7 @@ function _refreshWatchlistNav() {
     // Show a small count badge only when at least one player has an alert.
     if (alertEl) {
       alertEl.style.display = alertCount ? '' : 'none';
-      alertEl.textContent = alertCount ? String(alertCount) : '';
+      alertEl.textContent = alertCount ? (alertCount > 9 ? '9+' : String(alertCount)) : '';
     }
   });
 }

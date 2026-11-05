@@ -1,8 +1,9 @@
 """Contract tests: floating mobile dock (Facebook-style pill) + pro polish.
 
 - The dock floats with side margins, rounded corners and a soft shadow.
-- Slim pass: 50px tall, 20px icons, 10px tracked labels, and ONE active signal
-  (the gliding pill; the active icon/label stay a strong neutral).
+- Dock B: 64px tall, 24px icons, 11px tracked labels, blurred floating
+  surface, and ONE active signal (the gliding pill behind the icon only;
+  the active icon/label stay a strong neutral).
 - A mobile-only search shortcut sits top-right in the top bar and opens the
   existing full-screen search.
 """
@@ -17,28 +18,29 @@ APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 
 
 def test_dock_floats_with_side_margins():
-    assert "left: max(12px, env(safe-area-inset-left))" in CSS
-    assert "right: max(12px, env(safe-area-inset-right))" in CSS
-    assert "bottom: calc(env(safe-area-inset-bottom) + 10px)" in CSS
+    assert "left: max(16px, env(safe-area-inset-left))" in CSS
+    assert "right: max(16px, env(safe-area-inset-right))" in CSS
+    assert "bottom: calc(env(safe-area-inset-bottom) + 12px)" in CSS
 
 
 def test_dock_is_a_rounded_pill_with_shadow():
-    assert "border-radius: var(--radius)" in CSS
-    assert "box-shadow: 0 8px 24px" in CSS
+    assert "border-radius: 20px" in CSS
+    assert "box-shadow: 0 16px 40px rgba(18, 45, 75, .18)" in CSS
+    assert "backdrop-filter: blur(14px) saturate(1.5)" in CSS
 
 
 def test_dock_reserve_space_accounts_for_float_gap():
-    assert "--dock-safe-bottom: calc(50px + env(safe-area-inset-bottom) + 12px)" in CSS
+    assert "--dock-safe-bottom: calc(64px + env(safe-area-inset-bottom) + 14px)" in CSS
 
 
 def test_dock_proportions():
-    assert "height: 50px;" in CSS
-    assert "font-size: 10px;" in CSS
+    assert "height: 64px;" in CSS
+    assert "font-size: 11px;" in CSS
     assert "letter-spacing: .03em;" in CSS
-    # Dock icons render at 20px in both the league and guest docks (the
+    # Dock icons render at 24px in both the league and guest docks (the
     # tabbar-anchored call sites; More-sheet rows use their own size).
-    assert APP_PY.count("_nav_icon(icon, size=20)}<span class='br-tabbar-lbl'>") == 2
-    assert APP_PY.count("_nav_icon('more', size=20)}<span class='br-tabbar-lbl'>") == 2
+    assert APP_PY.count("_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>") == 2
+    assert APP_PY.count("_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>") == 2
 
 
 def test_active_tab_uses_pill_only():
