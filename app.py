@@ -562,7 +562,10 @@ def _playoff_sim_sig(ctx: dict, platform: str) -> str:
     except Exception:
         sched = "fallback"
     cw = int(ctx.get("current_week") or 0)
-    return f"{_roster_sig(ctx)}|w{cw}|{sched}"
+    # Rules fingerprint (Wave 1): without it, correcting a league's
+    # playoff format in the rules record would not invalidate a warm sim
+    # built on the wrong field until roster/week/schedule changed.
+    return f"{_roster_sig(ctx)}|w{cw}|{sched}|rules:{_rules_fingerprint(ctx)}"
 
 
 def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
@@ -612,6 +615,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                 fresh
                 and hit.get("roster_sig") == _roster_sig(ctx)
                 and hit.get("week") == int(ctx.get("current_week") or 0)
+                and hit.get("rules_fp") == _rules_fingerprint(ctx)
             ):
                 return hit["data"] or []
         else:
@@ -636,6 +640,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                     "sig": snap_sig,
                     "roster_sig": _roster_sig(snapshot),
                     "week": int(snapshot.get("current_week") or 0),
+                    "rules_fp": _rules_fingerprint(snapshot),
                 }
             except Exception:
                 logger.debug("background playoff sim failed", exc_info=True)
@@ -684,6 +689,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             "sig": sig,
             "roster_sig": _roster_sig(ctx),
             "week": int(ctx.get("current_week") or 0),
+            "rules_fp": _rules_fingerprint(ctx),
         }
         return odds
     except Exception:
@@ -767,7 +773,10 @@ def _championship_sim_cached(ctx: dict, platform: str, odds_rows) -> list:
         import hashlib as _hl
         odds_sig = _hl.md5(  # noqa: S324 (non-crypto cache key)
             ("|".join(odds_sig_parts)).encode("utf-8")).hexdigest()
-        local_sig = f"{_roster_sig(ctx)}|w{int(ctx.get('current_week') or 0)}|{odds_sig}"
+        local_sig = (
+            f"{_roster_sig(ctx)}|w{int(ctx.get('current_week') or 0)}"
+            f"|{odds_sig}|rules:{_rules_fingerprint(ctx)}"
+        )
         if fresh and hit.get("sig") == local_sig:
             return hit["data"] or []
 
@@ -8141,6 +8150,15 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     league = _results["league"] or {}
     users = _results["users"] or []
     rosters = _results["rosters"] or []
+    # Wave 1 PR 2: persist designated keepers the provider supplied into
+    # the league-rules record, so keeper legality survives in surfaces
+    # that never see the raw provider rosters. Fail-soft by design.
+    try:
+        from utils.league_rules import update_designated_keepers
+        update_designated_keepers(platform, resolved_league_id, season,
+                                  rosters)
+    except Exception:
+        logger.debug("[build] keeper persist failed", exc_info=True)
     traded = _results["traded"] or []
     drafts = _results["drafts"] or []
     current = _results["state"] or {}
@@ -10199,7 +10217,8 @@ def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
                      movement: dict = None, owner_to_rid: dict = None,
                      sparklines: dict = None, divisions: dict = None,
-                     detailed_df=None, efficiency: dict = None) -> str:
+                     detailed_df=None, efficiency: dict = None,
+                     playoff_rules_note: str = "") -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -10591,6 +10610,7 @@ def render_standings(team_stats, length, all_play: dict = None,
 
     return f"""
         {ctx_line}
+        {playoff_rules_note}
         <div class="st-tblscroll">
         <table id="stats" class="standings-table" data-page="standings"{' data-divisions="1"' if _use_div else ''}>
           <thead>
@@ -11909,7 +11929,28 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     synthetic_bracket: list[dict] = []
     match_id = 1
 
-    if playoff_teams == 6:
+    _rules_source = (ctx.get("_league_rules") or {}).get("source")
+    if _rules_source in ("feed", "derived", "user_confirmed") \
+            and len(seeded_rids) >= 2:
+        # Verified format (Wave 1 rules record): project with the shared
+        # full-bracket builder so ANY verified field size renders, not
+        # just the hand-rolled 4/6/8 shapes below.
+        try:
+            from utils.standings import build_full_bracket
+            _seed_ids = []
+            for _v in seeded_rids:
+                try:
+                    _seed_ids.append(int(_v))
+                except (TypeError, ValueError):
+                    _seed_ids.append(_v)
+            synthetic_bracket = build_full_bracket(_seed_ids)
+        except Exception:
+            logger.debug(
+                "[standings] verified bracket projection failed",
+                exc_info=True,
+            )
+            synthetic_bracket = []
+    elif playoff_teams == 6:
         # R1: 3v6, 4v5 → R2 (Semis): 1 vs W(4v5), 2 vs W(3v6) → R3 Finals
         synthetic_bracket = [
             {"m": 1, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 3}},
@@ -12301,6 +12342,88 @@ def _standings_playoff_params(ctx: dict, team_stats):
     return _pp_spots, _pp_weeks
 
 
+def _playoff_rules_confirm_note(ctx: dict, total_rosters: int,
+                                settings: dict) -> str:
+    """One quiet confirmation line under the Playoff Picture header (Wave 1).
+
+    Shown only when the league's rules record is default_unverified (in
+    practice Fleaflicker and some MFL leagues, whose APIs never publish
+    the playoff format) and the viewer is linked to the league. Saving
+    posts to /api/league-rules/confirm, which stores a user_confirmed
+    record; the serve-time overlay then serves the confirmed values to
+    every consumer. No modal, nothing on connect.
+    """
+    rules = ctx.get("_league_rules") or {}
+    if rules.get("source") != "default_unverified":
+        return ""
+    viewer = ctx.get("viewer") or {}
+    if not (viewer.get("viewer_roster_id") is not None
+            or viewer.get("roster_id") is not None):
+        return ""
+    platform = html.escape(str(ctx.get("platform") or ""), quote=True)
+    league_id = html.escape(
+        str(ctx.get("resolved_league_id", ctx.get("league_id")) or ""),
+        quote=True,
+    )
+    try:
+        season = int(ctx.get("season") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    try:
+        cur_teams = int((settings or {}).get("playoff_teams") or 6)
+    except (TypeError, ValueError):
+        cur_teams = 6
+    try:
+        cur_start = int((settings or {}).get("playoff_week_start") or 15)
+    except (TypeError, ValueError):
+        cur_start = 15
+    cur_wtype = str((settings or {}).get("waiver_type") or "")
+    cur_wtime = html.escape(
+        str((settings or {}).get("waiver_process_time") or ""), quote=True,
+    )
+    max_teams = int(total_rosters or 0) or cur_teams
+
+    def _sel(value):
+        return " selected" if cur_wtype == value else ""
+
+    return (
+        "<div class='pp-confirm'>"
+        "<span class='pp-confirm-lead'>Playoff format not confirmed for "
+        "this league.</span>"
+        "<form class='pp-confirm-form' method='post' "
+        "action='/api/league-rules/confirm'>"
+        f"<input type='hidden' name='platform' value='{platform}'>"
+        f"<input type='hidden' name='league_id' value='{league_id}'>"
+        f"<input type='hidden' name='season' value='{season}'>"
+        "<label>Playoff teams "
+        f"<input type='number' name='playoff_teams' min='2' "
+        f"max='{max_teams}' value='{cur_teams}' required></label>"
+        "<label>First playoff week "
+        f"<input type='number' name='playoff_week_start' min='2' "
+        f"max='25' value='{cur_start}' required></label>"
+        "<label>Waivers <select name='waiver_type'>"
+        "<option value=''>Not sure</option>"
+        f"<option value='rolling'{_sel('rolling')}>Rolling priority</option>"
+        f"<option value='faab'{_sel('faab')}>FAAB</option>"
+        f"<option value='reverse_standings'{_sel('reverse_standings')}>"
+        "Reverse standings</option>"
+        f"<option value='free'{_sel('free')}>Free agency</option>"
+        "</select></label>"
+        "<label>Process time "
+        f"<input type='time' name='waiver_process_time' "
+        f"value='{cur_wtime}'></label>"
+        "<label>Process days <select name='waiver_process_days'>"
+        "<option value=''>Not sure</option>"
+        "<option value='daily'>Daily</option>"
+        "<option value='Tue'>Tuesdays</option>"
+        "<option value='Wed'>Wednesdays</option>"
+        "<option value='Thu'>Thursdays</option>"
+        "</select></label>"
+        "<button type='submit'>Confirm</button>"
+        "</form></div>"
+    )
+
+
 def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> dict:
     """Render the swappable standings surfaces from ctx. Shared by the
     standings page and the week-selector endpoint, so a "through week N" view is
@@ -12358,6 +12481,7 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
         movement=_movement, owner_to_rid=_o2r, sparklines=_sparks,
         divisions=_div_info, detailed_df=detailed_df, efficiency=_eff_by_rid,
+        playoff_rules_note=_playoff_rules_confirm_note(ctx, num_teams, _settings),
     )
 
     try:
@@ -12997,6 +13121,7 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
                     "cta_label": "Fix lineup",
                     "cta_url": fix_url,
                     "score": _score,
+                    "player_ids": [str(s.get("in") or ""), str(s.get("out") or "")],
                 })
         except Exception:
             logger.debug("next-steps lineup swaps failed", exc_info=True)
@@ -13046,6 +13171,7 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
                     "cta_label": "Fix lineup",
                     "cta_url": fix_url,
                     "score": 95,
+                    "player_ids": [str(i.get("pid") or "")],
                 })
         except Exception:
             logger.debug("next-steps lineup issues failed", exc_info=True)
@@ -13405,6 +13531,15 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
                 "score": _score,
                 "player_id": _pid,
                 "outcome": _outcome,
+                # Wave 3 PR 3 claims block inputs: the starting-role
+                # reason and the dropped-today flag ride along only
+                # when the selector actually sourced them (the Wave 2
+                # role override / Wave 1 transactions delta on their
+                # own stacks); absent data stays absent, never a chip
+                # without a source.
+                "role_reason": res.get("role_reason") or res.get("starting_role_reason"),
+                "dropped_today": bool(res.get("dropped_today")),
+                "pickup_score": res.get("pickup_score"),
             })
     except Exception:
         logger.debug("next-steps waiver actions failed", exc_info=True)
@@ -13479,10 +13614,19 @@ def _next_steps_trade_actions(ctx: dict, viewer_roster_id) -> list:
             elif "stuck" in direction:
                 _opp = "Mutual upgrade"
 
-            # Concrete package: name the specific player to send.
-            _send = sends[0] if sends else None
-            _send_name = (_send.get("name") if _send else "") or ""
-            _send_pos = str((_send.get("position") if _send else "") or "").upper()
+            # Concrete package: name every player sent (Wave 3 PR 3:
+            # the brief sequences deals by their full send assets, so
+            # a QB-back repair piece is part of the named package).
+            _send_names = [str(s.get("name") or "") for s in sends
+                           if isinstance(s, dict) and s.get("name")]
+            _send_name = " + ".join(_send_names)
+            _send_ids = [str(s.get("id") or s.get("player_id") or "")
+                         for s in sends if isinstance(s, dict)]
+            _send_ids = [s for s in _send_ids if s]
+            _receive_ids = [str(t.get("id") or t.get("player_id") or "")]
+            _receive_ids = [s for s in _receive_ids if s]
+            _bye_flag = p.get("bye_flag") if isinstance(
+                p.get("bye_flag"), dict) else None
 
             # Roster-fit reasoning.
             _why_bits = []
@@ -13497,6 +13641,8 @@ def _next_steps_trade_actions(ctx: dict, viewer_roster_id) -> list:
                 _why_bits.append(f"fills your {_hole} hole")
             if _send_name:
                 _why_bits.append(f"you send {_send_name}")
+            if _bye_flag and _bye_flag.get("label"):
+                _why_bits.append(str(_bye_flag["label"]))
             _why = ". ".join(_why_bits) + "." if _why_bits else ""
 
             # Fairness + accept probability.
@@ -13513,6 +13659,10 @@ def _next_steps_trade_actions(ctx: dict, viewer_roster_id) -> list:
             _impact = " \u00b7 ".join(_impact_bits) if _impact_bits else None
 
             _action = f"Offer {_send_name} for {t_name}" if _send_name else f"Target {t_name}"
+            try:
+                _acc_val = float(_acc) if _acc else 0.0
+            except (TypeError, ValueError):
+                _acc_val = 0.0
             actions.append({
                 "priority": "low",
                 "tag": f"Trade \u00b7 {_opp}",
@@ -13522,8 +13672,54 @@ def _next_steps_trade_actions(ctx: dict, viewer_roster_id) -> list:
                 "impact": _impact,
                 "cta_label": "Propose trade",
                 "cta_url": _trade_url,
-                "score": 40 + _losing_boost,
+                "score": 40 + _losing_boost + (_acc_val / 5.0 if _acc_val else 0),
+                # Named, partner-checked deal (Wave 3 PR 3): the brief
+                # sequences on these assets and reads acceptance from
+                # the Wave 2 conditioned model output.
+                "partner": team_name,
+                "partner_roster_id": str(p.get("roster_id") or ""),
+                "send_ids": _send_ids,
+                "receive_ids": _receive_ids,
+                "send_names": _send_names,
+                "receive_names": [t_name],
+                "acceptance_rate": _acc_val or None,
+                "bye_flag": _bye_flag,
             })
+            # The partner's alt deal is a second named deal with the
+            # same partner, fed by the same conditioned outputs.
+            _alt = p.get("alt_deal") if isinstance(p.get("alt_deal"), dict) else None
+            if _alt and _alt.get("gets") and _alt.get("gives"):
+                _a_get = _alt["gets"][0]
+                _a_give_names = [str(g.get("name") or "") for g in _alt["gives"]
+                                 if isinstance(g, dict) and g.get("name")]
+                _a_acc = _alt.get("acceptance_rate")
+                try:
+                    _a_acc_val = float(_a_acc) if _a_acc else 0.0
+                except (TypeError, ValueError):
+                    _a_acc_val = 0.0
+                actions.append({
+                    "priority": "low",
+                    "tag": f"Trade \u00b7 {_opp}",
+                    "kind": "trade",
+                    "action": (f"Offer {' + '.join(_a_give_names)} for "
+                               f"{_a_get.get('name') or 'Unknown'}"
+                               if _a_give_names else
+                               f"Target {_a_get.get('name') or 'Unknown'}"),
+                    "why": _why,
+                    "impact": _impact,
+                    "cta_label": "Propose trade",
+                    "cta_url": _trade_url,
+                    "score": 38 + _losing_boost + (_a_acc_val / 5.0 if _a_acc_val else 0),
+                    "partner": team_name,
+                    "partner_roster_id": str(p.get("roster_id") or ""),
+                    "send_ids": [str(g.get("id") or g.get("player_id") or "")
+                                 for g in _alt["gives"] if isinstance(g, dict)],
+                    "receive_ids": [str(_a_get.get("id") or _a_get.get("player_id") or "")],
+                    "send_names": _a_give_names,
+                    "receive_names": [str(_a_get.get("name") or "")],
+                    "acceptance_rate": _a_acc_val or None,
+                    "bye_flag": None,
+                })
     except Exception:
         logger.debug("next-steps trade actions failed", exc_info=True)
     return actions
@@ -13709,8 +13905,22 @@ def _render_next_steps_queue(
     # check is an action (>= 5.0) or has nothing to say.
     bench_note_html = _next_steps_bench_check_note(ctx, viewer_roster_id, last_final_week)
 
-    # Rank by score (expected impact), highest first.
-    actions.sort(key=lambda a: -(a.get("score") or 0))
+    # GM brief (Wave 3): deadline stamps, the <=24h float, and the
+    # playoff-race line on the true field. Fail-soft: without a brief
+    # the queue ranks by score exactly as before.
+    _brief = None
+    try:
+        from dashboard_services.gm_brief import build_gm_brief
+
+        _brief = build_gm_brief(ctx, viewer_roster_id, actions)
+    except Exception:
+        logger.debug("next-steps GM brief failed", exc_info=True)
+        _brief = None
+    if _brief:
+        actions = _brief.get("actions") or []
+    else:
+        # Rank by score (expected impact), highest first.
+        actions.sort(key=lambda a: -(a.get("score") or 0))
     if not actions:
         return f"""
         <section class="os-card os-action-card ns-card" data-action-card="nextsteps">
@@ -13763,6 +13973,22 @@ def _render_next_steps_queue(
             f' data-ns-key="{html.escape(str(a.get("dismiss_key")), quote=True)}"'
             if a.get("dismiss_key") else ""
         )
+        _deadline = a.get("deadline") or {}
+        _deadline_html = (
+            f'<div class="ns-deadline">{html.escape(str(_deadline.get("label") or ""))}</div>'
+            if isinstance(_deadline, dict) and _deadline.get("label") else ""
+        )
+        # Sequencing (Wave 3 PR 3): step labels ride on the item, and
+        # a claim with no legal funding move renders its blocker
+        # named instead of a Claim CTA.
+        _seq = a.get("sequence") or {}
+        _seq_html = (
+            f'<div class="ns-sequence">{html.escape(str(_seq.get("note") or ""))}</div>'
+            if isinstance(_seq, dict) and _seq.get("note") else ""
+        )
+        if a.get("blocker"):
+            _cta = (f'<div class="ns-blocker">'
+                    f'{html.escape(str(a.get("blocker")))}</div>')
         return (
             f'<div class="ns-item ns-prio-{_prio}" data-ns-item="{_item_id}"{_kind_attr}{_key_attr}>'
             f'<div class="ns-priority {_prio}"></div>'
@@ -13770,6 +13996,8 @@ def _render_next_steps_queue(
             f'<div class="ns-tag">{_tag}</div>'
             f'<div class="ns-action">{_action}</div>'
             + (f'<div class="ns-why">{_why}</div>' if _why else '')
+            + _deadline_html
+            + _seq_html
             + _cta
             + f'</div>'
             + f'<button type="button" class="ns-item-dismiss" data-dismiss-ns-item="{_item_id}" aria-label="Dismiss action">&times;</button>'
@@ -13791,12 +14019,101 @@ def _render_next_steps_queue(
     # layout) instead of sitting in a tall third-of-a-row box. The
     # dismiss script keeps this class in sync as actions come and go.
     _single_cls = " ns-frame-single" if _n == 1 else ""
+    # Race line as the card subtitle; the rules confirmation prompt
+    # takes its place when the field is unverified (Wave 3 spec 3.2).
+    _subtitle = "Most important first."
+    if _brief and (_brief.get("race_line") or {}).get("text"):
+        _subtitle = str(_brief["race_line"]["text"])
+    elif _brief and (_brief.get("race_prompt") or {}).get("text"):
+        _subtitle = str(_brief["race_prompt"]["text"])
+    # GM brief strips (Wave 3 PR 2): coverage map and bye panel,
+    # flag-gated per spec section 4. A clean coverage map renders as
+    # one quiet line; a bye panel with no crunch is omitted entirely;
+    # an element with no data renders nothing at all.
+    _strips_html = ""
+    if _brief:
+        _cov = _brief.get("qb_coverage") or {}
+        if _cov.get("holes"):
+            _hole_lines = ""
+            for _hole in _cov["holes"]:
+                _causes = ", ".join(_hole.get("causes") or []) or "short at the position"
+                _fill = (f" Filled by: {html.escape(str(_hole['fills_action']))}."
+                         if _hole.get("fills_action") else "")
+                _hole_lines += (
+                    f'<div>Week {_hole["week"]} {_hole["position"]}: '
+                    f'{_hole["count"]} of {_hole["required"]} startable. '
+                    f'{html.escape(_causes)}.{_fill}</div>'
+                )
+            _strips_html += (
+                f'<details class="ns-strip"><summary>Coverage holes</summary>'
+                f'{_hole_lines}</details>'
+            )
+        elif _cov.get("weeks"):
+            _label_note = " (role-unconfirmed)" if _cov.get("label") else ""
+            _strips_html += (
+                f'<div class="ns-strip">QB coverage set through Week '
+                f'{_cov.get("through_week")}{_label_note}.</div>'
+            )
+        # Claims block (Wave 3 PR 3): the claims subset grouped as
+        # one section in waiver-selector order, with tonight's
+        # process time, the viewer's priority, and each claim's
+        # funding move (or its blocker) named.
+        _claims = _brief.get("claims") or []
+        if _claims:
+            _first = _claims[0]
+            _title_bits = ["Claims"]
+            if _first.get("process_label"):
+                _title_bits.append(str(_first["process_label"]))
+            if _first.get("waiver_priority"):
+                _title_bits.append(
+                    f"Priority {_first['waiver_priority']}")
+            _claim_lines = ""
+            for _claim in _claims:
+                _fund = _claim.get("funding") or {}
+                if _claim.get("blocker"):
+                    _fund_txt = str(_claim["blocker"])
+                elif _fund.get("kind") == "ir_move":
+                    _fund_txt = (f"Funded by moving "
+                                 f"{_fund.get('name') or 'a player'} to IR")
+                elif _fund.get("kind") == "drop":
+                    _fund_txt = (f"Funded by dropping "
+                                 f"{_fund.get('name') or 'a player'}")
+                else:
+                    _fund_txt = ""
+                _chip = (" Dropped today." if _claim.get("dropped_today")
+                         else "")
+                _claim_lines += (
+                    f'<div>Claim {html.escape(str(_claim.get("name") or ""))}.'
+                    + (f' {html.escape(_fund_txt)}.' if _fund_txt else "")
+                    + _chip
+                    + '</div>'
+                )
+            _strips_html += (
+                f'<div class="ns-claims"><div class="ns-claims-title">'
+                f'{html.escape(" · ".join(_title_bits))}</div>'
+                f'{_claim_lines}</div>'
+            )
+        _bye = _brief.get("bye_panel") or {}
+        if _bye.get("has_crunch"):
+            _bye_lines = ""
+            for _wk in _bye.get("weeks") or []:
+                _notes = "".join(
+                    f'<div>{html.escape(str(_n))}.</div>'
+                    for _n in (_wk.get("notes") or []))
+                _bye_lines += (
+                    f'<div>{html.escape(str(_wk.get("net") or ""))}.</div>'
+                    f'{_notes}'
+                )
+            _strips_html += (
+                f'<details class="ns-strip"><summary>Bye outlook</summary>'
+                f'{_bye_lines}</details>'
+            )
     return f"""
         <section class="os-card os-action-card ns-card{collapsed_cls}{_single_cls}" data-action-card="nextsteps">
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Next steps</h2>
-              <div class="os-section-subtitle">Most important first.</div>
+              <div class="os-section-subtitle">{html.escape(_subtitle)}</div>
             </div>
             <div class="os-section-head-actions">
               <span class="os-card-actions">
@@ -13810,8 +14127,9 @@ def _render_next_steps_queue(
             {_items_html}
           </div>""" + (
             f'<div class="ns-list ns-hidden" id="ns-body-extra">{_hidden_html}</div>' if show_expand else ""
-        ) + bench_note_html + f"""
+        ) + _strips_html + bench_note_html + f"""
         </section>"""
+
 
 
 _WEEK1_KICKOFF_CACHE: dict = {}  # season -> (fetched_at, ts_ms | None)
@@ -15052,7 +15370,100 @@ def _league_ctx_redis_load(platform, league_id, season):
         return None
 
 
+def _prior_season_rules_deriver(platform, league_id, season):
+    """Best-effort derived league rules from last season's playoffs.
+
+    Counts the distinct teams in the prior season's ACTUAL winners
+    bracket (matches the scoreboard derivation produced; projected
+    matches are not evidence) and takes the playoff week start as the
+    week after the last prior-season week in which every roster played.
+    Returns None when the prior season offers no real bracket (new
+    league, missing data): the record then stays default_unverified and
+    the Standings confirmation control is the path to truth.
+    """
+    try:
+        from dashboard_services.platform_api import (
+            get_bracket, get_league, get_matchups,
+        )
+        prev = int(season) - 1
+        bracket = get_bracket(platform, league_id, "winners", prev) or []
+        real = [
+            m for m in bracket
+            if (m or {}).get("derived") and not (m or {}).get("projected")
+        ]
+        if not real:
+            return None
+        teams = {
+            str(m.get(k)) for m in real for k in ("t1", "t2")
+            if m.get(k) is not None
+        }
+        if len(teams) < 2:
+            return None
+        out = {"playoff_teams": len(teams)}
+        try:
+            league = get_league(platform, league_id, prev) or {}
+            total = int(league.get("total_rosters") or 0)
+            if total >= 2:
+                last_full = None
+                for wk in range(12, 18):
+                    rows = get_matchups(platform, league_id, wk, prev) or []
+                    playing = {
+                        str(r.get("roster_id")) for r in rows
+                        if r.get("roster_id") is not None
+                    }
+                    if len(playing) >= total:
+                        last_full = wk
+                if last_full:
+                    out["playoff_week_start"] = last_full + 1
+        except Exception:
+            logger.debug(
+                "[league-rules] prior-season week-start derivation failed",
+                exc_info=True,
+            )
+        return out
+    except Exception:
+        logger.debug(
+          "[league-rules] prior-season derivation failed", exc_info=True,
+        )
+        return None
+
+
+def _rules_fingerprint(ctx) -> str:
+    """League-rules component for sim cache signatures (Wave 1).
+
+    Reads the ``_league_rules`` summary the serve-time overlay stamps on
+    the ctx, so correcting the rules record invalidates warm sims whose
+    signature predates the correction.
+    """
+    try:
+        from utils.league_rules import ctx_rules_fingerprint
+        return ctx_rules_fingerprint(ctx)
+    except Exception:
+        return "none"
+
+
 def get_league_ctx_from_cache(
+    platform: str, league_id: str, season: int, *, allow_build: bool = True,
+) -> dict:
+    ctx = _get_league_ctx_from_cache_impl(
+        platform, league_id, season, allow_build=allow_build,
+    )
+    if ctx:
+        # Wave 1: apply the league-rules record as a serve-time overlay
+        # (never baked into the cached/pickled ctx), so playoff format,
+        # waiver and keeper facts come from the record, not from
+        # provider defaults the adapter may have silently invented.
+        try:
+            from utils.ui_audit_fixture import is_ui_audit_league, ui_audit_enabled
+            if not (ui_audit_enabled() and is_ui_audit_league(league_id)):
+                from utils.league_rules import apply_rules_overlay
+                apply_rules_overlay(ctx, deriver=_prior_season_rules_deriver)
+        except Exception:
+            logger.debug("[league-rules] overlay skipped", exc_info=True)
+    return ctx
+
+
+def _get_league_ctx_from_cache_impl(
     platform: str, league_id: str, season: int, *, allow_build: bool = True,
 ) -> dict:
     try:
@@ -16294,6 +16705,30 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                 proj_by_week = {}
         _wk_proj = ((proj_by_week or {}).get(current_week) or {}).get("projections") or {}
 
+    # ── Role states (Wave 2 PR 1): display-only chips ─────────────────────
+    # Computed once per request from the situation layer and joined onto
+    # rows below as the role_situation chip (promoted / benched /
+    # returning). Serve-time only via get_role_states' ctx memo; the
+    # states NEVER feed compute_start_score inputs or factors.
+    _ss_role_states: dict = {}
+    try:
+        from utils.role_state import (
+            get_role_states as _ss_get_role_states,
+            role_chip as _ss_role_chip,
+        )
+        if ctx.get("proj_by_week"):
+            _ss_role_states = _ss_get_role_states(ctx, current_week) or {}
+        else:
+            _role_ctx = dict(ctx)
+            _role_ctx["proj_by_week"] = {
+                current_week: {"projections": dict(_wk_proj or {})},
+            }
+            _ss_role_states = _ss_get_role_states(_role_ctx, current_week) or {}
+    except Exception:
+        logger.debug("[start-sit] role states skipped", exc_info=True)
+        _ss_role_states = {}
+        _ss_role_chip = lambda entry: None  # noqa: E731 -- fail-soft chip
+
     def _lookup_proj(pid: str, pos: str = ""):
         pts = _ss_wpp(_raw_week_map, pid, _ss_scoring, pos)
         if pts is not None:
@@ -16634,6 +17069,15 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             "game_env": _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
             "qb_situation": (_ss_qb_situation(team, _ss_depth_index, players_full)
                              if (pos in ("WR", "TE", "RB") and not on_bye) else None),
+            # Wave 2 PR 1 role state + chip: display-only, same family as
+            # qb_situation. The chip carries the state's reason as its
+            # note; compute_start_score never sees either field.
+            "role_state": ((_ss_role_states.get(pid) or {}).get("state")
+                           if not on_bye else None),
+            "role_reason": ((_ss_role_states.get(pid) or {}).get("reason")
+                            if not on_bye else None),
+            "role_situation": (_ss_role_chip(_ss_role_states.get(pid))
+                               if not on_bye else None),
             "news_signal": (_ss_news_signal(player_name, team, full_player)
                             if not on_bye else None),
             "implied_total": _imp_ss,
@@ -30325,6 +30769,14 @@ def api_league_rosters():
         users = ctx.get("users", []) or []
         rosters = ctx.get("rosters", []) or []
         picks_by_roster = ctx.get("picks_by_roster", {}) or {}
+        # Wave 1 PR 2: designated keepers ride along so the calculator
+        # can badge them (never block). League-level data, so it is safe
+        # inside the shared per-league response cache below.
+        try:
+            from utils.league_rules import keeper_locked_by_roster as _klbr
+            _locked_map = _klbr(ctx)
+        except Exception:
+            _locked_map = {}
 
         teams = _teams if _teams is not None else []
         _build_rosters = rosters if _teams is None else []
@@ -30377,6 +30829,7 @@ def api_league_rosters():
                 "team_name": team_name,
                 "username": username,
                 "player_ids": player_ids,
+                "keeper_locked_ids": sorted(_locked_map.get(roster_id) or ()),
                 "pick_ids": sorted(pick_ids),
                 "pick_round_counts": pick_round_counts,
             })
@@ -40293,6 +40746,14 @@ def api_trade_targets():
     model_value_table = ctx.get("model_value_table") or []
     players_index = ctx.get("players_index") or {}
     picks_by_roster = {} if _league_is_redraft(ctx) else (ctx.get("picks_by_roster") or {})
+    # Wave 1 PR 2: designated keepers cannot be traded in this league;
+    # when designations are known they leave the target pool AND the
+    # viewer's chip pool below. Empty map = unknown = no enforcement.
+    try:
+        from utils.league_rules import keeper_locked_by_roster as _klbr
+        _locked_by_roster = _klbr(ctx)
+    except Exception:
+        _locked_by_roster = {}
 
     if _league_is_redraft(ctx):
         _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
@@ -40401,9 +40862,11 @@ def api_trade_targets():
 
     viewer_roster_obj = next((r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
     viewer_pids = [str(p) for p in (viewer_roster_obj.get("players") or [])] if viewer_roster_obj else []
+    _viewer_locked = _locked_by_roster.get(viewer_roster_id) or frozenset()
     viewer_player_vals = sorted(
         [float(values_by_id[p]["value"]) for p in viewer_pids
-         if p in values_by_id and values_by_id[p]["value"] >= 150],
+         if p in values_by_id and values_by_id[p]["value"] >= 150
+         and p not in _viewer_locked],
         reverse=True,
     )
     valued_ages = [
@@ -40446,6 +40909,8 @@ def api_trade_targets():
                 continue
             if info["value"] > _realistic_max:
                 continue
+            if pid in (_locked_by_roster.get(rid) or ()):
+                continue  # designated keeper: cannot be traded (Wave 1)
             all_collected[info["position"]].append({
                 "player_id": pid,
                 "name": info["name"],
@@ -40471,6 +40936,66 @@ def api_trade_targets():
         owner_needs_by_roster[rid] = detect_needed_positions(
             ranks, vals, num_teams, _thr, _floors,
         )
+
+    # Wave 2 PR 3, check 1 (surplus-by-format): a candidate is only
+    # pitchable when the partner keeps the required starters at his
+    # position after the deal, or the viewer holds a spare startable
+    # there to send back (the package-time repair path, check 2). The
+    # Burrow case: an SF partner with exactly 2 startable QBs and a
+    # viewer who cannot return one never sees Burrow listed at all.
+    try:
+        from dashboard_services import trade_partner_checks as _tpc_t
+        _tp_role_states_t: dict = {}
+        _tp_projections_t: dict = {}
+        try:
+            from utils.role_state import (
+                _week_projections as _rsp_t,
+                get_role_states as _grs_t,
+            )
+            _wk_t = int(ctx.get("current_week") or ctx.get("week") or 0)
+            _tp_role_states_t = _grs_t(ctx, _wk_t) or {}
+            _tp_projections_t = _rsp_t(ctx, _wk_t) or {}
+        except Exception:
+            _tp_role_states_t, _tp_projections_t = {}, {}
+
+        def _infos_t(roster_obj):
+            out = []
+            for _pid in (roster_obj.get("players") or []):
+                _info = values_by_id.get(str(_pid))
+                if _info and _info["position"] in POSITIONS:
+                    out.append({
+                        "player_id": str(_pid), "id": str(_pid),
+                        "name": _info["name"],
+                        "position": _info["position"],
+                        "value": float(_info["value"]),
+                        "team": _info.get("team", ""),
+                    })
+            return out
+
+        _viewer_infos_t = _infos_t(viewer_roster_obj) if viewer_roster_obj else []
+        _infos_by_rid_t = {
+            str(r.get("roster_id")): _infos_t(r) for r in rosters}
+        _bars_t = {p: float(_thr.get(p) or 350) for p in POSITIONS}
+        for _pos_t in POSITIONS:
+            _req_t = int(_floors.get(_pos_t) or 0)
+            _viewer_startable_t = len(_tpc_t.startable_players(
+                _viewer_infos_t, _pos_t,
+                _tp_role_states_t or None, _tp_projections_t or None,
+                _bars_t))
+            _viewer_can_return_t = _viewer_startable_t > _req_t
+            _kept_t = []
+            for _cand_t in all_collected.get(_pos_t) or []:
+                _owner_t = str(_cand_t.get("owner_roster_id") or "")
+                if _viewer_can_return_t or _tpc_t.surplus_ok(
+                        partner_players=_infos_by_rid_t.get(_owner_t, []),
+                        target=_cand_t, requirements=_floors,
+                        role_states=_tp_role_states_t or None,
+                        projections=_tp_projections_t or None,
+                        value_bars=_bars_t):
+                    _kept_t.append(_cand_t)
+            all_collected[_pos_t] = _kept_t
+    except Exception:
+        pass
 
     picked = select_trade_targets(
         viewer_vals=roster_vals.get(viewer_roster_id) or {p: [] for p in POSITIONS},
@@ -40498,6 +41023,7 @@ def api_trade_targets():
             }
             for p in viewer_pids
             if p in values_by_id and values_by_id[p]["position"] in POSITIONS
+            and p not in _viewer_locked
         ),
         key=lambda c: float(values_by_id[c["player_id"]]["value"]),
         reverse=True,
@@ -40840,11 +41366,20 @@ def api_trade_intel_player_packages(player_id: str):
         viewer_players: list[dict] = []
         viewer_picks: list[dict] = []
         rosters: list = []
+        # Wave 1 PR 2: the viewer's designated keepers cannot be traded;
+        # generated packages below never include them (empty when the
+        # league's designations are unknown).
+        _locked_ids: frozenset = frozenset()
         if league_id and viewer_roster_id:
             try:
                 if not ctx:
                     ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
                 rosters = ctx.get("rosters") or []
+                try:
+                    from utils.league_rules import keeper_locked_ids as _kli
+                    _locked_ids = _kli(ctx, [viewer_roster_id])
+                except Exception:
+                    _locked_ids = frozenset()
                 viewer_roster_obj = next(
                     (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
                 )
@@ -41107,6 +41642,7 @@ def api_trade_intel_player_packages(player_id: str):
                 focus_value, viewer_players, _viewer_picks_offer,
                 sorted_vals=_ladder, league_size=num_teams,
                 min_results=3 if (viewer_players or _viewer_picks_offer) else 0,
+                locked_ids=_locked_ids,
             )
             return jsonify({
                 "player_name": player_name,
@@ -41262,111 +41798,324 @@ def api_trade_intel_player_packages(player_id: str):
                 scoring_type="redraft" if is_redraft else "dynasty",
             )
 
+        # ── Wave 2 PR 3: shared partner checks (spec 3.2 / 3.3) ──────
+        # The Trade Targets engine previously had NO partner guard: it
+        # stamped grades/acceptance on packages that orphan the partner
+        # (Burrow, Caleb). The shared module now gates every package
+        # before _enrich_pkg's grades are trusted, and acceptance is
+        # the partner-conditioned one from spec 3.3. Everything here is
+        # fail-soft: no owner roster (or a pick focus) leaves _tp None
+        # and packages flow exactly as before, with acceptance computed
+        # from ratio + fit alone.
+        _tp = None
+        _tp_evals: dict = {}
+        _tp_partner_infos: list = []
+        _tp_viewer_infos: list = []
+        _tp_requirements: dict = {}
+        _tp_value_bars: dict = {}
+        _tp_role_states: dict = {}
+        _tp_projections: dict = {}
+        _tp_contention = None
+        _tp_bye_flag = None
+        _tp_partner_needs: set = set()
+        _tp_partner_stacked: set = set()
+        _tp_owner_roster = _player_owner_map.get(str(player_id))
+        if _tp_owner_roster is not None and not _focus_is_pick:
+            try:
+                from dashboard_services import trade_partner_checks as _tpc2
+                from utils.trade import derive_league_thresholds as _dlt2
+                _tp = _tpc2
+                _rp2 = ctx.get("roster_positions") or []
+                _is_sf2 = (league_type == "sf") or any(
+                    "SUPER" in str(s).upper() for s in _rp2)
+                _thr2, _floors2 = _dlt2(
+                    _rp2, len(rosters) or 12, is_sf=_is_sf2)
+                _tp_requirements = {
+                    p: int(_floors2.get(p) or 0) for p in _tpc2.POSITIONS}
+                _tp_value_bars = {
+                    p: float(_thr2.get(p) or 350) for p in _tpc2.POSITIONS}
+
+                def _infos_for(roster_obj):
+                    out = []
+                    for _pid in (roster_obj.get("players") or []):
+                        _info = values_by_id.get(str(_pid))
+                        if _info and _info.get("position") in _tpc2.POSITIONS:
+                            out.append({
+                                "player_id": str(_pid), "id": str(_pid),
+                                "name": _info.get("name", ""),
+                                "position": _info["position"],
+                                "value": float(_info.get("value") or 0),
+                                "team": _info.get("team", ""),
+                            })
+                    return out
+
+                _tp_partner_infos = _infos_for(_tp_owner_roster)
+                _viewer_roster_obj2 = next(
+                    (r for r in rosters
+                     if str(r.get("roster_id")) == viewer_roster_id), None)
+                if _viewer_roster_obj2 is not None:
+                    _tp_viewer_infos = _infos_for(_viewer_roster_obj2)
+                try:
+                    from utils.role_state import (
+                        _week_projections as _rsp2,
+                        get_role_states as _grs2,
+                    )
+                    _wk2 = int(ctx.get("current_week")
+                               or ctx.get("week") or 0)
+                    _tp_role_states = _grs2(ctx, _wk2) or {}
+                    _tp_projections = _rsp2(ctx, _wk2) or {}
+                except Exception:
+                    _tp_role_states, _tp_projections = {}, {}
+                for _pos2 in _tpc2.POSITIONS:
+                    _cnt2 = len(_tpc2.startable_players(
+                        _tp_partner_infos, _pos2,
+                        _tp_role_states or None, _tp_projections or None,
+                        _tp_value_bars))
+                    if _cnt2 < _tp_requirements.get(_pos2, 0):
+                        _tp_partner_needs.add(_pos2)
+                    elif _cnt2 > _tp_requirements.get(_pos2, 0):
+                        _tp_partner_stacked.add(_pos2)
+                # Contention (check 5) from roster settings when the
+                # provider carries them; absent data stays neutral.
+                try:
+                    _recs = []
+                    for _r3 in rosters:
+                        _s3 = _r3.get("settings") or {}
+                        _w3 = float(_s3.get("wins") or 0)
+                        _l3 = float(_s3.get("losses") or 0)
+                        _t3 = float(_s3.get("ties") or 0)
+                        _pf3 = float(_s3.get("fpts") or 0)
+                        _recs.append((str(_r3.get("roster_id")), _w3,
+                                      _l3, _t3, _pf3))
+                    _own3 = next(
+                        (x for x in _recs
+                         if x[0] == str(_tp_owner_roster.get("roster_id"))),
+                        None)
+                    if _own3 and any(x[1] + x[2] > 0 for x in _recs):
+                        _pfs3 = sorted(x[4] for x in _recs)
+                        _pct3 = (sum(1 for v in _pfs3 if v <= _own3[4])
+                                 / len(_pfs3)) if _pfs3 else 0.5
+                        _rules3 = ctx.get("_league_rules") or {}
+                        _tp_contention = _tpc2.classify_contention(
+                            record=f"{int(_own3[1])}-{int(_own3[2])}",
+                            pf=_own3[4], pf_percentile=_pct3,
+                            playoff_teams=_rules3.get("playoff_teams"),
+                            rules_source=_rules3.get("source"))
+                except Exception:
+                    _tp_contention = None
+                # Bye collision (check 6) for the focus player.
+                try:
+                    _payload2 = ctx.get("players") or {}
+                    _tmeta2 = _payload2.get(str(player_id)) or {}
+                    _tbye2 = (_tmeta2.get("bye_week")
+                              or _tmeta2.get("byeWeek"))
+                    _bye_map2: dict = {}
+                    for _mp2 in _payload2.values():
+                        if isinstance(_mp2, dict):
+                            _tm2 = str(_mp2.get("team") or "").upper()
+                            _bw2 = (_mp2.get("bye_week")
+                                    or _mp2.get("byeWeek"))
+                            if _tm2 and _bw2:
+                                _bye_map2[_tm2] = int(_bw2)
+                    if _tbye2 and _tp_viewer_infos:
+                        _tp_bye_flag = _tpc2.bye_collision_flag(
+                            {**(target_info or {}),
+                             "player_id": str(player_id),
+                             "position": (target_info or {}).get(
+                                 "position", ""),
+                             "bye_week": _tbye2},
+                            _tp_viewer_infos, _bye_map2, _tp_requirements)
+                except Exception:
+                    _tp_bye_flag = None
+            except Exception:
+                _tp = None
+
+        def _tp_evaluate_pkg(pkg: dict):
+            """Shared checks 1-3 for one package against the focus
+            player's owner. None when the partner layer is inactive."""
+            if _tp is None:
+                return None
+            try:
+                return _tp.evaluate_package(
+                    partner_players=_tp_partner_infos,
+                    viewer_players=_tp_viewer_infos,
+                    send=list(pkg.get("send") or []),
+                    receive=[{
+                        "player_id": str(player_id),
+                        "position": (target_info or {}).get("position", ""),
+                        "value": float(focus_value or 0),
+                        "name": (target_info or {}).get("name", ""),
+                    }],
+                    requirements=_tp_requirements,
+                    role_states=_tp_role_states or None,
+                    projections=_tp_projections or None,
+                    value_bars=_tp_value_bars,
+                    is_dynasty_or_keeper=not is_redraft,
+                )
+            except Exception:
+                return None
+
+        _tp_ladder_cache: list = []
+
+        # ── Wave 2 PR 4: form pricing (check 4) + keeper core (check 7) ──
+        # _price_focus_value is the price every package below is matched
+        # and graded against: the raw format value, form/depth-adjusted
+        # when the focus player is buried, benched or slumping (never a
+        # starter price for a QB4 — the Daniel Jones case). The raw
+        # focus_value still drives the response's displayed value.
+        _focus_meta = None
+        _price_focus_value = float(focus_value or 0)
+        _keeper_core: dict = {"active": False, "core_ids": set()}
+        if not _focus_is_pick and target_info:
+            try:
+                _fpos4 = str(target_info.get("position") or "").upper()
+                _depth_rank4 = None
+                if _tp_owner_roster is not None and _fpos4:
+                    _room4 = sorted(
+                        (float((values_by_id.get(str(_p4)) or {})
+                                .get("value") or 0)
+                         for _p4 in (_tp_owner_roster.get("players") or [])
+                         if (values_by_id.get(str(_p4)) or {})
+                         .get("position") == _fpos4),
+                        reverse=True)
+                    _fv4 = float(target_info.get("value") or 0)
+                    _depth_rank4 = (
+                        _room4.index(_fv4) + 1) if _fv4 in _room4 else None
+                _role4 = None
+                _states4 = _tp_role_states
+                if not _states4:
+                    try:
+                        from utils.role_state import (
+                            get_role_states as _grs4,
+                        )
+                        _states4 = _grs4(
+                            ctx, int(ctx.get("current_week")
+                                     or ctx.get("week") or 0)) or {}
+                    except Exception:
+                        _states4 = {}
+                _entry4 = _states4.get(str(player_id)) or {}
+                if isinstance(_entry4, dict):
+                    _role4 = _entry4.get("state")
+                # Form swing over the LAST 4 WEEKS (decided window):
+                # last4_ppg vs season_ppg from the start-score bundle's
+                # derivation (utils.start_sit.form_usage_inputs).
+                _swing4 = None
+                try:
+                    from data_building.start_score_bundle import (
+                        derive_start_sit_inputs as _dssi4,
+                    )
+                    _scoring4 = (
+                        ctx.get("scoring_settings")
+                        or (ctx.get("league") or {}).get("scoring_settings")
+                        or {})
+                    _din4 = (_dssi4(season, _scoring4) or {}).get(
+                        str(player_id)) or {}
+                    if (int(_din4.get("played_games") or 0) >= 4
+                            and float(_din4.get("season_ppg") or 0) > 0):
+                        _swing4 = (
+                            float(_din4.get("last4_ppg") or 0)
+                            - float(_din4["season_ppg"])
+                        ) / float(_din4["season_ppg"])
+                except Exception:
+                    _swing4 = None
+                if _depth_rank4 is not None or _role4 or _swing4 is not None:
+                    _focus_meta = {
+                        "depth_rank": _depth_rank4,
+                        "role_state": _role4,
+                        "form_swing": _swing4,
+                    }
+                    from dashboard_services.trade_acquire_packages import (
+                        form_adjusted_focus_value as _fafv4,
+                    )
+                    _adj4, _pricing4 = _fafv4(
+                        float(focus_value or 0),
+                        depth_rank=_depth_rank4, role_state=_role4,
+                        form_swing=_swing4)
+                    if _adj4 > 0:
+                        _price_focus_value = _adj4
+                        _focus_meta["adjusted_value"] = _adj4
+                        _focus_meta["pricing"] = _pricing4
+            except Exception:
+                _focus_meta = None
+                _price_focus_value = float(focus_value or 0)
+            try:
+                from dashboard_services.keeper_core import (
+                    keeper_core as _kc4,
+                )
+                _keeper_core = _kc4(
+                    ctx, rosters, values_by_id, is_redraft=is_redraft,
+                    league_size=len(rosters) or 12)
+            except Exception:
+                _keeper_core = {"active": False, "core_ids": set()}
+
         def _acceptance_prob(pkg: dict, total_trades: int) -> int:
+            """Partner-conditioned acceptance (spec 3.3), replacing the
+            old grade-base + frequency formula.
+
+            Core = archetype logistic on the depth-adjusted (effective)
+            ratio + fit restricted to partner-starting pieces; terms
+            for surplus match and the partner's contention window; the
+            similar-league frequency rate survives only as a +12-capped
+            prior. When the prior is empty the number is ratio + fit
+            alone and ``acceptance_basis`` says so — no false precision.
+            Viability is a gate (see the gate loop below): acceptance
+            is never stamped on a package the checks rejected.
             """
-            Estimate acceptance probability (0–100) that the owner of the
-            focus player accepts this package.
-
-            Factors:
-              1. Value balance      – from receiver's POV (overpay = high)
-              2. Historical rate    – trades_like_this / total_real_trades
-              3. Positional index   – tier of the receiver's best player at
-                                      each position being sent, not just depth
-              4. Win/rebuild window – rebuild teams prize youth + picks;
-                                      win-now teams prize proven vets
-            """
-            # 1. Value base (receiver's perspective)
-            grade = pkg.get("value_grade", "fair")
-            base = {"steal": 14, "fair": 46, "overpay": 66, "big_overpay": 82}.get(grade, 46)
-
-            # 2. Historical frequency boost
-            count = pkg.get("trades_like_this", 0)
-            freq = count / max(total_trades, 1)
-            freq_boost = min(int(freq * 60), 12)
-
-            owner_roster = _player_owner_map.get(str(player_id))
-            need_adj = 0
-            window_adj = 0
-
-            if owner_roster:
-                # Build positional value index for the receiving team
-                pos_vals: dict[str, list[float]] = {}
-                for pid in (owner_roster.get("players") or []):
-                    info = values_by_id.get(str(pid))
-                    if info and info.get("position") in ("QB", "RB", "WR", "TE"):
-                        p = info["position"]
-                        pos_vals.setdefault(p, []).append(float(info.get("value") or 0))
-                for p in pos_vals:
-                    pos_vals[p].sort(reverse=True)
-
-                # 3. Positional index: score each sent position against receiver's depth
-                sent_players = [a for a in pkg.get("send", []) if not a.get("is_pick")]
-                for a in sent_players:
-                    pos = a.get("position", "")
-                    aval = float(a.get("value") or a.get("send_value") or 0)
-                    if not pos:
-                        continue
-                    existing = pos_vals.get(pos, [])
-                    starter_val = existing[0] if existing else 0
-                    depth_val = existing[1] if len(existing) > 1 else 0
-
-                    if not existing:
-                        need_adj += 12  # hole at this position
-                    elif starter_val < 200:
-                        need_adj += 9  # barely-rostered starter
-                    elif starter_val < 400:
-                        need_adj += 5  # mediocre starter
-                        if aval > starter_val * 1.1:
-                            need_adj += 3  # upgrade on their best
-                    elif depth_val < 150:
-                        need_adj += 2  # strong starter, thin depth
-                    else:
-                        need_adj -= 3  # stacked at this pos - harder sell
-
-                need_adj = max(-10, min(need_adj, 18))
-
-                # 4. Win/rebuild window -- dynasty only. Redraft acceptance
-                # is this-season need + value, not youth or future picks.
-                if not is_redraft:
-                    grade_data = _roster_grade(owner_roster)
-                    win_window = grade_data.get("win_window", "")
-                    # Map Teams-page labels to rebuild / win_now / competitive
-                    if win_window in ("Full Rebuild", "Retooling"):
-                        window = "rebuild"
-                    elif win_window in ("Powerhouse", "Contender", "Win-Now", "Contender Window"):
-                        window = "win_now"
-                    else:
-                        window = "competitive"
-
-                    sent_picks = [a for a in pkg.get("send", []) if a.get("is_pick")]
-                    sent_ages = []
-                    sent_vals = []
-                    for a in sent_players:
-                        info = values_by_id.get(a.get("player_id") or "")
-                        if info:
-                            sent_ages.append(float(info.get("age") or 25))
-                            sent_vals.append(float(info.get("value") or 0))
-
-                    avg_sent_age = sum(sent_ages) / len(sent_ages) if sent_ages else 25
-                    avg_sent_val = sum(sent_vals) / len(sent_vals) if sent_vals else 0
-                    n_picks = len(sent_picks)
-
-                    if window == "rebuild":
-                        # Rebuilding teams want youth and picks
-                        youth_bonus = max(0, int((26 - avg_sent_age) * 2.5))  # young = good
-                        pick_bonus = n_picks * 6
-                        upside_bonus = min(int(avg_sent_val / 60), 8) if avg_sent_age < 24 else 0
-                        window_adj = min(youth_bonus + pick_bonus + upside_bonus, 20)
-                    elif window == "win_now":
-                        # Win-now teams want proven contributors now
-                        vet_bonus = max(0, int((avg_sent_age - 23) * 2))
-                        tier_bonus = min(int(avg_sent_val / 100), 8)
-                        pick_penalty = n_picks * -4  # picks less useful when chasing now
-                        window_adj = max(-15, min(vet_bonus + tier_bonus + pick_penalty, 12))
-                    # competitive: neutral (window_adj stays 0)
-
-            prob = base + freq_boost + need_adj + window_adj
-            return min(93, max(8, round(prob)))
+            ev = _tp_evals.get(id(pkg))
+            if ev is None:
+                ev = _tp_evaluate_pkg(pkg)
+            send_total = float(pkg.get("send_value") or 0)
+            if send_total <= 0:
+                send_total = sum(
+                    float(a.get("value") or a.get("send_value") or 0)
+                    for a in pkg.get("send", []))
+            eff_send = send_total
+            if not is_redraft:
+                # Depth/consolidation penalty applies in dynasty/keeper
+                # formats only (the pre-Wave-2 behavior; redraft values
+                # are used raw).
+                try:
+                    from dashboard_services.archetype_engine import (
+                        _depth_penalty as _dp2,
+                    )
+                    if not _tp_ladder_cache:
+                        _tp_ladder_cache.extend(sorted(
+                            (float(v.get("value") or 0)
+                             for v in values_by_id.values()
+                             if float(v.get("value") or 0) > 0),
+                            reverse=True))
+                    _n_players = sum(
+                        1 for a in pkg.get("send", [])
+                        if not a.get("is_pick"))
+                    eff_send = send_total - _dp2(
+                        max(0, _n_players - 1), _tp_ladder_cache,
+                        len(rosters) or 12)
+                except Exception:
+                    eff_send = send_total
+            fit = 0
+            if _tp is not None and ev is not None:
+                fit = _tp.acceptance_fit_restricted(
+                    pkg.get("send") or [], _tp_partner_needs,
+                    _tp_partner_stacked, ev.get("starting_pieces"))
+            if _tp is not None:
+                prob, basis = _tp.conditioned_acceptance(
+                    eff_send, _price_focus_value, fit=fit,
+                    evaluation=ev, contention=_tp_contention,
+                    trades_like_this=pkg.get("trades_like_this", 0),
+                    total_trades=total_trades,
+                    extra_adj=(-3 if _tp_bye_flag else 0))
+            else:
+                from dashboard_services.trade_partner_checks import (
+                    conditioned_acceptance as _ca2,
+                )
+                prob, basis = _ca2(
+                    eff_send, _price_focus_value, fit=0,
+                    trades_like_this=pkg.get("trades_like_this", 0),
+                    total_trades=total_trades)
+            pkg["acceptance_basis"] = basis
+            if _tp_bye_flag:
+                pkg["bye_flag"] = _tp_bye_flag
+            return prob
 
         def _enrich_pkg(pkg: dict) -> None:
             for asset in pkg["send"]:
@@ -41389,8 +42138,12 @@ def api_trade_intel_player_packages(player_id: str):
             pkg["throw_in_sig"] = throw_sig
             send_total = sum(float(a.get("value") or a.get("send_value") or 0) for a in pkg["send"])
             pkg["send_value"] = round(send_total, 1)
-            pkg["value_delta"] = round(send_total - focus_value, 1)
-            _pct = (send_total - focus_value) / max(focus_value, 1) * 100
+            # Grading prices the focus player at his form-adjusted
+            # price (check 4) so a package matched to a discounted
+            # QB4 is not re-graded against his starter price.
+            _grade_against = _price_focus_value or float(focus_value or 0)
+            pkg["value_delta"] = round(send_total - _grade_against, 1)
+            _pct = (send_total - _grade_against) / max(_grade_against, 1) * 100
             if _pct <= -10:
                 pkg["value_grade"] = "steal"
             elif _pct <= 8:
@@ -41399,6 +42152,24 @@ def api_trade_intel_player_packages(player_id: str):
                 pkg["value_grade"] = "overpay"
             else:
                 pkg["value_grade"] = "big_overpay"
+            # Wave 2 PR 4, check 7 (Steal guard): in a keeper/dynasty
+            # league, a package that surrenders a keeper-core player
+            # for a return carrying NO keeper value cannot be a steal
+            # — the raw ratio ignores that the send side's core is
+            # gone for years while the return is a rental (the Kyren
+            # case). Suppress the label, stamp the honest grade, and
+            # say why. Server-side, where the grade is stamped; the
+            # client prefers this grade when present.
+            if pkg["value_grade"] == "steal" and _keeper_core.get("active"):
+                _core_ids = _keeper_core.get("core_ids") or set()
+                _sends_core = any(
+                    (not a.get("is_pick"))
+                    and str(a.get("player_id") or "") in _core_ids
+                    for a in pkg["send"])
+                _return_has_keeper_value = str(player_id) in _core_ids
+                if _sends_core and not _return_has_keeper_value:
+                    pkg["value_grade"] = "fair"
+                    pkg["grade_note"] = "Costs keeper core"
 
         for pkg in primary_pkgs:
             _enrich_pkg(pkg)
@@ -41408,6 +42179,7 @@ def api_trade_intel_player_packages(player_id: str):
         # packages built with a 1.3× ceiling and left a blank suggestions page.
         primary_pkgs = _filter_acquire_packages(
             primary_pkgs, str(player_id), float(focus_value or 0), max_ratio=1.40,
+            locked_ids=_locked_ids,
         )
 
         # Fill remaining slots from the viewer's roster AFTER filtering so a
@@ -41424,6 +42196,8 @@ def api_trade_intel_player_packages(player_id: str):
                 max_options=max(need, 5),
                 sorted_vals=_ladder, league_size=num_teams,
                 min_results=need,
+                locked_ids=_locked_ids,
+                focus_meta=_focus_meta,
             )
             for vm in vm_pkgs:
                 if len(primary_pkgs) >= 5:
@@ -41452,6 +42226,81 @@ def api_trade_intel_player_packages(player_id: str):
             ]
             pool = close or sorted(refs, key=lambda p: abs(float(p.get("send_value") or 0) - fv))
             primary_pkgs = pool[:5]
+
+        def _tp_gate_pkg(pkg: dict):
+            """Viability gate (checks 1-3) for one package.
+
+            Returns the package (possibly repaired, re-enriched) or
+            None to drop it. A shortfall only at the focus position is
+            repaired with the viewer's cheapest spare startable there
+            (check 2); a repair that breaks the 1.40x band drops the
+            deal — it is never pitched broken.
+            """
+            if _tp is None:
+                return pkg
+            ev = _tp_evaluate_pkg(pkg)
+            if ev is None:
+                return pkg
+            if ev["viable"] and ev["headline_ok"]:
+                _tp_evals[id(pkg)] = ev
+                return pkg
+            _fpos = str((target_info or {}).get("position") or "").upper()
+            if set(ev["shortfalls"].keys()) != {_fpos}:
+                return None
+            try:
+                _repair = _tp.find_repair_player(
+                    viewer_players=[
+                        {"player_id": p["player_id"], "id": p["player_id"],
+                         "name": p.get("name", ""),
+                         "position": p.get("position", ""),
+                         "value": float(p.get("value") or 0)}
+                        for p in viewer_players
+                    ],
+                    send=list(pkg.get("send") or []), position=_fpos,
+                    viewer_requirements=_tp_requirements,
+                    role_states=_tp_role_states or None,
+                    projections=_tp_projections or None,
+                    value_bars=_tp_value_bars,
+                )
+            except Exception:
+                _repair = None
+            if _repair is None:
+                return None
+            _rid2 = str(_repair.get("player_id") or "")
+            if not _rid2 or _rid2 in _locked_ids:
+                return None
+            if any(str(a.get("player_id") or "") == _rid2
+                   for a in pkg.get("send") or []):
+                return None
+            _orig_send = list(pkg.get("send") or [])
+            pkg["send"] = _orig_send + [{
+                "player_id": _rid2,
+                "name": _repair.get("name", ""),
+                "value": float(_repair.get("value") or 0),
+            }]
+            _enrich_pkg(pkg)
+            _ev2 = _tp_evaluate_pkg(pkg)
+            _band_ok = (
+                _price_focus_value > 0
+                and float(pkg.get("send_value") or 0)
+                <= _price_focus_value * _tp.FAIR_BAND_MAX)
+            if (_ev2 is not None and _ev2["viable"]
+                    and _ev2["headline_ok"] and _band_ok):
+                _tp_evals[id(pkg)] = _ev2
+                return pkg
+            pkg["send"] = _orig_send
+            _enrich_pkg(pkg)
+            return None
+
+        # Viability is a GATE (spec 3.3): packages failing checks 1-3
+        # (after repair) are never emitted, so grades/acceptance below
+        # are only ever stamped on deals the partner can actually make.
+        if _tp is not None:
+            primary_pkgs = [
+                kept for kept in
+                (_tp_gate_pkg(pkg) for pkg in primary_pkgs)
+                if kept is not None
+            ]
 
         _total_real = real_result.get("total_real_trades") or 1
 
@@ -41553,6 +42402,14 @@ def api_trade_intel_player_packages(player_id: str):
         return jsonify({
             "player_name": player_name,
             "focus_value": focus_value,
+            # Wave 2 PR 4 (check 4): the form/depth-adjusted price the
+            # packages were matched and graded against, when it differs.
+            "focus_pricing": (
+                _focus_meta.get("pricing") if _focus_meta else None),
+            "focus_value_adjusted": (
+                _price_focus_value
+                if _focus_meta and _price_focus_value != float(focus_value or 0)
+                else None),
             "packages": [],
             "total_packages": 0,
             "real_packages": primary_pkgs,

@@ -2105,6 +2105,18 @@ function wvNewsChip(p) {{
          s.label + '</span>';
 }}
 
+// Starting-role chip (Wave 2 situation layer): the player's own role
+// state this week - promoted into a starting job, benched, or returning.
+// Display-only like the QB/news chips; the tooltip carries the state's
+// reason from the server ("Starting for BAL: Lamar Jackson on IR").
+function wvRoleChip(p) {{
+  const r = p.role_situation;
+  if (!r || !r.label) return '';
+  const note = (r.note || '').replace(/"/g, '&quot;');
+  return '<span class="wv-ss-news wv-ss-news-info" title="' + note + '">' +
+         r.label + '</span>';
+}}
+
 // Vegas implied team total chip.
 function wvVegasChip(p) {{
   if (p.implied_total == null) return '';
@@ -3511,6 +3523,7 @@ function wvRenderStartSit() {{
       const injBadge = wvInjBadge(p.injury_status);
       const qbChip = wvQbChip(p);
       const newsChip = wvNewsChip(p);
+      const roleChip = wvRoleChip(p);
       const escName = (p.name || '').replace(/'/g, "\\'");
       const matchup = p.opponent
         ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
@@ -3550,7 +3563,7 @@ function wvRenderStartSit() {{
               onclick="wvToggleSsRow(this)">
             ${{badge}}
             <span class="wv-cx-main">
-              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}${{newsChip}}</span>
+              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}${{newsChip}}${{roleChip}}</span>
               ${{matchup || demoteChip ? `<span class="wv-cx-why">${{matchup}}${{demoteChip}}</span>` : ''}}
               ${{p.guest && p.guest_note ? `<span class="wv-ss-guest-note">${{wvEsc(p.guest_note)}}</span>` : ''}}
               ${{p.flex_safeguard ? `<span class="wv-cx-why"><span class="wv-cx-k">Flex safeguard</span>Q tag: moved to FLEX so a late scratch can be covered by any RB/WR/TE.</span>` : ''}}

@@ -136,7 +136,7 @@ def test_block_false_never_signs_on_the_caller_thread(sig_gate):
     # The background sim stores its result (full sig computed there).
     assert _wait_until(lambda: key in app_mod._PLAYOFF_SIM_CACHE)
     entry = app_mod._PLAYOFF_SIM_CACHE[key]
-    assert entry["sig"].endswith("|sched-fake")
+    assert entry["sig"].endswith("|sched-fake|rules:none")
     assert entry["roster_sig"] == app_mod._roster_sig(_sim_ctx())
     assert entry["week"] == 8
 
@@ -173,6 +173,34 @@ def test_block_true_still_validates_the_full_signature(sig_gate):
     # serves the stored rows.
     rows2 = app_mod._playoff_sim_cached(_sim_ctx(), "sleeper", block=True)
     assert rows2 == rows
+
+
+def test_rules_correction_invalidates_warm_sim(sig_gate):
+    # Wave 1: the sim signature carries the league-rules fingerprint, so
+    # correcting a league's playoff format (same rosters, same week,
+    # same schedule) refuses the warm entry on both validation paths.
+    rows = app_mod._playoff_sim_cached(_sim_ctx(), "sleeper", block=True)
+    assert rows and rows[0]["playoff_pct"] == 50.0
+
+    corrected = _sim_ctx()
+    corrected["_league_rules"] = {
+        "source": "user_confirmed", "playoff_teams": 8,
+        "playoff_week_start": 15,
+        "updated_at": "2026-11-04T00:00:00+00:00", "keepers_known": False,
+    }
+    assert app_mod._playoff_sim_sig(_sim_ctx(), "sleeper") \
+        != app_mod._playoff_sim_sig(corrected, "sleeper")
+    # Cheap path: warm entry's rules fingerprint no longer matches.
+    assert app_mod._playoff_sim_cached(
+        corrected, "sleeper", block=False) == []
+    # The kicked re-sim stores an entry stamped with the corrected
+    # fingerprint, which then serves the corrected ctx.
+    key = ("sleeper", "sig-league", 2026, "v3")
+    assert _wait_until(
+        lambda: app_mod._PLAYOFF_SIM_CACHE.get(key, {}).get("rules_fp")
+        == app_mod._rules_fingerprint(corrected))
+    rows2 = app_mod._playoff_sim_cached(corrected, "sleeper", block=False)
+    assert rows2 and rows2[0]["playoff_pct"] == 50.0
 
 
 # ── Endpoint: production-shaped scan pays no provider I/O ────────────
