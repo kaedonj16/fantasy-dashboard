@@ -55,6 +55,7 @@ def test_slim_trade_player_drops_non_skill_positions():
 def test_slim_trade_payload_folds_in_deltas_and_indicators():
     payload = {
         "tier_thresholds": {"1qb": {"10": [100]}},
+        "tier_thresholds_redraft": {"sf": [900, 700]},
         "players": [_player("1", "WR"), _player("2", "RB")],
     }
     out = slim_trade_payload(
@@ -68,6 +69,7 @@ def test_slim_trade_payload_folds_in_deltas_and_indicators():
     assert by_id["2"]["is_elite"] is True
     assert "delta_7d" not in by_id["2"]
     assert out["tier_thresholds"] == {"1qb": {"10": [100]}}
+    assert out["tier_thresholds_redraft"] == {"sf": [900, 700]}
 
 
 def test_slim_trade_payload_does_not_mutate_input():

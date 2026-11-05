@@ -63,6 +63,7 @@ def test_slim_keeps_every_row_and_top_level_blocks():
         "players": [_fat_player(), {"id": "pick_1", "position": "PICK",
                                      "name": "2027 1st"}],
         "tier_thresholds": {"1qb": {"10": [900, 700]}},
+        "tier_thresholds_redraft": {"sf": [928.2, 736.5]},
         "adp_columns": ["sleeper"],
     }
     out = slim_rankings_payload(payload)
@@ -71,6 +72,7 @@ def test_slim_keeps_every_row_and_top_level_blocks():
     assert len(out["players"]) == 2
     assert out["players"][1]["position"] == "PICK"
     assert out["tier_thresholds"] == payload["tier_thresholds"]
+    assert out["tier_thresholds_redraft"] == payload["tier_thresholds_redraft"]
     assert out["adp_columns"] == ["sleeper"]
     # Input not mutated.
     assert "historical" in payload["players"][0]

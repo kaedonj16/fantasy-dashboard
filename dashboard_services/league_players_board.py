@@ -255,6 +255,8 @@ def slim_trade_payload(
     out = {"players": players}
     if payload.get("tier_thresholds") is not None:
         out["tier_thresholds"] = payload["tier_thresholds"]
+    if payload.get("tier_thresholds_redraft") is not None:
+        out["tier_thresholds_redraft"] = payload["tier_thresholds_redraft"]
     return out
 
 

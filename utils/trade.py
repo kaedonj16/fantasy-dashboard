@@ -1133,6 +1133,36 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
     return thresholds if len(thresholds) >= 2 else FALLBACK_THRESHOLDS
 
 
+def compute_redraft_tier_thresholds(value_table) -> dict:
+    """Tier thresholds computed on REDRAFT values, one set per league type.
+
+    The payload's ``tier_thresholds`` are derived from dynasty values, but the
+    Rankings board and the Trade Calculator side panel judge REDRAFT values
+    against them in redraft mode. The two scales differ (and redraft values
+    are size-invariant, so the league-size key reshuffled redraft tiers on
+    its own): on 2026-11-05 the redraft SF board's T1 held 8 players spanning
+    244 points under the dynasty SF/8 thresholds, violating MAX_SPAN.
+
+    Redraft values live in the ``redraft_value_1qb`` / ``redraft_value_sf``
+    columns and do not vary by league size, so remap them onto the columns
+    ``compute_tier_thresholds`` reads and compute once per league type (no
+    size dimension). Returns ``{"1qb": [...], "sf": [...]}``.
+    """
+    remapped = []
+    for p in (value_table or []):
+        if not isinstance(p, dict):
+            continue
+        remapped.append({
+            "position": p.get("position"),
+            "value": p.get("redraft_value_1qb"),
+            "sf_value": p.get("redraft_value_sf"),
+        })
+    return {
+        "1qb": compute_tier_thresholds(remapped, "1qb", 10),
+        "sf": compute_tier_thresholds(remapped, "sf", 10),
+    }
+
+
 # ======================================================================
 # From utils/player_tiers.py
 # ======================================================================

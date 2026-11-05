@@ -1705,11 +1705,21 @@ if (!window.__prDocBound) {
 }
 
 var prTierThresholds = {};
+var prTierThresholdsRedraft = {};
 
 function prGetTier(p) {
   const lt  = prLeagueType || '1qb';
-  const sz  = String(prLeagueSize || 10);
-  const tbl = (prTierThresholds[lt] || {})[sz] || (prTierThresholds['1qb'] || {})['10'] || [];
+  let tbl;
+  if (prScoringType === 'redraft') {
+    // Redraft values are size-invariant and sit on their own scale: use the
+    // thresholds computed on redraft values (one set per league type, no
+    // size key). Judging them against the dynasty thresholds above produced
+    // oversized top tiers (redraft SF T1 held 8 players, span 244).
+    tbl = prTierThresholdsRedraft[lt] || prTierThresholdsRedraft['1qb'] || [];
+  } else {
+    const sz  = String(prLeagueSize || 10);
+    tbl = (prTierThresholds[lt] || {})[sz] || (prTierThresholds['1qb'] || {})['10'] || [];
+  }
   if (!tbl.length) return null;
   const val = prGetValue(p);
   for (let i = 0; i < tbl.length; i++) {
@@ -1791,6 +1801,7 @@ return Promise.all([
   // Support both old (array) and new (object with players + tier_thresholds) format
   const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
   prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
+  prTierThresholdsRedraft = (!Array.isArray(resp) && resp.tier_thresholds_redraft) ? resp.tier_thresholds_redraft : {};
   prAdpSourceOptions = (!Array.isArray(resp) && resp.adp_source_options) ? resp.adp_source_options : {};
   prAdpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
   prAdpColumns = (!Array.isArray(resp) && Array.isArray(resp.adp_columns)) ? resp.adp_columns : [];
