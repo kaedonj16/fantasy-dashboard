@@ -7,10 +7,11 @@ from utils.trade import (  # noqa: F401,F403
     FALLBACK_THRESHOLDS,
     ELITE_RANK_CUTOFFS,
     MAX_DISPLAY_TIERS,
+    compute_redraft_tier_thresholds,
     compute_tier_thresholds,
 )
 
-__all__ = ['FALLBACK_THRESHOLDS', 'ELITE_RANK_CUTOFFS', 'MAX_DISPLAY_TIERS', 'compute_tier_thresholds']
+__all__ = ['FALLBACK_THRESHOLDS', 'ELITE_RANK_CUTOFFS', 'MAX_DISPLAY_TIERS', 'compute_redraft_tier_thresholds', 'compute_tier_thresholds']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---

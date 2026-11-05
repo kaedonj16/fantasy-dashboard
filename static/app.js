@@ -9945,11 +9945,21 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   let _tierThresholds = {};
+  let _tierThresholdsRedraft = {};
 
   function _getOtcTier(player) {
     const lt = getLeagueType();
-    const sz = String(getLeagueSize());
-    const tbl = (_tierThresholds[lt] || {})[ sz] || (_tierThresholds["1qb"] || {})["10"] || [];
+    let tbl;
+    if (getScoringType() === "redraft") {
+      // Redraft values are size-invariant and sit on their own scale: use
+      // the thresholds computed on redraft values (one set per league type,
+      // no size key). The dynasty thresholds produced an 8-player T1
+      // spanning 244 points on the redraft SF board.
+      tbl = _tierThresholdsRedraft[lt] || _tierThresholdsRedraft["1qb"] || [];
+    } else {
+      const sz = String(getLeagueSize());
+      tbl = (_tierThresholds[lt] || {})[sz] || (_tierThresholds["1qb"] || {})["10"] || [];
+    }
     if (!tbl.length) return null;
     const val = getPlayerValue(player);
     for (let i = 0; i < tbl.length; i++) { if (val >= tbl[i]) return i + 1; }
@@ -9963,6 +9973,7 @@ window.initTradePage = function initTradePage(root = document) {
   function buildPlayerPool(data) {
     const rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
     if (!Array.isArray(data) && data.tier_thresholds) _tierThresholds = data.tier_thresholds;
+    if (!Array.isArray(data) && data.tier_thresholds_redraft) _tierThresholdsRedraft = data.tier_thresholds_redraft;
 
     const players = rawData.filter(p => p.position !== "PICK");
     const picks = rawData.filter(p => p.position === "PICK");

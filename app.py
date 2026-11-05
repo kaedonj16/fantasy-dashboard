@@ -14278,6 +14278,7 @@ def _market_scale(fmt: str = "1qb") -> float:
 
 from utils.tier_thresholds import (  # noqa: E402
     MAX_DISPLAY_TIERS as _MAX_DISPLAY_TIERS,
+    compute_redraft_tier_thresholds,
     compute_tier_thresholds,
 )
 
@@ -29958,6 +29959,16 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                 compute_tier_thresholds(model_value_table, _lt, _sz)
             ]
 
+    # Redraft thresholds, computed on the redraft values themselves. The
+    # dynasty thresholds above sit on a different scale, so judging redraft
+    # values against them produced oversized top tiers (redraft SF T1 held 8
+    # players spanning 244 points under the dynasty SF/8 set). Redraft values
+    # are size-invariant, so this is one set per league type, no size key.
+    _tier_thresholds_redraft = {
+        _lt: [round(v, 1) for v in _thr]
+        for _lt, _thr in compute_redraft_tier_thresholds(model_value_table).items()
+    }
+
     # Attach ADP so the rankings/draft room can sort & simulate by ADP, for the
     # CURRENT season. The route overlays a historical season's ADP on request.
     _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
@@ -30109,6 +30120,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     return {
         "players": model_value_table,
         "tier_thresholds": _tier_thresholds_all,
+        "tier_thresholds_redraft": _tier_thresholds_redraft,
         "adp_sources": _adp_sources,
         "adp_source_options": _adp_source_options,
         "adp_columns": _adp_columns,
