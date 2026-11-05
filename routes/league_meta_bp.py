@@ -5,7 +5,7 @@ import os
 import hmac
 from datetime import datetime
 import pandas as pd
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, redirect, request, session
 from utils.api_params import api_int
 
 from dashboard_services.api import (
@@ -180,6 +180,92 @@ def api_favorite_my_league():
     resp = jsonify({"ok": True, "is_favorite": favorite})
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@league_meta_bp.route("/api/league-rules/confirm", methods=["POST"])
+def api_confirm_league_rules():
+    """Store a user-confirmed league rules record (Wave 1).
+
+    Posted by the quiet confirmation control on the Standings Playoff
+    Picture (form) or as JSON. Any signed-in user linked to the league
+    may confirm; the record is shared league-wide and, once confirmed,
+    outranks feed/derived values in utils.league_rules resolution.
+    """
+    account_id = session.get("account_id")
+    wants_json = bool(request.is_json)
+    back = request.referrer or "/"
+    if not account_id:
+        if wants_json:
+            return jsonify(
+                {"ok": False, "error": "Sign in to confirm league rules"}
+            ), 401
+        return redirect(back)
+    data = (request.get_json(silent=True) or {}) if wants_json \
+        else request.form
+    platform = str(data.get("platform") or "").strip().lower()
+    league_id = str(data.get("league_id") or "").strip()
+    try:
+        season = int(data.get("season") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    if not platform or not league_id or not season:
+        if wants_json:
+            return jsonify(
+                {"ok": False, "error": "Missing league identity"}
+            ), 400
+        return redirect(back)
+    try:
+        from dashboard_services.accounts import list_user_leagues
+        linked = any(
+            (row.get("platform") or "").lower() == platform
+            and str(row.get("league_id")) == league_id
+            for row in list_user_leagues(account_id)
+        )
+    except Exception:
+        logger.debug("[league-rules] linkage check failed", exc_info=True)
+        linked = False
+    if not linked:
+        if wants_json:
+            return jsonify(
+                {"ok": False, "error": "League not linked to this account"}
+            ), 403
+        return redirect(back)
+    total_rosters = None
+    try:
+        ctx = get_league_ctx_from_cache(
+            platform, league_id, season, allow_build=False,
+        )
+        if ctx:
+            total_rosters = len({
+                str(r.get("roster_id")) for r in (ctx.get("rosters") or [])
+            }) or None
+    except Exception:
+        total_rosters = None
+    from utils.league_rules import confirm_league_rules
+    try:
+        record = confirm_league_rules(
+            platform, league_id, season,
+            playoff_teams=data.get("playoff_teams"),
+            playoff_week_start=data.get("playoff_week_start"),
+            waiver_type=(data.get("waiver_type") or None),
+            waiver_process_time=(data.get("waiver_process_time") or None),
+            waiver_process_days=(data.get("waiver_process_days") or None),
+            account_id=account_id,
+            total_rosters=total_rosters,
+        )
+    except ValueError as exc:
+        if wants_json:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return redirect(back)
+    if wants_json:
+        resp = jsonify({"ok": True, "rules": {
+            "source": record.get("source"),
+            "playoff_teams": record.get("playoff_teams"),
+            "playoff_week_start": record.get("playoff_week_start"),
+        }})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    return redirect(back)
 
 
 @league_meta_bp.route("/api/weekly-trends")
