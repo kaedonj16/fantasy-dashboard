@@ -37301,7 +37301,20 @@ button:disabled {
 .srk-pcell {
     display: inline-flex;
     align-items: center;
+    gap: 6px;
     max-width: 100%;
+}
+
+/* The flex gap above owns the spacing inside the rankings player cell.
+   The shared .sched-pos / .sched-nfl margins would double it up, and the
+   roster badge carried no margin at all, so it sat flush against the
+   team code (LAR + YOURS rendered as one blob). */
+.srk-pcell .sched-pos {
+    margin-right: 0;
+}
+
+.srk-pcell .sched-nfl {
+    margin-left: 0;
 }
 
 .srk-names {
@@ -37649,7 +37662,7 @@ button:disabled {
     .schedule-card .sched-nfl {
         flex-shrink: 0;
         font-size: 11px;
-        margin-left: 4px;
+        margin-left: 0;
     }
 
     .schedule-card .srk-remove {
