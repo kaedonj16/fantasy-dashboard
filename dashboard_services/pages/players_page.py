@@ -779,19 +779,36 @@ def build_players_shell() -> str:
       .ql-nw { white-space: nowrap; }
       .ql-meta {
         display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-        margin-top: 6px; font-size: 12px; color: var(--text-muted); font-weight: 600;
+        margin-top: 6px; margin-bottom: 10px;
+        font-size: 12px; color: var(--text-muted); font-weight: 600;
       }
+      /* Position hues are the site-wide .pos-badge palette (QB blue,
+         RB green, WR amber, TE purple, K pink, DEF slate): solid chip,
+         white text, like the matchup board's pos badges. The base
+         accent chip stays for positions with no badge hue (PICK). */
       .ql-pospill {
         background: var(--accent-soft); color: var(--accent);
         font-size: 11px; font-weight: 800; padding: 2.5px 8px;
         border-radius: var(--radius-pill);
       }
+      .ql-pospill.ql-pos-QB { background: var(--brand-blue); color: #fff; }
+      .ql-pospill.ql-pos-RB { background: #22c55e; color: #fff; }
+      .ql-pospill.ql-pos-WR { background: #f59e0b; color: #fff; }
+      .ql-pospill.ql-pos-TE { background: #8b5cf6; color: #fff; }
+      .ql-pospill.ql-pos-K { background: #c92c68; color: #fff; }
+      .ql-pospill.ql-pos-DEF, .ql-pospill.ql-pos-IDP { background: #475569; color: #fff; }
       .ql-move {
         margin-top: auto; padding-top: 10px;
         border-top: 1px solid var(--border);
         display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
         font-size: 12.5px;
       }
+      /* Long flat text (the untracked-in-redraft note) stacks under the
+         label instead of running on one nowrap line out of the column. */
+      .ql-move.ql-move-stack {
+        flex-direction: column; align-items: flex-start; gap: 3px;
+      }
+      .ql-move.ql-move-stack > span:last-child { white-space: normal; }
       .ql-move-label {
         font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
         text-transform: uppercase; color: var(--text-muted); flex: none;

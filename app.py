@@ -28483,6 +28483,15 @@ def api_player_quicklook(player_id: str):
         scoring_type = (
             "redraft" if request.args.get("scoring_type") == "redraft" else "dynasty"
         )
+        # Redraft values are size-invariant on every surface that serves
+        # them (the board's prGetValue, this card's value boxes and the
+        # trade calculator all read the base redraft columns), so the
+        # trend must read that same base series: at a solved size the
+        # reader would otherwise return the size-specific redraft
+        # columns (a trade-WLS overlay) whose endpoint and 7d move do
+        # not match the value the card displays. Dynasty history stays
+        # size-specific, like dynasty values.
+        history_size = 10 if scoring_type == "redraft" else league_size
 
         # ── Value trend (30d) ──────────────────────────────────────────
         history = []
@@ -28490,7 +28499,7 @@ def api_player_quicklook(player_id: str):
         try:
             rows = _cached_value_history(
                 str(player_id), days=31,
-                league_type=league_type, league_size=league_size,
+                league_type=league_type, league_size=history_size,
                 scoring_type=scoring_type,
             ) or []
             col = "value_sf" if league_type == "sf" else "value_1qb"

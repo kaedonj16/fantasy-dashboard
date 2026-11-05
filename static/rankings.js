@@ -2375,10 +2375,15 @@ function prQlBuild(p) {
   }
   var meta = [p.team && p.team !== '–' ? p.team : '',
     p.age != null ? 'Age ' + Number(p.age).toFixed(1) : ''].filter(Boolean).join(' · ');
+  // The untracked flat text is too long to sit beside the label in the
+  // 168px identity column (it spilled over the value column); the stack
+  // class puts it on its own line under the label instead.
+  var moveCls = rankChange == null ? 'ql-move ql-move-stack' : 'ql-move';
   var html = '<div class="ql-col ql-col-id">' + prQlHeadshotHTML(p) + prQlNameHTML(p.name)
-    + '<div class="ql-meta"><span class="ql-pospill">' + prQlEsc(prPosRankLabel(p))
+    + '<div class="ql-meta"><span class="ql-pospill ql-pos-' + prQlEsc(p.position || '') + '">'
+    + prQlEsc(prPosRankLabel(p))
     + '</span>' + (meta ? '<span>' + prQlEsc(meta) + '</span>' : '') + '</div>'
-    + '<div class="ql-move"><span class="ql-move-label">7d rank move</span>' + moveHTML
+    + '<div class="' + moveCls + '"><span class="ql-move-label">7d rank move</span>' + moveHTML
     + '</div></div>'
     + '<div class="ql-col ql-col-val"><div class="ql-zone-title">Value</div>'
     + '<div class="ql-values">'
@@ -2423,7 +2428,16 @@ function prQlShow(p, row) {
     prQlEl = document.createElement('div');
     prQlEl.id = 'prQuicklook';
     prQlEl.className = 'ql-card';
-    prQlEl.addEventListener('pointerenter', prQlCancelHide);
+    // Entering the card cancels a pending hide AND a pending show:
+    // the card sits below/above its row with a 10px gap that overlays
+    // the neighbouring row, so crossing to the card briefly "hovers"
+    // that neighbour and arms its 600ms show timer. Without the show
+    // cancel, the card rebuilt itself for the neighbour mid-read and
+    // then vanished.
+    prQlEl.addEventListener('pointerenter', function() {
+      prQlCancelHide();
+      prQlCancelShow();
+    });
     prQlEl.addEventListener('pointerleave', function() { prQlScheduleHide(180); });
     document.body.appendChild(prQlEl);
   }
@@ -2513,7 +2527,15 @@ if (!window.__prQlBound) {
       return;
     }
     prQlCancelShow();
-    prQlShowTimer = setTimeout(function() { prQlShow(p, row); }, PR_QL_DELAY);
+    prQlShowTimer = setTimeout(function() {
+      // Only open for a row the cursor is still actually on. Crossing
+      // the 10px gap to an already-open card briefly hovers the
+      // neighbouring row the gap overlays; by the time this fires the
+      // cursor is on the card, not that row, and opening would swap
+      // the card to the neighbour and then dismiss it.
+      if (row.matches && !row.matches(':hover')) return;
+      prQlShow(p, row);
+    }, PR_QL_DELAY);
   });
   document.addEventListener('pointerout', function(e) {
     if (!prQlCanHover) return;

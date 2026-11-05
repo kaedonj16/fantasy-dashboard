@@ -168,6 +168,59 @@ def test_players_page_card_css():
     assert "margin-top: auto" in ql_block
 
 
+def test_quicklook_trend_follows_scoring_type_basis():
+    # Redraft values are size-invariant everywhere they are served
+    # (board, this card's value boxes, trade calculator), so the trend
+    # reads the base (10-team) redraft series whatever the league size:
+    # at a solved size the reader would otherwise return the
+    # size-specific redraft columns, whose endpoint and 7d move do not
+    # match the displayed value. Dynasty keeps the size-specific read.
+    assert 'history_size = 10 if scoring_type == "redraft" else league_size' in APP
+    assert "league_size=history_size," in APP
+
+
+def test_quicklook_pos_pill_uses_site_pos_badge_palette():
+    # The identity pill carries the player's position so its chip can
+    # use the site-wide .pos-badge palette instead of the generic
+    # accent tint every position shared.
+    assert "ql-pospill ql-pos-' + prQlEsc(p.position || '')" in RANKINGS_JS
+    for cls, bg in (("QB", "var(--brand-blue)"), ("RB", "#22c55e"),
+                    ("WR", "#f59e0b"), ("TE", "#8b5cf6"),
+                    ("K", "#c92c68")):
+        assert f".ql-pospill.ql-pos-{cls} {{ background: {bg}; color: #fff; }}" in PLAYERS_PAGE
+    assert ".ql-pospill.ql-pos-DEF, .ql-pospill.ql-pos-IDP { background: #475569; color: #fff; }" in PLAYERS_PAGE
+
+
+def test_quicklook_meta_row_keeps_clear_of_move_divider():
+    # The move row's divider is its border-top and its margin-top is
+    # auto, so with no free space the meta row (and its pos pill) sat
+    # directly on the line. The meta row now reserves space below it.
+    assert "margin-top: 6px; margin-bottom: 10px;" in PLAYERS_PAGE
+
+
+def test_quicklook_untracked_move_stacks_instead_of_spilling():
+    # "Not tracked in redraft" on one nowrap line beside the label is
+    # wider than the 168px identity column and spilled over the value
+    # column. The untracked state stacks it under the label.
+    assert "rankChange == null ? 'ql-move ql-move-stack' : 'ql-move'" in RANKINGS_JS
+    assert ".ql-move.ql-move-stack" in PLAYERS_PAGE
+    assert ".ql-move.ql-move-stack > span:last-child { white-space: normal; }" in PLAYERS_PAGE
+
+
+def test_quicklook_card_entry_cancels_pending_show():
+    # The card opens 10px from its row, over the neighbouring row:
+    # crossing to the card briefly hovers that neighbour and arms its
+    # show timer, which rebuilt the card for the neighbour and then
+    # dismissed it. Entering the card cancels the pending show, and
+    # the show timer itself only opens for a row still hovered.
+    assert "prQlEl.addEventListener('pointerenter', function() {" in RANKINGS_JS
+    enter = RANKINGS_JS.split("addEventListener('pointerenter', function() {")[1]
+    enter = enter[:enter.index("});")]
+    assert "prQlCancelHide();" in enter
+    assert "prQlCancelShow();" in enter
+    assert "if (row.matches && !row.matches(':hover')) return;" in RANKINGS_JS
+
+
 def test_changelog_announces_quick_look():
     entry = changelog_entry("quick look", "Schedule Rankings ease rank")
     assert entry["tag"] == "new"
