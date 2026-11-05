@@ -631,13 +631,28 @@ def get_most_recent_valid_draft_for_season(drafts: list, season: int) -> Optiona
 
 
 def build_roster_map(users: list, rosters: list) -> dict:
-    """Map roster_id -> display name, using metadata.team_name with user fallback."""
+    """Map roster_id -> display name, using metadata.team_name with user fallback.
+
+    Labels are stripped before use: a Sleeper team name can carry a trailing
+    space ("I Chase Brown Kids "), while team_stats owners are built stripped
+    (public_owner_label), so an unstripped roster_map silently breaks every
+    name-keyed join against it. In League of Greatness that dropped both
+    trailing-space teams from build_standings_map's seed map and shifted
+    Rebuild from Hell from its true 9th to 8th.
+    """
+    def _label(*candidates):
+        for cand in candidates:
+            text = str(cand or "").strip()
+            if text:
+                return text
+        return ""
+
     user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
+        u["user_id"]: _label(
+            (u.get("metadata") or {}).get("team_name"),
+            u.get("display_name"),
+            u.get("username"),
+            str(u["user_id"]),
         )
         for u in users
     }
@@ -645,9 +660,10 @@ def build_roster_map(users: list, rosters: list) -> dict:
     for r in rosters:
         rid = str(r["roster_id"])
         owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
-        )
+        roster_map[rid] = _label(
+            (r.get("metadata") or {}).get("team_name"),
+            user_fallback.get(owner_id),
+        ) or f"Roster {rid}"
     return roster_map
 
 
