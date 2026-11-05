@@ -24,7 +24,9 @@ def test_ctx_cache_helper_has_no_build_mode_and_background_warm():
     # The keyword-only opt-out exists and never runs the synchronous build path.
     assert "def get_league_ctx_from_cache(" in source
     assert "allow_build: bool = True" in source
-    helper = source.split("def get_league_ctx_from_cache(")[1].split("\ndef ")[0]
+    # The public helper is a thin wrapper (Wave 1 rules overlay); the
+    # build/cache behavior guarded here lives in the impl it delegates to.
+    helper = source.split("def _get_league_ctx_from_cache_impl(")[1].split("\ndef ")[0]
     assert "if not allow_build:" in helper
     assert "_warm_league_ctx_async(" in helper
     # The no-build branch must return before acquiring the build lock.

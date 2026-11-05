@@ -249,6 +249,29 @@ def test_get_league_survives_rules_failure(monkeypatch):
     assert league["roster_positions"] == []
 
 
+def test_get_league_marks_playoff_format_unverified(monkeypatch):
+    # Fleaflicker's API never publishes playoff settings; the settings
+    # values are defaults and must say so (Wave 1) so the league-rules
+    # record -- not this payload -- becomes the source of truth.
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *a, **k):
+        if method == "FetchLeagueRules":
+            return {"rosterPositions": []}
+        return {
+            "league": {"id": 14153, "name": "Dynasty", "size": 12},
+            "divisions": [{"teams": [{"id": 1, "name": "Owls",
+                                      "owners": [{"id": 9}]}]}],
+            "season": 2026,
+        }
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    league = provider.get_league("14153", 2026)
+    assert league["settings"]["playoff_format_verified"] is False
+    assert league["settings"]["playoff_teams"] == 6
+    assert league["settings"]["playoff_week_start"] == 15
+
+
 @patch("dashboard_services.providers.fleaflicker_api._request_get")
 def test_preview_survives_rules_season_html_400(mock_get):
     """Regression: rules+season HTML 400 used to 503 the whole /preview path."""
@@ -700,6 +723,177 @@ def test_get_rosters_uses_fetch_roster_starters_when_bulk_list_exists(monkeypatc
     assert roster["players"] == ["canon-qb", "canon-rb"]
     assert roster["starters"] == ["canon-qb"]
     assert "canon-rb" not in roster["starters"]
+    # No isKeeper flags anywhere in this payload: designation data was
+    # not supplied, so the roster must NOT carry a keepers list (key
+    # presence is the known/unknown signal for keeper enforcement).
+    assert "keepers" not in roster
+
+
+def test_get_rosters_captures_designated_keepers_from_all_groups(monkeypatch):
+    # Real-shape FetchRoster (league 92916, verified live 2026-11-04):
+    # isKeeper rides on leaguePlayer and appears in START, BENCH and IR
+    # groups alike; non-keepers omit the key entirely.
+    provider = FleaflickerProvider()
+
+    def slot(pid, name, pos, group, keeper=False):
+        lp = {"proPlayer": {"id": pid, "nameFull": name, "position": pos}}
+        if keeper:
+            lp["isKeeper"] = True
+        return {"position": {"label": pos, "group": group},
+                "leaguePlayer": lp}
+
+    def fake_call(method, *args, **kwargs):
+        if method == "FetchLeagueRosters":
+            return {"rosters": [{
+                "team": {"id": 1, "name": "Owls"},
+                "players": [
+                    {"proPlayer": {"id": 9, "nameFull": "Keeper QB", "position": "QB"}},
+                    {"proPlayer": {"id": 10, "nameFull": "Plain RB", "position": "RB"}},
+                    {"proPlayer": {"id": 11, "nameFull": "Keeper WR", "position": "WR"}},
+                    {"proPlayer": {"id": 12, "nameFull": "Keeper TE", "position": "TE"}},
+                ],
+            }]}
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {"id": 14153, "name": "Dynasty", "size": 1},
+                "divisions": [{"teams": [{"id": 1, "name": "Owls"}]}],
+            }
+        if method == "FetchRoster":
+            return {"groups": [
+                {"group": "START", "slots": [
+                    slot(9, "Keeper QB", "QB", "START", keeper=True),
+                    slot(10, "Plain RB", "RB", "START"),
+                ]},
+                {"group": "BENCH", "slots": [
+                    slot(11, "Keeper WR", "WR", "BENCH", keeper=True),
+                ]},
+                {"group": "IR", "slots": [
+                    slot(12, "Keeper TE", "TE", "IR", keeper=True),
+                ]},
+            ]}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {
+        "9": "canon-qb", "10": "canon-rb", "11": "canon-wr", "12": "canon-te"})
+    roster = provider.get_rosters("14153", 2026)[0]
+    assert roster["players"] == ["canon-qb", "canon-rb", "canon-wr", "canon-te"]
+    assert sorted(roster["keepers"]) == ["canon-qb", "canon-te", "canon-wr"]
+
+
+def test_get_rosters_captures_keepers_from_bulk_fallback(monkeypatch):
+    # When FetchRoster is unavailable, keeper flags on the bulk entries
+    # (same leaguePlayer shape) are captured instead.
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *args, **kwargs):
+        if method == "FetchLeagueRosters":
+            return {"rosters": [{
+                "team": {"id": 1, "name": "Owls"},
+                "players": [
+                    {"proPlayer": {"id": 9, "nameFull": "Keeper QB", "position": "QB"},
+                     "isKeeper": True},
+                    {"proPlayer": {"id": 10, "nameFull": "Plain RB", "position": "RB"}},
+                ],
+            }]}
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {"id": 14153, "name": "Dynasty", "size": 1},
+                "divisions": [{"teams": [{"id": 1, "name": "Owls"}]}],
+            }
+        if method == "FetchRoster":
+            raise ProviderUnavailableError("down")
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {
+        "9": "canon-qb", "10": "canon-rb"})
+    roster = provider.get_rosters("14153", 2026)[0]
+    assert roster["keepers"] == ["canon-qb"]
+
+
+def test_get_rosters_captures_injury_and_news_designations(monkeypatch):
+    # Real-shape capture (league 92916, live 2026-11-05; trimmed fixture
+    # in tests/fixtures/fleaflicker_roster_designations.json): injury
+    # rides on proPlayer in BOTH FetchLeagueRosters and FetchRoster as
+    # {typeAbbreviaition, description, severity, typeFull}; news rides
+    # only on FetchRoster's leaguePlayer.proPlayer as a list of
+    # {timeEpochMilli, contents, title?, url?} items.
+    import json
+    from pathlib import Path
+
+    fixture = json.loads((
+        Path(__file__).parent / "fixtures"
+        / "fleaflicker_roster_designations.json"
+    ).read_text(encoding="utf-8"))
+    provider = FleaflickerProvider()
+
+    def fake_call(method, *args, **kwargs):
+        if method == "FetchLeagueRosters":
+            return fixture["FetchLeagueRosters"]
+        if method == "FetchLeagueStandings":
+            return {
+                "league": {"id": 92916, "name": "All American", "size": 2},
+                "divisions": [{"teams": [
+                    {"id": 643462, "name": "Tua in the Pink"},
+                    {"id": 700001, "name": "Rival Team"},
+                ]}],
+            }
+        if method == "FetchRoster":
+            if kwargs.get("team_id") == 643462:
+                return fixture["FetchRoster"]
+            raise ProviderUnavailableError("no detail for rival")
+        raise AssertionError(method)
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+    monkeypatch.setattr(provider, "_canonical_map", lambda *a, **k: {
+        "14722": "canon-lock", "17004": "canon-kyren",
+        "13770": "canon-darnold", "13775": "canon-lamar"})
+    rosters = provider.get_rosters("92916", 2026)
+    by_id = {r["roster_id"]: r for r in rosters}
+
+    mine = by_id[643462]["player_designations"]
+    # FetchRoster capture wins for Lock: severity + type + body part,
+    # the Sleeper-shaped status, and the latest titled news item.
+    lock = mine["canon-lock"]
+    assert lock["injury_severity"] == "QUESTIONABLE"
+    assert lock["injury_type"] == "Questionable"
+    assert lock["injury_abbrev"] == "Q"
+    assert lock["injury_description"] == "Elbow"
+    assert lock["injury_status"] == "Questionable"
+    assert lock["news_title"] == \
+        "Drew Lock (elbow) limited at practice Wednesday"
+    assert lock["news_time_epoch_milli"] == 1793846296000
+    # A healthy player with no injury and no news carries no designation.
+    assert "canon-kyren" not in mine
+
+    rival = by_id[700001]["player_designations"]
+    # Bulk-only capture (FetchRoster unavailable): injury is captured,
+    # news is not (the bulk payload carries none).
+    darnold = rival["canon-darnold"]
+    assert darnold["injury_severity"] == "OUT"
+    assert darnold["injury_status"] == "Out"
+    assert "news_title" not in darnold
+    # Injured Reserve typeFull maps to the Sleeper-shaped IR status even
+    # though Fleaflicker's severity reads OUT.
+    lamar = rival["canon-lamar"]
+    assert lamar["injury_severity"] == "OUT"
+    assert lamar["injury_type"] == "Injured Reserve"
+    assert lamar["injury_status"] == "IR"
+
+
+def test_flea_player_designation_helper_shapes():
+    from dashboard_services.providers.fleaflicker_api import (
+        _flea_player_designation,
+    )
+    assert _flea_player_designation({}) is None
+    assert _flea_player_designation({"id": 1, "position": "QB"}) is None
+    assert _flea_player_designation("not a dict") is None
+    out = _flea_player_designation({"injury": {
+        "typeAbbreviaition": "D", "description": "Ankle",
+        "severity": "DOUBTFUL", "typeFull": "Doubtful"}})
+    assert out["injury_status"] == "Doubtful"
+    assert out["injury_severity"] == "DOUBTFUL"
 
 
 def test_name_index_reads_pos_and_keeps_both_lamars():

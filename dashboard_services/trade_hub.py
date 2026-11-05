@@ -424,6 +424,14 @@ def shop_package(
     rosters = ctx.get("rosters") or []
     roster_map = ctx.get("roster_map") or {}
     values = values_by_id(ctx, league_type, league_size)
+    # Wave 1 keeper legality: a partner's designated keepers cannot be
+    # traded, so they never appear in a generated return package. Empty
+    # map = designations unknown = no filtering.
+    try:
+        from utils.league_rules import keeper_locked_by_roster
+        _locked_map = keeper_locked_by_roster(ctx)
+    except Exception:
+        _locked_map = {}
 
     # Redraft leagues have no pick assets to price.
     from dashboard_services.ai.context_builders import ctx_scoring_type
@@ -483,9 +491,12 @@ def shop_package(
         team_players = [str(p) for p in (roster.get("players") or [])]
 
         candidates: List[Dict[str, Any]] = []
+        _locked_here = _locked_map.get(rid) or ()
         # Viewer-needed positions first, then the rest of their startable
         # assets. Cheap, startable pieces make the fairest return.
         for pid in team_players:
+            if pid in _locked_here:
+                continue  # designated keeper: untradeable (Wave 1)
             info = values.get(pid)
             if not info or info["position"] not in POSITIONS:
                 continue
