@@ -580,11 +580,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 /* Compare panel */
 .wv-compare-panel {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-  margin-bottom: 16px; overflow: hidden;
+  margin-bottom: 16px; overflow: hidden; padding: 14px;
 }
 .wv-compare-header {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  padding: 0 0 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border);
   font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
   color: var(--text-muted);
 }
@@ -605,6 +605,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   color: var(--text-muted); cursor: pointer; text-transform: none; letter-spacing: 0;
 }
 @media (max-width: 600px) {
+  .wv-compare-panel { padding: 12px; }
   .wv-cmp-title { order: 1; }
   .wv-cmp-clear { order: 2; margin-left: auto; }
   .wv-cmp-picks { order: 3; flex-basis: 100%; }
@@ -628,7 +629,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-compare-lose { color: var(--loss); }
 
 /* Shared-label compare: value(a) · LABEL · value(b), one label per metric */
-.wv-cmp { padding: 6px 16px 14px; }
+.wv-cmp { padding: 0; }
 .wv-cmp-row, .wv-cmp-head {
   display: grid; grid-template-columns: 1fr minmax(86px, auto) 1fr;
   align-items: center; gap: 10px; padding: 9px 0;
@@ -3097,9 +3098,10 @@ function wvRemoveCompareSlot(i) {{
   wvRenderStartSit();
 }}
 
-// Absence lines for one compare head card, grouped per side. The player
-// objects handed to wvToggleCompare are the full start-sit rows, so they
-// already carry p.absences; a player without them renders nothing.
+// Absence lines for one player in the compare Game context section,
+// grouped per side. The player objects handed to wvToggleCompare are the
+// full start-sit rows, so they already carry p.absences; a player without
+// them renders nothing.
 function wvCmpAbsences(p) {{
   const fmt = (txt) => {{
     const i = txt.indexOf(' (');
@@ -3360,7 +3362,6 @@ function wvRenderCompare() {{
       <div class="mt">${{sub(p)}}</div>
       <div class="pj">${{dp.proj != null ? dp.proj : '–'}}</div>
       <div class="pl">PROJ</div>
-      ${{wvCmpAbsences(p)}}
     </div>`;
   const winnerIdx = (v && v.idx != null) ? v.idx : -1;
 
@@ -3391,8 +3392,17 @@ function wvRenderCompare() {{
     row('Venue', wvSsVenueText(a) || da.venue, wvSsVenueText(b) || db.venue) +
     row('Opp plays faced/game', da.playsFaced != null ? da.playsFaced + '/gm' : null, db.playsFaced != null ? db.playsFaced + '/gm' : null) +
     row('vs. NFL average', wvFmtVsAvg(da.playsVsAvg), wvFmtVsAvg(db.playsVsAvg));
-  const ctxHtml = ctxRows
-    ? `<div class="wv-cmp-sec"><div class="wv-cmp-sec-h">GAME CONTEXT</div><div class="wv-cmp">${{ctxRows}}</div></div>` : '';
+  // Absences live in Game context too, grouped per player under the shared
+  // rows; the head cards stay at name + meta + proj, as mocked. The section
+  // renders when either the shared rows or any absence group has content.
+  const absGroup = (p) => {{
+    const inner = wvCmpAbsences(p);
+    return inner ? `<div class="wv-cmp-abs"><div class="wv-cmp-abs-name">${{p.name}}</div>${{inner}}</div>` : '';
+  }};
+  const absHtml = absGroup(a) + absGroup(b);
+  const ctxHtml = (ctxRows || absHtml)
+    ? `<div class="wv-cmp-sec"><div class="wv-cmp-sec-h">GAME CONTEXT</div>`
+      + (ctxRows ? `<div class="wv-cmp">${{ctxRows}}</div>` : '') + absHtml + `</div>` : '';
 
   const fullRows =
     row('Start/Sit index', dash(idxA), dash(idxB), wIdx[0], wIdx[1]) +

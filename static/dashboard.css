@@ -50388,7 +50388,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .wv-cmp2-absg .wv-abs b { font-weight: 800; }
 .wv-cmp2-head .pl { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-subtle); }
 .wv-cmp2-vs { align-self: center; flex-shrink: 0; font-size: 11px; font-weight: 800; color: var(--text-subtle); letter-spacing: 1px; }
-.wv-cmp2-factors { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 12px 6px; }
+.wv-cmp2-factors { background: none; border: none; border-radius: 0; padding: 0; }
 .wv-cmp2-factor { padding: 6px 0; border-bottom: 1px solid var(--grid); }
 .wv-cmp2-factor:last-child { border-bottom: none; }
 .wv-cmp2-factor .fl { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 4px; }
@@ -50396,10 +50396,15 @@ a, button, [role="button"], [role="tab"], summary, label,
 .wv-cmp2-bar-row .vn { font-size: 13px; font-weight: 800; width: 46px; font-variant-numeric: tabular-nums; color: var(--text); flex-shrink: 0; }
 .wv-cmp2-bar-row .vn.r { text-align: right; }
 .wv-cmp2-track { flex: 1; height: 5px; background: var(--grid); border-radius: var(--radius-sm); overflow: hidden; display: flex; }
-/* Slim grouped sections inside the compare panel (Range / Game context). */
-.wv-cmp-sec { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-top: 10px; }
+/* Slim grouped sections inside the compare panel (Range / Game context):
+   borderless sections of the one panel card, split by a hairline divider. */
+.wv-cmp-sec { background: none; border: none; border-radius: 0; padding: 10px 0 0; margin-top: 14px; border-top: 1px solid var(--grid); }
 .wv-cmp-sec-h { font-size: 11px; font-weight: 800; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 8px; }
 .wv-cmp-sec .wv-cmp { padding: 0; }
+/* Absences grouped per player inside the Game context section. */
+.wv-cmp-abs { margin-top: 10px; }
+.wv-cmp-sec .wv-cmp + .wv-cmp-abs { border-top: 1px solid var(--grid); padding-top: 8px; }
+.wv-cmp-abs-name { font-size: 12px; font-weight: 800; color: var(--text); margin-bottom: 2px; }
 .wv-cmp-range-row + .wv-cmp-range-row { margin-top: 12px; }
 .wv-cmp2-track i { display: block; height: 100%; }
 .wv-cmp2-track .a { background: var(--win); border-radius: var(--radius-sm) 0 0 var(--radius-sm); }

@@ -101,3 +101,42 @@ def test_compare_slim_and_grouped_sections(script):
     assert "padding: 8px 12px" in CSS
     assert ".wv-cmp2-track { flex: 1; height: 5px;" in CSS
     assert ".wv-cmp2-head .pj { font-size: 22px;" in CSS
+
+
+def test_compare_panel_is_one_inset_card(body):
+    # The mock is ONE padded card: the panel itself carries the inset and
+    # every section aligns to it, nothing runs full-bleed to the card edge.
+    panel = body.split(".wv-compare-panel {")[1].split("}")[0]
+    assert "padding: 14px" in panel
+    assert ".wv-compare-panel { padding: 12px; }" in body
+    # The header is inset too: no full-bleed padding, hairline only.
+    header = body.split(".wv-compare-header {")[1].split("}")[0]
+    assert "padding: 0 0 10px" in header
+    assert "10px 14px" not in header
+    # Shared-label rows carry no horizontal padding of their own.
+    assert ".wv-cmp { padding: 0; }" in body
+
+
+def test_compare_sections_have_no_card_chrome():
+    # Range / Game context and the factor bars are borderless sections of
+    # the one panel card, split by a hairline divider, not cards-in-a-card.
+    sec = CSS.split(".wv-cmp-sec {")[1].split("}")[0]
+    assert "background: none" in sec
+    assert "border: none" in sec
+    assert "border-top: 1px solid var(--grid)" in sec
+    factors = CSS.split(".wv-cmp2-factors {")[1].split("}")[0]
+    assert "background: none" in factors
+    assert "border: none" in factors
+    assert "padding: 0" in factors
+
+
+def test_compare_absences_live_in_game_context(script):
+    # Head cards are name + meta + proj only, as mocked: no absence block.
+    head = script.split("const headCard")[1].split("`;")[0]
+    assert "wvCmpAbsences" not in head
+    assert "wv-cmp2-absg" not in head
+    # The same absence content renders in Game context, grouped per player,
+    # and the section shows even when only absences have content.
+    assert "wv-cmp-abs" in script
+    assert "absGroup(a)" in script
+    assert "(ctxRows || absHtml)" in script
