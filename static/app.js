@@ -20129,6 +20129,16 @@ document.addEventListener('DOMContentLoaded', function() {
       _forOpenModal();
       return;
     }
+    var forJumpBtn = event.target.closest('[data-for-jump]');
+    if (forJumpBtn) {
+      // Jumpbar inside the Front Office modal: scroll the modal body
+      // to the section in place. No hash change, no navigation, no
+      // page reload (the old <a href='#...'> links reloaded the page).
+      event.preventDefault();
+      var forTarget = document.getElementById(forJumpBtn.getAttribute('data-for-jump'));
+      if (forTarget) forTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
 
     const generateGmMemoBtn = event.target.closest('#generateGmMemoBtn');
     if (!generateGmMemoBtn) return;

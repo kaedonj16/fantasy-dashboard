@@ -20,6 +20,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import math
 from urllib.parse import quote_plus
 
 from dashboard_services.ai.cache import (
@@ -58,6 +59,22 @@ logger = logging.getLogger(__name__)
 # exact rank as role language ("RB18 type") and must not hit.
 CACHE_VERSION = "v8"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
+
+
+def _fmt_playoff_pct_display(value) -> str:
+    """Playoff odds for display: one decimal, floored, so an undecided
+    99.9 never rounds up to 100. A literal 100 / 0 appears only when the
+    raw value is exact (clinched / eliminated). Mirrors app.py's
+    _fmt_playoff_pct_display and the Playoff Odds page rule."""
+    try:
+        raw = float(value)
+    except (TypeError, ValueError):
+        return "0"
+    if raw >= 100:
+        return "100"
+    if raw <= 0:
+        return "0"
+    return f"{math.floor(raw * 10 + 1e-9) / 10:.1f}"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1301,17 +1318,26 @@ def _build_decision_moves(*, trade_targets: list[dict],
             i for i, cand_p in enumerate(potential_targets)
             if not _rebuild_age_block(cand_p.get("age"), rebuilding)
         ][:2]
-        if pot_idx:
-            p = potential_targets[pot_idx[0]]
+        # Each potential target is its own move: bundling a second
+        # target inside the first target's evidence made it read as
+        # part of that deal (Kaedon, 2026-11-05: Javonte Williams
+        # inside Target Bhayshul Tuten).
+        for n_pot, idx in enumerate(pot_idx):
+            p = potential_targets[idx]
             gap = int(p.get("gap_pct") or 0)
-            why_bits = ["Top gettable target at a position you need."]
+            lead = (
+                "Top gettable target at a position you need."
+                if n_pot == 0
+                else "Another gettable target at a position you need."
+            )
+            why_bits = [lead]
             if gap:
                 why_bits.append(f"Your surplus package reaches about {gap}% of his value.")
             moves.append({
                 "kind": "potential", "type": "Trade", "timing": "This week",
                 "line": f"Target {p.get('name')} ({p.get('position')})",
                 "why": " ".join(why_bits), "after": "", "dep": None,
-                "potential_indices": pot_idx,
+                "potential_indices": [idx],
             })
 
     # 4. Lineup move: a lineup starter who cannot play (OUT or worse)
@@ -2468,7 +2494,8 @@ def render_front_office_card_html(data: dict, ai: dict) -> str:
     pct = data.get("playoff_pct")
     if pct is not None:
         try:
-            keys.append(("Playoff odds", f"{float(pct):.0f}%"))
+            float(pct)
+            keys.append(("Playoff odds", f"{_fmt_playoff_pct_display(pct)}%"))
         except (TypeError, ValueError):
             pass
     grades = data.get("grades") or []
@@ -3189,10 +3216,17 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     # alert are folded into it, and grades + roster drop to Reference.
     board_html = _decision_board_html(data, ai)
     if board_html:
+        # Buttons, not anchor links: an <a href='#...'> changes the URL
+        # hash and reloads / re-routes the page from inside the modal.
+        # The app.js handler for [data-for-jump] scrolls the modal body
+        # to the target with no navigation. The bar sits ABOVE the
+        # board it navigates (Kaedon, 2026-11-05).
         jump_html = (
-            "<div class='for-jumpbar'><a href='#forBoard'>Do this first</a>"
-            "<a href='#forLastWeek'>Since last week</a>"
-            "<a href='#forReference'>Reference</a></div>"
+            "<div class='for-jumpbar'>"
+            "<button type='button' data-for-jump='forBoard'>Do this first</button>"
+            "<button type='button' data-for-jump='forLastWeek'>Since last week</button>"
+            "<button type='button' data-for-jump='forReference'>Reference</button>"
+            "</div>"
         )
         changes_wrapped = (
             f"<div id='forLastWeek'>{changes_html}</div>" if changes_html else ""
@@ -3213,8 +3247,8 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
       </div>
       <h3 class='for-headline'>{headline}</h3>
       {posture_html}
-      {board_html}
       {jump_html}
+      {board_html}
       {changes_wrapped}
       {reference_html}
     </div>
@@ -3254,8 +3288,9 @@ def _hero_chips_html(week, rec, pct, trade_deadline=None) -> str:
         chips.append(f"<span class='for-chip'>{html.escape(str(rec))}</span>")
     if pct is not None:
         try:
+            float(pct)
             chips.append(
-                f"<span class='for-chip for-chip-hot'>{float(pct):.0f}% playoff odds</span>"
+                f"<span class='for-chip for-chip-hot'>{_fmt_playoff_pct_display(pct)}% playoff odds</span>"
             )
         except (TypeError, ValueError):
             pass

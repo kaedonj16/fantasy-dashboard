@@ -50035,8 +50035,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 .for-holdrow:last-child { border-bottom: none; }
 .for-holdtag { flex-shrink: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-muted); padding-top: 2px; min-width: 44px; }
 .for-jumpbar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding: 8px 0; }
-.for-jumpbar a { font-size: 12px; font-weight: 700; color: var(--text); text-decoration: none; border: 1px solid var(--border); background: var(--card-soft); border-radius: var(--radius-pill); padding: 5px 11px; }
-.for-jumpbar a:hover { border-color: var(--accent); }
+.for-jumpbar a, .for-jumpbar button { font-size: 12px; font-weight: 700; color: var(--text); text-decoration: none; border: 1px solid var(--border); background: var(--card-soft); border-radius: var(--radius-pill); padding: 5px 11px; font-family: inherit; cursor: pointer; }
+.for-jumpbar a:hover, .for-jumpbar button:hover { border-color: var(--accent); }
 .for-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .for-sec-head .for-sec-title { margin-bottom: 0; }
 .for-xref { font-size: 11px; font-weight: 800; letter-spacing: 0.4px; color: var(--on-accent); background: var(--accent); border-radius: var(--radius-pill); padding: 3px 9px; white-space: nowrap; }
