@@ -10,6 +10,7 @@ subprocesses.
 from __future__ import annotations
 
 import subprocess
+from datetime import date
 
 import pytest
 
@@ -120,3 +121,44 @@ def test_cron_only_whitespace_is_unset(harness, monkeypatch):
     cron_daily.main()
     assert len(harness["subprocess"]) >= 15
     assert harness["derive"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Step 4b (matchup ratings) Wednesday gate vs CRON_ONLY. The step is
+# Wednesday-gated for scheduled runs, but a CRON_ONLY run naming it is a
+# deliberate manual trigger: on 2026-11-05 (a Thursday) such a run logged
+# "skipped - not Wednesday" and exited ok without building anything.
+# ---------------------------------------------------------------------------
+
+
+class _Thursday(date):
+    @classmethod
+    def today(cls):
+        return cls(2026, 11, 5)  # weekday() == 3
+
+
+@pytest.fixture
+def thursday(monkeypatch):
+    assert _Thursday.today().weekday() == 3
+    monkeypatch.setattr(cron_daily, "date", _Thursday)
+
+
+def test_cron_only_matchup_ratings_runs_on_thursday(harness, thursday, monkeypatch):
+    monkeypatch.setenv("CRON_ONLY", "build_matchup_ratings")
+    cron_daily.main()
+    codes = _step_codes(harness)
+    assert len(codes) == 1
+    assert "build_matchup_rating_profiles" in codes[0]
+    assert ("build_matchup_ratings", "ok") in harness["health"]
+
+
+def test_normal_thursday_run_still_skips_matchup_ratings(harness, thursday, capsys):
+    cron_daily.main()
+    codes = _step_codes(harness)
+    assert not any("build_matchup_rating_profiles" in c for c in codes)
+    assert ("build_matchup_ratings", "skipped") in harness["health"]
+    assert ("Matchup ratings skipped - not Wednesday (weekday=3)"
+            in capsys.readouterr().out)
+    # The rest of the daily job still ran.
+    assert harness["derive"] == 1
+    assert len(codes) >= 10
