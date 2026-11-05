@@ -674,8 +674,25 @@ def season_weights(completed_through_week: int, *, blend: bool = True):
     return 1. - current, current
 
 
+def _normalize_profile_numbers(value):
+    """Recursively coerce int leaves to float so numerically identical
+    settings canonicalize identically ({"rec": 1} == {"rec": 1.0}). Bools
+    are ints in Python but are settings flags, not quantities, so they -
+    and strings/None - pass through untouched."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return float(value)
+    if isinstance(value, dict):
+        return {key: _normalize_profile_numbers(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize_profile_numbers(val) for val in value]
+    return value
+
+
 def scoring_profile_hash(settings):
-    canonical = json.dumps(settings or {}, sort_keys=True, separators=(",", ":"), default=str)
+    canonical = json.dumps(_normalize_profile_numbers(settings or {}),
+                           sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 

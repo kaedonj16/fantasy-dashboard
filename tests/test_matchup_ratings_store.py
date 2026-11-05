@@ -66,7 +66,7 @@ def _payload():
         "season": 2026,
         "through_week": 7,
         "generated_at": "2026-10-28T23:20:31+00:00",
-        "scoring_profile": "e644f15a2c198fe2",
+        "scoring_profile": "3ce7b75fe4f40427",
         "ratings": {"BUF": {"RB": {"adjusted_multiplier": 1.1}}},
     }
 
@@ -82,7 +82,7 @@ def test_save_upserts_row_keyed_by_season_and_profile(monkeypatch, reset_tables_
     sql, args = upserts[0]
     assert "ON CONFLICT (season, scoring_profile) DO UPDATE" in sql
     assert args[0] == 2026
-    assert args[1] == "e644f15a2c198fe2"
+    assert args[1] == "3ce7b75fe4f40427"
     assert args[2] == 7
     assert isinstance(args[3], datetime)
     assert args[4].obj["ratings"] == {"BUF": {"RB": {"adjusted_multiplier": 1.1}}}
@@ -110,7 +110,7 @@ def test_load_returns_payload(monkeypatch, reset_tables_ready):
     conn = _FakeConn(fetchone_result=(_payload(),))
     _patch_conn(monkeypatch, conn)
 
-    row = store.load_matchup_ratings(2026, "e644f15a2c198fe2")
+    row = store.load_matchup_ratings(2026, "3ce7b75fe4f40427")
     assert row is not None
     assert row["through_week"] == 7
     assert row["ratings"]["BUF"]["RB"]["adjusted_multiplier"] == 1.1
@@ -119,7 +119,7 @@ def test_load_returns_payload(monkeypatch, reset_tables_ready):
 def test_load_returns_none_when_no_row(monkeypatch, reset_tables_ready):
     conn = _FakeConn(fetchone_result=None)
     _patch_conn(monkeypatch, conn)
-    assert store.load_matchup_ratings(2026, "e644f15a2c198fe2") is None
+    assert store.load_matchup_ratings(2026, "3ce7b75fe4f40427") is None
 
 
 def test_load_returns_none_when_db_down(monkeypatch, reset_tables_ready):
@@ -130,3 +130,54 @@ def test_load_returns_none_when_db_down(monkeypatch, reset_tables_ready):
 
     monkeypatch.setattr("dashboard_services.db.get_conn", boom)
     assert store.load_matchup_ratings(2026) is None
+
+
+class _RoundTripConn:
+    """In-memory stand-in for the matchup_ratings table: INSERTs land in a
+    dict keyed by (season, scoring_profile) and SELECTs answer from it, so a
+    save/load round trip exercises the real keying on both sides."""
+
+    def __init__(self):
+        self.rows = {}
+        self._pending = None
+
+    def execute(self, sql, args=()):
+        if "INSERT INTO matchup_ratings" in sql:
+            season, profile, _week, _generated, payload = args
+            self.rows[(season, profile)] = payload.obj
+        elif "SELECT payload FROM matchup_ratings" in sql and len(args) == 2:
+            stored = self.rows.get((args[0], args[1]))
+            self._pending = (stored,) if stored is not None else None
+        return self
+
+    def fetchone(self):
+        return self._pending
+
+    def commit(self):
+        pass
+
+
+def test_default_build_round_trips_under_app_default_lookup_keys(
+        monkeypatch, reset_tables_ready, stub_json_adapter):
+    from utils.nfl import scoring_profile_hash
+
+    conn = _RoundTripConn()
+    _patch_conn(monkeypatch, conn)
+
+    # Stamped exactly as build_matchup_ratings stamps the default profile
+    # (scoring_settings None -> {"rec": 1}).
+    payload = _payload()
+    payload["scoring_profile"] = scoring_profile_hash({"rec": 1})
+    assert store.save_matchup_ratings(2026, payload) is True
+
+    # app.py _load_matchup_ratings tries these keys, in this order, for a
+    # default request; before the int/float hash normalization the first key
+    # never matched the builder's stamp and the read fell through to the
+    # stale flat file.
+    hit = None
+    for key in [scoring_profile_hash({"rec": 1.0}), "standard-ppr"]:
+        hit = store.load_matchup_ratings(2026, key)
+        if hit and (hit.get("ratings") or {}):
+            break
+    assert hit is not None
+    assert hit["ratings"]["BUF"]["RB"]["adjusted_multiplier"] == 1.1

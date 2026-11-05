@@ -1078,7 +1078,11 @@ else:
     if not in_season:
         print("[cron] Matchup ratings skipped - offseason")
         record_pipeline_health("build_matchup_ratings", "skipped")
-    elif today_weekday != 2:  # 0=Mon … 2=Wed … 6=Sun
+    elif today_weekday != 2 and _cron_only_step() != "build_matchup_ratings":
+        # 0=Mon … 2=Wed … 6=Sun. A CRON_ONLY run naming this step is a
+        # deliberate manual trigger, so it bypasses the Wednesday gate
+        # (the offseason skip above still applies to it); scheduled runs
+        # keep the Wednesday cadence.
         print(f"[cron] Matchup ratings skipped - not Wednesday (weekday={today_weekday})")
         record_pipeline_health("build_matchup_ratings", "skipped")
     else:
@@ -1089,7 +1093,10 @@ statuses = build_matchup_rating_profiles({season!r})
 failed = [s for s in statuses if s['label'] == 'default PPR' and (s['status'] != 'built' or not s.get('db_saved'))]
 if failed:
     raise RuntimeError(f"default matchup ratings unavailable or not persisted to the durable store: {{failed[0].get('failure_reason', failed[0]['status'])}}")
-print(f"[cron] Matchup rating profiles complete: {{len(statuses)}} statuses")
+_parts = []
+for _s in statuses:
+    _parts.append('%s: %s (db_saved=%s)' % (_s['label'], _s['status'], bool(_s.get('db_saved'))))
+print('[cron] Matchup rating profiles complete: ' + ', '.join(_parts))
 """, "build_matchup_ratings", timeout=900)
 
     # ------------------------------------------------------------------ #

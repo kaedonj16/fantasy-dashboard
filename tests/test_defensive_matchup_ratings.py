@@ -3,6 +3,7 @@ from utils.defensive_matchup_ratings import (
     rank_team_schedules,
     rank_values,
     rating_cache_key,
+    scoring_profile_hash,
     season_weights,
     aggregate_defense_games,
     game_adjustment,
@@ -61,6 +62,27 @@ def test_cache_key_isolates_season_week_position_and_full_scoring_profile():
     assert base != rating_cache_key(2026, 3, {"rec": 1, "pass_td": 4}, "QB")
     assert base != rating_cache_key(2026, 2, {"rec": .5, "pass_td": 4}, "QB")
     assert base != rating_cache_key(2026, 2, {"rec": 1, "pass_td": 4}, "RB")
+
+
+def test_profile_hash_treats_int_and_float_forms_as_the_same_profile():
+    # The ratings builder stamps the default profile from {"rec": 1} while
+    # app.py looks the default up under {"rec": 1.0}; before numeric
+    # normalization those hashed differently and every default read missed.
+    assert scoring_profile_hash({"rec": 1}) == scoring_profile_hash({"rec": 1.0})
+
+
+def test_profile_hash_normalizes_nested_and_listed_numbers():
+    int_form = {"rec": 1, "pass": {"td": 4, "yd": 0.04}, "tiers": [1, 2]}
+    float_form = {"rec": 1.0, "pass": {"td": 4.0, "yd": 0.04}, "tiers": [1.0, 2.0]}
+    assert scoring_profile_hash(int_form) == scoring_profile_hash(float_form)
+
+
+def test_profile_hash_still_distinguishes_profiles_and_bool_flags():
+    assert scoring_profile_hash({"rec": 1}) != scoring_profile_hash({"rec": 0.5})
+    assert scoring_profile_hash({"rec": 1}) != scoring_profile_hash(
+        {"rec": 1, "bonus_rec_te": 0.5})
+    # Bools are flags, not quantities: True must not collapse into 1.
+    assert scoring_profile_hash({"flag": True}) != scoring_profile_hash({"flag": 1})
 
 
 def test_17_5_against_20_8_is_suppression():
