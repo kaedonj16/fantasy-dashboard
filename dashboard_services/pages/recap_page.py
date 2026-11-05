@@ -1096,10 +1096,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         logger.warning("recap gotw lookup failed", exc_info=True)
         _gotw_idx = None
     if _gotw_idx is not None:
-        # A recovered pick is labeled as one: it was reconstructed after the
-        # fact from historical signals, not chosen before the week was played.
-        badge_map.setdefault(_gotw_idx, []).insert(
-            0, "GOTW (recovered)" if (_gotw_selection or {}).get("recovered") else "GOTW")
+        # A recovered pick carries the same chip as a cached one.
+        badge_map.setdefault(_gotw_idx, []).insert(0, "GOTW")
 
     def matchup_result_row(m, matchup_index):
         w_team = team_name(m["winner"], m["w_rid"])
