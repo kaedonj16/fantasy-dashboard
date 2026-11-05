@@ -2073,7 +2073,8 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
                                  waiver_type: str = "faab", budget_total=None,
                                  budget_remaining=None, competing_holes=None,
                                  limit=None, require_team=False,
-                                 hard_exclude_serious=False) -> list:
+                                 hard_exclude_serious=False,
+                                 starting_role_by_pid=None) -> list:
     """The shared team-waiver selector (item 6). See module note above for
     the gate order. ``quality_bar_fn`` is the caller's format bar
     (digest/FO own the tables); when it is absent a value floor plus
@@ -2174,6 +2175,19 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             _m = _re.search(r"(\d+)\s*$", str(raw.get("pos_rank_label")))
             rk = int(_m.group(1)) if _m else None
         gap = gaps.get(pos, 0.0)
+        # Starting-role override (Wave 2 spec §2.3): a promoted/returning
+        # (or fresh-drop) candidate admitted by utils.waiver_role carries
+        # a projection-judged signal. Its role-based starter hole counts
+        # as a starter gap alongside the count-based one.
+        _sr = (starting_role_by_pid or {}).get(pid)
+        if not isinstance(_sr, dict):
+            _sr = None
+        if _sr is not None:
+            try:
+                if float(_sr.get("starter_gap") or 0) > 0:
+                    gap = max(gap, float(_sr["starter_gap"]))
+            except (TypeError, ValueError):
+                pass
         cand = {
             "player_id": pid, "value": val, "age": age, "position": pos,
             "rank_change_7d": raw.get("rank_change_7d") or 0,
@@ -2188,7 +2202,12 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
         # Quality bar + rank ceiling (caller's), with credible opportunity
         # as the low-value admission path (item 5): retry with a floor the
         # candidate's value clears, keeping every other gate intact.
-        if quality_bar_fn is not None:
+        # Starting-role candidates skip the value quality bar entirely:
+        # their gate is the projection gate below (spec §2.3), because a
+        # promoted backup's model value is exactly what is stale.
+        if _sr is not None:
+            pass
+        elif quality_bar_fn is not None:
             try:
                 ok = quality_bar_fn(pos=pos, pos_rank=rk, value=val,
                                     is_redraft=is_redraft, is_sf=is_sf,
@@ -2210,11 +2229,19 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             if not passes_candidate_floor(cand, breakout, min_value=min_value):
                 continue
         # x1.05 drop bar. A real starter/calendar hole bypasses it;
-        # nothing else does.
-        bar = bars.get(pos)
-        beats_bar = bar is None or val > float(bar) * 1.05
-        if gap <= 0 and not beats_bar:
-            continue
+        # nothing else does. Starting-role candidates are judged on
+        # projection instead of value (spec §2.3): pass iff his
+        # projection beats the worst rostered player at the position's
+        # projection, or a starter hole (count- or role-based) exists.
+        if _sr is not None:
+            from utils.waiver_role import passes_projection_gate as _ppg_gate
+            if gap <= 0 and not _ppg_gate(_sr):
+                continue
+        else:
+            bar = bars.get(pos)
+            beats_bar = bar is None or val > float(bar) * 1.05
+            if gap <= 0 and not beats_bar:
+                continue
         # QB coverage rule (2026-10-16): in a 1QB format, a covered QB
         # room yields NO QB claim. When healthy rostered QBs meet the QB
         # slot and there is no starter/calendar hole, the claim is
@@ -2279,7 +2306,8 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
                     horizon_gain = round(float(ev.horizon_gain), 2)
             except Exception:
                 outcome = "cannot_evaluate"
-        if outcome is None and roster_pids and roster_positions and gap <= 0:
+        if outcome is None and roster_pids and roster_positions and gap <= 0 \
+                and _sr is None:
             # Fail closed when classification could not run (2026-10-16):
             # the caller supplied a roster to judge fit against but no
             # per-week points and no forward points, so this claim would
@@ -2289,7 +2317,7 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             # ranking calls (no roster to judge) are unaffected.
             continue
         if outcome == "cannot_evaluate" and roster_pids and roster_positions \
-                and gap <= 0:
+                and gap <= 0 and _sr is None:
             # Fail closed on the evaluator's own verdict too (2026-10-17):
             # evaluate_pickup returns cannot_evaluate when the candidate
             # has no usable week-0 projection, and that verdict used to be
@@ -2302,7 +2330,7 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             # at all and gets the same treatment; the attested-hole
             # exception (gap > 0) is unchanged.
             continue
-        if outcome == "add_drop" and drop_pid and roster_values:
+        if outcome == "add_drop" and drop_pid and roster_values and _sr is None:
             # Value confirmation against the ACTUAL drop (2026-10-17):
             # the evaluator costs a drop on projected points alone, so a
             # spot-window projection edge can name a far more valuable
@@ -2339,7 +2367,8 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             _room = _room_cache[pos]
             _cand_team = str(raw.get("team") or "").upper()
             _stash_ok = (
-                gap > 0
+                _sr is not None
+                or gap > 0
                 or _room["deficit"]
                 or (_room["weakest_starter_value"] is not None
                     and val > _room["weakest_starter_value"] * 1.05)
@@ -2376,6 +2405,12 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             "claim_guidance": guidance["label"],
             "claim_guidance_reason": guidance["reason"],
             "faab": faab,
+            # Starting-role override (spec §2.3): present only for
+            # candidates admitted/judged by the projection gate.
+            "starting_role": _sr is not None,
+            "signal_kind": (_sr or {}).get("signal_kind") if _sr else None,
+            "role_state": (_sr or {}).get("state") if _sr else None,
+            "role_reason": (_sr or {}).get("reason") if _sr else None,
         })
     _order = {"add": 0, "add_drop": 0, "cannot_evaluate": 1, None: 1, "stash": 2}
     results.sort(key=lambda r: (_order.get(r.get("outcome"), 1), -float(r.get("score") or 0)))

@@ -426,6 +426,12 @@ class MFLProvider(ProviderAdapter):
             "settings": {
                 "playoff_week_start": _int(lg.get("lastRegularSeasonWeek"), 14) + 1,
                 "playoff_teams": _int(lg.get("playoffTeams") or lg.get("playoff_teams"), 6),
+                # Whether playoffTeams actually came from the payload, so
+                # the league-rules record (Wave 1) can tell a feed value
+                # from the `or 6` fallback above.
+                "playoff_teams_from_feed": bool(
+                    lg.get("playoffTeams") or lg.get("playoff_teams")
+                ),
                 "draft_rounds": _int(lg.get("draftRounds") or lg.get("draft_rounds"), 4),
                 "type": sleeper_type,
                 "league_type": league_type_label,

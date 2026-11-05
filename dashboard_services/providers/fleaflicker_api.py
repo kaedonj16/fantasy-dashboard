@@ -316,6 +316,81 @@ def _flea_dst_canonical(pro: dict) -> Optional[str]:
     return alt if alt in NFL_TEAMS else canon
 
 
+def _flea_player_designation(pro: dict) -> Optional[dict]:
+    """Provider-native designation for one ``proPlayer`` (Wave 2 PR 1).
+
+    Real shape, captured live from league 92916 on 2026-11-05:
+
+    * ``proPlayer.injury`` (FetchLeagueRosters, FetchRoster and
+      FetchPlayerListing alike): ``{"typeAbbreviaition": "IR"`` (the
+      feed's own misspelling), ``"description": "Thumb"`` (body part),
+      ``"severity": "OUT"``, ``"typeFull": "Injured Reserve"``.
+    * ``proPlayer.news`` (FetchRoster / FetchPlayerListing only; the bulk
+      roster list carries none): a list of ``{"timeEpochMilli",
+      "contents", "analysis"?, "title"?, "url"?}`` items.
+
+    Returns a compact structured designation, or None when the player
+    carries neither. The news side is captured as the latest item's
+    title + timestamp only: news text is a display signal, never a
+    role-state input in v1 (Wave 2 spec section 2.1 / open question 1).
+    """
+    if not isinstance(pro, dict):
+        return None
+    out: dict = {}
+    injury = _get(pro, "injury")
+    if isinstance(injury, dict) and injury:
+        severity = str(_get(injury, "severity") or "").strip().upper()
+        type_full = str(_get(injury, "typeFull", "type_full") or "").strip()
+        if severity:
+            out["injury_severity"] = severity
+        if type_full:
+            out["injury_type"] = type_full
+        abbrev = _get(injury, "typeAbbreviaition", "typeAbbreviation",
+                      "type_abbreviation")
+        if abbrev:
+            out["injury_abbrev"] = str(abbrev).strip()
+        description = _get(injury, "description")
+        if description:
+            out["injury_description"] = str(description).strip()
+        # Sleeper-shaped status so existing consumers (Start/Sit avail,
+        # role state) can read the fresher Fleaflicker designation
+        # without learning a second vocabulary. An Injured Reserve
+        # typeFull is IR even though its severity reads OUT.
+        if "INJURED RESERVE" in type_full.upper():
+            out["injury_status"] = "IR"
+        elif severity == "OUT":
+            out["injury_status"] = "Out"
+        elif severity == "QUESTIONABLE":
+            out["injury_status"] = "Questionable"
+        elif severity == "DOUBTFUL":
+            out["injury_status"] = "Doubtful"
+        elif severity:
+            out["injury_status"] = severity.title()
+    news = _get(pro, "news")
+    if isinstance(news, list) and news:
+        # Most recent item that carries a title wins (some items are
+        # title-less link posts); the timestamp is that item's.
+        best_title = ""
+        best_ts = 0
+        for item in news:
+            if not isinstance(item, dict):
+                continue
+            title = str(_get(item, "title") or "").strip()
+            if not title:
+                continue
+            try:
+                ts = int(_get(item, "timeEpochMilli", "time_epoch_milli") or 0)
+            except (TypeError, ValueError):
+                ts = 0
+            if not best_title or ts >= best_ts:
+                best_title, best_ts = title, ts
+        if best_title:
+            out["news_title"] = best_title
+            if best_ts > 0:
+                out["news_time_epoch_milli"] = best_ts
+    return out or None
+
+
 def _flea_group_family(group_label: str) -> str:
     """Normalize 'Receiving Stats' / 'Passing' onto the family used in the map."""
     group = str(group_label or "").strip().lower()
@@ -1052,6 +1127,12 @@ class FleaflickerProvider(ProviderAdapter):
             "draft_status": _fleaflicker_draft_status(league),
             "playoff_week_start": playoff_week_start,
             "playoff_teams": playoff_teams,
+            # Fleaflicker's API never publishes playoff settings, so the
+            # two values above are unverified defaults. Say so explicitly
+            # (Wave 1): the league-rules record resolves the real format
+            # via derivation or user confirmation, and the championship
+            # gate reads this flag.
+            "playoff_format_verified": False,
         }
         if max_keepers > 0:
             settings["max_keepers"] = max_keepers
@@ -1139,8 +1220,12 @@ class FleaflickerProvider(ProviderAdapter):
 
     def _parse_fetch_roster_groups(
         self, detail: dict, xwalk: dict, by_name: dict,
-    ) -> tuple[list[str], list[str], list[str], list[str], set[str]]:
+    ) -> tuple[list[str], list[str], list[str], list[str], set[str],
+               list[str], bool, dict]:
         players, starters, reserve, taxi = [], [], [], []
+        keepers: list[str] = []
+        keeper_seen = False
+        designations: dict = {}
         seen: set[str] = set()
         for group in detail.get("groups") or []:
             group_label = str(group.get("group") or "").upper()
@@ -1148,6 +1233,16 @@ class FleaflickerProvider(ProviderAdapter):
                 lp = slot.get("leaguePlayer") or slot.get("league_player") or {}
                 pro = lp.get("proPlayer") or lp.get("pro_player") or {}
                 bucket = self._slot_group_label(group_label, slot)
+                # Designated-keeper truth (Wave 1): the flag rides on
+                # leaguePlayer in every group (starters, bench, IR) but
+                # is only present when true in this feed. Any slot
+                # carrying the key means the league supplied designation
+                # data for this roster.
+                is_keeper = lp.get("isKeeper")
+                if is_keeper is None:
+                    is_keeper = lp.get("is_keeper")
+                if is_keeper is not None:
+                    keeper_seen = True
                 if _get(pro, "id") is None:
                     if bucket in _START_GROUPS:
                         starters.append("0")
@@ -1161,13 +1256,19 @@ class FleaflickerProvider(ProviderAdapter):
                     continue
                 seen.add(cid)
                 players.append(cid)
+                designation = _flea_player_designation(pro)
+                if designation:
+                    designations[cid] = designation
+                if is_keeper:
+                    keepers.append(cid)
                 if bucket in _START_GROUPS:
                     starters.append(cid)
                 elif bucket in _IR_GROUPS:
                     reserve.append(cid)
                 elif bucket in _TAXI_GROUPS:
                     taxi.append(cid)
-        return players, starters, reserve, taxi, seen
+        return (players, starters, reserve, taxi, seen, keepers,
+                keeper_seen, designations)
 
     def _canonical_map(self, league_id, season, *, token: Optional[str] = None):
         auth = resolve_credentials(str(league_id), season, token=token) or ""
@@ -1288,6 +1389,9 @@ class FleaflickerProvider(ProviderAdapter):
             team_name = team_names.get(str(team_id)) or _get(team, "name") or f"Team {team_id}"
             entries = roster.get("players") or []
             players, starters, reserve, taxi = [], [], [], []
+            keepers: list[str] = []
+            keeper_seen = False
+            designations: dict = {}
             seen: set[str] = set()
             mapped_flat = 0
             # FetchRoster carries START/BENCH groups; the bulk roster list does not.
@@ -1298,7 +1402,9 @@ class FleaflickerProvider(ProviderAdapter):
                         "FetchRoster", league_id, season, ttl=300, token=token,
                         team_id=int(team_id),
                     )
-                    players, starters, reserve, taxi, seen = self._parse_fetch_roster_groups(
+                    (players, starters, reserve, taxi, seen,
+                     keepers, keeper_seen,
+                     designations) = self._parse_fetch_roster_groups(
                         detail, xwalk, by_name,
                     )
                 except ProviderUnavailableError:
@@ -1319,6 +1425,28 @@ class FleaflickerProvider(ProviderAdapter):
                 if not cid:
                     continue
                 mapped_flat += 1
+                # Keeper flags on bulk entries too (same leaguePlayer
+                # shape); when the bulk payload carries none, designations
+                # come only from the FetchRoster path above.
+                entry_keeper = player.get("isKeeper")
+                if entry_keeper is None:
+                    entry_keeper = player.get("is_keeper")
+                if entry_keeper is None:
+                    nested_lp = player.get("leaguePlayer") \
+                        or player.get("league_player") or {}
+                    entry_keeper = nested_lp.get("isKeeper") \
+                        if isinstance(nested_lp, dict) else None
+                if entry_keeper is not None:
+                    keeper_seen = True
+                    if entry_keeper and cid not in keepers:
+                        keepers.append(cid)
+                # Designations on bulk entries too (injury rides on
+                # proPlayer there; news does not). FetchRoster's richer
+                # capture wins: only fill gaps it left.
+                if cid not in designations:
+                    bulk_designation = _flea_player_designation(pro)
+                    if bulk_designation:
+                        designations[cid] = bulk_designation
                 if cid not in seen:
                     seen.add(cid)
                     players.append(cid)
@@ -1342,6 +1470,17 @@ class FleaflickerProvider(ProviderAdapter):
                     "team_name": team_name,
                 },
             })
+            # "keepers" is present only when the feed supplied
+            # designation data for this roster (Wave 1): key presence is
+            # the known/unknown signal downstream enforcement reads.
+            if keeper_seen:
+                out[-1]["keepers"] = keepers
+            # Provider-native injury/news designations per canonical
+            # player id (Wave 2 PR 1), present only when the feed
+            # supplied at least one for this roster. Role state reads
+            # these off the ctx rosters at serve time.
+            if designations:
+                out[-1]["player_designations"] = designations
         return out
 
     @staticmethod
