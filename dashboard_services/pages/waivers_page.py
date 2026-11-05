@@ -2105,6 +2105,18 @@ function wvNewsChip(p) {{
          s.label + '</span>';
 }}
 
+// Starting-role chip (Wave 2 situation layer): the player's own role
+// state this week - promoted into a starting job, benched, or returning.
+// Display-only like the QB/news chips; the tooltip carries the state's
+// reason from the server ("Starting for BAL: Lamar Jackson on IR").
+function wvRoleChip(p) {{
+  const r = p.role_situation;
+  if (!r || !r.label) return '';
+  const note = (r.note || '').replace(/"/g, '&quot;');
+  return '<span class="wv-ss-news wv-ss-news-info" title="' + note + '">' +
+         r.label + '</span>';
+}}
+
 // Vegas implied team total chip.
 function wvVegasChip(p) {{
   if (p.implied_total == null) return '';
@@ -2794,6 +2806,21 @@ function wvBmClaimLine(p) {{
   return `<div class="wv-cx-evl${{claimHi ? ' caution' : ''}}"><span class="k">CLAIM</span><span title="${{String(claimTip).replace(/"/g, '&quot;')}}">${{claimBid}}</span></div>`;
 }}
 
+// "Claim by" chip for players the transactions delta says were dropped
+// after the league data was built (spec §5.2C). The time renders only
+// when the league's waiver process is known; never guessed.
+function wvDropChipText(p) {{
+  const wp = p.waiver_process || null;
+  let when = '';
+  if (wp && wp.next_process_at) {{
+    try {{
+      when = new Intl.DateTimeFormat('en-US', {{ timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }}).format(new Date(wp.next_process_at));
+    }} catch (e) {{ when = ''; }}
+  }}
+  if (wp && wp.type === 'faab') return when ? ('On waivers · claim by ' + when + ' ET') : 'On waivers';
+  return when ? ('Dropped today · claim by ' + when + ' ET') : 'Dropped today';
+}}
+
 function wvRenderWaivers() {{
   const list = document.getElementById('wvWaiverList');
   let players = wvWaiverData;
@@ -2835,6 +2862,19 @@ function wvRenderWaivers() {{
     // by the name; the full note (designation + return timeline) rides in the
     // tap-to-expand evidence below.
     const injBadge = wvInjBadge(p.injury_status);
+    // Fresh-drop flag: this player hit the wire after the league data
+    // was built, so the chip names the claim deadline when known.
+    let dropChip = '';
+    if (p.dropped_at) {{
+      dropChip = `<span class="wv-cx-chip">${{wvDropChipText(p)}}</span>`;
+    }}
+    // Starting-role flag (Wave 2): the promoted player's role reason
+    // ("Starting for BAL this week") rides along as a chip.
+    let roleChip = '';
+    if (p.role_reason) {{
+      const roleTxt = String(p.role_reason).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      roleChip = `<span class="wv-cx-chip">${{roleTxt}}</span>`;
+    }}
     // Big-game flag from last week rides along as a chip, not a row.
     let bgChip = '';
     if (p.big_game && p.big_game.category) {{
@@ -2890,6 +2930,8 @@ function wvRenderWaivers() {{
           <span class="wv-cx-name" data-wl-star-pid="${{p.player_id}}">${{p.name}}${{injBadge}}</span>
           ${{sub ? `<span class="wv-cx-sub">${{sub}}${{usageChip}}</span>` : ''}}
           ${{gainTxt ? `<span class="wv-cx-why"><span class="wv-cx-k">${{gainLbl}}</span>${{gainTxt}}</span>` : ''}}
+          ${{dropChip}}
+          ${{roleChip}}
           ${{bgChip}}
         </span>
         ${{projBlock}}
@@ -3511,6 +3553,7 @@ function wvRenderStartSit() {{
       const injBadge = wvInjBadge(p.injury_status);
       const qbChip = wvQbChip(p);
       const newsChip = wvNewsChip(p);
+      const roleChip = wvRoleChip(p);
       const escName = (p.name || '').replace(/'/g, "\\'");
       const matchup = p.opponent
         ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
@@ -3550,7 +3593,7 @@ function wvRenderStartSit() {{
               onclick="wvToggleSsRow(this)">
             ${{badge}}
             <span class="wv-cx-main">
-              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}${{newsChip}}</span>
+              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}${{newsChip}}${{roleChip}}</span>
               ${{matchup || demoteChip ? `<span class="wv-cx-why">${{matchup}}${{demoteChip}}</span>` : ''}}
               ${{p.guest && p.guest_note ? `<span class="wv-ss-guest-note">${{wvEsc(p.guest_note)}}</span>` : ''}}
               ${{p.flex_safeguard ? `<span class="wv-cx-why"><span class="wv-cx-k">Flex safeguard</span>Q tag: moved to FLEX so a late scratch can be covered by any RB/WR/TE.</span>` : ''}}

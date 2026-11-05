@@ -1902,6 +1902,17 @@ def _sell_findings(ctx, bundle, sell_entry, values, index):
     sell_pos = sell_entry.get("position")
     if not sell_value or not sell_pos:
         return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+    # Wave 1 keeper legality: designated keepers cannot be traded, on
+    # either side. A locked sell candidate produces no findings at all;
+    # a partner's locked players leave their return pool below.
+    try:
+        from utils.league_rules import keeper_locked_by_roster
+        _locked_map = keeper_locked_by_roster(ctx)
+    except Exception:
+        _locked_map = {}
+    if str(sell_entry.get("player_id") or "") in (
+            _locked_map.get(viewer_rid) or ()):
+        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
     findings, miss = [], None
     for r in rosters:
         rid = str(r.get("roster_id"))
@@ -1916,7 +1927,8 @@ def _sell_findings(ctx, bundle, sell_entry, values, index):
         try:
             pkgs = value_matched_acquire_packages(
                 sell_value, pool, [], max_options=4,
-                league_size=fit.get("num_teams") or 12, min_results=1) or []
+                league_size=fit.get("num_teams") or 12, min_results=1,
+                locked_ids=_locked_map.get(rid) or frozenset()) or []
         except Exception:
             pkgs = []
         for pkg in pkgs:
@@ -2458,6 +2470,18 @@ def _target_findings(ctx, bundle, target_entry, owner_roster, values, index,
     if not focus:
         return ([], None, tools, viewer_info.get("needs") or [],
                 viewer_info.get("surplus") or [], None, None, None)
+    # Wave 1 keeper legality: a designated keeper cannot be acquired,
+    # and the viewer's own keepers never fund an offer.
+    try:
+        from utils.league_rules import keeper_locked_by_roster
+        _locked_map = keeper_locked_by_roster(ctx)
+    except Exception:
+        _locked_map = {}
+    _owner_rid = str(owner_roster.get("roster_id"))
+    if str(target_entry.get("player_id") or "") in (
+            _locked_map.get(_owner_rid) or ()):
+        return ([], None, tools, viewer_info.get("needs") or [],
+                viewer_info.get("surplus") or [], None, None, None)
     pool, _counts = _asset_pool(bundle.get("roster") or {}, values, index)
     pool = [p for p in pool if p["player_id"] != target_entry.get("player_id")]
     if not pool:
@@ -2466,7 +2490,8 @@ def _target_findings(ctx, bundle, target_entry, owner_roster, values, index,
     try:
         pkgs = value_matched_acquire_packages(
             focus, pool, [], max_options=12 if give_position else 6,
-            league_size=fit.get("num_teams") or 12, min_results=1) or []
+            league_size=fit.get("num_teams") or 12, min_results=1,
+            locked_ids=_locked_map.get(viewer_rid) or frozenset()) or []
     except Exception:
         pkgs = []
     owner_needs = set(owner_info.get("needs") or [])

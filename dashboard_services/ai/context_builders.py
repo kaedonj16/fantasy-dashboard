@@ -1795,6 +1795,198 @@ def build_trade_suggestions_context(
     viewer_needs = starter_gap_needs(viewer_counts, _ng_depth_floor)
     viewer_surplus = startable_surplus(viewer_counts, _ng_depth_floor)
 
+    # ── Wave 2 PR 3: shared trade-partner model ─────────────────────
+    # The October sole-starter closure is replaced by
+    # dashboard_services.trade_partner_checks (spec 3.2 checks 1,2,3,5,6
+    # + 3.3 conditioned acceptance): surplus-by-format, partner
+    # viability with QB-back repair, headline caliber, contention
+    # against the true playoff line, and the bye-collision flag. Role
+    # states / projections are consumed fail-soft: absent layers fall
+    # back to the value bars above (the pre-Wave-2 definition).
+    from dashboard_services import trade_partner_checks as _tpc
+
+    _tp_positions = ("QB", "RB", "WR", "TE")
+    _tp_requirements = {
+        pos: int(_ng_depth_floor.get(pos, 0)) for pos in _tp_positions
+    }
+    _tp_value_bars = {
+        pos: float(_ng_starter_thr.get(pos, 350)) for pos in _tp_positions
+    }
+    try:
+        _tp_week = int(ctx.get("current_week") or ctx.get("week") or 0)
+    except (TypeError, ValueError):
+        _tp_week = 0
+    _tp_role_states: dict = {}
+    _tp_projections: dict = {}
+    try:
+        from utils.role_state import _week_projections as _rs_week_proj
+        from utils.role_state import get_role_states as _rs_get
+        _tp_role_states = _rs_get(ctx, _tp_week) or {}
+        _tp_projections = _rs_week_proj(ctx, _tp_week) or {}
+    except Exception:
+        _tp_role_states, _tp_projections = {}, {}
+    _tp_players_payload = ctx.get("players") or {}
+
+    def _tp_infos(r: dict) -> list:
+        out = []
+        for pid in (r or {}).get("players") or []:
+            spid = str(pid)
+            mv = model_value_lookup.get(spid) or {}
+            pos = str(mv.get("position") or "").upper()
+            if pos not in _tp_positions:
+                continue
+            _meta = _tp_players_payload.get(spid) or {}
+            out.append({
+                "id": spid, "player_id": spid,
+                "name": str(mv.get("name") or spid),
+                "position": pos,
+                "value": _safe_float(
+                    mv.get("value") or mv.get("model_value")
+                    or mv.get("trade_value")),
+                "age": mv.get("age"),
+                "team": str(_meta.get("team") or mv.get("team") or ""),
+            })
+        return out
+
+    _tp_infos_by_rid = {
+        str(r.get("roster_id") or ""): _tp_infos(r) for r in rosters
+    }
+    _tp_viewer_infos = _tp_infos_by_rid.get(viewer_rid) or _tp_infos(roster)
+    _tp_bye_by_team: dict = {}
+    for _pid2, _meta2 in _tp_players_payload.items():
+        if not isinstance(_meta2, dict):
+            continue
+        _tm = str(_meta2.get("team") or "").upper()
+        _bw = _meta2.get("bye_week") or _meta2.get("byeWeek")
+        if _tm and _bw:
+            try:
+                _tp_bye_by_team[_tm] = int(_bw)
+            except (TypeError, ValueError):
+                pass
+    _tp_rules = ctx.get("_league_rules") or {}
+    _tp_contention_by_rid: dict = {}
+
+    def _tp_contention(rid: str, r: dict) -> dict:
+        """Partner contention class (check 5), cached per roster."""
+        if rid in _tp_contention_by_rid:
+            return _tp_contention_by_rid[rid]
+        try:
+            _rec, _pf, _pa = _record_pf_pa_for_roster(ctx, rid, r)
+            _all_pf = []
+            for _r2 in rosters:
+                _rec2, _pf2, _pa2 = _record_pf_pa_for_roster(
+                    ctx, str(_r2.get("roster_id") or ""), _r2)
+                _all_pf.append((_pf2, _rec2))
+            _pct = (
+                sum(1 for _v, _ in _all_pf if _v <= _pf) / len(_all_pf)
+                if _all_pf else 0.5
+            )
+            _seed = None
+            _gb = None
+            _pt = _tp_rules.get("playoff_teams")
+            _src = str(_tp_rules.get("source") or "")
+            if _pt and _src and _src != "default_unverified":
+                _stand = sorted(
+                    _all_pf,
+                    key=lambda t: (
+                        _tpc.parse_record(t[1])[0]
+                        + 0.5 * _tpc.parse_record(t[1])[2],
+                        t[0]),
+                    reverse=True,
+                )
+                _my_w = (_tpc.parse_record(_rec)[0]
+                         + 0.5 * _tpc.parse_record(_rec)[2])
+                for _i, (_pf3, _rec3) in enumerate(_stand):
+                    if (_tpc.parse_record(_rec3)[0]
+                            + 0.5 * _tpc.parse_record(_rec3)[2] == _my_w
+                            and _pf3 == _pf):
+                        _seed = _i + 1
+                        break
+                _cut_i = min(int(_pt), len(_stand)) - 1
+                if _cut_i >= 0:
+                    _cut_w = (_tpc.parse_record(_stand[_cut_i][1])[0]
+                              + 0.5 * _tpc.parse_record(_stand[_cut_i][1])[2])
+                    _gb = max(0.0, _cut_w - _my_w)
+            _cls = _tpc.classify_contention(
+                record=_rec, pf=_pf, pf_percentile=_pct, seed=_seed,
+                games_behind_cut=_gb,
+                playoff_teams=(int(_pt) if _pt else None),
+                rules_source=_src or None,
+            )
+        except Exception:
+            _cls = {"class": "bubble", "win_pct": 0.5,
+                    "pf_percentile": 0.5, "basis": "record_pf"}
+        _tp_contention_by_rid[rid] = _cls
+        return _cls
+
+    def _tp_evaluate(partner_roster: dict, target: dict, package: list) -> dict:
+        return _tpc.evaluate_package(
+            partner_players=_tp_infos_by_rid.get(
+                str(partner_roster.get("roster_id") or ""), []),
+            viewer_players=_tp_viewer_infos,
+            send=list(package or []),
+            receive=[target],
+            requirements=_tp_requirements,
+            role_states=_tp_role_states or None,
+            projections=_tp_projections or None,
+            value_bars=_tp_value_bars,
+            is_dynasty_or_keeper=not is_redraft,
+        )
+
+    def _tp_gate(partner_roster: dict, target: dict, package: list):
+        """Checks 1-3 as a gate with QB-back repair (check 2).
+
+        Returns (ok, package): a failing package whose only shortfall
+        is at the target's own position is repaired with the viewer's
+        cheapest spare startable there; the repaired package must stay
+        inside the fairness band or the deal is dropped, never pitched
+        broken.
+        """
+        try:
+            _ev = _tp_evaluate(partner_roster, target, package)
+        except Exception:
+            return True, package  # fail soft: never block on a bug here
+        if _ev["viable"] and _ev["headline_ok"]:
+            return True, package
+        _tpos = str(target.get("position") or "").upper()
+        if set(_ev["shortfalls"].keys()) != {_tpos}:
+            return False, package
+        try:
+            _repair = _tpc.find_repair_player(
+                viewer_players=_tp_viewer_infos,
+                send=list(package or []), position=_tpos,
+                viewer_requirements=_tp_requirements,
+                role_states=_tp_role_states or None,
+                projections=_tp_projections or None,
+                value_bars=_tp_value_bars,
+            )
+        except Exception:
+            _repair = None
+        if _repair is None:
+            return False, package
+        if is_redraft and _serious_injury(str(_repair.get("id"))):
+            return False, package
+        _repaired = list(package or []) + [{
+            "id": _repair["player_id"], "name": _repair.get("name", ""),
+            "value": _repair["value"], "position": _repair["position"],
+            "age": _repair.get("age"),
+        }]
+        try:
+            _ev2 = _tp_evaluate(partner_roster, target, _repaired)
+        except Exception:
+            return False, package
+        if not (_ev2["viable"] and _ev2["headline_ok"]):
+            return False, package
+        _give = sum(_safe_float(p.get("value")) for p in _repaired)
+        _get = _safe_float(target.get("value"))
+        if _give <= 0 or _get <= 0:
+            return False, package
+        if not (_tpc.FAIR_BAND_MIN
+                <= _tpc.fairness_ratio(_give, _get)
+                and _give / _get <= _tpc.FAIR_BAND_MAX):
+            return False, package
+        return True, _repaired
+
     def _serious_injury(pid: str) -> bool:
         """True when the player's current status means he cannot play any
         time soon (IR/PUP/NFI/suspended/OUT/DOUBTFUL). Seriously-injured
@@ -1917,21 +2109,14 @@ def build_trade_suggestions_context(
                 score += 0.3
             elif _contending and _age_f <= 24:
                 score -= 0.2
+        # Contention window (check 5): sellers move starters,
+        # contenders hold them — read against the true playoff line
+        # when the Wave 1 record is verified.
+        _cont = _tp_contention_by_rid.get(
+            str(partner_roster.get("roster_id") or ""))
+        if _cont:
+            score += _tpc.contention_gettability_adj(_cont)
         return max(0.0, min(1.0, score))
-
-    def _partner_sole_starter(partner_roster: dict, target: dict, send_positions: set) -> bool:
-        """True when the target is the partner's only startable player at his
-        position and the viewer isn't sending a startable at that spot back.
-        QB-for-QB swaps pass; stripping their lone QB for a WR3 does not."""
-        _tpos = str(target.get("position") or "").upper()
-        if _tpos in send_positions:
-            return False
-        _bar = _ng_starter_thr.get(_tpos, 350)
-        _n = sum(
-            1 for pl in _roster_top_players(partner_roster, _tpos)
-            if _safe_float(pl.get("value")) >= _bar
-        )
-        return _n <= 1
 
     def _assign_target_tier(t: dict, partner_roster: dict) -> str:
         """elite = their best at the position; buy_low = falling in the
@@ -1964,13 +2149,6 @@ def build_trade_suggestions_context(
             _scored.append((0.6 * _g + 0.4 * _nv, t))
         _scored.sort(key=lambda x: x[0], reverse=True)
         return _scored
-
-    # Deferred import: archetype_engine imports context_builders at module
-    # level, so this must stay function-local to avoid a circular import.
-    from dashboard_services.archetype_engine import (
-        _acceptance_fit,
-        _estimate_acceptance,
-    )
 
     # Find best trade partners
     partners = []
@@ -2049,6 +2227,7 @@ def build_trade_suggestions_context(
         # buy. Never default to their best player when a gettable one solves it.
         partner_direction = _cheap_partner_direction(r, rid)
         _direction_by_rid[rid] = partner_direction
+        _tp_contention(rid, r)
         _prec, _, _ = _record_pf_pa_for_roster(ctx, rid, r)
         _record_by_rid[rid] = _prec
         need_pool = _bench_pool([p for p in viewer_surplus if p in partner_needs])
@@ -2066,8 +2245,8 @@ def build_trade_suggestions_context(
                 for _, cand in _score_candidates(_cands, r, pos, partner_direction)[:3]:
                     package, fair = _fairest_package(need_pool, cand["value"])
                     if fair >= 0.80:
-                        _pkg_pos = {str(p.get("position") or "").upper() for p in package}
-                        if _partner_sole_starter(r, cand, _pkg_pos):
+                        _ok, package = _tp_gate(r, cand, package)
+                        if not _ok:
                             continue
                         deal = (fair, cand, package)
                         break
@@ -2103,8 +2282,8 @@ def build_trade_suggestions_context(
                 for _, cand in sorted(upgrade_cands, key=lambda x: x[0], reverse=True):
                     package, fair = _fairest_package(pool, cand["value"])
                     if fair >= 0.80:
-                        _pkg_pos = {str(p.get("position") or "").upper() for p in package}
-                        if _partner_sole_starter(r, cand, _pkg_pos):
+                        _ok, package = _tp_gate(r, cand, package)
+                        if not _ok:
                             continue
                         deal = (fair, cand, package)
                         is_package_trade = True
@@ -2138,8 +2317,8 @@ def build_trade_suggestions_context(
                     for _, candc in sorted(_ceil_cands, key=lambda x: x[0], reverse=True):
                         packagec, fairc = _fairest_package(_ceil_pool, candc["value"])
                         if fairc >= 0.80:
-                            _pkg_posc = {str(p.get("position") or "").upper() for p in packagec}
-                            if _partner_sole_starter(r, candc, _pkg_posc):
+                            _ok, packagec = _tp_gate(r, candc, packagec)
+                            if not _ok:
                                 continue
                             deal = (fairc, candc, packagec)
                             is_package_trade = True
@@ -2171,8 +2350,8 @@ def build_trade_suggestions_context(
                     for _, candb in _score_candidates(_candsb, r, pos, partner_direction)[:3]:
                         packageb, fairb = _fairest_package(_remaining, candb["value"])
                         if fairb >= 0.80:
-                            _pkg_posb = {str(p.get("position") or "").upper() for p in packageb}
-                            if _partner_sole_starter(r, candb, _pkg_posb):
+                            _ok, packageb = _tp_gate(r, candb, packageb)
+                            if not _ok:
                                 continue
                             alt_deal = (fairb, candb, packageb)
                             break
@@ -2241,15 +2420,39 @@ def build_trade_suggestions_context(
         except Exception:
             pass
 
-        # Acceptance estimate from the partner's perspective: value ratio run
-        # through the archetype engine's logistic curve, nudged by whether the
-        # send package fills a position they're thin at.
+        # Bye collision (check 6): flag + rank/acceptance penalty,
+        # never a block. Computed before acceptance so the penalty
+        # prices into both.
+        _bye_flag = None
         try:
-            _afit = _acceptance_fit(
-                targets_viewer_sends, set(partner_needs), set(partner_surplus)
-            )
-            acceptance_rate = _estimate_acceptance(
-                value_you_give, value_you_get, is_preferred=False, fit=_afit
+            _tgt_meta = _tp_players_payload.get(
+                str(targets_they_have[0].get("id") or "")) or {}
+            _tgt_bye = _tgt_meta.get("bye_week") or _tgt_meta.get("byeWeek")
+            if _tgt_bye:
+                _bye_flag = _tpc.bye_collision_flag(
+                    {**targets_they_have[0], "bye_week": _tgt_bye},
+                    _tp_viewer_infos, _tp_bye_by_team, _tp_requirements,
+                    from_week=_tp_week or 1,
+                )
+        except Exception:
+            _bye_flag = None
+
+        # Acceptance estimate from the partner's perspective: the
+        # shared conditioned acceptance (spec 3.3) — logistic on the
+        # value ratio, fit restricted to pieces that start for the
+        # partner (check 3), plus surplus-match and contention terms.
+        _deal_eval = None
+        try:
+            _deal_eval = _tp_evaluate(r, targets_they_have[0],
+                                      targets_viewer_sends)
+            _afit = _tpc.acceptance_fit_restricted(
+                targets_viewer_sends, set(partner_needs),
+                set(partner_surplus), _deal_eval.get("starting_pieces"))
+            acceptance_rate, _acc_basis = _tpc.conditioned_acceptance(
+                value_you_give, value_you_get, fit=_afit,
+                evaluation=_deal_eval,
+                contention=_tp_contention_by_rid.get(rid),
+                extra_adj=(-3 if _bye_flag else 0),
             )
         except Exception:
             acceptance_rate = None
@@ -2267,7 +2470,8 @@ def build_trade_suggestions_context(
         suggestion_score = round(
             match_score + fairness * 3.0 + _acc * 2.0 + _get * 1.0
             + (0.5 if value_you_get >= value_you_give else 0.0)
-            + direction_fit,
+            + direction_fit
+            - (0.3 if _bye_flag else 0.0),
             3,
         )
 
@@ -2281,10 +2485,13 @@ def build_trade_suggestions_context(
             _a_get = round(sum(p["value"] for p in [_a_target]), 1)
             _a_give = round(sum(p["value"] for p in _a_package), 1)
             try:
-                _a_afit = _acceptance_fit(
-                    _a_package, set(partner_needs), set(partner_surplus)
-                )
-                _a_acc = _estimate_acceptance(_a_give, _a_get, is_preferred=False, fit=_a_afit)
+                _a_eval = _tp_evaluate(r, _a_target, _a_package)
+                _a_afit = _tpc.acceptance_fit_restricted(
+                    _a_package, set(partner_needs), set(partner_surplus),
+                    _a_eval.get("starting_pieces"))
+                _a_acc, _a_basis = _tpc.conditioned_acceptance(
+                    _a_give, _a_get, fit=_a_afit, evaluation=_a_eval,
+                    contention=_tp_contention_by_rid.get(rid))
             except Exception:
                 _a_acc = None
             _a_warnings: list = []
@@ -2329,6 +2536,11 @@ def build_trade_suggestions_context(
             "partner_surplus": partner_surplus,
             "partner_direction": partner_direction,
             "partner_record": _record_by_rid.get(rid) or "",
+            "partner_contention": (
+                _tp_contention_by_rid.get(rid) or {}).get("class"),
+            "partner_check_notes": (
+                _deal_eval.get("notes") if _deal_eval else []),
+            "bye_flag": _bye_flag,
             "targets_they_have": targets_they_have[:3],
             "targets_viewer_sends": targets_viewer_sends[:3],
             "value_you_get": value_you_get,
@@ -2362,13 +2574,19 @@ def build_trade_suggestions_context(
                 for pos in viewer_needs:
                     top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:1]
                     # Same guards as the player-package paths: never a
-                    # seriously-injured target, never a partner's sole
-                    # starter with nothing at the position going back.
+                    # seriously-injured target, and check 1 (surplus-by-
+                    # format): a pick returns no player, so the partner
+                    # must still field the position after the deal.
                     targets.extend(
                         p for p in top
                         if p.get("value", 0) >= 250
                         and not _serious_injury(str(p.get("id")))
-                        and not _partner_sole_starter(r, p, set())
+                        and _tpc.surplus_ok(
+                            partner_players=_tp_infos_by_rid.get(rid, []),
+                            target=p, requirements=_tp_requirements,
+                            role_states=_tp_role_states or None,
+                            projections=_tp_projections or None,
+                            value_bars=_tp_value_bars)
                     )
                 # Pick sanity: when the offered picks carry a projected
                 # value, they must be at least in the player's ballpark.

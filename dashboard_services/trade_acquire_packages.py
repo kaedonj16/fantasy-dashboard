@@ -181,10 +181,15 @@ def filter_acquire_packages(
     focus_player_id: str,
     focus_value: float,
     max_ratio: float = 1.40,
+    locked_ids: frozenset = frozenset(),
 ) -> list:
     """Drop packages that echo the focus player on the give side, or that send
     more than ``max_ratio`` of the target's current value (extreme overpays
-    from historical data, not useful suggestions)."""
+    from historical data, not useful suggestions).
+
+    ``locked_ids`` (Wave 1 keeper legality): designated keepers a league
+    forbids trading. Any package whose give side carries a locked player
+    is dropped; pick assets are never locked."""
     focus = str(focus_player_id or "")
     cap = (focus_value or 1) * max_ratio
     out = []
@@ -192,6 +197,12 @@ def filter_acquire_packages(
         assets = pkg.get("send") or pkg.get("assets") or []
         if focus and any(
             (not a.get("is_pick")) and str(a.get("player_id") or "") == focus
+            for a in assets
+        ):
+            continue
+        if locked_ids and any(
+            (not a.get("is_pick"))
+            and str(a.get("player_id") or "") in locked_ids
             for a in assets
         ):
             continue
@@ -204,6 +215,54 @@ def filter_acquire_packages(
     return out
 
 
+def form_adjusted_focus_value(
+    focus_value: float,
+    *,
+    depth_rank: Optional[int] = None,
+    role_state: Optional[str] = None,
+    form_swing: Optional[float] = None,
+) -> tuple:
+    """Wave 2 PR 4, check 4 (current-form pricing): adjust a focus
+    player's price before band matching.
+
+    A player buried on his own roster (depth rank >= 3 at his
+    position), benched (role state), or in a real form slump is NOT
+    priced as a starter: no starter-price package is generated for a
+    QB4 (the Daniel Jones case). Symmetrically, a promoted player is
+    priced UP toward his starting role.
+
+    Inputs (all optional, fail-soft):
+    * ``depth_rank`` — his rank at his position on his OWN roster
+      (1 = the team's starter at the position).
+    * ``role_state`` — the Wave 2 role state string for this week.
+    * ``form_swing`` — (last-4-weeks PPG - season PPG) / season PPG,
+      from the codebase's recent-form derivation
+      (``data_building.start_score_bundle.derive_start_sit_inputs``,
+      whose ``last4_ppg`` comes from ``utils.start_sit.form_usage_inputs``
+      over the last 4 played weeks — the decided 4-week window).
+
+    Returns ``(adjusted_value, {"factor", "reasons"})``; the combined
+    factor is clamped to [0.55, 1.15].
+    """
+    factor = 1.0
+    reasons: list = []
+    if depth_rank is not None and depth_rank >= 3:
+        factor *= 0.80
+        reasons.append(f"depth_rank_{depth_rank}")
+    if role_state == "benched":
+        factor *= 0.75
+        reasons.append("benched")
+    if form_swing is not None and form_swing <= -0.25:
+        factor *= 0.85
+        reasons.append("form_slump")
+    if role_state == "promoted":
+        factor = max(factor, 1.0) * 1.10
+        reasons.append("promoted")
+    factor = max(0.55, min(1.15, factor))
+    return round(float(focus_value or 0) * factor, 1), {
+        "factor": round(factor, 3), "reasons": reasons}
+
+
 def value_matched_acquire_packages(
     focus_value: float,
     players: list,
@@ -212,6 +271,8 @@ def value_matched_acquire_packages(
     sorted_vals: Optional[list] = None,
     league_size: int = 10,
     min_results: int = 0,
+    locked_ids: frozenset = frozenset(),
+    focus_meta: Optional[dict] = None,
 ) -> list:
     """Build value-matched ASSET packages (players + picks from the viewer's
     roster) whose combined value is close to ``focus_value``.
@@ -223,9 +284,26 @@ def value_matched_acquire_packages(
     slots, the closest remaining combos (honestly labeled overpay/steal) are
     appended so a searched player is never a blank page when the roster has
     anything to offer.
+
+    ``focus_meta`` (Wave 2 PR 4, check 4): when given, band matching,
+    labels and fit all price the focus player at his form/depth-adjusted
+    value (see :func:`form_adjusted_focus_value`), and every returned
+    package is stamped with ``focus_value`` (raw), ``focus_value_adjusted``
+    and ``focus_pricing`` so the caller can grade against the same price.
     """
     if focus_value <= 0:
         return []
+
+    _pricing = None
+    if focus_meta:
+        _adjusted, _pricing = form_adjusted_focus_value(
+            focus_value,
+            depth_rank=focus_meta.get("depth_rank"),
+            role_state=focus_meta.get("role_state"),
+            form_swing=focus_meta.get("form_swing"),
+        )
+        if _adjusted > 0:
+            focus_value = _adjusted
 
     from dashboard_services.archetype_engine import _depth_penalty
 
@@ -256,8 +334,12 @@ def value_matched_acquire_packages(
             "pick_order": pk.get("pick_order") or "mid",
         }
 
+    # Designated keepers (locked_ids) never enter the asset pool; picks
+    # are not players and are never locked.
     players_a = sorted(
-        (_passet(p) for p in players if float(p.get("value") or 0) >= 30),
+        (_passet(p) for p in players
+         if float(p.get("value") or 0) >= 30
+         and str(p.get("player_id") or p.get("id") or "") not in locked_ids),
         key=lambda x: -x["value"],
     )
     picks_a = sorted((_pkasset(p) for p in picks), key=lambda x: -x["value"])
@@ -322,7 +404,7 @@ def value_matched_acquire_packages(
     def _to_pkg(rec: tuple) -> dict:
         _fit, _key, assets, total, eff, _in_band = rec
         label, cls = _label(eff)
-        return {
+        pkg = {
             "assets": assets,
             "send_value": total,
             "value_label": label,
@@ -331,6 +413,10 @@ def value_matched_acquire_packages(
             "frequency": 0,
             "_fit": _fit,
         }
+        if _pricing is not None:
+            pkg["focus_value_adjusted"] = focus_value
+            pkg["focus_pricing"] = _pricing
+        return pkg
 
     in_band = sorted((c for c in combos if c[5]), key=lambda c: c[0])
     out = [_to_pkg(c) for c in in_band[:max_options]]
