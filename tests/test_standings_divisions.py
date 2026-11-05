@@ -544,3 +544,227 @@ def test_compact_character_card_markup():
     # Old flat markup is gone.
     assert "cc-rw" not in html
     assert "rank-move" not in html
+
+
+# ── Real-standings order (Kaedon 2026-11-05) ────────────────────────────────
+# Everything sorts the way real standings (and the NFL) do: overall wins
+# first, division win% breaks overall ties, then PF. Hit the (Sa)Quon at
+# 3-5 (3-1) therefore sits 4th in RAW: the 4-4 teams stay ahead of him,
+# but his division record lifts him above Veiny, the other 3-5 (1-3)
+# team. The shipped bug was the standings page's JS re-sort discarding
+# the division record on load, which dropped Hit to last in the group.
+#
+# One shared game frame drives the render + recap fixtures. Winner is
+# listed first; points are 110-90 in every game (only W/L matters here).
+# Division games: Pitt sweeps RAW; Hit beats everyone but Pitt; Veiny
+# beats Trustfund. Cross-division: Nunky wins 4, Trustfund wins 2.
+# That yields division records Pitt 4-0, Hit 3-1, Veiny 1-3, Nunky 0-2,
+# Trustfund 0-3 and (for the recap, which derives everything from the
+# frame) overall wins Pitt 4, Nunky 4, Hit 3, Trustfund 2, Veiny 1.
+
+_RS_GAMES = [
+    ("Pitt", "Nunky"), ("Pitt", "Hit"), ("Pitt", "Trustfund"),
+    ("Pitt", "Veiny"), ("Hit", "Nunky"), ("Hit", "Trustfund"),
+    ("Hit", "Veiny"), ("Veiny", "Trustfund"),
+    ("Nunky", "EastA"), ("Nunky", "EastA"), ("Nunky", "EastB"),
+    ("Nunky", "EastB"), ("Trustfund", "EastA"), ("Trustfund", "EastB"),
+]
+_RS_RAW = ("Pitt", "Nunky", "Trustfund", "Veiny", "Hit")
+_RS_EAST = ("EastA", "EastB")
+
+
+def _rs_frame(pd, raw_ids, east_ids):
+    ids = {**raw_ids, **east_ids}
+    rows = []
+    for i, (winner, loser) in enumerate(_RS_GAMES):
+        mid = 100 + i
+        rows.append((i + 1, mid, ids[winner], 110.0, 90.0))
+        rows.append((i + 1, mid, ids[loser], 90.0, 110.0))
+    df = pd.DataFrame(
+        rows,
+        columns=["week", "matchup_id", "roster_id", "points", "points_against"],
+    )
+    df["finalized"] = True
+    df["owner"] = df["roster_id"].map({rid: name for name, rid in ids.items()})
+    return df
+
+
+def _rs_team_df(pd, raw_ids, east_ids):
+    # Overall records + PF from Kaedon's Blackedraw screenshot (Week 8).
+    stats = {
+        "Pitt": (7, 1, 1259.8), "Nunky": (4, 4, 1178.2),
+        "Trustfund": (4, 4, 1026.0), "Veiny": (3, 5, 1009.0),
+        "Hit": (3, 5, 954.8), "EastA": (1, 7, 900.0), "EastB": (0, 8, 800.0),
+    }
+    rows = []
+    for name in _RS_RAW + _RS_EAST:
+        w, l, pf = stats[name]
+        rows.append({
+            "owner": name, "Wins": w, "Losses": l, "Ties": 0, "PF": pf,
+            "PA": 900.0, "Streak": "", "avatar": "",
+            "Win%": w / (w + l), "Rank": 0,
+        })
+    return pd.DataFrame(rows)
+
+
+def test_render_standings_real_standings_order():
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    import app as appmod
+
+    raw_ids = {name: 11 + i for i, name in enumerate(_RS_RAW)}
+    east_ids = {name: 1 + i for i, name in enumerate(_RS_EAST)}
+    ids = {**raw_ids, **east_ids}
+    divisions = {
+        "by_rid": {**{r: 2 for r in raw_ids.values()},
+                   **{r: 1 for r in east_ids.values()}},
+        "names": {1: "EAST", 2: "RAW"}, "ids": [1, 2], "count": 2,
+    }
+    html = appmod.render_standings(
+        _rs_team_df(pd, raw_ids, east_ids), length=7, playoff_spots=6,
+        owner_to_rid={name: str(rid) for name, rid in ids.items()},
+        divisions=divisions,
+        detailed_df=_rs_frame(pd, raw_ids, east_ids),
+    )
+    raw = html[html.index("RAW"):]
+    order = [raw.index(name) for name in
+             ("Pitt", "Nunky", "Trustfund", "Hit", "Veiny")]
+    assert order == sorted(order), "RAW must run Pitt, Nunky, Trustfund, Hit, Veiny"
+    # Seeds use the same chain: winners Pitt + EastA take seeds 1-2, then
+    # Nunky 3, Trustfund 4, so Hit's row carries seed 5, ahead of Veiny
+    # (3-5, 1-3) purely on the division-record tiebreak.
+    hit_row = html.split('data-rk-key="Hit"')[1].split("data-rk-key=")[0]
+    assert 'rank-plain">5<' in hit_row
+
+
+def test_render_standings_compact_real_standings_order():
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    import app as appmod
+
+    raw_ids = {name: 11 + i for i, name in enumerate(_RS_RAW)}
+    east_ids = {name: 1 + i for i, name in enumerate(_RS_EAST)}
+    ids = {**raw_ids, **east_ids}
+    divisions = {
+        "by_rid": {**{r: 2 for r in raw_ids.values()},
+                   **{r: 1 for r in east_ids.values()}},
+        "names": {1: "EAST", 2: "RAW"}, "ids": [1, 2], "count": 2,
+    }
+    div_records = {
+        raw_ids["Pitt"]: (4, 0, 0), raw_ids["Nunky"]: (1, 3, 0),
+        raw_ids["Trustfund"]: (1, 3, 0), raw_ids["Veiny"]: (1, 3, 0),
+        raw_ids["Hit"]: (3, 1, 0),
+        east_ids["EastA"]: (1, 0, 0), east_ids["EastB"]: (0, 1, 0),
+    }
+    html = appmod.render_standings_compact(
+        _rs_team_df(pd, raw_ids, east_ids),
+        owner_to_rid={name: str(rid) for name, rid in ids.items()},
+        divisions=divisions, div_records=div_records,
+    )
+    raw = html[html.index("RAW"):]
+    order = [raw.index(name) for name in
+             ("Pitt", "Nunky", "Trustfund", "Hit", "Veiny")]
+    assert order == sorted(order), "RAW must run Pitt, Nunky, Trustfund, Hit, Veiny"
+
+
+def test_recap_standings_rows_real_standings_order():
+    pd = pytest.importorskip("pandas")
+    from dashboard_services.pages.recap_page import _recap_standings_rows
+
+    raw_ids = {name: 1 + i for i, name in enumerate(
+        ("Pitt", "Hit", "Nunky", "Trustfund", "Veiny"))}
+    east_ids = {"EastA": 11, "EastB": 12}
+    by_rid = {**{r: 2 for r in raw_ids.values()},
+              **{r: 1 for r in east_ids.values()}}
+    out = _recap_standings_rows(_rs_frame(pd, raw_ids, east_ids), by_rid, True)
+    raw_rids = [r["rid"] for r in out if r["division"] == 2]
+    # Frame overall wins run Pitt 4, Nunky 4, Hit 3, Trustfund 2, Veiny 1.
+    # Pitt and Nunky tie on overall wins, so Pitt's 4-0 division record
+    # breaks that tie; Hit's 3-1 can only lift him among the 3-win group,
+    # never past the 4-win teams.
+    assert raw_rids == ["1", "3", "2", "4", "5"]
+
+
+_JS_HARNESS = r"""
+function bindOnce() {}
+function initStandingsSharesSort() {}
+function cell(text) { return { textContent: text, hasAttribute: () => false }; }
+function teamRow(name, record, pf) {
+  const cells = ["", name, "", record, pf, "", "", "", "", ""].map(cell);
+  return { children: cells,
+           classList: { contains: () => false, add() {}, remove() {} } };
+}
+function dividerRow(label) {
+  const c = { textContent: label, hasAttribute: (n) => n === "colspan" };
+  return { children: [c],
+           classList: { contains: (x) => x === "st-div-row",
+                        add() {}, remove() {} } };
+}
+function run(rows) {
+  const tbody = { _rows: rows.slice(),
+    querySelectorAll: () => tbody._rows.slice(),
+    replaceChildren: (frag) => { tbody._rows = frag._children.slice(); } };
+  const ths = Array.from({ length: 10 }, () => ({
+    classList: { add() {}, remove() {} }, getAttribute: () => null }));
+  const tbl = { tHead: { rows: [{ children: ths }] }, tBodies: [tbody],
+                querySelectorAll: () => ths, __sortInited: false };
+  const root = { querySelector: (sel) => (sel === "#stats" ? tbl : {}) };
+  initStandingsSort(root);
+  return tbody._rows.filter((r) => !r.classList.contains("st-div-row"))
+    .map((r) => r.children[1].textContent);
+}
+globalThis.document = {
+  createDocumentFragment: () => ({ _children: [],
+    appendChild(n) { this._children.push(n); } }),
+};
+"""
+
+
+def test_js_default_resort_keeps_real_standings_order():
+    """initStandingsSort re-sorts #stats on load. Its Record key must be
+    division-aware (overall wins, then div win%), or the browser undoes
+    the server's order the moment the page renders (the shipped bug:
+    Veiny's PF pushed 3-1 Hit below the other 3-5 team). Drives the real
+    function under node with a minimal fake DOM."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+    src = open("static/app.js", encoding="utf-8").read()
+    start = src.index("function initStandingsSort")
+    end = src.index("// Generic table sorter")
+    fn_src = src[start:end].rsplit("}", 1)[0] + "}"
+    script = _JS_HARNESS + fn_src + r"""
+const divOrder = run([
+  dividerRow("EAST"),
+  teamRow("EastA", "1-7 (1-0)", "900.0"),
+  teamRow("EastB", "0-8 (0-1)", "800.0"),
+  dividerRow("RAW"),
+  teamRow("Pitt", "7-1 (4-0)", "1,259.8"),
+  teamRow("Nunky", "4-4 (1-3)", "1,178.2"),
+  teamRow("Trustfund", "4-4 (1-3)", "1,026.0"),
+  teamRow("Hit", "3-5 (3-1)", "954.8"),
+  teamRow("Veiny", "3-5 (1-3)", "1,009.0"),
+]);
+const flatOrder = run([
+  teamRow("X", "5-3", "900.0"),
+  teamRow("Y", "5-3", "950.0"),
+  teamRow("Z", "6-2", "800.0"),
+]);
+console.log(JSON.stringify({ divOrder, flatOrder }));
+"""
+    proc = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+    # Rows arrive in the server's (correct) order; the load-time re-sort
+    # must keep Hit above Veiny inside RAW.
+    assert out["divOrder"] == [
+        "EastA", "EastB", "Pitt", "Nunky", "Trustfund", "Hit", "Veiny",
+    ]
+    # Flat leagues (no division record in the cell) keep wins, then PF.
+    assert out["flatOrder"] == ["Z", "Y", "X"]
