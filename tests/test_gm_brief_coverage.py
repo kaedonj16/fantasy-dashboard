@@ -179,19 +179,20 @@ def test_bye_panel_no_crunch_flag_when_no_tight_week():
 
 
 # ---------------------------------------------------------------------------
-# renderer strips (section 4): flag-gated, hidden when nothing to say
+# renderer (mocked brief presentation): no standalone prose strips;
+# the brief's intel rides on the action cards themselves
 # ---------------------------------------------------------------------------
 
-def _render_ctx(ctx, monkeypatch):
+def _render_ctx(ctx, monkeypatch, lineup=None, waiver=None):
     import app as appmod
 
     action = {"kind": "lineup", "tag": "Lineup", "action": "Start someone",
               "why": "Projects more.", "cta_label": "Fix lineup",
               "cta_url": "#", "score": 90, "priority": "high"}
     monkeypatch.setattr(appmod, "_next_steps_lineup_actions",
-                        lambda c, r: [action])
+                        lambda c, r: [action] if lineup is None else lineup)
     monkeypatch.setattr(appmod, "_next_steps_waiver_actions",
-                        lambda c, r, m: [])
+                        lambda c, r, m: waiver or [])
     monkeypatch.setattr(appmod, "_next_steps_trade_actions",
                         lambda c, r: [])
     monkeypatch.setattr(appmod, "_next_steps_roster_actions",
@@ -213,7 +214,7 @@ def test_render_omits_bye_panel_without_crunch(monkeypatch):
     assert "Bye outlook" not in html_out
 
 
-def test_render_shows_bye_panel_with_crunch_and_quiet_coverage_line(monkeypatch):
+def test_render_never_shows_standalone_brief_strips(monkeypatch):
     pytest.importorskip("flask")
     ctx = _bye_ctx()
     # The crunch comes from the opponent's RB room; the viewer's own
@@ -238,5 +239,152 @@ def test_render_shows_bye_panel_with_crunch_and_quiet_coverage_line(monkeypatch)
     ctx["league_rules"] = {"source": "user_confirmed",
                            "playoff_week_start": 15, "playoff_teams": 8}
     html_out = _render_ctx(ctx, monkeypatch)
-    assert "Bye outlook" in html_out
-    assert "QB coverage set through Week 14" in html_out
+    # Even with a bye crunch and a clean coverage map, the standalone
+    # prose rows are gone: no bye block, no coverage line, no claims
+    # strip. The brief data still exists; it just has no strip.
+    assert "Bye outlook" not in html_out
+    assert "QB coverage set" not in html_out
+    assert "Coverage holes" not in html_out
+    assert "ns-strip" not in html_out
+    assert "ns-claims" not in html_out
+
+
+def _claim_card_ctx():
+    players = {
+        "qb_a": _player("AAA", "QB", "QB Alpha", bye=11),
+        "qb_b": _player("BBB", "QB", "QB Bravo"),
+        "claim_qb": _player("CCC", "QB", "Claim QB"),
+        "harvey": _player("DEN", "RB", "Hurt Back", status="IR"),
+        "rb1": _player("DDD", "RB", "RB One"),
+        "wr1": _player("FFF", "WR", "WR One"),
+        "wr2": _player("GGG", "WR", "WR Two"),
+        "te1": _player("HHH", "TE", "TE One"),
+    }
+    proj = {wk: {"qb_a": 18.0, "qb_b": 17.0, "rb1": 12.0,
+                 "wr1": 13.0, "wr2": 12.0, "te1": 9.0}
+            for wk in range(9, 15)}
+    return {
+        "current_week": 9,
+        "season": 2026,
+        "current_season": 2026,
+        "players": players,
+        "proj_by_week": {wk: {"projections": p} for wk, p in proj.items()},
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE",
+                             "SUPER_FLEX"],
+        "league": {"settings": {"reserve_slots": 1}},
+        "league_rules": {"source": "user_confirmed",
+                         "playoff_teams": 8, "playoff_week_start": 15,
+                         "waiver_type": "rolling",
+                         "waiver_process_time": "03:00",
+                         "waiver_process_days": "daily",
+                         "waiver_process_tz": "America/New_York"},
+        "rosters": [{
+            "roster_id": "1",
+            "players": ["qb_a", "qb_b", "harvey", "rb1", "wr1",
+                        "wr2", "te1"],
+            "starters": ["qb_a", "qb_b", "rb1", "wr1", "wr2", "te1"],
+            "settings": {"waiver_position": 5},
+        }],
+        "roster_map": {"1": "Viewer Team"},
+    }
+
+
+def test_render_claim_card_carries_reason_funding_and_meta(monkeypatch):
+    pytest.importorskip("flask")
+    claim = {"kind": "waiver", "tag": "Waiver", "action": "Claim Claim QB",
+             "why": "Gate reason.", "cta_label": "Review",
+             "cta_url": "#", "score": 85, "priority": "med",
+             "player_id": "claim_qb"}
+    html_out = _render_ctx(_claim_card_ctx(), monkeypatch,
+                           lineup=[], waiver=[claim])
+    # Subline: the Week 11 hole is the reason, the IR move funds it.
+    assert "No QB in Week 11" in html_out
+    assert "Hurt Back to IR opens the spot" in html_out
+    # Quiet meta line: process stamp and priority, demoted.
+    assert "Processes 3:00 AM ET" in html_out
+    assert "Priority #5" in html_out
+    assert 'class="ns-meta"' in html_out
+    # And still no standalone strips.
+    assert "ns-claims" not in html_out
+    assert "Coverage holes" not in html_out
+
+
+# ---------------------------------------------------------------------------
+# coverage horizon: stored weekly files extend the map past the
+# current week; underivable weeks are named missing, never invented
+# ---------------------------------------------------------------------------
+
+def _stored_week(pid_points):
+    return {pid: {"ppr": pts} for pid, pts in pid_points.items()}
+
+
+def _patch_stored_weeks(monkeypatch, stored):
+    import utils.data_cache as dc
+
+    def fake_load(season, week, force_refresh=False):
+        return stored.get(week) or {}
+
+    monkeypatch.setattr(dc, "load_week_projection", fake_load)
+
+
+def _horizon_ctx(monkeypatch, stored):
+    _patch_stored_weeks(monkeypatch, stored)
+    ctx = _sf_ctx()
+    # Live shape: the dashboard ctx bundles only through Week 9.
+    ctx["proj_by_week"] = {9: ctx["proj_by_week"][9]}
+    return ctx
+
+
+def test_coverage_horizon_extends_from_stored_week_files(monkeypatch):
+    full = {"qb_a": 18.0, "qb_b": 17.0, "rb1": 12.0, "rb2": 11.0,
+            "wr1": 13.0, "wr2": 12.0, "te1": 9.0}
+    stored = {wk: _stored_week(full) for wk in range(10, 15)}
+    brief = gb.build_gm_brief(_horizon_ctx(monkeypatch, stored),
+                              "1", [], now=0)
+    cov = brief["qb_coverage"]
+    assert cov is not None
+    assert {w["week"] for w in cov["weeks"]} == {9, 10, 11, 12, 13, 14}
+    assert cov["missing_weeks"] == []
+    assert cov["through_week"] == 14
+    holes = {(h["week"], h["position"]) for h in cov["holes"]}
+    assert (10, "QB") in holes   # qb_a bye, from the stored week file
+    assert (13, "QB") in holes   # qb_b bye
+    hole10 = next(h for h in cov["holes"] if h["week"] == 10)
+    assert "bye: QB Alpha" in " ".join(hole10["causes"])
+
+
+def test_coverage_horizon_stops_at_last_derivable_week(monkeypatch):
+    full = {"qb_a": 18.0, "qb_b": 17.0, "rb1": 12.0, "rb2": 11.0,
+            "wr1": 13.0, "wr2": 12.0, "te1": 9.0}
+    stored = {wk: _stored_week(full) for wk in range(10, 13)}
+    brief = gb.build_gm_brief(_horizon_ctx(monkeypatch, stored),
+                              "1", [], now=0)
+    cov = brief["qb_coverage"]
+    assert cov is not None
+    assert cov["missing_weeks"] == [13, 14]
+    assert cov["through_week"] == 12
+    # Nothing is fabricated for the underivable weeks.
+    assert all(h["week"] <= 12 for h in cov["holes"])
+    assert {w["week"] for w in cov["weeks"]} == {9, 10, 11, 12}
+
+
+def test_future_week_unknown_roles_do_not_fabricate_holes():
+    ctx = _sf_ctx()
+    del ctx["players"]["qb_a"]["byeWeek"]
+    del ctx["players"]["qb_b"]["byeWeek"]
+    starters = {pid: {"state": "starter", "reason": "", "week": 9}
+                for pid in ctx["players"]}
+    unknown10 = {pid: {"state": "unknown", "reason": "", "week": 10}
+                 for pid in ctx["players"]}
+    week9 = dict(starters)
+    week9["qb_b"] = {"state": "unknown", "reason": "", "week": 9}
+    ctx["role_states_by_week"] = {9: week9, 10: unknown10}
+    del ctx["role_states"]
+    brief = gb.build_gm_brief(ctx, "1", [], now=0)
+    cov = brief["qb_coverage"]
+    holes = {(h["week"], h["position"]) for h in cov["holes"]}
+    # Current week: role state is real, so qb_b unknown leaves a hole.
+    assert (9, "QB") in holes
+    # Future week: an all-unknown role layer is no evidence at all;
+    # projections + byes say both QBs are startable, so no hole.
+    assert (10, "QB") not in holes

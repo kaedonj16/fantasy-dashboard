@@ -162,6 +162,12 @@ def test_race_line_holds_seed_pf_delta_vs_first_team_out():
     assert race["pf_rival"] == "East Bay Biters"
     assert "East Bay Biters" in race["text"]
     assert brief["race_prompt"] is None  # user_confirmed: no prompt
+    # One seed story: the text names the viewer's own seed only. The
+    # old second claim ("Holds the 8th seed" under the same header)
+    # read as a contradiction and is gone; the PF bit carries the
+    # cushion.
+    assert race["text"].startswith("8th seed · 3-5")
+    assert "Holds the" not in race["text"]
 
 
 def test_race_line_chasing_gb_and_pf_vs_cutoff_holder():
@@ -174,8 +180,28 @@ def test_race_line_chasing_gb_and_pf_vs_cutoff_holder():
     assert race["games_back"] == 1.0
     assert race["pf_delta"] == 83.25
     assert race["pf_rival"] == "Cutoff Team"
+    # A chasing team names the cutoff only as its games-back target.
+    assert "1 GB of the 8th seed" in race["text"]
     # The confirmation prompt rides along until user_confirmed.
     assert brief["race_prompt"] is not None
+
+
+def test_waiver_action_stamped_from_claim_history_derivation():
+    # A derived record stamps ONLY when its waiver fields carry the
+    # claim-history marker (derive_waiver_from_activity); the plain
+    # "derived" parametrization above stays unstamped.
+    rules = _rules("derived")
+    rules["waiver_process_derived"] = True
+    ctx = _ctx(league_rules=rules)
+    action = {"kind": "waiver", "action": "Claim Seattle QB",
+              "score": 80, "player_id": "sea_qb"}
+    brief = gb.build_gm_brief(ctx, "1", [action], now=NOW)
+    stamp = brief["actions"][0]["deadline"]
+    assert stamp["kind"] == "waiver_process"
+    assert "3:00 AM ET" in stamp["label"]
+    claim = brief["claims"][0]
+    assert claim["process_label"] == "Waiver process 3:00 AM ET"
+    assert claim["process_stamp"] == "Processes 3:00 AM ET"
 
 
 def test_race_line_suppressed_for_default_unverified_with_prompt():

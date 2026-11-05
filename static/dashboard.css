@@ -10892,6 +10892,12 @@ select:focus {
 .ns-card .ns-list .ns-item.ns-prio-high {
     border-left-color: #ef4444;
 }
+/* The urgent primary card (top-ranked, high priority) carries the
+   amber edge from the mocked brief presentation; it replaces the
+   red priority edge on that one card only. */
+.ns-card .ns-list:not(.ns-hidden) .ns-item:first-child.ns-prio-high {
+    border-left: 4px solid #f59e0b;
+}
 .ns-card .ns-list .ns-item.ns-prio-med {
     border-left-color: #f59e0b;
 }
@@ -22429,18 +22435,6 @@ img, svg, canvas {
     margin-bottom: 6px;
     line-height: 1.4;
 }
-.ns-deadline {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--warning, #b45309);
-    margin-bottom: 6px;
-}
-.ns-sequence {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--accent);
-    margin-bottom: 6px;
-}
 .ns-blocker {
     font-size: 13px;
     font-weight: 600;
@@ -22448,29 +22442,12 @@ img, svg, canvas {
     margin-bottom: 6px;
     line-height: 1.4;
 }
-.ns-strip {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-    font-size: 13px;
-    line-height: 1.5;
+/* Quiet meta line on a claim card: process stamp and waiver
+   priority, demoted below the subline (mocked brief presentation). */
+.ns-meta {
+    font-size: 11.5px;
     color: var(--text-muted);
-}
-.ns-strip summary {
-    cursor: pointer;
-    font-weight: 700;
-    color: var(--text);
-}
-.ns-claims {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-    font-size: 13px;
-    line-height: 1.5;
-}
-.ns-claims-title {
-    font-weight: 700;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 .ns-cta {
     display: inline-block;

@@ -331,6 +331,13 @@ def test_element_1_claims(monkeypatch):
     assert lock_claim["funding"]["name"] == "RJ Harvey"
     assert brissett_claim["funding"]["kind"] == "drop"
     assert brissett_claim["funding"]["name"] == "Kenyon Sadiq"
+    # Card composition (mocked brief presentation): the Week 10
+    # coverage hole is the first claim's reason, the funding move is
+    # subline text, and the process stamp is the quiet meta form.
+    assert lock_claim["brief_reason"] == "No QB in Week 10"
+    assert lock_claim["funding_text"] == "RJ Harvey to IR opens the spot"
+    assert brissett_claim["funding_text"] == "Drops Kenyon Sadiq"
+    assert lock_claim["process_stamp"] == "Processes 3:00 AM ET"
 
 
 # Element 2 (pass/fail): Milton over Fagnano stamped with Thursday's
@@ -402,6 +409,10 @@ def test_element_6_race_line(monkeypatch):
     assert race["pf_rival"] == "East Bay Biters"
     assert race["pf_delta"] == 104.0
     assert "East Bay Biters" in race["h2h_remaining"]
+    # One seed story: the text opens with the viewer's own seed and
+    # never appends a second seed claim for the cutoff.
+    assert race["text"].startswith("8th seed")
+    assert "Holds the" not in race["text"]
     blob = json.dumps(brief, default=str)
     assert "1 GB out" not in blob
 

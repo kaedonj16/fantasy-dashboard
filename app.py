@@ -14030,6 +14030,14 @@ def _render_next_steps_queue(
     else:
         # Rank by score (expected impact), highest first.
         actions.sort(key=lambda a: -(a.get("score") or 0))
+    # Brief claims by action text: the claim card's intel (coverage
+    # reason, funding move, process stamp, priority) renders on the
+    # queue item itself, not in a standalone claims strip.
+    _claim_by_action = {}
+    if _brief:
+        for _c in _brief.get("claims") or []:
+            if isinstance(_c, dict) and _c.get("action"):
+                _claim_by_action.setdefault(str(_c["action"]), _c)
     if not actions:
         return f"""
         <section class="os-card os-action-card ns-card" data-action-card="nextsteps">
@@ -14057,13 +14065,53 @@ def _render_next_steps_queue(
 
     def _item_html(a: dict) -> str:
         _prio = a.get("priority") or "low"
-        _tag = html.escape(a.get("tag") or "")
         _action = html.escape(a.get("action") or "")
-        _why = html.escape(a.get("why") or "")
         _cta = (
             f'<a class="ns-cta" href="{html.escape(a.get("cta_url") or "#")}">'
             f'{html.escape(a.get("cta_label") or "View")}</a>'
         )
+        # Card grammar (mocked brief presentation): a kicker chip with
+        # the sequence step folded in, a verb-first headline, ONE
+        # subline carrying at most one reason plus one deadline, and
+        # a quiet meta line for the claim's process stamp / priority.
+        _seq = a.get("sequence") or {}
+        _tag_text = str(a.get("tag") or "")
+        if isinstance(_seq, dict) and _seq.get("step"):
+            _step_bit = f"Step {_seq['step']}"
+            _tag_text = f"{_tag_text} · {_step_bit}" if _tag_text \
+                else _step_bit
+        _tag = html.escape(_tag_text)
+        _claim = _claim_by_action.get(str(a.get("action") or ""))
+        _sub_parts = []
+        _meta_html = ""
+        if _claim is not None:
+            _reason = (_claim.get("brief_reason")
+                       or a.get("brief_reason") or a.get("why"))
+            if _reason:
+                _sub_parts.append(str(_reason))
+            if _claim.get("funding_text") and not a.get("blocker"):
+                _sub_parts.append(str(_claim["funding_text"]))
+            if _claim.get("dropped_today"):
+                _sub_parts.append("Dropped today")
+            _meta_bits = []
+            if _claim.get("process_stamp"):
+                _meta_bits.append(str(_claim["process_stamp"]))
+            if _claim.get("waiver_priority"):
+                _meta_bits.append(
+                    f"Priority #{_claim['waiver_priority']}")
+            if _meta_bits:
+                _meta_html = (
+                    f'<div class="ns-meta">'
+                    f'{html.escape(" · ".join(_meta_bits))}</div>'
+                )
+        else:
+            if a.get("why"):
+                _sub_parts.append(str(a["why"]))
+            _dl = a.get("deadline") or {}
+            if isinstance(_dl, dict) and _dl.get("label") \
+                    and str(_dl["label"]) not in " · ".join(_sub_parts):
+                _sub_parts.append(str(_dl["label"]))
+        _why = html.escape(" · ".join(p for p in _sub_parts if p))
         # Stable per-action id for the per-card dismiss: derived from the
         # action content so the same action keeps the same id across loads
         # (dismissals persist client-side per season/week/day, like cards).
@@ -14082,19 +14130,8 @@ def _render_next_steps_queue(
             f' data-ns-key="{html.escape(str(a.get("dismiss_key")), quote=True)}"'
             if a.get("dismiss_key") else ""
         )
-        _deadline = a.get("deadline") or {}
-        _deadline_html = (
-            f'<div class="ns-deadline">{html.escape(str(_deadline.get("label") or ""))}</div>'
-            if isinstance(_deadline, dict) and _deadline.get("label") else ""
-        )
-        # Sequencing (Wave 3 PR 3): step labels ride on the item, and
-        # a claim with no legal funding move renders its blocker
+        # A claim with no legal funding move renders its blocker
         # named instead of a Claim CTA.
-        _seq = a.get("sequence") or {}
-        _seq_html = (
-            f'<div class="ns-sequence">{html.escape(str(_seq.get("note") or ""))}</div>'
-            if isinstance(_seq, dict) and _seq.get("note") else ""
-        )
         if a.get("blocker"):
             _cta = (f'<div class="ns-blocker">'
                     f'{html.escape(str(a.get("blocker")))}</div>')
@@ -14105,8 +14142,7 @@ def _render_next_steps_queue(
             f'<div class="ns-tag">{_tag}</div>'
             f'<div class="ns-action">{_action}</div>'
             + (f'<div class="ns-why">{_why}</div>' if _why else '')
-            + _deadline_html
-            + _seq_html
+            + _meta_html
             + _cta
             + f'</div>'
             + f'<button type="button" class="ns-item-dismiss" data-dismiss-ns-item="{_item_id}" aria-label="Dismiss action">&times;</button>'
@@ -14135,88 +14171,12 @@ def _render_next_steps_queue(
         _subtitle = str(_brief["race_line"]["text"])
     elif _brief and (_brief.get("race_prompt") or {}).get("text"):
         _subtitle = str(_brief["race_prompt"]["text"])
-    # GM brief strips (Wave 3 PR 2): coverage map and bye panel,
-    # flag-gated per spec section 4. A clean coverage map renders as
-    # one quiet line; a bye panel with no crunch is omitted entirely;
-    # an element with no data renders nothing at all.
-    _strips_html = ""
-    if _brief:
-        _cov = _brief.get("qb_coverage") or {}
-        if _cov.get("holes"):
-            _hole_lines = ""
-            for _hole in _cov["holes"]:
-                _causes = ", ".join(_hole.get("causes") or []) or "short at the position"
-                _fill = (f" Filled by: {html.escape(str(_hole['fills_action']))}."
-                         if _hole.get("fills_action") else "")
-                _hole_lines += (
-                    f'<div>Week {_hole["week"]} {_hole["position"]}: '
-                    f'{_hole["count"]} of {_hole["required"]} startable. '
-                    f'{html.escape(_causes)}.{_fill}</div>'
-                )
-            _strips_html += (
-                f'<details class="ns-strip"><summary>Coverage holes</summary>'
-                f'{_hole_lines}</details>'
-            )
-        elif _cov.get("weeks"):
-            _label_note = " (role-unconfirmed)" if _cov.get("label") else ""
-            _strips_html += (
-                f'<div class="ns-strip">QB coverage set through Week '
-                f'{_cov.get("through_week")}{_label_note}.</div>'
-            )
-        # Claims block (Wave 3 PR 3): the claims subset grouped as
-        # one section in waiver-selector order, with tonight's
-        # process time, the viewer's priority, and each claim's
-        # funding move (or its blocker) named.
-        _claims = _brief.get("claims") or []
-        if _claims:
-            _first = _claims[0]
-            _title_bits = ["Claims"]
-            if _first.get("process_label"):
-                _title_bits.append(str(_first["process_label"]))
-            if _first.get("waiver_priority"):
-                _title_bits.append(
-                    f"Priority {_first['waiver_priority']}")
-            _claim_lines = ""
-            for _claim in _claims:
-                _fund = _claim.get("funding") or {}
-                if _claim.get("blocker"):
-                    _fund_txt = str(_claim["blocker"])
-                elif _fund.get("kind") == "ir_move":
-                    _fund_txt = (f"Funded by moving "
-                                 f"{_fund.get('name') or 'a player'} to IR")
-                elif _fund.get("kind") == "drop":
-                    _fund_txt = (f"Funded by dropping "
-                                 f"{_fund.get('name') or 'a player'}")
-                else:
-                    _fund_txt = ""
-                _chip = (" Dropped today." if _claim.get("dropped_today")
-                         else "")
-                _claim_lines += (
-                    f'<div>Claim {html.escape(str(_claim.get("name") or ""))}.'
-                    + (f' {html.escape(_fund_txt)}.' if _fund_txt else "")
-                    + _chip
-                    + '</div>'
-                )
-            _strips_html += (
-                f'<div class="ns-claims"><div class="ns-claims-title">'
-                f'{html.escape(" · ".join(_title_bits))}</div>'
-                f'{_claim_lines}</div>'
-            )
-        _bye = _brief.get("bye_panel") or {}
-        if _bye.get("has_crunch"):
-            _bye_lines = ""
-            for _wk in _bye.get("weeks") or []:
-                _notes = "".join(
-                    f'<div>{html.escape(str(_n))}.</div>'
-                    for _n in (_wk.get("notes") or []))
-                _bye_lines += (
-                    f'<div>{html.escape(str(_wk.get("net") or ""))}.</div>'
-                    f'{_notes}'
-                )
-            _strips_html += (
-                f'<details class="ns-strip"><summary>Bye outlook</summary>'
-                f'{_bye_lines}</details>'
-            )
+    # No standalone brief strips: the coverage line, the claims
+    # block and the bye outlook no longer render as prose rows.
+    # The brief's intel rides on the action cards themselves (the
+    # claim card's reason + funding subline and process / priority
+    # meta line above); bye facts render only where they change a
+    # decision, as a coverage hole's named cause on its card.
     return f"""
         <section class="os-card os-action-card ns-card{collapsed_cls}{_single_cls}" data-action-card="nextsteps">
           <div class="os-section-head">
@@ -14236,7 +14196,7 @@ def _render_next_steps_queue(
             {_items_html}
           </div>""" + (
             f'<div class="ns-list ns-hidden" id="ns-body-extra">{_hidden_html}</div>' if show_expand else ""
-        ) + _strips_html + bench_note_html + f"""
+        ) + bench_note_html + f"""
         </section>"""
 
 
@@ -15537,6 +15497,59 @@ def _prior_season_rules_deriver(platform, league_id, season):
         return None
 
 
+def _waiver_activity_deriver(platform, league_id, season):
+    """Derived waiver facts from the league's own claim history.
+
+    Fleaflicker publishes no waiver type or process time, so the
+    rules record's waiver fields stay null and no claim stamp can
+    render. The league's processed claims are evidence: they all land
+    on the waiver run's instant. When they cluster consistently, the
+    process time/days are derived (utils.league_rules); inconsistent
+    or thin history derives nothing. Fleaflicker's claim system is
+    rolling priority (its waiverPosition rotates after each processed
+    claim), so a derived process time carries the rolling type with
+    it. Other platforms publish these facts; out of scope here.
+    """
+    if str(platform or "").strip().lower() != "fleaflicker":
+        return None
+    try:
+        from dashboard_services.service import get_transactions_by_week
+        from utils.league_rules import derive_waiver_from_activity
+
+        by_week = get_transactions_by_week(
+            str(league_id), list(range(1, 19)),
+            platform="fleaflicker", season=int(season),
+        ) or {}
+        rows = []
+        for week_rows in by_week.values():
+            rows.extend(week_rows or [])
+        derived = derive_waiver_from_activity(rows)
+        if not derived:
+            return None
+        derived["waiver_type"] = "rolling"
+        return derived
+    except Exception:
+        logger.debug(
+            "[league-rules] waiver activity derivation failed",
+            exc_info=True,
+        )
+        return None
+
+
+def _league_rules_deriver(platform, league_id, season):
+    """Combined rules deriver: prior-season playoff format plus
+    claim-history waiver facts, each fail-soft on its own."""
+    out = {}
+    for deriver in (_prior_season_rules_deriver, _waiver_activity_deriver):
+        try:
+            values = deriver(platform, league_id, season)
+        except Exception:
+            values = None
+        if values:
+            out.update(values)
+    return out or None
+
+
 def _rules_fingerprint(ctx) -> str:
     """League-rules component for sim cache signatures (Wave 1).
 
@@ -15566,7 +15579,7 @@ def get_league_ctx_from_cache(
             from utils.ui_audit_fixture import is_ui_audit_league, ui_audit_enabled
             if not (ui_audit_enabled() and is_ui_audit_league(league_id)):
                 from utils.league_rules import apply_rules_overlay
-                apply_rules_overlay(ctx, deriver=_prior_season_rules_deriver)
+                apply_rules_overlay(ctx, deriver=_league_rules_deriver)
         except Exception:
             logger.debug("[league-rules] overlay skipped", exc_info=True)
     return ctx
