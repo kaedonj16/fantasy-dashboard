@@ -115,8 +115,8 @@ def test_blocked_claim_renders_blocker_instead_of_claim_cta(monkeypatch):
         ctx, "1", [], season=2026, current_week=9)
     assert "No legal funding move" in html_out
     assert ">Claim now<" not in html_out
-    # The claims block groups it with the blocker named too.
-    assert "Claims" in html_out
+    # No standalone claims strip: the blocker rides on the card itself.
+    assert "ns-claims" not in html_out
 
 
 # ---------------------------------------------------------------------------

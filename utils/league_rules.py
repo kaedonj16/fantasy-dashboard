@@ -62,6 +62,7 @@ _RULE_FIELDS = (
     "waiver_process_time",
     "waiver_process_days",
     "waiver_process_tz",
+    "waiver_process_derived",
     "trade_deadline",
     "max_keepers",
 )
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS league_rules (
     waiver_process_time TIME,
     waiver_process_days TEXT,
     waiver_process_tz  TEXT DEFAULT 'America/New_York',
+    waiver_process_derived BOOLEAN NOT NULL DEFAULT FALSE,
     trade_deadline     DATE,
     max_keepers        INTEGER,
     designated_keepers JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -95,6 +97,7 @@ _MEMO_TTL_SECONDS = 60.0
 _MEMO_LOCK = threading.Lock()
 _TABLE_READY = False
 _DERIVE_ATTEMPTED: set = set()
+_WAIVER_DERIVE_ATTEMPTED: set = set()
 
 
 # ── small coercion helpers ──────────────────────────────────────────────
@@ -165,6 +168,7 @@ def _blank_record(platform, league_id, season):
     for field in _RULE_FIELDS:
         rec[field] = None
     rec["waiver_process_tz"] = "America/New_York"
+    rec["waiver_process_derived"] = False
     return rec
 
 
@@ -183,6 +187,12 @@ def _ensure_table() -> bool:
     try:
         with _conn() as conn:
             conn.execute(_CREATE_SQL)
+            # Column added after the table first shipped (migration
+            # 054); IF NOT EXISTS keeps this safe on every boot path.
+            conn.execute(
+                "ALTER TABLE league_rules ADD COLUMN IF NOT EXISTS"
+                " waiver_process_derived BOOLEAN NOT NULL DEFAULT FALSE"
+            )
         _TABLE_READY = True
         return True
     except Exception:
@@ -202,6 +212,8 @@ def _row_to_record(row) -> dict:
     if rec["playoff_reseed"] is not None:
         rec["playoff_reseed"] = bool(rec["playoff_reseed"])
     rec["waiver_process_time"] = _as_time_str(rec["waiver_process_time"])
+    rec["waiver_process_derived"] = bool(
+        row.get("waiver_process_derived"))
     rec["trade_deadline"] = _as_date_str(rec["trade_deadline"])
     keepers = row.get("designated_keepers") or {}
     if isinstance(keepers, str):
@@ -265,7 +277,8 @@ def _store_record(record) -> bool:
                     platform, league_id, season, playoff_teams,
                     playoff_week_start, playoff_round_type, playoff_reseed,
                     waiver_type, waiver_process_time, waiver_process_days,
-                    waiver_process_tz, trade_deadline, max_keepers,
+                    waiver_process_tz, waiver_process_derived,
+                    trade_deadline, max_keepers,
                     designated_keepers, keepers_known, source, confirmed_by,
                     updated_at
                 ) VALUES (
@@ -273,7 +286,8 @@ def _store_record(record) -> bool:
                     %(playoff_week_start)s, %(playoff_round_type)s,
                     %(playoff_reseed)s, %(waiver_type)s,
                     %(waiver_process_time)s, %(waiver_process_days)s,
-                    %(waiver_process_tz)s, %(trade_deadline)s, %(max_keepers)s,
+                    %(waiver_process_tz)s, %(waiver_process_derived)s,
+                    %(trade_deadline)s, %(max_keepers)s,
                     %(designated_keepers)s::jsonb, %(keepers_known)s,
                     %(source)s, %(confirmed_by)s, now()
                 )
@@ -286,6 +300,7 @@ def _store_record(record) -> bool:
                     waiver_process_time = EXCLUDED.waiver_process_time,
                     waiver_process_days = EXCLUDED.waiver_process_days,
                     waiver_process_tz = EXCLUDED.waiver_process_tz,
+                    waiver_process_derived = EXCLUDED.waiver_process_derived,
                     trade_deadline = EXCLUDED.trade_deadline,
                     max_keepers = EXCLUDED.max_keepers,
                     designated_keepers = EXCLUDED.designated_keepers,
@@ -307,6 +322,8 @@ def _store_record(record) -> bool:
                     "waiver_process_time": record.get("waiver_process_time"),
                     "waiver_process_days": record.get("waiver_process_days"),
                     "waiver_process_tz": record.get("waiver_process_tz"),
+                    "waiver_process_derived": bool(
+                        record.get("waiver_process_derived")),
                     "trade_deadline": record.get("trade_deadline"),
                     "max_keepers": record.get("max_keepers"),
                     "designated_keepers": json.dumps(
@@ -396,6 +413,108 @@ def _settings_values(settings):
     return out
 
 
+# ── waiver derivation from the league's own claim history ─────────────
+#
+# Some feeds (Fleaflicker) publish no waiver type or process time at
+# all, so the record's waiver fields stay null and no claim stamp can
+# ever render. The league's processed claims ARE evidence, though: a
+# waiver run stamps every successful claim with the same process
+# instant. When the claim timestamps cluster tightly on one time of
+# day and one cadence, the process time / days are derived (source
+# stays "derived"; the waiver_process_derived marker records that the
+# waiver fields specifically came from claim history, which is what
+# lets the GM brief stamp from them). Inconsistent or thin evidence
+# derives nothing: fail closed, never guess.
+
+_WAIVER_DERIVE_MIN_CLAIMS = 6
+_WAIVER_DERIVE_HOUR_SHARE = 0.85
+_WAIVER_DERIVE_MINUTE_SHARE = 0.5
+_WEEKDAY_SHORT = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _claim_epoch_ms(row):
+    """Processed-claim instant (epoch ms) from a normalized transaction
+    row, or None when the row is not a processed waiver claim."""
+    if not isinstance(row, dict):
+        return None
+    kind = str(row.get("type") or "").strip().lower()
+    meta = row.get("metadata") or {}
+    provider_kind = str(
+        (meta.get("provider_type") if isinstance(meta, dict) else "")
+        or "").upper()
+    if kind != "waiver" and "CLAIM" not in provider_kind \
+            and "WAIVER" not in provider_kind:
+        return None
+    raw = row.get("created")
+    try:
+        ts = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if ts <= 0:
+        return None
+    if ts < 1e11:  # seconds, not milliseconds
+        ts *= 1000.0
+    # Sane window: 2020-01-01 .. 2100-01-01 UTC in ms.
+    if not (1577836800000 <= ts <= 4102444800000):
+        return None
+    return ts
+
+
+def derive_waiver_from_activity(transactions, tz_name=None) -> dict | None:
+    """Derive waiver process time/days from processed-claim timestamps.
+
+    ``transactions`` are normalized provider rows (``type == "waiver"``
+    with an epoch-ms ``created``). Returns the derived waiver fields
+    (with the ``waiver_process_derived`` marker) or None when the
+    evidence is absent, thin, or inconsistent.
+    """
+    from zoneinfo import ZoneInfo
+
+    tz_label = tz_name or "America/New_York"
+    try:
+        tz = ZoneInfo(tz_label)
+    except Exception:
+        return None
+    stamps = []
+    for row in transactions or []:
+        ts = _claim_epoch_ms(row)
+        if ts is not None:
+            stamps.append(datetime.fromtimestamp(ts / 1000.0, tz=tz))
+    if len(stamps) < _WAIVER_DERIVE_MIN_CLAIMS:
+        return None
+    total = len(stamps)
+    hour_counts: dict = {}
+    for dt in stamps:
+        hour_counts[dt.hour] = hour_counts.get(dt.hour, 0) + 1
+    hour, hour_n = max(hour_counts.items(), key=lambda kv: kv[1])
+    if hour_n / total < _WAIVER_DERIVE_HOUR_SHARE:
+        return None
+    minute_counts: dict = {}
+    for dt in stamps:
+        if dt.hour == hour:
+            minute_counts[dt.minute] = minute_counts.get(dt.minute, 0) + 1
+    minute, minute_n = max(minute_counts.items(), key=lambda kv: kv[1])
+    if minute_n / total < _WAIVER_DERIVE_MINUTE_SHARE:
+        return None
+    weekdays = {dt.weekday() for dt in stamps}
+    if len(weekdays) >= 4:
+        days = "daily"
+    elif len(weekdays) == 1:
+        days = _WEEKDAY_SHORT[next(iter(weekdays))]
+    else:
+        # Claims land on two or three weekdays: the cadence cannot be
+        # told apart from "nobody claimed on the other run days", so
+        # the days stay unknown and nothing is derived at all (a
+        # process time stamped on the wrong days is worse than none).
+        return None
+    return {
+        "waiver_process_time": f"{hour:02d}:{minute:02d}",
+        "waiver_process_days": days,
+        "waiver_process_tz": tz_label,
+        "waiver_process_derived": True,
+    }
+
+
 def _merge(base, values, source, total_rosters):
     rec = dict(base) if base else None
     if rec is None:
@@ -407,6 +526,8 @@ def _merge(base, values, source, total_rosters):
         rec.get("playoff_teams"), total_rosters
     )
     rec["waiver_process_time"] = _as_time_str(rec.get("waiver_process_time"))
+    if rec.get("waiver_process_derived") is not None:
+        rec["waiver_process_derived"] = bool(rec["waiver_process_derived"])
     rec["trade_deadline"] = _as_date_str(rec.get("trade_deadline"))
     rec["source"] = source
     return rec
@@ -445,7 +566,45 @@ def resolve_league_rules(platform, league_id, season, provider_settings=None,
             _store_record(merged)
         return merged
 
-    if stored and stored["source"] in (SOURCE_FEED, SOURCE_DERIVED):
+    if stored and stored["source"] == SOURCE_FEED:
+        return stored
+
+    if stored and stored["source"] == SOURCE_DERIVED:
+        # The record already landed (playoff derivation), but its
+        # waiver fields may never have been derived: the full deriver
+        # is not re-run for a derived record. Give the waiver fields
+        # one top-up attempt per process, merging ONLY waiver values
+        # the deriver marks as claim-history derived; the source stays
+        # derived and no playoff value is touched.
+        if not stored.get("waiver_process_time") and deriver is not None:
+            wkey = (platform, league_id, season)
+            if wkey not in _WAIVER_DERIVE_ATTEMPTED:
+                _WAIVER_DERIVE_ATTEMPTED.add(wkey)
+                try:
+                    derived = deriver(platform, league_id, season)
+                except Exception:
+                    logger.debug(
+                        "[league-rules] waiver deriver failed",
+                        exc_info=True,
+                    )
+                    derived = None
+                derived = derived or {}
+                waiver_values = {
+                    f: derived[f]
+                    for f in ("waiver_type", "waiver_process_time",
+                              "waiver_process_days", "waiver_process_tz",
+                              "waiver_process_derived")
+                    if derived.get(f) is not None
+                }
+                if waiver_values.get("waiver_process_time") \
+                        and waiver_values.get("waiver_process_derived"):
+                    merged = _merge(
+                        stored, waiver_values, SOURCE_DERIVED,
+                        total_rosters,
+                    )
+                    if not _rules_equal(merged, stored):
+                        _store_record(merged)
+                    return merged
         return stored
 
     key = (platform, league_id, season)

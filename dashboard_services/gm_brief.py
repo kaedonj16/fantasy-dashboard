@@ -53,9 +53,28 @@ _RULE_FIELDS = (
     "waiver_process_time",
     "waiver_process_days",
     "waiver_process_tz",
+    "waiver_process_derived",
     "trade_deadline",
     "max_keepers",
 )
+
+
+def _waiver_stamp_ok(rules) -> bool:
+    """Whether the record's waiver process time may stamp claims.
+
+    Feed and user-confirmed records stamp. A derived record stamps
+    ONLY when its waiver fields carry the claim-history marker
+    (``waiver_process_derived``: the process time was derived from the
+    league's own processed-claim timestamps by
+    utils.league_rules.derive_waiver_from_activity). A record that is
+    merely "derived" (e.g. its playoff field came from a prior-season
+    bracket) says nothing about waivers and never stamps.
+    """
+    rules = rules or {}
+    if rules.get("source") in _STAMP_SOURCES:
+        return True
+    return bool(rules.get("waiver_process_derived")
+                and rules.get("waiver_process_time"))
 
 _WEEKDAY_NAMES = {
     "mon": 0, "monday": 0, "tue": 1, "tuesday": 1, "wed": 2,
@@ -437,10 +456,12 @@ def _process_weekdays(days_value):
 def next_waiver_process(rules: dict, now: float):
     """Next waiver-process instant from the rules record, or None.
 
-    Only feed / user_confirmed records stamp (spec 3.1): the process
-    time is never guessed from a derived or defaulted record.
+    Feed / user_confirmed records stamp (spec 3.1), as do waiver
+    fields derived from the league's own claim history (the
+    waiver_process_derived marker). Any other derived or defaulted
+    process time is never guessed.
     """
-    if (rules or {}).get("source") not in _STAMP_SOURCES:
+    if not _waiver_stamp_ok(rules):
         return None
     parsed = _parse_process_time(rules.get("waiver_process_time"))
     if not parsed:
@@ -677,11 +698,14 @@ def build_race_line(ctx, viewer_roster_id, rules=None) -> dict | None:
                     h2h.append(opp["team_name"])
     except Exception:
         h2h = []
-    # Copy is arithmetic, never sim prose.
+    # Copy is arithmetic, never sim prose. The line tells ONE seed
+    # story: the viewer's own seed. A second seed claim for the
+    # playoff cutoff ("Holds the 6th seed" under a 2nd-seed header)
+    # reads as a contradiction, so a holder's cushion is carried by
+    # the PF bit below; only a chasing team names the cutoff, as the
+    # games-back target it is chasing.
     bits = [f"{_ordinal(seed)} seed", record]
-    if status == "holds":
-        bits.append(f"Holds the {_ordinal(playoff_teams)} seed")
-    else:
+    if status != "holds":
         gb_text = (str(int(games_back)) if games_back == int(games_back)
                    else f"{games_back:.1f}")
         bits.append(f"{gb_text} GB of the {_ordinal(playoff_teams)} seed")
@@ -780,6 +804,28 @@ def build_gm_brief(ctx, viewer_roster_id, actions=None, now=None) -> dict:
             ctx, viewer_roster_id, rules, ranked)
     except Exception:
         coverage, roles_present = None, False
+    # A coverage hole is the claim card's reason (the mock's subline:
+    # "No QB in Week 11"): attach it to the claim and to the queue
+    # action that fills the hole, so the intel rides on the card
+    # instead of a standalone coverage strip.
+    try:
+        for hole in (coverage or {}).get("holes") or []:
+            fills = hole.get("fills_action")
+            if not fills:
+                continue
+            reason = (f"No {hole.get('position')} in "
+                      f"Week {hole.get('week')}")
+            for claim in claims:
+                if claim.get("action") == fills \
+                        and not claim.get("brief_reason"):
+                    claim["brief_reason"] = reason
+            for item in ranked:
+                if isinstance(item, dict) \
+                        and item.get("action") == fills \
+                        and not item.get("brief_reason"):
+                    item["brief_reason"] = reason
+    except Exception:
+        pass
     bye_panel = None
     try:
         bye_panel = build_bye_panel(ctx, viewer_roster_id, rules)
@@ -964,7 +1010,11 @@ def build_claims(ctx, viewer_roster_id, actions, rules=None) -> list:
     priority = waiver_priority(ctx, viewer_roster_id)
     ir_moves, drops = _funding_sources(ctx, viewer_roster_id, index)
     process_label = waiver_process_label(rules) \
-        if (rules or {}).get("source") in _STAMP_SOURCES else None
+        if _waiver_stamp_ok(rules) else None
+    # The card's quiet meta line drops the "Waiver process" lead-in:
+    # "Processes 3:00 AM ET".
+    process_stamp = (process_label.replace("Waiver process", "Processes", 1)
+                     if process_label else None)
     is_faab = str((rules or {}).get("waiver_type") or "").lower() == "faab"
     claims = []
     ir_i = 0
@@ -1001,6 +1051,17 @@ def build_claims(ctx, viewer_roster_id, actions, rules=None) -> list:
                         waiver_type="faab")
                 except Exception:
                     faab = None
+        funding_text = None
+        if funding:
+            if funding.get("kind") == "ir_move":
+                funding_text = (
+                    f"{funding.get('name') or 'A player'} to IR "
+                    f"opens the spot")
+            elif funding.get("kind") == "drop":
+                funding_text = (
+                    f"Drops {funding.get('name') or 'a bench player'}")
+            else:
+                funding_text = "Open roster spot"
         claim = {
             "player_id": pid,
             "name": player_name(ctx, pid, index),
@@ -1011,9 +1072,11 @@ def build_claims(ctx, viewer_roster_id, actions, rules=None) -> list:
             "dropped_today": bool(action.get("dropped_today")),
             "deadline": action.get("deadline"),
             "process_label": process_label,
+            "process_stamp": process_stamp,
             "waiver_priority": priority,
             "faab": faab,
             "funding": funding,
+            "funding_text": funding_text,
             "blocker": blocker,
         }
         action["funding"] = funding
@@ -1199,7 +1262,52 @@ def week_projections(ctx, week):
     current = _i(ctx.get("current_week") or ctx.get("week"))
     if week == current and isinstance(ctx.get("projections"), dict):
         return {str(k): _f(v) for k, v in ctx["projections"].items()}
+    # Horizon fallback: the dashboard ctx only bundles projections
+    # through the current week, but the site's stored weekly files
+    # cover future weeks on demand (the same files the full builder
+    # flattens). Score the ctx's players from the stored week so the
+    # coverage map can span the remaining regular season. A week with
+    # no stored file stays uncomputable: None here, named in
+    # missing_weeks by the caller, never interpolated.
+    season = _i(ctx.get("season") or ctx.get("current_season"))
+    if season:
+        try:
+            stored = _stored_week_projections(ctx, season, week)
+        except Exception:
+            stored = None
+        if stored is not None:
+            return stored
     return None
+
+
+def _stored_week_projections(ctx, season, week):
+    """``{pid: pts}`` for one week from the stored weekly projection
+    file, scored with the same projection_points selection the
+    dashboard builder uses, under the league's raw scoring settings.
+    Only players the ctx knows are scored (their position comes from
+    the ctx index; the coverage map only ever reads rostered players).
+    None when the stored file is absent or yields nothing."""
+    from utils.data_cache import load_week_projection
+    from utils.projections import projection_points
+
+    raw = load_week_projection(int(season), int(week))
+    if not isinstance(raw, dict) or not raw:
+        return None
+    scoring = ctx.get("raw_scoring_settings")
+    if not isinstance(scoring, dict):
+        scoring = {}
+    index = player_index(ctx)
+    out = {}
+    for pid, info in index.items():
+        entry = raw.get(str(pid))
+        if entry is None:
+            entry = raw.get(pid)
+        if entry is None:
+            continue
+        pts = projection_points(entry, scoring, player_pos(info or {}))
+        if pts is not None:
+            out[str(pid)] = _f(pts)
+    return out or None
 
 
 def role_states_for(ctx, week):
@@ -1323,6 +1431,20 @@ def build_coverage(ctx, viewer_roster_id, rules=None, actions=None):
             missing.append(week)
             continue
         states = role_states_for(ctx, week) if roles_present else None
+        if states is not None and week > current:
+            # Role state is a current-week layer. Projected forward it
+            # can name nobody startable (every state unknown), which
+            # would fabricate holes across the whole horizon; when no
+            # rostered player carries a startable state for a future
+            # week, judge that week on projections + byes alone.
+            def _state_of(entry):
+                if isinstance(entry, dict):
+                    return str(entry.get("state") or "")
+                return str(entry or "")
+
+            if not any(_state_of(states.get(pid)) in STARTABLE_STATES
+                       for pid in pids):
+                states = None
         positions_out = {}
         week_hole = False
         for pos in _COVERAGE_POSITIONS:

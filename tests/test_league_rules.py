@@ -314,3 +314,138 @@ def test_fingerprint_changes_with_the_record():
     assert lr.ctx_rules_fingerprint({}) == "none"
     assert lr.ctx_rules_fingerprint({"_league_rules": b}) \
         == lr.rules_fingerprint(b)
+
+
+# ── waiver derivation from claim history ────────────────────────────────
+
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+_ET = ZoneInfo("America/New_York")
+_MON = datetime(2026, 9, 7, tzinfo=_ET)  # a Monday
+
+
+def _claim(day_offset, hour=3, minute=0, kind="waiver"):
+    dt = _MON + timedelta(days=day_offset, hours=hour, minutes=minute)
+    return {"type": kind, "created": int(dt.timestamp() * 1000)}
+
+
+def test_derive_waiver_daily_3am_from_consistent_claims():
+    # Fourteen claims across two full weeks, all at the 3 AM run
+    # (a few stamped a minute into the run): daily, 03:00.
+    rows = [_claim(d, minute=1 if d % 4 == 0 else 0) for d in range(14)]
+    out = lr.derive_waiver_from_activity(rows)
+    assert out == {
+        "waiver_process_time": "03:00",
+        "waiver_process_days": "daily",
+        "waiver_process_tz": "America/New_York",
+        "waiver_process_derived": True,
+    }
+
+
+def test_derive_waiver_ignores_free_agent_rows():
+    rows = [_claim(d) for d in range(7)]
+    rows += [_claim(d, hour=15, kind="free_agent") for d in range(7)]
+    out = lr.derive_waiver_from_activity(rows)
+    assert out["waiver_process_time"] == "03:00"
+
+
+def test_derive_waiver_single_weekday_cadence():
+    rows = [_claim(1 + 7 * w) for w in range(6)]  # Tuesdays only
+    out = lr.derive_waiver_from_activity(rows)
+    assert out["waiver_process_time"] == "03:00"
+    assert out["waiver_process_days"] == "tue"
+
+
+def test_derive_waiver_fails_closed_on_scattered_hours():
+    rows = [_claim(d, hour=h)
+            for d, h in enumerate([3, 7, 12, 18, 22, 3, 9, 15])]
+    assert lr.derive_waiver_from_activity(rows) is None
+
+
+def test_derive_waiver_fails_closed_on_thin_history():
+    rows = [_claim(d) for d in range(4)]
+    assert lr.derive_waiver_from_activity(rows) is None
+
+
+def test_derive_waiver_fails_closed_on_ambiguous_cadence():
+    # Claims only ever land Mon/Tue: cannot tell a Mon+Tue schedule
+    # from a daily one nobody used later in the week.
+    rows = [_claim(d) for d in (0, 1, 7, 8, 14, 15, 21, 22)]
+    assert lr.derive_waiver_from_activity(rows) is None
+
+
+def test_derive_waiver_fails_closed_without_claims():
+    assert lr.derive_waiver_from_activity([]) is None
+    assert lr.derive_waiver_from_activity(None) is None
+
+
+def test_derive_waiver_real_92916_feed_shape_fails_closed():
+    # League 92916's real processed-claim stamps (Fleaflicker feed,
+    # captured live 2026-11-05): a dominant Wednesday 06:00 ET batch
+    # (46 of 51) plus a Thursday minority at other hours. The batch
+    # contradicts the league's daily processing and the cadence is
+    # not single-story, so the only honest derivation is none: no
+    # process time is stamped from this evidence.
+    rows = [_claim(2, hour=6, minute=0) for _ in range(46)]  # Wed 06:00
+    rows += [_claim(3, hour=16), _claim(3, hour=16),
+             _claim(3, hour=8), _claim(3, hour=8),
+             _claim(2, hour=12)]
+    assert lr.derive_waiver_from_activity(rows) is None
+
+
+def _waiver_deriver(**over):
+    values = {
+        "waiver_type": "rolling",
+        "waiver_process_time": "03:00",
+        "waiver_process_days": "daily",
+        "waiver_process_tz": "America/New_York",
+        "waiver_process_derived": True,
+    }
+    values.update(over)
+    return lambda p, l, s: dict(values)
+
+
+def test_resolve_merges_claim_history_waiver_on_first_derive(store):
+    out = lr.resolve_league_rules(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12,
+        deriver=_waiver_deriver(playoff_teams=8, playoff_week_start=15),
+    )
+    assert out["source"] == lr.SOURCE_DERIVED
+    assert out["waiver_process_time"] == "03:00"
+    assert out["waiver_type"] == "rolling"
+    assert out["waiver_process_derived"] is True
+
+
+def test_resolve_tops_up_waiver_on_already_derived_record(store):
+    store["stored"] = _record(
+        source=lr.SOURCE_DERIVED, playoff_teams=8, playoff_week_start=15)
+    lr._WAIVER_DERIVE_ATTEMPTED.clear()
+    out = lr.resolve_league_rules(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12, deriver=_waiver_deriver(),
+    )
+    # Playoff values untouched; only the waiver fields landed.
+    assert out["source"] == lr.SOURCE_DERIVED
+    assert out["playoff_teams"] == 8
+    assert out["waiver_process_time"] == "03:00"
+    assert out["waiver_process_derived"] is True
+    assert store["saved"]
+
+
+def test_resolve_top_up_refuses_unmarked_waiver_values(store):
+    store["stored"] = _record(
+        source=lr.SOURCE_DERIVED, playoff_teams=8, playoff_week_start=15)
+    lr._WAIVER_DERIVE_ATTEMPTED.clear()
+    out = lr.resolve_league_rules(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12,
+        deriver=lambda p, l, s: {"waiver_process_time": "03:00"},
+    )
+    # No claim-history marker: the time is not evidence, not merged.
+    assert out["waiver_process_time"] is None
+    assert store["saved"] == []
