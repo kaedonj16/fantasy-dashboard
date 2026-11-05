@@ -68,6 +68,52 @@ def test_empty_and_none():
     assert sanitize_ai_html(None) == ""
 
 
+def test_preserves_details_summary_and_open():
+    # Regression (Kaedon, 2026-11-05): the Front Office Evidence toggles
+    # and Reference collapses are <details>/<summary>; stripping the
+    # tags left "Evidence" as loose unstyled text with no toggle.
+    dirty = (
+        '<details class="for-detail" open><summary><span>Evidence</span></summary>'
+        '<div class="for-detail-body">rows</div></details>'
+    )
+    clean = sanitize_ai_html(dirty)
+    assert "<details" in clean
+    assert 'class="for-detail"' in clean
+    assert " open" in clean
+    assert "<summary>" in clean
+    assert "Evidence" in clean and "rows" in clean
+
+
+def test_preserves_safe_inline_styles_only():
+    dirty = (
+        '<div class="for-stamp" style="border-color:#1a7f4b;color:#1a7f4b">BUY</div>'
+        '<span style="width:73%"></span>'
+        '<div style="background:url(javascript:alert(1))">x</div>'
+        '<div style="width:expression(alert(1))">y</div>'
+    )
+    clean = sanitize_ai_html(dirty)
+    assert "border-color:#1a7f4b" in clean
+    assert "width:73%" in clean
+    assert "url(" not in clean
+    assert "expression" not in clean
+    assert "javascript:" not in clean
+    assert "alert(1)" not in clean
+
+
+def test_preserves_data_attributes_for_js_delegation():
+    # The player modal and the report jump buttons are driven by
+    # data-* hooks; stripping them silently disabled the controls.
+    dirty = (
+        '<span class="player-clickable" data-player-id="123" '
+        'data-player-name="Jaylen Waddle"><strong>Jaylen Waddle</strong></span>'
+        '<button type="button" data-for-jump="forBoard">Do this first</button>'
+    )
+    clean = sanitize_ai_html(dirty)
+    assert 'data-player-id="123"' in clean
+    assert 'data-player-name="Jaylen Waddle"' in clean
+    assert 'data-for-jump="forBoard"' in clean
+
+
 def test_keeps_button_without_event_handlers():
     # Regression: the Front Office Report card's "View full report" button was
     # stripped by the sanitizer (button wasn't allowlisted), so the card

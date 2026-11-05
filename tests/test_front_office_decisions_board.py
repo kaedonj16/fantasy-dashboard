@@ -348,6 +348,68 @@ def test_potential_targets_become_the_trade_move_when_nothing_priced():
     assert "85%" in trade[0]["why"]
 
 
+def test_each_potential_target_gets_its_own_move():
+    # Kaedon, 2026-11-05: Javonte Williams was rendered inside
+    # Target Bhayshul Tuten. Each target is its own board move, with
+    # only its own row as evidence.
+    sc = _scenario()
+    pot = [
+        {"id": "p1", "name": "Bhayshul Tuten", "position": "RB", "value": 378.2,
+         "partner": "Veiny Oilers", "gap_pct": 95, "attainability": "Reach",
+         "injury": "QUESTIONABLE", "depth_rank": 2, "flex_slots": 2,
+         "is_surplus": False, "sole_starter": False, "starting_point": {}},
+        {"id": "p2", "name": "Javonte Williams", "position": "RB", "value": 379.3,
+         "partner": "Make Kamaraca Great Again", "gap_pct": 94,
+         "attainability": "Reach", "injury": "", "depth_rank": 2,
+         "flex_slots": 2, "is_surplus": False, "sole_starter": False,
+         "starting_point": {}},
+    ]
+    moves = _build(sc, trade_targets=[], potential_targets=pot,
+                   drop_add_pairs=[], waiver_targets=[])
+    trade = [m for m in moves if m["kind"] == "potential"]
+    assert [m["line"] for m in trade] == [
+        "Target Bhayshul Tuten (RB)", "Target Javonte Williams (RB)"]
+    assert trade[0]["potential_indices"] == [0]
+    assert trade[1]["potential_indices"] == [1]
+    assert [m["rank"] for m in trade] == sorted(m["rank"] for m in trade)
+    # Rendered: Tuten's evidence contains only Tuten, Williams' only Williams.
+    data = _render_data(sc, moves)
+    data["potential_trade_targets"] = pot
+    data["trade_targets"] = []
+    out = fmod.render_front_office_report_html(data, _AI)
+    tuten_at = out.index("Target Bhayshul Tuten")
+    williams_at = out.index("Target Javonte Williams")
+    assert tuten_at < williams_at
+    assert out.count("Bhayshul Tuten") >= 2  # move line + its own evidence row
+    # The evidence block for move 1 ends before move 2's line starts.
+    first_block = out[tuten_at:williams_at]
+    assert "Javonte Williams" not in first_block
+
+
+def test_playoff_odds_never_round_undecided_99_9_up_to_100():
+    # Kaedon, 2026-11-05 (and the settled 2026-09-30 rule): 100 only
+    # when the raw value is exact / clinched.
+    assert fmod._fmt_playoff_pct_display(99.9) == "99.9"
+    assert fmod._fmt_playoff_pct_display(99.99) == "99.9"
+    assert fmod._fmt_playoff_pct_display(99.4) == "99.4"
+    assert fmod._fmt_playoff_pct_display(68.0) == "68.0"
+    assert fmod._fmt_playoff_pct_display(100.0) == "100"
+    assert fmod._fmt_playoff_pct_display(0.1) == "0.1"
+    assert fmod._fmt_playoff_pct_display(0.0) == "0"
+    sc = _scenario()
+    data = _render_data(sc, _build(sc))
+    data["playoff_pct"] = 99.9
+    out = fmod.render_front_office_report_html(data, _AI)
+    assert "99.9% playoff odds" in out
+    assert "100% playoff odds" not in out
+    card = fmod.render_front_office_card_html(data, _AI)
+    assert "99.9%" in card
+    assert "100%" not in card
+    data["playoff_pct"] = 100.0
+    out = fmod.render_front_office_report_html(data, _AI)
+    assert "100% playoff odds" in out
+
+
 # ── Renderer: board layout vs legacy fallback ─────────────────────────────
 
 def _render_data(sc, moves):
@@ -381,16 +443,26 @@ _AI = {"verdict": "HOLD", "headline": "Covered at QB. The leak is at RB depth.",
 def test_board_layout_folds_sections_and_orders_decisions_first():
     sc = _scenario()
     out = fmod.render_front_office_report_html(_render_data(sc, _build(sc)), _AI)
-    board = out.index("Do this first")
-    assert board < out.index("Since last week") < out.index("Reference")
-    # Evidence lives inside the board: swap card and Plan B precede the jump nav.
-    assert out.index("for-swap-card") < out.index("for-jumpbar")
+    board = out.index("id='forBoard'")
+    # Jumpbar sits ABOVE the board it navigates (Kaedon, 2026-11-05),
+    # as buttons with no href, so clicking cannot reload the page.
+    assert out.index("for-jumpbar") < board
+    assert "data-for-jump='forBoard'" in out
+    assert "data-for-jump='forLastWeek'" in out
+    assert "data-for-jump='forReference'" in out
+    assert "href='#forBoard'" not in out
+    assert "href='#forLastWeek'" not in out
+    assert "href='#forReference'" not in out
+    assert board < out.index("id='forLastWeek'") < out.index("id='forReference'")
+    # Evidence lives inside the board, after the jump nav.
+    assert out.index("for-jumpbar") < out.index("for-swap-card")
     assert "Plan B: Plan B RB" in out
     assert "Fallback drop: Worst RB" in out
     assert "Add RB" in out and "RB24" in out
     # Hold / Watch / Alert rows ride in the board, not at the bottom.
     holdbox = out.index("for-holdbox")
-    assert board < holdbox < out.index("for-jumpbar")
+    assert board < holdbox
+    assert out.index("for-jumpbar") < holdbox
     assert "QB: covered, no move." in out
     assert "TE One (TE) questionable." in out
     assert "Trade deadline is 4 weeks out." in out
@@ -403,7 +475,74 @@ def test_board_layout_folds_sections_and_orders_decisions_first():
     assert "Show table" in out and "Show all" in out
     assert "Nothing to decide" in out
     # Opponent line lives in the lineup evidence, inside the board.
-    assert out.index("Opponent missing") < out.index("for-jumpbar")
+    assert out.index("for-jumpbar") < out.index("Opponent missing")
+
+
+def test_jumpbar_omits_since_last_week_when_section_absent():
+    # Audit fix (2026-11-05): a jump button whose section never
+    # rendered is a dead control.
+    sc = _scenario()
+    data = _render_data(sc, _build(sc))
+    data["last_week"] = None
+    data["risers_7d"] = []
+    data["fallers_7d"] = []
+    out = fmod.render_front_office_report_html(data, _AI)
+    assert "data-for-jump='forBoard'" in out
+    assert "data-for-jump='forLastWeek'" not in out
+    assert "id='forLastWeek'" not in out
+    assert "data-for-jump='forReference'" in out
+
+
+def test_movers_by_sign_never_backfills_opposite_direction():
+    rows = [
+        {"id": "a", "name": "Up Big", "position": "RB", "trend_7d": 5.0},
+        {"id": "b", "name": "Up Mid", "position": "WR", "trend_7d": 3.0},
+        {"id": "c", "name": "Up Small", "position": "TE", "trend_7d": 1.0},
+        {"id": "d", "name": "Down One", "position": "RB", "trend_7d": -2.0},
+        {"id": "e", "name": "Flat", "position": "QB", "trend_7d": 0},
+        {"id": "f", "name": "No Data", "position": "QB", "trend_7d": None},
+    ]
+    rising = fmod._movers_by_sign(rows, rising=True)
+    falling = fmod._movers_by_sign(rows, rising=False)
+    assert [r["name"] for r in rising] == ["Up Big", "Up Mid", "Up Small"]
+    assert [r["name"] for r in falling] == ["Down One"]
+    assert fmod._movers_by_sign(rows[:3], rising=False) == []
+
+
+def test_card_week_result_never_fabricates_opponent_zero():
+    sc = _scenario()
+    data = _render_data(sc, _build(sc))
+    data["last_week"] = {"week": 8, "result": "W", "pf": 128.4,
+                         "pa": None, "opponent": ""}
+    card = fmod.render_front_office_card_html(data, _AI)
+    assert "W 128.4" in card
+    assert "128.4-0" not in card
+
+
+def test_last_week_result_unknown_opponent_is_not_a_tie():
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame([
+        {"week": 8, "points": 128.4, "roster_id": "7"},
+        {"week": 8, "points": 101.2, "roster_id": "3"},
+    ])
+    out = fmod._last_week_result({"df_weekly": df, "current_week": 9}, "7")
+    assert out is not None
+    assert out["pa"] is None
+    assert out["result"] == ""
+
+
+def test_tie_badge_uses_neutral_class_and_redraft_note_drops_dynasty():
+    base = {"last_week": {"week": 8, "result": "T", "pf": 128.4,
+                          "pa": 128.4, "opponent": "Partner B"},
+            "risers_7d": [], "fallers_7d": []}
+    out = fmod._changes_html(base)
+    assert "for-score-t" in out
+    assert "for-score-l" not in out
+    assert "dynasty trade-value rank" in out
+    redraft = dict(base, scoring_type="redraft")
+    out_r = fmod._changes_html(redraft)
+    assert "in trade-value rank" in out_r
+    assert "dynasty" not in out_r
 
 
 def test_waiver_evidence_labels_a_stash_add_if_one_is_ever_rendered():

@@ -20,6 +20,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import math
 from urllib.parse import quote_plus
 
 from dashboard_services.ai.cache import (
@@ -58,6 +59,22 @@ logger = logging.getLogger(__name__)
 # exact rank as role language ("RB18 type") and must not hit.
 CACHE_VERSION = "v8"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
+
+
+def _fmt_playoff_pct_display(value) -> str:
+    """Playoff odds for display: one decimal, floored, so an undecided
+    99.9 never rounds up to 100. A literal 100 / 0 appears only when the
+    raw value is exact (clinched / eliminated). Mirrors app.py's
+    _fmt_playoff_pct_display and the Playoff Odds page rule."""
+    try:
+        raw = float(value)
+    except (TypeError, ValueError):
+        return "0"
+    if raw >= 100:
+        return "100"
+    if raw <= 0:
+        return "0"
+    return f"{math.floor(raw * 10 + 1e-9) / 10:.1f}"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -205,7 +222,17 @@ def _last_week_result(ctx: dict, viewer_roster_id: str) -> dict | None:
                 foe = foes.iloc[0]
                 opp_pts = round(float(foe.get("points") or 0.0), 1)
                 opp_name = _safe_str(foe.get("owner") or foe.get("team_name") or "")
-        result = "W" if opp_pts is not None and my_pts > opp_pts else ("L" if opp_pts is not None and my_pts < opp_pts else "T")
+        # An unknown opponent score is NOT a tie: result stays empty
+        # and every consumer hides the result line rather than
+        # printing a fabricated T (or a 0 for the opponent).
+        if opp_pts is None:
+            result = ""
+        elif my_pts > opp_pts:
+            result = "W"
+        elif my_pts < opp_pts:
+            result = "L"
+        else:
+            result = "T"
         return {"week": last, "result": result, "pf": my_pts, "pa": opp_pts, "opponent": opp_name}
     except Exception:
         logger.debug("[front-office] last-week lookup failed", exc_info=True)
@@ -1301,17 +1328,26 @@ def _build_decision_moves(*, trade_targets: list[dict],
             i for i, cand_p in enumerate(potential_targets)
             if not _rebuild_age_block(cand_p.get("age"), rebuilding)
         ][:2]
-        if pot_idx:
-            p = potential_targets[pot_idx[0]]
+        # Each potential target is its own move: bundling a second
+        # target inside the first target's evidence made it read as
+        # part of that deal (Kaedon, 2026-11-05: Javonte Williams
+        # inside Target Bhayshul Tuten).
+        for n_pot, idx in enumerate(pot_idx):
+            p = potential_targets[idx]
             gap = int(p.get("gap_pct") or 0)
-            why_bits = ["Top gettable target at a position you need."]
+            lead = (
+                "Top gettable target at a position you need."
+                if n_pot == 0
+                else "Another gettable target at a position you need."
+            )
+            why_bits = [lead]
             if gap:
                 why_bits.append(f"Your surplus package reaches about {gap}% of his value.")
             moves.append({
                 "kind": "potential", "type": "Trade", "timing": "This week",
                 "line": f"Target {p.get('name')} ({p.get('position')})",
                 "why": " ".join(why_bits), "after": "", "dep": None,
-                "potential_indices": pot_idx,
+                "potential_indices": [idx],
             })
 
     # 4. Lineup move: a lineup starter who cannot play (OUT or worse)
@@ -1925,6 +1961,29 @@ def _exclude_hurt_waiver_targets(waiver_targets: list[dict],
     return targets
 
 
+def _movers_by_sign(rows: list[dict], *, rising: bool, n: int = 3) -> list[dict]:
+    """Top 7-day rank movers in ONE direction. The sign filter is the
+    point: without it, when fewer than n players moved the requested
+    way, the other column backfilled with players who moved the
+    OPPOSITE way and rendered them with the wrong arrow (Kaedon
+    audit, 2026-11-05)."""
+    cands = []
+    for r in rows or []:
+        t = r.get("trend_7d")
+        if not t:
+            continue
+        if rising and t > 0:
+            cands.append(r)
+        elif not rising and t < 0:
+            cands.append(r)
+    cands.sort(key=lambda r: r["trend_7d"], reverse=rising)
+    return [
+        {"id": r.get("id"), "name": r["name"], "position": r["position"],
+         "trend_7d": r["trend_7d"]}
+        for r in cands[:n]
+    ]
+
+
 def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
                             model_value_lookup: dict | None = None,
                             roster_rows: list | None = None,
@@ -1958,12 +2017,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
         weakest = [g["pos"] for g in sorted(grades, key=lambda g: g["rank"], reverse=True)[:2]]
 
     def _movers(rows: list[dict], *, rising: bool, n: int = 3) -> list[dict]:
-        cands = [r for r in rows if r.get("trend_7d")]
-        cands.sort(key=lambda r: r["trend_7d"], reverse=rising)
-        return [
-            {"id": r.get("id"), "name": r["name"], "position": r["position"], "trend_7d": r["trend_7d"]}
-            for r in cands[:n]
-        ]
+        return _movers_by_sign(rows, rising=rising, n=n)
 
     last_week = _last_week_result(ctx, viewer_roster_id)
     this_week = _this_week_matchup(ctx, viewer_roster_id)
@@ -2468,7 +2522,8 @@ def render_front_office_card_html(data: dict, ai: dict) -> str:
     pct = data.get("playoff_pct")
     if pct is not None:
         try:
-            keys.append(("Playoff odds", f"{float(pct):.0f}%"))
+            float(pct)
+            keys.append(("Playoff odds", f"{_fmt_playoff_pct_display(pct)}%"))
         except (TypeError, ValueError):
             pass
     grades = data.get("grades") or []
@@ -2478,7 +2533,11 @@ def render_front_office_card_html(data: dict, ai: dict) -> str:
     lw = data.get("last_week") or {}
     if lw.get("result") and lw.get("pf") is not None:
         opp = f" vs {html.escape(lw['opponent'])}" if lw.get("opponent") else ""
-        keys.append((f"Week {lw.get('week')} result", f"{lw['result']} {lw['pf']}-{lw['pa'] or 0}{opp}"))
+        # Mirror _changes_html: an unknown opponent score renders as
+        # no score pair at all, never as a fabricated "-0".
+        pa = lw.get("pa")
+        score_txt = f"{lw['pf']}-{pa}" if pa is not None else f"{lw['pf']}"
+        keys.append((f"Week {lw.get('week')} result", f"{lw['result']} {score_txt}{opp}"))
     keys = keys[:3]
     keys_html = "".join(
         f"<li><span class='for-key-k'>{html.escape(k)}</span>"
@@ -2580,7 +2639,12 @@ def _changes_html(data: dict) -> str:
         opp = f" vs {html.escape(lw['opponent'])}" if lw.get("opponent") else ""
         pa = lw.get("pa")
         score = f"{lw['pf']}-{pa}" if pa is not None else f"{lw['pf']}"
-        badge = "for-score-w" if str(lw["result"]).upper().startswith("W") else "for-score-l"
+        _res = str(lw["result"]).upper()
+        badge = (
+            "for-score-w" if _res.startswith("W")
+            else "for-score-l" if _res.startswith("L")
+            else "for-score-t"
+        )
         score_html = (
             "<div class='for-score-row'>"
             f"<span class='{badge}'>{html.escape(str(lw['result']))}</span>"
@@ -2604,10 +2668,13 @@ def _changes_html(data: dict) -> str:
             f"<ul class='for-moves'>{''.join(downs)}</ul></div>"
         )
     moves_html = f"<div class='for-two-col for-moves-cols'>{''.join(cols)}</div>" if cols else ""
+    # The rank these movers are measured on is the league's own value
+    # model: call it dynasty only in dynasty leagues.
+    fmt_word = "" if str(data.get("scoring_type") or "").lower() == "redraft" else "dynasty "
     return (
         "<div class='for-sec'><div class='for-sec-title'>Since last week</div>"
         f"{score_html}{moves_html}"
-        "<div class='for-sec-note'>Spots gained or lost in dynasty trade-value rank vs 7 days ago.</div>"
+        f"<div class='for-sec-note'>Spots gained or lost in {fmt_word}trade-value rank vs 7 days ago.</div>"
         "</div>"
     )
 
@@ -3189,11 +3256,26 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     # alert are folded into it, and grades + roster drop to Reference.
     board_html = _decision_board_html(data, ai)
     if board_html:
-        jump_html = (
-            "<div class='for-jumpbar'><a href='#forBoard'>Do this first</a>"
-            "<a href='#forLastWeek'>Since last week</a>"
-            "<a href='#forReference'>Reference</a></div>"
+        # Buttons, not anchor links: an <a href='#...'> changes the URL
+        # hash and reloads / re-routes the page from inside the modal.
+        # The app.js handler for [data-for-jump] scrolls the modal body
+        # to the target with no navigation. The bar sits ABOVE the
+        # board it navigates (Kaedon, 2026-11-05).
+        # Only offer jumps to sections that actually rendered: the
+        # Since last week section is omitted entirely when there is no
+        # last-week result and no movers, and a button with no target
+        # is a dead control (Kaedon audit, 2026-11-05).
+        jump_buttons = [
+            "<button type='button' data-for-jump='forBoard'>Do this first</button>"
+        ]
+        if changes_html:
+            jump_buttons.append(
+                "<button type='button' data-for-jump='forLastWeek'>Since last week</button>"
+            )
+        jump_buttons.append(
+            "<button type='button' data-for-jump='forReference'>Reference</button>"
         )
+        jump_html = f"<div class='for-jumpbar'>{''.join(jump_buttons)}</div>"
         changes_wrapped = (
             f"<div id='forLastWeek'>{changes_html}</div>" if changes_html else ""
         )
@@ -3213,8 +3295,8 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
       </div>
       <h3 class='for-headline'>{headline}</h3>
       {posture_html}
-      {board_html}
       {jump_html}
+      {board_html}
       {changes_wrapped}
       {reference_html}
     </div>
@@ -3254,8 +3336,9 @@ def _hero_chips_html(week, rec, pct, trade_deadline=None) -> str:
         chips.append(f"<span class='for-chip'>{html.escape(str(rec))}</span>")
     if pct is not None:
         try:
+            float(pct)
             chips.append(
-                f"<span class='for-chip for-chip-hot'>{float(pct):.0f}% playoff odds</span>"
+                f"<span class='for-chip for-chip-hot'>{_fmt_playoff_pct_display(pct)}% playoff odds</span>"
             )
         except (TypeError, ValueError):
             pass

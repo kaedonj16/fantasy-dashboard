@@ -147,7 +147,7 @@ def _render(data=None, ai=None):
 def test_hero_renders_chips_not_dot_meta():
     out = _render()
     assert "for-hero" in out
-    assert "Week 3" in out and "2-0" in out and "99% playoff odds" in out
+    assert "Week 3" in out and "2-0" in out and "99.4% playoff odds" in out
     assert "for-report-meta" not in out
     assert "CONTENDER" in out  # verdict stamp still present
 

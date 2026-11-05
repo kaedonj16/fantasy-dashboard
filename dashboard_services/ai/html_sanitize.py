@@ -11,13 +11,54 @@ from typing import Iterable
 from urllib.parse import urlparse
 
 # Tags the AI renderer / fallbacks emit. Anything else is dropped (contents kept).
+# ``details`` / ``summary`` are here because the Front Office board and
+# Reference sections are built on them: without the tags, the Evidence
+# toggles rendered as loose unstyled text (Kaedon, 2026-11-05).
 _ALLOWED_TAGS = frozenset({
     "p", "div", "span", "strong", "em", "b", "i", "ul", "ol", "li", "br",
     "h3", "h4", "table", "thead", "tbody", "tr", "th", "td", "a", "button",
+    "details", "summary",
 })
 _VOID_TAGS = frozenset({"br"})
 # Global attrs safe on any allowed tag. ``href`` is validated separately on <a>.
 _ALLOWED_ATTRS = frozenset({"class", "id"})
+# Inline style is how several deterministic renderers carry data-driven
+# presentation (verdict stamp colors, grade-bar widths, avatar colors).
+# It survives only as whitelisted properties with inert values: no
+# url(), no expression(), nothing that can load or execute.
+_SAFE_STYLE_PROPS = frozenset({
+    "color", "background", "background-color", "border", "border-color",
+    "border-radius", "width", "min-width", "max-width", "height",
+    "min-height", "max-height", "margin", "margin-top", "margin-bottom",
+    "margin-left", "margin-right", "padding", "padding-top",
+    "padding-bottom", "padding-left", "padding-right", "opacity",
+    "display", "font-weight", "font-size", "font-style", "text-align",
+    "text-transform", "text-decoration", "line-height", "letter-spacing",
+    "white-space", "vertical-align", "flex", "flex-basis", "flex-wrap",
+    "gap", "align-items", "justify-content", "cursor", "position",
+    "top", "left", "right", "bottom", "z-index", "overflow",
+    "box-shadow", "float", "clear",
+})
+_BANNED_STYLE_TOKENS = (
+    "url", "expression", "javascript", "behavior", "-moz-binding",
+    "<", ">", "\\", "@", "/*",
+)
+
+
+def _safe_style(value: str) -> str | None:
+    decls = []
+    for part in (value or "").split(";"):
+        if ":" not in part:
+            continue
+        prop, val = part.split(":", 1)
+        prop = prop.strip().lower()
+        val = val.strip()
+        if prop not in _SAFE_STYLE_PROPS or not val:
+            continue
+        if any(tok in val.lower() for tok in _BANNED_STYLE_TOKENS):
+            continue
+        decls.append(f"{prop}:{val}")
+    return ";".join(decls) if decls else None
 
 
 def _safe_href(value: str) -> str | None:
@@ -64,6 +105,20 @@ class _AllowlistParser(HTMLParser):
                 href = _safe_href(val or "")
                 if href is not None:
                     safe_attrs.append(f'href="{_escape_attr(href)}"')
+                continue
+            if tag_l == "details" and n == "open":
+                safe_attrs.append("open")
+                continue
+            if n == "style":
+                cleaned = _safe_style(val or "")
+                if cleaned is not None:
+                    safe_attrs.append(f'style="{_escape_attr(cleaned)}"')
+                continue
+            # data-* attributes are inert data hooks the site's own JS
+            # delegation reads (player modal, report jump buttons);
+            # stripping them silently disabled those controls.
+            if n.startswith("data-") and val is not None:
+                safe_attrs.append(f'{n}="{_escape_attr(val)}"')
                 continue
             if n in _ALLOWED_ATTRS and val is not None:
                 safe_attrs.append(f'{n}="{_escape_attr(val)}"')
