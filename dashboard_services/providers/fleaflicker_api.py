@@ -1136,6 +1136,16 @@ class FleaflickerProvider(ProviderAdapter):
         }
         if max_keepers > 0:
             settings["max_keepers"] = max_keepers
+        # Division play is published only as the standings payload's
+        # divisions[] grouping: expose the count on settings and the
+        # names as league metadata division_N (division_name_map reads
+        # both). Flat leagues (single bucket) stay division-free.
+        div_names = self._divisions_from_standings(standings or {})["names"]
+        metadata: dict[str, Any] = {"provider": "fleaflicker"}
+        if len(div_names) >= 2:
+            settings["divisions"] = len(div_names)
+            for idx in sorted(div_names):
+                metadata[f"division_{idx}"] = div_names[idx]
         return {
             "league_id": str(_get(league, "id") or league_id),
             "season": int(_get(standings or {}, "season") or season),
@@ -1145,7 +1155,7 @@ class FleaflickerProvider(ProviderAdapter):
             "settings": settings,
             "scoring_settings": self._scoring(rules),
             "roster_positions": self._positions(rules, league=league),
-            "metadata": {"provider": "fleaflicker"},
+            "metadata": metadata,
         }
 
     def get_users(self, league_id, season, *, token: Optional[str] = None):
@@ -1368,15 +1378,23 @@ class FleaflickerProvider(ProviderAdapter):
         xwalk = self._canonical_map(league_id, season, token=token)
         team_names = {}
         team_settings = {}
+        team_divisions = {}
         try:
             standings = self._call(
                 "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
             )
+            team_divisions = self._divisions_from_standings(standings)["by_team"]
             for team in self._teams_from_standings(standings):
                 tid = _get(team, "id")
                 if tid is not None:
                     team_names[str(tid)] = _get(team, "name") or f"Team {tid}"
                     team_settings[str(tid)] = self._settings_from_standings_team(team)
+                    # Division play lives only in the standings payload's
+                    # divisions[] grouping; stamp it here or standings
+                    # render flat (resolve_divisions reads settings).
+                    div = team_divisions.get(str(tid))
+                    if div:
+                        team_settings[str(tid)]["division"] = div[0]
         except Exception:
             logger.debug("Fleaflicker standings unavailable for roster names", exc_info=True)
         out = []
@@ -1454,6 +1472,15 @@ class FleaflickerProvider(ProviderAdapter):
                 if cid not in starter_set and "start" in display:
                     starters.append(cid)
                     starter_set.add(cid)
+            roster_metadata = {
+                "unmapped_player_count": max(0, len(entries) - mapped_flat),
+                "provider_team_id": str(team_id),
+                "team_name": team_name,
+            }
+            div = team_divisions.get(str(team_id))
+            if div:
+                # division_name_map reads the label off roster metadata.
+                roster_metadata["division_name"] = div[1]
             out.append({
                 "league_id": str(league_id), "roster_id": _int(team_id),
                 "owner_id": str(team_id), "players": players,
@@ -1464,11 +1491,7 @@ class FleaflickerProvider(ProviderAdapter):
                     "fpts_against": 0, "fpts_against_decimal": 0,
                     "ppts": 0, "ppts_decimal": 0, "total_moves": 0,
                     "waiver_budget_used": 0, "waiver_position": 0,
-                }, "metadata": {
-                    "unmapped_player_count": max(0, len(entries) - mapped_flat),
-                    "provider_team_id": str(team_id),
-                    "team_name": team_name,
-                },
+                }, "metadata": roster_metadata,
             })
             # "keepers" is present only when the feed supplied
             # designation data for this roster (Wave 1): key presence is
@@ -2124,6 +2147,42 @@ class FleaflickerProvider(ProviderAdapter):
                 if isinstance(team, dict):
                     teams.append(team)
         return teams
+
+    @staticmethod
+    def _divisions_from_standings(standings: dict) -> dict:
+        """Division assignments from the standings payload.
+
+        Returns ``{"by_team": {team_id_str: (index, name)}, "names":
+        {index: name}}`` with 1-based indexes in payload order, or an
+        empty by_team/names when the league is flat. Fleaflicker groups
+        standings teams under ``divisions[]`` (92916: "Division 1/2/3"
+        x 4 teams); a flat league arrives as a single bucket (or the
+        bare ``teams[]`` fallback), which is NOT division play and must
+        stay division-free, so anything short of two populated buckets
+        yields no divisions.
+        """
+        empty = {"by_team": {}, "names": {}}
+        divisions = [
+            d for d in (standings or {}).get("divisions") or []
+            if isinstance(d, dict)
+        ]
+        if len(divisions) < 2:
+            return empty
+        by_team: dict = {}
+        names: dict = {}
+        for idx, division in enumerate(divisions, 1):
+            name = _get(division, "name")
+            name = str(name).strip() if name else f"Division {idx}"
+            names[idx] = name
+            for team in division.get("teams") or []:
+                if not isinstance(team, dict):
+                    continue
+                tid = _get(team, "id")
+                if tid is not None:
+                    by_team[str(tid)] = (idx, name)
+        if len({idx for idx, _ in by_team.values()}) < 2:
+            return empty
+        return {"by_team": by_team, "names": names}
 
     @staticmethod
     def _roster_position_rows(rules: dict, league: Optional[dict] = None) -> list:

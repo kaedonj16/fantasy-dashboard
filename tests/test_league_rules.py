@@ -81,6 +81,66 @@ def test_derived_beats_default(store):
     assert out["playoff_teams"] == 8
 
 
+def test_stored_derived_full_league_field_is_poison_and_reresolved(store):
+    # 92916 regression: the scoreboard-count deriver stored 12 of 12
+    # (consolation games counted as playoff matches) for a true 8-team
+    # field, and the overlay stamped 100% odds / all-clinched. A stored
+    # DERIVED record at league size must be treated as absent.
+    store["stored"] = _record(
+        source=lr.SOURCE_DERIVED, playoff_teams=12, playoff_week_start=15,
+    )
+    out = lr.resolve_league_rules(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12, deriver=lambda p, l, s: None,
+    )
+    assert out["source"] == lr.SOURCE_DEFAULT
+    assert out["playoff_teams"] == 6
+    # The default store overwrites the poisoned row.
+    assert store["saved"][-1]["source"] == lr.SOURCE_DEFAULT
+
+
+def test_fresh_derivation_at_league_size_is_never_stored(store):
+    out = lr.resolve_league_rules(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12,
+        deriver=lambda p, l, s: {"playoff_teams": 12,
+                                 "playoff_week_start": 15},
+    )
+    assert out["source"] == lr.SOURCE_DEFAULT
+    assert all(s["source"] != lr.SOURCE_DERIVED for s in store["saved"])
+
+
+def test_stored_derived_sane_field_still_wins(store):
+    store["stored"] = _record(
+        source=lr.SOURCE_DERIVED, playoff_teams=8, playoff_week_start=15,
+    )
+    out = lr.resolve_league_rules(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12, deriver=lambda p, l, s: None,
+    )
+    assert out["source"] == lr.SOURCE_DERIVED
+    assert out["playoff_teams"] == 8
+
+
+def test_user_confirmed_full_league_field_is_untouched(store):
+    # A confirmed 12-of-12 is the user's call, not deriver poison.
+    store["stored"] = _record(
+        source=lr.SOURCE_USER_CONFIRMED, playoff_teams=12,
+        playoff_week_start=15,
+    )
+    out = lr.resolve_league_rules(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12, deriver=lambda p, l, s: None,
+    )
+    assert out["source"] == lr.SOURCE_USER_CONFIRMED
+    assert out["playoff_teams"] == 12
+    assert store["saved"] == []
+
+
 def test_default_unverified_when_nothing_better(store):
     out = lr.resolve_league_rules(
         "fleaflicker", "92916", 2026,
