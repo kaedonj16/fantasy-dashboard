@@ -149,8 +149,10 @@ def test_keyword_trade_verb_forms_and_accept_anchor(keyword):
     assert _intent(keyword, "Should I accept Gibbs for Bijan and a second?")["intent"] == "trade_eval"
 
 
-def test_keyword_trade_deadline_date_question_is_out_of_scope(keyword):
-    assert _intent(keyword, "When is the trade deadline?")["intent"] == "out_of_scope"
+def test_keyword_trade_deadline_date_question_is_league_settings(keyword):
+    out = _intent(keyword, "When is the trade deadline?")
+    assert out["intent"] == "league_settings"
+    assert out["entities"]["settings_topic"] == "deadline"
     # A finding ask that merely mentions the deadline still finds a trade.
     assert _intent(keyword, "Who should I target before the trade deadline?")["intent"] == "trade_finding"
 

@@ -15,7 +15,7 @@ INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player"
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
            "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity", "watchlist", "front_office",
-           "gm_directive", "live", "draft", "nfl_schedule",
+           "gm_directive", "live", "draft", "nfl_schedule", "league_settings",
            "open", "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -56,12 +56,13 @@ SCHEMA = {
         "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
         "replace_mode": {"type": ["string", "null"], "enum": ["younger", "older", "cheaper", None]},
         "waiver_mode": {"type": ["string", "null"], "enum": ["stash", "drop", "stream", None]},
+        "settings_topic": {"type": ["string", "null"], "enum": ["deadline", "playoffs", "waivers", "all", None]},
         "value_in_picks": {"type": ["boolean", "null"]},
         "shop_pool": {"type": ["boolean", "null"]},
         "slot": {"type": ["string", "null"]},
         "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "give_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "day_hint", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "positions", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "give_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "day_hint", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "positions", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "settings_topic", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
     "additionalProperties": False,
 }
 
@@ -146,6 +147,13 @@ SYSTEM = (
     "strength, NOT the win-loss standings table. "
     "standings: the standings table itself, records, points for, seeds, or division races; the "
     "win-loss table, NOT power rankings. "
+    "league_settings: a question about the league's own rules or settings, not advice: "
+    "when the trade deadline is (settings_topic deadline), when the playoffs start or how "
+    "many teams make them (settings_topic playoffs), or how waivers work in this league, "
+    "the waiver system, FAAB budget, or when waivers process (settings_topic waivers). "
+    "A bare league settings or league rules question is league_settings with settings_topic "
+    "all. Asking what to do before the deadline, playoff odds, or who to add from waivers "
+    "keeps its own intent, never league_settings. "
     "matchup: a head-to-head matchup preview, a win probability between two teams this week, "
     "or ANY question about the outcome of the user's own game this week: will I win, am I "
     "going to win, do I beat X, what are my chances, am I projected to win, will I lose. "
@@ -659,15 +667,55 @@ _OUTCOME_RE = re.compile(
     r"|\bwho wins (my|our) (game|matchup)\b"
     r"|\bam i favored\b|\bam i the favorite\b")
 
-# Trade-deadline date questions: they mention a trade but ask for a date,
-# which no evidence pack can answer. Narrow on purpose (a date-seeking
-# shape) so deal questions that merely mention the deadline still route
-# to their trade intent.
+# League-settings questions: the league's own rules (trade deadline,
+# playoff start / field, waiver system), answered deterministically from
+# the league settings the bundle already carries. Narrow on purpose
+# (settings-seeking shapes) so advice questions that merely mention the
+# deadline, the playoffs, or waivers still route to their own intents.
 _DEADLINE_RE = re.compile(
     r"\bwhen is (the |our |my )?trade deadline\b"
     r"|\bwhat (date|day) is (the |our |my )?trade deadline\b"
     r"|\bwhat is (the |our |my )?trade deadline\b"
-    r"|\btrade deadline (date|day)\b")
+    r"|\btrade deadline (date|day)\b"
+    r"|\bwhen (do|does) trades? (stop|close|end)\b"
+    r"|\bhow long do i have to (make|do) trades?\b")
+
+_SETTINGS_PLAYOFFS_RE = re.compile(
+    r"\bwhen do(es)? (the )?playoffs? (start|begin)\b"
+    r"|\bwhat week do(es)? (the )?playoffs? (start|begin)\b"
+    r"|\bplayoffs? (start|begin) (week|when)\b"
+    r"|\bhow many (teams|people) (make|get into|are in) (the )?playoffs?\b"
+    r"|\bhow many playoff teams\b"
+    r"|\bplayoff format\b")
+
+_SETTINGS_WAIVERS_RE = re.compile(
+    r"\bhow do(es)? waivers? work\b"
+    r"|\bwaiver (system|type|settings|process)\b"
+    r"|\bwhat('s| is) (my|our|the) waiver (budget|system|type)\b"
+    r"|\bwhen do(es)? waivers? (process|run|clear)\b"
+    r"|\b(do we|does (my|our|the) league|is (my|our|the) league) use faab\b"
+    r"|\bfaab league\b")
+
+_SETTINGS_ALL_RE = re.compile(
+    r"\bwhat are (the |my |our )?league (settings|rules)\b"
+    r"|\bleague settings\b")
+
+
+def _settings_topic_in(m: str):
+    """The league-settings topic a message asks about, or None.
+
+    Deadline shapes live in _DEADLINE_RE (they sit in the trade section,
+    after the finding rule); this helper covers the playoff and waiver
+    shapes, which must be claimed before the generic playoff and waiver
+    rules below eat them.
+    """
+    if _SETTINGS_ALL_RE.search(m):
+        return "all"
+    if _SETTINGS_PLAYOFFS_RE.search(m):
+        return "playoffs"
+    if _SETTINGS_WAIVERS_RE.search(m):
+        return "waivers"
+    return None
 
 # Player fallthrough for the keyword fallback, the last resort before
 # out_of_scope: bare player questions ("How is Puka Nacua doing?") carry
@@ -1205,6 +1253,14 @@ def _keyword_route(message: str) -> dict:
         # "Playoff stretch" names the schedule window (weeks 15-17), not the
         # odds question; it is the one phrase that outranks the playoff rule.
         return {**base, "intent": "schedule"}
+    _settings_topic = _settings_topic_in(m)
+    if _settings_topic is not None:
+        # League-settings shapes ("when do playoffs start", "how do
+        # waivers work in my league") ask for the league's rules, not
+        # odds or waiver advice: claimed here, before the generic
+        # playoff and waiver rules below would eat them.
+        return {**base, "intent": "league_settings",
+                "settings_topic": _settings_topic}
     if re.search(r"playoff|postseason|clinch|eliminat", m):
         return {**base, "intent": "playoffs", "season": _season_in(m)}
     if re.search(r"power ranking|power rank|team to beat|strongest team", m):
@@ -1359,11 +1415,12 @@ def _keyword_route(message: str) -> dict:
     if _FINDING_RE.search(m):
         return {**base, "intent": "trade_finding", "target_position": _target_position(m)}
     if _DEADLINE_RE.search(m):
-        # "When is the trade deadline?" asks for a date, not a deal: the
-        # trade_eval pack needs two sides and cannot answer it. Placed
-        # after the finding rule so "target before the trade deadline"
-        # still finds a trade.
-        return {**base, "intent": "out_of_scope"}
+        # "When is the trade deadline?" asks for the league's deadline,
+        # not a deal: the league_settings pack answers it from the
+        # league settings. Placed after the finding rule so "target
+        # before the trade deadline" still finds a trade.
+        return {**base, "intent": "league_settings",
+                "settings_topic": "deadline"}
     # Worth-in-picks: a named player plus a pick-value phrasing is a
     # finding question (what his value buys in picks), not an evaluation
     # of a deal and not a metric. Placed before the trade anchor so
