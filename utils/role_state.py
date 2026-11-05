@@ -505,11 +505,41 @@ def get_role_states(ctx: dict, week: int) -> dict:
             and isinstance(memo.get("states"), dict):
         return memo["states"]
     states = build_role_states(ctx, week)
+    _snapshot_hook(ctx, week, states)
     try:
         ctx["_role_states"] = {"week": week, "states": states}
     except Exception:
         pass
     return states
+
+
+def _snapshot_hook(ctx: dict, week: int, states: dict) -> None:
+    """Frontier 1: persist this week's role map and annotate changes.
+
+    Runs only for the ctx's CURRENT week (historical and future-week
+    derivations are not snapshots of anything real), and only when the
+    snapshot store is reachable. Each entry gains
+    ``change_since_last_week`` when the prior week's snapshot shows a
+    real change; the current week is then captured for next week's
+    diff. Fail-soft: any problem leaves the states untouched.
+    """
+    try:
+        current = ctx.get("current_week")
+        if current is None or int(current) != int(week):
+            return
+        from utils import role_snapshots
+
+        prior = role_snapshots.latest_prior_snapshot(ctx, week)
+        if prior is not None:
+            changes = role_snapshots.diff_states(
+                prior[1], role_snapshots.compact_states(ctx, states))
+            for pid, change in changes.items():
+                entry = states.get(pid)
+                if isinstance(entry, dict):
+                    entry["change_since_last_week"] = change
+        role_snapshots.capture_snapshot(ctx, week, states)
+    except Exception:
+        pass
 
 
 def role_chip(role_entry: Any) -> Optional[dict]:

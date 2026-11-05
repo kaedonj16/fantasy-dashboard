@@ -8163,6 +8163,78 @@ def build_front_office(bundle, entities=None, player_ids=None) -> tuple[dict, li
     return pack, tools
 
 
+def build_gm_directive(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """GM directive pack (Parity 1): decided calls for an open-ended
+    "what should I do" question, drawn from the GM brief — the same
+    decision layer that sequences the dashboard's Next Steps queue
+    (race line on the true field, coverage holes, claim cards, stash
+    holds from real return horizons). The assistant had no brief
+    access before this pack; it advises only, the user executes.
+    Not premium-gated: the queue this mirrors is shown to every
+    signed-in user on their league page."""
+    tools: list[str] = []
+    pack = _base_pack("gm_directive", bundle)
+    ctx = bundle.get("ctx") or {}
+    roster = bundle.get("roster") or {}
+    if not ctx or roster.get("roster_id") is None:
+        pack["available"] = False
+        pack["missing"] = "your roster in this league"
+        return pack, tools
+    try:
+        from dashboard_services.gm_brief import build_gm_brief
+        brief = build_gm_brief(ctx, str(roster["roster_id"]))
+        tools.append("gm_brief.build_gm_brief")
+    except Exception:
+        logger.debug("[assistant] gm brief failed", exc_info=True)
+        brief = None
+    if not brief:
+        pack["available"] = False
+        pack["missing"] = "a GM brief for your team yet"
+        return pack, tools
+    directives: list[dict] = []
+    race = brief.get("race_line") or {}
+    path = race.get("path") or {}
+    if path.get("win_and_in"):
+        directives.append({
+            "kind": "race", "call": "Win this week and you are in",
+            "why": path.get("note") or race.get("text")})
+    elif race.get("text"):
+        directives.append({"kind": "race", "call": race["text"],
+                           "why": path.get("note")})
+    for claim in (brief.get("claims") or [])[:2]:
+        call = claim.get("action")
+        if not call:
+            continue
+        why = claim.get("brief_reason") or claim.get("why")
+        if claim.get("funding_text"):
+            why = ((why + " " if why else "")
+                   + f"({claim['funding_text']})")
+        if claim.get("culture_note"):
+            why = ((why + " " if why else "")
+                   + str(claim["culture_note"]))
+        directives.append({"kind": "waiver", "call": call, "why": why})
+    coverage = brief.get("coverage") or {}
+    for hole in (coverage.get("holes") or [])[:2]:
+        directives.append({
+            "kind": "coverage",
+            "call": (f"Fix your {hole.get('position')} hole in "
+                     f"Week {hole.get('week')}"),
+            "why": (f"Only {hole.get('count')} of "
+                    f"{hole.get('required')} startable "
+                    f"{hole.get('position')} that week")})
+    for stash in (brief.get("return_horizons") or [])[:2]:
+        directives.append({
+            "kind": "stash",
+            "call": f"Hold {stash.get('name')}",
+            "why": (f"Back Week {stash.get('return_week')}: "
+                    f"{stash.get('weeks_of_coverage')} weeks of "
+                    "coverage")})
+    pack["directives"] = directives[:5]
+    pack["race_line"] = race.get("text")
+    pack["league_culture"] = brief.get("league_culture")
+    return pack, tools
+
+
 # -- live in-game -----------------------------------------------------------------
 
 def build_live(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
@@ -9031,6 +9103,7 @@ BUILDERS = {
     "activity": build_activity,
     "watchlist": build_watchlist,
     "front_office": build_front_office,
+    "gm_directive": build_gm_directive,
     "live": build_live,
     "draft": build_draft,
     "nfl_schedule": build_nfl_schedule,

@@ -716,7 +716,7 @@ def build_race_line(ctx, viewer_roster_id, rules=None) -> dict | None:
         bits.append(f"{sign}{_fmt_pf(pf_delta)} PF on {rival_name} ({tiebreak})")
     if h2h:
         bits.append(f"{' and '.join(h2h[:2])} still to play")
-    return {
+    line = {
         "seed": seed,
         "record": record,
         "wins": viewer["wins"],
@@ -732,6 +732,25 @@ def build_race_line(ctx, viewer_roster_id, rules=None) -> dict | None:
         "source": rules.get("source"),
         "text": " · ".join(bits),
     }
+    # Frontier 2: the forward path (remaining schedules for the
+    # viewer and the cut-line window, win-and-in status, magic
+    # number). Fail closed: no path key at all when the slate or
+    # the season shape cannot support honest math.
+    try:
+        from utils.race_path import build_race_path
+
+        path = build_race_path(
+            rows, ctx.get("matchups_by_week") or {},
+            current_week=_i(ctx.get("current_week") or ctx.get("week"))
+            or 0,
+            playoff_teams=int(playoff_teams),
+            regular_season_end=_regular_season_end(ctx, rules),
+            viewer_roster_id=viewer_roster_id)
+        if path:
+            line["path"] = path
+    except Exception:
+        pass
+    return line
 
 
 def _ordinal(n) -> str:
@@ -836,6 +855,13 @@ def build_gm_brief(ctx, viewer_roster_id, actions=None, now=None) -> dict:
         and (a.get("partner") or a.get("acceptance_rate") is not None)
         for a in ranked
     )
+    culture = {}
+    try:
+        from utils.league_culture import fetch_culture
+
+        culture = fetch_culture(ctx) or {}
+    except Exception:
+        culture = {}
     return {
         "week": week,
         "actions": ranked,
@@ -844,6 +870,8 @@ def build_gm_brief(ctx, viewer_roster_id, actions=None, now=None) -> dict:
         "qb_coverage": coverage,
         "bye_panel": bye_panel,
         "claims": claims,
+        "league_culture": culture or None,
+        "return_horizons": build_return_horizons(ctx, viewer_roster_id),
         "layers": {
             "rules": rules.get("source"),
             "roles": roles_present,
@@ -992,6 +1020,25 @@ def _funding_sources(ctx, viewer_roster_id, index):
             "detail": f"Drop {player_name(ctx, pid, index)}",
         })
     candidates.sort(key=lambda c: (c["value"], c["name"]))
+    # Frontier 7 (bench as portfolio): funding order is weakest
+    # PATH to value first, not lowest sticker price — the handcuff
+    # to your own starter is not the drop just because his market
+    # value is small. No portfolio (no depth/role data) keeps the
+    # value order untouched.
+    try:
+        from utils.bench_portfolio import drop_order
+
+        order = drop_order(ctx, viewer_roster_id)
+        if order:
+            rank = {pid: i for i, pid in enumerate(order)}
+            candidates.sort(key=lambda c: (
+                rank.get(c["player_id"], len(rank)),
+                c["value"], c["name"]))
+            for c in candidates:
+                if rank.get(c["player_id"], len(rank)) < len(rank):
+                    c["path_rank"] = rank[c["player_id"]]
+    except Exception:
+        pass
     return ir_moves, candidates
 
 
@@ -1083,7 +1130,142 @@ def build_claims(ctx, viewer_roster_id, actions, rules=None) -> list:
         if blocker:
             action["blocker"] = blocker
         claims.append(claim)
+    # Frontier 6 (league culture): evidenced customs bend the claim
+    # card's advice — a QB stash in a hoarding league, a DST claim
+    # in a streaming league. No signal, no note.
+    try:
+        from utils.league_culture import claim_culture_note, fetch_culture
+
+        profile = fetch_culture(ctx)
+        if profile:
+            for claim in claims:
+                note = claim_culture_note(profile, claim)
+                if note:
+                    claim["culture_note"] = note
+    except Exception:
+        pass
+    # Frontier 5 (return horizons): a fill-in claim is worth the
+    # weeks until the starter ahead of him returns. The horizon
+    # comes only from a real ESPN return date; with no date there
+    # is no coverage block and no guessed number of weeks.
+    try:
+        _attach_claim_coverage(ctx, claims, index)
+    except Exception:
+        pass
     return claims
+
+
+def _attach_claim_coverage(ctx, claims, index) -> None:
+    """Attach ``coverage`` to claims whose value is a vacancy window.
+
+    The claim's player is a fill-in when an out starter sits ahead
+    of him on his own depth chart. ``coverage`` names that starter,
+    the weeks until his ESPN return date, and the return week. Any
+    missing piece (no starter ahead, no date) leaves the claim
+    untouched.
+    """
+    import math
+
+    from dashboard_services.injury_return import weeks_out_for_player
+
+    week = _i(ctx.get("current_week") or ctx.get("week")) or 0
+    for claim in claims:
+        pid = str(claim.get("player_id") or "")
+        if not pid:
+            continue
+        info = player_info(ctx, pid, index)
+        team = player_team(info)
+        pos = player_pos(info)
+        if not team or not pos:
+            continue
+        my_order = info.get("depth_chart_order")
+        try:
+            my_order = int(my_order) if my_order is not None else None
+        except (TypeError, ValueError):
+            my_order = None
+        if not my_order or my_order <= 1:
+            continue
+        ahead = None
+        for other_id, other in (index or {}).items():
+            if str(other_id) == pid or not isinstance(other, dict):
+                continue
+            if player_team(other) != team or player_pos(other) != pos:
+                continue
+            order = other.get("depth_chart_order")
+            try:
+                order = int(order) if order is not None else None
+            except (TypeError, ValueError):
+                order = None
+            if order is None or order >= my_order:
+                continue
+            status = str(other.get("injury_status")
+                         or other.get("status") or "").strip().upper()
+            if status in _OUT_STATUSES or status == "DOUBTFUL":
+                if ahead is None or order < ahead[0]:
+                    ahead = (order, str(other_id), other)
+        if ahead is None:
+            continue
+        weeks_out = weeks_out_for_player(ahead[1])
+        if not weeks_out:
+            continue
+        claim["coverage"] = {
+            "for_player_id": ahead[1],
+            "for_name": player_name(ctx, ahead[1], index),
+            "weeks_out": round(float(weeks_out), 1),
+            "return_week": week + int(math.ceil(float(weeks_out))),
+            "source": "espn_return_date",
+        }
+
+
+def build_return_horizons(ctx, viewer_roster_id) -> dict | None:
+    """The viewer's designated players with real return dates.
+
+    Stash, IR-slot and drop decisions are weeks-of-coverage math;
+    this is the ledger. Only ESPN return dates count: a designated
+    player with no published date is counted in ``without_date``
+    and given NO horizon, never a per-class guess.
+    """
+    import math
+
+    try:
+        from dashboard_services.injury_return import weeks_out_for_player
+    except Exception:
+        return None
+    roster = _viewer_roster(ctx, viewer_roster_id)
+    if roster is None:
+        return None
+    index = player_index(ctx)
+    week = _i(ctx.get("current_week") or ctx.get("week")) or 0
+    dated = []
+    without_date = 0
+    for pid in (roster.get("players") or []):
+        pid = str(pid)
+        info = player_info(ctx, pid, index)
+        status = str(info.get("injury_status")
+                     or info.get("status") or "").strip().upper()
+        if status not in _OUT_STATUSES and status != "DOUBTFUL":
+            continue
+        weeks_out = None
+        try:
+            weeks_out = weeks_out_for_player(pid)
+        except Exception:
+            weeks_out = None
+        if not weeks_out:
+            without_date += 1
+            continue
+        dated.append({
+            "player_id": pid,
+            "name": player_name(ctx, pid, index),
+            "position": player_pos(info),
+            "status": status,
+            "weeks_out": round(float(weeks_out), 1),
+            "return_week": week + int(math.ceil(float(weeks_out))),
+            "source": "espn_return_date",
+        })
+    if not dated and not without_date:
+        return None
+    dated.sort(key=lambda r: r["weeks_out"])
+    return {"dated": dated, "without_date": without_date}
 
 
 # ---------------------------------------------------------------------------

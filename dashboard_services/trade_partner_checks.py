@@ -380,7 +380,7 @@ def evaluate_package(
         and post_counts.get(target_pos, 0) > req.get(target_pos, 0))
 
     viable = not shortfalls
-    return {
+    result = {
         "viable": viable,
         "shortfalls": shortfalls,
         "flex_covered": flex_covered,
@@ -394,6 +394,21 @@ def evaluate_package(
         "post_counts": post_counts,
         "touched_positions": touched,
     }
+    # Frontier 3 (keeper costs): in a keeper format a package's real
+    # price includes the keeper surplus of any projected keepers it
+    # moves (a Round 6 keeper cost is an asset beyond the sticker
+    # value). Annotation only — viability math is unchanged — and
+    # absent entirely when no priced keeper is in the deal.
+    if ctx is not None and is_dynasty_or_keeper:
+        try:
+            from utils.keeper_cost import keeper_block_for_package
+
+            block = keeper_block_for_package(ctx, send, receive)
+            if block:
+                result["keeper"] = block
+        except Exception:
+            pass
+    return result
 
 
 def surplus_ok(*, partner_players: list, target: dict, requirements: dict,

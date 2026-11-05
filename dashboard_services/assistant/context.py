@@ -208,6 +208,14 @@ def resolve_league(account_key: str | None, *, platform=None, league_id=None, se
     except Exception:
         logger.debug("[assistant] league ctx lookup failed", exc_info=True)
         ctx = {}
+    if ctx and account_key:
+        # Frontier 8: stamp the caller's account key on a COPY of
+        # the shared cached ctx so the trade-suggestion engine can
+        # honor the owner's remembered pricing rules. The cached
+        # dict itself is shared across users and must never carry
+        # one caller's identity.
+        ctx = dict(ctx)
+        ctx["owner_account_key"] = account_key
     out["ctx"] = ctx or None
     if ctx:
         league = ctx.get("league") or {}
