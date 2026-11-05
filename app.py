@@ -562,7 +562,10 @@ def _playoff_sim_sig(ctx: dict, platform: str) -> str:
     except Exception:
         sched = "fallback"
     cw = int(ctx.get("current_week") or 0)
-    return f"{_roster_sig(ctx)}|w{cw}|{sched}"
+    # Rules fingerprint (Wave 1): without it, correcting a league's
+    # playoff format in the rules record would not invalidate a warm sim
+    # built on the wrong field until roster/week/schedule changed.
+    return f"{_roster_sig(ctx)}|w{cw}|{sched}|rules:{_rules_fingerprint(ctx)}"
 
 
 def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
@@ -612,6 +615,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                 fresh
                 and hit.get("roster_sig") == _roster_sig(ctx)
                 and hit.get("week") == int(ctx.get("current_week") or 0)
+                and hit.get("rules_fp") == _rules_fingerprint(ctx)
             ):
                 return hit["data"] or []
         else:
@@ -636,6 +640,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                     "sig": snap_sig,
                     "roster_sig": _roster_sig(snapshot),
                     "week": int(snapshot.get("current_week") or 0),
+                    "rules_fp": _rules_fingerprint(snapshot),
                 }
             except Exception:
                 logger.debug("background playoff sim failed", exc_info=True)
@@ -684,6 +689,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             "sig": sig,
             "roster_sig": _roster_sig(ctx),
             "week": int(ctx.get("current_week") or 0),
+            "rules_fp": _rules_fingerprint(ctx),
         }
         return odds
     except Exception:
@@ -767,7 +773,10 @@ def _championship_sim_cached(ctx: dict, platform: str, odds_rows) -> list:
         import hashlib as _hl
         odds_sig = _hl.md5(  # noqa: S324 (non-crypto cache key)
             ("|".join(odds_sig_parts)).encode("utf-8")).hexdigest()
-        local_sig = f"{_roster_sig(ctx)}|w{int(ctx.get('current_week') or 0)}|{odds_sig}"
+        local_sig = (
+            f"{_roster_sig(ctx)}|w{int(ctx.get('current_week') or 0)}"
+            f"|{odds_sig}|rules:{_rules_fingerprint(ctx)}"
+        )
         if fresh and hit.get("sig") == local_sig:
             return hit["data"] or []
 
@@ -8141,6 +8150,15 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     league = _results["league"] or {}
     users = _results["users"] or []
     rosters = _results["rosters"] or []
+    # Wave 1 PR 2: persist designated keepers the provider supplied into
+    # the league-rules record, so keeper legality survives in surfaces
+    # that never see the raw provider rosters. Fail-soft by design.
+    try:
+        from utils.league_rules import update_designated_keepers
+        update_designated_keepers(platform, resolved_league_id, season,
+                                  rosters)
+    except Exception:
+        logger.debug("[build] keeper persist failed", exc_info=True)
     traded = _results["traded"] or []
     drafts = _results["drafts"] or []
     current = _results["state"] or {}
@@ -10199,7 +10217,8 @@ def render_standings(team_stats, length, all_play: dict = None,
                      playoff_spots: int = None, total_regular_weeks: int = None,
                      movement: dict = None, owner_to_rid: dict = None,
                      sparklines: dict = None, divisions: dict = None,
-                     detailed_df=None, efficiency: dict = None) -> str:
+                     detailed_df=None, efficiency: dict = None,
+                     playoff_rules_note: str = "") -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -10591,6 +10610,7 @@ def render_standings(team_stats, length, all_play: dict = None,
 
     return f"""
         {ctx_line}
+        {playoff_rules_note}
         <div class="st-tblscroll">
         <table id="stats" class="standings-table" data-page="standings"{' data-divisions="1"' if _use_div else ''}>
           <thead>
@@ -11909,7 +11929,28 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     synthetic_bracket: list[dict] = []
     match_id = 1
 
-    if playoff_teams == 6:
+    _rules_source = (ctx.get("_league_rules") or {}).get("source")
+    if _rules_source in ("feed", "derived", "user_confirmed") \
+            and len(seeded_rids) >= 2:
+        # Verified format (Wave 1 rules record): project with the shared
+        # full-bracket builder so ANY verified field size renders, not
+        # just the hand-rolled 4/6/8 shapes below.
+        try:
+            from utils.standings import build_full_bracket
+            _seed_ids = []
+            for _v in seeded_rids:
+                try:
+                    _seed_ids.append(int(_v))
+                except (TypeError, ValueError):
+                    _seed_ids.append(_v)
+            synthetic_bracket = build_full_bracket(_seed_ids)
+        except Exception:
+            logger.debug(
+                "[standings] verified bracket projection failed",
+                exc_info=True,
+            )
+            synthetic_bracket = []
+    elif playoff_teams == 6:
         # R1: 3v6, 4v5 → R2 (Semis): 1 vs W(4v5), 2 vs W(3v6) → R3 Finals
         synthetic_bracket = [
             {"m": 1, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 3}},
@@ -12301,6 +12342,88 @@ def _standings_playoff_params(ctx: dict, team_stats):
     return _pp_spots, _pp_weeks
 
 
+def _playoff_rules_confirm_note(ctx: dict, total_rosters: int,
+                                settings: dict) -> str:
+    """One quiet confirmation line under the Playoff Picture header (Wave 1).
+
+    Shown only when the league's rules record is default_unverified (in
+    practice Fleaflicker and some MFL leagues, whose APIs never publish
+    the playoff format) and the viewer is linked to the league. Saving
+    posts to /api/league-rules/confirm, which stores a user_confirmed
+    record; the serve-time overlay then serves the confirmed values to
+    every consumer. No modal, nothing on connect.
+    """
+    rules = ctx.get("_league_rules") or {}
+    if rules.get("source") != "default_unverified":
+        return ""
+    viewer = ctx.get("viewer") or {}
+    if not (viewer.get("viewer_roster_id") is not None
+            or viewer.get("roster_id") is not None):
+        return ""
+    platform = html.escape(str(ctx.get("platform") or ""), quote=True)
+    league_id = html.escape(
+        str(ctx.get("resolved_league_id", ctx.get("league_id")) or ""),
+        quote=True,
+    )
+    try:
+        season = int(ctx.get("season") or 0)
+    except (TypeError, ValueError):
+        season = 0
+    try:
+        cur_teams = int((settings or {}).get("playoff_teams") or 6)
+    except (TypeError, ValueError):
+        cur_teams = 6
+    try:
+        cur_start = int((settings or {}).get("playoff_week_start") or 15)
+    except (TypeError, ValueError):
+        cur_start = 15
+    cur_wtype = str((settings or {}).get("waiver_type") or "")
+    cur_wtime = html.escape(
+        str((settings or {}).get("waiver_process_time") or ""), quote=True,
+    )
+    max_teams = int(total_rosters or 0) or cur_teams
+
+    def _sel(value):
+        return " selected" if cur_wtype == value else ""
+
+    return (
+        "<div class='pp-confirm'>"
+        "<span class='pp-confirm-lead'>Playoff format not confirmed for "
+        "this league.</span>"
+        "<form class='pp-confirm-form' method='post' "
+        "action='/api/league-rules/confirm'>"
+        f"<input type='hidden' name='platform' value='{platform}'>"
+        f"<input type='hidden' name='league_id' value='{league_id}'>"
+        f"<input type='hidden' name='season' value='{season}'>"
+        "<label>Playoff teams "
+        f"<input type='number' name='playoff_teams' min='2' "
+        f"max='{max_teams}' value='{cur_teams}' required></label>"
+        "<label>First playoff week "
+        f"<input type='number' name='playoff_week_start' min='2' "
+        f"max='25' value='{cur_start}' required></label>"
+        "<label>Waivers <select name='waiver_type'>"
+        "<option value=''>Not sure</option>"
+        f"<option value='rolling'{_sel('rolling')}>Rolling priority</option>"
+        f"<option value='faab'{_sel('faab')}>FAAB</option>"
+        f"<option value='reverse_standings'{_sel('reverse_standings')}>"
+        "Reverse standings</option>"
+        f"<option value='free'{_sel('free')}>Free agency</option>"
+        "</select></label>"
+        "<label>Process time "
+        f"<input type='time' name='waiver_process_time' "
+        f"value='{cur_wtime}'></label>"
+        "<label>Process days <select name='waiver_process_days'>"
+        "<option value=''>Not sure</option>"
+        "<option value='daily'>Daily</option>"
+        "<option value='Tue'>Tuesdays</option>"
+        "<option value='Wed'>Wednesdays</option>"
+        "<option value='Thu'>Thursdays</option>"
+        "</select></label>"
+        "<button type='submit'>Confirm</button>"
+        "</form></div>"
+    )
+
+
 def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> dict:
     """Render the swappable standings surfaces from ctx. Shared by the
     standings page and the week-selector endpoint, so a "through week N" view is
@@ -12358,6 +12481,7 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         playoff_spots=_pp_spots, total_regular_weeks=_pp_weeks,
         movement=_movement, owner_to_rid=_o2r, sparklines=_sparks,
         divisions=_div_info, detailed_df=detailed_df, efficiency=_eff_by_rid,
+        playoff_rules_note=_playoff_rules_confirm_note(ctx, num_teams, _settings),
     )
 
     try:
@@ -15052,7 +15176,100 @@ def _league_ctx_redis_load(platform, league_id, season):
         return None
 
 
+def _prior_season_rules_deriver(platform, league_id, season):
+    """Best-effort derived league rules from last season's playoffs.
+
+    Counts the distinct teams in the prior season's ACTUAL winners
+    bracket (matches the scoreboard derivation produced; projected
+    matches are not evidence) and takes the playoff week start as the
+    week after the last prior-season week in which every roster played.
+    Returns None when the prior season offers no real bracket (new
+    league, missing data): the record then stays default_unverified and
+    the Standings confirmation control is the path to truth.
+    """
+    try:
+        from dashboard_services.platform_api import (
+            get_bracket, get_league, get_matchups,
+        )
+        prev = int(season) - 1
+        bracket = get_bracket(platform, league_id, "winners", prev) or []
+        real = [
+            m for m in bracket
+            if (m or {}).get("derived") and not (m or {}).get("projected")
+        ]
+        if not real:
+            return None
+        teams = {
+            str(m.get(k)) for m in real for k in ("t1", "t2")
+            if m.get(k) is not None
+        }
+        if len(teams) < 2:
+            return None
+        out = {"playoff_teams": len(teams)}
+        try:
+            league = get_league(platform, league_id, prev) or {}
+            total = int(league.get("total_rosters") or 0)
+            if total >= 2:
+                last_full = None
+                for wk in range(12, 18):
+                    rows = get_matchups(platform, league_id, wk, prev) or []
+                    playing = {
+                        str(r.get("roster_id")) for r in rows
+                        if r.get("roster_id") is not None
+                    }
+                    if len(playing) >= total:
+                        last_full = wk
+                if last_full:
+                    out["playoff_week_start"] = last_full + 1
+        except Exception:
+            logger.debug(
+                "[league-rules] prior-season week-start derivation failed",
+                exc_info=True,
+            )
+        return out
+    except Exception:
+        logger.debug(
+          "[league-rules] prior-season derivation failed", exc_info=True,
+        )
+        return None
+
+
+def _rules_fingerprint(ctx) -> str:
+    """League-rules component for sim cache signatures (Wave 1).
+
+    Reads the ``_league_rules`` summary the serve-time overlay stamps on
+    the ctx, so correcting the rules record invalidates warm sims whose
+    signature predates the correction.
+    """
+    try:
+        from utils.league_rules import ctx_rules_fingerprint
+        return ctx_rules_fingerprint(ctx)
+    except Exception:
+        return "none"
+
+
 def get_league_ctx_from_cache(
+    platform: str, league_id: str, season: int, *, allow_build: bool = True,
+) -> dict:
+    ctx = _get_league_ctx_from_cache_impl(
+        platform, league_id, season, allow_build=allow_build,
+    )
+    if ctx:
+        # Wave 1: apply the league-rules record as a serve-time overlay
+        # (never baked into the cached/pickled ctx), so playoff format,
+        # waiver and keeper facts come from the record, not from
+        # provider defaults the adapter may have silently invented.
+        try:
+            from utils.ui_audit_fixture import is_ui_audit_league, ui_audit_enabled
+            if not (ui_audit_enabled() and is_ui_audit_league(league_id)):
+                from utils.league_rules import apply_rules_overlay
+                apply_rules_overlay(ctx, deriver=_prior_season_rules_deriver)
+        except Exception:
+            logger.debug("[league-rules] overlay skipped", exc_info=True)
+    return ctx
+
+
+def _get_league_ctx_from_cache_impl(
     platform: str, league_id: str, season: int, *, allow_build: bool = True,
 ) -> dict:
     try:
@@ -16294,6 +16511,30 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                 proj_by_week = {}
         _wk_proj = ((proj_by_week or {}).get(current_week) or {}).get("projections") or {}
 
+    # ── Role states (Wave 2 PR 1): display-only chips ─────────────────────
+    # Computed once per request from the situation layer and joined onto
+    # rows below as the role_situation chip (promoted / benched /
+    # returning). Serve-time only via get_role_states' ctx memo; the
+    # states NEVER feed compute_start_score inputs or factors.
+    _ss_role_states: dict = {}
+    try:
+        from utils.role_state import (
+            get_role_states as _ss_get_role_states,
+            role_chip as _ss_role_chip,
+        )
+        if ctx.get("proj_by_week"):
+            _ss_role_states = _ss_get_role_states(ctx, current_week) or {}
+        else:
+            _role_ctx = dict(ctx)
+            _role_ctx["proj_by_week"] = {
+                current_week: {"projections": dict(_wk_proj or {})},
+            }
+            _ss_role_states = _ss_get_role_states(_role_ctx, current_week) or {}
+    except Exception:
+        logger.debug("[start-sit] role states skipped", exc_info=True)
+        _ss_role_states = {}
+        _ss_role_chip = lambda entry: None  # noqa: E731 -- fail-soft chip
+
     def _lookup_proj(pid: str, pos: str = ""):
         pts = _ss_wpp(_raw_week_map, pid, _ss_scoring, pos)
         if pts is not None:
@@ -16634,6 +16875,15 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             "game_env": _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
             "qb_situation": (_ss_qb_situation(team, _ss_depth_index, players_full)
                              if (pos in ("WR", "TE", "RB") and not on_bye) else None),
+            # Wave 2 PR 1 role state + chip: display-only, same family as
+            # qb_situation. The chip carries the state's reason as its
+            # note; compute_start_score never sees either field.
+            "role_state": ((_ss_role_states.get(pid) or {}).get("state")
+                           if not on_bye else None),
+            "role_reason": ((_ss_role_states.get(pid) or {}).get("reason")
+                            if not on_bye else None),
+            "role_situation": (_ss_role_chip(_ss_role_states.get(pid))
+                               if not on_bye else None),
             "news_signal": (_ss_news_signal(player_name, team, full_player)
                             if not on_bye else None),
             "implied_total": _imp_ss,
@@ -30325,6 +30575,14 @@ def api_league_rosters():
         users = ctx.get("users", []) or []
         rosters = ctx.get("rosters", []) or []
         picks_by_roster = ctx.get("picks_by_roster", {}) or {}
+        # Wave 1 PR 2: designated keepers ride along so the calculator
+        # can badge them (never block). League-level data, so it is safe
+        # inside the shared per-league response cache below.
+        try:
+            from utils.league_rules import keeper_locked_by_roster as _klbr
+            _locked_map = _klbr(ctx)
+        except Exception:
+            _locked_map = {}
 
         teams = _teams if _teams is not None else []
         _build_rosters = rosters if _teams is None else []
@@ -30377,6 +30635,7 @@ def api_league_rosters():
                 "team_name": team_name,
                 "username": username,
                 "player_ids": player_ids,
+                "keeper_locked_ids": sorted(_locked_map.get(roster_id) or ()),
                 "pick_ids": sorted(pick_ids),
                 "pick_round_counts": pick_round_counts,
             })
@@ -40293,6 +40552,14 @@ def api_trade_targets():
     model_value_table = ctx.get("model_value_table") or []
     players_index = ctx.get("players_index") or {}
     picks_by_roster = {} if _league_is_redraft(ctx) else (ctx.get("picks_by_roster") or {})
+    # Wave 1 PR 2: designated keepers cannot be traded in this league;
+    # when designations are known they leave the target pool AND the
+    # viewer's chip pool below. Empty map = unknown = no enforcement.
+    try:
+        from utils.league_rules import keeper_locked_by_roster as _klbr
+        _locked_by_roster = _klbr(ctx)
+    except Exception:
+        _locked_by_roster = {}
 
     if _league_is_redraft(ctx):
         _vk_primary, _vk_fallback = _waiver_value_keys(ctx)
@@ -40401,9 +40668,11 @@ def api_trade_targets():
 
     viewer_roster_obj = next((r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
     viewer_pids = [str(p) for p in (viewer_roster_obj.get("players") or [])] if viewer_roster_obj else []
+    _viewer_locked = _locked_by_roster.get(viewer_roster_id) or frozenset()
     viewer_player_vals = sorted(
         [float(values_by_id[p]["value"]) for p in viewer_pids
-         if p in values_by_id and values_by_id[p]["value"] >= 150],
+         if p in values_by_id and values_by_id[p]["value"] >= 150
+         and p not in _viewer_locked],
         reverse=True,
     )
     valued_ages = [
@@ -40446,6 +40715,8 @@ def api_trade_targets():
                 continue
             if info["value"] > _realistic_max:
                 continue
+            if pid in (_locked_by_roster.get(rid) or ()):
+                continue  # designated keeper: cannot be traded (Wave 1)
             all_collected[info["position"]].append({
                 "player_id": pid,
                 "name": info["name"],
@@ -40498,6 +40769,7 @@ def api_trade_targets():
             }
             for p in viewer_pids
             if p in values_by_id and values_by_id[p]["position"] in POSITIONS
+            and p not in _viewer_locked
         ),
         key=lambda c: float(values_by_id[c["player_id"]]["value"]),
         reverse=True,
@@ -40840,11 +41112,20 @@ def api_trade_intel_player_packages(player_id: str):
         viewer_players: list[dict] = []
         viewer_picks: list[dict] = []
         rosters: list = []
+        # Wave 1 PR 2: the viewer's designated keepers cannot be traded;
+        # generated packages below never include them (empty when the
+        # league's designations are unknown).
+        _locked_ids: frozenset = frozenset()
         if league_id and viewer_roster_id:
             try:
                 if not ctx:
                     ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
                 rosters = ctx.get("rosters") or []
+                try:
+                    from utils.league_rules import keeper_locked_ids as _kli
+                    _locked_ids = _kli(ctx, [viewer_roster_id])
+                except Exception:
+                    _locked_ids = frozenset()
                 viewer_roster_obj = next(
                     (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
                 )
@@ -41107,6 +41388,7 @@ def api_trade_intel_player_packages(player_id: str):
                 focus_value, viewer_players, _viewer_picks_offer,
                 sorted_vals=_ladder, league_size=num_teams,
                 min_results=3 if (viewer_players or _viewer_picks_offer) else 0,
+                locked_ids=_locked_ids,
             )
             return jsonify({
                 "player_name": player_name,
@@ -41408,6 +41690,7 @@ def api_trade_intel_player_packages(player_id: str):
         # packages built with a 1.3× ceiling and left a blank suggestions page.
         primary_pkgs = _filter_acquire_packages(
             primary_pkgs, str(player_id), float(focus_value or 0), max_ratio=1.40,
+            locked_ids=_locked_ids,
         )
 
         # Fill remaining slots from the viewer's roster AFTER filtering so a
@@ -41424,6 +41707,7 @@ def api_trade_intel_player_packages(player_id: str):
                 max_options=max(need, 5),
                 sorted_vals=_ladder, league_size=num_teams,
                 min_results=need,
+                locked_ids=_locked_ids,
             )
             for vm in vm_pkgs:
                 if len(primary_pkgs) >= 5:

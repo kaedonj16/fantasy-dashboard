@@ -181,10 +181,15 @@ def filter_acquire_packages(
     focus_player_id: str,
     focus_value: float,
     max_ratio: float = 1.40,
+    locked_ids: frozenset = frozenset(),
 ) -> list:
     """Drop packages that echo the focus player on the give side, or that send
     more than ``max_ratio`` of the target's current value (extreme overpays
-    from historical data, not useful suggestions)."""
+    from historical data, not useful suggestions).
+
+    ``locked_ids`` (Wave 1 keeper legality): designated keepers a league
+    forbids trading. Any package whose give side carries a locked player
+    is dropped; pick assets are never locked."""
     focus = str(focus_player_id or "")
     cap = (focus_value or 1) * max_ratio
     out = []
@@ -192,6 +197,12 @@ def filter_acquire_packages(
         assets = pkg.get("send") or pkg.get("assets") or []
         if focus and any(
             (not a.get("is_pick")) and str(a.get("player_id") or "") == focus
+            for a in assets
+        ):
+            continue
+        if locked_ids and any(
+            (not a.get("is_pick"))
+            and str(a.get("player_id") or "") in locked_ids
             for a in assets
         ):
             continue
@@ -212,6 +223,7 @@ def value_matched_acquire_packages(
     sorted_vals: Optional[list] = None,
     league_size: int = 10,
     min_results: int = 0,
+    locked_ids: frozenset = frozenset(),
 ) -> list:
     """Build value-matched ASSET packages (players + picks from the viewer's
     roster) whose combined value is close to ``focus_value``.
@@ -256,8 +268,12 @@ def value_matched_acquire_packages(
             "pick_order": pk.get("pick_order") or "mid",
         }
 
+    # Designated keepers (locked_ids) never enter the asset pool; picks
+    # are not players and are never locked.
     players_a = sorted(
-        (_passet(p) for p in players if float(p.get("value") or 0) >= 30),
+        (_passet(p) for p in players
+         if float(p.get("value") or 0) >= 30
+         and str(p.get("player_id") or p.get("id") or "") not in locked_ids),
         key=lambda x: -x["value"],
     )
     picks_a = sorted((_pkasset(p) for p in picks), key=lambda x: -x["value"])
