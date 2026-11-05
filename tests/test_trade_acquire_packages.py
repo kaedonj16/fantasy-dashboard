@@ -46,6 +46,47 @@ def test_rank_prefers_value_fit_over_expensive_frequency():
     assert team and team[0]["pattern_sig"] == "WR-T7"
 
 
+def test_filter_drops_packages_carrying_locked_players():
+    # Wave 1 keeper legality: a package sending a designated keeper is
+    # dropped; pick assets are never locked, even on an id collision.
+    pkgs = [
+        {"send": [{"player_id": "locked1", "value": 300}], "send_value": 300},
+        {"send": [{"player_id": "free1", "value": 300}], "send_value": 300},
+        {"send": [{"player_id": "locked1", "is_pick": True, "value": 300}],
+         "send_value": 300},
+        {"send": [{"player_id": "free2", "value": 200},
+                  {"player_id": "locked1", "value": 100}],
+         "send_value": 300},
+    ]
+    out = filter_acquire_packages(
+        pkgs, "target", 300.0, locked_ids=frozenset({"locked1"}))
+    assert [p["send_value"] for p in out] == [300, 300]
+    assert out[0]["send"][0]["player_id"] == "free1"
+    assert out[1]["send"][0]["is_pick"] is True
+    # No locked set -> identical to legacy behavior.
+    assert len(filter_acquire_packages(pkgs, "target", 300.0)) == 4
+
+
+def test_value_match_never_spends_a_locked_player():
+    players = [
+        {"player_id": "locked-star", "name": "Locked Star",
+         "position": "RB", "value": 500},
+        {"player_id": "free-a", "name": "Free A", "position": "WR",
+         "value": 260},
+        {"player_id": "free-b", "name": "Free B", "position": "WR",
+         "value": 250},
+    ]
+    locked = value_matched_acquire_packages(
+        500.0, players, [], locked_ids=frozenset({"locked-star"}))
+    spent = {a["player_id"] for pkg in locked for a in pkg["assets"]}
+    assert "locked-star" not in spent
+    assert spent  # the two free players still combine into an offer
+    # Control: without the lock, the 1-for-1 star swap is offered.
+    open_pkgs = value_matched_acquire_packages(500.0, players, [])
+    open_spent = {a["player_id"] for pkg in open_pkgs for a in pkg["assets"]}
+    assert "locked-star" in open_spent
+
+
 def test_filter_drops_focus_echo_and_extreme_overpays():
     focus = "p1"
     pkgs = [
