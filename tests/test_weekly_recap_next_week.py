@@ -453,7 +453,7 @@ def test_pin_pair_keeps_the_saved_pick_on_top(monkeypatch):
     assert {got["team_a"], got["team_b"]} == {"T1", "T2"}
 
 
-def test_write_once_guard_and_recovered_label_are_in_the_sources():
+def test_write_once_guard_and_gotw_label_are_in_the_sources():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     recap_ai = (root / "dashboard_services/ai/weekly_recap.py").read_text()
@@ -461,4 +461,6 @@ def test_write_once_guard_and_recovered_label_are_in_the_sources():
     assert "existing_selection is None" in recap_ai
     assert "gotw_pin_pair=pin_pair" in recap_ai
     recap_page = (root / "dashboard_services/pages/recap_page.py").read_text()
-    assert '"GOTW (recovered)"' in recap_page
+    # The chip reads GOTW whether the pick was cached or recovered.
+    assert '"GOTW (recovered)"' not in recap_page
+    assert '"GOTW"' in recap_page
