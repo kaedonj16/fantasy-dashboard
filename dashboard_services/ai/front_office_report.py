@@ -222,7 +222,17 @@ def _last_week_result(ctx: dict, viewer_roster_id: str) -> dict | None:
                 foe = foes.iloc[0]
                 opp_pts = round(float(foe.get("points") or 0.0), 1)
                 opp_name = _safe_str(foe.get("owner") or foe.get("team_name") or "")
-        result = "W" if opp_pts is not None and my_pts > opp_pts else ("L" if opp_pts is not None and my_pts < opp_pts else "T")
+        # An unknown opponent score is NOT a tie: result stays empty
+        # and every consumer hides the result line rather than
+        # printing a fabricated T (or a 0 for the opponent).
+        if opp_pts is None:
+            result = ""
+        elif my_pts > opp_pts:
+            result = "W"
+        elif my_pts < opp_pts:
+            result = "L"
+        else:
+            result = "T"
         return {"week": last, "result": result, "pf": my_pts, "pa": opp_pts, "opponent": opp_name}
     except Exception:
         logger.debug("[front-office] last-week lookup failed", exc_info=True)
@@ -1951,6 +1961,29 @@ def _exclude_hurt_waiver_targets(waiver_targets: list[dict],
     return targets
 
 
+def _movers_by_sign(rows: list[dict], *, rising: bool, n: int = 3) -> list[dict]:
+    """Top 7-day rank movers in ONE direction. The sign filter is the
+    point: without it, when fewer than n players moved the requested
+    way, the other column backfilled with players who moved the
+    OPPOSITE way and rendered them with the wrong arrow (Kaedon
+    audit, 2026-11-05)."""
+    cands = []
+    for r in rows or []:
+        t = r.get("trend_7d")
+        if not t:
+            continue
+        if rising and t > 0:
+            cands.append(r)
+        elif not rising and t < 0:
+            cands.append(r)
+    cands.sort(key=lambda r: r["trend_7d"], reverse=rising)
+    return [
+        {"id": r.get("id"), "name": r["name"], "position": r["position"],
+         "trend_7d": r["trend_7d"]}
+        for r in cands[:n]
+    ]
+
+
 def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
                             model_value_lookup: dict | None = None,
                             roster_rows: list | None = None,
@@ -1984,12 +2017,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
         weakest = [g["pos"] for g in sorted(grades, key=lambda g: g["rank"], reverse=True)[:2]]
 
     def _movers(rows: list[dict], *, rising: bool, n: int = 3) -> list[dict]:
-        cands = [r for r in rows if r.get("trend_7d")]
-        cands.sort(key=lambda r: r["trend_7d"], reverse=rising)
-        return [
-            {"id": r.get("id"), "name": r["name"], "position": r["position"], "trend_7d": r["trend_7d"]}
-            for r in cands[:n]
-        ]
+        return _movers_by_sign(rows, rising=rising, n=n)
 
     last_week = _last_week_result(ctx, viewer_roster_id)
     this_week = _this_week_matchup(ctx, viewer_roster_id)
@@ -2505,7 +2533,11 @@ def render_front_office_card_html(data: dict, ai: dict) -> str:
     lw = data.get("last_week") or {}
     if lw.get("result") and lw.get("pf") is not None:
         opp = f" vs {html.escape(lw['opponent'])}" if lw.get("opponent") else ""
-        keys.append((f"Week {lw.get('week')} result", f"{lw['result']} {lw['pf']}-{lw['pa'] or 0}{opp}"))
+        # Mirror _changes_html: an unknown opponent score renders as
+        # no score pair at all, never as a fabricated "-0".
+        pa = lw.get("pa")
+        score_txt = f"{lw['pf']}-{pa}" if pa is not None else f"{lw['pf']}"
+        keys.append((f"Week {lw.get('week')} result", f"{lw['result']} {score_txt}{opp}"))
     keys = keys[:3]
     keys_html = "".join(
         f"<li><span class='for-key-k'>{html.escape(k)}</span>"
@@ -2607,7 +2639,12 @@ def _changes_html(data: dict) -> str:
         opp = f" vs {html.escape(lw['opponent'])}" if lw.get("opponent") else ""
         pa = lw.get("pa")
         score = f"{lw['pf']}-{pa}" if pa is not None else f"{lw['pf']}"
-        badge = "for-score-w" if str(lw["result"]).upper().startswith("W") else "for-score-l"
+        _res = str(lw["result"]).upper()
+        badge = (
+            "for-score-w" if _res.startswith("W")
+            else "for-score-l" if _res.startswith("L")
+            else "for-score-t"
+        )
         score_html = (
             "<div class='for-score-row'>"
             f"<span class='{badge}'>{html.escape(str(lw['result']))}</span>"
@@ -2631,10 +2668,13 @@ def _changes_html(data: dict) -> str:
             f"<ul class='for-moves'>{''.join(downs)}</ul></div>"
         )
     moves_html = f"<div class='for-two-col for-moves-cols'>{''.join(cols)}</div>" if cols else ""
+    # The rank these movers are measured on is the league's own value
+    # model: call it dynasty only in dynasty leagues.
+    fmt_word = "" if str(data.get("scoring_type") or "").lower() == "redraft" else "dynasty "
     return (
         "<div class='for-sec'><div class='for-sec-title'>Since last week</div>"
         f"{score_html}{moves_html}"
-        "<div class='for-sec-note'>Spots gained or lost in dynasty trade-value rank vs 7 days ago.</div>"
+        f"<div class='for-sec-note'>Spots gained or lost in {fmt_word}trade-value rank vs 7 days ago.</div>"
         "</div>"
     )
 
@@ -3221,13 +3261,21 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
         # The app.js handler for [data-for-jump] scrolls the modal body
         # to the target with no navigation. The bar sits ABOVE the
         # board it navigates (Kaedon, 2026-11-05).
-        jump_html = (
-            "<div class='for-jumpbar'>"
+        # Only offer jumps to sections that actually rendered: the
+        # Since last week section is omitted entirely when there is no
+        # last-week result and no movers, and a button with no target
+        # is a dead control (Kaedon audit, 2026-11-05).
+        jump_buttons = [
             "<button type='button' data-for-jump='forBoard'>Do this first</button>"
-            "<button type='button' data-for-jump='forLastWeek'>Since last week</button>"
+        ]
+        if changes_html:
+            jump_buttons.append(
+                "<button type='button' data-for-jump='forLastWeek'>Since last week</button>"
+            )
+        jump_buttons.append(
             "<button type='button' data-for-jump='forReference'>Reference</button>"
-            "</div>"
         )
+        jump_html = f"<div class='for-jumpbar'>{''.join(jump_buttons)}</div>"
         changes_wrapped = (
             f"<div id='forLastWeek'>{changes_html}</div>" if changes_html else ""
         )

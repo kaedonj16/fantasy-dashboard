@@ -478,6 +478,73 @@ def test_board_layout_folds_sections_and_orders_decisions_first():
     assert out.index("for-jumpbar") < out.index("Opponent missing")
 
 
+def test_jumpbar_omits_since_last_week_when_section_absent():
+    # Audit fix (2026-11-05): a jump button whose section never
+    # rendered is a dead control.
+    sc = _scenario()
+    data = _render_data(sc, _build(sc))
+    data["last_week"] = None
+    data["risers_7d"] = []
+    data["fallers_7d"] = []
+    out = fmod.render_front_office_report_html(data, _AI)
+    assert "data-for-jump='forBoard'" in out
+    assert "data-for-jump='forLastWeek'" not in out
+    assert "id='forLastWeek'" not in out
+    assert "data-for-jump='forReference'" in out
+
+
+def test_movers_by_sign_never_backfills_opposite_direction():
+    rows = [
+        {"id": "a", "name": "Up Big", "position": "RB", "trend_7d": 5.0},
+        {"id": "b", "name": "Up Mid", "position": "WR", "trend_7d": 3.0},
+        {"id": "c", "name": "Up Small", "position": "TE", "trend_7d": 1.0},
+        {"id": "d", "name": "Down One", "position": "RB", "trend_7d": -2.0},
+        {"id": "e", "name": "Flat", "position": "QB", "trend_7d": 0},
+        {"id": "f", "name": "No Data", "position": "QB", "trend_7d": None},
+    ]
+    rising = fmod._movers_by_sign(rows, rising=True)
+    falling = fmod._movers_by_sign(rows, rising=False)
+    assert [r["name"] for r in rising] == ["Up Big", "Up Mid", "Up Small"]
+    assert [r["name"] for r in falling] == ["Down One"]
+    assert fmod._movers_by_sign(rows[:3], rising=False) == []
+
+
+def test_card_week_result_never_fabricates_opponent_zero():
+    sc = _scenario()
+    data = _render_data(sc, _build(sc))
+    data["last_week"] = {"week": 8, "result": "W", "pf": 128.4,
+                         "pa": None, "opponent": ""}
+    card = fmod.render_front_office_card_html(data, _AI)
+    assert "W 128.4" in card
+    assert "128.4-0" not in card
+
+
+def test_last_week_result_unknown_opponent_is_not_a_tie():
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame([
+        {"week": 8, "points": 128.4, "roster_id": "7"},
+        {"week": 8, "points": 101.2, "roster_id": "3"},
+    ])
+    out = fmod._last_week_result({"df_weekly": df, "current_week": 9}, "7")
+    assert out is not None
+    assert out["pa"] is None
+    assert out["result"] == ""
+
+
+def test_tie_badge_uses_neutral_class_and_redraft_note_drops_dynasty():
+    base = {"last_week": {"week": 8, "result": "T", "pf": 128.4,
+                          "pa": 128.4, "opponent": "Partner B"},
+            "risers_7d": [], "fallers_7d": []}
+    out = fmod._changes_html(base)
+    assert "for-score-t" in out
+    assert "for-score-l" not in out
+    assert "dynasty trade-value rank" in out
+    redraft = dict(base, scoring_type="redraft")
+    out_r = fmod._changes_html(redraft)
+    assert "in trade-value rank" in out_r
+    assert "dynasty" not in out_r
+
+
 def test_waiver_evidence_labels_a_stash_add_if_one_is_ever_rendered():
     move = {"kind": "waiver",
             "add": {"id": "ap", "name": "Alec Pierce", "position": "WR",
