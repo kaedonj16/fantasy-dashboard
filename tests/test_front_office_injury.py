@@ -122,6 +122,11 @@ def test_fmt_weeks_out():
     # Fractional provider estimates cap at one decimal: the live card
     # showed "~14.57 wks" (Kaedon, 2026-11-05).
     assert _fmt_weeks_out(14.57) == "~14.6 wks"
+    # A return past Week 18 is not a week count: it is the season.
+    assert _fmt_weeks_out(14.6, season_weeks_left=9) == "for the season"
+    assert _fmt_weeks_out(9.0, season_weeks_left=9) == "~9 wks"
+    assert _fmt_weeks_out(10.1, season_weeks_left=9) == "for the season"
+    assert _fmt_weeks_out(0.4, season_weeks_left=0) == "this week"
 
 
 def test_build_injury_rows_sorts_and_enriches(monkeypatch):
@@ -279,6 +284,34 @@ def test_card_injury_compact_caps_at_three():
     assert html_out.count("<li") == 3
     assert "+2 more in the full report" in html_out
     assert _injury_card_html([]) == ""
+
+
+def test_injury_row_labels_season_ending_return(monkeypatch):
+    # Kaedon, 2026-11-05: at Week 9 a "~14.6 wks" return is the rest
+    # of the season; the row must say so.
+    _stub_injury_return(
+        monkeypatch,
+        weeks_out_map={"1": 14.57, "2": 3.0},
+        verdict_map={},
+    )
+    ctx = {"current_week": 9, "players": {
+        "1": {"injury_status": "IR", "injury_body_part": "Knee"},
+        "2": {"injury_status": "IR", "injury_body_part": "Ankle"},
+    }}
+    rows = [
+        {"id": "1", "name": "Terry McLaurin", "position": "WR", "team": "WAS",
+         "role": "Starter", "value": 500.0, "injury": "IR"},
+        {"id": "2", "name": "Short Timer", "position": "RB", "team": "SF",
+         "role": "Depth", "value": 100.0, "injury": "IR"},
+    ]
+    out = _build_injury_rows(ctx, rows)
+    by_name = {r["name"]: r for r in out}
+    assert by_name["Terry McLaurin"]["return_label"] == "out for the season"
+    assert by_name["Short Timer"]["return_label"] == "out ~3 wks"
+    # No week context: the plain count still renders.
+    out2 = _build_injury_rows({"players": ctx["players"]}, rows)
+    by_name2 = {r["name"]: r for r in out2}
+    assert by_name2["Terry McLaurin"]["return_label"] == "out ~14.6 wks"
 
 
 def test_card_injury_row_is_two_lines():
