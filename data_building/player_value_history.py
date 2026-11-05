@@ -370,10 +370,16 @@ def get_player_value_history(
 
     if _redraft:
         # Redraft history columns hold the WLS solve exactly as served, so
-        # they are read directly: no COALESCE to the base column (a size the
-        # WLS never solved is a gap, not a point at the base value) and no
-        # calibrated rescaling below (the stored values already are the
-        # current-values scale).
+        # they are read directly and never COALESCE to a dynasty column,
+        # and there is no calibrated rescaling below (the stored values
+        # already are the current-values scale). Sizes the WLS actually
+        # solves (10/12) stay gap-honest: no fallback to the base column.
+        # Sizes it never solves (8/14) have no size column at all, on any
+        # date, for any player; there the base (10-team) solve IS the
+        # served redraft value (the hero values and the trade calculator
+        # are size-invariant for redraft), so the history falls back to
+        # the base redraft columns only. Falling back to DYNASTY would
+        # fabricate points; falling back within redraft does not.
         if league_size == 8:
             _1qb_col, _sf_col = "redraft_value_8", "redraft_sf_value_8"
         elif league_size == 12:
@@ -401,8 +407,16 @@ def get_player_value_history(
     # the calibrated endpoint below); fall back to the size column if it's null.
     _1qb_expr = f"COALESCE(value, {_1qb_col})"
     if _redraft:
-        _sf_expr = _sf_col
-        _1qb_expr = _1qb_col
+        if league_size in (8, 14):
+            # Unsolved sizes: the size column is NULL on every row, so a
+            # direct read returns a full-length all-null series (which the
+            # modal then rendered as a flat 0). Serve the base redraft
+            # solve for those sizes instead (see the column note above).
+            _sf_expr = f"COALESCE({_sf_col}, redraft_sf_value)"
+            _1qb_expr = f"COALESCE({_1qb_col}, redraft_value)"
+        else:
+            _sf_expr = _sf_col
+            _1qb_expr = _1qb_col
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -461,6 +475,15 @@ def get_player_value_history(
     for r in rows:
         v1qb = None if r["value_1qb"] is None else float(r["value_1qb"]) * _cal_scale_1qb
         vsf  = None if r["value_sf"] is None else float(r["value_sf"]) * _cal_scale_sf
+        # A date with no value in either series is not a point at all:
+        # drop it instead of returning a null row. Redraft rows predate
+        # tracking (which began in late October 2026) on every dynasty
+        # snapshot date, and returning them made an empty/short redraft
+        # series look full-length, which defeated the client's honest
+        # empty state and rendered as a flat 0. A date where only ONE
+        # series is missing stays: that gap is real (see below).
+        if v1qb is None and vsf is None:
+            continue
         # Primary "value" follows league_type for backwards-compat callers.
         # On a gap date an SF league has no primary value either (None), and
         # the delta chain skips the gap so the next real point is compared

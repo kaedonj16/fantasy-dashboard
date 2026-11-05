@@ -206,6 +206,50 @@ def test_reader_redraft_size12_and_gaps(monkeypatch):
     assert out[1]["value_1qb"] is None
 
 
+def test_reader_redraft_unsolved_size8_falls_back_to_base(monkeypatch):
+    # The WLS never solves 8/14, so the size columns are NULL on every
+    # date for every player; the served redraft value for those leagues
+    # is the size-invariant base solve, and the history must serve that
+    # same series (within redraft only, never the dynasty columns).
+    # All-null dates (pre-tracking) are dropped, not returned as rows.
+    rows = [_hist_row("2026-03-29", None, None),
+            _hist_row("2026-10-28", 80.1, 172.3),
+            _hist_row("2026-11-05", 33.2, 42.0)]
+    captured = _install_reader(monkeypatch, rows)
+    out = H.get_player_value_history(
+        "P1", days=365, league_type="sf", league_size=8,
+        scoring_type="redraft")
+    assert "COALESCE(redraft_value_8, redraft_value)" in captured["sql"]
+    assert "COALESCE(redraft_sf_value_8, redraft_sf_value)" in captured["sql"]
+    assert [r["as_of_date"] for r in out] == ["2026-10-28", "2026-11-05"]
+    # SF is the primary series in an SF league.
+    assert [r["value"] for r in out] == [172.3, 42.0]
+    assert [r["value_1qb"] for r in out] == [80.1, 33.2]
+    assert out[1]["delta_from_prev"] == -130.3
+    assert "cal_fetched" not in captured
+
+
+def test_reader_redraft_unsolved_size14_falls_back_to_base(monkeypatch):
+    rows = [_hist_row("2026-11-05", 33.2, 42.0)]
+    captured = _install_reader(monkeypatch, rows)
+    out = H.get_player_value_history(
+        "P1", days=30, league_type="1qb", league_size=14,
+        scoring_type="redraft")
+    assert "COALESCE(redraft_value_14, redraft_value)" in captured["sql"]
+    assert "COALESCE(redraft_sf_value_14, redraft_sf_value)" in captured["sql"]
+    assert [r["value"] for r in out] == [33.2]
+
+
+def test_reader_redraft_all_null_series_returns_empty(monkeypatch):
+    rows = [_hist_row("2026-03-29", None, None),
+            _hist_row("2026-11-05", None, None)]
+    _install_reader(monkeypatch, rows)
+    out = H.get_player_value_history(
+        "P1", days=365, league_type="1qb", league_size=10,
+        scoring_type="redraft")
+    assert out == []
+
+
 def test_reader_default_stays_dynasty(monkeypatch):
     rows = [_hist_row("2026-10-27", 500.0, 480.0)]
     captured = _install_reader(monkeypatch, rows)
@@ -254,8 +298,36 @@ def test_web_reader_redraft_direct_column(monkeypatch):
     assert out[1]["delta_from_prev"] == 10.0
 
 
+def test_web_reader_redraft_unsolved_size8_falls_back_to_base(monkeypatch):
+    rows = [_web_row("2026-10-26", None), _web_row("2026-10-27", 700.0)]
+    captured = _install_web_reader(monkeypatch, rows)
+    out = WH.get_player_value_history(
+        "P1", days=30, league_type="1qb", league_size=8,
+        scoring_type="redraft")
+    assert "COALESCE(redraft_value_8, redraft_value) AS value" in captured["sql"]
+    # Still redraft-only: the dynasty base column never enters the chain.
+    assert "COALESCE(redraft_value_8, value)" not in captured["sql"]
+    assert [r["value"] for r in out] == [700.0]
+
+
 def test_web_reader_default_keeps_dynasty_coalesce(monkeypatch):
     captured = _install_web_reader(monkeypatch, [_web_row("2026-10-27", 5.0)])
     WH.get_player_value_history("P1", days=30, league_type="1qb",
                                 league_size=12)
     assert "COALESCE(value_12, value) AS value" in captured["sql"]
+
+
+# ---------------------------------------------------------------------------
+# Modal client: an all-null series is the empty state, never a flat 0
+# ---------------------------------------------------------------------------
+
+def test_modal_all_null_series_is_empty_state_and_summary_ignores_nulls():
+    src = (ROOT / "static/player_modal.js").read_text()
+    # The chart renderer must treat a series with no non-null point as
+    # empty (the honest "still building" note), not draw it.
+    assert "_vhHasPoint" in src
+    assert "(!_vhSeries.length || !_vhHasPoint)" in src
+    # The summary must skip nulls instead of Number(null) == 0, which
+    # fabricated "Value 0 / 0.0%" for pre-tracking rows.
+    assert "history.map(d => Number(d.value_1qb ?? d.value))" not in src
+    assert "!= null ? Number(d.value_1qb ?? d.value) : null" in src
