@@ -2794,6 +2794,21 @@ function wvBmClaimLine(p) {{
   return `<div class="wv-cx-evl${{claimHi ? ' caution' : ''}}"><span class="k">CLAIM</span><span title="${{String(claimTip).replace(/"/g, '&quot;')}}">${{claimBid}}</span></div>`;
 }}
 
+// "Claim by" chip for players the transactions delta says were dropped
+// after the league data was built (spec §5.2C). The time renders only
+// when the league's waiver process is known; never guessed.
+function wvDropChipText(p) {{
+  const wp = p.waiver_process || null;
+  let when = '';
+  if (wp && wp.next_process_at) {{
+    try {{
+      when = new Intl.DateTimeFormat('en-US', {{ timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }}).format(new Date(wp.next_process_at));
+    }} catch (e) {{ when = ''; }}
+  }}
+  if (wp && wp.type === 'faab') return when ? ('On waivers · claim by ' + when + ' ET') : 'On waivers';
+  return when ? ('Dropped today · claim by ' + when + ' ET') : 'Dropped today';
+}}
+
 function wvRenderWaivers() {{
   const list = document.getElementById('wvWaiverList');
   let players = wvWaiverData;
@@ -2835,6 +2850,12 @@ function wvRenderWaivers() {{
     // by the name; the full note (designation + return timeline) rides in the
     // tap-to-expand evidence below.
     const injBadge = wvInjBadge(p.injury_status);
+    // Fresh-drop flag: this player hit the wire after the league data
+    // was built, so the chip names the claim deadline when known.
+    let dropChip = '';
+    if (p.dropped_at) {{
+      dropChip = `<span class="wv-cx-chip">${{wvDropChipText(p)}}</span>`;
+    }}
     // Big-game flag from last week rides along as a chip, not a row.
     let bgChip = '';
     if (p.big_game && p.big_game.category) {{
@@ -2890,6 +2911,7 @@ function wvRenderWaivers() {{
           <span class="wv-cx-name" data-wl-star-pid="${{p.player_id}}">${{p.name}}${{injBadge}}</span>
           ${{sub ? `<span class="wv-cx-sub">${{sub}}${{usageChip}}</span>` : ''}}
           ${{gainTxt ? `<span class="wv-cx-why"><span class="wv-cx-k">${{gainLbl}}</span>${{gainTxt}}</span>` : ''}}
+          ${{dropChip}}
           ${{bgChip}}
         </span>
         ${{projBlock}}

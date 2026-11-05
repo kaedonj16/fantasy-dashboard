@@ -13103,6 +13103,27 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         str(pid) for r in rosters for pid in (r.get("players") or [])
     }
 
+    # Transactions delta (spec §5.2A, shared with /api/waiver-candidates
+    # via utils.waiver_freshness): this selector's pool is the same
+    # value-table-minus-ctx-rosters derivation, so it inherits the same
+    # staleness. Net the provider transactions newer than the ctx build
+    # into the rostered set; fail soft to the cached rosters on any error.
+    _ns_dropped: dict = {}
+    try:
+        from utils.waiver_freshness import (
+            apply_delta_to_rostered as _ns_apply_delta,
+            dropped_within as _ns_dropped_within,
+            get_transactions_delta as _ns_get_delta,
+        )
+        _ns_delta = _ns_get_delta(
+            ctx.get("platform") or "sleeper", ctx.get("league_id") or "",
+            int(ctx.get("current_season") or ctx.get("season") or 0), ctx) or {}
+        rostered_ids = _ns_apply_delta(rostered_ids, _ns_delta)
+        _ns_dropped = _ns_dropped_within(_ns_delta, hours=48.0)
+    except Exception:
+        logger.debug("next-steps waiver delta skipped", exc_info=True)
+        _ns_dropped = {}
+
     # Rookie-class eligibility, identical to the Waiver Wire Targets card:
     # this year's rookies join the pool only once a classmate is rostered
     # (i.e. the rookie draft has happened).
@@ -13187,7 +13208,13 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         if pid in _rookie_sids and not _rookie_draft_done:
             continue
         val = value_by_pid.get(pid, 0.0)
-        if val < WEIGHTS.min_value:
+        # Dropped-starter admission (spec §5.2B): a below-floor player the
+        # delta says was dropped in the last 48h enters the pool
+        # tentatively; the projection check after the opportunity inputs
+        # are built keeps only those at/above the viewer's worst starter
+        # at the position, and the shared selector's gates judge the rest.
+        _ns_bypass = pid in _ns_dropped
+        if val < WEIGHTS.min_value and not _ns_bypass:
             continue
         try:
             age = float(row.get("age") or 0)
@@ -13203,6 +13230,8 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
             "pos_rank_label": row.get(_rk_ns) or row.get("pos_rank_label") or "",
             "rank_change_7d": row.get("rank_change_7d"),
             "injury_status": str((players_index.get(pid) or {}).get("injury_status") or ""),
+            "dropped_at": _ns_dropped.get(pid),
+            "dropped_bypass": _ns_bypass,
         })
     if not pool:
         return [], names_by_pid, {}, 0
@@ -13224,7 +13253,9 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         logger.debug("suppressed exception", exc_info=True)
 
     # Bound the evaluated pool like the Waivers page does (top values plus
-    # any strong breakout) so the lineup solver stays cheap.
+    # any strong breakout) so the lineup solver stays cheap. Tentative
+    # dropped-starter bypass candidates always evaluate: their whole case
+    # is this week's projection, which only the opportunity inputs know.
     eval_pool = pool[:48]
     _eval_ids = {c["player_id"] for c in eval_pool}
     for c in pool[48:]:
@@ -13232,7 +13263,7 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
             _bs = float((waiver_breakout or {}).get(c["player_id"]) or 0.0)
         except (TypeError, ValueError):
             _bs = 0.0
-        if _bs >= 50.0 and c["player_id"] not in _eval_ids:
+        if (_bs >= 50.0 or c.get("dropped_bypass")) and c["player_id"] not in _eval_ids:
             eval_pool.append(c)
             _eval_ids.add(c["player_id"])
 
@@ -13281,6 +13312,81 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         if _opp["weekly_availability"]:
             calendar_need = _calendar_need_from_availability(
                 _opp["weekly_availability"], roster_positions) or {}
+
+    # Dropped-starter bypass verdict (spec §5.2B): a tentative below-floor
+    # admission survives only when its current-week projection reaches the
+    # viewer's worst starter at the position (dedicated starters, the
+    # Superflex slot for QBs, or the FLEX starter for RB/WR/TE). Without
+    # opportunity inputs there is no projection to judge, so tentative
+    # admissions fall out rather than riding in unjudged.
+    if any(c.get("dropped_bypass") for c in eval_pool):
+        _keep_bypass: set = set()
+        try:
+            _wk_by_pid = (_opp["weekly_pts_by_pid"] if season and week else {}) or {}
+
+            def _cur_proj(_pid):
+                # Current week only: the bypass judges this week's
+                # starter bar, and a starter with no current-week
+                # projection (bye/hurt) is exactly the hole a dropped
+                # starter fills -- a later week's value must not
+                # resurrect him as the bar.
+                _series = _wk_by_pid.get(str(_pid)) or []
+                if _series and _series[0] is not None:
+                    return float(_series[0])
+                return None
+
+            _counts_ns = _count_lineup_slots(roster_positions)
+            _by_pos_ns: dict = {}
+            for _rpid in roster_pids:
+                _rp = _cur_proj(_rpid)
+                if _rp is None:
+                    continue
+                _rpos = positions_by_pid.get(str(_rpid))
+                if _rpos in ("QB", "RB", "WR", "TE"):
+                    _by_pos_ns.setdefault(_rpos, []).append(_rp)
+            _ded_ns = {
+                "QB": int(_counts_ns.get("QB") or 0) + int(_counts_ns.get("SUPER_FLEX") or 0),
+                "RB": int(_counts_ns.get("RB") or 0),
+                "WR": int(_counts_ns.get("WR") or 0),
+                "TE": int(_counts_ns.get("TE") or 0),
+            }
+            _worst_ns: dict = {}
+            _flex_pool_ns: list = []
+            for _pos, _n in _ded_ns.items():
+                _vals = sorted(_by_pos_ns.get(_pos) or [], reverse=True)
+                if _n and len(_vals) >= _n:
+                    _worst_ns[_pos] = _vals[_n - 1]
+                elif _n:
+                    # Starter hole this week: the bar is zero.
+                    _worst_ns[_pos] = 0.0
+                if _pos in ("RB", "WR", "TE"):
+                    _flex_pool_ns.extend(_vals[_n:])
+            _nflex_ns = int(_counts_ns.get("FLEX") or 0)
+            if _nflex_ns and len(_flex_pool_ns) >= _nflex_ns:
+                _flex_worst_ns = sorted(_flex_pool_ns, reverse=True)[_nflex_ns - 1]
+            elif _nflex_ns:
+                _flex_worst_ns = 0.0
+            else:
+                _flex_worst_ns = None
+            for c in eval_pool:
+                if not c.get("dropped_bypass"):
+                    continue
+                _cpos = str(c.get("position") or "").upper()
+                _cp = _cur_proj(c["player_id"])
+                if _cp is None:
+                    continue
+                if _worst_ns.get(_cpos) is not None and _cp >= _worst_ns[_cpos]:
+                    _keep_bypass.add(c["player_id"])
+                elif (_cpos in ("RB", "WR", "TE") and _flex_worst_ns is not None
+                        and _cp >= _flex_worst_ns):
+                    _keep_bypass.add(c["player_id"])
+        except Exception:
+            logger.debug("next-steps dropped-starter check failed", exc_info=True)
+            _keep_bypass = set()
+        eval_pool = [c for c in eval_pool
+                     if not c.get("dropped_bypass") or c["player_id"] in _keep_bypass]
+        pool = [c for c in pool
+                if not c.get("dropped_bypass") or c["player_id"] in _keep_bypass]
 
     results = rank_team_waiver_suggestions(
         eval_pool,
@@ -16016,6 +16122,67 @@ def api_start_sit_options():
     return jsonify(payload), status
 
 
+def _ss_resolve_identity(pid, row=None, meta=None, full_player=None,
+                         teams_index=None, groups=None):
+    """Resolve a Start/Sit row's (position, name, team) -- spec §4.2.
+
+    The fallback chain, in order: model value table row, players_index
+    meta, the full players payload (``ctx["players"]``, Sleeper shape:
+    ``full_name`` / ``position`` / ``team``), and -- only for a pid that
+    is an NFL team code with no position from any source -- a synthesized
+    DEF identity from the teams index / full team name. The value table
+    and the players index carry no DEF rows, so without steps 3-4 a team
+    defense resolved to position "" (row dropped, "No roster data") or,
+    with a partial meta row, to the literal fallback "Player NO" for the
+    Saints (the pid IS the team code). Defenses are deliberately NOT
+    added to the model value table: those values are player values and a
+    DEF row would leak into trade/waiver value surfaces.
+
+    The synthesis guard requires that NO source carried a position, so
+    an IDP player (DB/CB/LB...) is never relabelled a team defense.
+    Returns (pos, name, team) with pos canonicalized via _start_sit_pos
+    ("" when nothing resolves to a Start/Sit group).
+    """
+    row = row or {}
+    meta = meta or {}
+    full = full_player or {}
+    pid_s = str(pid)
+    full_pos = full.get("position") or full.get("pos") or ""
+    if not full_pos:
+        _fps = full.get("fantasy_positions")
+        if isinstance(_fps, (list, tuple)) and _fps:
+            full_pos = _fps[0]
+    any_pos = (row.get("position") or row.get("pos") or meta.get("pos")
+               or meta.get("position") or full_pos or "")
+    pos = _start_sit_pos(any_pos)
+    if not pos and not any_pos:
+        code = pid_s.upper()
+        _ti = (teams_index or {}).get(code) or {}
+        _known_team = bool(_ti) or get_team_full_name(code) != code
+        if _known_team and (not groups or "DEF" in groups):
+            pos = "DEF"
+    name = (row.get("name") or meta.get("name") or meta.get("full_name")
+            or full.get("full_name") or full.get("name") or "")
+    if not name:
+        _joined = " ".join(
+            str(x) for x in (full.get("first_name"), full.get("last_name"))
+            if x)
+        name = _joined
+    if not name and pos == "DEF":
+        code = pid_s.upper()
+        _ti = (teams_index or {}).get(code) or {}
+        name = (_ti.get("name") or _ti.get("full_name")
+                or (get_team_full_name(code) if get_team_full_name(code) != code else "")
+                or "")
+    if not name:
+        name = f"Player {pid_s}"
+    team = str(row.get("team") or meta.get("team") or full.get("team")
+               or "").upper()
+    if not team and pos == "DEF":
+        team = pid_s.upper()
+    return pos, name, team
+
+
 def _build_start_sit_options(platform: str, league_id: str, season: int,
                              guest_pids=()):
     """Start/Sit options payload + HTTP status (see api_start_sit_options).
@@ -16084,6 +16251,12 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         return _owner_by_pid.get(str(pid)) or "Free Agent"
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
+    _ss_teams_index = ctx.get("teams_index") or {}
+    if not _ss_teams_index:
+        try:
+            _ss_teams_index = load_teams_index() or {}
+        except Exception:
+            _ss_teams_index = {}
     try:
         from utils.waiver_score import build_depth_index as _ss_build_depth
         _ss_depth_index = _ss_build_depth(players_full)
@@ -16139,6 +16312,24 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         # (roster and guest alike, keeping their numbers comparable).
         _ss_bundles = {}
         _ss_use_bundles = False
+    if _ss_use_bundles:
+        # DEF rows always take the live path (spec §4.2): the bundle
+        # build's universe comes from players_index, which carries no DEF
+        # entries, so a team defense can never have a bundle. The coverage
+        # check above already degrades such rosters to live today; force
+        # it explicitly so a future bundle-build change cannot silently
+        # score a DEF row from missing bundle inputs. The live path's
+        # _lookup_proj does serve DEF projections: the projections-by-week
+        # maps carry team-code entries (verified: "NO" -> 9.5 pts).
+        for _pid in list(player_ids) + list(guest_pids):
+            _pos_chk, _, _ = _ss_resolve_identity(
+                _pid, rows_by_id.get(_pid), players_index.get(_pid),
+                players_full.get(_pid), _ss_teams_index,
+                _start_sit_groups(lineup_requirements))
+            if _pos_chk == "DEF":
+                _ss_bundles = {}
+                _ss_use_bundles = False
+                break
 
     # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
@@ -16439,11 +16630,13 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         player's position has no group in this league."""
         row = rows_by_id.get(pid) or {}
         meta = players_index.get(pid) or {}
-        pos = _start_sit_pos(row.get("position") or row.get("pos") or meta.get("pos") or "")
+        # Identity fallback chain (spec §4.2): value table -> players
+        # index -> full players payload -> teams-index DEF synthesis.
+        pos, player_name, team = _ss_resolve_identity(
+            pid, row, meta, players_full.get(pid) or {},
+            _ss_teams_index, positions_out)
         if pos not in positions_out:
             return None
-        player_name = row.get("name") or meta.get("name") or f"Player {pid}"
-        team = (row.get("team") or meta.get("team") or "").upper()
         opponent = opponent_map.get(team, "")
         # Only mark as BYE/on-bye when the schedule actually loaded (opponent_map non-empty)
         on_bye = bool(opponent_map) and team not in opponent_map
