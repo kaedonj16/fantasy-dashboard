@@ -266,10 +266,17 @@ def get_player_value_history(
     _redraft = str(scoring_type or "dynasty").lower() == "redraft"
     if _redraft:
         # Redraft columns hold the WLS solve exactly as served: read them
-        # directly, never COALESCE to the dynasty value (a size the WLS
-        # never solved is a gap, not a point at the dynasty value).
+        # directly, never COALESCE to the dynasty value. Sizes the WLS
+        # actually solves (10/12) stay gap-honest. Sizes it never solves
+        # (8/14) have no size column on any date, so there the base
+        # (10-team) redraft solve, which is the served size-invariant
+        # redraft value, is the fallback: COALESCE within redraft only.
         col = _redraft_value_col(league_type, league_size)
-        _value_expr = col
+        if league_size in (8, 14):
+            _base_col = "redraft_sf_value" if str(league_type).lower() == "sf" else "redraft_value"
+            _value_expr = f"COALESCE({col}, {_base_col})"
+        else:
+            _value_expr = col
     else:
         col = _value_col(league_type, league_size)
         _value_expr = f"COALESCE({col}, value)"

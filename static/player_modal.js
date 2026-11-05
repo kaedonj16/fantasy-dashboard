@@ -341,7 +341,13 @@ function _pmRenderValueHistoryChart(data) {
       }
       const _vhLbl = document.getElementById('pmValueHistoryLabel');
       if (_vhLbl) _vhLbl.textContent = _pmVhLabel(_vhFmt);
-      if (_vhDiv && !_vhSeries.length) {
+      // A series can be non-empty yet carry no points at all (every row
+      // null, e.g. a format whose tracking has not produced values for
+      // this player): that is the empty state too, never a chart of
+      // zeroes. The line renderer treats null as a gap, but the summary
+      // below used to turn nulls into 0 and draw a flat line at 0.
+      const _vhHasPoint = _vhSeries.some(d => d && ((d.value_1qb ?? d.value) != null || d.value_sf != null));
+      if (_vhDiv && (!_vhSeries.length || !_vhHasPoint)) {
         // The active format has no history points yet (redraft tracking
         // only began in late October 2026): show the block with an honest
         // note instead of drawing the other format's line under this
@@ -355,7 +361,7 @@ function _pmRenderValueHistoryChart(data) {
             : 'No dynasty value history for this player yet.')
           + '</div>';
       }
-      if (_vhSeries.length > 0) {
+      if (_vhHasPoint) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv) {
           chartDiv.innerHTML = '';  // clears a prior thin-state note
@@ -395,7 +401,12 @@ function _pmRenderValueHistoryChart(data) {
           function updateSummary(history) {
             const el = document.getElementById('pmVhSummary');
             if (!el) return;
-            const vals = history.map(d => Number(d.value_1qb ?? d.value)).filter(v => !isNaN(v));
+            // Nulls are gaps, not zeroes: Number(null) is 0, so mapping
+            // them through used to fabricate a 0 value / 0.0% summary
+            // (and a flat line) for a series whose early rows predate
+            // tracking. Keep only real points, in date order.
+            const vals = history.map(d => (d.value_1qb ?? d.value) != null ? Number(d.value_1qb ?? d.value) : null)
+              .filter(v => v != null && !isNaN(v));
             if (vals.length < 2) {
               // No summary cluster to join: park the bar back before the
               // chart (its standalone spot) rather than hiding it with
@@ -407,7 +418,11 @@ function _pmRenderValueHistoryChart(data) {
             }
             el.style.display = '';
             const ysf2 = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
-            const dual = vals.some((v, i) => ysf2[i] != null && Math.abs(v - ysf2[i]) > 1);
+            // Pair each 1QB point with the SF point on its own date:
+            // vals is null-filtered, so its indices no longer line up
+            // with history/ysf2 once a gap exists.
+            const dual = history.some((d, i) => (d.value_1qb ?? d.value) != null && ysf2[i] != null
+              && Math.abs(Number(d.value_1qb ?? d.value) - ysf2[i]) > 1);
             const first = vals[0], last = vals[vals.length - 1];
             const diff = last - first;
             const pct = first ? diff / first * 100 : 0;
