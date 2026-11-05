@@ -2870,8 +2870,19 @@ def build_standings_map(team_stats, roster_map, division_by_rid=None,
     ``division_records_by_rid`` supplies per-team ``(w, l, t)`` division
     records, seeding breaks overall-record ties by division win% before PF,
     matching the standings tables.
+
+    The owner join is whitespace-insensitive on both sides: a Sleeper team
+    name can carry a trailing space ("I Chase Brown Kids ") while the
+    team_stats owner for the same team is stripped, and an exact-string join
+    silently dropped both such teams from the seed map in League of
+    Greatness (Rebuild from Hell read 8th instead of its true 9th). A row
+    that still matches nothing is logged, never silently skipped.
     """
-    owner_to_rid = {owner: rid for rid, owner in roster_map.items()}
+    owner_to_rid = {
+        str(owner).strip(): rid
+        for rid, owner in roster_map.items()
+        if owner is not None
+    }
     if team_stats is None or getattr(team_stats, "empty", True):
         return {}
 
@@ -2879,8 +2890,13 @@ def build_standings_map(team_stats, roster_map, division_by_rid=None,
     owners = []
     for _, row in team_stats.iterrows():
         owner = row["owner"]
-        rid = owner_to_rid.get(owner)
+        rid = owner_to_rid.get(str(owner).strip()) if owner is not None else None
         if rid is None:
+            logger.warning(
+                "[standings_map] no roster match for owner %r; "
+                "team left out of the seed map",
+                owner,
+            )
             continue
         try:
             rid_int = int(rid)
