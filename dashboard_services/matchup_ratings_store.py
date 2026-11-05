@@ -128,9 +128,13 @@ def load_matchup_ratings(season: int,
                 ).fetchone()
         if not row:
             return None
-        payload = row[0]
+        # Production connections use psycopg's dict_row factory
+        # (dashboard_services.db), so rows arrive as dicts keyed by column
+        # name; a positional row[0] raises KeyError there and the except
+        # below would silently turn every load into a miss.
+        payload = row["payload"] if isinstance(row, dict) else row[0]
         return payload if isinstance(payload, dict) else None
     except Exception as exc:
-        logger.debug("[matchup_ratings_store] load failed for season %s: %s",
-                     season, exc)
+        logger.warning("[matchup_ratings_store] load failed for season %s: %s",
+                       season, exc)
         return None

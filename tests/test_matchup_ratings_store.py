@@ -107,7 +107,12 @@ def test_save_never_raises_when_db_down(monkeypatch, reset_tables_ready):
 
 
 def test_load_returns_payload(monkeypatch, reset_tables_ready):
-    conn = _FakeConn(fetchone_result=(_payload(),))
+    # Production connections use psycopg's dict_row factory
+    # (dashboard_services.db.get_conn), so fetchone() returns a dict keyed
+    # by column name, never a tuple. The fake must use that shape: a tuple
+    # row let row[0] pass in tests while every production load raised
+    # KeyError and silently missed.
+    conn = _FakeConn(fetchone_result={"payload": _payload()})
     _patch_conn(monkeypatch, conn)
 
     row = store.load_matchup_ratings(2026, "3ce7b75fe4f40427")
@@ -147,7 +152,8 @@ class _RoundTripConn:
             self.rows[(season, profile)] = payload.obj
         elif "SELECT payload FROM matchup_ratings" in sql and len(args) == 2:
             stored = self.rows.get((args[0], args[1]))
-            self._pending = (stored,) if stored is not None else None
+            # dict_row shape, matching production connections.
+            self._pending = {"payload": stored} if stored is not None else None
         return self
 
     def fetchone(self):
