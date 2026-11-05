@@ -106,6 +106,22 @@ def test_week_headers_sort_by_that_weeks_matchup():
     assert ".srk-wk-sort" in css and ".srk-th-sorted" in css
 
 
+def test_player_cell_spacing_is_a_flex_gap_not_flush_badges():
+    # The player cell is one flex row (pos pill, name, team code, roster
+    # badge). The badge carried no margin at all, so it rendered flush
+    # against the team code ("LAR" + "YOURS" as one blob). The cell's
+    # flex gap now owns all the spacing, and the shared inner margins
+    # that would double it up are zeroed inside the cell.
+    css = Path("static/dashboard.css").read_text()
+    pcell = css.split(".srk-pcell {", 1)[1].split("}", 1)[0]
+    assert "display: inline-flex;" in pcell
+    assert "gap: 6px;" in pcell
+    assert ".srk-pcell .sched-pos {\n    margin-right: 0;\n}" in css
+    assert ".srk-pcell .sched-nfl {\n    margin-left: 0;\n}" in css
+    # The phone override must not re-add a margin on top of the gap.
+    assert ".schedule-card .sched-nfl {\n        flex-shrink: 0;\n        font-size: 11px;\n        margin-left: 0;\n    }" in css
+
+
 def test_band_spacer_splits_so_ease_hiding_cannot_shift_the_band():
     # Rank+Player spacer is its own pinned cell; the Ease spacer hides with
     # the Ease column on phones, and the Adj Avg spacer shows only where
