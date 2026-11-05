@@ -15492,6 +15492,18 @@ def _prior_season_rules_deriver(platform, league_id, season):
         if total >= 2 and len(teams) >= total:
             return None
         out = {"playoff_teams": len(teams)}
+        # Derived bracket rows carry their week: the first winners
+        # week IS the playoff start. (The fallback below, "the week
+        # after the last week every roster played", reads consolation
+        # weeks as regular-season weeks on hosts like Fleaflicker
+        # where every team plays through the playoff rounds.)
+        bracket_weeks = [
+            int(m["week"]) for m in real
+            if isinstance(m.get("week"), int)
+        ]
+        if bracket_weeks:
+            out["playoff_week_start"] = min(bracket_weeks)
+            return out
         if total >= 2:
             try:
                 last_full = None

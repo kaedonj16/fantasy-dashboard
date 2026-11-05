@@ -287,11 +287,24 @@ def _trade_targets(ctx: dict, viewer_roster_id: str, scoring_type: str) -> list[
     platform = _safe_str(ctx.get("platform") or "sleeper")
     season = ctx.get("current_season") or ctx.get("season") or ""
     league_id = _safe_str(ctx.get("league_id") or "")
+    # Parity guard (Wave 1 legality at the report level): a
+    # designated keeper is untradeable, so a card naming one — on
+    # either side — is dropped even if an engine regression let it
+    # through upstream.
+    try:
+        from utils.league_rules import keeper_locked_ids as _klids
+
+        _locked = {str(pid) for pid in _klids(ctx)}
+    except Exception:
+        _locked = set()
     targets = []
     for p in partners:
         gets = (p.get("targets_they_have") or [])[:2]
         gives = (p.get("targets_viewer_sends") or [])[:3]
         if not gets or not gives:
+            continue
+        if _locked and any(str(g.get("id")) in _locked
+                           for g in gets + gives):
             continue
         get_ids = ",".join(str(g.get("id")) for g in gets if g.get("id"))
         give_ids = ",".join(str(g.get("id")) for g in gives if g.get("id"))
@@ -532,6 +545,20 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
     roster_map = ctx.get("roster_map") or {}
     inj_lookup = _injury_lookup(ctx)
     viewer_rid = str(viewer_roster_id)
+    # Parity (shared checks): this builder historically priced its
+    # own packages with no legality pass, so it could pitch a
+    # designated keeper (untradeable, Wave 1) as a target, offer the
+    # viewer's own designated keeper as the payment, and pitch a
+    # partner's sole starter as a "Reach". The shared layers judge
+    # all three below: keeper locks filter both sides, and
+    # trade_partner_checks.evaluate_package vetoes priced packages
+    # the partner cannot survive.
+    try:
+        from utils.league_rules import keeper_locked_ids as _klids
+
+        locked_ids = {str(pid) for pid in _klids(ctx)}
+    except Exception:
+        locked_ids = set()
 
     def _ordered_players(roster: dict, pos: str) -> list[dict]:
         out = []
@@ -583,7 +610,8 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
     for pos in ("QB", "RB", "WR", "TE"):
         ordered = _ordered_players(viewer_roster, pos)
         bar = _starter_bar(pos)
-        startable = [pl for pl in ordered if pl["value"] >= bar and not _is_serious(pl["id"])]
+        startable = [pl for pl in ordered if pl["value"] >= bar and not _is_serious(pl["id"])
+                     and pl["id"] not in locked_ids]
         if pos == "QB":
             sendable = startable[slots.get(pos, 1):]
         else:
@@ -647,6 +675,8 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
                     is_surplus = buried > 0
                 if _is_serious(cand["id"]):
                     continue
+                if cand["id"] in locked_ids:
+                    continue   # designated keeper: untradeable
                 pkg_val, pkg = _package_for(cand["value"])
                 gap = (min(pkg_val, cand["value"]) / max(pkg_val, cand["value"])
                        if pkg_val > 0 and cand["value"] > 0 else 0.0)
@@ -660,6 +690,8 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
                 cands.append({
                     **cand,
                     "partner": partner,
+                    "partner_roster_id": rid,
+                    "_pkg": pkg,
                     "partner_holes": partner_holes,
                     "depth_rank": depth_rank,
                     "skill_rank": skill_rank,
@@ -678,6 +710,69 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
                         else "Reach"
                     ),
                 })
+    # Shared viability: a candidate carrying a priced package must
+    # survive trade_partner_checks.evaluate_package (the partner
+    # still fields his required starters after the deal). A package
+    # that strips his sole starter is dropped here, not pitched as
+    # a Reach. Candidates with no priced package stay name-only
+    # targets: nothing is being offered, so nothing needs a veto.
+    try:
+        from dashboard_services.trade_partner_checks import (
+            evaluate_package as _evaluate_package,
+            slot_requirements as _slot_requirements,
+        )
+
+        _reqs = _slot_requirements(
+            roster_positions=ctx.get("roster_positions") or [],
+            is_sf=bool(_ctx_is_sf(ctx)))
+        try:
+            from dashboard_services.keeper_core import (
+                is_keeper_format as _is_kf,
+            )
+
+            _dyn_or_kp = bool(_is_kf(ctx)) or bool(ctx.get("is_dynasty"))
+        except Exception:
+            _dyn_or_kp = False
+        _rosters_by_id = {
+            str(r.get("roster_id") or ""): r
+            for r in ctx.get("rosters") or []}
+        _viewer_players = []
+        for _pos in ("QB", "RB", "WR", "TE"):
+            _viewer_players.extend(_ordered_players(viewer_roster, _pos))
+        _checked: list[dict] = []
+        for c in cands:
+            pkg = c.get("_pkg") or []
+            if not pkg:
+                _checked.append(c)
+                continue
+            partner_roster = _rosters_by_id.get(
+                str(c.get("partner_roster_id") or "")) or {}
+            partner_players = []
+            for _pos in ("QB", "RB", "WR", "TE"):
+                partner_players.extend(
+                    _ordered_players(partner_roster, _pos))
+            ev = _evaluate_package(
+                partner_players=partner_players,
+                viewer_players=_viewer_players,
+                send=pkg,
+                receive=[{k: c.get(k) for k in
+                          ("id", "name", "position", "value")}],
+                requirements=_reqs, ctx=ctx,
+                is_dynasty_or_keeper=_dyn_or_kp)
+            if not ev.get("viable"):
+                continue
+            c["partner_check"] = {
+                "viable": True, "notes": ev.get("notes") or [],
+            }
+            if ev.get("keeper"):
+                c["keeper_cost"] = ev["keeper"]
+            _checked.append(c)
+        cands = _checked
+    except Exception:
+        logger.debug("[front-office] potential-target checks failed",
+                     exc_info=True)
+    for c in cands:
+        c.pop("_pkg", None)
     # Gettability first: surplus pieces and the players buried deepest
     # below the partner's starting group (flex included), closer to a
     # fair package, outrank a bigger name who will never move.

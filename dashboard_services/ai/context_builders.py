@@ -2150,6 +2150,33 @@ def build_trade_suggestions_context(
         _scored.sort(key=lambda x: x[0], reverse=True)
         return _scored
 
+    # Frontier 8 (owner pricing memory): when the caller stamped
+    # the owner's account key on the ctx (the assistant does), her
+    # remembered pricing statements bind this build: never-offer
+    # players veto any package that spends them, and named players
+    # reprice at her stated premium/discount. No key, no signals:
+    # the site's own surfaces price on the model alone.
+    _owner_signals = {"never_offer": {}, "boost": {}, "discount": {}}
+    try:
+        _acct = ctx.get("owner_account_key")
+        if _acct:
+            from dashboard_services.assistant.store import (
+                list_preferences as _list_prefs,
+            )
+            from utils.owner_pricing import (
+                parse_owner_pricing as _parse_owner,
+            )
+            _name_map = {}
+            for _opid, _omv in (model_value_lookup or {}).items():
+                _oname = str((_omv or {}).get("name") or "").strip().lower()
+                if _oname:
+                    _name_map[_oname] = str(_opid)
+            _owner_signals = _parse_owner(
+                _list_prefs(_acct), _name_map,
+                league_id=ctx.get("resolved_league_id"))
+    except Exception:
+        _owner_signals = {"never_offer": {}, "boost": {}, "discount": {}}
+
     # Find best trade partners
     partners = []
     _direction_by_rid: dict = {}
@@ -2374,9 +2401,68 @@ def build_trade_suggestions_context(
         if not targets_they_have or not targets_viewer_sends:
             continue
 
+        # Frontier 8 hard rule: a package that spends a player the
+        # owner said never to offer is not a suggestion at all.
+        if _owner_signals.get("never_offer") and any(
+                str(p.get("id")) in _owner_signals["never_offer"]
+                for p in targets_viewer_sends):
+            continue
+
         # Compute value sums and classify the trade type
         value_you_get = round(sum(p["value"] for p in targets_they_have[:3]), 1)
         value_you_give = round(sum(p["value"] for p in targets_viewer_sends[:3]), 1)
+
+        # Parity 3 (form pricing): price the target the way the
+        # trade page's acquire packages do — a target buried on his
+        # own roster (depth rank 3+) or benched is NOT priced as a
+        # starter (the Daniel Jones case from Wave 2 PR 4). Fairness
+        # and acceptance below run on the adjusted price; the raw
+        # sum and the pricing evidence ride on the entry.
+        _form_pricing = None
+        try:
+            from dashboard_services.trade_acquire_packages import (
+                form_adjusted_focus_value as _fafv,
+            )
+            _t0 = targets_they_have[0]
+            _tpos = str(_t0.get("position") or "").upper()
+            _ranked = _roster_top_players(r, _tpos) if _tpos else []
+            _depth_rank = next(
+                (i + 1 for i, p in enumerate(_ranked)
+                 if str(p.get("id")) == str(_t0.get("id"))), None)
+            _rstate = str(((_tp_role_states or {}).get(
+                str(_t0.get("id"))) or {}).get("state") or "") or None
+            _adj_get, _pricing = _fafv(
+                value_you_get, depth_rank=_depth_rank,
+                role_state=_rstate)
+            if _pricing.get("factor") not in (None, 1.0):
+                _form_pricing = {
+                    "factor": _pricing.get("factor"),
+                    "reasons": _pricing.get("reasons") or [],
+                    "raw_value": value_you_get,
+                    "adjusted_value": _adj_get,
+                }
+                value_you_get = _adj_get
+        except Exception:
+            _form_pricing = None
+
+        # Frontier 8: the owner's own stated pricing on the target
+        # (remembered preference) reprices the get side by a bounded
+        # 10%, stamped with the preference that caused it.
+        _owner_pricing = None
+        try:
+            from utils.owner_pricing import owner_factor as _ofactor
+
+            _of, _otext = _ofactor(_owner_signals,
+                                   targets_they_have[0].get("id"))
+            if _of != 1.0:
+                _owner_pricing = {
+                    "factor": _of, "preference": _otext,
+                    "raw_value": value_you_get,
+                    "adjusted_value": round(value_you_get * _of, 1),
+                }
+                value_you_get = _owner_pricing["adjusted_value"]
+        except Exception:
+            _owner_pricing = None
 
         if value_you_give > 0 and value_you_get / value_you_give >= 1.20:
             trade_type_hint = "up_tier"
@@ -2437,6 +2523,36 @@ def build_trade_suggestions_context(
         except Exception:
             _bye_flag = None
 
+        # Frontier 4 (partner memory): this manager's own completed
+        # trade history in THIS league conditions the estimate —
+        # QB appetite, 2-for-1 shape history, value tilt. Bounded
+        # and sample-gated inside utils.partner_memory; no history
+        # (or a thin one) leaves the estimate exactly as before.
+        _pm_adj, _pm_history = 0, None
+        try:
+            from utils.partner_memory import (
+                fetch_profiles as _pm_fetch,
+                partner_acceptance_adj as _pm_adj_for,
+            )
+            _pm_profile = (_pm_fetch(ctx) or {}).get(str(rid))
+            if _pm_profile:
+                _pm_adj, _pm_notes = _pm_adj_for(
+                    _pm_profile,
+                    partner_receives_positions=[
+                        (p or {}).get("position")
+                        for p in targets_viewer_sends],
+                    partner_sends_count=len(targets_they_have or []),
+                    partner_receives_count=len(
+                        targets_viewer_sends or []),
+                )
+                if _pm_notes:
+                    _pm_history = {
+                        "sample": _pm_profile.get("sample"),
+                        "notes": _pm_notes,
+                    }
+        except Exception:
+            _pm_adj, _pm_history = 0, None
+
         # Acceptance estimate from the partner's perspective: the
         # shared conditioned acceptance (spec 3.3) — logistic on the
         # value ratio, fit restricted to pieces that start for the
@@ -2452,7 +2568,7 @@ def build_trade_suggestions_context(
                 value_you_give, value_you_get, fit=_afit,
                 evaluation=_deal_eval,
                 contention=_tp_contention_by_rid.get(rid),
-                extra_adj=(-3 if _bye_flag else 0),
+                extra_adj=(-3 if _bye_flag else 0) + _pm_adj,
             )
         except Exception:
             acceptance_rate = None
@@ -2540,6 +2656,9 @@ def build_trade_suggestions_context(
                 _tp_contention_by_rid.get(rid) or {}).get("class"),
             "partner_check_notes": (
                 _deal_eval.get("notes") if _deal_eval else []),
+            "partner_history": _pm_history,
+            "form_pricing": _form_pricing,
+            "owner_pricing": _owner_pricing,
             "bye_flag": _bye_flag,
             "targets_they_have": targets_they_have[:3],
             "targets_viewer_sends": targets_viewer_sends[:3],
@@ -2550,6 +2669,21 @@ def build_trade_suggestions_context(
         })
 
     partners.sort(key=lambda x: (x["suggestion_score"], x["match_score"]), reverse=True)
+
+    # Parity 3 extras: coverage justification (the brief's hole map),
+    # asset conflicts across the list, counter ladders with
+    # sweetener ceilings and refuse-outright rules, and race /
+    # deadline weighting on the true field (rules record). One
+    # post-pass; any layer that cannot be computed honestly is
+    # absent rather than approximated.
+    try:
+        from dashboard_services.trade_suggestion_extras import (
+            annotate_suggestions as _annotate_suggestions,
+        )
+        _annotate_suggestions(ctx, partners, roster,
+                              model_value_lookup)
+    except Exception:
+        pass   # extras are annotation-only; never sink the list
 
     # Pick-for-player suggestions: viewer offers a pick instead of a player.
     # Don't require partner_surplus - any team with a good player at a needed
@@ -2649,6 +2783,15 @@ def build_trade_suggestions_context(
         "viewer_pos_totals": {pos: round(v, 1) for pos, v in viewer_totals.items()},
         "league_avg_pos_totals": {pos: round(v, 1) for pos, v in league_avg.items()},
         "top_partners": partners[:5],
+        # Frontier 8: which remembered owner rules bound this build
+        # (empty unless the caller stamped an account key and the
+        # owner's preferences named rostered players).
+        "owner_rules": {
+            kind: sorted({str((model_value_lookup.get(pid) or {})
+                               .get("name") or pid)
+                          for pid in pids})
+            for kind, pids in _owner_signals.items() if pids
+        },
         "projected_picks": [] if is_redraft else _projected_picks,
         "pick_trade_partners": [] if is_redraft else pick_trade_partners,
         # Viewer roster player IDs (sorted) so the renderer can hash the

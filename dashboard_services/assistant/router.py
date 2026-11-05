@@ -15,7 +15,7 @@ INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player"
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
            "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity", "watchlist", "front_office",
-           "live", "draft", "nfl_schedule",
+           "gm_directive", "live", "draft", "nfl_schedule",
            "open", "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -196,6 +196,13 @@ SYSTEM = (
     "report, GM memo, front office top moves): its computed direction, playoff odds, "
     "weakest positions, top moves, trade and waiver targets, and cut candidates. A "
     "general what-should-I-do question without the report named stays with this_week. "
+    "gm_directive: an open-ended directive ask about the user's own team in "
+    "moves or next-steps phrasing (what are my next steps, what moves should I "
+    "make, what is my next move, tell me what to do): the decided calls from the "
+    "GM brief that sequences the dashboard's Next Steps queue (race line, "
+    "coverage holes, claim cards, stash holds). Bare what-should-I-do phrasing "
+    "stays with this_week, and a question about a specific move (a named trade, "
+    "add, or start) keeps its own intent. "
     "live: a game happening right now or earlier today: who is winning right now, the live "
     "score, what a team needs tonight, or how a player is doing today. NOT a pregame preview "
     "or a win probability before kickoff (that is matchup), and NOT which NFL teams play "
@@ -1177,6 +1184,17 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "watchlist"}
     if re.search(r"front office|\bgm (report|memo)\b|general manager", m):
         return {**base, "intent": "front_office"}
+    # Parity 1: an open-ended directive ask gets the GM brief's
+    # decided calls. Tight phrasings only, and deliberately NOT the
+    # bare "what should I do" forms: those are pinned to this_week
+    # (test_keyword_plan_questions_stay_this_week — the digest ask
+    # that works today must not move). The moves / next-steps
+    # phrasings carry the directive intent instead.
+    if re.search(r"\bwhat'?s my (next )?move\b|\bwhat are my moves\b"
+                 r"|\bwhat moves should i make\b"
+                 r"|\bwhat are my next steps\b|\bmy next steps\b"
+                 r"|\btell me what to do\b|\bwhat do i need to do\b", m):
+        return {**base, "intent": "gm_directive"}
     # League-context intents run before the player/team-week rules below:
     # their phrasings overlap ("this week", "my team", "who leads"), so the
     # specific subject wins. Disambiguation: power rankings need the word

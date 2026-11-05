@@ -743,6 +743,7 @@ def derive_bracket_from_matchups(
     *,
     kind: str = "winners",
     max_rounds: int = 4,
+    seed_order: Optional[Sequence[Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Build bracket rounds from playoff-week matchup rows.
 
@@ -782,8 +783,86 @@ def derive_bracket_from_matchups(
                 "w": winner,
                 "l": loser,
                 "derived": True,
+                "week": week,
             })
-    return out
+    return _winners_bracket_only(out, seed_order=seed_order)
+
+
+def _winners_bracket_only(
+    rows: List[Dict[str, Any]],
+    *,
+    seed_order: Optional[Sequence[Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Drop consolation games from a derived bracket.
+
+    Providers like Fleaflicker schedule EVERY team during playoff
+    weeks (non-qualifiers play consolation games), so the raw
+    derivation above reads the whole league as the playoff field:
+    the prior-season rules deriver stamped a 12-team field and a
+    Week 16 start on an 8-team / Week 15 league (92916) because of
+    exactly this. ``kind="winners"`` must mean the winners bracket.
+
+    Structural test: in a completed bracket the championship game
+    is a final-round game whose participants are BOTH still
+    undefeated (every placement game involves a team that already
+    lost). A consolation bracket can crown its own undefeated
+    champion, so when several such games exist the tie breaks on
+    ``seed_order`` (standings order): the real finalists are the
+    best-seeded pair. Walking down from the final, a game belongs
+    to the winners bracket when its winner appears as a participant
+    in a later winners game; bye teams enter as participants of
+    those games. Consolation winners keep winning placement games
+    but never reach the final's chain, so their games fall out.
+
+    Fail-soft by design: when no completed final can be identified
+    (playoffs in progress, a single round played, an unbreakable
+    tie), the rows pass through unchanged rather than risk dropping
+    real winners games.
+    """
+    by_round: Dict[Any, List[Dict[str, Any]]] = {}
+    for row in rows or []:
+        by_round.setdefault(row.get("r"), []).append(row)
+    if len(by_round) < 2:
+        return rows
+    rounds = sorted(r for r in by_round if isinstance(r, int))
+    if len(rounds) < 2:
+        return rows
+    losses: Dict[Any, int] = {}
+    final = None
+    for r in rounds:
+        if r == rounds[-1]:
+            cands = [
+                g for g in by_round[r]
+                if g.get("t1") is not None and g.get("t2") is not None
+                and not losses.get(g.get("t1"), 0)
+                and not losses.get(g.get("t2"), 0)
+            ]
+            if len(cands) == 1:
+                final = cands[0]
+            elif len(cands) > 1 and seed_order:
+                rank = {rid: i for i, rid in enumerate(seed_order)}
+
+                def _seed_sum(g):
+                    return (rank.get(g.get("t1"), len(rank) + 1)
+                            + rank.get(g.get("t2"), len(rank) + 1))
+
+                cands.sort(key=_seed_sum)
+                if _seed_sum(cands[0]) < _seed_sum(cands[1]):
+                    final = cands[0]
+        for g in by_round[r]:
+            if g.get("l") is not None:
+                losses[g["l"]] = losses.get(g["l"], 0) + 1
+    if final is None:
+        return rows
+    keep = {(final.get("r"), final.get("m"))}
+    participants = {final.get("t1"), final.get("t2")}
+    for r in reversed(rounds[:-1]):
+        for g in by_round[r]:
+            if g.get("w") is not None and g.get("w") in participants:
+                keep.add((g.get("r"), g.get("m")))
+                participants.add(g.get("t1"))
+                participants.add(g.get("t2"))
+    return [row for row in rows if (row.get("r"), row.get("m")) in keep]
 
 
 def project_bracket_from_seeds(
@@ -937,6 +1016,7 @@ def derive_or_project_bracket(
     """
     actual = derive_bracket_from_matchups(
         matchups_by_week or {}, playoff_week_start, kind=kind,
+        seed_order=seed_roster_ids,
     )
     if actual:
         return actual
