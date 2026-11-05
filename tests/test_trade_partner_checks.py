@@ -5,6 +5,9 @@ One fixture per Nov 4 failing case:
 - Burrow: SF partner with exactly 2 startable QBs cannot sell one.
 - Caleb: Watson-only package orphans Goodfellas; the QB-back repair
   (Watson + the viewer's spare QB2) makes it viable and fair.
+- Ward (Nov 5 live dry run on 92916): Goodfellas' QB3 has NO Week 9
+  projection in a supplied projections map but clears the QB value
+  bar; he must not satisfy the Superflex minimum on value alone.
 - Moore + Dobbins: two non-starting sweeteners fail headline caliber;
   the same value as one starting piece + filler passes.
 - Contention: same roster at 2-6 vs 6-2 against a fixture 8-team rules
@@ -26,6 +29,7 @@ from dashboard_services.trade_partner_checks import (
     evaluate_package,
     fairness_ratio,
     find_repair_player,
+    player_startable,
     surplus_ok,
 )
 
@@ -136,6 +140,94 @@ def test_repair_none_when_viewer_has_no_spare():
         viewer_players=viewer, send=[viewer[2]], position="QB",
         viewer_requirements=SF_REQ, value_bars=BARS)
     assert repair is None
+
+
+# --- Ward (missing projection fails closed, Nov 5 live dry run) ---------------
+#
+# Live 92916 shape: Goodfellas' QB room is Maye + Caleb starting, with
+# Ward (value 501.9, just over the 500 QB value bar) and Mendoza behind
+# them. The Week 9 projections map covers Maye and Caleb but has NO
+# entry for Ward — he is a backup we have no evidence will play. On
+# value alone he counted as a startable QB2 and a Watson-alone offer
+# for Caleb passed viability; with a projections layer present, a
+# missing projection must fail closed.
+
+LIVE_BARS = {"QB": 500.0, "RB": 300.0, "WR": 300.0, "TE": 180.0}
+WEEK9_PROJ = {"maye": 23.03, "caleb": 20.64}
+
+
+def _goodfellas_live():
+    return [
+        _p("maye", "QB", 866.9), _p("caleb", "QB", 805.4),
+        _p("ward", "QB", 501.9), _p("mendoza", "QB", 419.4),
+        _p("rb-a", "RB", 600), _p("rb-b", "RB", 450),
+        _p("wr-a", "WR", 650), _p("wr-b", "WR", 500),
+        _p("te-a", "TE", 320),
+    ]
+
+
+def test_no_projection_qb3_does_not_satisfy_sf_minimum():
+    partner = _goodfellas_live()
+    ev = evaluate_package(
+        partner_players=partner, viewer_players=[],
+        send=[_p("watson", "WR", 615)], receive=[partner[1]],
+        requirements=SF_REQ, projections=WEEK9_PROJ,
+        value_bars=LIVE_BARS)
+    assert ev["viable"] is False
+    assert ev["post_counts"].get("QB") == 1
+    assert ev["shortfalls"].get("QB") == {"have": 1, "need": 2}
+    assert "Leaves them without a second QB" in ev["notes"]
+
+
+def test_projected_qb3_satisfies_sf_minimum_control():
+    # Same roster, same offer — but Ward carries a real Week 9
+    # projection over the QB starter bar, so he legitimately counts.
+    partner = _goodfellas_live()
+    proj = dict(WEEK9_PROJ, ward=16.5)
+    ev = evaluate_package(
+        partner_players=partner, viewer_players=[],
+        send=[_p("watson", "WR", 615)], receive=[partner[1]],
+        requirements=SF_REQ, projections=proj, value_bars=LIVE_BARS)
+    assert ev["viable"] is True
+    assert ev["shortfalls"] == {}
+
+
+def test_repair_qb_with_projection_restores_viability():
+    # The QB-back repair still lands when the QB coming back actually
+    # projects (McCarthy, 17.93 in the live run): he counts, Ward and
+    # Mendoza do not, and the partner stays at the SF minimum.
+    partner = _goodfellas_live()
+    proj = dict(WEEK9_PROJ, mccarthy=17.93)
+    ev = evaluate_package(
+        partner_players=partner, viewer_players=[],
+        send=[_p("watson", "WR", 615), _p("mccarthy", "QB", 612.6)],
+        receive=[partner[1]],
+        requirements=SF_REQ, projections=proj, value_bars=LIVE_BARS)
+    assert ev["viable"] is True
+    assert ev["post_counts"].get("QB") == 2
+    assert ev["shortfalls"] == {}
+
+
+def test_player_startable_missing_projection_fails_closed():
+    ward = _p("ward", "QB", 501.9)
+    # In a supplied projections map but missing from it: not startable,
+    # even though his value clears the QB value bar.
+    assert player_startable(
+        ward, projections=WEEK9_PROJ, value_bars=LIVE_BARS) is False
+    # No projections layer at all: the legacy value-bar fallback still
+    # defines startable for value-only callers.
+    assert player_startable(
+        ward, projections=None, value_bars=LIVE_BARS) is True
+    # Present in the map with a starter-level projection: startable.
+    assert player_startable(
+        ward, projections=dict(WEEK9_PROJ, ward=16.5),
+        value_bars=LIVE_BARS) is True
+    # The fail-closed rule is QB-scoped: a flex player missing from a
+    # partial projections map keeps the value-bar fallback (the same
+    # definition feeds viewer-surplus math, where maps are partial).
+    wr = _p("wr-x", "WR", 615)
+    assert player_startable(
+        wr, projections=WEEK9_PROJ, value_bars=LIVE_BARS) is True
 
 
 # --- Headline caliber (check 3) ----------------------------------------------

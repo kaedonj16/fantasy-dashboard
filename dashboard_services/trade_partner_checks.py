@@ -21,8 +21,10 @@ Pure functions over plain data:
 * ``role_states`` / ``projections``: the Wave 2 situation layer
   (``utils/role_state.py``). Both are optional and fail-soft: with no
   role layer, "startable" falls back to projection-vs-bar, and with no
-  projections either, to the caller's value bar (the pre-Wave-2
-  definition). See :func:`player_startable`.
+  projections layer at all, to the caller's value bar (the pre-Wave-2
+  definition). One fail-closed exception: at QB, a player missing
+  from a supplied projections layer earns no startable credit — no
+  projection, no QB2 (see :func:`player_startable`).
 
 Checks implemented (spec 3.2 numbering):
 
@@ -145,6 +147,17 @@ def player_startable(info: dict, role_states: Optional[dict] = None,
     in for the projection test so value-only callers keep the old
     behavior. Without a role entry (role layer absent or the player
     missing from it): projection over the bar, else the value bar.
+
+    QB exception (fail closed): when a projections layer WAS supplied,
+    a QB missing from it (and carrying no projection of his own) is
+    never startable — no projection means we do not know he starts,
+    so he must not satisfy the Superflex starter minimum on value
+    alone. The exception is QB-scoped on purpose: QB has no flex
+    substitute and a QB shortfall is never offset, while at the flex
+    positions this same shared definition also feeds viewer-surplus
+    and headline logic, where projections maps are legitimately
+    partial (flat-map callers cover a subset) and failing closed
+    would silently zero every uncovered position.
     """
     if not isinstance(info, dict) or _is_pick(info):
         return False
@@ -159,7 +172,14 @@ def player_startable(info: dict, role_states: Optional[dict] = None,
         proj = info.get("projection")
     entry = (role_states or {}).get(pid) if role_states else None
     if proj is None:
-        # No projection FOR THIS PLAYER (layer absent, or the player
+        if projections and pos == "QB":
+            # A projections layer exists for this week and this QB is
+            # not in it: fail closed (see docstring). The live 92916
+            # case: Goodfellas' QB3 Cam Ward had no Week 9 projection
+            # but cleared the QB value bar, so a Watson-alone offer
+            # passed viability on a QB2 we had no evidence would play.
+            return False
+        # No projection FOR THIS PLAYER (layer absent, or a non-QB
         # missing from it): the value bar is the fallback definition of
         # startable (spec 3.2 shared inputs) — unless a role state
         # already rules him out (starter_out / benched).
