@@ -10368,6 +10368,11 @@ window.initTradePage = function initTradePage(root = document) {
       } else if (isProspect(p.id)) {
         badges.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
       }
+      // Designated keeper: this league does not allow trading them.
+      // Badge and warn only -- the manual calculator never blocks.
+      if (p.id && rosterFilter.lockedIds && rosterFilter.lockedIds.has(String(p.id))) {
+        badges.push('<span class="otc-keeper-badge" title="Designated keeper: this league does not allow trading designated keepers" style="display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:#f59e0b22;color:#b45309;border:1px solid #f59e0b44;vertical-align:middle;cursor:default;">Keeper-locked</span>');
+      }
 
       // Text meta (pos · team · age) joined with " • "; badges appended space-separated.
       const metaHtml = metaBits.map(bit =>
@@ -13517,8 +13522,11 @@ window.initTradePage = function initTradePage(root = document) {
               big_overpay:{ label: 'Overpay',       color: '#ef4444' },
             };
             const gradeInfo = gradeMap[pkg.value_grade];
+            // Server grade wins (Wave 2 PR 4): pkg.value_grade is the
+            // server-stamped grade (incl. the keeper-core Steal guard);
+            // grade_note carries its reason ("Costs keeper core").
             const gradeHtml = gradeInfo
-              ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`
+              ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>${pkg.grade_note ? `<span style="font-size:10px;font-weight:600;color:var(--text-muted);white-space:nowrap;">${esc(pkg.grade_note)}</span>` : ''}`
               : '';
 
             // Acceptance probability computed server-side (roster need + history + value balance)
@@ -14718,7 +14726,18 @@ window.initTradePage = function initTradePage(root = document) {
         const getVal  = getAssets.reduce((s, a) => s + (a.value || 0), 0) || (t.value || 0);
         const ratio   = giveVal > 0 ? getVal / giveVal : 0;
         let gradeInfo;
-        if (isSell) {
+        // Prefer the server-stamped grade when the suggestion carries
+        // one (Wave 2 PR 4): the ratio recompute below must not
+        // resurrect a "Steal" the server suppressed (keeper-core guard).
+        const _serverGradeMap = {
+          steal:       { label: "Steal",         color: "#10b981" },
+          fair:        { label: "Fair value",    color: "#6366f1" },
+          overpay:     { label: "Slight overpay",color: "#f59e0b" },
+          big_overpay: { label: "Overpay",       color: "#ef4444" },
+        };
+        if (!isSell && t.value_grade && _serverGradeMap[t.value_grade]) {
+          gradeInfo = _serverGradeMap[t.value_grade];
+        } else if (isSell) {
           gradeInfo = ratio >= 1.08
             ? { label: "Great return",  color: "#10b981" }
             : ratio >= 0.92
@@ -15095,11 +15114,18 @@ window.initTradePage = function initTradePage(root = document) {
       rosterFilter.pickRoundCountsByRid = {};
       rosterFilter.teamName = {};
       rosterFilter.username = {};
+      // Designated keepers (Wave 1): badge-only in the calculator -- a
+      // locked player can still be added, but the chip says so.
+      rosterFilter.lockedByRid = {};
+      rosterFilter.lockedIds = new Set();
       teams.forEach(t => {
         const rid = String(t.roster_id);
         const set = new Set((t.player_ids || []).map(String));
         const counts = t.pick_round_counts || {};
         rosterFilter.byRid[rid] = set;
+        const lockedSet = new Set((t.keeper_locked_ids || []).map(String));
+        rosterFilter.lockedByRid[rid] = lockedSet;
+        lockedSet.forEach(pid => rosterFilter.lockedIds.add(pid));
         rosterFilter.pickIdsByRid[rid] = new Set((t.pick_ids || []).map(String));
         rosterFilter.pickRoundCountsByRid[rid] = counts;
         rosterFilter.pickRoundsByRid[rid] = new Set(Object.keys(counts));
