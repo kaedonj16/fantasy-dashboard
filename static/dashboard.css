@@ -50115,7 +50115,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 .for-card-inj ul { list-style: none; margin: 0; padding: 0; }
 .for-card-inj-row { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--grid); }
 .for-card-inj-row:last-child { border-bottom: none; }
-.for-card-inj-row .for-muted { font-size: 12px; }
+.for-card-inj-main { flex: 1 1 auto; min-width: 0; }
+.for-card-inj-row .for-inj-meta { font-size: 12px; margin-top: 1px; }
 .for-inj-act { margin-left: auto; color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
 .for-opp-inj { font-size: 13px; margin-top: 10px; }
 .for-role { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-sm); }

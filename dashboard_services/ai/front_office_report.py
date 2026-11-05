@@ -1723,14 +1723,21 @@ def _inj_severity(status: str) -> int:
     return _INJ_SEVERITY.get(str(status or "").strip().upper(), 9)
 
 
-def _fmt_weeks_out(weeks_out) -> str:
-    """'~3 wks', '~1 wk', 'this week', or '' when unknown."""
+def _fmt_weeks_out(weeks_out, season_weeks_left=None) -> str:
+    """'~3 wks', '~1 wk', 'this week', 'for the season', or ''.
+
+    When the caller's season context says the expected return lands
+    past the end of the regular season (Week 18), a week count is the
+    wrong thing to print: say he is out for the season (Kaedon,
+    2026-11-05, on a Week 9 card showing '~14.6 wks')."""
     try:
-        w = float(weeks_out)
+        w = round(float(weeks_out), 1)
     except (TypeError, ValueError):
         return ""
     if w <= 0.5:
         return "this week"
+    if season_weeks_left is not None and w > season_weeks_left + 1:
+        return "for the season"
     return f"~{w:g} {'wk' if w == 1 else 'wks'}"
 
 
@@ -1832,6 +1839,13 @@ def _build_injury_rows(ctx: dict, roster_rows: list[dict]) -> list[dict]:
         injury_roster_verdict = None
         weeks_out_for_player = None
     inj_map = _roster_injury_map(ctx)
+    # Weeks left in the regular season (Week 18 is the last), for the
+    # out-for-the-season label; unknown week keeps the plain count.
+    season_weeks_left = None
+    try:
+        season_weeks_left = max(18 - int(ctx.get("current_week")), 0)
+    except (TypeError, ValueError):
+        season_weeks_left = None
     rows_by_id = {str(r.get("id") or ""): r for r in roster_rows}
     rows: list[dict] = []
     for pid, info in inj_map.items():
@@ -1864,7 +1878,7 @@ def _build_injury_rows(ctx: dict, roster_rows: list[dict]) -> list[dict]:
                 action = str(verdict.get("label") or "")
             except Exception:
                 logger.debug("[front-office] injury verdict failed for %s", pid, exc_info=True)
-        return_label = _fmt_weeks_out(weeks_out)
+        return_label = _fmt_weeks_out(weeks_out, season_weeks_left=season_weeks_left)
         rows.append({
             "id": pid,
             "name": r.get("name"),
@@ -2153,9 +2167,17 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
     injury_rows = _build_injury_rows(ctx, roster_rows)
     # Roster table shows the ESPN return estimate next to the injury pill.
     wo_by_id = {r["id"]: r["weeks_out"] for r in injury_rows}
+    # The injury rows already resolved the season-aware label; carry
+    # its fragment so the roster table agrees with the report instead
+    # of re-deriving a bare week count.
+    wo_lbl_by_id = {
+        r["id"]: (r.get("return_label") or "").removeprefix("out ")
+        for r in injury_rows
+    }
     for r in roster_rows:
         if r.get("injury"):
             r["weeks_out"] = wo_by_id.get(r["id"])
+            r["weeks_out_label"] = wo_lbl_by_id.get(r["id"]) or None
     # Injury pills on the players the report recommends acquiring. Gated on
     # reportable designations so non-injury statuses never get a pill.
     inj_map = _roster_injury_map(ctx)
@@ -2505,11 +2527,25 @@ def _injury_card_html(rows: list[dict]) -> str:
             f"<span class='for-inj-act'>{html.escape(str(r['action']))}</span>"
             if r.get("action") else ""
         )
+        # Same two-line grammar as the modal's injury rows: the name
+        # gets its own line, the pill + body/return meta sit under it.
+        # The old single flex line squeezed the meta into a word-per-
+        # line column next to a long pill (Kaedon, 2026-11-05).
+        pill = (
+            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
+            if r.get("injury") else ""
+        )
+        meta_inner = " ".join(
+            x for x in (pill, html.escape(meta)) if x
+        )
+        meta_html = (
+            f"<div class='for-inj-meta'>{meta_inner}</div>" if meta_inner else ""
+        )
         items.append(
             "<li class='for-card-inj-row'>"
-            f"<span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span> "
-            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
-            + (f" <span class='for-muted'>{html.escape(meta)}</span>" if meta else "")
+            "<div class='for-card-inj-main'>"
+            f"<span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span>"
+            f"{meta_html}</div>"
             + action
             + "</li>"
         )
@@ -2702,7 +2738,7 @@ def _roster_table_html(rows: list[dict]) -> str:
         inj = ""
         if r.get("injury"):
             label = str(r["injury"])
-            wo = _fmt_weeks_out(r.get("weeks_out"))
+            wo = r.get("weeks_out_label") or _fmt_weeks_out(r.get("weeks_out"))
             if wo:
                 label = f"{label} · {wo}"
             inj = f" <span class='for-inj'>{html.escape(label)}</span>"

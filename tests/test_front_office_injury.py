@@ -119,6 +119,14 @@ def test_fmt_weeks_out():
     assert _fmt_weeks_out(1.0) == "~1 wk"
     assert _fmt_weeks_out(2.0) == "~2 wks"
     assert _fmt_weeks_out(2.5) == "~2.5 wks"
+    # Fractional provider estimates cap at one decimal: the live card
+    # showed "~14.57 wks" (Kaedon, 2026-11-05).
+    assert _fmt_weeks_out(14.57) == "~14.6 wks"
+    # A return past Week 18 is not a week count: it is the season.
+    assert _fmt_weeks_out(14.6, season_weeks_left=9) == "for the season"
+    assert _fmt_weeks_out(9.0, season_weeks_left=9) == "~9 wks"
+    assert _fmt_weeks_out(10.1, season_weeks_left=9) == "for the season"
+    assert _fmt_weeks_out(0.4, season_weeks_left=0) == "this week"
 
 
 def test_build_injury_rows_sorts_and_enriches(monkeypatch):
@@ -276,6 +284,53 @@ def test_card_injury_compact_caps_at_three():
     assert html_out.count("<li") == 3
     assert "+2 more in the full report" in html_out
     assert _injury_card_html([]) == ""
+
+
+def test_injury_row_labels_season_ending_return(monkeypatch):
+    # Kaedon, 2026-11-05: at Week 9 a "~14.6 wks" return is the rest
+    # of the season; the row must say so.
+    _stub_injury_return(
+        monkeypatch,
+        weeks_out_map={"1": 14.57, "2": 3.0},
+        verdict_map={},
+    )
+    ctx = {"current_week": 9, "players": {
+        "1": {"injury_status": "IR", "injury_body_part": "Knee"},
+        "2": {"injury_status": "IR", "injury_body_part": "Ankle"},
+    }}
+    rows = [
+        {"id": "1", "name": "Terry McLaurin", "position": "WR", "team": "WAS",
+         "role": "Starter", "value": 500.0, "injury": "IR"},
+        {"id": "2", "name": "Short Timer", "position": "RB", "team": "SF",
+         "role": "Depth", "value": 100.0, "injury": "IR"},
+    ]
+    out = _build_injury_rows(ctx, rows)
+    by_name = {r["name"]: r for r in out}
+    assert by_name["Terry McLaurin"]["return_label"] == "out for the season"
+    assert by_name["Short Timer"]["return_label"] == "out ~3 wks"
+    # No week context: the plain count still renders.
+    out2 = _build_injury_rows({"players": ctx["players"]}, rows)
+    by_name2 = {r["name"]: r for r in out2}
+    assert by_name2["Terry McLaurin"]["return_label"] == "out ~14.6 wks"
+
+
+def test_card_injury_row_is_two_lines():
+    # Layout fix (Kaedon screenshot, 2026-11-05): the single flex line
+    # squeezed the meta into a word-per-line column beside a long
+    # QUESTIONABLE pill. Rows now mirror the modal: name on its own
+    # line inside .for-card-inj-main, pill + meta in .for-inj-meta
+    # under it, action pinned right as a sibling.
+    rows = [
+        {"name": "Christian McCaffrey", "injury": "QUESTIONABLE",
+         "body": "Calf", "return_label": "out this week", "action": "Hold"},
+    ]
+    html_out = _injury_card_html(rows)
+    assert "for-card-inj-main" in html_out
+    assert "for-inj-meta" in html_out
+    assert html_out.index("for-inj-name") < html_out.index("for-inj-meta")
+    assert html_out.index("QUESTIONABLE") > html_out.index("for-inj-meta")
+    assert "Calf · out this week" in html_out
+    assert "for-inj-act" in html_out
 
 
 def test_card_masthead_layout():
