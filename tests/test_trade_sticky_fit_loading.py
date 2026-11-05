@@ -61,7 +61,7 @@ def test_dock_safe_variable_is_the_site_pattern():
     # The variable the bar anchors to is the shared one: 0 on desktop,
     # dock height + float gap + safe-area on mobile.
     assert "--dock-safe-bottom: 0px;" in CSS
-    assert "--dock-safe-bottom: calc(50px + env(safe-area-inset-bottom) + 12px);" in CSS
+    assert "--dock-safe-bottom: calc(64px + env(safe-area-inset-bottom) + 14px);" in CSS
 
 
 def test_fit_grading_state_wiring():

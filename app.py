@@ -4723,7 +4723,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         aria = " aria-current='page'" if on else ""
         items += (
             f"<a class='{cls}'{aria} href='{_href(ep, suffix)}'>"
-            f"{_nav_icon(icon, size=20)}<span class='br-tabbar-lbl'>{label}</span></a>"
+            f"{_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
     _more_live_cls = " br-more-live" if rz_live else ""
     _more_dot = "<span class='rz-mnav-dot' aria-hidden='true'></span>" if rz_live else ""
@@ -4740,7 +4740,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     items += (
         f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}{_more_active}' id='brMoreTab' "
         f"aria-label='More navigation; current page: {_DOCK_LABELS.get(active_norm, active_norm.replace('-', ' ').title())}'{_more_current} aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=20)}<span class='br-tabbar-lbl'>More</span>{_more_dot}{_recap_dot}{_bo_dot}</button>"
+        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span>{_more_dot}{_recap_dot}{_bo_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
     # at the active slot so it rests correctly with no flash; app.js animates a
@@ -5022,12 +5022,12 @@ def _mobile_nav_guest(active: str) -> str:
         aria = " aria-current='page'" if on else ""
         items += (
             f"<a class='{cls}'{aria} href='{href}'>"
-            f"{_nav_icon(icon, size=20)}<span class='br-tabbar-lbl'>{label}</span></a>"
+            f"{_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
     items += (
         "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=20)}<span class='br-tabbar-lbl'>More</span></button>"
+        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span></button>"
     )
     n_tabs = len(_GUEST_DOCK_TABS) + 1
     ind_hidden = "" if active_index >= 0 else " data-hidden='1'"
@@ -5958,6 +5958,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "<div class='changelog-bell-wrapper'>"
             "  <button type='button' id='changelogBell' class='changelog-bell-btn' aria-label='Notifications' aria-haspopup='true' aria-expanded='false'>"
             "    " + _nav_icon("bell") +
+            "    <span class='count-badge' id='changelogBadge' hidden aria-hidden='true'>0</span>"
             "  </button>"
             "  <div class='changelog-dot changelog-dot-hidden'></div>"
             "  <div id='changelogDropdown' class='changelog-dropdown' style='display:none;'></div>"
@@ -6289,6 +6290,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             " onclick=\"window.brToggleChangelog&&window.brToggleChangelog(event)\">"
             f"    {_nav_icon('bell', size=20)}"
             "    <span class='br-top-notif-dot' id='brTopNotifDot' hidden></span>"
+            "    <span class='count-badge' id='brTopNotifBadge' hidden aria-hidden='true'>0</span>"
             "  </button>"
             "</nav>"
             f"{guest_signin_modal}"
@@ -6710,6 +6712,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         " onclick=\"window.brToggleChangelog&&window.brToggleChangelog(event)\">"
         f"    {_nav_icon('bell', size=20)}"
         "    <span class='br-top-notif-dot' id='brTopNotifDot' hidden></span>"
+        "    <span class='count-badge' id='brTopNotifBadge' hidden aria-hidden='true'>0</span>"
         "  </button>"
         "</nav>"
         f"{signin_modal}"
@@ -45504,7 +45507,7 @@ def build_portfolio_body(
         ".pf-live-skel-score{height:20px;width:52px;border-radius:4px;margin-top:2px;}"
         ".pf-live-skel-proj{height:7px;width:40px;border-radius:4px;}"
         ".pf-live-skel-wp{height:6px;width:100%;border-radius:999px;margin-top:2px;}"
-        ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
+        ".pf-live-dot{width:8px;height:8px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
         # Head-to-head: your side left-aligned, opponent right-aligned. The leader's
         # score is crisp; the trailer's is muted, so who's ahead reads at a glance.
         ".pf-live-grid{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;}"
@@ -45518,7 +45521,7 @@ def build_portfolio_body(
         ".pf-live-head-wp{margin-left:auto;flex:0 0 auto;color:var(--win);font-weight:800;"
         "font-variant-numeric:tabular-nums;}"
         ".pf-live-head-wp.is-low{color:var(--loss);}"
-        ".pf-live-head .pf-live-dot{background:var(--win);}"
+        ".pf-live-head .pf-live-dot{background:var(--dot-live,#16a34a);animation:br-live-pulse 1.6s ease-out infinite;}"
         # Score line: yours reads inline ("You 148.0 proj"); the
         # opponent's number stands alone, unnamed, on the right.
         ".pf-live-main{display:flex;align-items:baseline;gap:6px;}"

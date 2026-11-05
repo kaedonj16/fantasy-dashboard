@@ -279,7 +279,7 @@
     --z-gate-nested: 100002; /* identify / league picker stacked on paywall */
     --z-progress: 999999; /* #page-load-bar (top progress bar) */
 
-    /* Space the fixed mobile bottom dock (.br-mnav / .br-tabbar, 50px +
+    /* Space the fixed mobile bottom dock (.br-mnav / .br-tabbar, 64px +
        safe-area + the float gap) owns. 0 on desktop where there is no dock; the phone value is
        set in the media query below. Any bottom-fixed element that must clear the
        dock should anchor to calc(var(--dock-safe-bottom) + <gap>) instead of
@@ -289,8 +289,8 @@
 
 @media (max-width: 768px) {
     :root {
-        /* 50px bar + 10px float gap (+2px breathing room) + safe-area. */
-        --dock-safe-bottom: calc(50px + env(safe-area-inset-bottom) + 12px);
+        /* 64px bar + 12px float gap (+2px breathing room) + safe-area. */
+        --dock-safe-bottom: calc(64px + env(safe-area-inset-bottom) + 14px);
     }
 }
 
@@ -331,6 +331,11 @@
     --win: #16a34a;
     --loss: #ef4444;
     --warning: #f59e0b;
+    /* Unified chrome dot system: alert = unread/new, live = happening now,
+       status = system state. Every nav/notification dot uses these. */
+    --dot-alert: #E24B4A;
+    --dot-live: #16A34A;
+    --dot-status: #F59E0B;
     --info: #38bdf8;
     --toast-bg: #1e293b; /* neutral dark slate for toasts in both themes */
     --gold: #ca8a04; /* elite badge -- vibrant gold, kept close to the dark-mode gold */
@@ -435,6 +440,8 @@
     --accent-strong: #0b1220;
     --win: #4ade80;
     --loss: #f87171;
+    --dot-alert: #FF6B69;
+    --dot-live: #4ADE80;
     --toast-bg: #0f1a2b; /* a touch deeper so toasts read as raised above dark cards */
     --gold: #fbbf24; /* brighter on the dark ground */
     --orange: #fb923c;
@@ -1462,13 +1469,13 @@ ul {
 
 .changelog-dot {
     position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 7px;
-    height: 7px;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: #E24B4A;
-    border: 1.5px solid var(--card);
+    background: var(--dot-alert);
+    border: 2px solid var(--card);
     pointer-events: none;
     transition: opacity 0.2s ease;
 }
@@ -1491,11 +1498,11 @@ ul {
     position: absolute;
     top: 2px;
     right: 2px;
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: #E24B4A;
-    border: 1.5px solid var(--card);
+    background: var(--dot-alert);
+    border: 2px solid var(--card);
     pointer-events: none;
     transition: opacity 0.2s ease;
 }
@@ -1516,6 +1523,45 @@ ul {
 /* Sheet rows push the dot to the far end, like the ScoreZone live dot. */
 .br-sheet-link .alert-dot-inline {
     margin-left: auto;
+}
+
+/* Counted badge: replaces the plain alert dot where a real unread count
+   exists (notification bell, watchlist). Anchored to the ICON's top-right
+   corner by the per-surface offset rules (bell / top bar / watchlist),
+   never to the wide button box. JS clamps the label at 9+. */
+.count-badge {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    min-width: 16px;
+    padding: 0 5px;
+    box-sizing: border-box;
+    border-radius: var(--radius-pill);
+    background: var(--dot-alert);
+    border: 2px solid var(--card);
+    color: #fff;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    text-align: center;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.count-badge[hidden] {
+    display: none;
+}
+
+/* Desktop bell: 36px button, 16px icon centred (10px inset); the 16px
+   badge centred on the icon corner sits at 10 - 8 = 2px. (The badge is
+   inside the button; the nearest positioned ancestor is the 36px
+   .changelog-bell-wrapper, the same box.) */
+.changelog-bell-btn .count-badge {
+    top: 2px;
+    right: 2px;
 }
 
 /* Dark mode toggle */
@@ -1679,7 +1725,7 @@ ul {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #dc2626;
+    background: var(--dot-alert);
     margin-top: 6px;
 }
 
@@ -14965,8 +15011,9 @@ a.signed-home-league:hover {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #f59e0b
+    background: var(--dot-status)
 }
+
 .conn-banner-text {
     flex: 1 1 auto;
     font-weight: 600
@@ -15001,7 +15048,7 @@ a.signed-home-league:hover {
     color: #fcd34d
 }
 :root[data-theme="dark"] .conn-banner-dot {
-    background: #f59e0b
+    background: var(--dot-status)
 }
 :root[data-theme="dark"] .conn-banner-reconnect {
     background: #d97706
@@ -16707,9 +16754,8 @@ a.signed-home-league:hover {
     width: 8px;
     height: 8px;
     margin-right: 4px;
-    border-radius: var(--radius);
-    background: #ef4444;
-    animation: liveBlink 1.5s infinite;
+    border-radius: 50%;
+    background: var(--dot-live);
 }
 
 .m-body {
@@ -32312,18 +32358,19 @@ table.mid-table {
 /* Small alert dot on the star only when a watched player has a value move / injury. */
 .watchlist-alert-dot {
     position: absolute;
-    top: -4px;
-    right: -4px;
-    min-width: 15px;
-    height: 15px;
-    padding: 0 4px;
+    top: 2px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    box-sizing: border-box;
     border-radius: var(--radius-pill);
-    background: #ef4444;
+    background: var(--dot-alert);
     border: 2px solid var(--card);
     color: #fff;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
-    line-height: 15px;
+    line-height: 12px;
     text-align: center;
     pointer-events: none;
 }
@@ -32960,7 +33007,7 @@ table.mid-table {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #f59e0b;
+    background: var(--dot-status);
     flex-shrink: 0;
 }
 
@@ -40933,11 +40980,11 @@ button:disabled {
 }
 
 .rz-live-dot-sm {
-    width: 5px;
-    height: 5px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: var(--rz-red);
-    animation: rz-pulse 1.2s ease-in-out infinite;
+    background: var(--dot-live);
+    animation: br-live-pulse 1.6s ease-out infinite;
     flex-shrink: 0;
 }
 
@@ -42637,9 +42684,9 @@ a.rz-demo-link:hover {
 
 .pm-live-dot {
     display: none;
-    width: 6px;
-    height: 6px;
-    background: #dc2626;
+    width: 8px;
+    height: 8px;
+    background: var(--dot-live);
     border-radius: 50%;
     margin-right: 5px;
     vertical-align: middle;
@@ -42649,7 +42696,7 @@ a.rz-demo-link:hover {
 
 .pm-tab[data-tab="live"].pm-rz-is-live .pm-live-dot {
     display: inline-block;
-    animation: rz-pulse 1.4s ease-in-out infinite;
+    animation: br-live-pulse 1.6s ease-out infinite;
 }
 
 .pm-tab[data-tab="live"].pm-rz-is-live {
@@ -43178,11 +43225,11 @@ a.rz-demo-link:hover {
 
 .rz-psb-live-dot {
     display: inline-block;
-    width: 6px;
-    height: 6px;
-    background: #22c55e;
+    width: 8px;
+    height: 8px;
+    background: var(--dot-live);
     border-radius: 50%;
-    animation: rz-pulse 1.6s ease-in-out infinite;
+    animation: br-live-pulse 1.6s ease-out infinite;
 }
 
 .rz-psb-spread {
@@ -43363,7 +43410,7 @@ a.rz-demo-link:hover {
 .rz-fb-drive { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 9px; font-size: 11px; font-weight: 800; color: var(--rz-muted, var(--text-muted)); font-variant-numeric: tabular-nums; }
 .rz-fb-drive b { color: var(--rz-text, var(--text)); }
 .rz-fb-live { display: inline-flex; align-items: center; gap: 5px; color: var(--rz-live, #16a34a); font-weight: 900; letter-spacing: .06em; white-space: nowrap; }
-.rz-fb-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--rz-live, #16a34a); flex: 0 0 auto; }
+.rz-fb-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot-live); flex: 0 0 auto; }
 /* TD celebration pieces: the flash overlay rests invisible; the pill is the
    board's only TD announcement. */
 .rz-fb-tdflash { position: absolute; top: 0; bottom: 0; width: 10%; opacity: 0; z-index: 1; }
@@ -43407,11 +43454,11 @@ a.rz-demo-link:hover {
 /* Small live indicator, kept subtle -- green, not an overuse of red (§3). */
 .rz-nfl-live-dot {
     display: inline-block;
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: var(--rz-live);
-    animation: rz-nfl-pulse 1.6s ease-in-out infinite;
+    background: var(--dot-live);
+    animation: br-live-pulse 1.6s ease-out infinite;
 }
 @keyframes rz-nfl-pulse {
     0%, 100% { opacity: 1; }
@@ -44442,6 +44489,18 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     animation-delay: .16s;
 }
 
+/* -- Shared live pulse: one ring animation for every live dot -------------- */
+@keyframes br-live-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(22, 163, 74, .35);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot-live) 35%, transparent);
+    }
+    100% {
+        box-shadow: 0 0 0 7px rgba(22, 163, 74, 0);
+        box-shadow: 0 0 0 7px transparent;
+    }
+}
+
 /* -- Live pulse dot: expanding ring instead of a hard blink ----------------- */
 @keyframes brPulseRing {
     0% {
@@ -44463,7 +44522,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     content: "";
     position: absolute;
     inset: 0;
-    border-radius: var(--radius);
+    border-radius: 50%;
     background: inherit;
     animation: brPulseRing 1.6s ease-out infinite;
 }
@@ -44651,7 +44710,8 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     /* Infinite live pulses: hold the resting frame under reduced motion. */
     .rz-nav-dot, .rz-brand-dot.is-live, .rz-live-dot-sm, .rz-fh-dot,
     .weekly-rz-cta-dot, .weekly-live-badge::before, .pm-live-dot,
-    .rz-psb-live-dot, .rz-mnav-dot,
+    .rz-psb-live-dot, .rz-mnav-dot, .rz-nfl-live-dot, .rz-fb-live-dot,
+    .mb-m-dot, .live-dot::after,
     .rz-mc-state.live::before, .rz-mt-live::before, .rz-lb-live::before,
     .br-sheet-link.rz-mnav-live {
         animation: none !important;
@@ -46966,16 +47026,25 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-tabbar {
         display: flex;
         position: fixed;
-        /* Float like a pill instead of hugging the screen edges: less
-           conspicuous, Facebook-style. Icons and labels are unchanged. */
-        left: max(12px, env(safe-area-inset-left));
-        right: max(12px, env(safe-area-inset-right));
-        bottom: calc(env(safe-area-inset-bottom) + 10px);
+        /* Floating, grown up: taller bar, softer radius, blurred surface,
+           one soft navy-tinted shadow. The solid var(--bg) line is the
+           fallback for engines without color-mix / backdrop-filter. */
+        left: max(16px, env(safe-area-inset-left));
+        right: max(16px, env(safe-area-inset-right));
+        bottom: calc(env(safe-area-inset-bottom) + 12px);
         z-index: var(--z-chrome);
         background: var(--bg);
+        background: color-mix(in srgb, var(--bg) 92%, transparent);
+        -webkit-backdrop-filter: blur(14px) saturate(1.5);
+        backdrop-filter: blur(14px) saturate(1.5);
         border: 1px solid var(--border);
-        border-radius: var(--radius);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+        border-color: rgba(18, 45, 75, .10);
+        border-radius: 20px;
+        box-shadow: 0 16px 40px rgba(18, 45, 75, .18);
+    }
+
+    :root[data-theme="dark"] .br-tabbar {
+        border-color: var(--border);
     }
 
     .br-tabbar-item {
@@ -46988,15 +47057,15 @@ a, button, [role="button"], [role="tab"], summary, label,
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 2px;
-        height: 50px;
+        gap: 4px;
+        height: 64px;
         text-decoration: none;
         color: var(--text-muted);
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 600;
         letter-spacing: .03em;
         -webkit-tap-highlight-color: transparent;
-        transition: color .12s ease, transform .08s var(--ease-out);
+        transition: color .12s ease, opacity .12s ease;
     }
 
     .br-tabbar-item .nav-svg-icon {
@@ -47019,10 +47088,10 @@ a, button, [role="button"], [role="tab"], summary, label,
        offsets (top/right 2px, written for square icon buttons like the
        bell) would strand the dot at the slot's outer edge. */
     .br-tabbar-item .alert-dot {
-        top: 7px;
+        top: 8px;
         right: auto;
         left: 50%;
-        margin-left: 6px;
+        margin-left: 8px;
         z-index: 1;
     }
 
@@ -47037,7 +47106,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
 
     .br-tabbar-item:active {
-        transform: scale(0.94);
+        opacity: .6;
     }
 
     .br-tabbar-lbl {
@@ -47063,7 +47132,7 @@ a, button, [role="button"], [role="tab"], summary, label,
         width: calc(100% / var(--n, 5));
         transform: translateX(calc(var(--i, 0) * 100%));
         transition: transform .28s var(--ease-glide);
-        padding: 5px 8px;
+        padding: 8px 0 0;
         box-sizing: border-box;
         pointer-events: none;
     }
@@ -47075,9 +47144,10 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-tabbar-ind::before {
         content: "";
         display: block;
-        width: 100%;
-        height: 100%;
-        border-radius: var(--radius);
+        width: 56px;
+        height: 32px;
+        margin: 0 auto;
+        border-radius: 16px;
         background: var(--accent-soft);
         background: color-mix(in srgb, var(--accent) 16%, transparent);
     }
@@ -47091,10 +47161,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
     .br-tabbar-item {
         transition: color .12s ease;
-    }
-
-    .br-tabbar-item:active {
-        transform: none;
     }
 
     .br-tabbar-ind {
@@ -47171,14 +47237,19 @@ a, button, [role="button"], [role="tab"], summary, label,
 
     .top-nav.br-mnav .br-top-notif-dot {
         position: absolute;
-        top: 7px;
-        right: 7px;
+        top: 5px;
+        right: 5px;
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #E24B4A;
-        border: 1.5px solid var(--card);
+        background: var(--dot-alert);
+        border: 2px solid var(--card);
         pointer-events: none;
+    }
+
+    .top-nav.br-mnav .br-top-notif .count-badge {
+        top: 1px;
+        right: 1px;
     }
 
     .top-nav.br-mnav .br-top-notif-dot[hidden] {
@@ -47320,10 +47391,10 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
 
     .br-sheet-acct-dot {
-        width: 7px;
-        height: 7px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
-        background: #E24B4A;
+        background: var(--dot-alert);
         flex: 0 0 auto;
     }
 
@@ -47411,25 +47482,17 @@ a, button, [role="button"], [role="tab"], summary, label,
         color: var(--accent);
     }
 
-    /* ScoreZone live: the mobile port of the desktop nav glow. The always-visible
-       More tab shows a pulsing red dot and the ScoreZone sheet row pulses red --
-       only while games are live or kicking off within the hour (server adds
-       .rz-mnav-live / .br-more-live). Reuses the desktop keyframes. */
-    .br-sheet-link.rz-mnav-live {
-        animation: rz-nav-live-pulse 1.6s ease-in-out infinite;
-    }
-
-    .br-sheet-link.rz-mnav-live .nav-svg-icon {
-        color: #dc2626;
-    }
-
+    /* ScoreZone live: the always-visible More tab and the ScoreZone sheet
+       row carry the shared green live dot -- only while games are live or
+       kicking off within the hour (server adds .rz-mnav-live / .br-more-live).
+       The dot is the only live signal here: it never recolours its tab,
+       icon or row. */
     .rz-mnav-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #dc2626;
-        box-shadow: 0 0 0 3px rgba(220, 38, 38, .18);
-        animation: rz-pulse 1.6s ease-in-out infinite;
+        background: var(--dot-live);
+        animation: br-live-pulse 1.6s ease-out infinite;
     }
 
     .br-sheet-link .rz-mnav-dot {
@@ -47437,17 +47500,13 @@ a, button, [role="button"], [role="tab"], summary, label,
         flex: 0 0 auto;
     }
 
-    .br-more-tab.br-more-live {
-        color: #dc2626;
-    }
-
     .br-more-tab .rz-mnav-dot {
         position: absolute;
-        top: 6px;
+        top: 8px;
         left: 50%;
-        margin-left: 5px;
-        width: 7px;
-        height: 7px;
+        margin-left: 8px;
+        width: 8px;
+        height: 8px;
     }
 
     /* The Discord PNG (matches the 20px nav-svg icons) and the freshness time on
@@ -49670,7 +49729,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-moments-hd { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
 .mb-moments-hd .mb-m-t { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
 .mb-moments-hd .mb-m-live { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: .04em; color: var(--win); }
-.mb-moments-hd .mb-m-live .mb-m-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--win); animation: mbLivePulse 1.6s ease-in-out infinite; }
+.mb-moments-hd .mb-m-live .mb-m-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot-live); animation: br-live-pulse 1.6s ease-out infinite; }
 @keyframes mbLivePulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .mb-moments-hd .mb-m-live .mb-m-dot { animation: none; } }
 .mb-mstrip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
@@ -50380,7 +50439,7 @@ body:has(.home-hero) { background: var(--bg); color: var(--text); font-family: -
 .hp-rz .rz-player-info { flex: 1; min-width: 0; }
 .hp-rz .rz-player-name { font-size: 13px; font-weight: 700; color: var(--rz-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
 .hp-rz .rz-player-meta { font-size: 11px; color: var(--rz-muted); display: flex; align-items: center; gap: 5px; }
-.hp-rz .rz-live-dot-sm { width: 5px; height: 5px; border-radius: 50%; background: var(--rz-red); flex-shrink: 0; }
+.hp-rz .rz-live-dot-sm { width: 8px; height: 8px; border-radius: 50%; background: var(--dot-live); flex-shrink: 0; }
 .hp-rz .rz-meta-game.live { color: var(--rz-red); font-weight: 700; }
 .hp-rz .rz-player-pts { font-size: 18px; font-weight: 900; color: var(--rz-text); min-width: 46px; text-align: right; flex-shrink: 0; line-height: 1; font-variant-numeric: tabular-nums; }
 .hp-rz .rz-player-pts.live-pts { color: var(--rz-red); }

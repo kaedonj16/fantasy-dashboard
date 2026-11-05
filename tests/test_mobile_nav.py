@@ -118,17 +118,24 @@ def test_more_sheet_lists_core_pages(offline_client):
 
 
 def test_mobile_scorezone_glow_styles_present():
-    """The mobile port of the desktop ScoreZone nav glow must exist in the CSS.
+    """The mobile ScoreZone live dot contract must exist in the CSS.
 
     The server only emits .rz-mnav-live / .br-more-live / .rz-mnav-dot while a
     game is live or imminent (gated by app._games_live_or_imminent), so this
     guards the styling contract those classes rely on from silent deletion.
+    Unified dot system: the dot is the ONLY live signal (shared green, one
+    pulse); it never recolours the More tab, the sheet icon or the row.
     """
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-    assert ".br-sheet-link.rz-mnav-live" in css
-    assert ".br-more-tab.br-more-live" in css
     assert ".rz-mnav-dot" in css
-    # Reuses the desktop live-pulse keyframes rather than inventing new ones.
+    assert "background: var(--dot-live)" in css
+    assert "animation: br-live-pulse 1.6s ease-out infinite" in css
+    assert ".br-more-tab.br-more-live {" not in css
+    assert ".br-sheet-link.rz-mnav-live .nav-svg-icon" not in css
+    # The live class survives only as a reduced-motion kill-list entry.
+    for chunk in css.split(".br-sheet-link.rz-mnav-live {")[1:]:
+        assert chunk.split("}", 1)[0].strip().startswith("animation: none")
+    # The desktop dropdown item keeps its own live pulse keyframes.
     assert "@keyframes rz-nav-live-pulse" in css
 
 
