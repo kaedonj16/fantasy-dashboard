@@ -56844,6 +56844,39 @@ body.otc-sticky-on { padding-bottom: 72px; }
 }
 
 /* ============================================================
+   Draft board (shared): flush hairline grid used by the Draft
+   Database board view and the Draft Room board. R1 "Compact
+   beside" cell: one fixed 68px cell height, 3px position stripe,
+   a reserved 50px photo zone at the left with the headshot flush
+   to the cell bottom, and all text strictly right of the zone.
+   Round labels form one continuous sticky strip; column headers
+   stick to the top. Column width is set by the board's inline
+   grid-template-columns (min 168px per team column).
+   ============================================================ */
+.dr-board-scroll{overflow:auto;min-width:0;max-height:600px;border:1px solid var(--border);border-radius:10px;background:#fff}
+.dr-board{display:grid;gap:0;min-width:max-content;padding:0}
+.dr-colhead{position:-webkit-sticky;position:sticky;top:0;z-index:6;background:#fff;font-size:11px;font-weight:700;color:var(--text-muted);text-align:center;padding:8px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;border-bottom:2px solid var(--border)}
+.dr-colhead-you{color:var(--info)}
+.dr-youpill{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;background:var(--info);color:#fff;border-radius:6px;padding:3px 10px}
+.dr-rowhead{position:-webkit-sticky;position:sticky;left:0;z-index:5;background:#f8fafc;border-right:1px solid var(--border);border-bottom:1px solid var(--border);box-shadow:2px 0 4px -2px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;padding:0;font-size:11px;font-weight:700;color:var(--text-muted)}
+.dr-corner{z-index:7;border-bottom:2px solid var(--border)}
+.dr-cell{border-right:1px solid var(--border);border-bottom:1px solid var(--border);border-radius:0;padding:0;height:68px;background:#fff;position:relative;z-index:0;overflow:hidden;min-width:168px}
+.dr-cell-filled{background:#fff;background:color-mix(in srgb,var(--pos,var(--accent)) 5%,#fff)}
+.dr-cell .stripe{position:absolute;left:0;top:0;bottom:0;width:3px;z-index:3;background:var(--pos,#94a3b8)}
+.dr-cell-mine{box-shadow:inset 0 0 0 2px var(--info)}
+.dr-ph{position:absolute;left:3px;bottom:0;width:50px;line-height:0;z-index:1}
+.dr-ph img{display:block;height:54px;width:auto;margin:0 auto}
+.dr-ph-init{position:absolute;left:3px;bottom:0;width:50px;height:54px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px;font-size:13px;font-weight:800;color:color-mix(in srgb,var(--pos,#64748b) 68%,#122d4b);z-index:1}
+.dr-cell-body{margin-left:58px;padding:6px 8px 6px 0;height:100%;display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:1.2}
+.dr-cell-name{font-size:12.5px;font-weight:700;color:var(--text);line-height:1.24;max-height:31px;overflow:hidden;overflow-wrap:anywhere;padding-right:15px}
+.dr-cell-pick{position:absolute;top:4px;right:6px;font-size:10px;font-weight:600;color:var(--text-muted);z-index:2}
+.dr-cell-meta{font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:4px;margin-top:3px}
+.dr-posbadge{font-size:10px;font-weight:800;color:color-mix(in srgb,var(--pos,#64748b) 68%,#122d4b);background:color-mix(in srgb,var(--pos,#64748b) 13%,#fff);border-radius:4px;padding:1px 5px;line-height:1.3}
+.dr-cell-chip{margin-top:4px;line-height:1.15;display:flex;gap:6px;align-items:baseline}
+.dr-cell-verdict{font-size:10.5px;font-weight:800;letter-spacing:.02em;white-space:nowrap}
+.dr-cell-grade{font-size:10.5px;font-weight:700;color:var(--text-muted);white-space:nowrap}
+
+/* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
    See scripts/merge_icon_css.py

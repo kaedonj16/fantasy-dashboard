@@ -1800,6 +1800,14 @@ except Exception as e:
     logger.warning("[trade-bp] skipped: %s", e)
 
 try:
+    from routes.draft_db_bp import draft_db_bp
+
+    app.register_blueprint(draft_db_bp)
+    logger.info("[draft-db-bp] registered")
+except Exception as e:
+    logger.warning("[draft-db-bp] skipped: %s", e)
+
+try:
     from routes.players_bp import players_bp
 
     app.register_blueprint(players_bp)
@@ -4540,6 +4548,7 @@ _NAV_PAGE_META = {
     "trade": ("swap", "trade.page_trade", ""),
     "trade-suggestions": ("swap", "trade.page_trade", "?tab=suggestions"),
     "trade-database": ("swap", "trade.page_trade_database", ""),
+    "draft-database": ("history", "draft_db.page_draft_database", ""),
     "compare": ("bars", "seo_pages.page_compare", ""),
     "top-movers": ("bars2", "seo_pages.top_movers_page", ""),
     "advanced-metrics": ("bars2", "league_pages.page_advanced_metrics", ""),
@@ -4559,7 +4568,7 @@ _DOCK_LABELS = {
     "draft": "Draft", "keeper": "Keeper", "standings": "Standings", "activity": "Activity",
     "league_health": "Health", "recap": "Recap", "scout": "Scout", "optimal": "Lineup",
     "scorezone": "ScoreZone", "waivers": "Waivers", "lineup-lab": "Lab", "schedule": "Schedule", "trade": "Trades",
-    "trade-suggestions": "Trades", "trade-database": "Trades",
+    "trade-suggestions": "Trades", "trade-database": "Trades", "draft-database": "Drafts",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
     "nfl-teams": "NFL Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
     "draft-recap": "Recap",
@@ -4838,6 +4847,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     trade_rows = [
         _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Trade Hub", pro=True),
         _sl("trade-database", "Trade Database"),
+        _sl("draft-database", "Draft Database"),
     ]
     trades_html = _sec("Trades", trade_rows)
 
@@ -4890,7 +4900,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     ])
 
     category_keys = {
-        "Trades": {"trade", "trade-suggestions", "trade-database"},
+        "Trades": {"trade", "trade-suggestions", "trade-database", "draft-database"},
         "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "lineup-lab", "schedule", "scorezone"},
         "League": {"standings", "teams", "activity", "league_health"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "breakouts", "prospects"},
@@ -5074,6 +5084,7 @@ def _mobile_nav_guest(active: str) -> str:
         _gl("/trade", "Trade Calculator", "trade"),
         _gl("/trade?tab=suggestions", "Trade Hub", "trade-suggestions", pro=True),
         _gl("/trade-database", "Trade Database", "trade-database"),
+        _gl("/draft-database", "Draft Database", "draft-database"),
     ])
     players_html = _sec("Players", [
         _gl("/players", "Player Rankings", "players"),
@@ -5108,7 +5119,7 @@ def _mobile_nav_guest(active: str) -> str:
     ])
 
     guest_groups = {
-        "Trades": {"trade", "trade-suggestions", "trade-database"},
+        "Trades": {"trade", "trade-suggestions", "trade-database", "draft-database"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "draft-history", "draft-recap"},
         "Learn": {"guides", "glossary", "faq", "about", "contact"},
@@ -6145,7 +6156,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Trade Calculator", "/trade", "trade"),
                 ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database", "/trade-database", "trade-database"),
-            ], ["trade", "trade-suggestions", "trade-database"], "tradesNavDropdown"),
+                ("Draft Database", "/draft-database", "draft-database"),
+            ], ["trade", "trade-suggestions", "trade-database", "draft-database"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players", "players"),
                 ("Compare Players", "/compare", "compare"),
@@ -6371,7 +6383,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
          "?tab=suggestions"),
         ("Trade Database", "trade.page_trade_database", "trade-database", False),
-    ], ["trade", "trade-suggestions", "trade-database"], "tradesNavDropdown"))
+        ("Draft Database", "draft_db.page_draft_database", "draft-database", False),
+    ], ["trade", "trade-suggestions", "trade-database", "draft-database"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
