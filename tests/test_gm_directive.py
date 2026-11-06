@@ -62,8 +62,14 @@ def _brief():
                     "brief_reason": "No QB in Week 11",
                     "funding_text": "Drops a bench RB",
                     "culture_note": None, "why": None}],
-        "coverage": {"holes": [{"position": "TE", "week": 12,
-                                "count": 0, "required": 1}]},
+        # The brief's coverage map rides under "qb_coverage" (the
+        # build_coverage dict), with holes in build_coverage's shape.
+        "qb_coverage": {"holes": [{"week": 12, "position": "TE",
+                                   "count": 0, "required": 1,
+                                   "causes": [], "fills_action": None}],
+                        "weeks": [], "missing_weeks": [],
+                        "through_week": 14, "label": None,
+                        "roles_confirmed": True, "requirements": {}},
         "return_horizons": [{"name": "Keeper Stash", "return_week": 10,
                              "weeks_of_coverage": 5}],
         "league_culture": {"signals": []},
