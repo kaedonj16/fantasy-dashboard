@@ -199,7 +199,7 @@ def test_playoffs_receipts_unchanged_without_seed_data():
     assert "Current seed" not in labels
     assert "First-seed odds (%)" not in labels
     assert labels == ["Your playoff odds (%)",
-                      "Wins still needed (projected)",
+                      "Wins still needed (projected cut line)",
                       "Weeks remaining"]
 
 
