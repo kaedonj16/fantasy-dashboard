@@ -401,6 +401,10 @@ if (typeof window !== 'undefined') {
   var POLL_MS = 4000;      // base cadence (just above the 3s picks cache TTL)
   var POLL_FULL_EVERY = 60;// every N light polls, do a full refresh to catch trades/slot names
   var _espnStallPolls = 0; // consecutive in-progress polls with no new ESPN picks
+  var _sleeperPollErrs = 0; // consecutive failed Sleeper polls (backoff, then stop)
+  var _pollStopped = false; // true once Sleeper polling gave up after repeated errors
+  var SLEEPER_POLL_ERR_LIMIT = 4; // consecutive Sleeper poll errors before polling stops
+  var _upcomingTimer = null; // one-shot re-check when a pre-draft enters its start window
   var _espnEverGrew = false;
   var _espnLastPickCount = 0;
   var _espnAuthFailed = false;
@@ -6235,18 +6239,20 @@ if (typeof window !== 'undefined') {
         }
         var all = resp.drafts || [];
         if (!all.length){ box.innerHTML = '<div class="dr-live-head">No drafts found for this league yet.</div>'; return; }
-        // Prefer live/upcoming drafts; only if there are none do we fall back to
-        // showing completed ones (so connect never dead-ends with "no drafts").
-        var active = all.filter(function(d){ return String(d.status) !== 'complete'; });
-        var ds = active.length ? active : all;
+        // Live/upcoming drafts are connectable. Completed drafts are NEVER
+        // presented as a live connection: they get their own clearly labelled
+        // view-only section below (clicking one opens the finished board,
+        // which does not poll), and if only completed drafts exist the head
+        // says plainly that no live draft was found.
+        var ds = all.filter(function(d){ return String(d.status) !== 'complete'; });
+        var done = all.filter(function(d){ return String(d.status) === 'complete'; });
         // Soonest first: live, then by scheduled start time.
         ds.sort(function(a, b){
           var ar = a.status === 'drafting' ? 0 : 1, br = b.status === 'drafting' ? 0 : 1;
           if (ar !== br) return ar - br;
           return (Number(a.start_time) || 9e15) - (Number(b.start_time) || 9e15);
         });
-        var html = '<div class="dr-live-head">' + (ds.length > 1 ? 'Pick a draft to connect' : 'Your draft') + '</div>';
-        ds.forEach(function(d){
+        function itemHtml(d){
           var when = '';
           if (d.start_time){
             try {
@@ -6257,10 +6263,21 @@ if (typeof window !== 'undefined') {
               when = ' · ' + (sameDay ? t : (dt.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + t));
             } catch(e){}
           }
-          html += '<button class="dr-live-item" data-id="' + esc(d.draft_id) + '">'
+          return '<button class="dr-live-item" data-id="' + esc(d.draft_id) + '">'
             + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(liveStatusLabel(d.status)) + '</span>'
             + esc((d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds' + when) + '</button>';
-        });
+        }
+        var html = '';
+        if (ds.length){
+          html += '<div class="dr-live-head">' + (ds.length > 1 ? 'Pick a draft to connect' : 'Your draft') + '</div>';
+          ds.forEach(function(d){ html += itemHtml(d); });
+        } else {
+          html += '<div class="dr-live-head">No live or upcoming draft found for this league.</div>';
+        }
+        if (done.length){
+          html += '<div class="dr-live-head">Completed drafts - view only</div>';
+          done.forEach(function(d){ html += itemHtml(d); });
+        }
         box.innerHTML = html;
       })
       .catch(function(){ box.innerHTML = '<div class="dr-live-head">Could not detect drafts.</div>'; });
@@ -6434,14 +6451,11 @@ if (typeof window !== 'undefined') {
           scoring: cfg.scoring || readScoring()
         };
         _espnStallPolls = 0; _espnEverGrew = liveSelectionCount(d.picks) > 0; _espnLastPickCount = liveSelectionCount(d.picks);
+        _sleeperPollErrs = 0; _pollStopped = false;
         _espnAuthFailed = false; _espnFallbackShown = false; _espnRelayActive = false; _espnRelayLastFp = '';
         hideEspnFallback();
         if (isExtLiveSource()) showEspnTools();
         applyLivePicks(d.picks || []);
-        // Completed draft: reload the pool against that season's ADP so grades
-        // reflect ADP at draft time, not today. No-op cost for the current season
-        // (server returns the shared current-season pool); overlays for past ones.
-        if (isComplete && state.season){ loadPlayers(); }
         // Seed the poll signature so the first poll doesn't redundantly rebuild.
         _liveSig = liveSig(d); _pollLastAt = Date.now();
         showMain();
@@ -6462,14 +6476,24 @@ if (typeof window !== 'undefined') {
         } else {
           document.getElementById('drSide').style.display = '';
           _setUpcomingMode(!isDrafting);
-          startPolling();
-          _liveSig = liveSig(d);  // re-seed after startPolling resets it so first auto-poll skips a redundant rebuild
+          if (_livePollAllowed(String(d.status), state.startTime)){
+            startPolling();
+            _liveSig = liveSig(d);  // re-seed after startPolling resets it so first auto-poll skips a redundant rebuild
+          } else {
+            // Upcoming draft outside its start window: board renders as a
+            // preview; a one-shot re-check starts polling when the window
+            // arrives. No polling and no Syncing indicator until then.
+            _armUpcomingRecheck();
+          }
           if (isDrafting) startPickTimer();
           if (isExtLiveSource()){
             updateEspnSyncPill(isDrafting ? 'live' : (String(d.status) === 'pre_draft' ? 'not_started' : 'synced'));
             _pullExtensionRelaySnapshot();
           }
         }
+        // Single pool load for every connect (a completed draft's pool is
+        // scored against that season's ADP via state.season inside
+        // loadPlayers). Loading it twice here raced the same fetch.
         loadPlayers();
     }
   }
@@ -6862,6 +6886,17 @@ if (typeof window !== 'undefined') {
     var el = document.getElementById('drPollStatus');
     if (!el) return;
     if (!state || state.mode !== 'live' || state.isComplete){ el.style.display = 'none'; return; }
+    if (_pollStopped){
+      el.style.display = '';
+      el.classList.remove('is-syncing');
+      el.innerHTML = '<span class="dr-poll-dot"></span>Connection lost - stopped checking';
+      return;
+    }
+    // Upcoming (far-future pre_draft) boards are not syncing - hide the
+    // freshness indicator instead of showing a perpetual "Syncing".
+    if (String(state.status) === 'pre_draft' && !_preDraftInWindow(state.startTime)){
+      el.style.display = 'none'; return;
+    }
     el.style.display = '';
     if (_pollInFlight){
       el.classList.add('is-syncing');
@@ -6927,8 +6962,78 @@ if (typeof window !== 'undefined') {
       if (cdEl) cdEl.textContent = _fmtCountdown(state.startTime - Date.now());
     }
   }
+  // A pre_draft only counts as imminent inside the same 15-minute window the
+  // site-wide draft banner uses (_START_WINDOW_MS, with the same 15 minutes of
+  // grace past the scheduled start for a start that fires a little late).
+  function _preDraftInWindow(startMs){
+    var st = parseInt(startMs, 10) || 0;
+    if (!st) return false;
+    var delta = st - Date.now();
+    return delta <= _START_WINDOW_MS && delta >= -_START_WINDOW_MS;
+  }
+  // Only a genuinely drafting draft polls continuously. A pre_draft polls only
+  // inside its start window (it flips to drafting any moment); a paused draft
+  // keeps polling so an unpause is picked up. Everything else (far-future
+  // pre_draft, no scheduled start) must never poll - that was the phantom
+  // "connecting to a live draft that isn't live" loop.
+  function _livePollAllowed(status, startMs){
+    var s = String(status || '');
+    if (s === 'drafting' || s === 'paused') return true;
+    if (s === 'pre_draft') return _preDraftInWindow(startMs);
+    return false;
+  }
+  function _clearUpcomingRecheck(){
+    if (_upcomingTimer){ clearTimeout(_upcomingTimer); _upcomingTimer = null; }
+  }
+  // Single one-shot timer that starts polling when a connected pre-draft
+  // reaches its start window - no perpetual polling while it is days away.
+  function _armUpcomingRecheck(){
+    _clearUpcomingRecheck();
+    if (!state || state.mode !== 'live' || state.isComplete) return;
+    if (String(state.status) !== 'pre_draft') return;
+    var st = parseInt(state.startTime, 10) || 0;
+    if (!st) return;
+    var ms = st - _START_WINDOW_MS - Date.now();
+    if (ms <= 0 || ms > 2147483647) return;
+    _upcomingTimer = setTimeout(function(){
+      _upcomingTimer = null;
+      if (state && state.mode === 'live' && !state.isComplete
+          && String(state.status) === 'pre_draft') startPolling();
+    }, ms);
+  }
+  // Sleeper poll failure: count consecutive errors; schedulePoll backs off on
+  // the count, and at the limit polling stops with a plain note instead of
+  // retrying a dead draft forever (mirrors the ESPN stall/fallback pattern).
+  function _registerSleeperPollError(){
+    _sleeperPollErrs++;
+    if (_sleeperPollErrs < SLEEPER_POLL_ERR_LIMIT) return false;
+    _pollStopped = true;
+    stopPolling();
+    var el = document.getElementById('drPollStatus');
+    if (el){
+      el.style.display = '';
+      el.classList.remove('is-syncing');
+      el.innerHTML = '<span class="dr-poll-dot"></span>Connection lost - stopped checking';
+    }
+    return true;
+  }
+  function _showNotSyncingNote(text){
+    var el = document.getElementById('drPollStatus');
+    if (!el) return;
+    el.style.display = '';
+    el.classList.remove('is-syncing');
+    el.innerHTML = '<span class="dr-poll-dot"></span>' + text;
+  }
   function startPolling(){
     stopPolling();
+    // Never (re)start polling for a far-future pre_draft: arm the one-shot
+    // window re-check instead.
+    if (state && state.mode === 'live' && !state.isComplete
+        && !_livePollAllowed(state.status, state.startTime)){
+      _armUpcomingRecheck();
+      return;
+    }
+    _pollStopped = false; _sleeperPollErrs = 0;
     _pollCount = 0; _liveSig = null;
     pollTickTimer = setInterval(function(){
       if (_drGone()){ _stopTimersOnly(); return; }
@@ -6967,6 +7072,11 @@ if (typeof window !== 'undefined') {
         else if (toStart <= 300000) ms = 10000;                  // 1-5 min out
         else ms = 15000;                                         // far out: catch reschedules
       }
+    }
+    // Sleeper error backoff: each consecutive failure at least doubles the
+    // wait (capped) until _registerSleeperPollError stops polling outright.
+    if (!isExtLiveSource() && _sleeperPollErrs > 0){
+      ms = Math.min(60000, Math.max(ms, POLL_MS * Math.pow(2, _sleeperPollErrs)));
     }
     _pollNextAt = Date.now() + ms;
     pollTimer = setTimeout(pollOnce, ms);
@@ -7011,13 +7121,21 @@ if (typeof window !== 'undefined') {
           return;
         }
         if (!res.ok || d.error){
-          if (isExtLiveSource()) _espnStallPolls++;
-          if (isExtLiveSource() && _espnShouldFallback(d)){
-            stopPolling(); showEspnFallback();
+          if (isExtLiveSource()){
+            _espnStallPolls++;
+            if (_espnShouldFallback(d)){
+              stopPolling(); showEspnFallback();
+            }
+          } else {
+            _registerSleeperPollError();
           }
           return;
         }
-        if (!d || !Array.isArray(d.picks)){ _pollLastAt = Date.now(); return; }
+        if (!d || !Array.isArray(d.picks)){
+          if (!isExtLiveSource()){ _registerSleeperPollError(); return; }
+          _pollLastAt = Date.now(); return;
+        }
+        _sleeperPollErrs = 0; _pollStopped = false;
         if (d.poll_interval_ms) state.pollIntervalMs = parseInt(d.poll_interval_ms, 10) || state.pollIntervalMs;
         if (d.stall_polls) state.stallPolls = parseInt(d.stall_polls, 10) || state.stallPolls;
         if (d.start_time != null) state.startTime = parseInt(d.start_time) || 0;
@@ -7087,6 +7205,13 @@ if (typeof window !== 'undefined') {
         } else if (isEspn){
           updateEspnSyncPill(state.isDrafting ? 'live' : (String(state.status) === 'pre_draft' ? 'not_started' : 'synced'));
         }
+        // A pre_draft whose start moved (or always was) outside the start
+        // window stops polling here; the one-shot re-check reopens it when
+        // the window arrives. Never poll a far-future draft indefinitely.
+        if (String(state.status) === 'pre_draft' && !_preDraftInWindow(state.startTime)){
+          stopPolling(); _armUpcomingRecheck();
+          return;
+        }
         _pollLastAt = Date.now();
       })
       .catch(function(){
@@ -7098,6 +7223,7 @@ if (typeof window !== 'undefined') {
             stopPolling(); showEspnFallback();
           }
         }
+        if (state && !isExtLiveSource()) _registerSleeperPollError();
       })
       .then(function(){
         // Schedule the next poll once this one settles (success or failure),
@@ -7107,6 +7233,7 @@ if (typeof window !== 'undefined') {
       });
   }
   function stopPolling(){
+    _clearUpcomingRecheck();
     if (pollTimer){ clearTimeout(pollTimer); pollTimer = null; }
     if (pollTickTimer){ clearInterval(pollTickTimer); pollTickTimer = null; }
     _pollInFlight = false;
@@ -10097,8 +10224,66 @@ if (typeof window !== 'undefined') {
       }
       showMain();
       loadPlayers();
-      if (state.mode === 'live' && state.sourceDraftId && !state.isComplete) startPolling();
+      if (state.mode === 'live' && state.sourceDraftId && !state.isComplete){
+        // Never resurrect polling on the saved word alone: re-validate the
+        // draft's CURRENT status first (see _revalidateResumedLive).
+        _revalidateResumedLive();
+      }
     }
+  }
+
+  // Re-validate a resumed live session against the provider before any
+  // polling restarts. Poll only when the draft is drafting (or a pre_draft
+  // inside its 15-minute start window, or paused). A completed draft settles
+  // into its finished state; a far-future pre_draft shows the board as an
+  // upcoming preview with the one-shot window re-check armed; a failed or
+  // vanished draft never polls - the board stays as saved with an honest
+  // not-syncing note.
+  function _revalidateResumedLive(){
+    if (!state || state.mode !== 'live' || !state.sourceDraftId) return;
+    var url = '/api/draft/live?platform=' + encodeURIComponent(cfg.platform)
+      + '&draft_id=' + encodeURIComponent(state.sourceDraftId) + '&light=1';
+    if (isExtLiveSource() && cfg.leagueId){
+      url += '&league_id=' + encodeURIComponent(cfg.leagueId)
+        + '&season=' + encodeURIComponent(cfg.season || state.season || '');
+    }
+    fetch(url, { cache: 'no-store' })
+      .then(function(r){ return r.json().then(function(body){ return { ok: r.ok, body: body }; }); })
+      .then(function(res){
+        if (!state || state.mode !== 'live') return;   // user moved on mid-check
+        var d = (res && res.body) || {};
+        if (!res.ok || d.error || !d.status){
+          _showNotSyncingNote('Could not confirm this draft is live - not syncing');
+          return;
+        }
+        var status = String(d.status);
+        state.status = status;
+        state.isDrafting = status === 'drafting';
+        if (d.start_time != null) state.startTime = parseInt(d.start_time, 10) || 0;
+        if (status === 'complete'){
+          state.isComplete = true;
+          save();
+          showCompleteSidebar();
+          document.getElementById('drLiveBadge').style.display = 'none';
+          document.getElementById('drUpcomingBadge').style.display = 'none';
+          if (isExtLiveSource()) updateEspnSyncPill('complete');
+          return;
+        }
+        if (_livePollAllowed(status, state.startTime)){
+          startPolling();
+          if (state.isDrafting) startPickTimer();
+        } else {
+          _setUpcomingMode(true);
+          if (!isExtLiveSource()) _setStatusBadge(false, false, status);
+          else updateEspnSyncPill(status === 'pre_draft' ? 'not_started' : 'synced');
+          _armUpcomingRecheck();
+        }
+      })
+      .catch(function(){
+        if (state && state.mode === 'live' && !state.isComplete){
+          _showNotSyncingNote('Could not confirm this draft is live - not syncing');
+        }
+      });
   }
 
   // ── Board hover: team needs tooltip ─────────────────────────────────────────

@@ -264,23 +264,15 @@ def test_next_steps_dropped_path_joins_same_signal(monkeypatch):
     # all, still admitted and claimed with the signal kind set.
     ctx, rows = _ns_fixture(monkeypatch, role_states={})
     import utils.waiver_freshness as wf
-    # The drop fixture is stamped 2026-11-04T15:00Z and admission reads
-    # the real clock through dropped_within's 48h window. Pin the
-    # freshness clock to an hour after the drop so the test can never
-    # age out of the window.
-    from datetime import datetime, timezone
-
-    class _PinnedDateTime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            base = datetime(2026, 11, 4, 16, 0, tzinfo=timezone.utc)
-            return base.astimezone(tz) if tz else base
-
-    monkeypatch.setattr(wf, "datetime", _PinnedDateTime)
+    # Clock-relative drop: freshness is judged against wall-clock now
+    # (dropped_within, 48h), so a hardcoded date time-bombs this fixture.
+    from datetime import datetime, timedelta, timezone
+    recent_drop = (datetime.now(timezone.utc)
+                   - timedelta(hours=2)).isoformat()
     monkeypatch.setattr(wf, "get_transactions_delta",
                         lambda *a, **k: {
                             "adds": set(),
-                            "drops": {"lock": "2026-11-04T15:00:00+00:00"},
+                            "drops": {"lock": recent_drop},
                             "hash": "drop-hash"})
     actions = app_module._next_steps_waiver_actions(ctx, 1, rows)
     lock_claims = [a for a in actions if a["player_id"] == "lock"]
