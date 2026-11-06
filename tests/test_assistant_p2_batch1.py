@@ -41,10 +41,21 @@ def _patch_values(monkeypatch, rows):
                         lambda: {str(r["id"]): r for r in rows})
 
 
+# Real model-table rows carry every format column; the bundle ctx below
+# is Sleeper type 1, which the site's league-format lookup prices from
+# the redraft columns, so the fixture rows carry them too (equal here:
+# these tests assert keeper math, not format selection).
 _VALUES = [
-    {"id": "odunze", "value": 4850}, {"id": "addison", "value": 3920},
-    {"id": "marks", "value": 2380}, {"id": "mooney", "value": 2600},
-    {"id": "bijan", "value": 7200},
+    {"id": "odunze", "value": 4850, "sf_value": 4850,
+     "redraft_value_1qb": 4850, "redraft_value_sf": 4850},
+    {"id": "addison", "value": 3920, "sf_value": 3920,
+     "redraft_value_1qb": 3920, "redraft_value_sf": 3920},
+    {"id": "marks", "value": 2380, "sf_value": 2380,
+     "redraft_value_1qb": 2380, "redraft_value_sf": 2380},
+    {"id": "mooney", "value": 2600, "sf_value": 2600,
+     "redraft_value_1qb": 2600, "redraft_value_sf": 2600},
+    {"id": "bijan", "value": 7200, "sf_value": 7200,
+     "redraft_value_1qb": 7200, "redraft_value_sf": 7200},
 ]
 
 _INDEX = {

@@ -548,6 +548,37 @@ def _row_value(row) -> float | None:
     return None
 
 
+def _format_values(bundle):
+    """pid -> value row priced in the bundle league's own format.
+
+    The raw model table's ``value`` column is 1QB dynasty; citing it in a
+    superflex or redraft league prices every pack number in the wrong
+    format (live gap audit 2026-11-06: trade totals, waiver gates and
+    player values in her SF redraft league were 1QB dynasty numbers).
+    The site's canonical rewrite (league_format_value_lookup, via
+    _mode_values in its natural mode) rewrites ``value`` per league:
+    SF vs 1QB, redraft vs dynasty, scoring format, TE premium, exactly
+    like the player modal and the Teams page. Falls back to the raw rows
+    when the lookup has nothing (no value table anywhere). Cached on the
+    bundle: several builders run per request and the lookup walks the
+    whole table.
+    """
+    if isinstance(bundle, dict):
+        cached = bundle.get("_format_values")
+        if cached is not None:
+            return cached
+    ctx = (bundle or {}).get("ctx") or {}
+    out = _mode_values(ctx, "dynasty") or {}
+    if not out:
+        out = _value_rows()
+    if isinstance(bundle, dict):
+        try:
+            bundle["_format_values"] = out
+        except Exception:
+            pass
+    return out
+
+
 def _metrics_for(pid, season=None):
     tools = []
     try:
@@ -751,7 +782,7 @@ def _upcoming_schedule(bundle, team, count=4):
 def build_start_sit(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     pack = _base_pack("start_sit", bundle)
     tools: list[str] = []
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     index = _index()
@@ -1520,7 +1551,7 @@ def _side_picks(bundle, entities, ownership, table, *, viewer_rid, partner_rid, 
 def build_trade_eval(bundle, entities, resolved_ids) -> tuple[dict, list[str]]:
     pack = _base_pack("trade_eval", bundle)
     tools: list[str] = ["model_value_table"]
-    values = _value_rows()
+    values = _format_values(bundle)
     index = _index()
     give_ids = (entities or {}).get("give_player_ids") or []
     recv_ids = (entities or {}).get("receive_player_ids") or []
@@ -2727,7 +2758,7 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         give_position = None
     pack["give_position"] = give_position
     index = _index()
-    values = _value_rows()
+    values = _format_values(bundle)
     my_ids = {str(p) for p in (roster.get("players") or [])}
     named = [str(pid) for pid in (player_ids or []) if pid]
     rosters = ctx.get("rosters") or []
@@ -2914,7 +2945,7 @@ def build_buy_sell_hold(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     index = _index()
     info = _player_info(pid, index)
     pack["player"] = info
-    values = _value_rows()
+    values = _format_values(bundle)
     v = _row_value(values.get(str(pid)))
     if v is not None:
         pack["player"]["value"] = v
@@ -3049,7 +3080,7 @@ def build_replacement(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         mode = "younger"
     pack["mode"] = mode
     index = _index()
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     info = _player_info(pid, index)
@@ -3136,7 +3167,7 @@ def build_handcuff(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         pack["missing"] = "no resolved player"
         return pack, tools
     index = _index()
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     info = _player_info(pid, index)
@@ -3223,7 +3254,7 @@ def build_player(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     index = _index()
     info = _player_info(pid, index)
     pack["player"] = info
-    values = _value_rows()
+    values = _format_values(bundle)
     v = _row_value(values.get(str(pid)))
     if v is not None:
         pack["player"]["value"] = v
@@ -5846,7 +5877,7 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     tools: list[str] = ["model_value_table"]
     ctx = bundle.get("ctx") or {}
     roster = bundle.get("roster") or {}
-    values = _value_rows()
+    values = _format_values(bundle)
     index = _index()
     roster_ids = {str(p) for p in (roster.get("players") or [])} or set(bundle.get("roster_player_ids") or set())
     # Free agents: everyone rostered anywhere in the league is owned.
@@ -7570,7 +7601,7 @@ def build_keeper(bundle, entities=None, player_ids=None) -> tuple[dict, list[str
         return pack, tools
     roster = bundle.get("roster") or {}
     roster_id = roster.get("roster_id")
-    values = _value_rows()
+    values = _format_values(bundle)
     index = _index()
 
     def _val(pid):
@@ -7909,10 +7940,96 @@ def _activity_players(players, values):
     return out, round(total, 1), unpriced
 
 
+def _activity_pick_context(bundle, tools):
+    """(ownership, pick value table) for pricing completed trades' picks,
+    computed once per request and memoized on the bundle."""
+    cached = bundle.get("_activity_pick_ctx") if isinstance(bundle, dict) else None
+    if cached is not None:
+        return cached
+    ctx = bundle.get("ctx") or {}
+    rosters = [r for r in (ctx.get("rosters") or []) if isinstance(r, dict)]
+    ownership = None
+    try:
+        ownership = _pick_ownership(bundle)
+    except Exception:
+        logger.debug("[assistant] activity pick ownership failed", exc_info=True)
+    table = None
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        table = pick_value_table(league_teams=len(rosters) or 10,
+                                 is_sf=is_superflex_lineup(ctx.get("roster_positions") or []))
+        if table:
+            tools.append("dashboard_services.picks.load_pick_value_table")
+    except Exception:
+        logger.debug("[assistant] activity pick table failed", exc_info=True)
+        table = None
+    if ownership:
+        tools.append(ownership["source"])
+    out = (ownership, table)
+    if isinstance(bundle, dict):
+        try:
+            bundle["_activity_pick_ctx"] = out
+        except Exception:
+            pass
+    return out
+
+
+def _activity_picks(bundle, raw_picks, tools):
+    """Price one completed trade's draft picks, attributed per side.
+
+    The activity frame carries the transaction's raw picks: owner_id is
+    the receiver, previous_owner_id the sender, roster_id the pick's
+    original owner, the attribution the Activity page itself renders.
+    Pricing mirrors build_trade_eval's _pick_entry (the pick value table
+    for this league's size and format; a future pick's slot resolves
+    from ownership where possible, else the round price). Returns
+    (by_receiver, by_sender, entries). A pick that cannot be priced
+    stays in the pack with priced False and value None, never dropped
+    and never given an invented number.
+    """
+    by_receiver: dict[str, list[dict]] = {}
+    by_sender: dict[str, list[dict]] = {}
+    entries: list[dict] = []
+    picks = [p for p in (raw_picks or []) if isinstance(p, dict)]
+    if not picks:
+        return by_receiver, by_sender, entries
+    ownership, table = _activity_pick_context(bundle, tools)
+    for pk in picks:
+        try:
+            season, rnd = int(pk.get("season") or 0), int(pk.get("round") or 0)
+        except (TypeError, ValueError):
+            season, rnd = 0, 0
+        recv = str(pk.get("owner_id")) if pk.get("owner_id") is not None else None
+        send = str(pk.get("previous_owner_id")) \
+            if pk.get("previous_owner_id") is not None else None
+        original = str(pk.get("roster_id")) if pk.get("roster_id") is not None \
+            else (send or "")
+        if season and rnd:
+            entry = _pick_entry(bundle, ownership, table,
+                                {"season": season, "round": rnd, "slot": None},
+                                side="gets", current_owner_rid=recv,
+                                original_rid=original)
+        else:
+            entry = {"pick_id": None,
+                     "label": f"{season or '?'} round {rnd or '?'} pick",
+                     "season": season or None, "round": rnd or None,
+                     "slot": None, "side": "gets",
+                     "original_owner_team": None, "current_owner_team": None,
+                     "value": None, "priced": False}
+        entry = {**entry, "receiver_roster_id": recv, "sender_roster_id": send}
+        entries.append(entry)
+        if recv is not None:
+            by_receiver.setdefault(recv, []).append(entry)
+        if send is not None:
+            by_sender.setdefault(send, []).append(entry)
+    return by_receiver, by_sender, entries
+
+
 def build_activity(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
     """League activity: the Activity page's own frame (trades, waiver adds,
     serious injuries), newest first, with completed trades priced from the
-    model value table and judged by the shared fairness band."""
+    model value table (league format) plus the pick value table for the
+    picks that moved, and judged by the shared fairness band."""
     tools: list[str] = []
     pack = _base_pack("activity", bundle)
     ctx = bundle.get("ctx") or {}
@@ -7935,7 +8052,7 @@ def build_activity(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
         records = df.to_dict("records") if hasattr(df, "to_dict") else list(df)
     except Exception:
         records = []
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     from utils.trade import fairness_label
@@ -7956,26 +8073,43 @@ def build_activity(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
             if len(trades) >= 5:
                 continue
             teams, totals = [], []
+            raw_picks = data.get("draft_picks") or []
+            by_recv, by_send, pick_entries = _activity_picks(bundle, raw_picks, tools)
             for t in data.get("teams") or []:
                 if not isinstance(t, dict):
                     continue
                 gets, gets_total, gets_un = _activity_players(t.get("gets"), values)
                 sends, sends_total, sends_un = _activity_players(t.get("sends"), values)
                 rid = str(t.get("roster_id") or t.get("rid") or "")
+                gets_picks = by_recv.get(rid) or []
+                sends_picks = by_send.get(rid) or []
+                picks_in = round(sum(p["value"] for p in gets_picks if p.get("value")), 1)
+                picks_un = sum(1 for p in gets_picks + sends_picks
+                               if not p.get("priced"))
+                total_gets = round(gets_total + picks_in, 1)
+                has_gets = bool(gets or gets_picks)
                 teams.append({
                     "team_name": t.get("name") or f"Roster {rid}",
                     "roster_id": rid,
                     "involves_you": bool(viewer_rid and rid == viewer_rid),
                     "gets": gets, "sends": sends,
-                    "gets_value": gets_total if gets else None,
+                    "gets_picks": gets_picks, "sends_picks": sends_picks,
+                    "gets_value": total_gets if has_gets else None,
                     "sends_value": sends_total if sends else None,
-                    "unpriced": gets_un + sends_un,
+                    "unpriced": gets_un + sends_un + picks_un,
                 })
-                totals.append(gets_total if gets else None)
+                totals.append(total_gets if has_gets else None)
             entry = {"week": wk, "teams": teams,
-                     "picks_moved": len(data.get("draft_picks") or [])}
+                     "picks_moved": len(raw_picks),
+                     "picks": pick_entries}
+            unpriced_assets = sum(t["unpriced"] for t in teams)
+            if unpriced_assets:
+                entry["unpriced"] = unpriced_assets
             priced = [x for x in totals if x is not None]
-            if len(teams) == 2 and len(priced) == 2:
+            # No fairness verdict while any asset on either side is
+            # unpriced: a gap computed from a partial deal would read as
+            # the whole deal's verdict.
+            if len(teams) == 2 and len(priced) == 2 and not unpriced_assets:
                 gap = round(abs(priced[0] - priced[1]), 1)
                 entry["value_gap"] = gap
                 entry["ahead_team"] = teams[0]["team_name"] if priced[0] >= priced[1] \
@@ -8028,7 +8162,7 @@ def build_watchlist(bundle, entities=None, player_ids=None) -> tuple[dict, list[
         pack["available"] = False
         pack["missing"] = "your watchlist could not be loaded"
         return pack, tools
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     index = _index()
