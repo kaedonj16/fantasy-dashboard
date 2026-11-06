@@ -229,7 +229,16 @@ def build_advanced_metrics_body(
                 "weeklyVol": _weekly_vol_map.get(key) or None,
                 "subcategory": spec.get("subcategory", ""),
                 "sample": (
-                    "dropbacks" if key in {"epa_per_play", "cpoe", "success_rate", "sack_rate", "scramble_rate", "qb_hit_rate"}
+                    # Denominator first: a rate reads next to the volume it
+                    # divides by. Per-snap rates sit beside Snaps, not the
+                    # numerator the category rules below would pick (targets
+                    # for Receiving, carries for Rushing).
+                    "snaps" if "per_snap" in key
+                    else "touches" if key == "touches_per_game"
+                    # First Down Rate divides by targets + carries, so both
+                    # component counts are its context (a list sample).
+                    else ["targets", "carries"] if key == "first_down_rate"
+                    else "dropbacks" if key in {"epa_per_play", "cpoe", "success_rate", "sack_rate", "scramble_rate", "qb_hit_rate"}
                     else "attempts" if spec.get("category") == "Passing"
                     else "carries" if spec.get("category") == "Rushing" and key != "total_carries"
                     else "receptions" if key in {"yards_after_catch_per_reception", "ngs_avg_yac", "ngs_avg_expected_yac", "ngs_avg_yac_above_expectation"}
@@ -3056,7 +3065,7 @@ _AM_JS = r"""
       });
       state.extraData[key] = {
         byId: Object.fromEntries(rows.map(r => [amRowKey(r), Number(r.value)])),
-        context: Object.fromEntries(rows.map(r => [amRowKey(r), {tgt:r.tgt, car:r.car, rec:r.rec, att:r.att, db:r.db, games:r.games}])),
+        context: Object.fromEntries(rows.map(r => [amRowKey(r), {tgt:r.tgt, car:r.car, rec:r.rec, att:r.att, db:r.db, snp:r.snp, tch:r.tch, games:r.games}])),
         maxAbs: maxAbs
       };
       render();
@@ -3131,7 +3140,7 @@ _AM_JS = r"""
       });
       state.extraData[k] = {
         byId: Object.fromEntries(rows.map(r => [amRowKey(r), Number(r.value)])),
-        context: Object.fromEntries(rows.map(r => [amRowKey(r), {tgt:r.tgt, car:r.car, rec:r.rec, att:r.att, db:r.db, games:r.games}])),
+        context: Object.fromEntries(rows.map(r => [amRowKey(r), {tgt:r.tgt, car:r.car, rec:r.rec, att:r.att, db:r.db, snp:r.snp, tch:r.tch, games:r.games}])),
         maxAbs: maxAbs
       };
       render();
@@ -3743,9 +3752,14 @@ _AM_JS = r"""
       carries:{key:'car',label:'Car',title:'Carries in the selected season/week range'},
       attempts:{key:'att',label:'Att',title:'Pass attempts in the selected season/week range'},
       dropbacks:{key:'db',label:'DB',title:'Qualifying dropbacks covered by the metric'},
-      receptions:{key:'rec',label:'Rec',title:'Receptions in the selected season/week range'}
+      receptions:{key:'rec',label:'Rec',title:'Receptions in the selected season/week range'},
+      snaps:{key:'snp',label:'Snaps',title:'Offensive snaps in the selected season/week range'},
+      touches:{key:'tch',label:'Touches',title:'Touches (carries + receptions) in the selected season/week range'}
     };
-    const selected = [state.metric, ...state.extraMetrics];
+    // Filter metrics count as selected too: a stat added as a custom filter
+    // brings its companion column with it, same as an added compare column.
+    const selected = [state.metric, ...state.extraMetrics,
+      ...(state.filterColKeys ? [...state.filterColKeys] : [])];
     const explicit = new Set();
     if (selected.includes('total_targets')) explicit.add('targets');
     if (selected.includes('total_carries')) explicit.add('carries');
@@ -3759,14 +3773,21 @@ _AM_JS = r"""
       if (identity !== 'games' && !explicit.has(identity) && !wanted.includes(identity)) wanted.push(identity);
     });
     selected.forEach(function(k) {
-      const identity = cfg.metrics[k] && cfg.metrics[k].sample;
-      if (identity && identity !== 'games' && !explicit.has(identity) && !wanted.includes(identity)) wanted.push(identity);
+      // A metric's sample is one identity, or a list when its rate has two
+      // component counts (First Down Rate divides by targets + carries).
+      const sample = cfg.metrics[k] && cfg.metrics[k].sample;
+      (Array.isArray(sample) ? sample : [sample]).forEach(function(identity) {
+        if (identity && identity !== 'games' && !explicit.has(identity) && !wanted.includes(identity)) wanted.push(identity);
+      });
     });
     const cols = wanted.map(k => Object.assign({id:'sample:' + k, semantic:k, kind:'sample'}, defs[k])).filter(Boolean);
     const rows = state.rows || [];
+    // Context can ride on any fetched column payload: the primary rows,
+    // an extra column's payload, or a filter column's payload.
+    const ctxKeys = state.extraMetrics.concat(state.filterColKeys ? [...state.filterColKeys] : []);
     return cols.filter(function(c) {
       if (rows.some(function(r) { return r[c.key] != null; })) return true;
-      return state.extraMetrics.some(function(k) {
+      return ctxKeys.some(function(k) {
         const ed = state.extraData[k];
         return ed && ed.context && Object.values(ed.context).some(v => v && v[c.key] != null);
       });
@@ -3775,7 +3796,8 @@ _AM_JS = r"""
   function contextValue(row, key) {
     if (row[key] != null) return row[key];
     const rk = amRowKey(row);
-    for (const metric of state.extraMetrics) {
+    const ctxKeys = state.extraMetrics.concat(state.filterColKeys ? [...state.filterColKeys] : []);
+    for (const metric of ctxKeys) {
       const ed = state.extraData[metric];
       if (ed && ed.context && ed.context[rk] && ed.context[rk][key] != null) return ed.context[rk][key];
     }
@@ -4014,6 +4036,47 @@ _AM_JS = r"""
     return cur ? String(cur - 1) : '';
   }
 
+  // Combo filters on metric keys evaluate against state.extraData, which
+  // loads async (fetchExtraData / _loadExtras). Until a filter key's data
+  // lands, its value reads null for EVERY player, so the combo stage in
+  // render() drops the whole board; if both fetch attempts fail, the entry
+  // settles {failed:true} and the board stays dropped. Either way the
+  // filter-empty verdict ("No players pass these filters") would claim the
+  // filter matched no one when it has not actually been evaluated. These
+  // helpers let the empty branch report the load state honestly instead;
+  // a settled filter that genuinely matches no one still gets the verdict.
+  function _amFilterLoadState() {
+    const pending = [], failed = [];
+    (state.comboFilters || []).forEach(function(f) {
+      if (f.key === 'primary' || f.key === 'age' || f.key === 'exp') return;
+      const ed = state.extraData[f.key];
+      if (!ed) pending.push(f.key);
+      else if (ed.failed) failed.push(f.key);
+    });
+    return { pending: pending, failed: failed };
+  }
+  function amRenderFilterLoad(empty, load) {
+    if (load.failed.length) {
+      const names = load.failed.map(function(k) { return _mLabel(k); }).join(', ');
+      empty.innerHTML = '<div class="empty-state">'
+        + '<p class="empty-state-title">Filter data failed to load</p>'
+        + '<p class="empty-state-msg">' + _amEsc(names)
+        + ' could not be loaded, so this filter has not been checked yet.</p>'
+        + '<div class="am-empty-actions">'
+        + load.failed.map(function(k) {
+            return '<button type="button" class="am-empty-relax" onclick="amRetryExtra(\''
+              + k + '\')">Retry ' + _amEsc(_mLabel(k)) + '</button>';
+          }).join('')
+        + '</div></div>';
+      return;
+    }
+    const names = load.pending.map(function(k) { return _mLabel(k); }).join(', ');
+    empty.innerHTML = '<div class="empty-state">'
+      + '<p class="empty-state-title">Loading filter data</p>'
+      + '<p class="empty-state-msg">' + _amEsc(names)
+      + ' is still loading. The board updates as soon as it lands.</p>'
+      + '</div>';
+  }
   function render() {
     if (state.fetching) return; // keep the spinner up while a fetch is in flight
     const rel = new Set(relevantPositions(state.metric));
@@ -4219,8 +4282,14 @@ _AM_JS = r"""
       if (tableWrap) tableWrap.style.display = 'none';
       if (avgNote) avgNote.style.display = 'none';
       if (paginationEl) paginationEl.style.display = 'none';
+      const _fLoad = _amFilterLoadState();
       if (state.rosterOnly) {
         window.brEmptyState(empty, { icon: 'search', title: 'No ranked players', message: 'None of your rostered players rank for this metric yet.' });
+      } else if (_fLoad.pending.length || _fLoad.failed.length) {
+        // An active combo filter whose data is still loading (or failed)
+        // empties the board by construction: say that, not "no players
+        // pass", which is only true once the data has actually landed.
+        amRenderFilterLoad(empty, _fLoad);
       } else if (amActiveFilterChips().length) {
         // Active filters emptied the board: name them and offer one-tap
         // relax actions instead of the generic no-data copy.

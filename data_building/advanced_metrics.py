@@ -3159,7 +3159,8 @@ def get_weekly_range_leaderboard(
     # Context volume sums for the always-visible columns (receiving/rushing only;
     # the weekly table has no passing attempts/completions).
     _ctx_inner = ("SUM(receptions) AS ctx_receptions, SUM(targets) AS ctx_targets, "
-                  "SUM(carries) AS ctx_carries")
+                  "SUM(carries) AS ctx_carries, SUM(snaps) AS ctx_snaps, "
+                  "SUM(touches) AS ctx_touches")
     inner_select = (
         f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {_ctx_inner}, {min_col} AS _wvol"
         if has_min else
@@ -3175,7 +3176,8 @@ def get_weekly_range_leaderboard(
         rows = conn.execute(
             f"""
             SELECT t.player_id, t.position, t.weeks_played, t.value,
-                   t.ctx_receptions, t.ctx_targets, t.ctx_carries{', t._wvol' if has_min else ''}
+                   t.ctx_receptions, t.ctx_targets, t.ctx_carries,
+                   t.ctx_snaps, t.ctx_touches{', t._wvol' if has_min else ''}
             FROM (
                 SELECT {inner_select}
                 FROM player_weekly_metrics
@@ -3221,6 +3223,8 @@ def get_weekly_range_leaderboard(
             "rec": _ci("ctx_receptions"),
             "tgt": _ci("ctx_targets"),
             "car": _ci("ctx_carries"),
+            "snp": _ci("ctx_snaps"),
+            "tch": _ci("ctx_touches"),
         })
     return out
 
@@ -5344,6 +5348,8 @@ def get_metric_leaderboard(
             "ctx_targets": "total_targets",
             "ctx_carries": "total_carries",
             "ctx_attempts": "total_pass_att",
+            "ctx_snaps": "total_snaps",
+            "ctx_touches": "total_touches",
         }
         # Advanced-provider values and basic volume totals may be written on
         # different snapshot dates. Resolve context counts across every snapshot
@@ -5447,6 +5453,8 @@ def get_metric_leaderboard(
             "car": _ctx_int(rd, "ctx_carries"),
             "att": _ctx_int(rd, "ctx_attempts"),
             "cmp": _ctx_int(rd, "ctx_completions"),
+            "snp": _ctx_int(rd, "ctx_snaps"),
+            "tch": _ctx_int(rd, "ctx_touches"),
         })
     # Cache non-empty results only; evict stale-date entries to stay bounded.
     if out:
