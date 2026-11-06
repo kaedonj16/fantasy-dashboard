@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-06",
+        "tag": "new",
+        "text": "Draft Database is here: browse completed Sleeper drafts from across the site, with the full board for every draft, the best draft in each league, biggest steals and busts, and ADP by segment. Filter by season, startup or rookie, dynasty or redraft, 1QB or Superflex, and league size.",
+        "link": "/draft-database"
+    },
+    {
+        "date": "2026-11-06",
         "tag": "update",
         "text": "Draft Room: the draft board is rebuilt with compact rows and real player headshots. Each pick now shows the player's photo beside their name, position and team on a clean flush grid, with the pick number and value in the corners and the Last pick, keeper and traded-pick flags kept in place, so the board reads faster while your draft is live.",
         "link": "/draft"

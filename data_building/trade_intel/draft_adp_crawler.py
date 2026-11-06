@@ -142,6 +142,210 @@ def _draft_started_at(draft_meta: dict) -> Optional[datetime]:
     return None
 
 
+_LEAGUE_FORMAT_BY_TYPE = {0: "redraft", 1: "keeper", 2: "dynasty"}
+
+_SCORING_NORMALIZE = {
+    "ppr": "ppr", "full_ppr": "ppr", "1ppr": "ppr",
+    "half": "half", "half_ppr": "half", "halfppr": "half", "0.5ppr": "half",
+    "std": "std", "standard": "std", "non_ppr": "std", "nonppr": "std",
+}
+
+
+def _normalize_scoring(raw) -> Optional[str]:
+    if raw is None:
+        return None
+    return _SCORING_NORMALIZE.get(str(raw).strip().lower().replace(" ", "_"))
+
+
+def _scoring_from_settings(settings: dict) -> Optional[str]:
+    """Classify from Sleeper scoring_settings.rec the way
+    league_discovery._classify_scoring does for trade_intel_leagues."""
+    scoring_settings = (settings or {}).get("scoring_settings") or {}
+    if "rec" not in scoring_settings:
+        return None  # no evidence in the payload; never guess a scoring type
+    try:
+        rec = float(scoring_settings.get("rec") or 0)
+    except (TypeError, ValueError):
+        return None
+    if rec >= 1.0:
+        return "ppr"
+    if rec >= 0.5:
+        return "half"
+    return "std"
+
+
+def _roster_names(users, rosters) -> dict:
+    """roster_id (str) -> team/owner display name.
+
+    Same precedence as dashboard_services.players.build_roster_map:
+    the owner's Sleeper team_name, then display name, then username.
+    Rosters whose owner cannot be resolved are omitted (never guessed).
+    """
+    by_user: dict[str, str] = {}
+    for u in users or []:
+        uid = str(u.get("user_id") or "")
+        if not uid:
+            continue
+        meta = u.get("metadata") or {}
+        name = (meta.get("team_name") or u.get("display_name")
+                or u.get("username") or "")
+        if name:
+            by_user[uid] = str(name)
+    out: dict[str, str] = {}
+    for r in rosters or []:
+        rid = r.get("roster_id")
+        owner = str(r.get("owner_id") or "")
+        if rid is not None and owner in by_user:
+            out[str(rid)] = by_user[owner]
+    return out
+
+
+def extract_draft_metadata(draft: dict, league: Optional[dict] = None,
+                           users=None, rosters=None,
+                           league_type: Optional[int] = None) -> dict:
+    """Draft Database metadata for one Sleeper draft (migration 056).
+
+    Pure function over the payloads the crawler already fetches. Every
+    field the payloads do not honestly support comes back None:
+      - league_format comes from the league's settings.type (or the
+        crawl's league_type argument, which is read from that same
+        setting upstream); a keeper league the ADP crawl skips never
+        reaches storage, so no format is ever inferred from rounds.
+      - scoring_type comes from draft metadata.scoring_type when
+        Sleeper sends one, else the league's scoring_settings; the
+        draft's own settings carry no scoring_settings on Sleeper.
+    """
+    draft = draft or {}
+    league = league or {}
+    meta = draft.get("metadata") or {}
+    if league_type is None:
+        try:
+            league_type = int((league.get("settings") or {}).get("type"))
+        except (TypeError, ValueError):
+            league_type = None
+    scoring = _normalize_scoring(meta.get("scoring_type"))
+    if scoring is None:
+        scoring = _scoring_from_settings(league.get("settings") or {})
+    slot_map = draft.get("slot_to_roster_id") or {}
+    return {
+        "league_name": (league.get("name") or None),
+        "scoring_type": scoring,
+        "league_format": _LEAGUE_FORMAT_BY_TYPE.get(league_type),
+        "slot_to_roster_id": (
+            {str(k): str(v) for k, v in slot_map.items()} if slot_map else None
+        ),
+        "draft_order_type": (str(draft.get("type")).strip().lower()
+                             if draft.get("type") else None),
+        "roster_names": _roster_names(users, rosters) or None,
+        # roster_id -> Sleeper owner user_id. Powers the Draft Database
+        # board's YOU rule (a viewer is marked only on a slot they own).
+        "roster_owners": (
+            {str(r["roster_id"]): str(r["owner_id"]) for r in (rosters or [])
+             if r.get("roster_id") is not None and r.get("owner_id")}
+            or None
+        ),
+    }
+
+
+def compute_and_store_grade_summary(conn, draft_id: str) -> Optional[dict]:
+    """Build + persist the grade summary for a stored draft.
+
+    ADP map: the draft's own segment aggregate recomputed from
+    draft_adp_picks (the same rows compute_adp() rolls into draft_adp,
+    so a fresh draft grades even before the batch aggregate runs).
+    Performance PPG: player_weekly_metrics.ppr_pts for the draft season
+    (PPR basis; the per-league recap endpoint re-scores with the
+    league's own settings, the corpus stores the site's canonical PPR
+    weekly line). Positions come from player_values when present.
+    Never raises: grading is an enhancement, not a crawl gate.
+    """
+    try:
+        from utils.draft_db_grades import build_grade_summary
+
+        d = conn.execute(
+            "SELECT draft_id, season, draft_type, num_teams, is_superflex, "
+            "roster_names FROM draft_adp_drafts WHERE draft_id = %s",
+            (draft_id,),
+        ).fetchone()
+        if not d:
+            return None
+        picks = conn.execute(
+            "SELECT player_id, pick_no, round, roster_id "
+            "FROM draft_adp_picks WHERE draft_id = %s ORDER BY pick_no",
+            (draft_id,),
+        ).fetchall()
+        if not picks:
+            return None
+        roster_names = d.get("roster_names") or {}
+        if isinstance(roster_names, str):
+            import json as _json
+            try:
+                roster_names = _json.loads(roster_names)
+            except Exception:
+                roster_names = {}
+        pick_rows = [{
+            "player_id": str(p["player_id"]),
+            "pick_no": p["pick_no"],
+            "round": p["round"],
+            "roster_id": p["roster_id"],
+            "team": (roster_names or {}).get(str(p["roster_id"]) or "") or "",
+        } for p in picks]
+
+        adp_rows = conn.execute(
+            "SELECT p.player_id, AVG(p.pick_no) AS avg_pick "
+            "FROM draft_adp_picks p "
+            "JOIN draft_adp_drafts dd ON dd.draft_id = p.draft_id "
+            "WHERE dd.draft_type = %s AND dd.season = %s "
+            "  AND COALESCE(dd.is_superflex, FALSE) = %s "
+            "  AND COALESCE(dd.num_teams, 12) = %s "
+            "GROUP BY p.player_id",
+            (d["draft_type"], d["season"], bool(d["is_superflex"]),
+             int(d["num_teams"] or 12)),
+        ).fetchall()
+        adp_map = {str(r["player_id"]): float(r["avg_pick"]) for r in adp_rows}
+
+        pids = [r["player_id"] for r in pick_rows]
+        positions: dict[str, str] = {}
+        ppg: dict[str, float] = {}
+        try:
+            for r in conn.execute(
+                    "SELECT player_id, position FROM player_values "
+                    "WHERE player_id = ANY(%s)", (pids,)).fetchall():
+                if r.get("position"):
+                    positions[str(r["player_id"])] = str(r["position"])
+        except Exception:
+            positions = {}
+        try:
+            for r in conn.execute(
+                    "SELECT player_id, AVG(ppr_pts) AS ppg "
+                    "FROM player_weekly_metrics "
+                    "WHERE season = %s AND player_id = ANY(%s) "
+                    "GROUP BY player_id", (d["season"], pids)).fetchall():
+                if r.get("ppg") is not None:
+                    ppg[str(r["player_id"])] = float(r["ppg"])
+        except Exception:
+            ppg = {}
+
+        summary = build_grade_summary(
+            pick_rows, adp_map, positions,
+            is_superflex=bool(d["is_superflex"]),
+            num_teams=int(d["num_teams"] or 12),
+            draft_type=str(d["draft_type"] or ""),
+            ppg_by_player=ppg or None,
+        )
+        import json as _json
+        conn.execute(
+            "UPDATE draft_adp_drafts SET grade_summary = %s::jsonb, "
+            "grades_computed_at = NOW() WHERE draft_id = %s",
+            (_json.dumps(summary), draft_id),
+        )
+        return summary
+    except Exception:
+        logger.warning("[draft_adp] grade summary failed for %s",
+                       draft_id, exc_info=True)
+        return None
+
+
 def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int,
                         league_type: int = 2) -> tuple[int, int]:
     """
@@ -156,6 +360,18 @@ def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int,
 
     new_picks  = 0
     new_drafts = 0
+    # Draft Database metadata payloads (league / users / rosters) are
+    # fetched lazily, once per league, only when a new draft is stored.
+    _meta_ctx: dict = {}
+
+    def _metadata_for(draft_obj):
+        if "league" not in _meta_ctx:
+            _meta_ctx["league"] = _get(f"/league/{league_id}") or {}
+            _meta_ctx["users"] = _get(f"/league/{league_id}/users") or []
+            _meta_ctx["rosters"] = _get(f"/league/{league_id}/rosters") or []
+        return extract_draft_metadata(
+            draft_obj, _meta_ctx["league"], _meta_ctx["users"],
+            _meta_ctx["rosters"], league_type=league_type)
 
     for draft in drafts:
         draft_id = str(draft.get("draft_id") or "")
@@ -247,6 +463,35 @@ def crawl_league_drafts(league_id: str, is_superflex: bool, num_teams: int,
                 )
                 new_picks += len(rows)
                 new_drafts += 1
+
+        # Draft Database metadata + persisted grade summary for the new
+        # draft (migration 056). Failures never fail the crawl: the row
+        # keeps NULLs and the backfill can fill them later.
+        if rows:
+            try:
+                import json as _json
+                md = _metadata_for(draft)
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE draft_adp_drafts SET league_name = %s, "
+                        "scoring_type = %s, league_format = %s, "
+                        "slot_to_roster_id = %s::jsonb, "
+                        "draft_order_type = %s, roster_names = %s::jsonb, "
+                        "roster_owners = %s::jsonb "
+                        "WHERE draft_id = %s",
+                        (md["league_name"], md["scoring_type"],
+                         md["league_format"],
+                         _json.dumps(md["slot_to_roster_id"]) if md["slot_to_roster_id"] else None,
+                         md["draft_order_type"],
+                         _json.dumps(md["roster_names"]) if md["roster_names"] else None,
+                         _json.dumps(md["roster_owners"]) if md["roster_owners"] else None,
+                         draft_id),
+                    )
+                with get_conn() as conn:
+                    compute_and_store_grade_summary(conn, draft_id)
+            except Exception:
+                logger.warning("[draft_adp] metadata/grades failed for %s",
+                               draft_id, exc_info=True)
 
     return new_picks, new_drafts
 
