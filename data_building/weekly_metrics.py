@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 
 import json
 import os
+import statistics
 import threading
 import time
 
@@ -143,6 +144,13 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
     on its first (pre-game / partial) fetch, so the weekly-filter usage rows would
     never reflect a game that finished later the same week. The live refresh
     passes the current week here so a just-final slate lands in the week view now.
+
+    A stored week whose row count is drastically below the season's typical
+    week is the same freeze one step removed: its cache was populated
+    mid-slate (often only the first game) and, once the week rolled over,
+    nothing forced a refetch, so rebuilds re-upserted the partial slice
+    forever. The weeks-is-None selection detects such weeks and force-refetches
+    them too, so any frozen week self-heals on the next build.
     """
     init_weekly_metrics_db()
     idx = load_players_index() or {}
@@ -151,7 +159,8 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
     if weeks is None:
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT week, BOOL_OR(rz_targets IS NULL OR rz_carries IS NULL "
+                "SELECT week, COUNT(*) AS n_rows, "
+                "BOOL_OR(rz_targets IS NULL OR rz_carries IS NULL "
                 "OR carry_share IS NULL) AS needs_rz "
                 "FROM player_weekly_metrics WHERE season = %s GROUP BY week",
                 (int(season),),
@@ -159,6 +168,27 @@ def build_weekly_metrics(season: int, weeks: Optional[List[int]] = None,
         have = sorted(int(r["week"]) for r in rows)
         refresh = set(have[-2:])  # rebuild the latest two stored weeks
         refresh.update(int(r["week"]) for r in rows if r["needs_rz"])
+        # Frozen-partial detection: a real week (even a heavy bye week, 24+
+        # teams) never comes close to half the typical week's row count, but
+        # a one-game slice is an order of magnitude smaller. Needs a few
+        # stored weeks before "typical" means anything.
+        # Rows from the real query always carry n_rows; tolerate a row
+        # source that omits it (the count is an anomaly heuristic, never a
+        # reason to crash the whole weekly build).
+        counts = {}
+        for r in rows:
+            n = r.get("n_rows") if hasattr(r, "get") else None
+            if n is not None:
+                counts[int(r["week"])] = int(n)
+        if len(counts) >= 3:
+            typical = statistics.median(counts.values())
+            frozen = {w for w, n in counts.items() if n < 0.5 * typical}
+            if frozen:
+                print(f"[weekly_metrics] s{season}: force-refetching "
+                      f"anomalously small stored weeks {sorted(frozen)} "
+                      f"(typical week has {typical:.0f} rows)")
+                refresh.update(frozen)
+                force_set.update(frozen)
         weeks = [w for w in range(1, 19) if w not in have or w in refresh]
 
     total = 0
