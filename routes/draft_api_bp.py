@@ -15,6 +15,8 @@ when a request is served. Everything else comes from dashboard_services.
 from __future__ import annotations
 
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -28,6 +30,34 @@ from dashboard_services.platform_api import (
 logger = logging.getLogger(__name__)
 
 draft_api_bp = Blueprint("draft_api", __name__)
+
+
+# ── Draft History detect cache ───────────────────────────────────────────────
+# history=1 walks a league's whole previous_league_id chain (one provider
+# call per season). The assembled response used to be rebuilt from scratch on
+# every Draft History page load; cache it briefly in-process instead. Drafts
+# in history are completed/past, so a 10-minute TTL cannot go meaningfully
+# stale. Keyed on platform + league + season + history flag (only history
+# responses are stored).
+_DETECT_HISTORY_TTL = 600.0
+_detect_history_cache: dict = {}
+
+
+def _detect_history_get(key):
+    entry = _detect_history_cache.get(key)
+    if not entry:
+        return None
+    stored_at, payload = entry
+    if time.monotonic() - stored_at >= _DETECT_HISTORY_TTL:
+        _detect_history_cache.pop(key, None)
+        return None
+    return payload
+
+
+def _detect_history_put(key, payload):
+    if len(_detect_history_cache) > 64:
+        _detect_history_cache.clear()
+    _detect_history_cache[key] = (time.monotonic(), payload)
 
 
 # ── Lazy shims to app.py internals (resolved at request time) ─────────────────
@@ -298,6 +328,11 @@ def api_draft_detect():
     # The draft-history page wants every season's draft; the dashboard countdown
     # card only needs this league's, so it stays a single call unless history=1.
     want_history = (request.args.get("history") or "").strip() in ("1", "true", "yes")
+    cache_key = (platform, league_id, season, True) if want_history else None
+    if cache_key is not None:
+        cached = _detect_history_get(cache_key)
+        if cached is not None:
+            return jsonify({"drafts": cached})
     out = []
     seen_ids: set = set()
     try:
@@ -312,11 +347,23 @@ def api_draft_detect():
                 hist = {}
         league_ids = list(dict.fromkeys(
             [league_id] + [lid for _yr, lid in sorted(hist.items(), reverse=True)]))
-        for lid in league_ids:
+
+        def _drafts_for(lid):
             try:
-                drafts = get_drafts(platform, lid, season) or []
+                return get_drafts(platform, lid, season) or []
             except Exception:
-                continue
+                return []
+
+        # Fetch every season's draft list in parallel (the old sequential walk
+        # stacked one provider round-trip per season on the page load).
+        # Executor.map preserves league order, so the assembled response keeps
+        # its newest-first ordering and draft_id dedupe exactly as before.
+        if len(league_ids) > 1:
+            with ThreadPoolExecutor(max_workers=min(8, len(league_ids))) as _ex:
+                per_league = list(_ex.map(_drafts_for, league_ids))
+        else:
+            per_league = [_drafts_for(lid) for lid in league_ids]
+        for lid, drafts in zip(league_ids, per_league):
             for d in drafts:
                 did = str(d.get("draft_id") or "")
                 if not did or did in seen_ids:
@@ -341,6 +388,8 @@ def api_draft_detect():
                 })
     except Exception as exc:
         logger.warning("[draft-detect] error: %s", exc)
+    if cache_key is not None:
+        _detect_history_put(cache_key, list(out))
     return jsonify({"drafts": out})
 
 
