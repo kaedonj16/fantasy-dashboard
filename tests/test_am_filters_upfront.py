@@ -156,6 +156,52 @@ def test_active_filter_chips_model():
     _run_node(script)
 
 
+def test_editor_chip_state_is_initialized_before_the_init_render():
+    """Regression (2026-11-06 live report): amRenderActiveChips() runs
+    during page init and, with no active chips (the default load), calls
+    amCloseChipEditor(), which writes _amEditorChip. When that variable
+    was declared with `let` down in the chip-editor section, the init
+    call hit the temporal dead zone: 'Cannot access _amEditorChip before
+    initialization', killing the rest of the page script."""
+    js = _page_js()
+    decl = js.index("let _amEditorChip = null;")
+    init_call = js.index("\n  amRenderActiveChips();\n")
+    assert decl < init_call, \
+        "_amEditorChip must be initialized before the init amRenderActiveChips() call"
+    assert js.count("let _amEditorChip") == 1, "exactly one declaration"
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node tests disabled")
+def test_render_active_chips_with_no_chips_closes_editor_cleanly():
+    js = _page_js()
+    decl = re.search(r"let _amEditorChip = null;", js).group(0)
+    fns = "\n".join(_extract_fn(js, n) for n in (
+        "amActiveFilterChips", "amRenderActiveChips", "amCloseChipEditor"))
+    script = (
+        "var cfg = { seasons: [2026] };\n"
+        "var state = { weekRange: '', minVol: '', team: '', ageMin: '', ageMax: '',\n"
+        "  rosterOnly: false, comboFilters: [] };\n"
+        + decl + "\n"
+        "var _wrap = { style: {} };\n"
+        "var _row = { innerHTML: 'stale' };\n"
+        "var _ed = { hidden: false, innerHTML: 'stale' };\n"
+        "var document = { getElementById: function(id) {\n"
+        "  if (id === 'amActiveWrap') return _wrap;\n"
+        "  if (id === 'amActiveChips') return _row;\n"
+        "  if (id === 'amChipEditor') return _ed;\n"
+        "  return null; } };\n"
+        "function amSelectedSeasons() { return [2026]; }\n"
+        "function amSeasonLabel(y) { return y.join(' + '); }\n"
+        + fns + "\n"
+        "amRenderActiveChips();\n"
+        "if (_wrap.style.display !== 'none') { console.error('FAIL wrap not hidden'); process.exit(1); }\n"
+        "if (_row.innerHTML !== '') { console.error('FAIL chips row not cleared'); process.exit(1); }\n"
+        "if (!_ed.hidden || _ed.innerHTML !== '') { console.error('FAIL editor not closed'); process.exit(1); }\n"
+        "if (_amEditorChip !== null) { console.error('FAIL editor chip not reset'); process.exit(1); }\n"
+    )
+    _run_node(script)
+
+
 # ── Honest empty state ─────────────────────────────────────────────────
 
 def test_render_branches_on_active_filters_for_empty_state():

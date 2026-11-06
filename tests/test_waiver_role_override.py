@@ -264,11 +264,12 @@ def test_next_steps_dropped_path_joins_same_signal(monkeypatch):
     # all, still admitted and claimed with the signal kind set.
     ctx, rows = _ns_fixture(monkeypatch, role_states={})
     import utils.waiver_freshness as wf
-    # Clock-relative drop: freshness is judged against wall-clock now
-    # (dropped_within, 48h), so a hardcoded date time-bombs this fixture.
+    # Recent relative to the real clock: dropped_within judges the 48h
+    # window against wall-clock now, so a fixed drop date ages out and
+    # this test starts failing on time alone (as 2026-11-04 did).
     from datetime import datetime, timedelta, timezone
     recent_drop = (datetime.now(timezone.utc)
-                   - timedelta(hours=2)).isoformat()
+                   - timedelta(hours=3)).isoformat()
     monkeypatch.setattr(wf, "get_transactions_delta",
                         lambda *a, **k: {
                             "adds": set(),

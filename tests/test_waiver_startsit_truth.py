@@ -233,9 +233,12 @@ def test_waiver_process_faab_and_missing_keys():
 
 # ── /api/waiver-candidates integration (spec §5.2A/B/C) ────────────────────
 
-# Clock-relative drop: freshness is judged against wall-clock now
-# (dropped_within, 48h), so a hardcoded date time-bombs this fixture.
-DROP_ISO = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+# The candidates endpoint judges "dropped within 48h" against the real
+# wall clock (dropped_within's default now), so this must stay a recent
+# timestamp: the fixed 2026-11-04 date it replaced aged out of the 48h
+# window on 2026-11-06 and the drop-path tests started failing on time
+# alone, on every branch.
+DROP_ISO = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
 
 _WV_TEAMS = {"q1": "BUF", "rb1": "DET", "rb2": "SF", "wr1": "CIN",
              "wr2": "MIA", "te1": "KC", "b1": "DAL", "dropqb": "ARI",
