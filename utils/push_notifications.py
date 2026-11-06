@@ -975,6 +975,64 @@ def _broadcast_league(league_id, title, body, url="/", tag="update", notif_type=
         return 0
 
 
+def _broadcast_league_excluding(league_id, exclude_owner_ids, title, body,
+                                url="/", tag="update", notif_type=None,
+                                exclude_roster_ids=None,
+                                exclude_account_keys=None):
+    """League broadcast that skips the given owners.
+
+    For alerts about a manager's own move (e.g. the big-drop alert): the
+    manager who made the move already knows, so only the rest of the
+    league is notified. Owner ids are matched across spelling variants
+    (ESPN SWID braces), and roster ids are excluded too because some
+    subscribe paths persist the roster/team id as the subscription's
+    owner_id (the Yahoo bulk-subscribe path). Yahoo movers are excluded
+    by account_key instead: Yahoo payload owner ids are the fetching
+    caller's guid on every roster, so only the saved team binding
+    (exclude_account_keys, from yahoo_roster_account_ids) identifies
+    them. Subscriptions that match none of the exclusions are kept,
+    including rows with no owner_id on file: they cannot be identified
+    as the mover. With nothing to exclude this is exactly
+    _broadcast_league.
+    """
+    exclude = set()
+    for oid in exclude_owner_ids or []:
+        if oid:
+            exclude |= owner_id_variants(oid)
+            exclude.add(str(oid))
+    for rid in exclude_roster_ids or []:
+        if rid is not None and str(rid) != "":
+            exclude.add(str(rid))
+    exclude_accts = {str(a) for a in (exclude_account_keys or []) if a}
+    if not exclude and not exclude_accts:
+        return _broadcast_league(league_id, title, body, url, tag, notif_type)
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT endpoint, p256dh, auth, prefs, platform, account_key, owner_id "
+                "FROM push_subscriptions WHERE league_id = %s",
+                (str(league_id),)
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("[push] broadcast_league_excluding %s failed: %s", league_id, exc)
+        return 0
+    kept = []
+    for r in rows:
+        if not hasattr(r, "get"):
+            kept.append(r)
+            continue
+        oid = str(r.get("owner_id") or "")
+        if oid and oid in exclude:
+            continue
+        acct = str(r.get("account_key") or "")
+        if acct and acct in exclude_accts:
+            continue
+        kept.append(r)
+    return _send_with_digest(kept, title, body, url, tag,
+                             notif_type=notif_type, league_id=str(league_id))
+
+
 def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update", notif_type=None):
     """Send to a specific owner. Falls back to league broadcast if no owner match."""
     if not owner_id:
@@ -2562,6 +2620,7 @@ def notify_rival_trades():
             try:
                 fmt = _league_format(platform, league_id, season)
                 txns = get_transactions(platform, league_id, int(week), int(season)) or []
+                roster_owner = None  # roster_id -> owner_id, fetched lazily
                 for t in txns:
                     if t.get("type") != "trade":
                         continue
@@ -2583,14 +2642,75 @@ def notify_rival_trades():
                         f"Trade alert in {league_name}" if league_name
                         else "Trade alert in your league"
                     )
-                    _broadcast_league(
-                        league_id,
-                        title=trade_title,
-                        body=f"{name} was just traded. Check the activity feed to see the full deal.",
-                        url=f"/{platform}/{season}/{league_id}/activity",
-                        tag=f"trade-{league_id}-{txn_id}",
-                        notif_type="rival_trades",
+                    trade_body = (
+                        f"{name} was just traded. "
+                        "Check the activity feed to see the full deal."
                     )
+                    trade_url = f"/{platform}/{season}/{league_id}/activity"
+                    trade_tag = f"trade-{league_id}-{txn_id}"
+                    # The two managers in the trade already know: never send
+                    # the rival-trade alert to a participant. Participants are
+                    # the rosters on either side (adds receive, drops send,
+                    # plus the transaction's roster_ids list when present).
+                    # Yahoo resolves through the saved team bindings' account
+                    # ids instead of payload owner ids, same as the big-drop
+                    # alert. When no participant can be identified, fall back
+                    # to the plain league broadcast so the rest of the league
+                    # still hears.
+                    participant_rids = sorted({
+                        str(v) for v in list(adds.values())
+                        + list((t.get("drops") or {}).values())
+                        + list(t.get("roster_ids") or [])
+                        if v is not None and str(v) != ""
+                    })
+                    participant_accounts = []
+                    participant_owners = []
+                    if _is_yahoo(platform):
+                        for _rid in participant_rids:
+                            try:
+                                participant_accounts += yahoo_roster_account_ids(
+                                    league_id, season, _rid)
+                            except Exception:
+                                continue
+                    elif participant_rids:
+                        if roster_owner is None:
+                            roster_owner = {}
+                            try:
+                                from dashboard_services.platform_api import (
+                                    get_rosters as _get_rosters,
+                                )
+                                for _r in _get_rosters(
+                                        platform, league_id, season) or []:
+                                    if isinstance(_r, dict):
+                                        roster_owner[str(_r.get("roster_id"))] = str(
+                                            _r.get("owner_id") or "")
+                            except Exception:
+                                roster_owner = {}
+                        participant_owners = [
+                            roster_owner[_rid] for _rid in participant_rids
+                            if roster_owner.get(_rid)
+                        ]
+                    if participant_owners or participant_accounts:
+                        _broadcast_league_excluding(
+                            league_id,
+                            participant_owners,
+                            title=trade_title,
+                            body=trade_body,
+                            url=trade_url,
+                            tag=trade_tag,
+                            notif_type="rival_trades",
+                            exclude_roster_ids=participant_rids,
+                            exclude_account_keys=participant_accounts,
+                        )
+                    else:
+                        _broadcast_league(
+                            league_id,
+                            title=trade_title,
+                            body=trade_body,
+                            url=trade_url,
+                            tag=trade_tag,
+                            notif_type="rival_trades",
+                        )
                     new_txns.add(txn_id)
             except Exception as le:
                 logger.warning("[notify] rival_trades league %s: %s", league_id, le)
@@ -3891,6 +4011,7 @@ def notify_transaction_drops():
             try:
                 fmt = _league_format(platform, league_id, season)
                 txns = get_transactions(platform, league_id, int(week), int(season)) or []
+                roster_owner = None  # roster_id -> owner_id, fetched lazily
                 for t in txns:
                     if t.get("type") not in ("waiver", "free_agent"):
                         continue
@@ -3913,14 +4034,63 @@ def notify_transaction_drops():
                     pos_str = f" ({pos})" if pos else ""
                     league_name = _league_display_name(platform, league_id, season)
                     drop_title = f"Big drop in {league_name}" if league_name else "Big drop in your league"
-                    sent += _broadcast_league(
-                        league_id,
-                        title=drop_title,
-                        body=f"{name}{pos_str} was just dropped. Act fast on waivers.",
-                        url=f"/{platform}/{season}/{league_id}/players",
-                        tag=f"drop-{league_id}-{txn_id}",
-                        notif_type="transaction",
-                    )
+                    drop_body = f"{name}{pos_str} was just dropped. Act fast on waivers."
+                    drop_url = f"/{platform}/{season}/{league_id}/players"
+                    drop_tag = f"drop-{league_id}-{txn_id}"
+                    # The manager who dropped the player already knows: never
+                    # send the big-drop alert to the dropper. Identify them
+                    # from the transaction's dropping roster (drops maps
+                    # player_id -> roster_id). Yahoo payload owner ids are
+                    # the fetching caller's guid, so Yahoo resolves through
+                    # the saved team binding's account ids instead. When the
+                    # dropper cannot be identified, fall back to the plain
+                    # league broadcast so the rest of the league still hears.
+                    drop_rid = drops.get(top_pid)
+                    dropper_accounts = []
+                    dropper_owner = ""
+                    if _is_yahoo(platform):
+                        if drop_rid is not None:
+                            try:
+                                dropper_accounts = yahoo_roster_account_ids(
+                                    league_id, season, drop_rid)
+                            except Exception:
+                                dropper_accounts = []
+                    elif drop_rid is not None:
+                        if roster_owner is None:
+                            roster_owner = {}
+                            try:
+                                from dashboard_services.platform_api import (
+                                    get_rosters as _get_rosters,
+                                )
+                                for _r in _get_rosters(
+                                        platform, league_id, season) or []:
+                                    if isinstance(_r, dict):
+                                        roster_owner[str(_r.get("roster_id"))] = str(
+                                            _r.get("owner_id") or "")
+                            except Exception:
+                                roster_owner = {}
+                        dropper_owner = roster_owner.get(str(drop_rid)) or ""
+                    if dropper_owner or dropper_accounts:
+                        sent += _broadcast_league_excluding(
+                            league_id,
+                            [dropper_owner] if dropper_owner else [],
+                            title=drop_title,
+                            body=drop_body,
+                            url=drop_url,
+                            tag=drop_tag,
+                            notif_type="transaction",
+                            exclude_roster_ids=[drop_rid],
+                            exclude_account_keys=dropper_accounts,
+                        )
+                    else:
+                        sent += _broadcast_league(
+                            league_id,
+                            title=drop_title,
+                            body=drop_body,
+                            url=drop_url,
+                            tag=drop_tag,
+                            notif_type="transaction",
+                        )
                     new_txns.add(txn_id)
             except Exception as le:
                 logger.warning("[notify] transaction_drops league %s: %s", league_id, le)

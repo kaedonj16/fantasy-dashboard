@@ -264,6 +264,19 @@ def test_next_steps_dropped_path_joins_same_signal(monkeypatch):
     # all, still admitted and claimed with the signal kind set.
     ctx, rows = _ns_fixture(monkeypatch, role_states={})
     import utils.waiver_freshness as wf
+    # The drop fixture is stamped 2026-11-04T15:00Z and admission reads
+    # the real clock through dropped_within's 48h window. Pin the
+    # freshness clock to an hour after the drop so the test can never
+    # age out of the window.
+    from datetime import datetime, timezone
+
+    class _PinnedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = datetime(2026, 11, 4, 16, 0, tzinfo=timezone.utc)
+            return base.astimezone(tz) if tz else base
+
+    monkeypatch.setattr(wf, "datetime", _PinnedDateTime)
     monkeypatch.setattr(wf, "get_transactions_delta",
                         lambda *a, **k: {
                             "adds": set(),
