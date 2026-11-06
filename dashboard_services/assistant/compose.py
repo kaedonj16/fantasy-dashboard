@@ -94,7 +94,8 @@ SYSTEM = (
     "top finding's receive total, give total, and fairness gap; for a metric, the leader "
     "and any of the user's own players on the board; for the weekly digest, each action's key number; "
     "for waivers, the top candidate's value and the user's weakest starter at that position; "
-    "for playoffs, the odds and the wins still needed; for standings and power rankings, the user's "
+    "for playoffs, the odds, your current seed and first-seed odds when the pack carries them, "
+    "and the wins still needed; for standings and power rankings, the user's "
     "own seed or rank and the leader; for a matchup, the win probability and both projected "
     "totals (a matchup answer is only about the matchup: the verdict leads with the win "
     "probability and the projected score, and it never carries waiver targets or weekly "
@@ -946,6 +947,10 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         scen = pack.get("scenario") or {}
         if me.get("playoff_pct") is not None:
             rows.append({"label": "Your playoff odds (%)", "value": _fmt_num(me["playoff_pct"])})
+        if me.get("seed") is not None:
+            rows.append({"label": "Current seed", "value": _fmt_num(me["seed"])})
+        if me.get("first_seed_pct") is not None:
+            rows.append({"label": "First-seed odds (%)", "value": _fmt_num(me["first_seed_pct"])})
         traj = pack.get("odds_trajectory") or {}
         if traj.get("start_pct") is not None and traj.get("start_week") is not None:
             rows.append({"label": f"Your playoff odds in Week {traj['start_week']} (%)",

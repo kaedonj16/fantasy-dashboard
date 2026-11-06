@@ -548,6 +548,37 @@ def _row_value(row) -> float | None:
     return None
 
 
+def _format_values(bundle):
+    """pid -> value row priced in the bundle league's own format.
+
+    The raw model table's ``value`` column is 1QB dynasty; citing it in a
+    superflex or redraft league prices every pack number in the wrong
+    format (live gap audit 2026-11-06: trade totals, waiver gates and
+    player values in her SF redraft league were 1QB dynasty numbers).
+    The site's canonical rewrite (league_format_value_lookup, via
+    _mode_values in its natural mode) rewrites ``value`` per league:
+    SF vs 1QB, redraft vs dynasty, scoring format, TE premium, exactly
+    like the player modal and the Teams page. Falls back to the raw rows
+    when the lookup has nothing (no value table anywhere). Cached on the
+    bundle: several builders run per request and the lookup walks the
+    whole table.
+    """
+    if isinstance(bundle, dict):
+        cached = bundle.get("_format_values")
+        if cached is not None:
+            return cached
+    ctx = (bundle or {}).get("ctx") or {}
+    out = _mode_values(ctx, "dynasty") or {}
+    if not out:
+        out = _value_rows()
+    if isinstance(bundle, dict):
+        try:
+            bundle["_format_values"] = out
+        except Exception:
+            pass
+    return out
+
+
 def _metrics_for(pid, season=None):
     tools = []
     try:
@@ -751,7 +782,7 @@ def _upcoming_schedule(bundle, team, count=4):
 def build_start_sit(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     pack = _base_pack("start_sit", bundle)
     tools: list[str] = []
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     index = _index()
@@ -1520,7 +1551,7 @@ def _side_picks(bundle, entities, ownership, table, *, viewer_rid, partner_rid, 
 def build_trade_eval(bundle, entities, resolved_ids) -> tuple[dict, list[str]]:
     pack = _base_pack("trade_eval", bundle)
     tools: list[str] = ["model_value_table"]
-    values = _value_rows()
+    values = _format_values(bundle)
     index = _index()
     give_ids = (entities or {}).get("give_player_ids") or []
     recv_ids = (entities or {}).get("receive_player_ids") or []
@@ -2727,7 +2758,7 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         give_position = None
     pack["give_position"] = give_position
     index = _index()
-    values = _value_rows()
+    values = _format_values(bundle)
     my_ids = {str(p) for p in (roster.get("players") or [])}
     named = [str(pid) for pid in (player_ids or []) if pid]
     rosters = ctx.get("rosters") or []
@@ -2914,7 +2945,7 @@ def build_buy_sell_hold(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     index = _index()
     info = _player_info(pid, index)
     pack["player"] = info
-    values = _value_rows()
+    values = _format_values(bundle)
     v = _row_value(values.get(str(pid)))
     if v is not None:
         pack["player"]["value"] = v
@@ -3049,7 +3080,7 @@ def build_replacement(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         mode = "younger"
     pack["mode"] = mode
     index = _index()
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     info = _player_info(pid, index)
@@ -3136,7 +3167,7 @@ def build_handcuff(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         pack["missing"] = "no resolved player"
         return pack, tools
     index = _index()
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     info = _player_info(pid, index)
@@ -3223,7 +3254,7 @@ def build_player(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     index = _index()
     info = _player_info(pid, index)
     pack["player"] = info
-    values = _value_rows()
+    values = _format_values(bundle)
     v = _row_value(values.get(str(pid)))
     if v is not None:
         pack["player"]["value"] = v
@@ -5846,7 +5877,7 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     tools: list[str] = ["model_value_table"]
     ctx = bundle.get("ctx") or {}
     roster = bundle.get("roster") or {}
-    values = _value_rows()
+    values = _format_values(bundle)
     index = _index()
     roster_ids = {str(p) for p in (roster.get("players") or [])} or set(bundle.get("roster_player_ids") or set())
     # Free agents: everyone rostered anywhere in the league is owned.
@@ -6352,6 +6383,81 @@ def _finalized_weeks(ctx) -> list:
         return []
 
 
+def _standings_seed_pf(ctx, tools):
+    """(seed_by_rid, pf_by_rid) from the site's standings machinery.
+
+    Seeds are build_standings_map's (division winners first, then wild
+    cards) over the finalized team_stats frame, the exact source
+    build_standings stamps; PF comes from that same frame. Both maps are
+    keyed by roster_id (str). When the league has no standings snapshot
+    both come back empty: callers omit seed data rather than deriving it
+    from the sim's own ordering, which is an odds sort, not a seeding.
+    """
+    team_stats = None
+    weeks = _finalized_weeks(ctx)
+    if weeks:
+        try:
+            capped = standings_as_of_week(ctx, weeks[-1]) or {}
+            team_stats = capped.get("team_stats")
+            if team_stats is not None:
+                tools.append("app.build_standings_as_of_week")
+        except Exception:
+            logger.debug("[assistant] playoffs standings cap failed", exc_info=True)
+            team_stats = None
+    if team_stats is None:
+        team_stats = ctx.get("team_stats")
+    if team_stats is None:
+        return {}, {}
+    roster_map = ctx.get("roster_map") or {}
+    owner_to_rid = {}
+    for rid, owner in roster_map.items():
+        if owner is not None:
+            owner_to_rid[str(owner)] = rid
+            owner_to_rid[str(owner).strip()] = rid
+    div_by_rid: dict = {}
+    div_records = None
+    try:
+        from utils.standings import division_records_for_ctx, roster_division_map
+        div_by_rid = roster_division_map(
+            ctx.get("rosters") or [],
+            settings=ctx.get("league_settings") or (ctx.get("league") or {}).get("settings") or {},
+        ) or {}
+        div_records = division_records_for_ctx(ctx)
+    except Exception:
+        logger.debug("[assistant] playoffs divisions failed", exc_info=True)
+        div_by_rid, div_records = {}, None
+    seed_by_rid: dict = {}
+    try:
+        from dashboard_services.service import build_standings_map
+        seeds = build_standings_map(
+            team_stats, roster_map,
+            division_by_rid=div_by_rid or None,
+            division_records_by_rid=div_records,
+        ) or {}
+        if seeds:
+            tools.append("service.build_standings_map")
+        seed_by_rid = {str(rid): int(seed) for rid, seed in seeds.items()}
+    except Exception:
+        logger.debug("[assistant] playoffs seeds failed", exc_info=True)
+        seed_by_rid = {}
+    pf_by_rid: dict = {}
+    raw_rows = []
+    if hasattr(team_stats, "iterrows"):
+        raw_rows = [dict(r) for _, r in team_stats.iterrows()]
+    elif isinstance(team_stats, (list, tuple)):
+        raw_rows = [dict(r) for r in team_stats if isinstance(r, dict)]
+    for row in raw_rows:
+        owner = row.get("owner")
+        if owner is None:
+            continue
+        rid = owner_to_rid.get(str(owner))
+        if rid is None:
+            rid = owner_to_rid.get(str(owner).strip())
+        if rid is not None:
+            pf_by_rid[str(rid)] = _f(row.get("PF"), 2)
+    return seed_by_rid, pf_by_rid
+
+
 def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
     """Playoff path: Monte Carlo odds (the app's cached sim) plus, inside
     the end-of-season window, the exact clinch/elimination scenarios.
@@ -6360,6 +6466,12 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
     before the stretch): the pack flags odds_soft and carries the
     wins-needed math (the projected cut line) so the answer can lead with
     that instead of false precision.
+
+    The field also carries each team's CURRENT seed (from the standings
+    machinery, never from the odds sort) and the sim's first_seed_pct,
+    plus a top_seed block describing the 1-seed race from the viewer's
+    side: a question about the 1 seed needs who holds it today and how
+    far back the viewer is, not the cut-line wins number.
     """
     pack = _base_pack("playoffs", bundle)
     tools: list[str] = []
@@ -6423,9 +6535,17 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
             "record": _record_str(row.get("wins"), row.get("losses"), row.get("ties")),
             "playoff_pct": _f0(row.get("playoff_pct")),
             "bye_pct": _f0(row.get("bye_pct")),
+            "first_seed_pct": _f(row.get("first_seed_pct")),
             "avg_final_wins": _f(row.get("avg_final_wins")),
         })
     rows.sort(key=lambda r: r["playoff_pct"], reverse=True)
+    # Current seeds ride along from the standings machinery (never from
+    # this odds sort). Leagues with no standings snapshot carry seed None
+    # on every row and no top_seed block: the seed race is simply not
+    # claimed, rather than dressed up from the odds ordering.
+    seed_by_rid, pf_by_rid = _standings_seed_pf(ctx, tools)
+    for r in rows:
+        r["seed"] = seed_by_rid.get(r["roster_id"])
     pack["field"] = rows
     pack["playoff_teams"] = playoff_teams
     pack["playoff_week_start"] = playoff_week_start
@@ -6460,6 +6580,36 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
         if projected_cut_wins is not None:
             me["wins_still_needed"] = round(max(0.0, projected_cut_wins - me["wins"]), 1)
         pack["me"] = me
+    # The 1-seed race from the viewer's side: who holds the top seed
+    # today and the ground to make up. Only derivable when the standings
+    # machinery stamped a seed 1; otherwise the block stays None.
+    pack["top_seed"] = None
+    leader = next((r for r in rows if r.get("seed") == 1), None)
+    if leader is not None:
+        top_seed = {
+            "roster_id": leader["roster_id"],
+            "team_name": leader["team_name"],
+            "wins": leader["wins"], "losses": leader["losses"],
+            "ties": leader["ties"], "record": leader["record"],
+            "pf": pf_by_rid.get(leader["roster_id"]),
+            "is_me": bool(me is not None
+                          and leader["roster_id"] == me["roster_id"]),
+            "games_back": 0.0,
+            "pf_back": 0.0,
+        }
+        if me is None:
+            top_seed["games_back"] = None
+            top_seed["pf_back"] = None
+        elif not top_seed["is_me"]:
+            games_back = ((leader["wins"] - me["wins"])
+                          + (me["losses"] - leader["losses"])) / 2
+            top_seed["games_back"] = round(max(0.0, games_back), 1)
+            leader_pf = pf_by_rid.get(leader["roster_id"])
+            my_pf = pf_by_rid.get(me["roster_id"])
+            top_seed["pf_back"] = (
+                round(max(0.0, leader_pf - my_pf), 2)
+                if leader_pf is not None and my_pf is not None else None)
+        pack["top_seed"] = top_seed
     # Odds trajectory: the recorded weekly snapshots (the same series
     # the odds page charts) so "how have my odds moved" and the league's
     # biggest movers answer from recorded history, not a re-simulation.
@@ -6752,10 +6902,15 @@ def build_standings(bundle, entities=None, player_ids=None) -> tuple[dict, list[
         r["seed"] = int(seed) if seed is not None else None
     if all(r["seed"] is not None for r in rows):
         rows.sort(key=lambda r: r["seed"])
+        pack["seeds_estimated"] = False
     else:
         rows.sort(key=lambda r: (-r["wins"], -r["pf"]))
         for i, r in enumerate(rows):
             r["seed"] = i + 1
+        # Fallback stamps are a wins/PF sort wearing the seed label (they
+        # ignore division winners); flag them so no surface reads them
+        # as build_standings_map's real seeds.
+        pack["seeds_estimated"] = True
     pack["teams"] = rows
     pack["me"] = next((r for r in rows if r["is_me"]), None)
     leader_pf = max(rows, key=lambda r: r["pf"])
@@ -7570,7 +7725,7 @@ def build_keeper(bundle, entities=None, player_ids=None) -> tuple[dict, list[str
         return pack, tools
     roster = bundle.get("roster") or {}
     roster_id = roster.get("roster_id")
-    values = _value_rows()
+    values = _format_values(bundle)
     index = _index()
 
     def _val(pid):
@@ -7909,10 +8064,96 @@ def _activity_players(players, values):
     return out, round(total, 1), unpriced
 
 
+def _activity_pick_context(bundle, tools):
+    """(ownership, pick value table) for pricing completed trades' picks,
+    computed once per request and memoized on the bundle."""
+    cached = bundle.get("_activity_pick_ctx") if isinstance(bundle, dict) else None
+    if cached is not None:
+        return cached
+    ctx = bundle.get("ctx") or {}
+    rosters = [r for r in (ctx.get("rosters") or []) if isinstance(r, dict)]
+    ownership = None
+    try:
+        ownership = _pick_ownership(bundle)
+    except Exception:
+        logger.debug("[assistant] activity pick ownership failed", exc_info=True)
+    table = None
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        table = pick_value_table(league_teams=len(rosters) or 10,
+                                 is_sf=is_superflex_lineup(ctx.get("roster_positions") or []))
+        if table:
+            tools.append("dashboard_services.picks.load_pick_value_table")
+    except Exception:
+        logger.debug("[assistant] activity pick table failed", exc_info=True)
+        table = None
+    if ownership:
+        tools.append(ownership["source"])
+    out = (ownership, table)
+    if isinstance(bundle, dict):
+        try:
+            bundle["_activity_pick_ctx"] = out
+        except Exception:
+            pass
+    return out
+
+
+def _activity_picks(bundle, raw_picks, tools):
+    """Price one completed trade's draft picks, attributed per side.
+
+    The activity frame carries the transaction's raw picks: owner_id is
+    the receiver, previous_owner_id the sender, roster_id the pick's
+    original owner, the attribution the Activity page itself renders.
+    Pricing mirrors build_trade_eval's _pick_entry (the pick value table
+    for this league's size and format; a future pick's slot resolves
+    from ownership where possible, else the round price). Returns
+    (by_receiver, by_sender, entries). A pick that cannot be priced
+    stays in the pack with priced False and value None, never dropped
+    and never given an invented number.
+    """
+    by_receiver: dict[str, list[dict]] = {}
+    by_sender: dict[str, list[dict]] = {}
+    entries: list[dict] = []
+    picks = [p for p in (raw_picks or []) if isinstance(p, dict)]
+    if not picks:
+        return by_receiver, by_sender, entries
+    ownership, table = _activity_pick_context(bundle, tools)
+    for pk in picks:
+        try:
+            season, rnd = int(pk.get("season") or 0), int(pk.get("round") or 0)
+        except (TypeError, ValueError):
+            season, rnd = 0, 0
+        recv = str(pk.get("owner_id")) if pk.get("owner_id") is not None else None
+        send = str(pk.get("previous_owner_id")) \
+            if pk.get("previous_owner_id") is not None else None
+        original = str(pk.get("roster_id")) if pk.get("roster_id") is not None \
+            else (send or "")
+        if season and rnd:
+            entry = _pick_entry(bundle, ownership, table,
+                                {"season": season, "round": rnd, "slot": None},
+                                side="gets", current_owner_rid=recv,
+                                original_rid=original)
+        else:
+            entry = {"pick_id": None,
+                     "label": f"{season or '?'} round {rnd or '?'} pick",
+                     "season": season or None, "round": rnd or None,
+                     "slot": None, "side": "gets",
+                     "original_owner_team": None, "current_owner_team": None,
+                     "value": None, "priced": False}
+        entry = {**entry, "receiver_roster_id": recv, "sender_roster_id": send}
+        entries.append(entry)
+        if recv is not None:
+            by_receiver.setdefault(recv, []).append(entry)
+        if send is not None:
+            by_sender.setdefault(send, []).append(entry)
+    return by_receiver, by_sender, entries
+
+
 def build_activity(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
     """League activity: the Activity page's own frame (trades, waiver adds,
     serious injuries), newest first, with completed trades priced from the
-    model value table and judged by the shared fairness band."""
+    model value table (league format) plus the pick value table for the
+    picks that moved, and judged by the shared fairness band."""
     tools: list[str] = []
     pack = _base_pack("activity", bundle)
     ctx = bundle.get("ctx") or {}
@@ -7935,7 +8176,7 @@ def build_activity(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
         records = df.to_dict("records") if hasattr(df, "to_dict") else list(df)
     except Exception:
         records = []
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     from utils.trade import fairness_label
@@ -7956,26 +8197,43 @@ def build_activity(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
             if len(trades) >= 5:
                 continue
             teams, totals = [], []
+            raw_picks = data.get("draft_picks") or []
+            by_recv, by_send, pick_entries = _activity_picks(bundle, raw_picks, tools)
             for t in data.get("teams") or []:
                 if not isinstance(t, dict):
                     continue
                 gets, gets_total, gets_un = _activity_players(t.get("gets"), values)
                 sends, sends_total, sends_un = _activity_players(t.get("sends"), values)
                 rid = str(t.get("roster_id") or t.get("rid") or "")
+                gets_picks = by_recv.get(rid) or []
+                sends_picks = by_send.get(rid) or []
+                picks_in = round(sum(p["value"] for p in gets_picks if p.get("value")), 1)
+                picks_un = sum(1 for p in gets_picks + sends_picks
+                               if not p.get("priced"))
+                total_gets = round(gets_total + picks_in, 1)
+                has_gets = bool(gets or gets_picks)
                 teams.append({
                     "team_name": t.get("name") or f"Roster {rid}",
                     "roster_id": rid,
                     "involves_you": bool(viewer_rid and rid == viewer_rid),
                     "gets": gets, "sends": sends,
-                    "gets_value": gets_total if gets else None,
+                    "gets_picks": gets_picks, "sends_picks": sends_picks,
+                    "gets_value": total_gets if has_gets else None,
                     "sends_value": sends_total if sends else None,
-                    "unpriced": gets_un + sends_un,
+                    "unpriced": gets_un + sends_un + picks_un,
                 })
-                totals.append(gets_total if gets else None)
+                totals.append(total_gets if has_gets else None)
             entry = {"week": wk, "teams": teams,
-                     "picks_moved": len(data.get("draft_picks") or [])}
+                     "picks_moved": len(raw_picks),
+                     "picks": pick_entries}
+            unpriced_assets = sum(t["unpriced"] for t in teams)
+            if unpriced_assets:
+                entry["unpriced"] = unpriced_assets
             priced = [x for x in totals if x is not None]
-            if len(teams) == 2 and len(priced) == 2:
+            # No fairness verdict while any asset on either side is
+            # unpriced: a gap computed from a partial deal would read as
+            # the whole deal's verdict.
+            if len(teams) == 2 and len(priced) == 2 and not unpriced_assets:
                 gap = round(abs(priced[0] - priced[1]), 1)
                 entry["value_gap"] = gap
                 entry["ahead_team"] = teams[0]["team_name"] if priced[0] >= priced[1] \
@@ -8028,7 +8286,7 @@ def build_watchlist(bundle, entities=None, player_ids=None) -> tuple[dict, list[
         pack["available"] = False
         pack["missing"] = "your watchlist could not be loaded"
         return pack, tools
-    values = _value_rows()
+    values = _format_values(bundle)
     if values:
         tools.append("model_value_table")
     index = _index()
