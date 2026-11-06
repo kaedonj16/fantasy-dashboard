@@ -8471,7 +8471,10 @@ def build_gm_directive(bundle, entities=None, player_ids=None) -> tuple[dict, li
             why = ((why + " " if why else "")
                    + str(claim["culture_note"]))
         directives.append({"kind": "waiver", "call": call, "why": why})
-    coverage = brief.get("coverage") or {}
+    # The brief returns its coverage map under "qb_coverage" (the
+    # build_coverage dict: weeks/holes/requirements); its "holes"
+    # entries carry exactly week/position/count/required.
+    coverage = brief.get("qb_coverage") or {}
     for hole in (coverage.get("holes") or [])[:2]:
         directives.append({
             "kind": "coverage",
@@ -8978,6 +8981,22 @@ def build_draft(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]
     pack["best_available_rookies"] = (
         rookies if (pack["draft_kind"] == "rookie" or entities.get("draft_slot"))
         else [])
+    if pack["draft_kind"] == "rookie" and status != "complete":
+        # A rookie draft's available pool IS the rookie class: the
+        # best_available list (and its by-position cut, derived above
+        # from the same veteran table) must cite rookies, not the
+        # veteran value table. A completed draft keeps best_available
+        # empty, as for full drafts.
+        pack["best_available"] = rookies
+        rookie_by_pos = {}
+        for r in board:
+            pos = str(r.get("position") or "").upper()
+            if pos in ("QB", "RB", "WR", "TE"):
+                rookie_by_pos.setdefault(pos, [])
+                if len(rookie_by_pos[pos]) < 3:
+                    rookie_by_pos[pos].append(
+                        {"name": r["name"], "score": r["score"]})
+        pack["best_available_by_position"] = rookie_by_pos
 
     # Positional needs from the viewer's roster construction: existing
     # roster (keeper/redraft context) plus this draft's picks so far,
