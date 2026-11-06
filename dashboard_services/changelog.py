@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-05",
+        "tag": "update",
+        "text": "Advanced Metrics: the filters you reach for most are up front now. Season, week range, and the minimum-volume filter sit on the main bar instead of inside the Filters sheet, and every filter you set shows as a chip underneath: tap a chip to change its value in place, or tap its x to clear just that one. When a combination of filters leaves the board empty, the page now says which filters did it and offers one-tap ways to loosen them, instead of a generic no-data message.",
+        "link": "/advanced-metrics"
+    },
+    {
         "date": "2026-11-03",
         "tag": "new",
         "text": "Championship odds are here for the stretch run. A new Title column on the Playoff Odds page shows each team's chance to win it all, from a separate sim that only plays out the playoff bracket: bubble teams rotate into the open spots by their playoff odds, and the bye and top seed spots rotate the same way, so the odds flex as the race does. The same title number joins the Season Hub tile and the team modal in the final two weeks, and once the playoffs start it becomes the headline number for the teams still alive.",
