@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-06",
+        "tag": "update",
+        "text": "Draft Room: the draft board is rebuilt with compact rows and real player headshots. Each pick now shows the player's photo beside their name, position and team on a clean flush grid, with the pick number and value in the corners and the Last pick, keeper and traded-pick flags kept in place, so the board reads faster while your draft is live.",
+        "link": "/draft"
+    },
+    {
         "date": "2026-11-05",
         "tag": "update",
         "text": "Advanced Metrics: the filters you reach for most are up front now. Season, week range, and the minimum-volume filter sit on the main bar instead of inside the Filters sheet, and every filter you set shows as a chip underneath: tap a chip to change its value in place, or tap its x to clear just that one. When a combination of filters leaves the board empty, the page now says which filters did it and offers one-tap ways to loosen them, instead of a generic no-data message.",
