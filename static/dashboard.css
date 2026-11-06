@@ -56662,6 +56662,186 @@ body.otc-sticky-on { padding-bottom: 72px; }
 }
 
 /* ============================================================
+   Advanced Metrics: up-front filter strip + active-filter chips.
+   The strip relocates the Season / week-range / Min controls out of
+   the filter sheet onto the main bar. Approved treatment: boxy
+   outlined controls (1px border, no fill, 6px radius), selected
+   week-range = accent border + bold text, one nowrap line that
+   scrolls sideways at every width.
+   ============================================================ */
+.am-filter-strip {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 2px 0;
+}
+.am-filter-strip::-webkit-scrollbar { display: none; }
+/* While the season dropdown is open, the strip must not clip it. */
+.am-filter-strip.am-menu-open { overflow: visible; }
+.am-strip-group { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.am-strip-group:empty { display: none; }
+.am-filter-strip .am-season-multi { flex: 0 0 auto; }
+.am-filter-strip .am-season-btn { width: auto; }
+.am-filter-strip .am-select {
+    min-width: 0;
+    border-radius: 6px;
+    background: transparent;
+}
+.am-filter-strip .am-quick-ranges { flex-wrap: nowrap; }
+.am-filter-strip .am-qr {
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    flex: 0 0 auto;
+}
+.am-filter-strip .am-qr:hover { background: transparent; }
+.am-filter-strip .am-qr.active {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--accent);
+    font-weight: 700;
+}
+.am-filter-strip .am-vol-ctrl { margin: 0; }
+.am-filter-strip .am-filter-label { white-space: nowrap; }
+
+.am-active-wrap { position: relative; }
+.am-active-chips {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 2px 0;
+}
+.am-active-chips::-webkit-scrollbar { display: none; }
+.am-active-chip {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.am-active-chip-x { opacity: 0.6; font-weight: 700; }
+.am-active-chip:hover .am-active-chip-x { opacity: 1; }
+.am-active-clear {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    padding: 4px 2px;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.am-chip-editor {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 240px;
+    max-width: calc(100vw - 32px);
+    padding: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+.am-chip-editor[hidden] { display: none; }
+.am-chip-editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+.am-chip-editor-row { display: flex; gap: 8px; }
+.am-chip-editor-row .am-chip-editor-field { flex: 1 1 0; min-width: 0; }
+.am-chip-editor .am-select,
+.am-chip-editor .am-age-input { min-width: 0; width: 100%; box-sizing: border-box; }
+.am-chip-editor-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+}
+.am-chip-editor-check input { margin: 0; accent-color: var(--accent, #2563eb); }
+.am-chip-editor-seasons { display: flex; flex-direction: column; gap: 6px; }
+.am-chip-editor-note { margin: 0; font-size: 11px; font-weight: 500; color: var(--text-muted); }
+.am-chip-editor-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.am-chip-editor-cancel {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.am-chip-editor-apply {
+    padding: 5px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.am-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 10px;
+}
+.am-empty-relax {
+    appearance: none;
+    -webkit-appearance: none;
+    padding: 6px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+/* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
    See scripts/merge_icon_css.py

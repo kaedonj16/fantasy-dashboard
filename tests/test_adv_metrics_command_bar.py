@@ -72,6 +72,19 @@ DYNAMIC_IDS = {
     "amPagePrev",
     "amRetryBtn",
     "amSpSearch",
+    # Chip popover editor fields: amOpenChipEditor injects them into
+    # #amChipEditor via innerHTML when a chip is tapped.
+    "amEdAgeMax",
+    "amEdAgeMin",
+    "amEdApply",
+    "amEdCancel",
+    "amEdKey",
+    "amEdMin",
+    "amEdOp",
+    "amEdRoster",
+    "amEdTeam",
+    "amEdVal",
+    "amEdWeeks",
 }
 
 

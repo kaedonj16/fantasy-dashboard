@@ -481,6 +481,25 @@ def build_advanced_metrics_body(
           </div>
         </div>
 
+        <!-- Up-front filter strip: Season, week-range quick options, and Min
+             live here on the main bar. The hosts start empty; JS relocates
+             the real controls (#amSeasonMulti, #amQuickRanges, #amGamesCtrl)
+             out of the filter sheet into them, so IDs, listeners, and state
+             stay single-sourced. The sheet keeps the week drag bar, the
+             Each year/Combine toggle, and every other filter. -->
+        <div id="amFilterStrip" class="am-filter-strip" aria-label="Season, week range and minimum filters">
+          <div id="amStripSeason" class="am-strip-group"></div>
+          <div id="amStripWeeks" class="am-strip-group"></div>
+          <div id="amStripMin" class="am-strip-group"></div>
+        </div>
+        <!-- Active-filter chips: one editable chip per non-default filter,
+             filled by amRenderActiveChips(). The popover editor is a sibling
+             of the scrolling row so the row's overflow never clips it. -->
+        <div id="amActiveWrap" class="am-active-wrap" style="display:none;">
+          <div id="amActiveChips" class="am-active-chips"></div>
+          <div id="amChipEditor" class="am-chip-editor" hidden></div>
+        </div>
+
         <!-- Decision presets: one-tap views organized by the question being answered.
              Pills are server-rendered; JS wires clicks and the active state. -->
         <div class="am-decisions" id="amDecisionPills" role="tablist" aria-label="Decision views">
@@ -1958,6 +1977,8 @@ def build_advanced_metrics_body(
           grid-template-columns:minmax(280px, 340px) minmax(0, 1fr);
           grid-template-areas:
             "metric positions"
+            "strip strip"
+            "chips chips"
             "pills pills"
             "tagline tagline"
             "context movers";
@@ -1968,12 +1989,16 @@ def build_advanced_metrics_body(
         .am-cmd-controls .am-cmd-metric,
         .am-cmd-controls .am-pos-row,
         .am-cmd-controls .am-compare-host,
+        .am-cmd-controls .am-filter-strip,
+        .am-cmd-controls .am-active-wrap,
         .am-cmd-controls .am-decisions,
         .am-cmd-controls .am-preset-tagline,
         .am-cmd-controls .am-context-line,
         .am-cmd-controls .am-movers { margin:0; min-width:0; }
         .am-cmd-controls .am-cmd-metric { grid-area:metric; }
         .am-cmd-controls .am-pos-row { grid-area:positions; align-self:center; }
+        .am-cmd-controls .am-filter-strip { grid-area:strip; }
+        .am-cmd-controls .am-active-wrap { grid-area:chips; }
         /* The compare row only exists while extra metrics (or pinned
            compare) are showing; updateCompareBar toggles .am-has-compare
            with the bar, so the layout is unchanged when nothing is picked. */
@@ -1981,6 +2006,8 @@ def build_advanced_metrics_body(
           grid-template-areas:
             "metric positions"
             "compare compare"
+            "strip strip"
+            "chips chips"
             "pills pills"
             "tagline tagline"
             "context movers";
@@ -4146,9 +4173,15 @@ _AM_JS = r"""
       if (tableWrap) tableWrap.style.display = 'none';
       if (avgNote) avgNote.style.display = 'none';
       if (paginationEl) paginationEl.style.display = 'none';
-      window.brEmptyState(empty, state.rosterOnly
-        ? { icon: 'search', title: 'No ranked players', message: 'None of your rostered players rank for this metric yet.' }
-        : { icon: 'search', title: 'No data yet', message: 'This metric doesn’t have enough sample to rank for the current filters.' });
+      if (state.rosterOnly) {
+        window.brEmptyState(empty, { icon: 'search', title: 'No ranked players', message: 'None of your rostered players rank for this metric yet.' });
+      } else if (amActiveFilterChips().length) {
+        // Active filters emptied the board: name them and offer one-tap
+        // relax actions instead of the generic no-data copy.
+        amRenderFilterEmpty(empty);
+      } else {
+        window.brEmptyState(empty, { icon: 'search', title: 'No data yet', message: 'This metric doesn’t have enough sample to rank for the current filters.' });
+      }
       return;
     }
     empty.style.display = 'none';
@@ -6386,6 +6419,10 @@ _AM_JS = r"""
     const multi = amIsMultiSeason();
     const weekCtrl = document.getElementById('amWeekCtrl');
     if (weekCtrl) weekCtrl.style.display = multi ? 'none' : '';
+    // The quick ranges live on the up-front strip now, outside #amWeekCtrl;
+    // week filtering is single-season only, so hide them there too.
+    const stripWeeks = document.getElementById('amStripWeeks');
+    if (stripWeeks) stripWeeks.style.display = multi ? 'none' : '';
     const seasonHdr = document.getElementById('amSeasonColHdr');
     if (seasonHdr) seasonHdr.style.display = amIsEachYear() ? '' : 'none';
     if (multi) {
@@ -6439,6 +6476,20 @@ _AM_JS = r"""
       });
     });
   }
+  // ── Up-front filter strip: relocate the Season multi-select, the ──────
+  // week-range quick options, and the Min control out of the filter sheet
+  // onto the main bar. The nodes themselves move, so every existing ID,
+  // listener, and state binding rides along; the sheet keeps the week drag
+  // bar, the Each year/Combine toggle, and the remaining filters.
+  (function amRelocateFilterStrip() {
+    const seasonHost = document.getElementById('amStripSeason');
+    const weekHost = document.getElementById('amStripWeeks');
+    const minHost = document.getElementById('amStripMin');
+    if (seasonHost && seasonCtrl) seasonHost.appendChild(seasonCtrl);
+    const qr = document.getElementById('amQuickRanges');
+    if (weekHost && qr) weekHost.appendChild(qr);
+    if (minHost && gamesCtrl) minHost.appendChild(gamesCtrl);
+  })();
   (function initSeasonPicker() {
     const btn = document.getElementById('amSeasonBtn');
     const menu = document.getElementById('amSeasonMenu');
@@ -6446,18 +6497,26 @@ _AM_JS = r"""
     fillSeasonMenu();
     syncSeasonBtn();
     syncMultiSeasonUI();
+    // The strip scrolls sideways, which would clip the season dropdown;
+    // while the menu is open the strip lets it overflow visibly instead.
+    const strip = document.getElementById('amFilterStrip');
+    const syncStripOverflow = function() {
+      if (strip) strip.classList.toggle('am-menu-open', menu.style.display !== 'none');
+    };
     btn.addEventListener('click', function(e) {
       e.stopPropagation();
       const open = menu.style.display !== 'none';
       menu.style.display = open ? 'none' : '';
       btn.setAttribute('aria-expanded', open ? 'false' : 'true');
       if (!open) fillSeasonMenu();
+      syncStripOverflow();
     });
     document.addEventListener('click', function(e) {
       if (menu.style.display === 'none') return;
       if (e.target.closest && e.target.closest('#amSeasonMulti')) return;
       menu.style.display = 'none';
       btn.setAttribute('aria-expanded', 'false');
+      syncStripOverflow();
     });
   })();
   if (seasonSel) {
@@ -6529,6 +6588,7 @@ _AM_JS = r"""
     state.weekRange='custom'; state.weekStart=Math.min(initialWs,initialWe); state.weekEnd=Math.max(initialWs,initialWe);
   }
   _amRefreshWeekControls(true);
+  amRenderActiveChips();
   const quickWrap = document.getElementById('amQuickRanges');
   if (quickWrap) quickWrap.addEventListener('click', function(e) {
     const btn=e.target.closest('.am-qr'); if(!btn || btn.disabled)return;
@@ -6646,7 +6706,392 @@ _AM_JS = r"""
     if (state.rosterOnly) n++;
     if (n > 0) { badge.textContent = String(n); badge.hidden = false; }
     else { badge.hidden = true; }
+    // The chips row under the strip mirrors the same non-default states.
+    amRenderActiveChips();
   }
+  // ── Active-filter chips ────────────────────────────────────────────────
+  // One boxy chip per active non-default filter, under the up-front strip.
+  // A chip's × resets just that filter to its default; tapping the chip
+  // body opens a small popover editor, pre-filled, that updates the filter
+  // in place. Custom metric filters edit here too; the + Filter form in
+  // the sheet remains how new ones are added.
+  function _amMinUnitWord() {
+    const unit = (volLabel && volLabel.textContent || 'Min').trim();
+    const m = /^Min\s+(.+)$/i.exec(unit);
+    return m ? m[1].charAt(0).toLowerCase() + m[1].slice(1) : '';
+  }
+  function _amMinChipLabel() {
+    const w = _amMinUnitWord();
+    return w ? ('Min ' + state.minVol + ' ' + w) : ('Min ' + state.minVol);
+  }
+  function _amWeekChipLabel() {
+    if (state.weekRange === 'last2') return 'Last 2 weeks';
+    if (state.weekRange === 'last4') return 'Last 4 weeks';
+    if (state.weekRange === 'last8') return 'Last 8 weeks';
+    if (state.weekRange === 'last12') return 'Last 12 weeks';
+    const r = resolveWeekRange();
+    if (r.ws != null && r.we != null) return 'Weeks ' + r.ws + '-' + r.we;
+    return 'Week range';
+  }
+  function _amCustomChipLabel(f) {
+    const lbl = f.key === 'primary' ? _mLabel(state.metric)
+      : f.key === 'age' ? 'Age'
+      : f.key === 'exp' ? 'Years Exp'
+      : _mLabel(f.key);
+    return lbl + ' ' + (f.op === 'gte' ? '≥' : '≤') + ' ' + f.val;
+  }
+  function amActiveFilterChips() {
+    const chips = [];
+    const seasons = amSelectedSeasons();
+    const def = (cfg.seasons && cfg.seasons.length) ? Number(cfg.seasons[0]) : null;
+    if (seasons.length && !(seasons.length === 1 && def != null && seasons[0] === def)) {
+      chips.push({ kind: 'season', label: amSeasonLabel(seasons) + (seasons.length > 1 ? ' seasons' : '') });
+    }
+    if (state.weekRange) chips.push({ kind: 'weeks', label: _amWeekChipLabel() });
+    if (state.minVol) chips.push({ kind: 'min', label: _amMinChipLabel() });
+    if (state.team) chips.push({ kind: 'team', label: 'Team ' + state.team });
+    if (state.ageMin || state.ageMax) {
+      const lbl = (state.ageMin && state.ageMax) ? ('Age ' + state.ageMin + '-' + state.ageMax)
+        : state.ageMin ? ('Age ≥ ' + state.ageMin) : ('Age ≤ ' + state.ageMax);
+      chips.push({ kind: 'age', label: lbl });
+    }
+    if (state.rosterOnly) chips.push({ kind: 'roster', label: 'My roster only' });
+    (state.comboFilters || []).forEach(function(f, i) {
+      chips.push({ kind: 'custom', index: i, label: _amCustomChipLabel(f) });
+    });
+    return chips;
+  }
+  function amRenderActiveChips() {
+    const wrap = document.getElementById('amActiveWrap');
+    const row = document.getElementById('amActiveChips');
+    if (!wrap || !row) return;
+    const chips = amActiveFilterChips();
+    if (!chips.length) {
+      wrap.style.display = 'none';
+      row.innerHTML = '';
+      amCloseChipEditor();
+      return;
+    }
+    wrap.style.display = '';
+    row.innerHTML = chips.map(function(c) {
+      return '<button type="button" class="am-active-chip" data-kind="' + c.kind + '"'
+        + (c.index != null ? ' data-idx="' + c.index + '"' : '')
+        + ' title="Tap to edit">' + _amEsc(c.label)
+        + '<span class="am-active-chip-x" aria-hidden="true">×</span></button>';
+    }).join('') + '<button type="button" class="am-active-clear" id="amActiveClearAll">Clear all</button>';
+  }
+  // Shared tail for chip-driven changes: same setters the controls use.
+  function _amAfterFilterChange(fetch) {
+    state.page = 0;
+    syncURL(); amUpdateContextLine(); amRefreshFilterBadge();
+    if (fetch) fetchData(); else render();
+  }
+  function amResetWeekRange() {
+    state.weekRange = ''; state.weekStart = null; state.weekEnd = null;
+    state.minVol = ''; if (minGamesSel) minGamesSel.value = '';
+    updateVolCtrl(); _amSyncQuickChips('');
+    const weeks = availableWeeks(), r = resolveWeekRange();
+    _amBuildWkBar(r.ws == null ? (weeks[0] || 1) : r.ws,
+                  r.we == null ? (weeks[weeks.length - 1] || 18) : r.we);
+  }
+  function _amClearCustomFilters() {
+    (state.comboFilters || []).forEach(function(f) {
+      if (f.key !== 'primary' && f.key !== 'age' && f.key !== 'exp'
+          && state.filterColKeys && state.filterColKeys.has(f.key)
+          && !state.extraMetrics.includes(f.key)) {
+        state.filterColKeys.delete(f.key);
+        delete state.extraData[f.key];
+        delete state.extraPrevData[f.key];
+      }
+    });
+    state.comboFilters = [];
+    syncFilterCols();
+    updateFilterBar();
+  }
+  function amResetFilterChip(kind, idx) {
+    amCloseChipEditor();
+    if (kind === 'season') {
+      if (cfg.seasons && cfg.seasons.length) applySeasonSelection([Number(cfg.seasons[0])]);
+      return;
+    }
+    if (kind === 'weeks') { amResetWeekRange(); _amAfterFilterChange(true); return; }
+    if (kind === 'min') {
+      state.minVol = ''; if (minGamesSel) minGamesSel.value = '';
+      _amAfterFilterChange(true); return;
+    }
+    if (kind === 'team') {
+      state.team = ''; if (teamSel) teamSel.value = '';
+      _amAfterFilterChange(false); return;
+    }
+    if (kind === 'age') {
+      state.ageMin = ''; state.ageMax = '';
+      const a = document.getElementById('amAgeMin'), b = document.getElementById('amAgeMax');
+      if (a) a.value = ''; if (b) b.value = '';
+      _amAfterFilterChange(false); return;
+    }
+    if (kind === 'roster') {
+      state.rosterOnly = false; if (rosterChk) rosterChk.checked = false;
+      _amAfterFilterChange(false); return;
+    }
+    if (kind === 'custom' && idx != null) amRemoveFilter(idx);
+  }
+  function amClearAllFilters() {
+    amCloseChipEditor();
+    const def = (cfg.seasons && cfg.seasons.length) ? Number(cfg.seasons[0]) : null;
+    const seasons = amSelectedSeasons();
+    const seasonReset = def != null && !(seasons.length === 1 && seasons[0] === def);
+    state.weekRange = ''; state.weekStart = null; state.weekEnd = null;
+    state.minVol = ''; if (minGamesSel) minGamesSel.value = '';
+    state.team = ''; if (teamSel) teamSel.value = '';
+    state.ageMin = ''; state.ageMax = '';
+    const a = document.getElementById('amAgeMin'), b = document.getElementById('amAgeMax');
+    if (a) a.value = ''; if (b) b.value = '';
+    state.rosterOnly = false; if (rosterChk) rosterChk.checked = false;
+    _amClearCustomFilters();
+    updateVolCtrl(); _amSyncQuickChips('');
+    // Applying the default season refetches and refreshes everything else.
+    if (seasonReset) { applySeasonSelection([def]); return; }
+    _amAfterFilterChange(true);
+  }
+  // ── Chip popover editor ────────────────────────────────────────────────
+  let _amEditorChip = null; // {kind, index} whose editor is open
+  function amCloseChipEditor() {
+    const ed = document.getElementById('amChipEditor');
+    if (ed) { ed.hidden = true; ed.innerHTML = ''; }
+    _amEditorChip = null;
+  }
+  function amOpenChipEditor(chipEl, kind, idx) {
+    const ed = document.getElementById('amChipEditor');
+    if (!ed || !chipEl) return;
+    const myIdx = idx == null ? -1 : idx;
+    if (_amEditorChip && _amEditorChip.kind === kind && _amEditorChip.index === myIdx && !ed.hidden) {
+      amCloseChipEditor();
+      return;
+    }
+    _amEditorChip = { kind: kind, index: myIdx };
+    const field = function(label, inner) {
+      return '<label class="am-chip-editor-field"><span>' + label + '</span>' + inner + '</label>';
+    };
+    let body = '';
+    if (kind === 'min') {
+      body = field((volLabel && volLabel.textContent) || 'Min',
+        '<select id="amEdMin" class="am-select">' + (minGamesSel ? minGamesSel.innerHTML : '<option value="">Any</option>') + '</select>');
+    } else if (kind === 'weeks') {
+      const opt = function(v, lbl) {
+        return '<option value="' + v + '"' + (state.weekRange === v ? ' selected' : '') + '>' + lbl + '</option>';
+      };
+      body = field('Week range', '<select id="amEdWeeks" class="am-select">'
+        + opt('', 'Full season') + opt('last2', 'Last 2') + opt('last4', 'Last 4')
+        + opt('last8', 'Last 8') + opt('last12', 'Last 12')
+        + (state.weekRange === 'custom' ? opt('custom', _amWeekChipLabel()) : '')
+        + '</select>')
+        + '<p class="am-chip-editor-note">Drag exact weeks in Filters.</p>';
+    } else if (kind === 'team') {
+      body = field('Team', '<select id="amEdTeam" class="am-select">'
+        + (teamSel ? teamSel.innerHTML : '<option value="">All Teams</option>') + '</select>');
+    } else if (kind === 'age') {
+      body = '<div class="am-chip-editor-row">'
+        + field('Age min', '<input type="number" id="amEdAgeMin" class="am-age-input" min="18" max="45" value="' + _amEsc(state.ageMin) + '">')
+        + field('Age max', '<input type="number" id="amEdAgeMax" class="am-age-input" min="18" max="45" value="' + _amEsc(state.ageMax) + '">')
+        + '</div>';
+    } else if (kind === 'roster') {
+      body = '<label class="am-chip-editor-check"><input type="checkbox" id="amEdRoster"'
+        + (state.rosterOnly ? ' checked' : '') + '> My roster only</label>';
+    } else if (kind === 'season') {
+      const sel = new Set(amSelectedSeasons());
+      body = '<div class="am-chip-editor-field"><span>Seasons</span><div class="am-chip-editor-seasons">'
+        + (cfg.seasons || []).map(function(y) {
+            return '<label class="am-chip-editor-check"><input type="checkbox" class="amEdSeason" value="' + y + '"'
+              + (sel.has(Number(y)) ? ' checked' : '') + '> ' + y + '</label>';
+          }).join('') + '</div></div>';
+    } else if (kind === 'custom') {
+      const keySel = document.getElementById('amFilterKey');
+      body = '<div class="am-chip-editor-row">'
+        + field('Metric', '<select id="amEdKey" class="am-select">' + (keySel ? keySel.innerHTML : '') + '</select>')
+        + field('Op', '<select id="amEdOp" class="am-select"><option value="gte">≥</option><option value="lte">≤</option></select>')
+        + field('Value', '<input type="number" id="amEdVal" class="am-age-input" value="">')
+        + '</div>';
+    }
+    ed.innerHTML = body + '<div class="am-chip-editor-actions">'
+      + '<button type="button" class="am-chip-editor-cancel" id="amEdCancel">Cancel</button>'
+      + '<button type="button" class="am-chip-editor-apply" id="amEdApply">Apply</button></div>';
+    ed.hidden = false;
+    if (kind === 'min') { const s = document.getElementById('amEdMin'); if (s) s.value = state.minVol || ''; }
+    if (kind === 'team') { const s = document.getElementById('amEdTeam'); if (s) s.value = state.team || ''; }
+    if (kind === 'custom') {
+      const f = state.comboFilters[idx] || {};
+      const k = document.getElementById('amEdKey'); if (k) k.value = f.key || 'primary';
+      const o = document.getElementById('amEdOp'); if (o) o.value = f.op || 'gte';
+      const v = document.getElementById('amEdVal'); if (v) v.value = f.val != null ? f.val : '';
+    }
+    // Anchor the popover under the tapped chip, kept inside the wrap.
+    const wrap = document.getElementById('amActiveWrap');
+    if (wrap) {
+      const maxLeft = Math.max(0, wrap.clientWidth - 264);
+      ed.style.left = Math.min(chipEl.offsetLeft, maxLeft) + 'px';
+    }
+    document.getElementById('amEdCancel').addEventListener('click', amCloseChipEditor);
+    document.getElementById('amEdApply').addEventListener('click', function() { amApplyChipEditor(kind, idx); });
+  }
+  function amApplyChipEditor(kind, idx) {
+    if (kind === 'min') {
+      const s = document.getElementById('amEdMin');
+      state.minVol = s ? (s.value || '') : '';
+      if (minGamesSel) minGamesSel.value = state.minVol;
+      amCloseChipEditor(); _amAfterFilterChange(true); return;
+    }
+    if (kind === 'weeks') {
+      const s = document.getElementById('amEdWeeks');
+      const v = s ? s.value : '';
+      amCloseChipEditor();
+      if (v === 'custom') return; // keep the dragged range as-is
+      if (!v) { amResetWeekRange(); _amAfterFilterChange(true); return; }
+      state.weekRange = v; state.weekStart = null; state.weekEnd = null;
+      state.minVol = ''; if (minGamesSel) minGamesSel.value = '';
+      updateVolCtrl(); _amSyncQuickChips(v);
+      const weeks = availableWeeks(), r = resolveWeekRange();
+      _amBuildWkBar(r.ws == null ? (weeks[0] || 1) : r.ws,
+                    r.we == null ? (weeks[weeks.length - 1] || 18) : r.we);
+      _amAfterFilterChange(true); return;
+    }
+    if (kind === 'team') {
+      const s = document.getElementById('amEdTeam');
+      state.team = s ? (s.value || '') : '';
+      if (teamSel) teamSel.value = state.team;
+      amCloseChipEditor(); _amAfterFilterChange(false); return;
+    }
+    if (kind === 'age') {
+      const a = document.getElementById('amEdAgeMin'), b = document.getElementById('amEdAgeMax');
+      state.ageMin = a ? (a.value || '') : ''; state.ageMax = b ? (b.value || '') : '';
+      const sa = document.getElementById('amAgeMin'), sb = document.getElementById('amAgeMax');
+      if (sa) sa.value = state.ageMin; if (sb) sb.value = state.ageMax;
+      amCloseChipEditor(); _amAfterFilterChange(false); return;
+    }
+    if (kind === 'roster') {
+      const c = document.getElementById('amEdRoster');
+      state.rosterOnly = !!(c && c.checked);
+      if (rosterChk) rosterChk.checked = state.rosterOnly;
+      amCloseChipEditor(); _amAfterFilterChange(false); return;
+    }
+    if (kind === 'season') {
+      const ed = document.getElementById('amChipEditor');
+      const picked = [];
+      if (ed) ed.querySelectorAll('.amEdSeason:checked').forEach(function(el) { picked.push(Number(el.value)); });
+      amCloseChipEditor();
+      if (picked.length) applySeasonSelection(picked);
+      return;
+    }
+    if (kind === 'custom') {
+      const k = document.getElementById('amEdKey'), o = document.getElementById('amEdOp'), v = document.getElementById('amEdVal');
+      if (!k || !o || !v || !v.value.trim() || !state.comboFilters[idx]) { amCloseChipEditor(); return; }
+      const old = state.comboFilters[idx];
+      const nf = { key: k.value, op: o.value, val: v.value.trim() };
+      state.comboFilters[idx] = nf;
+      // Filter-column bookkeeping mirrors amRemoveFilter plus the add form.
+      if (old.key !== nf.key && old.key !== 'primary' && old.key !== 'age' && old.key !== 'exp'
+          && state.filterColKeys && state.filterColKeys.has(old.key)
+          && !state.comboFilters.some(function(f) { return f.key === old.key; })
+          && !state.extraMetrics.includes(old.key)) {
+        state.filterColKeys.delete(old.key);
+        delete state.extraData[old.key];
+        delete state.extraPrevData[old.key];
+      }
+      if (nf.key !== 'primary' && nf.key !== 'age' && nf.key !== 'exp' && cfg.metrics[nf.key]
+          && state.filterColKeys && !state.filterColKeys.has(nf.key)
+          && !state.extraMetrics.includes(nf.key)) {
+        state.filterColKeys.add(nf.key);
+        fetchExtraData(nf.key);
+      }
+      syncFilterCols();
+      amCloseChipEditor();
+      updateFilterBar();
+      state.page = 0;
+      amRefreshFilterBadge();
+      render();
+      return;
+    }
+    amCloseChipEditor();
+  }
+  // ── Honest empty state ─────────────────────────────────────────────────
+  // When filters (not missing data) emptied the board, name the active
+  // constraints and offer one-tap ways to loosen them.
+  function _amLowerMinOption() {
+    if (!minGamesSel) return null;
+    const opts = Array.from(minGamesSel.options).map(function(o) { return o.value; }).filter(Boolean);
+    const i = opts.indexOf(String(state.minVol));
+    if (i > 0) return opts[i - 1];
+    if (i === 0) return '';
+    return opts.length ? opts[opts.length - 1] : '';
+  }
+  function amRenderFilterEmpty(el) {
+    const parts = amActiveFilterChips().map(function(c) { return c.label; });
+    const pl = _posList();
+    if (pl.length) parts.push(pl.join('/'));
+    let actions = '';
+    if (state.minVol) {
+      const lower = _amLowerMinOption();
+      const w = _amMinUnitWord();
+      actions += '<button type="button" class="am-empty-relax" data-relax="min" data-lower="'
+        + _amEsc(lower == null ? '' : lower) + '">'
+        + (lower ? ('Lower Min to ' + _amEsc(lower) + (w ? ' ' + _amEsc(w) : '')) : 'Clear Min filter')
+        + '</button>';
+    }
+    if (state.weekRange) {
+      actions += '<button type="button" class="am-empty-relax" data-relax="weeks">Use full season</button>';
+    }
+    if (state.comboFilters && state.comboFilters.length) {
+      actions += '<button type="button" class="am-empty-relax" data-relax="custom">Clear custom filters</button>';
+    }
+    el.innerHTML = '<div class="empty-state">'
+      + '<p class="empty-state-title">No players pass these filters</p>'
+      + '<p class="empty-state-msg">' + _amEsc(parts.join(' · ')) + '</p>'
+      + (actions ? '<div class="am-empty-actions">' + actions + '</div>' : '')
+      + '</div>';
+  }
+  (function initActiveChips() {
+    const row = document.getElementById('amActiveChips');
+    if (row) {
+      row.addEventListener('click', function(e) {
+        if (e.target.closest && e.target.closest('#amActiveClearAll')) { amClearAllFilters(); return; }
+        const chip = e.target.closest ? e.target.closest('.am-active-chip') : null;
+        if (!chip) return;
+        const kind = chip.getAttribute('data-kind');
+        const idx = chip.hasAttribute('data-idx') ? Number(chip.getAttribute('data-idx')) : null;
+        if (e.target.closest('.am-active-chip-x')) { amResetFilterChip(kind, idx); return; }
+        amOpenChipEditor(chip, kind, idx);
+      });
+    }
+    document.addEventListener('click', function(e) {
+      const ed = document.getElementById('amChipEditor');
+      if (!ed || ed.hidden) return;
+      if (e.target.closest && (e.target.closest('#amChipEditor') || e.target.closest('.am-active-chip'))) return;
+      amCloseChipEditor();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') amCloseChipEditor();
+    });
+    // Relax actions in the honest empty state (delegated: the empty
+    // container's children are replaced on every render).
+    if (empty) {
+      empty.addEventListener('click', function(e) {
+        const btn = e.target.closest ? e.target.closest('[data-relax]') : null;
+        if (!btn) return;
+        const mode = btn.getAttribute('data-relax');
+        if (mode === 'min') {
+          const lower = btn.getAttribute('data-lower') || '';
+          state.minVol = lower; if (minGamesSel) minGamesSel.value = lower;
+          _amAfterFilterChange(true);
+        } else if (mode === 'weeks') {
+          amResetWeekRange(); _amAfterFilterChange(true);
+        } else if (mode === 'custom') {
+          _amClearCustomFilters();
+          state.page = 0;
+          amRefreshFilterBadge();
+          render();
+        }
+      });
+    }
+  })();
   const filterToggle = document.getElementById('amFilterToggle');
   if (filterToggle) filterToggle.addEventListener('click', () => amToggleSheet());
   const ctxLine = document.getElementById('amContextLine');
