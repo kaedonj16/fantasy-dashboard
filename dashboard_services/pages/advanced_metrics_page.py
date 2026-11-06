@@ -515,16 +515,21 @@ def build_advanced_metrics_body(
         </button>
 
         <!-- What changed: usage/xFP movers and efficiency outliers, filled by JS.
-             Collapsed by default; the head is a slim banner with live counts. -->
+             The in-row element is a permanent slim bar (bolt, label, one-line
+             summary, chevron); the groups open in an anchored popover under
+             the bar (#amMoversPop, the chip-editor popover pattern) so the
+             leaderboard never shifts. -->
         <div class="am-movers" id="amMovers" style="display:none;">
-          <div class="am-movers-head" id="amMoversHead" role="button" tabindex="0" aria-expanded="false" title="Expand">
+          <div class="am-movers-head" id="amMoversHead" role="button" tabindex="0" aria-expanded="false" aria-haspopup="true" title="Show what changed">
             <span class="am-movers-bolt" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
             <span class="am-ctrl-label">What changed</span>
             <span class="am-movers-summary" id="amMoversSummary"></span>
-            <span class="am-movers-sub" id="amMoversSub"></span>
             <span class="am-movers-chev" id="amMoversChev"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </div>
-          <div class="am-movers-groups" id="amMoversGroups"></div>
+          <div class="am-movers-pop" id="amMoversPop" hidden>
+            <div class="am-movers-sub" id="amMoversSub"></div>
+            <div class="am-movers-groups" id="amMoversGroups"></div>
+          </div>
         </div>
       </div><!-- /am-cmd-controls -->
 
@@ -773,16 +778,29 @@ def build_advanced_metrics_body(
       .am-pill-locked { opacity:.65; border-style:dashed; }
       .am-preset-tagline { font-size:13px; color:var(--text-muted); font-style:italic; margin:2px 0 6px; min-height:0; }
       .am-preset-tagline:empty { display:none; }
-      /* What-changed movers strip */
-      .am-movers { margin:8px 0 4px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--card); }
-      .am-movers-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; cursor:pointer; user-select:none; }
+      /* What-changed movers: slim bar in the row + anchored popover.
+         .am-movers is the positioned anchor (position:relative, no overflow
+         on it or on .am-cmd-controls / .am-cmd-shell above it, so the
+         popover is never clipped); the popover floats over the leaderboard
+         and opening/closing it cannot reflow the page. */
+      .am-movers { position:relative; margin:8px 0 4px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--card); }
+      .am-movers-head { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
       .am-movers-head .am-ctrl-label { flex-shrink:0; }
       .am-movers-chev { margin-left:auto; display:flex; align-items:center; color:var(--text-muted); transition:transform .15s ease; }
-      .am-movers.collapsed .am-movers-chev { transform:rotate(-90deg); }
-      .am-movers.collapsed .am-movers-groups { display:none; }
-      .am-movers.collapsed .am-movers-head { margin-bottom:0; }
+      .am-movers.open .am-movers-chev { transform:rotate(180deg); }
+      .am-movers-pop {
+        position:absolute; top:calc(100% + 6px); right:0; z-index:60;
+        width:min(880px, calc(100vw - 24px));
+        max-height:min(70vh, 560px); overflow-y:auto;
+        padding:10px 12px; background:var(--card); color:var(--text);
+        border:1px solid var(--border); border-radius:12px;
+        box-shadow:0 12px 32px rgba(0,0,0,.18);
+      }
+      .am-movers-pop[hidden] { display:none; }
       .am-movers-sub { font-size:11px; color:var(--text-muted); }
-      .am-movers-groups { display:flex; gap:14px; overflow-x:auto; padding-bottom:2px; }
+      .am-movers-pop .am-movers-sub { margin-bottom:8px; }
+      .am-movers-pop .am-movers-sub:empty { display:none; margin-bottom:0; }
+      .am-movers-groups { display:flex; gap:14px; }
       .am-movers-group { min-width:200px; flex:1; }
       .am-movers-ghead { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
       .am-movers-ghead.up { color:#2e9e5b; }
@@ -805,9 +823,14 @@ def build_advanced_metrics_body(
       .am-mover-val { margin-left:auto; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
       .am-mover-val.up { color:#2e9e5b; }
       .am-mover-val.down { color:#d64545; }
+      @media (max-width:760px) {
+        /* Phone: the popover spans the bar's full width (the bar is
+           full-width in the stacked layout) and the groups stack. */
+        .am-movers-pop { left:0; right:0; width:auto; }
+        .am-movers-groups { flex-direction:column; gap:10px; }
+        .am-movers-group { min-width:0; }
+      }
       @media (max-width:600px) {
-        .am-movers-groups { gap:10px; }
-        .am-movers-group { min-width:170px; }
         .am-pill { padding:6px 11px; font-size:13px; }
       }
       .am-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:0 0 8px; }
@@ -1745,9 +1768,9 @@ def build_advanced_metrics_body(
         #amDeleteSetBtn:hover { border-color:var(--loss); color:var(--loss); }
         /* 6. Presets: no label in the markup; keep the rail tidy. */
         .am-decisions { margin:8px 0 2px; }
-        /* 7. What-changed strip, quieter. */
+        /* 7. What-changed bar, quieter. (No head margin-bottom: the bar
+           is slim now and the groups live in the popover.) */
         .am-movers { padding:8px 14px; }
-        .am-movers-head { margin-bottom:6px; }
         /* 8. Week range: quick pills + slim slider in one compact row. */
         #amWeekCtrl { display:flex; flex-direction:row; align-items:center; gap:14px; }
         #amWeekCtrl .am-weekbar-head { flex:0 0 auto; }
@@ -1905,11 +1928,10 @@ def build_advanced_metrics_body(
       .am-context-line:hover { border-color:var(--accent,#2563eb); color:var(--text); }
       #amContextLineText { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .am-context-chev { flex-shrink:0; }
-      /* Movers slim banner: collapsed shows the summary counts only. */
+      /* Movers slim bar: the summary counts are always the bar's text;
+         the detail note moved into the popover with the groups. */
       .am-movers-bolt { display:inline-flex; color:var(--accent,#2563eb); }
       .am-movers-summary { font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .am-movers.collapsed .am-movers-sub { display:none; }
-      .am-movers:not(.collapsed) .am-movers-summary { display:none; }
       /* Filter sheet */
       .am-sheet-backdrop {
         position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.45);
@@ -2559,6 +2581,7 @@ _AM_JS = r"""
     val.textContent = _moverValText(m);
     b.appendChild(nm); b.appendChild(meta); b.appendChild(val);
     b.addEventListener('click', function() {
+      amCloseMoversPopover();
       if (!searchEl) return;
       searchEl.value = m.name; state.search = m.name; state.page = 0; _amSyncSearchClear(); render();
       const t = document.getElementById('amTable');
@@ -2577,31 +2600,47 @@ _AM_JS = r"""
     items.forEach(function(m) { g.appendChild(_moverChip(m, valCls)); });
     return g;
   }
-  // Collapsible "What changed" card. Persists collapsed state in localStorage.
-  function _initMoversCollapse() {
+  // "What changed" popover: the in-row card is a permanent slim bar and
+  // the groups live in the anchored #amMoversPop panel under it, so
+  // opening/closing never reflows the leaderboard. Open state is NOT
+  // persisted: every load starts closed (the chip-editor pattern).
+  let _amMoversOpen = false;
+  function amSetMoversPopover(open) {
     const host = document.getElementById('amMovers');
+    const pop = document.getElementById('amMoversPop');
     const head = document.getElementById('amMoversHead');
-    if (!host || !head || head.dataset.collapseInit) return;
-    head.dataset.collapseInit = '1';
-    function _apply(collapsed) {
-      host.classList.toggle('collapsed', collapsed);
-      head.setAttribute('aria-expanded', String(!collapsed));
-      head.title = collapsed ? 'Expand' : 'Collapse';
-      try { localStorage.setItem('amMoversCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+    _amMoversOpen = !!open;
+    if (pop) pop.hidden = !_amMoversOpen;
+    if (host) host.classList.toggle('open', _amMoversOpen);
+    if (head) {
+      head.setAttribute('aria-expanded', String(_amMoversOpen));
+      head.title = _amMoversOpen ? 'Hide what changed' : 'Show what changed';
     }
-    head.addEventListener('click', function() { _apply(!host.classList.contains('collapsed')); });
+  }
+  function amCloseMoversPopover() { if (_amMoversOpen) amSetMoversPopover(false); }
+  function _initMoversPopover() {
+    const head = document.getElementById('amMoversHead');
+    if (!head || head.dataset.popoverInit) return;
+    head.dataset.popoverInit = '1';
+    head.addEventListener('click', function() { amSetMoversPopover(!_amMoversOpen); });
     head.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _apply(!host.classList.contains('collapsed')); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); amSetMoversPopover(!_amMoversOpen); }
+      if (e.key === 'Escape') amCloseMoversPopover();
     });
-    try {
-      const stored = localStorage.getItem('amMoversCollapsed');
-      // Collapsed by default (slim banner with counts); an explicit stored
-      // choice wins over the default.
-      _apply(stored === null ? true : stored === '1');
-    } catch (e) { _apply(true); }
+    // Outside-click / Escape close, mirroring the chip editor's
+    // document-level handlers in initActiveChips.
+    document.addEventListener('click', function(e) {
+      if (!_amMoversOpen) return;
+      if (e.target.closest && e.target.closest('#amMovers')) return;
+      amCloseMoversPopover();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') amCloseMoversPopover();
+    });
+    amSetMoversPopover(false);
   }
   function _loadMovers() {
-    _initMoversCollapse();
+    _initMoversPopover();
     const host = document.getElementById('amMovers');
     if (!host) return;
     // The movers strip is PRO intelligence. Free users get one slim
@@ -2668,7 +2707,7 @@ _AM_JS = r"""
         if (outliers.length) groups.appendChild(_moverGroup(_BOLT_SVG + '<span>Efficiency outliers</span>', 'out', outliers, '', 'PPR pts/g vs expected · min 5 xFP/g'));
         const sub = document.getElementById('amMoversSub');
         if (sub) sub.textContent = d.note || '';
-        // Slim banner summary shown while collapsed.
+        // One-line summary counts: the slim bar's permanent text.
         const sumEl = document.getElementById('amMoversSummary');
         if (sumEl) {
           const parts = [];
