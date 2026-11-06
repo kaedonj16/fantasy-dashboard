@@ -828,7 +828,11 @@ if season_type == "off":
 else:
     # Force-refetch the in-progress week so its box-score cache does not stay
     # frozen at the pre-game/partial fetch and the week view reflects finals.
-    _force = [current_week] if current_week >= 1 else None
+    # Also force the just-completed week: its cache may have been populated
+    # mid-slate (only the first game played), and once the NFL week rolls
+    # over nothing else ever refetches it, so the rebuild would re-upsert
+    # that one-game slice forever and ranges ending at it lose a week.
+    _force = [w for w in (current_week, current_week - 1) if w >= 1] or None
     n = build_weekly_metrics(current_season, force_weeks=_force)
 print(f"[cron] Weekly metrics: {n} rows upserted")
 """, "build_weekly_metrics")

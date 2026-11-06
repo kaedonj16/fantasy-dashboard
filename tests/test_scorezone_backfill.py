@@ -42,7 +42,7 @@ def test_incremental_weekly_build_revisits_old_missing_rz(monkeypatch):
             assert 'BOOL_OR(rz_targets IS NULL OR rz_carries IS NULL OR carry_share IS NULL)' in sql
             return self
         def fetchall(self):
-            return [dict(week=w, needs_rz=(w == 1)) for w in range(1, 19)]
+            return [dict(week=w, n_rows=330, needs_rz=(w == 1)) for w in range(1, 19)]
     @contextmanager
     def connection():
         yield Conn()
