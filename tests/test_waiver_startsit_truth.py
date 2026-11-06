@@ -100,7 +100,7 @@ def test_start_sit_row_builder_uses_fallback_chain():
 
 # ── Transactions delta (spec §5.2A) ────────────────────────────────────────
 
-from datetime import datetime, timezone  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
 
 from utils.waiver_freshness import (  # noqa: E402
     apply_delta_to_rostered,
@@ -233,7 +233,9 @@ def test_waiver_process_faab_and_missing_keys():
 
 # ── /api/waiver-candidates integration (spec §5.2A/B/C) ────────────────────
 
-DROP_ISO = "2026-11-04T15:00:00+00:00"
+# Clock-relative drop: freshness is judged against wall-clock now
+# (dropped_within, 48h), so a hardcoded date time-bombs this fixture.
+DROP_ISO = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
 
 _WV_TEAMS = {"q1": "BUF", "rb1": "DET", "rb2": "SF", "wr1": "CIN",
              "wr2": "MIA", "te1": "KC", "b1": "DAL", "dropqb": "ARI",

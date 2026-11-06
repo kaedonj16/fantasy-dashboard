@@ -264,10 +264,15 @@ def test_next_steps_dropped_path_joins_same_signal(monkeypatch):
     # all, still admitted and claimed with the signal kind set.
     ctx, rows = _ns_fixture(monkeypatch, role_states={})
     import utils.waiver_freshness as wf
+    # Clock-relative drop: freshness is judged against wall-clock now
+    # (dropped_within, 48h), so a hardcoded date time-bombs this fixture.
+    from datetime import datetime, timedelta, timezone
+    recent_drop = (datetime.now(timezone.utc)
+                   - timedelta(hours=2)).isoformat()
     monkeypatch.setattr(wf, "get_transactions_delta",
                         lambda *a, **k: {
                             "adds": set(),
-                            "drops": {"lock": "2026-11-04T15:00:00+00:00"},
+                            "drops": {"lock": recent_drop},
                             "hash": "drop-hash"})
     actions = app_module._next_steps_waiver_actions(ctx, 1, rows)
     lock_claims = [a for a in actions if a["player_id"] == "lock"]

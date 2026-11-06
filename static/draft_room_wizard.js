@@ -658,12 +658,21 @@
       });
     }
     /* Quiet until a draft is actually live: probe once; only status
-       'drafting' earns the prominent treatment. Failure stays quiet. */
+       'drafting' earns the prominent treatment. Failure stays quiet.
+       The probe is LIGHT on purpose: no sync=1, so ESPN/Yahoo do not run a
+       full draft-snapshot sync on every page load - sync=1 is reserved for
+       the explicit Connect action (draft_room.js detectLive). And when
+       draft_room.js already resumed a live session board, the probe is
+       skipped entirely: the board is already showing that draft. */
+    var _wzResumedLive = false;
+    try {
+      var _wzSaved = JSON.parse(sessionStorage.getItem('dr_' + location.pathname) || 'null');
+      _wzResumedLive = !!(_wzSaved && _wzSaved.mode === 'live' && _wzSaved.sourceDraftId);
+    } catch (e) {}
+    if (_wzResumedLive) return;
     (function(){
       var url = '/api/draft/detect?platform=' + encodeURIComponent(cfg.platform)
         + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || '');
-      var plat = String(cfg.platform || '').toLowerCase();
-      if (plat === 'espn' || plat === 'yahoo') url += '&sync=1';
       fetch(url)
         .then(function(r){ return r.json(); })
         .then(function(resp){
