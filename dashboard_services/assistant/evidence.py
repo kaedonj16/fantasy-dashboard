@@ -6352,6 +6352,81 @@ def _finalized_weeks(ctx) -> list:
         return []
 
 
+def _standings_seed_pf(ctx, tools):
+    """(seed_by_rid, pf_by_rid) from the site's standings machinery.
+
+    Seeds are build_standings_map's (division winners first, then wild
+    cards) over the finalized team_stats frame, the exact source
+    build_standings stamps; PF comes from that same frame. Both maps are
+    keyed by roster_id (str). When the league has no standings snapshot
+    both come back empty: callers omit seed data rather than deriving it
+    from the sim's own ordering, which is an odds sort, not a seeding.
+    """
+    team_stats = None
+    weeks = _finalized_weeks(ctx)
+    if weeks:
+        try:
+            capped = standings_as_of_week(ctx, weeks[-1]) or {}
+            team_stats = capped.get("team_stats")
+            if team_stats is not None:
+                tools.append("app.build_standings_as_of_week")
+        except Exception:
+            logger.debug("[assistant] playoffs standings cap failed", exc_info=True)
+            team_stats = None
+    if team_stats is None:
+        team_stats = ctx.get("team_stats")
+    if team_stats is None:
+        return {}, {}
+    roster_map = ctx.get("roster_map") or {}
+    owner_to_rid = {}
+    for rid, owner in roster_map.items():
+        if owner is not None:
+            owner_to_rid[str(owner)] = rid
+            owner_to_rid[str(owner).strip()] = rid
+    div_by_rid: dict = {}
+    div_records = None
+    try:
+        from utils.standings import division_records_for_ctx, roster_division_map
+        div_by_rid = roster_division_map(
+            ctx.get("rosters") or [],
+            settings=ctx.get("league_settings") or (ctx.get("league") or {}).get("settings") or {},
+        ) or {}
+        div_records = division_records_for_ctx(ctx)
+    except Exception:
+        logger.debug("[assistant] playoffs divisions failed", exc_info=True)
+        div_by_rid, div_records = {}, None
+    seed_by_rid: dict = {}
+    try:
+        from dashboard_services.service import build_standings_map
+        seeds = build_standings_map(
+            team_stats, roster_map,
+            division_by_rid=div_by_rid or None,
+            division_records_by_rid=div_records,
+        ) or {}
+        if seeds:
+            tools.append("service.build_standings_map")
+        seed_by_rid = {str(rid): int(seed) for rid, seed in seeds.items()}
+    except Exception:
+        logger.debug("[assistant] playoffs seeds failed", exc_info=True)
+        seed_by_rid = {}
+    pf_by_rid: dict = {}
+    raw_rows = []
+    if hasattr(team_stats, "iterrows"):
+        raw_rows = [dict(r) for _, r in team_stats.iterrows()]
+    elif isinstance(team_stats, (list, tuple)):
+        raw_rows = [dict(r) for r in team_stats if isinstance(r, dict)]
+    for row in raw_rows:
+        owner = row.get("owner")
+        if owner is None:
+            continue
+        rid = owner_to_rid.get(str(owner))
+        if rid is None:
+            rid = owner_to_rid.get(str(owner).strip())
+        if rid is not None:
+            pf_by_rid[str(rid)] = _f(row.get("PF"), 2)
+    return seed_by_rid, pf_by_rid
+
+
 def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
     """Playoff path: Monte Carlo odds (the app's cached sim) plus, inside
     the end-of-season window, the exact clinch/elimination scenarios.
@@ -6360,6 +6435,12 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
     before the stretch): the pack flags odds_soft and carries the
     wins-needed math (the projected cut line) so the answer can lead with
     that instead of false precision.
+
+    The field also carries each team's CURRENT seed (from the standings
+    machinery, never from the odds sort) and the sim's first_seed_pct,
+    plus a top_seed block describing the 1-seed race from the viewer's
+    side: a question about the 1 seed needs who holds it today and how
+    far back the viewer is, not the cut-line wins number.
     """
     pack = _base_pack("playoffs", bundle)
     tools: list[str] = []
@@ -6423,9 +6504,17 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
             "record": _record_str(row.get("wins"), row.get("losses"), row.get("ties")),
             "playoff_pct": _f0(row.get("playoff_pct")),
             "bye_pct": _f0(row.get("bye_pct")),
+            "first_seed_pct": _f(row.get("first_seed_pct")),
             "avg_final_wins": _f(row.get("avg_final_wins")),
         })
     rows.sort(key=lambda r: r["playoff_pct"], reverse=True)
+    # Current seeds ride along from the standings machinery (never from
+    # this odds sort). Leagues with no standings snapshot carry seed None
+    # on every row and no top_seed block: the seed race is simply not
+    # claimed, rather than dressed up from the odds ordering.
+    seed_by_rid, pf_by_rid = _standings_seed_pf(ctx, tools)
+    for r in rows:
+        r["seed"] = seed_by_rid.get(r["roster_id"])
     pack["field"] = rows
     pack["playoff_teams"] = playoff_teams
     pack["playoff_week_start"] = playoff_week_start
@@ -6460,6 +6549,36 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
         if projected_cut_wins is not None:
             me["wins_still_needed"] = round(max(0.0, projected_cut_wins - me["wins"]), 1)
         pack["me"] = me
+    # The 1-seed race from the viewer's side: who holds the top seed
+    # today and the ground to make up. Only derivable when the standings
+    # machinery stamped a seed 1; otherwise the block stays None.
+    pack["top_seed"] = None
+    leader = next((r for r in rows if r.get("seed") == 1), None)
+    if leader is not None:
+        top_seed = {
+            "roster_id": leader["roster_id"],
+            "team_name": leader["team_name"],
+            "wins": leader["wins"], "losses": leader["losses"],
+            "ties": leader["ties"], "record": leader["record"],
+            "pf": pf_by_rid.get(leader["roster_id"]),
+            "is_me": bool(me is not None
+                          and leader["roster_id"] == me["roster_id"]),
+            "games_back": 0.0,
+            "pf_back": 0.0,
+        }
+        if me is None:
+            top_seed["games_back"] = None
+            top_seed["pf_back"] = None
+        elif not top_seed["is_me"]:
+            games_back = ((leader["wins"] - me["wins"])
+                          + (me["losses"] - leader["losses"])) / 2
+            top_seed["games_back"] = round(max(0.0, games_back), 1)
+            leader_pf = pf_by_rid.get(leader["roster_id"])
+            my_pf = pf_by_rid.get(me["roster_id"])
+            top_seed["pf_back"] = (
+                round(max(0.0, leader_pf - my_pf), 2)
+                if leader_pf is not None and my_pf is not None else None)
+        pack["top_seed"] = top_seed
     # Odds trajectory: the recorded weekly snapshots (the same series
     # the odds page charts) so "how have my odds moved" and the league's
     # biggest movers answer from recorded history, not a re-simulation.
@@ -6752,10 +6871,15 @@ def build_standings(bundle, entities=None, player_ids=None) -> tuple[dict, list[
         r["seed"] = int(seed) if seed is not None else None
     if all(r["seed"] is not None for r in rows):
         rows.sort(key=lambda r: r["seed"])
+        pack["seeds_estimated"] = False
     else:
         rows.sort(key=lambda r: (-r["wins"], -r["pf"]))
         for i, r in enumerate(rows):
             r["seed"] = i + 1
+        # Fallback stamps are a wins/PF sort wearing the seed label (they
+        # ignore division winners); flag them so no surface reads them
+        # as build_standings_map's real seeds.
+        pack["seeds_estimated"] = True
     pack["teams"] = rows
     pack["me"] = next((r for r in rows if r["is_me"]), None)
     leader_pf = max(rows, key=lambda r: r["pf"])
