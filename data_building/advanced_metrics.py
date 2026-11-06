@@ -2876,6 +2876,11 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "scrimmage_yards_per_game": {"label": "Scrimmage Yds/G", "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Scrimmage yards per game: rushing plus receiving yards, averaged over games played.", "computed_sql": "(COALESCE(m.yards_per_carry * m.total_carries, 0) + COALESCE(m.yards_per_reception * m.total_receptions, 0)) / NULLIF(m.games, 0)", "computed_null": "((m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL) OR (m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL)) AND m.games IS NOT NULL AND m.games > 0"},
     "total_tds_per_game":   {"label": "Total TDs/G",         "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "first_downs_per_game": {"label": "First Downs/G",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "First downs per game from the player's own plays: as passer plus as rusher plus as receiver, each play counted once (nflverse play-by-play). Chain-moving production, not just scoring.", "computed_sql": "m.total_first_downs::float / NULLIF(m.games, 0)", "computed_null": "m.total_first_downs IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    # Combined chain-moving rate: the numerator is the same total_first_downs
+    # count behind First Downs/G (for RB/WR/TE those plays are rushes and
+    # receptions, each counted once); the denominator is targets + carries
+    # explicitly (total_touches is carries + receptions, a different base).
+    "first_down_rate":      {"label": "First Down Rate",     "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TOUCHES, "desc": "Percent of opportunities (targets + carries) that earn a first down (nflverse play-by-play). The combined rate behind Rec 1st Down % and Rush 1st Down %, so RB/WR/TE flex candidates compare on one chain-moving number.", "computed_sql": "m.total_first_downs::float / NULLIF(COALESCE(m.total_targets, 0) + COALESCE(m.total_carries, 0), 0)", "computed_null": "m.total_first_downs IS NOT NULL AND (COALESCE(m.total_targets, 0) + COALESCE(m.total_carries, 0)) > 0"},
     "goal_line_opp_share":  {"label": "Goal-Line Opp Share", "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's goal-line opportunities that went to this player: carries plus targets on plays snapped at or inside the opponent's 5-yard line (nflverse play-by-play)."},
     "td_share":             {"label": "TD Share", "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's offensive touchdowns scored by this player: his rushing plus receiving TDs over the team's total (every offensive TD is one player's rush or rec TD, so nothing double counts)."},
     "touches_per_game":     {"basic": True, "label": "Touches/G",           "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
@@ -2891,6 +2896,10 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "early_down_share":     {"label": "Early Down Share",    "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB rush attempts on 1st and 2nd down that went to this player. The every-down role indicator."},
     "two_minute_share":     {"label": "Two Minute Share",    "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB rush attempts in the last 2 minutes of either half that went to this player. Hurry-up and comeback-game work."},
     "td_rate_per_opp":      {"label": "TD Rate / Opp",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TOUCHES, "desc": "Percent of opportunities (carries + targets) that result in a touchdown; scoring efficiency on volume.", "computed_sql": "m.total_tds::float / NULLIF(m.total_touches, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.total_touches IS NOT NULL AND m.total_touches > 0"},
+    # Per-snap production: the points/yards siblings of Targets / Snap and
+    # Touches / Snap, gated on snaps like they are.
+    "pts_per_snap":         {"label": "Points / Snap",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "PPR fantasy points per offensive snap; what a player scores with his playing time, independent of snap volume.", "computed_sql": "m.ppr_pts::float / NULLIF(m.total_snaps, 0)", "computed_null": "m.ppr_pts IS NOT NULL AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
+    "yards_per_snap":       {"label": "Yards / Snap",        "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "Scrimmage yards (rushing + receiving, the Scrimmage Yards construction) per offensive snap; yardage produced per snap played, independent of snap volume.", "computed_sql": "(COALESCE(m.yards_per_carry * m.total_carries, 0) + COALESCE(m.yards_per_reception * m.total_receptions, 0)) / NULLIF(m.total_snaps, 0)", "computed_null": "((m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL) OR (m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL)) AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
     "boom_rate":            {"basic": True, "label": "Boom Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of games at/above the position boom threshold (QB 25 / RB-WR 20 / TE 15 PPR); how often the player wins you a week."},
     "bust_rate":            {"basic": True, "label": "Bust Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "lower_better": True, "min_vol": _V_GAMES, "desc": "Share of games below the position bust threshold (QB 15 / RB-WR 8 / TE 5 PPR). Lower is better; high bust rate means frequent lineup-killing weeks."},
     "fp_cv":                {"label": "FP Consistency (CV)", "category": "General", "positions": ["QB", "RB", "WR", "TE"], "lower_better": True, "min_vol": _V_GAMES, "desc": "Coefficient of variation of weekly PPR scores (std dev ÷ mean). Lower means steadier week-to-week scoring; high CV means boom-or-bust."},
@@ -3079,6 +3088,14 @@ _WEEKLY_METRICS: Dict[str, Any] = {
     "targets_per_snap": {"sql": "SUM(targets)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(snaps)", "min_label": "Min Snaps", "min_opts": [50, 100, 200, 400]},
     "touches_per_snap": {"sql": "SUM(touches)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(snaps)", "min_label": "Min Snaps", "min_opts": [50, 100, 200, 400]},
     "td_rate_per_opp":  {"sql": "(SUM(rec_tds) + SUM(rush_tds))::float / NULLIF(SUM(touches), 0)", "min_col": "SUM(touches)", "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
+    # Points/yards per snap use the same snaps gate as the pair above (their
+    # season specs are _V_SNAPS too). Weekly scrimmage yards are the raw
+    # rush_yards + rec_yards columns, as in scrimmage_yards_per_game.
+    "pts_per_snap":     {"sql": "SUM(ppr_pts)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(snaps)", "min_label": "Min Snaps", "min_opts": [50, 100, 200, 400]},
+    "yards_per_snap":   {"sql": "(SUM(rush_yards) + SUM(rec_yards))::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(snaps)", "min_label": "Min Snaps", "min_opts": [50, 100, 200, 400]},
+    # Combined first-down rate: weekly first_downs counts (nflverse) over
+    # targets + carries, gated like td_rate_per_opp.
+    "first_down_rate":  {"sql": "SUM(first_downs)::float / NULLIF(SUM(targets) + SUM(carries), 0)", "min_col": "SUM(touches)", "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
     # Boom/bust thresholds mirror utils.consistency._POS_THRESHOLDS exactly
     # (QB 25/15, RB-WR 20/8, TE 15/5). position is in the GROUP BY so the CASE
     # can branch per position even when no position filter is applied.
@@ -5848,6 +5865,9 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "targets_per_snap": ("total_targets", 15),
                 "touches_per_snap": ("total_touches", 40),
                 "td_rate_per_opp": ("total_touches", 40),
+                "pts_per_snap": ("total_snaps", 100),
+                "yards_per_snap": ("total_snaps", 100),
+                "first_down_rate": ("total_touches", 40),
                 "rz_opp_share": ("games", 4),
                 "rz_target_share": ("games", 4),
                 "yards_per_team_pass_att": ("games", 4),
@@ -5928,6 +5948,21 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                     _row["touches_per_snap"] = _touches / _snaps
                 if _touches > 0 and _row.get("total_tds") is not None:
                     _row["td_rate_per_opp"] = _safe(_row.get("total_tds")) / _touches
+                if _snaps > 0 and _row.get("ppr_pts") is not None:
+                    _row["pts_per_snap"] = _safe(_row.get("ppr_pts")) / _snaps
+                _has_rush_yards = (_row.get("yards_per_carry") is not None
+                                   and _row.get("total_carries") is not None)
+                _has_rec_yards = (_row.get("yards_per_reception") is not None
+                                  and _row.get("total_receptions") is not None)
+                if _snaps > 0 and (_has_rush_yards or _has_rec_yards):
+                    _rush_yards = (_safe(_row.get("yards_per_carry")) * _carries
+                                   if _has_rush_yards else 0.0)
+                    _rec_yards = (_ypr * _recs) if _has_rec_yards else 0.0
+                    _row["yards_per_snap"] = (_rush_yards + _rec_yards) / _snaps
+                _opps = _targets + _carries
+                if _opps > 0 and _row.get("total_first_downs") is not None:
+                    _row["first_down_rate"] = (
+                        _safe(_row.get("total_first_downs")) / _opps)
             # Avg Sep Score: percentile of ngs_avg_separation within this
             # position's qualified pool (srows are this position only, and
             # the gate matches _sep_scores_from_pool's season definition).
