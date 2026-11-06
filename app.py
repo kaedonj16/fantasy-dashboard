@@ -48190,7 +48190,12 @@ def _start_notification_scheduler():
 _inprocess_notify = (os.environ.get("ENABLE_INPROCESS_NOTIFY_SCHEDULER") or "").strip().lower()
 if _inprocess_notify in ("1", "true", "yes", "on"):
     _start_notification_scheduler()
-elif (os.environ.get("PYTHON_ENV") or "").strip().lower() != "production":
+elif (os.environ.get("PYTHON_ENV") or "").strip().lower() != "production" \
+        and "pytest" not in sys.modules:
+    # Never start the scheduler under pytest: the thread's first pass
+    # calls run_hourly() immediately, and a pass that overlaps a test
+    # module importing app re-runs the notify functions against that
+    # test's live monkeypatches (phantom sends, double-sends).
     _start_notification_scheduler()
 
 if __name__ == "__main__":

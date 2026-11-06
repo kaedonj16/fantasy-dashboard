@@ -51,6 +51,13 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(pn, "_app_state_get", _get)
     monkeypatch.setattr(pn, "_app_state_set", _set)
     monkeypatch.setattr(db, "get_conn", lambda: _FakeConn(store))
+    # Importing app (as other test modules in the suite do) starts its
+    # notify-scheduler thread outside production, and the thread's first
+    # pass calls run_hourly() immediately. If that pass lands inside one
+    # of these tests it re-runs the notify functions against this test's
+    # own mocks and double-sends. Stub run_hourly for the duration of
+    # every test using this fixture so a stray scheduler pass is a no-op.
+    monkeypatch.setattr(pn, "run_hourly", lambda *a, **k: {})
     return store
 
 
@@ -243,3 +250,245 @@ def test_drop_alert_title_names_the_league(monkeypatch, fake_db):
     assert len(sent) == 1
     assert sent[0]["title"] == "Big drop in Blackedraw"
     assert "Jahmyr Gibbs" in sent[0]["body"]
+
+
+def _drop_fixtures(monkeypatch, platform="sleeper", drops=None):
+    import dashboard_services.platform_api as papi
+    from utils import utils as utils_mod
+
+    monkeypatch.setattr(
+        papi, "get_league",
+        lambda platform, league_id, season: {"name": "Blackedraw"},
+    )
+    monkeypatch.setattr(
+        papi, "get_transactions",
+        lambda platform, league_id, week, season: [{
+            "type": "waiver",
+            "transaction_id": "t1",
+            "drops": drops if drops is not None else {"p1": 1},
+            "adds": {},
+        }],
+    )
+    monkeypatch.setattr(
+        utils_mod, "load_model_value_table",
+        lambda: [{"id": "p1", "name": "Jahmyr Gibbs", "position": "RB", "value": 5000}],
+    )
+    import dashboard_services.api as api
+    monkeypatch.setattr(
+        api, "get_nfl_state",
+        lambda: {"season": "2026", "week": 4, "season_type": "reg"},
+    )
+    monkeypatch.setattr(pn, "_get_subscribed_leagues", lambda: [("L1", platform)])
+    pn._league_name_cache.clear()
+    pn._league_format_cache.clear()
+
+
+def test_drop_alert_excludes_the_dropper(monkeypatch, fake_db):
+    import dashboard_services.platform_api as papi
+
+    _drop_fixtures(monkeypatch)
+    monkeypatch.setattr(
+        papi, "get_rosters",
+        lambda platform, league_id, season: [
+            {"roster_id": 1, "owner_id": "o_dropper"},
+            {"roster_id": 2, "owner_id": "o_other"},
+        ],
+    )
+
+    plain = []
+    monkeypatch.setattr(
+        pn, "_broadcast_league",
+        lambda *a, **k: plain.append((a, k)) or 0,
+    )
+    excluded = []
+    monkeypatch.setattr(
+        pn, "_broadcast_league_excluding",
+        lambda league_id, owners, title=None, body=None, url=None, tag=None,
+               notif_type=None, exclude_roster_ids=None,
+               exclude_account_keys=None: excluded.append({
+                   "owners": owners, "title": title, "body": body,
+                   "roster_ids": exclude_roster_ids,
+                   "accounts": exclude_account_keys,
+               }) or 3,
+    )
+
+    pn.notify_transaction_drops()
+
+    assert plain == []
+    assert len(excluded) == 1
+    assert excluded[0]["owners"] == ["o_dropper"]
+    assert excluded[0]["roster_ids"] == [1]
+    assert excluded[0]["accounts"] == []
+    assert excluded[0]["title"] == "Big drop in Blackedraw"
+
+
+def test_drop_alert_yahoo_excludes_by_bound_account(monkeypatch, fake_db):
+    _drop_fixtures(monkeypatch, platform="yahoo", drops={"p1": 4})
+    monkeypatch.setattr(
+        pn, "yahoo_roster_account_ids",
+        lambda league_id, season, roster_id: ["42"] if str(roster_id) == "4" else [],
+    )
+
+    plain = []
+    monkeypatch.setattr(
+        pn, "_broadcast_league",
+        lambda *a, **k: plain.append((a, k)) or 0,
+    )
+    excluded = []
+    monkeypatch.setattr(
+        pn, "_broadcast_league_excluding",
+        lambda league_id, owners, title=None, body=None, url=None, tag=None,
+               notif_type=None, exclude_roster_ids=None,
+               exclude_account_keys=None: excluded.append({
+                   "owners": owners, "roster_ids": exclude_roster_ids,
+                   "accounts": exclude_account_keys,
+               }) or 2,
+    )
+
+    pn.notify_transaction_drops()
+
+    assert plain == []
+    assert len(excluded) == 1
+    assert excluded[0]["accounts"] == ["42"]
+    assert excluded[0]["roster_ids"] == [4]
+
+
+def test_broadcast_league_excluding_filters_only_the_mover(monkeypatch):
+    import dashboard_services.db as db
+
+    rows = [
+        {"endpoint": "ep_dropper", "p256dh": "k", "auth": "a", "prefs": {},
+         "platform": "sleeper", "account_key": "x", "owner_id": "o_dropper"},
+        {"endpoint": "ep_other", "p256dh": "k", "auth": "a", "prefs": {},
+         "platform": "sleeper", "account_key": "y", "owner_id": "o_other"},
+        {"endpoint": "ep_rosterid", "p256dh": "k", "auth": "a", "prefs": {},
+         "platform": "yahoo", "account_key": "z", "owner_id": "1"},
+        {"endpoint": "ep_bound_acct", "p256dh": "k", "auth": "a", "prefs": {},
+         "platform": "yahoo", "account_key": "42", "owner_id": "guid"},
+        {"endpoint": "ep_legacy", "p256dh": "k", "auth": "a", "prefs": {},
+         "platform": "sleeper", "account_key": "", "owner_id": ""},
+    ]
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, *a, **k):
+            class _R:
+                def fetchall(inner):
+                    return rows
+
+            return _R()
+
+    monkeypatch.setattr(db, "get_conn", lambda: _Conn())
+
+    kept = []
+    monkeypatch.setattr(
+        pn, "_send_with_digest",
+        lambda rows_, title, body, url="/", tag="update", notif_type=None,
+               league_id=None, platform=None: kept.extend(
+                   r["endpoint"] for r in rows_) or len(rows_),
+    )
+
+    pn._broadcast_league_excluding(
+        "L1", ["o_dropper"], title="t", body="b",
+        exclude_roster_ids=[1], exclude_account_keys=["42"],
+    )
+
+    assert kept == ["ep_other", "ep_legacy"]
+
+
+def _trade_fixtures(monkeypatch, platform="sleeper"):
+    import dashboard_services.platform_api as papi
+    from utils import utils as utils_mod
+
+    monkeypatch.setattr(
+        papi, "get_league",
+        lambda platform, league_id, season: {"name": "Blackedraw"},
+    )
+    monkeypatch.setattr(
+        papi, "get_transactions",
+        lambda platform, league_id, week, season: [{
+            "type": "trade",
+            "transaction_id": "tt1",
+            "adds": {"p1": 2},
+            "drops": {"p1": 1},
+            "roster_ids": [1, 2],
+        }],
+    )
+    monkeypatch.setattr(
+        utils_mod, "load_model_value_table",
+        lambda: [{"id": "p1", "name": "Jahmyr Gibbs", "position": "RB", "value": 5000}],
+    )
+    import dashboard_services.api as api
+    monkeypatch.setattr(
+        api, "get_nfl_state",
+        lambda: {"season": "2026", "week": 4, "season_type": "reg"},
+    )
+    monkeypatch.setattr(pn, "_get_subscribed_leagues", lambda: [("L1", platform)])
+    pn._league_name_cache.clear()
+    pn._league_format_cache.clear()
+
+
+def _capture_broadcasts(monkeypatch):
+    plain = []
+    monkeypatch.setattr(
+        pn, "_broadcast_league",
+        lambda *a, **k: plain.append((a, k)) or 0,
+    )
+    excluded = []
+    monkeypatch.setattr(
+        pn, "_broadcast_league_excluding",
+        lambda league_id, owners, title=None, body=None, url=None, tag=None,
+               notif_type=None, exclude_roster_ids=None,
+               exclude_account_keys=None: excluded.append({
+                   "owners": owners, "title": title, "body": body,
+                   "roster_ids": exclude_roster_ids,
+                   "accounts": exclude_account_keys,
+               }) or 2,
+    )
+    return plain, excluded
+
+
+def test_trade_alert_excludes_both_participants(monkeypatch, fake_db):
+    import dashboard_services.platform_api as papi
+
+    _trade_fixtures(monkeypatch)
+    monkeypatch.setattr(
+        papi, "get_rosters",
+        lambda platform, league_id, season: [
+            {"roster_id": 1, "owner_id": "o_sender"},
+            {"roster_id": 2, "owner_id": "o_receiver"},
+            {"roster_id": 3, "owner_id": "o_bystander"},
+        ],
+    )
+    plain, excluded = _capture_broadcasts(monkeypatch)
+
+    pn.notify_rival_trades()
+
+    assert plain == []
+    assert len(excluded) == 1
+    assert excluded[0]["owners"] == ["o_sender", "o_receiver"]
+    assert excluded[0]["roster_ids"] == ["1", "2"]
+    assert excluded[0]["accounts"] == []
+    assert excluded[0]["title"] == "Trade alert in Blackedraw"
+
+
+def test_trade_alert_yahoo_excludes_by_bound_accounts(monkeypatch, fake_db):
+    _trade_fixtures(monkeypatch, platform="yahoo")
+    monkeypatch.setattr(
+        pn, "yahoo_roster_account_ids",
+        lambda league_id, season, roster_id: {"1": ["42"], "2": ["77"]}.get(
+            str(roster_id), []),
+    )
+    plain, excluded = _capture_broadcasts(monkeypatch)
+
+    pn.notify_rival_trades()
+
+    assert plain == []
+    assert len(excluded) == 1
+    assert excluded[0]["accounts"] == ["42", "77"]
+    assert excluded[0]["roster_ids"] == ["1", "2"]
