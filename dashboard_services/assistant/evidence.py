@@ -8769,6 +8769,32 @@ def build_draft(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]
     if not rounds:
         rounds = 5 if status != "complete" else 15
     pack["status"] = status
+    # Scheduled start: the draft object carries it as an epoch stamp
+    # (Sleeper publishes milliseconds; the Draft Room banner reads the
+    # same field). Kept only when the feed published one, as both the
+    # raw stamp and a rendered label: no stamp means unknown, never a
+    # guessed date.
+    start_ms = None
+    for cand in (src.get("start_time"), chosen.get("start_time")):
+        try:
+            v = float(cand)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            start_ms = int(v if v > 1e12 else v * 1000)
+            break
+    if start_ms:
+        pack["start_time"] = start_ms
+        try:
+            from datetime import datetime as _sdt_cls
+            from zoneinfo import ZoneInfo as _szi
+            sdt = _sdt_cls.fromtimestamp(start_ms / 1000,
+                                         _szi("America/New_York"))
+            pack["start_label"] = (
+                f"{sdt:%A, %B} {sdt.day} at {sdt:%I:%M %p} {sdt:%Z}"
+                .replace(" 0", " "))
+        except Exception:
+            pack["start_label"] = None
     pack["draft_season"] = _dseason(src) or season
     pack["rounds"] = rounds
     pack["league_size"] = teams
@@ -9345,8 +9371,9 @@ def _settings_int(value):
 
 
 def build_league_settings(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
-    """The league's own rules: trade deadline, playoff start / field, and
-    the waiver system, read from the settings the bundle's league ctx
+    """The league's own rules: trade deadline, playoff start / field,
+    the waiver system, the scoring format / point values, and the
+    league format / roster shape, read from the settings the bundle's league ctx
     already carries (provider settings plus the league-rules overlay in
     ctx["league_settings"], the same sources Front Office's deadline
     chip and the waiver page's FAAB gate read). Every field is whatever
@@ -9362,13 +9389,25 @@ def build_league_settings(bundle, entities=None, player_ids=None) -> tuple[dict,
     tools: list[str] = []
     entities = entities or {}
     topic = str(entities.get("settings_topic") or "all").strip().lower()
-    if topic not in ("deadline", "playoffs", "waivers", "all"):
+    if topic not in ("deadline", "playoffs", "waivers", "scoring",
+                     "format", "all"):
         topic = "all"
     pack["topic"] = topic
     ctx = bundle.get("ctx") or {}
     raw = (ctx.get("league") or {}).get("settings") or {}
     overlaid = ctx.get("league_settings") or {}
-    if not raw and not overlaid:
+    # Scoring settings ride their own ctx keys (the same dict the
+    # projections builder reads), not the league settings dict.
+    scoring_src: dict = {}
+    for src in (ctx.get("raw_scoring_settings"), ctx.get("scoring_settings"),
+                (ctx.get("league") or {}).get("scoring_settings")):
+        if isinstance(src, dict) and src:
+            scoring_src = src
+            break
+    roster_positions = ctx.get("roster_positions") or []
+    if hasattr(roster_positions, "tolist"):
+        roster_positions = list(roster_positions)
+    if not raw and not overlaid and not scoring_src and not roster_positions:
         pack["available"] = False
         pack["missing"] = "your league settings are not loaded"
         pack["nearest"] = []
@@ -9483,6 +9522,70 @@ def build_league_settings(bundle, entities=None, player_ids=None) -> tuple[dict,
         except ValueError:
             pass
     pack["waivers"] = waivers
+
+    # Scoring: the format label follows the site's own scoring-format
+    # read (the player modal's PPR / half / std call), and the point
+    # values are whatever the scoring settings actually publish. A
+    # missing reception value leaves the label unknown instead of
+    # defaulting to PPR the way the modal read does: an assistant
+    # answer states only what the feed carries.
+    def _snum(key):
+        v = scoring_src.get(key)
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    scoring = None
+    if scoring_src:
+        rec_pts = _snum("rec")
+        if rec_pts is None:
+            rec_pts = _snum("pointsPerReception")
+        fmt_label = None
+        if rec_pts is not None:
+            try:
+                from utils.value_helpers import scoring_format_from_settings
+                fmt_label = scoring_format_from_settings(
+                    {"rec": rec_pts})
+            except Exception:
+                fmt_label = None
+        entry = {"format": fmt_label, "points_per_reception": rec_pts,
+                 "pass_td": _snum("pass_td"), "rush_td": _snum("rush_td"),
+                 "rec_td": _snum("rec_td"),
+                 "te_bonus_rec": _snum("bonus_rec_te")}
+        if any(v is not None for v in entry.values()):
+            scoring = entry
+            tools.append("league.scoring_settings")
+    pack["scoring"] = scoring
+
+    # Format: superflex vs 1QB from the lineup slots (the site's own
+    # is_superflex_lineup read), team count from the league record or
+    # the roster list, bench and roster size counted off the published
+    # roster_positions. Absent sources stay None (unknown), never a
+    # default league shape.
+    fmt = None
+    rosters = [r for r in (ctx.get("rosters") or []) if isinstance(r, dict)]
+    is_sf = None
+    if roster_positions:
+        try:
+            from utils.lineup_slots import is_superflex_lineup
+            is_sf = bool(is_superflex_lineup(roster_positions))
+        except Exception:
+            is_sf = None
+    team_count = (_settings_int(ctx.get("total_rosters"))
+                  or _settings_int((ctx.get("league") or {}).get("total_rosters"))
+                  or (len(rosters) or None))
+    bench_spots = None
+    roster_size = None
+    if roster_positions:
+        bench_spots = sum(1 for s in roster_positions
+                          if str(s).upper() == "BN")
+        roster_size = len(roster_positions)
+    if (is_sf is not None or team_count or bench_spots is not None
+            or roster_size is not None):
+        fmt = {"superflex": is_sf, "teams": team_count,
+               "bench_spots": bench_spots, "roster_size": roster_size}
+    pack["format"] = fmt
     return pack, tools
 
 

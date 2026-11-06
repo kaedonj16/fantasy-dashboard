@@ -1256,6 +1256,12 @@ def _required_receipts(intent: str, pack: dict, question: str | None = None) -> 
             rows.append({"label": f"{a.get('team_name')} projected final",
                          "value": _fmt_num(a["projected"])})
     elif intent == "draft":
+        if pack.get("start_label") and pack.get("status") == "pre_draft":
+            # A not-yet-started draft has no clock to cite; its
+            # scheduled start is the key number (and the whole point of
+            # a "when is our draft?" ask).
+            rows.append({"label": "Draft starts",
+                         "value": str(pack["start_label"])})
         cur = pack.get("current_pick") or {}
         if cur.get("pick_no") is not None:
             rows.append({"label": "Current pick", "value": _fmt_num(cur["pick_no"])})
@@ -3173,9 +3179,90 @@ def _compose_league_settings(pack: dict) -> dict:
             receipts.append({"label": "Next waiver run", "value": process})
         return (verdict, text)
 
+    def _scoring_part():
+        s = pack.get("scoring")
+        if not s:
+            return (None, "I don't have your league's scoring settings "
+                           "from its feed.")
+        names = {"ppr": "PPR", "half": "Half PPR",
+                 "std": "Standard (no PPR)"}
+        sentences = []
+        verdict = None
+        if s.get("format"):
+            lab = names[s["format"]]
+            verdict = f"Scoring: {lab}"
+            receipts.append({"label": "Scoring format", "value": lab})
+            ppr = s.get("points_per_reception")
+            if ppr is not None:
+                plural = "s" if float(ppr) != 1 else ""
+                sentences.append(
+                    f"Your league is {lab}: {_fmt_num(ppr)} point{plural} "
+                    "per reception.")
+            else:
+                sentences.append(f"Your league is {lab}.")
+        td_bits = []
+        for key, lab in (("pass_td", "Passing TD"), ("rush_td", "Rushing TD"),
+                         ("rec_td", "Receiving TD")):
+            if s.get(key) is not None:
+                receipts.append({"label": f"{lab} points",
+                                 "value": _fmt_num(s[key])})
+                td_bits.append(f"a {lab[0].lower() + lab[1:]} is worth "
+                               f"{_fmt_num(s[key])} points")
+        if td_bits:
+            joined = (", ".join(td_bits[:-1])
+                      + (" and " if len(td_bits) > 1 else "")
+                      + td_bits[-1])
+            sentences.append(joined[0].upper() + joined[1:] + ".")
+        if s.get("te_bonus_rec"):
+            receipts.append({"label": "TE reception bonus",
+                             "value": f"+{_fmt_num(s['te_bonus_rec'])}"})
+            sentences.append(
+                f"Tight ends get a +{_fmt_num(s['te_bonus_rec'])} bonus "
+                "per reception.")
+        if not sentences:
+            return (None, "I don't have your league's scoring settings "
+                           "from its feed.")
+        return (verdict, " ".join(sentences))
+
+    def _format_part():
+        f = pack.get("format")
+        if not f:
+            return (None, "I don't have your league's format details "
+                           "from its feed.")
+        verdict = None
+        head = []
+        if f.get("superflex") is not None:
+            lab = "Superflex" if f["superflex"] else "1QB"
+            receipts.append({"label": "QB format", "value": lab})
+            verdict = f"Format: {lab}"
+            head.append("a superflex league" if f["superflex"]
+                        else "a 1QB league")
+        if f.get("teams"):
+            receipts.append({"label": "Teams", "value": str(f["teams"])})
+            head.append(f"{f['teams']} teams")
+        sentences = []
+        if head:
+            sentences.append("Your league is " + ", ".join(head) + ".")
+        tail = []
+        if f.get("roster_size") is not None:
+            receipts.append({"label": "Roster spots",
+                             "value": str(f["roster_size"])})
+            tail.append(f"{f['roster_size']} roster spots")
+        if f.get("bench_spots") is not None:
+            receipts.append({"label": "Bench spots",
+                             "value": str(f["bench_spots"])})
+            tail.append(f"{f['bench_spots']} of them bench spots")
+        if tail:
+            sentences.append("Rosters carry " + ", ".join(tail) + ".")
+        if not sentences:
+            return (None, "I don't have your league's format details "
+                           "from its feed.")
+        return (verdict, " ".join(sentences))
+
     parts = {"deadline": _deadline_part, "playoffs": _playoffs_part,
-             "waivers": _waivers_part}
-    order = ["deadline", "playoffs", "waivers"]
+             "waivers": _waivers_part, "scoring": _scoring_part,
+             "format": _format_part}
+    order = ["deadline", "playoffs", "scoring", "format", "waivers"]
     wanted = order if topic == "all" else [topic]
     verdicts, sentences = {}, []
     for key in wanted:
@@ -3185,7 +3272,9 @@ def _compose_league_settings(pack: dict) -> dict:
     verdict = verdicts.get(topic) if topic != "all" else "Your league settings"
     followup_for = {"deadline": "When is the trade deadline?",
                     "playoffs": "When do playoffs start?",
-                    "waivers": "How do waivers work in my league?"}
+                    "waivers": "How do waivers work in my league?",
+                    "scoring": "Is my league PPR or half PPR?",
+                    "format": "Is this a superflex league?"}
     followups = [followup_pair(followup_for[k]) for k in order if k not in wanted]
     return {"verdict": verdict, "text": " ".join(sentences),
             "receipts": receipts, "caveat": caveat,
