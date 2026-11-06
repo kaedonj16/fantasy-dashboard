@@ -1207,9 +1207,16 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Advanced Metrics / Prospect Profile + Value History flags ──
       const supportedMetricsPosition =
         ['QB', 'RB', 'WR', 'TE'].includes(String(pos || '').toUpperCase());
-      let hasMetrics =
-        supportedMetricsPosition &&
-        (data.has_advanced_metrics === true || hasGameLogs);
+      // Eligibility at first paint is UNKNOWN, not "no": the core payload
+      // deliberately carries neutral false flags (see the player-details
+      // build) and the real answer rides the deferred payload, whose cold
+      // build runs 20-30s. Gating the tab on that left Advanced muted and
+      // unclickable for the whole wait on every player. A supported
+      // position therefore starts enabled: the tab's own fetch answers
+      // definitively on click (a 404 renders the honest empty state), and
+      // the deferred patch below disables the tab only when it lands with
+      // a definite "no" before the panel is ever opened.
+      let hasMetrics = supportedMetricsPosition;
       // The block exists when EITHER format has points; the chart then
       // renders the active format's series (or its thin-state note).
       let hasChart   = (data.value_history && data.value_history.length > 0)
@@ -2020,13 +2027,22 @@ function openPlayerModal(playerId, playerName, opts) {
           if (_railEl && _pcHtml) _railEl.insertAdjacentHTML('afterbegin', _pcHtml);
         }
 
-        // Metrics tab eligibility.
+        // Metrics tab eligibility: the deferred payload is the definite
+        // answer. A "yes" upgrades a tab the core render left disabled
+        // (unsupported positions never reach this: _hmNow requires a
+        // supported one). A definite "no" disables the tab ONLY when its
+        // panel was never opened: once the user has clicked, the tab's
+        // own fetch has already rendered the honest empty state, and
+        // muting the tab mid-read would be worse than leaving it.
         var _hmNow = supportedMetricsPosition
           && (dfd.has_advanced_metrics === true || dfd.has_game_logs === true);
+        var _mp = document.getElementById('pm-panel-metrics');
         if (_hmNow && !hasMetrics) {
           hasMetrics = true;
-          var _mp = document.getElementById('pm-panel-metrics');
           if (_mp) _mp.innerHTML = _metricsPanelHTML(true);
+        } else if (!_hmNow && hasMetrics && !(_mp && _mp.dataset.loaded)) {
+          hasMetrics = false;
+          if (_mp) _mp.innerHTML = _metricsPanelHTML(false);
         }
         if (tabMetrics) {
           tabMetrics.disabled = !hasMetrics;
@@ -7454,12 +7470,18 @@ function pmRenderTrendingSection(playerId, season, position) {
     var badge = cls === 'newrole' ? '&#9650; NEW ROLE'
       : (view.hot ? '&#9650; HEATING UP' : '&#9660; COOLING OFF');
     var hero = view.hero;
-    var html = '<div class="pm-trending ' + cls + '"><div class="pm-trending-head">'
-      + '<span class="pm-trending-dot"></span><span>TRENDING</span>'
-      + '<span class="pm-trending-window">Last 3 vs prior</span></div>'
-      + '<div class="pm-trend-verdict"><span class="pm-trend-badge ' + cls + '">' + badge + '</span>'
-      + '<div class="pm-trend-verdict-title">' + view.title + '</div>'
-      + '<div class="pm-trend-verdict-sub">' + view.sub + '</div></div>'
+    // Collapsed by default: one summary line (dot, badge, verdict title)
+    // carries the signal, and the detail (sub, hero, groups, role check)
+    // sits behind the toggle so the metrics below start right away.
+    var html = '<div class="pm-trending ' + cls + '">'
+      + '<button type="button" class="pm-trending-toggle" aria-expanded="false" onclick="pmToggleTrending(this)">'
+      + '<span class="pm-trending-dot"></span><span class="pm-trending-name">TRENDING</span>'
+      + '<span class="pm-trend-badge ' + cls + '">' + badge + '</span>'
+      + '<span class="pm-trending-title">' + view.title + '</span>'
+      + '<span class="pm-trending-window">Last 3 vs prior</span>'
+      + '<span class="pm-trending-chev" aria-hidden="true">&#9662;</span></button>'
+      + '<div class="pm-trending-body" hidden>'
+      + '<div class="pm-trend-verdict-sub">' + view.sub + '</div>'
       + '<div class="pm-trend-hero">'
       + '<div class="pm-trend-hero-main"><div class="pm-trend-metric">' + hero.label + '</div>'
       + '<div class="pm-trend-spark">' + sparkFor(hero) + '</div></div>'
@@ -7487,10 +7509,21 @@ function pmRenderTrendingSection(playerId, season, position) {
       }).join(' &middot; ');
       html += '<div class="pm-trend-role"><span class="pm-trend-role-lab">Role check</span> ' + anchorTxt + '</div>';
     }
-    html += '</div>';
+    html += '</div></div>';
     // Only render if the host is still in the DOM (modal may have closed).
     if (document.getElementById('pmTrendingSection') === host) host.innerHTML = html;
   });
+}
+
+// Expand/collapse the TRENDING detail body from its summary header.
+function pmToggleTrending(btn) {
+  var card = btn && btn.closest ? btn.closest('.pm-trending') : null;
+  var body = card ? card.querySelector('.pm-trending-body') : null;
+  if (!body) return;
+  var open = body.hidden;
+  body.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  card.classList.toggle('pm-trending-open', open);
 }
 
 // Collapse/expand a section in the player compare view.

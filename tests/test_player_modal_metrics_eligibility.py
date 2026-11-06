@@ -162,7 +162,16 @@ def test_prospect_only_columns_do_not_count_as_nfl_advanced_metrics(monkeypatch,
 def test_frontend_uses_backend_signal_and_safe_game_log_fallback():
     source = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
     assert "['QB', 'RB', 'WR', 'TE'].includes(String(pos || '').toUpperCase())" in source
-    assert "(data.has_advanced_metrics === true || hasGameLogs)" in source
+    # First paint must NOT gate the tab on the core payload's eligibility
+    # flags: the core build deliberately ships them neutral-false and the
+    # real answer rides the slow deferred payload, which left the tab
+    # muted for the whole deferred wait. Supported positions start
+    # enabled; the deferred patch remains the definite answer.
+    assert "let hasMetrics = supportedMetricsPosition;" in source
+    assert "(dfd.has_advanced_metrics === true || dfd.has_game_logs === true)" in source
+    # A definite deferred "no" disables the tab only before its panel is
+    # ever opened (dataset.loaded is set by pmSwitchTab on first click).
+    assert "!(_mp && _mp.dataset.loaded)" in source
     assert "!hasProspectData && pos" not in source
     # Rookie tab (player modal redesign): visibility is driven solely by the
     # backend is_rookie flag, not the old prospect-data/game-log gate.

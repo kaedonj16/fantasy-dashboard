@@ -116,10 +116,27 @@ def test_trending_css_single_verdict_card():
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     # Option A: one verdict card, full width at every size (no 2x2 card grid).
     assert ".pm-trend-hero" in css
-    assert ".pm-trend-verdict-title" in css
+    assert ".pm-trending-toggle" in css
+    assert ".pm-trending-body" in css
     assert ".pm-trend-group-head" in css
     assert ".pm-trend-role" in css
     assert ".pm-trending-grid" not in css
+
+
+def test_trending_collapsed_by_default_behind_summary_toggle():
+    js = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
+    # The header is a toggle button carrying the one-line summary (badge +
+    # verdict title); the detail body starts hidden and the toggle flips
+    # it with aria-expanded kept in sync.
+    assert 'class="pm-trending-toggle" aria-expanded="false"' in js
+    assert 'onclick="pmToggleTrending(this)"' in js
+    assert '<div class="pm-trending-body" hidden>' in js
+    assert "function pmToggleTrending(btn)" in js
+    assert "body.hidden = !open;" in js
+    assert "btn.setAttribute('aria-expanded', open ? 'true' : 'false');" in js
+    # The old always-expanded verdict block is gone: badge and title live
+    # in the summary header only.
+    assert "pm-trend-verdict-title" not in js
 
 
 def test_trending_option_a_view_in_js():
@@ -128,8 +145,8 @@ def test_trending_option_a_view_in_js():
     assert "function pmComputeRoleAnchor(weeks, position, moverKeys)" in js
     assert "Last 3 vs prior" in js
     assert "Role check" in js
-    # The badge/verdict is stated once, in the verdict block, not per card.
-    assert "pm-trend-verdict" in js
+    # The badge/verdict is stated once, in the summary header, not per card.
+    assert "pm-trend-verdict-sub" in js
     # Honest labels: catch rate is not a drops stat, and no mock annotation
     # text ships in the UI.
     assert "Drops creeping in" not in js

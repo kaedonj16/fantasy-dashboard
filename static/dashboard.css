@@ -12105,16 +12105,49 @@ select:focus {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--card);
-    padding: 12px 14px;
 }
-.pm-trending-head {
+.pm-trending-toggle {
     display: flex;
     align-items: center;
     gap: 7px;
+    width: 100%;
+    padding: 10px 14px;
+    background: none;
+    border: 0;
+    font: inherit;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+.pm-trending-name {
     font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.08em;
-    color: var(--text);
+    flex: none;
+}
+.pm-trending-toggle .pm-trend-badge {
+    margin-bottom: 0;
+    flex: none;
+}
+.pm-trending-title {
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.pm-trending-chev {
+    flex: none;
+    font-size: 11px;
+    color: var(--text-muted);
+    transition: transform 0.15s;
+}
+.pm-trending-open .pm-trending-chev {
+    transform: rotate(180deg);
+}
+.pm-trending-body {
+    padding: 0 14px 12px;
 }
 .pm-trending-window {
     margin-left: auto;
@@ -12122,6 +12155,7 @@ select:focus {
     font-weight: 600;
     letter-spacing: 0;
     color: var(--text-muted);
+    flex: none;
 }
 .pm-trending-dot {
     width: 7px;
@@ -12132,15 +12166,6 @@ select:focus {
 }
 .pm-trending.cold .pm-trending-dot { background: #dc2626; }
 .pm-trending.newrole .pm-trending-dot { background: #2563eb; }
-.pm-trend-verdict {
-    margin-top: 8px;
-}
-.pm-trend-verdict-title {
-    font-size: 16px;
-    font-weight: 800;
-    color: var(--text);
-    margin-top: 4px;
-}
 .pm-trend-verdict-sub {
     font-size: 12px;
     color: var(--text-muted);
