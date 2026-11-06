@@ -95,14 +95,16 @@ SYSTEM = (
     "and any of the user's own players on the board; for the weekly digest, each action's key number; "
     "for waivers, the top candidate's value and the user's weakest starter at that position; "
     "for playoffs, the odds, your current seed and first-seed odds when the pack carries them, "
-    "and the wins still needed; for standings and power rankings, the user's "
+    "the first-round bye odds, and the wins still needed against the "
+    "projected cut line; for standings and power rankings, the user's "
     "own seed or rank and the leader; for a matchup, the win probability and both projected "
     "totals (a matchup answer is only about the matchup: the verdict leads with the win "
     "probability and the projected score, and it never carries waiver targets or weekly "
     "digest actions); "
     "for schedule, the user's opponent strength index and the easiest team's. "
     "For league activity, cite the most recent trade's two received totals and the fairness "
-    "gap, and say plainly whether that deal was fair or lopsided; an activity answer reports "
+    "gap, and say plainly whether that deal was fair or lopsided; when the question is about "
+    "waiver moves instead, cite the waiver counts; an activity answer reports "
     "what already happened in the league and never recommends a move. "
     "If the pack flags odds_soft, say the odds are soft this early and lead with the wins math. "
     "For trade finding, present only the findings in the evidence: never invent a partner, a package, "
@@ -760,11 +762,74 @@ def _pick_label(pick: dict) -> str | None:
     return None
 
 
-def _required_receipts(intent: str, pack: dict) -> list[dict]:
+_WAIVER_Q_RE = re.compile(r"\b(waivers?|adds?|added|drops?|dropped|pickups?|claims?|claimed)\b")
+_TRADE_Q_RE = re.compile(r"\b(trades?|traded|trading|deals?|swaps?|swapped)\b")
+_METRIC_RANK_Q_RE = re.compile(r"\b(who|leads?|leading|best|top|highest|most|rank|ranked|ranks)\b")
+_METRIC_DEF_Q_RE = re.compile(
+    r"^\s*(what is|what's|what does|define)\b|\b(means?|meaning|definition|stand for)\b")
+
+
+def _standings_focus_row(pack: dict, question) -> dict | None:
+    """The standings row a question is actually about, when it is not
+    about the viewer: last place, the points leader, or a named team.
+    Returns None when the question names no clear other subject (or is
+    about the viewer), in which case receipts keep the viewer-first
+    set."""
+    q = str(question or "").strip().lower()
+    if not q:
+        return None
+    teams = [t for t in (pack.get("teams") or []) if isinstance(t, dict)]
+    if not teams:
+        return None
+    if re.search(r"\b(last place|in last|bottom of the standings|worst record)\b", q):
+        seeded = [t for t in teams if t.get("seed") is not None]
+        pool = seeded or teams
+        return max(pool, key=lambda t: t.get("seed") or 0)
+    if re.search(r"\b(points leader|most points|leads? in points|scored the most"
+                 r"|highest scorer)\b", q):
+        leader_name = (pack.get("points_leader") or {}).get("team_name")
+        for t in teams:
+            if leader_name and t.get("team_name") == leader_name:
+                return t
+        return max(teams, key=lambda t: t.get("pf") or 0)
+    if re.search(r"\b(my|mine|am i|do i|are we)\b", q):
+        return None
+    for t in teams:
+        name = str(t.get("team_name") or "").lower()
+        if name and name in q and not t.get("is_me"):
+            return t
+    return None
+
+
+def _metric_definition_question(question, pack) -> bool:
+    """A pure definition ask ("What is target share?"): no player named
+    in the pack and no who/leads/best phrasing. The board leader's value
+    is not a required receipt for these; the definition is the answer."""
+    q = str(question or "").strip().lower()
+    if not q or (pack or {}).get("player_ranks"):
+        return False
+    if _METRIC_RANK_Q_RE.search(q):
+        return False
+    return bool(_METRIC_DEF_Q_RE.search(q))
+
+
+def _activity_waiver_question(question) -> bool:
+    """The activity question is about waiver moves, not trades: the
+    waiver counts are the required receipts, not the latest trade's
+    totals."""
+    q = str(question or "").strip().lower()
+    if not q:
+        return False
+    return bool(_WAIVER_Q_RE.search(q)) and not _TRADE_Q_RE.search(q)
+
+
+def _required_receipts(intent: str, pack: dict, question: str | None = None) -> list[dict]:
     """Receipt rows an answer to this intent must carry, derived from the pack.
 
     These are the numbers the eval scorer (and any reader) checks for. They
     are built from pack fields only, so they are grounded by construction.
+    Where the question's subject differs from the pack's default subject
+    (standings, activity, metric), the required set follows the question.
     """
     rows: list[dict] = []
     pack = pack or {}
@@ -823,6 +888,10 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             if p.get("projection") is not None:
                 rows.append({"label": f"{p.get('name')} projection",
                              "value": _fmt_num(p["projection"])})
+    elif intent == "metric" and _metric_definition_question(question, pack):
+        # Definition ask: no number is forced. The leader's value stapled
+        # onto "What is target share?" answers a question nobody asked.
+        rows = []
     elif intent == "metric":
         top = [e for e in (pack.get("leaderboard_top5") or [])
                if isinstance(e, dict) and e.get("value") is not None]
@@ -951,6 +1020,8 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             rows.append({"label": "Current seed", "value": _fmt_num(me["seed"])})
         if me.get("first_seed_pct") is not None:
             rows.append({"label": "First-seed odds (%)", "value": _fmt_num(me["first_seed_pct"])})
+        if me.get("bye_pct") is not None:
+            rows.append({"label": "First-round bye odds (%)", "value": _fmt_num(me["bye_pct"])})
         traj = pack.get("odds_trajectory") or {}
         if traj.get("start_pct") is not None and traj.get("start_week") is not None:
             rows.append({"label": f"Your playoff odds in Week {traj['start_week']} (%)",
@@ -958,8 +1029,12 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         if scen.get("wins_to_clinch") is not None:
             rows.append({"label": "Wins to clinch", "value": _fmt_num(scen["wins_to_clinch"])})
         elif me.get("wins_still_needed") is not None:
-            rows.append({"label": "Wins still needed (projected)", "value": _fmt_num(me["wins_still_needed"])})
-        if pack.get("weeks_remaining") is not None:
+            # The wins number is measured against the projected cut line
+            # (the last-in team's projected final wins), never against
+            # any seed above it; the label says so.
+            rows.append({"label": "Wins still needed (projected cut line)",
+                         "value": _fmt_num(me["wins_still_needed"])})
+        if pack.get("weeks_remaining") is not None and len(rows) < 4:
             rows.append({"label": "Weeks remaining", "value": _fmt_num(pack["weeks_remaining"])})
     elif intent == "power_rankings":
         me = pack.get("me") or {}
@@ -986,13 +1061,25 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
     elif intent == "standings":
         me = pack.get("me") or {}
         leader = pack.get("points_leader") or {}
-        if me.get("seed") is not None:
-            rows.append({"label": "Your seed", "value": _fmt_num(me["seed"])})
-        if me.get("pf") is not None:
-            rows.append({"label": "Your points for", "value": _fmt_num(me["pf"])})
-        if leader.get("pf") is not None and leader.get("team_name") != me.get("team_name"):
-            rows.append({"label": f"{leader.get('team_name')} points for",
-                         "value": _fmt_num(leader["pf"])})
+        focus = _standings_focus_row(pack, question)
+        if focus is not None:
+            # The question is about another row (last place, the points
+            # leader, a named team): that row's seed and points are the
+            # required receipts, not the viewer's.
+            if focus.get("seed") is not None:
+                rows.append({"label": f"{focus.get('team_name')} seed",
+                             "value": _fmt_num(focus["seed"])})
+            if focus.get("pf") is not None and len(rows) < 4:
+                rows.append({"label": f"{focus.get('team_name')} points for",
+                             "value": _fmt_num(focus["pf"])})
+        else:
+            if me.get("seed") is not None:
+                rows.append({"label": "Your seed", "value": _fmt_num(me["seed"])})
+            if me.get("pf") is not None:
+                rows.append({"label": "Your points for", "value": _fmt_num(me["pf"])})
+            if leader.get("pf") is not None and leader.get("team_name") != me.get("team_name"):
+                rows.append({"label": f"{leader.get('team_name')} points for",
+                             "value": _fmt_num(leader["pf"])})
     elif intent == "matchup":
         m = pack.get("matchup") or {}
         a, b = m.get("team_a") or {}, m.get("team_b") or {}
@@ -1007,11 +1094,14 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         me = pack.get("me") or {}
         easiest = pack.get("easiest") or {}
         stretch = (pack.get("playoff_stretch") or {}).get("me") or {}
+        # Remaining slate first: it is what most schedule questions ask
+        # about. The playoff-stretch index (Weeks 15-17) rides second so
+        # it is never read as the remaining-schedule number.
+        if me.get("opp_index") is not None:
+            rows.append({"label": "Your remaining opponent index", "value": _fmt_num(me["opp_index"])})
         if stretch.get("opp_index") is not None:
             rows.append({"label": "Your playoff stretch opponent index",
                          "value": _fmt_num(stretch["opp_index"])})
-        if me.get("opp_index") is not None:
-            rows.append({"label": "Your remaining opponent index", "value": _fmt_num(me["opp_index"])})
         if easiest.get("opp_index") is not None and easiest.get("roster_id") != me.get("roster_id"):
             rows.append({"label": f"{easiest.get('team_name')} opponent index",
                          "value": _fmt_num(easiest["opp_index"])})
@@ -1107,20 +1197,28 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
                 rows.append({"label": label, "value": _fmt_num(line[key])})
                 break
     elif intent == "activity":
-        latest = pack.get("latest_trade") or {}
-        for t in (latest.get("teams") or [])[:2]:
-            if isinstance(t, dict) and t.get("gets_value") is not None:
-                rows.append({"label": f"{t.get('team_name')} received (total value)",
-                             "value": _fmt_num(t["gets_value"])})
-        if latest.get("value_gap") is not None and len(rows) < 4:
-            rows.append({"label": "Fairness gap", "value": _fmt_num(latest["value_gap"])})
-        if not rows:
+        if _activity_waiver_question(question):
+            # A waiver-moves question: the counts are the receipts. The
+            # latest trade's totals belong to a trade question.
             counts = pack.get("counts") or {}
-            if counts.get("trades") is not None:
-                rows.append({"label": "Trades this season", "value": _fmt_num(counts["trades"])})
-            if counts.get("waiver_adds") is not None and len(rows) < 4:
+            if counts.get("waiver_adds") is not None:
                 rows.append({"label": "Waiver adds this season",
                              "value": _fmt_num(counts["waiver_adds"])})
+        else:
+            latest = pack.get("latest_trade") or {}
+            for t in (latest.get("teams") or [])[:2]:
+                if isinstance(t, dict) and t.get("gets_value") is not None:
+                    rows.append({"label": f"{t.get('team_name')} received (total value)",
+                                 "value": _fmt_num(t["gets_value"])})
+            if latest.get("value_gap") is not None and len(rows) < 4:
+                rows.append({"label": "Fairness gap", "value": _fmt_num(latest["value_gap"])})
+            if not rows:
+                counts = pack.get("counts") or {}
+                if counts.get("trades") is not None:
+                    rows.append({"label": "Trades this season", "value": _fmt_num(counts["trades"])})
+                if counts.get("waiver_adds") is not None and len(rows) < 4:
+                    rows.append({"label": "Waiver adds this season",
+                                 "value": _fmt_num(counts["waiver_adds"])})
     elif intent == "watchlist":
         top = pack.get("top_mover") or {}
         if top.get("value") is not None:
@@ -1229,9 +1327,9 @@ def _name_waiver_receipts(pack: dict, receipts: list) -> list:
     return out
 
 
-def _required_numbers(intent: str, pack: dict) -> set[str]:
+def _required_numbers(intent: str, pack: dict, question: str | None = None) -> set[str]:
     out: set[str] = set()
-    for row in _required_receipts(intent, pack):
+    for row in _required_receipts(intent, pack, question):
         out |= _canon_numbers(row["value"])
     return out
 
@@ -1253,8 +1351,9 @@ def _surface_numbers(data: dict, actions: list) -> set[str]:
     return out
 
 
-def _missing_key_numbers(intent: str, pack: dict, data: dict, actions: list) -> list[str]:
-    required = _required_numbers(intent, pack)
+def _missing_key_numbers(intent: str, pack: dict, data: dict, actions: list,
+                         question: str | None = None) -> list[str]:
+    required = _required_numbers(intent, pack, question)
     if not required:
         return []
     missing = required - _surface_numbers(data, actions)
@@ -1268,14 +1367,15 @@ def _missing_key_numbers(intent: str, pack: dict, data: dict, actions: list) -> 
     return sorted(missing, key=_key)
 
 
-def _ensure_required_receipts(intent: str, pack: dict, receipts: list) -> list:
+def _ensure_required_receipts(intent: str, pack: dict, receipts: list,
+                              question: str | None = None) -> list:
     """Inject any required receipt rows the final answer still lacks.
 
     Model receipts are kept first; a missing required row is appended while
     there is room (receipts cap at 4), otherwise it replaces the last
     receipt that is not itself a required row.
     """
-    required = _required_receipts(intent, pack)
+    required = _required_receipts(intent, pack, question)
     if not required:
         return receipts
     out = list(receipts)
@@ -1735,7 +1835,15 @@ def _ensure_required_mentions(intent: str, pack: dict, data: dict, receipts: lis
             sentences.append(f"The top front office trade target is with {names[0]}.")
         elif kind == "league":
             sentences.append(f"That comparison also includes {_join_names(names)}.")
+        elif kind == "live_team":
+            sentences.append(f"That game involves {_join_names(names)}.")
+        elif kind == "draft_clock":
+            sentences.append(f"The team on the clock is {names[0]}.")
+        elif kind == "draft_best":
+            sentences.append(f"The best available player is {names[0]}.")
         elif len(names) == 1:
+            # Only kind "stretch" (playoff-stretch opponents) reaches
+            # this fall-through; every other kind has its own branch.
             sentences.append(f"That stretch includes {names[0]}.")
         else:
             sentences.append("That stretch runs through " + _join_names(names) + ".")
@@ -3411,7 +3519,7 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
     data = _draft(system, payload, allowed)
     # Quality pass: key-number citation + internal language. One combined
     # regeneration naming both defects, then deterministic fallbacks below.
-    missing = _missing_key_numbers(intent, pack, data, actions)
+    missing = _missing_key_numbers(intent, pack, data, actions, question)
     internal = _internal_hits(data)
     if missing or internal:
         logger.info("[assistant] quality defects (missing=%s, internal=%s), regenerating once",
@@ -3428,11 +3536,11 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
             data = _draft(system + _QUALITY_SUFFIX, retry_payload, allowed)
         except Exception:
             logger.info("[assistant] quality retry failed; keeping first draft", exc_info=True)
-        missing = _missing_key_numbers(intent, pack, data, actions)
+        missing = _missing_key_numbers(intent, pack, data, actions, question)
         internal = _internal_hits(data)
     if internal:
         data = _strip_internal_language(data)
-    receipts = _ensure_required_receipts(intent, pack, _final_receipts(data, allowed))
+    receipts = _ensure_required_receipts(intent, pack, _final_receipts(data, allowed), question)
     if intent == "waivers":
         receipts = _name_waiver_receipts(pack, receipts)
     if intent == "trade_eval":

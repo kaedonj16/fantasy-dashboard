@@ -1348,6 +1348,8 @@ def _playoffs(pack):
     receipts = []
     if me.get("playoff_pct") is not None:
         receipts.append({"label": "Your playoff odds (%)", "value": fmt(me["playoff_pct"])})
+    if me.get("bye_pct") is not None:
+        receipts.append({"label": "First-round bye odds (%)", "value": fmt(me["bye_pct"])})
     traj = pack.get("odds_trajectory") or {}
     if traj.get("start_pct") is not None and traj.get("start_week") is not None:
         receipts.append({"label": f"Your playoff odds in Week {traj['start_week']} (%)",
@@ -1355,9 +1357,9 @@ def _playoffs(pack):
     if scen.get("wins_to_clinch") is not None:
         receipts.append({"label": "Wins to clinch", "value": fmt(scen["wins_to_clinch"])})
     elif me.get("wins_still_needed") is not None:
-        receipts.append({"label": "Wins still needed (projected)",
+        receipts.append({"label": "Wins still needed (projected cut line)",
                          "value": fmt(me["wins_still_needed"])})
-    if pack.get("weeks_remaining") is not None:
+    if pack.get("weeks_remaining") is not None and len(receipts) < 4:
         receipts.append({"label": "Weeks remaining", "value": fmt(pack["weeks_remaining"])})
     ans = _base("playoffs", pack)
     if pack.get("odds_soft"):
