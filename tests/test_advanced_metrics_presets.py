@@ -71,10 +71,14 @@ def test_presets_have_valid_ordered_metrics_primary_position_and_sort():
         assert preset["position"] == position
         assert preset["sort"] == "desc"
         assert preset.get("kind") != "decision"
-        # rb preset has 12 metrics (7 base + 5 situational usage shares);
-        # receiving/wr/te have 8 since targets_per_snap was surfaced there.
-        expected_count = 12 if preset_id == "rb" else (
-            8 if preset_id in ("receiving", "wr", "te") else 7)
+        # rb preset has 14 metrics (7 base + 5 situational usage shares +
+        # the per-snap pair); wr/te have 10 and general has 9 since
+        # pts_per_snap / yards_per_snap were surfaced there; receiving
+        # has 8 since targets_per_snap was surfaced there.
+        expected_count = 14 if preset_id == "rb" else (
+            10 if preset_id in ("wr", "te") else (
+            9 if preset_id == "general" else (
+            8 if preset_id == "receiving" else 7)))
         assert len(preset["metrics"]) == expected_count
         assert len(set(preset["metrics"])) == expected_count
         assert all(key in LEADERBOARD_METRICS for key in preset["metrics"])

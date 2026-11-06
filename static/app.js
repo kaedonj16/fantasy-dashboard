@@ -24044,6 +24044,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
   ];
   const rbMetrics = [
     'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
+    'pts_per_snap', 'yards_per_snap', 'first_down_rate',
     'opportunity_share', 'rz_opp_share',
     'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
     'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
@@ -24052,7 +24053,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
   ];
   const wrTeMetrics = [
     'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
-    'targets_per_snap',
+    'targets_per_snap', 'pts_per_snap', 'yards_per_snap', 'first_down_rate',
     'snap_share', 'opportunity_share', 'rz_target_share',
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
     'contested_catch_rate', 'drop_rate', 'uncatchable_tgt_rate',
@@ -24099,7 +24100,8 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
   // Fallback label map for keys missing from cfg
   const fallbackLabels = {
     yards_per_target:'Yards/Target', catch_rate:'Catch Rate', yprr:'Yds/Route Run',
-    targets_per_snap:'Targets/Snap',
+    targets_per_snap:'Targets/Snap', pts_per_snap:'Points/Snap',
+    yards_per_snap:'Yards/Snap', first_down_rate:'First Down Rate',
     yards_per_reception:'Yards/Rec', target_quality_score:'Target Quality',
     yards_after_catch:'YAC', yards_after_catch_per_reception:'YAC/Rec',
     avg_depth_of_target:'aDOT', contested_catch_rate:'Contested Catch %',
@@ -24177,6 +24179,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
       // Decimal-stored rates (0-1)
       'catch_rate': 1, 'snap_share': 1, 'rush_td_rate': 0.08, 'targets_per_snap': 0.25,
+      'pts_per_snap': 0.6, 'first_down_rate': 0.7,
 
       // Percentage-stored rates (0-100)
       'completion_pct': 85, 'adjusted_completion_rate': 90,
@@ -24187,7 +24190,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'opportunity_share': 25,
 
       // Raw rate metrics
-      'td_rate': 0.06, 'int_rate': 0.04,
+      'td_rate': 0.06, 'int_rate': 0.04, 'yards_per_snap': 3.2,
 
       // Counting / volume
       'expected_tds': 15, 'xtd_per_game': 1.2, 'td_over_expected': 8,
