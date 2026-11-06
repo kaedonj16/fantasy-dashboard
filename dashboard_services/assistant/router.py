@@ -56,7 +56,7 @@ SCHEMA = {
         "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
         "replace_mode": {"type": ["string", "null"], "enum": ["younger", "older", "cheaper", None]},
         "waiver_mode": {"type": ["string", "null"], "enum": ["stash", "drop", "stream", None]},
-        "settings_topic": {"type": ["string", "null"], "enum": ["deadline", "playoffs", "waivers", "all", None]},
+        "settings_topic": {"type": ["string", "null"], "enum": ["deadline", "playoffs", "waivers", "scoring", "format", "all", None]},
         "value_in_picks": {"type": ["boolean", "null"]},
         "shop_pool": {"type": ["boolean", "null"]},
         "slot": {"type": ["string", "null"]},
@@ -150,7 +150,11 @@ SYSTEM = (
     "league_settings: a question about the league's own rules or settings, not advice: "
     "when the trade deadline is (settings_topic deadline), when the playoffs start or how "
     "many teams make them (settings_topic playoffs), or how waivers work in this league, "
-    "the waiver system, FAAB budget, or when waivers process (settings_topic waivers). "
+    "the waiver system, FAAB budget, or when waivers process (settings_topic waivers), "
+    "the scoring format or point values (is my league PPR or half PPR, how many points "
+    "is a passing TD: settings_topic scoring), or the league format and roster shape "
+    "(superflex or 1QB, how many teams are in the league, bench spots, roster size: "
+    "settings_topic format). "
     "A bare league settings or league rules question is league_settings with settings_topic "
     "all. Asking what to do before the deadline, playoff odds, or who to add from waivers "
     "keeps its own intent, never league_settings. "
@@ -215,7 +219,7 @@ SYSTEM = (
     "score, what a team needs tonight, or how a player is doing today. NOT a pregame preview "
     "or a win probability before kickoff (that is matchup), and NOT which NFL teams play "
     "tonight (that is nfl_schedule). "
-    "draft: a fantasy draft question: who is on the clock, the best player still available, "
+    "draft: a fantasy draft question: when the draft is or when it starts, who is on the clock, the best player still available, "
     "my next pick, who should I draft, my roster's needs in the draft, or draft prep (who "
     "should I target at a pick like 1.03; draft_slot carries that pick as 'R.S', and an "
     "overall pick named without a round ('pick 3', 'third overall') is a round-1 pick, so "
@@ -700,6 +704,39 @@ _SETTINGS_ALL_RE = re.compile(
     r"\bwhat are (the |my |our )?league (settings|rules)\b"
     r"|\bleague settings\b")
 
+# Scoring settings: the format label (PPR / half / standard) and the
+# point values the settings publish. League-framed on purpose: a player
+# question that merely mentions PPR ("top-5 RB in PPR") is not asking
+# for the league's scoring settings.
+_SETTINGS_SCORING_RE = re.compile(
+    r"\bppr or (half|standard)\b|\bhalf( ppr)? or ppr\b|\bstandard or ppr\b"
+    r"|\bis (my|our|the|this) league (a )?(full[- ]ppr|half[- ]ppr|ppr|standard)\b"
+    r"|\bis (this|it) (a )?(full[- ]ppr|half[- ]ppr|ppr|standard)\b"
+    r"|\b(full|half)[- ]ppr league\b|\bppr league\b"
+    r"|\bscoring (format|settings|system)\b|\bwhat scoring\b"
+    r"|\bhow many points (is|are) (a |an )?(passing|rushing|receiving) (td|touchdown)\b"
+    r"|\bhow many points for (a |an )?(passing|rushing|receiving )?(td|touchdown|reception|catch)\b"
+    r"|\b(passing|rushing|receiving) (td|touchdown) worth\b"
+    r"|\bhow many points (is|are) (a |an )?(td|touchdown) worth\b"
+    r"|\bhow many points? per reception\b"
+    r"|\bpoints? per reception (do we|in (my|our|the) league)\b"
+    r"|\bper[- ]reception scoring\b")
+
+# League format / roster shape: superflex vs 1QB, team count, bench
+# spots, roster size. The bench shapes name the SPOTS, not a player:
+# "should I bench Gibbs?" carries no spots/size/count phrasing and
+# stays with start_sit below.
+_SETTINGS_FORMAT_RE = re.compile(
+    r"\bsuperflex\b[^?]{0,24}\bleague\b|\bleague\b[^?]{0,24}\bsuperflex\b"
+    r"|\bis (this|it) (a )?superflex\b|\bare we (a )?superflex\b"
+    r"|\bsuperflex or 1 ?qb\b|\b1 ?qb or superflex\b"
+    r"|\b(two[- ]qb|2 ?qb) league\b"
+    r"|\bis (this|my|our|the) league (a )?(1 ?qb|one[- ]qb)\b"
+    r"|\bhow many teams (are in|in (my|the|our|this)|does (my|our|the) league have)\b"
+    r"|\bbench spots?\b|\bbench size\b|\bhow many bench\b"
+    r"|\bhow big is (my|the|our) bench\b"
+    r"|\broster size\b|\bhow many roster spots\b|\broster spots\b")
+
 
 def _settings_topic_in(m: str):
     """The league-settings topic a message asks about, or None.
@@ -715,6 +752,10 @@ def _settings_topic_in(m: str):
         return "playoffs"
     if _SETTINGS_WAIVERS_RE.search(m):
         return "waivers"
+    if _SETTINGS_SCORING_RE.search(m):
+        return "scoring"
+    if _SETTINGS_FORMAT_RE.search(m):
+        return "format"
     return None
 
 # Player fallthrough for the keyword fallback, the last resort before
@@ -1356,6 +1397,13 @@ def _keyword_route(message: str) -> dict:
         _overall = _overall_pick_in(m)
         if _overall is not None:
             _slot_text = f"1.{_overall:02d}"
+    if re.search(r"\bwhen (is|does|was) (the |our |my |this )?(rookie )?draft\b"
+                 r"|\bwhen do (we|i) draft\b|\bdraft (date|day)\b", m):
+        # "When is our draft?" asks for the draft itself (its scheduled
+        # start rides in the draft pack), not an in-draft action: claimed
+        # on the when-shape alone, before the start anchor below would
+        # read "when does the draft start" as a start/sit question.
+        return {**base, "intent": "draft", "draft_slot": _slot_text}
     if re.search(r"\bdraft\b", m) and re.search(
             r"best available|on the clock|my (next )?pick|who should (i|we)|"
             r"who do i take|still available|up next|available|needs?|target", m):
@@ -1435,6 +1483,19 @@ def _keyword_route(message: str) -> dict:
     if re.search(r"\bwho (should|can|could) i (trade away|shop|move|sell)\b"
                  r"|\btrade away\b", m):
         return {**base, "intent": "trade_finding", "shop_pool": True}
+    # Trade NEWS about a named player is a player question (the player
+    # pack carries his headlines), not a deal to evaluate: the generic
+    # trade anchor below would otherwise read "trade rumors about X"
+    # as trade_eval. Deal structure (a side given or received, an
+    # accept call, a should-I-trade ask) keeps trade_eval.
+    rumor_name = _player_name_in(message)
+    if (rumor_name
+            and re.search(r"\brumou?rs?\b|\breportedly\b|\btrade news\b|"
+                          r"\bnews\b|\bmight get traded\b|\btrade request\b|"
+                          r"\bwants (out|a trade)\b|\btrade block\b", m)
+            and not re.search(r"\bshould (i|we) trade\b|\baccept\b|"
+                              r"\bgive\b|\breceive\b|\bget back\b", m)):
+        return {**base, "intent": "player", "player_names": [rumor_name]}
     if re.search(r"\btrad(?:e|es|ed|ing)\b|\bswap\b"
                  r"|\bshould i accept\b|\baccept (this|the) (trade|deal|offer)\b", m):
         return {**base, "intent": "trade_eval"}
@@ -1468,6 +1529,13 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "rookie",
                 "draft_year": int(year.group(1)) if year else None,
                 "position": pos.group(1).upper() if pos else None}
+    if re.search(r"\bhow many points did (my team|i|we) score\b"
+                 r"|\bwhat did (my team|i|we) score\b", m):
+        # A score question asks for the number, not the weekly digest:
+        # the matchup pack carries both sides' current points (final
+        # when the game is final). Digest shapes ("how did my team do
+        # this week") keep falling to this_week below.
+        return {**base, "intent": "matchup"}
     if re.search(r"what should i do|this week|my team", m):
         return {**base, "intent": "this_week"}
     if re.search(r"target share|snap share|route|metric|what is|who leads", m):
