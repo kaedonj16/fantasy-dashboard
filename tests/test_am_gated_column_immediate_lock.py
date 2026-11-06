@@ -33,6 +33,8 @@ def _extract_fn(name):
 
 _MLOCKED_JS = _extract_fn("_mLocked")
 _AMROWKEY_JS = _extract_fn("amRowKey")
+_RANGE_PARAMS_JS = (_extract_fn("amRangeFetchParams") + "\n"
+                    + _extract_fn("_amApplyRangeParams"))
 _FETCH_EXTRA_JS = _extract_fn("fetchExtraData")
 
 FREE_CFG = {
@@ -82,7 +84,7 @@ def _run_fetch_scenario(cfg, key, stub):
         "  fetchCalls.push({ url: url, mode: mode || null });\n"
         "  return %s;\n"
         "}\n"
-        "%s\n%s\n%s\n"
+        "%s\n%s\n%s\n%s\n"
         "fetchExtraData('%s');\n"
         "setTimeout(function() {\n"
         "  console.log(JSON.stringify({ extraData: state.extraData,\n"
@@ -94,6 +96,7 @@ def _run_fetch_scenario(cfg, key, stub):
             _FETCH_STUBS[stub],
             _MLOCKED_JS,
             _AMROWKEY_JS,
+            _RANGE_PARAMS_JS,
             _FETCH_EXTRA_JS,
             key,
         )

@@ -80,6 +80,8 @@ def _extract_row_filter():
 
 
 _FETCH_DATA_JS = _extract_fn("fetchData")
+_RANGE_PARAMS_JS = (_extract_fn("amRangeFetchParams") + "\n"
+                    + _extract_fn("_amApplyRangeParams"))
 _ROW_FILTER_JS = _extract_row_filter()
 
 
@@ -196,6 +198,8 @@ def _run_fetch_scenario(prev_stub, body):
     script = (
         _FETCH_PREAMBLE
         + "function _amCmpFetch(url, ms) { return %s; }\n" % prev_stub
+        + _RANGE_PARAMS_JS
+        + "\n"
         + _FETCH_DATA_JS
         + "\n"
         + body

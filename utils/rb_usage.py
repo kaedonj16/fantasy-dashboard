@@ -508,12 +508,20 @@ def get_all_player_situational_shares(
     week_start: Optional[int] = None,
     week_end: Optional[int] = None,
     rush_only: bool = False,
+    last_n_games: Optional[int] = None,
 ) -> Dict[str, Dict[str, float]]:
     """Compute per-player situational touch shares for all teams.
 
     week=None aggregates the full season; a single week filters to it;
     week_start/week_end restrict to that inclusive range. rush_only=True
     counts rushing attempts only, excluding receptions.
+
+    ``last_n_games`` replaces any calendar window with a per-player one:
+    each player's shares are computed over his own N most recent game
+    weeks (weeks in which he recorded a touch), with the team totals
+    taken over those same weeks for that player, and the entry gains a
+    "games" count of the weeks included. Bye weeks and missed games
+    reach further back instead of shrinking the sample.
 
     Only roster RBs are counted, so WR/TE/QB touches never enter the
     shares (and no non-RB is ever labeled RB downstream). Fail-open to
@@ -543,12 +551,8 @@ def get_all_player_situational_shares(
 
     result: Dict[str, Dict[str, float]] = {}
     teams = pbp["posteam"].dropna().unique()
-    for team in teams:
-        team = str(team).strip()
-        if not team:
-            continue
-        buckets = _compute_team_buckets(
-            pbp, team, week, week_start, week_end, rush_only=rush_only)
+
+    def _rb_filtered(buckets, team):
         # RB-only: shares are of team RB touches, so exclude WR/TE/QB touches.
         # Fail-open when roster data is unavailable.
         rb_ids = rb_by_team.get(team)
@@ -557,6 +561,72 @@ def get_all_player_situational_shares(
                 buckets[key] = {
                     pid: p for pid, p in buckets[key].items() if pid in rb_ids
                 }
+        return buckets
+
+    if last_n_games:
+        # Per-week buckets first; each player then selects his own N most
+        # recent game weeks from the weeks he actually touched the ball.
+        n = int(last_n_games)
+        season_weeks = set()
+        for w in pbp["week"].dropna().unique():
+            try:
+                season_weeks.add(int(w))
+            except (TypeError, ValueError):
+                continue
+        for team in teams:
+            team = str(team).strip()
+            if not team:
+                continue
+            weekly = []
+            for w in sorted(season_weeks):
+                b = _rb_filtered(
+                    _compute_team_buckets(pbp, team, week=w, rush_only=rush_only),
+                    team)
+                if any(b[k] for k in b):
+                    weekly.append((w, b))
+            if not weekly:
+                continue
+            # Player -> [(week, buckets)] in ascending week order, plus the
+            # display name from his "all" bucket entries.
+            appearances: Dict[str, list] = {}
+            names: Dict[str, str] = {}
+            for w, b in weekly:
+                for pid, entry in b["all"].items():
+                    appearances.setdefault(pid, []).append((w, b))
+                    names.setdefault(pid, entry["name"])
+            for pid, apps in appearances.items():
+                picked = apps[-n:]
+                picked_weeks = {w for w, _ in picked}
+                for sit_key, metric_key in key_map.items():
+                    touches = 0
+                    total = 0
+                    for w, b in weekly:
+                        if w not in picked_weeks:
+                            continue
+                        entry = b[sit_key].get(pid)
+                        if entry:
+                            touches += entry["touches"]
+                        total += sum(p["touches"] for p in b[sit_key].values())
+                    if total == 0:
+                        continue
+                    if pid not in result:
+                        result[pid] = {"name": names.get(pid) or pid,
+                                       "team": team, "games": len(picked)}
+                    result[pid][metric_key] = round(100.0 * touches / total, 1)
+        # Fill missing situations with 0.0
+        for pid in result:
+            for metric_key in key_map.values():
+                result[pid].setdefault(metric_key, 0.0)
+        return result
+
+    for team in teams:
+        team = str(team).strip()
+        if not team:
+            continue
+        buckets = _rb_filtered(
+            _compute_team_buckets(
+                pbp, team, week, week_start, week_end, rush_only=rush_only),
+            team)
         # For each situation, compute each player's share of team touches
         for sit_key, metric_key in key_map.items():
             b = buckets[sit_key]

@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-06",
+        "tag": "update",
+        "text": "Advanced Metrics: Last 2 and Last 4 now mean each player's last games, not the last calendar weeks. A player whose team had a bye, or who missed a game, still gets a full sample: the board reaches back to his most recent 2 or 4 games played, so recent-form rates compare on equal footing. Picking exact weeks still works the same as before.",
+        "link": "/advanced-metrics"
+    },
+    {
+        "date": "2026-11-06",
         "tag": "new",
         "text": "Draft Database is here: browse completed Sleeper drafts from across the site, with the full board for every draft, the best draft in each league, biggest steals and busts, and ADP by segment. Filter by season, startup or rookie, dynasty or redraft, 1QB or Superflex, and league size.",
         "link": "/draft-database"

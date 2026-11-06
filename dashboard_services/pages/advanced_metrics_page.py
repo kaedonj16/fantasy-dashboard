@@ -366,8 +366,8 @@ def build_advanced_metrics_body(
                 <div class="am-weekbar-head">
                   <div class="otc-day-filters am-quick-ranges" id="amQuickRanges">
                     <button type="button" class="otc-day-filter am-qr active" data-range="">Season</button>
-                    <button type="button" class="otc-day-filter am-qr" data-range="last2">Last 2</button>
-                    <button type="button" class="otc-day-filter am-qr" data-range="last4">Last 4</button>
+                    <button type="button" class="otc-day-filter am-qr" data-range="last2">Last 2 games</button>
+                    <button type="button" class="otc-day-filter am-qr" data-range="last4">Last 4 games</button>
                   </div>
                 </div>
                 <div id="amWkBarHost"></div>
@@ -3021,9 +3021,7 @@ _AM_JS = r"""
       const vol = defaultVol(key);
       if (vol) p.set('min_vol', vol);
       // Apply the same week range as the primary metric so columns stay in sync.
-      const { ws, we } = resolveWeekRange();
-      if (ws) p.set('week_start', String(ws));
-      if (we) p.set('week_end',   String(we));
+      _amApplyRangeParams(p);
       return p;
     }
     const curSeason = state.season || (cfg.seasons && cfg.seasons[0] ? String(cfg.seasons[0]) : '');
@@ -3107,9 +3105,7 @@ _AM_JS = r"""
     const vols = [];
     keys.forEach(function(k) { const v = defaultVol(k); if (v) vols.push(k + ':' + v); });
     if (vols.length) p.set('min_vol_map', vols.join(','));
-    const { ws, we } = resolveWeekRange();
-    if (ws) p.set('week_start', String(ws));
-    if (we) p.set('week_end', String(we));
+    _amApplyRangeParams(p);
     return '/api/advanced-metrics/leaderboard?' + p;
   }
   // Load several extra-metric columns. PRO-locked columns settle locally as
@@ -3822,7 +3818,9 @@ _AM_JS = r"""
       {id:'player', kind:'player', label:'Player', sortKey:'name'},
       {id:'season', kind:'season', label:'Year'},
       {id:'games', kind:'games', label:'G', title:'Games played in the selected period', sortKey:'games'},
-      {id:'weeks', kind:'weeks', label:'Wks', title:'Weeks in range'}
+      {id:'weeks', kind:'weeks',
+       label: (state.weekRange === 'last2' || state.weekRange === 'last4') ? 'Gms' : 'Wks',
+       title: (state.weekRange === 'last2' || state.weekRange === 'last4') ? 'Games included (per player)' : 'Weeks in range'}
     ];
     contextColsFor().forEach(c => cols.push(c));
     if (state.filterColKeys) [...state.filterColKeys].forEach(function(key) {
@@ -4587,6 +4585,35 @@ _AM_JS = r"""
     return { ws: null, we: null };
   }
 
+  // Fetch-param view of the active range. Last 2 / Last 4 are per-player
+  // last-games windows: they travel as last_n_games and deliberately NOT
+  // as week_start/week_end, which remain the calendar Custom range.
+  // resolveWeekRange() above still resolves the calendar span for the
+  // week bar, URL sync and sort order; only the fetch params differ.
+  function amRangeFetchParams() {
+    if (!state.weekRange || !isMetricWeeklyCapable()) return { lastN: null, ws: null, we: null };
+    if (state.weekRange === 'last2') return { lastN: 2, ws: null, we: null };
+    if (state.weekRange === 'last4') return { lastN: 4, ws: null, we: null };
+    const r = resolveWeekRange();
+    return { lastN: null, ws: r.ws, we: r.we };
+  }
+  function _amApplyRangeParams(p) {
+    const r = amRangeFetchParams();
+    if (r.lastN) p.set('last_n_games', String(r.lastN));
+    if (r.ws) p.set('week_start', String(r.ws));
+    if (r.we) p.set('week_end', String(r.we));
+    return p;
+  }
+  // Short label for the active range in notes: games wording for the
+  // per-player shortcuts, the week span for a Custom range.
+  function _amRangeNoteLabel() {
+    if (state.weekRange === 'last2') return 'Last 2 games';
+    if (state.weekRange === 'last4') return 'Last 4 games';
+    const wr = resolveWeekRange();
+    if (wr.ws && wr.we) return 'W' + wr.ws + '–W' + wr.we;
+    return '';
+  }
+
   function updateWeekNote(isWeekFiltered, weekCapable) {
     const el = document.getElementById('amWeekNote');
     if (!el) return;
@@ -5029,9 +5056,7 @@ _AM_JS = r"""
     if (graphPos) p.set('position', graphPos);
     const vol = isX ? _amGraphMinVol : defaultVol(metricKey);
     if (vol) p.set('min_vol', vol); else p.delete('min_vol');
-    const wr = resolveWeekRange();
-    if (wr.ws) p.set('week_start', String(wr.ws));
-    if (wr.we) p.set('week_end', String(wr.we));
+    _amApplyRangeParams(p);
     return p;
   }
   let _amGraphToken = 0;
@@ -5059,7 +5084,8 @@ _AM_JS = r"""
   // never show stale data after the user switches the page-level filters.
   function _amSyncLbCache() {
     const sig = [state.season || '', state.combine ? '1' : '0', cfg.leagueId || '', cfg.platform || '',
-                 (resolveWeekRange().ws || ''), (resolveWeekRange().we || '')].join('|');
+                 (resolveWeekRange().ws || ''), (resolveWeekRange().we || ''),
+                 (amRangeFetchParams().lastN || '')].join('|');
     if (sig !== _amLbCacheSig) { _amLbCache.clear(); _amLbCacheSig = sig; }
   }
   // Sync the graph-modal's position button active states to _amGraphPos.
@@ -5158,8 +5184,8 @@ _AM_JS = r"""
       const bits = [];
       bits.push(state.season || (cfg.seasons && cfg.seasons[0]) || '');
       bits.push(_amGraphPos ? _amGraphPos : 'All positions');
-      const wr = resolveWeekRange();
-      if (wr.ws && wr.we) bits.push('W' + wr.ws + '–W' + wr.we);
+      const _rl = _amRangeNoteLabel();
+      if (_rl) bits.push(_rl);
       note.textContent = bits.filter(Boolean).join(' · ');
     }
     modal.style.display = 'flex';
@@ -5930,8 +5956,8 @@ _AM_JS = r"""
         const note = document.getElementById('amGraphCtxNote');
         if (note) {
           const bits = [state.season || '', _amGraphPos || 'All positions'];
-          const wr = resolveWeekRange();
-          if (wr.ws && wr.we) bits.push('W' + wr.ws + '–W' + wr.we);
+          const _rl = _amRangeNoteLabel();
+          if (_rl) bits.push(_rl);
           note.textContent = bits.filter(Boolean).join(' · ');
         }
         window.amRenderGraph();
@@ -6207,9 +6233,11 @@ _AM_JS = r"""
     // re-firing the primary request plus every extra-column request. That
     // burst is what made columns time out on preset re-apply.
     const _sigRange = resolveWeekRange();
+    const _sigFetch = amRangeFetchParams();
     const _boardSig = [state.metric, state.season,
       (state.combine && amIsMultiSeason()) ? 'c' : '',
-      state.minVol, _sigRange.ws || '', _sigRange.we || ''].join('|');
+      state.minVol, _sigRange.ws || '', _sigRange.we || '',
+      _sigFetch.lastN || ''].join('|');
     if (_boardSig === state._boardSig && state.rows.length) { render(); _ensureWeeklyBreakouts(); return; }
     // paywall removed -- advanced metrics is available to all users
     state.fetching = true;
@@ -6222,11 +6250,11 @@ _AM_JS = r"""
     if (state.combine && amIsMultiSeason()) params.set('combine', '1');
     if (state.minVol) params.set('min_vol', state.minVol);
 
-    // Add week range params when a filter is active.
+    // Add week range params when a filter is active. Last 2 / Last 4 ride
+    // as last_n_games (per-player last games); Custom rides as week bounds.
     const weekCapable = cfg.metrics[state.metric] && cfg.metrics[state.metric].weeklyCapable;
     const { ws, we } = resolveWeekRange();
-    if (ws) params.set('week_start', String(ws));
-    if (we) params.set('week_end',   String(we));
+    _amApplyRangeParams(params);
 
     // Determine the previous season to fetch for YoY trend arrows.
     // Skip YoY when a week range is active (not meaningful cross-season).
@@ -6796,8 +6824,8 @@ _AM_JS = r"""
     if (!el) return;
     const parts = [amSeasonLabel(amSelectedSeasons())];
     let weekLbl = 'Season';
-    if (state.weekRange === 'last2') weekLbl = 'Last 2';
-    else if (state.weekRange === 'last4') weekLbl = 'Last 4';
+    if (state.weekRange === 'last2') weekLbl = 'Last 2 games · per player';
+    else if (state.weekRange === 'last4') weekLbl = 'Last 4 games · per player';
     else {
       const r = resolveWeekRange();
       if (r.ws != null && r.we != null) weekLbl = 'Weeks ' + r.ws + '-' + r.we;
@@ -6843,8 +6871,8 @@ _AM_JS = r"""
     return w ? ('Min ' + state.minVol + ' ' + w) : ('Min ' + state.minVol);
   }
   function _amWeekChipLabel() {
-    if (state.weekRange === 'last2') return 'Last 2 weeks';
-    if (state.weekRange === 'last4') return 'Last 4 weeks';
+    if (state.weekRange === 'last2') return 'Last 2 games';
+    if (state.weekRange === 'last4') return 'Last 4 games';
     if (state.weekRange === 'last8') return 'Last 8 weeks';
     if (state.weekRange === 'last12') return 'Last 12 weeks';
     const r = resolveWeekRange();
@@ -6999,7 +7027,7 @@ _AM_JS = r"""
         return '<option value="' + v + '"' + (state.weekRange === v ? ' selected' : '') + '>' + lbl + '</option>';
       };
       body = field('Week range', '<select id="amEdWeeks" class="am-select">'
-        + opt('', 'Full season') + opt('last2', 'Last 2') + opt('last4', 'Last 4')
+        + opt('', 'Full season') + opt('last2', 'Last 2 games') + opt('last4', 'Last 4 games')
         + opt('last8', 'Last 8') + opt('last12', 'Last 12')
         + (state.weekRange === 'custom' ? opt('custom', _amWeekChipLabel()) : '')
         + '</select>')

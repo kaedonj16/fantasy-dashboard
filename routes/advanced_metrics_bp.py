@@ -176,6 +176,15 @@ def _compute_leaderboard_payload(q, premium_check, enrich_ctx):
         if week_start > week_end:
             week_start, week_end = week_end, week_start
 
+    # Last-N-games mode (the page's Last 2 / Last 4 shortcuts): instead of a
+    # calendar window, each player is aggregated over his own N most recent
+    # game weeks. Invalid values are ignored, like the week bounds; a
+    # calendar range, when also sent, wins (the client never sends both).
+    last_n_str = (q.get("last_n_games") or "").strip()
+    last_n_games = int(last_n_str) if last_n_str.isdigit() else None
+    if last_n_games is not None and not (1 <= last_n_games <= 18):
+        last_n_games = None
+
     # A metric is week-filterable if it has a usage-table aggregation
     # (_WEEKLY_METRICS), an NGS/FTN/EPA weekly aggregation, or a situational
     # (play-by-play) range computation. Week ranges are season-specific, so
@@ -183,21 +192,32 @@ def _compute_leaderboard_payload(q, premium_check, enrich_ctx):
     adv_weekly       = adv_weekly_metric_supported(metric)
     weekly_capable   = (metric in _WEEKLY_METRICS) or adv_weekly or (metric in SITUATIONAL_METRICS)
     is_multi_season  = isinstance(season, list)
-    is_week_filtered = week_start is not None and week_end is not None and weekly_capable and not is_multi_season
+    is_calendar_filtered = (week_start is not None and week_end is not None
+                            and weekly_capable and not is_multi_season)
+    is_last_n = (last_n_games is not None and weekly_capable
+                 and not is_multi_season and isinstance(season, int)
+                 and not is_calendar_filtered)
+    is_week_filtered = is_calendar_filtered or is_last_n
 
     # An omitted threshold means "use the shared default for this completed
     # portion". An explicit value (including a stricter one) is never changed.
     qualification = None
     if isinstance(season, int):
-        from utils.season_qualification import qualification_policy
+        from utils.season_qualification import qualification_policy, scaled_minimum
         qualification = qualification_policy(
-            season, week_start=week_start if is_week_filtered else None,
-            week_end=week_end if is_week_filtered else None)
+            season, week_start=week_start if is_calendar_filtered else None,
+            week_end=week_end if is_calendar_filtered else None)
         if not min_vol_str:
             _mv = (LEADERBOARD_METRICS[metric].get("min_vol") or {})
             _opts = _mv.get("opts") or []
             _full_default = int(_opts[0]) if _opts else 1
-            min_vol = qualification.minimum(_mv.get("col") or "games", _full_default)
+            if is_last_n:
+                # The sample is the N selected games, so scale the default
+                # gate to that sample with the same linear rule the range
+                # policy applies over its completed rounds.
+                min_vol = scaled_minimum(_full_default, last_n_games)
+            else:
+                min_vol = qualification.minimum(_mv.get("col") or "games", _full_default)
 
     # Value metrics (VORP/WAR) are league-size aware; derive num_teams from
     # the league context when available, else standard 12-team. Resolved
@@ -220,8 +240,9 @@ def _compute_leaderboard_payload(q, premium_check, enrich_ctx):
     # effective parameter that shapes the payload.
     _cache_key = (
         metric, position, tuple(selected_seasons), min_vol, bool(combine),
-        week_start if is_week_filtered else None,
-        week_end if is_week_filtered else None,
+        week_start if is_calendar_filtered else None,
+        week_end if is_calendar_filtered else None,
+        last_n_games if is_last_n else None,
         _num_teams if (metric in VALUE_METRICS and not is_multi_season) else None,
     )
     _cached = _lb_cache_get(_cache_key)
@@ -237,16 +258,19 @@ def _compute_leaderboard_payload(q, premium_check, enrich_ctx):
             players = get_adv_weekly_range_leaderboard(
                 metric, position=position, season=season,
                 week_start=week_start, week_end=week_end, min_vol=min_vol,
+                last_n_games=last_n_games if is_last_n else None,
             )
         elif is_week_filtered and metric in SITUATIONAL_METRICS:
             players = get_situational_leaderboard(
                 metric, position=position, season=season,
                 week_start=week_start, week_end=week_end, limit=500,
+                last_n_games=last_n_games if is_last_n else None,
             )
         elif is_week_filtered:
             players = get_weekly_range_leaderboard(
                 metric, position=position, season=season,
                 week_start=week_start, week_end=week_end, min_vol=min_vol,
+                last_n_games=last_n_games if is_last_n else None,
             )
         else:
             players = get_metric_leaderboard(
@@ -331,8 +355,9 @@ def _compute_leaderboard_payload(q, premium_check, enrich_ctx):
         "vol_col": vol_col,
         "weekly_capable": weekly_capable,
         "is_week_filtered": is_week_filtered,
-        "week_start": week_start if is_week_filtered else None,
-        "week_end": week_end if is_week_filtered else None,
+        "week_start": week_start if is_calendar_filtered else None,
+        "week_end": week_end if is_calendar_filtered else None,
+        "last_n_games": last_n_games if is_last_n else None,
         "selected_seasons": selected_seasons,
         "combine": bool(combine) and is_multi_season,
         "qualification": ({"games_min": qualification.games_min,
