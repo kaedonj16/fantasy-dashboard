@@ -241,11 +241,15 @@ def test_sheet_close_button_is_pinned_shorter():
 def test_movers_default_to_slim_banner():
     body = _body(_html())
     head = _tag(body, "amMoversHead")
-    assert 'aria-expanded="false"' in head, "movers start collapsed"
+    assert 'aria-expanded="false"' in head, "movers popover starts closed"
     _tag(body, "amMoversSummary")
     js = _html()[_html().index("<script>"):_html().index("</script>")]
-    # Collapsed by default; an explicit stored choice still wins.
-    assert "stored === null ? true : stored === '1'" in js
+    # Popover starts closed on every load (chip-editor pattern); the old
+    # in-row collapse persisted its state in localStorage, the popover
+    # deliberately does not. Its behavior is pinned in
+    # tests/test_am_what_changed_popover.py.
+    assert "amMoversCollapsed" not in js
+    assert "amSetMoversPopover(false);" in js
     # Banner counts derive from the fetched movers data.
     assert "efficiency outlier" in js
     assert "heating up" in js
