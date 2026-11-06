@@ -1833,6 +1833,14 @@ def page_league_pro_invite(platform: str, season: int, league_id: str):
     )
 
 
+_PRICING_TITLE = "Pricing - BR Fantasy"
+_PRICING_DESCRIPTION = (
+    "BR Fantasy PRO plans: Starter is $10/year for 1 league, All-Pro is "
+    "$30/year for up to 5 leagues, and Hall of Fame is $50/year for "
+    "unlimited leagues. Roster-aware trade, waiver, draft, and playoff tools."
+)
+
+
 @billing_bp.route("/<platform>/<int:season>/<league_id>/pricing")
 def page_pricing(platform: str, season: int, league_id: str):
     from app import render_page
@@ -1842,7 +1850,8 @@ def page_pricing(platform: str, season: int, league_id: str):
     # lite_js: guests get public.js + seo_lite.css (pricing is card chrome only);
     # signed-in visitors still receive full app.js / dashboard.css via render_page.
     return render_page(
-        "Pricing", league_id, "pricing", body_html, platform, season,
+        _PRICING_TITLE, league_id, "pricing", body_html, platform, season,
+        description=_PRICING_DESCRIPTION,
         lite_js=True,
     )
 
@@ -1858,7 +1867,8 @@ def page_pricing_guest():
         platform = "sleeper"
     body_html = _pricing_body(None, platform)
     return render_page(
-        "Pricing", None, "pricing", body_html, platform, current_season,
+        _PRICING_TITLE, None, "pricing", body_html, platform, current_season,
+        description=_PRICING_DESCRIPTION,
         lite_js=True,
     )
 

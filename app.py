@@ -2582,9 +2582,10 @@ FORM_BODY = """
     </div>
     <div class="ld-pro-side">
       <div class="ld-pro-price">$10</div>
-      <p>per year &middot; all PRO tools, every league</p>
+      <p>per year &middot; all PRO tools for 1 league</p>
       <button type="button" class="ld-btn ld-btn-navy" data-home-pro-open>Get PRO</button>
       <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
+      <a class="ld-pro-pricing-link" href="/pricing">See all plans and pricing</a>
     </div>
   </section>
 

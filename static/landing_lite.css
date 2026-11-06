@@ -4600,6 +4600,8 @@ html[data-theme="dark"] .hp-mb-strip-wk { background: rgba(37, 99, 235, .18); bo
 .ld-pro-price { font-size: 44px; font-weight: 800; letter-spacing: -.03em; color: var(--text); line-height: 1; }
 .ld-pro-side p { margin: 0; font-size: 13px; color: var(--text-muted); }
 .ld-pro-side .home-pro-cta-note { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.ld-pro-pricing-link { font-size: 13px; font-weight: 700; color: var(--brand-blue, #2563eb); text-decoration: none; }
+.ld-pro-pricing-link:hover { text-decoration: underline; }
 
 /* free tools */
 .ld-free { margin-top: 22px; padding: 0; background: none; }
