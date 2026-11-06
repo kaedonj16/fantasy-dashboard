@@ -3071,8 +3071,13 @@ _WEEKLY_METRICS: Dict[str, Any] = {
     "ppr_pts_per_game": {"sql": "AVG(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
     # Per-snap and per-opportunity rates over a week range (weekly table has
     # absolute snaps; snap_pct is 0-100 and would need rescaling).
-    "targets_per_snap": {"sql": "SUM(targets)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(targets)", "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
-    "touches_per_snap": {"sql": "SUM(touches)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(touches)", "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
+    # The volume gate for per-snap rates must be snaps: the leaderboard
+    # handler derives its default min_vol from the season spec, whose
+    # min_vol column is total_snaps. Gating on SUM(targets)/SUM(touches)
+    # instead demands a season's worth of targets/touches inside the range
+    # and empties the board at default settings.
+    "targets_per_snap": {"sql": "SUM(targets)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(snaps)", "min_label": "Min Snaps", "min_opts": [50, 100, 200, 400]},
+    "touches_per_snap": {"sql": "SUM(touches)::float / NULLIF(SUM(snaps), 0)",  "min_col": "SUM(snaps)", "min_label": "Min Snaps", "min_opts": [50, 100, 200, 400]},
     "td_rate_per_opp":  {"sql": "(SUM(rec_tds) + SUM(rush_tds))::float / NULLIF(SUM(touches), 0)", "min_col": "SUM(touches)", "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
     # Boom/bust thresholds mirror utils.consistency._POS_THRESHOLDS exactly
     # (QB 25/15, RB-WR 20/8, TE 15/5). position is in the GROUP BY so the CASE
