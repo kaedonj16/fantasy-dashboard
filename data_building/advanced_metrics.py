@@ -3112,6 +3112,40 @@ _WEEKLY_METRICS: Dict[str, Any] = {
 }
 
 
+def _last_n_games_clause(
+    table: str,
+    season: Optional[int],
+    last_n_games: Optional[int],
+    prefix: str = "",
+) -> tuple:
+    """(sql_fragment, params) restricting rows to each player's N most
+    recent game weeks in ``table`` for the season.
+
+    A game week is a week in which the player has a data row in the table,
+    so byes and missed games never shrink the sample: the window reaches
+    back as far as needed within the season, and a player with fewer games
+    than N simply contributes what he has. ``table``/``prefix`` are internal
+    constants (never user input). Returns ("", []) when last-N mode is off
+    or no single season is in scope (the mode is season-specific by
+    definition, mirroring calendar week ranges).
+    """
+    try:
+        n = int(last_n_games) if last_n_games is not None else 0
+    except (TypeError, ValueError):
+        n = 0
+    if n <= 0 or not season:
+        return "", []
+    sql = (
+        f"({prefix}player_id, {prefix}week) IN ("
+        "SELECT player_id, week FROM ("
+        "SELECT player_id, week, ROW_NUMBER() OVER "
+        "(PARTITION BY player_id ORDER BY week DESC) AS _rn "
+        f"FROM {table} WHERE season = %s"
+        ") _lastn WHERE _lastn._rn <= %s)"
+    )
+    return sql, [int(season), n]
+
+
 def get_weekly_range_leaderboard(
     metric: str,
     position: Optional[str] = None,
@@ -3120,11 +3154,16 @@ def get_weekly_range_leaderboard(
     week_end: Optional[int] = None,
     min_vol: Optional[int] = None,
     limit: int = 500,
+    last_n_games: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Players ranked by a weekly-aggregate metric over a week range.
 
     Queries player_weekly_metrics. Returns [{player_id, name, team, position, value, games, vol}].
     games/vol = weeks played in the range. min_vol filters on min_col (e.g. SUM(targets) >= min_vol).
+
+    ``last_n_games`` replaces the calendar bounds: each player is
+    aggregated over his own N most recent game weeks (see
+    _last_n_games_clause); games/weeks then count the games included (<= N).
     """
     wspec = _WEEKLY_METRICS.get(metric)
     if not wspec or metric not in LEADERBOARD_METRICS:
@@ -3140,10 +3179,15 @@ def get_weekly_range_leaderboard(
     if season:
         where_parts.append("season = %s")
         params.append(season)
-    if week_start:
+    _lastn_sql, _lastn_params = _last_n_games_clause(
+        "player_weekly_metrics", season, last_n_games)
+    if _lastn_sql:
+        where_parts.append(_lastn_sql)
+        params.extend(_lastn_params)
+    elif week_start:
         where_parts.append("week >= %s")
         params.append(week_start)
-    if week_end:
+    if not _lastn_sql and week_end:
         where_parts.append("week <= %s")
         params.append(week_end)
     if pos:
@@ -3742,6 +3786,7 @@ def _get_derived_per_game_leaderboard(
     week_start: Optional[int] = None,
     week_end: Optional[int] = None,
     limit: int = 500,
+    last_n_games: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Per-game derived metrics (xFP/G, FPOE/G, xTD/G, first downs/G).
 
@@ -3753,6 +3798,12 @@ def _get_derived_per_game_leaderboard(
     separately as xfp_covered_weeks and is used as the denominator ONLY as
     an explicit fallback for players with no weekly-metrics rows at all
     (their games-played count is unknown, not zero).
+
+    ``last_n_games`` replaces the calendar bounds on BOTH sides with the
+    player's N most recent games played (ranked over player_weekly_metrics,
+    the denominator's own store): the numerator sums his advanced rows in
+    exactly those weeks, so a zero-opportunity game inside the window
+    still counts in the denominator, as documented above.
     """
     if metric not in LEADERBOARD_METRICS:
         return []
@@ -3767,12 +3818,20 @@ def _get_derived_per_game_leaderboard(
     if season:
         a_parts.append("a.season = %s"); a_params.append(int(season))
         g_parts.append("season = %s"); g_params.append(int(season))
-    if week_start:
-        a_parts.append("a.week >= %s"); a_params.append(int(week_start))
-        g_parts.append("week >= %s"); g_params.append(int(week_start))
-    if week_end:
-        a_parts.append("a.week <= %s"); a_params.append(int(week_end))
-        g_parts.append("week <= %s"); g_params.append(int(week_end))
+    _lastn_a, _lastn_a_params = _last_n_games_clause(
+        "player_weekly_metrics", season, last_n_games, prefix="a.")
+    _lastn_g, _lastn_g_params = _last_n_games_clause(
+        "player_weekly_metrics", season, last_n_games)
+    if _lastn_a:
+        a_parts.append(_lastn_a); a_params.extend(_lastn_a_params)
+        g_parts.append(_lastn_g); g_params.extend(_lastn_g_params)
+    else:
+        if week_start:
+            a_parts.append("a.week >= %s"); a_params.append(int(week_start))
+            g_parts.append("week >= %s"); g_params.append(int(week_start))
+        if week_end:
+            a_parts.append("a.week <= %s"); a_params.append(int(week_end))
+            g_parts.append("week <= %s"); g_params.append(int(week_end))
     if pos:
         a_parts.append("a.position = %s"); a_params.append(pos)
     a_where = ("WHERE " + " AND ".join(a_parts)) if a_parts else ""
@@ -3871,22 +3930,28 @@ def get_adv_weekly_range_leaderboard(
     week_end: Optional[int] = None,
     min_vol: Optional[int] = None,
     limit: int = 500,
+    last_n_games: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Players ranked by a weekly advanced metric over a week range.
 
     Queries player_weekly_advanced_metrics. Mirrors get_weekly_range_leaderboard
     but for the NGS/FTN/EPA metrics. Returns
     [{player_id, name, team, position, value, games, vol}].
+
+    ``last_n_games`` replaces the calendar bounds with each player's own
+    N most recent game weeks, exactly as in get_weekly_range_leaderboard;
+    both intercepts (sep score, per-game derived) honor it too.
     """
     if metric == "ngs_avg_sep_score":
         return get_sep_score_range_leaderboard(
             position=position, season=season, week_start=week_start,
             week_end=week_end, min_vol=min_vol, limit=limit,
+            last_n_games=last_n_games,
         )
     if metric in _ADV_WEEKLY_DERIVED_METRICS:
         return _get_derived_per_game_leaderboard(
             metric, position=position, season=season, week_start=week_start,
-            week_end=week_end, limit=limit,
+            week_end=week_end, limit=limit, last_n_games=last_n_games,
         )
     agg = _adv_weekly_agg_sql(metric)
     if not agg or metric not in LEADERBOARD_METRICS:
@@ -3899,10 +3964,15 @@ def get_adv_weekly_range_leaderboard(
     params: list = []
     if season:
         where_parts.append("season = %s"); params.append(int(season))
-    if week_start:
-        where_parts.append("week >= %s"); params.append(int(week_start))
-    if week_end:
-        where_parts.append("week <= %s"); params.append(int(week_end))
+    _lastn_sql, _lastn_params = _last_n_games_clause(
+        "player_weekly_advanced_metrics", season, last_n_games)
+    if _lastn_sql:
+        where_parts.append(_lastn_sql); params.extend(_lastn_params)
+    else:
+        if week_start:
+            where_parts.append("week >= %s"); params.append(int(week_start))
+        if week_end:
+            where_parts.append("week <= %s"); params.append(int(week_end))
     if pos:
         where_parts.append("position = %s"); params.append(pos)
     where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
@@ -4577,11 +4647,14 @@ def get_situational_leaderboard(
     season: Optional[int] = None,
     week_start: Optional[int] = None,
     week_end: Optional[int] = None,
+    last_n_games: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Players ranked by a situational RB usage share metric.
 
     Aggregates the full season by default; week_start/week_end restrict to
-    that inclusive range.
+    that inclusive range. ``last_n_games`` replaces the calendar bounds
+    with each player's own N most recent game weeks (weeks in which he
+    recorded a touch), with team totals taken over those same weeks.
 
     Output shape matches get_metric_leaderboard:
     [{player_id, name, team, position, value, games}].
@@ -4602,14 +4675,16 @@ def get_situational_leaderboard(
     from datetime import date as _date
     _cache_key = (_date.today().isoformat(), metric,
                   (position or "").upper().strip() or None,
-                  season, week_start, week_end, limit)
+                  season, week_start, week_end, limit,
+                  int(last_n_games) if last_n_games else None)
     _hit = _SITUATIONAL_LEADERBOARD_CACHE.get(_cache_key)
     if _hit is not None:
         return _hit
 
     # Rush-only: these are Rushing-category metrics, so receptions don't count.
     shares = get_all_player_situational_shares(
-        season, week_start=week_start, week_end=week_end, rush_only=True)
+        season, week_start=week_start, week_end=week_end, rush_only=True,
+        last_n_games=last_n_games)
     if not shares:
         return []
 
@@ -4635,13 +4710,17 @@ def get_situational_leaderboard(
         # Only RBs have meaningful situational shares; skip others.
         if pos and pos != "RB":
             continue
+        # In last-N mode the shares payload carries the games actually
+        # included per player; calendar/season modes keep the index count.
+        _games = data.get("games") if last_n_games else None
         out.append({
             "player_id": str(sleeper_id),
             "name": meta.get("name") or data.get("name") or "Unknown",
             "team": meta.get("team") or data.get("team") or "",
             "position": pos or "RB",
             "value": float(value),
-            "games": meta.get("games"),
+            "games": _games if _games is not None else meta.get("games"),
+            "weeks": _games,
         })
 
     out.sort(key=lambda x: x["value"], reverse=True)
@@ -4954,6 +5033,34 @@ def _sep_range_pool(season: int, week_start: int, week_end: int) -> List[Dict[st
     return [dict(r) for r in rows]
 
 
+def _sep_last_n_pool(season: int, last_n_games: int) -> List[Dict[str, Any]]:
+    """Per-player last-N-games aggregates for the sep score: same shape as
+    _sep_range_pool, but each player's rows are restricted to his N most
+    recent game weeks (weeks with a row in the weekly advanced table), so
+    byes and missed games reach further back instead of shrinking the
+    sample."""
+    init_weekly_advanced_metrics_db()
+    _lastn_sql, _lastn_params = _last_n_games_clause(
+        "player_weekly_advanced_metrics", season, last_n_games)
+    if not _lastn_sql:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT player_id, position, "
+            "SUM(ngs_avg_separation * w_targets)::float / "
+            "NULLIF(SUM(CASE WHEN ngs_avg_separation IS NOT NULL THEN w_targets END), 0) "
+            "AS ngs_avg_separation, "
+            "SUM(w_targets) AS total_targets, "
+            "COUNT(*) FILTER (WHERE ngs_avg_separation IS NOT NULL) AS weeks "
+            "FROM player_weekly_advanced_metrics "
+            "WHERE season = %s AND position IN ('WR', 'TE') "
+            f"AND {_lastn_sql} "
+            "GROUP BY player_id, position",
+            (int(season), *_lastn_params),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def _avg_sep_scores_for_range(season: int, week_start: int, week_end: int) -> Dict[str, float]:
     """{player_id: Avg Sep Score} over a week range (daily-cached). The
     pool gate scales with the range via the qualification policy, exactly
@@ -4982,10 +5089,25 @@ def get_sep_score_range_leaderboard(
     week_end: Optional[int] = None,
     min_vol: Optional[int] = None,
     limit: int = 500,
+    last_n_games: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Players ranked by Avg Sep Score over a week range. Row shape
-    mirrors get_adv_weekly_range_leaderboard."""
-    if season is None or week_start is None or week_end is None:
+    mirrors get_adv_weekly_range_leaderboard.
+
+    ``last_n_games`` swaps the calendar range for each player's own N
+    most recent game weeks (see _sep_last_n_pool); the pool gate then
+    scales with the N-game sample via the same scaled_minimum the
+    calendar-range policy applies over its completed rounds.
+    """
+    if season is None:
+        return []
+    if last_n_games:
+        pool = _sep_last_n_pool(int(season), int(last_n_games))
+        from utils.season_qualification import scaled_minimum
+        gate = scaled_minimum(15, int(last_n_games))
+        scores = _sep_scores_from_pool(pool, gate)
+        return _sep_range_rows(pool, scores, position, min_vol, limit, season)
+    if week_start is None or week_end is None:
         return []
     pool = _sep_range_pool(int(season), int(week_start), int(week_end))
     from utils.season_qualification import qualification_policy
@@ -4994,6 +5116,13 @@ def get_sep_score_range_leaderboard(
         int(season), week_start=int(lo), week_end=int(hi),
     ).minimum("total_targets", 15)
     scores = _sep_scores_from_pool(pool, gate)
+    return _sep_range_rows(pool, scores, position, min_vol, limit, season)
+
+
+def _sep_range_rows(pool, scores, position, min_vol, limit, season):
+    """Build ranked rows from a sep-score range pool + computed scores.
+    Shared by the calendar-range and last-N-games paths so both emit the
+    identical row shape."""
     if not scores:
         return []
     try:
