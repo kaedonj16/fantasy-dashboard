@@ -303,6 +303,18 @@ def _wv_client(monkeypatch):
     monkeypatch.setattr(waiver, "load_do_not_drop",
                         lambda *a, **k: set())
     import utils.waiver_freshness as wf
+
+    # The drop fixture sits at DROP_ISO (2026-11-04T15:00Z) and the route
+    # admits it through dropped_within's 48h window, which reads the real
+    # clock. Pin the freshness clock to an hour after the drop so the
+    # test can never age out of the window.
+    class _PinnedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = datetime(2026, 11, 4, 16, 0, tzinfo=timezone.utc)
+            return base.astimezone(tz) if tz else base
+
+    monkeypatch.setattr(wf, "datetime", _PinnedDateTime)
     monkeypatch.setattr(wf, "get_transactions_delta",
                         lambda *a, **k: {
                             "adds": {"addedrb"},
