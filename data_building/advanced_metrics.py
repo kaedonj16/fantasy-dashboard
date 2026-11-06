@@ -2898,7 +2898,12 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "td_rate_per_opp":      {"label": "TD Rate / Opp",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TOUCHES, "desc": "Percent of opportunities (carries + targets) that result in a touchdown; scoring efficiency on volume.", "computed_sql": "m.total_tds::float / NULLIF(m.total_touches, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.total_touches IS NOT NULL AND m.total_touches > 0"},
     # Per-snap production: the points/yards siblings of Targets / Snap and
     # Touches / Snap, gated on snaps like they are.
-    "pts_per_snap":         {"label": "Points / Snap",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "PPR fantasy points per offensive snap; what a player scores with his playing time, independent of snap volume.", "computed_sql": "m.ppr_pts::float / NULLIF(m.total_snaps, 0)", "computed_null": "m.ppr_pts IS NOT NULL AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
+    # No computed_sql here on purpose: PPR points have no column on
+    # player_advanced_metrics (they live in player_weekly_metrics), so a
+    # season-table expression referencing m.ppr_pts 500s in Postgres.
+    # Season mode serves this from the weekly table via _SEASON_FROM_WEEKLY
+    # (SUM(ppr_pts) / SUM(snaps), the _WEEKLY_METRICS entry below).
+    "pts_per_snap":         {"label": "Points / Snap",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "PPR fantasy points per offensive snap; what a player scores with his playing time, independent of snap volume."},
     "yards_per_snap":       {"label": "Yards / Snap",        "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "Scrimmage yards (rushing + receiving, the Scrimmage Yards construction) per offensive snap; yardage produced per snap played, independent of snap volume.", "computed_sql": "(COALESCE(m.yards_per_carry * m.total_carries, 0) + COALESCE(m.yards_per_reception * m.total_receptions, 0)) / NULLIF(m.total_snaps, 0)", "computed_null": "((m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL) OR (m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL)) AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
     "boom_rate":            {"basic": True, "label": "Boom Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of games at/above the position boom threshold (QB 25 / RB-WR 20 / TE 15 PPR); how often the player wins you a week."},
     "bust_rate":            {"basic": True, "label": "Bust Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "lower_better": True, "min_vol": _V_GAMES, "desc": "Share of games below the position bust threshold (QB 15 / RB-WR 8 / TE 5 PPR). Lower is better; high bust rate means frequent lineup-killing weeks."},
@@ -4312,8 +4317,11 @@ SITUATIONAL_METRICS = ("goalline_share", "short_yardage_share",
 
 # Metrics whose data lives only in player_weekly_metrics (no column on
 # player_advanced_metrics). In season mode these must be aggregated from the
-# weekly table rather than read as a column.
-_SEASON_FROM_WEEKLY = frozenset({"ppr_pts", "ppr_pts_per_game"})
+# weekly table rather than read as a column. pts_per_snap belongs here too:
+# its numerator is the same weekly ppr_pts, divided by the weekly snaps sum
+# (see its _WEEKLY_METRICS entry); a season-table computed_sql referencing
+# m.ppr_pts is an UndefinedColumn 500.
+_SEASON_FROM_WEEKLY = frozenset({"ppr_pts", "ppr_pts_per_game", "pts_per_snap"})
 
 # In-process daily cache for _value_table. The full-season VORP/WAR computation is
 # identical for every player in a league, but the player modal calls it twice per
@@ -5091,10 +5099,11 @@ def get_metric_leaderboard(
             ),
             season,
         )
-    # ppr_pts / ppr_pts_per_game have no column in player_advanced_metrics — the
-    # fantasy points live in player_weekly_metrics. In season mode (no week range)
-    # aggregate the full season from the weekly table instead of querying a
-    # non-existent column, which would otherwise return nothing.
+    # ppr_pts / ppr_pts_per_game / pts_per_snap have no column in
+    # player_advanced_metrics — the fantasy points live in
+    # player_weekly_metrics. In season mode (no week range) aggregate the
+    # full season from the weekly table instead of querying a non-existent
+    # column, which 500s (UndefinedColumn) in Postgres.
     if metric in _SEASON_FROM_WEEKLY:
         return _stamp_season(
             get_weekly_range_leaderboard(

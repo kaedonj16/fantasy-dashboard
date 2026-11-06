@@ -19,6 +19,7 @@ from dashboard_services.pages.advanced_metrics_page import ADVANCED_METRIC_PRESE
 from data_building.advanced_metrics import (
     LEADERBOARD_METRICS,
     PRO_METRICS,
+    _SEASON_FROM_WEEKLY,
     _WEEKLY_METRICS,
 )
 
@@ -60,8 +61,13 @@ def test_season_registry_entries_are_free_and_snaps_gated():
         assert spec["positions"] == ["RB", "WR", "TE"], key
         assert spec["min_vol"]["col"] == "total_snaps", key
         assert key not in PRO_METRICS, key
-    assert LEADERBOARD_METRICS["pts_per_snap"]["computed_sql"] == (
-        "m.ppr_pts::float / NULLIF(m.total_snaps, 0)")
+    # pts_per_snap must NOT carry a season-table computed_sql: PPR points
+    # have no column on player_advanced_metrics (they live in
+    # player_weekly_metrics), so "m.ppr_pts / m.total_snaps" is an
+    # UndefinedColumn 500 in production. Season mode delegates to the
+    # weekly table via _SEASON_FROM_WEEKLY, exactly like ppr_pts itself.
+    assert "computed_sql" not in LEADERBOARD_METRICS["pts_per_snap"]
+    assert "pts_per_snap" in _SEASON_FROM_WEEKLY
     assert LEADERBOARD_METRICS["yards_per_snap"]["computed_sql"] == (
         "(COALESCE(m.yards_per_carry * m.total_carries, 0) + "
         "COALESCE(m.yards_per_reception * m.total_receptions, 0)) "
@@ -187,3 +193,100 @@ def test_weekly_first_down_rate_gates_on_touches(monkeypatch):
     assert "SUM(touches) AS _wvol" in captured["sql"]
     assert len(rows) == 1
     assert rows[0]["value"] == 45 / 90
+
+
+# ── Regression: season board must not reference columns the store lacks ──
+# Production failure (2026-11-06): GET /api/advanced-metrics/leaderboard
+# ?metric=pts_per_snap returned 500, psycopg UndefinedColumn "m.ppr_pts
+# does not exist". The season spec's computed_sql named a column that
+# only exists on player_weekly_metrics. The tests above pinned the SQL
+# string, so nothing caught it; the tests below validate the catalog
+# against the store's actual DDL and exercise the season entry point.
+
+def _season_store_columns():
+    """player_advanced_metrics columns from the DDL in advanced_metrics.py
+    (its CREATE TABLE block plus every ADD COLUMN migration in the file;
+    no other module alters this table)."""
+    import re
+
+    cols = set()
+    in_create = False
+    for ln in ADVANCED_METRICS_PY.splitlines():
+        if "CREATE TABLE IF NOT EXISTS player_advanced_metrics" in ln:
+            in_create = True
+            continue
+        if in_create:
+            if ln.strip() == ");":
+                break
+            m = re.match(
+                r"\s+([a-z_][a-z0-9_]*)\s+"
+                r"(NUMERIC|VARCHAR|INTEGER|DATE|SERIAL|TEXT|REAL|BOOLEAN)",
+                ln)
+            if m:
+                cols.add(m.group(1))
+    cols |= set(re.findall(
+        r"ADD COLUMN IF NOT EXISTS\s+([a-z_][a-z0-9_]*)",
+        ADVANCED_METRICS_PY))
+    return cols
+
+
+def test_every_computed_sql_reference_exists_in_the_season_store():
+    import re
+
+    cols = _season_store_columns()
+    assert "total_snaps" in cols and "total_first_downs" in cols  # sanity
+    assert "ppr_pts" not in cols  # points live in player_weekly_metrics
+    for key, spec in LEADERBOARD_METRICS.items():
+        expr = (spec.get("computed_sql") or "") + " " + (
+            spec.get("computed_null") or "")
+        if not expr.strip():
+            continue
+        refs = set(re.findall(r"\bm\.([A-Za-z_][A-Za-z0-9_]*)", expr))
+        missing = refs - cols
+        assert not missing, (
+            f"{key} references columns player_advanced_metrics lacks: "
+            f"{sorted(missing)}")
+
+
+def test_season_pts_per_snap_board_aggregates_the_weekly_table(monkeypatch):
+    """The season entry point (get_metric_leaderboard, no week range)
+    must serve Points / Snap from player_weekly_metrics — SUM(ppr_pts) /
+    SUM(snaps) gated on SUM(snaps) — and never issue SQL against
+    player_advanced_metrics for this metric."""
+    import data_building.advanced_metrics as metrics
+
+    captured = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, params=()):
+            captured.append(sql)
+            return self
+
+        def fetchall(self):
+            return [{
+                "player_id": "p1", "position": "RB", "weeks_played": 8,
+                "value": 150 / 280, "ctx_receptions": 30, "ctx_targets": 40,
+                "ctx_carries": 50, "_wvol": 280,
+            }]
+
+        def fetchone(self):
+            return None
+
+    monkeypatch.setattr(metrics, "get_conn", lambda: Conn())
+    metrics._METRIC_LEADERBOARD_CACHE.clear()
+    rows = metrics.get_metric_leaderboard(
+        "pts_per_snap", position="RB", season=2026, min_vol=100)
+    assert len(rows) == 1
+    assert rows[0]["value"] == 150 / 280
+    assert rows[0]["vol"] == 280
+    assert captured, "no SQL issued"
+    assert all("player_weekly_metrics" in sql for sql in captured)
+    assert all("player_advanced_metrics" not in sql for sql in captured)
+    assert any("SUM(ppr_pts)" in sql and "SUM(snaps)" in sql
+               for sql in captured)
