@@ -1390,48 +1390,74 @@ _DRAFT_ROOM_HTML = r"""
   .dr-board-panel .dr-board-toolbar { padding: 0; }
   /* The board scrolls on both axes; the header row sticks to the top and the
      round-label column (+ corner cell) sticks to the left. */
-  .dr-board-scroll { overflow: auto; min-width: 0; max-height: calc(100vh - 330px); min-height: 300px; }
-  .dr-board { display: grid; gap: 5px; min-width: max-content; padding: 8px; }
+  .dr-board-scroll { overflow: auto; min-width: 0; max-height: calc(100vh - 330px); min-height: 300px; background: var(--card); }
+  /* R1 board (approved 2026-11-06): flush hairline grid, gap 0 and square
+     cells, so the round labels read as one connected strip and columns share
+     hairlines instead of sitting as separate cards. Values lifted from the
+     approved room mock so the Draft DB board shares this grammar. */
+  .dr-board { display: grid; gap: 0; min-width: max-content; padding: 0; }
   .dr-cell {
-    border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px 0; min-height: 50px;
-    background: var(--bg); display: flex; align-items: flex-end; gap: 6px; position: relative; overflow: hidden;
+    border: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    border-radius: 0; padding: 0; height: 68px; min-height: 68px;
+    background: var(--card); display: block; position: relative; overflow: hidden;
   }
-  .dr-cell-body { padding: 5px; }
-  /* Empty slot: reads as an open board cell with its round.pick centered, rather
-     than a washed-out box. */
-  .dr-cell-empty { background: var(--card); border-style: dashed; }
+  /* 3px position stripe, an element so the ownership shadows below can still
+     win the same left edge (mine accent, traded-in warning). */
+  .dr-cell .stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 3; }
+  /* R1 photo zone: fixed 50px at the cell left, photo anchored flush to the
+     cell bottom; all text starts at margin-left 58px, strictly right of it.
+     No circle, disc, ring, border or background behind a loaded photo. */
+  .dr-ph { position: absolute; left: 3px; bottom: 0; width: 50px; height: 54px; line-height: 0; z-index: 1; }
+  .dr-ph img { display: block; width: 50px; height: 54px; object-fit: cover; object-position: bottom; margin: 0 auto; }
+  /* Fallback initials disc, centered in the photo zone; hidden by the img
+     onload once a photo paints, revealed again if the img errors out. */
+  .dr-ph .dr-hs { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    width: 32px; height: 32px; font-size: 11px; border-width: 1.5px; }
+  .dr-cell-body { margin-left: 58px; padding: 6px 8px 6px 0; height: 100%;
+    display: flex; flex-direction: column; justify-content: center; }
+  /* Empty slot: plain cell with its pick number top-left; owned/traded
+     empties keep the centered round.pick under their flag. */
+  .dr-cell-empty { background: var(--card); }
   .dr-cell-rp { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
     justify-content: center; line-height: 1.05; font-size: 11px; font-weight: 700; color: var(--text-muted);
     font-variant-numeric: tabular-nums; letter-spacing: .01em; }
   .dr-cell-rp-ov { font-size: 11px; font-weight: 600; opacity: .55; margin-top: 1px; }
-  /* Filled pick: tint the whole cell by its POSITION colour (--pos, set per-cell)
-     with a matching left stripe, so a column reads as a roster shape at a glance.
-     The ownership (.dr-cell-mine) and current-pick rules below still win their stripe/ring. */
-  .dr-cell-filled { background: color-mix(in srgb, var(--pos, var(--accent)) 14%, var(--bg));
-    box-shadow: inset 3px 0 0 var(--pos, var(--accent)); }
-  .dr-cell-current { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
+  /* On the clock: centered label inside the pulsing current cell, no photo. */
+  .dr-cell-otc { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #0284c7; }
+  :root[data-theme="dark"] .dr-cell-otc { color: #38bdf8; }
+  /* Filled pick: a 5% position wash (--pos, set per-cell); the stripe element
+     carries the position colour so a column reads as a roster shape. */
+  .dr-cell-filled { background: color-mix(in srgb, var(--pos, var(--accent)) 5%, var(--card)); }
+  .dr-cell-current { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8); z-index: 1; animation: drPulse 1.6s ease-in-out infinite; }
   @keyframes drPulse { 0%,100% { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8); } 50% { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8), 0 0 10px color-mix(in srgb, var(--accent) 20%, transparent); } }
   .dr-cell-mine { box-shadow: inset 3px 0 0 var(--accent,#38bdf8); opacity: 1; }
-  .dr-cell-mine.dr-cell-empty { opacity: 1; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, transparent), var(--bg)); }
+  .dr-cell-mine.dr-cell-empty { opacity: 1; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, transparent), var(--card)); }
   .dr-cell-claimed { box-shadow: inset 3px 0 0 var(--warning); }     /* traded-in pick */
   .dr-cell-claimable { cursor: pointer; }
   .dr-cell-claimable:hover { outline: 1px dashed var(--accent,#38bdf8); outline-offset: -2px; }
-  .dr-cell-mineflag { position: absolute; top: 2px; right: 5px; font-size: 11px; font-weight: 800;
-    letter-spacing: .04em; color: var(--accent,#38bdf8); }
+  .dr-cell-mineflag { position: absolute; top: 3px; right: 6px; font-size: 10px; font-weight: 800;
+    letter-spacing: .04em; color: var(--accent,#38bdf8); z-index: 2; }
   .dr-cell-claimed .dr-cell-mineflag { color: var(--warning); }
   /* Keeper: same position tint as a live pick; the KEEP flag is the marker.
      Do not wash the cell green -- that hides WR/QB/TE color. */
-  .dr-cell-keepflag { position: absolute; top: 2px; right: 5px; font-size: 11px; font-weight: 800;
-    letter-spacing: .04em; color: var(--win,#15803d); }
+  .dr-cell-keepflag { position: absolute; top: 3px; right: 6px; font-size: 10px; font-weight: 800;
+    letter-spacing: .04em; color: var(--win,#15803d); z-index: 2; }
   /* Traded pick: who the pick was dealt to (shown on another team's seat). */
-  .dr-cell-owner { position: absolute; top: 2px; right: 5px; font-size: 11px; font-weight: 800;
-    letter-spacing: .04em; color: var(--warning);
+  .dr-cell-owner { position: absolute; top: 3px; right: 6px; font-size: 10px; font-weight: 800;
+    letter-spacing: .04em; color: var(--warning); z-index: 2; max-width: 72%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
   .dr-cell-just { animation: drPop .35s ease; }
-  @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
-  .dr-cell-val { position: absolute; bottom: 3px; right: 4px; font-size: 11px; font-weight: 800; color: var(--accent,#38bdf8);
-    background: color-mix(in srgb, var(--card) 70%, transparent); padding: 0 4px; border-radius: 5px; font-variant-numeric: tabular-nums; }
-  .dr-cell-num { position: absolute; top: 2px; left: 5px; font-size: 11px; font-weight: 700; color: var(--text-muted); }
+  @keyframes drPop { 0% { transform: scale(.96); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
+  /* Top-right slot: the display value / pick score, replaced by the Last
+     pick flag on the just-picked cell (same slot, room-mock grammar). */
+  .dr-cell-val { position: absolute; top: 3px; right: 6px; font-size: 10.5px; font-weight: 700; color: var(--text-subtle, var(--text-muted));
+    font-variant-numeric: tabular-nums; z-index: 2; line-height: 1; }
+  .dr-cell-lastflag { position: absolute; top: 3px; right: 6px; font-size: 9.5px; font-weight: 800;
+    letter-spacing: .05em; text-transform: uppercase; color: #fff; background: var(--accent,#38bdf8);
+    border-radius: 4px; padding: 1px 5px; line-height: 1.4; z-index: 2; }
+  .dr-cell-num { position: absolute; top: 3px; left: 6px; font-size: 10.5px; font-weight: 700; color: var(--text-muted);
+    font-variant-numeric: tabular-nums; z-index: 2; line-height: 1; }
   .dr-board-toolbar { display: flex; align-items: center; justify-content: flex-end; padding: 4px 6px 2px; }
   .dr-cell-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 11px; font-weight: 700; }
   .dr-ct-opt { padding: 3px 9px; cursor: pointer; color: var(--text-muted); transition: background .15s, color .15s; }
@@ -1491,25 +1517,39 @@ _DRAFT_ROOM_HTML = r"""
   :root[data-theme="dark"] .dr-wrap .t-SEA{--tint:#1c3a2c;--tfg:#9fe0b8}:root[data-theme="dark"] .dr-wrap .t-TB{--tint:#3a2326;--tfg:#f0b0b0}
   :root[data-theme="dark"] .dr-wrap .t-TEN{--tint:#1f2a44;--tfg:#a9bfe8}:root[data-theme="dark"] .dr-wrap .t-WAS{--tint:#3d2626;--tfg:#e8a8a8}
   .dr-cell-body { min-width: 0; line-height: 1.2; }
-  .dr-cell-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 96px; }
-  .dr-cell-meta { font-size: 11px; color: var(--text-muted); }
+  /* R1 name: wraps to two lines inside the text column, right of the photo
+     zone; padding-right reserves the top-right value/flag slot. */
+  .dr-cell-name { font-size: 12.5px; font-weight: 700; color: var(--text); line-height: 1.24;
+    max-height: 31px; overflow: hidden; overflow-wrap: anywhere; padding-right: 38px; }
+  .dr-cell-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; margin-top: 3px; }
   .dr-posbadge { font-size: 11px; font-weight: 700; color: #fff; border-radius: 3px; padding: 1px 4px; }
-  .dr-colhead { position: sticky; top: 0; z-index: 3; background: var(--card);
-    font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; padding: 6px 0;
-    white-space: nowrap; border-bottom: 2px solid var(--border); }
-  .dr-colhead-you { color: var(--accent,#38bdf8); }
+  /* Board cells only: the badge is tinted by the cell's position colour
+     (--pos) instead of a solid fill, matching the room mock. Pool/roster
+     badges keep the solid treatment above. */
+  .dr-cell .dr-posbadge { font-size: 10px; font-weight: 800; line-height: 1.3; border-radius: 4px; padding: 1px 5px;
+    color: color-mix(in srgb, var(--pos, #64748b) 68%, #122d4b);
+    background: color-mix(in srgb, var(--pos, #64748b) 13%, var(--card)); }
+  :root[data-theme="dark"] .dr-cell .dr-posbadge { color: color-mix(in srgb, var(--pos, #64748b) 55%, #fff);
+    background: color-mix(in srgb, var(--pos, #64748b) 22%, transparent); }
+  .dr-colhead { position: sticky; top: 0; z-index: 6; background: var(--card);
+    font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; padding: 8px 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; border-bottom: 2px solid var(--border); }
+  .dr-colhead-you { color: var(--accent,#38bdf8); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 4px; }
+  .dr-colhead-name { font-size: 10px; font-weight: 700; color: var(--text-muted); }
   /* Your seat's column header: a clear YOU pill (plus a star when you only
      hold traded-in picks in the column). */
   .dr-youpill { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .1em;
     text-transform: uppercase; background: var(--accent,#38bdf8); color: #fff;
     border-radius: 6px; padding: 3px 10px; }
   /* Round-label column sticks to the left so "R11" stays visible while you
-     scroll the board horizontally through team columns. */
-  .dr-rowhead { position: sticky; left: 0; z-index: 2; background: var(--card);
-    box-shadow: 2px 0 4px -2px rgba(0,0,0,.25);
-    display: flex; align-items: center; justify-content: center; }
+     scroll the board horizontally through team columns. With the grid gap at
+     0 and a hairline under every label, the labels read as one strip. */
+  .dr-rowhead { position: sticky; left: 0; z-index: 5; background: var(--bg);
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    box-shadow: 2px 0 4px -2px rgba(0,0,0,.18);
+    display: flex; align-items: center; justify-content: center; padding: 0; }
   /* Corner cell sticks on BOTH axes during horizontal + vertical scroll. */
-  .dr-corner { z-index: 4; }
+  .dr-corner { z-index: 7; border-bottom: 2px solid var(--border); }
   /* Best Available panel: keeps the old .dr-side id/class so the mobile sheet
      logic keeps working; the tab strip is gone, so this is the player pool. */
   .dr-pool-panel { display: flex; flex-direction: column;

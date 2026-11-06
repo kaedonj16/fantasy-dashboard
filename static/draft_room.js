@@ -7562,49 +7562,94 @@ if (typeof window !== 'undefined') {
     var pk = pn - (rd - 1) * teams;
     return rd + '.' + (pk < 10 ? '0' + pk : String(pk));
   }
+  // R1 board headshot: the ESPN cutout anchored flush to the cell bottom in
+  // the reserved 50px photo zone (.dr-ph). Pick objects carry only
+  // id/name/position/team, so resolve the full pool record via playersById:
+  // its espnHeadshot is the canonical
+  // https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png URL
+  // (built from espnID when only the id is present); the existing
+  // playerImgUrl builder is the next fallback. The initials disc sits in the
+  // same zone behind the photo: onload hides it, onerror removes the img and
+  // reveals it, and DEF picks (no headshot) render the disc alone -- never a
+  // broken img, never a circle/ring around a loaded photo.
+  function drBoardHsHtml(pl){
+    var full = playersById[String(pl.id)] || {};
+    var pos = String(pl.position || full.position || '').toUpperCase();
+    var name = String(pl.name || full.name || '');
+    var ini = name.replace(/[^A-Za-z.' -]/g, '').trim().split(/\s+/)
+      .map(function(w){ return w.charAt(0); }).join('').slice(0, 2).toUpperCase() || '?';
+    var team = String(pl.team || full.team || '').toUpperCase();
+    var url = '';
+    if (pos !== 'DEF' && pos !== 'DST' && pos !== 'D/ST'){
+      var hs = pl.espnHeadshot || full.espnHeadshot || '';
+      var eid = pl.espnID || pl.espn_id || full.espnID || full.espn_id || '';
+      if (!hs && eid) hs = 'https://a.espncdn.com/i/headshots/nfl/players/full/' + eid + '.png';
+      if (hs) url = hs;
+      else url = playerImgUrl(full.id != null ? full : pl);
+    }
+    var fb = '<span class="dr-hs dr-ph-hs' + (team ? ' t-' + team : '')
+      + '" style="--ring:' + posColor(pos) + '"><span class="dr-hs-ini" aria-hidden="true">'
+      + esc(ini) + '</span></span>';
+    if (!url) return '<div class="dr-ph">' + fb + '</div>';
+    return '<div class="dr-ph">' + fb
+      + '<img class="dr-ph-img" loading="lazy" decoding="async" src="' + esc(url) + '" alt="" '
+      + 'onload="this.previousElementSibling.style.display=\'none\'" onerror="this.remove()"></div>';
+  }
   function cellInner(pn){
     var pl = state.picks[pn];
-    // Empty cell: show the round.pick centered so the grid reads as a real board
-    // (keeper/YOU/traded flags still render); filled cell keeps the overall # top-left.
+    // Empty cell (R1): the pick number only, top-left. The on-the-clock cell
+    // swaps the centered round.pick for the ON THE CLOCK label (no photo);
+    // owned/traded empties keep their YOU / owner flags and the centered
+    // round.pick so a traded-in pick still reads at a glance.
     if (!pl){
-      var eh = '';
+      var eh = '<span class="dr-cell-num">' + pn + '</span>';
       if (isMyPick(pn)) eh += '<span class="dr-cell-mineflag">YOU</span>';
       var _eown = tradedOwnerLabel(pn);
       if (_eown) eh += '<span class="dr-cell-owner">' + esc(_eown) + '</span>';
-      eh += '<span class="dr-cell-rp">' + roundPickStr(pn) + '<small class="dr-cell-rp-ov">' + pn + '</small></span>';
+      if (pn === state.current) eh += '<span class="dr-cell-otc">On the clock</span>';
+      else if (isMyPick(pn) || _eown) eh += '<span class="dr-cell-rp">' + roundPickStr(pn) + '<small class="dr-cell-rp-ov">' + pn + '</small></span>';
       return eh;
     }
-    var h = '<span class="dr-cell-num">' + pn + '</span>';
-    if (pl && pl.keeper) h += '<span class="dr-cell-keepflag">KEEP</span>';
-    else if (isMyPick(pn)) h += '<span class="dr-cell-mineflag">YOU</span>';
+    var h = '<span class="stripe" style="background:' + posColor(pl.position) + '"></span>';
+    h += '<span class="dr-cell-num">' + pn + '</span>';
+    // Top-right slot (room-mock grammar): one occupant only. The Last pick
+    // flag replaces the display value on the just-picked cell; KEEP and the
+    // traded-away owner label take the same slot; a traded-in pick keeps its
+    // YOU flag; otherwise the display value / pick score sits there.
     var _own = tradedOwnerLabel(pn);
-    if (_own) h += '<span class="dr-cell-owner">' + esc(_own) + '</span>';
-    if (pl){
+    var _slotTaken = false;
+    if (pn === justPick){ h += '<span class="dr-cell-lastflag">Last pick</span>'; _slotTaken = true; }
+    else if (pl.keeper){ h += '<span class="dr-cell-keepflag">KEEP</span>'; _slotTaken = true; }
+    else if (_own){ h += '<span class="dr-cell-owner">' + esc(_own) + '</span>'; _slotTaken = true; }
+    else if (isMyPick(pn) && state.slot && slotOnClock(pn, state.teams, state.order) !== state.slot){
+      h += '<span class="dr-cell-mineflag">YOU</span>'; _slotTaken = true;
+    }
+    if (!_slotTaken){
       if (_cellShowPs) {
         var _cvps = relPS(pl, pn);
         if (_cvps != null) h += '<span class="dr-cell-val" style="color:' + psColor(_cvps) + '">' + _cvps + '</span>';
       } else {
         if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
       }
-      h += drHsHtml(pl, '');
-      h += '<div class="dr-cell-body"><div class="dr-cell-name">' + esc(pl.name) + '</div>'
-        + '<div class="dr-cell-meta"><span class="dr-posbadge" style="background:' + posColor(pl.position) + '">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div></div>';
     }
+    h += drBoardHsHtml(pl);
+    h += '<div class="dr-cell-body"><div class="dr-cell-name">' + esc(pl.name) + '</div>'
+      + '<div class="dr-cell-meta"><span class="dr-posbadge">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div></div>';
     return h;
   }
   function buildBoard(){
     var board = document.getElementById('drBoard');
     var teams = state.teams, rounds = state.rounds;
-    board.style.gridTemplateColumns = '30px repeat(' + teams + ', minmax(108px, 1fr))';
-    var html = '<div class="dr-colhead dr-rowhead dr-corner"></div>';
+    board.style.gridTemplateColumns = '34px repeat(' + teams + ', minmax(168px, 1fr))';
+    var html = '<div class="dr-colhead dr-rowhead dr-corner">Rd</div>';
     for (var s = 1; s <= teams; s++){
       // Highlight columns by actual ownership: a column you fully own gets a
-      // clear YOU pill header; a column where you only hold traded-in pick(s)
-      // keeps its seat name but still gets the star + accent so you can spot
-      // your picks.
+      // clear YOU pill header (pill over the seat name, room-mock grammar);
+      // a column where you only hold traded-in pick(s) keeps its seat name
+      // but still gets the star + accent so you can spot your picks.
       var ownsAny = ownsAnyInColumn(s);
       var you = ownsAny ? ' dr-colhead-you' : '';
-      var label = ownsAllInColumn(s) ? '<span class="dr-youpill">YOU</span>'
+      var label = ownsAllInColumn(s) ? '<span class="dr-youpill">YOU</span><span class="dr-colhead-name">' + esc(teamName(s)) + '</span>'
         : esc(teamName(s)) + (ownsAny ? ' ★' : '');
       html += '<div class="dr-colhead' + you + '" data-slot="' + s + '" style="cursor:default;">' + label + '</div>';
     }

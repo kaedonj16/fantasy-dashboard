@@ -55,7 +55,7 @@ def test_keeper_cells_keep_position_color():
     body = build_draft_room_body(None, None, None, is_guest=True)
     source = (REPO / "static" / "draft_room.js").read_text(encoding="utf-8")
 
-    assert ".dr-cell-filled { background: color-mix(in srgb, var(--pos, var(--accent)) 14%, var(--bg));" in body
+    assert ".dr-cell-filled { background: color-mix(in srgb, var(--pos, var(--accent)) 5%, var(--card)); }" in body
     assert "pl && pl.keeper ? ' dr-cell-keeper'" in source
     assert 'class="dr-cell-keepflag">KEEP' in source
     assert ".dr-cell-keepflag" in body
