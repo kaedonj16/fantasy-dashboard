@@ -2279,6 +2279,13 @@ _AM_JS = r"""
                   requestToken: 0,       // invalidates responses from an older schema/selection
                   _boardSig: null,       // signature of the last successfully loaded board (idempotent reloads)
                   pinnedIds: _loadPins() };
+  // {kind, index} whose chip editor is open. Declared with state on
+  // purpose: amRenderActiveChips() runs during init (below), long before
+  // the chip-editor section, and its empty-chips path calls
+  // amCloseChipEditor() — a `let` declared down there is still in the
+  // temporal dead zone at that call and throws a ReferenceError that
+  // kills the rest of the page script.
+  let _amEditorChip = null;
   // Seven displayed metrics means six comparisons plus the primary.
   const MAX_COMPARE = Math.max(6, ...Object.values(cfg.presets || {}).map(p => (p.metrics || []).length - 1));
   // Multi-position subsets ('RB,WR') ride in the same field; normalize
@@ -6857,7 +6864,7 @@ _AM_JS = r"""
     _amAfterFilterChange(true);
   }
   // ── Chip popover editor ────────────────────────────────────────────────
-  let _amEditorChip = null; // {kind, index} whose editor is open
+  // (_amEditorChip itself is declared up with state; see the note there.)
   function amCloseChipEditor() {
     const ed = document.getElementById('amChipEditor');
     if (ed) { ed.hidden = true; ed.innerHTML = ''; }
