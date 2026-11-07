@@ -22915,10 +22915,15 @@ img, svg, canvas {
 /* Collapse a slot AdSense reports as unfilled (and ones marked blocked when
    the ad script itself never loads) so nobody stares at an empty grey band.
    The height reservation above still prevents CLS for slots that do fill;
-   collapsing is a single deliberate shift only once the slot is known-empty. */
+   collapsing is a single deliberate shift only once the slot is known-empty.
+   The top/bottom slots are bare <ins> elements with no .ad-container
+   wrapper, so the third selector collapses them directly; !important is
+   required because the bare slot carries inline display:block and Google
+   stamps a fixed height on it even when nothing fills. */
 .ad-container:has(ins.adsbygoogle[data-ad-status="unfilled"]),
-.ad-container[data-ads-blocked] {
-    display: none;
+.ad-container[data-ads-blocked],
+ins.adsbygoogle[data-ad-status="unfilled"] {
+    display: none !important;
 }
 
 .ad-top-banner {
