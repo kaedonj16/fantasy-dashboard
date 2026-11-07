@@ -67,6 +67,10 @@ def test_checkout_preserves_provider_at_every_plan_entry(
 
     assert response.status_code == 200
     assert captured["automatic_tax"] == {"enabled": True}
+    # Promotion codes must be enterable at checkout, and the session must
+    # not also pass discounts (Stripe forbids combining the two).
+    assert captured["allow_promotion_codes"] is True
+    assert "discounts" not in captured
     assert captured["metadata"]["platform"] == platform
     assert captured["metadata"]["season"] == "2026"
     assert captured["metadata"]["user_id"] == f"{platform}-owner-7"
@@ -346,3 +350,7 @@ def test_resume_checkout_session_enables_automatic_tax(offline_client, monkeypat
     assert error is None
     assert url == "https://checkout.stripe.test/resume"
     assert captured["automatic_tax"] == {"enabled": True}
+    # Resume checkout offers the promotion code field too (no discounts
+    # are passed on this session, so the combination stays Stripe-legal).
+    assert captured["allow_promotion_codes"] is True
+    assert "discounts" not in captured

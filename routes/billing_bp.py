@@ -2046,6 +2046,7 @@ def _stripe_checkout_url(user_id: str, payload: dict, _allow_legacy: bool = Fals
             cancel_url=cancel_url,
             metadata=meta,
             subscription_data={"metadata": meta},
+            allow_promotion_codes=True,
         )
         return checkout.url, None
     except Exception:
@@ -2168,6 +2169,7 @@ def create_checkout_session():
             subscription_data={
                 "metadata": _checkout_metadata(plan, user_id, league_id, platform, season, interval),
             },
+            allow_promotion_codes=True,
         )
         # Product analytics: checkout started (conversion does not imply payment).
         from dashboard_services import analytics as _analytics
