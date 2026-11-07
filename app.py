@@ -2900,11 +2900,11 @@ BASE_HTML = """
     <link rel="preload" href="/static/fonts/web/archivo-700.woff2" as="font" type="font/woff2" crossorigin>
     {sentry_js}
 
-    <link rel="icon" href="/static/app-icon-192.png?v=8d7945c1" type="image/png">
-    <link rel="shortcut icon" href="/static/app-icon-192.png?v=8d7945c1" type="image/png">
-    <link rel="apple-touch-icon" href="/static/app-icon-180.png?v=8d7945c1">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/app-icon-180.png?v=8d7945c1">
-    <link rel="manifest" href="/static/manifest.json?v=8d7945c1">
+    <link rel="icon" href="/static/app-icon-192.png?v=39d54ec7" type="image/png">
+    <link rel="shortcut icon" href="/static/app-icon-192.png?v=39d54ec7" type="image/png">
+    <link rel="apple-touch-icon" href="/static/app-icon-180.png?v=39d54ec7">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/app-icon-180.png?v=39d54ec7">
+    <link rel="manifest" href="/static/manifest.json?v=39d54ec7">
     <!-- iOS launch images: from icon tap until first HTML paint, iOS shows
          its OWN launch screen, and without these links it is blank white (iOS
          ignores the manifest for this). Each image is the BR logo centered on
