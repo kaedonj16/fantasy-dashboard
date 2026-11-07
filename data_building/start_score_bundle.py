@@ -28,6 +28,13 @@ intraday, so the request always overlays the live status from the player map
 before calling ``compute_start_score``. The bundle stores the batch-time status
 for reference only.
 
+The bundle's ``proj_pts`` gets the same treatment at load time (see
+``_apply_live_projection_overlay`` below): projections move intraday too —
+when a starter is ruled out, Sleeper redistributes his volume to his
+teammates within hours — so the loader swaps in the live Sleeper projection
+for the week, cached for a few minutes, and silently keeps the batch value
+whenever the live feed is unavailable or has no line for the player.
+
 Form/usage inputs follow the 2026-10 rating rework: only PLAYED weeks count
 (a stat row carrying a points line), recent form is the last 3 played weeks,
 and usage is the absolute per-game delta of opportunities (RB) or targets
@@ -41,6 +48,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -673,12 +681,110 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
 # Request-time read path
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Live projection overlay
+#
+# The mirror of the live injury-status overlay the request paths apply: the
+# batch freezes proj_pts at build time, but Sleeper revises its lines
+# intraday — most sharply when a player is ruled out and his volume moves to
+# his teammates (2026-11-07: Skattebo Out moved Singletary 8.7 -> 13.9 while
+# the site kept scoring the frozen 8.7). One Sleeper fetch per (season, week)
+# is cached in-process; every bundle load then swaps each player's proj_pts
+# for the live value under the bundle variant's scoring — the same
+# weekly_projection_points selection the batch build itself uses, so the
+# number is identical in kind, just fresher. Fully fail-soft: any fetch or
+# scoring failure keeps the batch values, and a player with no live line
+# (absent from the feed, or a present-but-zero line that is indistinguishable
+# from a partial feed) keeps his batch value too — exclusion for ruled-out
+# players stays with the live STATUS overlay, never an invented zero here.
+# ---------------------------------------------------------------------------
+_LIVE_PROJ_TTL_SEC = 12 * 60        # fresh map: at most one fetch per window
+_LIVE_PROJ_EMPTY_TTL_SEC = 60       # failed/empty fetch: retry again soon
+_LIVE_PROJ_CACHE: Dict[tuple, tuple] = {}   # (season, week) -> (fetched_at, map)
+_LIVE_PROJ_LOCK = threading.Lock()
+
+
+def _fetch_live_projection_map(season: int, week: int) -> dict:
+    """Sleeper's live weekly projections, {pid: multi-variant entry}.
+
+    The codebase's own Sleeper fetch (utils.projections). Never raises:
+    {} on any failure so callers fall back to the batch projections.
+    """
+    try:
+        from utils.projections import fetch_week_projections
+        return fetch_week_projections(int(season), int(week)) or {}
+    except Exception:
+        logger.debug("live projection fetch failed", exc_info=True)
+        return {}
+
+
+def live_projection_map(season: int, week: int) -> dict:
+    """TTL-cached ``_fetch_live_projection_map`` (12 min; 1 min when empty)."""
+    key = (int(season), int(week))
+    now = time.monotonic()
+    with _LIVE_PROJ_LOCK:
+        hit = _LIVE_PROJ_CACHE.get(key)
+        if hit is not None:
+            fetched_at, cached = hit
+            ttl = _LIVE_PROJ_TTL_SEC if cached else _LIVE_PROJ_EMPTY_TTL_SEC
+            if now - fetched_at < ttl:
+                return cached
+    fresh = _fetch_live_projection_map(int(season), int(week))
+    with _LIVE_PROJ_LOCK:
+        _LIVE_PROJ_CACHE[key] = (time.monotonic(), fresh)
+    return fresh
+
+
+def _apply_live_projection_overlay(bundles: Dict[str, dict], season: int,
+                                   week: int, variant: str) -> Dict[str, dict]:
+    """Swap each bundle's proj_pts for the live Sleeper value. Never raises.
+
+    Returns the input untouched when the variant is unknown, the live map is
+    empty, or anything fails; otherwise returns a dict whose swapped bundles
+    are copies (batch dicts are never mutated in place).
+    """
+    try:
+        if not bundles or variant not in VARIANT_SCORING:
+            return bundles
+        live_map = live_projection_map(season, week)
+        if not live_map:
+            return bundles
+        from utils.fantasy_scoring import weekly_projection_points
+        from utils.league_scoring import stamp_scoring_aliases
+        scoring = stamp_scoring_aliases(VARIANT_SCORING[variant])
+        out: Dict[str, dict] = {}
+        for pid, bundle in bundles.items():
+            if not isinstance(bundle, dict):
+                out[pid] = bundle
+                continue
+            pts = None
+            try:
+                pts = weekly_projection_points(
+                    live_map, pid, scoring,
+                    str(bundle.get("pos") or "").upper())
+            except Exception:
+                pts = None
+            if pts is not None and float(pts) > 0:
+                nb = dict(bundle)
+                nb["proj_pts"] = round(float(pts), 1)
+                out[pid] = nb
+            else:
+                out[pid] = bundle
+        return out
+    except Exception:
+        logger.debug("live projection overlay failed", exc_info=True)
+        return bundles
+
+
 def load_start_score_bundles(season: int, week: int, variant: str,
                              player_ids: list) -> Dict[str, dict]:
     """{player_id: bundle} for one (season, week, variant). Never raises.
 
     Returns {} when the table is missing, the batch hasn't run yet, or the DB
     is unreachable — callers fall back to live per-request computation.
+    proj_pts is overlaid with the live Sleeper projection before returning
+    (see ``_apply_live_projection_overlay``); every other field is the
+    batch's, and injury status still comes from the callers' live overlay.
     """
     if not player_ids or not variant:
         return {}
@@ -705,7 +811,7 @@ def load_start_score_bundles(season: int, week: int, variant: str,
                     continue
             if isinstance(bundle, dict):
                 out[pid] = bundle
-        return out
+        return _apply_live_projection_overlay(out, season, week, variant)
     except Exception:
         logger.debug("load_start_score_bundles failed", exc_info=True)
         return {}

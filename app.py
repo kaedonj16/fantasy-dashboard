@@ -3876,7 +3876,13 @@ def start_score_flex_index(rank, pool_size):
 
 
 _SS_POOL_CACHE: dict = {}
+_SS_POOL_CACHE_TS: dict = {}
 _SS_POOL_LOCK = threading.Lock()
+# Pools expire on the live-overlay cadence (the bundle loader's live
+# projection TTL): the pool is built from overlaid inputs — live injury
+# status and live projections — so a pool older than this would keep
+# ranking on values both overlays have since revised.
+_SS_POOL_TTL_SEC = 12 * 60
 # A bundle read that returns only a handful of rows is a partial batch, not
 # a league-wide pool; below this the pool falls back to raw projections.
 _SS_POOL_MIN_BUNDLES = 40
@@ -3908,14 +3914,19 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
     computations of the same rating and manufactures ranks neither one
     earned (2026-10-22: Maye and Stroud both printed 94).
 
-    Cached per (season, week, scoring) like the position anchors.
+    Cached per (season, week, scoring) like the position anchors, for
+    ``_SS_POOL_TTL_SEC``: past that the pool is rebuilt so the live
+    status / projection overlays are re-read.
     """
     if not season or not week:
         return {"kind": None, "by_pos": {}, "by_pid": {}}
     key = (int(season), int(week), _ss_scoring_sig(scoring_settings))
     cached = _SS_POOL_CACHE.get(key)
     if cached is not None:
-        return cached
+        _built_at = _SS_POOL_CACHE_TS.get(key)
+        if (_built_at is not None
+                and time.monotonic() - _built_at < _SS_POOL_TTL_SEC):
+            return cached
     pool: dict = {"kind": None, "by_pos": {}, "by_pid": {}}
     # Primary: rebuild league-wide start scores from the daily bundles.
     # The for-scoring loader keeps the bundles' scoring-dependent fields
@@ -4070,7 +4081,9 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
     with _SS_POOL_LOCK:
         if len(_SS_POOL_CACHE) > 64:
             _SS_POOL_CACHE.clear()
+            _SS_POOL_CACHE_TS.clear()
         _SS_POOL_CACHE[key] = pool
+        _SS_POOL_CACHE_TS[key] = time.monotonic()
     return pool
 
 
