@@ -132,6 +132,107 @@ def test_matchup_tiebreaker_breaks_near_ties_only():
     assert s_best_tough > s_worse_soft
 
 
+def test_form_blend_lifts_a_hot_player():
+    """2026-11-07 (Kaedon's call): the base blends recent form in, so a
+    player outproducing his projection is not buried by it. Real case:
+    Week 9 Nabers — projection 15.7 (WR11 on projection), last-4-played
+    24.7 PPG (2nd-best in the pool)."""
+    score, factors, _ = compute_start_score(
+        15.7, last4_ppg=24.7, played_games=7, position="WR")
+    assert abs(factors["base"] - 18.85) < 1e-9  # 0.65*15.7 + 0.35*24.7
+    assert abs(score - 18.85) < 1e-9  # no other factor active
+    assert factors["proj"] == 15.7  # the raw projection is still reported
+
+
+def test_form_blend_drops_a_cold_player():
+    # Week 9 London the other way: projection 19.0, last-4-played 13.1.
+    score, factors, _ = compute_start_score(
+        19.0, last4_ppg=13.1, played_games=8, position="WR")
+    assert abs(factors["base"] - 16.935) < 0.01  # 0.65*19.0 + 0.35*13.1
+    assert score < 19.0
+
+
+def test_form_blend_reorders_a_pool():
+    # Projection order says London (19.0) over Nabers (15.7); the blended
+    # base flips them — the whole point of the blend.
+    hot, _, _ = compute_start_score(
+        15.7, last4_ppg=24.7, played_games=7, position="WR")
+    cold, _, _ = compute_start_score(
+        19.0, last4_ppg=13.1, played_games=8, position="WR")
+    assert hot > cold
+
+
+def test_form_blend_window_counts_played_games_only():
+    # The window is the last 4 PLAYED games: callers hand over played
+    # weeks only (byes / DNP / missed weeks never enter the derivation),
+    # so a player whose 4 played games span 6 calendar weeks still gets
+    # the full window (played_games=4 -> weight 0.35).
+    _, full, _ = compute_start_score(
+        10.0, last4_ppg=20.0, played_games=4, position="RB")
+    assert abs(full["base"] - 13.5) < 1e-9  # 0.65*10 + 0.35*20
+    # Two played games total: the window holds 2, half the form weight.
+    _, thin, _ = compute_start_score(
+        10.0, last4_ppg=20.0, played_games=2, position="RB")
+    assert abs(thin["base"] - 11.75) < 1e-9  # 0.825*10 + 0.175*20
+
+
+def test_form_blend_window_override():
+    # last4_games states the window directly when the caller knows it
+    # (the assistant's last-4 fetch), overriding the played_games size.
+    _, factors, _ = compute_start_score(
+        10.0, last4_ppg=20.0, played_games=8, last4_games=1, position="RB")
+    # weight 0.35 * 1/4 -> base 10.875, reported rounded to 2dp.
+    assert abs(factors["base"] - 10.88) < 1e-9
+
+
+def test_form_blend_no_games_is_projection_alone():
+    # No played games: no window, no blend — even if a form line is sent.
+    for kwargs in (dict(last4_ppg=0.0), dict(last4_ppg=20.0)):
+        score, factors, _ = compute_start_score(
+            10.0, played_games=0, position="RB", **kwargs)
+        assert factors["base"] == 10.0
+        assert score == 10.0
+    # No form input at all (legacy callers): unchanged.
+    score, factors, _ = compute_start_score(10.0, position="RB")
+    assert factors["base"] == 10.0
+    assert score == 10.0
+
+
+def test_form_blend_never_resurrects_a_zero_projection():
+    # A 0 projection line means no game this week; hot form must not
+    # manufacture a score (ranked pools admit any score > 0).
+    score, factors, _ = compute_start_score(
+        0.0, last4_ppg=24.7, played_games=7, position="WR")
+    assert factors["base"] == 0.0
+    assert score == 0.0
+
+
+def test_form_blend_stacks_with_the_capped_factors():
+    # The blend replaces the base only: the form factor and the matchup
+    # tiebreaker still multiply on top, unchanged.
+    score, factors, _ = compute_start_score(
+        10.0, recent_ppg=20.0, season_ppg=10.0, position="RB",
+        last4_ppg=20.0)
+    assert abs(factors["base"] - 13.5) < 1e-9
+    assert factors["form"] == 1.08
+    assert abs(score - 13.5 * 1.08) < 1e-9
+    score, factors, _ = compute_start_score(
+        15.7, last4_ppg=24.7, played_games=7, position="WR",
+        def_rank=1, def_total=32)
+    assert factors["matchup"] == 1.02
+    assert abs(score - 18.85 * 1.02) < 1e-9
+
+
+def test_form_blend_questionable_stays_display_only():
+    # The blend does not change availability: Q is still tag-only.
+    score, factors, demotion = compute_start_score(
+        15.7, last4_ppg=24.7, played_games=7, position="WR",
+        injury_status="Questionable")
+    assert factors["avail"] == 1.0
+    assert demotion == "questionable"
+    assert abs(score - 18.85) < 1e-9
+
+
 def test_questionable_availability():
     # Questionable is display-only since the 2026-10 rework: the tag is kept
     # (demotion label) but there is no score haircut.

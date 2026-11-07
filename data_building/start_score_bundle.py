@@ -269,8 +269,9 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     weeks, and the usage delta is the absolute per-game change of the
     position's volume metric (see ``utils.start_sit.form_usage_inputs``).
     The derivation also carries ``last4_ppg`` (last 4 played weeks):
-    display-only, for the compare rows labeled "L4 PPG"; the rating
-    itself never reads it.
+    the rating's form-blend input (``compute_start_score`` blends it
+    into the base at 35% on a full window), and the value the compare
+    rows labeled "L4 PPG" display.
 
     This is the single derivation the bundle build and the Start/Sit page's
     live fallback share, so both paths feed ``compute_start_score`` identical
