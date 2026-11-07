@@ -27,6 +27,8 @@ failures answer with the honest incomplete payload (never a cached
 failure, never a bare 500), and the client routes scan-less error
 envelopes through the retry ladder.
 """
+import contextlib
+import threading
 import time
 
 import pytest
@@ -108,6 +110,54 @@ def _wait_for_idle(bp_mod, timeout=5.0):
     return False
 
 
+def _park_scan(bp_mod, monkeypatch):
+    """Park the background scan at its first per-league step until the
+    test releases it, so the first GET's deferred answer is
+    deterministic rather than a race against the worker thread.
+
+    The handler answers a cache miss immediately with the deferred
+    payload UNLESS the just-spawned worker has already landed its
+    payload (it is served from the holder / latest-pass store instead).
+    The fully mocked scan is near-instant, so on a fast or idle machine
+    the worker routinely won that race and the deferred assertions
+    below flaked (CI: "assert False is True" on scan.incomplete).
+
+    The scan's only route to league data is get_league_ctx_from_cache,
+    called exclusively from _run_actions_compute on the worker thread;
+    the request thread never calls it, so gating it parks the scan
+    without ever blocking the request being asserted on. Returns the
+    gate event: set it to let the scan land. The 30s wait timeout is a
+    self-cleaning backstop only; tests release the gate in a finally.
+    """
+    gate = threading.Event()
+    real_fetch = bp_mod.get_league_ctx_from_cache
+
+    def _gated_fetch(*a, **k):
+        gate.wait(timeout=30)
+        return real_fetch(*a, **k)
+
+    monkeypatch.setattr(bp_mod, "get_league_ctx_from_cache", _gated_fetch)
+    return gate
+
+
+@contextlib.contextmanager
+def _parked_scan(bp_mod, monkeypatch):
+    """_park_scan as a context manager with unconditional cleanup.
+
+    The finally releases the gate AND waits (bounded) for the scan
+    worker to drain, so the worker cannot outlive the test even when
+    an assertion inside the block fails: a still-running worker would
+    otherwise keep writing this module's shared caches/marks while
+    later tests in the session assert on them.
+    """
+    gate = _park_scan(bp_mod, monkeypatch)
+    try:
+        yield gate
+    finally:
+        gate.set()
+        _wait_for_idle(bp_mod)
+
+
 def test_lineup_exception_degrades_instead_of_aborting(monkeypatch):
     import utils.lineup_issues as li
 
@@ -120,12 +170,15 @@ def test_lineup_exception_degrades_instead_of_aborting(monkeypatch):
     client, bp_mod, calls = _client(
         monkeypatch, ctx=_ctx(starters=["p1"]), players=players)
 
-    resp = client.get("/api/portfolio-actions")
-    assert resp.status_code == 200  # was a scan-aborting 500 pre-fix
-    # 2026-10-27: the request defers while the scan runs in the
-    # background; the degraded-but-complete scan lands in the cache and
-    # the next GET serves it.
-    assert resp.get_json()["scan"]["incomplete"] is True
+    with _parked_scan(bp_mod, monkeypatch):
+        resp = client.get("/api/portfolio-actions")
+        assert resp.status_code == 200  # was a scan-aborting 500 pre-fix
+        # 2026-10-27: the request defers while the scan runs in the
+        # background; the degraded-but-complete scan lands in the cache
+        # and the next GET serves it. The scan is parked behind the
+        # gate, so this deferred answer cannot lose the race to the
+        # worker landing first.
+        assert resp.get_json()["scan"]["incomplete"] is True
     assert _wait_for_idle(bp_mod)
     # The degraded-but-complete scan is cached like any complete scan.
     assert ("viewer:owner-1", 2026, 7) in bp_mod._ACTIONS_CACHE
@@ -211,11 +264,14 @@ def test_ranking_failure_serves_unranked_actions(monkeypatch):
     client, bp_mod, calls = _client(
         monkeypatch, ctx=_ctx(starters=["p1"]), players=players)
 
-    resp = client.get("/api/portfolio-actions")
-    assert resp.status_code == 200
-    # Deferred while the (unranked-fallback) scan computes in the
-    # background; the landed scan is complete.
-    assert resp.get_json()["scan"]["incomplete"] is True
+    with _parked_scan(bp_mod, monkeypatch):
+        resp = client.get("/api/portfolio-actions")
+        assert resp.status_code == 200
+        # Deferred while the (unranked-fallback) scan computes in the
+        # background; the landed scan is complete. The scan is parked
+        # behind the gate, so this deferred answer cannot lose the
+        # race to the worker landing first.
+        assert resp.get_json()["scan"]["incomplete"] is True
     assert _wait_for_idle(bp_mod)
     data = client.get("/api/portfolio-actions").get_json()
     assert data["scan"]["incomplete"] is False
