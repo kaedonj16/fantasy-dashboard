@@ -3939,6 +3939,29 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
             )
             by_pos: dict = {}
             by_pid: dict = {}
+            # Matchup tiebreaker (2026-11-07): the pool must apply the
+            # same +/-2% matchup residual the page and modal compute, or
+            # the ranked pool value and the displayed score become two
+            # computations of the same rating. Rank maps come from the
+            # same _matchup_rank_table the page's chips use (rank 1 =
+            # easiest), loaded once per position; any failure leaves the
+            # factor neutral for that position, never blocks the pool.
+            _pool_rank_maps: dict = {}
+
+            def _pool_def_rank(_pos: str, _opp):
+                if _pos not in _pool_rank_maps:
+                    try:
+                        _rm, _tot, _ri, _iz = _matchup_rank_table(
+                            int(season), _pos)
+                        _pool_rank_maps[_pos] = (_rm or {}, _tot or 32)
+                    except Exception:
+                        _pool_rank_maps[_pos] = ({}, 32)
+                _rm, _tot = _pool_rank_maps[_pos]
+                if not _opp or not _rm:
+                    return None, 32
+                _rank = _rm.get(_norm_sched_team(_opp)) or _rm.get(_opp)
+                return _rank, _tot
+
             for _pid, bundle in bundles.items():
                 if not isinstance(bundle, dict):
                     continue
@@ -3956,11 +3979,15 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 if _pool_excluded(_live_status or bundle.get("injury_status")):
                     continue
                 try:
+                    _p_def_rank, _p_def_total = _pool_def_rank(
+                        pos, bundle.get("opponent"))
                     score, _, _ = _pool_score(
                         bundle.get("proj_pts") or 0.0,
                         on_bye=bool(bundle.get("on_bye")),
                         recent_ppg=bundle.get("recent_ppg") or 0.0,
                         season_ppg=bundle.get("season_ppg") or 0.0,
+                        def_rank=_p_def_rank,
+                        def_total=_p_def_total,
                         usage_delta=bundle.get("usage_delta"),
                         usage_season_avg=bundle.get("usage_season_avg"),
                         # Live status overlays the batch-time one here
@@ -17254,8 +17281,10 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
 
         fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
         # Z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank.
-        # Shown as the matchup chip for context - the weekly projection already
-        # reflects the opponent, so it is NOT re-applied to the start/sit score.
+        # Shown as the matchup chip, and fed to the score as the capped
+        # +/-2% tiebreaker residual (2026-11-07): the projection already
+        # carries most of the opponent signal, so the score re-applies
+        # only enough matchup to break near-ties, never more.
         _z_opp = _norm_sched_team(opponent) if opponent else ""
         _z_map = _z_rank_tables.get(pos, {})
         if _z_opp and _z_map:

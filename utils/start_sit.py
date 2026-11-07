@@ -508,7 +508,7 @@ def compute_start_score(
     weather_kind: Optional[str] = None,
     position: Optional[str] = None,
     oline_index: Optional[float] = None,
-    apply_matchup: bool = False,
+    apply_matchup: Optional[bool] = None,
     expected_team_plays: Optional[float] = None,
     league_average_plays: Optional[float] = None,
     role_confidence: Optional[float] = None,
@@ -548,10 +548,16 @@ def compute_start_score(
     It is applied as a small ±4% residual because projections already reflect
     line quality in part. Pass None to leave the factor neutral.
 
-    ``apply_matchup`` defaults to False because weekly projections already
-    reflect the opponent. Pass True only for matchup-neutral projection feeds.
-    ``def_rank`` / ``def_total`` are still accepted so callers can pass them
-    without branching; they only affect the score when ``apply_matchup`` is True.
+    ``apply_matchup`` (2026-11-07, Kaedon's call): weekly projections already
+    carry most of the opponent signal, so the matchup enters the score only
+    as a capped +/-2% TIEBREAKER residual (``matchup`` factor): it can
+    reorder players within about a point of each other — the flex coin
+    flips a manager decides on matchup — but can never override a real
+    projection gap or double-count the matchup the projection already
+    priced. It applies whenever ``def_rank`` / ``def_total`` are supplied;
+    pass ``apply_matchup=False`` to force it off (matchup-neutral scoring),
+    or omit the rank inputs to leave the factor neutral. Missing or
+    invalid ranks stay neutral: the tiebreaker never invents a matchup.
 
     ``low_total_team`` marks the player's team as one of the week's bottom-8
     implied-total teams (see ``bottom_teams_by_implied_total``). It only gates
@@ -594,10 +600,12 @@ def compute_start_score(
         form_scale = FORM_SCALES.get(pos, 4.0)
         form = 1.0 + min(1.0, max(-1.0, (recent - season) / form_scale)) * 0.08 * shrink
 
-    if apply_matchup and def_rank and def_total and def_total > 1:
+    if apply_matchup is not False and def_rank and def_total and def_total > 1:
         ease = (float(def_total) - float(def_rank)) / (float(def_total) - 1)
-        # Residual only (±3%): even matchup-neutral feeds shouldn't swing hard.
-        mu = 0.97 + ease * 0.06
+        # Tiebreaker residual only (±2%): at flex-range scores the widest
+        # possible swing between two players is about a point, so matchup
+        # breaks near-ties and nothing more.
+        mu = 0.98 + ease * 0.04
 
     usage_scale = USAGE_SCALES.get(pos)
     if usage_delta is not None and usage_scale:
