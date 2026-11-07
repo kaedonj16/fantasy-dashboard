@@ -3820,6 +3820,61 @@ def start_score_tier_index(pos, rank):
     return 1
 
 
+# ── Combined flex-pool index (2026-11-06) ────────────────────────────────────
+# RB/WR/TE compete for the same flex slots, so their index must rank them
+# against ONE combined pool: the per-position tables above printed 79 (RB),
+# 52 (WR) and 81 (TE) for one identical raw score, which made cross-position
+# flex comparisons meaningless. The combined mapping keeps the 36-deep
+# RB/WR table's exact curve shape — four bands anchored 100-90 / 89-70 /
+# 69-40 / 39-1, linear by rank within a band — with band widths scaled
+# proportionally to the combined pool size (the reference table's bands
+# end at cumulative ranks 10 / 22 / 30 of 36). QB keeps the per-position
+# table (it is not a flex position). Within-position ranks and tiers are
+# unaffected: they still come from the position pool; only this printed
+# index changes. Scaling the bands to the full pool also retires the old
+# cliff at the table's edge, where every rank past 36 collapsed to a
+# flat 1 — every flex player in the pool now gets an interpolated index.
+_SS_FLEX_POSITIONS = ("RB", "WR", "TE")
+_SS_FLEX_BAND_ENDS = (10, 22, 30)  # cumulative band-end ranks at depth 36
+_SS_FLEX_BAND_ANCHORS = ((90, 100), (70, 89), (40, 69), (1, 39))
+
+
+def start_score_flex_index(rank, pool_size):
+    """0-100 display index for a 1-indexed rank in the combined flex pool.
+
+    ``pool_size`` is the number of values in the combined RB+WR+TE pool.
+    Linear within each scaled tier band; single-rank band maps to
+    band_hi; rank beyond the pool maps to 1. Returns None for a bad
+    rank or an empty pool.
+    """
+    try:
+        rank = int(rank)
+        pool_size = int(pool_size)
+    except (TypeError, ValueError):
+        return None
+    if rank < 1 or pool_size < 1:
+        return None
+    if rank > pool_size:
+        return 1
+    ends = []
+    for cut in _SS_FLEX_BAND_ENDS:
+        edge = int(round(pool_size * cut / 36.0))
+        ends.append(min(pool_size, max(edge, ends[-1] if ends else 1)))
+    bands = []
+    lo = 1
+    for i, (band_lo, band_hi) in enumerate(_SS_FLEX_BAND_ANCHORS):
+        hi = ends[i] if i < len(ends) else pool_size
+        bands.append((lo, hi, band_lo, band_hi))
+        lo = hi + 1
+    for lo, hi, band_lo, band_hi in bands:
+        if lo <= rank <= hi:
+            if hi <= lo:
+                return int(band_hi)
+            frac = (rank - lo) / (hi - lo)
+            return int(round(band_hi - frac * (band_hi - band_lo)))
+    return 1
+
+
 _SS_POOL_CACHE: dict = {}
 _SS_POOL_LOCK = threading.Lock()
 # A bundle read that returns only a handful of rows is a partial batch, not
@@ -3999,6 +4054,15 @@ def start_score_league_index(season, week, scoring_settings, pos,
     league-wide pool exists for the position, so callers can fall back
     to the anchor pct instead of showing a roster-relative number.
 
+    Flex positions (RB/WR/TE) rank against the ONE combined flex pool
+    and map through ``start_score_flex_index`` (2026-11-06): they
+    compete for the same lineup slots, so an index that ranked each
+    position only against itself printed different numbers for the same
+    raw score at different positions and could not be compared across
+    positions at all. QB still ranks within its own pool through
+    ``start_score_tier_index``. Within-position ranks and tiers are
+    computed elsewhere and do not change; only this index does.
+
     When ``player_id`` is given, the value ranked is the POOL's own
     value for that player (``by_pid``) — the index is then a pure
     function of the one pool computation, identical on every surface.
@@ -4016,7 +4080,14 @@ def start_score_league_index(season, week, scoring_settings, pos,
     if pos not in _SS_TIER_BANDS:
         return None
     pool = start_score_pool_scores(season, week, scoring_settings)
-    vals = (pool.get("by_pos") or {}).get(pos) or []
+    by_pos = pool.get("by_pos") or {}
+    flex = pos in _SS_FLEX_POSITIONS
+    if flex:
+        vals = []
+        for _fp in _SS_FLEX_POSITIONS:
+            vals.extend(by_pos.get(_fp) or [])
+    else:
+        vals = by_pos.get(pos) or []
     if not vals:
         return None
     if player_id is not None:
@@ -4039,6 +4110,8 @@ def start_score_league_index(season, week, scoring_settings, pos,
     if value <= 0:
         return None
     rank = 1 + sum(1 for v in vals if v > value)
+    if flex:
+        return start_score_flex_index(rank, len(vals))
     return start_score_tier_index(pos, rank)
 
 
@@ -17644,10 +17717,12 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     except Exception:
         logger.debug("market intelligence unavailable for start/sit", exc_info=True)
 
-    # Tier-anchored 0-100 index from each player's LEAGUE-WIDE rank at
-    # their position (roster and guest rows alike, now that guests are
-    # merged in). Ranking the roster against itself put every rostered
-    # RB/WR in the 90-100 band; the pool rank is what the bands mean.
+    # Tier-anchored 0-100 index from each player's LEAGUE-WIDE rank
+    # (flex players rank against the combined RB/WR/TE pool; see
+    # start_score_league_index). Roster and guest rows alike, now that
+    # guests are merged in. Ranking the roster against itself put every
+    # rostered RB/WR in the 90-100 band; the pool rank is what the
+    # bands mean.
     # When no league-wide pool can be built, rows keep the anchor pct
     # computed at build time.
     try:
@@ -32865,10 +32940,11 @@ def api_player_details(player_id: str):
                     _start_factors = _ss_fac
                     _start_demotion = _ss_dem
                     # Tier-anchored 0-100 index from the player's LEAGUE-WIDE
-                    # rank at their position: the same index the Start/Sit page
-                    # shows, so Compare and the page can never disagree. The
-                    # anchor pct (share of the top projection) remains only as
-                    # a fallback when no league-wide pool can be built.
+                    # rank (combined flex pool for RB/WR/TE): the same index
+                    # the Start/Sit page shows, so Compare and the page can
+                    # never disagree. The anchor pct (share of the top
+                    # projection) remains only as a fallback when no
+                    # league-wide pool can be built.
                     try:
                         _start_score_pct = start_score_league_index(
                             int(season), _ss_week, scoring_settings,
