@@ -10,6 +10,8 @@ from utils.start_sit import (  # noqa: F401,F403
     _weather_mult,
     _lerp_clamped,
     _vegas_mult,
+    FORM_BLEND_WEIGHT,
+    FORM_BLEND_WINDOW,
     FORM_SCALES,
     USAGE_SCALES,
     USAGE_STAT_KEYS,
@@ -22,7 +24,7 @@ from utils.start_sit import (  # noqa: F401,F403
     usage_value_from_stats,
 )
 
-__all__ = ['_WEATHER_MULT', '_WEATHER_DEFAULT', '_neutral_factors', '_weather_mult', '_lerp_clamped', '_vegas_mult', 'FORM_SCALES', 'USAGE_SCALES', 'USAGE_STAT_KEYS', 'START_SIT_POOL_EXCLUDED_STATUSES', 'bottom_teams_by_implied_total', 'compute_start_score', 'form_usage_inputs', 'likely_range', 'start_sit_pool_excluded', 'usage_value_from_stats']
+__all__ = ['_WEATHER_MULT', '_WEATHER_DEFAULT', '_neutral_factors', '_weather_mult', '_lerp_clamped', '_vegas_mult', 'FORM_BLEND_WEIGHT', 'FORM_BLEND_WINDOW', 'FORM_SCALES', 'USAGE_SCALES', 'USAGE_STAT_KEYS', 'START_SIT_POOL_EXCLUDED_STATUSES', 'bottom_teams_by_implied_total', 'compute_start_score', 'form_usage_inputs', 'likely_range', 'start_sit_pool_excluded', 'usage_value_from_stats']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---

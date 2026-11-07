@@ -871,6 +871,12 @@ def build_start_sit(bundle, entities, player_ids) -> tuple[dict, list[str]]:
                 score, factors, _demotion = compute_start_score(
                     proj, on_bye=bool(on_bye),
                     recent_ppg=recent_ppg or 0.0,
+                    # Form blend: recent_ppg here IS the last-4-played
+                    # mean (``form`` is capped at 4 played games), so it
+                    # doubles as the blend's form input with its true
+                    # window size — the same base the site computes.
+                    last4_ppg=recent_ppg,
+                    last4_games=len(form) if form else None,
                     season_ppg=float(metrics.get("ppg") or 0.0) if metrics else 0.0,
                     def_rank=def_rank, def_total=def_total,
                     injury_status=entry.get("injury_status"),

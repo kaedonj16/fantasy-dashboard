@@ -3986,6 +3986,10 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                         on_bye=bool(bundle.get("on_bye")),
                         recent_ppg=bundle.get("recent_ppg") or 0.0,
                         season_ppg=bundle.get("season_ppg") or 0.0,
+                        # Form blend: the bundle's last-4-played PPG is
+                        # the base's form input (window size derives
+                        # from the played_games passed below).
+                        last4_ppg=bundle.get("last4_ppg"),
                         def_rank=_p_def_rank,
                         def_total=_p_def_total,
                         usage_delta=bundle.get("usage_delta"),
@@ -16534,8 +16538,9 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     # Start/Sit page (last 3 played weeks; a week counts only when its stat
     # row carries a points line). The same derivation supplies the rating's
     # usage delta and played-game count for the modal's start score, plus
-    # last4_ppg (last 4 played weeks, display only) for the compare row
-    # labeled "L4 PPG": that row must never show the last-3 form input.
+    # last4_ppg (last 4 played weeks): the base blend's form input for the
+    # modal's start score, and the value the compare row labeled "L4 PPG"
+    # shows (that row must never show the last-3 form input).
     try:
         from data_building.start_score_bundle import (
             derive_start_sit_inputs as _derive_ss_extras,
@@ -17121,7 +17126,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     # from the bundle instead).
     season_ppg: dict = {}
     recent_ppg_map: dict = {}  # last 3 played weeks (the rating's form input)
-    last4_ppg_map: dict = {}  # last 4 played weeks (display only, "L4 PPG")
+    last4_ppg_map: dict = {}  # last 4 played weeks (base-blend form input; shown as "L4 PPG")
     _ss_derived: dict = {}
     if not _ss_use_bundles:
         try:
@@ -17260,8 +17265,9 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         if _bun is not None:
             s_ppg = _bun.get("season_ppg") or 0.0
             recent_ppg = _bun.get("recent_ppg") or 0.0
-            # Display-only L4: fresh bundles carry it; a stale bundle
-            # without it gets the lazily derived value, never recent_ppg.
+            # L4 (the base blend's form input, and the "L4 PPG" row):
+            # fresh bundles carry it; a stale bundle without it gets
+            # the lazily derived value, never recent_ppg.
             last4_ppg = _bun.get("last4_ppg")
             if last4_ppg is None:
                 last4_ppg = _last4_for(pid) or 0.0
@@ -17373,6 +17379,9 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             on_bye=on_bye,
             recent_ppg=recent_ppg,
             season_ppg=s_ppg,
+            # Form blend: last-4-played PPG resolved above from the same
+            # bundle/derivation as every other rating input here.
+            last4_ppg=last4_ppg,
             def_rank=def_rank,
             def_total=def_total,
             usage_delta=usage_delta,
@@ -32949,6 +32958,10 @@ def api_player_details(player_id: str):
                         on_bye=_ss_bye,
                         recent_ppg=_ss_recent,
                         season_ppg=float(_ppg or 0),
+                        # Form blend: the compare payload's last-4-played
+                        # PPG, from the same derivation as its recent PPG
+                        # (played_games is passed below).
+                        last4_ppg=_ssp.get("last4_ppg"),
                         def_rank=_ssp.get("def_rank"),
                         def_total=_ssp.get("def_total") or 32,
                         usage_delta=_ss_ud,

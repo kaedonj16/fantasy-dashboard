@@ -289,11 +289,19 @@ def role_confidence_from_trend(trend: dict) -> float | None:
 # From utils/start_sit_score.py
 # ======================================================================
 
-"""Single start/sit ranking formula: projection times capped multipliers.
+"""Single start/sit ranking formula: a blended expectation times capped
+multipliers.
 
 The START badges, optimal-lineup banner, and Compare card all rank on this
 score so they cannot contradict each other. Kept as a pure function so the
 math is unit-tested without Flask.
+
+The expectation being scaled is not the raw projection: when the caller
+supplies the player's last-4-played PPG, the base blends it in at 35%
+(65% projection), shrunk toward the projection on thin samples, so a hot
+player the projection is sleeping on climbs and a cold one it still
+loves sinks, instead of the board merely re-sorting the projection
+list. Without that input the base is the projection itself.
 
 Weekly projections already bake in the opponent, so defensive matchup rank is
 *not* re-multiplied into the score (that used to double-count). Matchup stays on
@@ -321,6 +329,7 @@ _WEATHER_DEFAULT = {"QB": 0.96, "WR": 0.96, "TE": 0.96, "K": 0.94, "RB": 0.98, "
 def _neutral_factors(proj: float) -> dict:
     return {
         "proj": proj,
+        "base": proj,
         "form": 1.0,
         "form_usage": 1.0,
         "matchup": 1.0,
@@ -420,6 +429,12 @@ def bottom_teams_by_implied_total(game_conditions: dict, n: int = 8) -> set:
 
 #: Position scale for the absolute form delta (PPG points per game).
 FORM_SCALES = {"QB": 5.5, "RB": 4.0, "WR": 4.0, "TE": 4.0}
+#: Base blend (2026-11-07): the score's base expectation is
+#: (1 - FORM_BLEND_WEIGHT) * projection + FORM_BLEND_WEIGHT * last-4-played
+#: PPG, with the weight scaled by the games actually in the 4-game window.
+FORM_BLEND_WEIGHT = 0.35
+#: Games in a full recent-form window for the base blend.
+FORM_BLEND_WINDOW = 4
 #: Position scale for the absolute usage delta (metric units per game).
 USAGE_SCALES = {"RB": 3.0, "WR": 2.0, "TE": 2.0}
 #: Sleeper stat keys summed into the usage metric, by position. QB is
@@ -467,10 +482,12 @@ def form_usage_inputs(played_points, played_usage=None) -> dict:
 
     Returns season PPG (all played weeks), recent PPG (last 3 played
     weeks, the form input the rating scores on), last-4 PPG (last 4
-    played weeks, DISPLAY ONLY: the compare surfaces label a row "L4
-    PPG", so they must show this number, never the last-3 form input),
-    the absolute usage delta (recent - season, per game), the season
-    usage average, and the played-game count the shrinkage uses.
+    played weeks: the base blend's form input — see
+    :func:`compute_start_score` — and the number the compare surfaces
+    label a row "L4 PPG", so they must show this number, never the
+    last-3 form input), the absolute usage delta (recent - season, per
+    game), the season usage average, and the played-game count the
+    shrinkage uses.
     """
     pts = [float(p) for p in (played_points or [])]
     n = len(pts)
@@ -515,15 +532,34 @@ def compute_start_score(
     defensive_injury_impact: Optional[float] = None,
     low_total_team: bool = False,
     played_games: Optional[int] = None,
+    last4_ppg: Optional[float] = None,
+    last4_games: Optional[int] = None,
 ) -> tuple[float, dict, Optional[str]]:
     """Return ``(score, score_factors, demotion)``.
 
-    Factors: proj, form, form_usage, matchup, usage, avail, vegas, floor,
-    weather, oline. Bye and OUT/IR zero the score. Non-projection signals are
-    capped multipliers.
+    Factors: proj, base, form, form_usage, matchup, usage, avail, vegas,
+    floor, weather, oline. Bye and OUT/IR zero the score. Non-projection
+    signals are capped multipliers.
 
-    The core rating is ``proj * clamp(form * usage, 0.90, 1.10) * avail``:
+    The core rating is ``base * clamp(form * usage, 0.90, 1.10) * avail``:
 
+    * ``base`` — the expectation the multipliers scale (2026-11-07,
+      Kaedon's call: the rating has to be better than sorting by
+      projection). Without ``last4_ppg`` the base IS the projection.
+      With it, the base blends the projection with recent form:
+      ``(1 - w) * proj + w * last4_ppg`` where ``last4_ppg`` is the PPG
+      over the player's last 4 PLAYED games (from
+      :func:`form_usage_inputs`; bye, DNP and missed weeks never enter
+      that window — the derivation only ever hands over played weeks)
+      and ``w`` is ``FORM_BLEND_WEIGHT`` (0.35) scaled by the games
+      actually in the window: ``last4_games`` when given, else
+      ``min(4, played_games)``, else a full window for legacy callers
+      that supply no count at all. A 2-game window carries half the
+      form weight; a player with no played games — or no recorded
+      form at all — scores on projection alone. The blend never
+      applies to a zero projection: a 0 line means no game this week
+      (bye / doubtful / inactive), and form must not resurrect it
+      into the pool.
     * ``form`` — absolute PPG delta (``recent_ppg`` over the last 3 played
       weeks minus ``season_ppg`` over all played weeks), scaled per position
       (``FORM_SCALES``), worth up to ±8%.
@@ -586,12 +622,41 @@ def compute_start_score(
     # moves the score a third as much as the raw delta implies. Callers that
     # cannot supply a played-game count keep the unshrunk factors.
     shrink = 1.0
+    played = None
     if played_games is not None:
         try:
             played = max(0, int(played_games))
             shrink = played / (played + 4.0)
         except (TypeError, ValueError):
+            played = None
             shrink = 1.0
+
+    # Form-blended base (see docstring): replaces the raw projection as
+    # the number the factors scale, only when the caller supplies the
+    # last-4-played PPG and the player actually has a projection line.
+    base = proj
+    if proj > 0 and last4_ppg is not None:
+        try:
+            form4 = float(last4_ppg)
+        except (TypeError, ValueError):
+            form4 = None
+        # A 0.0 form line is "no recorded form" (the derivations emit
+        # 0.0 for a player with no played weeks), never a real 4-game
+        # average to blend toward: fall back to the projection alone.
+        if form4 is not None and form4 > 0:
+            if last4_games is not None:
+                try:
+                    window = int(last4_games)
+                except (TypeError, ValueError):
+                    window = FORM_BLEND_WINDOW
+            elif played is not None:
+                window = min(FORM_BLEND_WINDOW, played)
+            else:
+                window = FORM_BLEND_WINDOW
+            window = max(0, min(FORM_BLEND_WINDOW, window))
+            if window:
+                weight = FORM_BLEND_WEIGHT * window / FORM_BLEND_WINDOW
+                base = (1.0 - weight) * proj + weight * form4
 
     if recent or season:
         # Absolute PPG delta, position-scaled (the old recent/season ratio
@@ -690,9 +755,10 @@ def compute_start_score(
     # role describe much of the same signal, so together they may move the
     # score at most +/-10% no matter how extreme each factor is alone.
     form_usage = min(1.10, max(0.90, form * usage))
-    score = proj * form_usage * mu * avail * vegas * floor * weather * oline * plays * role * def_inj
+    score = base * form_usage * mu * avail * vegas * floor * weather * oline * plays * role * def_inj
     return score, {
         "proj": proj,
+        "base": round(base, 2),
         "form": round(form, 3),
         "form_usage": round(form_usage, 3),
         "matchup": round(mu, 3),
