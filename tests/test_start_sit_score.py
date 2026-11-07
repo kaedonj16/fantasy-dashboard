@@ -88,24 +88,48 @@ def test_form_usage_product_is_capped():
     assert abs(score - 11.0) < 1e-9
 
 
-def test_matchup_does_not_double_count_by_default():
-    """Weekly projections already include the opponent — do not re-apply it."""
+def test_matchup_tiebreaker_applies_by_default_at_two_percent():
+    """2026-11-07 (Kaedon's call): projections carry most of the opponent
+    signal, so the score re-applies matchup only as a capped +/-2%
+    tiebreaker whenever the caller supplies the defense rank."""
     s_easy, easy, _ = compute_start_score(10.0, def_rank=1, def_total=32)
     s_hard, hard, _ = compute_start_score(10.0, def_rank=32, def_total=32)
+    assert easy["matchup"] == 1.02
+    assert hard["matchup"] == 0.98
+    assert abs(s_easy - 10.2) < 1e-9
+    assert abs(s_hard - 9.8) < 1e-9
+
+
+def test_matchup_tiebreaker_can_be_forced_off():
+    s_easy, easy, _ = compute_start_score(
+        10.0, def_rank=1, def_total=32, apply_matchup=False,
+    )
+    s_hard, hard, _ = compute_start_score(
+        10.0, def_rank=32, def_total=32, apply_matchup=False,
+    )
     assert s_easy == s_hard == 10.0
     assert easy["matchup"] == hard["matchup"] == 1.0
 
 
-def test_matchup_optional_residual_when_explicitly_enabled():
-    s_easy, easy, _ = compute_start_score(
-        10.0, def_rank=1, def_total=32, apply_matchup=True,
-    )
-    s_hard, hard, _ = compute_start_score(
-        10.0, def_rank=32, def_total=32, apply_matchup=True,
-    )
-    assert easy["matchup"] == 1.03
-    assert hard["matchup"] == 0.97
-    assert s_easy > s_hard
+def test_matchup_tiebreaker_stays_neutral_without_a_rank():
+    """No rank input -> no invented matchup, factor stays 1.0."""
+    s, factors, _ = compute_start_score(10.0)
+    assert factors["matchup"] == 1.0
+    assert abs(s - 10.0) < 1e-9
+
+
+def test_matchup_tiebreaker_breaks_near_ties_only():
+    """The widest swing is ~a point at flex-range scores: a coin flip
+    flips on matchup, a real projection gap never does."""
+    # 0.01 apart: the soft matchup wins.
+    s_soft, _, _ = compute_start_score(12.66, def_rank=1, def_total=32)
+    s_tough, _, _ = compute_start_score(12.67, def_rank=32, def_total=32)
+    assert s_soft > s_tough
+    # 1.1 apart: the better projection keeps the spot even against the
+    # softest defense.
+    s_best_tough, _, _ = compute_start_score(14.0, def_rank=32, def_total=32)
+    s_worse_soft, _, _ = compute_start_score(12.9, def_rank=1, def_total=32)
+    assert s_best_tough > s_worse_soft
 
 
 def test_questionable_availability():
