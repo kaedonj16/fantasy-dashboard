@@ -80,14 +80,29 @@ def _release_all(sem, held):
 
 
 class _Tracker:
-    def __init__(self):
+    def __init__(self, own_keys=None):
         self.lock = threading.Lock()
         self.cur = 0
         self.max_seen = 0
         self.calls = 0
         self.gate = threading.Event()
+        self.own_keys = own_keys
 
     def compute(self, key, platform, league_id, season, week, ctx):
+        if self.own_keys is not None and key not in self.own_keys:
+            # A rebuild kicked by ANOTHER test's still-running
+            # background work (e.g. a My Leagues page build walking its
+            # cards) resolves this same module-level compute hook while
+            # the monkeypatch is installed. It is not part of this
+            # test's cap accounting: returning immediately lets that
+            # rebuild drain at once instead of parking on this gate for
+            # 60s, holding an aggregate slot, and corrupting the
+            # calls/cur counts and the rebuilding-set snapshot below
+            # (the 2026-11-07 full-shard cascade on PR #3067: a foreign
+            # mark/build inside this test's window failed the snapshot
+            # assert even though this test's own cap behavior was
+            # correct).
+            return ([], {}, {})
         with self.lock:
             self.cur += 1
             self.calls += 1
@@ -100,42 +115,78 @@ class _Tracker:
                 self.cur -= 1
 
 
+def _rebuilding_snapshot():
+    with pages._LIVE_MATCHUP_LOCKS_GUARD:
+        return set(pages._LIVE_MATCHUP_REBUILDING)
+
+
 def test_live_matchup_rebuilds_hold_to_aggregate_cap(fresh_agg, monkeypatch):
-    tracker = _Tracker()
+    keys = [("sleeper", f"gate-live-{i}", 2026, 9) for i in range(8)]
+    admitted = keys[:AGG]
+    dropped = keys[AGG:]
+    tracker = _Tracker(own_keys=set(keys))
     monkeypatch.setattr(pages, "_compute_live_matchups", tracker.compute)
     pages._LIVE_MATCHUP_CACHE.clear()
     with pages._LIVE_MATCHUP_LOCKS_GUARD:
-        pages._LIVE_MATCHUP_REBUILDING.clear()
-    keys = [("sleeper", f"gate-live-{i}", 2026, 9) for i in range(8)]
+        # Only this test's marks: the rebuilding set is shared session
+        # state, and clearing another test's in-flight marks would let
+        # a duplicate rebuild of its key kick alongside the original.
+        pages._LIVE_MATCHUP_REBUILDING.difference_update(keys)
     try:
-        for key in keys:
+        # Admit rebuilds one at a time. Each admitted build parks on
+        # the tracker gate inside compute, so an admission is a stable
+        # end state (tracker.calls stepping 1, 2, 3) the test can wait
+        # on deterministically. Scheduling all 8 at once and polling
+        # for the cur == AGG overlap flaked in the full shard: the
+        # overlap is a transient scheduling artifact of eight racing
+        # threads, and under shard load it was intermittently never
+        # observed inside the wait window even though the cap held.
+        for i, key in enumerate(admitted):
             pages._schedule_live_matchup_rebuild(
                 key, "sleeper", key[1], 2026, 9, {})
-
-        # Per-key dedupe alone allows all 8; the aggregate cap allows 3.
-        assert _wait_for(lambda: tracker.cur == AGG)
-        time.sleep(0.5)
+            assert _wait_for(lambda: tracker.calls == i + 1)
+        # Per-key dedupe alone allows all 8; the aggregate cap parked
+        # exactly these 3, each still holding its aggregate slot.
         assert tracker.cur == AGG
         assert tracker.max_seen <= AGG
+
+        # With every aggregate slot parked, the remaining kicks are
+        # over the cap: their builds never run, and each dropped thread
+        # clears its rebuilding mark, leaving exactly the admitted set.
+        # The snapshot is scoped to this test's keys: a foreign rebuild
+        # (another test's background work) may legitimately hold a mark
+        # in the shared set during this window and is not this test's
+        # cap behavior to assert on.
+        for key in dropped:
+            pages._schedule_live_matchup_rebuild(
+                key, "sleeper", key[1], 2026, 9, {})
+        assert _wait_for(
+            lambda: _rebuilding_snapshot() & set(keys) == set(admitted))
         assert tracker.calls == AGG
 
         tracker.gate.set()
         assert _wait_for(lambda: tracker.cur == 0)
         # Every dropped rebuild cleared its mark, so nothing is stuck.
-        assert _wait_for(lambda: not pages._LIVE_MATCHUP_REBUILDING)
+        assert _wait_for(
+            lambda: not (_rebuilding_snapshot() & set(keys)))
 
         # A dropped key re-kicks and actually rebuilds once slots free.
-        dropped = [k for k in keys[AGG:]]
         calls_before = tracker.calls
         pages._schedule_live_matchup_rebuild(
             dropped[0], "sleeper", dropped[0][1], 2026, 9, {})
         assert _wait_for(lambda: tracker.calls > calls_before)
         assert tracker.max_seen <= AGG
     finally:
+        # Unconditional cleanup: release the gate AND wait for the
+        # parked builds to actually drain, so no thread, mark or
+        # aggregate slot outlives the test even when an assertion above
+        # fails mid-test. Only this test's marks are discarded; foreign
+        # marks belong to their owners' finally blocks.
         tracker.gate.set()
+        _wait_for(lambda: tracker.cur == 0, timeout=10.0)
         pages._LIVE_MATCHUP_CACHE.clear()
         with pages._LIVE_MATCHUP_LOCKS_GUARD:
-            pages._LIVE_MATCHUP_REBUILDING.clear()
+            pages._LIVE_MATCHUP_REBUILDING.difference_update(keys)
 
 
 class _FakePool:
