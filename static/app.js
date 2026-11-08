@@ -31940,6 +31940,166 @@ window._rzStubPbpEvents = function(pid, state) {
   return events;
 };
 
+// ── Game-sheet play derivation ─────────────────────────────────────────────
+// The Matchups game sheet renders ONE game's play-by-play as ScoreZone feed
+// rows. ScoreZone's own feed builder lives in scorezone.js (not loaded off
+// that page), so the neutral per-game derivation lives here beside the stub
+// builder it reuses: raw pbp rows -> one event per NFL play, headlined by
+// the primary fantasy contributor (ScoreZone's _selectPrimaryActor order),
+// scored with that contributor's league scoring via _rzStubPbpEvents, with
+// the score as of the play resolved the way _scoreStrForEvent resolves it
+// (provider stamp first, else a reconciled NFL-points walk). No fantasy
+// scope is attached: no mine/opp, no running totals, no clips.
+function _rzGamePlayNflPoints(rows) {
+  var pts = {};
+  var td = {}, fg = {}, xp = {}, conv = {};
+  (rows || []).forEach(function (r) {
+    if (!r) return;
+    var st = r.play_state || 'VALID';
+    if (st === 'NO_PLAY' || st === 'NULLIFIED' || st === 'OVERTURNED') return;
+    var t = String(r.team || '').toUpperCase();
+    if (!t) return;
+    var line = r.stat_line || {};
+    var n = function (v) { return parseFloat(v || 0) || 0; };
+    if (r.is_td || n(line.pass_td) || n(line.rush_td) || n(line.rec_td) || n(line.def_td)) td[t] = true;
+    if (n(line.fgm)) fg[t] = true;
+    if (n(line.xpm)) xp[t] = true;
+    if (n(line.pass_2pt) || n(line.rush_2pt) || n(line.rec_2pt)) conv[t] = true;
+  });
+  [td, fg, xp, conv].forEach(function (set, i) {
+    var val = [6, 3, 1, 2][i];
+    Object.keys(set).forEach(function (t) { pts[t] = (pts[t] || 0) + val; });
+  });
+  return pts;
+}
+function _rzGamePrimaryActor(contribs) {
+  if (!contribs || !contribs.length) return null;
+  if (contribs.length === 1) return contribs[0];
+  var pick = function (fn) {
+    for (var i = 0; i < contribs.length; i++) { if (fn(contribs[i].statLine || {})) return contribs[i]; }
+    return null;
+  };
+  return pick(function (L) { return L.rec_td > 0; })
+    || pick(function (L) { return L.rec > 0; })
+    || pick(function (L) { return L.targets > 0 && !L.rec; })
+    || pick(function (L) { return L.rush_td > 0; })
+    || pick(function (L) { return L.carries > 0; })
+    || pick(function (L) { return L.int > 0; })
+    || pick(function (L) { return L.pass_td > 0; })
+    || pick(function (L) { return L.pass_yds > 0; })
+    || pick(function (L) { return L.def_td > 0; })
+    || pick(function (L) { return L.sacks || L.def_int || L.fum_rec; })
+    || pick(function (L) { return L.fgm || L.xpm; })
+    || contribs[0];
+}
+window._rzGameEvents = function (data, gid, game) {
+  gid = String(gid || '');
+  var info = (data && data.player_info) || {};
+  var rows = ((data && data.pbp_by_game) || {})[gid] || [];
+  if (!gid || !rows.length) return [];
+  // Canonical play key, consistent for raw rows and stub events alike:
+  // the play_id when the provider sends one, else the payload's seq.
+  var canon = function (playId) {
+    var id = String(playId || '');
+    return id.indexOf(gid + ':') === 0 ? id : (gid + ':' + id);
+  };
+  var rawByKey = {}, rawKeys = [];
+  rows.forEach(function (r, idx) {
+    if (!r) return;
+    var k = canon(r.play_id || (gid + ':' + (r.seq || 0)));
+    if (!rawByKey[k]) { rawByKey[k] = { rows: [], seq: parseFloat(r.seq), idx: idx }; rawKeys.push(k); }
+    if (!isFinite(rawByKey[k].seq)) rawByKey[k].seq = parseFloat(r.seq);
+    rawByKey[k].rows.push(r);
+  });
+  // Score-as-of map: walk the game's plays in seq order accumulating NFL
+  // points; trusted only when the walk reconciles exactly with the game's
+  // current score (a scoring play the stat model cannot see, e.g. a
+  // safety, breaks it and the cards fall back to stamped-only).
+  var asOf = null;
+  var anchorA = parseFloat(game && game.away_pts), anchorH = parseFloat(game && game.home_pts);
+  if (isFinite(anchorA) && isFinite(anchorH) && game.away && game.home) {
+    var runA = 0, runH = 0, map = {};
+    rawKeys.slice().sort(function (a, b) {
+      var ka = rawByKey[a], kb = rawByKey[b];
+      return ((isFinite(ka.seq) ? ka.seq : ka.idx) - (isFinite(kb.seq) ? kb.seq : kb.idx)) || (ka.idx - kb.idx);
+    }).forEach(function (k) {
+      var p = _rzGamePlayNflPoints(rawByKey[k].rows);
+      runA += p[game.away] || 0;
+      runH += p[game.home] || 0;
+      map[k] = { away: runA, home: runH };
+    });
+    if (runA === anchorA && runH === anchorH) asOf = map;
+  }
+  // Scored contributions: one _rzStubPbpEvents pass per resolved player.
+  var pids = {};
+  rows.forEach(function (r) {
+    var pid = _rzStubResolvePlayPid(r, info);
+    if (pid) pids[pid] = true;
+  });
+  var byKey = {};
+  Object.keys(pids).forEach(function (pid) {
+    (window._rzStubPbpEvents(pid, data) || []).forEach(function (ev) {
+      // The stub walks every game in the payload; keep only this one.
+      var evGid = String(ev.gameId || '');
+      if (evGid && evGid !== gid) return;
+      var k = canon(ev.playId);
+      if (!rawByKey[k]) return; // not a play of the tapped game
+      (byKey[k] = byKey[k] || []).push(ev);
+    });
+  });
+  var events = [];
+  Object.keys(byKey).forEach(function (k) {
+    var contribs = byKey[k];
+    var primary = _rzGamePrimaryActor(contribs);
+    if (!primary) return;
+    var rawRows = rawByKey[k].rows;
+    var praw = rawRows.filter(function (r) { return String(r.pid || '') === String(primary.pid); })[0] || rawRows[0] || {};
+    var pi = info[primary.pid] || {};
+    var invalid = contribs.every(function (c) { return c.isNullified; });
+    var L = primary.statLine || {};
+    var anyTd = !!praw.is_td || contribs.some(function (c) { return c.kind === 'td'; });
+    var kind;
+    if (invalid) kind = 'nullified';
+    else if (anyTd) kind = 'td';
+    else if (L.pass_2pt || L.rush_2pt || L.rec_2pt) kind = 'two_point';
+    else if (parseFloat(L.int || 0) > 0) kind = 'neg';
+    else if (L.rec || L.carries || L.pass_yds || L.fgm || L.sacks || L.sack || L.def_td || L.def_int || L.fum_rec) kind = 'gain';
+    else if (L.targets) kind = 'target';
+    else kind = primary.kind || 'gain';
+    var stamp = rawRows.filter(function (r) { return r.score_home != null && r.score_away != null; })[0];
+    var sc = stamp ? { away: stamp.score_away, home: stamp.score_home }
+      : (asOf && asOf[k] ? asOf[k] : null);
+    events.push({
+      pid: String(primary.pid),
+      name: pi.name || praw.name || '',
+      pos: pi.pos || '',
+      nflTeam: pi.team || praw.team || '',
+      gameId: gid,
+      playId: k,
+      seq: primary.seq != null ? primary.seq : (rawByKey[k].seq || 0),
+      gameQuarter: primary.gameQuarter || praw.quarter || '',
+      gameClock: primary.gameClock || praw.clock || '',
+      down: praw.down || '',
+      distance: praw.distance || '',
+      yardLine: praw.yard_line || '',
+      desc: primary.desc || praw.play_text || 'Play',
+      kind: kind,
+      pts: invalid ? 0 : parseFloat(primary.pts || 0),
+      statLine: invalid ? {} : L,
+      scoreAway: sc ? sc.away : null,
+      scoreHome: sc ? sc.home : null,
+      isNullified: invalid
+    });
+  });
+  // Newest first (single game: seq is the canonical order).
+  events.sort(function (a, b) {
+    var sa = parseFloat(a.seq || 0), sb = parseFloat(b.seq || 0);
+    if (sb !== sa) return sb - sa;
+    return a.playId < b.playId ? -1 : (a.playId > b.playId ? 1 : 0);
+  });
+  return events;
+};
+
 // ── Shared league-scope ScoreZone live cache ─────────────────────────────
 // One window-level cache owns the league-scope scorezone-data payloads for
 // every off-ScoreZone surface. The player-modal stub (30 s) and the matchup
@@ -32058,6 +32218,7 @@ window.__brSzLiveCache = (function () {
 // already fetches; only the visible carousel slide is ever painted.
 (function () {
   var TEAM_COLORS = {ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
+  var lastState = null; // latest lite payload painted here; the game sheet opens from it
   var norm = function (t) { return (window._rzNormalizeTeam ? window._rzNormalizeTeam(t) : String(t || '')).toUpperCase(); };
   var esc = function (v) { var d = document.createElement('div'); d.textContent = String(v == null ? '' : v); return d.innerHTML; };
 
@@ -32108,10 +32269,10 @@ window.__brSzLiveCache = (function () {
     var poss = norm(game.possession);
     var tn = norm(team);
     if (!poss || (tn !== norm(game.home) && tn !== norm(game.away))) return '';
-    var href = scorezoneGameUrl(game);
+    var gid = game.game_id ? String(game.game_id) : '';
     if (poss !== tn) {
       var def = '<div class="mb-fld-def">' + esc(tn) + ' on Defense</div>';
-      return href ? '<a class="mb-fld-link" href="' + esc(href) + '" aria-label="Open this game in ScoreZone">' + def + '</a>' : def;
+      return gid ? '<button type="button" class="mb-fld-link" data-gs-team="' + esc(tn) + '" aria-label="Open this game">' + def + '</button>' : def;
     }
     var fp = window._rzFieldPosition(game);
     if (!fp || fp.spot == null) return '';
@@ -32162,19 +32323,392 @@ window.__brSzLiveCache = (function () {
       + fd + '<span class="mb-fld-ball" style="left:' + ballX + '%"></span></div>'
       + '<span class="mb-fld-ezl">' + esc(homeT) + '</span>'
       + '<span class="mb-fld-spot">' + esc(fp.label || '') + '</span></div></div>';
-    return href ? '<a class="mb-fld-link" href="' + esc(href) + '" aria-label="Open this game in ScoreZone">' + bar + '</a>' : bar;
+    return gid ? '<button type="button" class="mb-fld-link" data-gs-team="' + esc(tn) + '" aria-label="Open this game">' + bar + '</button>' : bar;
   }
 
-  // The bar is a real anchor into ScoreZone, but it sits inside the matchup
-  // row's click surface: keep a tap on it from also firing the row's own
-  // handlers (player modal / carousel). Capture phase + stopPropagation --
-  // navigation itself is left alone (no preventDefault).
+  // The bar sits inside the matchup row's click surface: keep a tap on it
+  // from also firing the row's own handlers (player modal / carousel), and
+  // open the game sheet in place instead of navigating to ScoreZone.
+  // Capture phase + stopPropagation + preventDefault.
   document.addEventListener('click', function (e) {
-    if (e.target && e.target.closest && e.target.closest('.mb-fld-link')) e.stopPropagation();
+    var link = e.target && e.target.closest ? e.target.closest('.mb-fld-link') : null;
+    if (!link) return;
+    e.stopPropagation();
+    e.preventDefault();
+    var team = link.getAttribute('data-gs-team');
+    var game = team ? gameForTeam(lastState, team) : null;
+    if (game) { openGameSheet(game); return; }
+    // First tap before the lite payload has painted: fetch it, then open.
+    getState(function (s) {
+      var g = team ? gameForTeam(s, team) : null;
+      if (g) openGameSheet(g);
+    });
   }, true);
+
+  // ── Game sheet ──────────────────────────────────────────────────────────
+  // The sheet the drive bar opens: the real ScoreZone game board on top,
+  // Stats / Plays tabs under it (Weekly Hub tab grammar), and a quiet
+  // "Open in ScoreZone" text link in the footer. It mounts on document.body
+  // on the rz-bs sheet pattern, so carousel repaints never destroy it.
+  // Snapshot on open, no polling: the board first renders from the lite
+  // games map the carousel already holds; the play-by-play and the board's
+  // drive trail arrive with one full scorezone-data fetch through the
+  // shared __brSzLiveCache ('full' variant, the player modal's path). The
+  // box score fetches independently, so a failure in either payload only
+  // degrades its own tab.
+  var gsSheet = null; // { game, gid, tab, box:{team,data,error}, full, fullStatus, fullTimer, els }
+
+  function gsFmtDelta(n) {
+    var val = parseFloat(n);
+    if (isNaN(val)) return '0';
+    var s = (Math.round(val * 100) / 100).toFixed(2);
+    return s.replace(/\.?0+$/, '');
+  }
+  function gsFmtQuarter(q) {
+    var s = String(q == null ? '' : q).trim();
+    if (!s) return '';
+    if (/^\d+$/.test(s)) { var n = parseInt(s, 10); return n >= 5 ? 'OT' : ('Q' + n); }
+    return s;
+  }
+  function gsDownDist(ev) {
+    var d = ev.down, dist = ev.distance;
+    if (!d && !dist) return '';
+    var ord = ({ '1': '1st', '2': '2nd', '3': '3rd', '4': '4th' })[String(d)] || (d ? (d + 'th') : '');
+    if (ord && dist) return ord + ' & ' + dist;
+    if (ord) return ord + ' down';
+    return dist ? ('& ' + dist) : '';
+  }
+  // Red zone = the ball is inside the opponent's 20 (ScoreZone's rule).
+  function gsIsInRedZone(yardLine, offenseTeam) {
+    var m = String(yardLine || '').match(/([A-Za-z]{2,3})\s*(\d{1,2})\b/);
+    if (!m) return false;
+    var n = parseInt(m[2], 10);
+    if (!(n >= 1 && n <= 20)) return false;
+    var off = String(offenseTeam || '').toUpperCase();
+    if (!off) return false;
+    return m[1].toUpperCase() !== off;
+  }
+
+  // One play as a ScoreZone feed row (_eventHtml's markup and conventions),
+  // minus the fantasy-scope elements a neutral game view does not carry:
+  // no MY TEAM / OPP tag, no running total, no cumulative line, no clip row.
+  function gsEventHtml(ev, game) {
+    var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
+    var initials = (ev.name || '?').trim().split(/\s+/).map(function (w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
+    var avInner;
+    if (String(ev.pos || '').toUpperCase() === 'DEF' && ev.nflTeam && window.brTeamBadge) {
+      avInner = window.brTeamBadge(ev.nflTeam, 'xs');
+    } else if (String(ev.pos || '').toUpperCase() === 'DEF' && ev.nflTeam && window.brTeamLogoLocal) {
+      avInner = '<img class="rz-headshot rz-team-logo" src="' + esc(window.brTeamLogoLocal(ev.nflTeam)) + '" alt="" onerror="this.parentNode.classList.add(\'img-err\')">';
+    } else {
+      avInner = '<img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + esc(ev.pid) + '.jpg" alt="" onerror="this.parentNode.classList.add(\'img-err\')">';
+    }
+    var dd = gsDownDist(ev);
+    var situation = [dd, ev.yardLine].filter(Boolean).join(' @ ');
+    var rzBadge = gsIsInRedZone(ev.yardLine, ev.nflTeam) ? '<span class="rz-event-rz">RZ</span>' : '';
+    var situationHtml = (situation || rzBadge)
+      ? '<div class="rz-event-meta"><span class="rz-event-situation">' + esc(situation) + rzBadge + '</span></div>' : '';
+    var sl = ev.statLine || {};
+    var num = function (v) { return parseFloat(v || 0) || 0; };
+    var ydVal = null;
+    if (num(sl.carries)) ydVal = num(sl.rush_yds);
+    else if (num(sl.rec)) ydVal = num(sl.rec_yds);
+    else if ('pass_yds' in sl && !num(sl.int)) ydVal = num(sl.pass_yds);
+    var ydChip = (ydVal != null)
+      ? ' <span class="rz-event-yd ' + (ydVal > 0 ? 'pos' : (ydVal < 0 ? 'neg' : 'zero')) + '">'
+        + (ydVal > 0 ? '+' : '') + ydVal + ' yd</span>' : '';
+    var d = parseFloat(ev.pts || 0) || 0;
+    var deltaCls = d > 0.0001 ? 'pos' : (d < -0.0001 ? 'neg' : 'zero');
+    var deltaPrimary = (d > 0.0001 ? '+' : '') + gsFmtDelta(d);
+    var scoreStr = (ev.scoreAway != null && ev.scoreHome != null && game.away && game.home)
+      ? game.away + ' ' + ev.scoreAway + '\u2013' + ev.scoreHome + ' ' + game.home : '';
+    var clockStr = [gsFmtQuarter(ev.gameQuarter), ev.gameClock].filter(Boolean).join(' ');
+    var isBig = ev.kind === 'td' || d >= 4;
+    return '<div class="rz-event ' + esc(ev.kind) + (isBig ? ' is-big' : '') + ' rz-event-old" data-pid="' + esc(ev.pid) + '">'
+      + '<div class="rz-event-avatar rz-av-' + esc(posKey) + '" data-init="' + esc(initials) + '">' + avInner + '</div>'
+      + '<div class="rz-event-body">' + situationHtml
+      + '<div class="rz-event-main"><span class="rz-event-name">' + esc(ev.name) + '</span></div>'
+      + '<div class="rz-event-desc">' + esc(ev.desc) + ydChip + '</div></div>'
+      + '<div class="rz-event-delta ' + deltaCls + '">'
+      + ((scoreStr || clockStr) ? '<div class="rz-event-delta-game">'
+        + (scoreStr ? '<div class="rz-event-score">' + esc(scoreStr) + '</div>' : '')
+        + (clockStr ? '<div class="rz-event-clock">' + esc(clockStr) + '</div>' : '')
+        + '</div>' : '')
+      + '<div class="rz-event-delta-pts">' + deltaPrimary + '</div></div></div>';
+  }
+
+  // Box score body for the Stats tab: the ScoreZone box-score sheet's
+  // builder (scorezone.js _boxSheetBodyHtml) ported to this bundle, which
+  // scorezone.js is not part of. Same payload shaping, FP math, sorting,
+  // group totals and lead marking. Two sheet options differ, both deliberate:
+  // the section line is plain "Player stats" (Kaedon's ruling for this
+  // sheet; ScoreZone's own sheet keeps its note, see the options parameter
+  // on _boxSheetBodyHtml), and player rows carry headshots.
+  var GS_BOX_POS = { QB: 'Quarterbacks', RB: 'Running backs', WR: 'Wide receivers', TE: 'Tight ends' };
+  function gsBoxFantasyPts(cells) {
+    var num = function (v) { var x = parseFloat(v); return isFinite(x) ? x : 0; };
+    var c = cells || {};
+    return num(c.pass_yds) / 25 + num(c.pass_td) * 4 - num(c.pass_int) * 2
+      + num(c.rush_yds) / 10 + num(c.rush_td) * 6
+      + num(c.rec) + num(c.rec_yds) / 10 + num(c.rec_td) * 6
+      - num(c.fum_lost) * 2;
+  }
+  function gsBoxBodyHtml() {
+    var box = gsSheet.box;
+    if (box.error) {
+      return '<div class="rz-bs-empty"><span class="rz-bs-empty-ico">▦</span>'
+        + '<p>Could not load the box score.</p>'
+        + '<button type="button" class="rz-bs-retry" data-gs-box-retry="1">Try again</button></div>';
+    }
+    if (!box.data) return '<div class="rz-bs-empty"><p>Loading…</p></div>';
+    var d = box.data || {};
+    if (d.available === false) {
+      return '<div class="rz-bs-empty"><span class="rz-bs-empty-ico">▦</span><p>'
+        + esc(d.error || 'Box score unavailable.') + '</p></div>';
+    }
+    if (d.started === false) {
+      return '<div class="rz-bs-empty"><span class="rz-bs-empty-ico">▦</span><p>'
+        + esc(d.message || 'Box score available once the game begins.') + '</p></div>';
+    }
+    var away = d.away || {}, home = d.home || {};
+    var teams = d.teams || {};
+    var team = box.team && teams[box.team] ? box.team : (away.team || home.team || Object.keys(teams)[0] || '');
+    box.team = team;
+    var t = teams[team] || { groups: [] };
+    var toggle = '<div class="rz-bs-teams" role="group" aria-label="Team">'
+      + [away.team, home.team].filter(Boolean).map(function (abv) {
+          return '<button type="button" class="rz-bs-team' + (abv === team ? ' is-on' : '') + '"'
+            + ' data-box-team="' + esc(abv) + '" aria-pressed="' + (abv === team ? 'true' : 'false') + '">'
+            + esc(abv) + '</button>';
+        }).join('')
+      + '</div>';
+    var groups = (t.groups || []).filter(function (gr) {
+      return Object.prototype.hasOwnProperty.call(GS_BOX_POS, gr.pos);
+    });
+    function gsBoxHasData(p, cols) {
+      return cols.some(function (c) {
+        var v = (p.cells || {})[c.key];
+        return v !== null && v !== undefined && v !== '';
+      });
+    }
+    var tables = groups.map(function (gr) {
+      var allCols = gr.columns || [];
+      var cols = allCols.filter(function (c) {
+        return (gr.players || []).some(function (p) {
+          var v = (p.cells || {})[c.key];
+          return v !== null && v !== undefined && v !== '';
+        });
+      });
+      var rows = (gr.players || [])
+        .filter(function (p) { return gsBoxHasData(p, cols); })
+        .map(function (p) { return { p: p, fp: gsBoxFantasyPts(p.cells) }; })
+        .sort(function (a, b) { return b.fp - a.fp; });
+      if (!rows.length) return '';
+      var groupFp = rows.reduce(function (s, r) { return s + r.fp; }, 0);
+      var leadFp = rows[0].fp;
+      var head = '<tr><th scope="col"><span class="rz-sr">Player</span></th>'
+        + '<th scope="col" class="rz-bs-fp" title="Fantasy points (PPR)">FP</th>'
+        + cols.map(function (c) { return '<th scope="col">' + esc(c.label || c.key) + '</th>'; }).join('')
+        + '</tr>';
+      var body = rows.map(function (r) {
+        var p = r.p;
+        var cells = cols.map(function (c) {
+          var v = (p.cells || {})[c.key];
+          return '<td>' + (v === null || v === undefined || v === '' ? '–' : esc(String(v))) + '</td>';
+        }).join('');
+        var ini = (p.name || '?').trim().split(/\s+/).map(function (w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
+        var hs = p.id ? '<span class="gs-hs" data-init="' + esc(ini) + '"><img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + esc(p.id) + '.jpg" alt="" loading="lazy" onerror="this.parentNode.classList.add(\'img-err\')"></span>' : '';
+        return '<tr data-pid="' + esc(p.id || '') + '" data-pname="' + esc(p.name || '') + '">'
+          + '<td class="rz-bs-pname">' + hs + esc(p.name || '–') + '</td>'
+          + '<td class="rz-bs-fp' + (r.fp === leadFp && r.fp > 0 ? ' is-lead' : '') + '">'
+          + r.fp.toFixed(1) + '</td>' + cells + '</tr>';
+      }).join('');
+      return '<div class="rz-bs-ptitle"><span>' + esc(GS_BOX_POS[gr.pos] || gr.pos)
+        + '</span><span class="rz-bs-gfp">' + groupFp.toFixed(1) + ' FP</span></div>'
+        + '<div class="rz-bs-tscroll"><table class="rz-bs-table" data-sortable><thead>' + head
+        + '</thead><tbody>' + body + '</tbody></table></div>';
+    }).join('');
+    if (!tables) {
+      tables = '<div class="rz-bs-empty"><p>No player stats yet.</p></div>';
+    }
+    return '<div class="rz-bs-sec">Player stats</div>' + toggle + tables;
+  }
+
+  function gsRenderBoard() {
+    if (!gsSheet) return;
+    var data = gsSheet.full;
+    var g = (data && data.games && data.games[gsSheet.gid]) || gsSheet.game;
+    var plays = data && data.pbp_by_game ? (data.pbp_by_game[gsSheet.gid] || []) : [];
+    gsSheet.els.board.innerHTML = window._rzRenderGameBoard(g, { modal: true, fieldBoard: true, pbpPlays: plays });
+  }
+  function gsRenderStats() {
+    if (!gsSheet) return;
+    gsSheet.els.stats.innerHTML = gsBoxBodyHtml();
+    if (typeof initGenericTableSort === 'function') initGenericTableSort(gsSheet.els.stats);
+  }
+  function gsRenderPlays() {
+    if (!gsSheet) return;
+    if (gsSheet.fullStatus === 'loading') {
+      gsSheet.els.plays.innerHTML = '<div class="rz-bs-empty"><p>Loading plays…</p></div>';
+      return;
+    }
+    if (gsSheet.fullStatus !== 'ready' || !gsSheet.full) {
+      gsSheet.els.plays.innerHTML = '<div class="rz-bs-empty"><p>Plays are unavailable for this game.</p></div>';
+      return;
+    }
+    var data = gsSheet.full;
+    var g = (data.games && data.games[gsSheet.gid]) || gsSheet.game;
+    var events = window._rzGameEvents ? window._rzGameEvents(data, gsSheet.gid, g) : [];
+    gsSheet.els.plays.innerHTML = events.length
+      ? '<div class="gs-plays">' + events.map(function (ev) { return gsEventHtml(ev, g); }).join('') + '</div>'
+      : '<div class="rz-bs-empty"><p>No plays recorded yet.</p></div>';
+  }
+  function gsSheetKey(e) {
+    if (e && e.key === 'Escape') gsCloseSheet();
+  }
+  function gsCloseSheet() {
+    if (!gsSheet) return;
+    if (gsSheet.fullTimer) clearTimeout(gsSheet.fullTimer);
+    var els = gsSheet.els;
+    if (els.backdrop.parentNode) els.backdrop.parentNode.removeChild(els.backdrop);
+    if (els.sheet.parentNode) els.sheet.parentNode.removeChild(els.sheet);
+    gsSheet = null;
+    document.removeEventListener('keydown', gsSheetKey);
+    document.body.style.overflow = '';
+  }
+  function gsSheetClick(e) {
+    if (!gsSheet) return;
+    var t = e.target;
+    var closest = function (sel) { return t && t.closest ? t.closest(sel) : null; };
+    if (closest('[data-gs-close]')) { gsCloseSheet(); return; }
+    var tab = closest('[data-gtab]');
+    if (tab) {
+      gsSheet.tab = tab.getAttribute('data-gtab');
+      gsSheet.els.sheet.querySelectorAll('[data-gtab]').forEach(function (b) {
+        var on = b === tab;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      gsSheet.els.sheet.querySelectorAll('[data-gpanel]').forEach(function (p) {
+        p.classList.toggle('active', p.getAttribute('data-gpanel') === gsSheet.tab);
+      });
+      return;
+    }
+    if (closest('[data-gs-box-retry]')) {
+      var game = gsSheet.game;
+      gsCloseSheet();
+      openGameSheet(game);
+      return;
+    }
+    var teamBtn = closest('[data-box-team]');
+    if (teamBtn) {
+      gsSheet.box.team = teamBtn.getAttribute('data-box-team');
+      gsRenderStats();
+      return;
+    }
+    // Player rows tap through to the player modal, mirroring the box-score
+    // sheet's own delegation (Stats tab only; play rows stay inert here).
+    var pr = closest('[data-pid]');
+    if (pr && window.openPlayerModal && gsSheet.els.stats.contains(pr)) {
+      var pid = pr.getAttribute('data-pid');
+      if (pid && pid !== '0') window.openPlayerModal(pid, pr.getAttribute('data-pname') || '', { tab: 'live' });
+    }
+  }
+  function openGameSheet(game) {
+    if (!game || !window._rzRenderGameBoard) return;
+    var gid = game.game_id ? String(game.game_id) : '';
+    if (!gid) return;
+    gsCloseSheet();
+    var backdrop = document.createElement('div');
+    backdrop.className = 'rz-bs-backdrop';
+    var sheet = document.createElement('div');
+    sheet.className = 'rz-bs-sheet gs-sheet';
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-modal', 'true');
+    sheet.setAttribute('aria-label', 'Game sheet');
+    var url = scorezoneGameUrl(game);
+    sheet.innerHTML =
+      '<div class="rz-bs-handle" aria-hidden="true"></div>'
+      + '<div class="rz-bs-head"><button type="button" class="rz-bs-x" data-gs-close="1" aria-label="Close game sheet">✕</button></div>'
+      + '<div class="rz-bs-body"><div class="gs-board-wrap"></div>'
+      + '<div class="card-tabs gs-tabs"><div class="tab-bar" role="tablist" aria-label="Game sheet">'
+      + '<button type="button" class="tab-btn active" data-gtab="stats" role="tab" aria-selected="true">Stats</button>'
+      + '<button type="button" class="tab-btn" data-gtab="plays" role="tab" aria-selected="false">Plays</button>'
+      + '</div><div class="tab-panels">'
+      + '<div class="tab-panel active" data-gpanel="stats"></div>'
+      + '<div class="tab-panel" data-gpanel="plays"></div>'
+      + '</div></div></div>'
+      + (url ? '<div class="gs-foot"><a href="' + esc(url) + '">Open in ScoreZone \u2192</a></div>' : '');
+    document.body.appendChild(backdrop);
+    document.body.appendChild(sheet);
+    gsSheet = {
+      game: game, gid: gid, tab: 'stats',
+      box: { team: norm(game.away), data: null, error: false },
+      full: null, fullStatus: 'loading', fullTimer: null,
+      els: {
+        backdrop: backdrop, sheet: sheet,
+        board: sheet.querySelector('.gs-board-wrap'),
+        stats: sheet.querySelector('[data-gpanel="stats"]'),
+        plays: sheet.querySelector('[data-gpanel="plays"]')
+      }
+    };
+    // Animate in after mount so the transition runs.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        backdrop.classList.add('open');
+        sheet.classList.add('open');
+      });
+    });
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', gsSheetKey);
+    backdrop.addEventListener('click', gsCloseSheet);
+    sheet.addEventListener('click', gsSheetClick);
+    gsRenderBoard();
+    gsRenderStats();
+    gsRenderPlays();
+    // Stats: one box-score fetch per open; the payload carries both teams,
+    // the toggle only swaps which side renders.
+    fetch('/api/player-team-boxscore?game_id=' + encodeURIComponent(gid))
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        if (!gsSheet || gsSheet.gid !== gid) return; // user moved on
+        gsSheet.box.data = data;
+        var vt = data && data.view_team, teams = (data && data.teams) || {};
+        gsSheet.box.team = (vt && teams[vt]) ? vt : (((data || {}).away || {}).team || gsSheet.box.team);
+        gsRenderStats();
+      })
+      .catch(function () {
+        if (!gsSheet || gsSheet.gid !== gid) return;
+        gsSheet.box.error = true;
+        gsRenderStats();
+      });
+    // Plays + the board's drive trail: one full payload through the shared
+    // cache. A network failure drops the cache's waiters silently, so a
+    // timer marks the tab unavailable instead of loading forever.
+    var applyFull = function (data) {
+      if (!data || !gsSheet || gsSheet.gid !== gid) return;
+      gsSheet.full = data;
+      gsSheet.fullStatus = 'ready';
+      if (gsSheet.fullTimer) { clearTimeout(gsSheet.fullTimer); gsSheet.fullTimer = null; }
+      gsRenderBoard();
+      gsRenderPlays();
+    };
+    var cached = null;
+    try { cached = window.__brSzLiveCache.get('full', 30000, applyFull); } catch (err) {}
+    if (cached) applyFull(cached);
+    if (gsSheet && gsSheet.gid === gid && gsSheet.fullStatus === 'loading') {
+      gsSheet.fullTimer = setTimeout(function () {
+        if (gsSheet && gsSheet.gid === gid && gsSheet.fullStatus === 'loading') {
+          gsSheet.fullStatus = 'failed';
+          gsRenderPlays();
+        }
+      }, 15000);
+    }
+  }
 
   function paint(slide, state) {
     if (!slide || !state) return;
+    lastState = state;
     var anyLive = false;
     slide.querySelectorAll('.mb-fld[data-team]').forEach(function (mount) {
       var team = mount.getAttribute('data-team');

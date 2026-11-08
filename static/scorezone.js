@@ -5959,7 +5959,11 @@
     return d.status || '';
   }
 
-  function _boxSheetBodyHtml() {
+  // options.showPlayerStatsNote === false renders the section line as
+  // plain "Player stats" (the Matchups game sheet's ruling for its Stats
+  // tab, whose port of this builder lives in app.js). Default: unchanged.
+  function _boxSheetBodyHtml(options) {
+    var showNote = !options || options.showPlayerStatsNote !== false;
     var s = _boxSheet;
     if (!s) return '';
     if (s.error) {
@@ -6047,7 +6051,7 @@
     if (!tables) {
       tables = '<div class="rz-bs-empty"><p>No player stats yet.</p></div>';
     }
-    return '<div class="rz-bs-sec">Player stats <span class="rz-bs-note">\u00b7 fantasy points (PPR)</span></div>' + toggle + tables;
+    return '<div class="rz-bs-sec">Player stats' + (showNote ? ' <span class="rz-bs-note">\u00b7 fantasy points (PPR)</span>' : '') + '</div>' + toggle + tables;
   }
 
   function _renderBoxSheet() {
