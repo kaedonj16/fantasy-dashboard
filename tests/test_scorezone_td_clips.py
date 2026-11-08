@@ -266,6 +266,121 @@ def test_caption_tokens_split_mention_handles():
     assert clips.has_play_signal("THE CATCH. THE SCORE.")
 
 
+def _cin_wanted():
+    # Real ESPN row shape for CIN@ATL, 2026-11-08: the passer row
+    # carries pass_td, the receiver row rec_td.
+    rows = [
+        _row("c1", "burrow", {"pass_td": 1, "pass_yds": 47},
+             "2026-11-08T14:48:32Z", "1", "8:49"),
+        _row("c1", "chase", {"rec_td": 1},
+             "2026-11-08T14:48:32Z", "1", "8:49"),
+        _row("c2", "burrow", {"pass_td": 1},
+             "2026-11-08T15:38:12Z", "2", "4:03"),
+        _row("c2", "higgins", {"rec_td": 1},
+             "2026-11-08T15:38:12Z", "2", "4:03"),
+        _row("c3", "burrow", {"pass_td": 1},
+             "2026-11-08T16:43:20Z", "3", "2:05"),
+        _row("c3", "higgins", {"rec_td": 1},
+             "2026-11-08T16:43:20Z", "3", "2:05"),
+    ]
+    names = {"burrow": "Joe Burrow", "chase": "Ja'Marr Chase",
+             "higgins": "Tee Higgins"}
+    return clips.build_wanted_td_plays(
+        "20261108_CIN@ATL", rows, names, away="CIN", home="ATL")
+
+
+def test_wanted_records_passer_separately_from_scorer():
+    wanted = _cin_wanted()
+    c1 = next(w for w in wanted if w["play_id"] == "c1")
+    assert c1["scorers"] == ["Ja'Marr Chase"]
+    assert c1["passers"] == ["Joe Burrow"]
+    assert c1["name_surnames"] == {"chase", "burrow"}
+
+
+def test_passer_plus_first_name_caption_matches_chase_td():
+    # The real @NFL clip for the Chase TD: passer surname + the
+    # receiver's first name only. The scorer never appears.
+    tweet = _tweet(
+        "2119442177151447295",
+        "BURROW. JA'MARR. TOUCHDOWN. \n\n"
+        "CINvsATL on NFL Network\nStream on @NFLPlus",
+        "2026-11-08T14:49:27Z")
+    matches = clips.match_tweets([tweet], _cin_wanted())
+    assert [m["play_id"] for m in matches] == ["c1"]
+    assert matches[0]["scorer"] == "Ja'Marr Chase"
+
+
+def test_passer_caption_matches_higgins_first_td_and_fan_still_rejected():
+    # The real @NFL clip for Higgins' first TD, posted 32s BEFORE the
+    # fan tweet that won the live match: "Burrow finds Tee in the end
+    # zone" names the passer and a first name, never "Higgins".
+    real = _tweet(
+        "2119454721022820630",
+        "Burrow finds Tee in the end zone and the @Bengals offense "
+        "is rolling in Madrid.\n\n"
+        "CINvsATL on NFL Network\nStream on @NFLPlus",
+        "2026-11-08T15:39:17Z")
+    matches = clips.match_tweets([real], _cin_wanted())
+    assert [m["play_id"] for m in matches] == ["c2"]
+    assert matches[0]["scorer"] == "Tee Higgins"
+    fan = _tweet(
+        "2119454853554418046",
+        "Tee Higgins just made this @Bengals fan's day \U0001f979\n\n"
+        "CINvsATL on NFL Network\nStream on @NFLPlus",
+        "2026-11-08T15:39:49Z")
+    assert clips.match_tweets([fan], _cin_wanted()) == []
+
+
+def test_fused_handle_surname_suffix_matches_higgins_second_td():
+    # "@teehiggins5" tokenizes to "teehiggins": no split point, but
+    # the token ends with the surname.
+    tweet = _tweet(
+        "2119471041332293699",
+        "Second touchdown of the day for @teehiggins5 \n\n"
+        "CINvsATL on NFL Network\nStream on @NFLPlus",
+        "2026-11-08T16:44:08Z")
+    matches = clips.match_tweets([tweet], _cin_wanted())
+    assert [m["play_id"] for m in matches] == ["c3"]
+    assert matches[0]["scorer"] == "Tee Higgins"
+    # The companion post has the handle but no play signal: rejected.
+    vague = _tweet(
+        "2119471271754805308",
+        "Perfect execution from @JoeyB and @teehiggins5 \n\n"
+        "CINvsATL on NFL Network\nStream on @NFLPlus",
+        "2026-11-08T16:45:03Z")
+    assert clips.match_tweets([vague], _cin_wanted()) == []
+
+
+def test_surname_suffix_rule_needs_four_chars():
+    assert clips._surname_in_tokens("higgins", {"teehiggins"})
+    assert clips._surname_in_tokens("higgins", {"higgins"})
+    assert not clips._surname_in_tokens("lee", {"ashlee"})
+    assert not clips._surname_in_tokens("higgins", {"higgin"})
+    assert not clips._surname_in_tokens("", {"higgins"})
+
+
+def test_passer_only_caption_ambiguous_between_his_two_tds():
+    rows = [
+        _row("a1", "burrow", {"pass_td": 1}, "2026-11-08T15:00:00Z"),
+        _row("a1", "chase", {"rec_td": 1}, "2026-11-08T15:00:00Z"),
+        _row("a2", "burrow", {"pass_td": 1}, "2026-11-08T15:05:00Z"),
+        _row("a2", "higgins", {"rec_td": 1}, "2026-11-08T15:05:00Z"),
+    ]
+    names = {"burrow": "Joe Burrow", "chase": "Ja'Marr Chase",
+             "higgins": "Tee Higgins"}
+    wanted = clips.build_wanted_td_plays(
+        "20261108_CIN@ATL", rows, names, away="CIN", home="ATL")
+    vague = _tweet("v1", "Burrow with another touchdown pass!",
+                   "2026-11-08T15:06:00Z")
+    assert clips.match_tweets([vague], wanted) == []
+    # Naming the scorer as well breaks the tie toward his play, even
+    # though the passer alone also fits the earlier play.
+    specific = _tweet("s1", "Burrow finds Higgins for the touchdown!",
+                      "2026-11-08T15:06:00Z")
+    matches = clips.match_tweets([specific], wanted)
+    assert [m["play_id"] for m in matches] == ["a2"]
+
+
 def test_caption_naming_other_scorer_outside_his_window_does_not_match():
     # Tucker's real caption text, posted during Kyren's window: Tucker's own
     # play is hours from its window, and Kyren is not named. No match.
