@@ -21473,6 +21473,7 @@ if (typeof window !== 'undefined') {
   var MAX_WAIT_MS = 15000; // the indicator can never strand on a hung hook
 
   var candidate = false;
+  var deferredH = false; // candidate started on a horizontal scroller; direction not yet proven
   var refreshing = false;
   var startX = 0;
   var startY = 0;
@@ -21533,7 +21534,22 @@ if (typeof window !== 'undefined') {
       if (/(^|\s)(carousel|hz-scroll|scroll-row|tab-bar)(\s|$)/.test(cls)) return true;
       // Inner scroller that can still scroll up: the gesture belongs to it.
       if (node.scrollTop > 0 && node.scrollHeight > node.clientHeight + 4) return true;
-      // Horizontal scroller/carousel with room to move sideways.
+      node = node.parentElement || node.parentNode;
+      depth++;
+    }
+    return false;
+  }
+
+  // Horizontal scroller/carousel with room to move sideways, anywhere in
+  // the target's ancestry. This is NOT a hard block: at touchstart the
+  // gesture's direction is unknown, and a vertical pull that happens to
+  // start on a carousel (on the Weekly Hub the matchup board's .m-track
+  // fills most of the first screen) is a page pull, not a carousel swipe.
+  // The touchmove handler defers to the carousel only once the gesture
+  // proves horizontal; a vertical-dominant move claims the pull instead.
+  function hScrollerTarget(node) {
+    var depth = 0;
+    while (node && node !== document && depth < 14) {
       if (node.scrollLeft !== undefined && node.scrollWidth > node.clientWidth + 4) {
         var ox = '';
         try {
@@ -21565,6 +21581,7 @@ if (typeof window !== 'undefined') {
 
   document.addEventListener('touchstart', function (e) {
     candidate = false;
+    deferredH = false;
     pull = 0;
     if (refreshing) return;
     if (typeof window.brPageRefresh !== 'function') return; // no hook, no gesture
@@ -21576,12 +21593,29 @@ if (typeof window !== 'undefined') {
     startX = t.clientX;
     startY = t.clientY;
     candidate = true;
+    // On a horizontal scroller the gesture is only provisionally ours:
+    // touchmove decides once its direction is clear (see below).
+    deferredH = hScrollerTarget(e.target);
   }, { passive: true });
 
   document.addEventListener('touchmove', function (e) {
     if (!candidate || refreshing) return;
-    if (pageScrollY() > 0) { candidate = false; retract(); return; }
+    if (pageScrollY() > 0) { candidate = false; deferredH = false; retract(); return; }
     var t = touchPoint(e);
+    if (deferredH) {
+      if (!t) return;
+      var ddx = t.clientX - startX;
+      var ddy = t.clientY - startY;
+      // Horizontal-dominant: the scroller keeps its gesture. Nothing has
+      // been preventDefaulted or shown yet, so the swipe is untouched.
+      if (Math.abs(ddx) >= 10 && Math.abs(ddx) > Math.abs(ddy)) {
+        candidate = false; deferredH = false; retract(); return;
+      }
+      // Vertical-dominant: claim the pull and fall through to the normal
+      // handling below for this and every later move.
+      if (ddy >= 10 && Math.abs(ddy) >= Math.abs(ddx)) deferredH = false;
+      else return; // direction undecided: hands off
+    }
     if (!t) return;
     var dx = t.clientX - startX;
     var dy = t.clientY - startY;
@@ -21614,6 +21648,7 @@ if (typeof window !== 'undefined') {
   document.addEventListener('touchend', function () {
     if (!candidate) return;
     candidate = false;
+    deferredH = false;
     if (refreshing) return;
     if (pull >= THRESHOLD && typeof window.brPageRefresh === 'function') triggerRefresh();
     else retract();
@@ -21622,6 +21657,7 @@ if (typeof window !== 'undefined') {
 
   document.addEventListener('touchcancel', function () {
     candidate = false;
+    deferredH = false;
     pull = 0;
     if (!refreshing) retract();
   }, { passive: true });
