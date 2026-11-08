@@ -11,7 +11,9 @@ Pipeline (runs inside the scorezone-store poll, see ``poll_once``):
 3. Gate (precision over coverage): a tweet becomes a play's clip only when
    the author is @NFL or one of the game's team accounts, the tweet was
    posted within [play wallclock, +12 minutes], the caption names the TD
-   scorer's surname, the caption actually describes the play or the score
+   scorer's surname (or, on a pass TD, the passer's surname: @NFL's house
+   style is "BURROW. JA'MARR. TOUCHDOWN.", passer + first name only), the
+   caption actually describes the play or the score
    (a play signal: touchdown / end zone / a yardage line / "extends the
    lead" etc. -- a surname-only caption matched a post-TD fan moment on
    2026-11-08), the caption is not a multi-play roundup, and exactly
@@ -163,6 +165,29 @@ def _caption_tokens(text: str) -> set:
     return tokens
 
 
+def _surname_in_tokens(surname: str, tokens: set) -> bool:
+    """True when a caption token carries this surname.
+
+    Exact token, or a fused token that ENDS with the surname:
+    "@teehiggins5" tokenizes to "teehiggins", which no underscore or
+    camelCase split can open, but it still ends with "higgins". The
+    suffix rule requires a surname of 4+ chars so short names cannot
+    false-positive on unrelated words.
+    """
+    if not surname:
+        return False
+    if surname in tokens:
+        return True
+    if len(surname) < 4:
+        return False
+    return any(
+        len(t) > len(surname) and t.endswith(surname) for t in tokens)
+
+
+def _any_surname_in_tokens(surnames, tokens: set) -> bool:
+    return any(_surname_in_tokens(sn, tokens) for sn in surnames or ())
+
+
 def is_roundup_caption(text: str) -> bool:
     return bool(_ROUNDUP_RE.search(str(text or "")))
 
@@ -195,7 +220,11 @@ def build_wanted_td_plays(
     A play is wanted when any of its rows is a TD and some row carries an
     ESPN wallclock (the window anchor). Scorers are the players credited
     with the TD in their stat line (rec/rush/def); when attribution credited
-    nobody, every involved non-DEF player is a candidate scorer. Plays with
+    nobody, every involved non-DEF player is a candidate scorer. Passers
+    (pass_td in their stat line) are recorded separately: they never become
+    the play's scorer, but their surname is an accepted matching name,
+    because official captions routinely name the passer and only the
+    scorer's first name ("Burrow finds Tee in the end zone"). Plays with
     no resolvable scorer name are dropped: an unnameable play can never be
     matched precisely.
     """
@@ -227,6 +256,7 @@ def build_wanted_td_plays(
         if not wallclock:
             continue
         scorer_pids: list[str] = []
+        passer_pids: list[str] = []
         involved_pids: list[str] = []
         for r in td_rows:
             pid = str(r.get("pid") or "")
@@ -237,6 +267,8 @@ def build_wanted_td_plays(
             try:
                 if any(float(stat.get(k) or 0) > 0 for k in _TD_STAT_KEYS):
                     scorer_pids.append(pid)
+                if float(stat.get("pass_td") or 0) > 0:
+                    passer_pids.append(pid)
             except (TypeError, ValueError):
                 continue
         scorers: list[str] = []
@@ -246,6 +278,11 @@ def build_wanted_td_plays(
                 scorers.append(name)
         if not scorers:
             continue
+        passers: list[str] = []
+        for pid in passer_pids:
+            name = str((pid_to_name or {}).get(pid) or "")
+            if name and surname_of(name) and name not in scorers:
+                passers.append(name)
         first = td_rows[0]
         wanted.append({
             "game_id": str(game_id),
@@ -255,6 +292,12 @@ def build_wanted_td_plays(
             "clock": first.get("clock") or "",
             "scorers": scorers,
             "scorer_surnames": {surname_of(n) for n in scorers},
+            "passers": passers,
+            "passer_surnames": {surname_of(n) for n in passers},
+            "name_surnames": (
+                {surname_of(n) for n in scorers}
+                | {surname_of(n) for n in passers}
+            ),
             "accounts": accounts,
         })
     return wanted
@@ -305,26 +348,43 @@ def match_tweets(tweets: list[dict], wanted: list[dict]) -> list[dict]:
         if not ts:
             continue
         caption_tokens = _caption_tokens(text)
-        candidates = []
+        scorer_hits = []
+        passer_hits = []
         for plays in by_game.values():
             for w in plays:
                 if w["play_id"] in matched_play_ids:
                     continue
                 if author.lower() not in {a.lower() for a in w["accounts"]}:
                     continue
-                if not (w["scorer_surnames"] & caption_tokens):
+                if not (w["wallclock"] <= ts <= w["wallclock"] + _WINDOW_S):
                     continue
-                if w["wallclock"] <= ts <= w["wallclock"] + _WINDOW_S:
-                    candidates.append(w)
+                if _any_surname_in_tokens(
+                        w["scorer_surnames"], caption_tokens):
+                    scorer_hits.append(w)
+                elif _any_surname_in_tokens(
+                        w.get("passer_surnames") or (), caption_tokens):
+                    passer_hits.append(w)
+        # A caption naming the scorer outranks one naming only the
+        # passer: with two of the QB's TDs inside one window, "Burrow
+        # finds Higgins" must land on Higgins' play, not die as
+        # ambiguous against the earlier play the passer also fits.
+        candidates = scorer_hits if scorer_hits else passer_hits
         if len(candidates) != 1:
             # Zero fits: not a clip for anything wanted. Two or more fits:
             # ambiguous (same scorer twice in a window, a cross-game surname
-            # collision) -- precision wins, store nothing.
+            # collision, a passer who threw two TDs in one window) --
+            # precision wins, store nothing.
             continue
         w = candidates[0]
         scorer = next(
-            (n for n in w["scorers"] if surname_of(n) in caption_tokens), ""
+            (n for n in w["scorers"]
+             if _surname_in_tokens(surname_of(n), caption_tokens)), ""
         )
+        if not scorer and w["scorers"]:
+            # Passer-only caption ("BURROW. JA'MARR. TOUCHDOWN."): the
+            # clip still belongs to the TD scorer's play, so the stored
+            # scorer stays the scorer, not the passer.
+            scorer = w["scorers"][0]
         matched_play_ids.add(w["play_id"])
         tweet_id = str(tweet.get("id") or "")
         out.append({
