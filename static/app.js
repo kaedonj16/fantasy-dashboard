@@ -19060,6 +19060,11 @@ document.addEventListener("DOMContentLoaded", () => {
   let inboxItems = [];
   let inboxUnread = 0;
   let isDropdownOpen = false;
+  // Panel tabs: "updates" (everything else) vs "scorezone" (live game
+  // alerts). niTabChosen records an explicit tap so rebuilds (mark all
+  // read) never yank the user off the tab they picked.
+  let niActiveTab = "updates";
+  let niTabChosen = false;
 
   function changelogUnseen() {
     if (!changelogData || changelogData.length === 0) return false;
@@ -19127,10 +19132,30 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ── Notification center panel ──────────────────────────────────────────
-  // One list: the account's sent alerts (inbox) newest first, with the
-  // changelog folded in as an item type. A changelog entry whose headline
-  // matches a recorded changelog inbox item is skipped (the inbox item is
-  // the same alert, with a real read state).
+  // Two tabs over one inbox: the account's sent alerts newest first, with
+  // the changelog folded in as an item type. ScoreZone holds the live
+  // game alerts (TDs + close games); Updates holds everything else,
+  // changelog included. A changelog entry whose headline matches a
+  // recorded changelog inbox item is skipped (the inbox item is the same
+  // alert, with a real read state).
+  const _NI_SCOREZONE_TYPES = new Set(["redzone_scores", "close_game"]);
+
+  function _niTabFor(type) {
+    return _NI_SCOREZONE_TYPES.has(type) ? "scorezone" : "updates";
+  }
+
+  // Switch the visible list + active tab styling inside the open panel.
+  function _niActivateTab(name) {
+    niActiveTab = name;
+    dropdown.querySelectorAll(".ni-tab").forEach(function (t) {
+      const on = t.getAttribute("data-ni-tab") === name;
+      t.classList.toggle("active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    dropdown.querySelectorAll(".ni-list").forEach(function (l) {
+      l.hidden = l.getAttribute("data-ni-list") !== name;
+    });
+  }
   const _NI_ICONS = {
     redzone_scores: ["ni-navy", "M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z"],
     close_game: ["ni-navy", "M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z"],
@@ -19206,6 +19231,8 @@ document.addEventListener("DOMContentLoaded", () => {
         + " · " + _niTime(it.created_at);
       items.push({
         ts: Date.parse(it.created_at) || 0,
+        tab: _niTabFor(it.type),
+        read: !!it.read,
         html: _niItemHtml({ id: it.id, type: it.type, title: it.title, body: it.body, url: it.url, meta: meta, read: !!it.read }),
       });
     });
@@ -19227,6 +19254,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       items.push({
         ts: Date.parse(entry.date) || 0,
+        tab: "updates",
+        read: !(entry.date > lastSeen),
         html: _niItemHtml({
           type: "changelog", title: hb.title, body: hb.body, url: link,
           meta: "Site update · " + _niTime(entry.date + "T12:00:00"),
@@ -19236,20 +19265,47 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     items.sort((a, b) => b.ts - a.ts);
 
-    const listHtml = items.length
-      ? items.map(i => i.html).join("")
-      : `<div class="ni-empty">No notifications yet.</div>`;
+    const updItems = items.filter(i => i.tab === "updates");
+    const szItems = items.filter(i => i.tab === "scorezone");
+    const updUnread = updItems.filter(i => !i.read).length;
+    const szUnread = szItems.filter(i => !i.read).length;
+    // Land on ScoreZone only when Updates has nothing at all and the
+    // user has not explicitly picked a tab this session.
+    if (!niTabChosen && niActiveTab === "updates" && !updItems.length && szItems.length) {
+      niActiveTab = "scorezone";
+    }
+    const updHtml = updItems.length
+      ? updItems.map(i => i.html).join("")
+      : `<div class="ni-empty">No updates yet.</div>`;
+    const szHtml = szItems.length
+      ? szItems.map(i => i.html).join("")
+      : `<div class="ni-empty">No ScoreZone alerts yet.</div>`;
     const showMarkAll = inboxUnread > 0 || changelogUnseen();
     dropdown.innerHTML = `
-      <div class="ni-head">
-        <span class="ni-title">Notifications</span>
-        ${showMarkAll ? `<button type="button" class="ni-markall" id="niMarkAll">Mark all read</button>` : ""}
+      <div class="ni-stick">
+        <div class="ni-head">
+          <span class="ni-title">Notifications</span>
+          ${showMarkAll ? `<button type="button" class="ni-markall" id="niMarkAll">Mark all read</button>` : ""}
+        </div>
+        <div class="ni-tabs" role="tablist">
+          <button type="button" class="ni-tab${niActiveTab === "updates" ? " active" : ""}" data-ni-tab="updates" role="tab" aria-selected="${niActiveTab === "updates" ? "true" : "false"}">Updates${updUnread ? `<span class="ni-tab-count">${updUnread}</span>` : ""}</button>
+          <button type="button" class="ni-tab${niActiveTab === "scorezone" ? " active" : ""}" data-ni-tab="scorezone" role="tab" aria-selected="${niActiveTab === "scorezone" ? "true" : "false"}">ScoreZone${szUnread ? `<span class="ni-tab-count">${szUnread}</span>` : ""}</button>
+        </div>
       </div>
-      <div class="ni-list">${listHtml}</div>
+      <div class="ni-list" data-ni-list="updates"${niActiveTab === "updates" ? "" : " hidden"}>${updHtml}</div>
+      <div class="ni-list" data-ni-list="scorezone"${niActiveTab === "scorezone" ? "" : " hidden"}>${szHtml}</div>
       <button type="button" class="ni-foot" id="niNotifSettings">
         <span>Notification settings</span><span class="ni-chev">&rsaquo;</span>
       </button>
     `;
+
+    dropdown.querySelectorAll(".ni-tab").forEach(function (t) {
+      t.addEventListener("click", function (e) {
+        e.stopPropagation();
+        niTabChosen = true;
+        _niActivateTab(t.getAttribute("data-ni-tab"));
+      });
+    });
 
     const markAllBtn = dropdown.querySelector("#niMarkAll");
     if (markAllBtn) markAllBtn.addEventListener("click", function (e) {
