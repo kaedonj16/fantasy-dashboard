@@ -7154,10 +7154,11 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
      padding:18px 20px;width:300px;
      flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <div style="display:flex;align-items:center;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;flex:1;">
       <i class="fa-solid fa-newspaper" style="font-size:15px;color:var(--accent);margin-top:1px;"></i>
       <span style="font-size:15px;font-weight:700;color:var(--text);">Recap is ready</span>
     </div>
+    <span class="br-qcount" data-qcount="recap" style="display:none;font-size:12px;font-weight:600;color:var(--muted);line-height:1;white-space:nowrap;align-self:center;"></span>
     <button id="recapReadyClose"
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
                    cursor:pointer;padding:0;flex-shrink:0;"
@@ -7178,21 +7179,40 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
   var key = '{dismiss_key}';
   var el  = document.getElementById('recapReadyBanner');
   if (!el) return;
+  // Dismissed earlier this week: never show, never enter the queue.
+  if (localStorage.getItem(key)) return;
 
+  function show() {{ el.style.display = 'flex'; }}
+  function hide() {{ el.style.display = 'none'; }}
+  function reshow() {{
+    // Undo goes back through the queue, not straight to the screen,
+    // so the banner never lands on top of the one showing now.
+    if (window.brPromoGate) {{ window.brPromoGate.request('recap'); }}
+    else {{ show(); }}
+  }}
   function dismiss() {{
-    el.style.display = 'none';
     localStorage.setItem(key, '1');
+    if (window.brPromoGate) {{ window.brPromoGate.dismiss('recap'); }}
+    else {{ hide(); }}
     if (typeof window.brUndoToast === 'function') {{
       window.brUndoToast('Banner dismissed.', function() {{
         localStorage.removeItem(key);
-        el.style.display = '';
+        reshow();
       }});
     }}
   }}
-
-  if (!localStorage.getItem(key)) {{
-    el.style.display = 'flex';
+  function arm() {{
+    // Banner queue: one fixed banner at a time, in priority order.
+    // Arm at DOMContentLoaded, when the deferred core bundle (and its
+    // gate) has run; fail open if the gate is missing.
+    if (window.brPromoGate) {{
+      window.brPromoGate.register('recap', show, hide, 60);
+      window.brPromoGate.request('recap');
+    }} else {{ show(); }}
   }}
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', arm);
+  }} else {{ arm(); }}
 
   document.getElementById('recapReadyClose').addEventListener('click', dismiss);
   document.getElementById('recapReadyLink').addEventListener('click', dismiss);
@@ -7376,7 +7396,10 @@ def _google_link_pro_banner() -> str:
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
                    cursor:pointer;padding:4px 8px;flex-shrink:0;min-width:44px;min-height:44px;"
             aria-label="Dismiss">&times;</button>"""
-        display = "flex"
+        # Starts hidden in both modes: the banner queue (brPromoGate)
+        # shows it when its slot comes up, so it never stacks on top of
+        # another fixed banner at parse time.
+        display = "none"
     else:
         title = "Secure your PRO"
         body = "Link Google so only you can use your personal PRO. Sleeper username login is not proof of ownership."
@@ -7410,7 +7433,8 @@ def _google_link_pro_banner() -> str:
      padding:18px 20px;width:320px;
      flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <span style="font-size:15px;font-weight:700;color:var(--text);">{title}</span>
+    <span style="font-size:15px;font-weight:700;color:var(--text);flex:1;">{title}</span>
+    <span class="br-qcount" data-qcount="google" style="display:none;font-size:12px;font-weight:600;color:var(--muted);line-height:1;white-space:nowrap;align-self:center;"></span>
     {dismiss}
   </div>
   <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">{body}</p>
@@ -7432,25 +7456,40 @@ def _google_link_pro_banner() -> str:
     // Hard banner: respect a dismissal for this tab session only (user still
     // needs to link Google for PRO, so it returns on next visit).
     if (hard && sessionStorage.getItem(sessKey) === '1') {{ el.style.display = 'none'; return; }}
-    if (!hard && localStorage.getItem(key) === '1') return;
+    if (!hard && localStorage.getItem(key) === '1') {{ el.style.display = 'none'; return; }}
   }} catch (e) {{}}
-  if (!hard) {{
-    el.style.display = 'flex';
+  function show() {{ el.style.display = 'flex'; }}
+  function hide() {{ el.style.display = 'none'; }}
+  function reshow() {{
+    if (window.brPromoGate) {{ window.brPromoGate.request('google'); }}
+    else {{ show(); }}
   }}
+  function arm() {{
+    // Banner queue: one fixed banner at a time, in priority order
+    // (hard mode outranks everything but a failed payment).
+    if (window.brPromoGate) {{
+      window.brPromoGate.register('google', show, hide, hard ? 80 : 40);
+      window.brPromoGate.request('google');
+    }} else {{ show(); }}
+  }}
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', arm);
+  }} else {{ arm(); }}
   var btn = document.getElementById('proGoogleBannerClose');
   if (btn) btn.addEventListener('click', function() {{
-    el.style.display = 'none';
     try {{
       if (hard) {{ sessionStorage.setItem(sessKey, '1'); }}
       else {{ localStorage.setItem(key, '1'); }}
     }} catch (e) {{}}
+    if (window.brPromoGate) {{ window.brPromoGate.dismiss('google'); }}
+    else {{ hide(); }}
     if (typeof window.brUndoToast === 'function') {{
       window.brUndoToast('Banner dismissed.', function() {{
         try {{
           if (hard) {{ sessionStorage.removeItem(sessKey); }}
           else {{ localStorage.removeItem(key); }}
         }} catch (e) {{}}
-        el.style.display = 'flex';
+        reshow();
       }});
     }}
   }});
@@ -7528,7 +7567,8 @@ def _pro_trial_banner() -> str:
      padding:18px 20px;width:320px;
      flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <span style="font-size:15px;font-weight:700;color:var(--text);">{title}</span>
+    <span style="font-size:15px;font-weight:700;color:var(--text);flex:1;">{title}</span>
+    <span class="br-qcount" data-qcount="trial" style="display:none;font-size:12px;font-weight:600;color:var(--muted);line-height:1;white-space:nowrap;align-self:center;"></span>
     <button type="button" id="proTrialBannerClose"
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
                    cursor:pointer;padding:0;flex-shrink:0;"
@@ -7550,14 +7590,30 @@ def _pro_trial_banner() -> str:
   try {{
     if (store.getItem(key) === '1') return;
   }} catch (e) {{}}
-  el.style.display = 'flex';
+  function show() {{ el.style.display = 'flex'; }}
+  function hide() {{ el.style.display = 'none'; }}
+  function reshow() {{
+    if (window.brPromoGate) {{ window.brPromoGate.request('trial'); }}
+    else {{ show(); }}
+  }}
+  function arm() {{
+    // Banner queue: one fixed banner at a time, in priority order.
+    if (window.brPromoGate) {{
+      window.brPromoGate.register('trial', show, hide, 50);
+      window.brPromoGate.request('trial');
+    }} else {{ show(); }}
+  }}
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', arm);
+  }} else {{ arm(); }}
   document.getElementById('proTrialBannerClose').addEventListener('click', function() {{
-    el.style.display = 'none';
     try {{ store.setItem(key, '1'); }} catch (e) {{}}
+    if (window.brPromoGate) {{ window.brPromoGate.dismiss('trial'); }}
+    else {{ hide(); }}
     if (typeof window.brUndoToast === 'function') {{
       window.brUndoToast('Banner dismissed.', function() {{
         try {{ store.removeItem(key); }} catch (e) {{}}
-        el.style.display = 'flex';
+        reshow();
       }});
     }}
   }});
@@ -7619,9 +7675,10 @@ def _dunning_banner() -> str:
      background:var(--card);border:1px solid var(--border);
      border-top:3px solid #dc2626;border-radius:14px;
      box-shadow:0 12px 40px rgba(0,0,0,.22);
-     padding:18px 20px;width:330px;display:flex;flex-direction:column;gap:12px;">
+     padding:18px 20px;width:330px;display:none;flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <span style="font-size:15px;font-weight:700;color:var(--text);">Your PRO payment failed</span>
+    <span style="font-size:15px;font-weight:700;color:var(--text);flex:1;">Your PRO payment failed</span>
+    <span class="br-qcount" data-qcount="dunning" style="display:none;font-size:12px;font-weight:600;color:var(--muted);line-height:1;white-space:nowrap;align-self:center;"></span>
     <button type="button" id="brDunningClose" aria-label="Dismiss"
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0;min-width:44px;min-height:44px;">&times;</button>
   </div>
@@ -7635,9 +7692,23 @@ def _dunning_banner() -> str:
   var el = document.getElementById('brDunningBanner');
   if (!el) return;
   try { if (sessionStorage.getItem('br-dunning-dismissed') === '1') { el.style.display = 'none'; return; } } catch (e) {}
+  function show() { el.style.display = 'flex'; }
+  function hide() { el.style.display = 'none'; }
+  function arm() {
+    // Banner queue: one fixed banner at a time, in priority order.
+    // A failed payment is the most urgent banner, so it goes first.
+    if (window.brPromoGate) {
+      window.brPromoGate.register('dunning', show, hide, 90);
+      window.brPromoGate.request('dunning');
+    } else { show(); }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', arm);
+  } else { arm(); }
   document.getElementById('brDunningClose').addEventListener('click', function() {
-    el.style.display = 'none';
     try { sessionStorage.setItem('br-dunning-dismissed', '1'); } catch (e) {}
+    if (window.brPromoGate) { window.brPromoGate.dismiss('dunning'); }
+    else { hide(); }
   });
   document.getElementById('brDunningCta').addEventListener('click', function() {
     var btn = this; btn.disabled = true; btn.textContent = 'Opening billing...';
@@ -7681,17 +7752,27 @@ def _discord_banner() -> str:
     bottom:calc(var(--dock-safe-bottom) + 14px) !important;
     /* Slim one-line bar on phones (audit Finding 2): the 158px card
        covered the lower content of every public page. One row, pinned
-       above the dock: title, one truncated line, Join pill, close. */
+       above the dock: title, Join pill, close last. The head wrapper
+       dissolves (display:contents) so the close button takes the end
+       slot instead of sitting mid-bar right after the title, and the
+       copy line is dropped on phones: at these widths it truncated to
+       a few characters ("Talk dyn...") and ate the Join pill's room. */
     flex-direction:row !important; align-items:center;
     gap:10px; padding:10px 12px !important;
   }}
-  #discordBanner .discord-banner-head {{ flex:0 0 auto; }}
-  #discordBanner .discord-banner-copy {{
-    flex:1 1 auto; min-width:0; white-space:nowrap;
-    overflow:hidden; text-overflow:ellipsis; font-size:12px !important;
+  #discordBanner .discord-banner-head {{ display:contents !important; }}
+  #discordBanner .discord-banner-head > div {{
+    order:1; flex:0 1 auto; min-width:0; white-space:nowrap;
   }}
+  #discordBanner .discord-banner-copy {{ display:none !important; }}
   #discordBanner .discord-banner-link {{
-    flex:0 0 auto; width:auto; padding:6px 12px !important;
+    flex:0 0 auto; width:auto; padding:6px 12px !important; order:3;
+  }}
+  #discordBanner .br-qcount {{
+    order:4; flex:0 0 auto; align-self:center;
+  }}
+  #discordBanner #discordBannerClose {{
+    order:5; flex:0 0 auto; margin:0 !important; padding:6px 6px !important;
   }}
 }}
 </style>
@@ -7705,11 +7786,12 @@ def _discord_banner() -> str:
      padding:18px 20px;width:300px;
      flex-direction:column;gap:12px;">
   <div class="discord-banner-head" style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <div style="display:flex;align-items:center;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;flex:1;">
       <img src="/static/images/discord-brands-solid.png" alt="Discord"
            style="width:16px;height:16px;opacity:.9;filter:brightness(0) saturate(100%) invert(40%) sepia(80%) saturate(600%) hue-rotate(210deg) brightness(110%);">
       <span style="font-size:15px;font-weight:700;color:var(--text);">Join the Discord</span>
     </div>
+    <span class="br-qcount" data-qcount="discord" style="display:none;font-size:12px;font-weight:600;color:var(--muted);line-height:1;white-space:nowrap;align-self:center;"></span>
     <!-- Close glyph keeps its visual size; padding grows the hit area to
          32x32 and the negative margins restore the layout box so the
          glyph does not move (GUI audit Fix 4; was an 18x10 target). -->
@@ -7744,7 +7826,7 @@ def _discord_banner() -> str:
     // slot frees (immediately on pages with no assistant promo). Fail
     // open if the bundle and its gate failed to load.
     if (window.brPromoGate) {{
-      window.brPromoGate.register('discord', show, hide);
+      window.brPromoGate.register('discord', show, hide, 10);
       window.brPromoGate.request('discord');
     }} else {{
       show();

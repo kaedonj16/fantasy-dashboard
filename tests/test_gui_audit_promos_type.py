@@ -176,7 +176,13 @@ def test_discord_banner_phone_slim_bar():
     # Inside the phone media query the card becomes a one-line row.
     media_idx = BANNER.index("@media (max-width: 768px)")
     assert "flex-direction:row !important" in BANNER[media_idx:]
-    assert "text-overflow:ellipsis" in BANNER[media_idx:]
+    # 2026-11-08 fix: the head wrapper dissolves so the close button
+    # takes the last slot (it used to sit mid-bar after the title), and
+    # the copy line is dropped on phones, where it truncated to a few
+    # characters ("Talk dyn...") and ate the Join pill's room.
+    assert "display:contents" in BANNER[media_idx:]
+    assert "#discordBanner .discord-banner-copy {{ display:none !important; }}" in BANNER[media_idx:]
+    assert "order:4" in BANNER[media_idx:]
 
 
 # ---------------------------------------------------------------- type scale

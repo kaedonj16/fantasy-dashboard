@@ -790,7 +790,8 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
       if (!data.invite_path) return;
       el.innerHTML = `
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
-          <strong style="font-size:14px;color:var(--text);">Invite your league</strong>
+          <strong style="font-size:14px;color:var(--text);flex:1;">Invite your league</strong>
+          <span class="br-qcount" data-qcount="leaguepro" style="display:none;font-size:12px;font-weight:600;color:var(--text-muted);line-height:1;white-space:nowrap;align-self:center;"></span>
           <button type="button" aria-label="Dismiss" data-dismiss
             style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
         </div>
@@ -804,7 +805,8 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
     } else if (data.has_premium) {
       el.innerHTML = `
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
-          <strong style="font-size:14px;color:var(--text);">League PRO is unlocked</strong>
+          <strong style="font-size:14px;color:var(--text);flex:1;">League PRO is unlocked</strong>
+          <span class="br-qcount" data-qcount="leaguepro" style="display:none;font-size:12px;font-weight:600;color:var(--text-muted);line-height:1;white-space:nowrap;align-self:center;"></span>
           <button type="button" aria-label="Dismiss" data-dismiss
             style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
         </div>
@@ -821,7 +823,8 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
         : '/pricing';
       el.innerHTML = `
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
-          <strong style="font-size:14px;color:var(--text);">Your league has PRO</strong>
+          <strong style="font-size:14px;color:var(--text);flex:1;">Your league has PRO</strong>
+          <span class="br-qcount" data-qcount="leaguepro" style="display:none;font-size:12px;font-weight:600;color:var(--text-muted);line-height:1;white-space:nowrap;align-self:center;"></span>
           <button type="button" aria-label="Dismiss" data-dismiss
             style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
         </div>
@@ -833,15 +836,32 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
           Claim league PRO
         </a>`;
     }
-    document.body.appendChild(el);
+    // Banner queue: this banner used to append straight to the body and
+    // render on top of whatever fixed banner was already showing (the
+    // Discord bar in the 2026-11-08 screenshot). It now takes the
+    // shared promo slot like every other banner: one at a time, in
+    // priority order. Fail open if the gate bundle did not load.
+    function showLeaguePro() {
+      if (!el.isConnected) document.body.appendChild(el);
+      el.style.display = 'flex';
+    }
+    function hideLeaguePro() { el.remove(); }
+    if (window.brPromoGate) {
+      window.brPromoGate.register('leaguepro', showLeaguePro, hideLeaguePro, 20);
+      window.brPromoGate.request('leaguepro');
+    } else {
+      showLeaguePro();
+    }
     const dismiss = el.querySelector('[data-dismiss]');
     if (dismiss) dismiss.addEventListener('click', function () {
-      el.remove();
       try { localStorage.setItem(key, '1'); } catch (e) {}
+      if (window.brPromoGate) { window.brPromoGate.dismiss('leaguepro'); }
+      else { el.remove(); }
       if (typeof window.brUndoToast === 'function') {
         window.brUndoToast('Banner dismissed.', function () {
           try { localStorage.removeItem(key); } catch (e) {}
-          document.body.appendChild(el);
+          if (window.brPromoGate) { window.brPromoGate.request('leaguepro'); }
+          else { showLeaguePro(); }
         });
       }
     });
