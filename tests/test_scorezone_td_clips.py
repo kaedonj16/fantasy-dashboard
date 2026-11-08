@@ -185,6 +185,50 @@ def test_unrelated_account_does_not_match():
     assert matches == []
 
 
+def _higgins_wanted():
+    rows = [
+        _row("h1", "burrow", {"pass_td": 1}, "2026-11-08T15:35:00Z", "2", "4:03"),
+        _row("h1", "higgins", {"rec_td": 1}, "2026-11-08T15:35:00Z", "2", "4:03"),
+    ]
+    names = {"burrow": "Joe Burrow", "higgins": "Tee Higgins"}
+    return clips.build_wanted_td_plays(
+        "20261108_CIN@ATL", rows, names, away="CIN", home="ATL")
+
+
+def test_fan_moment_caption_naming_scorer_does_not_match():
+    # The real 2026-11-08 false positive: @NFL posted Higgins handing
+    # the ball to a fan after his TD. Official account, landscape video,
+    # inside the window, scorer named -- but the caption says nothing
+    # about the play, so it must store nothing.
+    fan = _tweet("2119454853554418046",
+                 "Tee Higgins just made this @Bengals fan's day \U0001f979\n\n"
+                 "CINvsATL on NFL Network\nStream on @NFLPlus",
+                 "2026-11-08T15:39:00Z")
+    assert clips.match_tweets([fan], _higgins_wanted()) == []
+
+
+def test_celebration_caption_naming_scorer_does_not_match():
+    cel = _tweet("c1", "Tee Higgins is celebrating in Berlin!",
+                 "2026-11-08T15:37:00Z")
+    assert clips.match_tweets([cel], _higgins_wanted()) == []
+
+
+def test_real_play_caption_for_same_play_still_matches():
+    real = _tweet("r1", "Joe Burrow finds Tee Higgins for a 4-yd TD!",
+                  "2026-11-08T15:37:30Z")
+    matches = clips.match_tweets([real], _higgins_wanted())
+    assert [m["play_id"] for m in matches] == ["h1"]
+    assert matches[0]["scorer"] == "Tee Higgins"
+
+
+def test_play_signal_covers_backtest_and_rejects_surname_only():
+    for tweet in BACKTEST_TWEETS:
+        assert clips.has_play_signal(tweet["text"]), tweet["text"]
+    assert not clips.has_play_signal(
+        "Tee Higgins just made this @Bengals fan's day")
+    assert not clips.has_play_signal("What a finish in Las Vegas.")
+
+
 def test_caption_naming_other_scorer_outside_his_window_does_not_match():
     # Tucker's real caption text, posted during Kyren's window: Tucker's own
     # play is hours from its window, and Kyren is not named. No match.
@@ -235,6 +279,13 @@ class _FakeClipConn:
         pass
 
     def execute(self, sql, params=None):
+        if "DELETE FROM redzone_play_clips" in sql:
+            season, ids = params[0], set(params[1])
+            doomed = [k for k, row in self.table.items()
+                      if k[0] == season and row["tweet_id"] in ids]
+            for k in doomed:
+                del self.table[k]
+            return _Res([{"play_id": k[2]} for k in doomed])
         if "SELECT video_url FROM redzone_play_clips" in sql:
             key = (params[0], params[1], params[2])
             row = self.table.get(key)
@@ -317,6 +368,23 @@ def test_clip_upsert_fills_media_on_existing_row(fake_clips_db):
     assert got["poster_url"].endswith("img/x.jpg")
     # Once media is filled, further upserts are no-ops again.
     assert store.upsert_play_clip(2026, RAMS_GAME, "404", with_media) is False
+
+
+def test_delete_play_clips_by_tweet_evicts_only_that_tweet(fake_clips_db):
+    base = {"tweet_url": "https://x.com/NFL/status/111", "author": "NFL",
+            "scorer": "Kyren Williams", "tweet_ts": 1761438000.0,
+            "video_url": "https://video.twimg.com/amplify_video/1/vid/avc1/1280x720/a.mp4"}
+    assert store.upsert_play_clip(2026, RAMS_GAME, "404",
+                                  dict(base, tweet_id="111")) is True
+    assert store.upsert_play_clip(2026, RAMS_GAME, "405",
+                                  dict(base, tweet_id="222")) is True
+    assert store.delete_play_clips_by_tweet(2026, ["111"]) == 1
+    got = store.get_play_clips(2026, [RAMS_GAME])
+    assert (RAMS_GAME, "404") not in got
+    assert got[(RAMS_GAME, "405")]["tweet_id"] == "222"
+    # Unknown ids and empty input delete nothing.
+    assert store.delete_play_clips_by_tweet(2026, ["999"]) == 0
+    assert store.delete_play_clips_by_tweet(2026, []) == 0
 
 
 # Real response shape captured from GET /2/tweets/:id with media
@@ -686,6 +754,56 @@ def test_backfill_second_run_is_idempotent(monkeypatch):
     assert game["stored"] == 0
     assert len(fetcher.calls) == calls_after_first
     assert len(store_fake.upserts) == 1
+
+
+def test_backfill_drop_tweet_evicts_wrong_clip_and_rematches(monkeypatch):
+    # A wrongly matched clip (landscape video, so it reads as complete)
+    # blocks its play forever unless evicted: --drop-tweet deletes the
+    # row first, the play goes back to wanted, and the same run stores
+    # the real clip.
+    store_fake, fetcher, players = _backfill_setup(monkeypatch)
+    play_id = "401873023384"
+    store_fake.clips[(TNF_GAME, play_id)] = {
+        "tweet_id": "999bad", "author": "NFL", "scorer": "Matthew Golden",
+        "video_url": "https://video.twimg.com/amplify_video/9/vid/avc1/1280x720/bad.mp4",
+        "poster_url": "",
+    }
+
+    def _delete(season, ids):
+        doomed = [k for k, row in store_fake.clips.items()
+                  if row.get("tweet_id") in set(ids)]
+        for k in doomed:
+            del store_fake.clips[k]
+        return len(doomed)
+
+    monkeypatch.setattr(store, "delete_play_clips_by_tweet", _delete)
+    stats = clips.run_clip_backfill(
+        2026, [TNF_GAME], fetcher=fetcher, nfl_players=players,
+        rows_for_game=lambda gid: _tnf_summary_rows(),
+        drop_tweet_ids=["999bad"],
+    )
+    game = stats["games"][0]
+    assert stats["dropped"] == 1
+    assert game["wanted"] == 1
+    assert game["matched"] == 1
+    assert game["stored"] == 1
+    assert store_fake.clips[(TNF_GAME, play_id)]["tweet_id"] == (
+        "2115980579091157136")
+
+
+def test_backfill_drop_tweet_is_ignored_on_dry_run(monkeypatch):
+    store_fake, fetcher, players = _backfill_setup(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        store, "delete_play_clips_by_tweet",
+        lambda season, ids: calls.append(ids) or 0)
+    stats = clips.run_clip_backfill(
+        2026, [TNF_GAME], fetcher=fetcher, nfl_players=players,
+        dry_run=True, rows_for_game=lambda gid: _tnf_summary_rows(),
+        drop_tweet_ids=["999bad"],
+    )
+    assert calls == []
+    assert stats["dropped"] == 0
 
 
 def test_backfill_upgrades_medialess_clip_then_goes_idle(monkeypatch):

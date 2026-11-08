@@ -16,6 +16,9 @@ Usage:
     X_BEARER_TOKEN=... python scripts/backfill_scorezone_clips.py \
         --game 20261029_CAR@GB
 
+To evict a wrongly matched clip and re-match its play in the same run,
+pass --drop-tweet <tweet_id> (repeatable).
+
 X reads are pay-per-use ($0.005/post); the run prints its tweets-read
 total and the estimated read cost. Exit 2 when X_BEARER_TOKEN is unset,
 1 when no games resolve or every game fails, 0 otherwise.
@@ -57,6 +60,11 @@ def main(argv=None) -> int:
         "--season", type=int, default=None,
         help="season key for the clip store (default: derived from the "
              "first target's date)")
+    parser.add_argument(
+        "--drop-tweet", action="append", default=[], metavar="TWEET_ID",
+        help="evict any stored clip with this tweet id before matching, "
+             "so its play is re-wanted and re-matched in this run "
+             "(repeatable; for removing a wrongly matched clip)")
     parser.add_argument(
         "--dry-run", action="store_true",
         help="match and report only; write nothing")
@@ -118,6 +126,7 @@ def main(argv=None) -> int:
         nfl_players=nfl_players,
         dry_run=args.dry_run,
         week=week,
+        drop_tweet_ids=args.drop_tweet,
     )
     failed = 0
     for g in stats["games"]:
@@ -131,9 +140,10 @@ def main(argv=None) -> int:
         )
     logger.info(
         "[backfill-clips] done: games=%s wanted=%s tweets_read=%s "
-        "matched=%s stored=%s est_read_cost=$%.2f%s",
+        "matched=%s stored=%s dropped=%s est_read_cost=$%.2f%s",
         len(stats["games"]), stats["wanted"], stats["tweets"],
-        stats["matched"], stats["stored"], stats["read_cost_usd"],
+        stats["matched"], stats["stored"], stats.get("dropped", 0),
+        stats["read_cost_usd"],
         " (dry run, nothing written)" if args.dry_run else "",
     )
     return 1 if failed and failed == len(stats["games"]) else 0
