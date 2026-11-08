@@ -2,7 +2,7 @@
 
 One chrome pass:
 - The mobile dock is Direction B (64px floating bar, blurred surface,
-  20px radius, icon-only gliding pill, opacity press feedback).
+  20px radius, full-tab gliding fill, opacity press feedback).
 - Every chrome dot/badge speaks one system: --dot-alert (unread/new),
   --dot-live (happening now, one shared pulse), --dot-status (system
   state). Counted badges (.count-badge, watchlist) share one spec and
@@ -51,12 +51,15 @@ def test_dock_b_items_and_press_feedback():
     assert "scale(0.94)" not in CSS.split(".br-tabbar-item:active", 1)[1].split("}", 1)[0]
 
 
-def test_indicator_pill_is_icon_sized():
+def test_indicator_fill_covers_full_tab():
+    # Full-tab fill (variant C): the ::before fills the whole slot behind
+    # icon AND label; the slot's 6px padding is the fill's inset.
+    slot = _block(".br-tabbar-ind")
+    assert "padding: 6px" in slot
     pill = _block(".br-tabbar-ind::before")
-    assert "width: 56px" in pill
-    assert "height: 32px" in pill
-    assert "border-radius: 16px" in pill
-    assert "margin: 0 auto" in pill
+    assert "width: 100%" in pill
+    assert "height: 100%" in pill
+    assert "border-radius: 14px" in pill
 
 
 def test_alert_dots_unified():
