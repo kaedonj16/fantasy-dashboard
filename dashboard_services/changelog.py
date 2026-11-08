@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-07",
+        "tag": "update",
+        "text": "The mobile More menu is rebuilt: it glides open on a smoother curve and stays one height as you drill in, sections show what is inside them, your current page is named right on its section, and Standings, Start/Sit, Player Rankings and ScoreZone are one tap away in a new Quick group. Player search now expands right inside the menu, and Account is pinned at the bottom where it is always reachable.",
+        "link": "/"
+    },
+    {
         "date": "2026-11-06",
         "tag": "update",
         "text": "Advanced Metrics: Last 2 and Last 4 now mean each player's last games, not the last calendar weeks. A player whose team had a bye, or who missed a game, still gets a full sample: the board reaches back to his most recent 2 or 4 games played, so recent-form rates compare on equal footing. Picking exact weeks still works the same as before.",

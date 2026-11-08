@@ -40,7 +40,7 @@ def test_dock_proportions():
     # Dock icons render at 24px in both the league and guest docks (the
     # tabbar-anchored call sites; More-sheet rows use their own size).
     assert APP_PY.count("_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>") == 2
-    assert APP_PY.count("_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>") == 2
+    assert APP_PY.count("_more_icon_html()}<span class='br-tabbar-lbl'>") == 2
 
 
 def test_active_tab_uses_pill_only():
