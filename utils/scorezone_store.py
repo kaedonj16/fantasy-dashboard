@@ -544,6 +544,36 @@ def upsert_play_clip(season: int, game_id: str, play_id: str, clip: dict) -> boo
         return False
 
 
+def delete_play_clips_by_tweet(season: int, tweet_ids: list[str]) -> int:
+    """Delete stored clips by tweet id. Returns the rows deleted.
+
+    Eviction path for a wrongly matched clip: the store's first-match-wins
+    upsert otherwise keeps the bad row forever (its landscape video reads
+    as complete, so neither the live pass nor a backfill ever re-wants the
+    play). Deleting the row makes the play wantable again, so a backfill
+    re-run can store the real clip instead.
+    """
+    from dashboard_services.db import get_conn
+
+    ids = [str(t) for t in (tweet_ids or []) if str(t or "").strip()]
+    if not ids:
+        return 0
+    try:
+        with get_conn() as conn:
+            _ensure_clips_table(conn)
+            rows = conn.execute(
+                """DELETE FROM redzone_play_clips
+                   WHERE season = %s AND tweet_id = ANY(%s)
+                   RETURNING play_id""",
+                (int(season), ids),
+            ).fetchall()
+            conn.commit()
+        return len(rows or [])
+    except Exception as exc:
+        logger.warning("[scorezone-store] clip delete failed: %s", exc)
+        return 0
+
+
 def get_play_clips(season: int, game_ids: list[str]) -> dict:
     """Return {(game_id, play_id): clip dict} for the given games."""
     from dashboard_services.db import get_conn

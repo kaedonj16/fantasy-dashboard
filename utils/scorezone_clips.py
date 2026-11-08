@@ -11,7 +11,10 @@ Pipeline (runs inside the scorezone-store poll, see ``poll_once``):
 3. Gate (precision over coverage): a tweet becomes a play's clip only when
    the author is @NFL or one of the game's team accounts, the tweet was
    posted within [play wallclock, +12 minutes], the caption names the TD
-   scorer's surname, the caption is not a multi-play roundup, and exactly
+   scorer's surname, the caption actually describes the play or the score
+   (a play signal: touchdown / end zone / a yardage line / "extends the
+   lead" etc. -- a surname-only caption matched a post-TD fan moment on
+   2026-11-08), the caption is not a multi-play roundup, and exactly
    one wanted play in the whole slate fits. Anything ambiguous stores
    nothing, so a Watch button can never point at the wrong play.
 4. Store: ``redzone_play_clips`` via utils.scorezone_store; the feed and
@@ -69,6 +72,41 @@ _THROTTLE_S = 50.0           # min seconds between passes per process
 _STATE_KEY = "scorezone_clips_x_state"
 
 _ROUNDUP_RE = re.compile(r"highlights|best plays|every touchdown", re.IGNORECASE)
+
+# A clip caption must describe the play or the score, not merely name the
+# scorer. Surname + account + window alone matched @NFL's post-TD fan
+# moment for Tee Higgins' TD (2026-11-08, tweet 2119454853554418046:
+# "Tee Higgins just made this @Bengals fan's day" -- landscape video of
+# him handing the ball to a fan, posted inside the window). The phrases
+# below cover every verified backtest caption, including the ones with no
+# TD keyword ("adds six more to the board", "extends the lead",
+# "on his way to the end zone"), plus the standard play-by-play caption
+# shapes (yardage lines, "finds X for...", "takes it to the house").
+_PLAY_SIGNAL_RE = re.compile(
+    r"touchdowns?\b"
+    r"|\btd\b"
+    r"|end ?zone"
+    r"|for (6|six)\b"
+    r"|adds six\b"
+    r"|six more\b"
+    r"|on the board\b"
+    r"|extends the lead\b"
+    r"|pick[ -]?six\b"
+    r"|scoop and score\b"
+    r"|house call\b"
+    r"|to the house\b"
+    r"|paydirt\b"
+    r"|walks? it in\b"
+    r"|takes it in\b"
+    r"|(runs?|rushes|dives) it in\b"
+    r"|in for the score\b"
+    r"|\bscored\b|\bscores\b"
+    r"|connects with\b"
+    r"|floats it\b"
+    r"|finds .{1,40}? for\b"
+    r"|\d{1,3}[- ](yd|yard)\b",
+    re.IGNORECASE,
+)
 _SUFFIX_TOKENS = {"jr", "sr", "ii", "iii", "iv", "v"}
 _TD_STAT_KEYS = ("rec_td", "rush_td", "def_td")
 
@@ -96,6 +134,16 @@ def surname_of(full_name: str) -> str:
 
 def is_roundup_caption(text: str) -> bool:
     return bool(_ROUNDUP_RE.search(str(text or "")))
+
+
+def has_play_signal(text: str) -> bool:
+    """True when a caption describes the play or the score itself.
+
+    Naming the scorer is not enough: celebration, fan-moment, injury and
+    interview posts all name him too, and they post inside the same
+    12-minute window with landscape video.
+    """
+    return bool(_PLAY_SIGNAL_RE.search(str(text or "")))
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +256,11 @@ def match_tweets(tweets: list[dict], wanted: list[dict]) -> list[dict]:
     for tweet in sorted(tweets or [], key=_ts):
         text = str(tweet.get("text") or "")
         if not text or is_roundup_caption(text):
+            continue
+        if not has_play_signal(text):
+            # Surname-only post (celebration / fan moment / interview):
+            # not the play, and skipping it leaves the play wantable
+            # for the real broadcast clip.
             continue
         if tweet.get("graphic_media"):
             # Square/portrait social graphic ("TOUCHDOWN" card), not the
@@ -584,6 +637,7 @@ def run_clip_backfill(
     dry_run: bool = False,
     rows_for_game=None,
     week: int = 1,
+    drop_tweet_ids=(),
 ) -> dict:
     """Retroactively match clips for finished games. Fail-soft per game.
 
@@ -592,9 +646,25 @@ def run_clip_backfill(
     time range, so a game from days ago matches exactly like a live one.
     Returns {"games": [per-game stats], totals...}; per-game stats carry
     wanted / tweets / matched / stored (stored is 0 under dry_run).
+
+    drop_tweet_ids first evicts stored clips carrying those tweet ids
+    (a wrongly matched clip, e.g. a fan-moment post stored as a TD's
+    highlight), so the freed play is re-wanted and re-matched in the
+    same run. Ignored under dry_run: a dry run deletes nothing.
     """
     from utils.scorezone import parse_tank_game_id
     from utils.scorezone_store import get_play_clips, upsert_play_clip
+
+    dropped = 0
+    if drop_tweet_ids and not dry_run:
+        from utils.scorezone_store import delete_play_clips_by_tweet
+
+        try:
+            dropped = delete_play_clips_by_tweet(
+                int(season), [str(t) for t in drop_tweet_ids])
+        except Exception as exc:
+            logger.warning(
+                "[scorezone-clips] backfill clip drop failed: %s", exc)
 
     pid_to_name, def_pids = _player_name_maps(nfl_players)
     totals = {"wanted": 0, "tweets": 0, "matched": 0, "stored": 0}
@@ -658,6 +728,7 @@ def run_clip_backfill(
     return {
         "games": games_out,
         **totals,
+        "dropped": dropped,
         "read_cost_usd": round(totals["tweets"] * _READ_COST_USD, 2),
         "dry_run": bool(dry_run),
     }
