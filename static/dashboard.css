@@ -47202,22 +47202,23 @@ a, button, [role="button"], [role="tab"], summary, label,
         white-space: nowrap;
     }
 
-    /* A single accent pill behind the active tab that GLIDES between tabs. It is
+    /* A single accent fill behind the active tab that GLIDES between tabs. It is
      one slot wide (--n tabs) and translated to the active slot (--i), both set
      server-side so it rests in the right place with no flash; app.js animates a
-     change of --i on dock navigation so the pill slides across the dock. The
-     inner ::before is the inset, rounded, theme-tinted fill. */
+     change of --i on dock navigation so the fill slides across the dock. The
+     inner ::before fills the whole tab slot (icon and label together), inset
+     6px on every side, as a rounded, theme-tinted fill. */
     .br-tabbar-ind {
         position: absolute;
         left: 0;
         z-index: 0;
-        /* Span the full floating pill. */
+        /* Span the full tab slot; the 6px padding is the fill's inset. */
         top: 0;
         bottom: 0;
         width: calc(100% / var(--n, 5));
         transform: translateX(calc(var(--i, 0) * 100%));
         transition: transform .38s var(--ease-soft);
-        padding: 8px 0 0;
+        padding: 6px;
         box-sizing: border-box;
         pointer-events: none;
     }
@@ -47229,10 +47230,9 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-tabbar-ind::before {
         content: "";
         display: block;
-        width: 56px;
-        height: 32px;
-        margin: 0 auto;
-        border-radius: 16px;
+        width: 100%;
+        height: 100%;
+        border-radius: 14px;
         background: var(--accent-soft);
         background: color-mix(in srgb, var(--accent) 16%, transparent);
     }

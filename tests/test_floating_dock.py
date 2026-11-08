@@ -2,7 +2,7 @@
 
 - The dock floats with side margins, rounded corners and a soft shadow.
 - Dock B: 64px tall, 24px icons, 11px tracked labels, blurred floating
-  surface, and ONE active signal (the gliding pill behind the icon only;
+  surface, and ONE active signal (the gliding fill behind the whole tab;
   the active icon/label stay a strong neutral).
 - A mobile-only search shortcut sits top-right in the top bar and opens the
   existing full-screen search.
