@@ -347,7 +347,24 @@ try {
 // cache-busting URL that has no cached copy to serve. Time-boxed so a hung
 // teardown can never strand the user on this screen.
 var _went = false;
-function _go(){ if (_went) return; _went = true; window.location.replace('/?signed_out=' + Date.now()); }
+// "Not me?" returns to the page the user was on, not the top of the home
+// page: app.js stashes {u, y, t} under 'br_reset_return' when a
+// /reset-user link is tapped. Only a fresh, same-origin path counts
+// (never an open redirect, never back into /reset-user or /logout
+// itself); the landing page restores the stashed scroll spot. The key
+// is deliberately NOT removed here -- the landing page consumes it.
+// Anything else keeps the old home-page landing.
+var _target = '/?signed_out=' + Date.now();
+try {
+  var _saved = JSON.parse(localStorage.getItem('br_reset_return') || 'null');
+  if (_saved && typeof _saved.u === 'string'
+      && _saved.u.charAt(0) === '/' && _saved.u.charAt(1) !== '/'
+      && _saved.u.indexOf('/reset-user') !== 0 && _saved.u.indexOf('/logout') !== 0
+      && (Date.now() - (_saved.t || 0)) < 120000) {
+    _target = _saved.u + (_saved.u.indexOf('?') > -1 ? '&' : '?') + 'signed_out=' + Date.now();
+  }
+} catch(_) {}
+function _go(){ if (_went) return; _went = true; window.location.replace(_target); }
 setTimeout(_go, 1500);  // hard cap: redirect even if teardown stalls
 var _jobs = [];
 try {

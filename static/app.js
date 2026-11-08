@@ -876,52 +876,123 @@ window.brUndoToast = function (message, onUndo, duration) {
  * promo's own dismissal persistence (localStorage keys) is untouched.
  * Promos that cannot see the gate (bundle failed) fail open and show as
  * before, so a broken bundle never silently eats a promo.
+ *
+ * Every fixed bottom banner now goes through this gate (2026-11-08):
+ * the Discord bar used to be the only server banner in the queue, so
+ * the League PRO invite, recap, trial, Google-link and payment-failed
+ * banners all rendered at the same fixed spot at once, stacked on top
+ * of each other. Each banner registers with a priority (higher shows
+ * earlier); a higher-priority request preempts the holder, and the
+ * waiting queue is kept in priority order, so dismissing one banner
+ * surfaces the next most important one, in order, until the queue
+ * drains. Priorities: assistant 100, payment failed 90, recap 60,
+ * trial 50, Google link (hard) 80 / (soft) 40, League PRO invite 20,
+ * Discord 10.
  */
 window.brPromoGate = (function () {
   var current = null;
   var entries = {};   // name -> {show, hide}
-  var queue = [];     // names waiting for the slot, FIFO
-  function register(name, show, hide) {
+  var queue = [];     // names waiting for the slot, priority order
+  var priorities = {};   // name -> priority (higher shows earlier)
+  // Queue count (2026-11-08): while a run of banners drains, the one
+  // on screen carries a small "1/3" style label beside its close
+  // button, its position in the run by priority. A run (cycle) starts
+  // at the first request after the slot was empty and ends when the
+  // queue fully drains; every banner that requests during the run
+  // counts toward its total, even ones already dismissed, so the
+  // denominator never shrinks mid-run. A lone banner gets no label.
+  var cycleOn = false;
+  var cycleSeen = {};   // name -> true, banners counted in this run
+  function prio(name) {
+    if (name === 'assistant') return 100;
+    return priorities[name] || 0;
+  }
+  function cycleNames() {
+    return Object.keys(cycleSeen).sort(function (a, b) {
+      return prio(b) - prio(a);
+    });
+  }
+  function countLabel(name) {
+    if (!cycleOn || !cycleSeen[name]) return '';
+    var names = cycleNames();
+    if (names.length < 2) return '';
+    return (names.indexOf(name) + 1) + '/' + names.length;
+  }
+  function paintCount(name) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    var label = countLabel(name);
+    var nodes = document.querySelectorAll('[data-qcount="' + name + '"]');
+    for (var i = 0; i < nodes.length; i++) {
+      nodes[i].textContent = label;
+      nodes[i].style.display = label ? '' : 'none';
+    }
+  }
+  function noteRequest(name) {
+    if (!cycleOn) { cycleOn = true; cycleSeen = {}; }
+    if (!cycleSeen[name]) {
+      cycleSeen[name] = true;
+      // The run grew: the showing banner's denominator moves with it.
+      if (current) paintCount(current);
+    }
+  }
+  function activate(name) {
+    current = name;
+    entries[name].show();
+    paintCount(name);
+  }
+  function register(name, show, hide, priority) {
     entries[name] = { show: show, hide: hide };
+    if (typeof priority === 'number') priorities[name] = priority;
   }
   function dequeue(name) {
     var i = queue.indexOf(name);
     if (i > -1) queue.splice(i, 1);
   }
+  function enqueue(name) {
+    // Keep the queue in priority order (stable for equal priorities),
+    // so the slot always passes to the most important waiting banner.
+    dequeue(name);
+    var i = 0;
+    while (i < queue.length && prio(queue[i]) >= prio(name)) i++;
+    queue.splice(i, 0, name);
+  }
   function showNext() {
     while (queue.length) {
       var next = queue.shift();
       if (entries[next]) {
-        current = next;
-        entries[next].show();
+        activate(next);
         return;
       }
     }
   }
   function request(name) {
     if (!entries[name] || current === name) return;
+    noteRequest(name);
     if (!current) {
-      current = name;
-      entries[name].show();
+      dequeue(name);
+      activate(name);
       return;
     }
-    if (name === 'assistant') {
-      // Priority: hide the holder, re-queue it behind the assistant.
+    if (name === 'assistant' || prio(name) > prio(current)) {
+      // Priority: hide the holder, re-queue it in priority order.
       var prev = current;
       if (entries[prev]) entries[prev].hide();
-      dequeue(prev);
-      queue.push(prev);
-      current = name;
-      entries[name].show();
+      activate(name);
+      enqueue(prev);
       return;
     }
-    if (queue.indexOf(name) === -1) queue.push(name);
+    enqueue(name);
   }
   function release(name) {
     dequeue(name);
     if (current !== name) return;
     current = null;
     showNext();
+    if (!current && !queue.length) {
+      // The run drained: the next request starts a fresh count.
+      cycleOn = false;
+      cycleSeen = {};
+    }
   }
   function dismiss(name) {
     // User closed this promo for good: hide it and drop it from the
@@ -934,8 +1005,78 @@ window.brPromoGate = (function () {
     request: request,
     release: release,
     dismiss: dismiss,
-    current: function () { return current; }
+    current: function () { return current; },
+    countLabel: function () { return current ? countLabel(current) : ''; }
   };
+})();
+
+/**
+ * "Not me?" (/reset-user) returns to the same page, at the same scroll
+ * spot, instead of always landing at the top of the home page.
+ *
+ * Clicking any /reset-user link first stashes {url, scrollY} in
+ * localStorage under a dedicated key (the /reset-user interstitial only
+ * removes saved_viewer / saved_account and clears sessionStorage, so
+ * this key survives it). The interstitial reads the key and redirects
+ * back to that URL instead of "/". On landing, this restores the
+ * scroll position (this app scrolls <body>, so reads/writes target
+ * window, <html> and <body> like the soft-nav getScroll/setScroll).
+ * The stash is consumed on the first landing whose path matches, is
+ * ignored after two minutes, and any manual scroll cancels the
+ * remaining restore attempts so it never fights the user.
+ */
+(function initResetReturn() {
+  var KEY = 'br_reset_return';
+  function getY() {
+    return Math.max(
+      window.scrollY || 0,
+      document.documentElement ? (document.documentElement.scrollTop || 0) : 0,
+      document.body ? (document.body.scrollTop || 0) : 0
+    );
+  }
+  function setY(y) {
+    try { window.scrollTo(0, y); } catch (_) {}
+    if (document.documentElement) document.documentElement.scrollTop = y;
+    if (document.body) document.body.scrollTop = y;
+  }
+  // Restore: only on the page the stash names, only when fresh.
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) {
+      var saved = JSON.parse(raw);
+      if (saved && String(saved.u || '').split('?')[0] === location.pathname) {
+        localStorage.removeItem(KEY);
+        if (saved.y > 0 && (Date.now() - (saved.t || 0)) < 120000) {
+          var y = saved.y, done = false;
+          function attempt() { if (!done) setY(y); }
+          function cancel() { done = true; }
+          window.addEventListener('wheel', cancel, { passive: true, once: true });
+          window.addEventListener('touchmove', cancel, { passive: true, once: true });
+          document.addEventListener('DOMContentLoaded', attempt);
+          window.addEventListener('load', attempt);
+          [120, 400, 900].forEach(function (ms) { setTimeout(attempt, ms); });
+          setTimeout(function () { done = true; }, 1600);
+          attempt();
+        }
+      }
+    }
+  } catch (_) {}
+  // Capture: delegated, so the client-mounted saved-viewer link counts.
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href="/reset-user"]') : null;
+    if (!a) return;
+    if (location.pathname === '/reset-user' || location.pathname === '/logout') return;
+    try {
+      var params = new URLSearchParams(location.search);
+      params.delete('signed_out');
+      var qs = params.toString();
+      localStorage.setItem(KEY, JSON.stringify({
+        u: location.pathname + (qs ? '?' + qs : ''),
+        y: getY(),
+        t: Date.now()
+      }));
+    } catch (_) {}
+  });
 })();
 
 /**
@@ -1045,6 +1186,12 @@ window.brPromoGate = (function () {
     signin.href = '#';
     signin.textContent = 'Sign in free to try it';
     bubble.appendChild(signin);
+    var bcount = document.createElement('span');
+    bcount.className = 'br-qcount';
+    bcount.setAttribute('data-qcount', 'assistant');
+    bcount.style.cssText = 'display:none;position:absolute;top:12px;right:36px;' +
+      'font-size:12px;font-weight:600;color:#64748b;line-height:1;white-space:nowrap;';
+    bubble.appendChild(bcount);
     var bdismiss = document.createElement('button');
     bdismiss.type = 'button';
     bdismiss.className = 'br-asst-bubble-dismiss';
@@ -3570,11 +3717,18 @@ window._brPromoEligible = function () {
         if (_pr.ok) prefs = (await _pr.json()).prefs || {};
       } catch (_) {}
     }
+    // Scroll fix (2026-11-08): the modal's height cap is 100% of the
+    // fixed overlay's content box, never calc(100vh - 96px). On iOS
+    // 100vh is the LARGE viewport (browser chrome hidden), which is
+    // taller than the visible one, so the old cap let the modal run
+    // past the bottom of the screen: scrolled all the way, the last
+    // rows and the Done/Skip buttons still sat off-screen. The same
+    // sizing is applied to the Notification Settings modal below.
     var overlay = document.createElement('div');
     overlay.id = 'pushPickerOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px calc(24px + env(safe-area-inset-bottom, 0px));box-sizing:border-box;';
     var modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
+    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-sizing:border-box;box-shadow:0 8px 32px rgba(0,0,0,.2);';
     var groupRows = groups.map(function (g) {
       var head = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:14px 0 2px;">'
         + _npEsc(g.label) + '</div>';
@@ -3595,7 +3749,7 @@ window._brPromoEligible = function () {
       + '<span style="position:absolute;inset:0;background:' + (digestOn ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
       + '<span style="position:absolute;top:2px;left:' + (digestOn ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
       + '</label></div>'
-      + '<div style="display:flex;gap:10px;margin-top:14px;">'
+      + '<div style="display:flex;gap:10px;margin-top:14px;position:sticky;bottom:-20px;background:var(--card,#fff);padding:10px 0 20px;">'
       + '<button id="ppDone" style="flex:1;background:var(--accent,#3b82f6);color:#fff;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">Done</button>'
       + '<button id="ppSkip" style="flex:1;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">Skip for now</button>'
       + '</div>';
@@ -3635,9 +3789,9 @@ window._brPromoEligible = function () {
       // Not subscribed yet -- show a subscribe prompt in a modal
       var overlay = document.createElement('div');
       overlay.id = 'notifPrefsOverlay';
-      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px calc(24px + env(safe-area-inset-bottom, 0px));box-sizing:border-box;';
       var modal = document.createElement('div');
-      modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.2);text-align:center;';
+      modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;max-height:100%;overflow-y:auto;box-sizing:border-box;box-shadow:0 8px 32px rgba(0,0,0,.2);text-align:center;';
       modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:8px;">'
         + '<button onclick="document.getElementById(\'notifPrefsOverlay\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">&times;</button>'
         + '</div>'
@@ -3716,9 +3870,9 @@ window._brPromoEligible = function () {
     // summaries on their headers.
     var overlay = document.createElement('div');
     overlay.id = 'notifPrefsOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px calc(24px + env(safe-area-inset-bottom, 0px));box-sizing:border-box;';
     var modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
+    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-sizing:border-box;box-shadow:0 8px 32px rgba(0,0,0,.2);';
     var _HEADING = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:16px 0 2px;';
     function _groupRows(g) {
       return (g.types || []).map(function(t) {
@@ -5397,6 +5551,11 @@ function showLoginGate(target, opts) {
         bchip.type = 'button';
         brow.appendChild(bchip);
         introEl.appendChild(brow);
+        var bcount = el('span', 'br-qcount');
+        bcount.setAttribute('data-qcount', 'assistant');
+        bcount.style.cssText = 'display:none;position:absolute;top:12px;right:36px;' +
+          'font-size:12px;font-weight:600;color:#64748b;line-height:1;white-space:nowrap;';
+        introEl.appendChild(bcount);
         var bdismiss = el('button', 'br-asst-bubble-dismiss', '×');
         bdismiss.type = 'button';
         bdismiss.setAttribute('aria-label', 'Dismiss');
