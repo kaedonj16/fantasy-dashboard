@@ -659,6 +659,10 @@ def build_advanced_metrics_body(
                 <button type="button" id="amGraphZoomReset" class="am-graph-zoom-btn am-graph-zoom-reset" onclick="amResetGraphZoom()" title="Reset zoom">Reset</button>
               </div>
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
+              <div id="amGraphVeil" class="am-graph-veil" style="display:none;" role="status" aria-label="Loading graph">
+                <span class="am-graph-spinner" aria-hidden="true"></span>
+                <span class="am-graph-veil-label">Loading graph</span>
+              </div>
               <div id="amGraphHover" class="am-graph-hover"></div>
               <div id="amGraphTip" class="am-graph-tip"></div>
             </div>
@@ -1501,6 +1505,24 @@ def build_advanced_metrics_body(
            (also two classes) sets flex-direction:column on the container. */
         .am-graph-controls .am-graph-actions { display:flex; flex-direction:row; flex-wrap:wrap; gap:6px; }
         .am-graph-actions-row { display:contents; }
+        /* One scroll surface on phones: the body scrolls as a single
+           sheet and the controls take their natural height. The old
+           layout capped the controls in their own inner scroller whose
+           last row (Simple / Detailed, Download, Copy link) rendered
+           half under the plot wrap, untappable until the user found and
+           scrolled that invisible inner box. Nested scrollers inside a
+           modal are also why settings felt like they "worked weird":
+           a drag could scroll the controls, the plot, or the page
+           depending on exactly where it started. */
+        .am-graph-body { overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+        /* Neither body child may flex-shrink: a shrunk rail lets the
+           controls paint past its box into the plot wrap's area, which
+           is the original half-buried-row bug in a new costume. With
+           shrink off, the body genuinely scrolls instead. */
+        .am-graph-body > * { flex-shrink:0; }
+        .am-graph-controls { overflow-y:visible; flex:0 0 auto; }
+        .am-graph-plot-wrap { overflow:visible; flex:0 0 auto; }
+        .am-graph-loading { min-height:420px; }
       }
       /* Desktop rail layout (Kaedon 2026-10-15): the top-stacked controls
          ate ~180px and forced scrolling to see the whole graph. On desktop
@@ -1549,6 +1571,38 @@ def build_advanced_metrics_body(
       }
       .am-graph-svg { width:100%; height:auto; display:block; touch-action:none; }
       .am-graph-empty { text-align:center; color:var(--text-muted); font-size:13px; padding:48px 0; }
+      /* Graph loading state: a real loading screen, not the bare grey
+         skeleton box the plot used to swap in while its leaderboard
+         fetches ran. First load shows a framed panel with a spinner and
+         a label, sized like the chart it is about to become; a re-render
+         with a chart already on screen keeps that chart visible under
+         the .am-graph-veil chip instead of wiping it to grey. */
+      .am-graph-loading {
+        display:flex; flex-direction:column; align-items:center; justify-content:center;
+        gap:10px; width:100%; box-sizing:border-box; min-height:340px; height:100%;
+        border:1px solid var(--border); border-radius:14px; background:var(--card);
+        padding:32px 20px; text-align:center;
+      }
+      .am-graph-load-title { font-size:14px; font-weight:800; color:var(--text); }
+      .am-graph-load-sub { font-size:12px; color:var(--text-muted); margin-top:-6px; }
+      .am-graph-spinner {
+        width:30px; height:30px; border-radius:50%; flex:0 0 auto;
+        border:3px solid color-mix(in srgb, var(--spinner,#38bdf8) 22%, transparent);
+        border-top-color:var(--spinner,#38bdf8);
+        animation:amGraphSpin .8s linear infinite;
+      }
+      @keyframes amGraphSpin { to { transform:rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .am-graph-spinner { animation-duration:2.4s; }
+      }
+      .am-graph-veil {
+        position:absolute; inset:0; z-index:8;
+        display:flex; align-items:center; justify-content:center; gap:9px;
+        background:color-mix(in srgb, var(--card) 55%, transparent);
+        font-size:13px; font-weight:700; color:var(--text);
+      }
+      .am-graph-veil .am-graph-spinner { width:20px; height:20px; border-width:2.5px; }
+      .am-graph-plot-wrap.am-graph-busy .am-graph-zoom { visibility:hidden; }
       .am-graph-axis { stroke:var(--border); }
       .am-graph-tick { fill:var(--text-muted); font-size:11px; }
       .am-graph-axislbl { fill:var(--text); font-size:11px; font-weight:700; }
@@ -1624,7 +1678,7 @@ def build_advanced_metrics_body(
       }
       html.og-render .am-legend-head, html.og-render .am-graph-controls,
       html.og-render .am-graph-zoom, html.og-render .am-graph-rail,
-      html.og-render #amGraphHover, html.og-render #amGraphTip { display:none !important; }
+      html.og-render #amGraphHover, html.og-render #amGraphTip, html.og-render #amGraphVeil { display:none !important; }
       html.og-render .am-graph-body { display:block !important; }
       html.og-render .am-graph-plot-wrap {
         flex:1 1 auto !important; display:flex !important; align-items:center !important; justify-content:center !important;
@@ -5215,7 +5269,37 @@ _AM_JS = r"""
     const nowHidden = ctrl.classList.toggle('am-ctrl-hidden');
     if (pos) pos.classList.toggle('am-ctrl-hidden', nowHidden);
     if (chev) chev.textContent = nowHidden ? '▼' : '▲';
+    if (!nowHidden) {
+      // Reopening Settings starts at the top of the sheet, so the first
+      // controls are in view instead of wherever the graph was scrolled to.
+      const body = modal.querySelector('.am-graph-body');
+      if (body) body.scrollTop = 0;
+    }
   };
+  // Graph loading state. First load (no chart on screen yet) replaces
+  // the plot with the .am-graph-loading panel; a re-render keeps the
+  // current chart visible under the veil chip. Either way the zoom pill
+  // hides while busy, since there is no stable chart to zoom yet.
+  function _amGraphBusy(busy) {
+    const wrap = document.querySelector('.am-graph-plot-wrap');
+    const veil = document.getElementById('amGraphVeil');
+    const plot = document.getElementById('amGraphPlot');
+    if (!busy) {
+      if (veil) veil.style.display = 'none';
+      if (wrap) wrap.classList.remove('am-graph-busy');
+      return;
+    }
+    if (wrap) wrap.classList.add('am-graph-busy');
+    if (plot && plot.querySelector('svg.am-graph-svg')) {
+      if (veil) veil.style.display = 'flex';
+    } else if (plot) {
+      if (veil) veil.style.display = 'none';
+      plot.innerHTML = '<div class="am-graph-loading" role="status" aria-label="Loading graph">'
+        + '<span class="am-graph-spinner" aria-hidden="true"></span>'
+        + '<div class="am-graph-load-title">Loading graph</div>'
+        + '<div class="am-graph-load-sub">Pulling the latest numbers for these metrics.</div></div>';
+    }
+  }
   window.amRenderGraph = function() {
     const plot = document.getElementById('amGraphPlot');
     const xSel = document.getElementById('amGraphX');
@@ -5225,7 +5309,7 @@ _AM_JS = r"""
     if (!plot || !xSel || !ySel) return;
     const xk = xSel.value, yk = ySel.value, zk = zSel ? zSel.value : '';
     const topN = nSel ? (parseInt(nSel.value, 10) || 25) : 25;
-    if (!xk || !yk) { plot.innerHTML = '<div class="am-graph-empty">Pick an X and Y metric.</div>'; return; }
+    if (!xk || !yk) { _amGraphBusy(false); plot.innerHTML = '<div class="am-graph-empty">Pick an X and Y metric.</div>'; return; }
     // When X changes reset min-vol to the new metric's default and refresh the control.
     if (xk !== _amGraphLastXk) {
       _amGraphLastXk = xk;
@@ -5240,7 +5324,7 @@ _AM_JS = r"""
     // flash) so reopening / toggling axes is effectively instant.
     const allCached = urls.every(function(u) { return _amLbCache.has(u); });
     if (!allCached) {
-      plot.innerHTML = '<div class="skeleton" style="width:100%;height:340px;border-radius:14px;"></div>';
+      _amGraphBusy(true);
     }
     Promise.all(urls.map(_amFetchLeaderboard)).then(function(results) {
       if (token !== _amGraphToken) return;
@@ -5281,6 +5365,7 @@ _AM_JS = r"""
       }
       const pts = ptsAll.slice(0, topN);
       if (!pts.length) {
+        _amGraphBusy(false);
         window.brEmptyState(plot, { icon: 'search', title: 'Nothing to plot', message: 'No players have data for both metrics with the current filters.' });
         return;
       }
@@ -5297,6 +5382,7 @@ _AM_JS = r"""
         const _scope = _amAnimPending || 'all';
         _amAnimPending = null;
         plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, trend, _scope);
+        _amGraphBusy(false);
         _amLastScatter = { pts: pts, xk: xk, yk: yk, zk: zk, logo: logo, trend: trend,
                            full: _amFullDomainOf(plot.querySelector('svg.am-graph-svg')) };
         _amWireGraphZoom(plot);
@@ -5309,7 +5395,7 @@ _AM_JS = r"""
         }
       });
     }).catch(function() {
-      if (token === _amGraphToken) window.brErrorState(plot, 'Could not load graph data.', window.amRenderGraph);
+      if (token === _amGraphToken) { _amGraphBusy(false); window.brErrorState(plot, 'Could not load graph data.', window.amRenderGraph); }
     });
   };
   // Builds a fully self-contained SVG (explicit theme colors, embedded logo
@@ -5948,6 +6034,16 @@ _AM_JS = r"""
         if (xSel) { xSel.innerHTML = _amGraphMetricOptions(curX); xSel.value = curX; }
         if (ySel) { ySel.innerHTML = _amGraphMetricOptions(curY); ySel.value = curY; }
         if (zSel) { zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions(curZ); zSel.value = curZ; }
+        // A preserved axis that is not offered for the new position
+        // leaves the select blank, and the graph died on "Pick an X and
+        // Y metric" even though the user never touched the axes. Fall
+        // back to the first offered metric instead (Y: the first one
+        // that is not X), the same way a fresh modal open picks axes.
+        if (xSel && !xSel.value && xSel.options.length) xSel.value = xSel.options[0].value;
+        if (ySel && !ySel.value && ySel.options.length) {
+          const alt = Array.from(ySel.options).find(function(o) { return o.value && o.value !== (xSel ? xSel.value : ''); });
+          ySel.value = alt ? alt.value : ySel.options[0].value;
+        }
         // Sync the search-picker labels with the rebuilt options.
         [xSel, ySel, zSel].forEach(function(s) {
           if (s) s.dispatchEvent(new Event('change'));
@@ -7568,6 +7664,7 @@ _AM_JS = r"""
       selEl.dispatchEvent(new Event('change'));
     };
     const showWeekly = o.showWeekly !== false;
+    const looseLabel = o.looseLabel || 'Options';
 
     let _mdActiveCat = '';
     let _mdGroups = [];
@@ -7587,6 +7684,20 @@ _AM_JS = r"""
     function readGroups() {
       const weeklySet = new Set(cfg.weeklyMetrics || []);
       const groups = [];
+      // Options that live directly on the <select>, outside any
+      // <optgroup> (the Bubble size picker's "None"), belong to no
+      // category; skipping them made that choice unreachable in the
+      // picker, so a bubble metric could never be turned back off.
+      // They get their own first group.
+      const loose = [];
+      for (const o of selEl.querySelectorAll(':scope > option')) {
+        loose.push({
+          value: o.value,
+          text: o.textContent,
+          weekly: weeklySet.has(o.value),
+        });
+      }
+      if (loose.length) groups.push({ label: looseLabel, options: loose });
       for (const og of selEl.querySelectorAll('optgroup')) {
         const options = [];
         for (const o of og.querySelectorAll('option')) {
@@ -7854,6 +7965,7 @@ _AM_JS = r"""
       panel: document.getElementById('amGraphZDropdown'),
       select: document.getElementById('amGraphZ'),
       showWeekly: false,
+      looseLabel: 'Bubble size',
       onChange: function() { amRenderGraph(); },
     });
   }

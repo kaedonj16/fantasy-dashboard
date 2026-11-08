@@ -523,3 +523,71 @@ def test_axis_pinch_factor_composition():
     assert res["px"] == {"x0": 0, "x1": 2, "y0": 3, "y1": 7}
     assert res["pxy"] == {"x0": 0, "x1": 2, "y0": 4, "y1": 6}
     assert res["back"] == {"x0": -1, "x1": 3, "y0": 4, "y1": 6}
+
+
+# ---------------------------------------------------------------------------
+# 6. Settings reachability round 2 + graph loading screen (2026-11-07)
+#
+# Kaedon again: "improve the settings dropdown on graph part of adv
+# metrics, things are unreachable or work weird a little. and add a
+# loading screen when a graph is loading because right now it just
+# shows a grey box". Verified on current main in Playwright at 390px:
+# the #3007 inner-scroller still rendered the last action row
+# (Simple / Detailed, Download, Copy link) half under the plot wrap
+# (elementFromPoint at their centres returned the plot wrap / its SVG),
+# tappable only after scrolling an invisible inner box; the Bubble
+# size picker could never re-select "None" (its <option> lives outside
+# every <optgroup> and readGroups only read optgroups); and the whole
+# loading feedback was one bare .skeleton div, a plain grey box.
+# ---------------------------------------------------------------------------
+
+def test_graph_loading_screen_replaces_grey_skeleton():
+    html = _html()
+    css = _style(html)
+    # A labelled loading panel with a spinner, sized like the chart.
+    assert ".am-graph-loading {" in css and "min-height:340px" in css
+    assert ".am-graph-spinner {" in css and "@keyframes amGraphSpin" in css
+    assert "am-graph-load-title" in _AM_JS and "Loading graph" in _AM_JS
+    # The bare grey skeleton swap is gone from the graph render path.
+    assert "height:340px;border-radius:14px" not in _AM_JS
+    # Re-renders keep the chart under a veil chip instead of wiping it,
+    # and the zoom pill hides while a load is in flight.
+    assert 'id="amGraphVeil"' in html and 'class="am-graph-veil"' in html
+    assert ".am-graph-plot-wrap.am-graph-busy .am-graph-zoom" in css
+    assert "function _amGraphBusy(busy)" in _AM_JS
+    assert "if (!allCached) {" in _AM_JS and "_amGraphBusy(true);" in _AM_JS
+    # Every settle path (built, empty, error) clears the busy state.
+    assert _AM_JS.count("_amGraphBusy(false);") >= 3
+
+
+def test_mobile_settings_use_one_scroll_sheet():
+    css = _style(_html())
+    mob = _mobile_block(css)
+    # The body is the single scroller; controls and plot take natural
+    # height inside it, so no control can render under the plot wrap.
+    assert ".am-graph-body { overflow-y:auto;" in mob
+    assert ".am-graph-body > * { flex-shrink:0; }" in mob
+    assert ".am-graph-controls { overflow-y:visible; flex:0 0 auto; }" in mob
+    assert ".am-graph-plot-wrap { overflow:visible; flex:0 0 auto; }" in mob
+    assert ".am-graph-loading { min-height:420px; }" in mob
+    # The base (desktop-serving) controls rule keeps its own scrolling
+    # for the rail; only the phone layout flattens to one sheet.
+    base = css.split(".am-graph-controls {", 1)[1].split("}", 1)[0]
+    assert "overflow-y:auto" in base
+
+
+def test_bubble_picker_can_turn_bubble_back_off():
+    # readGroups must surface options that live directly on the select
+    # (the Z picker's "None") as their own first group.
+    assert "selEl.querySelectorAll(':scope > option')" in _AM_JS
+    assert "groups.push({ label: looseLabel, options: loose })" in _AM_JS
+    assert "looseLabel: 'Bubble size'" in _AM_JS
+
+
+def test_position_switch_falls_back_when_axis_metric_not_offered():
+    # Switching the graph position filter rebuilt the axis selects with
+    # the preserved values; a metric not offered at the new position
+    # left the select blank and the graph stopped at "Pick an X and Y
+    # metric". The handler now falls back to an offered metric.
+    assert "if (xSel && !xSel.value && xSel.options.length) xSel.value = xSel.options[0].value;" in _AM_JS
+    assert "return o.value && o.value !== (xSel ? xSel.value : '');" in _AM_JS
