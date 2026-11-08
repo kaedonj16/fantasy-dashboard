@@ -31568,7 +31568,9 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
           + '<br><span class="rz-pm-cume">' + fmt(ev.runTotal) + ' total</span>';
       }
       var chip = ev.notCounted ? ' <span class="rz-pm-chip-notcounted">No target credited</span>' : '';
-      var clipRow = (ev.kind === 'td' && ev.clipTweetId && window.brClip)
+      // Clips exist only for matched highlight plays (TDs, 40+ gains,
+      // turnovers): the stamp is the gate, whatever the event kind.
+      var clipRow = (ev.clipTweetId && window.brClip)
         ? window.brClip.rowHtml('pm' + ev.playId, {
             tweetId: ev.clipTweetId, url: ev.clipUrl,
             video: ev.clipVideoUrl, poster: ev.clipPosterUrl })

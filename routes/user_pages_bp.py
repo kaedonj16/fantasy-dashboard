@@ -4900,7 +4900,7 @@ def _moment_fantasy_pts(stat, scoring):
 @user_pages_bp.route("/api/clip-stream")
 @limiter.limit("240/minute")
 def api_clip_stream():
-    """Stream a ScoreZone TD clip's MP4 through this origin.
+    """Stream a ScoreZone play clip's MP4 through this origin.
 
     video.twimg.com 403s amplify video when the browser's Referer is a
     foreign site, so the native <video> player cannot hotlink the file.
@@ -5168,7 +5168,7 @@ def api_scorezone_moments():
             "observed_ts": play.get("_observed_ts") or 0,
         })
 
-    # TD clips: stamp the matched official X clip onto TD moments so the
+    # Play clips: stamp the matched official X clip onto moments so the
     # client can offer a Watch button. Unmatched moments stay untouched.
     if moments:
         try:

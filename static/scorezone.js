@@ -3889,8 +3889,8 @@
     return '';
   }
 
-  // ── TD clips ────────────────────────────────────────────────────────────
-  // A TD card whose play has a matched official X clip gets a quiet Watch
+  // ── Play clips ──────────────────────────────────────────────────────────
+  // A card whose play has a matched official X clip gets a quiet Watch
   // button; tapping lazy-loads the X embed inside the card. Only one embed
   // is open at a time (phone memory), and cards without a clip render
   // exactly as before: no button, no placeholder.
@@ -4175,7 +4175,9 @@
       : '<img class="rz-headshot' + (isDef ? ' rz-team-logo' : '') + '" src="' + avSrc + '" alt=""'
         + (isDef && defTeam ? ' data-team="' + String(defTeam).replace(/"/g, '') + '"' : '')
         + ' onerror="' + avOnErr + '">';
-    var hasClip = !!(ev.clipTweetId && ev.kind === 'td');
+    // Clips exist only for matched highlight plays (TDs, 40+ gains,
+    // turnovers): the stamp is the gate, whatever the event kind.
+    var hasClip = !!ev.clipTweetId;
     var clipOpen = hasClip && _openClipKey === ev.playId;
     // The clip row is button-left / source-right (Kaedon's pick over the
     // old right-pushed button with dead space beside it): the source is

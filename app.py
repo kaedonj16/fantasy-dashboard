@@ -19512,7 +19512,7 @@ def _scorezone_collect(platform, league_id, season, week):
                 logger.debug("[scorezone] alt pbp failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
 
-    # TD clips: stamp matched official X clips onto TD play rows so the
+    # Play clips: stamp matched official X clips onto play rows so the
     # client can offer a Watch button. Plays without a stored clip are
     # untouched, so the payload is identical when no clip exists.
     if pbp_by_game:
