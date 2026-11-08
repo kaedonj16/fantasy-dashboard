@@ -229,6 +229,43 @@ def test_play_signal_covers_backtest_and_rejects_surname_only():
     assert not clips.has_play_signal("What a finish in Las Vegas.")
 
 
+def _walker_wanted():
+    # Real ESPN shape for the missed play: NYJ at KC, 2026-11-08,
+    # Mahomes to Walker for 7 yards, TOUCHDOWN (play 401873045997,
+    # wallclock 2026-11-08T18:41:37Z).
+    rows = [
+        _row("w1", "mahomes", {"pass_td": 1}, "2026-11-08T18:41:37Z", "2", "14:56"),
+        _row("w1", "walker", {"rec_td": 1}, "2026-11-08T18:41:37Z", "2", "14:56"),
+    ]
+    names = {"mahomes": "Patrick Mahomes", "walker": "Kenneth Walker III"}
+    return clips.build_wanted_td_plays(
+        "20261108_NYJ@KC", rows, names, away="NYJ", home="KC")
+
+
+def test_mention_only_caption_matches_the_td():
+    # The real missed clip (@Chiefs, 2026-11-08, 83s after the play):
+    # the caption names both players ONLY by @-mention and describes
+    # the play in four words. "walker9" / "patrickmahomes" tokens must
+    # still yield the surnames, and "THE SCORE" must count as a play
+    # signal.
+    tweet = _tweet(
+        "2119501128110907874",
+        "THE CATCH. THE SCORE.\n@PatrickMahomes x @Kenneth_Walker9",
+        "2026-11-08T18:43:00Z", author="Chiefs")
+    matches = clips.match_tweets([tweet], _walker_wanted())
+    assert [m["play_id"] for m in matches] == ["w1"]
+    assert matches[0]["author"] == "Chiefs"
+
+
+def test_caption_tokens_split_mention_handles():
+    tokens = clips._caption_tokens(
+        "THE CATCH. THE SCORE. @PatrickMahomes x @Kenneth_Walker9")
+    assert "walker" in tokens
+    assert "mahomes" in tokens
+    assert "kenneth" in tokens
+    assert clips.has_play_signal("THE CATCH. THE SCORE.")
+
+
 def test_caption_naming_other_scorer_outside_his_window_does_not_match():
     # Tucker's real caption text, posted during Kyren's window: Tucker's own
     # play is hours from its window, and Kyren is not named. No match.

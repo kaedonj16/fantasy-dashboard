@@ -81,7 +81,9 @@ _ROUNDUP_RE = re.compile(r"highlights|best plays|every touchdown", re.IGNORECASE
 # below cover every verified backtest caption, including the ones with no
 # TD keyword ("adds six more to the board", "extends the lead",
 # "on his way to the end zone"), plus the standard play-by-play caption
-# shapes (yardage lines, "finds X for...", "takes it to the house").
+# shapes (yardage lines, "finds X for...", "takes it to the house") and
+# the terse team-account shape "THE CATCH. THE SCORE." (Chiefs,
+# 2026-11-08), which is why the bare noun "score" counts as a signal.
 _PLAY_SIGNAL_RE = re.compile(
     r"touchdowns?\b"
     r"|\btd\b"
@@ -100,7 +102,7 @@ _PLAY_SIGNAL_RE = re.compile(
     r"|takes it in\b"
     r"|(runs?|rushes|dives) it in\b"
     r"|in for the score\b"
-    r"|\bscored\b|\bscores\b"
+    r"|\bscored\b|\bscores\b|\bscore\b"
     r"|connects with\b"
     r"|floats it\b"
     r"|finds .{1,40}? for\b"
@@ -130,6 +132,35 @@ def surname_of(full_name: str) -> str:
     while tokens and tokens[-1] in _SUFFIX_TOKENS:
         tokens.pop()
     return tokens[-1] if tokens else ""
+
+
+_HANDLE_RE = re.compile(r"@([A-Za-z0-9_]+)")
+_HANDLE_PART_RE = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]+|[a-z]+")
+
+
+def _caption_tokens(text: str) -> set:
+    """Caption tokens for surname matching, mentions included.
+
+    Team accounts increasingly name players ONLY by @-mention, and the
+    plain token split mangles those handles past recognition:
+    "@Kenneth_Walker9" tokenizes to {"kenneth", "walker9"} and
+    "@PatrickMahomes" to {"patrickmahomes"}, so the scorer's surname
+    never appears and a real TD clip is missed (Chiefs, 2026-11-08:
+    "THE CATCH. THE SCORE. @PatrickMahomes x @Kenneth_Walker9", posted
+    83 seconds after Kenneth Walker III's TD, matched nothing). Split
+    each handle on underscores, camelCase and digit runs, and also add
+    every token's trailing-digit-stripped form, so the surname survives.
+    """
+    tokens = set(_norm_tokens(text))
+    for handle in _HANDLE_RE.findall(str(text or "")):
+        for part in handle.split("_"):
+            for piece in _HANDLE_PART_RE.findall(part):
+                tokens.add(piece.lower())
+    for tok in list(tokens):
+        stripped = tok.rstrip("0123456789")
+        if stripped and stripped != tok:
+            tokens.add(stripped)
+    return tokens
 
 
 def is_roundup_caption(text: str) -> bool:
@@ -273,7 +304,7 @@ def match_tweets(tweets: list[dict], wanted: list[dict]) -> list[dict]:
         ts = _ts(tweet)
         if not ts:
             continue
-        caption_tokens = set(_norm_tokens(text))
+        caption_tokens = _caption_tokens(text)
         candidates = []
         for plays in by_game.values():
             for w in plays:
