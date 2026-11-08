@@ -311,6 +311,12 @@ def test_panel_tabs_css_is_the_quiet_treatment():
     tab = CSS.split("\n.ni-tab {")[1].split("}")[0]
     assert "text-transform" not in tab
     assert "font-weight: 600" in tab
+    # Square tab: the global button rule's rounded corners must not
+    # leak in (they turned the tap focus ring into a rounded box
+    # around the active tab on the live panel, 2026-11-08).
+    assert "border-radius: 0" in tab
+    ring = CSS.split(".changelog-dropdown .ni-tab:focus-visible {")[1].split("}")[0]
+    assert "outline: none !important" in ring
     active = CSS.split("\n.ni-tab.active {")[1].split("}")[0]
     assert "border-bottom-color: var(--accent)" in active
     count = CSS.split("\n.ni-tab-count {")[1].split("}")[0]
