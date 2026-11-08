@@ -1789,6 +1789,10 @@ ul {
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
+    /* The global button rule gives every button rounded corners; a tab
+       is square, and the inherited radius is what turned the focus
+       ring below into a rounded box around the active tab. */
+    border-radius: 0;
     padding: 8px 10px 10px;
     font-family: inherit;
     font-size: 13.5px;
@@ -1797,6 +1801,13 @@ ul {
     cursor: pointer;
     white-space: nowrap;
     transition: color 0.12s, border-color 0.12s;
+}
+
+/* The global [role="tab"] focus ring sticks after a touch tap in
+   WebKit and boxes the whole tab; the active underline + label weight
+   already carry the selected state, so the panel's tabs opt out. */
+.changelog-dropdown .ni-tab:focus-visible {
+    outline: none !important;
 }
 
 .ni-tab:hover {
