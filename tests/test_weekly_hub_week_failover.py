@@ -67,7 +67,6 @@ function makeEl(id) {
 const select = makeEl('hubWeek');
 select.value = scenario.startWeek;
 const matchupsContainer = makeEl('weeklyMatchupsContainer');
-const loadingOverlay = makeEl('weeklyMatchupsLoading');
 const mainContainer = makeEl('mainPanels');
 const sideContainer = makeEl('sidePanels');
 
@@ -76,7 +75,6 @@ global.document = {
   getElementById(id) {
     if (id === 'hubWeek') return select;
     if (id === 'weeklyMatchupsContainer') return matchupsContainer;
-    if (id === 'weeklyMatchupsLoading') return loadingOverlay;
     return null;
   },
   querySelector(sel) {

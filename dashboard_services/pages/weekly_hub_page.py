@@ -469,13 +469,6 @@ def build_weekly_hub_body(ctx: dict) -> str:
                 <div id="weeklyMatchupsContainer">
                   {matchup_html}
                 </div>
-                <div id="weeklyMatchupsLoading" class="matchups-loading hidden">
-                  <div class="matchups-loading-inner matchups-loading-skel" aria-hidden="true">
-                    <div class="skeleton skeleton-line w-60"></div>
-                    <div class="skeleton skeleton-line w-80"></div>
-                    <div class="skeleton skeleton-line w-40"></div>
-                  </div>
-                </div>
               </div>
             </div>"""
     _wk_scorers_panel_cls = "tab-panel" if _show_matchup_preview else "tab-panel active"
@@ -550,24 +543,24 @@ def build_weekly_hub_body(ctx: dict) -> str:
   sel.__hubWeekBound = true;
 
   var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
-  var loadingOverlay    = document.getElementById('weeklyMatchupsLoading');
   var mainContainer = document.querySelector('.week-main-panels');
   var sideContainer = document.querySelector('.week-side-panels');
 
   function showLoading() {{
     // Invalidate the old week's marker before the replacement request starts.
-    // The rest of the old card may remain visible beneath the loading overlay.
+    // No cover is drawn over the board while it loads (Kaedon, 2026-11-08):
+    // the old card stays fully visible and the new content swaps in when it
+    // lands. On a pull-to-refresh the .br-ptr spinner chip is the indicator,
+    // and sel.disabled remains the loading/settle signal the PTR hook polls.
     if (matchupsContainer) {{
       matchupsContainer.querySelectorAll('.m-gotw-badge').forEach(function(badge) {{
         badge.remove();
       }});
     }}
-    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
     sel.disabled = true;
   }}
 
   function hideLoading() {{
-    if (loadingOverlay) loadingOverlay.classList.add('hidden');
     sel.disabled = false;
   }}
 
@@ -605,8 +598,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
     showLoading();
 
     // Bound the wait: the controller was only ever aborted by the NEXT
-    // week change, so a hung request left the loading overlay up and the
-    // selector disabled forever (.finally only runs when fetch settles).
+    // week change, so a hung request left the selector disabled forever
+    // (.finally only runs when fetch settles).
     // A timeout abort is not a user abort: it rolls the selector back via
     // failWeekChange below instead of being swallowed by the AbortError
     // early return.
