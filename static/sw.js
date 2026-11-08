@@ -54,8 +54,8 @@ const PRECACHE_URLS = [
   '/static/BR_Mark.png?v=6c0c4828',
   '/static/BR_Mark_dark.png?v=6c0c4828',
   '/static/Website_Logo.png?v=6c0c4828',
-  '/static/app-icon-180.png?v=b152bc26',
-  '/static/app-icon-192.png?v=b152bc26',
+  '/static/app-icon-180.png?v=39d54ec7',
+  '/static/app-icon-192.png?v=39d54ec7',
   '/static/offline.html',
 ];
 

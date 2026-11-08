@@ -315,8 +315,13 @@ def _png_corner_rgb(path):
     return (row[0], row[1], row[2]), (w, h)
 
 
-def test_pwa_icons_are_opaque_white():
-    """Home-screen icons must be opaque white so iOS/Android do not fill navy."""
+def test_pwa_icons_are_opaque_navy_tile():
+    """Home-screen icons are a deliberate opaque navy gradient tile.
+
+    The tile is the site's navy family by design (Kaedon, 2026-11-07), so
+    corners are dark navy, never transparent: the PNGs stay 8-bit RGB and
+    no OS theme fill can show through.
+    """
     icons = (
         ROOT / "static" / "app-icon-180.png",
         ROOT / "static" / "app-icon-192.png",
@@ -325,8 +330,10 @@ def test_pwa_icons_are_opaque_white():
         ROOT / "static" / "app-icon-512-maskable.png",
     )
     for icon in icons:
-        rgb, (w, h) = _png_corner_rgb(icon)
-        assert rgb == (255, 255, 255), f"{icon.name} corner is {rgb}, expected white"
+        (r, g, b), (w, h) = _png_corner_rgb(icon)
+        assert b > r + 20 and r <= 70 and b <= 140, (
+            f"{icon.name} corner is {(r, g, b)}, expected the navy tile family"
+        )
         assert w == h
     manifest = (ROOT / "static" / "manifest.json").read_text(encoding="utf-8")
     assert "/static/app-icon-192.png" in manifest
