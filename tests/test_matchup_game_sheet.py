@@ -110,6 +110,63 @@ def test_player_stats_label_ruling():
     assert "_boxSheetEls.body.innerHTML = _boxSheetBodyHtml();" in sz
 
 
+def test_sheet_plays_pull_to_refresh():
+    seg = _sheet_segment()
+    # The gesture helper is a self-contained, harness-extractable block.
+    assert "/* gs-ptr:start */" in seg
+    assert "/* gs-ptr:end */" in seg
+    assert "window.__brGsAttachPtr = function (cfg)" in seg
+    # Same arm point as the page-level br-ptr controller.
+    block = seg[seg.index("/* gs-ptr:start */"):seg.index("/* gs-ptr:end */")]
+    assert "var THRESHOLD = 76;" in block
+    # Plays panel chrome: indicator chip, failure note, and a render host
+    # the re-render cannot wipe (the chrome lives outside the host).
+    assert 'class="gs-ptr"' in seg
+    assert 'class="gs-ptr-chip"' in seg
+    assert 'class="gs-ptr-note"' in seg
+    assert 'class="gs-plays-host"' in seg
+    # Wiring: bound to the plays panel, scrolled by the sheet body,
+    # detached when the sheet closes.
+    assert "window.__brGsAttachPtr({" in seg
+    assert "panel: gsSheet.els.playsPanel" in seg
+    assert "scroller: gsSheet.els.body" in seg
+    assert "gsSheet.ptrDetach()" in seg
+    # Gate: Plays tab only, and only once the payload is ready.
+    assert "gsSheet.tab === 'plays' && gsSheet.fullStatus === 'ready'" in seg
+
+
+def test_sheet_plays_refresh_fetch_path():
+    seg = _sheet_segment()
+    start = seg.index("function gsPlaysRefresh(done)")
+    end = seg.index("function gsSheetKey", start)
+    body = seg[start:end]
+    # The fresh fetch goes through the shared cache's own bypass, in
+    # order: invalidate zeroes the freshness stamp, then get refetches.
+    assert body.index("__brSzLiveCache.invalidate('full')") < body.index(
+        "__brSzLiveCache.get('full', 30000,"
+    )
+    # Only a changed payload re-renders, and only the plays list: the
+    # refresh never touches the board or the Stats tab.
+    assert "data !== before" in body
+    assert "gsRenderPlays();" in body
+    assert "gsRenderBoard" not in body
+    assert "gsRenderStats" not in body
+    # invalidate lives only on the refresh path: the initial load in
+    # openGameSheet still serves through the cache window untouched.
+    assert seg.count("__brSzLiveCache.invalidate") == 1
+
+
+def test_page_ptr_suppressed_under_the_sheet():
+    # The page-level pull-to-refresh must not fire under the open sheet:
+    # its modalOpen() gate names the rz-bs sheet (the class both this
+    # sheet and ScoreZone's box-score sheet mount with). Before this,
+    # a pull at the top of the hub could refresh the page behind the
+    # sheet and double-fire against the Plays pull.
+    js = _js()
+    block = js[js.index("/* br-ptr:start */"):js.index("/* br-ptr:end */")]
+    assert ".rz-bs-sheet.open" in block
+
+
 def test_game_sheet_events_harness_passes():
     node = shutil.which("node")
     if not node:
@@ -129,8 +186,14 @@ def test_game_sheet_css_block():
     block = css[start:end]
     # The new CSS lives before the icons merge marker, per repo convention.
     for sel in (".gs-sheet", ".gs-tabs .tab-bar", ".gs-tabs .tab-btn.active",
-                ".gs-plays", ".gs-foot", ".gs-foot a", ".gs-hs"):
+                ".gs-plays", ".gs-foot", ".gs-foot a", ".gs-hs",
+                ".gs-ptr", ".gs-ptr-chip", ".gs-ptr-spinner", ".gs-ptr-note"):
         assert sel in block, sel
+    # The Plays pull chip mirrors the page indicator's spinner treatment:
+    # armed and refreshing states reuse the br-ptr spin keyframes.
+    assert ".gs-ptr-chip.is-armed .gs-ptr-spinner" in block
+    assert ".gs-ptr-chip.is-refreshing .gs-ptr-spinner" in block
+    assert "animation: br-ptr-spin" in block
     # Footer link is the quiet link blue, not a filled button.
     foot = re.search(r"\.gs-foot a \{(.*?)\}", block, flags=re.S)
     assert foot and "color: var(--brand-blue)" in foot.group(1)

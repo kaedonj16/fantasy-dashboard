@@ -56431,6 +56431,55 @@ button.mb-fld-link {
 .gs-tabs .tab-panel { display: none; }
 .gs-tabs .tab-panel.active { display: block; padding: 8px 0 4px; }
 .gs-plays { display: flex; flex-direction: column; gap: 5px; padding-top: 4px; }
+/* Plays pull-to-refresh: the br-ptr chip treatment (same 40px hairline
+   chip, same spinner ring, same spin keyframes) revealed inside the
+   panel by the gs-ptr controller in app.js. The wrap is height-driven:
+   it stays 0 until a pull at the top of the sheet body reveals it. */
+.gs-ptr {
+    height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    transition: height .18s ease;
+}
+.gs-ptr.is-pulling { transition: none; }
+.gs-ptr-chip {
+    flex: 0 0 auto;
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 10px rgba(2, 6, 23, .12);
+}
+.gs-ptr-spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--text);
+    opacity: .45;
+}
+.gs-ptr-chip.is-armed .gs-ptr-spinner { opacity: 1; }
+.gs-ptr-chip.is-refreshing .gs-ptr-spinner {
+    opacity: 1;
+    animation: br-ptr-spin .7s linear infinite;
+}
+.gs-ptr-note {
+    text-align: center;
+    font-size: 12px;
+    color: var(--rz-muted);
+    padding: 2px 0 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .gs-ptr { transition: none; }
+    .gs-ptr-chip.is-refreshing .gs-ptr-spinner { animation-duration: 1.6s; }
+}
 .gs-foot {
     flex: 0 0 auto;
     border-top: 1px solid var(--rz-border);
