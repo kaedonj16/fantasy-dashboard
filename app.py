@@ -4774,6 +4774,37 @@ def _sheet_action_row(label: str, action: str, icon: str, *, description: str = 
     )
 
 
+def _more_icon_html() -> str:
+    """The dock More tab icon: solid dots that morph into a chevron-down
+    while the More sheet is open (app.js toggles .br-more-open on the tab;
+    the crossfade/rotate lives in dashboard.css)."""
+    chev = (
+        "<svg class='nav-svg-icon' width='24' height='24' viewBox='0 0 24 24' fill='none' "
+        "stroke='currentColor' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round' "
+        "aria-hidden='true'><path d='M6 9l6 6 6-6'/></svg>"
+    )
+    return (
+        "<span class='br-more-ic'>"
+        f"<span class='br-more-dots'>{_nav_icon('more', size=24)}</span>"
+        f"<span class='br-more-chev'>{chev}</span></span>"
+    )
+
+
+def _sheet_footer_html() -> str:
+    """The More sheet's pinned Account footer: rendered inside the sheet,
+    below the panels, so it stays visible on the root and every drill-down
+    panel and never scrolls. Drills into the Account panel through the
+    sheet's shared [data-br-sheet-target] delegation in app.js."""
+    return (
+        "<div class='br-sheet-footer'>"
+        "<button type='button' class='br-sheet-foot-acct' data-br-sheet-target='account' "
+        "aria-controls='brMorePanel-account'>"
+        f"{_nav_icon('gear', size=20)}<span>Account</span>"
+        "<span class='br-sheet-acct-dot' id='brSheetAcctDot' hidden aria-hidden='true'></span>"
+        "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button></div>"
+    )
+
+
 def _mobile_nav(active: str, league_id, platform, season) -> str:
     """Mobile navigation: a stable bottom dock plus a full "More" sheet.
 
@@ -4867,7 +4898,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     items += (
         f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}{_more_active}' id='brMoreTab' "
         f"aria-label='More navigation; current page: {_DOCK_LABELS.get(active_norm, active_norm.replace('-', ' ').title())}'{_more_current} aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span>{_more_dot}{_recap_dot}{_bo_dot}</button>"
+        f"{_more_icon_html()}<span class='br-tabbar-lbl'>More</span>{_more_dot}{_recap_dot}{_bo_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
     # at the active slot so it rests correctly with no flash; app.js animates a
@@ -4906,9 +4937,9 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             f"<div class='br-sheet-group'>{''.join(rows)}</div></section>"
         )
 
-    # Search is a row like the others; tapping it opens the full-screen search
-    # screen (app.js moves the real search widget into it). Watchlist is a plain
-    # link to the full watchlist page.
+    # Search is a row like the others; tapping it expands the real search
+    # widget in place inside the Find group (app.js moves #navSearchWrapper
+    # into the expand mount). Watchlist is a plain link to the full page.
     find_html = (
         "<h3 class='br-sheet-h'>Find</h3>"
         "<div class='br-sheet-group'>"
@@ -4917,33 +4948,41 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "<a class='br-sheet-link' href='/watchlist'>"
         "<i class='fa-solid fa-star br-sheet-fa' aria-hidden='true'></i>"
         "<span>Watchlist</span></a>"
+        "<div class='br-sheet-search-expand' id='brSheetSearchExpand' hidden>"
+        "<div class='br-sheet-search-mount' id='brSheetSearchMount'></div>"
+        "<button type='button' class='br-sheet-search-cancel' id='brSheetSearchCancel'>Cancel</button></div>"
         "</div>"
     )
 
+    _bb_sheet = False
+    try:
+        _bb_sheet = _nav_is_best_ball(platform, league_id, season)
+    except Exception:
+        _bb_sheet = False
+
+    def _scorezone_row():
+        # Shared by the Weekly panel and the Quick group: the live variant
+        # pulses red while a game is live/imminent, the plain row otherwise.
+        if rz_live:
+            _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["scorezone"]
+            _rz_on = " active" if active_norm == "scorezone" else ""
+            _rz_aria = " aria-current='page'" if active_norm == "scorezone" else ""
+            return (
+                f"<a class='br-sheet-link rz-mnav-live{_rz_on}'{_rz_aria} "
+                f"href='{_href(_rz_ep, _rz_suffix)}'>"
+                f"{_nav_icon(_rz_icon, size=20)}<span>ScoreZone</span>"
+                "<span class='rz-mnav-dot' aria-hidden='true'></span></a>"
+            )
+        return _sl("scorezone", "ScoreZone")
+
     weekly_html = ""
     if draft_ended or not offseason:
-        _bb_sheet = False
-        try:
-            _bb_sheet = _nav_is_best_ball(platform, league_id, season)
-        except Exception:
-            _bb_sheet = False
         # Same Play / Review grouping and order as the desktop Weekly dropdown:
         # Play is this week's live pages and lineup tools, Review is last
         # week's recap and efficiency. ScoreZone sits second, in Play.
         rows = [_grp("Play"), _sl("weekly", "Matchups")]
         if not offseason:
-            if rz_live:
-                _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["scorezone"]
-                _rz_on = " active" if active_norm == "scorezone" else ""
-                _rz_aria = " aria-current='page'" if active_norm == "scorezone" else ""
-                rows.append(
-                    f"<a class='br-sheet-link rz-mnav-live{_rz_on}'{_rz_aria} "
-                    f"href='{_href(_rz_ep, _rz_suffix)}'>"
-                    f"{_nav_icon(_rz_icon, size=20)}<span>ScoreZone</span>"
-                    "<span class='rz-mnav-dot' aria-hidden='true'></span></a>"
-                )
-            else:
-                rows.append(_sl("scorezone", "ScoreZone"))
+            rows.append(_scorezone_row())
         rows.append(_sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"))
         if not _bb_sheet:
             # The Lab is a Start/Sit mode: best-ball leagues have neither.
@@ -4955,6 +4994,19 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("optimal", "Lineup Efficiency"),
         ]
         weekly_html = _sec("Weekly", rows)
+
+    # Quick: the fast pages one tap from the root, no category drill-down.
+    quick_rows = [
+        _sl("standings", "Standings"),
+        _sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"),
+        _sl("players", "Player Rankings"),
+    ]
+    if not offseason:
+        quick_rows.append(_scorezone_row())
+    quick_html = (
+        "<h3 class='br-sheet-h'>Quick</h3>"
+        f"<div class='br-sheet-group'>{''.join(quick_rows)}</div>"
+    )
 
     league_html = _sec("League", [
         _sl("standings", "Standings"), _sl("teams", "Teams"),
@@ -5024,6 +5076,43 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history", "draft-recap"},
         "Stats": {"awards", "graphs", "history", "nfl-teams"},
     }
+    # Category rows are two-line: the section's representative icon, the
+    # label, and a muted sublabel naming what's inside. When the current
+    # page lives in the section, its panel label leads the sublabel in
+    # accent (replacing the old 6px active dot).
+    _cat_meta = {
+        "Weekly": ("weekly", "Matchups, ScoreZone, Start/Sit"),
+        "Trades": ("trade", "Calculator, Hub, Database"),
+        "League": ("standings", "Standings, Teams, Activity"),
+        "Players": ("players", "Rankings, Compare, Top Movers"),
+        "Draft": ("draft", "Draft Room, Cheat Sheet, History"),
+        "Stats": ("awards", "Awards, Graphs, League History"),
+    }
+    _cat_labels = {
+        "weekly": "Matchups", "scorezone": "ScoreZone",
+        "waivers": "Waivers" if _bb_sheet else "Start/Sit",
+        "lineup-lab": "Lineup Lab", "scout": "Opponent Scout",
+        "schedule": "Schedule Rankings", "recap": "Weekly Recap",
+        "optimal": "Lineup Efficiency", "standings": "Standings",
+        "teams": "Teams", "activity": "Activity", "league_health": "League Health",
+        "trade": "Trade Calculator", "trade-suggestions": "Trade Hub",
+        "trade-database": "Trade Database", "draft-database": "Draft Database",
+        "players": "Player Rankings", "compare": "Compare Players",
+        "top-movers": "Top Movers", "advanced-metrics": "Advanced Metrics",
+        "breakouts": "Breakout Engine", "prospects": "Prospect Rankings",
+        "draft": "Draft Room", "draft-cheat-sheet": "Cheat Sheet",
+        "keeper": "Keeper Assistant", "draft-history": "Draft History",
+        "draft-recap": "Draft Recap", "awards": "Awards", "graphs": "Graphs",
+        "history": "League History", "nfl-teams": "NFL Team Rankings",
+    }
+    # Sublabel items are shortened forms of some panel labels; map a current
+    # label back to its sublabel item so it is not repeated after the lead.
+    _cat_alias = {
+        "Trade Calculator": "Calculator", "Trade Hub": "Hub",
+        "Trade Database": "Database", "Player Rankings": "Rankings",
+        "Compare Players": "Compare",
+    }
+
     def _category_row(label):
         slug = label.lower()
         current = active_norm in category_keys[label]
@@ -5034,8 +5123,6 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         live_cls = " rz-mnav-live" if live else ""
         if live:
             dot = '<span class="rz-mnav-dot" aria-hidden="true"></span>'
-        elif current:
-            dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>'
         else:
             dot = ""
         # Unread alert dot for the section's flagged surface, when one is
@@ -5045,10 +5132,26 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             alert = _recap_dot_in
         elif label == "Players":
             alert = _bo_dot_in
+        rep_key, sublabel = _cat_meta[label]
+        if current:
+            cur_label = _cat_labels.get(active_norm, "")
+            if cur_label:
+                drop = _cat_alias.get(cur_label, cur_label)
+                rest = [part for part in sublabel.split(", ") if part != drop]
+                sub_html = (
+                    f"<span class='br-sheet-cat-current'>{cur_label}</span>"
+                    + (f" &middot; {', '.join(rest)}" if rest else "")
+                )
+            else:
+                sub_html = sublabel
+        else:
+            sub_html = sublabel
         return (
             f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}{live_cls}' "
             f"data-br-sheet-target='{slug}' aria-controls='brMorePanel-{slug}'>"
-            f"<span>{label}</span>{dot}{alert}"
+            f"{_nav_icon(_NAV_PAGE_META[rep_key][0], size=20)}"
+            f"<span class='br-sheet-cat-text'><span class='br-sheet-cat-label'>{label}</span>"
+            f"<span class='br-sheet-cat-sub'>{sub_html}</span></span>{dot}{alert}"
             "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
         )
     # Every product section is reachable from the More root, Weekly and Trades
@@ -5075,15 +5178,10 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     root_html = (
         "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
         "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
-        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{my_actions_row}{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
+        f"{find_html}{quick_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{my_actions_row}{''.join(root_categories)}{portfolio_root or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         f"<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>{tools_html}</div>"
-        "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
-        "<h3 class='br-sheet-h'>Account</h3><div class='br-sheet-group'>"
-        "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='account' "
-        "aria-controls='brMorePanel-account'><span>Account</span><span class='br-sheet-acct-dot' "
-        "id='brSheetAcctDot' hidden aria-hidden='true'></span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
-        "</div></section>"
+        "</section>"
     )
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
@@ -5091,6 +5189,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
         f"  <div class='br-sheet-panels'>{root_html}{trades_html}{weekly_html}{league_html}"
         f"  {players_html}{draft_html}{stats_html}{help_html}{account_html}</div>"
+        f"{_sheet_footer_html()}"
         "</nav>"
     )
 
@@ -5155,7 +5254,7 @@ def _mobile_nav_guest(active: str) -> str:
     items += (
         "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span></button>"
+        f"{_more_icon_html()}<span class='br-tabbar-lbl'>More</span></button>"
     )
     n_tabs = len(_GUEST_DOCK_TABS) + 1
     ind_hidden = "" if active_index >= 0 else " data-hidden='1'"
@@ -5194,7 +5293,20 @@ def _mobile_nav_guest(active: str) -> str:
         "<a class='br-sheet-link' href='/watchlist'>"
         "<i class='fa-solid fa-star br-sheet-fa' aria-hidden='true'></i>"
         "<span>Watchlist</span></a>"
+        "<div class='br-sheet-search-expand' id='brSheetSearchExpand' hidden>"
+        "<div class='br-sheet-search-mount' id='brSheetSearchMount'></div>"
+        "<button type='button' class='br-sheet-search-cancel' id='brSheetSearchCancel'>Cancel</button></div>"
         "</div>"
+    )
+
+    # Quick: the fast pages one tap from the root, no category drill-down.
+    quick_html = (
+        "<h3 class='br-sheet-h'>Quick</h3>"
+        "<div class='br-sheet-group'>"
+        + _gl("/players", "Player Rankings", "players")
+        + _gl("/trade", "Trade Calculator", "trade")
+        + _gl("/draft", "Draft Room", "draft")
+        + "</div>"
     )
 
     trades_html = _sec("Trades", [
@@ -5241,14 +5353,56 @@ def _mobile_nav_guest(active: str) -> str:
         "Draft": {"draft", "draft-cheat-sheet", "draft-history", "draft-recap"},
         "Learn": {"guides", "glossary", "faq", "about", "contact"},
     }
+    # Same two-line category rows as the league sheet: representative icon,
+    # label, muted sublabel; the current page leads the sublabel in accent.
+    _guest_cat_meta = {
+        "Trades": ("trade", "Calculator, Hub, Database"),
+        "Players": ("players", "Rankings, Compare, Top Movers"),
+        "Draft": ("draft", "Draft Room, Cheat Sheet, History"),
+        "Learn": ("guides", "Guides, Glossary, FAQ"),
+    }
+    _guest_cat_labels = {
+        "trade": "Trade Calculator", "trade-suggestions": "Trade Hub",
+        "trade-database": "Trade Database", "draft-database": "Draft Database",
+        "players": "Player Rankings", "compare": "Compare Players",
+        "top-movers": "Top Movers", "advanced-metrics": "Advanced Metrics",
+        "nfl-teams": "NFL Team Rankings", "breakouts": "Breakout Engine",
+        "prospects": "Prospect Rankings", "draft": "Draft Room",
+        "draft-cheat-sheet": "Cheat Sheet", "draft-history": "Draft History",
+        "draft-recap": "Draft Recap", "guides": "Strategy Guides",
+        "glossary": "Glossary", "faq": "FAQ", "about": "About",
+        "contact": "Contact",
+    }
+    _guest_cat_alias = {
+        "Trade Calculator": "Calculator", "Trade Hub": "Hub",
+        "Trade Database": "Database", "Player Rankings": "Rankings",
+        "Compare Players": "Compare", "Strategy Guides": "Guides",
+    }
+
     def _guest_category(label):
         slug = label.lower()
         current = active in guest_groups[label]
-        dot = '<span class="br-sheet-active-dot" aria-label="Current section"></span>' if current else ""
+        rep_key, sublabel = _guest_cat_meta[label]
+        if current:
+            cur_label = _guest_cat_labels.get(active, "")
+            if cur_label:
+                drop = _guest_cat_alias.get(cur_label, cur_label)
+                rest = [part for part in sublabel.split(", ") if part != drop]
+                sub_html = (
+                    f"<span class='br-sheet-cat-current'>{cur_label}</span>"
+                    + (f" &middot; {', '.join(rest)}" if rest else "")
+                )
+            else:
+                sub_html = sublabel
+        else:
+            sub_html = sublabel
+        icon = _NAV_PAGE_META.get(rep_key, ("bars", "", ""))[0]
         return (
             f"<button type='button' class='br-sheet-link br-sheet-category{' active' if current else ''}' "
             f"data-br-sheet-target='{slug}' aria-controls='brMorePanel-{slug}'>"
-            f"<span>{label}</span>{dot}"
+            f"{_nav_icon(icon, size=20)}"
+            f"<span class='br-sheet-cat-text'><span class='br-sheet-cat-label'>{label}</span>"
+            f"<span class='br-sheet-cat-sub'>{sub_html}</span></span>"
             "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
         )
     categories = ''.join(_guest_category(x) for x in ("Trades", "Players", "Draft", "Learn"))
@@ -5256,21 +5410,19 @@ def _mobile_nav_guest(active: str) -> str:
     root_html = (
         "<section class='br-sheet-panel br-sheet-root' id='brMorePanel-root' data-br-sheet-panel='root'>"
         "<h2 class='br-sheet-root-title' tabindex='-1'>More</h2>"
-        f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{categories}{portfolio_link or portfolio_fallback}</div>"
+        f"{find_html}{quick_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{categories}{portfolio_link or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         "<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>"
         "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='learn' aria-controls='brMorePanel-learn'>"
         "<span>Help</span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button></div>"
-        "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
-        "<h3 class='br-sheet-h'>Account</h3><div class='br-sheet-group'>"
-        "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='account' aria-controls='brMorePanel-account'>"
-        "<span>Account</span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button></div></section>"
+        "</section>"
     )
     sheet = (
         "<div class='br-sheet-scrim' id='brSheetScrim'></div>"
         "<nav class='br-sheet' id='brMoreSheet' aria-label='More' aria-hidden='true'>"
         "  <div class='br-sheet-grip' aria-hidden='true'></div>"
         f"  <div class='br-sheet-panels'>{root_html}{trades_html}{players_html}{draft_html}{learn_html}{account_html}</div>"
+        f"{_sheet_footer_html()}"
         "</nav>"
     )
     search_screen = (
@@ -5288,6 +5440,13 @@ def _nav_icon(name: str, cls: str = "", style: str = "", size: int = 16) -> str:
     body = _NAV_ICON_PATHS.get(name, "")
     cls_attr = f" {cls}" if cls else ""
     style_attr = f" style='{style}'" if style else ""
+    if name == "more":
+        # The More dots are solid: filled circles, no stroke.
+        return (
+            f"<svg class='nav-svg-icon{cls_attr}' width='{size}' height='{size}' viewBox='0 0 24 24' "
+            f"fill='currentColor' stroke='none' aria-hidden='true'{style_attr}>"
+            "<circle cx='5' cy='12' r='2'/><circle cx='12' cy='12' r='2'/><circle cx='19' cy='12' r='2'/></svg>"
+        )
     return (
         f"<svg class='nav-svg-icon{cls_attr}' width='{size}' height='{size}' viewBox='0 0 24 24' "
         f"fill='none' stroke='currentColor' stroke-width='1.75' stroke-linecap='round' "

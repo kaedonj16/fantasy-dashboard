@@ -1408,7 +1408,12 @@ window.brHaptic = function (pattern) {
     var changelog   = document.getElementById('changelogDropdown');
     remember(search); remember(settings); remember(changelog);
     if (mq.matches) {
-      if (search && searchMount && search.parentNode !== searchMount) searchMount.appendChild(search);
+      var sheetMount = document.getElementById('brSheetSearchMount');
+      var expand = document.getElementById('brSheetSearchExpand');
+      if (search && expand && !expand.hidden && sheetMount) {
+        // Inline search is expanded: the widget stays in the sheet.
+        if (search.parentNode !== sheetMount) sheetMount.appendChild(search);
+      } else if (search && searchMount && search.parentNode !== searchMount) searchMount.appendChild(search);
       if (settings && acctMount && settings.parentNode !== acctMount) acctMount.appendChild(settings);
       if (changelog && topNav && changelog.parentNode !== topNav) topNav.appendChild(changelog);
     } else {
@@ -1430,6 +1435,12 @@ window.brHaptic = function (pattern) {
   };
 
   function sheetOpen() { var s = document.getElementById('brMoreSheet'); return !!(s && s.classList.contains('open')); }
+  // The sheet's height is locked; each panel scrolls inside it, so scroll
+  // reads/writes target the active panel, never the sheet itself.
+  function activePanel(sheet) {
+    if (!sheet) return null;
+    return sheet.querySelector('[data-br-sheet-panel="' + (sheet.dataset.brSheetLevel || 'root') + '"]');
+  }
   function showSheetPanel(name, backwards, trigger) {
     var sheet = document.getElementById('brMoreSheet');
     if (!sheet) return;
@@ -1450,7 +1461,7 @@ window.brHaptic = function (pattern) {
     if (trigger) next._brReturnFocus = trigger;
     next.hidden = false;
     sheet.dataset.brSheetLevel = name;
-    sheet.scrollTop = 0;
+    next.scrollTop = 0;
     if (!reduce) {
       if (current) {
         current.classList.remove('br-sheet-panel-leave', 'br-sheet-panel-leave-back');
@@ -1466,7 +1477,7 @@ window.brHaptic = function (pattern) {
         }
         next.classList.remove('br-sheet-panel-enter');
         sheet._brPanelTimer = null;
-      }, 210);
+      }, 370);
     } else if (current) {
       current.hidden = true;
     }
@@ -1480,7 +1491,7 @@ window.brHaptic = function (pattern) {
     if (!sheet) return;
     if (sheet._brPanelTimer) clearTimeout(sheet._brPanelTimer);
     sheet._brPanelTimer = null;
-    sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) { p.hidden = p.dataset.brSheetPanel !== 'root'; });
+    sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) { p.hidden = p.dataset.brSheetPanel !== 'root'; p.scrollTop = 0; });
     sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) {
       p.classList.remove('br-sheet-panel-enter', 'br-sheet-panel-leave', 'br-sheet-panel-leave-back');
     });
@@ -1521,15 +1532,47 @@ window.brHaptic = function (pattern) {
       setTimeout(function () { if (popup.parentNode) popup.remove(); }, 400);
     });
   }
+  // Inline player search: the Search row expands the real nav-search widget
+  // in place inside the Find group instead of opening the full-screen search.
+  function inlineSearchOpen() {
+    var ex = document.getElementById('brSheetSearchExpand');
+    return !!(ex && !ex.hidden);
+  }
+  function openInlineSearch() {
+    var ex = document.getElementById('brSheetSearchExpand');
+    var mount = document.getElementById('brSheetSearchMount');
+    if (!ex || !mount) return;
+    if (typeof ensureFeatures === 'function') ensureFeatures();
+    var search = document.getElementById('navSearchWrapper');
+    if (search && search.parentNode !== mount) mount.appendChild(search);
+    ex.hidden = false;
+    ex.classList.remove('expanding');
+    void ex.offsetWidth;
+    ex.classList.add('expanding');
+    setTimeout(function () { var i = document.getElementById('navPlayerSearch'); if (i) i.focus(); }, 300);
+  }
+  function closeInlineSearch() {
+    var ex = document.getElementById('brSheetSearchExpand');
+    if (!ex || ex.hidden) return;
+    ex.hidden = true;
+    ex.classList.remove('expanding');
+    var i = document.getElementById('navPlayerSearch'); if (i) i.blur();
+    // Park the widget back in the full-screen mount; relocate() re-homes it
+    // on the next setup pass if the inline search reopens first.
+    var search = document.getElementById('navSearchWrapper');
+    var screenMount = document.getElementById('brSearchMount');
+    if (search && screenMount && search.parentNode !== screenMount) screenMount.appendChild(search);
+  }
   function setOpen(o) {
     var sheet = document.getElementById('brMoreSheet');
     var scrim = document.getElementById('brSheetScrim');
     var tab   = document.getElementById('brMoreTab');
     if (!sheet) return;
+    if (!o) closeInlineSearch();
     sheet.classList.toggle('open', o);
     if (scrim) scrim.classList.toggle('open', o);
     sheet.setAttribute('aria-hidden', o ? 'false' : 'true');
-    if (tab) { tab.setAttribute('aria-expanded', o ? 'true' : 'false'); tab.classList.toggle('active', o); }
+    if (tab) { tab.setAttribute('aria-expanded', o ? 'true' : 'false'); tab.classList.toggle('active', o); tab.classList.toggle('br-more-open', o); }
     if (o && window.brHaptic) window.brHaptic(10);
     if (o) {
       resetSheetPanel();
@@ -1546,6 +1589,7 @@ window.brHaptic = function (pattern) {
   // before opening -- open sheet z-index beats --z-modal and would cover them.
   window.brCloseMoreSheet = function () { setOpen(false); };
   function openSearch() {
+    closeInlineSearch();
     var ss = document.getElementById('brSearchScreen'); if (!ss) return;
     // On lite pages the nav-search wiring (initNavSearch) lives in the lazy
     // feature bundle -- pull it in so typing actually returns results.
@@ -1615,6 +1659,8 @@ window.brHaptic = function (pattern) {
     if (searchScreen) searchScreen.addEventListener('click', function (e) {
       if (e.target.closest('.nav-search-result')) closeSearch();
     });
+    var inlineCancel = document.getElementById('brSheetSearchCancel');
+    if (inlineCancel) inlineCancel.addEventListener('click', closeInlineSearch);
 
     sheet.addEventListener('click', function (e) {
       var category = e.target.closest('[data-br-sheet-target]');
@@ -1625,7 +1671,9 @@ window.brHaptic = function (pattern) {
         setAcctOpen(!(t && t.getAttribute('aria-expanded') === 'true'));
         return;
       }
-      if (e.target.closest('#brSheetSearchRow')) { setOpen(false); openSearch(); return; }
+      if (e.target.closest('#brSheetSearchRow')) { openInlineSearch(); return; }
+      if (e.target.closest('#brSheetSearchCancel')) { closeInlineSearch(); return; }
+      if (e.target.closest('.nav-search-result')) { closeInlineSearch(); setOpen(false); return; }
       var action = e.target.closest('[data-br-action]');
       if (action) {
         // The changelog's document-level outside-click handler sees this same
@@ -1660,9 +1708,11 @@ window.brHaptic = function (pattern) {
     sheet.addEventListener('touchmove', function (e) {
       if (!tracking) return;
       var dy = e.touches[0].clientY - tsY;
+      var panel = activePanel(sheet);
+      var pTop = panel ? panel.scrollTop : 0;
       if (!tDrag) {
-        if (dy > 6 && sheet.scrollTop <= 0) { tDrag = true; sheet.style.transition = 'none'; }
-        else if (dy < 0 || sheet.scrollTop > 0) { tracking = false; return; }
+        if (dy > 6 && pTop <= 0) { tDrag = true; sheet.style.transition = 'none'; if (scrim) scrim.style.transition = 'none'; }
+        else if (dy < 0 || pTop > 0) { tracking = false; return; }
         else return;
       }
       tDelta = Math.max(0, dy);
@@ -1674,9 +1724,22 @@ window.brHaptic = function (pattern) {
       if (!tracking) return;
       tracking = false;
       if (tDrag) {
-        sheet.style.transition = ''; sheet.style.transform = '';
+        // Release on the soft curve from the dragged position, duration
+        // scaled to the distance left to travel (280-460ms either way).
+        var closing = tDelta > 90;
+        var h = sheet.offsetHeight || 600;
+        var dist = closing ? Math.max(0, h - tDelta) : tDelta;
+        var dur = Math.round(Math.min(460, Math.max(280, dist * 0.6)));
+        var tr = 'transform ' + dur + 'ms cubic-bezier(.22, 1, .36, 1)';
+        sheet.style.transition = tr;
+        if (scrim) scrim.style.transition = 'opacity ' + dur + 'ms cubic-bezier(.22, 1, .36, 1)';
+        sheet.style.transform = '';
         if (scrim) scrim.style.opacity = '';
-        if (tDelta > 90) setOpen(false);
+        if (closing) setOpen(false);
+        setTimeout(function () {
+          sheet.style.transition = '';
+          if (scrim) scrim.style.transition = '';
+        }, dur + 30);
       }
       tDrag = false; tDelta = 0;
     }
@@ -1688,6 +1751,7 @@ window.brHaptic = function (pattern) {
         var ss = document.getElementById('brSearchScreen');
         if (e.key === 'Escape') {
           if (ss && ss.classList.contains('open')) { closeSearch(); return; }
+          if (sheetOpen() && inlineSearchOpen()) { closeInlineSearch(); return; }
           if (sheetOpen()) {
             var openSheet = document.getElementById('brMoreSheet');
             if (openSheet && openSheet.dataset.brSheetLevel && openSheet.dataset.brSheetLevel !== 'root') showSheetPanel('root', true);
@@ -29159,7 +29223,7 @@ window.showSubWelcome = function (opts) {
     // a sheet left on a sub-panel hides root-only targets like the search
     // row, and the step would be silently auto-skipped.
     if (sheet) {
-      sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) { p.hidden = p.dataset.brSheetPanel !== 'root'; });
+      sheet.querySelectorAll('.br-sheet-panel').forEach(function (p) { p.hidden = p.dataset.brSheetPanel !== 'root'; p.scrollTop = 0; });
       sheet.dataset.brSheetLevel = 'root';
     }
     var scrim = document.getElementById('brSheetScrim');
@@ -29172,6 +29236,7 @@ window.showSubWelcome = function (opts) {
     if (tab) {
       tab.setAttribute('aria-expanded', 'true');
       tab.classList.add('active');
+      tab.classList.add('br-more-open');
     }
   }
   function _closeMoreSheet() {
@@ -29186,6 +29251,7 @@ window.showSubWelcome = function (opts) {
     if (tab) {
       tab.setAttribute('aria-expanded', 'false');
       tab.classList.remove('active');
+      tab.classList.remove('br-more-open');
     }
   }
 

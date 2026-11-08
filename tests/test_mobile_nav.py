@@ -38,8 +38,9 @@ def test_dock_and_sheet_present(offline_client):
     assert "class='br-tabbar'" in html
     assert "id='brMoreTab'" in html
     assert "id='brMoreSheet'" in html
-    # Search is a row that opens the full-screen search screen; the settings
-    # menu is relocated into the Account mount.
+    # Search is a row that expands the search widget in place (the
+    # full-screen search screen still exists for the top-bar button); the
+    # settings menu is relocated into the Account mount.
     assert "id='brSheetSearchRow'" in html
     assert "id='brSearchScreen'" in html
     assert "id='brSearchMount'" in html
@@ -172,7 +173,12 @@ def test_more_information_architecture_and_shared_utilities(offline_client):
     root = html.split("data-br-sheet-panel='root'", 1)[1].split("</section>", 1)[0]
     assert "br-sheet-h'>Navigate<" in root
     assert "br-sheet-h'>Tools<" in root
-    assert "br-sheet-h'>Account<" in root
+    # Account is no longer a root group: it is the sheet's pinned footer,
+    # rendered after the panels and visible from every panel.
+    assert "br-sheet-h'>Account<" not in root
+    assert "data-br-sheet-target='account'" not in root
+    assert "br-sheet-footer" in html
+    assert html.index("br-sheet-footer") > html.index("data-br-sheet-panel='account'")
     for category in ("league", "players", "draft", "stats"):
         assert f"data-br-sheet-target='{category}'" in root
     # Weekly and Trades are dock destinations, but their extra tools (Recap,
@@ -190,6 +196,57 @@ def test_more_information_architecture_and_shared_utilities(offline_client):
     account = html.split("data-br-sheet-panel='account'", 1)[1].split("</section>", 1)[0]
     assert "My Leagues" not in account
     assert "brSheetRefresh" not in account
+
+
+def test_more_sheet_aplus_structure_and_motion(offline_client):
+    """A+ Full More sheet: locked height, two-line categories with the
+    current page leading the sublabel, a Quick group, a pinned Account
+    footer, in-place search, and the solid morphing More icon."""
+    html = _html(offline_client, GRAPHS)
+    root = html.split("data-br-sheet-panel='root'", 1)[1].split("</section>", 1)[0]
+    # Quick group sits between Find and Navigate with direct page rows.
+    assert "br-sheet-h'>Quick<" in root
+    assert html.index("br-sheet-h'>Find<") < html.index("br-sheet-h'>Quick<") < html.index("br-sheet-h'>Navigate<")
+    assert ">Standings</span>" in root and ">Player Rankings</span>" in root
+    # Category rows carry an icon, a label and a sublabel; on the current
+    # section (Stats, for the Graphs page) the current page leads the
+    # sublabel in accent and the old active dot is gone.
+    assert "br-sheet-cat-sub" in root
+    assert "Awards, Graphs, League History" not in root  # Graphs leads instead
+    assert "<span class='br-sheet-cat-current'>Graphs</span> &middot; Awards, League History" in root
+    assert "br-sheet-active-dot" not in root
+    for sub in ("Calculator, Hub, Database", "Standings, Teams, Activity",
+                "Rankings, Compare, Top Movers", "Draft Room, Cheat Sheet, History"):
+        assert sub in root
+    # Pinned Account footer: gear button, the account dot id exactly once.
+    assert "br-sheet-foot-acct" in html
+    assert html.count("id='brSheetAcctDot'") == 1
+    # Search expands in place: expand container + mount + cancel in the root.
+    assert "id='brSheetSearchExpand'" in root
+    assert "id='brSheetSearchMount'" in root
+    assert "id='brSheetSearchCancel'" in root
+    # Solid More dots inside the morph wrapper (dots + chevron).
+    assert "br-more-ic" in html and "br-more-dots" in html and "br-more-chev" in html
+    assert "fill='currentColor' stroke='none'" in html
+    # Motion + locked-height contract in the shared CSS/JS.
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    assert "height: 86dvh" in css
+    assert "transition: transform .46s var(--ease-soft), visibility .46s" in css
+    assert ".br-sheet-panel { height: 100%; overflow-y: auto" in css
+    assert "brSheetSearchMount" in js and "openInlineSearch" in js
+    assert "}, 370);" in js  # panel timer matches the 360ms drill
+    assert "br-more-open" in js
+    # Guest sheet gets the same structure (icons + sublabels, Quick, footer,
+    # inline search), with its own Learn sublabel.
+    import app
+    with app.app.test_request_context("/players"):
+        guest = app._mobile_nav_guest("players")
+    assert "br-sheet-h'>Quick<" in guest
+    assert "Guides, Glossary, FAQ" in guest
+    assert "<span class='br-sheet-cat-current'>Player Rankings</span>" in guest
+    assert "br-sheet-foot-acct" in guest and "id='brSheetSearchExpand'" in guest
+    assert guest.count("id='brSheetAcctDot'") == 1
 
 
 def test_desktop_profile_menu_exposes_shared_tools(monkeypatch):
