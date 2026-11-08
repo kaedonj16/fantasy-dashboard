@@ -202,19 +202,25 @@ console.log(JSON.stringify({{
     assert out == {"pid": "wr", "eventMine": False, "eventOpp": True}
 
 
-def test_on_deck_is_a_gridded_section_with_count_and_matches_gutter():
-    """On Deck is a header + responsive grid (tidy when many leagues connect),
-    aligned to the 14px content gutter like the cards below it."""
+def test_on_deck_is_a_scroll_strip_with_shared_kickoff_and_matches_gutter():
+    """On Deck is a header + one snap-scrolling chip row (Kaedon's B pick,
+    2026-11-08): a shared kickoff is shown once in the header and chips only
+    carry a time when kickoffs differ. Aligned to the 14px content gutter
+    like the cards below it."""
     ondeck = SCOREZONE_JS.split("function _onDeckHtml() {", 1)[1].split(
         "function _pregameScheduleHtml", 1
     )[0]
     assert "rz-ondeck-head" in ondeck
     assert "rz-ondeck-count" in ondeck
-    assert "rz-ondeck-grid" in ondeck
-    assert "rz-ondeck-item-top" in ondeck
+    assert "rz-ondeck-strip" in ondeck
+    assert "rz-ondeck-chip" in ondeck
+    assert "data-ondeck-next" in ondeck
+    assert "sharedKickoff" in ondeck
     assert "' game' : ' games'" in ondeck
+    assert "▶" not in ondeck
     assert ".rz-ondeck-bar {\n    margin: 0 14px 10px;" in DASHBOARD_CSS
-    assert "grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));" in DASHBOARD_CSS
+    assert "scroll-snap-type: x mandatory;" in DASHBOARD_CSS
+    assert "overflow-x: auto;" in DASHBOARD_CSS
 
 
 def test_matchup_strip_and_board_share_the_content_gutter():

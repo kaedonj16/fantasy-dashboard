@@ -225,6 +225,14 @@
       e.stopPropagation();
       return;
     }
+    // On Deck strip arrow: scrolls the chip row inside its own wrapper.
+    var odBtn = target && target.closest ? target.closest('[data-ondeck-next]') : null;
+    if (odBtn && root.contains(odBtn)) {
+      var strip = odBtn.parentElement ? odBtn.parentElement.querySelector('.rz-ondeck-strip') : null;
+      if (strip) strip.scrollBy({ left: 180, behavior: 'smooth' });
+      e.stopPropagation();
+      return;
+    }
     // Walk up to find element with data-pid
     while (target && target !== root) {
       if (target.dataset && target.dataset.pid) {
@@ -4250,25 +4258,43 @@
     });
     var gids = Object.keys(games).sort(function(a, b) { return games[a].ep - games[b].ep; });
     if (!gids.length) return '';
-    var rows = gids.map(function(gid) {
+    // One kickoff slate shares its time: it goes in the header once and the
+    // chips carry no clock at all. Only when kickoffs differ does each chip
+    // carry its own time, so no information is lost on mixed slates.
+    var eps = {};
+    gids.forEach(function(gid) { eps[Math.round(games[gid].ep / 60)] = true; });
+    var sharedKickoff = Object.keys(eps).length === 1;
+    function _kickoffLabel(ep) {
+      var d = new Date(ep * 1000);
+      var time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      var mins = Math.max(1, Math.round((ep - now) / 60));
+      return time + ' · in ' + mins + 'm';
+    }
+    var chips = gids.map(function(gid) {
       var g = games[gid];
-      var mins = Math.max(1, Math.round((g.ep - now) / 60));
       var nameStr = g.names.slice(0, 3).join(', ') + (g.names.length > 3 ? ' +' + (g.names.length - 3) : '');
-      return '<div class="rz-ondeck-item">'
-        + '<div class="rz-ondeck-item-top">'
-        +   '<span class="rz-ondeck-game">' + g.away + ' @ ' + g.home + '</span>'
-        +   '<span class="rz-ondeck-clock">▶ ' + mins + 'm</span>'
-        + '</div>'
+      return '<div class="rz-ondeck-chip">'
+        + '<span class="rz-ondeck-game">' + g.away + ' @ ' + g.home + '</span>'
         + '<span class="rz-ondeck-players">' + nameStr + '</span>'
+        + (sharedKickoff ? '' : '<span class="rz-ondeck-when">' + _kickoffLabel(g.ep) + '</span>')
         + '</div>';
     }).join('');
     var count = gids.length;
+    var headWhen = sharedKickoff
+      ? '<span class="rz-ondeck-when">' + _kickoffLabel(games[gids[0]].ep) + '</span>'
+      : '<span class="rz-ondeck-when">next in ' + Math.max(1, Math.round((games[gids[0]].ep - now) / 60)) + 'm</span>';
     return '<div class="rz-ondeck-bar">'
       + '<div class="rz-ondeck-head">'
       +   '<span class="rz-ondeck-label">On deck</span>'
-      +   '<span class="rz-ondeck-count">' + count + (count === 1 ? ' game' : ' games') + '</span>'
+      +   '<span class="rz-ondeck-meta">'
+      +     '<span class="rz-ondeck-count">' + count + (count === 1 ? ' game' : ' games') + '</span>'
+      +     headWhen
+      +   '</span>'
       + '</div>'
-      + '<div class="rz-ondeck-grid">' + rows + '</div>'
+      + '<div class="rz-ondeck-stripwrap">'
+      +   '<div class="rz-ondeck-strip">' + chips + '</div>'
+      +   (count > 2 ? '<button type="button" class="rz-ondeck-next" data-ondeck-next aria-label="Scroll on deck games">›</button>' : '')
+      + '</div>'
       + '</div>';
   }
 

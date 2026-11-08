@@ -44058,9 +44058,10 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 }
 
 /* ── On-deck strip (games kicking off soon) ── */
-/* On deck: a header line plus a grid of upcoming games, so the section stays
-   tidy whether one league or a dozen are connected. Side gutter matches the
-   main card so it no longer runs wider than the cards below it. */
+/* On deck: one slim panel with the kickoff in the header and the games as a
+   single snap-scrolling chip row, so the queue stays a preview and never
+   pushes the live feed down the page. Side gutter matches the main card so
+   it no longer runs wider than the cards below it. */
 .rz-ondeck-bar {
     margin: 0 14px 10px;
     padding: 10px 12px;
@@ -44085,6 +44086,13 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     color: var(--rz-muted);
 }
 
+.rz-ondeck-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+}
+
 .rz-ondeck-count {
     font-size: 11px;
     font-weight: 700;
@@ -44092,35 +44100,73 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     opacity: .8;
 }
 
-.rz-ondeck-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-    gap: 8px;
-}
-
-.rz-ondeck-item {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-    padding: 8px 10px;
-    border-radius: var(--radius);
-    background: rgba(59, 130, 246, .08);
-    font-size: 11px;
-}
-
-.rz-ondeck-item-top {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.rz-ondeck-clock {
+.rz-ondeck-meta .rz-ondeck-when {
     font-size: 11px;
     font-weight: 800;
-    color: var(--brand-blue);
-    flex-shrink: 0;
+    color: var(--rz-text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.rz-ondeck-meta .rz-ondeck-when::before {
+    content: "·";
+    margin-right: 6px;
+    color: var(--rz-muted);
+    font-weight: 700;
+}
+
+.rz-ondeck-stripwrap {
+    position: relative;
+}
+
+.rz-ondeck-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 30px;
+}
+
+.rz-ondeck-strip::-webkit-scrollbar {
+    display: none;
+}
+
+.rz-ondeck-chip {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 148px;
+    max-width: 200px;
+    padding: 8px 10px;
+    border: 1px solid var(--rz-border);
+    border-radius: var(--radius);
+    background: var(--rz-surface);
+    font-size: 11px;
+}
+
+.rz-ondeck-next {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--rz-border);
+    background: var(--rz-card);
+    color: var(--rz-text);
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    z-index: 1;
 }
 
 .rz-ondeck-game {
@@ -44136,11 +44182,17 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     color: var(--rz-muted);
     line-height: 1.35;
     min-width: 0;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-:root[data-theme="dark"] .rz-ondeck-item {
-    background: rgba(59, 130, 246, .14);
+.rz-ondeck-chip .rz-ondeck-when {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--rz-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 /* ── System feed events (blowout, lead change) ──────── */
