@@ -43,6 +43,36 @@ def test_controller_is_touch_only_and_hook_gated():
     assert "location.reload" not in block
 
 
+def test_h_scroller_is_a_deferred_direction_check_not_a_touchstart_block():
+    # Regression (2026-11-08): blockedTarget() used to reject at touchstart
+    # any touch with a horizontal-scroller ancestor. Every touch inside the
+    # Weekly Hub matchup board has .m-track (overflow-x:auto) in its
+    # ancestry, so PTR from the board never started. The h-scroller
+    # predicate now lives in hScrollerTarget() and only makes the touch a
+    # provisional (deferredH) candidate; touchmove decides by direction.
+    start = APP_JS.index("/* br-ptr:start */")
+    end = APP_JS.index("/* br-ptr:end */")
+    block = APP_JS[start:end]
+    assert "function hScrollerTarget(node)" in block
+    assert "deferredH" in block
+    assert "deferredH = hScrollerTarget(e.target);" in block
+    # The horizontal-scroller predicate (wide content + overflowX auto /
+    # scroll) must NOT come back inside blockedTarget(): everything between
+    # blockedTarget's start and hScrollerTarget's start is the hard-block
+    # path, and the overflowX probe belongs to the deferred one.
+    hard = block[block.index("function blockedTarget"):block.index(
+        "function hScrollerTarget")]
+    assert "scrollWidth > node.clientWidth" not in hard
+    deferred = block[block.index("function hScrollerTarget"):]
+    assert "scrollWidth > node.clientWidth" in deferred
+    # The harness drives both directions on an h-scroller target.
+    harness = (ROOT / "tests" / "pull_to_refresh_harness.mjs").read_text(
+        encoding="utf-8")
+    assert "horizontal-scroller target + vertical pull = refresh" in harness
+    assert ("horizontal-scroller target + horizontal drag = scroller keeps "
+            "gesture") in harness
+
+
 def test_overscroll_contain_stays_so_android_cannot_double_fire():
     assert "overscroll-behavior-y: contain;" in DASHBOARD_CSS
 

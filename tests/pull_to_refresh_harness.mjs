@@ -230,6 +230,48 @@ async function run() {
     console.log('ok - horizontal gesture = aborted');
   }
 
+  // 9. Target inside a horizontal scroller, VERTICAL pull: direction is
+  //    proven on move, so the pull belongs to the page and refreshes.
+  //    (Regression: the Weekly Hub matchup board's .m-track is a horizontal
+  //    scroller filling most of the first screen; a touchstart-time block
+  //    on any h-scroller ancestry made hub PTR dead from the board.)
+  {
+    const w = makeWorld();
+    let calls = 0;
+    w.win.brPageRefresh = () => { calls++; return Promise.resolve(); };
+    const scroller = new El('div');
+    scroller.scrollWidth = 1100;
+    scroller.clientWidth = 360;
+    scroller._overflowX = 'auto';
+    const child = new El('span');
+    scroller.appendChild(child);
+    w.pull(child, 140);
+    await flush();
+    assert.equal(calls, 1, 'h-scroller vertical pull: hook called once');
+    console.log('ok - horizontal-scroller target + vertical pull = refresh');
+  }
+
+  // 10. Target inside a horizontal scroller, HORIZONTAL drag: the
+  //     scroller keeps its gesture; no refresh, no indicator.
+  {
+    const w = makeWorld();
+    let calls = 0;
+    w.win.brPageRefresh = () => { calls++; return Promise.resolve(); };
+    const scroller = new El('div');
+    scroller.scrollWidth = 1100;
+    scroller.clientWidth = 360;
+    scroller._overflowX = 'auto';
+    const child = new El('span');
+    scroller.appendChild(child);
+    w.fire('touchstart', w.touch(child, 100, 10));
+    w.fire('touchmove', w.touch(child, 190, 40)); // dx 90 > dy 30
+    w.fire('touchend', w.touch(child, 190, 40));
+    await flush();
+    assert.equal(calls, 0, 'h-scroller horizontal drag: hook not called');
+    assert.equal(w.indicator(), null, 'h-scroller horizontal drag: no indicator');
+    console.log('ok - horizontal-scroller target + horizontal drag = scroller keeps gesture');
+  }
+
   console.log('\nALL PULL-TO-REFRESH HARNESS CHECKS PASSED');
 }
 
