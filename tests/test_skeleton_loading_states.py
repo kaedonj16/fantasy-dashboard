@@ -34,14 +34,24 @@ def test_gameday_refresh_uses_animator():
     assert "brAnimateMatchupRefresh(matchupsContainer" in src
 
 
-def test_week_change_overlay_uses_skeleton_not_spinner():
+def test_week_change_has_no_matchups_loading_cover():
+    # Kaedon (2026-11-08): no refresh cover on the Matchups page. The week
+    # change / pull-to-refresh load draws nothing over the board; the old
+    # content stays visible and swaps in when the fetch lands.
     src = _read("dashboard_services/pages/weekly_hub_page.py")
-    m = re.search(r'id="weeklyMatchupsLoading".*?</div>\s*</div>', src, re.S)
-    assert m, "week-change loading overlay markup not found"
-    overlay = m.group(0)
-    assert "matchups-spinner" not in overlay
-    assert "skeleton" in overlay
-    assert "matchups-loading-skel" in overlay
+    assert "weeklyMatchupsLoading" not in src
+    assert "matchups-loading" not in src
+    assert "loadingOverlay" not in src
+    css = _read("static/dashboard.css")
+    assert ".matchups-loading" not in css
+    # The loading/settle contract the pull-to-refresh hook polls survives:
+    # showLoading/hideLoading still flip sel.disabled, with no cover.
+    assert "sel.disabled = true" in src
+    assert "sel.disabled = false" in src
+    # And the pull-to-refresh spinner chip itself is kept, untouched.
+    app_js = _read("static/app.js")
+    assert "br-ptr" in app_js and "br-ptr-spinner" in app_js
+    assert ".br-ptr" in css and ".br-ptr-spinner" in css
 
 
 def test_league_tab_initial_view_is_skeleton():
@@ -70,7 +80,6 @@ def test_fade_swap_css_defined_with_reduced_motion_opt_out():
     # The global reduced-motion block must neutralise the new fade.
     m = re.search(r"@media \(prefers-reduced-motion: reduce\) \{[^}]*\.br-fade-swap[^}]*\}", css, re.S)
     assert m, ".br-fade-swap missing from a prefers-reduced-motion block"
-    assert ".matchups-loading-skel" in css
 
 
 def test_ls_skeleton_constant_used_for_loading_states():
