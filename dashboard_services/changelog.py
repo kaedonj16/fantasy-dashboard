@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-08",
+        "tag": "update",
+        "text": "ScoreZone clips now cover big plays too, not just touchdowns. When the official clip is posted, a Watch button appears on 40+ yard gains and turnovers in the feed, in Moments and in player modals, the same as it already does for scoring plays.",
+        "link": "/scorezone"
+    },
+    {
         "date": "2026-11-07",
         "tag": "update",
         "text": "The mobile More menu is rebuilt: it glides open on a smoother curve and stays one height as you drill in, sections show what is inside them, your current page is named right on its section, and Standings, Start/Sit, Player Rankings and ScoreZone are one tap away in a new Quick group. Player search now expands right inside the menu, and Account is pinned at the bottom where it is always reachable.",
