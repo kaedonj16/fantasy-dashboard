@@ -696,6 +696,15 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
         background: var(--card);
     }
 
+    /* The tab bar pins together with the header while the panel
+       scrolls (head + tabs share the .ni-stick wrapper). */
+    .top-nav.br-mnav .changelog-dropdown .ni-stick {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--card);
+    }
+
     .top-nav.br-mnav .changelog-dropdown .ni-foot {
         position: sticky;
         bottom: 0;
@@ -1760,6 +1769,63 @@ ul {
 
 .ni-chev {
     color: var(--text-muted);
+}
+
+/* Notification panel tabs (Updates / ScoreZone): quiet treatment --
+   white ground, hairline under the bar, sentence case, grey count
+   pills. The red stays on the per-item unread dots only. */
+.ni-tabs {
+    display: flex;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 2px 10px 0;
+    gap: 4px;
+}
+
+.ni-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 10px 10px;
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.12s, border-color 0.12s;
+}
+
+.ni-tab:hover {
+    color: var(--text);
+}
+
+.ni-tab.active {
+    color: var(--text);
+    font-weight: 700;
+    border-bottom-color: var(--accent);
+}
+
+.ni-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 17px;
+    min-width: 17px;
+    padding: 0 5px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-alt);
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.ni-list[hidden] {
+    display: none;
 }
 
 /* Breakout Candidates Page -- chip look comes from the canonical

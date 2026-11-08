@@ -284,6 +284,98 @@ def test_panel_reads_inbox_api_and_marks_read():
     assert "Held for" not in APP_JS
 
 
+# ── Panel tabs (Updates / ScoreZone) ────────────────────────────────────────
+
+def test_panel_tabs_split_scorezone_types():
+    # ScoreZone tab = the live game alerts only: ScoreZone TDs plus
+    # close games (Kaedon's pick). Everything else, changelog included,
+    # lands in Updates.
+    assert 'new Set(["redzone_scores", "close_game"])' in APP_JS
+    assert "_niTabFor" in APP_JS
+    assert 'data-ni-tab="updates"' in APP_JS
+    assert 'data-ni-tab="scorezone"' in APP_JS
+    assert 'data-ni-list="updates"' in APP_JS
+    assert 'data-ni-list="scorezone"' in APP_JS
+    # Each tab carries its own unread count pill; empty states are
+    # per-tab and the old single-list empty copy is gone.
+    assert "ni-tab-count" in APP_JS
+    assert "No updates yet." in APP_JS
+    assert "No ScoreZone alerts yet." in APP_JS
+    assert "No notifications yet." not in APP_JS
+
+
+def test_panel_tabs_css_is_the_quiet_treatment():
+    tabs = CSS.split("\n.ni-tabs {")[1].split("}")[0]
+    assert "background: var(--card)" in tabs
+    assert "border-bottom: 1px solid var(--border)" in tabs
+    tab = CSS.split("\n.ni-tab {")[1].split("}")[0]
+    assert "text-transform" not in tab
+    assert "font-weight: 600" in tab
+    active = CSS.split("\n.ni-tab.active {")[1].split("}")[0]
+    assert "border-bottom-color: var(--accent)" in active
+    count = CSS.split("\n.ni-tab-count {")[1].split("}")[0]
+    assert "background: var(--bg-alt)" in count
+    assert "var(--dot-alert)" not in count
+    assert ".ni-list[hidden]" in CSS
+    # On mobile the tab bar pins together with the header.
+    stick = CSS.split(".changelog-dropdown .ni-stick {")[1].split("}")[0]
+    assert "position: sticky" in stick and "top: 0" in stick
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_ni_tab_mapping_and_activation():
+    type_set = APP_JS[APP_JS.index("const _NI_SCOREZONE_TYPES"):]
+    type_set = type_set[:type_set.index(";") + 1]
+    mapping = _function_source(APP_JS, "_niTabFor")
+    activate = _function_source(APP_JS, "_niActivateTab")
+    harness = """
+function ClassList() { this.set = new Set(); }
+ClassList.prototype.toggle = function (c, on) { if (on) this.set.add(c); else this.set.delete(c); };
+ClassList.prototype.contains = function (c) { return this.set.has(c); };
+function El(tab, list) {
+  this.attrs = {}; this.classList = new ClassList(); this.hidden = false;
+  if (tab) this.attrs['data-ni-tab'] = tab;
+  if (list) this.attrs['data-ni-list'] = list;
+}
+El.prototype.getAttribute = function (k) { return this.attrs[k]; };
+El.prototype.setAttribute = function (k, v) { this.attrs[k] = v; };
+var tabs = [new El('updates'), new El('scorezone')];
+var lists = [new El(null, 'updates'), new El(null, 'scorezone')];
+var dropdown = { querySelectorAll: function (sel) {
+  return sel === '.ni-tab' ? tabs : lists;
+} };
+var niActiveTab = 'updates';
+function ok(v, m) { if (!v) throw new Error(m); }
+%s
+%s
+%s
+
+ok(_niTabFor('redzone_scores') === 'scorezone', 'TD alerts go to ScoreZone');
+ok(_niTabFor('close_game') === 'scorezone', 'close games go to ScoreZone');
+ok(_niTabFor('injury') === 'updates', 'injuries stay in Updates');
+ok(_niTabFor('changelog') === 'updates', 'changelog stays in Updates');
+ok(_niTabFor('recap_ready') === 'updates', 'recaps stay in Updates');
+ok(_niTabFor('') === 'updates', 'unknown types stay in Updates');
+
+_niActivateTab('scorezone');
+ok(niActiveTab === 'scorezone', 'activation records the tab');
+ok(tabs[1].classList.contains('active'), 'scorezone tab gets .active');
+ok(!tabs[0].classList.contains('active'), 'updates tab loses .active');
+ok(tabs[1].attrs['aria-selected'] === 'true', 'aria-selected follows');
+ok(lists[0].hidden === true, 'updates list hides');
+ok(lists[1].hidden === false, 'scorezone list shows');
+
+_niActivateTab('updates');
+ok(lists[0].hidden === false && lists[1].hidden === true, 'switching back restores updates');
+console.log('ni tabs behavior ok');
+""" % (type_set, mapping, activate)
+    result = subprocess.run(
+        ["node", "-e", harness], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "ni tabs behavior ok" in result.stdout
+
+
 # ── Scrim behavior (node) ────────────────────────────────────────────────────
 
 def _function_source(source: str, name: str) -> str:
