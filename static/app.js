@@ -21731,7 +21731,7 @@ if (typeof window !== 'undefined') {
       return !!document.querySelector(
         '.player-modal-overlay, .for-modal-overlay, .team-modal-overlay,' +
         ' .rzm-modal-overlay, .modal-overlay, .modal.open, .sheet.open,' +
-        ' .br-more-sheet.open, [data-br-modal-open="true"]'
+        ' .rz-bs-sheet.open, .br-more-sheet.open, [data-br-modal-open="true"]'
       );
     } catch (e) { return false; }
   }
@@ -32355,7 +32355,9 @@ window.__brSzLiveCache = (function () {
   // drive trail arrive with one full scorezone-data fetch through the
   // shared __brSzLiveCache ('full' variant, the player modal's path). The
   // box score fetches independently, so a failure in either payload only
-  // degrades its own tab.
+  // degrades its own tab. The one manual exception is the Plays tab's
+  // pull-to-refresh (the gs-ptr block below): a fresh fetch through the
+  // same cache that re-renders only the plays list.
   var gsSheet = null; // { game, gid, tab, box:{team,data,error}, full, fullStatus, fullTimer, els }
 
   function gsFmtDelta(n) {
@@ -32563,12 +32565,198 @@ window.__brSzLiveCache = (function () {
       ? '<div class="gs-plays">' + events.map(function (ev) { return gsEventHtml(ev, g); }).join('') + '</div>'
       : '<div class="rz-bs-empty"><p>No plays recorded yet.</p></div>';
   }
+
+  /* gs-ptr:start */
+  // Pull-to-refresh for the game sheet's Plays tab: the page-level br-ptr
+  // gesture cannot reach inside the sheet (it is suppressed while a sheet
+  // is open, and its hook refreshes the page behind it), so the Plays
+  // panel carries its own. Same constants and indicator language as
+  // br-ptr: a 76px raw pull arms the refresh, the chip reveals at
+  // pull / 2.5 capped at 76px, pins while the refresh runs, and a hung
+  // refresh can never strand it. The gesture belongs to the plays panel
+  // only: it engages solely when the sheet's scroll body is at the very
+  // top and the move proves vertical; a horizontal move, an upward
+  // reversal, or the panel scrolling hands the touch back to native
+  // behavior untouched. Self-contained: every collaborator arrives via
+  // cfg, which is what tests/game_sheet_events_harness.mjs drives.
+  window.__brGsAttachPtr = function (cfg) {
+    var THRESHOLD = 76;      // raw pull px that arms a refresh on release
+    var RESISTANCE = 2.5;    // indicator reveal divisor
+    var MAX_VISUAL = 76;     // indicator reveal cap, px
+    var PIN_H = 52;          // revealed height held while refreshing
+    var MAX_WAIT_MS = 15000; // the indicator can never strand on a hung refresh
+
+    var panel = cfg.panel, scroller = cfg.scroller;
+    var wrap = cfg.wrap, chip = cfg.chip, note = cfg.note;
+    var candidate = false;
+    var claimed = false;
+    var busy = false;
+    var startX = 0;
+    var startY = 0;
+    var pull = 0;
+    var waitTimer = null;
+
+    function setH(h) { wrap.style.height = h + 'px'; }
+    function showNote() {
+      note.textContent = 'Could not refresh plays. Try again.';
+      note.hidden = false;
+    }
+    function hideNote() { note.hidden = true; }
+    function collapse() {
+      chip.classList.remove('is-armed', 'is-refreshing');
+      wrap.classList.remove('is-pulling');
+      setH(0);
+    }
+    function showPull(visual) {
+      wrap.classList.add('is-pulling');
+      setH(visual);
+      chip.classList.toggle('is-armed', pull >= THRESHOLD);
+    }
+    function touchPoint(e) {
+      var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+      return t || null;
+    }
+    function settle(ok) {
+      if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
+      if (!busy) return;
+      busy = false;
+      if (ok) hideNote(); else showNote();
+      collapse();
+    }
+    function startRefresh() {
+      busy = true;
+      hideNote();
+      chip.classList.remove('is-armed');
+      chip.classList.add('is-refreshing');
+      wrap.classList.remove('is-pulling');
+      setH(PIN_H);
+      waitTimer = setTimeout(function () { settle(false); }, MAX_WAIT_MS);
+      try { cfg.refresh(function (ok) { settle(!!ok); }); }
+      catch (e) { settle(false); }
+    }
+    function onStart(e) {
+      candidate = false;
+      claimed = false;
+      pull = 0;
+      if (busy) return;
+      if (!cfg.enabled()) return;
+      if (e.touches && e.touches.length !== 1) return;
+      if (!scroller || scroller.scrollTop > 0) return; // not at the very top
+      var t = touchPoint(e);
+      if (!t) return;
+      startX = t.clientX;
+      startY = t.clientY;
+      candidate = true;
+    }
+    function onMove(e) {
+      if (!candidate || busy) return;
+      if (!cfg.enabled()) { candidate = false; claimed = false; pull = 0; collapse(); return; }
+      // The panel scrolled: native scroll owns the rest of this touch.
+      if (scroller.scrollTop > 0) {
+        var wasClaimed = claimed;
+        candidate = false;
+        claimed = false;
+        pull = 0;
+        if (wasClaimed) collapse();
+        return;
+      }
+      var t = touchPoint(e);
+      if (!t) return;
+      var dx = t.clientX - startX;
+      var dy = t.clientY - startY;
+      if (!claimed) {
+        // Direction not yet proven: a horizontal-dominant move is not a
+        // pull, and nothing has been preventDefaulted or shown yet.
+        if (Math.abs(dx) >= 10 && Math.abs(dx) > Math.abs(dy)) { candidate = false; return; }
+        if (dy >= 10 && Math.abs(dy) >= Math.abs(dx)) claimed = true;
+        else return; // undecided: hands off
+      }
+      // Upward reversal: zero the pull and stop claiming the touch, so
+      // native scroll proceeds (this branch never preventDefaults).
+      if (dy <= 0) { pull = 0; collapse(); return; }
+      pull = dy;
+      if (e.cancelable && e.preventDefault) e.preventDefault();
+      showPull(Math.min(MAX_VISUAL, dy / RESISTANCE));
+    }
+    function onEnd() {
+      if (!candidate) return;
+      candidate = false;
+      var go = claimed && pull >= THRESHOLD;
+      claimed = false;
+      pull = 0;
+      if (busy) return;
+      if (go) startRefresh();
+      else collapse();
+    }
+    function onCancel() {
+      candidate = false;
+      claimed = false;
+      pull = 0;
+      if (!busy) collapse();
+    }
+    panel.addEventListener('touchstart', onStart, { passive: true });
+    panel.addEventListener('touchmove', onMove, { passive: false });
+    panel.addEventListener('touchend', onEnd, { passive: true });
+    panel.addEventListener('touchcancel', onCancel, { passive: true });
+    return function detach() {
+      panel.removeEventListener('touchstart', onStart);
+      panel.removeEventListener('touchmove', onMove);
+      panel.removeEventListener('touchend', onEnd);
+      panel.removeEventListener('touchcancel', onCancel);
+      if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
+      busy = false;
+      candidate = false;
+      claimed = false;
+      pull = 0;
+    };
+  };
+  /* gs-ptr:end */
+
+  function gsPtrEnabled() {
+    return !!gsSheet && gsSheet.tab === 'plays' && gsSheet.fullStatus === 'ready';
+  }
+  // The Plays pull's fetch: a fresh full payload through the shared
+  // cache's own bypass (invalidate zeroes the entry's freshness stamp, so
+  // the next get refetches instead of serving the 30 s window; no parallel
+  // fetch path). Only the plays list re-renders, and only when the payload
+  // actually changed: a same-reference flush (a 304, or the stale body
+  // after an HTTP error) counts as current and leaves the list untouched.
+  // A network failure drops the cache's waiters silently (the applyFull
+  // pattern), so a timer settles the pull as failed with the rendered
+  // plays byte-identical.
+  function gsPlaysRefresh(done) {
+    if (!gsSheet) { done(false); return; }
+    var gid = gsSheet.gid;
+    var before = null;
+    try { before = window.__brSzLiveCache.peek('full'); } catch (e) {}
+    var settled = false;
+    var timer = setTimeout(function () { settle(false); }, 15000);
+    function settle(ok, data) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (!gsSheet || gsSheet.gid !== gid) { done(false); return; }
+      if (ok && data && data !== before) {
+        gsSheet.full = data;
+        gsRenderPlays();
+      }
+      done(ok);
+    }
+    try { window.__brSzLiveCache.invalidate('full'); } catch (e) {}
+    try {
+      window.__brSzLiveCache.get('full', 30000, function (data) {
+        if (data) settle(true, data);
+        else settle(false);
+      });
+    } catch (e) { settle(false); }
+  }
   function gsSheetKey(e) {
     if (e && e.key === 'Escape') gsCloseSheet();
   }
   function gsCloseSheet() {
     if (!gsSheet) return;
     if (gsSheet.fullTimer) clearTimeout(gsSheet.fullTimer);
+    if (gsSheet.ptrDetach) { try { gsSheet.ptrDetach(); } catch (e) {} gsSheet.ptrDetach = null; }
     var els = gsSheet.els;
     if (els.backdrop.parentNode) els.backdrop.parentNode.removeChild(els.backdrop);
     if (els.sheet.parentNode) els.sheet.parentNode.removeChild(els.sheet);
@@ -32636,7 +32824,10 @@ window.__brSzLiveCache = (function () {
       + '<button type="button" class="tab-btn" data-gtab="plays" role="tab" aria-selected="false">Plays</button>'
       + '</div><div class="tab-panels">'
       + '<div class="tab-panel active" data-gpanel="stats"></div>'
-      + '<div class="tab-panel" data-gpanel="plays"></div>'
+      + '<div class="tab-panel" data-gpanel="plays">'
+      + '<div class="gs-ptr" aria-hidden="true"><span class="gs-ptr-chip"><span class="gs-ptr-spinner"></span></span></div>'
+      + '<div class="gs-ptr-note" role="status" hidden></div>'
+      + '<div class="gs-plays-host"></div></div>'
       + '</div></div></div>'
       + (url ? '<div class="gs-foot"><a href="' + esc(url) + '">Open in ScoreZone \u2192</a></div>' : '');
     document.body.appendChild(backdrop);
@@ -32644,12 +32835,14 @@ window.__brSzLiveCache = (function () {
     gsSheet = {
       game: game, gid: gid, tab: 'stats',
       box: { team: norm(game.away), data: null, error: false },
-      full: null, fullStatus: 'loading', fullTimer: null,
+      full: null, fullStatus: 'loading', fullTimer: null, ptrDetach: null,
       els: {
         backdrop: backdrop, sheet: sheet,
+        body: sheet.querySelector('.rz-bs-body'),
         board: sheet.querySelector('.gs-board-wrap'),
         stats: sheet.querySelector('[data-gpanel="stats"]'),
-        plays: sheet.querySelector('[data-gpanel="plays"]')
+        playsPanel: sheet.querySelector('[data-gpanel="plays"]'),
+        plays: sheet.querySelector('.gs-plays-host')
       }
     };
     // Animate in after mount so the transition runs.
@@ -32663,6 +32856,19 @@ window.__brSzLiveCache = (function () {
     document.addEventListener('keydown', gsSheetKey);
     backdrop.addEventListener('click', gsCloseSheet);
     sheet.addEventListener('click', gsSheetClick);
+    // Plays pull-to-refresh: the gesture lives on the plays panel, the
+    // sheet body is its scroll container (see the gs-ptr block above).
+    if (window.__brGsAttachPtr) {
+      gsSheet.ptrDetach = window.__brGsAttachPtr({
+        panel: gsSheet.els.playsPanel,
+        scroller: gsSheet.els.body,
+        wrap: sheet.querySelector('.gs-ptr'),
+        chip: sheet.querySelector('.gs-ptr-chip'),
+        note: sheet.querySelector('.gs-ptr-note'),
+        enabled: gsPtrEnabled,
+        refresh: gsPlaysRefresh
+      });
+    }
     gsRenderBoard();
     gsRenderStats();
     gsRenderPlays();
