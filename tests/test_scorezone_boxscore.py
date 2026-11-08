@@ -50,9 +50,12 @@ def test_boxscore_button_renders_inside_filtered_game_board():
 def test_boxscore_button_is_not_in_the_shared_board_renderer_itself():
     # The shared window._rzRenderGameBoard (app.js) is also used by the player
     # modal, so the button must not live inside it. The ScoreZone filtered view
-    # appends the button at its own call site instead.
+    # appends the button at its own call site instead. (The Matchups game
+    # sheet fetches the same endpoint from app.js, so the pin targets the
+    # button contract, not the endpoint string.)
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    assert "boxscore" not in app_js.lower()
+    assert "_boxScoreButtonHtml" not in app_js
+    assert "data-boxscore-game" not in app_js
     board = _board_fn()
     branch = board.split("if (window._rzRenderGameBoard) {", 1)[1].split("\n    }", 1)[0]
     assert "_boxScoreButtonHtml()" in branch

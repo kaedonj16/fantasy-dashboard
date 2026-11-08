@@ -1,24 +1,25 @@
-"""Drive bar -> ScoreZone deep link (Kaedon, 2026-10-25).
+"""Drive bar -> game sheet (Kaedon, 2026-10-25; sheet, 2026-11-08).
 
-Tapping a live drive bar on a matchup row opens ScoreZone focused on that
-drive's game. The contract pinned here:
+Tapping a live drive bar on a matchup row used to open ScoreZone focused
+on that drive's game; it now opens the game sheet in place instead (see
+tests/test_matchup_game_sheet.py). The contract pinned here:
 
-- app.js wraps the bar (and the "on Defense" variant) in a real anchor whose
-  href is /<platform>/<season>/<league_id>/scorezone?game=<game_id> -- the
-  game_id the shared scorezone-data payload already keys state.games by, and
-  the league scope parsed from the current URL exactly like the widget's own
-  data fetch. Without a game_id the bar renders unlinked, byte-for-byte the
+- app.js wraps the bar (and the "on Defense" variant) in a button carrying
+  the team's abbr; the sheet resolves the game from the carousel's lite
+  state. Without a game_id the bar renders unwrapped, byte-for-byte the
   pre-link markup.
 - A capture-phase handler stops the tap from also firing the matchup row's
-  own click handlers, without preventDefault (navigation proceeds).
+  own click handlers and opens the sheet (preventDefault: no navigation).
+- The ScoreZone deep link survives as the sheet's footer link, still built
+  by scorezoneGameUrl from the current URL's league scope.
 - scorezone.js consumes ?game= lazily and one-shot via _applyGameLink: it
   resolves the id against the canonical pill list (_nflMatchupOptions),
   falling back to the canonical team pair for duplicate-id spellings, and
   sets the single canonical filter _filters.nfl -- the same state a pill tap
   sets. It is wired into _setState (every canonical state replacement) and
   the boot path before the first _render().
-- dashboard.css gives the anchor an invisible hit-area expansion and resets
-  link chrome without touching the approved treatment-B resting look.
+- dashboard.css gives the bar an invisible hit-area expansion and resets
+  link/button chrome without touching the approved treatment-B resting look.
 """
 import os
 import re
@@ -31,27 +32,30 @@ def _read(rel):
         return fh.read()
 
 
-def test_drive_bar_links_to_scorezone_with_game_id():
+def test_drive_bar_opens_game_sheet_with_game_id():
     js = _read("static/app.js")
     assert "function scorezoneGameUrl(game)" in js
     assert "game.game_id" in js
     assert "'/scorezone?game=' + encodeURIComponent(gid)" in js
-    # Both live variants (ball carrier's bar + defense indicator) are links.
+    # Both live variants (ball carrier's bar + defense indicator) open the sheet.
     assert js.count('class="mb-fld-link"') == 2
-    assert 'aria-label="Open this game in ScoreZone"' in js
-    # Unlinked fallback preserved when there is no game_id / league scope.
-    assert "return href ? '<a class=\"mb-fld-link\"" in js
+    assert js.count('<button type="button" class="mb-fld-link"') == 2
+    assert js.count('aria-label="Open this game"') == 2
+    assert '<a class="mb-fld-link"' not in js
+    # Unwrapped fallback preserved when there is no game_id / league scope.
+    assert "return gid ? '<button type=\"button\" class=\"mb-fld-link\"" in js
 
 
-def test_drive_bar_click_does_not_fire_row_handlers():
+def test_drive_bar_click_opens_sheet_not_row_handlers():
     js = _read("static/app.js")
-    m = re.search(
-        r"document\.addEventListener\('click', function \(e\) \{\s*"
-        r"if \(e\.target && e\.target\.closest && e\.target\.closest\('\.mb-fld-link'\)\) "
-        r"e\.stopPropagation\(\);\s*\}, true\);",
-        js,
-    )
-    assert m, "capture-phase stopPropagation guard for .mb-fld-link missing"
+    start = js.index("var link = e.target && e.target.closest")
+    handler = js[js.rindex("document.addEventListener('click'", 0, start):]
+    handler = handler[: handler.index("}, true);")]
+    assert "closest('.mb-fld-link')" in handler
+    assert "e.stopPropagation()" in handler
+    assert "e.preventDefault()" in handler
+    assert "openGameSheet(game)" in handler
+    assert "gameForTeam(lastState, team)" in handler
 
 
 def test_scorezone_consumes_game_param_into_canonical_filter():
@@ -82,3 +86,5 @@ def test_drive_bar_link_css_hit_area_without_resting_visuals():
     assert "position: absolute" in hit.group(1)
     assert "inset: -6px 0" in hit.group(1)
     assert "background" not in hit.group(1)  # invisible: no resting visual change
+    # As a <button> now, the bar also needs its native chrome reset.
+    assert "button.mb-fld-link {" in css

@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-08",
+        "tag": "new",
+        "text": "Matchups: tapping a live drive bar now opens the game right there instead of leaving for ScoreZone. The sheet shows the full game board, a Stats tab with the box score for both teams, and a Plays tab with that game's play-by-play, with a link through to the full ScoreZone page at the bottom.",
+        "link": "/weekly"
+    },
+    {
         "date": "2026-11-07",
         "tag": "update",
         "text": "The mobile More menu is rebuilt: it glides open on a smoother curve and stays one height as you drill in, sections show what is inside them, your current page is named right on its section, and Standings, Start/Sit, Player Rankings and ScoreZone are one tap away in a new Quick group. Player search now expands right inside the menu, and Account is pinned at the bottom where it is always reachable.",
