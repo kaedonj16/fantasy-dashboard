@@ -264,8 +264,11 @@ def slim_trade_payload(
 # The nav player search needs only a few fields per player (id, name,
 # position, team, headshot, plus search_name and value so the shared
 # brNameMatch matcher can normalize and rank) and skips picks. Still far
-# smaller than the trade view.
-SEARCH_PLAYER_KEYS = ("id", "name", "position", "team", "espnHeadshot", "search_name", "value")
+# smaller than the trade view. proj_ppg rides along so the mobile search
+# empty state can order its "Top players" suggestions; it is stamped on
+# base payload rows by the payload builder (Sleeper season projections),
+# before the search view short-circuits ahead of the scoring overlays.
+SEARCH_PLAYER_KEYS = ("id", "name", "position", "team", "espnHeadshot", "search_name", "value", "proj_ppg")
 
 
 def slim_search_player(player: Mapping[str, Any]) -> Optional[dict]:

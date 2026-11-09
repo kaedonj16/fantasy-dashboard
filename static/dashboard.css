@@ -3219,6 +3219,25 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     color: var(--text-muted);
 }
 
+/* Suggestions header row (mobile empty state): group label on the left,
+   a small Clear action for the Recent list on the right. */
+.nav-search-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-right: 6px;
+}
+
+.nav-search-clear-recents {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 8px 8px 4px;
+}
+
 .nav-search-cmd {
     display: flex;
     align-items: center;
@@ -9339,6 +9358,13 @@ select:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* iOS Safari auto-zooms the page when a focused field's text is under
+   16px. Keep every field at 16px on phones so tapping into any input,
+   select or textarea never zooms; desktop is untouched. */
+@media (max-width: 768px) {
+    input, select, textarea { font-size: 16px !important; }
 }
 
 /* ── Custom Select Dropdown (CSD) ───────────────────────────────────────────── */

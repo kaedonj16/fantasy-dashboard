@@ -4900,3 +4900,10 @@ html:has(.home-page) { scroll-behavior: smooth; }
 /* landing fixes: the global h1::after sky bar must not underline the
    hero headline. */
 .ld-hero-title::after { display: none !important; }
+
+/* iOS Safari auto-zooms the page when a focused field's text is under
+   16px. Keep every field at 16px on phones so tapping into any input,
+   select or textarea never zooms; desktop is untouched. */
+@media (max-width: 768px) {
+    input, select, textarea { font-size: 16px !important; }
+}
