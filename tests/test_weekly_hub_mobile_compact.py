@@ -253,9 +253,20 @@ def test_preview_header_density_css():
     assert ".weekly-hub .m-espn-wp { display: inline; }" in css
     assert ".m-espn-wp { display: none; }" in css
     assert ".weekly-hub .m-wp-track { height: 4px; }" in css
-    assert ".weekly-hub .m-win-bar .m-wp-pct { display: none; }" in css
+    assert ".weekly-hub .m-head .m-win-bar .m-wp-pct { display: none; }" in css
     assert ".weekly-hub .m-espn-meta" in css
     assert ".weekly-hub .m-espn-proj {\n        font-size: 11.5px;" in css
+
+
+def test_league_scores_win_pct_labels_stay_visible_on_mobile():
+    """Regression (Kaedon, 2026-11-08): League Scores cards showed the
+    win bar with no numbers. The preview-header hide rule was scoped to
+    .weekly-hub .m-win-bar, which also matched .ls-card bars; the cards
+    have no projection-line percentage, so the bar labels are the only
+    place the numbers appear."""
+    css = _css()
+    assert ".weekly-hub .m-win-bar .m-wp-pct { display: none; }" not in css
+    assert ".weekly-hub .ls-card .m-win-bar .m-wp-pct { display: block; }" in css
 
 
 def test_h2h_lines_sit_under_the_records_on_mobile():

@@ -56215,7 +56215,12 @@ body.otc-sticky-on { padding-bottom: 72px; }
         padding: 0 2px 8px;
         margin-bottom: 0;
     }
-    .weekly-hub .m-win-bar .m-wp-pct { display: none; }
+    /* Bar end labels hide ONLY in the preview header (.m-head), where
+       the same percentage already sits on the projection line. League
+       Scores cards (.ls-card) reuse .m-win-bar and have no projection-
+       line percentage, so their labels must stay visible. */
+    .weekly-hub .m-head .m-win-bar .m-wp-pct { display: none; }
+    .weekly-hub .ls-card .m-win-bar .m-wp-pct { display: block; }
     .weekly-hub .m-wp-track { height: 4px; }
     .weekly-hub .m-espn-teams {
         gap: 8px;
