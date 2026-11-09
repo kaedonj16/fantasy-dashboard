@@ -319,6 +319,33 @@ def _prune_dashboard_cache(keep: Optional[str] = None) -> None:
             DASHBOARD_CACHE.pop(k, None)
 
 
+def _release_build_memory() -> None:
+    """Return a league build's transient memory to the OS.
+
+    A context build churns through large parse/DataFrame transients
+    (a Fleaflicker build fetches ~120 raw payloads; every build walks
+    the full player pool and season tables). Nothing on the web path
+    ever collected or trimmed, so the freed transients stayed in the
+    allocator as the worker's RSS high-water mark and each new peak
+    stacked on the last -- the mechanism behind the 2026-11-08 OOM
+    restarts continuing even at 1 worker. A build takes seconds, so a
+    collect + trim on completion is noise by comparison. Best-effort:
+    release bookkeeping must never break a serve.
+    """
+    try:
+        import gc
+
+        gc.collect()
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
 def _prune_ttl_cache(cache: dict, max_entries: int) -> None:
     """Evict the oldest ~10% of a per-league/per-roster TTL cache once it exceeds
     ``max_entries``. These caches key on ids from an effectively unbounded space
@@ -16251,6 +16278,7 @@ def _get_league_ctx_from_cache_impl(
                     "build_ms": round((time.monotonic() - build_started) * 1000), "success": True,
                     "cache_entries": len(DASHBOARD_CACHE), "rss_before": rss_before, "rss_after": rss_after,
                 }, separators=(",", ":")))
+                _release_build_memory()
                 _kick_modal_league_warm(platform, league_id, season, ctx)
                 return _stamp_viewer(ctx)
             except Exception:

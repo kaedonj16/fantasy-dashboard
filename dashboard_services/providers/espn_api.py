@@ -787,6 +787,22 @@ def _espn_to_canon_cached() -> Dict[str, str]:
 _BOX_SCORE_TTL = 90  # seconds
 _box_score_cache: Dict[Tuple[int, str, int], Tuple[float, Any]] = {}
 _box_score_lock = threading.Lock()
+# A build fetches box scores for every week (1-17), and each entry's
+# BoxScore objects reference the league's full Team/roster graphs, so an
+# uncapped cache pins several MB per (league, week) for the worker's
+# whole life. 128 entries covers ~7 leagues' full seasons; beyond that
+# the oldest weeks are evicted (they simply refetch on demand). This
+# unbounded growth was part of the 2026-11-08 OOM restarts: ESPN league
+# builds were the largest single RSS steps in the production logs.
+_BOX_SCORE_CACHE_MAX = 128
+
+
+def _store_box_scores(key, scores) -> None:
+    with _box_score_lock:
+        _box_score_cache[key] = (time.time(), scores)
+        while len(_box_score_cache) > _BOX_SCORE_CACHE_MAX:
+            oldest = min(_box_score_cache.items(), key=lambda kv: kv[1][0])[0]
+            _box_score_cache.pop(oldest, None)
 
 
 def _box_scores_cached(
@@ -842,8 +858,7 @@ def _box_scores_cached(
             "final" if score._br_finalized else "scheduled"
         )
         scores.append(score)
-    with _box_score_lock:
-        _box_score_cache[key] = (time.time(), scores)
+    _store_box_scores(key, scores)
     return scores
 
 
