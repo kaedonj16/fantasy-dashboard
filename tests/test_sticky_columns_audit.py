@@ -82,9 +82,11 @@ def test_game_log_freeze_lives_outside_media_queries():
     assert ".game-log-table tbody td:nth-child(1)" in base
     assert ".game-log-table tbody td:nth-child(2)" in base
     assert ".game-log-table tfoot td:nth-child(2)" in base
-    # Fixed offsets: Date at 0, Opp one 48px Date column in.
+    # Fixed offsets: Date at 0, Opp one 44px Date column in (the Opp
+    # column is 118px wide now that the code + matchup chip sit on one line).
     assert "left: 0;" in base
-    assert "left: 48px;" in base
+    assert "left: 44px;" in base
+    assert "width: 118px;" in base
     # Opaque backgrounds per row state, so scrolled cells never show
     # through the frozen pane.
     assert ".game-log-table tbody tr:nth-child(even) td:nth-child(-n+2)" in base
@@ -102,7 +104,8 @@ def test_game_log_mobile_keeps_third_frozen_column():
     block = "\n".join(blocks)
     assert ".game-log-table th:nth-child(3)" in block
     assert ".game-log-table td:nth-child(3)" in block
-    assert "left: 94px" in block
+    # Pts sits after the 44px Date + 118px one-line Opp columns.
+    assert "left: 162px" in block
 
 
 # ── Dynasty value standings + portfolio holdings ────────────────────────
