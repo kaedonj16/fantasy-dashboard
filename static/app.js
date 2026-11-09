@@ -1751,6 +1751,11 @@ window.brHaptic = function (pattern) {
     ss.classList.remove('open'); ss.setAttribute('aria-hidden', 'true');
     var i = document.getElementById('navPlayerSearch'); if (i) i.blur();
   }
+  // Public close so search-result navigation (initNavSearch) can dismiss the
+  // screen before it navigates: the screen lives outside #page-root, so any
+  // navigation that keeps this document alive would otherwise leave the
+  // screen open on top of the destination page.
+  window.brCloseSearch = closeSearch;
 
   // Re-runnable: safe to call again after a content swap. Element-level handlers
   // bind to the fresh (post-swap) nodes; document/media listeners bind once and
@@ -1804,7 +1809,7 @@ window.brHaptic = function (pattern) {
     if (cancelBtn) cancelBtn.addEventListener('click', closeSearch);
     var searchScreen = document.getElementById('brSearchScreen');
     if (searchScreen) searchScreen.addEventListener('click', function (e) {
-      if (e.target.closest('.nav-search-result')) closeSearch();
+      if (e.target.closest('.nav-search-result, .nav-search-cmd')) closeSearch();
     });
     var inlineCancel = document.getElementById('brSheetSearchCancel');
     if (inlineCancel) inlineCancel.addEventListener('click', closeInlineSearch);
@@ -1820,7 +1825,7 @@ window.brHaptic = function (pattern) {
       }
       if (e.target.closest('#brSheetSearchRow')) { openInlineSearch(); return; }
       if (e.target.closest('#brSheetSearchCancel')) { closeInlineSearch(); return; }
-      if (e.target.closest('.nav-search-result')) { closeInlineSearch(); setOpen(false); return; }
+      if (e.target.closest('.nav-search-result, .nav-search-cmd')) { closeInlineSearch(); setOpen(false); return; }
       var action = e.target.closest('[data-br-action]');
       if (action) {
         // The changelog's document-level outside-click handler sees this same
@@ -1843,7 +1848,7 @@ window.brHaptic = function (pattern) {
         }
         return;
       }
-      if (e.target.closest('.br-sheet-link, .nav-search-result')) setOpen(false);
+      if (e.target.closest('.br-sheet-link, .nav-search-result, .nav-search-cmd')) setOpen(false);
     });
 
     // Swipe down to dismiss.
@@ -30810,6 +30815,8 @@ function setupFunAwardsGrid() {
         window.openTeamModal(el.dataset.nsRid, el.dataset.nsName);
       }
     } else if (el.dataset.nsKind === 'cmd' || el.classList.contains('nav-search-cmd')) {
+      if (typeof window.brCloseSearch === 'function') window.brCloseSearch();
+      if (typeof window.brCloseMoreSheet === 'function') window.brCloseMoreSheet();
       window.location.href = el.getAttribute('href');
     } else {
       recordRecentById(el.dataset.nsPid);
@@ -30892,6 +30899,8 @@ function setupFunAwardsGrid() {
     const cmd = e.target.closest('.nav-search-cmd');
     if (cmd) {
       e.preventDefault();
+      if (typeof window.brCloseSearch === 'function') window.brCloseSearch();
+      if (typeof window.brCloseMoreSheet === 'function') window.brCloseMoreSheet();
       window.location.href = cmd.getAttribute('href');
       input.value = '';
       clearBtn.style.display = 'none';
