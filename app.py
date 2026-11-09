@@ -45586,6 +45586,18 @@ def build_portfolio_body(
         ".pf-stat-bar--5 .pf-stat:nth-child(4),.pf-stat-bar--5 .pf-stat:nth-child(5){grid-column:span 3;}"
         ".pf-stat-bar--4 .pf-stat{grid-column:span 3;}"
         ".pf-stat-btn .pf-stat-val{font-size:19px;}"
+        # Mobile stat strip as one inset hairline grid: no grid gaps (they
+        # broke the dividers into floating fragments), a full hairline
+        # between the two rows that the verticals terminate at, no left
+        # divider on a row's first cell, and the proj tile squared off --
+        # its rounded button chrome read as a stray border fragment
+        # against the strip's hairlines. Border presentation only; the
+        # receipts toggle (#pfProjTile) is untouched.
+        ".pf-stat-bar--5,.pf-stat-bar--4{gap:0;}"
+        ".pf-stat-bar--5 .pf-stat:nth-child(4),.pf-stat-bar--5 .pf-stat:nth-child(5),"
+        ".pf-stat-bar--4 .pf-stat:nth-child(3),.pf-stat-bar--4 .pf-stat:nth-child(4){border-top:1px solid var(--grid);}"
+        ".pf-stat-bar--5 .pf-stat:nth-child(4),.pf-stat-bar--4 .pf-stat:nth-child(3){border-left:0;}"
+        ".pf-stat-btn{border-radius:0;}"
         ".pf-phonetabs{display:flex;gap:6px;position:sticky;top:52px;z-index:30;background:var(--bg);padding:8px 0;margin-bottom:10px;overflow-x:auto;}"
         ".pf-phonetabs button{flex:1;border:1px solid var(--grid);background:var(--card);color:var(--text-muted);border-radius:999px;padding:7px 4px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}"
         ".pf-phonetabs button.on{background:var(--text);color:var(--card);border-color:var(--text);}"
