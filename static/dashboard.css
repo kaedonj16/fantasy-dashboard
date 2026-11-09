@@ -23654,7 +23654,14 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 }
 
 .game-log-table thead {
-    background: var(--bg-alt);
+    /* Every header cell is opaque (frozen cells var(--bg-alt), scrolling
+       cells var(--card) via the global thead th rule), so the thead's own
+       background only ever shows through the seam slot that opens beside
+       the frozen pane while the table scrolls sideways: there it must
+       match the scrolling cells it sits among, not the frozen pane --
+       bg-alt there painted a stray gray band inside the first scrolling
+       header cell (the xFP header at phone widths). */
+    background: var(--card);
     border-bottom: 2px solid var(--border);
 }
 
@@ -23872,16 +23879,21 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
     max-width: 86px;
 }
 /* The corner sits one level above the frozen column headers so the
-   group labels pass under it when scrolled. Pts gets the same opaque
-   header background as Date/Opp (it is the third frozen header below
-   768px; at desktop widths this matches the thead background it already
-   showed through). */
+   group labels pass under it when scrolled. */
 .game-log-table thead tr.grp th:first-child {
     background: var(--bg-alt);
     z-index: 4;
 }
-.game-log-table thead tr.cols th:nth-child(-n+3) {
+.game-log-table thead tr.cols th:nth-child(-n+2) {
     background: var(--bg-alt);
+    z-index: 3;
+}
+/* Pts is a stat column, not a pane label: its header paints var(--card)
+   like every scrolling header (the global thead th rule), not the frozen
+   pane's bg-alt tint. It stays opaque and at the frozen headers'
+   z-index because below 768px it is the third frozen header. */
+.game-log-table thead tr.cols th:nth-child(3) {
+    background: var(--card);
     z-index: 3;
 }
 .game-log-table tbody td:nth-child(-n+2),
@@ -27876,6 +27888,17 @@ tr.team-clickable {
     .game-log-table tbody td:nth-child(-n+3),
     .game-log-table tfoot td:nth-child(-n+3) {
         background: var(--card);
+    }
+
+    /* In a bye / no-stats row the Pts cell takes the row's var(--row)
+       paint like Date/Opp (base rule) and like the scrolling cells show
+       through their transparent cells. This needs the tr.game-log-*
+       selector shape to outrank the -n+3 var(--card) default above for
+       the third cell; it sits before the hover rule below so a hovered
+       bye row still lifts the cell to var(--bg-alt) with its row. */
+    .game-log-table tbody tr.game-log-no-stats td:nth-child(3),
+    .game-log-table tbody tr.game-log-bye td:nth-child(3) {
+        background-color: var(--row);
     }
 
     .game-log-table thead tr.cols th:nth-child(1),

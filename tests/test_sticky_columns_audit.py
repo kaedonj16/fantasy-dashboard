@@ -167,6 +167,66 @@ def test_game_log_grp_cover_extends_over_pts_segment_when_scrolled():
     assert "clipPath" in PLAYER_MODAL_JS
 
 
+def test_game_log_thead_background_matches_scrolling_header_cells():
+    # Every game-log header cell is opaque (frozen cells var(--bg-alt),
+    # scrolling cells var(--card) via the global thead th rule), so the
+    # thead's own background only ever shows through the seam slot that
+    # opens beside the frozen pane while the table scrolls sideways.
+    # There it must match the scrolling cells it sits among: bg-alt
+    # painted a stray gray band inside the first scrolling header cell
+    # (the xFP header at phone widths), appearing only at the scroll
+    # offsets where a column boundary crosses the seam.
+    base = _strip_media_queries(DASHBOARD_CSS)
+    sel = ".game-log-table thead {"
+    assert sel in base
+    rule = base[base.index(sel) :]
+    rule = rule[: rule.index("}")]
+    assert "background: var(--card);" in rule
+    assert "background: var(--bg-alt);" not in rule
+
+
+def test_game_log_pts_header_paints_card_not_pane_bg_alt():
+    # Pts is a stat column, not a pane label: only the Date/Opp headers
+    # keep the frozen pane's var(--bg-alt); the Pts header paints
+    # var(--card) like every scrolling header (global thead th rule),
+    # at every width. It stays opaque with the frozen headers' z-index
+    # because below 768px it is the third frozen header.
+    base = _strip_media_queries(DASHBOARD_CSS)
+    assert ".game-log-table thead tr.cols th:nth-child(-n+3)" not in base
+    sel = ".game-log-table thead tr.cols th:nth-child(-n+2) {"
+    assert sel in base
+    rule = base[base.index(sel) :]
+    rule = rule[: rule.index("}")]
+    assert "background: var(--bg-alt);" in rule
+    sel = ".game-log-table thead tr.cols th:nth-child(3) {"
+    assert sel in base
+    rule = base[base.index(sel) :]
+    rule = rule[: rule.index("}")]
+    assert "background: var(--card);" in rule
+    assert "background: var(--bg-alt);" not in rule
+    assert "z-index: 3;" in rule
+
+
+def test_game_log_pts_bye_row_paints_row_in_mobile_block():
+    # In the <=768px frozen-pane block, a bye / no-stats row's Pts cell
+    # must take the row's var(--row) paint like Date/Opp and the
+    # scrolling cells, not stay var(--card) white: the rule needs the
+    # tr.game-log-* selector shape to outrank the -n+3 var(--card)
+    # default for the third cell.
+    blocks = [
+        b
+        for b in _media_blocks(DASHBOARD_CSS)
+        if "max-width: 768px" in b.split("{", 1)[0] and "game-log-table" in b
+    ]
+    block = "\n".join(blocks)
+    for cls in ("game-log-no-stats", "game-log-bye"):
+        sel = f".game-log-table tbody tr.{cls} td:nth-child(3)"
+        assert sel in block
+        rule = block[block.index(sel) :]
+        rule = rule[: rule.index("}")]
+        assert "background-color: var(--row);" in rule
+
+
 # ── Dynasty value standings + portfolio holdings ────────────────────────
 
 
