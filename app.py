@@ -681,7 +681,16 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                 raise
             return []
 
-        odds = simulate_playoff_odds(ctx, platform=platform) or []
+        # Blocking callers never took the aggregate gate (they wait for
+        # their own result), but that left the inline Monte Carlo itself
+        # uncapped: up to one sim per request thread at once. Bound it with
+        # the per-mechanism semaphore, blocking -- this caller waits for a
+        # slot instead of starting a 3rd/4th concurrent sim.
+        _PLAYOFF_SIM_SEM.acquire()
+        try:
+            odds = simulate_playoff_odds(ctx, platform=platform) or []
+        finally:
+            _PLAYOFF_SIM_SEM.release()
         _prune_ttl_cache(_PLAYOFF_SIM_CACHE, _PLAYOFF_SIM_CACHE_MAX)
         _PLAYOFF_SIM_CACHE[key] = {
             "data": odds,
@@ -18597,10 +18606,12 @@ _RZ_BOX_TTL = 15.0
 # Key space is season-finite (game ids, plain + ":pbp" shapes): a full slate
 # is 16 games x 2 shapes = 32 hot entries, but ids accumulate across weeks
 # and entries are only TTL-checked when their exact key is re-requested, so
-# without a cap the dict grows one boxscore per game forever. 128 covers
-# several slates of churn while bounding the boxscore-sized values; pruned
-# on write with the shared _prune_ttl_cache helper.
-_RZ_BOX_CACHE_MAX = 128
+# without a cap the dict grows one boxscore per game forever. 48 covers the
+# hot slate plus churn while bounding the boxscore-sized values (128 let
+# several slates of full-PBP boxscores sit resident on the 2 GB web worker;
+# see the 2026-11-08 OOM restarts); pruned on write with the shared
+# _prune_ttl_cache helper.
+_RZ_BOX_CACHE_MAX = 48
 _RZ_LIVE_CACHE_TTL = 12.0
 # Bound the scoreboard upstream wait on the live path. The client aborts a
 # ScoreZone poll after _RZ_FETCH_DEADLINE_MS (25s in static/scorezone.js); the
@@ -18681,6 +18692,12 @@ def _scorezone_boxscore(
 
 _RZ_PROJ_CACHE: dict = {}
 _RZ_PROJ_TTL = 900.0  # 15 min
+# Each entry is a full player-pool projection map keyed by the league's
+# scoring signature, so distinct leagues mint distinct entries and the dict
+# was never pruned: on a game day every new ScoreZone league a visitor
+# opened permanently retained one pool map for the life of the worker.
+# Pruned on write like the other RZ caches.
+_RZ_PROJ_CACHE_MAX = 12
 
 
 def _rz_get_projections(season: int, week: int, scoring: dict = None) -> dict:
@@ -18712,6 +18729,7 @@ def _rz_get_projections(season: int, week: int, scoring: dict = None) -> dict:
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
     _RZ_PROJ_CACHE[key] = {"ts": time.time(), "data": data}
+    _prune_ttl_cache(_RZ_PROJ_CACHE, _RZ_PROJ_CACHE_MAX)
     return data
 
 
@@ -19724,21 +19742,61 @@ _RZ_COLLECT_INFLIGHT: dict = {}
 # A waiter must never hang longer than a build reasonably takes, even if the
 # builder thread dies without signalling.
 _RZ_COLLECT_WAIT_TIMEOUT = 90.0
+# Retained collect payloads are the largest values on the web worker: one
+# entry is ~1 MB serialized (multi-MB parsed) because it embeds pbp_by_game
+# for every game. The old 32-entry cap let dozens of leagues' payloads sit
+# resident at once on top of the ~450-650 MB steady state; 8 covers the hot
+# set of leagues actually being watched inside one 60s TTL window.
+_RZ_COLLECT_CACHE_MAX = 8
+# Foreground build concurrency: single-flight dedupes builds per key, but
+# distinct leagues build in parallel, so on a game day all 4 request threads
+# could each be assembling a full collect (plus the ETag serialization copy)
+# at the same moment -- the peak-memory shape behind the repeated Sunday
+# OOM restarts (7 on 2026-11-08). At most 2 ScoreZone builds (league
+# collects and user aggregates share this gate) run at once per worker;
+# other threads wait for a slot. A thread already inside a build passes
+# through (a user aggregate build calls the league collect per league on
+# the same thread). If no slot frees within the wait bound the build
+# proceeds unslotted rather than failing a live poll.
+_RZ_BUILD_SEM = threading.BoundedSemaphore(2)
+_RZ_BUILD_LOCAL = threading.local()
+_RZ_BUILD_WAIT_TIMEOUT = 90.0
+
+
+def _rz_build_acquire():
+    """Take a ScoreZone build slot; returns the token for _rz_build_release."""
+    if getattr(_RZ_BUILD_LOCAL, "depth", 0) > 0:
+        return "nested"
+    got = _RZ_BUILD_SEM.acquire(timeout=_RZ_BUILD_WAIT_TIMEOUT)
+    _RZ_BUILD_LOCAL.depth = 1
+    return "slot" if got else "fallback"
+
+
+def _rz_build_release(token) -> None:
+    if token == "nested":
+        return
+    _RZ_BUILD_LOCAL.depth = 0
+    if token == "slot":
+        _RZ_BUILD_SEM.release()
 
 
 def _rz_collect_build(key, platform, league_id, season, week):
     """Run _scorezone_collect, cache it, return (payload, etag, collected_at)."""
-    d = _scorezone_collect(platform, league_id, season, week)
-    collected_at = time.time()
+    _rz_token = _rz_build_acquire()
     try:
-        fp = json.dumps(d, sort_keys=True, default=str)
-        etag = '"rz-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
-    except Exception:
-        etag = '"rz-%d"' % int(collected_at)
-    with _RZ_COLLECT_LOCK:
-        _RZ_COLLECT_CACHE[key] = (time.time() + _RZ_COLLECT_TTL, etag, collected_at, d)
-        _prune_ttl_cache(_RZ_COLLECT_CACHE, 32)
-    return d, etag, collected_at
+        d = _scorezone_collect(platform, league_id, season, week)
+        collected_at = time.time()
+        try:
+            fp = json.dumps(d, sort_keys=True, default=str)
+            etag = '"rz-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
+        except Exception:
+            etag = '"rz-%d"' % int(collected_at)
+        with _RZ_COLLECT_LOCK:
+            _RZ_COLLECT_CACHE[key] = (time.time() + _RZ_COLLECT_TTL, etag, collected_at, d)
+            _prune_ttl_cache(_RZ_COLLECT_CACHE, _RZ_COLLECT_CACHE_MAX)
+        return d, etag, collected_at
+    finally:
+        _rz_build_release(_rz_token)
 
 
 def _rz_cached_collect(platform, league_id, season, week):
@@ -19793,12 +19851,17 @@ def _rz_cached_collect(platform, league_id, season, week):
 # all of that per viewer per poll. Entries are (expires_ts, etag, payload),
 # keyed by viewer identity + route params; callers must never mutate the
 # cached payload dict (per-request fields are stamped onto a copy, exactly
-# like the league collect cache). Bounds: 32 entries max (pruned oldest
+# like the league collect cache). Bounds: 8 entries max (pruned oldest
 # ~10% past the cap) and a 60s TTL, matching the collect cache it sits on.
+# Each entry aggregates up to MAX_USER_LEAGUES league slices with their own
+# pbp_by_game, so one entry can outweigh a league collect several times
+# over; the old 32-entry cap was the single largest retention on the worker
+# (see the 2026-11-08 OOM restarts).
 _RZ_USER_CACHE: dict = {}
 _RZ_USER_CACHE_LOCK = threading.Lock()
 _RZ_USER_INFLIGHT: dict = {}
 _RZ_USER_TTL = 60.0
+_RZ_USER_CACHE_MAX = 8
 
 
 def _rz_user_cache_key(platform, league_id, season, week):
@@ -19821,16 +19884,20 @@ def _rz_user_build(key, platform, league_id, season, week):
     The etag is a content hash of the built payload (whose updated_at is the
     build time), so it is stable for the life of the cache entry and changes
     whenever the aggregate is rebuilt."""
-    d = _scorezone_fetch_user(platform, league_id, season, week)
+    _rz_token = _rz_build_acquire()
     try:
-        fp = json.dumps(d, sort_keys=True, default=str)
-        etag = '"rzu-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
-    except Exception:
-        etag = '"rzu-%d"' % int(time.time())
-    with _RZ_USER_CACHE_LOCK:
-        _RZ_USER_CACHE[key] = (time.time() + _RZ_USER_TTL, etag, d)
-        _prune_ttl_cache(_RZ_USER_CACHE, 32)
-    return d, etag
+        d = _scorezone_fetch_user(platform, league_id, season, week)
+        try:
+            fp = json.dumps(d, sort_keys=True, default=str)
+            etag = '"rzu-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
+        except Exception:
+            etag = '"rzu-%d"' % int(time.time())
+        with _RZ_USER_CACHE_LOCK:
+            _RZ_USER_CACHE[key] = (time.time() + _RZ_USER_TTL, etag, d)
+            _prune_ttl_cache(_RZ_USER_CACHE, _RZ_USER_CACHE_MAX)
+        return d, etag
+    finally:
+        _rz_build_release(_rz_token)
 
 
 def _rz_cached_fetch_user(platform, league_id, season, week):
