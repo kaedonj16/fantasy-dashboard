@@ -1249,21 +1249,23 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             **fields,
         })
 
-    # Replacement PPG per position from the ROS pool (12-team 1QB defaults):
-    # the player at starters x size x REPLACEMENT_MULT in the PPG order.
+    # Replacement PPG per position from the ROS pool (12-team 1QB defaults),
+    # via the shared ROS convention in utils/ros_rankings.py: the same
+    # replacement the /players All view uses, including the 1QB QB rule
+    # (replacement QB at the starter line, not deep in the QB2 band).
     repl: dict = {}
     if not pos_filter:
-        starters = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
-        mult = {"QB": 1.5, "RB": 1.2, "WR": 1.2, "TE": 1.25}
+        from utils.ros_rankings import ros_replacement_ppg
+
         by_pos: dict = {}
         for r in rows:
             if r.get("ros_ppg") is not None:
                 by_pos.setdefault(r["position"], []).append(float(r["ros_ppg"]))
         for pos, ppgs in by_pos.items():
             ppgs.sort(reverse=True)
-            idx = int((starters.get(pos, 1) * 12) * mult.get(pos, 1.2))
-            idx = max(0, min(idx, len(ppgs) - 1))
-            repl[pos] = ppgs[idx]
+            base = ros_replacement_ppg(ppgs, pos, 12, "1qb")
+            if base is not None:
+                repl[pos] = base
         for r in rows:
             base = repl.get(r["position"])
             r["_vor"] = ((float(r["ros_ppg"]) - base) * int(r["ros_games"])

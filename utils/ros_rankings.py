@@ -37,6 +37,15 @@ of the player's remaining opponents, ranked across teams (1 = softest
 remaining schedule). It never enters the score: the weekly projections
 already price the opponent in.
 
+Cross-position order (the All view) is by VOR total: (window PPG minus
+the replacement PPG at his position) x window games, with the replacement
+convention in ros_replacement_index below. The All view's tier dividers
+are computed from those VOR totals (compute_ros_vor_tier_thresholds), NOT
+from the positional totals: a mixed list keyed to raw totals stamps each
+player with his own position's scale, so the dividers repeat and run out
+of order (a QB whose raw total is elite-scale but whose VOR is mid-pack
+reads T1 in the middle of the list).
+
 Scoring basis is standard PPR (rec = 1.0), the same basis the public pages
 state and the backtest used. The compute reads only the cached files the
 start-score bundle already loads (weekly stat files, weekly projection
@@ -215,41 +224,156 @@ def assign_ros_ranks(ros_by_pid: Dict[str, dict],
                 fields[rank_key] = i
 
 
+def _ros_tier_thresholds_for_values(rows: List[Tuple[Optional[str], float]]) -> list:
+    """Scale-normalized drop thresholds for one list of (position, value).
+
+    The shared drop-based algorithm is calibrated for dynasty values (its
+    span cap and fallback live around 1000), while ROS numbers top out
+    near 200, so the values are scaled onto that range for the computation
+    and the thresholds scaled back. A pool too thin or too smooth to tier
+    returns [] (no dividers) rather than dynasty-scale numbers.
+    """
+    from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
+
+    top = max((v for _pos, v in rows), default=0.0)
+    if len(rows) < 6 or top <= 0:
+        return []
+    factor = 1000.0 / top
+    remapped = [
+        {"position": pos, "value": v * factor, "sf_value": v * factor}
+        for pos, v in rows
+    ]
+    thresholds = compute_tier_thresholds(remapped, "1qb", 10)
+    if len(thresholds) < 2 or list(thresholds) == list(FALLBACK_THRESHOLDS):
+        return []
+    return [round(v / factor, 1) for v in thresholds]
+
+
 def compute_ros_tier_thresholds(ros_by_pid: Dict[str, dict],
                                 positions_by_pid: Dict[str, str]) -> dict:
     """Tier thresholds from the ROS totals actually displayed, per window.
 
     Follows the redraft pattern (PR #3031): thresholds are computed on the
-    same numbers the board sorts by, never the dynasty scale. The shared
-    drop-based algorithm is calibrated for dynasty values (its span cap
-    and fallback live around 1000), while ROS totals top out near 200, so
-    each window's totals are scaled onto that range for the computation
-    and the thresholds scaled back. A pool too thin or too smooth to tier
-    returns [] for the window (no dividers) rather than dynasty numbers.
+    same numbers the board sorts by, never the dynasty scale. These key
+    the position-filtered views, which order by the window total.
     Returns {"all": [...], "stretch": [...], "playoffs": [...]}.
     """
-    from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
-
     out: dict = {}
     for window_key, prefix in (("all", "ros"), ("stretch", "ros_stretch"),
                                ("playoffs", "ros_playoff")):
         total_key = f"{prefix}_total"
         rows = [(positions_by_pid.get(pid), fields[total_key])
                 for pid, fields in ros_by_pid.items() if total_key in fields]
-        top = max((t for _pos, t in rows), default=0.0)
-        if len(rows) < 6 or top <= 0:
-            out[window_key] = []
-            continue
-        factor = 1000.0 / top
-        remapped = [
-            {"position": pos, "value": t * factor, "sf_value": t * factor}
-            for pos, t in rows
-        ]
-        thresholds = compute_tier_thresholds(remapped, "1qb", 10)
-        if len(thresholds) < 2 or list(thresholds) == list(FALLBACK_THRESHOLDS):
-            out[window_key] = []
-            continue
-        out[window_key] = [round(v / factor, 1) for v in thresholds]
+        out[window_key] = _ros_tier_thresholds_for_values(rows)
+    return out
+
+
+# ── Cross-position VOR: replacement convention + All-view tiers ─────────────
+# One convention, read by every ROS surface: the public overall page calls
+# ros_replacement_ppg directly, the payload's All-view tier thresholds are
+# computed from ros_vor_totals, and the /players board mirrors the same
+# index math in JS (prRosReplacementMap in static/rankings.js).
+#
+# Starters per team and the scarcity multipliers are the value model's
+# (data_building/player_value.py: STARTERS with QB 2 in Superflex, and
+# REPLACEMENT_MULT). ONE exception: QB in 1QB. The 1.5x QB multiplier is
+# calibrated for the dynasty model's normalized strength scale, not raw
+# points; applied to raw ROS PPGs it prices the replacement QB deep in the
+# QB2 band, which leaves an elite QB's edge looking like an elite RB's.
+# In a 1QB league the actual fallback is the streaming tier right at the
+# starter line, so QB replacement in 1QB follows the site's VORP helpers
+# instead (utils/trade.py stamp_value_metrics): the player AT the starter
+# line, rank = starters x league size. SF keeps the multiplier: with two
+# starters per team, QB scarcity is real and priced.
+ROS_STARTERS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
+ROS_REPLACEMENT_MULT = {"QB": 1.50, "RB": 1.20, "WR": 1.20, "TE": 1.25}
+ROS_LEAGUE_TYPES = ("1qb", "sf")
+ROS_LEAGUE_SIZES = (8, 10, 12, 14)
+_WINDOW_PREFIXES = (("all", "ros"), ("stretch", "ros_stretch"),
+                    ("playoffs", "ros_playoff"))
+
+
+def ros_replacement_index(position: str, league_size: int, league_type: str) -> int:
+    """0-based index into a position's PPG-sorted (desc) pool locating the
+    replacement-level player, for one league shape."""
+    pos = str(position or "").upper()
+    size = int(league_size or 10)
+    starters = ROS_STARTERS.get(pos, 1)
+    if pos == "QB" and str(league_type or "1qb").lower() == "sf":
+        return int(2 * size * ROS_REPLACEMENT_MULT["QB"])
+    if pos == "QB":
+        # 1QB: the player at the starter line (utils/trade.py VORP rank).
+        return int(round(starters * size)) - 1
+    return int(starters * size * ROS_REPLACEMENT_MULT.get(pos, 1.2))
+
+
+def ros_replacement_ppg(ppgs_desc: List[float], position: str,
+                        league_size: int, league_type: str) -> Optional[float]:
+    """Replacement PPG from a position's PPGs sorted desc (None if empty)."""
+    if not ppgs_desc:
+        return None
+    idx = ros_replacement_index(position, league_size, league_type)
+    idx = max(0, min(idx, len(ppgs_desc) - 1))
+    return float(ppgs_desc[idx])
+
+
+def ros_vor_totals(ros_by_pid: Dict[str, dict],
+                   positions_by_pid: Dict[str, str],
+                   league_size: int, league_type: str) -> Dict[str, Dict[str, float]]:
+    """{window: {pid: VOR total}} for one league shape.
+
+    VOR total = (window PPG - replacement PPG at his position) x window
+    games: the All view's cross-position ordering metric.
+    """
+    out: Dict[str, Dict[str, float]] = {}
+    for window_key, prefix in _WINDOW_PREFIXES:
+        ppg_key, games_key = f"{prefix}_ppg", f"{prefix}_games"
+        by_pos: Dict[str, List[float]] = {}
+        for pid, fields in ros_by_pid.items():
+            if ppg_key in fields:
+                pos = str(positions_by_pid.get(pid) or "").upper()
+                by_pos.setdefault(pos, []).append(float(fields[ppg_key]))
+        repl: Dict[str, float] = {}
+        for pos, ppgs in by_pos.items():
+            ppgs.sort(reverse=True)
+            base = ros_replacement_ppg(ppgs, pos, league_size, league_type)
+            if base is not None:
+                repl[pos] = base
+        window_vor: Dict[str, float] = {}
+        for pid, fields in ros_by_pid.items():
+            if ppg_key not in fields or games_key not in fields:
+                continue
+            base = repl.get(str(positions_by_pid.get(pid) or "").upper())
+            if base is None:
+                continue
+            window_vor[pid] = round(
+                (float(fields[ppg_key]) - base) * int(fields[games_key]), 1)
+        out[window_key] = window_vor
+    return out
+
+
+def compute_ros_vor_tier_thresholds(ros_by_pid: Dict[str, dict],
+                                    positions_by_pid: Dict[str, str]) -> dict:
+    """Tier thresholds for the All view, computed on VOR totals.
+
+    The All view orders by VOR total, so its dividers must be thresholds
+    on VOR totals: one monotonic T1..Tn sequence for the mixed list.
+    Keyed per window x league type x league size, the same shape the
+    client looks up for dynasty tiers:
+    {"all": {"1qb": {"10": [...]}, "sf": {...}}, "stretch": ..., ...}.
+    """
+    out: dict = {}
+    for window_key, _prefix in _WINDOW_PREFIXES:
+        by_type: dict = {}
+        for league_type in ROS_LEAGUE_TYPES:
+            by_size: dict = {}
+            for size in ROS_LEAGUE_SIZES:
+                vors = ros_vor_totals(
+                    ros_by_pid, positions_by_pid, size, league_type)[window_key]
+                rows = [(positions_by_pid.get(pid), v) for pid, v in vors.items()]
+                by_size[str(size)] = _ros_tier_thresholds_for_values(rows)
+            by_type[league_type] = by_size
+        out[window_key] = by_type
     return out
 
 
@@ -286,7 +410,8 @@ def load_ros_map(season: Optional[int] = None) -> dict:
     """The full ROS payload block: per-player fields + window + thresholds.
 
     Returns {"players": {pid: fields}, "window": {"start_week", "end_week"},
-    "tier_thresholds_ros": {...}, "updated": "Month D, YYYY"}. Empty players
+    "tier_thresholds_ros": {...}, "tier_thresholds_ros_vor": {...},
+    "updated": "Month D, YYYY"}. Empty players
     when the window has closed (past Week 17) or the cached feeds are not
     there yet: the board then simply has no ROS rows, never fabricated ones.
     Signature-cached; the heavy pass runs at most once per data change per
@@ -298,7 +423,7 @@ def load_ros_map(season: Optional[int] = None) -> dict:
             season = int((get_nfl_state() or {}).get("season") or date.today().year)
         season = int(season)
     except Exception:
-        return {"players": {}, "window": None, "tier_thresholds_ros": {},
+        return {"players": {}, "window": None, "tier_thresholds_ros": {}, "tier_thresholds_ros_vor": {},
                 "updated": None}
     try:
         from utils.season_qualification import qualification_policy
@@ -310,7 +435,8 @@ def load_ros_map(season: Optional[int] = None) -> dict:
     if start_week > ROS_END_WEEK:
         return {"players": {}, "window": {"start_week": start_week,
                                           "end_week": ROS_END_WEEK},
-                "tier_thresholds_ros": {}, "updated": updated}
+                "tier_thresholds_ros": {}, "tier_thresholds_ros_vor": {},
+                "updated": updated}
 
     key = (season, start_week, _files_signature(season, start_week))
     if _ROS_CACHE.get("key") == key and _ROS_CACHE.get("payload") is not None:
@@ -323,7 +449,8 @@ def load_ros_map(season: Optional[int] = None) -> dict:
         # empty board to this data signature.
         return {"players": {}, "window": {"start_week": start_week,
                                           "end_week": ROS_END_WEEK},
-                "tier_thresholds_ros": {}, "updated": updated}
+                "tier_thresholds_ros": {}, "tier_thresholds_ros_vor": {},
+                "updated": updated}
     _ROS_CACHE["key"] = key
     _ROS_CACHE["payload"] = payload
     return payload
@@ -496,6 +623,7 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
             "players": ros_by_pid,
             "window": {"start_week": start_week, "end_week": ROS_END_WEEK},
             "tier_thresholds_ros": compute_ros_tier_thresholds(ros_by_pid, positions_by_pid),
+            "tier_thresholds_ros_vor": compute_ros_vor_tier_thresholds(ros_by_pid, positions_by_pid),
             "updated": updated,
         }
     except Exception:
