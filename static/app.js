@@ -27167,7 +27167,7 @@ function _tmBuildEffChart(weeks) {
   const seasonOpt = good.reduce((s, w) => s + Number(w.optimal), 0);
   const effPct = seasonOpt > 0 ? (seasonActual / seasonOpt * 100).toFixed(0) : '--';
   return (
-    '<div class="team-modal-section tm-chart-eff"><h3>Actual vs Optimal Points</h3>' +
+    '<div class="tm3-card tm-chart-eff"><h3>Actual vs Optimal Points</h3>' +
     `<div class="tm-eff-legend"><span><i class="tm-eff-dot tm-eff-actual"></i>Actual</span>` +
     `<span><i class="tm-eff-dot tm-eff-optimal"></i>Optimal</span>` +
     `<span class="tm-eff-season">Season efficiency ${effPct}%</span></div>` +
@@ -28680,25 +28680,41 @@ function renderTeamDetails(data) {
     graphsHTML += `<div class="tm3-season-line"><span class="tm3-season-chip">${G.season_used} season</span>${note ? `<span>${note}</span>` : ''}</div>`;
   }
 
-  // Scoring section.
-  let scoring = '';
-  if (Array.isArray(S.vs_opponent) && S.vs_opponent.length) {
-    scoring += `<div class="tm3-card"><h3>Score vs Opponent</h3><div class="tm3-note">This team in color, opponent in gray.</div>${_tmSvgVsOpp(S.vs_opponent)}</div>`;
-  }
+  // Scoring section (Layout A, approved 2026-11-09): every chart is the
+  // same tm3 card, paired into rows that share a height. Weekly Scoring
+  // (wide) sits beside Team Breakdown; Score vs Opponent pairs with
+  // Points Race. A lone chart in a row takes the full width. Colors stay
+  // on the site scheme: the chart renderers draw with the navy hero /
+  // sky / brand-blue tokens and the muted league references, and the
+  // cards use the tm3 surface/border tokens. No chart, data or formula
+  // changes, layout only.
+  let weeklyCard = '';
   if (Array.isArray(G.weekly_scores) && G.weekly_scores.length > 0) {
-    scoring += '<div class="team-modal-section tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
+    weeklyCard = '<div class="tm3-card tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
   }
-  // The radar keeps its old seat beside Weekly Scoring (the charts panel is
-  // a flex grid: 66% + 34%); the new blocks around them are full rows.
+  let radarCard = '';
   if (G.radar && G.radar.z_scores) {
-    scoring += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
+    radarCard = '<div class="tm3-card tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
   }
+  let vsOppCard = '';
+  if (Array.isArray(S.vs_opponent) && S.vs_opponent.length) {
+    vsOppCard = `<div class="tm3-card"><h3>Score vs Opponent</h3><div class="tm3-note">This team in color, opponent in gray.</div>${_tmSvgVsOpp(S.vs_opponent)}</div>`;
+  }
+  let raceCard = '';
   if (S.race && Array.isArray(S.race.me) && S.race.me.length) {
-    scoring += `<div class="tm3-card"><h3>Points Race</h3><div class="tm3-note">Cumulative points for vs the best other team each week.</div>${_tmSvgRace(S.race)}</div>`;
+    raceCard = `<div class="tm3-card"><h3>Points Race</h3><div class="tm3-note">Cumulative points for vs the best other team each week.</div>${_tmSvgRace(S.race)}</div>`;
   }
-  if (scoring) graphsHTML += `<div class="tm3-sec-head"><h3>Scoring</h3></div>` + scoring;
+  const _tmGraphRow = (cards, wide) => {
+    const live = cards.filter(Boolean);
+    if (!live.length) return '';
+    const cls = live.length > 1 && wide ? 'tm-graph-row tm-graph-row-wide' : 'tm-graph-row';
+    return `<div class="${cls}">${live.join('')}</div>`;
+  };
+  const scoringRows = _tmGraphRow([weeklyCard, radarCard], true) + _tmGraphRow([vsOppCard, raceCard], false);
+  if (scoringRows) graphsHTML += `<div class="tm3-sec-head"><h3>Scoring</h3></div>` + scoringRows;
 
-  // League Context section.
+  // League Context section: Seed Movement and Weekly Finish already pair
+  // in the tm3 two-col grid; it now stretches so both cards share a height.
   let contextCards = '';
   if (Array.isArray(S.seeds) && S.seeds.length) {
     contextCards += `<div><div class="tm3-card"><h3>Seed Movement</h3>${_tmSvgSeed(S.seeds, (G.strip && G.strip.pf_of) || null)}</div></div>`;
@@ -28710,22 +28726,27 @@ function renderTeamDetails(data) {
   if (contextCards) graphsHTML += `<div class="tm3-sec-head" style="margin-top:18px"><h3>League Context</h3></div><div class="tm3-two-col">${contextCards}</div>`;
 
   // League-wide SVG scatters (this team highlighted), injected as-is.
+  // Layout A: the same tm3 card as every other chart, paired in one row
+  // (the scatters keep their uniform owner-palette colors from the server).
+  let luckCard = '';
   if (data.graphs && data.graphs.luck_svg) {
-    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Performance vs Luck</h3>' +
-      '<div class="tm-svg-note">All-play strength vs actual wins across the league. Above the dashed line means winning more than the scoring earned.</div>' +
+    luckCard = '<div class="tm3-card tm-chart-svg"><h3>Performance vs Luck</h3>' +
+      '<div class="tm3-note tm-svg-note">All-play strength vs actual wins across the league. Above the dashed line means winning more than the scoring earned.</div>' +
       '<div class="team-svg-chart">' + data.graphs.luck_svg + '</div></div>';
   }
+  let valueAgeCard = '';
   if (data.graphs && data.graphs.value_age_svg) {
     const _vaTitle = data.is_redraft ? 'Roster Value vs Age' : 'Dynasty Value vs Age';
     const _vaNote = data.is_redraft
       ? 'Every team by total roster value and average age. Top-left is young and loaded.'
       : 'Every team by total roster value and average age. Top-left is young and loaded; top-right is a closing win-now window.';
-    graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>' + _vaTitle + '</h3>' +
-      '<div class="tm-svg-note">' + _vaNote + '</div>' +
+    valueAgeCard = '<div class="tm3-card tm-chart-svg"><h3>' + _vaTitle + '</h3>' +
+      '<div class="tm3-note tm-svg-note">' + _vaNote + '</div>' +
       '<div class="team-svg-chart">' + data.graphs.value_age_svg + '</div></div>';
   }
+  graphsHTML += _tmGraphRow([luckCard, valueAgeCard], false);
 
-  // Actual vs Optimal closes the tab (moved below the grouped charts).
+  // Actual vs Optimal closes the tab as a full-width unified card.
   if (Array.isArray(data.efficiency_weeks) && data.efficiency_weeks.length > 0) {
     graphsHTML += _tmBuildEffChart(data.efficiency_weeks);
   }
