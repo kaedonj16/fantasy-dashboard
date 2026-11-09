@@ -112,7 +112,14 @@ def test_parity_with_direct_parse(week_files):
             old = _old_logic(pid, season, week_files.parent)
             assert set(new) == set(old)
             for week in old:
-                assert _norm(new[week]) == _norm(old[week])
+                # Compare over the union of keys: the zero-fill key set
+                # grows when a new display key joins _GAMELOG_STAT_KEYS
+                # (pass_cmp), and a zero-filled key the raw row never
+                # carried is the same stat value as missing.
+                new_n, old_n = _norm(new[week]), _norm(old[week])
+                all_keys = set(new_n) | set(old_n)
+                assert {k: new_n.get(k, 0) for k in all_keys} == \
+                    {k: old_n.get(k, 0) for k in all_keys}
                 # Every key the old row had is still visible (custom scoring).
                 assert set(old[week]) <= set(new[week]) | {
                     k for k, v in old[week].items() if not v

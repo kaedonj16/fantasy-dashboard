@@ -26168,7 +26168,7 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
 # vs ~90MB of JSON parsed per request.
 # threading is imported at module top (gthread workers run 2 threads).
 _GAMELOG_STAT_KEYS = (
-    "pass_yd", "pass_td", "pass_int", "pass_att",
+    "pass_yd", "pass_td", "pass_int", "pass_att", "pass_cmp",
     "rush_att", "rush_yd", "rush_td",
     "rec", "rec_tgt", "rec_yd", "rec_td", "fum_lost",
 )
@@ -33916,6 +33916,64 @@ def _game_logs_cache_key(player_id: str, season: int, scoring_settings: dict) ->
     return f"{player_id}|{season}|{ss}"
 
 
+# Short-TTL cache of weekly finish ranks, keyed by season + week + scoring
+# signature: {player_id: rank} for every player who appeared that week.
+# Bounded like _GAME_LOGS_CACHE (each entry holds one week's full pool).
+_WEEK_FINISH_RANK_CACHE: Dict[tuple, tuple] = {}
+_WEEK_FINISH_RANK_CACHE_MAX = 512
+
+
+def _weekly_finish_ranks(season: int, week: int, scoring_settings: dict,
+                         positions: Dict[str, str]) -> Dict[str, int]:
+    """{player_id: weekly finish rank} among same-position players for one
+    (season, week), scored with the SAME settings the game log displays, so
+    a game's Rank always agrees with the Pts column beside it. Competition
+    ranking on the displayed (2dp-rounded) points: players tied on points
+    share the better rank. The pool comes from the parse-once week index
+    (appearance-filtered, so did-not-play rows never enter it). Cached per
+    (season, week, scoring signature) on the game-log cache's TTL; never
+    raises — a missing week file yields {} and those rows render no rank.
+    """
+    try:
+        sig = hashlib.md5(
+            json.dumps(scoring_settings, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:12]
+    except Exception:
+        sig = "0"
+    key = (int(season), int(week), sig)
+    hit = _WEEK_FINISH_RANK_CACHE.get(key)
+    if hit and time.time() - hit[0] < _GAME_LOGS_CACHE_TTL:
+        return hit[1]
+    ranks: Dict[str, int] = {}
+    try:
+        rows = _week_stat_index_rows(int(season), int(week))
+        by_pos: Dict[str, list] = {}
+        for pid, row in rows.items():
+            pos = positions.get(str(pid)) or ""
+            if pos not in ("QB", "RB", "WR", "TE"):
+                continue
+            pts = 0.0 if row is None else round(_score_stats(row, scoring_settings), 2)
+            by_pos.setdefault(pos, []).append((str(pid), pts))
+        for pool in by_pos.values():
+            pool.sort(key=lambda t: t[1], reverse=True)
+            prev_pts = None
+            prev_rank = 0
+            for i, (pid, pts) in enumerate(pool):
+                if prev_pts is None or pts < prev_pts:
+                    prev_rank = i + 1
+                    prev_pts = pts
+                ranks[pid] = prev_rank
+    except Exception:
+        logger.debug("[game_logs] weekly finish ranks failed", exc_info=True)
+        ranks = {}
+    if len(_WEEK_FINISH_RANK_CACHE) >= _WEEK_FINISH_RANK_CACHE_MAX:
+        for _k in sorted(_WEEK_FINISH_RANK_CACHE,
+                         key=lambda k: _WEEK_FINISH_RANK_CACHE[k][0])[:_WEEK_FINISH_RANK_CACHE_MAX // 10]:
+            _WEEK_FINISH_RANK_CACHE.pop(_k, None)
+    _WEEK_FINISH_RANK_CACHE[key] = (time.time(), ranks)
+    return ranks
+
+
 def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int:
     """First week the game-log Stats tab should (re)project.
 
@@ -34151,7 +34209,7 @@ def api_player_game_logs(player_id: str):
 
             def _stats_dict(s):
                 return {k: s.get(k) for k in
-                        ["pass_yd", "pass_td", "pass_int", "pass_att", "rush_att", "rush_yd", "rush_td", "rec", "rec_tgt", "rec_yd",
+                        ["pass_yd", "pass_td", "pass_int", "pass_att", "pass_cmp", "rush_att", "rush_yd", "rush_td", "rec", "rec_tgt", "rec_yd",
                          "rec_td", "fum_lost"]}
 
             if schedule_by_week:
@@ -34506,6 +34564,38 @@ def api_player_game_logs(player_id: str):
                         }
         except Exception:
             logger.debug("[game_logs] advanced metrics join failed", exc_info=True)
+
+        # ── Weekly finish rank per game ───────────────────────────────────
+        # Tag each real game with the player's finish rank at his position
+        # for that week (see _weekly_finish_ranks), so the Stats tab's
+        # verdict block can lead with it. Bye / DNP / projection rows get
+        # no rank: they have no finish. Best-effort like the joins above.
+        if _mpos in ("QB", "RB", "WR", "TE"):
+            try:
+                _positions = {
+                    str(_pid): str(_meta.get("pos") or "").upper()
+                    for _pid, _meta in (load_players_index() or {}).items()
+                    if isinstance(_meta, dict)
+                }
+                for _yr, _logs in game_logs_by_year.items():
+                    _rank_maps: Dict[int, Dict[str, int]] = {}
+                    for _g in _logs:
+                        if (_g.get("is_bye") or _g.get("is_projection")
+                                or _g.get("fantasy_pts") is None
+                                or not _g.get("stats")):
+                            continue
+                        try:
+                            _wk = int(_g.get("week"))
+                        except (TypeError, ValueError):
+                            continue
+                        if _wk not in _rank_maps:
+                            _rank_maps[_wk] = _weekly_finish_ranks(
+                                int(_yr), _wk, scoring_settings, _positions)
+                        _r = _rank_maps[_wk].get(str(player_id))
+                        if _r:
+                            _g["rank"] = _r
+            except Exception:
+                logger.debug("[game_logs] finish-rank join failed", exc_info=True)
 
         # Cache the fully-computed result (bounded; evict oldest when full).
         if len(_GAME_LOGS_CACHE) >= _GAME_LOGS_CACHE_MAX:
