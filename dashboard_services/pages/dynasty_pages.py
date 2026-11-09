@@ -1115,3 +1115,273 @@ def build_rankings_hub_body(
   </script>
 </div>
 """
+
+
+# ── Rest-of-season rankings (public) ────────────────────────────────────────
+# Read-only snapshots of the same ROS compute that powers the /players ROS
+# mode (utils/ros_rankings.py): no separate numbers path. Defaults stated on
+# the page: full PPR scoring, 12-team 1QB replacement level for the overall
+# order. Position pages order by ROS total within the position.
+
+_ROS_ANALYSIS = {
+    None: (
+        "How rest-of-season rankings work",
+        "<p>Rest-of-season rankings answer a different question than dynasty "
+        "values or weekly start/sit calls: who scores the most points from "
+        "now through Week 17? The board below is built from each player's "
+        "projected points in every remaining week, so a player with seven "
+        "games left can outrank a better per-game player who only has five. "
+        "That is why the board carries two numbers side by side: ROS PPG for "
+        "the per-game rate, and ROS Pts for the total your lineup actually "
+        "banks.</p>"
+        "<p>The overall order is by value over replacement in a 12-team 1QB "
+        "league, which is what makes a quarterback comparable to a tight end: "
+        "both are measured against the best player you could stream at their "
+        "position for free. Only players with a real role are ranked: at "
+        "least five games played, and either their team's top option at the "
+        "position or a workload that clears the position's volume bar. The "
+        "Sched column is the strength of the remaining schedule (1 is the "
+        "softest run left); it is context, not a score input, because the "
+        "weekly projections already price the opponent in.</p>"
+    ),
+    "QB": (
+        "Rest-of-season QB rankings",
+        "<p>Quarterback is the one position where the model blends the "
+        "forward projection with what a passer has actually done: 40% "
+        "projection, 30% last-four-games form, and 30% season-long scoring. "
+        "Weekly quarterback projections are the noisiest on the board, and a "
+        "passer's recent form carries real signal about his offense's shape "
+        "that a projection alone smooths away.</p>"
+        "<p>Games left matter more here than anywhere else. A top-five "
+        "per-game quarterback whose bye is still ahead of him, or whose team "
+        "has a Week 17 rest risk, can be worth fewer total points than the "
+        "steady starter a tier below. Read the ROS Pts column as the "
+        "tiebreaker for every start/sit and trade call from here in.</p>"
+    ),
+    "RB": (
+        "Rest-of-season RB rankings",
+        "<p>Running back rest-of-season value is a volume bet. The board "
+        "runs on forward projections alone at this position, because a "
+        "back's projected workload already reflects his recent form, and "
+        "adding a form bonus on top double-counts the same signal. What "
+        "separates the top of the board is projected games: a workhorse "
+        "with seven games left laps a committee back with five, even at a "
+        "lower weekly rate.</p>"
+        "<p>The role gate does the quality control. A back needs his team's "
+        "top rushing role or roughly twelve touches a game to appear here, "
+        "so one-week injury fill-ins and goal-line vultures do not crowd "
+        "out the backs who will actually carry your playoff run.</p>"
+    ),
+    "WR": (
+        "Rest-of-season WR rankings",
+        "<p>Wide receiver is the deepest position on the board, which makes "
+        "the games-left column decisive: with this many startable receivers, "
+        "the edge goes to the target earners who still have their bye "
+        "behind them and a full slate ahead. The rankings run on forward "
+        "projections, which already bake in target share, matchup, and "
+        "recent form.</p>"
+        "<p>Eligibility requires a real target diet: a team's top receiver, "
+        "or about five and a half targets a game. That keeps the board "
+        "honest about the difference between a receiver producing on "
+        "sustained volume and one living on two long touchdowns. When two "
+        "receivers sit close in ROS Pts, the Sched column shows who has the "
+        "softer run of secondaries left.</p>"
+    ),
+    "TE": (
+        "Rest-of-season TE rankings",
+        "<p>Tight end is where rest-of-season totals and per-game rates "
+        "diverge the most. The position is so thin past the first few names "
+        "that a mid-tier tight end with seven games left can be worth more "
+        "to your season than an elite one with five, and the value-over-"
+        "replacement gap between the top tier and the streaming pool is the "
+        "largest on the board.</p>"
+        "<p>The gate is a target floor: a team's top tight end, or about "
+        "five and a half targets a game. Touchdown-dependent names without "
+        "the weekly volume do not make the board, because a scoring drought "
+        "at this position is how playoff lineups die quietly.</p>"
+    ),
+}
+
+
+def _ros_analysis_html(pos_filter: str | None) -> str:
+    entry = _ROS_ANALYSIS.get(pos_filter) or _ROS_ANALYSIS.get(None)
+    heading, prose = entry
+    return (
+        '<section class="rnk-analysis">'
+        f'<h2 class="rnk-analysis-title">{html.escape(heading)}</h2>'
+        f'{prose}'
+        "</section>"
+    )
+
+
+def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
+                            position: str | None = None) -> str:
+    """Public rest-of-season rankings page body (overall or one position).
+
+    ``ros_payload`` is utils.ros_rankings.load_ros_map's output; player
+    names / teams come from the model value table, the same rows the
+    dynasty hub reads. Overall order: ROS value over replacement at
+    12-team 1QB defaults. Position order: ROS total within the position.
+    """
+    from dashboard_services.pages.player_page import slugify
+
+    pos_filter = (position or "").upper() if position else None
+    ros_players = (ros_payload or {}).get("players") or {}
+    window = (ros_payload or {}).get("window") or {}
+    start_week = window.get("start_week")
+    end_week = window.get("end_week") or 17
+    updated = (ros_payload or {}).get("updated") or datetime.now().strftime("%B %d, %Y")
+    year = datetime.now().year
+
+    by_id = {str(p.get("id")): p for p in (value_table or [])
+             if isinstance(p, dict) and p.get("id") is not None}
+    rows = []
+    for pid, fields in ros_players.items():
+        meta = by_id.get(str(pid)) or {}
+        pos = str(meta.get("position") or "").upper()
+        if pos_filter and pos != pos_filter:
+            continue
+        rows.append({
+            "id": str(pid),
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "position": pos,
+            **fields,
+        })
+
+    # Replacement PPG per position from the ROS pool (12-team 1QB defaults):
+    # the player at starters x size x REPLACEMENT_MULT in the PPG order.
+    repl: dict = {}
+    if not pos_filter:
+        starters = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
+        mult = {"QB": 1.5, "RB": 1.2, "WR": 1.2, "TE": 1.25}
+        by_pos: dict = {}
+        for r in rows:
+            if r.get("ros_ppg") is not None:
+                by_pos.setdefault(r["position"], []).append(float(r["ros_ppg"]))
+        for pos, ppgs in by_pos.items():
+            ppgs.sort(reverse=True)
+            idx = int((starters.get(pos, 1) * 12) * mult.get(pos, 1.2))
+            idx = max(0, min(idx, len(ppgs) - 1))
+            repl[pos] = ppgs[idx]
+        for r in rows:
+            base = repl.get(r["position"])
+            r["_vor"] = ((float(r["ros_ppg"]) - base) * int(r["ros_games"])
+                         if base is not None and r.get("ros_ppg") is not None
+                         and r.get("ros_games") else 0.0)
+        rows.sort(key=lambda r: (-r["_vor"], -float(r.get("ros_total") or 0),
+                                 -float(r.get("ros_ppg") or 0), r["name"]))
+    else:
+        rows.sort(key=lambda r: (-float(r.get("ros_total") or 0),
+                                 -float(r.get("ros_ppg") or 0), r["name"]))
+
+    window_txt = (f"Weeks {start_week} to {end_week}" if start_week
+                  else "the rest of the season")
+    if pos_filter:
+        title = f"Rest of Season {pos_filter} Rankings {year}"
+        subtitle = (f"Top rest-of-season {pos_filter} rankings for {window_txt}, "
+                    f"updated {updated}. Full PPR scoring.")
+    else:
+        title = f"Rest of Season Fantasy Football Rankings {year}"
+        subtitle = (f"Overall rest-of-season player rankings for {window_txt}, "
+                    f"updated {updated}. Full PPR scoring, 12-team 1QB "
+                    f"replacement level for the overall order.")
+
+    pos_nav_items = [
+        ("All", "/rankings/rest-of-season"),
+        ("QB", "/rankings/rest-of-season-qb"),
+        ("RB", "/rankings/rest-of-season-rb"),
+        ("WR", "/rankings/rest-of-season-wr"),
+        ("TE", "/rankings/rest-of-season-te"),
+    ]
+    active_path = (f"/rankings/rest-of-season-{pos_filter.lower()}"
+                   if pos_filter else "/rankings/rest-of-season")
+    nav_html = "".join(
+        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if path == active_path else ""}" href="{path}">{label}</a>'
+        for label, path in pos_nav_items
+    )
+
+    table_rows = ""
+    for rank, row in enumerate(rows, 1):
+        name = row.get("name") or "Unknown"
+        pos = (row.get("position") or "").upper()
+        team = row.get("team") or ""
+        slug = slugify(name)
+        pos_badge = (
+            "" if pos_filter
+            else f'<span class="rnk-pos-badge" style="background:{_pc(pos)};">{html.escape(pos)}</span>'
+        )
+        sched = row.get("ros_sched_rank")
+        table_rows += (
+            f'<tr>'
+            f'<td class="rnk-rank">{rank}</td>'
+            f'<td class="rnk-name-cell" data-sort-value="{html.escape(name, quote=True)}">'
+            f'{pos_badge}'
+            f'<a class="rnk-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
+            f'<span class="rnk-team">{html.escape(team)}</span>'
+            f'</td>'
+            f'<td class="rnk-val">{int(row.get("ros_games") or 0)}</td>'
+            f'<td class="rnk-val">{float(row.get("ros_ppg") or 0):.1f}</td>'
+            f'<td class="rnk-val rnk-val-primary">{float(row.get("ros_total") or 0):.1f}</td>'
+            f'<td class="rnk-age">{("#" + str(sched)) if sched else "-"}</td>'
+            f'</tr>'
+        )
+    if not table_rows:
+        table_rows = ('<tr><td colspan="6" style="text-align:center;padding:24px;">'
+                      'Rest-of-season rankings are not available right now. '
+                      'They publish once the remaining schedule and projections '
+                      'are set for the week.</td></tr>')
+
+    import json as _json
+    _items = []
+    for _rank, _row in enumerate(rows[:50], 1):
+        _items.append(
+            '{{"@type":"ListItem","position":{},"item":{{"@type":"Person","name":"{}","jobTitle":"{}"}}}}'.format(
+                _rank,
+                _json.dumps(str(_row.get("name") or "Unknown"))[1:-1].replace('"', '\\"'),
+                str(_row.get("position") or "").upper(),
+            )
+        )
+    json_ld = (
+        '{"@context":"https://schema.org","@type":"ItemList",'
+        '"name":"' + html.escape(title, quote=True).replace('"', '\\"') + '",'
+        '"itemListElement":[' + ",".join(_items) + "]}"
+    )
+
+    return f"""
+<div class="rnk-page">
+  <div class="rnk-hero">
+    <h1 class="rnk-title">{html.escape(title)}</h1>
+    <p class="rnk-subtitle">{html.escape(subtitle)}</p>
+  </div>
+
+  <div class="rnk-pos-nav">{nav_html}</div>
+
+  {_ros_analysis_html(pos_filter)}
+
+  <div class="rnk-table-wrap">
+    <table class="rnk-table" data-sortable>
+      <thead>
+        <tr>
+          <th class="rnk-rank">#</th>
+          <th class="rnk-player">Player</th>
+          <th class="rnk-val">Games</th>
+          <th class="rnk-val">ROS PPG</th>
+          <th class="rnk-val">ROS Pts</th>
+          <th class="rnk-age">Sched</th>
+        </tr>
+      </thead>
+      <tbody>
+        {table_rows}
+      </tbody>
+    </table>
+  </div>
+  <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
+    <p style="font-size:14px;color:var(--text-muted);">These are the same numbers as the Rest of Season mode on the live board, with Stretch and Playoff windows:</p>
+    <a href="/players" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Open the live Player Rankings</a>
+  </div>
+  <script type="application/ld+json">
+  {json_ld}
+  </script>
+</div>
+"""

@@ -30989,6 +30989,25 @@ def _overlay_league_players_payload(
             logger.debug("[api/league-players] historical stamp skipped", exc_info=True)
             payload["historical_available"] = False
 
+        # Rest-of-season fields (Player Rankings ROS mode + the public
+        # /rankings/rest-of-season pages read the same stamp). One cached
+        # compute in utils.ros_rankings over the cached stat / projection /
+        # schedule files; ineligible players simply carry no ros_* fields.
+        try:
+            from utils.ros_rankings import load_ros_map as _load_ros_map
+            _ros = _load_ros_map(int(projection_season)) or {}
+            _ros_players = _ros.get("players") or {}
+            if _ros_players:
+                for _rp in payload.get("players") or []:
+                    _fields = _ros_players.get(str(_rp.get("id")))
+                    if _fields:
+                        _rp.update(_fields)
+                payload["ros_window"] = _ros.get("window")
+                payload["tier_thresholds_ros"] = _ros.get("tier_thresholds_ros") or {}
+                payload["ros_updated"] = _ros.get("updated")
+        except Exception:
+            logger.debug("[api/league-players] ROS stamp skipped", exc_info=True)
+
         _LP_BOARD_JSON_CACHE.clear()
         if len(_LP_OVERLAY_CACHE) > 12:
             _LP_OVERLAY_CACHE.clear()

@@ -7,6 +7,7 @@ Routes:
     /compare
     /<platform>/<season>/<league_id>/compare
     /rankings/dynasty[-qb|-rb|-wr|-te]
+    /rankings/rest-of-season[-qb|-rb|-wr|-te]
     /player/<slug>[/trade-value]
     /breakouts   (guest)
     /prospects   (guest)
@@ -582,6 +583,73 @@ def rankings_dynasty_wr():
 @seo_pages_bp.route("/rankings/dynasty-te")
 def rankings_dynasty_te():
     return _rankings_page("TE")
+
+
+# ── Rest-of-season rankings (public snapshots of the /players ROS mode) ─────
+
+def _ros_rankings_page(position: str | None = None):
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+    from utils.ros_rankings import load_ros_map
+
+    try:
+        value_table = get_model_value_table_cached() or []
+    except Exception:
+        value_table = []
+    try:
+        season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+    except Exception:
+        season = datetime.now().year
+    ros_payload = load_ros_map(season)
+
+    if not ros_payload.get("players"):
+        label = f" {position}" if position else ""
+        body = (
+            "<div class='static-page'><div class='static-card-page'>"
+            f"<h1>Rest of season{label} rankings temporarily unavailable</h1>"
+            "<p>The remaining schedule and projections for this week are not "
+            "published yet. Please try again shortly. You can still read the "
+            "<a href='/guides'>strategy guides</a>.</p>"
+            "</div></div>"
+        )
+        return render_page(
+            f"Rest of Season{label} Rankings | BR Fantasy", None, "players", body,
+            noindex=True, ad_eligible=False, lite_js=True,
+        ), 503, {"Retry-After": "300"}
+
+    year = datetime.now().year
+    updated = ros_payload.get("updated") or datetime.now().strftime("%B %d, %Y")
+    body = build_ros_rankings_body(ros_payload, value_table, position=position)
+    pos_lbl = f" {position}" if position else ""
+    return render_page(
+        f"Rest of Season{pos_lbl} Rankings {year} | BR Fantasy",
+        None, "players", body,
+        description=(
+            f"Rest of season fantasy football{pos_lbl.lower()} rankings, updated {updated}. "
+            f"Projected points for every remaining week, full PPR scoring."
+        ),
+        lite_js=True,
+    )
+
+
+@seo_pages_bp.route("/rankings/rest-of-season")
+def rankings_rest_of_season():
+    return _ros_rankings_page(None)
+
+@seo_pages_bp.route("/rankings/rest-of-season-qb")
+def rankings_rest_of_season_qb():
+    return _ros_rankings_page("QB")
+
+@seo_pages_bp.route("/rankings/rest-of-season-rb")
+def rankings_rest_of_season_rb():
+    return _ros_rankings_page("RB")
+
+@seo_pages_bp.route("/rankings/rest-of-season-wr")
+def rankings_rest_of_season_wr():
+    return _ros_rankings_page("WR")
+
+@seo_pages_bp.route("/rankings/rest-of-season-te")
+def rankings_rest_of_season_te():
+    return _ros_rankings_page("TE")
 
 
 # ── Player value pages + guest breakouts/prospects ───────────────────────────

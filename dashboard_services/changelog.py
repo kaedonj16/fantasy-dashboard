@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-09",
+        "tag": "new",
+        "text": "Player Rankings now has a Rest of Season mode: every player ranked by projected production for the weeks left, with ROS points per game, total ROS points, games remaining and his remaining schedule rank. A Window toggle in Settings splits the board into the full rest of season, the stretch run through Week 14, and the fantasy playoffs in Weeks 15 to 17. The same rankings are public at /rankings/rest-of-season, with a page for each position.",
+        "link": "/players"
+    },
+    {
         "date": "2026-11-08",
         "tag": "new",
         "text": "Search on mobile no longer opens to a blank page: before you type, it suggests your recent player searches, the top players by projection, and Jump to shortcuts for ScoreZone, Matchups, Start/Sit, the Trade Calculator, Waivers and Player Rankings. And the page no longer zooms in when you tap a text field on your phone: every input, dropdown and text box across the site now stays put.",

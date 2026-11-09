@@ -27,6 +27,7 @@ def build_players_shell() -> str:
             <div class="pr-seg" role="group" aria-label="Scoring type" id="prScoringSeg">
               <button type="button" class="pr-segbtn active" data-value="dynasty" onclick="prSetScoringType('dynasty')">Dynasty</button>
               <button type="button" class="pr-segbtn" data-value="redraft" onclick="prSetScoringType('redraft')">Redraft</button>
+              <button type="button" class="pr-segbtn" data-value="ros" onclick="prSetScoringType('ros')">Rest of Season</button>
             </div>
             <div class="pr-seg pr-seg-sm" role="group" aria-label="League format" id="prFormatSeg">
               <button type="button" class="pr-segbtn active" data-value="1qb" onclick="prSetLeagueType('1qb')">1QB</button>
@@ -60,6 +61,8 @@ def build_players_shell() -> str:
               <button type="button" data-sortkey="total_pts" aria-pressed="false" onclick="prSetSortKey('total_pts')"><span class="pr-sort-full">Total Points</span><span class="pr-sort-short">Total</span></button>
               <button type="button" data-sortkey="age" aria-pressed="false" onclick="prSetSortKey('age')">Age</button>
               <button type="button" data-sortkey="pos_rank" aria-pressed="false" onclick="prSetSortKey('pos_rank')">Pos Rank</button>
+              <button type="button" class="pr-sort-ros" data-sortkey="ros_total" aria-pressed="false" onclick="prSetSortKey('ros_total')" style="display:none;">ROS Pts</button>
+              <button type="button" class="pr-sort-ros" data-sortkey="ros_ppg" aria-pressed="false" onclick="prSetSortKey('ros_ppg')" style="display:none;">ROS PPG</button>
             </div>
             <span class="pr-vdiv" aria-hidden="true"></span>
             <!-- Position filters -->
@@ -88,6 +91,8 @@ def build_players_shell() -> str:
                 <option value="pos_rank">Pos Rank</option>
                 <option value="ppg">PPG</option>
                 <option value="total_pts">Total Points</option>
+                <option value="ros_total">ROS Total</option>
+                <option value="ros_ppg">ROS PPG</option>
                 <option value="name">Name (A-Z)</option>
               </select>
             </div>
@@ -128,6 +133,15 @@ def build_players_shell() -> str:
                   <div class="settings-toggle-group">
                     <button class="settings-toggle active" data-value="dynasty" onclick="prSetScoringType('dynasty')">Dynasty</button>
                     <button class="settings-toggle" data-value="redraft" onclick="prSetScoringType('redraft')">Redraft</button>
+                    <button class="settings-toggle" data-value="ros" onclick="prSetScoringType('ros')">Rest of Season</button>
+                  </div>
+                </div>
+                <div class="settings-section" id="prRosWindowSection" style="display:none;">
+                  <span class="settings-section-label">Window</span>
+                  <div class="settings-toggle-group">
+                    <button class="settings-toggle active" data-value="all" onclick="prSetRosWindow('all')">All ROS</button>
+                    <button class="settings-toggle" data-value="stretch" onclick="prSetRosWindow('stretch')">Stretch</button>
+                    <button class="settings-toggle" data-value="playoffs" id="prRosPlayoffsBtn" onclick="prSetRosWindow('playoffs')">Playoffs</button>
                   </div>
                 </div>
                 <div class="settings-section">
@@ -290,6 +304,9 @@ def build_players_shell() -> str:
         flex: none;
       }
       .pr-age-inline { font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+      /* ROS mode: remaining-schedule rank muted after the player name
+         (desktop). On phones it rides the subline instead. */
+      .pr-sched { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; margin-left: 6px; }
       .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
       #prTableScroll.pr-adp-scroll {
         overflow-x: auto;
@@ -1021,6 +1038,7 @@ def build_players_shell() -> str:
         .pr-hs { width: 50px; }
         .pr-name { gap: 7px; }
         .pr-name-main { font-size: 13px; }
+        .pr-sched { display: none; }
         .pr-sub { gap: 4px; font-size: 10.5px; }
         .pr-rank { font-size: 14px; }
         .pr-rank-delta { font-size: 10px; }

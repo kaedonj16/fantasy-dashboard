@@ -320,9 +320,12 @@ var prPage = 1;
 var prPageSize = 50;
 var prSortKey = 'value';   // active sort key (mirrors the #prSort dropdown)
 var prSortDir = 'desc';    // 'asc' | 'desc' -- flipped by clicking a column header
+var prRosWindow = 'all';   // ROS sub-window: 'all' | 'stretch' | 'playoffs'
+var prRosWindowInfo = null; // {start_week, end_week} from the payload's ros_window
+var prTierThresholdsRos = {}; // {all: [...], stretch: [...], playoffs: [...]} on ROS totals
 // Default direction when a sort key is first chosen (AM-table convention:
 // names, ages, ADPs and ranks ascend; values and point totals descend).
-var PR_SORT_DIRS = { value: 'desc', adp: 'asc', age: 'asc', pos_rank: 'asc', ppg: 'desc', total_pts: 'desc', name: 'asc' };
+var PR_SORT_DIRS = { value: 'desc', adp: 'asc', age: 'asc', pos_rank: 'asc', ppg: 'desc', total_pts: 'desc', name: 'asc', ros_total: 'desc', ros_ppg: 'desc' };
 // Sort control: choosing a key resets to that key's default direction.
 function prSetSortKey(key) {
   prSortKey = key;
@@ -466,6 +469,19 @@ function prSortBase(a, b, sortBy) {
   }
   if (sortBy === 'ppg')       { var aP = a.ppg_raw != null ? a.ppg_raw : a.ppg, bP = b.ppg_raw != null ? b.ppg_raw : b.ppg; return (aP != null ? aP : -1) - (bP != null ? bP : -1); }
   if (sortBy === 'total_pts') { var aT = a.total_pts_raw != null ? a.total_pts_raw : a.total_pts, bT = b.total_pts_raw != null ? b.total_pts_raw : b.total_pts; return (aT != null ? aT : -1) - (bT != null ? bT : -1); }
+  if (sortBy === 'ros_ppg')   { var aR = prRosVal(a, 'ppg'), bR = prRosVal(b, 'ppg'); return (aR != null ? aR : -1) - (bR != null ? bR : -1); }
+  if (sortBy === 'ros_total') {
+    // All-positions view: order by total value over replacement for the
+    // active window (the spec's cross-position ROS ordering). A single
+    // position filter makes VOR a constant shift per game, so there the
+    // window total itself is the order (and matches ros_pos_rank).
+    if (prScoringType === 'ros' && prPosFilters.size === 0) {
+      var aV = prRosVor(a), bV = prRosVor(b);
+      if (aV != null && bV != null) return aV - bV;
+    }
+    var aRT = prRosVal(a, 'total'), bRT = prRosVal(b, 'total');
+    return (aRT != null ? aRT : -1) - (bRT != null ? bRT : -1);
+  }
   return prGetValue(a) - prGetValue(b);
 }
 function prSortCmp(a, b, sortBy) {
@@ -483,6 +499,8 @@ function prSortIsNull(p, sortBy) {
   if (sortBy === 'pos_rank')  return !prPosRankMap[String(p.id)];
   if (sortBy === 'ppg')       return p.ppg == null;
   if (sortBy === 'total_pts') return p.total_pts == null;
+  if (sortBy === 'ros_ppg')   return prRosVal(p, 'ppg') == null;
+  if (sortBy === 'ros_total') return prRosVal(p, 'total') == null;
   if (sortBy === 'value' || sortBy === 'rank') return !(prGetValue(p) > 0);
   return false; // 'name'
 }
@@ -496,7 +514,8 @@ function prUpdateSortHeaders() {
   // their active state, so they get no column arrow.
   var col = null;
   if (prSortKey === 'name') col = 'player';
-  else if (prSortKey === 'ppg') col = 'ppg';
+  else if (prSortKey === 'ppg' || prSortKey === 'ros_ppg') col = 'ppg';
+  else if (prSortKey === 'ros_total') col = 'sort';
   else if (prSortKey === 'total_pts') {
     // On phones the Total Points column is hidden and the trailing header
     // is renamed "Total" to carry this sort (prRender), so the arrow
@@ -677,9 +696,92 @@ function prFuzzyScore(name, query) {
   return (typeof brScorePlayerName === 'function') ? brScorePlayerName(name, query) : 0;
 }
 
+// ── Rest of Season mode ────────────────────────────────────────────────────
+// Field names per sub-window. The payload stamps all three windows from the
+// same weekly projections (utils/ros_rankings.py); the board only reads.
+var PR_ROS_WINDOWS = {
+  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         ptsLabel: 'ROS Pts',     ppgLabel: 'ROS PPG' },
+  stretch:  { ppg: 'ros_stretch_ppg', total: 'ros_stretch_total', games: 'ros_stretch_games', rank: 'ros_stretch_pos_rank', ptsLabel: 'Stretch Pts', ppgLabel: 'Stretch PPG' },
+  playoffs: { ppg: 'ros_playoff_ppg', total: 'ros_playoff_total', games: 'ros_playoff_games', rank: 'ros_playoff_pos_rank', ptsLabel: 'Playoff Pts', ppgLabel: 'Playoff PPG' },
+};
+function prRosCfg() { return PR_ROS_WINDOWS[prRosWindow] || PR_ROS_WINDOWS.all; }
+function prRosVal(p, kind) {
+  if (!p) return null;
+  var v = p[prRosCfg()[kind]];
+  return v != null ? v : null;
+}
+// Replacement PPG per position for the active window, from the ROS pool
+// itself: the player at the value model's replacement index (starters x
+// league size x REPLACEMENT_MULT, data_building/player_value.py), with
+// Superflex starting 2 QBs. League size and format therefore move the
+// cross-position order, which is why League Size stays visible in ROS mode.
+var _prRosReplCache = { key: null, map: {} };
+function prRosReplacementMap() {
+  var key = prRosWindow + '|' + prLeagueSize + '|' + prLeagueType;
+  if (_prRosReplCache.key === key) return _prRosReplCache.map;
+  var cfg = prRosCfg();
+  var byPos = {};
+  prAllPlayers.forEach(function(p) {
+    var v = p[cfg.ppg];
+    if (v != null) (byPos[p.position] = byPos[p.position] || []).push(v);
+  });
+  var starters = { QB: prLeagueType === 'sf' ? 2 : 1, RB: 2, WR: 2, TE: 1 };
+  var mult = { QB: 1.5, RB: 1.2, WR: 1.2, TE: 1.25 };
+  var map = {};
+  Object.keys(byPos).forEach(function(pos) {
+    var arr = byPos[pos].slice().sort(function(a, b) { return b - a; });
+    var idx = Math.floor((starters[pos] || 1) * prLeagueSize * (mult[pos] || 1.2));
+    idx = Math.max(0, Math.min(idx, arr.length - 1));
+    map[pos] = arr[idx];
+  });
+  _prRosReplCache = { key: key, map: map };
+  return map;
+}
+function prRosVor(p) {
+  var ppg = prRosVal(p, 'ppg'), g = prRosVal(p, 'games');
+  if (ppg == null || g == null) return null;
+  var repl = prRosReplacementMap()[p.position];
+  if (repl == null) return null;
+  return (ppg - repl) * g;
+}
+function prRosSubtitle() {
+  if (prRosWindowInfo && prRosWindowInfo.start_week) {
+    return 'All players ranked by projected rest-of-season production, Weeks '
+      + prRosWindowInfo.start_week + '-' + (prRosWindowInfo.end_week || 17) + '.';
+  }
+  return 'All players ranked by projected rest-of-season production.';
+}
+// Sync the ROS-only chrome: subtitle window, Playoffs option availability
+// (hidden when no playoff week remains), and the Window toggle states.
+function prSyncRosWindowUI() {
+  var sub = document.getElementById('prSubtitle');
+  if (sub && prScoringType === 'ros') sub.textContent = prRosSubtitle();
+  var remaining = 0;
+  if (prRosWindowInfo && prRosWindowInfo.start_week) {
+    remaining = Math.max(0, 17 - Math.max(prRosWindowInfo.start_week, 15) + 1);
+  }
+  var pbtn = document.getElementById('prRosPlayoffsBtn');
+  if (pbtn) pbtn.style.display = remaining >= 1 ? '' : 'none';
+  if (remaining < 1 && prRosWindow === 'playoffs') prRosWindow = 'all';
+  document.querySelectorAll('#prRosWindowSection .settings-toggle[data-value]').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-value') === prRosWindow);
+  });
+}
+function prSetRosWindow(w) {
+  if (!PR_ROS_WINDOWS[w]) return;
+  prRosWindow = w;
+  prSyncRosWindowUI();
+  // Switching window re-sorts by that window's total by default.
+  prSetSortKey('ros_total');
+}
+
 function prGetValue(p) {
   let base;
-  if (prScoringType === 'redraft') {
+  if (prScoringType === 'ros') {
+    // In ROS mode the board's "value" IS the active window's ROS total:
+    // tier thresholds, positional ranks and search tiebreaks all key off it.
+    return prRosVal(p, 'total') || 0;
+  } else if (prScoringType === 'redraft') {
     // Size-invariant: same 10-team columns the player modal shows.
     // redraft_sf_value_{8,12,14} is a trade-WLS overlay that has been
     // collapsing to a 1QB-shaped board (QB1 ~450, overall #30+).
@@ -769,7 +871,7 @@ function updateSettingsIndicator() {
   const tags = indicator.querySelectorAll('.active-setting-tag');
   if (tags[0]) tags[0].textContent = prLeagueSize + '-Team';
   if (tags[1]) tags[1].textContent = prLeagueType.toUpperCase();
-  if (tags[2]) tags[2].textContent = prScoringType === 'redraft' ? 'Redraft' : 'Dynasty';
+  if (tags[2]) tags[2].textContent = prScoringType === 'redraft' ? 'Redraft' : (prScoringType === 'ros' ? 'Rest of Season' : 'Dynasty');
   const tepTag = document.getElementById('prTepTag');
   if (tepTag) {
     tepTag.style.display = prTePremium ? '' : 'none';
@@ -783,7 +885,7 @@ function prSetScoringType(type) {
   if (sub) {
     sub.textContent = type === 'redraft'
       ? 'All players ranked by this-season redraft value.'
-      : 'All players ranked by dynasty value.';
+      : (type === 'ros' ? prRosSubtitle() : 'All players ranked by dynasty value.');
   }
   // Update panel toggles
   document.querySelectorAll('#prSettingsPanel .settings-toggle[data-value]').forEach(btn => {
@@ -792,16 +894,43 @@ function prSetScoringType(type) {
       btn.classList.toggle('active', btn.getAttribute('data-value') === type);
     }
   });
-  // Hide league-size in redraft (size doesn't affect redraft values)
+  // Hide league-size in redraft (size doesn't affect redraft values). ROS
+  // keeps it: league size sets the replacement level for the overall order.
   const sizeSection = document.getElementById('prSizeSection');
   if (sizeSection) sizeSection.style.display = type === 'redraft' ? 'none' : '';
-  // Hide PICK and ROOKIE filters in redraft
+  // Hide PICK and ROOKIE filters outside dynasty (picks and unproven
+  // rookies have no rest-of-season projection line).
   document.querySelectorAll('.pos-pill[data-pos="PICK"], .pos-pill[data-pos="ROOKIE"]').forEach(btn => {
-    btn.style.display = type === 'redraft' ? 'none' : '';
+    btn.style.display = type === 'dynasty' ? '' : 'none';
   });
-  if (type === 'redraft' && (prPosFilters.has('PICK') || prPosFilters.has('ROOKIE'))) {
+  if (type !== 'dynasty' && (prPosFilters.has('PICK') || prPosFilters.has('ROOKIE'))) {
     prPosFilters.clear();
   }
+  // ROS-only Settings section: the Stretch / Playoffs window toggle.
+  const rosWinSection = document.getElementById('prRosWindowSection');
+  if (rosWinSection) rosWinSection.style.display = type === 'ros' ? '' : 'none';
+  if (type === 'ros') prSyncRosWindowUI();
+  // Sort pill: ROS sorts swap in for the value sorts in ROS mode (Pos Rank
+  // stays: it reads the window's positional rank there).
+  document.querySelectorAll('#prSortToggle button').forEach(function(b) {
+    const k = b.getAttribute('data-sortkey');
+    if (k === 'ros_total' || k === 'ros_ppg') b.style.display = type === 'ros' ? '' : 'none';
+    else if (type === 'ros' && k !== 'pos_rank') b.style.display = 'none';
+    else b.style.display = '';
+  });
+  // Default sort per mode: ROS opens on ROS Total; leaving ROS with a ROS
+  // sort active falls back to Value.
+  if (type === 'ros' && prSortKey !== 'ros_total' && prSortKey !== 'ros_ppg'
+      && prSortKey !== 'pos_rank' && prSortKey !== 'name') {
+    prSortKey = 'ros_total'; prSortDir = 'desc';
+    var sel0 = document.getElementById('prSort');
+    if (sel0) sel0.value = prSortKey;
+  } else if (type !== 'ros' && (prSortKey === 'ros_total' || prSortKey === 'ros_ppg')) {
+    prSortKey = 'value'; prSortDir = 'desc';
+    var sel1 = document.getElementById('prSort');
+    if (sel1) sel1.value = prSortKey;
+  }
+  prSyncSortToggle();
   prSyncHeaderSegs();
   updateSettingsIndicator();
   prPage = 1;
@@ -1079,6 +1208,8 @@ var PR_SORT_META = {
   pos_rank:  { label: 'Pos Rank', cell: p => prPosRankLabel(p) },
   ppg:       { label: 'PPG',       cell: p => p.ppg != null ? p.ppg.toFixed(1) : '–' },
   total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '–' },
+  ros_ppg:   { label: 'ROS PPG',   cell: p => { const v = prRosVal(p, 'ppg'); return v != null ? v.toFixed(1) : '–'; } },
+  ros_total: { label: 'ROS Pts',   cell: p => { const v = prRosVal(p, 'total'); return v != null ? v.toFixed(1) : '–'; } },
   adp:       { label: 'ADP',       cell: p => prFormatAdp(p) },
 };
 
@@ -1135,7 +1266,7 @@ function prRender() {
     // to show whatever is being sorted. On desktop all columns are visible.
     // PPG and Total Points are the exceptions: PPG has its own always-visible
     // column now, so when sorting by either the trailing column stays on Value.
-    const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
+    const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp' || prScoringType === 'ros';
     const sortMeta0 = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
     const headerMeta0 = (sortBy === 'ppg' || sortBy === 'total_pts') ? PR_SORT_META.rank : sortMeta0;
     const sortHeaderEl = document.getElementById('prSortHeader');
@@ -1152,14 +1283,32 @@ function prRender() {
     else ageColEls.forEach(el => el.style.visibility = '');
     // Arrow on the active sortable column header.
     prUpdateSortHeaders();
+    // ROS mode renames the numeric columns: window PPG | Games | window Pts.
+    const _ppgHeadEl = document.getElementById('prPpgHeader');
+    const _totHeadEl = document.getElementById('prTotalHeader');
+    if (prScoringType === 'ros') {
+      const _cfgH = prRosCfg();
+      if (_ppgHeadEl) { _ppgHeadEl.textContent = _cfgH.ppgLabel; _ppgHeadEl.title = 'Projected rest-of-season points per game'; }
+      if (_totHeadEl) _totHeadEl.textContent = 'Games';
+      // The trailing column carries the window total for the ROS sorts;
+      // other sorts keep the label the standard path set for them.
+      if (sortHeaderEl && (sortBy === 'ros_total' || sortBy === 'ros_ppg')) sortHeaderEl.textContent = _cfgH.ptsLabel;
+    } else {
+      if (_ppgHeadEl && _ppgHeadEl.textContent !== 'PPG') { _ppgHeadEl.textContent = 'PPG'; _ppgHeadEl.title = 'Sort by fantasy points per game'; }
+      if (_totHeadEl && _totHeadEl.textContent !== 'Total Points') _totHeadEl.textContent = 'Total Points';
+    }
   }
-  const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
+  const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp' || prScoringType === 'ros';
   const sortMeta = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
   // The trailing column's metric. Sorting by PPG or Total Points no longer
   // swaps Value out: PPG renders in its own column and Total Points rides
   // along as a sublabel under Value, so the trailing column falls back to
   // Value for both sorts.
   const valueMeta = (sortBy === 'ppg' || sortBy === 'total_pts') ? PR_SORT_META.rank : sortMeta;
+  // ROS exception: sorting by the window PPG still leaves the window TOTAL
+  // in the trailing column (the PPG lives in its own column, like sortBy
+  // 'ppg' above).
+  const valueMetaEff = (prScoringType === 'ros' && sortBy === 'ros_ppg') ? PR_SORT_META.ros_total : valueMeta;
 
   let players = prAllPlayers.slice();
 
@@ -1170,14 +1319,17 @@ function prRender() {
   prPosRankMap = {};
   {
     const _byPos = {};
+    // In ROS mode the positional rank keys off the active window's total
+    // (the same number the server stamps as ros_*_pos_rank), not value.
+    const _posVal = p => prScoringType === 'ros' ? prRosVal(p, 'total') : prGetValue(p);
     prAllPlayers.forEach(p => {
       if (p.position === 'PICK') return;
       if (p.is_rookie && !(p.team && p.team !== 'FA')) return;  // skip undrafted rookies
-      if (!(prGetValue(p) > 0)) return;                          // no value in this view
+      if (!(_posVal(p) > 0)) return;                             // no value in this view
       (_byPos[p.position] = _byPos[p.position] || []).push(p);
     });
     Object.keys(_byPos).forEach(pos => {
-      _byPos[pos].sort((a, b) => prGetValue(b) - prGetValue(a));
+      _byPos[pos].sort((a, b) => _posVal(b) - _posVal(a));
       _byPos[pos].forEach((p, i) => { prPosRankMap[String(p.id)] = i + 1; });
     });
   }
@@ -1191,6 +1343,12 @@ function prRender() {
       if (p.position === 'PICK') return false;
       return prGetValue(p) > 0;
     });
+  }
+
+  // ROS mode: only players the ROS compute stamped (5+ games played and a
+  // real role; see utils/ros_rankings.py) exist on this board at all.
+  if (prScoringType === 'ros') {
+    players = players.filter(p => prRosVal(p, 'total') != null);
   }
 
   const isDrafted = p => p.is_rookie && p.team && p.team !== 'FA';
@@ -1291,7 +1449,7 @@ function prRender() {
   list.innerHTML = '';
   let prevTier = null;
   pageSlice.forEach((p, i) => {
-    const _tier = (sortBy === 'value' || sortBy === 'rank') ? prGetTier(p) : null;
+    const _tier = (sortBy === 'value' || sortBy === 'rank' || (prScoringType === 'ros' && sortBy === 'ros_total')) ? prGetTier(p) : null;
     if (_tier && _tier !== prevTier) {
       const tc = _PR_TIER_COLORS[_tier] || '#64748b';
       const tl = _PR_TIER_LABELS[_tier] || ('Tier ' + _tier);
@@ -1351,7 +1509,7 @@ function prRender() {
     //     show a mismatched dynasty delta on redraft-sorted rows.
     //   • Dynasty SF uses the SF-ordered delta (QBs move very differently in
     //     Superflex); Dynasty 1QB uses the 1QB delta.
-    const rankChange = prScoringType === 'redraft'
+    const rankChange = (prScoringType === 'redraft' || prScoringType === 'ros')
       ? null
       : (prLeagueType === 'sf' ? p.sf_rank_change_7d : p.rank_change_7d);
     // Align the sparkline to the value actually displayed in this row. The
@@ -1359,7 +1517,7 @@ function prRender() {
     // base league size), while `val` = prGetValue(p) applies the TE premium and
     // the size-specific column - so rescale the whole series so its last point
     // equals `val`. Preserves the 7-day shape; guarantees the endpoint matches.
-    const sparkData = prAlignSpark(prGetSparkData(p.id), val);
+    const sparkData = prScoringType === 'ros' ? null : prAlignSpark(prGetSparkData(p.id), val);
 
     // Arrows column: the value-trend sparkline only. Rank movement now sits
     // beside the rank number, so there's no chevron fallback here.
@@ -1381,7 +1539,15 @@ function prRender() {
         ? ((_subParts ? '<span class="pr-age-sep" aria-hidden="true">·</span>' : '')
            + `<span class="pr-age-inline">Age ${Number(p.age).toFixed(1)}</span>`)
         : '';
-      if (_subParts || _subSpark || _ageSeg) {
+      if (prScoringType === 'ros') {
+        // ROS subline: pos rank · team · games left, plus the remaining
+        // schedule rank on phones (on desktop it sits after the name).
+        const _g = prRosVal(p, 'games');
+        const _rosParts = [posRank, (p.team && p.team !== '–') ? p.team : '',
+          (_g != null ? _g + (_g === 1 ? ' game' : ' games') : ''),
+          (isMobile && p.ros_sched_rank != null ? 'Sched #' + p.ros_sched_rank : '')].filter(Boolean).join(' · ');
+        if (_rosParts) sublineHTML = `<span class="pr-sub"><span>${_rosParts}</span></span>`;
+      } else if (_subParts || _subSpark || _ageSeg) {
         sublineHTML = `<span class="pr-sub">${_subSpark}<span>${_subParts}</span>${_ageSeg}</span>`;
       }
     }
@@ -1396,7 +1562,7 @@ function prRender() {
       rankDeltaHTML = `<span class="pr-rank-delta ${_up ? 'up' : 'down'}" title="${_n} spot${_n !== 1 ? 's' : ''} overall in 7 days">${_up ? '▲' : '▼'}${_n}</span>`;
     }
 
-    const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '–' : valueMeta.cell(p);
+    const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '–' : valueMetaEff.cell(p);
     let sortDisplayHTML;
     if (p.position !== 'PICK' && sortBy === 'total_pts' && p.total_pts != null && isMobile) {
       // Phone (shipped #2716 semantics): the sorted-by metric is the big
@@ -1412,8 +1578,12 @@ function prRender() {
 
     // Total Points column: always the player's total in its own column;
     // while sorting by Total Points its positional rank rides underneath.
+    // In ROS mode this column carries Games left for the active window.
     let totalCellHTML = '–';
-    if (p.position !== 'PICK' && p.total_pts != null) {
+    if (prScoringType === 'ros') {
+      const _rg = prRosVal(p, 'games');
+      totalCellHTML = _rg != null ? String(_rg) : '–';
+    } else if (p.position !== 'PICK' && p.total_pts != null) {
       if (sortBy === 'total_pts' && p.total_pts_rank) {
         totalCellHTML = `<span style="display:flex;flex-direction:column;align-items:center;line-height:1.2;">`
           + `<span>${Number(p.total_pts).toFixed(1)}</span>`
@@ -1428,7 +1598,21 @@ function prRender() {
     // glance. When sorting by PPG the cell also carries the positional PPG
     // rank as a sublabel (the detail that used to replace the Value column).
     let ppgCellHTML = '–';
-    if (p.position !== 'PICK' && p.ppg != null) {
+    if (prScoringType === 'ros') {
+      const _rp = prRosVal(p, 'ppg');
+      if (_rp != null) {
+        if (sortBy === 'ros_ppg') {
+          const _cfgC = prRosCfg();
+          const _wRank = p[_cfgC.rank] ? (p.position + p[_cfgC.rank]) : '-';
+          ppgCellHTML = `<span style="display:flex;flex-direction:column;align-items:center;line-height:1.2;">`
+            + `<span>${Number(_rp).toFixed(1)}</span>`
+            + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${_wRank}</span>`
+            + `</span>`;
+        } else {
+          ppgCellHTML = Number(_rp).toFixed(1);
+        }
+      }
+    } else if (p.position !== 'PICK' && p.ppg != null) {
       if (sortBy === 'ppg') {
         const pRank = p.ppg_rank ? (p.position + p.ppg_rank) : '-';
         ppgCellHTML = `<span style="display:flex;flex-direction:column;align-items:center;line-height:1.2;">`
@@ -1479,7 +1663,7 @@ function prRender() {
     } else {
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
-        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">' + prHeadshotHTML(p, isPick) + '<span class="pr-name-text"><span class="pr-name-main">'  + (p.name || 'Unknown') + wlStar + badges + '</span>' + sublineHTML + '</span></span>' +
+        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">' + prHeadshotHTML(p, isPick) + '<span class="pr-name-text"><span class="pr-name-main">'  + (p.name || 'Unknown') + wlStar + badges + ((prScoringType === 'ros' && p.ros_sched_rank != null) ? '<span class="pr-sched">Sched #' + p.ros_sched_rank + '</span>' : '') + '</span>' + sublineHTML + '</span></span>' +
         '<span class="pr-ppg">' + ppgCellHTML + '</span>' +
         '<span class="pr-total">' + totalCellHTML + '</span>' +
         '<span class="pr-value">' + sortDisplayHTML + '</span>';
@@ -1677,6 +1861,13 @@ if (!window.__prDocBound) {
   function _prHeaderSortKey(cell) {
     var col = cell.getAttribute('data-pr-sort-col');
     if (col === 'player') return 'name';
+    if (prScoringType === 'ros') {
+      // In ROS mode the PPG column carries the window PPG, the middle
+      // column carries Games (click = the window total it feeds), and the
+      // trailing column is the window Pts total.
+      if (col === 'ppg') return 'ros_ppg';
+      if (col === 'total_pts' || col === 'sort') return 'ros_total';
+    }
     if (col === 'sort') {
       // The trailing header IS the Value column: clicking it must sort by
       // Value (or flip Value if already active), never flip whatever sort
@@ -1710,6 +1901,19 @@ var prTierThresholdsRedraft = {};
 function prGetTier(p) {
   const lt  = prLeagueType || '1qb';
   let tbl;
+  if (prScoringType === 'ros') {
+    // ROS tiers are computed from the ROS totals actually displayed
+    // (per window), never the dynasty thresholds: the scales differ by
+    // an order of magnitude and by games left.
+    tbl = prTierThresholdsRos[prRosWindow] || prTierThresholdsRos['all'] || [];
+    if (!tbl.length) return null;
+    const rv = prRosVal(p, 'total');
+    if (rv == null) return null;
+    for (let i = 0; i < tbl.length; i++) {
+      if (rv >= tbl[i]) return i + 1;
+    }
+    return tbl.length + 1;
+  }
   if (prScoringType === 'redraft') {
     // Redraft values are size-invariant and sit on their own scale: use the
     // thresholds computed on redraft values (one set per league type, no
@@ -1802,6 +2006,8 @@ return Promise.all([
   const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
   prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
   prTierThresholdsRedraft = (!Array.isArray(resp) && resp.tier_thresholds_redraft) ? resp.tier_thresholds_redraft : {};
+  prTierThresholdsRos = (!Array.isArray(resp) && resp.tier_thresholds_ros) ? resp.tier_thresholds_ros : {};
+  prRosWindowInfo = (!Array.isArray(resp) && resp.ros_window) ? resp.ros_window : null;
   prAdpSourceOptions = (!Array.isArray(resp) && resp.adp_source_options) ? resp.adp_source_options : {};
   prAdpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
   prAdpColumns = (!Array.isArray(resp) && Array.isArray(resp.adp_columns)) ? resp.adp_columns : [];
@@ -1895,6 +2101,19 @@ return Promise.all([
         total_pts_rank:   p.total_pts_rank != null ? Number(p.total_pts_rank) : null,
         ppg_ovr_rank:     p.ppg_ovr_rank != null ? Number(p.ppg_ovr_rank) : null,
         total_pts_ovr_rank: p.total_pts_ovr_rank != null ? Number(p.total_pts_ovr_rank) : null,
+        ros_ppg:          p.ros_ppg != null ? Number(p.ros_ppg) : null,
+        ros_total:        p.ros_total != null ? Number(p.ros_total) : null,
+        ros_games:        p.ros_games != null ? Number(p.ros_games) : null,
+        ros_sched_rank:   p.ros_sched_rank != null ? Number(p.ros_sched_rank) : null,
+        ros_pos_rank:     p.ros_pos_rank != null ? Number(p.ros_pos_rank) : null,
+        ros_stretch_ppg:   p.ros_stretch_ppg != null ? Number(p.ros_stretch_ppg) : null,
+        ros_stretch_total: p.ros_stretch_total != null ? Number(p.ros_stretch_total) : null,
+        ros_stretch_games: p.ros_stretch_games != null ? Number(p.ros_stretch_games) : null,
+        ros_stretch_pos_rank: p.ros_stretch_pos_rank != null ? Number(p.ros_stretch_pos_rank) : null,
+        ros_playoff_ppg:   p.ros_playoff_ppg != null ? Number(p.ros_playoff_ppg) : null,
+        ros_playoff_total: p.ros_playoff_total != null ? Number(p.ros_playoff_total) : null,
+        ros_playoff_games: p.ros_playoff_games != null ? Number(p.ros_playoff_games) : null,
+        ros_playoff_pos_rank: p.ros_playoff_pos_rank != null ? Number(p.ros_playoff_pos_rank) : null,
         ppg_season:       p.ppg_season || null,
       };
     })
@@ -1912,6 +2131,7 @@ return Promise.all([
     _prLoadEl.setAttribute('aria-busy', 'false');
   }
   prLoaded = true;
+  if (prScoringType === 'ros') prSyncRosWindowUI();
   prRender();
   // Sparklines and indicators were fetched in parallel with the players
   // payload (top of prLoadData); apply each as soon as it lands.
