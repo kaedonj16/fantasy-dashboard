@@ -16843,7 +16843,13 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     try:
         if opponent and pos and not on_bye:
             _fmt = _scoring_format_from_settings(scoring_settings)
-            _fa = _fpts_against_effective(int(season), scoring=_fmt) or {}
+            # Pass the completed week through: without it the PPG defaults
+            # to last season's full-season line while def_rank below comes
+            # from the current-season ratings table, and the modal row
+            # contradicts itself.
+            _fa = _fpts_against_effective(
+                int(season), scoring=_fmt,
+                completed_week=_season_completed_week(int(season))) or {}
             _pa = float(_fa.get(opponent, {}).get(pos, 0.0))
             out["fpts_against"] = round(_pa, 1) if _pa > 0 else None
             _rank, _total = None, len(_fa) or 32
@@ -17191,8 +17197,13 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     try:
         _fa_fmt = _scoring_format_from_settings(ctx.get("scoring_settings"))
         # Blend from last season early in the year so "Def vs pos" is populated
-        # before the current season has games, then crossfade to current.
-        fpts_against = _fpts_against_effective(season, scoring=_fa_fmt)
+        # before the current season has games, then crossfade to current. The
+        # completed week must be passed explicitly: the default (0) pins the
+        # PPG to last season's full-season line next to the current-season
+        # z-score matchup rank on the same row.
+        fpts_against = _fpts_against_effective(
+            season, scoring=_fa_fmt,
+            completed_week=_season_completed_week(season))
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -23703,6 +23714,38 @@ def _compute_fpts_against(season: int, scoring_settings=None, completed_through_
 # Weeks of current-season games after which defense-vs-position is trusted on its
 # own; below this it crossfades from last season, mirroring the consistency blend.
 _FPTS_BLEND_FULL = 6
+
+
+_COMPLETED_WEEK_CACHE: dict = {}  # season -> (ts, week)
+_COMPLETED_WEEK_TTL = 600
+
+
+def _season_completed_week(season: int) -> int:
+    """Last fully completed week of `season` (0 before Week 1 finishes).
+
+    The anchor `_fpts_against_effective` blends on. Its default is 0, which
+    silently means "last season only" (zero current-season weight and no
+    current-season weeks counted), so start/sit callers must pass this
+    explicitly or their "Def vs pos" PPG is last season's full-season line
+    sitting next to a current-season matchup rank. Derived from the
+    schedule files via the qualification policy, the same league-wide
+    completed-weeks source the rest of the app uses; briefly cached since
+    the week only changes when a slate finishes.
+    """
+    season = int(season)
+    now = time.time()
+    entry = _COMPLETED_WEEK_CACHE.get(season)
+    if entry and now - entry[0] < _COMPLETED_WEEK_TTL:
+        return entry[1]
+    week = 0
+    try:
+        from utils.season_qualification import qualification_policy
+        weeks = qualification_policy(season).completed_weeks or ()
+        week = max((int(w) for w in weeks), default=0)
+    except Exception:
+        week = 0
+    _COMPLETED_WEEK_CACHE[season] = (now, week)
+    return week
 
 
 def _fpts_against_effective(season: int, scoring_settings=None, completed_week: int = 0,
