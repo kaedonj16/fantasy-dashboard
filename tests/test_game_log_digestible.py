@@ -60,8 +60,12 @@ def test_detailed_toggle_markup_and_css():
     assert "data-cs-all" in PM_SRC and "data-cs-core" in PM_SRC
     assert ".game-log-table:not(.gl-show-detail) .gl-deep" in CSS_SRC
     assert ".gl-head-controls" in CSS_SRC
-    assert ".grp-pill" in CSS_SRC and 'class="grp-pill"' in PM_SRC
-    assert "#f4f6f8" in CSS_SRC  # group band tint from the approved mock
+    # Group headers are the plain pre-digestible labels (Kaedon's revert):
+    # no pill markup in the renderer, no pill class in the CSS, and the
+    # grp-h rule carries no tint-band background in either theme.
+    assert "grp-pill" not in PM_SRC and "grp-pill" not in CSS_SRC
+    grp_h = re.search(r"\.gl-adv thead th\.grp-h \{([^}]+)\}", CSS_SRC)
+    assert grp_h and "background" not in grp_h.group(1)
 
 
 def test_wash_css_uses_schedule_rankings_palette():
@@ -315,6 +319,10 @@ def test_rb_detailed_toggle_states():
     assert '<table class="game-log-table gl-adv gl-show-detail">' in on
     grp_off = _grp_headers(off)
     grp_on = _grp_headers(on)
+    # Group labels render as bare header text, no pill wrapper.
+    assert '<th colspan="4" class="grp-h">Fantasy</th>' in off
+    assert '<th colspan="4" class="grp-h">Fantasy</th>' in on
+    assert "grp-pill" not in off and "grp-pill" not in on
     assert [g[0] for g in grp_off] == [2, 4, 4, 4, 1]
     assert [g[0] for g in grp_on] == [2, 4, 8, 8, 1]
     # Rushing header carries the swap values; the all-deep Usage header
