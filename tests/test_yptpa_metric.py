@@ -106,6 +106,53 @@ def test_finalize_yptpa_golden_values(monkeypatch):
         assert by_pid[pid]["team_pass_att_gp"] == sum(att_split)
 
 
+def _patch_week_team_map(monkeypatch, wk_map):
+    import data_building.external_data.player_team_history as pth
+
+    monkeypatch.setattr(pth, "load_weekly_team_map",
+                        lambda season: wk_map)
+
+
+def test_finalize_yptpa_traded_qb_attempts_stay_with_old_team(monkeypatch):
+    # Regression (2026 ARI/BAL): the denominator pooled every player's
+    # pass_att under his CURRENT usage_table team. Brissett's listing
+    # moved to BAL after his ARI starts, so ARI's pooled denominator
+    # collapsed to 54 (real 359) and BAL's inflated to 591 (real 247).
+    series = {
+        # QB whose current team is BAL but who threw for ARI in weeks
+        # 1-2 (per-week map is the ground truth for those weeks).
+        "2001": [_week(1, position="QB", pass_att=30.0),
+                 _week(2, position="QB", pass_att=40.0)],
+        # ARI WR: denominator is the QB's ARI attempts, 30 + 40.
+        "2002": [_week(1, rec_yards=90.0),
+                 _week(2, rec_yards=110.0)],
+        # BAL WR: the traded QB's attempts must NOT land in BAL's pool;
+        # with no BAL QB rows his denominator is zero -> None.
+        "2003": [_week(1, rec_yards=50.0)],
+        # QB absent from the weekly map: current-team fallback still
+        # pools his attempts under his usage_table team.
+        "2004": [_week(1, position="QB", pass_att=20.0)],
+        "2005": [_week(1, rec_yards=40.0)],
+    }
+    metrics = [{"player_id": pid, "position": pos} for pid, pos in
+               [("2001", "QB"), ("2002", "WR"), ("2003", "WR"),
+                ("2004", "QB"), ("2005", "WR")]]
+    usage = [{"id": "2001", "team": "BAL"}, {"id": "2002", "team": "ARI"},
+             {"id": "2003", "team": "BAL"}, {"id": "2004", "team": "KC"},
+             {"id": "2005", "team": "KC"}]
+    _patch_week_team_map(monkeypatch, {"2001": {1: "ARI", 2: "ARI"}})
+    by_pid = _run_finalize(monkeypatch, series, metrics, usage)
+
+    assert by_pid["2002"]["team_pass_att_gp"] == 70.0
+    assert by_pid["2002"]["yards_per_team_pass_att"] == \
+        pytest.approx(200.0 / 70.0)
+    assert by_pid["2003"]["yards_per_team_pass_att"] is None
+    assert by_pid["2003"]["team_pass_att_gp"] is None
+    assert by_pid["2005"]["team_pass_att_gp"] == 20.0
+    assert by_pid["2005"]["yards_per_team_pass_att"] == \
+        pytest.approx(40.0 / 20.0)
+
+
 # --------------------------------------------------------------------------- #
 # Weekly writer + week-range aggregation
 # --------------------------------------------------------------------------- #
@@ -180,6 +227,39 @@ def _capture_weekly_rows(monkeypatch):
 
 def test_weekly_writer_rows_and_coexistence(monkeypatch):
     _capture_weekly_rows(monkeypatch)
+
+
+def test_weekly_writer_traded_qb_attempts_stay_with_old_team(monkeypatch):
+    import data_building.weekly_metrics as wm
+    from data_building import advanced_metrics as am
+
+    series = {
+        "2001": [_week(1, position="QB", pass_att=30.0),
+                 _week(2, position="QB", pass_att=40.0)],
+        "2002": [_week(1, rec_yards=90.0),
+                 _week(2, rec_yards=110.0)],
+        "2003": [_week(1, rec_yards=50.0)],
+    }
+    monkeypatch.setattr(wm, "get_weekly_series_by_player",
+                        lambda season, through_week: series)
+    monkeypatch.setattr(am, "init_weekly_advanced_metrics_db", lambda: None)
+    conn = _FakeConn()
+    monkeypatch.setattr(am, "get_conn", lambda: conn)
+    _patch_week_team_map(monkeypatch, {"2001": {1: "ARI", 2: "ARI"}})
+    usage = [{"id": "2001", "team": "BAL"}, {"id": "2002", "team": "ARI"},
+             {"id": "2003", "team": "BAL"}]
+
+    n = am.upsert_yptpa_weekly_metrics(2025, 2, usage)
+    assert n == 3
+    rows = {}
+    for _sql, params in conn.executes:
+        pid, _season, week, _pos, value, weight = params
+        rows[(pid, week)] = (value, weight)
+    # ARI WR valued against the QB's ARI attempts each week.
+    assert rows[("2002", 1)] == (pytest.approx(90.0 / 30.0), 30.0)
+    assert rows[("2002", 2)] == (pytest.approx(110.0 / 40.0), 40.0)
+    # BAL WR: none of the traded QB's attempts pooled under BAL.
+    assert rows[("2003", 1)] == (None, 0.0)
 
 
 def test_week_range_weighted_mean_is_exact_ratio_of_sums(monkeypatch):
