@@ -32653,9 +32653,17 @@ window.__brSzLiveCache = (function () {
           + '<td class="rz-bs-fp' + (r.fp === leadFp && r.fp > 0 ? ' is-lead' : '') + '">'
           + r.fp.toFixed(1) + '</td>' + cells + '</tr>';
       }).join('');
+      // Same fixed-layout colgroup as the ScoreZone box-score builder in
+      // scorezone.js: FP 48px + one 52px column per stat, name takes the
+      // rest; inline min-width (128 name floor + FP + stats) is where the
+      // table starts scrolling instead of squeezing, and where the FP
+      // sticky offset (128px in CSS) is exact.
+      var colgroup = '<colgroup><col class="rz-bs-cname"><col class="rz-bs-cfp">'
+        + cols.map(function () { return '<col class="rz-bs-cstat">'; }).join('') + '</colgroup>';
       return '<div class="rz-bs-ptitle"><span>' + esc(GS_BOX_POS[gr.pos] || gr.pos)
         + '</span><span class="rz-bs-gfp">' + groupFp.toFixed(1) + ' FP</span></div>'
-        + '<div class="rz-bs-tscroll"><table class="rz-bs-table" data-sortable><thead>' + head
+        + '<div class="rz-bs-tscroll"><table class="rz-bs-table" data-sortable style="min-width:'
+        + (176 + 52 * cols.length) + 'px">' + colgroup + '<thead>' + head
         + '</thead><tbody>' + body + '</tbody></table></div>';
     }).join('');
     if (!tables) {

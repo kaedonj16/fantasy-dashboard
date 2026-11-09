@@ -44057,6 +44057,9 @@ a.rz-demo-link:hover {
 .rz-bs-tscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 table.rz-bs-table {
     width: 100%;
+    /* Fixed layout: column widths come from the colgroup the builders emit,
+       so every position group shares the exact same column tracks. */
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 13px;
     font-variant-numeric: tabular-nums;
@@ -44084,7 +44087,6 @@ table.rz-bs-table td.rz-bs-pname {
     color: var(--rz-text);
     font-weight: 700;
     white-space: normal;
-    min-width: 110px;
 }
 table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: pointer; }
 .rz-bs-empty { text-align: center; padding: 36px 20px; color: var(--rz-muted); font-size: 13px; }
@@ -51034,20 +51036,21 @@ table.rz-bs-table thead th:first-child {
 
 /* ── ScoreZone box-score sheet: fantasy points column ──────────────────────
    The FP column sticks with the Player column so fantasy points stay visible
-   without horizontal scrolling. The name column gets a fixed width so the FP
-   sticky offset always lines up; the divider moves from the name cells to the
-   FP cells. Wash uses color-mix over --rz-card so the sticky cells stay
-   opaque while scrolled columns slide underneath. */
+   without horizontal scrolling. The name column is flexible: it absorbs
+   whatever width the tightened FP/stat columns leave, and the builders set
+   each table's inline min-width to 128 (name floor) + 48 (FP) + 52 per stat
+   column, so at that minimum - the only state where the table can scroll -
+   the name column is exactly 128px and the FP sticky offset below is exact.
+   The divider moves from the name cells to the FP cells. Wash uses
+   color-mix over --rz-card so the sticky cells stay opaque while scrolled
+   columns slide underneath. */
 table.rz-bs-table td.rz-bs-pname {
-    width: 108px;
-    min-width: 108px;
-    max-width: 108px;
     border-right: none;
 }
 table.rz-bs-table th.rz-bs-fp,
 table.rz-bs-table td.rz-bs-fp {
     position: sticky;
-    left: 108px; /* must match the fixed name-column width above */
+    left: 128px; /* the name column's floor width at the table min-width */
     z-index: 2;
     background: color-mix(in srgb, var(--rz-accent, #6366f1) 7%, var(--rz-card));
     border-right: 1px solid var(--rz-border);
@@ -51083,22 +51086,26 @@ table.rz-bs-table td.rz-bs-fp.is-lead {
     font-weight: 600;
 }
 
-/* ── Uniform stat columns ──────────────────────────────────────────────────
-   Every stat column (including FP) gets the same fixed width so headers and
-   values line up across groups. Longer headers wrap to two lines, bottom
-   aligned with single-line headers. box-sizing is border-box globally, so
-   the 108px name column and the FP sticky offset stay exact. */
+/* ── Tight, uniform stat columns ───────────────────────────────────────────
+   FP is 48px and every stat column is 52px, in every group, so the stat
+   cluster packs tight against the right edge and the same column edges line
+   up across QB/RB/WR/TE. The colgroup carries the widths (fixed layout
+   reads those first); the th/td rules below state the same widths for the
+   first row. Longer headers wrap to two lines, bottom aligned with
+   single-line headers. */
+table.rz-bs-table col.rz-bs-cfp { width: 48px; }
+table.rz-bs-table col.rz-bs-cstat { width: 52px; }
 table.rz-bs-table th.rz-bs-fp,
 table.rz-bs-table td.rz-bs-fp {
-    width: 56px;
-    min-width: 56px;
-    max-width: 56px;
+    width: 48px;
+    min-width: 48px;
+    max-width: 48px;
 }
 table.rz-bs-table thead th:not(:first-child):not(.rz-bs-fp),
 table.rz-bs-table tbody td:not(:first-child):not(.rz-bs-fp) {
-    width: 68px;
-    min-width: 68px;
-    max-width: 68px;
+    width: 52px;
+    min-width: 52px;
+    max-width: 52px;
 }
 table.rz-bs-table thead th:not(:first-child) {
     white-space: normal;

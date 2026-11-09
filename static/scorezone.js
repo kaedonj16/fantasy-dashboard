@@ -6064,9 +6064,16 @@
           + '<td class="rz-bs-fp' + (r.fp === leadFp && r.fp > 0 ? ' is-lead' : '') + '">'
           + r.fp.toFixed(1) + '</td>' + cells + '</tr>';
       }).join('');
+      // Fixed-layout colgroup: FP 48px + one 52px column per stat, name
+      // takes the rest. The inline min-width (128 name floor + FP + stats)
+      // is the width below which the table scrolls instead of squeezing,
+      // and at that width the FP sticky offset (128px in CSS) is exact.
+      var colgroup = '<colgroup><col class="rz-bs-cname"><col class="rz-bs-cfp">'
+        + cols.map(function() { return '<col class="rz-bs-cstat">'; }).join('') + '</colgroup>';
       return '<div class="rz-bs-ptitle"><span>' + _esc(_BOX_SKILL_POS[gr.pos] || gr.pos)
         + '</span><span class="rz-bs-gfp">' + groupFp.toFixed(1) + ' FP</span></div>'
-        + '<div class="rz-bs-tscroll"><table class="rz-bs-table" data-sortable><thead>' + head
+        + '<div class="rz-bs-tscroll"><table class="rz-bs-table" data-sortable style="min-width:'
+        + (176 + 52 * cols.length) + 'px">' + colgroup + '<thead>' + head
         + '</thead><tbody>' + body + '</tbody></table></div>';
     }).join('');
     if (!tables) {
