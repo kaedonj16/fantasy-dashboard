@@ -26250,36 +26250,61 @@ a.pm-avail-row:hover { background: var(--card); }
 
 #tm-panel-charts.active {
     display: flex;
-    flex-wrap: wrap;
-    gap: 24px;
-    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    align-items: stretch;
 }
 
-#tm-panel-charts .team-modal-section {
-    max-width: 770px;
-    overflow: hidden;
+/* Layout A (approved 2026-11-09): paired rows of unified tm3 cards that
+   share a row height. The wide row gives Weekly Scoring the 2fr seat
+   beside Team Breakdown; a lone card spans the full row. Colors come
+   from the tm3 card tokens (surface/border/text) and the chart
+   renderers' own site tokens, no new palette here. */
+.tm-graph-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.tm-graph-row-wide {
+    grid-template-columns: 2fr 1fr;
+}
+
+.tm-graph-row > .tm3-card {
     margin-bottom: 0;
-}
-
-.tm-chart-weekly {
-    flex: 0 0 66%;
     min-width: 0;
 }
 
-.tm-chart-radar {
-    flex: 0 0 calc(34% - 24px);
-    min-width: 0;
+.tm-graph-row > .tm3-card:only-child {
+    grid-column: 1 / -1;
 }
 
-/* League scatters: two per row on desktop, full width when the modal is narrow.
-   Grow to fill the row (a lone chart takes the full width) and let the SVG,
-   which is capped + auto-centered, sit in the middle instead of hugging left. */
+.tm-chart-weekly,
+.tm-chart-radar,
 .tm-chart-svg {
-    flex: 1 1 calc(50% - 12px);
-    min-width: 260px;
-    max-width: none;
-    border-top: 1px solid var(--border);
-    padding-top: 16px;
+    min-width: 0;
+}
+
+/* Chart containers sit flush inside their card: the card supplies the
+   padding, surface and border, and both renderers draw at the same
+   250px height so the paired Weekly/Breakdown row aligns exactly. */
+#tm-panel-charts .team-chart-container {
+    height: 250px;
+    padding: 0;
+    background: transparent;
+}
+
+#tm-panel-charts #teamRadarChart {
+    height: 250px;
+}
+
+@container (max-width: 700px) {
+    .tm-graph-row,
+    .tm-graph-row-wide {
+        grid-template-columns: 1fr;
+    }
 }
 
 .tm-svg-note {
@@ -27077,11 +27102,18 @@ a.pm-avail-row:hover { background: var(--card); }
 .tm3-lg-bar span { display: block; height: 100%; background: var(--accent); border-radius: 6px; }
 .tm3-lg-val { font-weight: 750; font-variant-numeric: tabular-nums; }
 
-/* Graphs */
+/* Graphs: in the column-flow panel each block is a full-width row; the
+   panel gap supplies all vertical spacing, so block margins are zeroed. */
 #tm-panel-charts .tm3-strip, #tm-panel-charts .tm3-season-line, #tm-panel-charts .tm3-sec-head,
-#tm-panel-charts .tm3-card, #tm-panel-charts .tm3-two-col, #tm-panel-charts .tm-chart-eff {
-    flex: 1 1 100%; min-width: 0;
+#tm-panel-charts .tm3-two-col, #tm-panel-charts .tm-graph-row, #tm-panel-charts .tm-chart-eff {
+    flex: none; width: 100%; min-width: 0;
 }
+#tm-panel-charts .tm3-card { min-width: 0; }
+#tm-panel-charts .tm3-strip, #tm-panel-charts .tm3-season-line,
+#tm-panel-charts .tm3-sec-head, #tm-panel-charts .tm-chart-eff { margin-bottom: 0; }
+#tm-panel-charts .tm3-two-col { align-items: stretch; }
+#tm-panel-charts .tm3-two-col > div { min-width: 0; }
+#tm-panel-charts .tm3-two-col .tm3-card { height: 100%; }
 .tm3-season-line { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; }
 .tm3-season-chip { font-size: 11px; font-weight: 800; border: 1px solid var(--border); background: var(--bg-alt); color: var(--text); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
 .tm3-fin-row { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -27764,17 +27796,16 @@ tr.team-clickable {
         width: 100%;
     }
 
-    /* Charts: stack full width instead of squeezing weekly (66%) + radar (34%)
-     side by side, which crushed the radar into an unreadable sliver. */
-    #tm-panel-charts.active {
-        flex-direction: column;
-        gap: 20px;
+    /* Charts: Layout A rows collapse to one full-width column instead of
+     squeezing Weekly + Breakdown side by side into unreadable slivers. */
+    .tm-graph-row,
+    .tm-graph-row-wide {
+        grid-template-columns: 1fr;
     }
 
     .tm-chart-weekly,
     .tm-chart-radar,
     .tm-chart-svg {
-        flex: 1 1 100%;
         max-width: 100%;
         min-width: 0;
         width: 100%;
