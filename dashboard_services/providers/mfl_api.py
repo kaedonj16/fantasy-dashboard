@@ -27,6 +27,29 @@ BASE_URL = "https://api.myfantasyleague.com/{season}/export"
 LOGIN_URL = "https://api.myfantasyleague.com/{season}/login"
 TIMEOUT = (4, 15)
 _CACHE: dict[tuple, tuple[float, dict]] = {}
+_CACHE_MAX = 256
+_CACHE_STALE_SECONDS = 3600.0
+
+
+def _prune_payload_cache() -> None:
+    """Bound ``_CACHE``: entries used to live forever (the TTL was only
+    checked when the exact key was re-read; nothing was ever evicted), so
+    every distinct league a worker built pinned its raw export payloads
+    for the worker's whole life -- the same unbounded-growth pattern
+    behind the 2026-11-08 OOM restarts on the Fleaflicker side. Drop
+    stale entries first, then the oldest, until within the cap.
+    Eviction is always safe: reads re-check the TTL and simply refetch
+    on a miss."""
+    if len(_CACHE) <= _CACHE_MAX:
+        return
+    cutoff = time.monotonic() - _CACHE_STALE_SECONDS
+    for stale, (ts, _) in list(_CACHE.items()):
+        if ts < cutoff:
+            _CACHE.pop(stale, None)
+    if len(_CACHE) > _CACHE_MAX:
+        excess = len(_CACHE) - _CACHE_MAX
+        for stale, _ in sorted(_CACHE.items(), key=lambda kv: kv[1][0])[:excess]:
+            _CACHE.pop(stale, None)
 _MFL_COOKIE_RE = re.compile(r"MFL_USER_ID\s*=\s*([^\s;]+)", re.IGNORECASE)
 
 
@@ -392,6 +415,7 @@ class MFLProvider(ProviderAdapter):
                 raise ProviderAuthenticationError("This MFL league is private or requires authentication.")
             raise LeagueNotFoundError("No MFL league was found for that ID and season.")
         _CACHE[key] = (time.monotonic(), payload)
+        _prune_payload_cache()
         return payload
 
     def connect_league(

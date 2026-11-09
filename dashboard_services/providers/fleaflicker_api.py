@@ -71,6 +71,8 @@ _NO_SEASON = frozenset({
     "FetchLeagueBoxscore",
 })
 _CACHE: dict[tuple, tuple[float, dict]] = {}
+_CACHE_MAX = 512
+_CACHE_STALE_SECONDS = 3600.0
 _FAIL_CACHE: dict[tuple, tuple[float, Exception]] = {}
 _OPTIONAL_FAIL: dict[str, tuple[float, Exception]] = {}
 _HOST_FAIL = _OPTIONAL_FAIL  # any unavailable error trips every subsequent _call
@@ -176,6 +178,28 @@ def _cached_failure(cache: dict, key, ttl: float):
     if hit and time.monotonic() - hit[0] < ttl:
         return hit[1]
     return None
+
+
+def _prune_payload_cache() -> None:
+    """Bound ``_CACHE``: entries used to live forever (the TTL was only
+    checked when the exact key was re-read; nothing was ever evicted), so
+    every distinct league a worker built pinned its raw payloads for the
+    worker's whole life -- roughly 120 payloads per Fleaflicker league
+    (17 scoreboards + ~100 boxscores + league/rosters/standings calls).
+    That unbounded growth was a primary driver of the 2026-11-08 OOM
+    restarts. Drop stale entries first, then the oldest, until within
+    the cap. Eviction is always safe: reads re-check the TTL and simply
+    refetch on a miss."""
+    if len(_CACHE) <= _CACHE_MAX:
+        return
+    cutoff = time.monotonic() - _CACHE_STALE_SECONDS
+    for stale, (ts, _) in list(_CACHE.items()):
+        if ts < cutoff:
+            _CACHE.pop(stale, None)
+    if len(_CACHE) > _CACHE_MAX:
+        excess = len(_CACHE) - _CACHE_MAX
+        for stale, _ in sorted(_CACHE.items(), key=lambda kv: kv[1][0])[:excess]:
+            _CACHE.pop(stale, None)
 
 
 def _remember_failure(key: tuple, exc: Exception) -> None:
@@ -1064,6 +1088,7 @@ class FleaflickerProvider(ProviderAdapter):
                 )
                 raise ProviderUnavailableError("Fleaflicker returned an invalid response.")
             _CACHE[key] = (time.monotonic(), payload)
+            _prune_payload_cache()
             return payload
 
     def connect_league(self, league_id: str, season: int, *, token: Optional[str] = None) -> dict:
