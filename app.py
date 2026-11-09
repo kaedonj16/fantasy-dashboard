@@ -31004,6 +31004,7 @@ def _overlay_league_players_payload(
                         _rp.update(_fields)
                 payload["ros_window"] = _ros.get("window")
                 payload["tier_thresholds_ros"] = _ros.get("tier_thresholds_ros") or {}
+                payload["tier_thresholds_ros_vor"] = _ros.get("tier_thresholds_ros_vor") or {}
                 payload["ros_updated"] = _ros.get("updated")
         except Exception:
             logger.debug("[api/league-players] ROS stamp skipped", exc_info=True)

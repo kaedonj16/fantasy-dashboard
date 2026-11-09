@@ -19,9 +19,13 @@ from utils.ros_rankings import (
     assign_ros_ranks,
     compute_player_ros,
     compute_ros_tier_thresholds,
+    compute_ros_vor_tier_thresholds,
     is_season_out,
     passes_role_gate,
     qb_ros_ppg,
+    ros_replacement_index,
+    ros_replacement_ppg,
+    ros_vor_totals,
     window_projection_stats,
 )
 
@@ -176,6 +180,117 @@ def test_tier_thresholds_come_from_ros_totals():
     assert max(out["stretch"]) < max(all_t)
 
 
+# ── Cross-position VOR: replacement convention + All-view tiers ────────────
+
+def test_ros_replacement_index_conventions():
+    # QB in 1QB: the player AT the starter line (rank = league size), the
+    # utils/trade.py VORP convention, NOT the dynasty model's 1.5x
+    # scarcity index (which would be 15 / 18 here).
+    assert ros_replacement_index("QB", 10, "1qb") == 9
+    assert ros_replacement_index("QB", 12, "1qb") == 11
+    assert ros_replacement_index("QB", 8, "1qb") == 7
+    # SF keeps the multiplier on two starters: scarcity is real there.
+    assert ros_replacement_index("QB", 10, "sf") == 30
+    assert ros_replacement_index("QB", 12, "sf") == 36
+    # Every other position keeps the value model's multipliers, both formats.
+    assert ros_replacement_index("RB", 10, "1qb") == 24
+    assert ros_replacement_index("RB", 10, "sf") == 24
+    assert ros_replacement_index("WR", 12, "1qb") == 28
+    assert ros_replacement_index("TE", 10, "1qb") == 12
+    ladder = [26.0 - 0.5 * i for i in range(20)]
+    assert ros_replacement_ppg(ladder, "QB", 10, "1qb") == pytest.approx(21.5)
+    assert ros_replacement_ppg([], "QB", 10, "1qb") is None
+
+
+def _vor_pool():
+    pool, pos = {}, {}
+    for i in range(12):
+        ppg = 26.0 - 0.6 * i
+        pool[f"qb{i}"] = {"ros_ppg": ppg, "ros_total": ppg * 8, "ros_games": 8,
+                          "ros_stretch_ppg": ppg, "ros_stretch_total": ppg * 5,
+                          "ros_stretch_games": 5,
+                          "ros_playoff_ppg": ppg, "ros_playoff_total": ppg * 3,
+                          "ros_playoff_games": 3}
+        pos[f"qb{i}"] = "QB"
+    for i in range(30):
+        ppg = 24.0 - 0.45 * i
+        pool[f"rb{i}"] = {"ros_ppg": ppg, "ros_total": ppg * 8, "ros_games": 8,
+                          "ros_stretch_ppg": ppg, "ros_stretch_total": ppg * 5,
+                          "ros_stretch_games": 5,
+                          "ros_playoff_ppg": ppg, "ros_playoff_total": ppg * 3,
+                          "ros_playoff_games": 3}
+        pos[f"rb{i}"] = "RB"
+    for i in range(30):
+        ppg = 22.0 - 0.4 * i
+        pool[f"wr{i}"] = {"ros_ppg": ppg, "ros_total": ppg * 8, "ros_games": 8,
+                          "ros_stretch_ppg": ppg, "ros_stretch_total": ppg * 5,
+                          "ros_stretch_games": 5,
+                          "ros_playoff_ppg": ppg, "ros_playoff_total": ppg * 3,
+                          "ros_playoff_games": 3}
+        pos[f"wr{i}"] = "WR"
+    for i in range(12):
+        ppg = 16.0 - 0.5 * i
+        pool[f"te{i}"] = {"ros_ppg": ppg, "ros_total": ppg * 8, "ros_games": 8,
+                          "ros_stretch_ppg": ppg, "ros_stretch_total": ppg * 5,
+                          "ros_stretch_games": 5,
+                          "ros_playoff_ppg": ppg, "ros_playoff_total": ppg * 3,
+                          "ros_playoff_games": 3}
+        pos[f"te{i}"] = "TE"
+    return pool, pos
+
+
+def test_ros_vor_totals_qb_discount_1qb_only():
+    pool, pos = _vor_pool()
+    vor_1qb = ros_vor_totals(pool, pos, 10, "1qb")["all"]
+    vor_sf = ros_vor_totals(pool, pos, 10, "sf")["all"]
+    # 1QB replacement QB is QB10 (idx 9): 26.0 - 9*0.6 = 20.6 PPG.
+    assert vor_1qb["qb0"] == pytest.approx((26.0 - 20.6) * 8)
+    # SF: idx 30 clamps to this pool's QB12 (19.4): a strictly bigger edge.
+    assert vor_sf["qb0"] == pytest.approx((26.0 - 19.4) * 8)
+    assert vor_sf["qb0"] > vor_1qb["qb0"]
+    # RB replacement is format-independent: identical VOR either way.
+    assert vor_1qb["rb0"] == vor_sf["rb0"] == pytest.approx((24.0 - 13.2) * 8)
+    # The point of the discount: in 1QB the clustered QB1 no longer
+    # out-VORs the top RB; in SF he closes most of the gap back.
+    assert vor_1qb["qb0"] < vor_1qb["rb0"]
+
+
+def _tier_of(thresholds, value):
+    for i, t in enumerate(thresholds):
+        if value >= t:
+            return i + 1
+    return len(thresholds) + 1
+
+
+def test_vor_tier_thresholds_shape_and_scale():
+    pool, pos = _vor_pool()
+    out = compute_ros_vor_tier_thresholds(pool, pos)
+    assert set(out) == {"all", "stretch", "playoffs"}
+    assert set(out["all"]) == {"1qb", "sf"}
+    assert set(out["all"]["1qb"]) == {"8", "10", "12", "14"}
+    t = out["all"]["1qb"]["10"]
+    assert t and t == sorted(t, reverse=True)
+    # Thresholds live on the VOR scale: the pool's max VOR (RB1, 86.4)
+    # bounds the top threshold.
+    assert max(t) <= 86.4
+
+
+def test_all_view_tiers_come_from_vor_not_positional_totals():
+    pool, pos = _vor_pool()
+    # QB1 owns the pool's biggest raw total (208.0) and IS T1 by the
+    # positional-total thresholds the position views use...
+    totals_t = compute_ros_tier_thresholds(pool, pos)["all"]
+    assert _tier_of(totals_t, pool["qb0"]["ros_total"]) == 1
+    # ...but his VOR is mid-pack (43.2) because 1QB QBs cluster, so the
+    # All view's VOR thresholds must NOT stamp him T1, while RB1 (the
+    # actual VOR leader at 86.4) is T1. One metric, one sequence.
+    vor_t = compute_ros_vor_tier_thresholds(pool, pos)["all"]["1qb"]["10"]
+    qb1_vor = ros_vor_totals(pool, pos, 10, "1qb")["all"]["qb0"]
+    rb1_vor = ros_vor_totals(pool, pos, 10, "1qb")["all"]["rb0"]
+    assert _tier_of(vor_t, rb1_vor) == 1
+    assert _tier_of(vor_t, qb1_vor) != 1
+
+
 # ── Payload path ────────────────────────────────────────────────────────────
 
 def test_slim_payload_keeps_ros_fields_and_blocks():
@@ -197,6 +312,15 @@ def test_slim_payload_keeps_ros_fields_and_blocks():
     assert "internal_only" not in row
     assert out["ros_window"] == {"start_week": 11, "end_week": 17}
     assert out["tier_thresholds_ros"]["playoffs"] == [30.0]
+
+
+def test_slim_payload_keeps_vor_tier_block():
+    from dashboard_services.league_players_board import slim_rankings_payload
+
+    payload = {"players": [],
+               "tier_thresholds_ros_vor": {"all": {"1qb": {"10": [50.0, 30.0]}}}}
+    out = slim_rankings_payload(payload)
+    assert out["tier_thresholds_ros_vor"]["all"]["1qb"]["10"] == [50.0, 30.0]
 
 
 # ── Public pages ────────────────────────────────────────────────────────────
@@ -231,6 +355,36 @@ def test_public_position_page_orders_by_ros_total():
     assert "Quarterback One" not in body
     assert "Updated November 09, 2026" in body or "updated November 09, 2026" in body
     assert "Full PPR" in body
+
+
+def test_public_overall_page_discounts_qb1_in_1qb():
+    # 20 clustered QBs: under the old 1.5x index the replacement QB was
+    # QB19 (19.7 PPG) and QB1's VOR (44.1) beat the 20-PPG back's (42.0).
+    # At the 1QB starter line the replacement is QB12 (22.15 PPG), QB1's
+    # VOR drops to ~27.0, and the back orders ahead of him.
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+
+    players, table = {}, []
+    for i in range(20):
+        pid = f"qb{i}"
+        ppg = 26.0 - 0.35 * i
+        players[pid] = {"ros_ppg": ppg, "ros_total": ppg * 7, "ros_games": 7,
+                        "ros_sched_rank": 5, "ros_pos_rank": i + 1}
+        table.append({"id": pid, "name": f"Quarterback {i + 1}",
+                      "team": "BUF", "position": "QB"})
+    for j, ppg in enumerate((24.0, 22.0, 20.0, 18.0, 16.0, 14.0)):
+        pid = f"rb{j}"
+        players[pid] = {"ros_ppg": ppg, "ros_total": ppg * 7, "ros_games": 7,
+                        "ros_sched_rank": 5, "ros_pos_rank": j + 1}
+        table.append({"id": pid, "name": f"Back {j + 1}",
+                      "team": "DET", "position": "RB"})
+    payload = {"players": players, "window": {"start_week": 11, "end_week": 17},
+               "updated": "November 09, 2026"}
+    body = build_ros_rankings_body(payload, table, position=None)
+    # "Back 3" is the 20.0-PPG back: ahead of "Quarterback 1" only under
+    # the starter-line replacement.
+    assert body.index("Back 3") < body.index("Quarterback 1")
+    assert body.index("Back 1") < body.index("Back 3")
 
 
 def test_public_pages_have_unique_editorial_and_no_em_dash():
@@ -287,3 +441,22 @@ def test_rankings_js_ros_mode():
     assert "ros_stretch_total" in js and "ros_playoff_total" in js
     # League Size stays visible in ROS mode (only redraft hides it).
     assert "type === 'redraft' ? 'none' : ''" in js
+
+
+def test_rankings_js_ros_all_view_uses_vor():
+    js = open(os.path.join(_ROOT, "static", "rankings.js"), encoding="utf-8").read()
+    # All-view tiers come from the payload's VOR thresholds, and the
+    # trailing column is the VOR "Value" column the board orders by.
+    assert "prTierThresholdsRosVor" in js
+    assert "tier_thresholds_ros_vor" in js
+    assert "ros_value" in js and "ROS Value" in js
+    assert "valueLabel" in js
+    # 1QB QB replacement sits at the starter line (rank = league size).
+    assert "prLeagueSize - 1" in js
+    # The pinned PPG-grid line stays byte-for-byte (a pin test guards it).
+    assert ("const valueMeta = (sortBy === 'ppg' || sortBy === 'total_pts') "
+            "? PR_SORT_META.rank : sortMeta;") in js
+    # app.py stamps the VOR tier block onto the payload next to the
+    # positional one.
+    app_src = open(os.path.join(_ROOT, "app.py"), encoding="utf-8").read()
+    assert 'payload["tier_thresholds_ros_vor"]' in app_src

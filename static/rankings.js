@@ -323,6 +323,7 @@ var prSortDir = 'desc';    // 'asc' | 'desc' -- flipped by clicking a column hea
 var prRosWindow = 'all';   // ROS sub-window: 'all' | 'stretch' | 'playoffs'
 var prRosWindowInfo = null; // {start_week, end_week} from the payload's ros_window
 var prTierThresholdsRos = {}; // {all: [...], stretch: [...], playoffs: [...]} on ROS totals
+var prTierThresholdsRosVor = {}; // {window: {1qb|sf: {size: [...]}}} on VOR totals (All view)
 // Default direction when a sort key is first chosen (AM-table convention:
 // names, ages, ADPs and ranks ascend; values and point totals descend).
 var PR_SORT_DIRS = { value: 'desc', adp: 'asc', age: 'asc', pos_rank: 'asc', ppg: 'desc', total_pts: 'desc', name: 'asc', ros_total: 'desc', ros_ppg: 'desc' };
@@ -700,9 +701,9 @@ function prFuzzyScore(name, query) {
 // Field names per sub-window. The payload stamps all three windows from the
 // same weekly projections (utils/ros_rankings.py); the board only reads.
 var PR_ROS_WINDOWS = {
-  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         ptsLabel: 'ROS Pts',     ppgLabel: 'ROS PPG' },
-  stretch:  { ppg: 'ros_stretch_ppg', total: 'ros_stretch_total', games: 'ros_stretch_games', rank: 'ros_stretch_pos_rank', ptsLabel: 'Stretch Pts', ppgLabel: 'Stretch PPG' },
-  playoffs: { ppg: 'ros_playoff_ppg', total: 'ros_playoff_total', games: 'ros_playoff_games', rank: 'ros_playoff_pos_rank', ptsLabel: 'Playoff Pts', ppgLabel: 'Playoff PPG' },
+  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         ptsLabel: 'ROS Pts',     ppgLabel: 'ROS PPG',     valueLabel: 'ROS Value',     totalLabel: 'ROS Total' },
+  stretch:  { ppg: 'ros_stretch_ppg', total: 'ros_stretch_total', games: 'ros_stretch_games', rank: 'ros_stretch_pos_rank', ptsLabel: 'Stretch Pts', ppgLabel: 'Stretch PPG', valueLabel: 'Stretch Value', totalLabel: 'Stretch Total' },
+  playoffs: { ppg: 'ros_playoff_ppg', total: 'ros_playoff_total', games: 'ros_playoff_games', rank: 'ros_playoff_pos_rank', ptsLabel: 'Playoff Pts', ppgLabel: 'Playoff PPG', valueLabel: 'Playoff Value', totalLabel: 'Playoff Total' },
 };
 function prRosCfg() { return PR_ROS_WINDOWS[prRosWindow] || PR_ROS_WINDOWS.all; }
 function prRosVal(p, kind) {
@@ -715,6 +716,15 @@ function prRosVal(p, kind) {
 // league size x REPLACEMENT_MULT, data_building/player_value.py), with
 // Superflex starting 2 QBs. League size and format therefore move the
 // cross-position order, which is why League Size stays visible in ROS mode.
+// ONE exception: QB in 1QB. The 1.5x multiplier is calibrated for the
+// dynasty model's normalized strength scale, not raw points; on raw ROS
+// PPGs it prices the replacement QB deep in the QB2 band and leaves an
+// elite QB's edge looking like an elite RB's, when the actual 1QB
+// fallback is the streaming tier right at the starter line. So the 1QB QB
+// replacement is the QB AT the starter line (rank = league size), the
+// site's VORP convention (utils/trade.py stamp_value_metrics), mirroring
+// utils/ros_rankings.py's ros_replacement_index. SF keeps the multiplier:
+// with two starters per team, QB scarcity is real and priced.
 var _prRosReplCache = { key: null, map: {} };
 function prRosReplacementMap() {
   var key = prRosWindow + '|' + prLeagueSize + '|' + prLeagueType;
@@ -730,7 +740,9 @@ function prRosReplacementMap() {
   var map = {};
   Object.keys(byPos).forEach(function(pos) {
     var arr = byPos[pos].slice().sort(function(a, b) { return b - a; });
-    var idx = Math.floor((starters[pos] || 1) * prLeagueSize * (mult[pos] || 1.2));
+    var idx = (pos === 'QB' && prLeagueType !== 'sf')
+      ? Math.max(0, prLeagueSize - 1)
+      : Math.floor((starters[pos] || 1) * prLeagueSize * (mult[pos] || 1.2));
     idx = Math.max(0, Math.min(idx, arr.length - 1));
     map[pos] = arr[idx];
   });
@@ -1210,6 +1222,7 @@ var PR_SORT_META = {
   total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '–' },
   ros_ppg:   { label: 'ROS PPG',   cell: p => { const v = prRosVal(p, 'ppg'); return v != null ? v.toFixed(1) : '–'; } },
   ros_total: { label: 'ROS Pts',   cell: p => { const v = prRosVal(p, 'total'); return v != null ? v.toFixed(1) : '–'; } },
+  ros_value: { label: 'ROS Value', cell: p => { const v = prRosVor(p); return v != null ? v.toFixed(1) : '–'; } },
   adp:       { label: 'ADP',       cell: p => prFormatAdp(p) },
 };
 
@@ -1290,9 +1303,19 @@ function prRender() {
       const _cfgH = prRosCfg();
       if (_ppgHeadEl) { _ppgHeadEl.textContent = _cfgH.ppgLabel; _ppgHeadEl.title = 'Projected rest-of-season points per game'; }
       if (_totHeadEl) _totHeadEl.textContent = 'Games';
-      // The trailing column carries the window total for the ROS sorts;
-      // other sorts keep the label the standard path set for them.
-      if (sortHeaderEl && (sortBy === 'ros_total' || sortBy === 'ros_ppg')) sortHeaderEl.textContent = _cfgH.ptsLabel;
+      // The trailing column carries the window total for the ROS sorts in
+      // a position view; in the All view it carries the VOR total the
+      // board is actually ordered by, so it is headed as a Value column
+      // (the Dynasty pattern: the sorted quantity is the one displayed).
+      // Other sorts keep the label the standard path set for them.
+      if (sortHeaderEl && (sortBy === 'ros_total' || sortBy === 'ros_ppg')) {
+        sortHeaderEl.textContent = prPosFilters.size === 0 ? _cfgH.valueLabel : _cfgH.ptsLabel;
+      }
+      // The sort controls name the same quantity the column shows.
+      const _rosPill = document.querySelector('.pr-sort-ros[data-sortkey="ros_total"]');
+      if (_rosPill) _rosPill.textContent = prPosFilters.size === 0 ? _cfgH.valueLabel : _cfgH.ptsLabel;
+      const _rosOpt = document.querySelector('#prSort option[value="ros_total"]');
+      if (_rosOpt) _rosOpt.textContent = prPosFilters.size === 0 ? _cfgH.valueLabel : _cfgH.totalLabel;
     } else {
       if (_ppgHeadEl && _ppgHeadEl.textContent !== 'PPG') { _ppgHeadEl.textContent = 'PPG'; _ppgHeadEl.title = 'Sort by fantasy points per game'; }
       if (_totHeadEl && _totHeadEl.textContent !== 'Total Points') _totHeadEl.textContent = 'Total Points';
@@ -1307,8 +1330,12 @@ function prRender() {
   const valueMeta = (sortBy === 'ppg' || sortBy === 'total_pts') ? PR_SORT_META.rank : sortMeta;
   // ROS exception: sorting by the window PPG still leaves the window TOTAL
   // in the trailing column (the PPG lives in its own column, like sortBy
-  // 'ppg' above).
-  const valueMetaEff = (prScoringType === 'ros' && sortBy === 'ros_ppg') ? PR_SORT_META.ros_total : valueMeta;
+  // 'ppg' above). In the All view the trailing column is the VOR total for
+  // both ROS sorts: the board orders by it, so it is the number displayed
+  // (position views keep the window total).
+  const valueMetaEff = (prScoringType === 'ros' && prPosFilters.size === 0 && (sortBy === 'ros_total' || sortBy === 'ros_ppg'))
+    ? PR_SORT_META.ros_value
+    : ((prScoringType === 'ros' && sortBy === 'ros_ppg') ? PR_SORT_META.ros_total : valueMeta);
 
   let players = prAllPlayers.slice();
 
@@ -1902,9 +1929,25 @@ function prGetTier(p) {
   const lt  = prLeagueType || '1qb';
   let tbl;
   if (prScoringType === 'ros') {
-    // ROS tiers are computed from the ROS totals actually displayed
-    // (per window), never the dynasty thresholds: the scales differ by
-    // an order of magnitude and by games left.
+    if (prPosFilters.size === 0) {
+      // All view: the list is ordered by VOR total, so its tiers are the
+      // server-computed VOR thresholds for this window / format / size
+      // (tier_thresholds_ros_vor): ONE monotonic sequence for the mixed
+      // list. The positional-total thresholds below would stamp each
+      // player with his own position's scale, so the dividers repeated
+      // and ran out of order (T1, T2, T1, T3, T1...).
+      const vtbl = (((prTierThresholdsRosVor[prRosWindow] || {})[lt] || {})[String(prLeagueSize || 10)]) || [];
+      if (!vtbl.length) return null;
+      const vv = prRosVor(p);
+      if (vv == null) return null;
+      for (let i = 0; i < vtbl.length; i++) {
+        if (vv >= vtbl[i]) return i + 1;
+      }
+      return vtbl.length + 1;
+    }
+    // Position views: tiers are computed from the ROS totals actually
+    // displayed (per window), never the dynasty thresholds: the scales
+    // differ by an order of magnitude and by games left.
     tbl = prTierThresholdsRos[prRosWindow] || prTierThresholdsRos['all'] || [];
     if (!tbl.length) return null;
     const rv = prRosVal(p, 'total');
@@ -2007,6 +2050,7 @@ return Promise.all([
   prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
   prTierThresholdsRedraft = (!Array.isArray(resp) && resp.tier_thresholds_redraft) ? resp.tier_thresholds_redraft : {};
   prTierThresholdsRos = (!Array.isArray(resp) && resp.tier_thresholds_ros) ? resp.tier_thresholds_ros : {};
+  prTierThresholdsRosVor = (!Array.isArray(resp) && resp.tier_thresholds_ros_vor) ? resp.tier_thresholds_ros_vor : {};
   prRosWindowInfo = (!Array.isArray(resp) && resp.ros_window) ? resp.ros_window : null;
   prAdpSourceOptions = (!Array.isArray(resp) && resp.adp_source_options) ? resp.adp_source_options : {};
   prAdpSources = (!Array.isArray(resp) && resp.adp_sources) ? resp.adp_sources : {};
