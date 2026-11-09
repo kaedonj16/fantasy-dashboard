@@ -70,8 +70,9 @@ def test_no_cohort_when_stored_ppg_exists():
 # ---------------------------------------------------------------------------
 
 def test_resolve_baseline_cohort_fill():
-    baseline, source = wg.resolve_baseline(no_baseline_call(), [], None,
-                                           cohort_ppg=7.5)
+    baseline, source, check = wg.resolve_baseline(
+        no_baseline_call(), [], None, cohort_ppg=7.5)
+    assert check is None
     assert source == "cohort"
     assert baseline["ppr_ppg"] == 7.5
     assert baseline["snap_pct"] is None
@@ -79,7 +80,9 @@ def test_resolve_baseline_cohort_fill():
 
 
 def test_resolve_baseline_no_cohort_stays_none():
-    baseline, source = wg.resolve_baseline(no_baseline_call(), [], None)
+    baseline, source, check = wg.resolve_baseline(no_baseline_call(), [],
+                                                  None)
+    assert check is None
     assert source == "none"
     assert baseline["ppr_ppg"] is None
 
@@ -88,7 +91,9 @@ def test_resolve_baseline_cohort_never_overrides_stored():
     call = no_baseline_call()
     call["baseline_source"] = "stored"
     call["evidence"]["fantasy"]["baseline_ppg"] = 8.0
-    baseline, source = wg.resolve_baseline(call, [], None, cohort_ppg=7.5)
+    baseline, source, check = wg.resolve_baseline(call, [], None,
+                                                  cohort_ppg=7.5)
+    assert check is None
     assert source == "stored"
     assert baseline["ppr_ppg"] == 8.0
 
@@ -162,7 +167,7 @@ def test_grade_call_cohort_records_cohort_source():
     assert grade["baseline_source"] == "cohort"
     assert grade["baseline_ppg"] == 7.5
     assert grade["ppg_delta"] == pytest.approx(4.5)
-    assert grade["grading_version"] == "weekly-grading-v5"
+    assert grade["grading_version"] == "weekly-grading-v6"
 
 
 def test_grade_call_without_cohort_stays_ungraded():

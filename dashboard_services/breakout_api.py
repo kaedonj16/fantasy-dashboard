@@ -894,6 +894,16 @@ def _weekly_grades_for_week(season: int, as_of_week: int) -> Dict[str, Dict]:
                         "reason": (
                             _detail.get("reason")
                             if isinstance(_detail, dict) else None),
+                        # The engine's verdict words, verbatim: print
+                        # surfaces use role_word exactly as the engine
+                        # recorded it (never a paraphrase like GREW
+                        # for a role that only HELD).
+                        "role_state": (
+                            _detail.get("role_state")
+                            if isinstance(_detail, dict) else None),
+                        "role_word": _wg.role_verdict_word(
+                            _detail.get("role_state")
+                            if isinstance(_detail, dict) else None),
                     },
                 }
             except (TypeError, ValueError):

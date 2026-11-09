@@ -93,13 +93,51 @@ composite, so it (and any other missing field) is computed from the weekly
 rows over the call's stored ``baseline_weeks``; when those are absent, the
 up-to-3 weeks immediately before the call week. Prior-season baselines
 (``baseline_source == 'prior_season'``) never fall back to current-season
-weeks - those weeks are the call's *recent* window, not its baseline.
+weeks when reconstructing the baseline window - those weeks are the
+call's *recent* window, not its baseline. They are, however, the
+evidence the baseline check (below) grades the prior-season baseline
+against before it is used.
 Their stored evidence carries no PPG (the engine's prior-season pseudo-row
 has no fantasy points), so when the caller supplies the player's
 prior-season rows, the baseline PPG is filled from them instead: the mean
 PPR PPG over that prior season, registered as a computed field. Without
 prior-season rows such calls grade with no PPG delta and cap at partial
 when the role held (a hit requires a measured production rise).
+
+Baseline check (weekly-grading-v6): a prior-season baseline is never
+used unchecked when the player already has current-season games. When
+a prior-season-baseline call has at least BASELINE_CHECK_MIN_GAMES
+full current-season games before the call week, each baseline field is
+compared against the player's current-season per-game line over those
+games; a field whose current-season value is materially higher (by the
+grader's own held-delta for that field: PPG_HIT_DELTA for PPG,
+SNAP_HELD_DELTA for snap share, OPP_HELD_DELTA for opportunity) is
+aligned to the current-season value before grading. The failure this
+prevents is the injury-depressed prior season: a Week 2 call on a
+player whose prior season was cut short grades his role against the
+role he actually holds this season, not the diminished one he held
+while hurt. The check is one-directional (it only raises a stale-low
+baseline; a small current sample never lowers one) and is recorded on
+the grade detail as ``baseline_check`` whenever it runs.
+
+Partial games (weekly-grading-v6): a weekly row whose recorded snap
+share is below PARTIAL_GAME_SNAP_PCT is a partial game - the player
+left early (the 11-snap injury exit) or barely played. Partial games
+do not count as games and do not enter the per-game means in
+:func:`window_stats`, in baselines and outcome windows alike; they
+are tallied as ``partial_games``. The 20% line mirrors the snap-share
+floor advanced_metrics already applies to its rate stats
+(_MIN_SNAP_FOR_EFFICIENCY). A row with no recorded snap share counts
+in full: missing stays missing, never a fabricated partial.
+
+Verdict words: the engine's verdict vocabulary is the grade
+(hit / partial / miss / injured / ungraded) and the role_state
+(held / reverted / mixed / injured / unknown / cohort). Any surface
+that prints a verdict word for a graded call - the Breakout Report
+graphic above all - must print the engine's own word via
+:func:`role_verdict_word`, never a paraphrase: a role that HELD is
+not a role that grew, and re-wording "held" as "GREW" on the graphic
+overstates the verdict the engine actually recorded.
 """
 from __future__ import annotations
 
@@ -117,7 +155,7 @@ from data_building.breakout_engine.weekly_store import (
 
 GRADES_TABLE = "weekly_breakout_grades"
 INJURY_SNAPSHOTS_TABLE = "player_injury_snapshots"
-GRADING_VERSION = "weekly-grading-v5"
+GRADING_VERSION = "weekly-grading-v6"
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +196,30 @@ HIT_MIN_GAMES = 2            # a hit needs at least this many outcome games;
 HIT_PPG_FLOOR = {"QB": 20.0, "RB": 10.0, "WR": 10.0, "TE": 8.0}
 HIT_PPG_FLOOR_DEFAULT = 10.0
 
+# Partial games (weekly-grading-v6): a game whose recorded snap share is
+# below this line is a partial game - an early injury exit or a cameo -
+# and does not count at full game weight in any grading window (see
+# window_stats). 20% mirrors the snap-share floor advanced_metrics
+# applies to its rate stats (_MIN_SNAP_FOR_EFFICIENCY = 0.20 there).
+PARTIAL_GAME_SNAP_PCT = 20.0
+
+# Baseline check (weekly-grading-v6): a prior-season baseline is only
+# sanity-checked against the current season when the player already has
+# at least this many full current-season games before the call week -
+# the Week 2 call shape, where the scorer's two recent games leave no
+# current-season baseline weeks and the prior season fills in unchecked.
+# One game is too thin a sample to overrule a full prior season.
+BASELINE_CHECK_MIN_GAMES = 2
+
+# Per-field materiality for the baseline check: the grader's own
+# held-deltas, reused so "materially higher" means exactly what the
+# role test already counts as a real move in that field.
+BASELINE_CHECK_DELTAS = {
+    "ppr_ppg": PPG_HIT_DELTA,
+    "snap_pct": SNAP_HELD_DELTA,
+    "opp_pg": OPP_HELD_DELTA,
+}
+
 
 def hit_ppg_floor(position: Any) -> float:
     """The outcome-PPG floor a hit must clear at ``position``."""
@@ -173,6 +235,17 @@ GRADE_PARTIAL = "partial"
 GRADE_MISS = "miss"
 GRADE_UNGRADED = "ungraded"
 GRADE_INJURED = "injured"
+
+
+def role_verdict_word(role_state: Any) -> str:
+    """The exact display word for an engine role verdict: the engine's
+    own role_state, uppercased, with no paraphrase. This is the ONLY
+    sanctioned way to turn a role_state into print - surfaces (the
+    Breakout Report graphic above all) must use it verbatim, so a role
+    that HELD can never be re-worded as GREW, and a reverted role can
+    never be softened. Unknown states print as UNKNOWN."""
+    state = str(role_state or "").strip().lower()
+    return state.upper() if state else "UNKNOWN"
 
 _INIT_DONE = False
 _SNAPSHOT_INIT_DONE = False
@@ -337,18 +410,33 @@ def is_mature(call_week: int, through_week: int) -> bool:
     return int(through_week) - int(call_week) >= OUTCOME_WEEKS
 
 
+def is_partial_game(row: Dict[str, Any]) -> bool:
+    """True when a weekly row is a partial game: the player was active
+    with usage but his recorded snap share is below
+    PARTIAL_GAME_SNAP_PCT - the early injury exit (an 11-snap game) or
+    a cameo. A row with no recorded snap share is never a partial game:
+    missing stays missing rather than reading as a small share."""
+    snap_pct = _num(row.get("snap_pct"))
+    return snap_pct is not None and snap_pct < PARTIAL_GAME_SNAP_PCT
+
+
 def window_stats(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """Per-game realized stats over one window of weekly_metrics rows.
 
     A row's presence means the player was active with usage that week (the
-    weekly builder drops inactive weeks), so ``games`` is simply the row
-    count. Opportunity is carries + targets per game, matching the engine's
+    weekly builder drops inactive weeks), so ``games`` is the row count -
+    minus partial games (see :func:`is_partial_game`): a partial game
+    counts in ``partial_games`` only and enters none of the means, so an
+    early injury exit cannot drag a per-game line at full game weight.
+    Opportunity is carries + targets per game, matching the engine's
     definition. Snap share / PPG average over the games where they were
     recorded; a missing value stays missing rather than reading as zero.
     """
     rows = list(rows)
+    partial_games = sum(1 for r in rows if is_partial_game(r))
+    full_rows = [r for r in rows if not is_partial_game(r)]
     opp_values: List[Optional[float]] = []
-    for row in rows:
+    for row in full_rows:
         carries = _num(row.get("carries"))
         targets = _num(row.get("targets"))
         if carries is None and targets is None:
@@ -356,10 +444,11 @@ def window_stats(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         else:
             opp_values.append((carries or 0.0) + (targets or 0.0))
     return {
-        "games": len(rows),
-        "ppr_ppg": _mean([_num(r.get("ppr_pts")) for r in rows]),
+        "games": len(full_rows),
+        "partial_games": partial_games,
+        "ppr_ppg": _mean([_num(r.get("ppr_pts")) for r in full_rows]),
         "opp_pg": _mean(opp_values),
-        "snap_pct": _mean([_num(r.get("snap_pct")) for r in rows]),
+        "snap_pct": _mean([_num(r.get("snap_pct")) for r in full_rows]),
     }
 
 
@@ -421,21 +510,83 @@ def call_needs_prior_ppg(call: Dict[str, Any]) -> bool:
     )
 
 
+def baseline_check(
+    call: Dict[str, Any],
+    baseline: Dict[str, Optional[float]],
+    weekly_rows: Sequence[Dict[str, Any]],
+) -> Tuple[Dict[str, Optional[float]], Optional[Dict[str, Any]]]:
+    """Sanity-check a prior-season baseline against the current season.
+
+    Only prior-season-baseline calls are checked, and only when the
+    player already has at least BASELINE_CHECK_MIN_GAMES full
+    current-season games before the call week (games in the call week
+    itself count: the stored call week is the data week, so its games
+    are pre-call evidence). Per field, when the current-season per-game
+    value is materially higher than the prior-season baseline - by the
+    field's BASELINE_CHECK_DELTAS margin - the baseline field is aligned
+    to the current-season value: a prior season depressed by injury
+    must not grade the player's real current role as growth. The check
+    never lowers a baseline and never touches a current-season or
+    cohort baseline.
+
+    Returns (baseline, check) where ``check`` is None when the check did
+    not run (not a prior-season call, or too few current games) and
+    otherwise a record of what was compared and which fields aligned.
+    Pure: the inputs are not mutated.
+    """
+    if call.get("baseline_source") != "prior_season":
+        return baseline, None
+    call_week = int(call.get("as_of_week") or 0)
+    pre_call_rows = [r for r in weekly_rows
+                     if _num(r.get("week")) is not None
+                     and int(r["week"]) <= call_week]
+    current = window_stats(pre_call_rows)
+    if int(current.get("games") or 0) < BASELINE_CHECK_MIN_GAMES:
+        return baseline, None
+    checked: Dict[str, Optional[float]] = dict(baseline)
+    aligned: List[str] = []
+    compared: Dict[str, Dict[str, Optional[float]]] = {}
+    for field, margin in BASELINE_CHECK_DELTAS.items():
+        base_value = baseline.get(field)
+        current_value = current.get(field)
+        if base_value is None or current_value is None:
+            continue
+        compared[field] = {"baseline": base_value, "current": current_value}
+        if float(current_value) - float(base_value) >= margin:
+            checked[field] = float(current_value)
+            aligned.append(field)
+    record = {
+        "current_games": int(current.get("games") or 0),
+        "current_partial_games": int(current.get("partial_games") or 0),
+        "compared": compared,
+        "aligned_fields": aligned,
+    }
+    return checked, record
+
+
 def resolve_baseline(
     call: Dict[str, Any],
     weekly_rows: Sequence[Dict[str, Any]],
     prior_rows: Optional[Sequence[Dict[str, Any]]] = None,
     cohort_ppg: Optional[float] = None,
-) -> Tuple[Dict[str, Optional[float]], str]:
-    """(baseline stats, source) for a call: stored evidence per field first,
-    computed-from-weekly-rows for any field the evidence lacks.
+) -> Tuple[Dict[str, Optional[float]], str, Optional[Dict[str, Any]]]:
+    """(baseline stats, source, baseline_check) for a call: stored
+    evidence per field first, computed-from-weekly-rows for any field
+    the evidence lacks.
 
     One exception to the weekly-rows fallback: a prior-season-baseline
     call whose stored PPG is missing takes its baseline PPG from
     ``prior_rows`` (the player's prior-season weekly rows, when the
-    caller supplies them) as that season's mean PPR PPG. Current-season
-    weeks are never promoted into a prior-season baseline. The filled
+    caller supplies them) as that season's mean PPR PPG. The filled
     PPG registers as a computed field for source bookkeeping.
+
+    Prior-season baselines then go through :func:`baseline_check`:
+    when the player's current-season games before the call show a
+    materially higher role than the prior season recorded, the stale
+    fields are aligned to the current-season line before grading.
+    Aligned fields register as a ``checked`` origin for source
+    bookkeeping, and the check record is returned for the grade detail
+    (None when the check did not run).
 
     A second fill, for initial-role calls with no baseline at all:
     ``cohort_ppg`` (the position's mean rookie-year PPG, see
@@ -453,40 +604,42 @@ def resolve_baseline(
     window_rows = [r for r in weekly_rows if _num(r.get("week")) is not None
                    and int(r["week"]) in weeks]
     computed = window_stats(window_rows) if window_rows else {
-        "games": 0, "ppr_ppg": None, "opp_pg": None, "snap_pct": None,
+        "games": 0, "partial_games": 0, "ppr_ppg": None, "opp_pg": None,
+        "snap_pct": None,
     }
     prior_ppg: Optional[float] = None
     if prior_rows and call.get("baseline_source") == "prior_season":
         prior_ppg = window_stats(list(prior_rows)).get("ppr_ppg")
     baseline: Dict[str, Optional[float]] = {}
-    origins: Set[str] = set()
+    field_origins: Dict[str, str] = {}
     for field in ("ppr_ppg", "snap_pct", "opp_pg"):
         if stored.get(field) is not None:
             baseline[field] = stored[field]
-            origins.add("stored")
+            field_origins[field] = "stored"
         elif computed.get(field) is not None:
             baseline[field] = computed[field]
-            origins.add("computed")
+            field_origins[field] = "computed"
         elif field == "ppr_ppg" and prior_ppg is not None:
             baseline[field] = prior_ppg
-            origins.add("computed")
+            field_origins[field] = "computed"
         else:
             baseline[field] = None
-    if not origins and cohort_ppg is not None \
+    if not field_origins and cohort_ppg is not None \
             and call_needs_cohort_baseline(call):
         baseline["ppr_ppg"] = float(cohort_ppg)
-        origins.add("cohort")
+        field_origins["ppr_ppg"] = "cohort"
+    baseline, check = baseline_check(call, baseline, weekly_rows)
+    if check:
+        for field in check.get("aligned_fields") or []:
+            field_origins[field] = "checked"
+    origins = set(field_origins.values())
     if not origins:
         source = "none"
-    elif origins == {"stored"}:
-        source = "stored"
-    elif origins == {"computed"}:
-        source = "computed"
-    elif origins == {"cohort"}:
-        source = "cohort"
+    elif len(origins) == 1:
+        source = origins.pop()
     else:
         source = "mixed"
-    return baseline, source
+    return baseline, source, check
 
 
 def classify_outcome(
@@ -729,8 +882,8 @@ def grade_call(
     outcome = window_stats(outcome_rows)
     injury = classify_injury_window(outcome["games"],
                                     injury_by_week or {}, outcome_weeks)
-    baseline, baseline_source = resolve_baseline(call, rows, prior_rows,
-                                                 cohort_ppg)
+    baseline, baseline_source, baseline_check_record = resolve_baseline(
+        call, rows, prior_rows, cohort_ppg)
     if injury["injured"]:
         verdict = {
             "grade": GRADE_INJURED,
@@ -752,6 +905,10 @@ def grade_call(
         "role_state": verdict["role_state"],
         "reason": verdict["reason"],
     }
+    if baseline_check_record is not None:
+        detail["baseline_check"] = baseline_check_record
+    if outcome.get("partial_games"):
+        detail["outcome_partial_games"] = int(outcome["partial_games"])
     if verdict.get("injury"):
         detail["injury"] = verdict["injury"]
     detail["thresholds"] = {

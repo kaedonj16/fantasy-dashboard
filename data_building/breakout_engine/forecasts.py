@@ -146,8 +146,8 @@ def weekly_forecast(
                      f"the Week {call_week + 1} call",
         })
         return base
-    baseline, _source = wg.resolve_baseline(call, rows, prior_rows,
-                                             cohort_ppg)
+    baseline, _source, _check = wg.resolve_baseline(call, rows, prior_rows,
+                                                    cohort_ppg)
     verdict = wg.classify_outcome(baseline, outcome,
                                   cohort=(_source == "cohort"),
                                   position=call.get("position"))
@@ -763,8 +763,21 @@ def load_reconstructed_weeks(season: int) -> set:
         return set()
 
 
+def _grade_detail(row: Dict[str, Any]) -> Dict[str, Any]:
+    """A grade row's detail JSON as a dict (drivers return it as a dict
+    or as JSON text depending on the path)."""
+    detail = row.get("detail")
+    if isinstance(detail, str):
+        try:
+            detail = json.loads(detail)
+        except ValueError:
+            return {}
+    return detail if isinstance(detail, dict) else {}
+
+
 def _grade_row_view(row: Dict[str, Any],
                     reconstructed: bool = False) -> Dict[str, Any]:
+    role_state = _grade_detail(row).get("role_state")
     return {
         "player_id": str(row.get("player_id") or ""),
         "player_name": row.get("player_name"),
@@ -775,6 +788,15 @@ def _grade_row_view(row: Dict[str, Any],
         "ppg_delta": wg._num(row.get("ppg_delta")),
         "opp_delta": wg._num(row.get("opp_delta")),
         "snap_delta": wg._num(row.get("snap_delta")),
+        # The engine's verdict, carried verbatim for print surfaces:
+        # the grade itself, the role_state, and the one sanctioned
+        # display word (weekly_grading.role_verdict_word). Consumers
+        # such as the Breakout Report graphic must print role_word
+        # exactly - deriving a word from the deltas is how a HELD role
+        # once shipped as GREW.
+        "grade": str(row.get("grade") or ""),
+        "role_state": role_state,
+        "role_word": wg.role_verdict_word(role_state),
         "reconstructed": bool(reconstructed),
     }
 
