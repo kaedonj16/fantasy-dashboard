@@ -5838,6 +5838,81 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
   return statsHTML || '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">No game log data available.</div></div>';
 }
 
+// Frozen-pane cover state for game-log tables: while a game-log wrap is
+// scrolled sideways it carries .gl-scrolled, which lets the grp header
+// row's corner patch in dashboard.css extend over the Pts segment of the
+// pane so group labels hide from the pane's right edge, not the
+// corner's. Delegated in the capture phase because scroll does not
+// bubble; the class only flips when a wrap crosses scrollLeft 0.
+//
+// The same pass keeps the pane edge clean of glyph debris: a header
+// label whose text straddles the pane's right edge while most of it is
+// still covered (the last "T" of ATT, the tail of PASSING) would
+// otherwise show as a disembodied tip floating at the edge. Once per
+// animation frame per scroll, the straddling header cell is clipped at
+// its text's right edge, so each label stays fully hidden until at
+// least half of it has legitimately emerged past the pane. clip-path
+// does not affect layout, and clips are cleared as soon as a cell no
+// longer straddles or the wrap returns to rest.
+if (!window._glScrollCoverWired) {
+  window._glScrollCoverWired = true;
+  const _glClipped = new WeakMap();
+  const _glClipPass = function (w) {
+    let clipped = _glClipped.get(w);
+    if (!clipped) { clipped = new Set(); _glClipped.set(w, clipped); }
+    const clear = function (el) {
+      if (el.style.clipPath) el.style.clipPath = '';
+      clipped.delete(el);
+    };
+    if (w.scrollLeft <= 0) { Array.from(clipped).forEach(clear); return; }
+    const rows = w.querySelectorAll(':scope > table.game-log-table thead tr');
+    if (rows.length < 2) return;
+    const grpTh = rows[0].children, colsTh = rows[1].children;
+    const mobile = window.matchMedia('(max-width: 768px)').matches;
+    const frozen = mobile ? 3 : 2;
+    if (!colsTh[frozen - 1]) return;
+    const wr = w.getBoundingClientRect();
+    const edge = colsTh[frozen - 1].getBoundingClientRect().right - wr.left;
+    const grpEdge = mobile ? edge
+      : grpTh[0].getBoundingClientRect().right - wr.left;
+    const check = function (th, rowEdge) {
+      if (!th || !th.textContent.trim()) { if (th) clear(th); return; }
+      const cr = th.getBoundingClientRect();
+      const rg = document.createRange();
+      rg.selectNodeContents(th);
+      const tr = rg.getBoundingClientRect();
+      const cellLeft = cr.left - wr.left;
+      const textL = tr.left - wr.left, textR = tr.right - wr.left;
+      const vis = textR - rowEdge;
+      if (textL < rowEdge && vis > 0 && vis < (textR - textL) / 2) {
+        th.style.clipPath =
+          'inset(0 0 0 ' + Math.min(textR - cellLeft, cr.width) + 'px)';
+        clipped.add(th);
+      } else {
+        clear(th);
+      }
+    };
+    for (let i = 1; i < grpTh.length; i++) check(grpTh[i], grpEdge);
+    for (let i = frozen; i < colsTh.length; i++) check(colsTh[i], edge);
+  };
+  let _glRaf = 0, _glPendingWrap = null;
+  document.addEventListener('scroll', function (e) {
+    const w = e.target;
+    if (!w || !w.classList || !w.classList.contains('table-wrap')) return;
+    if (!w.querySelector(':scope > table.game-log-table')) return;
+    w.classList.toggle('gl-scrolled', w.scrollLeft > 0);
+    _glPendingWrap = w;
+    if (!_glRaf) {
+      _glRaf = requestAnimationFrame(function () {
+        _glRaf = 0;
+        const pw = _glPendingWrap;
+        _glPendingWrap = null;
+        if (pw) _glClipPass(pw);
+      });
+    }
+  }, true);
+}
+
 // Averages/Totals toggle for the game-log mini strips. Flips the value shown
 // in every CLOSED season row; expanded tables are unaffected by design.
 window.glSetAvgTot = function (mode, el) {
