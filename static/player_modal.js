@@ -5887,7 +5887,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
                       const cs = core === 0 ? all : (window._glDetailed ? all : core);
                       const attrs = hasDeep ? ` data-cs-all="${all}" data-cs-core="${core}"` : '';
                       const cls = 'grp-h' + (hasDeep && core === 0 && !window._glDetailed ? ' gl-deep' : '');
-                      return `<th colspan="${cs}" class="${cls}"${attrs}><span class="grp-pill">${gr.label}</span></th>`;
+                      return `<th colspan="${cs}" class="${cls}"${attrs}>${gr.label}</th>`;
                     }).join('')}
                   </tr>
                   <tr class="cols">

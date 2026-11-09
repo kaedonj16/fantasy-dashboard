@@ -24058,27 +24058,6 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     display: none;
 }
 
-/* Group header band: a light tint behind the group row, labels as small
-   pills. The frozen corner cell is not a grp-h and keeps its pane paint. */
-.gl-adv thead th.grp-h {
-    background: #f4f6f8;
-}
-[data-theme="dark"] .gl-adv thead th.grp-h {
-    background: #141e2e;
-}
-.grp-pill {
-    display: inline-block;
-    padding: 1px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: var(--card);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    line-height: 1.5;
-    color: var(--text-muted);
-}
-
 /* Game Logs header control cluster: the Detailed toggle sits
    immediately before the Averages/Totals pill, both centered on the
    same line at the header's right edge. The switch itself reuses the
