@@ -1085,26 +1085,68 @@ def _recent_vs_season_ratio(vals: List[float], recent_n: int = 3) -> Optional[fl
     return _shared_trend_ratio(vals, recent_n)
 
 
+def _week_team_resolver(
+        season: Optional[int],
+        team_by_pid: Dict[str, str],
+):
+    """(pid, week) -> the team the player was on THAT week.
+
+    Prefers the per-week team map (player_week_team, via
+    player_team_history.load_weekly_team_map) and falls back to the
+    current usage_table team when the map has no entry for that
+    player-week (or no season was given). Returned teams are in
+    usage_table (players-index) form: the weekly map carries the
+    nflverse form for the Rams, so LA is converted back to LAR.
+    """
+    wk_map: Dict[str, Dict[int, str]] = {}
+    if season is not None:
+        try:
+            from data_building.external_data.player_team_history import (
+                load_weekly_team_map,
+            )
+            wk_map = load_weekly_team_map(int(season)) or {}
+        except Exception:
+            wk_map = {}
+
+    def resolve(pid: Any, week: Any) -> str:
+        if wk_map and week is not None:
+            try:
+                team = (wk_map.get(str(pid)) or {}).get(int(week))
+            except (TypeError, ValueError):
+                team = None
+            if team:
+                t = str(team).strip().upper()
+                return "LAR" if t == "LA" else t
+        return team_by_pid.get(str(pid)) or ""
+
+    return resolve
+
+
 def _pool_team_week_pass_att(
         series_by_pid: Dict[str, List[Dict[str, Any]]],
         team_by_pid: Dict[str, str],
+        season: Optional[int] = None,
 ) -> Dict[tuple, float]:
     """{(team, week): team pass attempts} pooled from a weekly series.
 
     Every player's stored pass_att counts — the QB's attempts plus any
     trick-play attempts by WR/RB — which reproduces Sleeper's TEAM_
     aggregate rows exactly (verified on the 2025 caches: player rows sum
-    to 17,439 attempts, the TEAM_ rows sum to 17,439). Teams come from
-    team_by_pid (the usage_table team), the same pooling basis — and the
-    same mid-season-trade caveat — as the RZ share denominators in
-    finalize_weekly_series_metrics.
+    to 17,439 attempts, the TEAM_ rows sum to 17,439). Each week is
+    pooled under the team the player was on THAT week (per-week team
+    map, current-team fallback), never under his current team for the
+    whole season: pooling by current team attributes a traded QB's
+    entire season of attempts to his new team — when Brissett's listing
+    moved to BAL in 2026, ARI's pooled denominator collapsed to 54
+    (real 359) and BAL's inflated to 591 (real 247).
     """
+    resolve = _week_team_resolver(season, team_by_pid)
     out: Dict[tuple, float] = {}
     for pid, weeks in series_by_pid.items():
-        team = team_by_pid.get(pid) or ""
-        if not team:
-            continue
         for w in weeks:
+            team = resolve(pid, w.get("week"))
+            if not team:
+                continue
             key = (team, w.get("week"))
             out[key] = out.get(key, 0.0) + float(w.get("pass_att") or 0)
     return out
@@ -1139,21 +1181,23 @@ def upsert_yptpa_weekly_metrics(
     if not series_by_pid:
         return 0
     team_by_pid = {str(p.get("id")): (p.get("team") or "") for p in usage_table}
-    team_week_att = _pool_team_week_pass_att(series_by_pid, team_by_pid)
+    team_week_att = _pool_team_week_pass_att(series_by_pid, team_by_pid,
+                                             season=season)
+    resolve = _week_team_resolver(season, team_by_pid)
 
     init_weekly_advanced_metrics_db()
     count = 0
     with get_conn() as conn:
         for pid, weeks in series_by_pid.items():
-            team = team_by_pid.get(str(pid)) or ""
-            if not team:
-                continue
             for w in weeks:
                 pos = (w.get("position") or "").upper() or None
                 if pos not in ("RB", "WR", "TE"):
                     continue
                 week = w.get("week")
                 if week is None:
+                    continue
+                team = resolve(pid, week)
+                if not team:
                     continue
                 att = team_week_att.get((team, week), 0.0)
                 rec_yds = float(w.get("rec_yards") or 0)
@@ -1201,7 +1245,10 @@ def finalize_weekly_series_metrics(
 
     RZ shares pool each player's weeks under the team listed in usage_table
     (a mid-season trade misattributes pre-trade weeks to the new team; the
-    weekly layer has team_for_week if exactness is ever needed).
+    weekly layer has team_for_week if exactness is ever needed). YPTPA is
+    the exception: its denominator pools per-week teams (see
+    _pool_team_week_pass_att), because a QB carries a whole team's pass
+    attempts and a current-team pool moves all of them on a trade.
     """
     if not metrics_list:
         return
@@ -1244,7 +1291,12 @@ def finalize_weekly_series_metrics(
     # same series: every player's pass_att counts, QBs plus trick-play
     # attempts by WR/RB, which reproduces Sleeper's TEAM_ aggregate rows
     # exactly (verified on 2025: 17,439 player-summed = 17,439 TEAM_).
-    team_week_att = _pool_team_week_pass_att(series_by_pid, team_by_pid)
+    # Pooled under each player's team THAT week, and each receiver's
+    # denominator below is summed under his own per-week teams, so a
+    # traded QB's attempts stay with the team he threw them for.
+    team_week_att = _pool_team_week_pass_att(series_by_pid, team_by_pid,
+                                             season=season)
+    resolve_week_team = _week_team_resolver(season, team_by_pid)
 
     # Team RZ denominators from the same weekly series (pooled per team).
     team_rz_targets: Dict[str, float] = {}
@@ -1312,7 +1364,9 @@ def finalize_weekly_series_metrics(
             # basis stays inspectable. Raw float, no rounding.
             if position in ("RB", "WR", "TE"):
                 rec_yds = sum(float(w.get("rec_yards") or 0) for w in weeks)
-                t_att = sum(team_week_att.get((team, w.get("week")), 0.0)
+                t_att = sum(team_week_att.get(
+                                (resolve_week_team(pid, w.get("week")),
+                                 w.get("week")), 0.0)
                             for w in weeks)
                 m["team_pass_att_gp"] = t_att if t_att > 0 else None
                 m["yards_per_team_pass_att"] = \
