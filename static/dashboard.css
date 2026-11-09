@@ -23699,9 +23699,10 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 }
 
 .game-log-table td {
-    padding: 6px 6px;
+    padding: 3px 6px;
     text-align: center;
     color: var(--text-muted);
+    line-height: 1.25;
 }
 
 .game-log-table td:first-child {
@@ -23716,13 +23717,14 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
     color: var(--text) !important;
 }
 
-/* Opponent code stacked over a matchup-difficulty chip */
+/* Opponent code beside a matchup-difficulty chip, on one line */
 .game-log-table-opp .opp-stack {
     display: inline-flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 2px;
-    line-height: 1.15;
+    gap: 4px;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .game-log-table-opp .opp-code {
@@ -23732,11 +23734,11 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 
 .game-log-matchup {
     display: inline-block;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    padding: 0 5px;
+    padding: 0 4px;
     border-radius: var(--radius-sm);
-    line-height: 1.5;
+    line-height: 1.4;
     letter-spacing: .01em;
     font-variant-numeric: tabular-nums;
     cursor: default;
@@ -23777,7 +23779,7 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 }
 
 .game-log-table-total td {
-    padding: 8px 6px;
+    padding: 5px 6px;
     color: var(--text);
     font-weight: 700;
     font-size: 13px;
@@ -23837,13 +23839,20 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 .game-log-table tbody td:nth-child(1),
 .game-log-table tfoot td:nth-child(1) {
     left: 0;
-    width: 48px;
+    width: 44px;
+    /* The date glyphs must fit inside the 44px sticky offset: at the
+       desktop 13px size "10/18" plus the default 12px left padding ends
+       past 44px, and the Opp pane (stuck at left:44px) would paint over
+       the last digit mid-scroll. Tighter cell padding keeps the whole
+       date inside the frozen column at every width. */
+    padding-left: 6px;
+    padding-right: 0;
 }
 .game-log-table thead tr.cols th:nth-child(2),
 .game-log-table tbody td:nth-child(2),
 .game-log-table tfoot td:nth-child(2) {
-    left: 48px;
-    width: 46px;
+    left: 44px;
+    width: 118px;
 }
 .game-log-table thead tr.grp th:first-child,
 .game-log-table thead tr.cols th:nth-child(-n+2) {
@@ -23984,7 +23993,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     min-width: 640px;
 }
 .gl-adv thead tr.grp th {
-    padding: 8px 4px 2px;
+    padding: 4px 4px 0;
     border-bottom: none;
 }
 .gl-adv thead th.grp-h {
@@ -23996,7 +24005,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     border-bottom: 1px solid var(--border);
 }
 .gl-adv thead tr.cols th {
-    padding: 3px 6px 8px;
+    padding: 2px 6px 5px;
 }
 .gl-adv td.sec-start,
 .gl-adv th.sec-start {
@@ -27770,12 +27779,12 @@ tr.team-clickable {
     }
 
     .game-log-table th {
-        padding: 6px 4px;
+        padding: 4px 4px;
         font-size: 11px;
     }
 
     .game-log-table td {
-        padding: 5px 4px;
+        padding: 3px 4px;
         font-size: 11px;
     }
 
@@ -27795,19 +27804,19 @@ tr.team-clickable {
     .game-log-table th:nth-child(1),
     .game-log-table td:nth-child(1) {
         left: 0;
-        width: 48px;
+        width: 44px;
         padding-left: 8px;
     }
 
     .game-log-table th:nth-child(2),
     .game-log-table td:nth-child(2) {
-        left: 48px;
-        width: 46px;
+        left: 44px;
+        width: 118px;
     }
 
     .game-log-table th:nth-child(3),
     .game-log-table td:nth-child(3) {
-        left: 94px;
+        left: 162px;
         width: 54px;
         /* Subtle divider marks where the frozen pane ends and scrolling begins. */
         border-right: 1px solid var(--border);
@@ -29603,7 +29612,7 @@ tr.cmp3-more td {
 
 .compare-gamelogs-col .game-log-table th,
 .compare-gamelogs-col .game-log-table td {
-    padding: 5px 5px;
+    padding: 3px 5px;
 }
 
 .compare-gamelogs-col .game-log-table th:first-child,
