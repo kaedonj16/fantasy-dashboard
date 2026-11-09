@@ -1,10 +1,10 @@
-"""Focused tests for the mobile search empty-state suggestions and the
+"""Focused tests for the search empty-state suggestions and the
 site-wide iOS no-zoom rule.
 
-Suggestions: with an empty query, the mobile search page / dropdown now
-shows Recent searches (localStorage), Top players (by proj_ppg from the
-slim search payload) and a Jump to shortcut list, instead of a blank
-void. Desktop keeps the old behavior (empty query shows nothing).
+Suggestions: with an empty query, the search page and the search
+dropdowns (mobile and desktop) now show Recent searches (localStorage),
+Top players (by proj_ppg from the slim search payload) and a Jump to
+shortcut list, instead of a blank void.
 
 No-zoom: iOS Safari zooms into any focused field under 16px, so all
 three stylesheets carry one blanket 16px rule for form fields inside
@@ -75,9 +75,12 @@ def test_app_js_render_suggestions_wired_to_empty_query():
     # renderResults routes the empty query to suggestions instead of
     # closing the dropdown outright.
     assert "if (!q) { renderSuggestions(); return; }" in APP_JS
-    # Mobile gate: desktop top-bar focus with an empty query shows nothing.
-    assert "window.matchMedia('(max-width: 768px)')" in APP_JS
-    assert "brSearchScreen" in APP_JS
+    # No context gate: suggestions render in every context (search page,
+    # mobile dropdown, desktop dropdown). renderSuggestions() closes the
+    # dropdown only when a query is actually typed.
+    assert "function suggestionsContext(" not in APP_JS
+    assert "suggestionsContext()" not in APP_JS
+    assert "if (input.value.trim()) { closeDropdown(); return; }" in APP_JS
 
 
 def test_app_js_suggestion_sections_and_jump_to_subset():
