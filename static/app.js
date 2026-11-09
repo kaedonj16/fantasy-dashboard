@@ -34234,17 +34234,44 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     });
     if (tile) tile.textContent = rows.length ? (w + '-' + l) : '—';
     if (box) {
-      box.innerHTML = rows.length ? rows.map(function (r) {
-        var now = (r.status && r.status !== 'pre' && r.youScore != null)
-          ? '<span class="pf-rc-now">' + fmt1(r.youScore) + ' · ' + fmt1(r.oppScore) + '</span>'
-          : '<span class="pf-rc-now"></span>';
-        var tag = r._tag
-          ? '<span class="pf-rc-tag ' + (r._tag === 'W' ? 'w' : r._tag === 'L' ? 'l' : 't') + '">' + r._tag + '</span>'
-          : '';
-        return '<div class="pf-rc-row"><span class="pf-rc-lg">' + esc(r.name) + '</span>' +
-          '<span class="pf-rc-opp">vs ' + esc(r.opp) + '</span>' + now +
-          '<span class="pf-rc-proj">' + fmt1(r.youProj) + ' · ' + fmt1(r.oppProj) + '</span>' + tag + '</div>';
-      }).join('') : '<div class="pf-receipts-empty">Scores are still loading.</div>';
+      if (!rows.length) {
+        box.innerHTML = '<div class="pf-receipts-empty">Scores are still loading.</div>';
+      } else {
+        var totYou = 0, totOpp = 0, totOk = true;
+        rows.forEach(function (r) {
+          var y = Number(r.youProj), o = Number(r.oppProj);
+          if (!Number.isFinite(y) || !Number.isFinite(o)) { totOk = false; return; }
+          totYou += y; totOpp += o;
+        });
+        var html = rows.map(function (r) {
+          var y = Number(r.youProj), o = Number(r.oppProj);
+          var d = y - o;
+          var md = Math.round(d * 10) / 10;
+          var margin = (md < 0 ? '-' : '+') + Math.abs(md).toFixed(1);
+          var mCls = r._tag === 'W' ? 'w' : r._tag === 'L' ? 'l' : 't';
+          var now = (r.status && r.status !== 'pre' && r.youScore != null)
+            ? '<span class="pf-rc-now">' + fmt1(r.youScore) + ' · ' + fmt1(r.oppScore) + '</span> '
+            : '';
+          var tag = r._tag
+            ? '<span class="pf-rc-tag ' + (r._tag === 'W' ? 'w' : r._tag === 'L' ? 'l' : 't') + '">' + r._tag + '</span>'
+            : '';
+          return '<div class="pf-rc-row"><span class="pf-rc-main"><span class="pf-rc-lg">' + esc(r.name) + '</span>' +
+            '<span class="pf-rc-opp">vs ' + esc(r.opp) + '</span></span>' +
+            '<span class="pf-rc-right"><span class="pf-rc-proj">' +
+            '<span class="' + (y > o ? 'pf-rc-win' : '') + '">' + fmt1(r.youProj) + '</span> · ' +
+            '<span class="' + (o > y ? 'pf-rc-win' : '') + '">' + fmt1(r.oppProj) + '</span></span>' +
+            '<span>' + now + '<span class="pf-rc-margin ' + mCls + '">' + margin + '</span></span></span>' + tag + '</div>';
+        }).join('');
+        if (totOk) {
+          var net = totYou - totOpp;
+          var fmtT = function (v) {
+            return v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+          };
+          html += '<div class="pf-rc-total">' + fmtT(totYou) + ' for · ' + fmtT(totOpp) +
+            ' against · net ' + (net < 0 ? '-' : '+') + fmtT(Math.abs(net)) + '</div>';
+        }
+        box.innerHTML = html;
+      }
     }
   }
   window.__pfReceiptPush = function (row) {
