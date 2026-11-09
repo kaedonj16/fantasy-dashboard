@@ -1015,6 +1015,11 @@ def build_advanced_metrics_body(
       .am-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
       .am-player-right { display:flex; align-items:center; gap:4px; flex-shrink:0; }
       .am-meta { font-size:11px; color:var(--text-muted); }
+      /* Name + mobile subline wrapper. The subline (rank folded in) only
+         renders on phones; see the max-width:600px table block below. */
+      .am-player-main { min-width:0; }
+      .am-player-main .am-name { display:block; }
+      .am-player-sub { display:none; }
       /* Merged metric cell: bar on left, value on right */
       .am-metric-cell { display:flex; align-items:center; gap:10px; }
       .am-metric-bar { flex:1; min-width:0; }
@@ -1037,16 +1042,42 @@ def build_advanced_metrics_body(
       @media (max-width:600px){
         .am-games, .am-table th.am-games,
         .am-weeks, .am-table th.am-weeks { display:none !important; }
+        /* Fit 3 columns: fixed layout pins every column to its declared
+           width, so Player (148px) + the first three metric columns
+           (68px each) = 352px sit fully visible in the ~372px phone wrap
+           and sideways scroll only starts at the fourth metric. */
+        .am-table { table-layout:fixed; }
+        .am-table td { padding:9px 6px; }
+        .am-table th { padding:8px 6px; }
+        /* The # column folds into the player cell subline (below). */
+        .am-rank, .am-table th.am-rank { display:none !important; }
+        .am-player { width:148px; max-width:148px; }
+        .am-player-inner { flex-wrap:wrap; }
+        .am-player-main { flex:1 1 100%; }
+        .am-player-right { display:none; }
+        .am-player-sub {
+          display:block; margin-top:2px; font-size:11px; line-height:1.25;
+          color:var(--text-muted); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis;
+        }
         .am-metric-bar { display:none; }
-        .am-metric-cell { gap:0; }
-        .am-val { min-width:38px; font-size:13px; text-align:center; }
+        .am-metric-cell { gap:0; justify-content:center; }
+        .am-val-wrap { width:auto; align-items:center; }
+        .am-val-row { justify-content:center; }
+        .am-val { min-width:0; font-size:13px; text-align:center; }
         .am-controls { gap:10px; }
         .am-ctrl:first-child { flex:1 0 100%; }
         .am-ctrl-search { flex:1 0 100%; }
         .am-ctrl-season { flex:1 0 100%; }
         .am-select { min-width:0; width:100%; }
         .am-roster-toggle { padding:5px 10px; font-size:11px; }
-        .am-barcell { min-width:52px; }
+        .am-barcell { width:68px; min-width:68px; max-width:68px; }
+        /* No short-label field exists in the metric catalog, so headers
+           wrap inside their 68px instead of forcing the column wider. */
+        .am-table th.am-barcell {
+          font-size:11px; white-space:normal; text-align:center;
+          line-height:1.2; letter-spacing:0; overflow-wrap:break-word;
+        }
       }
       .am-pagination { display:flex; align-items:center; justify-content:center; gap:16px; padding:16px 0 4px; }
       .am-page-btn {
@@ -4454,8 +4485,19 @@ _AM_JS = r"""
         + 'onclick="event.stopPropagation();amTogglePin(\'' + r.player_id + '\')" '
         + 'title="' + (pinned ? 'Unpin' : (state.pinnedIds.size >= _AM_MAX_PINS ? 'Unpin another player first (max 5)' : 'Pin to compare')) + '">' + _PIN_SVG + '</button>';
       const rankCell = '<td class="am-rank" data-column-id="rank"><div class="am-rank-cell">' + pinBtn + '<span>' + rank + '</span></div></td>';
+      // Mobile Fit 3: the # column is display:none on phones, so the rank
+      // folds into this subline under the name (.am-player-sub only renders
+      // at <=600px; desktop keeps the separate # column and the right-hand
+      // team/pos meta). Position is left out of the subline when the view
+      // is already filtered to exactly that one position: it adds nothing
+      // there. The pin button rides along so pinning still works on phones.
+      const _posNow = _posList();
+      const _subPos = (r.position && !(_posNow.length === 1 && _posNow[0] === r.position))
+        ? ' <span style="color:' + col + ';font-weight:600">' + r.position + '</span>' : '';
+      const playerSub = '<span class="am-player-sub">' + pinBtn + '#' + rank + ' · ' + amTeamLabel(r) + _subPos + '</span>';
       const playerCell = '<td class="am-player" data-column-id="player"><div class="am-player-inner">'
-        + '<span class="am-name">' + (r.name || '') + '</span>'
+        + '<span class="am-player-main"><span class="am-name">' + (r.name || '') + '</span>'
+        + playerSub + '</span>'
         + ownedBadge
         + _weeklyChipHtml(r)
         + '<span class="am-player-right">'
