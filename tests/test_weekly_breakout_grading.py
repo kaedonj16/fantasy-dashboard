@@ -248,7 +248,7 @@ def test_v4_grade_call_caps_single_game_hit_at_partial():
     assert one["grade"] == "partial"
     assert one["outcome_games"] == 1
     assert one["detail"]["reason"] == "single_game_sample"
-    assert one["grading_version"] == "weekly-grading-v5"
+    assert one["grading_version"] == "weekly-grading-v6"
     assert one["detail"]["thresholds"]["hit_min_games"] == 2
     assert one["detail"]["thresholds"]["ppg_miss_delta"] == -2.0
     two = wg.grade_call(call, [wk(5, snap=65, tgt=9, car=11, ppr=18.0),
@@ -412,23 +412,33 @@ def test_baseline_falls_back_to_pre_call_weeks_when_not_stored():
 
 def test_prior_season_baseline_never_uses_current_season_weeks():
     # Prior-season calls store a snap baseline but no PPG baseline; the
-    # player's current-season games before the call are the *recent* window
-    # and must not be promoted into a baseline.
+    # player's current-season games before the call are the *recent*
+    # window and are never promoted into the baseline WINDOW or the PPG
+    # fill: baseline PPG stays unmeasured without prior-season rows.
+    # Since weekly-grading-v6 those same games do feed the baseline
+    # CHECK: two pre-call games at 80% snaps / 20 opp per game are
+    # materially above the stored prior-season role (45% / 9), so the
+    # role fields align to the current role before grading, and the
+    # outcome (60% / 16) reads as the reverted role it actually was.
     call = make_call(baseline_ppg=None, baseline_snap=45.0, baseline_opp=9.0,
                      baseline_weeks=(), baseline_source="prior_season")
     rows = [
         wk(2, snap=80, tgt=10, car=10, ppr=25.0),
         wk(3, snap=80, tgt=10, car=10, ppr=25.0),
-        wk(5, snap=60, tgt=7, car=9, ppr=20.0),   # opp 16 (+7), snap +15
+        wk(5, snap=60, tgt=7, car=9, ppr=20.0),   # opp 16, snap 60
         wk(6, snap=60, tgt=7, car=9, ppr=20.0),
         wk(7, snap=60, tgt=7, car=9, ppr=20.0),
     ]
     grade = wg.grade_call(call, rows)
-    assert grade["baseline_source"] == "stored"
     assert grade["baseline_ppg"] is None
     assert grade["ppg_delta"] is None
-    # Role clearly held, but a hit requires a measured production rise.
-    assert grade["grade"] == "partial"
+    assert grade["baseline_snap_pct"] == 80.0
+    assert grade["baseline_opp_pg"] == 20.0
+    assert grade["detail"]["baseline_check"]["aligned_fields"] == [
+        "snap_pct", "opp_pg"]
+    # No measured production: the pre-v5 role-only verdicts apply, and
+    # a reverted role is a miss.
+    assert grade["grade"] == "miss"
 
 
 # ---------------------------------------------------------------------------
@@ -461,13 +471,17 @@ def test_prior_season_ppg_fill_from_prior_rows_can_hit():
     assert grade["baseline_source"] == "mixed"
 
 
-def test_prior_season_fill_uses_prior_rows_never_current_season():
-    # Pre-call current-season weeks are the recent window: even with prior
-    # rows supplied, their 25.0 PPG must not leak into the baseline.
-    rows = [wk(2, snap=80, tgt=10, car=10, ppr=25.0),
-            wk(3, snap=80, tgt=10, car=10, ppr=25.0)] + _held_outcome_rows()
+def test_prior_season_fill_uses_prior_rows_when_current_role_agrees():
+    # The PPG fill always comes from prior-season rows, never from
+    # current-season weeks. Since weekly-grading-v6 the baseline check
+    # compares the two, but when the current role agrees with the prior
+    # baseline (no field materially higher), nothing aligns and the
+    # filled baseline stands exactly as the prior rows set it.
+    rows = [wk(2, snap=50, tgt=5, car=5, ppr=11.0),
+            wk(3, snap=50, tgt=5, car=5, ppr=11.0)] + _held_outcome_rows()
     grade = wg.grade_call(_prior_call(), rows, _prior_rows())
     assert grade["baseline_ppg"] == 10.0
+    assert grade["detail"]["baseline_check"]["aligned_fields"] == []
     assert grade["grade"] == "hit"
 
 
