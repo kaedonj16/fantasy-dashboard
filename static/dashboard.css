@@ -23699,7 +23699,7 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 }
 
 .game-log-table td {
-    padding: 3px 6px;
+    padding: 3px 4px;
     text-align: center;
     color: var(--text-muted);
     line-height: 1.25;
@@ -23852,7 +23852,7 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 .game-log-table tbody td:nth-child(2),
 .game-log-table tfoot td:nth-child(2) {
     left: 44px;
-    width: 118px;
+    width: 86px;
 }
 .game-log-table thead tr.grp th:first-child,
 .game-log-table thead tr.cols th:nth-child(-n+2) {
@@ -23990,7 +23990,9 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     position: relative;
 }
 .gl-adv {
-    min-width: 640px;
+    /* No min-width floor: the table sizes to its content. A floor here
+       spread the columns apart regardless of their padding. */
+    min-width: 0;
 }
 .gl-adv thead tr.grp th {
     padding: 4px 4px 0;
@@ -24005,7 +24007,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     border-bottom: 1px solid var(--border);
 }
 .gl-adv thead tr.cols th {
-    padding: 2px 6px 5px;
+    padding: 2px 4px 5px;
 }
 .gl-adv td.sec-start,
 .gl-adv th.sec-start {
@@ -24069,7 +24071,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
         min-width: 0;
     }
     .gl-adv {
-        min-width: 600px;
+        min-width: 0;
     }
 }
 
@@ -24974,6 +24976,22 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pm-section-label-link:hover,
 .pm-section-label-link:focus-visible {
     color: var(--accent);
+    text-decoration: underline;
+}
+
+/* Explicit Advanced Metrics page link at the right of the modal's Advanced
+   section header (the title link alone was too easy to miss). Same target as
+   the title link; plain in-tab anchor like the Player Page button. */
+.pm-adv-page-link {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.pm-adv-page-link:hover,
+.pm-adv-page-link:focus-visible {
     text-decoration: underline;
 }
 
@@ -27779,12 +27797,12 @@ tr.team-clickable {
     }
 
     .game-log-table th {
-        padding: 4px 4px;
+        padding: 4px 3px;
         font-size: 11px;
     }
 
     .game-log-table td {
-        padding: 3px 4px;
+        padding: 3px 3px;
         font-size: 11px;
     }
 
@@ -27811,13 +27829,13 @@ tr.team-clickable {
     .game-log-table th:nth-child(2),
     .game-log-table td:nth-child(2) {
         left: 44px;
-        width: 118px;
+        width: 86px;
     }
 
     .game-log-table th:nth-child(3),
     .game-log-table td:nth-child(3) {
-        left: 162px;
-        width: 54px;
+        left: 130px;
+        width: 48px;
         /* Subtle divider marks where the frozen pane ends and scrolling begins. */
         border-right: 1px solid var(--border);
     }

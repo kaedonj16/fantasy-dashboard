@@ -1523,17 +1523,24 @@ function openPlayerModal(playerId, playerName, opts) {
         TE: { label: 'Receiving', preset: 'Receiving' },
       };
       const _posSet = _posSets[_metricsPos];
-      // The section title itself links to the filtered Adv Metrics leaderboard
-      // (no separate "View in Adv Metrics" button). The info icon stays a
-      // separate control - it can't be nested inside the title's link.
+      // The section title itself links to the filtered Adv Metrics leaderboard.
+      // The info icon stays a separate control - it can't be nested inside
+      // the title's link. An explicit page link also sits at the right of the
+      // section header (the title link alone was too easy to miss); both use
+      // the same URL: the AM page reads pos/preset/search on load, and its
+      // search deep link filters the leaderboard to this player.
+      const _advPageUrl = _posSet
+        ? `${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}`
+        : `${_metricsBase}?search=${encodeURIComponent(playerName || '')}`;
       const _advTitle = _posSet
-        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}" class="pm-section-label-link" title="Open ${_posSet.label} leaderboard">Advanced Metrics</a>`
+        ? `<a href="${_advPageUrl}" class="pm-section-label-link" title="Open ${_posSet.label} leaderboard">Advanced Metrics</a>`
         : 'Advanced Metrics';
       const _metricsPanelHTML = function(_hm) {
         return _hm ? `
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
             <span class="pm-section-label">${_advTitle} <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span><span class="adv-info-icon" onclick="advShowInfoTip(event)" aria-label="About metric tooltips">ⓘ</span></span>
+            <a class="pm-adv-page-link" href="${_advPageUrl}" title="Open the Advanced Metrics page filtered to this player">Advanced Metrics page &#8250;</a>
           </div>
           <div id="advMetricsPills"></div>
           <div id="advancedMetricsContent">
@@ -6041,6 +6048,9 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
 
   // When season is explicitly known and no week range, pre-fetch ranks in parallel
   // with the metrics request so we can render once with both instead of two renders.
+  // Ranks fetches get a 30s budget (not the usual 12s): the endpoint computes
+  // whole-position ranks live on a cold cache, and a 12s abort silently
+  // resolved to null and rendered the whole tab with no "(#N)" rank subs.
   let _earlyRanksPromise = null;
   if (realSeason && !hasWeekRange) {
     let _rUrl = `/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${season}`;
@@ -6048,7 +6058,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     const _rCached = _advRanksCache.get(_rUrl);
     _earlyRanksPromise = _rCached
       ? Promise.resolve(_rCached)
-      : _advFetch(_rUrl, 12000).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+      : _advFetch(_rUrl, 30000).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
           if (d && d.ranks) {
             _advRanksCache.set(_rUrl, d);
             if (_advRanksCache.size > 20) _advRanksCache.delete(_advRanksCache.keys().next().value);
@@ -6234,7 +6244,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             const _rCached2 = _advRanksCache.get(rankUrl);
             _ranksPromise = _rCached2
               ? Promise.resolve(_rCached2)
-              : _advFetch(rankUrl, 12000).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+              : _advFetch(rankUrl, 30000).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
                   if (d && d.ranks) {
                     _advRanksCache.set(rankUrl, d);
                     if (_advRanksCache.size > 20) _advRanksCache.delete(_advRanksCache.keys().next().value);
@@ -8158,7 +8168,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
     if (metrics.yards_after_catch != null) {
       const v = metrics.yards_after_catch;
-      defs.push({ label: 'YAC (season)', fill: Math.min(v / 600 * 100, 100), display: Math.round(v).toString(), cat: 'Volume' });
+      defs.push({ label: 'YAC (season)', fill: Math.min(v / 600 * 100, 100), display: Math.round(v).toString(), key: 'yards_after_catch', sub: _rankSub('yards_after_catch'), cat: 'Volume' });
     }
     if (metrics.avg_depth_of_target != null) {
       const v = metrics.avg_depth_of_target;
@@ -8207,19 +8217,19 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
     if (metrics.slot_rate != null) {
       const v = metrics.slot_rate;
-      defs.push({ label: 'Slot Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%', cat: 'Receiving' });
+      defs.push({ label: 'Slot Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%', key: 'slot_rate', sub: _rankSub('slot_rate'), cat: 'Receiving' });
     }
     if (metrics.wide_rate != null) {
       const v = metrics.wide_rate;
-      defs.push({ label: 'Wide Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%', cat: 'Receiving' });
+      defs.push({ label: 'Wide Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%', key: 'wide_rate', sub: _rankSub('wide_rate'), cat: 'Receiving' });
     }
     if (position === 'TE' && metrics.inline_rate != null) {
       const v = metrics.inline_rate;
-      defs.push({ label: 'Inline Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%', cat: 'Receiving' });
+      defs.push({ label: 'Inline Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%', key: 'inline_rate', sub: _rankSub('inline_rate'), cat: 'Receiving' });
     }
     if (metrics.pass_block_rate != null) {
       const v = metrics.pass_block_rate;
-      defs.push({ label: 'Block Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%', cat: 'Receiving' });
+      defs.push({ label: 'Block Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%', key: 'pass_block_rate', sub: _rankSub('pass_block_rate'), cat: 'Receiving' });
     }
     if (metrics.grades_pass_block != null) {
       const v = metrics.grades_pass_block;

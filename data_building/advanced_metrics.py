@@ -6070,6 +6070,16 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "first_down_rate": ("total_touches", 40),
                 "rz_opp_share": ("games", 4),
                 "rz_target_share": ("games", 4),
+                # Modal tiles the window query above never ranked: alignment
+                # rates, pass-block rate, season YAC total, and WOPR (a stored
+                # column, but absent from the SQL rank list). All are physical
+                # columns on the merged snapshot rows, so they rank here.
+                "slot_rate": ("total_targets", 15),
+                "wide_rate": ("total_targets", 15),
+                "inline_rate": ("total_targets", 15),
+                "pass_block_rate": ("games", 4),
+                "yards_after_catch": ("total_receptions", 10),
+                "wopr": ("games", 4),
                 "yards_per_team_pass_att": ("games", 4),
                 "boom_rate": ("games", 4),
                 "bust_rate": ("games", 4),
