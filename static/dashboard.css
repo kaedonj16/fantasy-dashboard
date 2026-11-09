@@ -23822,7 +23822,12 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
    Pts as a third frozen column with its own divider; here the pane ends
    after Opp. The two header rows are targeted separately: tr.grp's first
    cell spans both frozen columns, tr.cols carries the Date/Opp headers.
-   Fixed widths give the second column a known left offset. Every row
+   Widths are pinned with matching min/max: in an auto-layout table a bare
+   width is only a hint, and a column that renders narrower than its
+   sticky offset assumes leaves a gap at the pane seam that the scrolled
+   columns ghost through. Sticky thresholds sit 1px inside the preceding
+   column's edge (43px, not 44px) so the stuck cell's opaque background
+   always covers the collapsed-border seam column at that edge. Every row
    state that paints a td background gets an opaque twin here so scrolled
    cells never show through the pane. */
 .game-log-table thead tr.grp th:first-child,
@@ -23834,12 +23839,22 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 .game-log-table tfoot td:nth-child(2) {
     position: sticky;
 }
-.game-log-table thead tr.grp th:first-child,
+/* The grp corner spans Date + Opp: size it to the full 130px it spans,
+   not one 44px column, so the group labels start over their real columns
+   and slide under this opaque corner when the table scrolls. */
+.game-log-table thead tr.grp th:first-child {
+    left: 0;
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+}
 .game-log-table thead tr.cols th:nth-child(1),
 .game-log-table tbody td:nth-child(1),
 .game-log-table tfoot td:nth-child(1) {
     left: 0;
     width: 44px;
+    min-width: 44px;
+    max-width: 44px;
     /* The date glyphs must fit inside the 44px sticky offset: at the
        desktop 13px size "10/18" plus the default 12px left padding ends
        past 44px, and the Opp pane (stuck at left:44px) would paint over
@@ -23851,11 +23866,21 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 .game-log-table thead tr.cols th:nth-child(2),
 .game-log-table tbody td:nth-child(2),
 .game-log-table tfoot td:nth-child(2) {
-    left: 44px;
+    left: 43px;
     width: 86px;
+    min-width: 86px;
+    max-width: 86px;
 }
-.game-log-table thead tr.grp th:first-child,
-.game-log-table thead tr.cols th:nth-child(-n+2) {
+/* The corner sits one level above the frozen column headers so the
+   group labels pass under it when scrolled. Pts gets the same opaque
+   header background as Date/Opp (it is the third frozen header below
+   768px; at desktop widths this matches the thead background it already
+   showed through). */
+.game-log-table thead tr.grp th:first-child {
+    background: var(--bg-alt);
+    z-index: 4;
+}
+.game-log-table thead tr.cols th:nth-child(-n+3) {
     background: var(--bg-alt);
     z-index: 3;
 }
@@ -23882,6 +23907,23 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
     .game-log-table tbody td:nth-child(2),
     .game-log-table tfoot td:nth-child(2) {
         border-right: 1px solid var(--border);
+    }
+    /* Same sticky-border repaint problem as mobile: the divider is also
+       painted as an ::after line on the stuck Opp cells so it survives
+       scrolling, and on the grp corner (the desktop pane's full width,
+       whose right edge never carries label text) so the line runs
+       unbroken through both header rows. */
+    .game-log-table thead tr.cols th:nth-child(2)::after,
+    .game-log-table tbody td:nth-child(2)::after,
+    .game-log-table tfoot td:nth-child(2)::after,
+    .game-log-table thead tr.grp th:first-child::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 1px;
+        background: var(--border);
     }
 }
 
@@ -24047,7 +24089,9 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .scroll-hint {
     position: sticky;
     float: right;
-    margin: -28px 10px 8px 0;
+    /* Below the table, never over it: the old -28px top margin pulled the
+       hint up over the totals row and covered its last cells. */
+    margin: 0 10px 4px 0;
     color: var(--text-muted);
     opacity: 0.5;
     font-size: 15px;
@@ -27807,42 +27851,69 @@ tr.team-clickable {
     }
 
     /* Freeze Date / Opp / Pts as a left pane while the stat columns scroll.
-     Fixed widths give each frozen column a known offset for the next one. */
-    .game-log-table th:nth-child(1),
-    .game-log-table td:nth-child(1),
-    .game-log-table th:nth-child(2),
-    .game-log-table td:nth-child(2),
-    .game-log-table th:nth-child(3),
-    .game-log-table td:nth-child(3) {
+     Header selectors are scoped to tr.cols: in the tr.grp header row the
+     same nth-child numbers are the FANTASY / PASSING group labels, which
+     froze over the pane when these selectors were unscoped. Widths are
+     pinned with matching min/max so each column renders at exactly the
+     width the sticky offsets assume, and the thresholds sit 1-2px inside
+     the preceding column's edge (43px / 128px) so the stuck cell's
+     background covers the collapsed-border seam column: a scrolled stat
+     column ghosting through that seam was the dotted sliver visible
+     between Opp and Pts. */
+    .game-log-table thead tr.cols th:nth-child(1),
+    .game-log-table thead tr.cols th:nth-child(2),
+    .game-log-table thead tr.cols th:nth-child(3),
+    .game-log-table tbody td:nth-child(1),
+    .game-log-table tbody td:nth-child(2),
+    .game-log-table tbody td:nth-child(3),
+    .game-log-table tfoot td:nth-child(1),
+    .game-log-table tfoot td:nth-child(2),
+    .game-log-table tfoot td:nth-child(3) {
         position: sticky;
-        background: var(--card);
         white-space: nowrap;
     }
 
-    .game-log-table th:nth-child(1),
-    .game-log-table td:nth-child(1) {
+    .game-log-table tbody td:nth-child(-n+3),
+    .game-log-table tfoot td:nth-child(-n+3) {
+        background: var(--card);
+    }
+
+    .game-log-table thead tr.cols th:nth-child(1),
+    .game-log-table tbody td:nth-child(1),
+    .game-log-table tfoot td:nth-child(1) {
         left: 0;
         width: 44px;
+        min-width: 44px;
+        max-width: 44px;
         padding-left: 8px;
     }
 
-    .game-log-table th:nth-child(2),
-    .game-log-table td:nth-child(2) {
-        left: 44px;
+    .game-log-table thead tr.cols th:nth-child(2),
+    .game-log-table tbody td:nth-child(2),
+    .game-log-table tfoot td:nth-child(2) {
+        left: 43px;
         width: 86px;
+        min-width: 86px;
+        max-width: 86px;
     }
 
-    .game-log-table th:nth-child(3),
-    .game-log-table td:nth-child(3) {
-        left: 130px;
+    .game-log-table thead tr.cols th:nth-child(3),
+    .game-log-table tbody td:nth-child(3),
+    .game-log-table tfoot td:nth-child(3) {
+        left: 128px;
         width: 48px;
-        /* Subtle divider marks where the frozen pane ends and scrolling begins. */
+        min-width: 48px;
+        max-width: 48px;
+        /* Subtle divider marks where the frozen pane ends and scrolling
+           begins. The border-right paints it at rest; the ::after line
+           below repaints it at the stuck position while scrolled. */
         border-right: 1px solid var(--border);
     }
 
     /* Header corner cells stay above the frozen body cells (which sit above the
-     scrolling stat cells). */
-    .game-log-table thead th:nth-child(-n+3) {
+     scrolling stat cells). Scoped to tr.cols so the grp group labels keep
+     the global thead z-index and pass under the corner (z-index 4). */
+    .game-log-table thead tr.cols th:nth-child(-n+3) {
         z-index: 3;
     }
 
@@ -27868,6 +27939,52 @@ tr.team-clickable {
     .game-log-no-stats td:nth-child(-n+3),
     .game-log-bye td:nth-child(-n+3) {
         background-color: var(--row);
+    }
+
+    /* The pane divider also rides on the stuck Pts cells as an ::after
+     line: in a collapsed-border table the shared border column scrolls
+     away with the content and the stuck cell's border-right above is
+     not repainted at its stuck position, so the divider vanished from
+     the header, body and totals the moment the table scrolled. The
+     pseudo-element is part of the stuck cell's own paint, so the line
+     survives at every scroll position, on the column next to the
+     border it replaces while scrolled. */
+    .game-log-table thead tr.cols th:nth-child(3)::after,
+    .game-log-table tbody td:nth-child(3)::after,
+    .game-log-table tfoot td:nth-child(3)::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 1px;
+        background: var(--border);
+    }
+
+    /* While the table is scrolled sideways, extend the grp header row's
+     cover over the Pts segment of the frozen pane. The corner cell spans
+     only Date + Opp (130px) but the mobile pane is three columns, so a
+     group label's tail stayed visible drifting across the Pts segment
+     of its own header row. The patch is the corner's ::after reaching
+     from 130px to the stuck pane's right edge (177px: the frozen cells
+     stick 2px inside their rest position); it paints only while the
+     wrap carries .gl-scrolled (toggled by the scroll listener in
+     player_modal.js), because at rest the first group's label
+     legitimately sits over that segment of its own cell. The corner is
+     z-index 4, so the patch covers every group label that crosses. Its
+     right edge carries the same hard-stop divider line as the stuck
+     Pts cells below, so the line runs unbroken through both header
+     rows while scrolled. */
+    .table-wrap.gl-scrolled .game-log-table thead tr.grp th:first-child::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 130px;
+        width: 46px;
+        background: var(--bg-alt);
+        background-image: linear-gradient(to left, var(--border) 0 1px, transparent 1px);
+        background-repeat: no-repeat;
     }
 
     /* Adjust year header for mobile */
