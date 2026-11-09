@@ -147,7 +147,7 @@ def test_scorezone_shared_collect_cache():
     assert "_RZ_COLLECT_TTL = 60.0" in APP
     # Single-flight: concurrent polls share one in-flight build.
     assert "_RZ_COLLECT_INFLIGHT" in APP
-    assert "_prune_ttl_cache(_RZ_COLLECT_CACHE, 32)" in APP
+    assert "_prune_ttl_cache(_RZ_COLLECT_CACHE, _RZ_COLLECT_CACHE_MAX)" in APP
     # Per-viewer fields stamped onto a copy; cached payload never mutated.
     assert "d = dict(_rz_d)" in APP
     # Honest clock: data age is the collect's age.
