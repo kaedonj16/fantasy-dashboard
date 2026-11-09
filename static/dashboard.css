@@ -24025,6 +24025,71 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .gl-adv td.game-log-table-pts.t-o { color: #f59e0b !important; }
 .gl-adv td.game-log-table-pts.t-r { color: #ef4444 !important; }
 
+/* Digestible game-log washes: full-cell tints in the Schedule Rankings
+   palette (sched_rank_color's exact pairs, so a great game reads the
+   same green here as an easy matchup does there). background-color is
+   !important so a wash survives the frozen pane's row-state paints,
+   which target the Pts cell with high-specificity nth-child selectors
+   (the same reason the Pts tier colors above need !important). */
+.gl-adv td.gl-w1 { color: #22c55e; background-color: #22c55e18 !important; font-weight: 700; }
+.gl-adv td.gl-w2 { color: #84cc16; background-color: #84cc1618 !important; font-weight: 700; }
+.gl-adv td.gl-w3 { color: #f59e0b; background-color: #f59e0b18 !important; font-weight: 700; }
+.gl-adv td.gl-w4 { color: #ef4444; background-color: #ef444418 !important; font-weight: 700; }
+.gl-adv td.game-log-table-pts.gl-w1 { color: #22c55e !important; }
+.gl-adv td.game-log-table-pts.gl-w3 { color: #f59e0b !important; }
+.gl-adv td.game-log-table-pts.gl-w4 { color: #ef4444 !important; }
+
+/* Deep (advanced) columns stay hidden until the section's Detailed
+   toggle adds gl-show-detail to the table; group-header colspans swap
+   in step (data-cs-all / data-cs-core, flipped by glSetDetailed). */
+.game-log-table:not(.gl-show-detail) .gl-deep {
+    display: none;
+}
+
+/* Group header band: a light tint behind the group row, labels as small
+   pills. The frozen corner cell is not a grp-h and keeps its pane paint. */
+.gl-adv thead th.grp-h {
+    background: #f4f6f8;
+}
+[data-theme="dark"] .gl-adv thead th.grp-h {
+    background: #141e2e;
+}
+.grp-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--card);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+/* Game Logs header control cluster: the Detailed toggle sits
+   immediately before the Averages/Totals pill, both centered on the
+   same line at the header's right edge. The switch itself reuses the
+   Standings .st-detail-* styles; this is only the placement. */
+.gl-head-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+.pm-section-header .st-detail-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 6px 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
 /* Sectioned advanced table: group header row + column row, dividers between
    sections, sticky date column for horizontal scrolling. */
 .table-wrap {

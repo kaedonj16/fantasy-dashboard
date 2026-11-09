@@ -5317,6 +5317,14 @@ function _buildBkTabHTML(data, scoreColor) {
 // Averages/Totals mode for the game-log mini strips. Module-level so the
 // toggle and re-renders stay in sync across modal opens.
 window._glAvgTot = window._glAvgTot || 'avg';
+// Detailed (deep-column) state for the game-log tables, mirroring the
+// Standings page's Detailed toggle: persisted in localStorage, applied
+// per table via the gl-show-detail class plus the grp-colspan swap in
+// glSetDetailed below.
+if (window._glDetailed === undefined) {
+  try { window._glDetailed = localStorage.getItem('br-gamelog-detailed') === '1'; }
+  catch (e) { window._glDetailed = false; }
+}
 
 function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeams, opts) {
   seasonTeams = seasonTeams || {};
@@ -5359,13 +5367,58 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
     }
   };
 
+  // Wash steps (gl-w1..gl-w4, the Schedule Rankings palette) for the
+  // game-log table cells: a cell is colored by where the game sits in
+  // the real distribution of player games at this position, NOT by the
+  // hand-set _glTier bands above (those still drive the season strip).
+  // Cutoffs are pool-derived -- see scripts/derive_game_log_tiers.py
+  // (Sleeper weekly stats cache, 2025 + 2026 weeks 1-6, appearance-
+  // filtered, involvement floors per position; pools: QB 722, RB 980,
+  // WR 1873, TE 796 player-weeks). Shape: [step1 >=, step2 >=,
+  // step3 <=, step4 <=]; null = no such step. TD / red-zone columns are
+  // top-tail only (zero is a normal game). INT inverts (fewer is
+  // better). Pts reuses its _glTier assignment (green -> 1, orange ->
+  // 3, red -> 4); Rank bands are finish bands (1-5 / 6-12 / 13-24 /
+  // 25+); xFP uses Kaedon's fixed calibration bands (its weekly pool
+  // lives in the Postgres advanced store, not the stats cache). BTK /
+  // YBC / ADOT / WOPR have no honest local pool and stay unwashed.
+  const _GL_WASH = {
+    QB: { patt: [42, 37, 25, 20], pcmp: [28, 24, 15, 12], pyd: [314.8, 270, 167, 119], pypa: [9.64, 8.27, 5.73, 4.78], ptd: [4, 3, null, null], pint: [null, null, 2, 2], car: [7, 5, null, null], ryd: [43.9, 27, null, null], rypa: [8.33, 6.43, 2.25, 0.68], rtd: [1, 1, null, null] },
+    RB: { car: [21, 17, 9, 7], ryd: [104, 75, 33, 22], rypa: [6.43, 5.11, 3.12, 2.42], rtd: [2, 1, null, null], tar: [6, 4, 1, 0], rec: [5, 3, 0, 0], recyd: [43.1, 27, 2, null], rectd: [1, 1, null, null], ypt: [11.03, 7.67, 3.38, 1.67], carpct: [75, 63.6, 36, 27.1], tspct: [18.5, 12.9, 4, 0], rzcar: [5, 4, null, null], rztar: [2, 1, null, null], snppct: [81.2, 70.9, 42.4, 31.9] },
+    WR: { tar: [10, 8, 3, 2], rec: [7, 5, 2, 1], recyd: [97, 67, 21, 10], rectd: [2, 1, null, null], ypt: [13.88, 10.48, 4.67, 2.67], tspct: [30.6, 24.3, 11.9, 8.9], rztar: [3, 2, null, null], car: [1, null, null, null], ryd: [3, null, null, null], rtd: [1, 1, null, null], snppct: [93.1, 86.1, 56.8, 40.8] },
+    TE: { tar: [9, 6, 3, 2], rec: [7, 5, 2, 1], recyd: [77, 53, 20, 11], rectd: [2, 1, null, null], ypt: [12.15, 9.33, 4.8, 3.25], tspct: [25.8, 20, 11.1, 8.7], rztar: [3, 2, null, null], rtd: [1, 1, null, null], snppct: [91.7, 83.6, 53.8, 40.3] },
+  };
+  const _glWashStep = (key, v) => {
+    if (v == null) return 0;
+    if (key === 'pts') {
+      const t = _glTier('pts', v);
+      return t === 't-g' ? 1 : t === 't-o' ? 3 : t === 't-r' ? 4 : 0;
+    }
+    if (key === 'rank') return v <= 5 ? 1 : v <= 12 ? 2 : v <= 24 ? 3 : 4;
+    if (key === 'xfp') return v >= 18 ? 1 : v >= 14 ? 2 : v < 5.5 ? 4 : v < 9 ? 3 : 0;
+    const t = (_GL_WASH[POS] || {})[key];
+    if (!t) return 0;
+    if (key === 'pint') {
+      if (t[0] != null && v <= t[0]) return 1;
+      if (t[1] != null && v <= t[1]) return 2;
+      if (t[3] != null && v >= t[3]) return 4;
+      if (t[2] != null && v >= t[2]) return 3;
+      return 0;
+    }
+    if (t[0] != null && v >= t[0]) return 1;
+    if (t[3] != null && v <= t[3]) return 4;
+    if (t[1] != null && v >= t[1]) return 2;
+    if (t[2] != null && v <= t[2]) return 3;
+    return 0;
+  };
+
   // Column spec: get(g) -> number|null; fmt(v) -> string; agg: 'sum' | 'avg' |
   // 'wavg' (carries-weighted) | 'rate' (recomputed from season totals).
   // src 'adv' marks columns fed by the weekly advanced-metrics pipeline, so
   // seasons with no advanced rows (or projection-only seasons) hide them
   // instead of rendering a wall of dashes.
-  const _C = (k, h, get, fmt, tier, agg, src) =>
-    ({ k, h, get, fmt, tier: tier || '', agg: agg || 'sum', src: src || 'stat' });
+  const _C = (k, h, get, fmt, tier, agg, src, deep) =>
+    ({ k, h, get, fmt, tier: tier || '', agg: agg || 'sum', src: src || 'stat', deep: !!deep });
   const _sGet = (sk) => (g) => _num((g.stats || {})[sk]);
   const _aGet = (ak) => (g) => _num((g.adv || {})[ak]);
   const _rateGet = (nk, dk) => (g) => {
@@ -5374,12 +5427,20 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
     return d ? _num(s[nk]) / d : null;
   };
 
+  // Verdict block: the Fantasy group leads the table with the game's
+  // bottom line (Pts, weekly finish Rank, snap share, expected points)
+  // before any box-score group. Rank comes from the payload's per-game
+  // `rank` (server-computed finish at the position that week); SNP%
+  // moved up here from Usage for the same reason.
   const _FANT = [
     _C('pts', 'Pts', (g) => _num(g.fantasy_pts), (v) => fmtPts(v), 'pts', 'sum'),
+    _C('rank', 'Rank', (g) => _num(g.rank), (v) => String(Math.round(v)), '', 'none'),
+    _C('snppct', 'SNP%', _aGet('snap_pct'), _r0, 'snpPct', 'avg', 'adv'),
     _C('xfp', 'xFP', _aGet('xfp'), _r1, 'xfp', 'sum', 'adv'),
   ];
   const _PASS = [
     _C('patt', 'Att', _sGet('pass_att'), _r0, 'att', 'sum'),
+    _C('pcmp', 'Cmp', _sGet('pass_cmp'), _r0, '', 'sum'),
     _C('pyd', 'Yd', _sGet('pass_yd'), _r0, 'ydPass', 'sum'),
     _C('pypa', 'Y/A', _rateGet('pass_yd', 'pass_att'), _r1, 'ypaPass', 'rate'),
     _C('ptd', 'TD', _sGet('pass_td'), (v) => String(v), 'td', 'sum'),
@@ -5389,25 +5450,24 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
     _C('car', 'Car', _sGet('rush_att'), _r0, 'car', 'sum'),
     _C('ryd', 'Yd', _sGet('rush_yd'), _r0, 'ydRush', 'sum'),
     _C('rypa', 'Yd/A', _rateGet('rush_yd', 'rush_att'), (v) => v.toFixed(2), 'ypaRush', 'rate'),
-    _C('carpct', 'Car%', _aGet('carry_share'), _r0, 'carPct', 'avg', 'adv'),
+    _C('carpct', 'Car%', _aGet('carry_share'), _r0, 'carPct', 'avg', 'adv', true),
     _C('rtd', 'TD', _sGet('rush_td'), (v) => String(v), 'td', 'sum'),
-    _C('btk', 'BTK', _aGet('btk'), _r0, 'btk', 'sum', 'adv'),
-    _C('rzcar', 'RZ Car', _aGet('rz_carries'), (v) => String(v), '', 'sum', 'adv'),
-    _C('ybc', 'YBC', _aGet('ybc'), _r1, 'ybc', 'wavg', 'adv'),
+    _C('btk', 'BTK', _aGet('btk'), _r0, 'btk', 'sum', 'adv', true),
+    _C('rzcar', 'RZ Car', _aGet('rz_carries'), (v) => String(v), '', 'sum', 'adv', true),
+    _C('ybc', 'YBC', _aGet('ybc'), _r1, 'ybc', 'wavg', 'adv', true),
   ];
   const _REC = [
     _C('tar', 'Tar', _sGet('rec_tgt'), _r0, 'tar', 'sum'),
     _C('rec', 'Rec', _sGet('rec'), _r0, 'rec', 'sum'),
     _C('recyd', 'Yd', _sGet('rec_yd'), _r0, 'ydRec', 'sum'),
     _C('rectd', 'TD', _sGet('rec_td'), (v) => String(v), 'td', 'sum'),
-    _C('ypt', 'YPT', _rateGet('rec_yd', 'rec_tgt'), (v) => v.toFixed(2), 'ypt', 'rate'),
-    _C('tspct', 'TS%', _aGet('target_share'), _r0, 'tsPct', 'avg', 'adv'),
-    _C('adot', 'ADOT', _aGet('adot'), _r1, '', 'avg', 'adv'),
-    _C('rztar', 'RZ Tar', _aGet('rz_targets'), (v) => String(v), '', 'sum', 'adv'),
+    _C('ypt', 'YPT', _rateGet('rec_yd', 'rec_tgt'), (v) => v.toFixed(2), 'ypt', 'rate', '', true),
+    _C('tspct', 'TS%', _aGet('target_share'), _r0, 'tsPct', 'avg', 'adv', true),
+    _C('adot', 'ADOT', _aGet('adot'), _r1, '', 'avg', 'adv', true),
+    _C('rztar', 'RZ Tar', _aGet('rz_targets'), (v) => String(v), '', 'sum', 'adv', true),
   ];
   const _USE = [
-    _C('snppct', 'SNP%', _aGet('snap_pct'), _r0, 'snpPct', 'avg', 'adv'),
-    _C('wopr', 'WOPR', _aGet('wopr'), (v) => v.toFixed(2), 'wopr', 'avg', 'adv'),
+    _C('wopr', 'WOPR', _aGet('wopr'), (v) => v.toFixed(2), 'wopr', 'avg', 'adv', true),
   ];
   const _RUSH_COMPACT = ['car', 'ryd', 'rypa', 'rtd'];
   const _RATE_BASE = { rypa: ['rush_yd', 'rush_att'], ypt: ['rec_yd', 'rec_tgt'], pypa: ['pass_yd', 'pass_att'] };
@@ -5423,10 +5483,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
     const hasPass = _has((s) => s.pass_yd || s.pass_td || s.pass_int);
     const hasRush = _has((s) => s.rush_att || s.rush_yd || s.rush_td);
     const hasRec = _has((s) => s.rec_tgt || s.rec || s.rec_yd || s.rec_td);
-    const hasUse = realGames.some((g) => {
-      const a = g.adv || {};
-      return a.snap_pct != null || a.target_share != null || a.carry_share != null || a.wopr != null;
-    });
+    const hasUse = realGames.some((g) => (g.adv || {}).wopr != null);
     const groups = [];
     const fant = _vis(_FANT);
     if (fant.length) groups.push({ label: 'Fantasy', cols: fant });
@@ -5449,8 +5506,9 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
     }
     if (!groups.length) {
       // Projection-only player: fall back to a position-shaped, box-score-only
-      // table (no advanced columns) rather than an empty grid.
-      const _nf = (cols) => cols.filter((c) => c.src !== 'adv');
+      // table (no advanced columns) rather than an empty grid. Rank is
+      // excluded too: a projection has no finish to rank.
+      const _nf = (cols) => cols.filter((c) => c.src !== 'adv' && c.k !== 'rank');
       groups.push({ label: 'Fantasy', cols: _nf(_FANT) });
       const rushC = _nf(_RUSH.filter((c) => _RUSH_COMPACT.includes(c.k)));
       if (POS === 'QB') {
@@ -5557,8 +5615,10 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
   }).join('');
 
   // Season total for one column (tfoot). Rates recompute from season totals;
-  // shares average; YBC is carries-weighted.
+  // shares average; YBC is carries-weighted. 'none' columns (Rank) have no
+  // meaningful season total and render a dash.
   const _totFor = (col, realGames) => {
+    if (col.agg === 'none') return null;
     if (col.agg === 'rate') {
       const base = _RATE_BASE[col.k] || [];
       let nn = 0, dd = 0;
@@ -5659,9 +5719,16 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
         ${skipHeader ? '' : `
         <div class="pm-section-header">
           <span class="pm-section-label">Game Logs</span>
-          <div class="seg-light gl-toggle" role="group" aria-label="Season totals mode">
-            <span class="${_mode === 'avg' ? 'on' : ''}" data-mode="avg" onclick="glSetAvgTot('avg', this)">Averages</span>
-            <span class="${_mode === 'tot' ? 'on' : ''}" data-mode="tot" onclick="glSetAvgTot('tot', this)">Totals</span>
+          <div class="gl-head-controls">
+            <label class="st-detail-toggle" title="Show extra stat columns">
+              <input type="checkbox" ${window._glDetailed ? 'checked' : ''} onchange="glSetDetailed(this)">
+              <span class="st-detail-switch" aria-hidden="true"></span>
+              <span>Detailed</span>
+            </label>
+            <div class="seg-light gl-toggle" role="group" aria-label="Season totals mode">
+              <span class="${_mode === 'avg' ? 'on' : ''}" data-mode="avg" onclick="glSetAvgTot('avg', this)">Averages</span>
+              <span class="${_mode === 'tot' ? 'on' : ''}" data-mode="tot" onclick="glSetAvgTot('tot', this)">Totals</span>
+            </div>
           </div>
         </div>`}
         <div class="season-list">
@@ -5720,7 +5787,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
               <td class="sticky">${_dateStr(game) || `Wk ${game.week}`}</td>
               <td class="game-log-table-opp">${_oppCell(game, '-')}</td>
               <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
-              ${allCols.filter((c) => c.k !== 'pts').map(() => '<td class="dash">-</td>').join('')}
+              ${allCols.filter((c) => c.k !== 'pts').map((c) => `<td class="dash${c.deep ? ' gl-deep' : ''}">-</td>`).join('')}
             </tr>
           `;
           return;
@@ -5732,7 +5799,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
           s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null);
         const rowClass = isBye ? 'game-log-table-row game-log-bye'
           : hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
-        const ptsTier = hasAnyStats && game.fantasy_pts != null ? _glTier('pts', game.fantasy_pts) : '';
+        const ptsStep = hasAnyStats && game.fantasy_pts != null ? _glWashStep('pts', game.fantasy_pts) : 0;
         const ptsCell = isBye ? '-' : hasAnyStats
           ? (game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '-')
           : '<span class="gl-dnp">DNP</span>';
@@ -5742,7 +5809,8 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
           gr.cols.forEach((c, ci) => {
             if (c.k === 'pts') return; // Pts lives in its own fixed column
             const v = (isBye || !hasAnyStats) ? null : c.get(game);
-            const cls = ((ci === 0 ? 'sec-start ' : '') + _glTier(c.tier, v)).trim();
+            const step = _glWashStep(c.k, v);
+            const cls = ((ci === 0 ? 'sec-start ' : '') + (c.deep ? 'gl-deep ' : '') + (step ? 'gl-w' + step : '')).trim();
             cells += `<td class="${cls}">${v == null ? '-' : c.fmt(v)}</td>`;
           });
         });
@@ -5751,7 +5819,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
           <tr class="${rowClass}">
             <td class="sticky">${isBye ? '<span class="bye-code">BYE</span>' : _dateStr(game)}</td>
             <td class="game-log-table-opp">${_oppCell(game, '-')}</td>
-            <td class="game-log-table-pts sec-start ${ptsTier}">${ptsCell}</td>
+            <td class="game-log-table-pts sec-start${ptsStep ? ' gl-w' + ptsStep : ''}">${ptsCell}</td>
             ${cells}
           </tr>
         `;
@@ -5761,13 +5829,14 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
       let tfoot = '';
       if (isProjection) {
         const span = Math.max(allCols.length - 1, 1);
+        const coreSpan = Math.max(allCols.filter((c) => !c.deep).length - 1, 1);
         tfoot = `
           <tfoot>
             <tr class="game-log-table-total game-log-proj-row">
               <td class="sticky"><strong>Total</strong></td>
               <td><strong>${projGames}G</strong></td>
               <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
-              <td colspan="${span}" class="gl-tfoot-note">* Projected - actuals update when games are played</td>
+              <td colspan="${window._glDetailed ? span : coreSpan}" data-cs-all="${span}" data-cs-core="${coreSpan}" class="gl-tfoot-note">* Projected - actuals update when games are played</td>
             </tr>
           </tfoot>`;
       } else {
@@ -5778,7 +5847,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
               <td><strong>${agg.n}G</strong></td>
               ${allCols.map((c) => {
                 const t = _totFor(c, realGames);
-                const cls = c.k === 'pts' ? 'game-log-table-pts sec-start' : '';
+                const cls = ((c.k === 'pts' ? 'game-log-table-pts sec-start' : '') + (c.deep ? ' gl-deep' : '')).trim();
                 return `<td class="${cls}"><strong>${t == null ? '-' : c.fmt(t)}</strong></td>`;
               }).join('')}
             </tr>
@@ -5804,17 +5873,28 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
           </div>${_summaryOnly ? '' : `
           <div class="game-log-year-content${isFirstYear ? ' expanded' : ''}" id="year-${year}">
             <div class="table-wrap">
-              <table class="game-log-table gl-adv">
+              <table class="game-log-table gl-adv${window._glDetailed ? ' gl-show-detail' : ''}">
                 <thead>
                   <tr class="grp">
                     <th colspan="2"></th>
-                    ${groups.map((gr) => `<th colspan="${gr.cols.length}" class="grp-h">${gr.label}</th>`).join('')}
+                    ${groups.map((gr) => {
+                      const core = gr.cols.filter((c) => !c.deep).length;
+                      const all = gr.cols.length;
+                      const hasDeep = all > core;
+                      // An all-deep group (Usage) hides its header with its
+                      // columns while Detailed is off; its colspan is moot
+                      // then, so it keeps the full span.
+                      const cs = core === 0 ? all : (window._glDetailed ? all : core);
+                      const attrs = hasDeep ? ` data-cs-all="${all}" data-cs-core="${core}"` : '';
+                      const cls = 'grp-h' + (hasDeep && core === 0 && !window._glDetailed ? ' gl-deep' : '');
+                      return `<th colspan="${cs}" class="${cls}"${attrs}><span class="grp-pill">${gr.label}</span></th>`;
+                    }).join('')}
                   </tr>
                   <tr class="cols">
                     <th class="sticky">Date</th>
                     <th>Opp</th>
                     ${groups.map((gr) => gr.cols.map((c, ci) =>
-                      `<th class="${ci === 0 ? 'sec-start' : ''}">${c.k === 'pts' && (isProjection || isMixed) ? 'Pts *' : c.h}</th>`
+                      `<th class="${((ci === 0 ? 'sec-start' : '') + (c.deep ? ' gl-deep' : '')).trim()}">${c.k === 'pts' && (isProjection || isMixed) ? 'Pts *' : c.h}</th>`
                     ).join('')).join('')}
                   </tr>
                 </thead>
@@ -5912,6 +5992,24 @@ if (!window._glScrollCoverWired) {
     }
   }, true);
 }
+
+// Detailed toggle for the game-log tables (Standings pattern): flips the
+// deep (advanced) columns in every season table of the section at once.
+// The tables carry their state in the gl-show-detail class; group header
+// and projection-note colspans swap between the render-stamped
+// data-cs-core / data-cs-all values so headers stay over their columns.
+window.glSetDetailed = function (input) {
+  const on = !!(input && input.checked);
+  window._glDetailed = on;
+  try { localStorage.setItem('br-gamelog-detailed', on ? '1' : '0'); } catch (e) { /* private mode */ }
+  const section = (input && input.closest('.player-modal-section')) || document;
+  section.querySelectorAll('table.game-log-table').forEach((t) => {
+    t.classList.toggle('gl-show-detail', on);
+    t.querySelectorAll('[data-cs-all]').forEach((el) => {
+      el.colSpan = on ? el.dataset.csAll : el.dataset.csCore;
+    });
+  });
+};
 
 // Averages/Totals toggle for the game-log mini strips. Flips the value shown
 // in every CLOSED season row; expanded tables are unaffected by design.
