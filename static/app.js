@@ -32521,7 +32521,8 @@ window.__brSzLiveCache = (function () {
         var ini = (p.name || '?').trim().split(/\s+/).map(function (w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
         var hs = p.id ? '<span class="gs-hs" data-init="' + esc(ini) + '"><img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + esc(p.id) + '.jpg" alt="" loading="lazy" onerror="this.parentNode.classList.add(\'img-err\')"></span>' : '';
         return '<tr data-pid="' + esc(p.id || '') + '" data-pname="' + esc(p.name || '') + '">'
-          + '<td class="rz-bs-pname">' + hs + esc(p.name || '–') + '</td>'
+          + '<td class="rz-bs-pname"><span class="gs-prow">' + hs
+          + '<span class="gs-pname">' + esc(p.name || '–') + '</span></span></td>'
           + '<td class="rz-bs-fp' + (r.fp === leadFp && r.fp > 0 ? ' is-lead' : '') + '">'
           + r.fp.toFixed(1) + '</td>' + cells + '</tr>';
       }).join('');

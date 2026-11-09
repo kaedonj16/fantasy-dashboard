@@ -179,6 +179,31 @@ def test_game_sheet_events_harness_passes():
     assert "ALL GAME SHEET EVENT HARNESS CHECKS PASSED" in result.stdout
 
 
+def test_sheet_name_cell_is_a_flex_row():
+    seg = _sheet_segment()
+    # The name cell wraps headshot + name in a flex row with the name in
+    # its own block: as bare inline content the second word wrapped to
+    # the cell's left edge, under the headshot (Kaedon's GB @ NE shot:
+    # "Drake" beside the photo, "Maye" below it).
+    assert '<span class="gs-prow">' in seg
+    assert '<span class="gs-pname">' in seg
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    start = css.index("Matchups game sheet (drive-bar sheet")
+    end = css.index("MERGED: icons.css", start)
+    block = css[start:end]
+    prow = re.search(r"\.gs-sheet \.gs-prow \{(.*?)\}", block, flags=re.S)
+    assert prow and "display: flex" in prow.group(1)
+    assert prow and "align-items: center" in prow.group(1)
+    hs = re.search(r"\.gs-sheet \.gs-prow \.gs-hs \{(.*?)\}", block, flags=re.S)
+    assert hs and "flex: none" in hs.group(1)
+    # ScoreZone's own box-score sheet stays name-only: none of the game
+    # sheet's headshot / name-row markup or classes leak into it.
+    sz = (ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
+    assert "gs-hs" not in sz
+    assert "gs-prow" not in sz
+    assert "gs-pname" not in sz
+
+
 def test_game_sheet_css_block():
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     start = css.index("Matchups game sheet (drive-bar sheet")

@@ -56520,6 +56520,23 @@ button.mb-fld-link {
     font-weight: 900;
     color: var(--rz-muted);
 }
+/* Name cell layout: headshot and name form one flex row, so a long name
+   wraps inside its own text block beside the photo. As bare inline
+   content the second word wrapped to the cell's left edge, under the
+   headshot. Game sheet only: ScoreZone's own box-score sheet renders
+   the same .rz-bs-pname cell name-only and is untouched. overflow-wrap
+   is a safety net for a single word wider than the name block; it never
+   triggers on names that fit. */
+.gs-sheet .gs-prow {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+.gs-sheet .gs-prow .gs-hs { flex: none; }
+.gs-sheet .gs-pname {
+    min-width: 0;
+    overflow-wrap: break-word;
+}
 
 /* ── Trade Calculator: chip headshots (all widths) + phone redesign ──────
    Chips gain a headshot face at every width: the ESPN photo on a
