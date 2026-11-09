@@ -30493,8 +30493,8 @@ function setupFunAwardsGrid() {
     _loading = true;
     _loadFailed = false;
     try {
-      // Slim nav-search view: 5 fields per player (~50KB). Default cache mode
-      // lets the server's ETag + max-age=60 work; no-store is not used.
+      // Slim nav-search view: a few fields per player (~50KB). Default cache
+      // mode lets the server's ETag + max-age=60 work; no-store is not used.
       const res = await fetch('/api/league-players?view=search');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
@@ -30506,6 +30506,7 @@ function setupFunAwardsGrid() {
           name: String(p.name || ''),
           search_name: String(p.search_name || ''),
           value: Number(p.value || 0),
+          projPpg: Number(p.proj_ppg || 0),
           pos:  String(p.position || '').toUpperCase(),
           team: String(p.team || p.nfl_team || ''),
           headshot: String(p.espnHeadshot || ''),
@@ -30519,6 +30520,9 @@ function setupFunAwardsGrid() {
     // If the user already typed while the list was loading, render now instead
     // of leaving the dropdown stuck on "Loading…" until they type another key.
     if (input.value.trim()) renderResults(input.value);
+    // Suggestions already on screen (mobile, empty query) gain their Top
+    // players section the moment the list lands.
+    else if (_suggShowing) renderSuggestions();
   }
 
   function posColor(pos) {
@@ -30583,9 +30587,116 @@ function setupFunAwardsGrid() {
     ).slice(0, 8);
   }
 
+  // ── Empty-state suggestions (mobile only) ─────────────────────────────
+  // With no query typed, the full-screen search page and the mobile
+  // dropdown used to render a blank void. On mobile we fill that space
+  // with Recent searches, Top players and a Jump to shortcut list.
+  // Desktop top-bar behavior is unchanged: an empty query shows nothing.
+  const RECENT_SEARCHES_KEY = 'br_recent_searches';
+  const JUMP_TO_LABELS = ['ScoreZone', 'Matchups', 'Start/Sit', 'Trade Calculator', 'Waivers', 'Player Rankings'];
+  let _suggShowing = false;
+
+  function suggestionsContext() {
+    const screen = document.getElementById('brSearchScreen');
+    if (screen && (screen.classList.contains('open') || wrapper.closest('#brSearchScreen'))) return true;
+    return !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+  }
+
+  function loadRecents() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || '[]');
+      if (!Array.isArray(raw)) return [];
+      return raw.filter(r => r && r.id && r.name).slice(0, 5);
+    } catch (e) { return []; }
+  }
+
+  function recordRecent(p) {
+    if (!p || !p.id || !p.name) return;
+    try {
+      const recents = loadRecents().filter(r => String(r.id) !== String(p.id));
+      recents.unshift({
+        id: String(p.id), name: String(p.name), pos: String(p.pos || ''),
+        team: String(p.team || ''), headshot: String(p.headshot || ''),
+      });
+      localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(recents.slice(0, 5)));
+    } catch (e) { /* storage unavailable: recents just stay empty */ }
+  }
+
+  function recordRecentById(pid) {
+    if (!pid || !_players) return;
+    recordRecent(_players.find(p => p.id === String(pid)));
+  }
+
+  function clearRecents() {
+    try { localStorage.removeItem(RECENT_SEARCHES_KEY); } catch (e) {}
+  }
+
+  function renderSuggestions() {
+    if (input.value.trim() || !suggestionsContext()) { closeDropdown(); return; }
+    let idx = 0;
+    function suggPlayerRow(p) {
+      const i = idx++;
+      const meta = p.projPpg
+        ? (p.team || '–') + ' · ' + Number(p.projPpg).toFixed(1) + ' proj'
+        : (p.team || '–') + _availMetaSuffix(p);
+      return `
+          <div class="nav-search-result" data-idx="${i}" data-ns-kind="player" data-ns-pid="${p.id}" data-ns-name="${p.name.replace(/"/g, '&quot;')}">
+            <img class="nav-search-avatar" src="${_hiResHeadshot(p.headshot, 80)}" data-raw="${p.headshot}" alt="" loading="lazy"
+                 onerror="this.style.visibility='hidden'" />
+            <div class="nav-search-info">
+              <div class="nav-search-name">${p.name}</div>
+              <div class="nav-search-meta">${meta}</div>
+            </div>
+            <span class="nav-search-pos nav-search-pos-${posColor(p.pos)}">${p.pos}</span>
+          </div>
+        `;
+    }
+    function suggCmdRow(cmd, metaText) {
+      const i = idx++;
+      const href = cmd.abs ? (cmd.path + (cmd.suffix || '')) : brNavLeagueUrl(cmd.path, cmd.suffix || '');
+      return `<a class="nav-search-cmd" data-idx="${i}" data-ns-kind="cmd" href="${href}">` +
+        `<span class="nav-search-cmd-icon"><i class="fa-solid ${cmd.icon}" aria-hidden="true"></i></span>` +
+        `<span><span>${cmd.label}</span><div class="nav-search-cmd-meta">${metaText}</div></span></a>`;
+    }
+
+    let html = '';
+
+    const recents = loadRecents();
+    if (recents.length) {
+      html += '<div class="nav-search-group-head"><div class="nav-search-group-label">Recent</div>' +
+        '<button type="button" class="nav-search-clear-recents" data-ns-clear-recents>Clear</button></div>';
+      html += recents.map(suggPlayerRow).join('');
+    }
+
+    if (_players && !_loadFailed) {
+      const top = _players.filter(p => p.projPpg > 0)
+        .sort((a, b) => b.projPpg - a.projPpg).slice(0, 6);
+      if (top.length) {
+        html += '<div class="nav-search-group-label">Top players</div>' + top.map(suggPlayerRow).join('');
+      }
+    }
+
+    const jumpCmds = JUMP_TO_LABELS
+      .map(label => NAV_COMMANDS.find(c => c.label === label))
+      .filter(Boolean);
+    if (jumpCmds.length) {
+      html += '<div class="nav-search-group-label">Jump to</div>' +
+        jumpCmds.map(cmd => suggCmdRow(cmd, cmd.group === 'page' ? 'Page' : 'Tool')).join('');
+    }
+
+    if (!html) { closeDropdown(); return; }
+    dropdown.innerHTML = html;
+    _flatResults = Array.from(dropdown.querySelectorAll('[data-ns-kind]'));
+    _focusIdx = -1;
+    _suggShowing = true;
+    openDropdown();
+    _fillAvailBits();
+  }
+
   function renderResults(query) {
     const q = query.trim().toLowerCase();
-    if (!q) { closeDropdown(); return; }
+    if (!q) { renderSuggestions(); return; }
+    _suggShowing = false;
 
     const cmdMatches = matchCommands(q);
     const teamMatches = matchTeams(q);
@@ -30678,7 +30789,7 @@ function setupFunAwardsGrid() {
   }
 
   function openDropdown() { dropdown.classList.add('open'); }
-  function closeDropdown() { dropdown.classList.remove('open'); _focusIdx = -1; }
+  function closeDropdown() { dropdown.classList.remove('open'); _focusIdx = -1; _suggShowing = false; }
 
   function setFocus(idx) {
     const items = dropdown.querySelectorAll('.nav-search-result, .nav-search-cmd');
@@ -30701,6 +30812,7 @@ function setupFunAwardsGrid() {
     } else if (el.dataset.nsKind === 'cmd' || el.classList.contains('nav-search-cmd')) {
       window.location.href = el.getAttribute('href');
     } else {
+      recordRecentById(el.dataset.nsPid);
       if (typeof window.openPlayerModal === 'function') {
         window.openPlayerModal(el.dataset.nsPid, el.dataset.nsName);
       }
@@ -30715,7 +30827,11 @@ function setupFunAwardsGrid() {
     if (document.activeElement !== input) input.focus();
   });
 
-  input.addEventListener('focus', () => { loadPlayers(); loadTeams(); if (input.value.trim()) openDropdown(); });
+  input.addEventListener('focus', () => {
+    loadPlayers(); loadTeams();
+    if (input.value.trim()) openDropdown();
+    else renderSuggestions();
+  });
 
   input.addEventListener('input', () => {
     const val = input.value;
@@ -30747,11 +30863,21 @@ function setupFunAwardsGrid() {
   clearBtn.addEventListener('click', () => {
     input.value = '';
     clearBtn.style.display = 'none';
-    closeDropdown();
+    // Back to an empty query: on mobile the suggestions return in place of
+    // the results; on desktop the dropdown just closes as before.
+    renderSuggestions();
     input.focus();
   });
 
   dropdown.addEventListener('click', e => {
+    const clearRec = e.target.closest('[data-ns-clear-recents]');
+    if (clearRec) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearRecents();
+      renderSuggestions();
+      return;
+    }
     const trow = e.target.closest('.nav-search-result[data-ns-kind="team"]');
     if (trow) {
       e.stopPropagation();
@@ -30775,6 +30901,7 @@ function setupFunAwardsGrid() {
     const row = e.target.closest('.nav-search-result');
     if (!row) return;
     e.stopPropagation();
+    recordRecentById(row.dataset.nsPid);
     if (typeof window.openPlayerModal === 'function') {
       window.openPlayerModal(row.dataset.nsPid, row.dataset.nsName);
     }

@@ -2132,3 +2132,10 @@ input[type="search"] {
   .br-sheet-back:focus-visible,.br-sheet-category:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 }
 @media (prefers-reduced-motion:reduce){.br-sheet-panel-enter,.br-sheet-going-back .br-sheet-panel-enter,.br-sheet-panel-leave,.br-sheet-panel-leave-back{animation:none!important}.br-sheet.open .br-sheet-group{animation:none!important}.br-more-dots,.br-more-chev{transition:none!important}.br-sheet,.br-sheet-scrim{transition:none!important}.br-sheet-link,.br-sheet-foot-acct{transition:none!important}}
+
+/* iOS Safari auto-zooms the page when a focused field's text is under
+   16px. Keep every field at 16px on phones so tapping into any input,
+   select or textarea never zooms; desktop is untouched. */
+@media (max-width: 768px) {
+    input, select, textarea { font-size: 16px !important; }
+}

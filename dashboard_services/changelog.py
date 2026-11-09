@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-08",
         "tag": "new",
+        "text": "Search on mobile no longer opens to a blank page: before you type, it suggests your recent player searches, the top players by projection, and Jump to shortcuts for ScoreZone, Matchups, Start/Sit, the Trade Calculator, Waivers and Player Rankings. And the page no longer zooms in when you tap a text field on your phone: every input, dropdown and text box across the site now stays put.",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-08",
+        "tag": "new",
         "text": "Matchups: tapping a live drive bar now opens the game right there instead of leaving for ScoreZone. The sheet shows the full game board, a Stats tab with the box score for both teams, and a Plays tab with that game's play-by-play, with a link through to the full ScoreZone page at the bottom.",
         "link": "/weekly"
     },
