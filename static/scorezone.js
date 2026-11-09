@@ -704,7 +704,28 @@
     var roster = _rosterOf(rid);
     if (!roster) return '';
     var user = (_state.users || []).find(function(u) { return u.user_id === roster.owner_id; });
-    return (user && user.display_name) || '';
+    var name = (user && user.display_name) || '';
+    // Ambiguous owner identity: another roster in the same league scope
+    // carries the same owner_id. Yahoo's viewer-personalized payload stamps
+    // the caller's guid on every team, so every roster shares one owner_id
+    // and the find above lands on the first user for all of them -- every
+    // team labelled with that one name ("Sunday alex" on every card). The
+    // roster's own team name is per-team and cannot collapse, so it wins
+    // whenever the owner identity is shared. Scoped by the My Leagues
+    // namespace prefix so the same person owning teams in two different
+    // portfolio leagues does not trip it.
+    if (roster.owner_id && roster.team_name) {
+      var ns = String(roster.roster_id).indexOf(':') >= 0
+        ? String(roster.roster_id).split(':')[0] : '';
+      var shared = (_state.rosters || []).some(function(r) {
+        if (String(r.roster_id) === String(roster.roster_id)) return false;
+        var rns = String(r.roster_id).indexOf(':') >= 0
+          ? String(r.roster_id).split(':')[0] : '';
+        return rns === ns && r.owner_id === roster.owner_id;
+      });
+      if (shared) return roster.team_name;
+    }
+    return name || roster.team_name || '';
   }
   function _leagueOfRid(rid) {
     var s = String(rid);

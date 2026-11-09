@@ -19257,6 +19257,33 @@ def _rz_player_meta_for_teams(index_rows, game_teams):
     return meta_by_pid
 
 
+def _rz_roster_team_names(rosters, users):
+    """Per-roster team label for the ScoreZone payload, keyed by roster_id.
+
+    Resolved with the site's usual preference order (roster metadata
+    team_name, then the roster-matched user's team_name / display_name).
+    The ScoreZone client normally labels a roster through
+    owner_id -> user_id, but that lookup collapses when a provider stamps
+    one owner id on every roster (Yahoo's viewer-personalized payload
+    returns the caller's guid for every team in the league), so the payload
+    also carries this per-roster label for the client to fall back on.
+    """
+    users_by_rid = {}
+    for u in users or []:
+        rid = (u or {}).get("roster_id")
+        if rid is not None and str(rid) != "":
+            users_by_rid.setdefault(str(rid), u)
+    out = {}
+    for r in rosters or []:
+        rid = (r or {}).get("roster_id")
+        if rid is None:
+            continue
+        label = team_label_from_user(users_by_rid.get(str(rid)), r, fallback="")
+        if label:
+            out[str(rid)] = label
+    return out
+
+
 def _scorezone_collect(platform, league_id, season, week):
     """Build the raw per-league ScoreZone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
@@ -19693,10 +19720,12 @@ def _scorezone_collect(platform, league_id, season, week):
     except Exception:
         logger.debug("[scorezone] scoring push trigger failed", exc_info=True)
 
+    _rz_team_names = _rz_roster_team_names(rosters, users)
     out = {
         "matchups": matchups_out,
         "rosters": [
             {"roster_id": r.get("roster_id"), "owner_id": r.get("owner_id"),
+             "team_name": _rz_team_names.get(str(r.get("roster_id")), ""),
              "starters": r.get("starters") or [], "players": r.get("players") or []}
             for r in rosters
         ],
