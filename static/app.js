@@ -30592,20 +30592,13 @@ function setupFunAwardsGrid() {
     ).slice(0, 8);
   }
 
-  // ── Empty-state suggestions (mobile only) ─────────────────────────────
-  // With no query typed, the full-screen search page and the mobile
-  // dropdown used to render a blank void. On mobile we fill that space
-  // with Recent searches, Top players and a Jump to shortcut list.
-  // Desktop top-bar behavior is unchanged: an empty query shows nothing.
+  // ── Empty-state suggestions ───────────────────────────────────────────
+  // With no query typed, the search page and the search dropdowns (mobile
+  // and desktop) used to render a blank void. The empty state now shows
+  // Recent searches, Top players and a Jump to shortcut list everywhere.
   const RECENT_SEARCHES_KEY = 'br_recent_searches';
   const JUMP_TO_LABELS = ['ScoreZone', 'Matchups', 'Start/Sit', 'Trade Calculator', 'Waivers', 'Player Rankings'];
   let _suggShowing = false;
-
-  function suggestionsContext() {
-    const screen = document.getElementById('brSearchScreen');
-    if (screen && (screen.classList.contains('open') || wrapper.closest('#brSearchScreen'))) return true;
-    return !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
-  }
 
   function loadRecents() {
     try {
@@ -30637,7 +30630,7 @@ function setupFunAwardsGrid() {
   }
 
   function renderSuggestions() {
-    if (input.value.trim() || !suggestionsContext()) { closeDropdown(); return; }
+    if (input.value.trim()) { closeDropdown(); return; }
     let idx = 0;
     function suggPlayerRow(p) {
       const i = idx++;
@@ -30870,8 +30863,7 @@ function setupFunAwardsGrid() {
   clearBtn.addEventListener('click', () => {
     input.value = '';
     clearBtn.style.display = 'none';
-    // Back to an empty query: on mobile the suggestions return in place of
-    // the results; on desktop the dropdown just closes as before.
+    // Back to an empty query: the suggestions return in place of the results.
     renderSuggestions();
     input.focus();
   });
