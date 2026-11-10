@@ -134,26 +134,80 @@ def test_game_status_line_variants():
     assert line == "Sun · 1:00 PM"
 
 
-def test_need_lines_flip_and_out_of_reach():
+def test_outlook_lines_cover_every_state():
     margins = {
         "sleeper|2": {"league_name": "BLITZ", "my_score": 92.1,
                       "opp_score": 105.3, "final": False,
-                      "remaining_names": ["RB Two", "TE Two"]},
+                      "my_remaining_names": ["RB Two", "TE Two"],
+                      "my_remaining_proj": 21.0,
+                      "opp_remaining_names": [], "opp_remaining_proj": 0.0},
         "sleeper|3": {"league_name": "Greatness", "my_score": 70.0,
                       "opp_score": 105.0, "final": False,
-                      "remaining_names": []},
+                      "my_remaining_names": [], "my_remaining_proj": 0.0,
+                      "opp_remaining_names": ["Opp Guy"],
+                      "opp_remaining_proj": 9.0},
         "sleeper|4": {"league_name": "Done League", "my_score": 10.0,
-                      "opp_score": 99.0, "final": True, "remaining_names": []},
+                      "opp_score": 99.0, "final": True,
+                      "my_remaining_names": [], "my_remaining_proj": 0.0,
+                      "opp_remaining_names": [], "opp_remaining_proj": 0.0},
         "sleeper|5": {"league_name": "Leading", "my_score": 120.0,
                       "opp_score": 100.0, "final": False,
-                      "remaining_names": ["WR Left"]},
+                      "my_remaining_names": [],
+                      "my_remaining_proj": 0.0,
+                      "opp_remaining_names": ["WR Left"],
+                      "opp_remaining_proj": 12.5},
+        "sleeper|6": {"league_name": "Locked", "my_score": 130.0,
+                      "opp_score": 100.0, "final": False,
+                      "my_remaining_names": ["My Guy"],
+                      "my_remaining_proj": 8.0,
+                      "opp_remaining_names": [], "opp_remaining_proj": 0.0},
+        "sleeper|7": {"league_name": "Won League", "my_score": 121.4,
+                      "opp_score": 100.0, "final": True,
+                      "my_remaining_names": [], "my_remaining_proj": 0.0,
+                      "opp_remaining_names": [], "opp_remaining_proj": 0.0},
     }
-    lines = pi.need_lines(margins)
-    assert lines[0] == ("BLITZ needs 13.3 combined from RB Two and TE Two "
-                        "to flip their game.")
-    assert lines[1] == ("Greatness has nobody left in this window and is "
-                        "out of reach.")
-    assert len(lines) == 2
+    out = pi.outlook_lines(margins)
+    by_name = {e["league_name"]: e for e in out}
+    # Behind with players left: the need, plus their combined projection.
+    assert by_name["BLITZ"]["state"] == "behind"
+    assert by_name["BLITZ"]["line"] == (
+        "BLITZ needs 13.3 combined from RB Two and TE Two to flip their "
+        "game. The remaining players are projected for 21.0 combined.")
+    # Behind with nobody left: gone, not padded or omitted.
+    assert by_name["Greatness"]["state"] == "gone"
+    assert "down 35.0 and you have nobody left" in by_name["Greatness"]["line"]
+    # Ahead: how few the opponent needs to flip it back.
+    assert by_name["Leading"]["state"] == "ahead"
+    assert by_name["Leading"]["line"] == (
+        "Leading is up 20.0. WR Left needs 20.1 combined to flip it. "
+        "The remaining players are projected for 12.5 combined.")
+    # Ahead with the opponent done: locked.
+    assert by_name["Locked"]["state"] == "locked"
+    assert "opponent has nobody left" in by_name["Locked"]["line"]
+    # Finals report the result instead of being omitted.
+    assert by_name["Done League"]["state"] == "final_lost"
+    assert by_name["Done League"]["line"] == (
+        "Done League: lost by 89.0, 10.0 to 99.0.")
+    assert by_name["Won League"]["state"] == "final_won"
+    assert by_name["Won League"]["line"] == (
+        "Won League: won by 21.4, 121.4 to 100.0.")
+    # Live games first (closest first), finals last.
+    assert all(e["state"].startswith("final") for e in out[4:])
+    assert not any(e["state"].startswith("final") for e in out[:4])
+
+
+def test_group_rooting_window_final_flag():
+    games = [
+        _game("CLE", "BAL", OCT25_1PM_ET, "final", away_pts=17, home_pts=24),
+        _game("DAL", "PHI", OCT26_815PM_ET),
+    ]
+    starters = [
+        _starter("1", "RB One", "RB", "CLE", "sleeper|1", points=14.2),
+        _starter("3", "RB Two", "RB", "DAL", "sleeper|2"),
+    ]
+    windows = pi.group_rooting(games, starters, {})
+    assert windows[0]["final"] is True
+    assert windows[1]["final"] is False
 
 
 # ── Rooting / Bye cleanup (2026-10-27 screenshots) ──────────────────────────
@@ -210,6 +264,26 @@ def test_rooting_bye_cleanup_client_and_css():
     assert ".pf-bye-row{display:grid;grid-template-columns:minmax(170px,220px) minmax(0,1fr) auto" in app_src
     assert ".pf-bye-full{grid-column:3;justify-self:end" in app_src
     assert ".pf-bye-fix{grid-column:2;" in app_src
+
+
+def test_rooting_outlook_on_top_and_final_windows_collapsed():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    # The win outlook renders above the windows, from the payload's
+    # outlook block, at both renderRooting call sites.
+    assert "function renderRooting(windows, outlook)" in js
+    assert "pf-rg-outlook" in js
+    assert "renderRooting(windows, (d.rooting || {}).outlook)" in js
+    assert "renderRooting(ew, (emb.rooting || {}).outlook)" in js
+    # The old final-window-only need lines are gone from the renderer.
+    assert "need_lines" not in js
+    # Finished windows render collapsed with a Show toggle.
+    assert "data-rg-toggle" in js
+    assert "w.final ? '<span class=\"pf-rg-finaltag\">Final</span>" in js
+    app_src = (root / "app.py").read_text(encoding="utf-8")
+    assert ".pf-rg-win.final .pf-rg-games{display:none;}" in app_src
+    assert ".pf-rg-win.final.open .pf-rg-games{display:grid;}" in app_src
 
 
 def test_rooting_games_two_per_row_and_xs_badge_fits_text():

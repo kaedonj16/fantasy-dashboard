@@ -35337,17 +35337,30 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         right + '</div>';
     }).join('');
   }
-  function renderRooting(windows) {
+  function renderRooting(windows, outlook) {
     var body = document.getElementById('pfRootingBody');
     if (!body) return;
     if (!windows || !windows.length) {
       body.innerHTML = '<div class="pf-ins-empty">No starters in action this week.</div>';
       return;
     }
-    body.innerHTML = windows.map(function (w) {
-      var h = '<div class="pf-rg-win"><div class="pf-rg-winh">' +
+    // Win outlook first: what you need (and what your opponents need)
+    // in every league, before any scrolling past finished games.
+    var oh = '';
+    if (outlook && outlook.length) {
+      oh = '<div class="pf-rg-outlook">' + outlook.map(function (o) {
+        return '<div class="pf-rg-need' +
+          ((o.state || '').indexOf('final') === 0 ? ' final' : '') +
+          '">' + esc(o.line || '') + '</div>';
+      }).join('') + '</div>';
+    }
+    body.innerHTML = oh + windows.map(function (w) {
+      // A finished window can never change again: it renders collapsed
+      // (games one tap away) so live windows are what you land on.
+      var h = '<div class="pf-rg-win' + (w.final ? ' final' : '') + '"><div class="pf-rg-winh">' +
         '<span class="pf-rg-winname">' + esc(w.label) + '</span>' +
-        '<span class="pf-rg-stakes">' + esc(w.stakes || '') + '</span></div>';
+        '<span class="pf-rg-stakes">' + esc(w.stakes || '') + '</span>' +
+        (w.final ? '<span class="pf-rg-finaltag">Final</span><button type="button" class="pf-rg-toggle" data-rg-toggle aria-expanded="false">Show</button>' : '') + '</div>';
       h += '<div class="pf-rg-games">' + (w.games || []).map(function (g) {
         var live = g.status === 'in';
         var status = (live ? '<span class="dot"></span>' : '') + esc(g.status_line || '');
@@ -35383,12 +35396,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         card += '</div>';
         return card;
       }).join('') + '</div>';
-      (w.need_lines || []).forEach(function (line) {
-        h += '<div class="pf-rg-need">' + esc(line) + '</div>';
-      });
       h += '</div>';
       return h;
     }).join('');
+    body.querySelectorAll('[data-rg-toggle]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var win = btn.closest('.pf-rg-win');
+        if (!win) return;
+        var open = win.classList.toggle('open');
+        btn.textContent = open ? 'Hide' : 'Show';
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    });
   }
   function renderBye(bye) {
     var body = document.getElementById('pfByeBody');
@@ -35479,7 +35498,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         if (emb.season) SEASON = Number(emb.season) || SEASON;
         var ew = (emb.rooting && emb.rooting.windows) || [];
         var embIncomplete = !!(emb.scan && emb.scan.incomplete);
-        if (ew.length || !embIncomplete) renderRooting(ew);
+        if (ew.length || !embIncomplete) renderRooting(ew, (emb.rooting || {}).outlook);
         var live = false;
         for (var wi = 0; wi < ew.length && !live; wi++) {
           var gs = ew[wi].games || [];
@@ -35538,7 +35557,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           rb.innerHTML = '<div class="pf-ins-empty">Still loading your games, taking longer than usual.</div>';
           return;
         }
-        renderRooting(windows);
+        renderRooting(windows, (d.rooting || {}).outlook);
       })
       .catch(function () {
         if (budgetLeft()) { scheduleRetry(); return; }
