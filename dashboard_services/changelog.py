@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-10",
+        "tag": "new",
+        "text": "New Playoff Path tab on Standings: your magic number and earliest clinch, the games to root for this week, tiebreakers, and how every team's odds swing on a win or a loss.",
+        "link": "/standings"
+    },
+    {
         "date": "2026-11-09",
         "tag": "update",
         "text": "The Rooting Guide on My Leagues loads much faster, and it now leads with the math for every league: how many points you need from your remaining players to flip a game, how many your opponent needs to flip one back, when a lead is locked up, and the final result once a game is over. Finished windows collapse so the games still to play are what you land on.",

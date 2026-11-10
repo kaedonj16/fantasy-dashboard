@@ -57615,6 +57615,174 @@ button.mb-fld-link {
 .dr-cell-verdict{font-size:10.5px;font-weight:800;letter-spacing:.02em;white-space:nowrap}
 .dr-cell-grade{font-size:10.5px;font-weight:700;color:var(--text-muted);white-space:nowrap}
 
+/* ── Playoff Path (Standings tab) ───────────────────────────────────────────
+   Personal hero + remaining path, root-for, tiebreakers, weekly impact
+   graph and the Playoff Picture. All values come from the Playoff Odds
+   Monte Carlo rows (same run, partitioned) plus the scenarios payload. */
+.path-wrap{padding:2px 0 4px}
+.path-hairline{border:none;border-top:1px solid var(--border);margin:26px 0}
+.path-you-tag{display:inline-block;margin-left:7px;padding:1px 6px;border-radius:5px;background:#2563eb;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.06em;vertical-align:2px}
+.path-sect-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-top:2px}
+.path-sect-title{margin:0;font-size:19px;font-weight:800;letter-spacing:-.01em;color:var(--text)}
+.path-sect-sub{margin:4px 0 0;font-size:12.5px;color:var(--text-muted)}
+.path-wk-chip{flex:none;padding:5px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:700;color:var(--text);background:var(--row)}
+.path-tbl-note{margin:8px 0 0;font-size:11.5px;color:var(--text-subtle)}
+
+/* Hero */
+.path-hero{background:linear-gradient(180deg,#16324f,#122d4b);color:#e8eff7;border-top:3px solid #38bdf8;border-radius:var(--radius);padding:20px 22px 22px}
+.path-hero-kicker{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#7fb3e0}
+.path-hero h3{margin:6px 0 0;font-size:25px;font-weight:800;letter-spacing:-.01em;color:#fff;display:flex;align-items:center;flex-wrap:wrap}
+.path-hero .path-you-tag{background:#38bdf8;color:#0b2239;vertical-align:0}
+.path-hero-sub{margin:5px 0 0;font-size:13.5px;color:#b9cee2}
+.path-hero-stats{display:flex;margin-top:18px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.14);border-radius:10px;overflow:hidden}
+.path-hstat{flex:1;padding:12px 16px;min-width:0}
+.path-hstat + .path-hstat{border-left:1px solid rgba(255,255,255,.14)}
+.path-hstat-label{display:block;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#8fb0cf;white-space:nowrap}
+.path-hstat-value{display:block;margin-top:5px;font-size:21px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums;white-space:nowrap}
+.path-hstat-sub{display:block;margin-top:2px;font-size:11px;color:#8fb0cf}
+.path-hero-path{margin-top:20px}
+.path-hero-path h4,.path-road-head h4{margin:0;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#7fb3e0}
+.path-fork{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.path-fork-single{grid-template-columns:1fr}
+.path-fork-block{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:13px 15px}
+.path-fork-win{border-color:rgba(74,222,128,.45);background:rgba(22,163,74,.14)}
+.path-fork-label{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#8fb0cf}
+.path-fork-win .path-fork-label{color:#4ade80}
+.path-fork-head{margin-top:5px;font-size:19px;font-weight:800;color:#fff}
+.path-fork-sub{margin-top:3px;font-size:12.5px;color:#b9cee2}
+.path-road{margin-top:20px}
+.path-road-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.path-road-head span{font-size:11.5px;color:#8fb0cf;font-weight:600}
+.path-road-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:10px}
+.path-road-cell{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:11px 13px}
+.path-road-cell.path-clinch-week{border-color:#38bdf8;background:rgba(56,189,248,.13)}
+.path-road-wk{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#8fb0cf;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.path-clinch-flag{display:inline-block;padding:1px 6px;border-radius:5px;background:#38bdf8;color:#0b2239;font-size:9px;font-weight:800;letter-spacing:.05em}
+.path-road-opp{margin-top:6px;font-size:14.5px;font-weight:700;color:#fff}
+.path-road-note{margin-top:2px;font-size:11.5px;color:#8fb0cf}
+
+/* Root for */
+.path-root-list{margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.path-root-row{display:flex;gap:14px;padding:13px 16px;background:var(--card)}
+.path-root-row.path-alt{background:var(--row)}
+.path-root-row + .path-root-row{border-top:1px solid var(--border)}
+.path-root-rank{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:12.5px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.path-root-main{min-width:0}
+.path-root-pick{font-size:14.5px;font-weight:700;color:var(--text)}
+.path-root-vs{color:var(--text-muted);font-weight:600}
+.path-root-impact{display:flex;align-items:baseline;gap:7px;margin-top:8px;height:28px;padding:4px 10px;border-radius:8px;background:color-mix(in srgb,var(--win) 12%,transparent);width:fit-content}
+.path-root-impact-val{font-size:13px;font-weight:700;color:var(--win);font-variant-numeric:tabular-nums}
+.path-root-impact-lbl{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted)}
+.path-root-impact.path-neutral{background:var(--row)}
+.path-root-impact.path-neutral .path-root-impact-val{color:var(--text)}
+.path-root-why{margin-top:7px;font-size:12.5px;color:var(--text-muted)}
+
+/* Tiebreakers */
+.path-tie-block{margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);padding:16px 18px 14px}
+.path-pf-chart{display:flex;flex-direction:column;gap:12px}
+.path-pf-row{min-width:0}
+.path-pf-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.path-pf-name{font-size:13px;font-weight:600;color:var(--text)}
+.path-pf-name.path-you{font-weight:800}
+.path-pf-val{font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.path-pf-track{height:8px;margin-top:5px;border-radius:4px;background:var(--grid,#e5e7eb);overflow:hidden}
+.path-pf-fill{height:100%;border-radius:4px;background:#94a3b8}
+.path-pf-fill.path-you{background:#2563eb}
+.path-tie-note{margin:12px 0 0;font-size:12.5px;color:var(--text-muted)}
+.path-tie-note + .path-tie-note{margin-top:5px}
+.path-tie-note b{color:var(--text)}
+
+/* Impact graph */
+.path-games{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.path-game{border:1px solid var(--border);border-radius:var(--radius);background:var(--card);padding:12px 14px}
+.path-game-rank{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--text-subtle)}
+.path-game-teams{margin-top:6px;font-size:14px;font-weight:700;color:var(--text);line-height:1.35}
+.path-game-teams .path-vs{color:var(--text-muted);font-weight:600}
+.path-game-swing{margin-top:4px;font-size:12px;color:var(--text-muted)}
+.path-game-swing b{color:var(--text)}
+.path-imp-chart{margin-top:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);padding:6px 16px 12px}
+.path-imp-row{padding:11px 0 10px}
+.path-imp-row + .path-imp-row{border-top:1px solid var(--border)}
+.path-imp-head{display:flex;align-items:baseline;gap:10px}
+.path-imp-name{font-size:13.5px;font-weight:700;color:var(--text)}
+.path-imp-row.path-you .path-imp-name{color:#2563eb}
+.path-imp-rec{font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.path-imp-now{margin-left:auto;font-size:12px;color:var(--text-muted)}
+.path-imp-now b{color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
+.path-imp-bar-row{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;gap:10px;margin-top:7px}
+.path-imp-end{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.path-imp-end.path-l{color:var(--loss);text-align:right}
+.path-imp-end.path-w{color:var(--win)}
+.path-imp-track{position:relative;height:10px;border-radius:5px;background:var(--grid,#e5e7eb)}
+.path-imp-range{position:absolute;top:0;height:100%;border-radius:5px;background:#2563eb;opacity:.85}
+.path-imp-dot{position:absolute;top:50%;width:13px;height:13px;border-radius:50%;background:#fff;border:2.5px solid var(--accent);transform:translate(-50%,-50%);z-index:1}
+.path-imp-nogame{margin-top:7px;font-size:12px;color:var(--text-subtle)}
+.path-imp-axis{display:grid;grid-template-columns:40px 1fr 40px;gap:10px;margin-top:2px}
+.path-imp-axis-track{position:relative;height:14px;font-size:10.5px;color:var(--text-subtle)}
+.path-imp-axis-track span{position:absolute;left:0}
+.path-imp-axis-track .path-imp-axis-mid{left:50%;transform:translateX(-50%)}
+.path-imp-axis-track .path-imp-axis-r{left:auto;right:0}
+
+/* Clinch lines */
+.path-clinch{margin-top:22px}
+.path-clinch h3{margin:0 0 10px;font-size:16px;font-weight:800;color:var(--text)}
+.path-clinch-list{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.path-clinch-row{display:flex;align-items:center;gap:12px;padding:11px 16px;background:var(--card);font-size:13.5px;color:var(--text)}
+.path-clinch-row + .path-clinch-row{border-top:1px solid var(--border)}
+.path-clinch-row b{font-weight:700}
+.path-c-tag{flex:none;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.07em}
+.path-c-in{background:color-mix(in srgb,var(--win) 14%,transparent);color:var(--win)}
+.path-c-out{background:color-mix(in srgb,var(--loss) 12%,transparent);color:var(--loss)}
+
+/* Picture table (Path copy; the standings one keeps its own markup) */
+.path-tblwrap{margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;overflow-x:auto}
+.path-table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card)}
+.path-table th{padding:10px 14px;text-align:right;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--text-subtle);border-bottom:1px solid var(--border);background:var(--row)}
+.path-table th.path-l{text-align:left}
+.path-table td{padding:11px 14px;vertical-align:middle;text-align:right;border-top:1px solid var(--border)}
+.path-table tbody tr:first-child td{border-top:none}
+.path-table .path-alt td{background:var(--row)}
+.path-table td.path-l{text-align:left}
+.path-table td.path-team-cell{text-align:left}
+.path-table td.path-num{font-variant-numeric:tabular-nums;color:var(--text)}
+.path-table td.path-now{font-weight:700}
+.path-table .path-rec-cell{text-align:right}
+.path-table th.path-rec-cell{text-align:right}
+.path-table tr.path-you td{background:color-mix(in srgb,#2563eb 7%,transparent)}
+.path-table tr.path-out-row td{opacity:.62}
+.path-team-name{font-size:13.5px;font-weight:700;color:var(--text);display:flex;align-items:center;flex-wrap:wrap;gap:2px}
+.path-team-sub{display:none;margin-top:1px;font-size:11.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.path-pp-status{font-weight:700;font-size:12.5px;white-space:nowrap}
+.path-pp-sdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.path-table tr.path-scnrow td{padding:0 14px 10px 52px;border-top:none;text-align:left;background:transparent}
+.path-table tr.path-scnrow + tr td{border-top:1px solid var(--border)}
+.path-scn{font-size:12px;color:var(--text-muted)}
+.path-table tr.path-cutrow td{padding:7px 14px;border-top:1px solid var(--border);text-align:left;background:var(--row)}
+
+@media (max-width:640px){
+  .path-hero{padding:17px 16px 18px}
+  .path-hero h3{font-size:22px}
+  .path-hero-stats{display:grid;grid-template-columns:1fr 1fr}
+  .path-hstat{padding:11px 14px}
+  .path-hstat + .path-hstat{border-left:none}
+  .path-hstat:nth-child(even){border-left:1px solid rgba(255,255,255,.14)}
+  .path-hstat:nth-child(n+3){border-top:1px solid rgba(255,255,255,.14)}
+  .path-hstat:nth-child(n+3):nth-child(even){border-top:1px solid rgba(255,255,255,.14)}
+  .path-hstat-seed{grid-column:1 / -1;display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .path-hstat-seed .path-hstat-value{margin-top:0}
+  .path-hstat-seed .path-hstat-sub{margin-top:0}
+  .path-fork{grid-template-columns:1fr}
+  .path-road-grid{grid-template-columns:1fr 1fr}
+  .path-root-row{padding:12px 13px;gap:11px}
+  .path-games{grid-template-columns:1fr}
+  .path-imp-chart{padding:4px 13px 10px}
+  .path-table .path-rec-cell{display:none}
+  .path-team-sub{display:block}
+  .path-table th,.path-table td{padding-left:11px;padding-right:11px}
+  .path-table tr.path-scnrow td{padding-left:40px}
+  .path-pp-status-txt{display:none}
+}
+
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.

@@ -426,6 +426,7 @@ var document = {
 var window = {};
 function noop() {}
 var initManagerPills = noop, initCardTabs = noop, initPlayoffOdds = noop,
+    initPlayoffPath = noop,
     initTeamTabs = noop, initStandingsSort = noop, initGenericTableSort = noop,
     normalizeClickableAccessibility = noop, bindGlobalCarouselHandlersOnce = noop,
     initRecapPage = noop;

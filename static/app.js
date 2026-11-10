@@ -7329,6 +7329,461 @@ function _annotatePlayoffScenarios(panel, scen) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Playoff Path - lazy-loaded on first tab click (mirrors Playoff Odds).
+// Personal hero + remaining path + root-for + tiebreakers for the viewer's
+// team, then the league-wide weekly impact graph, clinch lines and the
+// Playoff Picture. All odds come from the same Monte Carlo rows the Odds
+// tab renders (the if-win / if-lose fields are partitions of that run),
+// so the Path Now % always equals the Odds %. The tab itself is only in
+// the markup inside the final-weeks window; if the exact scenarios gate
+// still says no on click, the tab is removed rather than placeholdered.
+// ---------------------------------------------------------------------------
+
+function initPlayoffPath(root = document) {
+  root.querySelectorAll('.tab-btn[data-tab="playoff-path"]').forEach(btn => {
+    bindOnce(btn, "playoffPathLoad", "click", () => {
+      const panel = root.getElementById
+        ? root.getElementById("playoffPathPanel")
+        : document.getElementById("playoffPathPanel");
+      if (!panel) return;
+      const _ppTTL = 5 * 60 * 1000; // 5 minutes, same as Playoff Odds
+      const _ppLoadedAt = parseInt(panel.dataset.loadedAt || '0', 10);
+      if (_ppLoadedAt && Date.now() - _ppLoadedAt < _ppTTL) return;
+      panel.dataset.loadedAt = String(Date.now());
+
+      const leagueId = btn.dataset.leagueId;
+      const platform = btn.dataset.platform;
+      const season   = btn.dataset.season;
+      const q = `?platform=${encodeURIComponent(platform)}` +
+        `&league_id=${encodeURIComponent(leagueId)}` +
+        `&season=${encodeURIComponent(season)}`;
+
+      Promise.all([
+        fetch(`/api/playoff-odds${q}`).then(r => r.json()).catch(() => null),
+        fetch(`/api/playoff-scenarios${q}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+      ]).then(([oddsData, scen]) => {
+        if (!oddsData || oddsData.error || !oddsData.odds || !oddsData.odds.length
+            || oddsData.is_complete || !scen || !scen.show) {
+          // Exact gate says no Path for this league right now: remove the
+          // tab and panel outright (never a placeholder). If the user is
+          // looking at the panel, land them on Power Rankings instead.
+          const card = btn.closest('.card-tabs');
+          const wasActive = panel.classList.contains('active');
+          const fallback = card ? card.querySelector('.tab-btn[data-tab="power"]') : null;
+          panel.remove();
+          btn.remove();
+          if (wasActive && fallback) fallback.click();
+          return;
+        }
+        panel.innerHTML = _renderPlayoffPath(oddsData, scen);
+        normalizeClickableAccessibility(panel);
+        fadeInCard(panel);
+      }).catch(() => {
+        delete panel.dataset.loadedAt;
+        window.brErrorState(panel, 'Unable to load playoff path.', () => { delete panel.dataset.loadedAt; btn.click(); }, { compact: true });
+      });
+    });
+  });
+}
+
+function _pathFmtPct(v) {
+  if (v == null) return '-';
+  if (v >= 100) return '100';
+  if (v <= 0) return '0';
+  return Number(v).toFixed(1);
+}
+
+function _pathRecVal(rec) {
+  // "7-3" / "7-3-1" -> standings value (ties at 0.5), for seed order.
+  const p = String(rec || '').split('-').map(x => parseFloat(x) || 0);
+  return (p[0] || 0) + 0.5 * (p[2] || 0);
+}
+
+function _renderPlayoffPath(data, scen) {
+  const odds = data.odds || [];
+  const byRid = {};
+  odds.forEach(t => { byRid[String(t.roster_id)] = t; });
+  const scenByRid = {};
+  (scen.teams || []).forEach(t => { scenByRid[String(t.roster_id)] = t; });
+  const nameOf = rid => {
+    const o = byRid[String(rid)];
+    if (o && o.team_name) return o.team_name;
+    const s = scenByRid[String(rid)];
+    return (s && s.name) || 'Team';
+  };
+  const recOf = rid => {
+    const s = scenByRid[String(rid)];
+    if (s && s.record) return s.record;
+    const o = byRid[String(rid)];
+    return o ? `${o.wins}-${o.losses}${o.ties ? '-' + o.ties : ''}` : '';
+  };
+
+  const week = (odds[0] && odds[0].impact_week) ||
+    ((scen.teams || []).map(t => t.next_game && t.next_game.week).filter(Boolean)[0]) || null;
+  const spots = data.playoff_teams || scen.playoff_teams || 6;
+  const nByes = scen.n_byes != null ? scen.n_byes : _calcPlayoffByes(spots);
+
+  // Current seed order, the way the scenarios source orders teams:
+  // standings value (wins, ties at 0.5) first, then points for.
+  const seedOrder = (scen.teams || []).slice().sort((a, b) =>
+    _pathRecVal(b.record) - _pathRecVal(a.record) || (b.pf || 0) - (a.pf || 0));
+  const seedOf = {};
+  seedOrder.forEach((t, i) => { seedOf[String(t.roster_id)] = i + 1; });
+
+  const viewerRid = (window._viewerRid != null && String(window._viewerRid) !== '')
+    ? String(window._viewerRid) : null;
+  const viewerOdds = viewerRid ? byRid[viewerRid] : null;
+  const viewerScen = viewerRid ? scenByRid[viewerRid] : null;
+  const hasViewer = !!(viewerOdds && viewerScen);
+
+  // ── Root-for rows (computed first: the hero fork reuses the top one) ──
+  let rootRows = [];
+  if (hasViewer && Array.isArray(viewerOdds.root_for)) {
+    rootRows = viewerOdds.root_for.map(g => {
+      const pa = g.playoff_if_a, pb = g.playoff_if_b;
+      const ba = g.bye_if_a, bb = g.bye_if_b;
+      if (pa == null && pb == null && ba == null && bb == null) return null;
+      const dp = (pa != null && pb != null) ? Math.abs(pa - pb) : 0;
+      const db = (ba != null && bb != null) ? Math.abs(ba - bb) : 0;
+      let favIsA = true;
+      if (pa != null && pb != null) {
+        if (pb > pa) favIsA = false;
+        else if (pb === pa && ba != null && bb != null && bb > ba) favIsA = false;
+      }
+      const useBye = dp < 0.05 && db >= 0.05;
+      return {
+        a: g.a, b: g.b, score: dp + db,
+        favRid: favIsA ? g.a : g.b, othRid: favIsA ? g.b : g.a,
+        useBye,
+        favVal: useBye ? (favIsA ? ba : bb) : (favIsA ? pa : pb),
+        othVal: useBye ? (favIsA ? bb : ba) : (favIsA ? pb : pa),
+        delta: useBye ? db : dp,
+        anyVal: pa != null ? pa : pb,
+      };
+    }).filter(Boolean).sort((x, y) => y.score - x.score);
+  }
+
+  const sections = [];
+
+  // ── 1. Personal hero ──────────────────────────────────────────────────
+  if (hasViewer) {
+    const cells = [];
+    cells.push({ label: 'Playoff odds', value: _pathFmtPct(viewerOdds.playoff_pct) + '%' });
+    if (viewerScen.wins_to_clinch != null) {
+      cells.push({ label: 'Magic number', value: String(viewerScen.wins_to_clinch) });
+    }
+    if (viewerScen.status === 'clinched' || viewerScen.status === 'clinched_bye') {
+      cells.push({ label: 'Earliest clinch', value: 'Clinched' });
+    } else if (viewerScen.clinch_if_win_next && week) {
+      cells.push({ label: 'Earliest clinch', value: `Week ${week}`, sub: 'This week' });
+    }
+    if (nByes > 0) {
+      cells.push({ label: 'Bye odds', value: _pathFmtPct(viewerOdds.bye_pct) + '%' });
+    }
+    if (seedOf[viewerRid]) {
+      cells.push({ label: 'Current seed', value: String(seedOf[viewerRid]), seed: true });
+    }
+    const statsHtml = cells.map(c =>
+      `<div class="path-hstat${c.seed ? ' path-hstat-seed' : ''}">` +
+      `<div class="path-hstat-label">${c.label}</div>` +
+      `<div class="path-hstat-value">${escapeHtml(c.value)}</div>` +
+      (c.sub ? `<div class="path-hstat-sub">${escapeHtml(c.sub)}</div>` : '') +
+      `</div>`).join('');
+
+    let oppLine = '';
+    const ng = viewerScen.next_game;
+    if (ng && ng.opp != null) {
+      oppLine = ` · Week ${ng.week} vs ${escapeHtml(nameOf(ng.opp))}`;
+    }
+
+    // Win / lose fork: headlines come from the clinch state, the odds
+    // from this team's own if-win / if-lose partition of the same sim.
+    let forkHtml = '';
+    const iw = viewerOdds.playoff_if_win, il = viewerOdds.playoff_if_lose;
+    if (iw != null || il != null) {
+      const blocks = [];
+      if (iw != null) {
+        const head = viewerScen.status === 'clinched_bye' ? 'Bye locked'
+          : (viewerScen.status === 'clinched' || viewerScen.clinch_if_win_next) ? 'Clinched'
+          : iw >= 50 ? 'In the field' : 'Still alive';
+        const byePart = (nByes > 0 && viewerOdds.bye_if_win != null)
+          ? ` · ${_pathFmtPct(viewerOdds.bye_if_win)}% bye` : '';
+        blocks.push(`<div class="path-fork-block path-fork-win">` +
+          `<div class="path-fork-label">Win</div>` +
+          `<div class="path-fork-head">${head}</div>` +
+          `<div class="path-fork-sub">${_pathFmtPct(iw)}% odds${byePart}</div></div>`);
+      }
+      if (il != null) {
+        const head = viewerScen.status === 'eliminated' ? 'Out'
+          : viewerScen.out_if_lose_next ? 'Eliminated'
+          : il >= 50 ? 'Still in, tightens'
+          : il >= 20 ? 'On the bubble' : 'Nearly out';
+        let needs = '';
+        const top = rootRows[0];
+        if (top && top.delta >= 0.05) {
+          needs = ` · needs ${escapeHtml(nameOf(top.othRid))} to lose`;
+        }
+        blocks.push(`<div class="path-fork-block">` +
+          `<div class="path-fork-label">Lose</div>` +
+          `<div class="path-fork-head">${head}</div>` +
+          `<div class="path-fork-sub">${_pathFmtPct(il)}% odds${needs}</div></div>`);
+      }
+      forkHtml = `<div class="path-hero-path"><h4>Your path</h4>` +
+        `<div class="path-fork${blocks.length === 1 ? ' path-fork-single' : ''}">${blocks.join('')}</div></div>`;
+    }
+
+    // Remaining path: every remaining week, earliest clinch week flagged.
+    let roadHtml = '';
+    let sched = Array.isArray(viewerScen.remaining_schedule) ? viewerScen.remaining_schedule : [];
+    if (scen.playoff_week_start) {
+      sched = sched.filter(g => g.week < scen.playoff_week_start);
+    }
+    if (sched.length) {
+      const clinchWeek = (viewerScen.clinch_if_win_next && week) ? week : null;
+      const roadCells = sched.map(g => {
+        const isClinch = clinchWeek != null && g.week === clinchWeek;
+        return `<div class="path-road-cell${isClinch ? ' path-clinch-week' : ''}">` +
+          `<div class="path-road-wk">Week ${g.week}${isClinch ? '<span class="path-clinch-flag">Earliest clinch</span>' : ''}</div>` +
+          `<div class="path-road-opp">vs ${escapeHtml(nameOf(g.opp_roster_id))}</div>` +
+          `<div class="path-road-note">${escapeHtml(recOf(g.opp_roster_id))}</div></div>`;
+      }).join('');
+      roadHtml = `<div class="path-road"><div class="path-road-head"><h4>Your remaining path</h4>` +
+        `<span>Weeks ${sched[0].week} to ${sched[sched.length - 1].week}</span></div>` +
+        `<div class="path-road-grid">${roadCells}</div></div>`;
+    }
+
+    sections.push(`<div class="path-hero">
+      <div class="path-hero-kicker">Your Playoff Path</div>
+      <h3>${escapeHtml(viewerOdds.team_name)}<span class="path-you-tag">YOU</span></h3>
+      <p class="path-hero-sub">${escapeHtml(recOf(viewerRid))}${oppLine}</p>
+      <div class="path-hero-stats">${statsHtml}</div>
+      ${forkHtml}${roadHtml}
+    </div>`);
+  }
+
+  // ── 2. Root for this week ─────────────────────────────────────────────
+  if (rootRows.length) {
+    const rowsHtml = rootRows.map((r, i) => {
+      let pick, pill, why;
+      if (r.delta < 0.05) {
+        pick = `No stake: ${escapeHtml(nameOf(r.a))} <span class="path-root-vs">vs ${escapeHtml(nameOf(r.b))}</span>`;
+        pill = `<div class="path-root-impact path-neutral"><span class="path-root-impact-val">0.0%</span><span class="path-root-impact-lbl">Your odds</span></div>`;
+        why = r.anyVal != null
+          ? `Your odds: ${_pathFmtPct(r.anyVal)}% either way.`
+          : 'No change to your odds either way.';
+      } else {
+        const fav = escapeHtml(nameOf(r.favRid)), oth = escapeHtml(nameOf(r.othRid));
+        pick = `Root for: ${fav} win <span class="path-root-vs">vs ${oth}</span>`;
+        pill = `<div class="path-root-impact"><span class="path-root-impact-val">+${r.delta.toFixed(1)}%</span>` +
+          `<span class="path-root-impact-lbl">${r.useBye ? 'Bye odds' : 'Your odds'}</span></div>`;
+        why = `Your ${r.useBye ? 'bye ' : ''}odds: ${_pathFmtPct(r.favVal)}% if ${fav} wins, ${_pathFmtPct(r.othVal)}% if ${oth} wins.`;
+      }
+      return `<div class="path-root-row${i % 2 ? ' path-alt' : ''}">
+        <div class="path-root-rank">${i + 1}</div>
+        <div class="path-root-main">
+          <div class="path-root-pick">${pick}</div>
+          ${pill}
+          <div class="path-root-why">${why}</div>
+        </div>
+      </div>`;
+    }).join('');
+    sections.push(`<div class="path-sect-head">
+        <div><h3 class="path-sect-title">Root for this week</h3>
+        <p class="path-sect-sub">Other Week ${week} games, ranked by impact on your team.</p></div>
+        <span class="path-wk-chip">Week ${week}</span>
+      </div>
+      <div class="path-root-list">${rowsHtml}</div>
+      <p class="path-tbl-note">Ranked by impact on your team only.</p>`);
+  }
+
+  // ── 3. Tiebreakers: top-4 PF bars ─────────────────────────────────────
+  if (hasViewer && viewerScen.pf != null) {
+    const pfRows = (scen.teams || []).slice()
+      .sort((a, b) => (b.pf || 0) - (a.pf || 0)).slice(0, 4);
+    if (!pfRows.some(t => String(t.roster_id) === viewerRid)) {
+      pfRows.push(viewerScen);
+    }
+    const maxPf = Math.max(...pfRows.map(t => t.pf || 0), 1);
+    const barsHtml = pfRows.map(t => {
+      const you = String(t.roster_id) === viewerRid;
+      const w = Math.max(2, (t.pf || 0) / maxPf * 100);
+      return `<div class="path-pf-row">
+        <div class="path-pf-head"><span class="path-pf-name${you ? ' path-you' : ''}">${escapeHtml(t.name || nameOf(t.roster_id))}</span>` +
+        `<span class="path-pf-val">${(t.pf || 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span></div>
+        <div class="path-pf-track"><div class="path-pf-fill${you ? ' path-you' : ''}" style="width:${w.toFixed(1)}%"></div></div>
+      </div>`;
+    }).join('');
+    const notes = [];
+    const held = pfRows.filter(t => String(t.roster_id) !== viewerRid && (t.pf || 0) < viewerScen.pf)
+      .map(t => escapeHtml(t.name || nameOf(t.roster_id)));
+    if (held.length) {
+      const list = held.length > 1
+        ? held.slice(0, -1).join(', ') + ' and ' + held[held.length - 1]
+        : held[0];
+      notes.push(`You hold the tiebreak over <b>${list}</b>.`);
+    }
+    const leader = pfRows[0];
+    if (leader && String(leader.roster_id) !== viewerRid) {
+      notes.push(`You trail <b>${escapeHtml(leader.name || nameOf(leader.roster_id))}</b> by ${((leader.pf || 0) - viewerScen.pf).toFixed(1)} PF.`);
+    } else if (leader) {
+      notes.push('You lead the league in points for.');
+    }
+    sections.push(`<div class="path-sect-head">
+        <div><h3 class="path-sect-title">Tiebreakers</h3>
+        <p class="path-sect-sub">Points for breaks a tie after division record.</p></div>
+      </div>
+      <div class="path-tie-block">
+        <div class="path-pf-chart">${barsHtml}</div>
+        ${notes.map(n => `<p class="path-tie-note">${n}</p>`).join('')}
+      </div>`);
+  }
+
+  // ── 4. Week N Playoff Impact ──────────────────────────────────────────
+  {
+    // Biggest games: this week's pairings from the scenarios next_game
+    // links, ranked by the two teams' combined swing.
+    const swingOf = rid => {
+      const o = byRid[String(rid)];
+      return o && o.swing != null ? o.swing : 0;
+    };
+    const seenPairs = new Set();
+    const games = [];
+    (scen.teams || []).forEach(t => {
+      const ng = t.next_game;
+      if (!ng || ng.week !== week || ng.opp == null) return;
+      const key = [String(t.roster_id), String(ng.opp)].sort().join(':');
+      if (seenPairs.has(key)) return;
+      seenPairs.add(key);
+      games.push({ a: t.roster_id, b: ng.opp, combined: swingOf(t.roster_id) + swingOf(ng.opp) });
+    });
+    games.sort((x, y) => y.combined - x.combined);
+    const gamesHtml = games.slice(0, 3).map((g, i) =>
+      `<div class="path-game">
+        <div class="path-game-rank">Biggest game: ${i + 1}</div>
+        <div class="path-game-teams">${escapeHtml(nameOf(g.a))} <span class="path-vs">vs</span> ${escapeHtml(nameOf(g.b))}</div>
+        <div class="path-game-swing">Combined swing <b>${g.combined.toFixed(1)} pts</b></div>
+      </div>`).join('');
+
+    const sorted = odds.slice().sort((a, b) => {
+      const sa = a.swing == null ? -1 : a.swing;
+      const sb = b.swing == null ? -1 : b.swing;
+      return sb - sa;
+    });
+    const chartRows = sorted.map(t => {
+      const you = viewerRid && String(t.roster_id) === viewerRid;
+      const head = `<div class="path-imp-head">
+        <span class="path-imp-name">${escapeHtml(t.team_name)}${you ? '<span class="path-you-tag">YOU</span>' : ''}</span>
+        <span class="path-imp-rec">${t.wins}-${t.losses}${t.ties ? '-' + t.ties : ''}</span>
+        <span class="path-imp-now">Now <b>${_pathFmtPct(t.playoff_pct)}%</b></span></div>`;
+      let bar;
+      if (t.swing == null || t.playoff_if_lose == null || t.playoff_if_win == null) {
+        bar = `<div class="path-imp-nogame">No game this week</div>`;
+      } else {
+        const lo = Math.max(0, Math.min(100, t.playoff_if_lose));
+        const hi = Math.max(0, Math.min(100, t.playoff_if_win));
+        bar = `<div class="path-imp-bar-row">
+          <span class="path-imp-end path-l">${_pathFmtPct(t.playoff_if_lose)}%</span>
+          <div class="path-imp-track">
+            <div class="path-imp-range" style="left:${lo}%;width:${Math.max(hi - lo, 0.8)}%"></div>
+            <div class="path-imp-dot" style="left:${Math.max(0, Math.min(100, t.playoff_pct))}%"></div>
+          </div>
+          <span class="path-imp-end path-w">${_pathFmtPct(t.playoff_if_win)}%</span></div>`;
+      }
+      return `<div class="path-imp-row${you ? ' path-you' : ''}">${head}${bar}</div>`;
+    }).join('');
+    const axis = `<div class="path-imp-axis"><span></span><div class="path-imp-axis-track">` +
+      `<span>0%</span><span class="path-imp-axis-mid">50%</span><span class="path-imp-axis-r">100%</span></div><span></span></div>`;
+
+    // Clinch / elimination lines: team + condition, from scenarios state.
+    const clinchLines = [];
+    seedOrder.forEach(t => {
+      const nm = `<b>${escapeHtml(t.name || nameOf(t.roster_id))}:</b>`;
+      if (t.status === 'clinched' || t.status === 'clinched_bye') {
+        clinchLines.push({ tag: 'CLINCHED', cls: 'path-c-in', html: `${nm} Playoff spot secured.` });
+      } else if (t.clinch_if_win_next) {
+        clinchLines.push({ tag: 'CLINCH', cls: 'path-c-in', html: `${nm} Clinches with a win.` });
+      } else if (t.out_if_lose_next) {
+        clinchLines.push({ tag: 'OUT WITH A LOSS', cls: 'path-c-out', html: `${nm} Eliminated with a loss.` });
+      } else if (t.status === 'eliminated') {
+        clinchLines.push({ tag: 'OUT', cls: 'path-c-out', html: `${nm} Eliminated.` });
+      }
+    });
+    const clinchHtml = clinchLines.length
+      ? `<div class="path-clinch"><h3>Clinch and elimination: Week ${week}</h3>
+          <div class="path-clinch-list">${clinchLines.map(l =>
+            `<div class="path-clinch-row"><span class="path-c-tag ${l.cls}">${l.tag}</span><span>${l.html}</span></div>`).join('')}
+          </div></div>`
+      : '';
+
+    sections.push(`<div class="path-sect-head">
+        <div><h3 class="path-sect-title">Week ${week} Playoff Impact</h3>
+        <p class="path-sect-sub">Playoff odds if each team wins or loses this week, sorted by swing.</p></div>
+        <span class="path-wk-chip">Week ${week}</span>
+      </div>
+      ${gamesHtml ? `<div class="path-games">${gamesHtml}</div>` : ''}
+      <div class="path-imp-chart">${chartRows}${axis}</div>
+      <p class="path-tbl-note">Bar spans If Lose to If Win. Dot is Now. Longer bar, bigger swing.</p>
+      ${clinchHtml}`);
+  }
+
+  // ── 5. Playoff Picture ────────────────────────────────────────────────
+  {
+    const tagFor = t => {
+      const seed = seedOf[String(t.roster_id)];
+      if (t.status === 'clinched_bye') return { tag: 'BYE', cls: 'pp-t-bye', word: 'Clinched', color: 'var(--win)' };
+      if (t.status === 'clinched') return { tag: 'IN', cls: 'pp-t-in', word: 'Clinched', color: 'var(--win)' };
+      if (t.status === 'eliminated') return { tag: 'OUT', cls: 'pp-t-out', word: 'Out', color: 'var(--text-subtle)' };
+      if (seed && seed <= nByes) return { tag: 'BYE', cls: 'pp-t-bye', word: 'Bye', color: 'var(--pp-bye)' };
+      if (seed && seed <= spots) return { tag: 'IN', cls: 'pp-t-in', word: 'In', color: 'var(--win)' };
+      if (seed && seed <= spots + 2) return { tag: 'BUBBLE', cls: 'pp-t-bub', word: 'Bubble', color: 'var(--warning)' };
+      return { tag: 'OUT', cls: 'pp-t-out', word: 'Out', color: 'var(--text-subtle)' };
+    };
+    let body = '';
+    seedOrder.forEach((t, i) => {
+      const seed = i + 1;
+      const o = byRid[String(t.roster_id)];
+      const info = tagFor(t);
+      const you = viewerRid && String(t.roster_id) === viewerRid;
+      const out = info.tag === 'OUT';
+      body += `<tr class="${i % 2 ? 'path-alt' : ''}${you ? ' path-you' : ''}${out ? ' path-out-row' : ''}">
+        <td class="path-l path-num">${seed}</td>
+        <td class="path-team-cell"><div class="path-team-name">${escapeHtml(t.name || nameOf(t.roster_id))}${you ? '<span class="path-you-tag">YOU</span>' : ''}<span class="pp-tag ${info.cls}">${info.tag}</span></div><div class="path-team-sub">${escapeHtml(t.record || '')}</div></td>
+        <td class="path-rec-cell path-num">${escapeHtml(t.record || '')}</td>
+        <td class="path-num path-now">${o ? _pathFmtPct(o.playoff_pct) + '%' : '-'}</td>
+        <td class="path-pp-status" style="color:${info.color}"><span class="path-pp-sdot" style="background:${info.color}"></span><span class="path-pp-status-txt">${info.word}</span></td>
+      </tr>`;
+      if (t.summary) {
+        body += `<tr class="path-scnrow"><td colspan="5"><div class="path-scn">${escapeHtml(t.summary)}</div></td></tr>`;
+      }
+      if (seed === spots && seed < seedOrder.length) {
+        body += `<tr class="path-cutrow"><td colspan="5"><div class="pp-cut">Playoff cut line</div></td></tr>`;
+      }
+    });
+    sections.push(`<div class="path-sect-head">
+        <div><h3 class="path-sect-title">Playoff Picture</h3>
+        <p class="path-sect-sub">If the season ended today, with each team's scenario underneath.</p></div>
+      </div>
+      <div class="pp-ctx" style="margin-top:12px">
+        <span class="pp-ctx-main">Top ${spots} in${nByes ? ` · Top ${nByes} get a bye` : ''}</span>
+        <span class="pp-legend">
+          ${nByes ? '<span class="pp-lg"><span class="pp-dot pp-d-bye"></span>Bye</span>' : ''}
+          <span class="pp-lg"><span class="pp-dot pp-d-in"></span>In</span>
+          <span class="pp-lg"><span class="pp-dot pp-d-bub"></span>Bubble</span>
+          <span class="pp-lg"><span class="pp-dot pp-d-out"></span>Out</span>
+        </span>
+      </div>
+      <div class="path-tblwrap">
+        <table class="path-table" aria-label="Playoff picture">
+          <thead><tr><th class="path-l">Seed</th><th class="path-l">Team</th><th class="path-rec-cell">Record</th><th>Playoff %</th><th>Status</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`);
+  }
+
+  return `<div class="path-wrap">${sections.join('<hr class="path-hairline">')}</div>`;
+}
+
 function initTeamTabs(root = document) {
   const tabs = Array.from(root.querySelectorAll(".team-tab"));
   const panels = Array.from(root.querySelectorAll(".team-panel"));
@@ -16817,6 +17272,7 @@ window.initPageRoot = function initPageRoot(root = document) {
     try { window.wkActivateTabFromUrl(); } catch (e) {}
   }
   initPlayoffOdds(root);
+  initPlayoffPath(root);
   initTeamTabs(root);
   initStandingsSort(root);
   initGenericTableSort(root);
