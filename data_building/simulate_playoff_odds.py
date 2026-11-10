@@ -1918,6 +1918,15 @@ def _actual_results(teams: list[dict], playoff_teams: int,
         "n_sims":           0,
         "is_complete":      True,
         "is_projected":     False,
+        # No remaining week to partition on once the season is final; the
+        # weekly-impact fields stay present but null (see _pack_mc_results).
+        "impact_week":      None,
+        "playoff_if_win":   None,
+        "playoff_if_lose":  None,
+        "bye_if_win":       None,
+        "bye_if_lose":      None,
+        "swing":            None,
+        "root_for":         [],
     } for t in teams]
 
 
@@ -2414,6 +2423,10 @@ def _pack_mc_results(
     n_sims: int,
     division_map: Optional[dict] = None,
     div_pct: "Optional[np.ndarray]" = None,
+    first_week: Optional[int] = None,
+    first_games: Optional[list] = None,
+    first_won: "Optional[np.ndarray]" = None,
+    first_lost: "Optional[np.ndarray]" = None,
 ) -> list[dict]:
     n = len(teams)
     n_byes = _n_byes(playoff_teams)
@@ -2442,6 +2455,58 @@ def _pack_mc_results(
     in_playoffs = (team_rank < playoff_teams).mean(axis=0) * 100
     got_bye     = (team_rank < n_byes).mean(axis=0) * 100 if n_byes else np.zeros(n)
     is_first    = (team_rank == 0).mean(axis=0) * 100
+
+    # ── Playoff Path weekly impact: the same sims, partitioned on the
+    # first remaining week's head-to-head results. No extra sim runs: the
+    # in/bye masks above are re-averaged over the sims where a team (or a
+    # game winner) won or lost that week. A tied game sets neither the won
+    # nor the lost partition, and a team with no H2H game that week (a bye
+    # week) gets nulls rather than a fabricated split. Conditionals are
+    # clamped like the headline odds (a projection never reads 0 / 100).
+    in_mask  = team_rank < playoff_teams
+    bye_mask = (team_rank < n_byes) if n_byes else np.zeros_like(in_mask)
+
+    def _clamp_cond(v) -> Optional[float]:
+        if v is None:
+            return None
+        return round(min(99.9, max(0.1, float(v))), 1)
+
+    def _cond(mask2d, sel, i) -> Optional[float]:
+        if sel is None or not bool(np.any(sel)):
+            return None
+        return _clamp_cond(mask2d[sel, i].mean() * 100)
+
+    cond: list[dict] = []
+    for i in range(n):
+        entry: dict = {
+            "playoff_if_win": None, "playoff_if_lose": None,
+            "bye_if_win": None, "bye_if_lose": None,
+            "swing": None, "root_for": [],
+        }
+        if first_won is not None and first_lost is not None:
+            won_i, lost_i = first_won[:, i], first_lost[:, i]
+            entry["playoff_if_win"]  = _cond(in_mask, won_i, i)
+            entry["playoff_if_lose"] = _cond(in_mask, lost_i, i)
+            if n_byes:
+                entry["bye_if_win"]  = _cond(bye_mask, won_i, i)
+                entry["bye_if_lose"] = _cond(bye_mask, lost_i, i)
+            if (entry["playoff_if_win"] is not None
+                    and entry["playoff_if_lose"] is not None):
+                entry["swing"] = round(
+                    entry["playoff_if_win"] - entry["playoff_if_lose"], 1)
+            for ga, gb in (first_games or []):
+                if i == ga or i == gb:
+                    continue
+                a_won, b_won = first_won[:, ga], first_won[:, gb]
+                entry["root_for"].append({
+                    "a": teams[ga]["roster_id"],
+                    "b": teams[gb]["roster_id"],
+                    "playoff_if_a": _cond(in_mask, a_won, i),
+                    "playoff_if_b": _cond(in_mask, b_won, i),
+                    "bye_if_a":     _cond(bye_mask, a_won, i) if n_byes else None,
+                    "bye_if_b":     _cond(bye_mask, b_won, i) if n_byes else None,
+                })
+        cond.append(entry)
 
     # Draft-pick outlook — the inverse of playoff success. Dynasty/rookie draft
     # order is reverse standings, so the worst finishers hold the best picks.
@@ -2535,6 +2600,16 @@ def _pack_mc_results(
         "avg_final_ties":   round(float(avg_final_ties[i]), 1),
         "n_sims":           n_sims,
         "is_complete":      False,
+        # Weekly impact (Playoff Path): conditionals from this same run,
+        # partitioned on the first remaining week's H2H result. Null when
+        # the team had no game that week or the partition never occurred.
+        "impact_week":      first_week,
+        "playoff_if_win":   cond[i]["playoff_if_win"],
+        "playoff_if_lose":  cond[i]["playoff_if_lose"],
+        "bye_if_win":       cond[i]["bye_if_win"],
+        "bye_if_lose":      cond[i]["bye_if_lose"],
+        "swing":            cond[i]["swing"],
+        "root_for":         cond[i]["root_for"],
     } for i, t in enumerate(teams)]
 
 
@@ -2575,6 +2650,21 @@ def _standings_from_score_map(
         [_div_record_games(t) for t in teams], dtype=np.float32,
     )
 
+    # Playoff Path weekly impact: the first remaining week with a game is
+    # the "this week" the Path partitions on. Its H2H winners are captured
+    # inside the scoring loop below (through _score, so swap overlays are
+    # honoured) and threaded into _pack_mc_results. In median leagues the
+    # partition is on the head-to-head game only: the league-median game
+    # has no single winner to condition on.
+    _impact_week: Optional[int] = None
+    for _wk in sorted(matchups_by_week.keys()):
+        if matchups_by_week[_wk]:
+            _impact_week = _wk
+            break
+    _first_won  = np.zeros((n_sims, n), dtype=bool)  # won its first-week H2H game
+    _first_lost = np.zeros((n_sims, n), dtype=bool)  # lost it (a tie sets neither)
+    _first_games: list[tuple[int, int]] = []         # (idx_a, idx_b), first week
+
     def _div_of(rid):
         if not division_map:
             return None
@@ -2606,6 +2696,12 @@ def _standings_from_score_map(
             wins[:, ib] += b_wins.astype(np.float32) + 0.5 * tie_f
             ties_gained[:, ia] += tie_f
             ties_gained[:, ib] += tie_f
+            if week == _impact_week:
+                _first_games.append((ia, ib))
+                _first_won[:, ia]  |= a_wins
+                _first_lost[:, ia] |= b_wins
+                _first_won[:, ib]  |= b_wins
+                _first_lost[:, ib] |= a_wins
             pf[:, ia] += sa
             pf[:, ib] += sb
             da, db = _div_of(rid_a), _div_of(rid_b)
@@ -2651,6 +2747,8 @@ def _standings_from_score_map(
     return _pack_mc_results(
         teams, wins, pf, ties_gained, games_per_team, playoff_teams, n_sims,
         division_map=division_map, div_pct=div_pct,
+        first_week=_impact_week, first_games=_first_games,
+        first_won=_first_won, first_lost=_first_lost,
     )
 
 

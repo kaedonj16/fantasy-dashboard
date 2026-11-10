@@ -630,7 +630,10 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             int(ctx.get("season") or ctx.get("current_season") or 0),
             # v3: invalidate when the published H2H schedule appears / changes
             # (v2 only keyed on roster composition).
-            "v3",
+            # v4: rows now also carry the Playoff Path weekly-impact fields
+            # (if-win / if-lose conditionals, swing, root-for partitions);
+            # a v3 entry must never be served to the Path tab.
+            "v4",
         )
         hit = _PLAYOFF_SIM_CACHE.get(key)
         fresh = bool(hit) and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL
@@ -11582,6 +11585,7 @@ def render_power_and_playoffs(
         power_rankings=None,
         prev_power_ranks=None,
         playoff_week_start=None,
+        playoff_path_live: bool = False,
 ) -> str:
     """
     Single card that shows:
@@ -11929,6 +11933,29 @@ def render_power_and_playoffs(
         playoff_tab_html = '<button class="tab-btn" data-tab="playoff">Playoff Picture</button>'
         playoff_panel_html = f'<div class="tab-panel" data-tab="playoff">{bracket_html}</div>'
 
+    # Playoff Path tab: only inside the final-weeks window (the caller
+    # computes that from games played vs the regular-season length, the
+    # same window the scenarios endpoint gates on). Outside it the button
+    # is absent entirely, never a placeholder. The client re-checks the
+    # scenarios payload on first click and removes the tab if the exact
+    # gate says no (e.g. a divisional league the enumerator defers on).
+    path_tab_html = ""
+    path_panel_html = ""
+    if playoff_path_live:
+        path_tab_html = (
+            '<button class="tab-btn" data-tab="playoff-path"'
+            f' data-league-id="{league_id}"'
+            f' data-platform="{platform}"'
+            f' data-season="{season}">Playoff Path</button>'
+        )
+        path_panel_html = (
+            '<div class="tab-panel" data-tab="playoff-path" id="playoffPathPanel">'
+            '<div class="playoff-odds-loading">'
+            '<div class="loading-spinner-sm"></div>'
+            '<span>Running simulation…</span>'
+            '</div></div>'
+        )
+
     podium_card = f"""
           <div class="card power" data-section="overview">
             <div class="card-tabs" data-card="power">
@@ -11939,6 +11966,7 @@ def render_power_and_playoffs(
                         data-league-id="{league_id}"
                         data-platform="{platform}"
                         data-season="{season}">Playoff Odds</button>
+                {path_tab_html}
               </div>
               <div class="tab-panels" style="padding: 0;">
                 <div class="tab-panel active" data-tab="power">
@@ -11952,6 +11980,7 @@ def render_power_and_playoffs(
                     <span>Running simulation…</span>
                   </div>
                 </div>
+                {path_panel_html}
               </div>
             </div>
           </div>
@@ -12909,6 +12938,19 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         _pws = int(_settings.get("playoff_week_start") or 0) or None
     except (TypeError, ValueError):
         _pws = None
+    # Playoff Path gate: the final-five-weeks window the scenarios
+    # endpoint also uses (SHOW_WITHIN_WEEKS), from games actually played
+    # vs the regular-season length, so a week-capped historical view
+    # (more weeks left than the window) never grows the tab.
+    _path_live = False
+    if _pp_spots and _pp_weeks:
+        try:
+            from data_building.playoff_scenarios import SHOW_WITHIN_WEEKS
+            _played_max = int((team_stats["Wins"] + team_stats["Losses"]
+                               + team_stats.get("Ties", 0)).max())
+            _path_live = 1 <= (_pp_weeks - _played_max) <= SHOW_WITHIN_WEEKS
+        except Exception:
+            _path_live = False
     power_html = render_power_and_playoffs(
         team_stats,
         roster_map,
@@ -12918,6 +12960,7 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         power_rankings=power_rankings,
         prev_power_ranks=prev_power_ranks,
         playoff_week_start=_pws,
+        playoff_path_live=_path_live,
     )
     # Roster values only feed the preseason tiles (records all 0-0); skip the DB
     # read once games are being played and the game-derived tiles take over.
@@ -38472,7 +38515,7 @@ def api_playoff_odds():
         # same cache key/signature/TTL as every other consumer instead of
         # hand-duplicating them and racing the page's background sim with
         # a second, unguarded Monte Carlo on the request thread.
-        _sim_key2 = (platform, str(league_id), season, "v3")
+        _sim_key2 = (platform, str(league_id), season, "v4")
         _sim_sig2 = _playoff_sim_sig(ctx, platform)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
         _fresh_sim = not (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL
@@ -38625,6 +38668,22 @@ def api_playoff_scenarios():
         name_by_rid = {int(t["roster_id"]): t.get("name") for t in sim_teams}
         rec_by_rid = {int(t["roster_id"]): (t.get("wins", 0), t.get("losses", 0),
                                             t.get("ties", 0)) for t in sim_teams}
+        # Playoff Path additions: each team's points-for (tiebreaker bars /
+        # seed order) and its remaining schedule in week order. Built from
+        # the same sim state the scenarios were computed on; no existing
+        # field changes.
+        pf_by_rid = {int(t["roster_id"]): float(t.get("pf", 0.0) or 0.0)
+                     for t in sim_teams}
+        sched_by_rid: dict = {}
+        for _wk, _pairs in sorted((state.get("matchups") or {}).items()):
+            for _pair in _pairs or []:
+                if not _pair or len(_pair) < 2:
+                    continue
+                _a, _b = int(_pair[0]), int(_pair[1])
+                sched_by_rid.setdefault(_a, []).append(
+                    {"week": int(_wk), "opp_roster_id": _b})
+                sched_by_rid.setdefault(_b, []).append(
+                    {"week": int(_wk), "opp_roster_id": _a})
         teams_out = []
         for rid, entry in (scen.get("teams") or {}).items():
             w, l, ti = rec_by_rid.get(int(rid), (0, 0, 0))
@@ -38632,6 +38691,8 @@ def api_playoff_scenarios():
                 "roster_id": int(rid),
                 "name": name_by_rid.get(int(rid)),
                 "record": f"{w}-{l}" + (f"-{ti}" if ti else ""),
+                "pf": pf_by_rid.get(int(rid), 0.0),
+                "remaining_schedule": sched_by_rid.get(int(rid), []),
                 "summary": scenario_summary(entry),
                 **entry,
             })
