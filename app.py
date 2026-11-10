@@ -45335,9 +45335,27 @@ def build_portfolio_body(
     # entirely until then. The cell renders from week 2 on even before any
     # league has a result, so cold cards can hydrate it client-side via
     # updateLastWeekRecord() (which no-ops when the cell is absent).
-    _lw_w = _lw_l = _lw_t = 0
+    # Same-week gate: summaries refresh independently, so a stale league can
+    # still report an OLDER finalized week than the rest. "Last Week" is one
+    # week: the reference week is the freshest last_week anyone reports, and
+    # only results from that week count -- older-week results are excluded
+    # until that league's summary refreshes. A result with no last_week
+    # cannot be verified as the same week and is never counted.
+    _lw_pairs = []
     for _lg in valid_leagues or []:
         _r = (_lg.get("last_week_result") or "").strip().upper()
+        if _r not in ("W", "L", "T"):
+            continue
+        try:
+            _wk = int(_lg.get("last_week"))
+        except (TypeError, ValueError):
+            _wk = None
+        _lw_pairs.append((_wk, _r))
+    _lw_ref = max((_wk for _wk, _r in _lw_pairs if _wk is not None), default=None)
+    _lw_w = _lw_l = _lw_t = 0
+    for _wk, _r in _lw_pairs:
+        if _lw_ref is None or _wk != _lw_ref:
+            continue
         if _r == "W":
             _lw_w += 1
         elif _r == "L":
@@ -45982,6 +46000,13 @@ def build_portfolio_body(
         # recompute as cold cards hydrate (mirrors data-wins/losses/ties).
         _lw_r = (lg.get("last_week_result") or "").strip().upper()
         _lw_attr = f" data-lw-result='{_lw_r}'" if _lw_r in ("W", "L", "T") else ""
+        if _lw_attr:
+            # The week rides along so the client-side recompute can apply
+            # the same same-week gate as the server aggregate above.
+            try:
+                _lw_attr += f" data-lw-week='{int(lg.get('last_week'))}'"
+            except (TypeError, ValueError):
+                pass
 
         # Standing as an ordinal place ("10th / 10") on the right side of
         # the record band -- a place reads more clearly than the old "10/10",
