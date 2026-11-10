@@ -421,7 +421,7 @@ def build_trade_intel_body(
         display: flex; gap: 6px; padding: 12px 20px;
         border-bottom: 1px solid var(--border); flex-shrink: 0;
       }}
-      .ti-trades-body {{ overflow-y: auto; flex: 1; padding: 0 20px; }}
+      .ti-trades-body {{ overflow-y: auto; overflow-x: hidden; flex: 1; padding: 0 20px; }}
       .ti-trades-msg {{ text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 15px; }}
       .ti-trade-item {{
         padding: 14px 0;
