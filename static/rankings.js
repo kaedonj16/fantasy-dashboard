@@ -1317,13 +1317,13 @@ function prRender() {
     else ageColEls.forEach(el => el.style.visibility = '');
     // Arrow on the active sortable column header.
     prUpdateSortHeaders();
-    // ROS mode renames the numeric columns: window PPG | Games | window Pts.
+    // ROS mode renames the numeric columns: window PPG | Exp. Games | window Pts.
     const _ppgHeadEl = document.getElementById('prPpgHeader');
     const _totHeadEl = document.getElementById('prTotalHeader');
     if (prScoringType === 'ros') {
       const _cfgH = prRosCfg();
       if (_ppgHeadEl) { _ppgHeadEl.textContent = _cfgH.ppgLabel; _ppgHeadEl.title = 'Projected rest-of-season points per game'; }
-      if (_totHeadEl) _totHeadEl.textContent = 'Games';
+      if (_totHeadEl) _totHeadEl.textContent = 'Exp. Games';
       // The trailing column carries the window total for the ROS sorts in
       // a position view; in the All view it carries the VOR total the
       // board is actually ordered by, so it is headed as a Value column

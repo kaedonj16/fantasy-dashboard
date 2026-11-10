@@ -57,6 +57,20 @@ def test_every_guide_has_a_real_read_time():
 
 # ── Index grouping ───────────────────────────────────────────────────────────
 
+def _latest_slugs():
+    """The view's Latest strip: 3 newest by published date, ties in
+    GUIDE_ORDER order."""
+    from routes.guides_content import GUIDE_ORDER, GUIDES
+
+    return [
+        slug for _i, slug in sorted(
+            enumerate(GUIDE_ORDER),
+            key=lambda p: ((GUIDES[p[1]].get("published") or ""), -p[0]),
+            reverse=True,
+        )[:3]
+    ]
+
+
 def test_index_groups_guides_by_category(offline_client):
     from routes.guides_content import (
         GUIDE_CATEGORY_CHIPS,
@@ -66,25 +80,46 @@ def test_index_groups_guides_by_category(offline_client):
     )
 
     html = _html(offline_client, "/guides")
+    latest = _latest_slugs()
 
-    # Category headers render once each, in the canonical order.
+    # Category headers render once each, in canonical order, for every
+    # category that still has guides after the Latest strip takes its 3.
+    rendered = [
+        category for category in GUIDE_CATEGORY_ORDER
+        if any(
+            (GUIDES[slug].get("category") or "Guides") == category
+            and slug not in latest
+            for slug in GUIDE_ORDER
+        )
+    ]
     header_at = []
-    for category in GUIDE_CATEGORY_ORDER:
+    for category in rendered:
         marker = f'<div class="guide-cathead"><h3>{category}</h3>'
         assert marker in html, f"missing category header: {category}"
         header_at.append(html.index(marker))
     assert header_at == sorted(header_at)
 
-    # Every guide card sits inside its own category's segment, with the
-    # category chip, the updated date, and a read time on the card.
+    # Each non-Latest guide card sits inside its own category's segment,
+    # with the category chip, the updated date, and a read time on the
+    # card. A Latest guide's only card sits in the Latest strip instead.
     segments = {}
-    for i, category in enumerate(GUIDE_CATEGORY_ORDER):
+    for i, category in enumerate(rendered):
         start = header_at[i]
-        end = header_at[i + 1] if i + 1 < len(header_at) else len(html)
+        end = header_at[i + 1] if i + 1 < len(rendered) else len(html)
         segments[category] = html[start:end]
+    latest_at = html.index('<div class="guide-cathead"><h3>Latest</h3>')
+    latest_segment = html[latest_at:header_at[0]]
     for slug in GUIDE_ORDER:
         guide = GUIDES[slug]
         category = guide["category"]
+        if slug in latest:
+            assert f'href="/guides/{slug}"' in latest_segment, (
+                f"{slug} card is not in the Latest strip"
+            )
+            assert f'href="/guides/{slug}"' not in segments[category], (
+                f"{slug} card is duplicated under {category}"
+            )
+            continue
         segment = segments[category]
         assert f'href="/guides/{slug}"' in segment, (
             f"{slug} card is not under {category}"
@@ -92,10 +127,42 @@ def test_index_groups_guides_by_category(offline_client):
         chip_label = GUIDE_CATEGORY_CHIPS[category][0]
         assert f">{chip_label}</span>" in segment
         assert "min read" in segment
-    # No guide is listed twice across the groups; the Latest strip above
-    # the groups repeats its 3 cards, so the page total is groups + 3.
+    # Every guide appears exactly once on the page: 15 cards total, not
+    # 15 category cards plus the Latest strip repeating 3 of them.
     assert len(GUIDE_ORDER) == 15
-    assert html.count('class="guide-card"') == len(GUIDE_ORDER) + 3
+    assert html.count('class="guide-card"') == len(GUIDE_ORDER)
+
+
+def test_index_lists_each_guide_link_exactly_once(offline_client):
+    from routes.guides_content import GUIDE_ORDER
+
+    html = _html(offline_client, "/guides")
+    for slug in GUIDE_ORDER:
+        assert html.count(f'href="/guides/{slug}"') == 1, (
+            f"{slug} link does not appear exactly once on the index"
+        )
+
+
+def test_index_skips_category_emptied_by_latest(offline_client, monkeypatch):
+    import routes.public_bp as public_bp
+
+    # A 3-guide index where every guide lands in the Latest strip: both
+    # categories lose all their members to Latest, so neither renders an
+    # (empty) section or a nav chip, and each guide still appears once.
+    monkeypatch.setattr(public_bp, "_GUIDE_ORDER", [
+        "two-for-one-consolidation-trade-case",
+        "evaluating-a-trade",
+        "using-the-trade-calculator",
+    ])
+    html = _html(offline_client, "/guides")
+    assert '<div class="guide-cathead"><h3>Latest</h3>' in html
+    assert '<div class="guide-cathead"><h3>Trade Case Studies</h3>' not in html
+    assert '<div class="guide-cathead"><h3>Guides</h3>' not in html
+    assert 'href="#guide-cat-trade-case-studies"' not in html
+    assert html.count('class="guide-card"') == 3
+    for slug in ("two-for-one-consolidation-trade-case",
+                 "evaluating-a-trade", "using-the-trade-calculator"):
+        assert html.count(f'href="/guides/{slug}"') == 1
 
 
 def test_index_cards_label_the_top_date_as_updated(offline_client):

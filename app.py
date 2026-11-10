@@ -2082,6 +2082,30 @@ def _landing_bg_svg() -> str:
     return _LANDING_BG_SVG
 
 
+def _hero_trade_count_label():
+    """Rounded trade total for the guest hero proof line.
+
+    Reads the same shared 1h cache behind /api/trade-count that the trade
+    calculator subtitle server-renders from, floored to the nearest 10,000
+    with a trailing "+" so the hero keeps its rounded marketing format
+    without a hardcoded figure that drifts stale against the site's own
+    count. Returns None when the count is unavailable, so the template
+    drops the number instead of printing an invented one.
+    """
+    try:
+        from routes.misc_api_bp import get_trade_count_total
+
+        total = get_trade_count_total()
+    except Exception:
+        return None
+    if not total:
+        return None
+    floored = int(total) // 10000 * 10000
+    if floored <= 0:
+        return None
+    return f"{floored:,}+"
+
+
 HOME_TICKER_HTML = """
 <div class="home-ticker-band" id="homeTicker" aria-hidden="true">
   <span class="home-ticker-tag"><span class="home-ticker-dot"></span>LIVE VALUES</span>
@@ -2108,7 +2132,7 @@ FORM_BODY = """
         <a class="ld-btn ld-btn-sky" href="/trade">Trade calculator</a>
       </div>
       <p class="ld-hero-note"><strong>Free for your first league</strong> &middot; Read-only &middot; 2-minute setup</p>
-      <p class="ld-hero-note">530,000+ real trades analyzed</p>
+      <p class="ld-hero-note">{% if hero_trade_count %}{{ hero_trade_count }} real trades analyzed{% else %}Real trades analyzed{% endif %}</p>
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
@@ -21122,8 +21146,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         player, refreshed daily from real league-to-league market data and our value model.
         Each number estimates what the rest of your league would give up to acquire a player,
         weighing recent production, age, and long-term outlook - not just this week's box
-        score. Use the filters to switch between <strong>1QB and Superflex</strong>, change
-        league size, or toggle redraft scoring, then take any player into the free
+        score. Use the filters to switch between <strong>dynasty, redraft, and
+        rest-of-season</strong> scoring, or between <strong>1QB and Superflex</strong>,
+        then take any player into the free
         <a href="/trade">Trade Calculator</a>. New to dynasty values? Start with
         <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>.
       </p>
@@ -25334,6 +25359,7 @@ def index():
                 espn_otp_enabled=_espn_otp_ui_enabled(),
                 landing_demo_json=_landing_demo_json(),
                 landing_bg_svg=_landing_bg_svg(),
+                hero_trade_count=_hero_trade_count_label(),
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
@@ -25364,6 +25390,7 @@ def index():
                         espn_otp_enabled=_espn_otp_ui_enabled(),
                         landing_demo_json=_landing_demo_json(),
                         landing_bg_svg=_landing_bg_svg(),
+                        hero_trade_count=_hero_trade_count_label(),
                     )
                     return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
@@ -25466,6 +25493,7 @@ def index():
         espn_otp_enabled=_espn_otp_ui_enabled(),
         landing_demo_json=_landing_demo_json(),
         landing_bg_svg=_landing_bg_svg(),
+        hero_trade_count=_hero_trade_count_label(),
     )
     return render_page(
         "BR Fantasy - Free Fantasy Football Trade Calculator & Dynasty Tools",

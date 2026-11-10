@@ -78,6 +78,17 @@ def test_trade_value_chart_has_methodology_and_faq(offline_client):
     assert "Should I use 1QB or Superflex values?" in html
 
 
+def test_trade_value_chart_intro_matches_visible_filters(offline_client):
+    html = _html(offline_client, "/dynasty-trade-value-chart")
+    # The intro may only promise what the visible filter row offers:
+    # scoring type (Dynasty / Redraft / Rest of Season) and format
+    # (1QB / Superflex). League size lives in the Settings panel, so the
+    # intro must not present it as a filter-row control.
+    assert "change league size" not in html
+    assert "rest-of-season</strong> scoring" in html
+    assert "1QB and Superflex" in html
+
+
 def test_top_movers_has_updated_stamp(offline_client):
     html = _html(offline_client, "/top-movers")
     assert "refreshed daily" in html

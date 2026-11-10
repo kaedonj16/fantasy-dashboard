@@ -1133,7 +1133,9 @@ _ROS_ANALYSIS = {
         "games left can outrank a better per-game player who only has five. "
         "That is why the board carries two numbers side by side: ROS PPG for "
         "the per-game rate, and ROS Pts for the total your lineup actually "
-        "banks.</p>"
+        "banks. The Games column (Exp. Games) is expected games over the "
+        "rest of the season: each player's remaining scheduled games "
+        "weighted by his availability rate, so it can be fractional.</p>"
         "<p>The overall order is by value over replacement in a 12-team 1QB "
         "league, which is what makes a quarterback comparable to a tight end: "
         "both are measured against the best player you could stream at their "
@@ -1376,7 +1378,7 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         <tr>
           <th class="rnk-rank">#</th>
           <th class="rnk-player">Player</th>
-          <th class="rnk-val">Games</th>
+          <th class="rnk-val">Exp. Games</th>
           <th class="rnk-val">ROS PPG</th>
           <th class="rnk-val">ROS Pts</th>
           <th class="rnk-age">Sched</th>

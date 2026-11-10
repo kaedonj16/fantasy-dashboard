@@ -1239,14 +1239,24 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
             <div class="guide-grid">{''.join(_card(slug) for slug in latest_slugs)}</div>
         """
 
+    # Every guide appears exactly once on the index: the Latest strip
+    # already carries its 3 cards, so category sections exclude them.
+    latest_set = set(latest_slugs)
+
+    def _category_members(category: str):
+        return [
+            slug for slug in _GUIDE_ORDER
+            if (GUIDES[slug].get("category") or "Guides") == category
+            and slug not in latest_set
+        ]
+
     # Sticky category chip nav: one chip per rendered category, each
-    # jumping to that category section's anchor.
+    # jumping to that category section's anchor. A category whose guides
+    # are all in the Latest strip renders no section (and no chip): its
+    # guides are still on the page, once, in Latest.
     rendered_categories = [
         category for category in GUIDE_CATEGORY_ORDER
-        if any(
-            (GUIDES[slug].get("category") or "Guides") == category
-            for slug in _GUIDE_ORDER
-        )
+        if _category_members(category)
     ]
     catnav_html = (
         '<nav class="guide-catnav">'
@@ -1257,17 +1267,12 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
         + "</nav>"
     )
 
-    # One section per category, in GUIDE_CATEGORY_ORDER; guides keep
-    # their GUIDE_ORDER order inside a group, and any category outside
-    # the known order falls back to the plain "Guides" grouping.
+    # One section per rendered category, in GUIDE_CATEGORY_ORDER; guides
+    # keep their GUIDE_ORDER order inside a group, and any category
+    # outside the known order falls back to the plain "Guides" grouping.
     groups = []
-    for category in GUIDE_CATEGORY_ORDER:
-        members = [
-            slug for slug in _GUIDE_ORDER
-            if (GUIDES[slug].get("category") or "Guides") == category
-        ]
-        if not members:
-            continue
+    for category in rendered_categories:
+        members = _category_members(category)
         cards = "".join(_card(slug) for slug in members)
         groups.append(f"""
             <span class="guide-cat-anchor" id="{_cat_anchor(category)}"></span>
