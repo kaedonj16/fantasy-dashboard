@@ -33683,7 +33683,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       var ties = Number(data.ties);
       if (Number.isFinite(ties)) card.dataset.ties = String(ties);
       var lwRes = String(data.last_week_result || '').toUpperCase();
-      if (lwRes === 'W' || lwRes === 'L' || lwRes === 'T') card.dataset.lwResult = lwRes;
+      if (lwRes === 'W' || lwRes === 'L' || lwRes === 'T') {
+        card.dataset.lwResult = lwRes;
+        // The week rides along so updateLastWeekRecord can apply the
+        // same-week gate; without a usable week the result is unverifiable,
+        // so the week stamp is cleared instead (and it is never counted).
+        var lwWeek = Number(data.last_week);
+        if (Number.isFinite(lwWeek) && lwWeek > 0) card.dataset.lwWeek = String(Math.floor(lwWeek));
+        else delete card.dataset.lwWeek;
+      } else {
+        delete card.dataset.lwResult;
+        delete card.dataset.lwWeek;
+      }
       updateAggregateRecord();
       updateLastWeekRecord();
       // Standings sort reads data-rank off the cards, which only exists
@@ -33731,12 +33742,26 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   // hydrate. Mirrors updateAggregateRecord: the server-rendered total only
   // covers warm leagues, so cold cards contribute their data-lw-result once
   // their summaries arrive. No-op when the server omitted the cell (week 1).
+  // Same-week gate (mirrors the server aggregate): summaries refresh
+  // independently, so a stale card can still report an older finalized week.
+  // Only results stamped with the freshest week anyone reports count; a
+  // result with no week stamp is unverifiable and never counts.
   function updateLastWeekRecord() {
     var agg = document.querySelector('[data-portfolio-lw-record]');
     if (!agg) return;
-    var w = 0, l = 0, t = 0;
     var cards = document.querySelectorAll('.pf-lg-card[data-summary-card]');
+    var refWeek = null;
     for (var i = 0; i < cards.length; i++) {
+      var rr = (cards[i].dataset.lwResult || '').toUpperCase();
+      var wk = Number(cards[i].dataset.lwWeek);
+      if ((rr === 'W' || rr === 'L' || rr === 'T') && Number.isFinite(wk) && wk > 0) {
+        if (refWeek === null || wk > refWeek) refWeek = wk;
+      }
+    }
+    if (refWeek === null) return;
+    var w = 0, l = 0, t = 0;
+    for (var i = 0; i < cards.length; i++) {
+      if (Number(cards[i].dataset.lwWeek) !== refWeek) continue;
       var r = (cards[i].dataset.lwResult || '').toUpperCase();
       if (r === 'W') w++;
       else if (r === 'L') l++;

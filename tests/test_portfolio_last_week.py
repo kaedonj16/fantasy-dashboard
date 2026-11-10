@@ -103,7 +103,7 @@ def test_last_finalized_week_none_when_nothing_finalized():
 
 
 # ── build_portfolio_body rendering ────────────────────────────────────────────
-def _league(league_id, name, wins, losses, lw_result=None, ties=0):
+def _league(league_id, name, wins, losses, lw_result=None, ties=0, lw_week=2):
     lg = {
         "league_id": league_id,
         "name": name,
@@ -130,7 +130,8 @@ def _league(league_id, name, wins, losses, lw_result=None, ties=0):
     }
     if lw_result is not None:
         lg["last_week_result"] = lw_result
-        lg["last_week"] = 2
+        if lw_week is not None:
+            lg["last_week"] = lw_week
     return lg
 
 
@@ -193,6 +194,57 @@ def test_last_week_cell_color_follows_record():
     html = _render(leagues, current_week=3)
     m = re.search(r"class='pf-stat-val ([^']*)' data-portfolio-lw-record", html)
     assert m and "color-win" in m.group(1)
+
+
+# ── same-week gate (server aggregate) ────────────────────────────────────────
+def test_last_week_aggregate_excludes_older_week():
+    # Alpha + Beta report week 9 (W, L); Gamma's stale summary still reports
+    # a week 8 win. Only the reference week (9) counts: 1-1, never 2-1.
+    leagues = [_league("1", "Alpha", 3, 1, lw_result="W", lw_week=9),
+               _league("2", "Beta", 2, 2, lw_result="L", lw_week=9),
+               _league("3", "Gamma", 1, 3, lw_result="W", lw_week=8)]
+    html = _render(leagues, current_week=10)
+    m = re.search(r"data-portfolio-lw-record[^>]*>([^<]*)<", html)
+    assert m and m.group(1) == "1-1"
+
+
+def test_last_week_aggregate_result_without_week_not_counted():
+    # A result with no last_week cannot be verified as the same week, so the
+    # week 9 loss stands alone even though a weekless win is present.
+    leagues = [_league("1", "Alpha", 3, 1, lw_result="W", lw_week=None),
+               _league("2", "Beta", 2, 2, lw_result="L", lw_week=9)]
+    html = _render(leagues, current_week=10)
+    m = re.search(r"data-portfolio-lw-record[^>]*>([^<]*)<", html)
+    assert m and m.group(1) == "0-1"
+
+
+def test_last_week_all_results_weekless_shows_placeholder():
+    leagues = [_league("1", "Alpha", 3, 1, lw_result="W", lw_week=None)]
+    html = _render(leagues, current_week=10)
+    assert "data-portfolio-lw-record" in html
+    m = re.search(r"data-portfolio-lw-record[^>]*>([^<]*)<", html)
+    assert m and m.group(1) == "-"
+
+
+def test_last_week_card_carries_week_hook():
+    leagues = [_league("1", "Alpha", 3, 1, lw_result="W", lw_week=9)]
+    html = _render(leagues, current_week=10)
+    assert "data-lw-result='W' data-lw-week='9'" in html
+
+
+# ── same-week gate (client recompute, static/app.js source contract) ─────────
+def test_last_week_js_recompute_gates_on_max_week():
+    src = (ROOT / "static" / "app.js").read_text()
+    # renderSummary stamps the week next to the result and clears both when
+    # the summary carries no valid result.
+    assert "card.dataset.lwWeek = String(Math.floor(lwWeek))" in src
+    assert "delete card.dataset.lwWeek" in src
+    assert "Number(data.last_week)" in src
+    # updateLastWeekRecord derives a reference week from the card stamps and
+    # counts only cards at that week.
+    body = src[src.index("function updateLastWeekRecord()"):src.index("function matchupHtml")]
+    assert "refWeek" in body
+    assert "dataset.lwWeek" in body
 
 
 # ── repaint-guard contract in static/app.js ───────────────────────────────────
