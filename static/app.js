@@ -23035,7 +23035,7 @@ function createRkModalIfMissing() {
          background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);">
       <div id="rkModalContent"
         style="background:var(--card);border-radius:16px;max-width:680px;width:100%;
-               max-height:90vh;overflow-y:auto;
+               max-height:90vh;overflow-y:auto;overflow-x:hidden;
                box-shadow:0 24px 48px rgba(15,23,42,0.25);">
       </div>
     </div>
