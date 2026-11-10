@@ -50,6 +50,34 @@ def api_advanced_metrics_seasons():
     return jsonify({"seasons": get_available_seasons()})
 
 
+def get_trade_count_total():
+    """The all-trades total behind /api/trade-count's default branch.
+
+    Cache-first (1h TTL, the same cache entry the endpoint serves) so a
+    page render can read the number without a COUNT(*) of its own in the
+    common case. Returns None when the count cannot be determined, so a
+    caller printing the number in copy can drop it instead of inventing
+    one (the endpoint keeps its own legacy fallback for API consumers).
+    """
+    import time
+
+    now = time.time()
+    cached = _TRADE_COUNT_CACHE.get("v1")
+    if cached and now - cached[0] < 3600:
+        return cached[1]
+    try:
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS n FROM trade_intel_trades")
+            count = cursor.fetchone()["n"]
+    except Exception:
+        return None
+    _TRADE_COUNT_CACHE["v1"] = (now, count)
+    return count
+
+
 @misc_api_bp.route("/api/trade-count")
 def api_trade_count():
     """Get the count of trades from trade_intel_trades table.
@@ -92,20 +120,11 @@ def api_trade_count():
         except Exception:
             # Return fallback count if table doesn't exist or other error
             return jsonify({"count": 15000})
-    cached = _TRADE_COUNT_CACHE.get("v1")
-    if cached and now - cached[0] < 3600:
-        return jsonify({"count": cached[1]})
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) AS n FROM trade_intel_trades")
-            count = cursor.fetchone()["n"]
-        _TRADE_COUNT_CACHE["v1"] = (now, count)
-        return jsonify({"count": count})
-    except Exception:
+    count = get_trade_count_total()
+    if count is None:
         # Return fallback count if table doesn't exist or other error
         return jsonify({"count": 15000})
+    return jsonify({"count": count})
 
 
 @misc_api_bp.route("/api/top-movers")

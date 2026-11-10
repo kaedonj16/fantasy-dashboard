@@ -98,6 +98,18 @@ def test_index_groups_guides_by_category(offline_client):
     assert html.count('class="guide-card"') == len(GUIDE_ORDER) + 3
 
 
+def test_index_cards_label_the_top_date_as_updated(offline_client):
+    html = _html(offline_client, "/guides")
+
+    # The card-top date is the guide's updated date and must say so: the
+    # bottom of the card already reads "Published <date>", so a bare top
+    # date left readers unable to tell which was which (6 of 15 guides
+    # have differing published/updated pairs). The article page labels
+    # both; the index now matches its wording.
+    assert '<span class="guide-date">Updated Oct 2, 2026</span>' in html
+    assert '<span class="guide-date">Oct 2, 2026</span>' not in html
+
+
 # ── Article header ───────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("slug", ["dynasty-trade-value", "waiver-wire-and-faab"])

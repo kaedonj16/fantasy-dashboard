@@ -4,15 +4,18 @@ metadata in four places, per Kaedon's approved legit mock.
 1. Trade Database: header subtitle total (lazy-filled from /api/trade-count)
    plus a results summary line above the grid that follows the filters.
 2. Trade Calculator: a muted "Values calibrated from" line under the title,
-   filled by the same lazy fetch that fills the tooltip's #tradeCount.
+   server-rendered from the shared count cache (the client lazy fetch
+   still refreshes it and the tooltip's #tradeCount after load).
 3. Trade Intelligence: subtitle leads with the live dynasty trade count
    (/api/trade-count?format=dynasty&season=<year>).
 4. Guest landing hero: one static rounded line, "530,000+ real trades
    analyzed", under the free-league note.
 
 No count is hardcoded in page copy (the hero's rounded marketing figure is
-the one approved exception), and no COUNT(*) runs during page render: every
-live number arrives client-side from the cached count endpoint.
+the one approved exception). The calculator's number is read at render
+time from the same 1h cache the count endpoint serves, so a render costs
+no COUNT(*) of its own unless the cache is cold, exactly like the
+endpoint's first hit of the hour.
 """
 from __future__ import annotations
 
@@ -152,10 +155,57 @@ def test_tdb_summary_line_above_grid_and_updates_from_pagination():
 # ── Trade Calculator placement ───────────────────────────────────────────────
 
 def test_calculator_head_carries_calibrated_from_line():
-    assert (
-        "Values calibrated from <span data-trade-count>…</span> real Sleeper trades"
-        in CALC_PAGE_SRC
+    # The subtitle interpolates the server-rendered count span; the old
+    # literal "…" placeholder span must never come back (on the league
+    # trade page the client fill silently never ran, so the placeholder
+    # was the final rendered state).
+    assert "Values calibrated from {subtitle_count_html}real Sleeper trades" in CALC_PAGE_SRC
+    assert '<span data-trade-count>{trade_count}</span>' in CALC_PAGE_SRC
+    assert "<span data-trade-count>…</span>" not in CALC_PAGE_SRC
+    assert "get_trade_count_total" in CALC_PAGE_SRC
+
+
+def _calc_body(monkeypatch, total, **kwargs):
+    import routes.misc_api_bp as misc_mod
+    from dashboard_services.pages.trade_calculator_page import (
+        build_trade_calculator_body,
     )
+
+    monkeypatch.setattr(misc_mod, "get_trade_count_total", lambda: total)
+    kwargs.setdefault("season", 2026)
+    return build_trade_calculator_body(**kwargs)
+
+
+def test_calculator_subtitle_server_renders_the_count_guest(monkeypatch):
+    html = _calc_body(monkeypatch, 633080, league_id=None)
+    assert (
+        "Values calibrated from <span data-trade-count>633,080</span> "
+        "real Sleeper trades" in html
+    )
+    assert "<span data-trade-count>…</span>" not in html
+    assert '<strong id="tradeCount">633,080</strong>' in html
+
+
+def test_calculator_subtitle_server_renders_the_count_league(monkeypatch):
+    # The league-context variant is the page where the unfilled "…" was
+    # observed live (/yahoo/2026/1307110/trade).
+    html = _calc_body(
+        monkeypatch, 633080, league_id="1307110", platform="yahoo"
+    )
+    assert (
+        "Values calibrated from <span data-trade-count>633,080</span> "
+        "real Sleeper trades" in html
+    )
+    assert "<span data-trade-count>…</span>" not in html
+
+
+def test_calculator_subtitle_drops_the_number_when_count_unavailable(monkeypatch):
+    html = _calc_body(monkeypatch, None, league_id="1307110", platform="yahoo")
+    # Honest degradation: the sentence survives with no number and no
+    # placeholder, in the subtitle and the tooltip alike.
+    assert "Values calibrated from real Sleeper trades" in html
+    assert "<span data-trade-count>" not in html
+    assert "150,000+" not in html
 
 
 def test_lazy_trade_count_fills_tooltip_and_data_spans():

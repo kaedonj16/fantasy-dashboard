@@ -1214,7 +1214,7 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
         return f"""
             <a class="guide-card" href="{base}/guides/{slug}">
               <div class="guide-card-top">{_guide_chip(category)}
-                <span class="guide-date">{updated}</span></div>
+                <span class="guide-date">Updated {updated}</span></div>
               <div class="guide-card-title">{g['title']}</div>
               <p class="guide-card-sum">{g['summary']}</p>
               <div class="guide-card-meta"><span>{minutes} min read</span>
