@@ -1214,6 +1214,17 @@ def _ros_analysis_html(pos_filter: str | None) -> str:
     )
 
 
+def _fmt_ros_games(games) -> str:
+    """Expected games as displayed: whole numbers bare, otherwise one
+    decimal (the stamped ros_games are the expected games the totals are
+    built on, so the cell must show that number, not a rounded-down int)."""
+    try:
+        g = float(games or 0)
+    except (TypeError, ValueError):
+        return "0"
+    return str(int(g)) if g == int(g) else f"{g:.1f}"
+
+
 def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
                             position: str | None = None) -> str:
     """Public rest-of-season rankings page body (overall or one position).
@@ -1251,24 +1262,22 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
 
     # Replacement PPG per position from the ROS pool (12-team 1QB defaults),
     # via the shared ROS convention in utils/ros_rankings.py: the same
-    # replacement the /players All view uses, including the 1QB QB rule
-    # (replacement QB at the starter line, not deep in the QB2 band).
+    # replacement map the /players All view uses, including the 1QB QB
+    # streaming level and the flex-aware RB/WR/TE lines. The stamped
+    # ros_games are expected games (availability-weighted), so the VOR
+    # below rides the same games the position pages total from.
     repl: dict = {}
     if not pos_filter:
-        from utils.ros_rankings import ros_replacement_ppg
+        from utils.ros_rankings import ros_replacement_map
 
         by_pos: dict = {}
         for r in rows:
             if r.get("ros_ppg") is not None:
                 by_pos.setdefault(r["position"], []).append(float(r["ros_ppg"]))
-        for pos, ppgs in by_pos.items():
-            ppgs.sort(reverse=True)
-            base = ros_replacement_ppg(ppgs, pos, 12, "1qb")
-            if base is not None:
-                repl[pos] = base
+        repl = ros_replacement_map(by_pos, 12, "1qb")
         for r in rows:
             base = repl.get(r["position"])
-            r["_vor"] = ((float(r["ros_ppg"]) - base) * int(r["ros_games"])
+            r["_vor"] = ((float(r["ros_ppg"]) - base) * float(r["ros_games"])
                          if base is not None and r.get("ros_ppg") is not None
                          and r.get("ros_games") else 0.0)
         rows.sort(key=lambda r: (-r["_vor"], -float(r.get("ros_total") or 0),
@@ -1322,7 +1331,7 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             f'<a class="rnk-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
             f'<span class="rnk-team">{html.escape(team)}</span>'
             f'</td>'
-            f'<td class="rnk-val">{int(row.get("ros_games") or 0)}</td>'
+            f'<td class="rnk-val">{_fmt_ros_games(row.get("ros_games"))}</td>'
             f'<td class="rnk-val">{float(row.get("ros_ppg") or 0):.1f}</td>'
             f'<td class="rnk-val rnk-val-primary">{float(row.get("ros_total") or 0):.1f}</td>'
             f'<td class="rnk-age">{("#" + str(sched)) if sched else "-"}</td>'

@@ -712,19 +712,19 @@ function prRosVal(p, kind) {
   return v != null ? v : null;
 }
 // Replacement PPG per position for the active window, from the ROS pool
-// itself: the player at the value model's replacement index (starters x
-// league size x REPLACEMENT_MULT, data_building/player_value.py), with
-// Superflex starting 2 QBs. League size and format therefore move the
-// cross-position order, which is why League Size stays visible in ROS mode.
-// ONE exception: QB in 1QB. The 1.5x multiplier is calibrated for the
-// dynasty model's normalized strength scale, not raw points; on raw ROS
-// PPGs it prices the replacement QB deep in the QB2 band and leaves an
-// elite QB's edge looking like an elite RB's, when the actual 1QB
-// fallback is the streaming tier right at the starter line. So the 1QB QB
-// replacement is the QB AT the starter line (rank = league size), the
-// site's VORP convention (utils/trade.py stamp_value_metrics), mirroring
-// utils/ros_rankings.py's ros_replacement_index. SF keeps the multiplier:
-// with two starters per team, QB scarcity is real and priced.
+// itself; mirrors utils/ros_rankings.py's ros_replacement_map exactly.
+// League size and format therefore move the cross-position order, which
+// is why League Size stays visible in ROS mode.
+// QB in 1QB is the streaming level: the realistic fallback is rotating
+// through the deep unrostered starter pool on weekly matchups, so the
+// line is PR_ROS_QB_STREAM_FACTOR x the mean ROS PPG of the top half of
+// the starter pool. SF keeps the scarcity index (2 starters x size x
+// 1.5): with two starters per team, QB scarcity is real and priced.
+// RB / WR / TE share one pool: dedicated starters first (RB 2, WR 2,
+// TE 1 per team), then one FLEX spot per team filled from the best
+// remaining across the three positions combined, and each position's
+// replacement is its best remaining player.
+var PR_ROS_QB_STREAM_FACTOR = 0.92;
 var _prRosReplCache = { key: null, map: {} };
 function prRosReplacementMap() {
   var key = prRosWindow + '|' + prLeagueSize + '|' + prLeagueType;
@@ -735,16 +735,37 @@ function prRosReplacementMap() {
     var v = p[cfg.ppg];
     if (v != null) (byPos[p.position] = byPos[p.position] || []).push(v);
   });
-  var starters = { QB: prLeagueType === 'sf' ? 2 : 1, RB: 2, WR: 2, TE: 1 };
-  var mult = { QB: 1.5, RB: 1.2, WR: 1.2, TE: 1.25 };
-  var map = {};
   Object.keys(byPos).forEach(function(pos) {
-    var arr = byPos[pos].slice().sort(function(a, b) { return b - a; });
-    var idx = (pos === 'QB' && prLeagueType !== 'sf')
-      ? Math.max(0, prLeagueSize - 1)
-      : Math.floor((starters[pos] || 1) * prLeagueSize * (mult[pos] || 1.2));
-    idx = Math.max(0, Math.min(idx, arr.length - 1));
-    map[pos] = arr[idx];
+    byPos[pos] = byPos[pos].slice().sort(function(a, b) { return b - a; });
+  });
+  var map = {};
+  var qb = byPos.QB;
+  if (qb && qb.length) {
+    if (prLeagueType === 'sf') {
+      var qIdx = Math.max(0, Math.min(Math.floor(2 * prLeagueSize * 1.5), qb.length - 1));
+      map.QB = qb[qIdx];
+    } else {
+      var nStart = Math.min(prLeagueSize, qb.length);
+      var nHalf = Math.max(1, Math.ceil(nStart / 2));
+      var qSum = 0;
+      for (var qi = 0; qi < nHalf; qi++) qSum += qb[qi];
+      map.QB = PR_ROS_QB_STREAM_FACTOR * (qSum / nHalf);
+    }
+  }
+  var flexStarters = { RB: 2, WR: 2, TE: 1 };
+  var taken = {}, leftovers = [];
+  ['RB', 'WR', 'TE'].forEach(function(pos) {
+    var arr = byPos[pos] || [];
+    var dedicated = Math.min((flexStarters[pos] || 0) * prLeagueSize, arr.length);
+    taken[pos] = dedicated;
+    for (var j = dedicated; j < arr.length; j++) leftovers.push([arr[j], pos]);
+  });
+  leftovers.sort(function(a, b) { return (b[0] - a[0]) || (a[1] < b[1] ? -1 : (a[1] > b[1] ? 1 : 0)); });
+  var flexSpots = Math.min(prLeagueSize, leftovers.length);
+  for (var k = 0; k < flexSpots; k++) taken[leftovers[k][1]]++;
+  ['RB', 'WR', 'TE'].forEach(function(pos) {
+    var arr = byPos[pos];
+    if (arr && arr.length) map[pos] = arr[Math.min(taken[pos], arr.length - 1)];
   });
   _prRosReplCache = { key: key, map: map };
   return map;
