@@ -16,10 +16,15 @@ and 2.584 for the originally pitched 65/35 blend):
     + 30% season PPG. A thin form sample (< 4 played games in the window)
     shrinks the form weight toward the projection, the same shrinkage the
     start-score base blend uses.
-  * ROS Pts = ROS PPG x projected games left. Games left counts the window
-    weeks where the player's team plays (non-bye) and a projection feed
-    exists, minus the leading zero-run of weeks out for an injured returner
-    (the waiver path's weeks-out read on the projection series).
+  * ROS Pts = ROS PPG x expected games left. Scheduled games left counts
+    the window weeks where the player's team plays (non-bye) and a
+    projection feed exists, minus the leading zero-run of weeks out for an
+    injured returner (the waiver path's weeks-out read on the projection
+    series). Expected games then weights that count by the player's
+    availability rate: how often he actually suits up (see
+    availability_rate). A total built on scheduled games prices every
+    player as if he plays every week, which systematically overstates
+    fragile players against durable ones.
   * Two sub-windows ride along on the same weekly numbers: Stretch (window
     start through Week 14) and Playoffs (Weeks 15-17), each with its own
     PPG / total / games and positional rank. Weeks-out and bye handling
@@ -38,8 +43,8 @@ remaining schedule). It never enters the score: the weekly projections
 already price the opponent in.
 
 Cross-position order (the All view) is by VOR total: (window PPG minus
-the replacement PPG at his position) x window games, with the replacement
-convention in ros_replacement_index below. The All view's tier dividers
+the replacement PPG at his position) x expected window games, with the
+replacement convention in ros_replacement_map below. The All view's tier dividers
 are computed from those VOR totals (compute_ros_vor_tier_thresholds), NOT
 from the positional totals: a mixed list keyed to raw totals stamps each
 player with his own position's scale, so the dividers repeat and run out
@@ -57,6 +62,7 @@ overlay's own memo then serves every request.
 from __future__ import annotations
 
 import logging
+import math
 import os
 from datetime import date
 from typing import Dict, List, Optional, Tuple
@@ -76,6 +82,15 @@ QB_W_PROJ = 0.40
 QB_W_FORM = 0.30
 QB_W_SEASON = 0.30
 FORM_WINDOW = 4
+
+# Availability (expected games): the rate is shrunk toward the positional
+# mean with a prior of one full season of team games, so a player needs
+# roughly a season of evidence before his own record moves him far off
+# the positional norm, and clamped to [0.70, 1.00]: nobody is priced as
+# missing more than 30% of his remaining games on availability alone
+# (longer absences already come out through the weeks-out zero-run).
+AVAILABILITY_PRIOR_GAMES = 17.0
+AVAILABILITY_FLOOR = 0.70
 
 PPR_SCORING = {"rec": 1.0}
 
@@ -110,6 +125,26 @@ def qb_ros_ppg(fwd_ppg: float, form_ppg: Optional[float],
     return (w_proj * fwd
             + w_form * float(form_ppg or 0.0)
             + w_season * float(season_ppg or 0.0))
+
+
+def availability_rate(appearances: Optional[int], team_games: Optional[int],
+                      pos_mean_rate: Optional[float]) -> Optional[float]:
+    """Share of his team's games a player actually appears in, shrunk
+    toward the positional mean.
+
+    appearances / team_games over the current plus prior season (a week
+    counts as an appearance when the weekly stat feed marks the player
+    active). The raw share is shrunk with a prior of
+    AVAILABILITY_PRIOR_GAMES team games at the positional mean rate, then
+    clamped to [AVAILABILITY_FLOOR, 1.00]. None when there is no data to
+    rate (the caller then prices scheduled games unweighted).
+    """
+    if not team_games or appearances is None or pos_mean_rate is None:
+        return None
+    prior = AVAILABILITY_PRIOR_GAMES
+    shrunk = (float(appearances) + prior * float(pos_mean_rate)) / (
+        float(team_games) + prior)
+    return max(AVAILABILITY_FLOOR, min(1.0, shrunk))
 
 
 def window_projection_stats(series: List[Optional[float]]) -> Optional[dict]:
@@ -161,13 +196,19 @@ def compute_player_ros(position: str, *, played_games: int,
                        targets_per_game: Optional[float], is_team_top: bool,
                        season_out: bool,
                        windows: Dict[str, List[Optional[float]]],
-                       sched_rank: Optional[int]) -> Optional[dict]:
+                       sched_rank: Optional[int],
+                       availability_rate: Optional[float] = None) -> Optional[dict]:
     """ROS fields for one player, or None when he is not ROS-eligible.
 
     ``windows`` maps "all" / "stretch" / "playoffs" to that window's weekly
     projection series (see window_projection_stats). Positional ranks are
     NOT set here: assign_ros_ranks fills them once the whole pool exists.
     A sub-window with no playable week left simply carries no fields.
+
+    ``availability_rate`` (see the module-level helper of the same name)
+    converts each window's scheduled games into expected games; the
+    stamped *_games fields ARE the expected games the totals are built
+    on, so the number the board displays is the number the total uses.
     """
     pos = str(position or "").upper()
     if pos not in ROS_POSITIONS or season_out:
@@ -195,9 +236,13 @@ def compute_player_ros(position: str, *, played_games: int,
             ppg = stats["fwd_ppg"]
         if ppg <= 0:
             continue
+        exp_games = stats["games"] * (
+            availability_rate if availability_rate is not None else 1.0)
         out[f"{prefix}_ppg"] = round(ppg, 2)
-        out[f"{prefix}_total"] = round(ppg * stats["games"], 1)
-        out[f"{prefix}_games"] = stats["games"]
+        out[f"{prefix}_total"] = round(ppg * exp_games, 1)
+        out[f"{prefix}_games"] = (
+            int(exp_games) if float(exp_games).is_integer()
+            else round(exp_games, 1))
     if "ros_ppg" not in out:
         return None
     if sched_rank is not None:
@@ -270,51 +315,117 @@ def compute_ros_tier_thresholds(ros_by_pid: Dict[str, dict],
 
 # ── Cross-position VOR: replacement convention + All-view tiers ─────────────
 # One convention, read by every ROS surface: the public overall page calls
-# ros_replacement_ppg directly, the payload's All-view tier thresholds are
+# ros_replacement_map directly, the payload's All-view tier thresholds are
 # computed from ros_vor_totals, and the /players board mirrors the same
-# index math in JS (prRosReplacementMap in static/rankings.js).
+# math in JS (prRosReplacementMap in static/rankings.js). Every line is
+# derived from the ROS pool itself; no constant is a hardcoded PPG.
 #
-# Starters per team and the scarcity multipliers are the value model's
-# (data_building/player_value.py: STARTERS with QB 2 in Superflex, and
-# REPLACEMENT_MULT). ONE exception: QB in 1QB. The 1.5x QB multiplier is
-# calibrated for the dynasty model's normalized strength scale, not raw
-# points; applied to raw ROS PPGs it prices the replacement QB deep in the
-# QB2 band, which leaves an elite QB's edge looking like an elite RB's.
-# In a 1QB league the actual fallback is the streaming tier right at the
-# starter line, so QB replacement in 1QB follows the site's VORP helpers
-# instead (utils/trade.py stamp_value_metrics): the player AT the starter
-# line, rank = starters x league size. SF keeps the multiplier: with two
-# starters per team, QB scarcity is real and priced.
+# QB in 1QB is priced at the STREAMING level. The realistic alternative to
+# holding an elite QB in a 1QB league is not one fixed fringe starter: it
+# is streaming, rotating through the deep unrostered starter pool and
+# playing favorable matchups week to week, which performs well above the
+# worst starter's static line. The line is therefore the top half of the
+# starter pool's mean ROS PPG, discounted by QB_STREAM_FACTOR: the pool
+# mean is a static average of full remaining lines, while a streamer
+# holds none of those QBs and his weekly best-matchup pick misses often
+# enough that the realized line sits under the band's mean. The earlier
+# conventions both mispriced this: the dynasty model's 1.5x index put the
+# line deep in the QB2 band (it is calibrated for a normalized strength
+# scale, not raw points), and the last starter's line still treated the
+# fallback as one fixed QB. SF keeps the 1.5x index on two starters per
+# team: with two starters, QB scarcity is real and priced.
+#
+# RB / WR / TE share ONE replacement pool, the way lineups actually work:
+# dedicated starters first (the value model's STARTERS in
+# data_building/player_value.py), then the FLEX slots (the site models
+# one FLEX per team; utils/trade.py's VORP section) are filled from the
+# best remaining RB/WR/TE combined, and each position's replacement is
+# the best remaining player at that position. This replaces the old
+# per-position multiplier indices (starters x size x 1.20 / 1.25), which
+# approximated the flex with a fixed depth markup on each position
+# separately, blind to how the combined pool actually orders; the VORP
+# helpers' fixed 45/45/10 flex usage split makes the same approximation
+# by assumed shares rather than the pool's own PPG order.
 ROS_STARTERS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
-ROS_REPLACEMENT_MULT = {"QB": 1.50, "RB": 1.20, "WR": 1.20, "TE": 1.25}
+ROS_QB_SF_MULT = 1.50
+ROS_FLEX_SLOTS_PER_TEAM = 1
+QB_STREAM_FACTOR = 0.92
 ROS_LEAGUE_TYPES = ("1qb", "sf")
 ROS_LEAGUE_SIZES = (8, 10, 12, 14)
 _WINDOW_PREFIXES = (("all", "ros"), ("stretch", "ros_stretch"),
                     ("playoffs", "ros_playoff"))
 
 
-def ros_replacement_index(position: str, league_size: int, league_type: str) -> int:
-    """0-based index into a position's PPG-sorted (desc) pool locating the
-    replacement-level player, for one league shape."""
-    pos = str(position or "").upper()
-    size = int(league_size or 10)
-    starters = ROS_STARTERS.get(pos, 1)
-    if pos == "QB" and str(league_type or "1qb").lower() == "sf":
-        return int(2 * size * ROS_REPLACEMENT_MULT["QB"])
-    if pos == "QB":
-        # 1QB: the player at the starter line (utils/trade.py VORP rank).
-        return int(round(starters * size)) - 1
-    return int(starters * size * ROS_REPLACEMENT_MULT.get(pos, 1.2))
+def ros_qb_replacement_ppg(ppgs_desc: List[float], league_size: int,
+                           league_type: str) -> Optional[float]:
+    """Replacement QB PPG from the QB pool's ROS PPGs sorted desc.
 
-
-def ros_replacement_ppg(ppgs_desc: List[float], position: str,
-                        league_size: int, league_type: str) -> Optional[float]:
-    """Replacement PPG from a position's PPGs sorted desc (None if empty)."""
+    1QB: the streaming level, QB_STREAM_FACTOR x the mean ROS PPG of the
+    top half of the starter pool (QB1..QB{ceil(size/2)}). SF: the player
+    at the scarcity index (2 starters x size x 1.5), clamped to the pool.
+    None when the pool is empty.
+    """
     if not ppgs_desc:
         return None
-    idx = ros_replacement_index(position, league_size, league_type)
-    idx = max(0, min(idx, len(ppgs_desc) - 1))
-    return float(ppgs_desc[idx])
+    size = int(league_size or 10)
+    if str(league_type or "1qb").lower() == "sf":
+        idx = int(2 * size * ROS_QB_SF_MULT)
+        idx = max(0, min(idx, len(ppgs_desc) - 1))
+        return float(ppgs_desc[idx])
+    n_starters = min(size, len(ppgs_desc))
+    n_half = max(1, math.ceil(n_starters / 2))
+    top_half = [float(v) for v in ppgs_desc[:n_half]]
+    return QB_STREAM_FACTOR * (sum(top_half) / len(top_half))
+
+
+def ros_flex_replacement_ppgs(by_pos_ppgs: Dict[str, List[float]],
+                              league_size: int) -> Dict[str, float]:
+    """Flex-aware replacement PPG for RB / WR / TE from one shared pool.
+
+    ``by_pos_ppgs`` maps position -> ROS PPGs (any order). Dedicated
+    starters per team (ROS_STARTERS) are allocated first, then
+    ROS_FLEX_SLOTS_PER_TEAM flex spots per team go to the best remaining
+    players across RB/WR/TE combined (PPG desc, position name breaking
+    ties deterministically), and each position's replacement PPG is the
+    best remaining player at that position, clamped to the pool's last
+    player when a position is fully allocated.
+    """
+    size = int(league_size or 10)
+    sorted_by_pos: Dict[str, List[float]] = {}
+    taken: Dict[str, int] = {}
+    leftovers: List[Tuple[float, str]] = []
+    for pos in ("RB", "WR", "TE"):
+        ppgs = sorted((float(v) for v in (by_pos_ppgs.get(pos) or [])),
+                      reverse=True)
+        sorted_by_pos[pos] = ppgs
+        dedicated = min(ROS_STARTERS[pos] * size, len(ppgs))
+        taken[pos] = dedicated
+        for v in ppgs[dedicated:]:
+            leftovers.append((v, pos))
+    leftovers.sort(key=lambda t: (-t[0], t[1]))
+    for _ppg, pos in leftovers[: ROS_FLEX_SLOTS_PER_TEAM * size]:
+        taken[pos] += 1
+    out: Dict[str, float] = {}
+    for pos in ("RB", "WR", "TE"):
+        ppgs = sorted_by_pos[pos]
+        if ppgs:
+            out[pos] = float(ppgs[min(taken[pos], len(ppgs) - 1)])
+    return out
+
+
+def ros_replacement_map(by_pos_ppgs: Dict[str, List[float]], league_size: int,
+                        league_type: str) -> Dict[str, float]:
+    """Replacement PPG per position for one league shape: the streaming /
+    scarcity QB line plus the flex-aware RB/WR/TE lines. Only positions
+    present in the pool appear in the result."""
+    out: Dict[str, float] = {}
+    qb_ppgs = sorted((float(v) for v in (by_pos_ppgs.get("QB") or [])),
+                     reverse=True)
+    qb_line = ros_qb_replacement_ppg(qb_ppgs, league_size, league_type)
+    if qb_line is not None:
+        out["QB"] = qb_line
+    out.update(ros_flex_replacement_ppgs(by_pos_ppgs, league_size))
+    return out
 
 
 def ros_vor_totals(ros_by_pid: Dict[str, dict],
@@ -333,12 +444,7 @@ def ros_vor_totals(ros_by_pid: Dict[str, dict],
             if ppg_key in fields:
                 pos = str(positions_by_pid.get(pid) or "").upper()
                 by_pos.setdefault(pos, []).append(float(fields[ppg_key]))
-        repl: Dict[str, float] = {}
-        for pos, ppgs in by_pos.items():
-            ppgs.sort(reverse=True)
-            base = ros_replacement_ppg(ppgs, pos, league_size, league_type)
-            if base is not None:
-                repl[pos] = base
+        repl = ros_replacement_map(by_pos, league_size, league_type)
         window_vor: Dict[str, float] = {}
         for pid, fields in ros_by_pid.items():
             if ppg_key not in fields or games_key not in fields:
@@ -347,7 +453,7 @@ def ros_vor_totals(ros_by_pid: Dict[str, dict],
             if base is None:
                 continue
             window_vor[pid] = round(
-                (float(fields[ppg_key]) - base) * int(fields[games_key]), 1)
+                (float(fields[ppg_key]) - base) * float(fields[games_key]), 1)
         out[window_key] = window_vor
     return out
 
@@ -388,9 +494,11 @@ def _files_signature(season: int, start_week: int) -> tuple:
 
     parts: List[Tuple[str, float]] = []
     stats_dir = os.path.join(CACHE_DIR, "sleeper_stats")
+    stat_prefixes = (f"sleeper_stats_s{season}_w",
+                     f"sleeper_stats_s{season - 1}_w")  # availability window
     try:
         for name in sorted(os.listdir(stats_dir)):
-            if name.startswith(f"sleeper_stats_s{season}_w"):
+            if name.startswith(stat_prefixes):
                 try:
                     parts.append((name, os.path.getmtime(os.path.join(stats_dir, name))))
                 except OSError:
@@ -473,17 +581,29 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
 
         # Usage + team-points pass over the completed weeks' stat files:
         # touches / targets per game for the role gate, and each team's #1
-        # at a position by season points.
+        # at a position by season points. The same pass also collects the
+        # availability inputs over the current AND prior seasons: a week
+        # is an appearance when the feed marks the player active
+        # (gms_active), and a team game week when any of the team's
+        # players was active that week (bye weeks never appear). Prior
+        # season team attribution uses the player's current team: every
+        # team plays the same number of games, so the only error is which
+        # week the bye fell on, and the shrinkage prior absorbs it.
         usage: Dict[str, dict] = {}
         team_points: Dict[Tuple[str, str], Dict[str, float]] = {}
-        stat_paths = sorted(_glob.glob(os.path.join(
-            CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")))
+        appearances: Dict[str, int] = {}
+        team_weeks: Dict[Tuple[int, str], set] = {}
+        stat_paths: List[str] = []
+        for yr in (season - 1, season):
+            stat_paths += sorted(_glob.glob(os.path.join(
+                CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{yr}_w*.json")))
         for path in stat_paths:
             try:
+                yr = int(path.rsplit("sleeper_stats_s", 1)[1].split("_w")[0])
                 week = int(path.rsplit("_w", 1)[1].split(".")[0])
             except (IndexError, ValueError):
                 continue
-            if week >= start_week:
+            if yr == season and week >= start_week:
                 continue  # only completed weeks carry played stats
             try:
                 with open(path) as fh:
@@ -493,17 +613,23 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
             if not isinstance(rows, dict):
                 continue
             for pid, st in rows.items():
-                if not isinstance(st, dict) or st.get("pts_ppr") is None:
+                if not isinstance(st, dict):
                     continue
                 pid = str(pid)
                 meta = index.get(pid) or {}
+                team = str(meta.get("team") or "").upper()
+                if float(st.get("gms_active") or 0) > 0:
+                    appearances[pid] = appearances.get(pid, 0) + 1
+                    if team:
+                        team_weeks.setdefault((yr, team), set()).add(week)
+                if yr != season or st.get("pts_ppr") is None:
+                    continue  # usage / team points are this season's facts
                 pos = str(meta.get("pos") or meta.get("position") or "").upper()
                 if pos not in ROS_POSITIONS:
                     continue
                 u = usage.setdefault(pid, {"touches": 0.0, "targets": 0.0})
                 u["touches"] += float(st.get("rush_att") or 0) + float(st.get("rec") or 0)
                 u["targets"] += float(st.get("rec_tgt") or 0)
-                team = str(meta.get("team") or "").upper()
                 if team:
                     try:
                         pts = float(week_stat_points(st, dict(PPR_SCORING), ""))
@@ -515,6 +641,29 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
         for bucket in team_points.values():
             if bucket:
                 team_top.add(max(bucket.items(), key=lambda kv: kv[1])[0])
+
+        # Availability: team games over the two-season window per team,
+        # and each position's mean raw appearance share (the shrinkage
+        # prior in availability_rate). The prior population is the board's
+        # own population, players who clear the same 5-game floor this
+        # season: the mean over every indexed name with a stat row would
+        # mostly measure roster churn (deep-bench players active a few
+        # weeks a year) and drag every regular's rate toward it.
+        team_games_by_team: Dict[str, int] = {}
+        for (_yr, team), weeks in team_weeks.items():
+            team_games_by_team[team] = team_games_by_team.get(team, 0) + len(weeks)
+        raw_rates: Dict[str, List[float]] = {}
+        for pid, apps in appearances.items():
+            if int((played_inputs.get(pid) or {}).get("played_games") or 0) \
+                    < MIN_GAMES_PLAYED:
+                continue
+            meta = index.get(pid) or {}
+            pos = str(meta.get("pos") or meta.get("position") or "").upper()
+            tg = team_games_by_team.get(str(meta.get("team") or "").upper()) or 0
+            if pos in ROS_POSITIONS and tg > 0:
+                raw_rates.setdefault(pos, []).append(apps / tg)
+        pos_mean_rate = {pos: sum(v) / len(v)
+                         for pos, v in raw_rates.items() if v}
 
         # Remaining schedules: team -> {week: opponent} over the window.
         team_opps: Dict[str, Dict[int, str]] = {}
@@ -613,6 +762,9 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                 season_out=is_season_out(meta.get("injury_status") or meta.get("status")),
                 windows=windows,
                 sched_rank=sched_rank.get((pos, norm_sched_team(team))),
+                availability_rate=availability_rate(
+                    appearances.get(pid), team_games_by_team.get(team),
+                    pos_mean_rate.get(pos)),
             )
             if fields:
                 ros_by_pid[pid] = fields
