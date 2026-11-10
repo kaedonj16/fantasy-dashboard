@@ -34,9 +34,16 @@ def test_step3_subtitle_names_the_team_for_username_picks():
         assert needle in APP_JS, f"app.js missing team-aware subtitle piece: {needle}"
 
 
-def test_board_strip_markup_and_week_context():
+def test_board_strip_labels_the_hardcoded_board_as_a_sample():
     assert "hp-mb-strip" in APP_PY
-    assert "This week&#x27;s matchup" in APP_PY
-    assert "Week {{ current_week }}" in APP_PY
-    # Every FORM_BODY render in the index route passes the week.
-    assert APP_PY.count('current_week=int(nfl_state.get("week") or 0)') >= 3
+    # The hero board's rows are a hardcoded illustration, so the strip
+    # labels it a sample and must not wear the live week (the dynamic
+    # "Week {{ current_week }}" chip claimed it was this week's real
+    # matchup while 8 of its 10 opponent labels were wrong).
+    assert "Sample matchup" in APP_PY
+    assert "This week&#x27;s matchup" not in APP_PY
+    assert "Week {{ current_week }}" not in APP_PY
+    # The ScoreZone feature strip states no hardcoded game count either
+    # (it said "13 games" regardless of the actual slate size).
+    assert "13 games" not in APP_PY
+    assert "Live scores" in APP_PY

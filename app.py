@@ -2119,7 +2119,7 @@ FORM_BODY = """
     </div>
     <div class="ld-board-wrap">
       <div class="hp-mb">
-          <div class="hp-mb-strip"><span class="hp-mb-strip-t">This week&#x27;s matchup</span>{% if current_week %}<span class="hp-mb-strip-wk">Week {{ current_week }}</span>{% endif %}</div>
+          <div class="hp-mb-strip"><span class="hp-mb-strip-t">Sample matchup</span></div>
           <div class="hp-mb-head">
             <div><div class="hp-mb-team">Caleb&#x27;s Casting Couch</div><div class="hp-mb-score" data-count="132.4">132.4</div></div>
             <div class="is-right"><div class="hp-mb-team">Pittsburgh Pilots</div><div class="hp-mb-score" data-count="128.9">128.9</div></div>
@@ -2573,7 +2573,7 @@ FORM_BODY = """
 <section class="ld-sec">
   <div class="ld-card ld-rv">
     <h2 class="ld-sec-h">Built for the whole week</h2>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#ef4444"></span><div class="ld-strip-main"><strong>ScoreZone</strong><span>Every NFL game and your players&#x27; points, live on one screen.</span></div><span class="ld-strip-stat" style="color:#ef4444">13 games</span></div>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#ef4444"></span><div class="ld-strip-main"><strong>ScoreZone</strong><span>Every NFL game and your players&#x27; points, live on one screen.</span></div><span class="ld-strip-stat" style="color:#ef4444">Live scores</span></div>
     <div class="ld-strip"><span class="ld-dot" style="--d:#16a34a"></span><div class="ld-strip-main"><strong>Start / Sit</strong><span>A verdict, a projection and the matchup case for every starter.</span></div><span class="ld-strip-stat" style="color:#16a34a">Start Gibbs</span></div>
     <div class="ld-strip"><span class="ld-dot" style="--d:#4f46e5"></span><div class="ld-strip-main"><strong>Trade Strategy</strong><span>See how a trade moves your playoff odds before you send it. <em class="ld-pro-tag">PRO</em></span></div><span class="ld-strip-stat" style="color:#4f46e5">+6.2% odds</span></div>
     <div class="ld-strip"><span class="ld-dot" style="--d:#ca8a04"></span><div class="ld-strip-main"><strong>Weekly Wrapped</strong><span>Your week, told back as a story with the receipts. Only the AI storyline is PRO; the rest stays free.</span></div><span class="ld-strip-stat" style="color:#ca8a04">New</span></div>

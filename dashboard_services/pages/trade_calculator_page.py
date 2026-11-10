@@ -63,9 +63,28 @@ def build_trade_calculator_body(
     is_guest = not league_id
     platform_val = platform or "sleeper"
 
-    # Trade count lazy-loads client-side from /api/trade-count so the
-    # COUNT(*) never blocks the page render.
-    trade_count = "150,000+"
+    # Trade count is server-rendered from the shared 1h cache behind
+    # /api/trade-count (routes.misc_api_bp.get_trade_count_total), so the
+    # subtitle and tooltip carry the real number in the HTML itself. The
+    # client lazy-fill still refreshes both spans after load, but the
+    # copy no longer depends on it: on the league trade page that fill
+    # could silently never run and left the subtitle on a literal "…"
+    # forever. When the count is unavailable, the subtitle drops the
+    # number entirely rather than printing an invented one.
+    try:
+        from routes.misc_api_bp import get_trade_count_total
+
+        _trade_total = get_trade_count_total()
+    except Exception:
+        _trade_total = None
+    if _trade_total:
+        trade_count = f"{int(_trade_total):,}"
+        subtitle_count_html = (
+            f'<span data-trade-count>{trade_count}</span> '
+        )
+    else:
+        trade_count = "hundreds of thousands of"
+        subtitle_count_html = ""
 
     # Clamp logged-in league size to nearest supported value
     if num_teams and not is_guest:
@@ -353,7 +372,7 @@ def build_trade_calculator_body(
                   </div>
                 </div>
               </div>
-              <div class="otc-page-subtitle" style="font-size:13px;color:var(--text-muted);margin-top:2px;">Values calibrated from <span data-trade-count>…</span> real Sleeper trades</div>
+              <div class="otc-page-subtitle" style="font-size:13px;color:var(--text-muted);margin-top:2px;">Values calibrated from {subtitle_count_html}real Sleeper trades</div>
               <div class="otc-context-line" id="otcContextLine"></div>
             </div>
             <div class="otc-page-head-controls">
