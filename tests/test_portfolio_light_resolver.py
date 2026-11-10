@@ -99,8 +99,9 @@ def _wire(monkeypatch, ctx_by_lid):
             _entry["projections"].update(
                 (_bundle or {}).get("projections") or {})
     monkeypatch.setattr(
-        pf_light, "_projections_by_week",
-        lambda season, weeks, scoring: dict(_proj))
+        pf_light, "_week_projection_map",
+        lambda season, week: dict(
+            (_proj.get(week) or {}).get("projections") or {}))
     return bp_mod, pf_light, platform_api
 
 
@@ -265,11 +266,6 @@ def test_rooting_full_payload_parity_old_vs_light(monkeypatch):
             margins[res["league_key"]] = margin
     windows = _pins.group_rooting(games_norm, all_starters,
                                   team_colors={})
-    if windows:
-        any_live = any(g.get("status") != "final"
-                       for g in windows[-1].get("games") or [])
-        windows[-1]["need_lines"] = (
-            _pins.need_lines(margins) if any_live else [])
     old_payload = {
         "ok": True, "week": 7, "season": 2026,
         "rooting": {"windows": windows},
@@ -278,11 +274,36 @@ def test_rooting_full_payload_parity_old_vs_light(monkeypatch):
     }
     new_payload = pf_light.rooting_payload(_light_base(pf_light))
     new_payload = {k: v for k, v in new_payload.items() if k != "updated"}
+    # The light payload adds the win outlook + the final flag on top of
+    # the old shape; everything the old assembly produced is unchanged.
+    outlook = new_payload["rooting"].pop("outlook")
+    assert new_payload.pop("final") is False
     assert new_payload == old_payload
+    # Pregame slate (the stubbed game is ahead): both leagues lead with
+    # their only starter still to play, so both outlook entries are the
+    # opponent-needs line (the fixture's opponent names no starters, so
+    # the opponent is done and the state is locked) -- computed from
+    # the corrected scores (starters only, no bench points).
+    assert {e["league_name"] for e in outlook} == {"Alpha", "Beta"}
+    assert all(e["state"] == "locked" for e in outlook)
     # Sanity on the shared expectation itself (a Sunday 1pm ET epoch
     # was used above via `future`; the window groups both starters).
     names = [s["name"] for s in windows[0]["games"][0]["sides"]["home"]]
     assert names == ["Starter One", "Starter Two"]
+
+
+def test_rooting_no_schedule_never_marks_leagues_final(monkeypatch):
+    """With no schedule data the payload knows no game's status: a
+    starter's team missing from an EMPTY slate must not stamp his
+    league final (the missing-team rule is for bye weeks on a known
+    slate)."""
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    bp_mod, pf_light, platform_api = _wire(monkeypatch, ctxs)
+    monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
+    payload = pf_light.rooting_payload(_light_base(pf_light))
+    assert payload["final"] is False
+    states = {e["state"] for e in payload["rooting"]["outlook"]}
+    assert states and not any(s.startswith("final") for s in states)
 
 
 # ── Provider failure is honest ───────────────────────────────────────

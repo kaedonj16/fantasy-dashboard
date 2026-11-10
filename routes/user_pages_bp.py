@@ -2977,6 +2977,19 @@ def _insights_cache_get(key, max_age=None):
     return None
 
 
+def _insights_cache_peek_final(key):
+    """The cached payload for ``key`` at ANY age when it is a finished
+    slate (payload ``final``): every NFL game is done, so its scores
+    and points can no longer move and freshness stops mattering. This
+    is what stops the Rooting Guide re-running its whole live compute
+    every TTL for a week that is already over."""
+    with _INSIGHTS_CACHE_LOCK:
+        ent = _INSIGHTS_CACHE.get(key)
+        if ent and (ent[1] or {}).get("final"):
+            return ent[1]
+    return None
+
+
 def _insights_cache_put(key, payload, age_s=0.0):
     # age_s backdates the entry: the disk tier re-seeds payloads whose
     # true compute time is in the past, and their freshness must be
@@ -3620,6 +3633,7 @@ def _pf_rooting_for(res, base, include_live=True):
     first paint, and live points arrive via the insights endpoint once
     games start.
     """
+    from dashboard_services.portfolio_light import _row_score
     nfl_players = base["nfl_players"]
     week = base["week"]
     starters = res["starters"]
@@ -3627,6 +3641,8 @@ def _pf_rooting_for(res, base, include_live=True):
     points_by_pid = {}
     opp_points = None
     my_points = None
+    opp_starters = []
+    opp_points_by_pid = {}
     try:
         rows = []
         if include_live:
@@ -3639,17 +3655,22 @@ def _pf_rooting_for(res, base, include_live=True):
         if mine:
             points_by_pid = {str(k): v for k, v in
                              (mine.get("players_points") or {}).items()}
-            my_points = sum(float(points_by_pid.get(p) or 0) for p in starters)
+            my_points = _row_score(mine, starters, points_by_pid)
             mid = mine.get("matchup_id")
             opp = next((r for r in rows
                         if r is not mine and mid is not None
                         and r.get("matchup_id") == mid), None)
             if opp:
-                opp_points = sum(
-                    float(v or 0)
-                    for v in (opp.get("players_points") or {}).values())
+                opp_points_by_pid = {str(k): v for k, v in
+                                     (opp.get("players_points") or {}).items()}
+                opp_pids = [str(p) for p in (opp.get("starters") or [])
+                            if p and str(p) != "0"]
+                opp_points = _row_score(opp, opp_pids, opp_points_by_pid)
+                opp_starters = opp_pids
     except Exception:
         points_by_pid = {}
+        opp_starters = []
+        opp_points_by_pid = {}
     proj_map = {}
     try:
         pbw = res["lctx"].get("proj_by_week") or {}
@@ -3671,12 +3692,25 @@ def _pf_rooting_for(res, base, include_live=True):
             "points": points_by_pid.get(pid),
             "proj": proj_map.get(pid),
         })
+    opp_starters_out = []
+    for pid in opp_starters:
+        pl = nfl_players.get(pid) or {}
+        opp_starters_out.append({
+            "pid": pid,
+            "name": pl.get("full_name") or pl.get("last_name") or pid,
+            "pos": pl.get("position") or "",
+            "team": str(pl.get("team") or "").upper(),
+            "points": opp_points_by_pid.get(pid),
+            "proj": proj_map.get(pid),
+        })
     margin = None
     if my_points is not None and opp_points is not None:
         margin = {
             "league_name": res["league_name"],
             "my_score": my_points, "opp_score": opp_points,
             "remaining_names": [], "final": False,
+            "opp_starters": opp_starters_out,
+            "opp_known": bool(opp_starters_out),
         }
     return starters_out, margin
 
@@ -3900,6 +3934,18 @@ def api_portfolio_insights():
             _pf_kick_background("insights", light_key,
                                 _pf_identity_snapshot())
         return jsonify(cached)
+    # Finished slate: every NFL game is final, so the payload can
+    # never change again this week. Serve it at any age, from memory
+    # or from the disk tier (looked back a week), and never re-kick
+    # the live compute for it.
+    final_cached = _insights_cache_peek_final(light_key)
+    if final_cached is not None:
+        return jsonify(final_cached)
+    disk_final = _pf_disk_get("insights", light_key, 7 * 86400.0)
+    if disk_final is not None and (disk_final[0] or {}).get("final"):
+        payload, age = disk_final
+        _insights_cache_put(light_key, payload, age_s=age)
+        return jsonify(payload)
     stale = _insights_cache_get(light_key, max_age=_INSIGHTS_STALE_S)
     if stale is not None:
         _pf_kick_background("insights", light_key, _pf_identity_snapshot())

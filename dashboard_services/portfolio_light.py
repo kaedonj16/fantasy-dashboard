@@ -37,11 +37,12 @@ Data sources, cheapest first, all shared/cached layers:
   ``dashboard_services.ai.context_builders.league_format_value_lookup``
   on a minimal settings dict -- a pure function over the shared table,
   memoized per base by scoring signature;
-- current-week projections via the process-memoized
-  ``build_projections_by_week`` (only weeks 1..current are built, and
-  a week's flattened map is identical to the 18-week bundle's entry
-  for that week by construction: each week flattens independently
-  from its own projections file).
+- current-week projections from the week's own projections file
+  (memoized read), flattened per requested player with
+  ``weekly_projection_points`` under the league's scoring: identical
+  values to the ``build_projections_by_week`` entry for that week
+  (each week flattens independently from its own file) without
+  building weeks 1..current for the whole pool per league.
 
 FORBIDDEN here (the zero-heavy-calls test pins this): building or
 reading a league context (``get_league_ctx`` /
@@ -83,9 +84,14 @@ def _team_bye_map(season):
     return _fn(season) or {}
 
 
-def _projections_by_week(season, weeks, scoring_settings):
-    from app import build_projections_by_week
-    return build_projections_by_week(season, weeks, scoring_settings)
+def _week_projection_map(season, week):
+    """The raw multi-variant projection map for ONE week (memoized
+    file read in utils.data_cache). The old seam built weeks 1..current
+    flattened for the WHOLE player pool per scoring signature; the
+    Rooting Guide only ever reads the current week, and only for the
+    starters in the matchups it just fetched."""
+    from utils.data_cache import load_week_projection
+    return load_week_projection(season, week) or {}
 
 
 def _players_index():
@@ -406,34 +412,69 @@ def bye_payload(base):
 
 # ── Rooting Guide ────────────────────────────────────────────────────
 
-def week_projections(base, res):
-    """Current-week projections map for one league, flattened with
-    the league's own scoring settings -- the same values the ctx's
-    18-week proj_by_week bundle carries for this week (each week
-    flattens independently from its own projections file)."""
+def week_projections(base, res, pids=None):
+    """Current-week projections for the requested players only,
+    flattened with the league's own scoring settings -- the same
+    values build_projections_by_week produces for this week (each week
+    flattens independently from its own projections file, via the same
+    weekly_projection_points selector), without building weeks
+    1..current for the whole pool per league. ``pids=None`` keeps the
+    old whole-map shape for any other caller."""
     try:
-        bundles = _projections_by_week(
-            base["season"], base["week"], res["scoring_settings"])
-        wk = bundles.get(base["week"]) or bundles.get(str(base["week"])) or {}
-        if isinstance(wk, dict):
-            return {str(k): v for k, v in (wk.get("projections") or {}).items()}
+        raw = _week_projection_map(base["season"], base["week"])
+        if not isinstance(raw, dict) or not raw:
+            return {}
+        from utils.fantasy_scoring import weekly_projection_points
+        scoring = res["scoring_settings"]
+        if pids is None:
+            pids = list(raw.keys())
+        out = {}
+        for pid in pids:
+            pl = _player(base, pid)
+            pos = pl.get("position") or pl.get("pos") or ""
+            v = weekly_projection_points(raw, str(pid), scoring, pos)
+            if v is not None:
+                out[str(pid)] = v
+        return out
     except Exception:
-        pass
-    return {}
+        return {}
+
+
+def _row_score(row, starter_pids, points_by_pid):
+    """A matchup row's score: the provider's own ``points`` total when
+    it carries one (the official total), else the sum over the row's
+    STARTERS only. Summing every value in ``players_points`` counts
+    BENCH points for providers whose map covers the whole roster
+    (Sleeper does), which inflated opponent scores and produced
+    impossible need lines (a 159.7-point Monday-night need). When the
+    row names no starters at all, fall back to the whole map: that is
+    the only total such a row can mean."""
+    pts = row.get("points")
+    if isinstance(pts, (int, float)):
+        return float(pts)
+    pids = [str(p) for p in (starter_pids or []) if p and str(p) != "0"]
+    if not pids:
+        return sum(float(v or 0) for v in (points_by_pid or {}).values())
+    return sum(float((points_by_pid or {}).get(p) or 0) for p in pids)
 
 
 def rooting_for(res, base, include_live=True):
     """Rooting inputs for one resolved league: (starters, margin or
-    None). Field-for-field the old _pf_rooting_for; live points come
-    from the CURRENT week's provider matchups only, and with
-    ``include_live=False`` no provider call happens at all (starters
-    carry projections only, points honestly None -- the embedded
-    pregame shape)."""
+    None). Live points come from the CURRENT week's provider matchups
+    only, and with ``include_live=False`` no provider call happens at
+    all (starters carry projections only, points honestly None -- the
+    embedded pregame shape). The margin also carries the opponent's
+    starters (pid/name/team/points/proj) so the payload can work out
+    who still has points to score on BOTH sides; which of them are
+    actually remaining is decided in rooting_payload, where the NFL
+    game statuses live."""
     week = base["week"]
     starters = res["starters"]
     points_by_pid = {}
     opp_points = None
     my_points = None
+    opp_starters = []
+    opp_points_by_pid = {}
     try:
         rows = []
         if include_live:
@@ -446,18 +487,24 @@ def rooting_for(res, base, include_live=True):
         if mine:
             points_by_pid = {str(k): v for k, v in
                              (mine.get("players_points") or {}).items()}
-            my_points = sum(float(points_by_pid.get(p) or 0) for p in starters)
+            my_points = _row_score(mine, starters, points_by_pid)
             mid = mine.get("matchup_id")
             opp = next((r for r in rows
                         if r is not mine and mid is not None
                         and r.get("matchup_id") == mid), None)
             if opp:
-                opp_points = sum(
-                    float(v or 0)
-                    for v in (opp.get("players_points") or {}).values())
+                opp_points_by_pid = {str(k): v for k, v in
+                                     (opp.get("players_points") or {}).items()}
+                opp_pids = [str(p) for p in (opp.get("starters") or [])
+                            if p and str(p) != "0"]
+                opp_points = _row_score(opp, opp_pids, opp_points_by_pid)
+                opp_starters = opp_pids
     except Exception:
         points_by_pid = {}
-    proj_map = week_projections(base, res)
+        opp_starters = []
+        opp_points_by_pid = {}
+    proj_map = week_projections(
+        base, res, pids=list(starters) + list(opp_starters))
     starters_out = []
     for pid in starters:
         pl = _player(base, pid)
@@ -471,23 +518,48 @@ def rooting_for(res, base, include_live=True):
             "points": points_by_pid.get(pid),
             "proj": proj_map.get(pid),
         })
+    opp_starters_out = []
+    for pid in opp_starters:
+        pl = _player(base, pid)
+        opp_starters_out.append({
+            "pid": pid,
+            "name": pl.get("full_name") or pl.get("last_name") or pid,
+            "pos": pl.get("position") or "",
+            "team": str(pl.get("team") or "").upper(),
+            "points": opp_points_by_pid.get(pid),
+            "proj": proj_map.get(pid),
+        })
     margin = None
     if my_points is not None and opp_points is not None:
         margin = {
             "league_name": res["league_name"],
             "my_score": my_points, "opp_score": opp_points,
             "remaining_names": [], "final": False,
+            "opp_starters": opp_starters_out,
+            "opp_known": bool(opp_starters_out),
         }
     return starters_out, margin
+
+
+# Bounded parallelism for the Rooting Guide's per-league work: the
+# cold compute was a fully sequential sweep of provider calls (league
+# meta + rosters + users + one matchup fetch per league, 4 x 11
+# leagues back to back), which is what made a cold load take tens of
+# seconds on the shared-CPU box. Four workers cap the transient raw
+# payloads at four leagues' worth while cutting the wall time roughly
+# to the slowest league times the number of rounds; results are
+# reassembled in the original league order.
+ROOTING_PARALLELISM = 4
 
 
 def rooting_payload(base, include_live=True):
     """Assemble the Rooting Guide payload (same shape as the old
     _compute_portfolio_insights, including the legacy empty bye block
-    older clients were built against). Per-league work is SEQUENTIAL:
-    one league's matchup rows are distilled and released before the
-    next league is fetched, so transient memory stays at one league's
-    rows instead of a pool's worth."""
+    older clients were built against, plus the per-league outlook
+    lines and the payload-level ``final`` flag). Per-league work runs
+    on a bounded thread pool (see ROOTING_PARALLELISM); each league's
+    raw provider payloads are distilled into small rows inside its
+    worker and only the distilled output is retained."""
     from dashboard_services import portfolio_insights as _pins
     from utils.utils import load_week_schedule
 
@@ -521,12 +593,21 @@ def rooting_payload(base, include_live=True):
                 if ep:
                     dates.add(datetime.fromtimestamp(
                         float(ep), _ZI("America/New_York")).strftime("%Y%m%d"))
-            for d in dates:
+            def _one_date(d):
                 try:
                     body = get_nfl_scores_for_date(d, timeout=5) or {}
-                    team_game.update(build_team_game_lookup(body))
+                    return build_team_game_lookup(body)
                 except Exception:
-                    continue
+                    return {}
+            if len(dates) > 1:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(
+                        max_workers=min(4, len(dates))) as pool:
+                    for got in pool.map(_one_date, sorted(dates)):
+                        team_game.update(got or {})
+            else:
+                for d in dates:
+                    team_game.update(_one_date(d))
         except Exception:
             team_game = {}
     for g in sched:
@@ -549,19 +630,41 @@ def rooting_payload(base, include_live=True):
             })
 
     total = scan_total(base["league_inputs"])
+
+    def _one_league(lg):
+        try:
+            res = resolve_league(lg, base)
+            if res is None:
+                return None
+            starters_out, margin = rooting_for(
+                res, base, include_live=include_live)
+            return res["league_key"], starters_out, margin
+        except Exception:
+            logger.debug("[portfolio-light] rooting league failed",
+                         exc_info=True)
+            return None
+
+    league_inputs = base["league_inputs"][:MAX_LEAGUES]
+    if len(league_inputs) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(
+                max_workers=min(ROOTING_PARALLELISM,
+                                len(league_inputs))) as pool:
+            # map preserves league order in the results.
+            per_league = list(pool.map(_one_league, league_inputs))
+    else:
+        per_league = [_one_league(lg) for lg in league_inputs]
     all_starters = []
     margins = {}
     scanned = 0
-    for lg in base["league_inputs"][:MAX_LEAGUES]:
-        res = resolve_league(lg, base)
-        if res is None:
+    for got in per_league:
+        if got is None:
             continue
         scanned += 1
-        starters_out, margin = rooting_for(res, base, include_live=include_live)
+        league_key, starters_out, margin = got
         all_starters.extend(starters_out)
         if margin is not None:
-            margins[res["league_key"]] = margin
-        res = None  # release this league's raw payloads before the next
+            margins[league_key] = margin
 
     try:
         from app import _NFL_COLORS as _team_colors
@@ -569,26 +672,69 @@ def rooting_payload(base, include_live=True):
         _team_colors = {}
     windows = _pins.group_rooting(games_norm, all_starters,
                                   team_colors=_team_colors)
-    if windows:
-        final_window = windows[-1]
-        final_teams = set()
-        any_live_left = False
-        for card in final_window.get("games") or []:
-            final_teams.add(card.get("away"))
-            final_teams.add(card.get("home"))
-            if card.get("status") != "final":
-                any_live_left = True
-        for s in all_starters:
-            if s.get("team") in final_teams and s.get("league_key") in margins:
-                margins[s["league_key"]]["remaining_names"].append(s.get("name"))
-        # Need lines only while the final window can still change outcomes.
-        final_window["need_lines"] = (
-            _pins.need_lines(margins) if any_live_left else [])
+
+    # ── Win outlook per league ───────────────────────────────────────
+    # A starter is REMAINING while his NFL game is not final (a team
+    # with no game this week scores nothing more, so it counts as
+    # done). A league is FINAL when every starter on both sides is
+    # done, or when the whole slate is final.
+    team_status = {}
+    for g in games_norm:
+        team_status[str(g.get("away") or "")] = g.get("status")
+        team_status[str(g.get("home") or "")] = g.get("status")
+    slate_final = bool(games_norm) and all(
+        g.get("status") == "final" for g in games_norm)
+
+    slate_known = bool(team_status)
+
+    def _remaining(starters_like):
+        names, proj_total, all_done = [], 0.0, True
+        for s in starters_like or []:
+            # Done when his game is final, or (with a known slate) his
+            # team has no game this week and cannot score. With NO
+            # schedule data at all nothing is known done: a starter
+            # counts as remaining rather than stamping his league
+            # final on missing data.
+            if slate_known and (
+                    team_status.get(str(s.get("team") or "")) == "final"
+                    or str(s.get("team") or "") not in team_status):
+                continue
+            all_done = False
+            names.append(s.get("name"))
+            try:
+                proj_total += float(s.get("proj") or 0)
+            except (TypeError, ValueError):
+                pass
+        return names, proj_total, all_done
+
+    starters_by_league = {}
+    for s in all_starters:
+        starters_by_league.setdefault(s.get("league_key"), []).append(s)
+    for league_key, margin in margins.items():
+        my_names, my_proj, my_done = _remaining(
+            starters_by_league.get(league_key))
+        opp_names, opp_proj, opp_done = _remaining(
+            margin.get("opp_starters"))
+        margin["my_remaining_names"] = my_names
+        margin["my_remaining_proj"] = my_proj
+        margin["opp_remaining_names"] = opp_names
+        margin["opp_remaining_proj"] = opp_proj
+        margin["final"] = bool(
+            slate_final or (my_done and opp_done
+                            and margin.get("opp_known")))
+        margin.pop("opp_starters", None)
+        margin.pop("opp_known", None)
+    outlook = _pins.outlook_lines(margins) if margins else []
     return {
         "ok": True,
         "week": week,
         "season": season,
-        "rooting": {"windows": windows},
+        # Every NFL game final: scores and points can no longer move,
+        # so the payload is immutable for this week and the endpoint
+        # serves it from cache/disk forever instead of re-kicking a
+        # live compute every TTL.
+        "final": slate_final,
+        "rooting": {"windows": windows, "outlook": outlook},
         # Bye Watch lives on /api/portfolio-bye now; the empty block keeps
         # the response shape older clients were built against.
         "bye": {"week": week + 1, "rows": [], "total_out": 0},

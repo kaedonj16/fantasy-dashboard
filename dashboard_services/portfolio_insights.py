@@ -10,8 +10,11 @@ from cached league contexts (never a fresh platform scan):
   agent at that position when one exists.
 - The Rooting Guide groups the user's starters by NFL game window and
   game, in ScoreZone's normalized game shape, with live scores and each
-  starter's actual fantasy points when games are under way. Need lines for
-  the final window are computed from live matchup margins only.
+  starter's actual fantasy points when games are under way. Outlook lines
+  for EVERY league's matchup are computed from live matchup margins:
+  what the user needs from their remaining starters to flip a game, what
+  the opponent needs to flip one back, when a game is locked up, and the
+  final result once every starter's NFL game is done.
 """
 from __future__ import annotations
 
@@ -22,7 +25,6 @@ from typing import Dict, List, Optional
 # a bench player below it is a stash, not coverage.
 STARTABLE_VALUE = 25.0
 FLEX_POSITIONS = {"RB", "WR", "TE"}
-OUT_OF_REACH_MARGIN = 25.0
 
 
 # ── Bye Watch ────────────────────────────────────────────────────────────────
@@ -260,20 +262,51 @@ def group_rooting(games, starters, team_records: Optional[dict] = None,
         w["stakes"] = (f"{n_starters} starter{'s' if n_starters != 1 else ''} "
                        f"across {n_leagues} of your leagues.")
         w["starter_count"] = n_starters
+        # A window whose games are ALL final can never change again: the
+        # client collapses it by default so live windows (and the
+        # outlook lines above them) are what the user lands on.
+        w["final"] = all(c.get("status") == "final" for c in w["games"])
         out.append(w)
     return out
 
 
-def need_lines(margins: Dict[str, dict]) -> List[str]:
-    """Final-window need lines from live matchup margins.
+def _who(names) -> str:
+    names = [n for n in (names or []) if n]
+    if len(names) <= 2:
+        return " and ".join(names)
+    return ", ".join(names[:2]) + " and more"
+
+
+def _proj_clause(total) -> str:
+    """The remaining group's combined projection, when it is known:
+    the context that turns a raw need number into a judgement call."""
+    try:
+        total = float(total)
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return ""
+    return f" The remaining players are projected for {total:.1f} combined."
+
+
+def outlook_lines(margins: Dict[str, dict]) -> List[dict]:
+    """One win-outlook line per league, from live matchup margins.
 
     ``margins`` maps league_key -> {league_name, my_score, opp_score,
-    remaining_names, final}. A league behind with starters still to play in
-    the window gets a flip line; a league behind by a lot with nobody left
-    on either side is called out of reach. Leading or finished leagues are
-    omitted rather than padded."""
-    lines = []
-    hopeless = []
+    final, my_remaining_names, my_remaining_proj, opp_remaining_names,
+    opp_remaining_proj}. Remaining means the starter's NFL game is not
+    final yet, on EITHER side: the old final-window need lines only ever
+    answered "what do I need" for leagues behind in the last window, and
+    never answered the other half of the question (how few points the
+    opponent needs to flip a game the user leads, whether a lead is
+    already locked, or what the final result was).
+
+    Returns [{league_key, league_name, state, line}] sorted with live
+    games first by closeness (either direction), finals last. States:
+    behind / ahead / tied / locked (ahead, opponent has nobody left) /
+    gone (behind, user has nobody left) / final_won / final_lost /
+    final_tied."""
+    entries = []
     for key in sorted(margins or {}):
         m = margins[key] or {}
         try:
@@ -281,18 +314,66 @@ def need_lines(margins: Dict[str, dict]) -> List[str]:
             theirs = float(m.get("opp_score") or 0)
         except (TypeError, ValueError):
             continue
-        if m.get("final"):
-            continue
-        deficit = theirs - mine
-        names = [n for n in (m.get("remaining_names") or []) if n]
         name = m.get("league_name") or key
-        if deficit > 0 and names:
-            need = deficit + 0.1
-            who = " and ".join(names[:2]) if len(names) <= 2 else (
-                ", ".join(names[:2]) + " and more")
-            lines.append(
-                f"{name} needs {need:.1f} combined from {who} to flip their game.")
-        elif deficit >= OUT_OF_REACH_MARGIN and not names:
-            hopeless.append(
-                f"{name} has nobody left in this window and is out of reach.")
-    return (lines + hopeless)[:3]
+        my_names = [n for n in (m.get("my_remaining_names") or []) if n]
+        opp_names = [n for n in (m.get("opp_remaining_names") or []) if n]
+        diff = mine - theirs
+        if m.get("final"):
+            if diff > 0:
+                state = "final_won"
+                line = (f"{name}: won by {diff:.1f}, "
+                        f"{mine:.1f} to {theirs:.1f}.")
+            elif diff < 0:
+                state = "final_lost"
+                line = (f"{name}: lost by {abs(diff):.1f}, "
+                        f"{mine:.1f} to {theirs:.1f}.")
+            else:
+                state = "final_tied"
+                line = f"{name}: tied at {mine:.1f}."
+            entries.append({"league_key": key, "league_name": name,
+                            "state": state, "line": line,
+                            "_sort": (1, 0.0)})
+            continue
+        if diff < 0:
+            need = abs(diff) + 0.1
+            if my_names:
+                state = "behind"
+                line = (f"{name} needs {need:.1f} combined from "
+                        f"{_who(my_names)} to flip their game."
+                        + _proj_clause(m.get("my_remaining_proj")))
+            else:
+                state = "gone"
+                line = (f"{name} is down {abs(diff):.1f} and you have "
+                        f"nobody left to play: this one is gone unless "
+                        f"stat corrections flip it.")
+        elif diff > 0:
+            if opp_names:
+                state = "ahead"
+                need = diff + 0.1
+                verb = "needs" if len(opp_names) == 1 else "need"
+                line = (f"{name} is up {diff:.1f}. {_who(opp_names)} "
+                        f"{verb} {need:.1f} combined to flip it."
+                        + _proj_clause(m.get("opp_remaining_proj")))
+            else:
+                state = "locked"
+                line = (f"{name} is up {diff:.1f} and your opponent has "
+                        f"nobody left to play: only stat corrections "
+                        f"can change this one.")
+        else:
+            state = "tied"
+            if my_names:
+                line = (f"{name} is tied: any points from "
+                        f"{_who(my_names)} flip it your way.")
+            elif opp_names:
+                line = (f"{name} is tied and you have nobody left: "
+                        f"any points from {_who(opp_names)} flip it "
+                        f"the other way.")
+            else:
+                line = f"{name} is tied with nobody left on either side."
+        entries.append({"league_key": key, "league_name": name,
+                        "state": state, "line": line,
+                        "_sort": (0, abs(diff))})
+    entries.sort(key=lambda e: e["_sort"])
+    for e in entries:
+        e.pop("_sort", None)
+    return entries

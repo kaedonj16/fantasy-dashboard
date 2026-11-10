@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-09",
+        "tag": "update",
+        "text": "The Rooting Guide on My Leagues loads much faster, and it now leads with the math for every league: how many points you need from your remaining players to flip a game, how many your opponent needs to flip one back, when a lead is locked up, and the final result once a game is over. Finished windows collapse so the games still to play are what you land on.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-11-09",
         "tag": "new",
         "text": "Player Rankings now has a Rest of Season mode: every player ranked by projected production for the weeks left, with ROS points per game, total ROS points, games remaining and his remaining schedule rank. A Window toggle in Settings splits the board into the full rest of season, the stretch run through Week 14, and the fantasy playoffs in Weeks 15 to 17. The same rankings are public at /rankings/rest-of-season, with a page for each position.",
         "link": "/players"

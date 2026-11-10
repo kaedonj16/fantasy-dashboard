@@ -130,8 +130,9 @@ def _client(monkeypatch, ctx_by_lid, leagues=None, sched=None, week=7):
             _entry["projections"].update(
                 (_bundle or {}).get("projections") or {})
     monkeypatch.setattr(
-        pf_light, "_projections_by_week",
-        lambda season, weeks, scoring: dict(_proj))
+        pf_light, "_week_projection_map",
+        lambda season, week: dict(
+            (_proj.get(week) or {}).get("projections") or {}))
     app = Flask(__name__)
     app.secret_key = "test"
     app.register_blueprint(bp_mod.user_pages_bp)
@@ -400,6 +401,108 @@ def test_insights_parallel_assembly_preserves_league_order(monkeypatch):
     assert names == ["Starter One", "Starter Two"]
 
 
+def test_rooting_league_work_overlaps_on_the_pool(monkeypatch):
+    """Speed: the per-league provider sweep runs on a bounded pool, not
+    back to back. The matchup stub holds each call open briefly; a
+    sequential sweep could never show two calls in flight at once."""
+    import threading
+    import time as _time
+
+    leagues = [{"league_id": f"L{i}", "platform": "sleeper",
+                "season": 2026, "name": f"League {i}"} for i in range(1, 5)]
+    ctxs = {f"L{i}": _ctx(f"s{(i % 2) + 1}", f"League {i}")
+            for i in range(1, 5)}
+    sched = [{"home": "BUF", "away": "NYJ",
+              "gameTime_epoch": _sun_1pm_et_epoch()}]
+    client, bp_mod, platform_api = _client(
+        monkeypatch, ctxs, leagues=leagues, sched=sched)
+    state = {"cur": 0, "max": 0}
+    lock = threading.Lock()
+
+    def _slow_rows(plat, lid, week, season):
+        with lock:
+            state["cur"] += 1
+            state["max"] = max(state["max"], state["cur"])
+        _time.sleep(0.3)
+        with lock:
+            state["cur"] -= 1
+        return _matchup_rows(plat, lid, week, season)
+
+    monkeypatch.setattr(platform_api, "get_matchups", _slow_rows)
+    data = _poll_insights(client, bp_mod)
+    assert data["scan"] == {"total": 4, "scanned": 4, "incomplete": False}
+    assert state["max"] >= 2
+
+
+def test_outlook_opp_score_counts_starters_only(monkeypatch):
+    """The opponent's score is their STARTERS' points (or the row's own
+    points total): players_points covers the whole roster on Sleeper,
+    and summing it counted bench points, producing impossible need
+    lines (a 159.7-point Monday-night need on 2026-11-09)."""
+    sched = [{"home": "BUF", "away": "NYJ",
+              "gameTime_epoch": _sun_1pm_et_epoch() + 2 * 86400}]
+    client, bp_mod, platform_api = _client(
+        monkeypatch, {"L1": _ctx("s1", "Alpha")}, sched=sched)
+
+    def _rows(plat, lid, week, season):
+        return [
+            {"roster_id": 1, "matchup_id": 1,
+             "players_points": {"s1": 60.0, "b1": 40.0}},
+            {"roster_id": 2, "matchup_id": 1, "starters": ["o1"],
+             "players_points": {"o1": 50.0, "o2": 80.0}},
+        ]
+
+    monkeypatch.setattr(platform_api, "get_matchups", _rows)
+    data = _poll_insights(client, bp_mod)
+    outlook = data["rooting"]["outlook"]
+    assert len(outlook) == 1
+    # 60 vs the starters-only 50: ahead by 10, not behind by 70.
+    assert outlook[0]["state"] == "locked"
+    assert "is up 10.0" in outlook[0]["line"]
+
+
+def test_final_payload_is_served_forever_without_rekick(monkeypatch):
+    """Finished games: once the whole slate is final the payload can
+    never change, so an aged cache entry (past even the stale grace)
+    still serves as-is and NO background compute is re-kicked."""
+    import time as _time
+
+    import dashboard_services.api as ds_api
+
+    past = _sun_1pm_et_epoch()
+    sched = [{"home": "BUF", "away": "NYJ", "gameTime_epoch": past}]
+    ctxs = {"L1": _ctx("s1", "Alpha"), "L2": _ctx("s2", "Beta")}
+    client, bp_mod, platform_api = _client(
+        monkeypatch, ctxs, sched=sched)
+    monkeypatch.setattr(platform_api, "get_matchups", _matchup_rows)
+    tank_game = {"home": "BUF", "away": "NYJ", "homePts": 24,
+                 "awayPts": 17, "gameStatusCode": "2",
+                 "gameTime_epoch": past, "lineScore": {"period": "4"}}
+    monkeypatch.setattr(ds_api, "get_nfl_scores_for_date",
+                        lambda d, **k: {"g": tank_game})
+    monkeypatch.setattr(ds_api, "build_team_game_lookup",
+                        lambda body: {"BUF": tank_game, "NYJ": tank_game})
+    landed = _poll_insights(client, bp_mod)
+    assert landed["final"] is True
+    assert landed["rooting"]["windows"][0]["final"] is True
+    states = {e["league_name"]: e["state"]
+              for e in landed["rooting"]["outlook"]}
+    assert states == {"Alpha": "final_won", "Beta": "final_won"}
+
+    kicks = []
+    monkeypatch.setattr(
+        bp_mod, "_pf_kick_background",
+        lambda kind, key, identity: kicks.append(kind))
+    key = ("viewer:owner-1", 2026, 7)
+    with bp_mod._INSIGHTS_CACHE_LOCK:
+        _stamp, payload = bp_mod._INSIGHTS_CACHE[key]
+        bp_mod._INSIGHTS_CACHE[key] = (_time.monotonic() - 100000.0, payload)
+    served = client.get("/api/portfolio-insights").get_json()
+    assert served["rooting"] == landed["rooting"]
+    assert served["final"] is True
+    assert kicks == []
+
+
 def test_insights_cold_call_defers_to_background_compute(monkeypatch):
     """Non-blocking cold load (2026-10-27 speed pass): NO request thread
     runs the per-league provider sweep anymore, not even the first one.
@@ -438,12 +541,16 @@ def test_insights_cold_call_defers_to_background_compute(monkeypatch):
         assert first["scan"]["scanned"] == 0
         assert first["scan"]["incomplete"] is True
         assert entered.wait(timeout=2.0)  # background compute is in flight
-        # Sequential compute (light resolver): the second league's
-        # fetch has not started while the first is parked.
-        assert calls["n"] == 1
+        # Parallel compute: the second league's fetch runs on the pool
+        # alongside the parked first one (the sequential sweep was the
+        # cold-load bottleneck).
+        deadline = _time.time() + 2.0
+        while calls["n"] < 2 and _time.time() < deadline:
+            _time.sleep(0.01)
+        assert calls["n"] == 2
         deferred = client2.get("/api/portfolio-insights").get_json()
         # Concurrent call: deferred too, no duplicate compute kicked.
-        assert calls["n"] == 1
+        assert calls["n"] == 2
         assert deferred["scan"]["scanned"] == 0
         assert deferred["scan"]["incomplete"] is True
     finally:
