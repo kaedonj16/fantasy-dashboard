@@ -448,6 +448,34 @@ def test_public_overall_page_discounts_qb1_in_1qb():
     assert body.index("Back 1") < body.index("Back 3")
 
 
+def test_public_pages_label_games_as_expected():
+    # The stamped ros_games ARE expected games (scheduled games x
+    # availability rate), so fractional values like 7.1 are correct data
+    # that read as a typo under a bare "Games" header. The header and the
+    # overall page's intro now say so.
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+
+    payload, table = _fake_ros_payload()
+    payload["players"]["rb1"]["ros_games"] = 7.1
+    for pos in (None, "RB"):
+        body = build_ros_rankings_body(payload, table, position=pos)
+        assert '<th class="rnk-val">Exp. Games</th>' in body
+        assert '<th class="rnk-val">Games</th>' not in body
+    body = build_ros_rankings_body(payload, table, position=None)
+    assert '<td class="rnk-val">7.1</td>' in body
+    assert "expected games over the rest of the season" in body
+
+
+def test_players_board_ros_games_header_says_expected():
+    # The /players board's ROS mode carries the same expected-games field
+    # in the column it renames at render time; it gets the same label.
+    # (Its dynasty/redraft "Games" surfaces elsewhere are actual games
+    # played and keep the bare label.)
+    src = open(os.path.join(_ROOT, "static", "rankings.js"), encoding="utf-8").read()
+    assert "_totHeadEl.textContent = 'Exp. Games'" in src
+    assert "_totHeadEl.textContent = 'Games'" not in src
+
+
 def test_public_pages_have_unique_editorial_and_no_em_dash():
     from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
 
