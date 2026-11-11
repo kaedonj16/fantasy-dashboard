@@ -4398,7 +4398,7 @@ function _pmBuildTeamHTML(data) {
   // "Also competing for targets": the top target earner at each other
   // receiving position, rendered when that position has any target-share
   // data at all. Omitted entirely when no other position qualifies.
-  const _compPosList = pos === 'QB' ? ['WR', 'TE', 'RB'] : ['WR', 'TE', 'RB'].filter(p => p !== pos);
+  const _compPosList = pos === 'QB' ? ['RB', 'WR', 'TE'] : ['RB', 'WR', 'TE'].filter(p => p !== pos);
   const _compRows = [];
   _compPosList.forEach(p => {
     const rows = ((data.depth_chart && data.depth_chart[p]) || [])

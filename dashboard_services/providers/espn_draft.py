@@ -174,20 +174,24 @@ def _roster_positions_from_payload(payload: Mapping[str, Any]) -> List[str]:
     if not isinstance(raw_slots, Mapping):
         return []
     # ESPN lineupSlotId -> Sleeper-style name. Only the common offensive slots;
-    # this is display/config for Draft Room, not pick submission.
-    slot_names = {
-        0: "QB", 2: "RB", 4: "WR", 6: "TE", 23: "FLEX", 7: "OP",
-        17: "K", 16: "DEF", 20: "BN", 21: "IR",
-    }
-    out: List[str] = []
+    # this is display/config for Draft Room, not pick submission. Iterated in
+    # canonical display order (QB, RB, WR, TE, FLEX, SUPER_FLEX, K, DEF, BN,
+    # IR), not raw payload dict order: ESPN slot ids put DEF (16) before
+    # K (17) and FLEX (23) last.
+    slot_names = [
+        (0, "QB"), (2, "RB"), (4, "WR"), (6, "TE"), (23, "FLEX"),
+        (7, "OP"), (17, "K"), (16, "DEF"), (20, "BN"), (21, "IR"),
+    ]
+    counts: dict = {}
     for key, count in raw_slots.items():
         try:
-            slot_id = int(key)
-            n = int(count)
+            counts[int(key)] = int(count)
         except (TypeError, ValueError):
             continue
-        name = slot_names.get(slot_id)
-        if not name or n <= 0:
+    out: List[str] = []
+    for slot_id, name in slot_names:
+        n = counts.get(slot_id) or 0
+        if n <= 0:
             continue
         mapped = "SUPER_FLEX" if name == "OP" else name
         out.extend([mapped] * n)

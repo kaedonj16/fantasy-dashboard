@@ -9213,7 +9213,7 @@ if (typeof window !== 'undefined') {
       WR: (rs.WR || 0) + Math.floor(flex * 0.5),
       TE: (rs.TE || 0)
     };
-    ['RB','WR','TE','QB'].forEach(function(pos){
+    ['QB','RB','WR','TE'].forEach(function(pos){
       var need = starterNeed[pos] || 0;
       if (pos === 'QB' && !state.sf) return;
       if (pos === 'TE' && need <= 1 && !(state.scoring && Number(state.scoring.tep) > 0)) return;

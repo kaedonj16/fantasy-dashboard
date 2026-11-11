@@ -2055,11 +2055,23 @@ def expand_espn_lineup_slot_counts(slot_counts: Any) -> List[str]:
     already-labeled counts from ``settings.position_slot_counts`` (``{"QB": 1}``).
     Bench/IR are included so consumers that care about roster depth see them;
     starting-lineup helpers already skip BN/IR via ``_BENCH_SLOTS``.
+
+    The expanded list is emitted in canonical display order (QB, RB, WR,
+    TE, FLEX, SUPER_FLEX, K, DEF, IDP slots, BN, IR), not the provider
+    dict / slot-id order: ESPN slot ids put DEF (16) before K (17) and
+    FLEX (23) last, which leaked into any surface reading the list in
+    order. Unknown slots keep their relative order after the known ones.
     """
     if not isinstance(slot_counts, dict) or not slot_counts:
         return []
-    out: List[str] = []
-    for key, count in slot_counts.items():
+    _rank = {
+        "QB": 0, "TQB": 1, "RB": 2, "RB_WR": 3, "WR": 4, "WR_TE": 5,
+        "TE": 6, "FLEX": 7, "SUPER_FLEX": 8, "K": 9, "DEF": 10,
+        "DT": 11, "DE": 12, "LB": 13, "DL": 14, "CB": 15, "S": 16,
+        "DB": 17, "DP": 18, "P": 19, "HC": 20, "BN": 21, "IR": 22,
+    }
+    pairs: List[tuple] = []
+    for seq, (key, count) in enumerate(slot_counts.items()):
         try:
             n = int(count)
         except (TypeError, ValueError):
@@ -2078,6 +2090,9 @@ def expand_espn_lineup_slot_counts(slot_counts: Any) -> List[str]:
         mapped = _map_espn_slot_name(name)
         if not mapped:
             continue
+        pairs.append((_rank.get(mapped, 90), seq, mapped, n))
+    out: List[str] = []
+    for _r, _s, mapped, n in sorted(pairs, key=lambda p: (p[0], p[1])):
         out.extend([mapped] * n)
     return out
 

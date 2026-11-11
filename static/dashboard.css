@@ -27200,6 +27200,7 @@ a.pm-avail-row:hover { background: var(--card); }
     .team-modal-close { position: absolute; top: 10px; right: 10px; }
     .tm-menu-wrap { margin-right: 44px; }
     .team-modal-statbar { order: 2; flex-basis: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .team-modal-statbar[data-tile-count="4"] { grid-template-columns: repeat(2, 1fr); }
     .tm-stat-tile { width: auto; padding: 10px 6px; }
     .team-modal-avatar { width: 48px; height: 48px; }
     .team-modal-name { font-size: 18px; }
@@ -27745,6 +27746,10 @@ tr.team-clickable {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 8px;
+    }
+
+    .team-modal-statbar[data-tile-count="4"] {
+        grid-template-columns: repeat(2, 1fr);
     }
 
     .tm-stat-tile {

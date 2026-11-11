@@ -227,9 +227,9 @@ def _compare_popular_matchups(n_pairs: int = 5) -> str:
         pos_pairs[pos] = [(players[i], players[i + 1])
                           for i in range(0, min(len(players) - 1, 6), 2)]
 
-    # Interleave across positions so the row is varied (a RB debate, a WR debate,
-    # a QB debate, a TE debate, then the next tier) instead of all one position.
-    order = ["RB", "WR", "QB", "TE"]
+    # Interleave across positions so the row is varied (a QB debate, a RB debate,
+    # a WR debate, a TE debate, then the next tier) instead of all one position.
+    order = ["QB", "RB", "WR", "TE"]
     chips: list = []
     round_i = 0
     while len(chips) < n_pairs:

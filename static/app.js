@@ -24503,7 +24503,7 @@ function initComparePage() {
     const row = document.getElementById('cmpPopularChips');
     if (!row || !_cmpBaselineList.length) return;
     const _base = _cmpCompareBase();
-    const html = ['WR', 'RB', 'QB', 'TE'].map(pos => {
+    const html = ['QB', 'RB', 'WR', 'TE'].map(pos => {
       const t1 = _cmpBaselineById['avg-' + pos + '-1'], t2 = _cmpBaselineById['avg-' + pos + '-2'];
       if (!t1 || !t2) return '';
       return '<a class="compare-chip compare-chip-tier" href="' + _base + '/compare?p1=' + t1.player_id + '&p2=' + t2.player_id + '">'
@@ -29173,9 +29173,11 @@ function renderTeamDetails(data) {
     }
     if (tiles.length) {
       statbar.innerHTML = tiles.join('');
+      statbar.dataset.tileCount = String(tiles.length);
       statbar.hidden = false;
     } else {
       statbar.innerHTML = '';
+      delete statbar.dataset.tileCount;
       statbar.hidden = true;
     }
   }
@@ -29353,7 +29355,7 @@ function renderTeamDetails(data) {
     (_activeByPos[p.position] = _activeByPos[p.position] || []).push(p);
   });
   const _roomsHTML = _rosterAll.length
-    ? `<div class="tm2-rooms"><div class="tm2-col">${_tmRoom('QB', _activeByPos.QB || [])}${_tmRoom('WR', _activeByPos.WR || [])}${_tmRoom('K', _activeByPos.K || [])}${_tmRoom('DEF', _activeByPos.DEF || [])}</div><div class="tm2-col">${_tmRoom('RB', _activeByPos.RB || [])}${_tmRoom('TE', _activeByPos.TE || [])}${_tmStash('ir', _irList)}${_tmStash('taxi', _taxiList)}</div></div>`
+    ? `<div class="tm2-rooms">${_tmRoom('QB', _activeByPos.QB || [])}${_tmRoom('RB', _activeByPos.RB || [])}${_tmRoom('WR', _activeByPos.WR || [])}${_tmRoom('TE', _activeByPos.TE || [])}${_tmRoom('K', _activeByPos.K || [])}${_tmRoom('DEF', _activeByPos.DEF || [])}${_tmStash('ir', _irList)}${_tmStash('taxi', _taxiList)}</div>`
     : '<div class="team-modal-empty">No players on roster</div>';
 
   // Rail cards: positional strength (every format), draft picks (dynasty),
@@ -29361,7 +29363,13 @@ function renderTeamDetails(data) {
   let _strengthCard = '';
   if (Array.isArray(data.positional_strength) && data.positional_strength.length > 0) {
     let rows = '';
-    data.positional_strength.forEach(row => {
+    const _posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
+    const _strengthSorted = data.positional_strength.slice().sort((a, b) => {
+      const ia = _posOrder.indexOf(a && a.position);
+      const ib = _posOrder.indexOf(b && b.position);
+      return (ia === -1 ? _posOrder.length : ia) - (ib === -1 ? _posOrder.length : ib);
+    });
+    _strengthSorted.forEach(row => {
       const pct = Math.max(0, Math.min(100, Number(row.percentile) || 0));
       const rankTxt = row.of ? `${_tmOrdinal(row.rank)} of ${row.of}` : _tmOrdinal(row.rank);
       let tier = 'mid';

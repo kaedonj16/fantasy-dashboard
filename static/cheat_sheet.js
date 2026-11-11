@@ -1952,7 +1952,7 @@ if (typeof window !== 'undefined') {
     }
 
     function renderPos(dyn) {
-        var POS = ['RB', 'WR', 'QB', 'TE'];
+        var POS = ['QB', 'RB', 'WR', 'TE'];
         var BAND = Math.max(1, maxVor * 0.045), CAP = 6;
         var groups = [], cur = null;
         // By Position stays the model view: iterate in model (VOR) order even when the
