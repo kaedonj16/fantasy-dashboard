@@ -1371,6 +1371,61 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 for h in (rd.get("highlights") or [])[:4]
             )
             body = kicker + champ_html + f"<div class='wrapped-rows'>{hl}</div>" + sub
+        elif kind == "cover":
+            # Weekly cover: real logo, league, the WEEK N WRAPPED wordmark
+            # and the week's headline stat boxes (all count up).
+            _boxes = "".join(
+                "<div class='wrapped-box'>"
+                f"<span class='wrapped-box-v'><span data-w-count='{_esc(str(_b.get('num') or '0'))}' "
+                f"data-w-dp='{_esc(str(_b.get('dp') or 0))}'>0</span>{_esc(str(_b.get('suffix') or ''))}</span>"
+                f"<span class='wrapped-box-k'>{_esc(str(_b.get('label') or ''))}</span></div>"
+                for _b in (s.get("boxes") or []))
+            body = (
+                kicker
+                + "<img src='/static/BR_Logo_dark.png?v=6c0c4828' alt='BR Fantasy' class='wrapped-cover-logo'>"
+                + f"<div class='wrapped-league'>{_esc(str(s['big']))}</div>"
+                + f"<div class='wrapped-word'>{_esc(str(s.get('word1') or ''))}<br>{_esc(str(s.get('word2') or ''))}</div>"
+                + f"<div class='wrapped-boxes'>{_boxes}</div>"
+            )
+        elif kind == "headline":
+            body = (
+                kicker
+                + f"<div class='wrapped-headline-txt'>{_esc(str(s.get('text') or ''))}</div>"
+            )
+        elif kind == "scoreboard":
+            _games = "".join(
+                "<div class='wrapped-game'>"
+                f"<span class='wrapped-game-w'>{_esc(str(_g.get('winner') or ''))}</span>"
+                f"<span class='wrapped-game-l'>{_esc(str(_g.get('loser') or ''))}</span>"
+                f"<span class='wrapped-game-s'>{float(_g.get('winner_pts') or 0):.1f}–{float(_g.get('loser_pts') or 0):.1f}</span>"
+                f"<span class='wrapped-game-m'>+{float(_g.get('margin') or 0):.1f}</span></div>"
+                for _g in (s.get("games") or []))
+            body = (
+                kicker
+                + "<div class='wrapped-num'>"
+                + f"<span class='wrapped-big' data-w-count='{float(s.get('hi_pts') or 0):.1f}' data-w-dp='1'>0</span>"
+                + "<span class='wrapped-unit'>PTS</span></div>"
+                + f"<div class='wrapped-name'>{_esc(str(s.get('hi_team') or ''))}</div>"
+                + f"<div class='wrapped-games'>{_games}</div>"
+            )
+        elif kind == "ohmy":
+            _blocks = []
+            for _b in (s.get("blocks") or []):
+                _bh = f"<div class='wrapped-om-k'>{_esc(str(_b.get('k') or ''))}</div>"
+                _bh += f"<div class='wrapped-om-n'>{_esc(str(_b.get('n') or ''))}</div>"
+                _sl = str(_b.get("scoreline") or "")
+                if "-" in _sl:
+                    _w, _l = _sl.split("-", 1)
+                    _bh += ("<div class='wrapped-scores'>"
+                            f"<span class='wrapped-score-w'>{_esc(_w.strip())}</span>"
+                            "<span class='wrapped-score-x'>VS</span>"
+                            f"<span class='wrapped-score-l'>{_esc(_l.strip())}</span></div>")
+                if _b.get("value"):
+                    _bh += f"<div class='wrapped-om-n'>{_esc(str(_b['value']))}</div>"
+                if _b.get("note"):
+                    _bh += f"<div class='wrapped-om-note'>{_esc(str(_b['note']))}</div>"
+                _blocks.append(f"<div class='wrapped-om-block'>{_bh}</div>")
+            body = kicker + "".join(_blocks)
         elif s.get("sections") or s.get("rows"):
             parts = []
             if s.get("sections"):
@@ -1400,8 +1455,15 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 _alive_html = ("<div class='wrapped-alive'><b>Still alive</b> "
                                + _esc(" · ".join(str(_a) for _a in s["alive"]))
                                + "</div>")
-            body = (kicker + f"<div class='wrapped-rows'>{''.join(parts)}</div>"
-                    + _alive_html + sub)
+            _title_html = (f"<div class='wrapped-slide-title'>{_esc(str(s['title']))}</div>"
+                           if s.get("title") else "")
+            _note_html = (f"<div class='wrapped-note'><b>Why it matters:</b> "
+                          f"{_esc(str(s['note']))}</div>"
+                          if s.get("note") else "")
+            body = (kicker + _title_html
+                    + f"<div class='wrapped-rows'>{''.join(parts)}</div>"
+                    + _note_html + _alive_html
+                    + (sub if str(s.get("sub") or "").strip() else ""))
         elif s.get("preview_teams"):
             # Next week's Game of the Week (a preview: no winner yet). Neutral
             # stacked hero, the projected win-% split bar, projected scoreline.
@@ -1428,11 +1490,18 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
             _why = str(s.get("why") or "").strip()
             _why_html = (f"<div class='wrapped-why'>{_esc(_why)}</div>"
                          if _why else "")
+            _stakes_html = ""
+            if s.get("stakes"):
+                _stakes_html = ("<div class='wrapped-stakes'>" + "".join(
+                    f"<div class='wrapped-stake'><b>{_esc(str(_t))}</b> "
+                    f"{_esc(str(_x))}</div>"
+                    for _t, _x in s["stakes"]) + "</div>")
             body = (
                 kicker
                 + _why_html
                 + _hero
                 + _winbar
+                + _stakes_html
                 + sub
             )
         elif s["num"]:
@@ -1611,10 +1680,13 @@ def _wrapped_face_url(pid, meta, pos, nfl, platform) -> str:
 def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
     """Per-player fantasy production for a single week from that week's
     boxscores. Returns {'top': entry, 'by_pos': {QB/RB/WR/TE/K/DEF: entry},
-    'dud': entry} where entry is {name, pos, nfl, pts}. 'dud' is the
-    lowest-scoring starter (needs the provider's starters list; skipped when
-    unavailable). One week, one fetch, per request -- no cache. {} when
-    unavailable."""
+    'dud': entry, 'top3': [entry], 'top3_mode': str} where entry is
+    {name, pos, nfl, pts}. 'dud' is the lowest-scoring starter (needs the
+    provider's starters list; skipped when unavailable). 'top3' is the
+    Top Performers slide's rows: the week's best starters from games that
+    mattered (a close game, or a team in/near the playoff race), each with
+    'team'/'mgr' attribution for the fantasy roster they played for.
+    One week, one fetch, per request -- no cache. {} when unavailable."""
     platform = str(ctx.get("platform") or "sleeper")
     league_id = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
     season = ctx.get("season")
@@ -1631,9 +1703,12 @@ def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
     top = None
     by_pos: dict = {}
     dud = None
+    starters_all: list = []
     for m in mus:
         pp = _mfield(m, "players_points") or {}
         starters = {str(s) for s in (_mfield(m, "starters") or [])}
+        _rid = _mfield(m, "roster_id")
+        _mid = _mfield(m, "matchup_id")
         for pid, pts in pp.items():
             pid = str(pid)
             if pid in ("", "0"):
@@ -1656,13 +1731,136 @@ def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
                 by_pos[pos] = entry
             if pid in starters and pv > 0 and (dud is None or pv < dud["pts"]):
                 dud = entry
+            if pid in starters and pv > 0:
+                starters_all.append({**entry,
+                                     "rid": str(_rid) if _rid is not None else "",
+                                     "mid": str(_mid) if _mid is not None else ""})
+    # ── Top Performers: best starters from games that mattered ──────────
+    # "Mattered" maps to the two real signals in ctx: the player's game was
+    # close (margin <= 20 from the finalized df_weekly row pair), or the
+    # player's team sits in/near the playoff race (seed <= playoff spots + 2
+    # in the standings through this week). Unknown context (a provider row
+    # without roster/matchup ids) counts as mattered: the filter only ever
+    # excludes a game we can prove was a blowout between also-rans.
+    top3: list = []
+    top3_mode = ""
+    if starters_all:
+        _margin_by_mid: dict = {}
+        _seed_by_rid: dict = {}
+        _playoff_teams = 6
+        try:
+            _settings: dict = {}
+            _settings.update((ctx.get("league") or {}).get("settings") or {})
+            _settings.update(ctx.get("league_settings") or {})
+            _playoff_teams = int(_settings.get("playoff_teams") or 6)
+        except (TypeError, ValueError):
+            _playoff_teams = 6
+        try:
+            _df = ctx.get("df_weekly")
+            if (_df is not None and not getattr(_df, "empty", True)
+                    and {"week", "points"} <= set(_df.columns)):
+                _wdf = _df.copy()
+                _wdf = _wdf[pd.to_numeric(_wdf["week"], errors="coerce") == int(week)]
+                if "finalized" in _wdf.columns:
+                    _fin = _wdf[_wdf["finalized"] == True]  # noqa: E712
+                    if not _fin.empty:
+                        _wdf = _fin
+                if "matchup_id" in _wdf.columns:
+                    for _mid2, _grp in _wdf.groupby("matchup_id"):
+                        if len(_grp) == 2:
+                            _pv = pd.to_numeric(_grp["points"], errors="coerce")
+                            _margin_by_mid[str(_mid2)] = float(_pv.max() - _pv.min())
+                if "points_against" in _df.columns and "roster_id" in _df.columns:
+                    _sdf = _df.copy()
+                    _sdf = _sdf[pd.to_numeric(_sdf["week"], errors="coerce") <= int(week)]
+                    if "finalized" in _sdf.columns:
+                        _sdf = _sdf[_sdf["finalized"] == True]  # noqa: E712
+                    _sp = pd.to_numeric(_sdf["points"], errors="coerce")
+                    _so = pd.to_numeric(_sdf["points_against"], errors="coerce")
+                    _sdf = _sdf[_sp.notna() & _so.notna() & (_sp > 0)]
+                    if not _sdf.empty:
+                        _sdf = _sdf.assign(
+                            _w=(_sp.loc[_sdf.index] > _so.loc[_sdf.index]).astype(int),
+                            _t=(_sp.loc[_sdf.index] == _so.loc[_sdf.index]).astype(int),
+                            _pf=_sp.loc[_sdf.index])
+                        _agg = (_sdf.groupby("roster_id")
+                                .agg(w=("_w", "sum"), t=("_t", "sum"), pf=("_pf", "sum"))
+                                .sort_values(["w", "t", "pf"],
+                                             ascending=[False, False, False]))
+                        for _i, (_srid, _sr) in enumerate(_agg.iterrows()):
+                            _seed_by_rid[str(_srid)] = _i + 1
+        except Exception:
+            pass
+        _rmap = {str(_k): _v for _k, _v in (ctx.get("roster_map") or {}).items()}
+        _mgr_by_rid: dict = {}
+        try:
+            from dashboard_services.display_names import username_from_user
+            _users = {str(_u.get("user_id")): _u
+                      for _u in (ctx.get("users") or [])
+                      if isinstance(_u, dict) and _u.get("user_id") is not None}
+            for _ro in (ctx.get("rosters") or []):
+                if isinstance(_ro, dict) and _ro.get("roster_id") is not None:
+                    _u = _users.get(str(_ro.get("owner_id") or ""))
+                    _mgr = username_from_user(_u) if _u else ""
+                    if _mgr:
+                        _mgr_by_rid[str(_ro["roster_id"])] = _mgr
+        except Exception:
+            _mgr_by_rid = {}
+
+        def _mattered(e) -> set:
+            _via = set()
+            _mg = _margin_by_mid.get(e["mid"]) if e["mid"] else None
+            _seed = _seed_by_rid.get(e["rid"]) if e["rid"] else None
+            if _mg is not None and _mg <= 20.0:
+                _via.add("close")
+            if _seed is not None and _seed <= _playoff_teams + 2:
+                _via.add("race")
+            if _mg is None and _seed is None:
+                _via.add("unknown")
+            return _via
+
+        _ranked = sorted(starters_all, key=lambda e: -e["pts"])
+        _picked: list = []
+        for _e in _ranked:
+            _via = _mattered(_e)
+            if _via and len(_picked) < 3:
+                _picked.append({**_e, "via": sorted(_via),
+                                "margin": (_margin_by_mid.get(_e["mid"])
+                                           if _e["mid"] else None)})
+        _filled = len(_picked) < min(3, len(_ranked))
+        if _filled:
+            _have = {(_e["pid"], _e["rid"]) for _e in _picked}
+            for _e in _ranked:
+                if len(_picked) >= 3:
+                    break
+                if (_e["pid"], _e["rid"]) not in _have:
+                    _picked.append({**_e, "via": []})
+            _picked.sort(key=lambda e: -e["pts"])
+        for _e in _picked:
+            _team = str(_rmap.get(_e["rid"], "") or "")
+            _e["team"] = _team
+            _mgr = _mgr_by_rid.get(_e["rid"], "")
+            _e["mgr"] = _mgr if _mgr and _mgr != _team else ""
+            _e["img"] = _wrapped_face_url(
+                _e.get("pid"), players_map.get(str(_e.get("pid") or "")),
+                _e.get("pos"), _e.get("nfl"), platform)
+        top3 = _picked
+        if _filled:
+            top3_mode = "fill"
+        elif _picked and all("close" in _e["via"] for _e in _picked):
+            top3_mode = "close"
+        elif _picked and all(_e["via"] == ["unknown"] for _e in _picked):
+            top3_mode = "open"
+        elif _picked and all(_e["via"] for _e in _picked):
+            top3_mode = "race"
     # Resolve headshots only for the entries the deck actually shows.
     for _e in [top, dud, *by_pos.values()]:
         if _e is not None:
             _e["img"] = _wrapped_face_url(_e.get("pid"),
                                           players_map.get(str(_e.get("pid") or "")),
                                           _e.get("pos"), _e.get("nfl"), platform)
-    return {"top": top, "by_pos": by_pos, "dud": dud}
+    return {"top": top, "by_pos": by_pos, "dud": dud,
+            "top3": top3, "top3_mode": top3_mode}
 
 
 def _next_week_gotw_game(ctx: dict, week: int, platform: str, league_id: str,
@@ -1957,13 +2155,18 @@ def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
 
 def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                  include_players: bool = True) -> list:
-    """Ordered 'Weekly Wrapped' story slides for one completed week. Each slide:
-    {kind, eyebrow, big, num, dp, suffix, label, sub} (plus optional 'rows').
+    """Ordered 'Weekly Wrapped' story slides for one completed week, in the
+    approved mock's order: Cover, Headline, Scoreboard, Top Performers,
+    Coaching Report, Standings, Playoff Picture, Game of the Week, Oh My
+    (the Share Card finale is appended by render_weekly_wrapped_overlay).
+    Each slide: {kind, eyebrow, big, num, dp, suffix, label, sub} plus
+    kind-specific payload keys.
 
     Slides with no data are skipped; the overlay needs >= 3 to render.
-    include_players=False skips the boxscore-backed slides (top player /
-    position leaders / dud), so the hub can cheaply decide whether to show the
-    launcher; the lazy /wrapped endpoint builds the full deck."""
+    include_players=False skips the boxscore-backed slides (performers /
+    coaching / standings / playoffs / GOTW / Oh My), so the hub can cheaply
+    decide whether to show the launcher; the lazy /wrapped endpoint builds
+    the full deck."""
     try:
         week = int(week)
     except (TypeError, ValueError):
@@ -1995,25 +2198,22 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
         return {"kind": kind, "eyebrow": eyebrow, "big": f"{val:.{dp}f}", "num": True,
                 "dp": dp, "suffix": suffix, "label": label, "sub": sub}
 
-    slides = [{**_txt("intro", f"WEEK {week}", str(league_name), "Wrapped",
-                      "The week that was, in stories"),
-               "intro_word": "WEEKLY<br>WRAPPED"}]
+    # The deck mirrors the approved mock's 10 slides: Cover, Headline,
+    # Scoreboard, Top Performers, Coaching Report, Standings, Playoff
+    # Picture, Game of the Week, Oh My, Share Card (the recap finale is
+    # appended by render_weekly_wrapped_overlay). Cover and Headline are
+    # assembled at the end -- they summarize the whole deck, playoff
+    # picture included -- and inserted at the front.
+    slides = []
 
     hi = wdf.loc[wdf["points"].idxmax()]
+    hi_team = str(hi.get("owner", "-"))
     hi_pts = float(hi.get("points") or 0)
-    if hi_pts > 0:
-        slides.append({**_num("topscore", f"HIGHEST SCORE · WEEK {week}",
-                              hi_pts, 1, " PTS", str(hi.get("owner", "-")),
-                              "The week's biggest team total"),
-                       "bgword": "HIGHEST"})
-
     lo = wdf.loc[wdf["points"].idxmin()]
+    lo_team = str(lo.get("owner", "-"))
     lo_pts = float(lo.get("points") or 0)
-    if 0 < lo_pts < hi_pts:
-        slides.append({**_num("lowscore", f"LOWEST SCORE · WEEK {week}",
-                              lo_pts, 1, " PTS", str(lo.get("owner", "-")),
-                              "The week's quietest team total"),
-                       "bgword": "LOWEST"})
+    league_pts = float(wdf["points"].sum())
+    n_teams = int(len(wdf))
 
     # Pair the week's head-to-head results via matchup_id.
     matchup_rows = []
@@ -2037,59 +2237,65 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                if "roster_id" in grp.columns else set()),
             })
 
+    bo = max(matchup_rows, key=lambda x: x["margin"]) if matchup_rows else None
+    nb = min(matchup_rows, key=lambda x: x["margin"]) if matchup_rows else None
+
+    # ── Scoreboard: every game this week, closest first, under the
+    # week-high team total ──
     if matchup_rows:
-        bo = max(matchup_rows, key=lambda x: x["margin"])
-        _b = _num("blowout", "BIGGEST BLOWOUT", bo["margin"], 1, " PTS",
-                  f"{bo['winner']} over {bo['loser']}",
-                  "The week's most lopsided result")
-        _b["scoreline"] = f"{bo['winner_pts']:.1f}-{bo['loser_pts']:.1f}"
-        _b["bgword"] = "BLOWOUT"
-        slides.append(_b)
+        slides.append({
+            "kind": "scoreboard", "eyebrow": f"WEEK {week} SCOREBOARD",
+            "num": False, "big": "", "dp": 0, "suffix": "", "label": "", "sub": "",
+            "hi_team": hi_team, "hi_pts": hi_pts,
+            "lo_team": lo_team, "lo_pts": lo_pts,
+            "games": sorted(matchup_rows, key=lambda g: g["margin"]),
+            "bgword": "SCOREBOARD"})
 
-    if len(matchup_rows) >= 2:
-        nb = min(matchup_rows, key=lambda x: x["margin"])
-        _c = _num("nailbiter", "CLOSEST GAME", nb["margin"], 1, " PTS",
-                  f"{nb['winner']} over {nb['loser']}",
-                  "Decided by the slimmest margin of the week")
-        _c["scoreline"] = f"{nb['winner_pts']:.1f}-{nb['loser_pts']:.1f}"
-        _c["bgword"] = "CLOSEST"
-        slides.append(_c)
-
-    # ── Player awards: best at each position (the highest scorer gets a crown),
-    # dud of the week ──
+    # ── Player slides: Top Performers (best starters from games that
+    # mattered, top scorer crowned) and the Coaching Report ──
     # The only slides that need a boxscore fetch, so the cheap availability
     # check skips them (and the next-week GOTW preview below, which fetches
-    # next week's matchup previews + projections).
+    # next week's matchup previews + projections). _analysis is shared with
+    # the Oh My slide's bench-regret block; _seeds feeds the GOTW stakes.
+    _analysis: dict = {}
+    _seeds: dict = {}
+    _playoff_slide = None
     if include_players:
         leaders = _wrapped_weekly_player_leaders(ctx, week)
 
-        by_pos = (leaders or {}).get("by_pos") or {}
-        _poses = [p for p in ("QB", "RB", "WR", "TE", "K", "DEF") if by_pos.get(p)]
-        _top_pos = max(_poses, key=lambda p: float(by_pos[p]["pts"]),
-                       default=None) if _poses else None
-        pos_rows = [(
-            p,
-            by_pos[p]["name"],
-            f"{by_pos[p]['pts']:.1f}",
-            "",
-            p == _top_pos,
-        ) for p in _poses]
-        if len(pos_rows) >= 3:
-            slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
+        _top3 = (leaders or {}).get("top3") or []
+        if len(_top3) >= 2:
+            _perf_rows = []
+            _perf_faces = {}
+            for _i, _e in enumerate(_top3):
+                _sub_line = " · ".join(
+                    x for x in [_e.get("pos"), _e.get("team"), _e.get("mgr")] if x)
+                _key = _sub_line or str(_e.get("nfl") or "")
+                _perf_rows.append((_key, _e["name"], f"{_e['pts']:.1f}", "",
+                                   _i == 0))
+                _perf_faces[_key] = str(_e.get("img") or "")
+            _mode = (leaders or {}).get("top3_mode")
+            if _mode == "close":
+                _mm = max((float(_e["margin"]) for _e in _top3
+                           if _e.get("margin") is not None), default=20.0)
+                _note = (f"All three came in games decided by {_mm:.1f} points "
+                         "or less. Every one of those points moved a result.")
+            elif _mode == "race":
+                _note = ("All three played with a playoff spot on the line: "
+                         "in position, or close enough to the cut line that "
+                         "the week swung it.")
+            elif _mode == "fill":
+                _note = ("The week's biggest starter scores. The filter looks "
+                         "for close games and playoff-race teams first; this "
+                         "week the raw scores told the story.")
+            else:
+                _note = ("Ranked on raw starter points: these three outscored "
+                         "everyone who started this week.")
+            slides.append({"kind": "performers", "eyebrow": "TOP PERFORMERS",
+                           "title": "WHO SWUNG THE WEEK",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
-                           "sub": "The week's points leader at every spot",
-                           "rows": pos_rows, "bgword": "LEADERS",
-                           "faces": {p: str(by_pos[p].get("img") or "")
-                                     for p in _poses}})
-
-        dud = (leaders or {}).get("dud")
-        if dud and dud.get("pts"):
-            _dmeta = " · ".join(x for x in [dud.get("pos"), dud.get("nfl")] if x)
-            slides.append({**_num("dud", "DUD OF THE WEEK", float(dud["pts"]), 1,
-                                  " PTS", dud["name"],
-                                  f"{_dmeta}, the week's coldest starter" if _dmeta
-                                  else "The week's coldest starter"),
-                           "bgword": "DUD"})
+                           "sub": "", "rows": _perf_rows, "faces": _perf_faces,
+                           "note": _note, "bgword": "STARS"})
 
         # ── Coaching report: efficiency top 3, biggest bust, worst start/sit
         # calls — one slide built from the same datasets the recap's Lineup
@@ -2114,7 +2320,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             _eff_section.append((
                 f"#{_i + 1}",
                 _owner_by_rid.get(str(_er["rid"]), f"Team {_er['rid']}"),
-                f"{_er['eff']:.0f}%",
+                f"{_er['eff']:.0f}% · {_er['actual']:.1f}",
             ))
         if _eff_section:
             _coach_sections.append({"title": "LINEUP EFFICIENCY", "rows": _eff_section})
@@ -2129,15 +2335,15 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             _under = (_analysis.get("underperformers") or [])
             if _under:
                 _b = _under[0]
-                # Don't repeat the dud slide's player when there's no
-                # trustworthy projection data (both rank raw starter points).
-                if str(_b.get("name") or "") != str((dud or {}).get("name") or ""):
-                    _bmeta = " · ".join(x for x in [_b.get("pos"), _b.get("nfl")] if x)
-                    _coach_sections.append({"title": "BIGGEST BUST", "rows": [(
-                        "",
-                        str(_b.get("name") or "—") + (f" ({_bmeta})" if _bmeta else ""),
-                        f"{float(_b.get('pts') or 0):.1f} PTS",
-                    )]})
+                # The coldest starter IS the bust now: the old dud slide
+                # that used to name him separately is folded into this deck
+                # (Cover/Scoreboard/Oh My), so there is no repeat to avoid.
+                _bmeta = " · ".join(x for x in [_b.get("pos"), _b.get("nfl")] if x)
+                _coach_sections.append({"title": "BIGGEST BUST", "rows": [(
+                    "",
+                    str(_b.get("name") or "—") + (f" ({_bmeta})" if _bmeta else ""),
+                    f"{float(_b.get('pts') or 0):.1f} PTS",
+                )]})
             _miss_section = []
             for _i, _mo in enumerate((_analysis.get("missed_opportunities") or [])[:2]):
                 _st, _bn = _mo.get("starter") or {}, _mo.get("bench_player") or {}
@@ -2163,7 +2369,8 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                            "sections": _coach_sections, "bgword": "COACHING"})
 
     # ── Standings: where the league stands after this week ─────────────────
-    # Recap beat before the preview closer: top 5 by record, then points for.
+    # Recap beat before the preview closer: every team by record, then
+    # points for, each with its seed movement vs last week.
     if include_players:
         try:
             _sdf = ctx.get("df_weekly")
@@ -2183,17 +2390,39 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                        _l=(_pts.loc[_sdf.index] < _opp.loc[_sdf.index]).astype(int),
                                        _t=(_pts.loc[_sdf.index] == _opp.loc[_sdf.index]).astype(int),
                                        _pf=_pts.loc[_sdf.index])
-                    _agg = (_sdf.groupby("roster_id")
-                            .agg(w=("_w", "sum"), l=("_l", "sum"),
-                                 t=("_t", "sum"), pf=("_pf", "sum"))
-                            .sort_values(["w", "t", "pf"], ascending=[False, False, False]))
+
+                    def _seed_table(_frame):
+                        return (_frame.groupby("roster_id")
+                                .agg(w=("_w", "sum"), l=("_l", "sum"),
+                                     t=("_t", "sum"), pf=("_pf", "sum"))
+                                .sort_values(["w", "t", "pf"],
+                                             ascending=[False, False, False]))
+
+                    _agg = _seed_table(_sdf)
+                    _prev_seed: dict = {}
+                    if week > 1:
+                        _pw = _sdf[pd.to_numeric(_sdf["week"], errors="coerce") <= week - 1]
+                        if not _pw.empty:
+                            _prev_seed = {str(_rid): _i + 1 for _i, (_rid, _r)
+                                          in enumerate(_seed_table(_pw).iterrows())}
                     _rmap = ctx.get("roster_map") or {}
-                    for _i, (_rid, _r) in enumerate(_agg.head(5).iterrows()):
+                    for _i, (_rid, _r) in enumerate(_agg.iterrows()):
                         _nm = _rmap.get(_rid, _rmap.get(str(_rid), f"Team {_rid}"))
                         _rec = f"{int(_r['w'])}-{int(_r['l'])}"
                         if int(_r["t"]):
                             _rec += f"-{int(_r['t'])}"
-                        _srows.append((f"#{_i + 1}", str(_nm), _rec))
+                        _seed_now = _i + 1
+                        _seeds[str(_rid)] = _seed_now
+                        _was = _prev_seed.get(str(_rid))
+                        _deco = ""
+                        if _was and _was != _seed_now:
+                            if _was > _seed_now:
+                                _deco = (f"<span class='wrapped-move up'>"
+                                         f"&#9650;{_was - _seed_now}</span>")
+                            else:
+                                _deco = (f"<span class='wrapped-move dn'>"
+                                         f"&#9660;{_seed_now - _was}</span>")
+                        _srows.append((f"#{_seed_now}", str(_nm), _rec, _deco))
             if len(_srows) >= 3:
                 slides.append({"kind": "standings", "eyebrow": "LEAGUE STANDINGS",
                                "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
@@ -2242,7 +2471,140 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                   "why": _why}
             _g["scoreline"] = _scoreline
             _g["bgword"] = "SHOWDOWN"
+            # Stakes, from the seeds through the wrapped week vs the
+            # league's playoff cut and bye lines. Only teams at or near a
+            # line get a line; a mid-table game carries none.
+            _stakes = []
+            try:
+                from utils.standings import bye_count as _bye_count
+                _pset: dict = {}
+                _pset.update((ctx.get("league") or {}).get("settings") or {})
+                _pset.update(ctx.get("league_settings") or {})
+                _pt = int(_pset.get("playoff_teams") or 6)
+                _nbyes = int(_bye_count(_pt))
+            except Exception:
+                _pt, _nbyes = 6, 0
+            for _tm, _rid in ((_game["team_a"], _game.get("roster_id_a")),
+                              (_game["team_b"], _game.get("roster_id_b"))):
+                _sd = _seeds.get(str(_rid)) if _rid is not None else None
+                if _sd is None:
+                    continue
+                if _nbyes and _sd <= _nbyes:
+                    _phrase = "in a bye spot"
+                elif _sd <= _pt:
+                    _phrase = "in playoff position"
+                elif _sd <= _pt + 2:
+                    _phrase = "on the bubble"
+                else:
+                    continue
+                _stakes.append((str(_tm), f"#{_sd} seed · {_phrase}"))
+            if _stakes:
+                _g["stakes"] = _stakes
             slides.append(_g)
+
+    # ── Oh My: the week's extremes — heartbreak, blowout, bench regret —
+    # from the same matchup rows and lineup analysis the deck already built.
+    # Sits after the GOTW preview, per the mock's order.
+    if include_players:
+        _om_blocks = []
+        if nb is not None:
+            _om_blocks.append({
+                "k": "HEARTBREAK", "n": nb["loser"],
+                # Subject-first scoreline: the loser's score leads, like
+                # the winner's does on the blowout block.
+                "scoreline": f"{nb['loser_pts']:.1f}-{nb['winner_pts']:.1f}",
+                "note": f"Lost to {nb['winner']} by {nb['margin']:.1f}"})
+        if bo is not None and bo is not nb:
+            _om_blocks.append({
+                "k": "BLOWOUT", "n": bo["winner"],
+                "scoreline": f"{bo['winner_pts']:.1f}-{bo['loser_pts']:.1f}",
+                "note": f"Beat {bo['loser']} by {bo['margin']:.1f}"})
+        if _analysis.get("available"):
+            _missed = _analysis.get("missed_opportunities") or []
+            if _missed:
+                _mo0 = _missed[0]
+                _bn0 = _mo0.get("bench_player") or {}
+                _st0 = _mo0.get("starter") or {}
+                _bp0 = _bn0.get("pts")
+                if _bn0.get("name") and isinstance(_bp0, (int, float)):
+                    # The same miss the Coaching Report leads with, so the
+                    # two slides agree (the mock's cross-slide consistency).
+                    _om_blocks.append({
+                        "k": "BENCH REGRET", "n": str(_bn0["name"]),
+                        "value": f"{float(_bp0):.1f} PTS ON THE BENCH",
+                        "note": (f"{_mo0.get('team') or 'A team'} started "
+                                 f"{_st0.get('name') or '?'} "
+                                 f"({float(_st0.get('pts') or 0):.1f}) instead · "
+                                 f"+{float(_mo0.get('gap') or 0):.1f} left on the table")})
+        if len(_om_blocks) >= 2:
+            slides.append({"kind": "ohmy", "eyebrow": "OH MY",
+                           "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+                           "sub": "", "blocks": _om_blocks, "bgword": "OH MY",
+                           "heartbreak": nb, "blowout": bo})
+
+    # ── Cover + Headline: assembled last because they summarize the whole
+    # deck (the playoff picture included), then placed at the front ──
+    _clinched = list((_playoff_slide or {}).get("clinched") or [])
+    _eliminated = list((_playoff_slide or {}).get("eliminated") or [])
+    _alive = list((_playoff_slide or {}).get("alive") or [])
+
+    def _names(_ns, cap=3):
+        _ns = [str(x) for x in _ns]
+        if not _ns:
+            return ""
+        if len(_ns) > cap:
+            return ", ".join(_ns[:cap - 1]) + f" and {len(_ns) - cap + 1} more"
+        if len(_ns) == 1:
+            return _ns[0]
+        if len(_ns) == 2:
+            return f"{_ns[0]} and {_ns[1]}"
+        return ", ".join(_ns[:-1]) + f" and {_ns[-1]}"
+
+    if _playoff_slide and (_clinched or _eliminated):
+        _clauses = []
+        _bye_names: list = []
+        for _sec in (_playoff_slide.get("sections") or []):
+            if _sec.get("title") == "CLINCHED A BYE":
+                _bye_names = [str(r[1]) for r in (_sec.get("rows") or [])]
+        _plain_in = [n for n in _clinched if n not in _bye_names]
+        if _bye_names:
+            _clauses.append(f"{_names(_bye_names)} locked up a first-round bye")
+        if _plain_in:
+            _clauses.append(
+                f"{_names(_plain_in)} {'is' if len(_plain_in) == 1 else 'are'} in")
+        if _eliminated:
+            _clauses.append(
+                f"{_names(_eliminated)} "
+                f"{'is' if len(_eliminated) == 1 else 'are'} out")
+        _headline = ". ".join(_clauses) + "."
+        if len(_clauses) == 1:
+            _headline += f" {hi_team} put up {hi_pts:.1f}, the week's top score."
+    elif nb is not None:
+        _headline = (f"{hi_team} hung {hi_pts:.1f} on the league. "
+                     f"{nb['winner']} survived {nb['loser']} by {nb['margin']:.1f}.")
+    else:
+        _headline = f"{hi_team} led the week with {hi_pts:.1f}."
+    slides.insert(0, {"kind": "headline", "eyebrow": "THE HEADLINE",
+                      "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+                      "sub": "", "text": _headline, "bgword": "HEADLINE"})
+
+    _boxes = [{"num": f"{league_pts:.1f}", "dp": 1, "suffix": "",
+               "label": f"TOTAL PTS · {n_teams} TEAMS"}]
+    if nb is not None:
+        _boxes.append({"num": f"{nb['margin']:.1f}", "dp": 1, "suffix": "",
+                       "label": "CLOSEST MARGIN"})
+    if _playoff_slide:
+        _boxes.append({"num": str(len(_clinched)), "dp": 0, "suffix": " IN",
+                       "label": f"{len(_eliminated)} OUT · {len(_alive)} ALIVE"})
+    else:
+        # Outside the playoff-picture window the third box falls back to
+        # the week's top team total (the most honest stat the week has).
+        _boxes.append({"num": f"{hi_pts:.1f}", "dp": 1, "suffix": "",
+                       "label": f"TOP SCORE · {hi_team}"})
+    slides.insert(0, {"kind": "cover", "eyebrow": f"WEEK {week}",
+                      "num": False, "big": str(league_name), "dp": 0, "suffix": "",
+                      "label": "", "sub": "", "boxes": _boxes,
+                      "word1": f"WEEK {week}", "word2": "WRAPPED"})
 
     return slides
 
@@ -2257,9 +2619,9 @@ def _wrapped_weekly_share_data(slides: list, league_name: str, season, week) -> 
         return {"k": str(k), "n": str(n), "v": str(v)}
 
     highlights: list = []
-    pl = by_kind.get("posleaders")
-    if pl:
-        _crowned = next((_r for _r in (pl.get("rows") or [])
+    pf = by_kind.get("performers")
+    if pf:
+        _crowned = next((_r for _r in (pf.get("rows") or [])
                          if len(_r) > 4 and _r[4]), None)
         if _crowned:
             highlights.append(_hi("TOP PLAYER", _crowned[1], _crowned[2]))
@@ -2278,18 +2640,24 @@ def _wrapped_weekly_share_data(slides: list, league_name: str, season, week) -> 
     if gw and gw.get("big"):
         highlights.append(_hi("GAME OF THE WEEK", gw["big"],
                               gw.get("scoreline") or ""))
-    ts = by_kind.get("topscore")
-    if ts and ts.get("label"):
-        highlights.append(_hi("HIGH SCORE", ts["label"], ts["big"]))
-    ls = by_kind.get("lowscore")
-    if ls and ls.get("label"):
-        highlights.append(_hi("LOW SCORE", ls["label"], ls["big"]))
-    bo = by_kind.get("blowout")
-    if bo and bo.get("label"):
-        highlights.append(_hi("BIGGEST BLOWOUT", bo["label"], bo["big"]))
-    nb = by_kind.get("nailbiter")
-    if nb and nb.get("label"):
-        highlights.append(_hi("CLOSEST GAME", nb["label"], nb["big"]))
+    sb = by_kind.get("scoreboard")
+    if sb and sb.get("hi_team"):
+        highlights.append(_hi("HIGH SCORE", sb["hi_team"],
+                              f"{float(sb.get('hi_pts') or 0):.1f}"))
+    if sb and sb.get("lo_team") and 0 < float(sb.get("lo_pts") or 0) < float(sb.get("hi_pts") or 0):
+        highlights.append(_hi("LOW SCORE", sb["lo_team"],
+                              f"{float(sb.get('lo_pts') or 0):.1f}"))
+    om = by_kind.get("ohmy")
+    if om and om.get("blowout"):
+        _bo = om["blowout"]
+        highlights.append(_hi("BIGGEST BLOWOUT",
+                              f"{_bo['winner']} over {_bo['loser']}",
+                              f"{float(_bo.get('margin') or 0):.1f}"))
+    if om and om.get("heartbreak"):
+        _hb = om["heartbreak"]
+        highlights.append(_hi("CLOSEST GAME",
+                              f"{_hb['winner']} over {_hb['loser']}",
+                              f"{float(_hb.get('margin') or 0):.1f}"))
 
     return {
         "league": str(league_name),
@@ -3037,12 +3405,12 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       if (!el) return;
       // Tint the current progress tick with the active slide's accent.
       try { overlay.style.setProperty('--wa', getComputedStyle(el).getPropertyValue('--wa')); } catch (e) {}
-      var num = el.querySelector('[data-w-count]');
-      if (num) {
+      var nums = el.querySelectorAll('[data-w-count]');
+      nums.forEach(function (num) {
         (window.brCountUp || wrappedCountUp)(num, { to: parseFloat(num.getAttribute('data-w-count')),
           dp: parseInt(num.getAttribute('data-w-dp') || '0', 10),
           suffix: num.getAttribute('data-w-suffix') || '', dur: 1100 });
-      }
+      });
       if (el.getAttribute('data-kind') === 'champion' && window.brConfetti) {
         setTimeout(function () { window.brConfetti(el, { palette: ['#f5c451','#e0a828','#fff1c2','#ffffff'], y: el.clientHeight * 0.4, count: 120 }); }, 350);
       }

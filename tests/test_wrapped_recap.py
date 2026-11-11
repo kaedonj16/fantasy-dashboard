@@ -74,10 +74,10 @@ def test_weekly_wrapped_standings_slide_sits_before_gotw(monkeypatch):
 
     rows = [
         # week, roster_id, points, points_against, finalized
-        (1, 1, 120.0, 100.0, True), (1, 2, 100.0, 120.0, True),
+        (1, 1, 120.0, 100.0, True), (1, 2, 102.0, 120.0, True),
         (1, 3, 110.0, 90.0, True), (1, 4, 90.0, 110.0, True),
         (2, 1, 130.0, 105.0, True), (2, 2, 105.0, 130.0, True),
-        (2, 3, 95.0, 115.0, True), (2, 4, 115.0, 95.0, True),
+        (2, 3, 95.0, 115.0, True), (2, 4, 117.0, 95.0, True),
     ]
     df = pd.DataFrame(rows, columns=["week", "roster_id", "points",
                                      "points_against", "finalized"])
@@ -91,16 +91,25 @@ def test_weekly_wrapped_standings_slide_sits_before_gotw(monkeypatch):
     slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 2)
     kinds = [s.get("kind") for s in slides]
     assert "standings" in kinds and "gotw" in kinds
-    # Standings is the recap beat; GOTW stays the preview closer.
+    # Standings is the recap beat; GOTW stays the preview closer (this ctx
+    # has no matchup ids, so there is no Oh My slide after it).
     assert kinds.index("standings") < kinds.index("gotw")
     assert kinds.index("gotw") == len(kinds) - 1
     st = next(s for s in slides if s.get("kind") == "standings")
     assert st["eyebrow"] == "LEAGUE STANDINGS"
-    assert st["rows"][0] == ("#1", "Alpha", "2-0")
-    assert st["rows"][1][2] == "1-1"  # Bravo and Charlie both 1-1; PF breaks it
+    # Rows carry every team plus a seed-movement chip in the deco slot:
+    # Alpha held #1 (no chip); Delta jumped #4 -> #2 on PF, Charlie slid.
+    assert st["rows"][0] == ("#1", "Alpha", "2-0", "")
+    assert st["rows"][1][:3] == ("#2", "Delta", "1-1")
+    assert "wrapped-move up" in st["rows"][1][3]
+    assert "&#9650;2" in st["rows"][1][3]
+    assert st["rows"][2][:3] == ("#3", "Charlie", "1-1")
+    assert "wrapped-move dn" in st["rows"][2][3]
+    assert st["rows"][3][:3] == ("#4", "Bravo", "0-2")
+    assert len(st["rows"]) == 4
 
 
-def test_weekly_wrapped_pos_leaders_crowns_top_scorer(monkeypatch):
+def test_weekly_wrapped_top_performers_crowns_top_scorer(monkeypatch):
     import pandas as pd
     from dashboard_services.pages import history_page as H
 
@@ -116,21 +125,34 @@ def test_weekly_wrapped_pos_leaders_crowns_top_scorer(monkeypatch):
             "RB": {"name": "R Bee", "pts": 38.5},
             "WR": {"name": "W Bee", "pts": 22.0},
         },
-        "dud": None})
+        "dud": None,
+        "top3": [
+            {"name": "R Bee", "pos": "RB", "nfl": "DET", "pts": 38.5,
+             "team": "Alpha", "mgr": "", "img": "https://img.example/r.png",
+             "via": ["close"], "margin": 20.0},
+            {"name": "Q Bee", "pos": "QB", "nfl": "KC", "pts": 28.0,
+             "team": "Alpha", "mgr": "", "img": "",
+             "via": ["close"], "margin": 20.0},
+            {"name": "W Bee", "pos": "WR", "nfl": "DAL", "pts": 22.0,
+             "team": "Bravo", "mgr": "", "img": "",
+             "via": ["close"], "margin": 20.0},
+        ],
+        "top3_mode": "close"})
     monkeypatch.setattr(H, "_next_week_gotw_game", lambda *a, **k: None)
 
     slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 1)
     kinds = [s.get("kind") for s in slides]
-    # One slide for top scorers now; the standalone top-player slide is gone.
+    # The old position-leaders slide is folded into Top Performers.
+    assert "posleaders" not in kinds
     assert "topplayer" not in kinds
-    pl = next(s for s in slides if s.get("kind") == "posleaders")
-    crowned = [r for r in pl["rows"] if len(r) > 4 and r[4]]
+    pf = next(s for s in slides if s.get("kind") == "performers")
+    crowned = [r for r in pf["rows"] if len(r) > 4 and r[4]]
     assert len(crowned) == 1
     assert crowned[0][1] == "R Bee"  # 38.5, the highest
 
     html = H.render_weekly_wrapped_overlay(ctx, 1)
-    before, _, after = html.partition("data-kind='posleaders'")
-    sec = before.rsplit("<section", 1)[1] + "data-kind='posleaders'" + after.split("</section>", 1)[0]
+    before, _, after = html.partition("data-kind='performers'")
+    sec = before.rsplit("<section", 1)[1] + "data-kind='performers'" + after.split("</section>", 1)[0]
     assert sec.count("wrapped-perf wrapped-row-top") == 1
     # The top scorer is crowned on his headshot, with the TOP SCORE pill.
     assert "wrapped-face-crown" in sec

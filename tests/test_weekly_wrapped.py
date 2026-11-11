@@ -1,8 +1,9 @@
-"""Weekly Wrapped: one-week story slides mirroring Season Wrapped.
+"""Weekly Wrapped: one-week story slides mirroring the approved mock deck.
 
-Covers the slide builder (intro, blowout/nailbiter math, boxscore-backed top
-player / position leaders / dud), the >= 3 slide minimum, the namespaced
-launcher/overlay ids, and the WEEK N footer branding.
+Covers the slide builder (Cover / Headline / Scoreboard / Top Performers /
+Coaching Report / Standings / Playoff Picture / GOTW / Oh My composition
+and math), the >= 3 slide minimum, the namespaced launcher/overlay ids,
+the WEEK N footer branding, and the fullscreen shell contract.
 
 Skipped when Flask/pandas aren't installed; runs in CI with the full stack.
 """
@@ -54,43 +55,67 @@ def _fake_boxscores(platform, league_id, week, season):
     ]
 
 
-def test_weekly_intro_slide_branding():
+def test_weekly_cover_slide_branding_and_boxes():
     from dashboard_services.pages import history_page as H
 
     slides = H._build_weekly_wrapped_slides(_mock_week_ctx(), "Test League", 2026, 3,
                                             include_players=False)
-    intro = slides[0]
-    assert intro["kind"] == "intro"
-    assert intro["eyebrow"] == "WEEK 3"
-    assert intro["big"] == "Test League"
-    assert intro["intro_word"] == "WEEKLY<br>WRAPPED"
+    cover = slides[0]
+    assert cover["kind"] == "cover"
+    assert cover["eyebrow"] == "WEEK 3"
+    assert cover["big"] == "Test League"
+    assert cover["word1"] == "WEEK 3"
+    assert cover["word2"] == "WRAPPED"
+    # Boxes: league total (150.5+90.2+120.0+119.4), closest margin (0.6),
+    # and -- outside the playoff window -- the top-score fallback box.
+    boxes = cover["boxes"]
+    assert boxes[0] == {"num": "480.1", "dp": 1, "suffix": "",
+                        "label": "TOTAL PTS · 4 TEAMS"}
+    assert boxes[1] == {"num": "0.6", "dp": 1, "suffix": "",
+                        "label": "CLOSEST MARGIN"}
+    assert boxes[2] == {"num": "150.5", "dp": 1, "suffix": "",
+                        "label": "TOP SCORE · Alpha"}
 
 
-def test_weekly_blowout_and_nailbiter_math():
+def test_weekly_scoreboard_games_and_totals():
     from dashboard_services.pages import history_page as H
 
     slides = H._build_weekly_wrapped_slides(_mock_week_ctx(), "Test League", 2026, 3,
                                             include_players=False)
     by_kind = {s["kind"]: s for s in slides}
 
-    # Alpha 150.5 over Beta 90.2 -> 60.3 blowout; Gamma 120.0 over Delta 119.4
-    # -> 0.6 nailbiter.
-    bo = by_kind["blowout"]
-    assert abs(float(bo["big"]) - 60.3) < 0.01
-    assert bo["label"] == "Alpha over Beta"
-    assert bo["scoreline"] == "150.5-90.2"
+    sb = by_kind["scoreboard"]
+    # Hero is the week-high team total; the low total rides along for the
+    # share card's LOW SCORE highlight.
+    assert sb["hi_team"] == "Alpha"
+    assert abs(sb["hi_pts"] - 150.5) < 0.01
+    assert sb["lo_team"] == "Beta"
+    assert abs(sb["lo_pts"] - 90.2) < 0.01
+    # Every game, closest first: Gamma 120.0 over Delta 119.4 (0.6), then
+    # Alpha 150.5 over Beta 90.2 (60.3).
+    games = sb["games"]
+    assert [g["winner"] for g in games] == ["Gamma", "Alpha"]
+    assert abs(games[0]["margin"] - 0.6) < 0.01
+    assert abs(games[1]["margin"] - 60.3) < 0.01
+    assert games[1]["loser"] == "Beta"
 
-    nb = by_kind["nailbiter"]
-    assert abs(float(nb["big"]) - 0.6) < 0.01
-    assert nb["label"] == "Gamma over Delta"
-    assert nb["scoreline"] == "120.0-119.4"
-
-    ts = by_kind["topscore"]
-    assert ts["label"] == "Alpha"
-    assert abs(float(ts["big"]) - 150.5) < 0.01
+    # The old standalone score slides are folded into the mock deck.
+    for gone in ("intro", "topscore", "lowscore", "blowout", "nailbiter",
+                 "posleaders", "dud"):
+        assert gone not in by_kind
 
 
-def test_weekly_top_player_pos_leaders_and_dud():
+def test_weekly_headline_from_game_facts():
+    from dashboard_services.pages import history_page as H
+
+    slides = H._build_weekly_wrapped_slides(_mock_week_ctx(), "Test League", 2026, 3,
+                                            include_players=False)
+    headline = {s["kind"]: s for s in slides}["headline"]
+    assert headline["text"] == (
+        "Alpha hung 150.5 on the league. Gamma survived Delta by 0.6.")
+
+
+def test_weekly_top_performers_top3_and_crown():
     from unittest import mock
     from dashboard_services.pages import history_page as H
 
@@ -100,55 +125,40 @@ def test_weekly_top_player_pos_leaders_and_dud():
         slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
 
     by_kind = {s["kind"]: s for s in slides}
-
-    # No standalone top-player slide; the week's top scorer wears the crown
-    # on the position-leaders slide instead.
-    assert "topplayer" not in by_kind
-
-    leaders = by_kind["posleaders"]
-    rows = {k: (n, v, d, t) for k, n, v, d, t in leaders["rows"]}
-    assert rows["QB"][0] == "Star QB"
-    assert rows["RB"][0] == "Star RB"
-    assert rows["WR"][0] == "Star WR"
-    assert rows["TE"][0] == "Star TE"
-    crowned = [k for k, (n, v, d, t) in rows.items() if t]
-    assert crowned == ["QB"]  # Star QB 32.5 is the week's top scorer
-
-    # Dud = lowest-scoring starter above zero (Cold K at 1.2), not a benched 0.
-    dud = by_kind["dud"]
-    assert dud["label"] == "Cold K"
-    assert abs(float(dud["big"]) - 1.2) < 0.01
+    perf = by_kind["performers"]
+    assert perf["eyebrow"] == "TOP PERFORMERS"
+    assert perf["title"] == "WHO SWUNG THE WEEK"
+    # Top 3 starters overall; the week's top scorer (Star QB, 32.5) is the
+    # crowned first row. Fixture rows carry no roster/matchup ids, so the
+    # key falls back to position alone.
+    rows = perf["rows"]
+    assert [r[1] for r in rows] == ["Star QB", "Star RB", "Star WR"]
+    assert [r[2] for r in rows] == ["32.5", "28.0", "24.1"]
+    assert [bool(r[4]) for r in rows] == [True, False, False]
+    assert set(perf["faces"]) == {r[0] for r in rows}
+    assert perf["note"]  # the "why it matters" line is always composed
 
 
-def test_weekly_pos_leaders_include_kicker_and_defense():
+def test_weekly_player_leaders_by_pos_and_dud():
+    """The leaders helper still computes every position's best and the dud;
+    the deck just no longer gives them their own slides."""
     from unittest import mock
     from dashboard_services.pages import history_page as H
 
     ctx = _mock_week_ctx()
     with mock.patch("dashboard_services.platform_api.get_matchups",
                     side_effect=_fake_boxscores):
-        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+        leaders = H._wrapped_weekly_player_leaders(ctx, 3)
 
-    by_kind = {s["kind"]: s for s in slides}
-    rows = {k: (n, v, d, t) for k, n, v, d, t in by_kind["posleaders"]["rows"]}
-    assert rows["K"][0] == "Cold K"
-    assert abs(float(rows["K"][1]) - 1.2) < 0.01
-    assert rows["DEF"][0] == "Top D"
-    assert abs(float(rows["DEF"][1]) - 22.0) < 0.01
-
-
-def test_weekly_lowest_score_slide():
-    from dashboard_services.pages import history_page as H
-
-    slides = H._build_weekly_wrapped_slides(_mock_week_ctx(), "Test League", 2026, 3,
-                                            include_players=False)
-    by_kind = {s["kind"]: s for s in slides}
-
-    # Beta 90.2 is the week's lowest finalized team total (Alpha 150.5 highest).
-    lo = by_kind["lowscore"]
-    assert lo["label"] == "Beta"
-    assert abs(float(lo["big"]) - 90.2) < 0.01
-    assert lo["eyebrow"] == "LOWEST SCORE · WEEK 3"
+    by_pos = leaders["by_pos"]
+    assert by_pos["QB"]["name"] == "Star QB"
+    assert by_pos["K"]["name"] == "Cold K"
+    assert abs(by_pos["K"]["pts"] - 1.2) < 0.01
+    assert by_pos["DEF"]["name"] == "Top D"
+    assert abs(by_pos["DEF"]["pts"] - 22.0) < 0.01
+    # Dud = lowest-scoring starter above zero (Cold K at 1.2).
+    assert leaders["dud"]["name"] == "Cold K"
+    assert leaders["top"]["name"] == "Star QB"
 
 
 def test_weekly_gotw_slide_previews_next_week():
@@ -174,8 +184,11 @@ def test_weekly_gotw_slide_previews_next_week():
     assert gotw["why"] == "#1 (2-0) vs #2 (1-1)"
     assert gotw["scoreline"] == "120.4-118.9"
     assert gotw["sub"] == "Projected 120.4–118.9"
-    # Teaser goes last in the deck (before the recap finale card).
-    assert slides[-1]["kind"] == "gotw"
+    # Mock order: the GOTW preview sits right before the Oh My closer
+    # (the recap finale card is appended later, at render time).
+    kinds = [s["kind"] for s in slides]
+    assert kinds[-1] == "ohmy"
+    assert kinds.index("gotw") == kinds.index("ohmy") - 1
 
 
 def test_weekly_gotw_slide_skipped_without_game():
@@ -243,7 +256,12 @@ def test_weekly_overlay_footer_and_recap_finale(offline_client):
     # Footer bug reads WEEK 3 WRAPPED, never SEASON.
     assert "wrapped-foot-season'>WEEK 3 WRAPPED<" in html
     assert "SEASON WRAPPED" not in html
-    assert "WEEKLY<br>WRAPPED" in html
+    # The deck opens on the mock's Cover: league + WEEK 3 WRAPPED wordmark
+    # + the headline stat boxes (which count up: three count targets).
+    assert "data-kind='cover'" in html
+    assert "WEEK 3<br>WRAPPED" in html
+    assert html.count("wrapped-box") >= 3
+    assert "data-w-count='480.1'" in html
     # The deck ends on the shareable recap card, like Season Wrapped.
     assert "data-kind='recap'" in html
     assert "WEEK 3 RECAP" in html
@@ -427,10 +445,11 @@ def test_weekly_coaching_slide_combines_efficiency_bust_and_misses():
     sections = coaching["sections"]
     assert [s["title"] for s in sections] == [
         "LINEUP EFFICIENCY", "BIGGEST BUST", "COACHING MISS"]
+    # Mock presentation: efficiency % beside that week's actual score.
     assert sections[0]["rows"] == [
-        ("#1", "Alpha", "99%"),
-        ("#2", "Beta", "93%"),
-        ("#3", "Gamma", "88%"),
+        ("#1", "Alpha", "99% · 148.0"),
+        ("#2", "Beta", "93% · 88.0"),
+        ("#3", "Gamma", "88% · 110.0"),
     ]
     assert sections[1]["rows"] == [("", "Bust WR (WR · DAL)", "2.1 PTS")]
     assert sections[2]["rows"] == [
@@ -460,9 +479,9 @@ def test_weekly_coaching_slide_skipped_without_data():
     assert "coaching" not in {s["kind"] for s in cheap}
 
 
-def test_weekly_coaching_bust_skipped_when_it_repeats_the_dud():
-    """Without trustworthy projections the bust ranking mirrors the dud slide's
-    coldest starter; the coaching slide must not name the same player twice."""
+def test_weekly_coaching_bust_names_the_coldest_starter():
+    """The bust is the coldest starter (the old dud slide is folded into
+    the mock deck, so there is no second slide naming him to avoid)."""
     from unittest import mock
     from dashboard_services.pages import history_page as H
 
@@ -482,7 +501,9 @@ def test_weekly_coaching_bust_skipped_when_it_repeats_the_dud():
 
     coaching = {s["kind"]: s for s in slides}["coaching"]
     titles = [s["title"] for s in coaching["sections"]]
-    assert "BIGGEST BUST" not in titles
+    assert "BIGGEST BUST" in titles
+    bust = [s for s in coaching["sections"] if s["title"] == "BIGGEST BUST"][0]
+    assert bust["rows"] == [("", "Cold K (K · NE)", "1.2 PTS")]
     assert titles.count("COACHING MISS") == 1
     miss = [s for s in coaching["sections"] if s["title"] == "COACHING MISS"][0]
     assert len(miss["rows"]) == 2
@@ -809,3 +830,324 @@ def test_weekly_restyle_css_scope():
     assert "[data-bgword]::after" in css
     assert ".wrapped-row-sec-clinched-a-bye" in css
     assert ".wrapped-row-sec-eliminated" in css
+
+
+# ── Mock-parity deck composition + fullscreen shell ─────────────────────────
+
+def _settled_week_ctx():
+    """8 teams, playoffs Week 14 with 4 spots, Weeks 1-11 played in real
+    paired games. Fixed team strength settles the race by Week 11: the top
+    four are mathematically in, the bottom four out. Week 11 pairs are
+    (Alpha,Beta) 0.6, (Gamma,Delta) 60.3, (Epsilon,Zeta) 12.0,
+    (Eta,Theta) 25.0."""
+    import pandas as pd
+
+    names = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta"]
+    base = {"Alpha": 140.0, "Beta": 130.0, "Gamma": 125.0, "Delta": 118.0,
+            "Epsilon": 112.0, "Zeta": 105.0, "Eta": 98.0, "Theta": 90.0}
+    rid = {n: i + 1 for i, n in enumerate(names)}
+    rows = []
+    pairs = [("Alpha", "Theta"), ("Beta", "Eta"), ("Gamma", "Zeta"),
+             ("Delta", "Epsilon")]
+    for wk in range(1, 11):
+        for mid, (a, b) in enumerate(pairs, start=1):
+            pa = base[a] + ((wk + rid[a]) % 3)
+            pb = base[b] + ((wk + rid[b]) % 3)
+            rows.append({"week": wk, "owner": a, "points": pa,
+                         "points_against": pb, "matchup_id": mid,
+                         "finalized": True, "roster_id": rid[a]})
+            rows.append({"week": wk, "owner": b, "points": pb,
+                         "points_against": pa, "matchup_id": mid,
+                         "finalized": True, "roster_id": rid[b]})
+    wk11 = [("Alpha", 140.3, "Beta", 139.7), ("Gamma", 155.3, "Delta", 95.0),
+            ("Epsilon", 118.0, "Zeta", 106.0), ("Eta", 115.0, "Theta", 90.0)]
+    for mid, (a, pa, b, pb) in enumerate(wk11, start=1):
+        rows.append({"week": 11, "owner": a, "points": pa,
+                     "points_against": pb, "matchup_id": mid,
+                     "finalized": True, "roster_id": rid[a]})
+        rows.append({"week": 11, "owner": b, "points": pb,
+                     "points_against": pa, "matchup_id": mid,
+                     "finalized": True, "roster_id": rid[b]})
+    remaining = {}
+    for wk in (12, 13):
+        remaining[wk] = [
+            r for m, (a, b) in enumerate([(1, 8), (2, 7), (3, 6), (4, 5)], start=1)
+            for r in ({"roster_id": a, "matchup_id": m},
+                      {"roster_id": b, "matchup_id": m})]
+    return {
+        "platform": "sleeper", "league_id": "L1", "resolved_league_id": "L1",
+        "season": 2026, "league": {"name": "Test League"},
+        "league_settings": {"playoff_week_start": 14, "playoff_teams": 4,
+                            "divisions": 0},
+        "df_weekly": pd.DataFrame(rows),
+        "roster_map": {i + 1: n for i, n in enumerate(names)},
+        "matchups_by_week": remaining,
+        "players_map": {
+            "101": {"name": "Alpha Star", "pos": "RB", "team": "DET"},
+            "102": {"name": "Beta Back", "pos": "RB", "team": "SF"},
+            "103": {"name": "Gamma Great", "pos": "WR", "team": "MIN"},
+            "104": {"name": "Delta Guy", "pos": "TE", "team": "BAL"},
+            "105": {"name": "Epsilon Arm", "pos": "QB", "team": "KC"},
+            "106": {"name": "Zeta Sleeper", "pos": "WR", "team": "DAL"},
+            "107": {"name": "Eta Arm", "pos": "QB", "team": "BUF"},
+            "108": {"name": "Theta Spike", "pos": "WR", "team": "CIN"},
+        },
+    }
+
+
+def _settled_boxscores(platform, league_id, week, season):
+    if week != 11:
+        return []
+    return [
+        {"roster_id": 1, "matchup_id": 1, "players_points": {"101": 35.0},
+         "starters": ["101"]},
+        {"roster_id": 2, "matchup_id": 1, "players_points": {"102": 20.0},
+         "starters": ["102"]},
+        {"roster_id": 3, "matchup_id": 2, "players_points": {"103": 33.0},
+         "starters": ["103"]},
+        {"roster_id": 4, "matchup_id": 2, "players_points": {"104": 12.0},
+         "starters": ["104"]},
+        {"roster_id": 5, "matchup_id": 3, "players_points": {"105": 18.0},
+         "starters": ["105"]},
+        {"roster_id": 6, "matchup_id": 3, "players_points": {"106": 31.0},
+         "starters": ["106"]},
+        {"roster_id": 7, "matchup_id": 4, "players_points": {"107": 15.0},
+         "starters": ["107"]},
+        {"roster_id": 8, "matchup_id": 4, "players_points": {"108": 40.0},
+         "starters": ["108"]},
+    ]
+
+
+def _settled_efficiency(*args, **kwargs):
+    return {"by_rid": {
+        "1": {"weeks": [{"week": 11, "actual": 150.0, "optimal": 152.0, "eff": 98.7}]},
+        "2": {"weeks": [{"week": 11, "actual": 140.0, "optimal": 150.0, "eff": 93.3}]},
+        "3": {"weeks": [{"week": 11, "actual": 130.0, "optimal": 145.0, "eff": 89.7}]},
+    }}
+
+
+def _settled_analysis(*args, **kwargs):
+    return {
+        "available": True, "historical_projections": True,
+        "underperformers": [
+            {"name": "Bust WR", "pos": "WR", "nfl": "DAL", "pts": 2.1}],
+        "missed_opportunities": [
+            {"starter": {"name": "Cold QB", "pts": 9.4},
+             "bench_player": {"name": "Bench Star", "pts": 31.8},
+             "gap": 22.4, "team": "Delta", "rid": "4"}],
+    }
+
+
+def test_weekly_deck_matches_mock_order_for_settled_week(offline_client):
+    """The full deck is the mock's 10 slides in the mock's order, rendered
+    from production data: Cover, Headline, Scoreboard, Top Performers,
+    Coaching Report, Standings, Playoff Picture, GOTW, Oh My, Share Card."""
+    import app
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _settled_week_ctx()
+    game = {"team_a": "Alpha", "team_b": "Epsilon",
+            "roster_id_a": 1, "roster_id_b": 5,
+            "rank_a": 1, "rank_b": 5, "record_a": "11-0", "record_b": "1-10",
+            "win_prob_a": 81, "proj_a": 145.2, "proj_b": 110.4,
+            "target_week": 12}
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_settled_boxscores), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    side_effect=_settled_efficiency), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    side_effect=_settled_analysis), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=game):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 11)
+        with app.app.test_request_context("/"):
+            html = H.render_weekly_wrapped_overlay(ctx, 11)
+
+    kinds = [s["kind"] for s in slides]
+    assert kinds == ["cover", "headline", "scoreboard", "performers",
+                     "coaching", "standings", "playoffs", "gotw", "ohmy"]
+    by_kind = {s["kind"]: s for s in slides}
+
+    # Cover box 3 is the playoff count, agreeing with the Playoff Picture
+    # slide itself: 4 in, 4 out, nobody left alive.
+    pp = by_kind["playoffs"]
+    assert len(pp["clinched"]) == 4 and len(pp["eliminated"]) == 4
+    assert pp["alive"] == []
+    boxes = by_kind["cover"]["boxes"]
+    assert boxes[0]["num"] == "959.3"
+    assert boxes[1]["num"] == "0.6"
+    assert boxes[2] == {"num": "4", "dp": 0, "suffix": " IN",
+                        "label": "4 OUT · 0 ALIVE"}
+
+    # The Headline is composed from the settlement, not invented.
+    assert by_kind["headline"]["text"] == (
+        "Alpha, Gamma and 2 more are in. Epsilon, Eta and 2 more are out.")
+
+    # Performers: the 40-point game on 0-11 Theta (seed 8, decided by 25)
+    # did NOT matter and is filtered out; the crown goes to Alpha Star.
+    perf = by_kind["performers"]
+    assert [r[1] for r in perf["rows"]] == ["Alpha Star", "Gamma Great",
+                                            "Zeta Sleeper"]
+    assert [bool(r[4]) for r in perf["rows"]] == [True, False, False]
+    assert perf["rows"][0][0] == "RB · Alpha"
+    assert all(perf["faces"].values())  # every row resolved a headshot
+
+    # Standings: all 8 teams, Gamma's rise and Beta's fall carry chips.
+    st = by_kind["standings"]
+    assert len(st["rows"]) == 8
+    gamma_row = next(r for r in st["rows"] if r[1] == "Gamma")
+    beta_row = next(r for r in st["rows"] if r[1] == "Beta")
+    assert "wrapped-move up" in gamma_row[3]
+    assert "wrapped-move dn" in beta_row[3]
+    assert next(r for r in st["rows"] if r[1] == "Alpha")[3] == ""
+
+    # GOTW stakes come from the current seeds vs the cut/bye lines.
+    assert by_kind["gotw"]["stakes"] == [
+        ("Alpha", "#1 seed · in playoff position"),
+        ("Epsilon", "#5 seed · on the bubble"),
+    ]
+
+    # Oh My: heartbreak is the 0.6 game, bench regret is Coaching Miss #1.
+    blocks = {b["k"]: b for b in by_kind["ohmy"]["blocks"]}
+    assert blocks["HEARTBREAK"]["n"] == "Beta"
+    assert blocks["HEARTBREAK"]["note"] == "Lost to Alpha by 0.6"
+    assert blocks["BLOWOUT"]["n"] == "Gamma"
+    assert blocks["BENCH REGRET"]["n"] == "Bench Star"
+    assert blocks["BENCH REGRET"]["value"] == "31.8 PTS ON THE BENCH"
+    assert "Delta started Cold QB (9.4)" in blocks["BENCH REGRET"]["note"]
+
+    # Rendered deck: 10 sections, recap finale last, one crown total.
+    assert html.count("<section class='wrapped-slide") == 10
+    assert html.rfind("data-kind='recap'") > html.rfind("data-kind='ohmy'")
+    assert html.count("wrapped-face-crown") == 1
+
+
+def test_weekly_pre_playoff_window_deck_has_no_playoff_slide():
+    """Before the stretch run: no Playoff Picture slide, the Cover's third
+    box falls back to the top score, and the deck keeps the mock's order
+    for the slides it does have."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    return_value={}), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    return_value={"available": False}), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=None):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+
+    kinds = [s["kind"] for s in slides]
+    assert kinds == ["cover", "headline", "scoreboard", "performers", "ohmy"]
+    assert "playoffs" not in kinds
+    cover = slides[0]
+    assert cover["boxes"][2]["label"] == "TOP SCORE · Alpha"
+
+
+def test_weekly_ohmy_data_mapping():
+    """Oh My blocks map to the week's closest loss, its blowout, and the
+    lineup analysis's biggest bench miss (points included)."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    def _analysis(*args, **kwargs):
+        return {
+            "available": True, "historical_projections": True,
+            "underperformers": [],
+            "missed_opportunities": [
+                {"starter": {"name": "Cold QB", "pts": 9.4},
+                 "bench_player": {"name": "Bench Star", "pts": 31.8},
+                 "gap": 22.4, "team": "Delta", "rid": "r4"}],
+        }
+
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    side_effect=_analysis), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=None):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+
+    ohmy = {s["kind"]: s for s in slides}["ohmy"]
+    blocks = {b["k"]: b for b in ohmy["blocks"]}
+    assert blocks["HEARTBREAK"] == {
+        "k": "HEARTBREAK", "n": "Delta", "scoreline": "119.4-120.0",
+        "note": "Lost to Gamma by 0.6"}
+    assert blocks["BLOWOUT"]["n"] == "Alpha"
+    assert blocks["BLOWOUT"]["note"] == "Beat Beta by 60.3"
+    assert blocks["BENCH REGRET"]["n"] == "Bench Star"
+    assert blocks["BENCH REGRET"]["value"] == "31.8 PTS ON THE BENCH"
+    assert blocks["BENCH REGRET"]["note"] == (
+        "Delta started Cold QB (9.4) instead · +22.4 left on the table")
+    # The share card's game highlights source from the same games.
+    assert ohmy["heartbreak"]["winner"] == "Gamma"
+    assert ohmy["blowout"]["winner"] == "Alpha"
+
+
+def test_weekly_performers_markup_title_note_and_crown():
+    """The performers slide renders its mock headline, the Why-it-matters
+    note, exactly one crowned row, and no empty sub divider."""
+    from dashboard_services.pages import history_page as H
+
+    slides = [
+        {"kind": "intro", "eyebrow": "WEEK 3", "big": "T", "num": False, "dp": 0,
+         "suffix": "", "label": "Wrapped", "sub": "s"},
+        {"kind": "topscore", "eyebrow": "HIGH", "big": "150.5", "num": True,
+         "dp": 1, "suffix": "", "label": "Alpha", "sub": "s"},
+        {"kind": "performers", "eyebrow": "TOP PERFORMERS",
+         "title": "WHO SWUNG THE WEEK", "num": False, "big": "", "dp": 0,
+         "suffix": "", "label": "", "sub": "", "bgword": "STARS",
+         "rows": [("RB · Alpha", "Alpha Star", "35.0", "", True),
+                  ("WR · Gamma", "Gamma Great", "33.0", "", False)],
+         "faces": {"RB · Alpha": "https://img.example/a.png",
+                   "WR · Gamma": "https://img.example/g.png"},
+         "note": "All three played with a playoff spot on the line."},
+    ]
+    html = H._wrapped_overlay_markup(slides, None, ns="weekly-wrapped",
+                                     footer_label="WEEK 3 WRAPPED")
+    before, _, after = html.partition("data-kind='performers'")
+    sec = before.rsplit("<section", 1)[1] + after.split("</section>", 1)[0]
+    assert "WHO SWUNG THE WEEK" in sec
+    assert "Why it matters:" in sec
+    assert "playoff spot on the line" in sec
+    assert sec.count("wrapped-face-crown") == 1
+    assert sec.count("wrapped-top-pill") == 1
+    assert sec.count("wrapped-face-img") == 2
+    assert "wrapped-divider" not in sec  # empty sub renders no divider
+
+
+def test_wrapped_fullscreen_shell_contract():
+    """Fullscreen contract (Kaedon 2026-11-11): the overlay sits at the
+    modal tier (above the 9999 dock), the phone stage fills the viewport
+    with no card radius, the hint strip is gone on phones, chrome and the
+    footer bug respect the safe areas, and every count-up target on a
+    slide animates (the Cover has three)."""
+    import re
+    from dashboard_services.pages import history_page as H
+
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static/dashboard.css").read_text()
+
+    overlay = re.search(r"\.wrapped-overlay \{(.*?)\n\}", css, re.S).group(1)
+    assert "z-index: var(--z-modal)" in overlay
+    toast = re.search(r"\.wrapped-toast \{(.*?)\n\}", css, re.S).group(1)
+    assert "z-index: var(--z-modal-top)" in toast
+
+    phone = css.split("Phone fullscreen", 1)[1]
+    phone = phone.split("@media (max-width: 768px)", 1)[1][:2600]
+    assert ".wrapped-stage" in phone
+    assert "100dvh" in phone and "100dvw" in phone
+    assert "border-radius: 0" in phone
+    assert ".wrapped-hint" in phone and "display: none" in phone
+    assert "env(safe-area-inset-top)" in phone
+    assert "env(safe-area-inset-bottom)" in phone
+
+    # The footer bug is the wide wordmark at 30px, not a square tile.
+    foot = re.search(r"\.wrapped-overlay-wk \.wrapped-foot img \{(.*?)\n\}",
+                     css, re.S).group(1)
+    assert "height: 30px" in foot and "width: auto" in foot
+
+    js = H._wrapped_bootstrap_js("weekly-wrapped")
+    assert "querySelectorAll('[data-w-count]')" in js
