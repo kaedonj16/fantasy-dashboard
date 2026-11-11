@@ -37,7 +37,7 @@ CHANGELOG = [
     {
         "date": "2026-11-10",
         "tag": "new",
-        "text": "Weekly Wrapped now adds a Playoff Picture slide down the stretch: once a team has mathematically clinched a playoff spot (or a first-round bye) or been eliminated, the deck calls it out after the standings slide. The whole weekly deck also gets a fresh look: darker navy, compact rows, real player headshots with a crown for the week's top scorer, and icon-only share, link and pause buttons.",
+        "text": "Weekly Wrapped now adds a Playoff Picture slide down the stretch: once a team has mathematically clinched a playoff spot (or a first-round bye) or been eliminated, the deck calls it out after the standings slide. The whole weekly deck also gets a fresh look: darker navy, compact rows, real player headshots with a crown for the week's top scorer, and icon-only share, link and pause buttons. The deck now plays full screen on phones and is rebuilt slide for slide: a cover with the week's headline numbers, the week's story in one headline, the full scoreboard, Top Performers from the games that mattered, the Coaching Report, full standings with movement, the Game of the Week with its stakes, and an Oh My slide for the heartbreak, the blowout and the bench regret.",
         "link": "/weekly"
     },
     {

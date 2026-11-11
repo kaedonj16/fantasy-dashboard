@@ -46539,7 +46539,11 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 .wrapped-overlay {
     position: fixed;
     inset: 0;
-    z-index: 4000;
+    /* Above the mobile dock (--z-chrome 9999) and the assistant launcher
+       (9995): the Wrapped player is a modal-tier surface (Kaedon
+       2026-11-11: "in front of the dock"). The player modal shares this
+       tier and is body-appended later, so it still opens on top. */
+    z-index: var(--z-modal);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -46719,7 +46723,9 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     bottom: max(28px, env(safe-area-inset-bottom));
     left: 50%;
     transform: translateX(-50%) translateY(12px);
-    z-index: 6000;
+    /* Above the overlay itself (modal tier) or the Saved toast hides
+       behind the fullscreen deck. */
+    z-index: var(--z-modal-top);
     max-width: 86vw;
     padding: 11px 18px;
     border-radius: var(--radius);
@@ -47707,6 +47713,243 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     --wglow: rgba(46, 194, 126, .15);
 }
 
+/* Weekly restyle, new slide kinds (Cover / Headline / Scoreboard /
+   Performers / Oh My): accents + components. */
+.wrapped-overlay-wk .wrapped-slide[data-kind="headline"] {
+    --wa: #e9b949;
+    --wglow: rgba(233, 185, 73, .14);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="scoreboard"] {
+    --wa: #6ea8ff;
+    --wglow: rgba(110, 168, 255, .14);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] {
+    --wa: #e9b949;
+    --wglow: rgba(233, 185, 73, .14);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="ohmy"] {
+    --wa: #c084fc;
+    --wglow: rgba(192, 132, 252, .14);
+}
+
+.wrapped-cover-logo {
+    width: 120px;
+    height: auto;
+    margin-bottom: 18px;
+    filter: drop-shadow(0 6px 18px rgba(0, 0, 0, .45));
+}
+
+.wrapped-boxes {
+    display: flex;
+    gap: 10px;
+    align-self: stretch;
+    margin-top: 36px;
+}
+
+.wrapped-box {
+    flex: 1;
+    min-width: 0;
+    background: var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 12px;
+    padding: 16px 12px 13px;
+    text-align: center;
+}
+
+.wrapped-box-v {
+    display: block;
+    font-size: 30px;
+    font-weight: 900;
+    letter-spacing: -.02em;
+    line-height: 1;
+    color: #f2f7fd;
+    font-variant-numeric: tabular-nums;
+}
+
+.wrapped-box-k {
+    display: block;
+    margin-top: 8px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: #9db8d2;
+    line-height: 1.45;
+}
+
+.wrapped-headline-txt {
+    font-size: 33px;
+    font-weight: 900;
+    line-height: 1.14;
+    letter-spacing: -.02em;
+    color: #f2f7fd;
+    max-width: 15ch;
+}
+
+.wrapped-slide-title {
+    font-size: 30px;
+    font-weight: 900;
+    line-height: 1.08;
+    letter-spacing: -.02em;
+    color: #f2f7fd;
+    margin-bottom: 18px;
+}
+
+.wrapped-games {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-self: stretch;
+    margin-top: 20px;
+}
+
+.wrapped-game {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    background: var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 12px;
+    padding: 10px 13px;
+    font-size: 14px;
+}
+
+.wrapped-game-w {
+    font-weight: 800;
+    color: #f2f7fd;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wrapped-game-l {
+    color: #9db8d2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wrapped-game-s {
+    margin-left: auto;
+    font-weight: 800;
+    color: #f2f7fd;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.wrapped-game-m {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--wa);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 42px;
+    text-align: right;
+}
+
+.wrapped-note {
+    align-self: stretch;
+    margin-top: 16px;
+    border-left: 3px solid var(--wa);
+    background: rgba(255, 255, 255, .04);
+    border-radius: 0 10px 10px 0;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #dbe7f5;
+}
+
+.wrapped-note b {
+    color: var(--wa);
+}
+
+.wrapped-om-block {
+    align-self: stretch;
+    background: var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 14px;
+    padding: 15px 16px 13px;
+    margin-top: 10px;
+}
+
+.wrapped-om-k {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--wa);
+    margin-bottom: 7px;
+}
+
+.wrapped-om-n {
+    font-size: 23px;
+    font-weight: 900;
+    letter-spacing: -.01em;
+    color: #f2f7fd;
+    line-height: 1.1;
+}
+
+.wrapped-om-note {
+    margin-top: 7px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: #9db8d2;
+}
+
+.wrapped-om-block .wrapped-scores {
+    margin: 6px 0 2px;
+}
+
+.wrapped-stakes {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 16px;
+    max-width: 420px;
+}
+
+.wrapped-stake {
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: #dbe7f5;
+    border-left: 3px solid var(--wa);
+    padding-left: 10px;
+}
+
+.wrapped-stake b {
+    color: #f2f7fd;
+}
+
+.wrapped-move {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 7px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    vertical-align: 2px;
+}
+
+.wrapped-move.up {
+    color: #2ec27e;
+    background: rgba(46, 194, 126, .14);
+}
+
+.wrapped-move.dn {
+    color: #f0766a;
+    background: rgba(240, 118, 106, .14);
+}
+
+/* Seed-mover chips ride the row deco slot, whose default side effect is a
+   gold "crowned" name; weekly standings names stay plain. */
+.wrapped-overlay-wk .wrapped-slide[data-kind="standings"] .wrapped-row-n.wrapped-crowned {
+    color: #f2f7fd;
+}
+
 /* Outlined backdrop word: texture behind the type, never over it. */
 .wrapped-overlay-wk .wrapped-slide[data-bgword]::after {
     content: attr(data-bgword);
@@ -47969,6 +48212,52 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 @media (prefers-reduced-motion: reduce) {
     .wrapped-face-crown {
         animation: none;
+    }
+}
+
+/* Phone fullscreen (Kaedon 2026-11-11): the deck fills the viewport
+   edge-to-edge and sits above the dock; no floating card, no hint strip
+   below it. Reuses the canonical 768px breakpoint. Placed after the
+   desktop wrapped rules so it wins the exact-768 overlap. */
+@media (max-width: 768px) {
+    .wrapped-stage {
+        width: 100vw;
+        width: 100dvw;
+        height: 100vh;
+        height: 100dvh;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    .wrapped-hint {
+        display: none;
+    }
+
+    .wrapped-progress {
+        padding-top: max(14px, env(safe-area-inset-top));
+    }
+
+    .wrapped-share,
+    .wrapped-link,
+    .wrapped-pause,
+    .wrapped-close {
+        top: max(46px, calc(env(safe-area-inset-top) + 32px));
+    }
+
+    .wrapped-foot {
+        bottom: max(26px, env(safe-area-inset-bottom));
+    }
+
+    /* Weekly slides anchor under the chrome and span the full height
+       instead of floating mid-deck. */
+    .wrapped-overlay-wk .wrapped-slide {
+        justify-content: flex-start;
+        padding-top: calc(env(safe-area-inset-top) + 104px);
+        padding-bottom: calc(84px + env(safe-area-inset-bottom));
+    }
+
+    .wrapped-overlay-wk .wrapped-slide[data-bgword]::after {
+        top: calc(env(safe-area-inset-top) + 70px);
     }
 }
 
