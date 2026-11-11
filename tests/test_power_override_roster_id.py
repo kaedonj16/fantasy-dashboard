@@ -74,11 +74,13 @@ def test_trailing_space_team_keeps_its_blended_score():
         {"roster_id": "4", "team_name": "Delta", "power_score": 0.3, "rank": 4},
     ]
     rows = _power_rows(_render(blended))
+    # Displayed scores are the 0-100 Power Index of the blended z
+    # (1.4 -> 85, 1.2 -> 80, 1.1 -> 78, 0.3 -> 58).
     assert rows == [
-        (1, "Alpha", "1.4"),
-        (2, "Beta", "1.2"),
-        (3, "Nunky Figgas", "1.1"),  # not the fabricated 0.0
-        (4, "Delta", "0.3"),
+        (1, "Alpha", "85"),
+        (2, "Beta", "80"),
+        (3, "Nunky Figgas", "78"),  # not the fabricated 0.0 (index 50)
+        (4, "Delta", "58"),
     ]
 
 
@@ -92,8 +94,9 @@ def test_unmatched_team_keeps_performance_score_instead_of_zero():
     ]
     rows = _power_rows(_render(blended))
     by_name = {name: (pos, score) for pos, name, score in rows}
-    # Delta falls back to its team_stats PowerScore (0.9), never 0.0.
-    assert by_name["Delta"] == (4, "0.9")
+    # Delta falls back to its team_stats PowerScore (0.9, shown as Power
+    # Index 73), never the fabricated 0.0 (index 50).
+    assert by_name["Delta"] == (4, "73")
 
 
 def test_movement_arrow_resolves_by_roster_id():

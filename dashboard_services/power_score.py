@@ -23,6 +23,7 @@ no longer counts at full value.
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 _CORE_POS = {"QB", "RB", "WR", "TE"}
@@ -99,6 +100,22 @@ def z_scores(values: Sequence[float]) -> list[float]:
     if std == 0:
         return [0.0] * n
     return [(v - mean) / std for v in values]
+
+
+def power_index(score) -> int:
+    """Display transform for a PowerScore z: the 0-100 Power Index.
+
+    ``clip(round-half-up(50 + 25 * z), 1, 99)`` — a league-average team
+    (z 0) prints 50, a dominant #1 (z ~1.6) prints 90, and equal z gaps
+    stay equal index gaps. Render-time only: the stored ``power_score``
+    remains the z everywhere internally (sorting, components, assistant
+    context), so rankings and order never change with the display.
+    """
+    try:
+        z = float(score or 0.0)
+    except (TypeError, ValueError):
+        z = 0.0
+    return max(1, min(99, math.floor(50.0 + 25.0 * z + 0.5)))
 
 
 def season_phase_from_progress(

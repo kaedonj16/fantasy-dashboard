@@ -7,6 +7,7 @@ from dashboard_services.power_score import (
     approximate_power_score_frame,
     blended_team_scores,
     performance_power_scores,
+    power_index,
     season_phase_from_progress,
     starter_lineup_value,
     z_scores,
@@ -19,6 +20,21 @@ def test_z_scores_population():
     zs = z_scores([0.0, 2.0])
     assert zs[0] == pytest.approx(-1.0)
     assert zs[1] == pytest.approx(1.0)
+
+
+def test_power_index_display_transform():
+    # The BLITZ board from the approved mock: z -> Power Index, exact.
+    zs = [1.6, 0.8, 0.6, 0.3, 0.1, -0.1, -0.3, -0.4, -0.9, -1.7]
+    assert [power_index(z) for z in zs] == [90, 70, 65, 58, 53, 48, 43, 40, 28, 8]
+    # League average anchors at 50; halves round UP (52.5 -> 53, 47.5 -> 48),
+    # not banker's rounding.
+    assert power_index(0.0) == 50
+    assert power_index(0.1) == 53
+    assert power_index(-0.1) == 48
+    # Clipped to 1..99 at the extremes; junk input reads as league average.
+    assert power_index(4.0) == 99
+    assert power_index(-4.0) == 1
+    assert power_index(None) == 50
 
 
 def test_season_phase_from_progress():

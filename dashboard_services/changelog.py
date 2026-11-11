@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-11",
+        "tag": "update",
+        "text": "Power Rankings now read as a Power Index from 1 to 99: the best team in your league sits in the 90s, a league-average team is a 50, and the bars fill on that same scale. The rankings themselves do not change: same order and same math underneath, just a score that is easier to follow from week to week.",
+        "link": "/standings"
+    },
+    {
         "date": "2026-11-10",
         "tag": "update",
         "text": "Playoff Path's Root For list now shows how each game also moves your bye and 1 seed odds, next to the playoff swing.",

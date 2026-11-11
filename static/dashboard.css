@@ -49708,6 +49708,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pwr-bar > div { height: 100%; border-radius: var(--radius-sm); background: var(--accent); }
 .pwr-right { text-align: right; }
 .pwr-score { font-family: "Archivo", system-ui, sans-serif; font-weight: 800; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+.pwr-score-label { display: block; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-top: 1px; }
 
 /* ---- Power panel stretch (desktop standings two-col) -------
    The power card fills the standings card's height: the layout row
