@@ -1230,23 +1230,59 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     return slides
 
 
-def _wrapped_row_html(k, n, v, deco="", is_top=False) -> str:
+def _wrapped_row_html(k, n, v, deco="", is_top=False, mgr="") -> str:
     """One wrapped rows-slide row: kicker, name, value, plus optional raw
     deco HTML (e.g. the crown on the week's top scorer). When is_top is set,
     the row gets the gold accent-bar treatment with a top-scorer label
-    instead of the deco."""
+    instead of the deco. ``mgr`` is an optional manager name rendered muted
+    after the name (Playoff Picture rows carry team + manager)."""
     _row_cls = "wrapped-row wrapped-row-top" if is_top else "wrapped-row"
     _n_cls = "wrapped-row-n wrapped-crowned" if (deco and not is_top) else "wrapped-row-n"
     _deco = "" if is_top else deco
+    _mgr = (f" <span class='wrapped-row-mgr'>{_esc(str(mgr))}</span>"
+            if mgr else "")
     _label = ("<div class='wrapped-row-top-label'>&#9733; Highest scorer of the week</div>"
               if is_top else "")
     return (
         f"<div class='{_row_cls}'>"
         f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
         "<div class='wrapped-row-m'>"
-        f"<span class='{_n_cls}'>{_esc(str(n))}{_deco}</span>"
+        f"<span class='{_n_cls}'>{_esc(str(n))}{_deco}{_mgr}</span>"
         + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
         + "</div>" + _label + "</div>"
+    )
+
+
+def _wrapped_face_row_html(k, n, v, img="", is_top=False) -> str:
+    """One Weekly Wrapped position-leader row with a real player headshot:
+    a clean cutout with no disc behind it (the initial letter is only the
+    image-failure fallback, covered the moment the photo loads). The top
+    scorer is crowned on the photo itself: solid gold crown worn on the
+    head, soft gold halo centered behind the headshot only, both absolutely
+    positioned so the row geometry matches every other performer row."""
+    _init = _esc((str(n)[:1] or "?").upper())
+    _face = "<div class='wrapped-face'>"
+    if is_top:
+        _face += "<span class='wrapped-face-glow' aria-hidden='true'></span>"
+    _face += f"<span class='wrapped-face-init' aria-hidden='true'>{_init}</span>"
+    if img:
+        _face += (f"<img class='wrapped-face-img' src='{_esc(str(img))}' alt='' "
+                  "loading='lazy' decoding='async' onerror='this.remove()'>")
+    if is_top:
+        _face += ("<i class='fa-solid fa-crown wrapped-face-crown' "
+                  "aria-hidden='true'></i>")
+    _face += "</div>"
+    _pill = "<span class='wrapped-top-pill'>TOP SCORE</span>" if is_top else ""
+    _row_cls = "wrapped-row wrapped-perf wrapped-row-top" if is_top else "wrapped-row wrapped-perf"
+    return (
+        f"<div class='{_row_cls}'>"
+        + _face
+        + "<div class='wrapped-perf-m'>"
+        + f"<div class='wrapped-perf-n'><span class='wrapped-row-n'>{_esc(str(n))}</span>{_pill}</div>"
+        + f"<div class='wrapped-perf-k'>{_esc(str(k))}</div>"
+        + "</div>"
+        + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+        + "</div>"
     )
 
 
@@ -1339,13 +1375,33 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
             parts = []
             if s.get("sections"):
                 for _sec in s["sections"]:
+                    _slug = _esc(str(_sec.get('title', '')).strip().lower()
+                                 .replace(' ', '-'))
                     parts.append(
-                        f"<div class='wrapped-row-sec'>{_esc(str(_sec.get('title', '')))}</div>")
-                    parts.extend(_wrapped_row_html(*_r)
-                                 for _r in (_sec.get("rows") or []))
+                        f"<div class='wrapped-row-sec wrapped-row-sec-{_slug}'>"
+                        f"{_esc(str(_sec.get('title', '')))}</div>")
+                    for _r in (_sec.get("rows") or []):
+                        if len(_r) > 3:
+                            parts.append(_wrapped_row_html(_r[0], _r[1], _r[2],
+                                                           mgr=_r[3]))
+                        else:
+                            parts.append(_wrapped_row_html(*_r))
+            elif s.get("faces") is not None:
+                _faces = s.get("faces") or {}
+                parts.extend(
+                    _wrapped_face_row_html(_r[0], _r[1], _r[2],
+                                           _faces.get(str(_r[0]), ""),
+                                           bool(len(_r) > 4 and _r[4]))
+                    for _r in s["rows"])
             else:
                 parts.extend(_wrapped_row_html(*_r) for _r in s["rows"])
-            body = kicker + f"<div class='wrapped-rows'>{''.join(parts)}</div>" + sub
+            _alive_html = ""
+            if s.get("alive"):
+                _alive_html = ("<div class='wrapped-alive'><b>Still alive</b> "
+                               + _esc(" · ".join(str(_a) for _a in s["alive"]))
+                               + "</div>")
+            body = (kicker + f"<div class='wrapped-rows'>{''.join(parts)}</div>"
+                    + _alive_html + sub)
         elif s.get("preview_teams"):
             # Next week's Game of the Week (a preview: no winner yet). Neutral
             # stacked hero, the projected win-% split bar, projected scoreline.
@@ -1411,25 +1467,27 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 + sub
             )
 
+        _bgw = (f" data-bgword='{_esc(str(s['bgword']))}'"
+                if s.get("bgword") else "")
         slide_html.append(
-            f"<section class='wrapped-slide{' wrapped-mvp' if s.get('mvp') else ''}' data-kind='{kind}'>{body}{foot}</section>"
+            f"<section class='wrapped-slide{' wrapped-mvp' if s.get('mvp') else ''}' data-kind='{kind}'{_bgw}>{body}{foot}</section>"
         )
 
     share_json = json.dumps(share_data or {}).replace("</", "<\\/")
     _pro_cta_attr = ' data-pro-cta="1"' if show_pro_cta else ""
+    _wk_cls = " wrapped-overlay-wk" if ns == "weekly-wrapped" else ""
     return f"""
-    <div class="wrapped-overlay" id="{ns}Overlay" hidden aria-hidden="true"{_pro_cta_attr}>
+    <div class="wrapped-overlay{_wk_cls}" id="{ns}Overlay" hidden aria-hidden="true"{_pro_cta_attr}>
       <div class="wrapped-progress">{bars}</div>
-      <button type="button" class="wrapped-share" id="{ns}Share" aria-label="Share">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Share</span>
+      <button type="button" class="wrapped-share" id="{ns}Share" aria-label="Share" title="Share">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       </button>
-      <button type="button" class="wrapped-link" id="{ns}Link" aria-label="Copy shareable link">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Link</span>
+      <button type="button" class="wrapped-link" id="{ns}Link" aria-label="Copy shareable link" title="Copy shareable link">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       </button>
-      <button type="button" class="wrapped-pause" id="{ns}Pause" aria-label="Pause auto-advance" aria-pressed="false">
-        <svg class="wp-ic-pause" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
-        <svg class="wp-ic-play" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>
-        <span>Pause</span>
+      <button type="button" class="wrapped-pause" id="{ns}Pause" aria-label="Pause auto-advance" title="Pause auto-advance" aria-pressed="false">
+        <svg class="wp-ic-pause" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+        <svg class="wp-ic-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>
       </button>
       <button type="button" class="wrapped-close" id="{ns}Close" aria-label="Close">&times;</button>
       <div class="wrapped-stage" id="{ns}Stage">{''.join(slide_html)}</div>
@@ -1522,6 +1580,34 @@ def _mfield(m, key):
         return getattr(m, key, None)
 
 
+def _wrapped_face_url(pid, meta, pos, nfl, platform) -> str:
+    """Headshot URL for a Weekly Wrapped performer row, via the same
+    sources the rest of the site uses: the canonical ESPN headshot
+    (players-index espnID / stored espnHeadshot, combiner-cropped) from
+    service._scorer_headshot_url, the NFL team logo for DEF, and the
+    Sleeper CDN thumb as the Sleeper fallback. "" when nothing resolves;
+    the row then falls back to the player's initial."""
+    pid = str(pid or "")
+    try:
+        from dashboard_services.service import _scorer_headshot_url
+        url = _scorer_headshot_url({"pid": pid, **(meta or {})})
+        if url:
+            return url
+    except Exception:
+        pass
+    if str(pos or "").upper() == "DEF":
+        try:
+            from utils.utils import canon_team, def_team_logo_urls
+            team = canon_team(nfl or pid) or ""
+            local, espn = def_team_logo_urls(team) if team else ("", "")
+            return local or espn or ""
+        except Exception:
+            return ""
+    if pid.isdigit() and str(platform or "sleeper") == "sleeper":
+        return f"https://sleepercdn.com/content/nfl/players/thumb/{pid}.jpg"
+    return ""
+
+
 def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
     """Per-player fantasy production for a single week from that week's
     boxscores. Returns {'top': entry, 'by_pos': {QB/RB/WR/TE/K/DEF: entry},
@@ -1562,13 +1648,20 @@ def _wrapped_weekly_player_leaders(ctx: dict, week) -> dict:
                 continue
             pos = str(p.get("pos") or p.get("position") or "").upper()
             nfl = str(p.get("team") or p.get("nfl") or "")
-            entry = {"name": str(name), "pos": pos, "nfl": nfl, "pts": round(pv, 1)}
+            entry = {"name": str(name), "pos": pos, "nfl": nfl,
+                     "pts": round(pv, 1), "pid": pid}
             if top is None or pv > top["pts"]:
                 top = entry
             if pos in _POS and (pos not in by_pos or pv > by_pos[pos]["pts"]):
                 by_pos[pos] = entry
             if pid in starters and pv > 0 and (dud is None or pv < dud["pts"]):
                 dud = entry
+    # Resolve headshots only for the entries the deck actually shows.
+    for _e in [top, dud, *by_pos.values()]:
+        if _e is not None:
+            _e["img"] = _wrapped_face_url(_e.get("pid"),
+                                          players_map.get(str(_e.get("pid") or "")),
+                                          _e.get("pos"), _e.get("nfl"), platform)
     return {"top": top, "by_pos": by_pos, "dud": dud}
 
 
@@ -1646,6 +1739,222 @@ def _next_week_gotw_game(ctx: dict, week: int, platform: str, league_id: str,
         return None
 
 
+def _wrapped_schedule_pairs(entries) -> list:
+    """(roster_id, roster_id) pairs from one week's schedule entries, in any
+    of the shapes the wrapped ctx can carry: raw provider rows (roster_id +
+    matchup_id, dict or MatchupRow), built matchup previews (left/right team
+    blocks), or recap-style games (roster_id_a / roster_id_b)."""
+    rows = [e for e in (entries or []) if e is not None]
+    pairs, seen = [], set()
+
+    def _add(a, b):
+        if a is None or b is None:
+            return
+        a, b = str(a), str(b)
+        if not a or not b or a == b:
+            return
+        key = tuple(sorted((a, b)))
+        if key not in seen:
+            seen.add(key)
+            pairs.append((a, b))
+
+    by_mid: dict = {}
+    for e in rows:
+        left, right = _mfield(e, "left"), _mfield(e, "right")
+        if isinstance(left, dict) and isinstance(right, dict):
+            _add(left.get("roster_id"), right.get("roster_id"))
+            continue
+        if _mfield(e, "roster_id_a") is not None or _mfield(e, "roster_id_b") is not None:
+            _add(_mfield(e, "roster_id_a"), _mfield(e, "roster_id_b"))
+            continue
+        rid, mid = _mfield(e, "roster_id"), _mfield(e, "matchup_id")
+        if rid is not None and mid is not None:
+            by_mid.setdefault(str(mid), []).append(rid)
+    for rids in by_mid.values():
+        if len(rids) == 2:
+            _add(rids[0], rids[1])
+    return pairs
+
+
+def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
+    """'Playoff Picture' slide for a completed week: the teams that have
+    mathematically clinched a berth (or a bye) and the teams eliminated, as
+    of the end of that week. Deterministic, from the same scenarios engine
+    the Standings Playoff Picture uses (data_building.playoff_scenarios),
+    fed with records/points-for through the wrapped week and the remaining
+    regular-season schedule. None when the week is outside the scenarios
+    window (more than five regular-season weeks left), when the remaining
+    schedule can't be read, or when no team is settled yet, so the deck
+    simply has no slide until the race actually decides something."""
+    try:
+        from data_building.playoff_scenarios import SHOW_WITHIN_WEEKS, compute_scenarios
+
+        settings: dict = {}
+        settings.update((ctx.get("league") or {}).get("settings") or {})
+        settings.update(ctx.get("league_settings") or {})
+        try:
+            playoff_start = int(settings.get("playoff_week_start") or 15)
+        except (TypeError, ValueError):
+            playoff_start = 15
+        try:
+            playoff_teams = int(settings.get("playoff_teams") or 6)
+        except (TypeError, ValueError):
+            playoff_teams = 6
+        remaining_calendar = (playoff_start - 1) - week
+        if remaining_calendar < 0 or remaining_calendar > SHOW_WITHIN_WEEKS:
+            return None
+
+        # Records / points-for through the wrapped week, the same finalized
+        # df_weekly aggregation the standings slide uses, kept for every team.
+        df = ctx.get("df_weekly")
+        if (df is None or getattr(df, "empty", True)
+                or not {"week", "points", "points_against", "roster_id"} <= set(df.columns)):
+            return None
+        df = df.copy()
+        df = df[pd.to_numeric(df["week"], errors="coerce") <= week]
+        if "finalized" in df.columns:
+            df = df[df["finalized"] == True]  # noqa: E712 - pandas mask, mirrors standings slide
+        _pts = pd.to_numeric(df["points"], errors="coerce")
+        _opp = pd.to_numeric(df["points_against"], errors="coerce")
+        df = df[_pts.notna() & _opp.notna() & (_pts > 0)]
+        if df.empty:
+            return None
+        df = df.assign(_w=(_pts.loc[df.index] > _opp.loc[df.index]).astype(int),
+                       _l=(_pts.loc[df.index] < _opp.loc[df.index]).astype(int),
+                       _t=(_pts.loc[df.index] == _opp.loc[df.index]).astype(int),
+                       _pf=_pts.loc[df.index])
+        agg = (df.groupby("roster_id")
+               .agg(w=("_w", "sum"), l=("_l", "sum"), t=("_t", "sum"), pf=("_pf", "sum"))
+               .sort_values(["w", "t", "pf"], ascending=[False, False, False]))
+        if len(agg) <= playoff_teams:
+            return None
+
+        rmap = ctx.get("roster_map") or {}
+        owner_by_rid: dict = {}
+        if "owner" in df.columns:
+            for _rid, _o in zip(df["roster_id"], df["owner"]):
+                owner_by_rid[str(_rid)] = str(_o)
+
+        # compute_scenarios keys teams by int roster id; map arbitrary
+        # provider ids onto small ints and back.
+        idx_of: dict = {}
+        teams = []
+        div_by_rid: dict = {}
+        for _r in (ctx.get("rosters") or []):
+            if isinstance(_r, dict) and _r.get("roster_id") is not None:
+                try:
+                    div_by_rid[str(_r["roster_id"])] = int(
+                        (_r.get("settings") or {}).get("division") or 0)
+                except (TypeError, ValueError):
+                    pass
+        for _i, (_rid, _r) in enumerate(agg.iterrows()):
+            idx_of[str(_rid)] = _i + 1
+            teams.append({"roster_id": _i + 1, "wins": int(_r["w"]),
+                          "ties": int(_r["t"]), "pf": float(_r["pf"]),
+                          "division": div_by_rid.get(str(_rid), 0)})
+        divisions = False
+        try:
+            divisions = int(settings.get("divisions") or 0) >= 2
+        except (TypeError, ValueError):
+            divisions = False
+
+        # Remaining regular-season schedule: the ctx's built matchups when
+        # present, else the provider's raw rows for that week.
+        platform = str(ctx.get("platform") or "sleeper")
+        league_id = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
+        season = ctx.get("season")
+        mbw = ctx.get("matchups_by_week") or {}
+        remaining: dict = {}
+        for _w in range(week + 1, playoff_start):
+            pairs = _wrapped_schedule_pairs(mbw.get(_w) or mbw.get(str(_w)))
+            if not pairs and league_id:
+                try:
+                    from dashboard_services.platform_api import get_matchups
+                    pairs = _wrapped_schedule_pairs(
+                        get_matchups(platform, league_id, _w, season) or [])
+                except Exception:
+                    pairs = []
+            mapped = [(idx_of[a], idx_of[b]) for a, b in pairs
+                      if a in idx_of and b in idx_of]
+            if mapped:
+                remaining[_w] = mapped
+        if not remaining:
+            return None
+
+        try:
+            from utils.standings import bye_count
+            n_byes = bye_count(playoff_teams)
+        except Exception:
+            n_byes = 0
+        scen = compute_scenarios(teams, remaining, playoff_teams,
+                                 n_byes=n_byes, divisions=divisions)
+        if not scen.get("show"):
+            return None
+        scen_teams = scen.get("teams") or {}
+
+        # Manager names from the same ctx the standings slide reads:
+        # rosters carry owner_id, users carry the public display name.
+        mgr_by_rid: dict = {}
+        try:
+            from dashboard_services.display_names import username_from_user
+            _users = {str(_u.get("user_id")): _u
+                      for _u in (ctx.get("users") or [])
+                      if isinstance(_u, dict) and _u.get("user_id") is not None}
+            for _ro in (ctx.get("rosters") or []):
+                if isinstance(_ro, dict) and _ro.get("roster_id") is not None:
+                    _u = _users.get(str(_ro.get("owner_id") or ""))
+                    _mgr = username_from_user(_u) if _u else ""
+                    if _mgr:
+                        mgr_by_rid[str(_ro["roster_id"])] = _mgr
+        except Exception:
+            mgr_by_rid = {}
+
+        groups = {"clinched_bye": [], "clinched": [], "eliminated": []}
+        alive = []
+        for _i, (_rid, _r) in enumerate(agg.iterrows()):
+            entry = scen_teams.get(idx_of[str(_rid)]) or {}
+            status = entry.get("status")
+            _nm = (rmap.get(_rid, rmap.get(str(_rid)))
+                   or owner_by_rid.get(str(_rid)) or f"Team {_rid}")
+            if status not in groups:
+                alive.append(str(_nm))
+                continue
+            _rec = f"{int(_r['w'])}-{int(_r['l'])}"
+            if int(_r["t"]):
+                _rec += f"-{int(_r['t'])}"
+            _mgr = mgr_by_rid.get(str(_rid), "")
+            if _mgr and _mgr != str(_nm):
+                groups[status].append((f"#{_i + 1}", str(_nm), _rec, _mgr))
+            else:
+                groups[status].append((f"#{_i + 1}", str(_nm), _rec))
+        if not any(groups.values()):
+            return None
+
+        sections = []
+        if groups["clinched_bye"]:
+            sections.append({"title": "CLINCHED A BYE", "rows": groups["clinched_bye"]})
+        if groups["clinched"]:
+            sections.append({"title": "CLINCHED", "rows": groups["clinched"]})
+        if groups["eliminated"]:
+            sections.append({"title": "ELIMINATED", "rows": groups["eliminated"]})
+        _in = len(groups["clinched_bye"]) + len(groups["clinched"])
+        _out = len(groups["eliminated"])
+        _parts = []
+        if _in:
+            _parts.append(f"{_in} clinched")
+        if _out:
+            _parts.append(f"{_out} eliminated")
+        return {"kind": "playoffs", "eyebrow": "PLAYOFF PICTURE",
+                "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+                "sub": f"{' · '.join(_parts)} through Week {week}",
+                "sections": sections, "bgword": "PLAYOFFS",
+                "alive": alive,
+                "clinched": [r[1] for r in groups["clinched_bye"] + groups["clinched"]],
+                "eliminated": [r[1] for r in groups["eliminated"]]}
+    except Exception:
+        return None  # best-effort slide; the deck renders without it
+
+
 def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                  include_players: bool = True) -> list:
     """Ordered 'Weekly Wrapped' story slides for one completed week. Each slide:
@@ -1696,7 +2005,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
         slides.append({**_num("topscore", f"HIGHEST SCORE · WEEK {week}",
                               hi_pts, 1, " PTS", str(hi.get("owner", "-")),
                               "The week's biggest team total"),
-                       })
+                       "bgword": "HIGHEST"})
 
     lo = wdf.loc[wdf["points"].idxmin()]
     lo_pts = float(lo.get("points") or 0)
@@ -1704,7 +2013,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
         slides.append({**_num("lowscore", f"LOWEST SCORE · WEEK {week}",
                               lo_pts, 1, " PTS", str(lo.get("owner", "-")),
                               "The week's quietest team total"),
-                       })
+                       "bgword": "LOWEST"})
 
     # Pair the week's head-to-head results via matchup_id.
     matchup_rows = []
@@ -1734,6 +2043,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                   f"{bo['winner']} over {bo['loser']}",
                   "The week's most lopsided result")
         _b["scoreline"] = f"{bo['winner_pts']:.1f}-{bo['loser_pts']:.1f}"
+        _b["bgword"] = "BLOWOUT"
         slides.append(_b)
 
     if len(matchup_rows) >= 2:
@@ -1742,6 +2052,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                   f"{nb['winner']} over {nb['loser']}",
                   "Decided by the slimmest margin of the week")
         _c["scoreline"] = f"{nb['winner_pts']:.1f}-{nb['loser_pts']:.1f}"
+        _c["bgword"] = "CLOSEST"
         slides.append(_c)
 
     # ── Player awards: best at each position (the highest scorer gets a crown),
@@ -1767,7 +2078,9 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                            "sub": "The week's points leader at every spot",
-                           "rows": pos_rows})
+                           "rows": pos_rows, "bgword": "LEADERS",
+                           "faces": {p: str(by_pos[p].get("img") or "")
+                                     for p in _poses}})
 
         dud = (leaders or {}).get("dud")
         if dud and dud.get("pts"):
@@ -1776,7 +2089,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                   " PTS", dud["name"],
                                   f"{_dmeta}, the week's coldest starter" if _dmeta
                                   else "The week's coldest starter"),
-                           })
+                           "bgword": "DUD"})
 
         # ── Coaching report: efficiency top 3, biggest bust, worst start/sit
         # calls — one slide built from the same datasets the recap's Lineup
@@ -1847,7 +2160,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             slides.append({"kind": "coaching", "eyebrow": "COACHING REPORT",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                            "sub": "Efficiency, busts & the week's worst start/sit calls",
-                           "sections": _coach_sections})
+                           "sections": _coach_sections, "bgword": "COACHING"})
 
     # ── Standings: where the league stands after this week ─────────────────
     # Recap beat before the preview closer: top 5 by record, then points for.
@@ -1885,9 +2198,18 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 slides.append({"kind": "standings", "eyebrow": "LEAGUE STANDINGS",
                                "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                                "sub": f"Through Week {week}",
-                               "rows": _srows})
+                               "rows": _srows, "bgword": "STANDINGS"})
         except Exception:
             pass  # standings slide is best-effort; the deck renders without it
+
+    # ── Playoff picture: who clinched / who is out, as of this week ───────
+    # Only inside the stretch run and only once a berth is actually settled;
+    # the helper returns None otherwise. Lazy-build only (it may fetch the
+    # remaining schedule), like the GOTW preview below.
+    if include_players:
+        _playoff_slide = _weekly_wrapped_playoff_slide(ctx, week)
+        if _playoff_slide:
+            slides.append(_playoff_slide)
 
     # ── Game of the week: a look AHEAD at next week's featured matchup ─────
     # The GOTW is a preview concept -- there is no winner yet. Closing teaser
@@ -1919,6 +2241,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                   "win_prob_a": _game.get("win_prob_a"),
                   "why": _why}
             _g["scoreline"] = _scoreline
+            _g["bgword"] = "SHOWDOWN"
             slides.append(_g)
 
     return slides
@@ -1940,6 +2263,17 @@ def _wrapped_weekly_share_data(slides: list, league_name: str, season, week) -> 
                          if len(_r) > 4 and _r[4]), None)
         if _crowned:
             highlights.append(_hi("TOP PLAYER", _crowned[1], _crowned[2]))
+    pp = by_kind.get("playoffs")
+    if pp and (pp.get("clinched") or pp.get("eliminated")):
+        _bits = []
+        if pp.get("clinched"):
+            _bits.append(f"{len(pp['clinched'])} in")
+        if pp.get("eliminated"):
+            _bits.append(f"{len(pp['eliminated'])} out")
+        highlights.append(_hi("PLAYOFF PICTURE",
+                              ", ".join((pp.get("clinched") or [])[:2]
+                                        + (pp.get("eliminated") or [])[:1]),
+                              " · ".join(_bits)))
     gw = by_kind.get("gotw")
     if gw and gw.get("big"):
         highlights.append(_hi("GAME OF THE WEEK", gw["big"],
@@ -1984,9 +2318,10 @@ def render_weekly_wrapped_overlay(ctx: dict, week, show_pro_cta: bool = False) -
             "eyebrow": f"WEEK {week} RECAP",
             "sub": "Tap Share to send it to the group chat",
             "recap": share_data,
+            "bgword": "RECAP",
         })
     return _wrapped_overlay_markup(slides, share_data, ns="weekly-wrapped",
-                                   footer_label=f"WEEK {week}",
+                                   footer_label=f"WEEK {week} WRAPPED",
                                    show_pro_cta=show_pro_cta)
 
 
@@ -2200,22 +2535,22 @@ def _restore_wrapped_share_chrome(overlay_html: str, ns: str,
     pieces = []
     if not _has_id(f"{ns}Share"):
         pieces.append(
-            f'<button type="button" class="wrapped-share" id="{ns}Share" aria-label="Share">'
-            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Share</span>'
+            f'<button type="button" class="wrapped-share" id="{ns}Share" aria-label="Share" title="Share">'
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>'
             "</button>"
         )
     if not _has_id(f"{ns}Link"):
         pieces.append(
-            f'<button type="button" class="wrapped-link" id="{ns}Link" aria-label="Copy shareable link">'
-            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Link</span>'
+            f'<button type="button" class="wrapped-link" id="{ns}Link" aria-label="Copy shareable link" title="Copy shareable link">'
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
             "</button>"
         )
     if not _has_id(f"{ns}Pause"):
         pieces.append(
-            f'<button type="button" class="wrapped-pause" id="{ns}Pause" aria-label="Pause auto-advance" aria-pressed="false">'
-            '<svg class="wp-ic-pause" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
-            '<svg class="wp-ic-play" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>'
-            "<span>Pause</span></button>"
+            f'<button type="button" class="wrapped-pause" id="{ns}Pause" aria-label="Pause auto-advance" title="Pause auto-advance" aria-pressed="false">'
+            '<svg class="wp-ic-pause" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
+            '<svg class="wp-ic-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>'
+            "</button>"
         )
     if not _has_id(f"{ns}Close"):
         pieces.append(
@@ -2418,14 +2753,25 @@ _WRAPPED_BOOTSTRAP_JS = r"""
   var F_DISP = "'InterVariable', 'Archivo', -apple-system, sans-serif";
   function paintWrappedCard(data, logo) {
     var W = 1080, H = 1920, PAD = 90, PURPLE = '#a78bfa', GOLD = '#f5c451';
+    // Weekly decks (data.week set) paint in the restyle's darker navy with
+    // a sky accent, matching the weekly slides; season cards keep purple.
+    var WK = !!data.week, ACC = WK ? '#38bdf8' : PURPLE;
     var c = document.createElement('canvas'); c.width = W; c.height = H;
     var ctx = c.getContext('2d');
-    // Ground: deep purple gradient + one soft glow, top-left.
+    // Ground: deep gradient + one soft glow, top-left.
     var g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#221247'); g.addColorStop(0.55, '#120b26'); g.addColorStop(1, '#07060c');
+    if (WK) {
+      g.addColorStop(0, '#0d2137'); g.addColorStop(0.55, '#081a2d'); g.addColorStop(1, '#050f1a');
+    } else {
+      g.addColorStop(0, '#221247'); g.addColorStop(0.55, '#120b26'); g.addColorStop(1, '#07060c');
+    }
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     var rg = ctx.createRadialGradient(W * 0.2, 480, 0, W * 0.2, 480, 760);
-    rg.addColorStop(0, 'rgba(124,58,237,0.30)'); rg.addColorStop(1, 'rgba(124,58,237,0)');
+    if (WK) {
+      rg.addColorStop(0, 'rgba(56,189,248,0.20)'); rg.addColorStop(1, 'rgba(56,189,248,0)');
+    } else {
+      rg.addColorStop(0, 'rgba(124,58,237,0.30)'); rg.addColorStop(1, 'rgba(124,58,237,0)');
+    }
     ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
@@ -2435,7 +2781,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     var yr = _wkTag ? ('W' + data.week) : ("'" + String(data.season || '').slice(-2));
     ctx.save();
     ctx.font = '900 330px ' + F_DISP;
-    ctx.strokeStyle = PURPLE; ctx.lineWidth = 4; ctx.globalAlpha = 0.13;
+    ctx.strokeStyle = ACC; ctx.lineWidth = 4; ctx.globalAlpha = 0.13;
     var yw = ctx.measureText(yr).width;
     ctx.strokeText(yr, W - yw + 40, 400);
     ctx.restore();
@@ -2447,7 +2793,7 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     }
     ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.font = '800 46px ' + F_BODY;
     ctx.fillText(ellip(ctx, data.league || 'League', W - 2 * PAD), PAD, 388);
-    ctx.fillStyle = PURPLE;
+    ctx.fillStyle = ACC;
     ctx.fillRect(PAD, 432, 54, 8);
     ctx.font = '800 34px ' + F_BODY;
     lsLeft(ctx, _wkTag ? (_wkTag + ' WRAPPED') : 'SEASON WRAPPED', PAD + 76, 444, 8);
@@ -2487,12 +2833,12 @@ _WRAPPED_BOOTSTRAP_JS = r"""
     var hs = (data.highlights || []).slice(0, 5);
     var valX = W - PAD;
     hs.forEach(function (row, i) {
-      ctx.fillStyle = PURPLE; ctx.font = '800 28px ' + F_BODY;
+      ctx.fillStyle = ACC; ctx.font = '800 28px ' + F_BODY;
       lsLeft(ctx, String(row.k || '').toUpperCase(), PAD, y, 6);
       var vtxt = String(row.v || '');
       ctx.font = '900 48px ' + F_DISP;
       var vw = vtxt ? ctx.measureText(vtxt).width : 0;
-      if (vtxt) { ctx.fillStyle = PURPLE; ctx.fillText(vtxt, valX - vw, y + 62); }
+      if (vtxt) { ctx.fillStyle = ACC; ctx.fillText(vtxt, valX - vw, y + 62); }
       ctx.fillStyle = '#ffffff'; ctx.font = '800 46px ' + F_BODY;
       ctx.fillText(ellip(ctx, row.n, (valX - PAD) - (vw ? vw + 34 : 0)), PAD, y + 62);
       if (i < hs.length - 1) {

@@ -131,8 +131,10 @@ def test_weekly_wrapped_pos_leaders_crowns_top_scorer(monkeypatch):
     html = H.render_weekly_wrapped_overlay(ctx, 1)
     before, _, after = html.partition("data-kind='posleaders'")
     sec = before.rsplit("<section", 1)[1] + "data-kind='posleaders'" + after.split("</section>", 1)[0]
-    assert sec.count("wrapped-row wrapped-row-top") == 1
-    assert "Highest scorer of the week" in sec
-    # The accent bar sits on the top scorer's row.
-    _top_idx = sec.find("wrapped-row wrapped-row-top")
+    assert sec.count("wrapped-perf wrapped-row-top") == 1
+    # The top scorer is crowned on his headshot, with the TOP SCORE pill.
+    assert "wrapped-face-crown" in sec
+    assert "TOP SCORE" in sec
+    # The crowned row is the top scorer's row.
+    _top_idx = sec.find("wrapped-perf wrapped-row-top")
     assert "R Bee" in sec[_top_idx:_top_idx + 500]

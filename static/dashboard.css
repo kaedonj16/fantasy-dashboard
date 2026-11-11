@@ -46260,11 +46260,12 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    justify-content: center;
+    width: 38px;
     height: 38px;
-    padding: 0 15px 0 13px;
+    padding: 0;
     border: 0;
-    border-radius: var(--radius);
+    border-radius: 50%;
     background: rgba(255, 255, 255, .12);
     color: #fff;
     font-size: 15px;
@@ -46288,20 +46289,21 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     animation: wrapLaunchSpin .8s linear infinite;
 }
 
-/* Copy-link pill: sits next to Share, same chrome. */
+/* Copy-link button: icon-only circle next to Share, same chrome. */
 .wrapped-link {
     position: absolute;
     top: 46px;
-    left: 108px;
+    left: 62px;
     z-index: 6;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    justify-content: center;
+    width: 38px;
     height: 38px;
-    padding: 0 15px 0 13px;
+    padding: 0;
     border: 0;
-    border-radius: var(--radius);
+    border-radius: 50%;
     background: rgba(255, 255, 255, .12);
     color: #fff;
     font-size: 15px;
@@ -46316,20 +46318,21 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     background: rgba(255, 255, 255, .22);
 }
 
-/* Pause/play pill: sits next to Link, same chrome. */
+/* Pause/play button: icon-only circle next to Link, same chrome. */
 .wrapped-pause {
     position: absolute;
     top: 46px;
-    left: 196px;
+    left: 108px;
     z-index: 6;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    justify-content: center;
+    width: 38px;
     height: 38px;
-    padding: 0 15px 0 13px;
+    padding: 0;
     border: 0;
-    border-radius: var(--radius);
+    border-radius: 50%;
     background: rgba(255, 255, 255, .12);
     color: #fff;
     font-size: 15px;
@@ -46378,12 +46381,12 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     }
     .wrapped-link {
         top: calc((100vh - var(--wrap-h)) / 2 + 44px);
-        left: calc((100vw - var(--wrap-w)) / 2 + 106px);
+        left: calc((100vw - var(--wrap-w)) / 2 + 60px);
     }
     .wrapped-pause {
-        /* Clear the progress bar (at +6px, ~35px tall) so the pill doesn't sit on it. */
+        /* Clear the progress bar (at +6px, ~35px tall) so the button doesn't sit on it. */
         top: calc((100vh - var(--wrap-h)) / 2 + 44px);
-        left: calc((100vw - var(--wrap-w)) / 2 + 194px);
+        left: calc((100vw - var(--wrap-w)) / 2 + 106px);
     }
 }
 
@@ -46562,6 +46565,13 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     --wg0: #2c1f06;
     --wg1: #151005;
     --wglow: rgba(245, 196, 81, .26);
+}
+
+.wrapped-slide[data-kind="playoffs"] {
+    --wa: #a3e635;
+    --wg0: #1a2b0d;
+    --wg1: #0d1507;
+    --wglow: rgba(163, 230, 53, .24);
 }
 
 /* Kicker: short accent rule + uppercase label above every headline. */
@@ -46981,6 +46991,24 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     font-size: 18px;
 }
 
+/* Playoff picture groups clinched and eliminated rows: compact like coaching. */
+.wrapped-slide[data-kind="playoffs"] .wrapped-row {
+    padding: 9px 0;
+}
+
+.wrapped-slide[data-kind="playoffs"] .wrapped-row-k {
+    font-size: 11px;
+    margin-bottom: 4px;
+}
+
+.wrapped-slide[data-kind="playoffs"] .wrapped-row-n {
+    font-size: 18px;
+}
+
+.wrapped-slide[data-kind="playoffs"] .wrapped-row-v {
+    font-size: 18px;
+}
+
 /* Section headers inside a rows slide (coaching report groups). */
 .wrapped-row-sec {
     display: flex;
@@ -47246,6 +47274,335 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
     .wrapped-bar i {
         transition: none !important;
+    }
+}
+
+/* ── Weekly Wrapped restyle: the approved full-deck mock look, scoped to
+   the weekly namespace (Season Wrapped keeps its own skin above). Darker
+   navy ground, sky/blue accents, gold/green/red only where they mean
+   something (top score, bye, in, out), compact one-line panel rows, an
+   outlined backdrop word per slide, and performer headshots with the
+   week's top scorer crowned on the photo. The wrapped story surface is
+   dark in both site themes, so these values are theme-independent like
+   the base wrapped CSS. */
+.wrapped-overlay-wk {
+    background: radial-gradient(1200px 700px at 50% -10%, rgba(56, 189, 248, .13) 0%, transparent 60%),
+    linear-gradient(160deg, #081a2d 0%, #0a1f36 55%, #081a2d 100%);
+}
+
+@media (min-width: 768px) {
+    .wrapped-overlay-wk .wrapped-stage {
+        background: linear-gradient(160deg, #0d2137 0%, #081a2d 100%);
+        box-shadow: 0 40px 120px rgba(0, 0, 0, .55), 0 0 0 1px #1b4066 inset;
+    }
+}
+
+.wrapped-overlay-wk .wrapped-slide {
+    --wa: #38bdf8;
+    --wg0: #0d2137;
+    --wg1: #081a2d;
+    --wglow: rgba(56, 189, 248, .16);
+    isolation: isolate;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="topscore"] {
+    --wa: #e9b949;
+    --wglow: rgba(233, 185, 73, .18);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="lowscore"] {
+    --wa: #f0766a;
+    --wglow: rgba(240, 118, 106, .14);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="blowout"] {
+    --wa: #6ea8ff;
+    --wglow: rgba(110, 168, 255, .16);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="posleaders"] {
+    --wa: #e9b949;
+    --wglow: rgba(233, 185, 73, .14);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="dud"] {
+    --wa: #f0766a;
+    --wglow: rgba(240, 118, 106, .14);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="standings"] {
+    --wa: #6ea8ff;
+    --wglow: rgba(110, 168, 255, .14);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="playoffs"] {
+    --wa: #2ec27e;
+    --wglow: rgba(46, 194, 126, .15);
+}
+
+/* Outlined backdrop word: texture behind the type, never over it. */
+.wrapped-overlay-wk .wrapped-slide[data-bgword]::after {
+    content: attr(data-bgword);
+    position: absolute;
+    top: 30px;
+    right: -10px;
+    z-index: -1;
+    font-family: "Archivo", sans-serif;
+    font-weight: 900;
+    font-size: 110px;
+    line-height: 1;
+    letter-spacing: .01em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgba(120, 190, 245, .13);
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Kicker gains the mock's fading hairline across the slide. */
+.wrapped-overlay-wk .wrapped-kicker {
+    align-self: stretch;
+}
+
+.wrapped-overlay-wk .wrapped-kicker::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, #1b4066, rgba(27, 64, 102, 0));
+}
+
+.wrapped-overlay-wk .wrapped-word {
+    background: linear-gradient(100deg, #eef4fb 0%, #38bdf8 90%);
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+
+.wrapped-overlay-wk .wrapped-sub {
+    color: #9db8d2;
+}
+
+.wrapped-overlay-wk .wrapped-divider {
+    background: #1b4066;
+}
+
+.wrapped-overlay-wk .wrapped-winbar i {
+    background: linear-gradient(90deg, #2563eb, #38bdf8);
+}
+
+/* Compact one-line panel rows in the mock's rhythm. */
+.wrapped-overlay-wk .wrapped-rows {
+    gap: 6px;
+}
+
+.wrapped-overlay-wk .wrapped-slide .wrapped-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 13px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, 0) 60%), #0d2137;
+    border: 1px solid #1b4066;
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.wrapped-overlay-wk .wrapped-slide .wrapped-row + .wrapped-row {
+    border-top: 1px solid #1b4066;
+}
+
+.wrapped-overlay-wk .wrapped-slide .wrapped-row-k {
+    margin: 0;
+    flex: 0 0 auto;
+    min-width: 30px;
+    font-size: 11px;
+}
+
+.wrapped-overlay-wk .wrapped-slide .wrapped-row-m {
+    flex: 1 1 auto;
+    align-items: center;
+}
+
+.wrapped-overlay-wk .wrapped-slide .wrapped-row-n {
+    font-size: 17px;
+}
+
+.wrapped-overlay-wk .wrapped-slide .wrapped-row-v {
+    font-size: 19px;
+}
+
+.wrapped-overlay-wk .wrapped-row-mgr {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #9db8d2;
+}
+
+/* Top-scorer row: the gold card from the mock. */
+.wrapped-overlay-wk .wrapped-slide .wrapped-row.wrapped-row-top {
+    border: 1px solid rgba(233, 185, 73, .55);
+    background: linear-gradient(180deg, rgba(233, 185, 73, .10), rgba(255, 255, 255, 0) 60%), #102539;
+    box-shadow: 0 0 0 1px rgba(233, 185, 73, .35), 0 8px 22px rgba(233, 185, 73, .12),
+    inset 0 1px 0 rgba(255, 255, 255, .04);
+    padding-left: 13px;
+}
+
+/* Playoff Picture section colors: gold bye, green in, red out. */
+.wrapped-overlay-wk .wrapped-row-sec-clinched-a-bye {
+    color: #e9b949;
+}
+
+.wrapped-overlay-wk .wrapped-row-sec-clinched {
+    color: #2ec27e;
+}
+
+.wrapped-overlay-wk .wrapped-row-sec-eliminated {
+    color: #f0766a;
+}
+
+/* Still-alive line under the Playoff Picture groups. */
+.wrapped-alive {
+    margin-top: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+    color: #9db8d2;
+}
+
+.wrapped-alive b {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #eef4fb;
+}
+
+.wrapped-overlay-wk .wrapped-slide.active .wrapped-alive {
+    animation: wrapUp .5s var(--ease-out) .45s both;
+}
+
+/* Performer rows: real headshots as clean cutouts. No disc, no initials
+   behind a loaded photo; the initial is only the failure fallback, and
+   the img covers it the moment it loads. Crown and glow are absolutely
+   positioned off the photo box, so every row keeps the same geometry. */
+.wrapped-face {
+    position: relative;
+    flex: 0 0 auto;
+    width: 54px;
+    height: 54px;
+}
+
+.wrapped-face-init {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 900;
+    color: #9db8d2;
+}
+
+.wrapped-face-img {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 15%;
+    border-radius: 50%;
+}
+
+/* Soft gold halo centered on the headshot only: pixel stops reach full
+   transparency inside the box so it can never clip into a hard edge, and
+   the mask keeps it out of the crown zone above the photo. */
+.wrapped-face-glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 74px;
+    height: 74px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(233, 185, 73, .5) 0, rgba(233, 185, 73, .26) 16px, rgba(233, 185, 73, 0) 33px);
+    z-index: 0;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 26px, #000 40px, #000 100%);
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 26px, #000 40px, #000 100%);
+}
+
+.wrapped-face-crown {
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    z-index: 2;
+    font-size: 25px;
+    color: #e9b949;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .4));
+    animation: wrapFaceFloat 2.6s ease-in-out infinite;
+}
+
+@keyframes wrapFaceFloat {
+    0%, 100% {
+        transform: translateX(-50%) rotate(-8deg) translateY(0);
+    }
+    50% {
+        transform: translateX(-50%) rotate(-8deg) translateY(-2.5px);
+    }
+}
+
+.wrapped-perf-m {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.wrapped-perf-n {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.wrapped-perf-k {
+    margin-top: 3px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .18em;
+    color: var(--wa);
+}
+
+.wrapped-top-pill {
+    flex: 0 0 auto;
+    padding: 3px 7px;
+    border-radius: var(--radius-sm);
+    background: #e9b949;
+    color: #231a02;
+    font-size: 9.5px;
+    font-weight: 900;
+    letter-spacing: .08em;
+}
+
+/* Footer bug: the real wordmark at its real aspect, grouped bottom-right
+   beside the week text, the hairline running off to the left. */
+.wrapped-overlay-wk .wrapped-foot img {
+    order: 2;
+    width: auto;
+    height: 30px;
+    opacity: .95;
+}
+
+.wrapped-overlay-wk .wrapped-foot-line {
+    order: 1;
+}
+
+.wrapped-overlay-wk .wrapped-foot-season {
+    order: 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wrapped-face-crown {
+        animation: none;
     }
 }
 

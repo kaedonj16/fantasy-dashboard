@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-10",
         "tag": "new",
+        "text": "Weekly Wrapped now adds a Playoff Picture slide down the stretch: once a team has mathematically clinched a playoff spot (or a first-round bye) or been eliminated, the deck calls it out after the standings slide. The whole weekly deck also gets a fresh look: darker navy, compact rows, real player headshots with a crown for the week's top scorer, and icon-only share, link and pause buttons.",
+        "link": "/weekly"
+    },
+    {
+        "date": "2026-11-10",
+        "tag": "new",
         "text": "New Playoff Path tab on Standings: your magic number and earliest clinch, the games to root for this week, tiebreakers, and how every team's odds swing on a win or a loss.",
         "link": "/standings"
     },
