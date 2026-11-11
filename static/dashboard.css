@@ -49781,6 +49781,30 @@ a, button, [role="button"], [role="tab"], summary, label,
 .st-tblscroll > .standings-table,
 .st-tblscroll > .standings-shares-table { margin: 0; }
 
+/* Mobile standings: keep the PLAYOFF LINE label centered in the VISIBLE
+   part of the horizontally scrolling table. The cut row's cell spans the
+   full table width, so on a wide table (Detailed columns on) the label
+   centers on the whole table instead: off-screen or clipped at the right
+   edge on a phone, sliding sideways with the scroll. Making the standings
+   panel's scroll wrapper a query container lets the divider size itself
+   to the visible width (100cqw) and stick to the scrollport's left edge,
+   so the label and hairline stay put at any scroll position. Scoped to
+   #stStandingsInner and the cut row only; desktop rendering unchanged.
+   (.st-div-row and .pp-scnrow do not share .pp-cut, so they are untouched.)
+   Placed here, after the canonical .st-tblscroll rule above, so that rule
+   stays the first .st-tblscroll rule in the file. */
+@media (max-width: 640px) {
+    #stStandingsInner .st-tblscroll {
+        container-type: inline-size;
+    }
+    #stStandingsInner .standings-table[data-page="standings"] tr.pp-cutrow .pp-cut {
+        position: sticky;
+        left: 0;
+        width: 100cqw;
+        box-sizing: border-box;
+    }
+}
+
 /* On phones the Detailed (11 cols) and Value Share (rank + team + two bar
    columns) tables can't fit; give them a readable min-width so .st-tblscroll
    scrolls instead of crushing the numbers/bars into an illegible squeeze. */
