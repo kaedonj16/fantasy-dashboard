@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-10",
+        "tag": "update",
+        "text": "Standings on mobile is now tabbed with a compact league summary, Playoff Path Overview shows your matchup with bye and 1 seed bars, and Playoff Impact can switch between playoff, bye and 1 seed odds.",
+        "link": "/standings"
+    },
+    {
+        "date": "2026-11-10",
         "tag": "new",
         "text": "Weekly Wrapped now adds a Playoff Picture slide down the stretch: once a team has mathematically clinched a playoff spot (or a first-round bye) or been eliminated, the deck calls it out after the standings slide. The whole weekly deck also gets a fresh look: darker navy, compact rows, real player headshots with a crown for the week's top scorer, and icon-only share, link and pause buttons.",
         "link": "/weekly"

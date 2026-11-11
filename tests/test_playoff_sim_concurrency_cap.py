@@ -149,7 +149,7 @@ def test_background_sim_kicks_are_capped_and_dropped_kicks_can_rekick(sim_gate):
     # portfolio load instead of never).
     dropped = league_ids[cap:]
     for lid in dropped:
-        key = ("sleeper", lid, 2026, "v4")
+        key = ("sleeper", lid, 2026, "v5")
         with app._PLAYOFF_SIM_BUILDING_LOCK:
             assert key not in app._PLAYOFF_SIM_BUILDING
 
@@ -159,7 +159,7 @@ def test_background_sim_kicks_are_capped_and_dropped_kicks_can_rekick(sim_gate):
     def _my_keys_cleared():
         with app._PLAYOFF_SIM_BUILDING_LOCK:
             return all(
-                ("sleeper", lid, 2026, "v4") not in app._PLAYOFF_SIM_BUILDING
+                ("sleeper", lid, 2026, "v5") not in app._PLAYOFF_SIM_BUILDING
                 for lid in league_ids[:cap]
             )
 

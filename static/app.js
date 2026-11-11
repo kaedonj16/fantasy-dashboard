@@ -7361,10 +7361,14 @@ function initPlayoffPath(root = document) {
       const q = `?platform=${encodeURIComponent(platform)}` +
         `&league_id=${encodeURIComponent(leagueId)}` +
         `&season=${encodeURIComponent(season)}`;
+      // The scenarios endpoint adds a your_matchup object (the Overview
+      // matchup card) when it knows which roster is the viewer's.
+      const scenQ = (window._viewerRid != null && String(window._viewerRid) !== '')
+        ? q + `&roster_id=${encodeURIComponent(String(window._viewerRid))}` : q;
 
       Promise.all([
         fetch(`/api/playoff-odds${q}`).then(r => r.json()).catch(() => null),
-        fetch(`/api/playoff-scenarios${q}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+        fetch(`/api/playoff-scenarios${scenQ}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
       ]).then(([oddsData, scen]) => {
         if (!oddsData || oddsData.error || !oddsData.odds || !oddsData.odds.length
             || oddsData.is_complete || !scen || !scen.show) {
@@ -7411,6 +7415,54 @@ function togglePathImpact(btn) {
   more.hidden = !open;
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   btn.textContent = open ? 'Show fewer' : (btn.dataset.moreLabel || 'Show all teams');
+}
+
+const _PATH_IMP_SUBS = {
+  playoff: 'Playoff odds if each team wins or loses this week, sorted by swing.',
+  bye: 'Bye odds if each team wins or loses this week, sorted by swing.',
+  first: '1 seed odds if each team wins or loses this week, sorted by swing.',
+};
+
+function switchPathMetric(btn, key) {
+  const wrap = btn.closest('.path-wrap');
+  if (!wrap) return;
+  wrap.querySelectorAll('.path-metric-btn').forEach(b => {
+    const on = b === btn;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  wrap.querySelectorAll('.path-imp-view').forEach(v => {
+    v.hidden = v.dataset.pathMetric !== key;
+  });
+  const sub = wrap.querySelector('[data-path-imp-sub]');
+  if (sub && _PATH_IMP_SUBS[key]) sub.textContent = _PATH_IMP_SUBS[key];
+}
+
+// Standings page, phone/tablet widths only (the switch is CSS-hidden
+// above the two-column stacking breakpoint): one of the two sections
+// shows at a time. The rail card keeps all its inner tabs; when the
+// Power Rankings section is first revealed with a lazy inner tab
+// (Playoff Odds / Playoff Path) active but never initialised, run that
+// tab's click so it loads exactly as a direct click would.
+function switchStandingsSection(btn, key) {
+  const wrap = btn.closest('.std-rework');
+  if (!wrap) return;
+  wrap.querySelectorAll('.st-sec-btn').forEach(b => {
+    const on = b === btn;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const main = wrap.querySelector('.standings-main');
+  if (main) main.classList.toggle('st-sec-power-on', key === 'power');
+  if (key !== 'power') return;
+  const active = wrap.querySelector(
+    '.st-sec-col-pw .card-tabs[data-card="power"] .tab-btn.active');
+  if (!active) return;
+  const tab = active.dataset.tab;
+  if (tab !== 'playoff-odds' && tab !== 'playoff-path') return;
+  const card = active.closest('.card-tabs');
+  const panelEl = card && card.querySelector(`.tab-panel[data-tab="${tab}"]`);
+  if (panelEl && panelEl.querySelector('.playoff-odds-loading, .loading-spinner-sm')) active.click();
 }
 
 function _pathFmtPct(v) {
@@ -7533,17 +7585,29 @@ function _renderPlayoffPath(data, scen) {
     let forkHtml = '';
     const iw = viewerOdds.playoff_if_win, il = viewerOdds.playoff_if_lose;
     if (iw != null || il != null) {
+      // Second subtext line under each side's playoff %: where the bye
+      // and 1-seed races land on that side of the fork, from the same
+      // partitions. A half is omitted when its conditionals are null
+      // (no byes in the format, or the partition never occurred); the
+      // whole line drops when both halves are missing.
+      const forkExtra = side => {
+        const parts = [];
+        const b = side === 'win' ? viewerOdds.bye_if_win : viewerOdds.bye_if_lose;
+        const f = side === 'win' ? viewerOdds.first_seed_if_win : viewerOdds.first_seed_if_lose;
+        if (nByes > 0 && b != null) parts.push(`Bye ${_pathFmtPct(b)}%`);
+        if (f != null) parts.push(`1 seed ${_pathFmtPct(f)}%`);
+        return parts.length
+          ? `<div class="path-fork-sub path-fork-extra">${parts.join(' · ')}</div>` : '';
+      };
       const blocks = [];
       if (iw != null) {
         const head = viewerScen.status === 'clinched_bye' ? 'Bye locked'
           : (viewerScen.status === 'clinched' || viewerScen.clinch_if_win_next) ? 'Clinched'
           : iw >= 50 ? 'In the field' : 'Still alive';
-        const byePart = (nByes > 0 && viewerOdds.bye_if_win != null)
-          ? ` · ${_pathFmtPct(viewerOdds.bye_if_win)}% bye` : '';
         blocks.push(`<div class="path-fork-block path-fork-win">` +
           `<div class="path-fork-label">Win</div>` +
           `<div class="path-fork-head">${head}</div>` +
-          `<div class="path-fork-sub">${_pathFmtPct(iw)}% odds${byePart}</div></div>`);
+          `<div class="path-fork-sub">${_pathFmtPct(iw)}% odds</div>${forkExtra('win')}</div>`);
       }
       if (il != null) {
         const head = viewerScen.status === 'eliminated' ? 'Out'
@@ -7558,7 +7622,7 @@ function _renderPlayoffPath(data, scen) {
         blocks.push(`<div class="path-fork-block">` +
           `<div class="path-fork-label">Lose</div>` +
           `<div class="path-fork-head">${head}</div>` +
-          `<div class="path-fork-sub">${_pathFmtPct(il)}% odds${needs}</div></div>`);
+          `<div class="path-fork-sub">${_pathFmtPct(il)}% odds${needs}</div>${forkExtra('lose')}</div>`);
       }
       forkHtml = `<div class="path-hero-path"><h4>Your path</h4>` +
         `<div class="path-fork${blocks.length === 1 ? ' path-fork-single' : ''}">${blocks.join('')}</div></div>`;
@@ -7584,12 +7648,84 @@ function _renderPlayoffPath(data, scen) {
         `<div class="path-road-grid">${roadCells}</div></div>`;
     }
 
+    // Your Matchup card: the viewer's game this week, from the
+    // scenarios payload's your_matchup (projected points and win
+    // probability built server-side from the matchup page's own
+    // totals/model). The range bars are each team's OWN bye / 1-seed
+    // conditionals from the odds rows: the opponent's if-win is their
+    // win in this same game. A bar is omitted when its conditionals
+    // are null; ends that happen to be equal render as a flat
+    // dot-only bar. The whole card hides when the payload has no
+    // your_matchup for this viewer (no team, bye week, or the live
+    // matchup bundle was not ready).
+    let matchupHtml = '';
+    const mu = scen.your_matchup;
+    if (mu && String(mu.viewer_roster_id) === viewerRid && mu.week != null
+        && typeof mu.viewer_proj === 'number' && typeof mu.opp_proj === 'number') {
+      const oppOdds = byRid[String(mu.opp_roster_id)];
+      const oppScen = scenByRid[String(mu.opp_roster_id)];
+      const muBar = (label, now, win, lose) => {
+        if (win == null || lose == null || now == null) return '';
+        const lo = Math.max(0, Math.min(100, lose));
+        const hi = Math.max(0, Math.min(100, win));
+        const flat = win === lose;
+        return `<div class="path-mu-bar">` +
+          `<div class="path-mu-bar-meta"><span class="path-mu-bar-metric">${label}</span>` +
+          `<span class="path-mu-bar-now">Now <b>${_pathFmtPct(now)}%</b></span></div>` +
+          `<div class="path-mu-bar-line">` +
+          `<span class="path-imp-end path-l${flat ? ' path-flat' : ''}">${_pathFmtPct(lose)}%</span>` +
+          `<div class="path-imp-track">` +
+            (flat ? '' : `<div class="path-imp-range" style="left:${lo}%;width:${Math.max(hi - lo, 0.8)}%"></div>`) +
+            `<div class="path-imp-dot" style="left:${Math.max(0, Math.min(100, now))}%"></div>` +
+          `</div>` +
+          `<span class="path-imp-end path-w${flat ? ' path-flat' : ''}">${_pathFmtPct(win)}%</span></div></div>`;
+      };
+      const muGroup = (oddsRow, isViewer) => {
+        if (!oddsRow) return '';
+        const bars = isViewer
+          ? muBar('Bye', oddsRow.bye_pct, oddsRow.bye_if_win, oddsRow.bye_if_lose)
+            + muBar('1 Seed', oddsRow.first_seed_pct, oddsRow.first_seed_if_win, oddsRow.first_seed_if_lose)
+          : muBar('1 Seed', oddsRow.first_seed_pct, oddsRow.first_seed_if_win, oddsRow.first_seed_if_lose)
+            + muBar('Bye', oddsRow.bye_pct, oddsRow.bye_if_win, oddsRow.bye_if_lose);
+        if (!bars) return '';
+        const nm = escapeHtml(oddsRow.team_name || nameOf(oddsRow.roster_id));
+        return `<div class="path-mu-group"><div class="path-mu-group-label">${nm}${isViewer ? '<span class="path-you-tag">YOU</span>' : ''}</div>${bars}</div>`;
+      };
+      const groups = muGroup(viewerOdds, true) + muGroup(oppOdds, false);
+      const oppName = mu.opp_name || nameOf(mu.opp_roster_id);
+      const oppClinched = oppScen
+        && (oppScen.status === 'clinched' || oppScen.status === 'clinched_bye');
+      const seedTxt = rid => seedOf[String(rid)] ? ` · Seed ${seedOf[String(rid)]}` : '';
+      const wp = (typeof mu.viewer_win_prob === 'number') ? mu.viewer_win_prob : null;
+      const wpHtml = wp != null
+        ? `<div class="path-mu-prob"><div class="path-mu-prob-label">Win probability</div>` +
+          `<div class="path-mu-split" role="img" aria-label="Win probability: ${escapeHtml(viewerOdds.team_name)} ${Math.round(wp)} percent, ${escapeHtml(oppName)} ${Math.round(100 - wp)} percent">` +
+          `<div class="path-mu-seg path-mu-seg-you" style="width:${Math.max(0, Math.min(100, wp))}%">${Math.round(wp)}%</div>` +
+          `<div class="path-mu-seg path-mu-seg-opp">${Math.round(100 - wp)}%</div></div></div>`
+        : '';
+      matchupHtml = `<div class="path-mu">
+        <div class="path-mu-head"><h4>Your Matchup</h4><span class="path-wk-chip">Week ${mu.week}</span></div>
+        <div class="path-mu-row">
+          <div class="path-mu-team"><div class="path-mu-name">${escapeHtml(viewerOdds.team_name)}<span class="path-you-tag">YOU</span></div>
+          <div class="path-mu-sub">${escapeHtml(recOf(viewerRid))}${seedTxt(viewerRid)}</div></div>
+          <div class="path-mu-proj">Proj <b>${mu.viewer_proj.toFixed(1)}</b></div>
+        </div>
+        <div class="path-mu-row">
+          <div class="path-mu-team"><div class="path-mu-name">${escapeHtml(oppName)}</div>
+          <div class="path-mu-sub">${escapeHtml(recOf(mu.opp_roster_id))}${seedTxt(mu.opp_roster_id)}${oppClinched ? ' · <span class="path-mu-clinched">Clinched</span>' : ''}</div></div>
+          <div class="path-mu-proj">Proj <b>${mu.opp_proj.toFixed(1)}</b></div>
+        </div>
+        ${wpHtml}
+        ${groups ? `<div class="path-mu-bars">${groups}</div>` : ''}
+      </div>`;
+    }
+
     heroHtml = `<div class="path-hero">
       <div class="path-hero-kicker">Your Playoff Path</div>
       <h3>${escapeHtml(viewerOdds.team_name)}<span class="path-you-tag">YOU</span></h3>
       <p class="path-hero-sub">${escapeHtml(recOf(viewerRid))}${oppLine}</p>
       <div class="path-hero-stats">${statsHtml}</div>
-      ${forkHtml}${roadHtml}
+      ${matchupHtml}${forkHtml}${roadHtml}
     </div>`;
   }
 
@@ -7704,39 +7840,88 @@ function _renderPlayoffPath(data, scen) {
       const sb = b.swing == null ? -1 : b.swing;
       return sb - sa;
     });
-    const rowHtml = sorted.map(t => {
+
+    // Metric switcher: the range-bar chart is built once per metric
+    // (playoffs / bye / 1 seed), each from its own {now, if_win,
+    // if_lose} partition of the same sim run, and switchPathMetric
+    // swaps which one shows (plus the subheading). Every list is
+    // re-sorted by its own metric's swing. Bye appears only when the
+    // format awards byes and bye conditionals exist; 1 Seed only when
+    // first-seed conditionals exist. A team whose ends both sit at the
+    // clamp floor has no path in that metric: it sinks to the bottom
+    // as a muted row with the dot at Now and no range fill. Ends that
+    // are equal but real (a lock) render flat the same way, unmuted.
+    const impVals = {
+      playoff: t => ({ now: t.playoff_pct, win: t.playoff_if_win, lose: t.playoff_if_lose }),
+      bye: t => ({ now: t.bye_pct, win: t.bye_if_win, lose: t.bye_if_lose }),
+      first: t => ({ now: t.first_seed_pct, win: t.first_seed_if_win, lose: t.first_seed_if_lose }),
+    };
+    const impSwing = v => (v.win != null && v.lose != null)
+      ? Math.round((v.win - v.lose) * 10) / 10 : null;
+    const impNoPath = v => v.win != null && v.lose != null && v.win <= 0.1 && v.lose <= 0.1;
+    const impSort = key => odds.slice().sort((a, b) => {
+      const va = impVals[key](a), vb = impVals[key](b);
+      const na = impNoPath(va) ? 1 : 0, nb = impNoPath(vb) ? 1 : 0;
+      if (na !== nb) return na - nb;
+      const sa = impSwing(va), sb = impSwing(vb);
+      const d = (sb == null ? -1 : sb) - (sa == null ? -1 : sa);
+      return d || ((vb.now || 0) - (va.now || 0));
+    });
+    const impRow = (t, key) => {
+      const v = impVals[key](t);
       const you = viewerRid && String(t.roster_id) === viewerRid;
       const main = `<div class="path-imp-main">
         <span class="path-imp-name">${escapeHtml(t.team_name)}${you ? '<span class="path-you-tag">YOU</span>' : ''}</span>
         <span class="path-imp-rec">${t.wins}-${t.losses}${t.ties ? '-' + t.ties : ''}</span></div>`;
-      const now = `<span class="path-imp-now">Now <b>${_pathFmtPct(t.playoff_pct)}%</b></span>`;
-      if (t.swing == null || t.playoff_if_lose == null || t.playoff_if_win == null) {
+      const now = `<span class="path-imp-now">Now <b>${_pathFmtPct(v.now)}%</b></span>`;
+      if (v.win == null || v.lose == null) {
         return `<div class="path-imp-row${you ? ' path-you' : ''}">${main}${now}` +
           `<span class="path-imp-nogame">No game this week</span>` +
           `<span class="path-imp-swing path-imp-swing-na">-</span></div>`;
       }
-      const lo = Math.max(0, Math.min(100, t.playoff_if_lose));
-      const hi = Math.max(0, Math.min(100, t.playoff_if_win));
-      return `<div class="path-imp-row${you ? ' path-you' : ''}">${main}${now}` +
-        `<span class="path-imp-end path-l">${_pathFmtPct(t.playoff_if_lose)}%</span>` +
+      const noPath = impNoPath(v);
+      const flat = !noPath && v.win === v.lose;
+      const lo = Math.max(0, Math.min(100, v.lose));
+      const hi = Math.max(0, Math.min(100, v.win));
+      return `<div class="path-imp-row${you ? ' path-you' : ''}${noPath ? ' path-imp-nopath' : ''}${flat ? ' path-imp-flat' : ''}">${main}${now}` +
+        `<span class="path-imp-end path-l">${_pathFmtPct(v.lose)}%</span>` +
         `<div class="path-imp-track">` +
-          `<div class="path-imp-range" style="left:${lo}%;width:${Math.max(hi - lo, 0.8)}%"></div>` +
-          `<div class="path-imp-dot" style="left:${Math.max(0, Math.min(100, t.playoff_pct))}%"></div>` +
+          ((noPath || flat) ? '' : `<div class="path-imp-range" style="left:${lo}%;width:${Math.max(hi - lo, 0.8)}%"></div>`) +
+          `<div class="path-imp-dot" style="left:${Math.max(0, Math.min(100, v.now))}%"></div>` +
         `</div>` +
-        `<span class="path-imp-end path-w">${_pathFmtPct(t.playoff_if_win)}%</span>` +
-        `<span class="path-imp-swing"><b>${t.swing.toFixed(1)}</b> swing</span></div>`;
-    });
+        `<span class="path-imp-end path-w">${_pathFmtPct(v.win)}%</span>` +
+        `<span class="path-imp-swing"><b>${impSwing(v).toFixed(1)}</b> swing</span></div>`;
+    };
+    const byeAvail = nByes > 0 && odds.some(t => t.bye_if_win != null);
+    const firstAvail = odds.some(t => t.first_seed_if_win != null);
+    const impKeys = ['playoff'];
+    if (byeAvail) impKeys.push('bye');
+    if (firstAvail) impKeys.push('first');
+    const impLists = { playoff: sorted };
+    if (byeAvail) impLists.bye = impSort('bye');
+    if (firstAvail) impLists.first = impSort('first');
     // Only the top 6 by swing render up front (the rest sit behind the
     // expand toggle) so the chart cannot stretch the column on desktop.
     const IMP_VISIBLE = 6;
-    const visibleRows = rowHtml.slice(0, IMP_VISIBLE).join('');
-    const moreRows = rowHtml.slice(IMP_VISIBLE).join('');
-    const moreHtml = moreRows
-      ? `<div class="path-imp-more" hidden>${moreRows}</div>` : '';
-    const toggleHtml = moreRows
-      ? `<div class="path-imp-toggle-row"><button type="button" class="btn btn-sm path-imp-toggle" aria-expanded="false" data-more-label="Show all ${sorted.length} teams" onclick="togglePathImpact(this)">Show all ${sorted.length} teams</button></div>` : '';
-    const axis = `<div class="path-imp-axis"><div class="path-imp-axis-track">` +
-      `<span>0%</span><span class="path-imp-axis-mid">50%</span><span class="path-imp-axis-r">100%</span></div></div>`;
+    const impChartInner = key => {
+      const rowHtml = impLists[key].map(t => impRow(t, key));
+      const visibleRows = rowHtml.slice(0, IMP_VISIBLE).join('');
+      const moreRows = rowHtml.slice(IMP_VISIBLE).join('');
+      const moreHtml = moreRows
+        ? `<div class="path-imp-more" hidden>${moreRows}</div>` : '';
+      const toggleHtml = moreRows
+        ? `<div class="path-imp-toggle-row"><button type="button" class="btn btn-sm path-imp-toggle" aria-expanded="false" data-more-label="Show all ${sorted.length} teams" onclick="togglePathImpact(this)">Show all ${sorted.length} teams</button></div>` : '';
+      const axis = `<div class="path-imp-axis"><div class="path-imp-axis-track">` +
+        `<span>0%</span><span class="path-imp-axis-mid">50%</span><span class="path-imp-axis-r">100%</span></div></div>`;
+      return `${visibleRows}${moreHtml}${axis}${toggleHtml}`;
+    };
+    const impLabels = { playoff: 'Playoffs', bye: 'Bye', first: '1 Seed' };
+    const segHtml = impKeys.length > 1
+      ? `<div class="path-metric-seg" role="tablist" aria-label="Impact metric">` +
+        impKeys.map((k, i) =>
+          `<button type="button" class="path-metric-btn${i === 0 ? ' active' : ''}" role="tab" aria-selected="${i === 0 ? 'true' : 'false'}" onclick="switchPathMetric(this, '${k}')">${impLabels[k]}</button>`).join('') +
+        `</div>`
+      : '';
 
     // Clinch / elimination lines: team + condition, from scenarios state.
     const clinchLines = [];
@@ -7761,10 +7946,11 @@ function _renderPlayoffPath(data, scen) {
 
     impactHtml = `<div class="path-sect-head">
         <div><h3 class="path-sect-title">Week ${week} Playoff Impact</h3>
-        <p class="path-sect-sub">Playoff odds if each team wins or loses this week, sorted by swing.</p></div>
+        <p class="path-sect-sub" data-path-imp-sub>Playoff odds if each team wins or loses this week, sorted by swing.</p></div>
         <span class="path-wk-chip">Week ${week}</span>
       </div>
-      <div class="path-imp-chart">${visibleRows}${moreHtml}${axis}${toggleHtml}</div>
+      ${segHtml}
+      ${impKeys.map((k, i) => `<div class="path-imp-view" data-path-metric="${k}"${i === 0 ? '' : ' hidden'}><div class="path-imp-chart">${impChartInner(k)}</div></div>`).join('')}
       <p class="path-tbl-note">Bar spans If Lose to If Win. Dot is Now. Longer bar, bigger swing.</p>`;
   }
 

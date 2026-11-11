@@ -91,6 +91,131 @@ def test_bye_conditionals_use_the_same_partitions():
     assert a["bye_if_win"] > a["bye_pct"] > a["bye_if_lose"]
 
 
+def test_first_seed_conditionals_bracket_the_headline():
+    by_id = _four_team_pack()
+    a = by_id[1]
+    # Same partitions as the bye splits (one bye = the top seed here):
+    # A is the 1 seed in sims 0, 1, 2 of 4.
+    assert a["first_seed_pct"] == 75.0
+    assert a["first_seed_if_win"] == 99.9
+    assert a["first_seed_if_lose"] == 50.0
+    assert a["first_seed_if_win"] > a["first_seed_pct"] > a["first_seed_if_lose"]
+    c = by_id[3]
+    # C is never the top seed in any sim: real zeros read as the clamp
+    # floor, not nulls (its partitions are non-empty).
+    assert c["first_seed_pct"] == 0.0
+    assert c["first_seed_if_win"] == 0.1
+    assert c["first_seed_if_lose"] == 0.1
+
+
+def _six_team_two_bye_pack():
+    """6 teams, 6 playoff spots (2 byes), 2 sims.
+
+    First week: A-B, C-D, E-F. Sim 0 winners A, C, E; sim 1 B, D, F.
+    Final ranks: sim 0 = A, C, E, B, D, F; sim 1 = B, D, F, A, C, E.
+    So A and B split the 1 seed, the byes are {A, C} and {B, D}, and
+    C / D each hold a bye path with no 1-seed path at all.
+    """
+    teams = [_team(i + 1, name, 5, 5, pf) for i, (name, pf) in enumerate(
+        [("A", 1000), ("B", 950), ("C", 900), ("D", 850), ("E", 800),
+         ("F", 750)])]
+    wins = np.array([
+        [7, 5, 6, 4, 6, 4],
+        [5, 7, 4, 6, 4, 6],
+    ], dtype=np.float32)
+    pf = np.array([
+        [750, 540, 630, 420, 620, 410],
+        [550, 740, 530, 620, 430, 600],
+    ], dtype=np.float32)
+    won = np.array([
+        [True, False, True, False, True, False],
+        [False, True, False, True, False, True],
+    ])
+    rows = _pack_mc_results(
+        teams, wins, pf, np.zeros_like(wins), np.full(6, 12.0),
+        playoff_teams=6, n_sims=2,
+        first_week=11, first_games=[(0, 1), (2, 3), (4, 5)],
+        first_won=won, first_lost=~won,
+    )
+    return {r["roster_id"]: r for r in rows}
+
+
+def test_first_seed_mask_is_not_the_bye_mask_with_two_byes():
+    by_id = _six_team_two_bye_pack()
+    a = by_id[1]
+    assert a["first_seed_pct"] == 50.0
+    assert a["first_seed_if_win"] == 99.9
+    assert a["first_seed_if_lose"] == 0.1
+    b = by_id[2]
+    assert b["first_seed_pct"] == 50.0
+    assert b["first_seed_if_win"] == 99.9
+    assert b["first_seed_if_lose"] == 0.1
+    c = by_id[3]
+    # C's bye came in the sim it won; it is never the 1 seed.
+    assert c["bye_pct"] == 50.0
+    assert c["bye_if_win"] == 99.9
+    assert c["bye_if_lose"] == 0.1
+    assert c["first_seed_pct"] == 0.0
+    assert c["first_seed_if_win"] == 0.1
+    assert c["first_seed_if_lose"] == 0.1
+    d = by_id[4]
+    assert d["bye_if_win"] == 99.9
+    assert d["first_seed_if_win"] == 0.1
+    assert d["first_seed_if_lose"] == 0.1
+
+
+def test_first_seed_nulls_for_bye_week_team():
+    teams = [_team(1, "A", 5, 5, 1000), _team(2, "B", 5, 5, 950),
+             _team(3, "C", 5, 5, 900), _team(4, "D", 5, 5, 850),
+             _team(5, "E", 5, 5, 800)]
+    wins = np.array([[6, 5, 5, 4, 5], [5, 6, 4, 5, 5]], dtype=np.float32)
+    pf = np.array([[650, 540, 530, 420, 510],
+                   [550, 640, 430, 520, 510]], dtype=np.float32)
+    won = np.array([[True, False, True, False, False],
+                    [False, True, False, True, False]])
+    lost = np.array([[False, True, False, True, False],
+                     [True, False, True, False, False]])
+    rows = _pack_mc_results(
+        teams, wins, pf, np.zeros_like(wins), np.full(5, 12.0),
+        playoff_teams=3, n_sims=2,
+        first_week=11, first_games=[(0, 1), (2, 3)],
+        first_won=won, first_lost=lost,
+    )
+    e = {r["roster_id"]: r for r in rows}[5]
+    # No first-week game: no honest split exists, so nulls, not zeros.
+    assert e["first_seed_if_win"] is None
+    assert e["first_seed_if_lose"] is None
+
+
+def test_first_seed_conditionals_exist_when_format_has_no_byes():
+    # 4 playoff spots means no byes: the bye splits are null (pinned by
+    # test_no_bye_format_nulls_bye_conditionals) but the 1-seed race
+    # still exists, so its splits must be real values.
+    teams = [_team(1, "A", 6, 4, 1000), _team(2, "B", 5, 5, 950),
+             _team(3, "C", 5, 5, 900), _team(4, "D", 4, 6, 850)]
+    wins = np.array([[7, 5, 6, 4], [6, 6, 5, 6]], dtype=np.float32)
+    pf = np.array([[750, 540, 630, 420], [650, 640, 530, 620]],
+                  dtype=np.float32)
+    won = np.array([[True, False, True, False],
+                    [False, True, False, True]])
+    rows = _pack_mc_results(
+        teams, wins, pf, np.zeros_like(wins), np.full(4, 12.0),
+        playoff_teams=4, n_sims=2,
+        first_week=11, first_games=[(0, 1), (2, 3)],
+        first_won=won, first_lost=~won,
+    )
+    by_id = {r["roster_id"]: r for r in rows}
+    a = by_id[1]
+    # A is the top seed in both sims, won one and lost one.
+    assert a["first_seed_pct"] == 99.9
+    assert a["first_seed_if_win"] == 99.9
+    assert a["first_seed_if_lose"] == 99.9
+    b = by_id[2]
+    # B is never the top seed, but both its partitions occurred.
+    assert b["first_seed_if_win"] == 0.1
+    assert b["first_seed_if_lose"] == 0.1
+
+
 def test_root_for_conditions_on_other_games_only():
     by_id = _four_team_pack()
     c = by_id[3]
