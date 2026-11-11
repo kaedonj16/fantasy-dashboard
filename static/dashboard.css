@@ -45973,12 +45973,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     border: 1px solid var(--accent);
 }
 
-.standings-week-hint {
-    font-size: 13px;
-    color: var(--text-muted);
-    flex: 1 1 auto;
-}
-
 .st-week-loading {
     opacity: .45;
     transition: opacity .15s ease;
@@ -45986,8 +45980,13 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 }
 
 @media (max-width: 640px) {
-    .standings-week-hint {
-        flex-basis: 100%;
+    /* Slimmer phone week card (header-slim round 2): tighter padding and
+       gaps; the explainer line under the selector was later removed
+       entirely, so the card is just the title and the week selector. */
+    .standings-week-bar {
+        padding: 6px 12px;
+        gap: 4px 6px;
+        margin-bottom: 10px;
     }
 }
 
@@ -49625,17 +49624,20 @@ a, button, [role="button"], [role="tab"], summary, label,
     .st-tiles .st-tile-lead { grid-column: 1 / -1; }
 }
 @media (max-width: 640px) {
-    .st-tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .st-tiles { grid-template-columns: 1fr 1fr; gap: 6px; }
     /* Compact phone hero: thinner tiles and a banner-weight lead card.
-       Same component everywhere .st-tiles renders; desktop untouched. */
-    .st-tile { padding: 7px 11px; gap: 4px; }
+       Same component everywhere .st-tiles renders; desktop untouched.
+       Round 2: tighter padding/gaps, 18px icon chips and values, and
+       11.5px sub-lines (the Luckiest/Unluckiest subs fit one line at
+       phone width instead of wrapping to two). */
+    .st-tile { padding: 5px 10px; gap: 3px; }
     .st-tile-top { gap: 6px; }
-    .st-tile-ic { width: 20px; height: 20px; font-size: 11px; }
+    .st-tile-ic { width: 18px; height: 18px; font-size: 10px; }
     .st-tile-label { font-size: 10.5px; letter-spacing: .05em; }
-    .st-tile-val { font-size: 19px; }
-    .st-tile-lead { padding: 8px 12px; gap: 4px; }
-    .st-tile-lead .st-tile-val { font-size: 20px; }
-    .st-tile-sub { font-size: 12px; line-height: 1.3; }
+    .st-tile-val { font-size: 18px; }
+    .st-tile-lead { padding: 6px 11px; gap: 3px; }
+    .st-tile-lead .st-tile-val { font-size: 19px; }
+    .st-tile-sub { font-size: 11.5px; line-height: 1.25; }
     /* Tile text wraps instead of truncating at phone width: team names
        in the value and sub lines are never cut off mid-name. Grid rows
        already stretch, so wrapped tiles stay equal height per row. */
