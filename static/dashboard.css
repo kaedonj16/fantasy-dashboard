@@ -32534,7 +32534,11 @@ table.mid-table {
 .slv-wrap {
     position: fixed;
     inset: 0;
-    z-index: 1200;
+    /* Modal tier, in front of the mobile dock and assistant launcher
+       (--z-chrome 9999 / 9995): the phone bottom sheet's footer must stay
+       tappable over the dock. Player/team modals share this tier and are
+       appended to the body after this wrap, so they still open on top. */
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;

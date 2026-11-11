@@ -132,6 +132,33 @@ def test_live_matchup_rebuilds_hold_to_aggregate_cap(fresh_agg, monkeypatch):
         # state, and clearing another test's in-flight marks would let
         # a duplicate rebuild of its key kick alongside the original.
         pages._LIVE_MATCHUP_REBUILDING.difference_update(keys)
+    def _wait_admit(key, want, timeout=60.0):
+        # Wait for one admitted key's compute to start, RE-KICKING it
+        # while waiting. A kick that lands while foreign background
+        # builds (an earlier test's page builds, which read the same
+        # app-global semaphore this fixture swapped in) hold every
+        # aggregate slot is dropped over-cap and its mark cleared, with
+        # nothing left to retry it: tracker.calls then never steps and
+        # the wait times out even though the cap held (PR #3133's
+        # failing Integration twin: the first admission starved for the
+        # full 20s while ESPN/Yahoo builds from other tests held the
+        # fresh semaphore). Re-kicking is the mechanism's own contract
+        # (an over-cap rebuild is dropped and the next poll re-kicks
+        # it), and the per-key rebuilding mark makes a re-kick while
+        # the original kick is still starting a no-op, so this cannot
+        # double-admit the key or weaken the cap assertions below.
+        deadline = time.time() + timeout
+        last_kick = 0.0
+        while time.time() < deadline:
+            if tracker.calls == want:
+                return True
+            if time.time() - last_kick >= 0.25:
+                last_kick = time.time()
+                pages._schedule_live_matchup_rebuild(
+                    key, "sleeper", key[1], 2026, 9, {})
+            time.sleep(0.02)
+        return tracker.calls == want
+
     try:
         # Admit rebuilds one at a time. Each admitted build parks on
         # the tracker gate inside compute, so an admission is a stable
@@ -142,9 +169,7 @@ def test_live_matchup_rebuilds_hold_to_aggregate_cap(fresh_agg, monkeypatch):
         # threads, and under shard load it was intermittently never
         # observed inside the wait window even though the cap held.
         for i, key in enumerate(admitted):
-            pages._schedule_live_matchup_rebuild(
-                key, "sleeper", key[1], 2026, 9, {})
-            assert _wait_for(lambda: tracker.calls == i + 1)
+            assert _wait_admit(key, i + 1)
         # Per-key dedupe alone allows all 8; the aggregate cap parked
         # exactly these 3, each still holding its aggregate slot.
         assert tracker.cur == AGG
@@ -170,11 +195,11 @@ def test_live_matchup_rebuilds_hold_to_aggregate_cap(fresh_agg, monkeypatch):
         assert _wait_for(
             lambda: not (_rebuilding_snapshot() & set(keys)))
 
-        # A dropped key re-kicks and actually rebuilds once slots free.
+        # A dropped key re-kicks and actually rebuilds once slots free
+        # (same re-kick wait as the admissions: a lone kick can still
+        # lose the freed slots to foreign builds).
         calls_before = tracker.calls
-        pages._schedule_live_matchup_rebuild(
-            dropped[0], "sleeper", dropped[0][1], 2026, 9, {})
-        assert _wait_for(lambda: tracker.calls > calls_before)
+        assert _wait_admit(dropped[0], calls_before + 1)
         assert tracker.max_seen <= AGG
     finally:
         # Unconditional cleanup: release the gate AND wait for the
