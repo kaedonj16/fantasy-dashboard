@@ -7370,22 +7370,50 @@ function initPlayoffPath(root = document) {
         fetch(`/api/playoff-odds${q}`).then(r => r.json()).catch(() => null),
         fetch(`/api/playoff-scenarios${scenQ}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
       ]).then(([oddsData, scen]) => {
-        if (!oddsData || oddsData.error || !oddsData.odds || !oddsData.odds.length
-            || oddsData.is_complete || !scen || !scen.show) {
-          // Exact gate says no Path for this league right now: remove the
-          // tab and panel outright (never a placeholder). If the user is
-          // looking at the panel, land them on Power Rankings instead.
-          const card = btn.closest('.card-tabs');
-          const wasActive = panel.classList.contains('active');
-          const fallback = card ? card.querySelector('.tab-btn[data-tab="power"]') : null;
-          panel.remove();
-          btn.remove();
-          if (wasActive && fallback) fallback.click();
+        const finishPath = () => {
+          if (!oddsData || oddsData.error || !oddsData.odds || !oddsData.odds.length
+              || oddsData.is_complete || !scen || !scen.show) {
+            // Exact gate says no Path for this league right now: remove the
+            // tab and panel outright (never a placeholder). If the user is
+            // looking at the panel, land them on Power Rankings instead.
+            const card = btn.closest('.card-tabs');
+            const wasActive = panel.classList.contains('active');
+            const fallback = card ? card.querySelector('.tab-btn[data-tab="power"]') : null;
+            panel.remove();
+            btn.remove();
+            if (wasActive && fallback) fallback.click();
+            return;
+          }
+          panel.innerHTML = _renderPlayoffPath(oddsData, scen);
+          normalizeClickableAccessibility(panel);
+          fadeInCard(panel);
+        };
+        // Your Matchup pending: the viewer has a game this week but the
+        // live matchup bundle behind the card is still building (the
+        // scenarios response flags your_matchup_pending, the same pending
+        // contract league scores polls on). Re-ask for the scenarios
+        // payload every 3s, bounded, and render with whichever response
+        // first carries the card; if the bundle never lands, render
+        // without the card rather than inventing one.
+        if (scen && scen.show && scen.your_matchup_pending && !scen.your_matchup) {
+          let _muAttempts = 0;
+          const _pollScen = () => {
+            _muAttempts += 1;
+            fetch(`/api/playoff-scenarios${scenQ}`).then(r => (r.ok ? r.json() : null)).catch(() => null)
+              .then(s2 => {
+                if (!document.body.contains(panel)) return;
+                if (s2 && s2.show) scen = s2;
+                if (!scen.your_matchup_pending || scen.your_matchup || _muAttempts >= 5) {
+                  finishPath();
+                  return;
+                }
+                setTimeout(_pollScen, 3000);
+              });
+          };
+          setTimeout(_pollScen, 3000);
           return;
         }
-        panel.innerHTML = _renderPlayoffPath(oddsData, scen);
-        normalizeClickableAccessibility(panel);
-        fadeInCard(panel);
+        finishPath();
       }).catch(() => {
         delete panel.dataset.loadedAt;
         window.brErrorState(panel, 'Unable to load playoff path.', () => { delete panel.dataset.loadedAt; btn.click(); }, { compact: true });
