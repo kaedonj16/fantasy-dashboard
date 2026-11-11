@@ -20,6 +20,7 @@ pytest.importorskip("numpy")
 ROOT = Path(__file__).resolve().parents[1]
 APP_PY = (ROOT / "app.py").read_text(encoding="utf-8")
 APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+DASH_CSS = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 
 OWNERS = [f"Team {chr(65 + i)}" for i in range(10)]
 RIDS = [str(i + 1) for i in range(10)]
@@ -163,6 +164,56 @@ def test_sim_cache_version_bumped_for_new_fields():
     # served to the Path tab: both cache-key constructions use v4.
     assert APP_PY.count('"v4"') >= 2
     assert '(platform, str(league_id), season, "v3")' not in APP_PY
+
+
+# ── Impact list: compact rows + top-6 pagination ────────────────────────
+
+def _impact_block(js: str) -> str:
+    start = js.index("Week N Playoff Impact")
+    return js[start:js.index("Clinch / elimination lines", start)]
+
+
+def test_impact_list_shows_top_six_with_expand_toggle():
+    block = _impact_block(APP_JS)
+    # Visible count is a hardcoded 6 regardless of league size; the rest
+    # render into a hidden container behind one toggle button.
+    assert "const IMP_VISIBLE = 6;" in block
+    assert "rowHtml.slice(0, IMP_VISIBLE)" in block
+    assert "rowHtml.slice(IMP_VISIBLE)" in block
+    assert '<div class="path-imp-more" hidden>' in block
+    assert "function togglePathImpact(btn)" in APP_JS
+    assert 'onclick="togglePathImpact(this)"' in block
+    # The button label carries the total row count and collapses back.
+    assert 'Show all ${sorted.length} teams' in block
+    assert "'Show fewer'" in APP_JS
+
+
+def test_impact_rows_are_compact_single_line_structure():
+    block = _impact_block(APP_JS)
+    # One grid row per team: name/record cell, Now, lose end, track, win
+    # end, swing cell. The old stacked head + bar-row pair is gone.
+    assert 'class="path-imp-main"' in block
+    assert 'class="path-imp-swing"' in block
+    assert "path-imp-head" not in APP_JS
+    assert "path-imp-bar-row" not in APP_JS
+    # Data values are untouched: same sim fields drive the row.
+    for field in ("playoff_if_lose", "playoff_if_win", "playoff_pct", "swing"):
+        assert field in block
+
+
+def test_impact_compact_css_desktop_and_mobile():
+    row_rule = next(
+        line for line in DASH_CSS.splitlines()
+        if line.startswith(".path-imp-row{") and "grid-template-columns" in line
+    )
+    # Desktop: single-line grid with a fixed name column and flex track.
+    assert "minmax(150px,205px)" in row_rule
+    assert "padding:6px 0" in row_rule
+    # Expanded rows stay hidden until the toggle opens them.
+    assert ".path-imp-more[hidden]{display:none}" in DASH_CSS
+    # Phone: the same row reflows to two lines (name line, bar line).
+    mobile = DASH_CSS[DASH_CSS.index("@media (max-width:640px)"):]
+    assert 'grid-template-areas:"main now swing" "l track w"' in mobile
 
 
 # ── Changelog: one entry, found by content (pin_helpers) ─────────────────
