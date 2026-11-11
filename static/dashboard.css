@@ -58068,6 +58068,7 @@ button.mb-fld-link {
 .path-root-impact.path-neutral{background:var(--row)}
 .path-root-impact.path-neutral .path-root-impact-val{color:var(--text)}
 .path-root-why{margin-top:7px;font-size:12.5px;color:var(--text-muted)}
+.path-root-extra{margin-top:4px;font-size:12px;font-weight:600;color:var(--text-muted);font-variant-numeric:tabular-nums}
 
 /* Tiebreakers */
 .path-tie-block{margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);padding:16px 18px 14px}
