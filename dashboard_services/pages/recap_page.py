@@ -9,6 +9,8 @@ import logging
 import math
 from typing import Optional
 
+from dashboard_services.power_score import power_index
+
 logger = logging.getLogger(__name__)
 
 
@@ -1277,13 +1279,17 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         rid = str(p.get("roster_id") or "")
         p["power_rank"] = i
         score = p.get("power_score")
-        score_text = f"{float(score):.1f}" if score is not None else ""
+        # Display-only: the z prints as the 0-100 Power Index so the recap
+        # reads the same as the standings card for the same week. The
+        # power_score value itself stays the z (movement, AI team context).
+        score_text = str(power_index(score)) if score is not None else ""
+        score_label = '<div class="pf">Power Index</div>' if score_text else ""
         delta = power_deltas.get(i)
         move = (f"<span class='st-movement {'up' if delta > 0 else 'down'}'>{'↑' if delta > 0 else '↓'}{abs(delta)}</span>"
                 if delta else ("<span class='st-movement flat'>—</span>" if prior_power_teams else ""))
         power_rows.append(f'<div class="st-row{" recap-viewer-team" if str(session.get("viewer_roster_id") or "") == rid else ""}"><div class="st-rank{(" lead" if i == 1 else "")}">{i}</div>'
                           f'{ava_img(team_by_rid.get(rid, ""), rid, 28)}<div class="st-main"><div class="st-name">'
-                          f'{team_link(team_by_rid.get(rid, ""), rid)}</div></div><div class="st-rec"><div class="wl">{score_text}</div></div>{move}</div>')
+                          f'{team_link(team_by_rid.get(rid, ""), rid)}</div></div><div class="st-rec"><div class="wl">{score_text}</div>{score_label}</div>{move}</div>')
     power_html = f'<div class="card recap-rank-card" style="overflow:hidden"><div class="card-header"><h3>Power Rankings</h3>' \
                  f'<a href="/{_platform}/{_season}/{_league_id}/teams" style="font-size:13px;color:var(--accent)">View power rankings</a></div>{"".join(power_rows)}</div>'
     standings_html = f'<section class="recap-section recap-changes"><div class="recap-section-heading"><h2>Standings &amp; Power Rankings</h2><small>Through Week {selected_week}</small></div><div class="recap-rank-grid">{standings_html}{power_html}</div></section>'

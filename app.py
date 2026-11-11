@@ -11615,6 +11615,7 @@ def render_power_and_playoffs(
         prev_power_ranks=None,
         playoff_week_start=None,
         playoff_path_live: bool = False,
+        power_index_display: bool = True,
 ) -> str:
     """
     Single card that shows:
@@ -11632,6 +11633,11 @@ def render_power_and_playoffs(
         grey dash when unchanged or unknown).
     playoff_week_start: first playoff week from league settings; labels the
         bracket match heads with their week (None hides the week labels).
+    power_index_display: when True (standings / week views), the PowerScore
+        z prints as the 0-100 Power Index (power_score.power_index) and the
+        bars use that fixed scale. The offseason standings caller passes
+        False: its synthetic frame carries the 100-160 roster-value display
+        scale (value_scale_score), not a z, so it renders raw as before.
     """
     if team_stats is None or team_stats.empty:
         return ""
@@ -11781,6 +11787,18 @@ def render_power_and_playoffs(
             return 100.0
         return max(2.0, min(100.0, (float(v) - min(pmin, pmax)) / span * 100.0))
 
+    # Display transform: the z prints as the 0-100 Power Index and the bar
+    # is that index on a fixed scale (90 = 90% of the track), replacing the
+    # per-board min/max rescale that rendered the worst team as a dot. The
+    # underlying PowerScore stays the z: order and sorting never change.
+    from dashboard_services.power_score import power_index as _power_index
+
+    def score_text(v: float) -> str:
+        return str(_power_index(v)) if power_index_display else f"{v:.1f}"
+
+    def bar_width(v: float) -> float:
+        return float(_power_index(v)) if power_index_display else pct_width(v)
+
     def safe_int(val, default=0):
         try:
             return int(val)
@@ -11827,9 +11845,9 @@ def render_power_and_playoffs(
         f"<div class='pwr-lead-badge'><i class='fa-solid fa-crown'></i> #1 Power</div>"
         f"<div class='pwr-lead-name'>{_clickable_team_name(lead_name, _o2r)} {move_arrow(lead_name)}</div>"
         f"<div class='pwr-lead-sub'>{lead_sub}</div></div>"
-        f"<div class='pwr-lead-score'><b>{safe_float(lead.get('PowerScore'), 0.0):.1f}</b>"
+        f"<div class='pwr-lead-score'><b>{score_text(safe_float(lead.get('PowerScore'), 0.0))}</b>"
         f"<span>Power</span></div></div>"
-        f"<div class='pwr-lead-bar'><div style='width:{pct_width(safe_float(lead.get('PowerScore'), 0.0)):.1f}%'></div></div>"
+        f"<div class='pwr-lead-bar'><div style='width:{bar_width(safe_float(lead.get('PowerScore'), 0.0)):.1f}%'></div></div>"
         f"</div>"
     )
 
@@ -11845,14 +11863,17 @@ def render_power_and_playoffs(
             "onerror=\"this.style.visibility='hidden'\">" if av
             else "<span class='avatar sm pwr-noav'></span>"
         )
-        right = ""
+        right = (
+            "<span class='pwr-score-label'>Power Index</span>"
+            if power_index_display else ""
+        )
         rows_html.append(
             f"<div class='pwr-row {streak_class(row)}' data-rk-key='{html.escape(str(team), quote=True)}'>"
             f"<span class='pwr-pos'>{pos}</span>{img}"
             f"<div class='pwr-mid'>"
             f"<div class='pwr-name'>{_clickable_team_name(team, _o2r, cls='name')} {move_arrow(team)}</div>"
-            f"<div class='pwr-bar'><div style='width:{pct_width(power_val):.1f}%'></div></div></div>"
-            f"<div class='pwr-right'><div class='pwr-score'>{power_val:.1f}</div>{right}</div>"
+            f"<div class='pwr-bar'><div style='width:{bar_width(power_val):.1f}%'></div></div></div>"
+            f"<div class='pwr-right'><div class='pwr-score'>{score_text(power_val)}</div>{right}</div>"
             f"</div>"
         )
 
@@ -12473,6 +12494,9 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         bracket_override=synthetic_bracket,
         seed_map_override=seed_map_override,
         power_rankings=_pr_teams,
+        # The synthetic frame's PowerScore is the 100-160 value display
+        # scale, not a z: keep the raw rendering this card has always had.
+        power_index_display=False,
     )
 
     # ── left-column dynasty rankings table ───────────────────────────────────
