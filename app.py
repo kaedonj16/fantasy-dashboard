@@ -13116,7 +13116,6 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
     <div class="standings-week-bar">
       <label for="standingsWeek" class="standings-week-label">Standings through</label>
       <select id="standingsWeek" class="search standings-week-select">{opts}</select>
-      <span class="standings-week-hint">Past weeks use scoring only; the live week blends value. See the standings &amp; power ranking as they stood after any week</span>
     </div>
     <script>
     (function() {{

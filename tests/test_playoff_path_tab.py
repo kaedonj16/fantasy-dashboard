@@ -494,8 +494,9 @@ def test_hero_tiles_wrap_never_truncate_on_mobile():
     block = DASH_CSS[start:start + 220]
     assert "white-space: normal" in block
     assert "overflow-wrap: break-word" in block
-    # The 2-across phone grid itself is unchanged.
-    assert ".st-tiles { grid-template-columns: 1fr 1fr; gap: 8px; }" in DASH_CSS
+    # The 2-across phone grid itself is unchanged (gap slimmed 8px -> 6px
+    # in the standings header-slim round 2).
+    assert ".st-tiles { grid-template-columns: 1fr 1fr; gap: 6px; }" in DASH_CSS
 
 
 # ── Changelog: one entry, found by content (pin_helpers) ─────────────────
