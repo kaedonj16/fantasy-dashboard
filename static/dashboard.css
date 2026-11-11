@@ -57701,24 +57701,28 @@ button.mb-fld-link {
 .path-game-swing{margin-top:4px;font-size:12px;color:var(--text-muted)}
 .path-game-swing b{color:var(--text)}
 .path-imp-chart{margin-top:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);padding:6px 16px 12px}
-.path-imp-row{padding:11px 0 10px}
-.path-imp-row + .path-imp-row{border-top:1px solid var(--border)}
-.path-imp-head{display:flex;align-items:baseline;gap:10px}
-.path-imp-name{font-size:13.5px;font-weight:700;color:var(--text)}
+.path-imp-row{display:grid;grid-template-columns:minmax(150px,205px) 74px 42px 1fr 42px 66px;align-items:center;column-gap:10px;padding:6px 0;border-top:1px solid var(--border)}
+.path-imp-chart > .path-imp-row:first-of-type{border-top:none}
+.path-imp-main{display:flex;align-items:baseline;gap:8px;min-width:0}
+.path-imp-name{font-size:13.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .path-imp-row.path-you .path-imp-name{color:#2563eb}
-.path-imp-rec{font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums}
-.path-imp-now{margin-left:auto;font-size:12px;color:var(--text-muted)}
-.path-imp-now b{color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
-.path-imp-bar-row{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;gap:10px;margin-top:7px}
+.path-imp-rec{flex:none;font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.path-imp-now{font-size:12px;color:var(--text-muted);white-space:nowrap}
+.path-imp-now b{color:var(--text);font-size:12.5px;font-variant-numeric:tabular-nums}
 .path-imp-end{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 .path-imp-end.path-l{color:var(--loss);text-align:right}
 .path-imp-end.path-w{color:var(--win)}
 .path-imp-track{position:relative;height:10px;border-radius:5px;background:var(--grid,#e5e7eb)}
 .path-imp-range{position:absolute;top:0;height:100%;border-radius:5px;background:#2563eb;opacity:.85}
 .path-imp-dot{position:absolute;top:50%;width:13px;height:13px;border-radius:50%;background:#fff;border:2.5px solid var(--accent);transform:translate(-50%,-50%);z-index:1}
-.path-imp-nogame{margin-top:7px;font-size:12px;color:var(--text-subtle)}
-.path-imp-axis{display:grid;grid-template-columns:40px 1fr 40px;gap:10px;margin-top:2px}
-.path-imp-axis-track{position:relative;height:14px;font-size:10.5px;color:var(--text-subtle)}
+.path-imp-swing{font-size:11px;color:var(--text-muted);text-align:right;white-space:nowrap}
+.path-imp-swing b{font-size:12.5px;color:var(--text);font-variant-numeric:tabular-nums}
+.path-imp-swing-na{color:var(--text-subtle)}
+.path-imp-nogame{grid-column:3 / 6;font-size:12px;color:var(--text-subtle)}
+.path-imp-more[hidden]{display:none}
+.path-imp-axis{display:grid;grid-template-columns:minmax(150px,205px) 74px 42px 1fr 42px 66px;column-gap:10px;margin-top:2px}
+.path-imp-axis-track{grid-column:4;position:relative;height:14px;font-size:10.5px;color:var(--text-subtle)}
+.path-imp-toggle-row{margin-top:10px}
 .path-imp-axis-track span{position:absolute;left:0}
 .path-imp-axis-track .path-imp-axis-mid{left:50%;transform:translateX(-50%)}
 .path-imp-axis-track .path-imp-axis-r{left:auto;right:0}
@@ -57776,6 +57780,16 @@ button.mb-fld-link {
   .path-root-row{padding:12px 13px;gap:11px}
   .path-games{grid-template-columns:1fr}
   .path-imp-chart{padding:4px 13px 10px}
+  .path-imp-row{grid-template-columns:1fr auto auto;grid-template-areas:"main now swing" "l track w";row-gap:5px;padding:7px 0}
+  .path-imp-main{grid-area:main}
+  .path-imp-now{grid-area:now}
+  .path-imp-swing{grid-area:swing}
+  .path-imp-end.path-l{grid-area:l}
+  .path-imp-track{grid-area:track}
+  .path-imp-end.path-w{grid-area:w}
+  .path-imp-nogame{grid-area:2 / 1 / 3 / 4}
+  .path-imp-axis{grid-template-columns:42px 1fr 42px;column-gap:10px}
+  .path-imp-axis-track{grid-column:2}
   .path-table .path-rec-cell{display:none}
   .path-team-sub{display:block}
   .path-table th,.path-table td{padding-left:11px;padding-right:11px}

@@ -7387,6 +7387,16 @@ function initPlayoffPath(root = document) {
   });
 }
 
+function togglePathImpact(btn) {
+  const chart = btn.closest('.path-imp-chart');
+  const more = chart && chart.querySelector('.path-imp-more');
+  if (!more) return;
+  const open = more.hidden;
+  more.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.textContent = open ? 'Show fewer' : (btn.dataset.moreLabel || 'Show all teams');
+}
+
 function _pathFmtPct(v) {
   if (v == null) return '-';
   if (v >= 100) return '100';
@@ -7670,30 +7680,39 @@ function _renderPlayoffPath(data, scen) {
       const sb = b.swing == null ? -1 : b.swing;
       return sb - sa;
     });
-    const chartRows = sorted.map(t => {
+    const rowHtml = sorted.map(t => {
       const you = viewerRid && String(t.roster_id) === viewerRid;
-      const head = `<div class="path-imp-head">
+      const main = `<div class="path-imp-main">
         <span class="path-imp-name">${escapeHtml(t.team_name)}${you ? '<span class="path-you-tag">YOU</span>' : ''}</span>
-        <span class="path-imp-rec">${t.wins}-${t.losses}${t.ties ? '-' + t.ties : ''}</span>
-        <span class="path-imp-now">Now <b>${_pathFmtPct(t.playoff_pct)}%</b></span></div>`;
-      let bar;
+        <span class="path-imp-rec">${t.wins}-${t.losses}${t.ties ? '-' + t.ties : ''}</span></div>`;
+      const now = `<span class="path-imp-now">Now <b>${_pathFmtPct(t.playoff_pct)}%</b></span>`;
       if (t.swing == null || t.playoff_if_lose == null || t.playoff_if_win == null) {
-        bar = `<div class="path-imp-nogame">No game this week</div>`;
-      } else {
-        const lo = Math.max(0, Math.min(100, t.playoff_if_lose));
-        const hi = Math.max(0, Math.min(100, t.playoff_if_win));
-        bar = `<div class="path-imp-bar-row">
-          <span class="path-imp-end path-l">${_pathFmtPct(t.playoff_if_lose)}%</span>
-          <div class="path-imp-track">
-            <div class="path-imp-range" style="left:${lo}%;width:${Math.max(hi - lo, 0.8)}%"></div>
-            <div class="path-imp-dot" style="left:${Math.max(0, Math.min(100, t.playoff_pct))}%"></div>
-          </div>
-          <span class="path-imp-end path-w">${_pathFmtPct(t.playoff_if_win)}%</span></div>`;
+        return `<div class="path-imp-row${you ? ' path-you' : ''}">${main}${now}` +
+          `<span class="path-imp-nogame">No game this week</span>` +
+          `<span class="path-imp-swing path-imp-swing-na">-</span></div>`;
       }
-      return `<div class="path-imp-row${you ? ' path-you' : ''}">${head}${bar}</div>`;
-    }).join('');
-    const axis = `<div class="path-imp-axis"><span></span><div class="path-imp-axis-track">` +
-      `<span>0%</span><span class="path-imp-axis-mid">50%</span><span class="path-imp-axis-r">100%</span></div><span></span></div>`;
+      const lo = Math.max(0, Math.min(100, t.playoff_if_lose));
+      const hi = Math.max(0, Math.min(100, t.playoff_if_win));
+      return `<div class="path-imp-row${you ? ' path-you' : ''}">${main}${now}` +
+        `<span class="path-imp-end path-l">${_pathFmtPct(t.playoff_if_lose)}%</span>` +
+        `<div class="path-imp-track">` +
+          `<div class="path-imp-range" style="left:${lo}%;width:${Math.max(hi - lo, 0.8)}%"></div>` +
+          `<div class="path-imp-dot" style="left:${Math.max(0, Math.min(100, t.playoff_pct))}%"></div>` +
+        `</div>` +
+        `<span class="path-imp-end path-w">${_pathFmtPct(t.playoff_if_win)}%</span>` +
+        `<span class="path-imp-swing"><b>${t.swing.toFixed(1)}</b> swing</span></div>`;
+    });
+    // Only the top 6 by swing render up front (the rest sit behind the
+    // expand toggle) so the chart cannot stretch the column on desktop.
+    const IMP_VISIBLE = 6;
+    const visibleRows = rowHtml.slice(0, IMP_VISIBLE).join('');
+    const moreRows = rowHtml.slice(IMP_VISIBLE).join('');
+    const moreHtml = moreRows
+      ? `<div class="path-imp-more" hidden>${moreRows}</div>` : '';
+    const toggleHtml = moreRows
+      ? `<div class="path-imp-toggle-row"><button type="button" class="btn btn-sm path-imp-toggle" aria-expanded="false" data-more-label="Show all ${sorted.length} teams" onclick="togglePathImpact(this)">Show all ${sorted.length} teams</button></div>` : '';
+    const axis = `<div class="path-imp-axis"><div class="path-imp-axis-track">` +
+      `<span>0%</span><span class="path-imp-axis-mid">50%</span><span class="path-imp-axis-r">100%</span></div></div>`;
 
     // Clinch / elimination lines: team + condition, from scenarios state.
     const clinchLines = [];
@@ -7722,7 +7741,7 @@ function _renderPlayoffPath(data, scen) {
         <span class="path-wk-chip">Week ${week}</span>
       </div>
       ${gamesHtml ? `<div class="path-games">${gamesHtml}</div>` : ''}
-      <div class="path-imp-chart">${chartRows}${axis}</div>
+      <div class="path-imp-chart">${visibleRows}${moreHtml}${axis}${toggleHtml}</div>
       <p class="path-tbl-note">Bar spans If Lose to If Win. Dot is Now. Longer bar, bigger swing.</p>
       ${clinchHtml}`);
   }
