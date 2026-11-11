@@ -12805,7 +12805,27 @@ def _standings_playoff_params(ctx: dict, team_stats):
     _pp_spots = _pp_weeks = None
     try:
         _settings = ctx.get("league_settings") or {}
-        _pws = int(_settings.get("playoff_week_start") or 0)
+        # Resolve the playoff start the way every other consumer does:
+        # the serve-time league-rules record first (the overlay stamps it
+        # on the ctx as the source of truth), then the settings under
+        # either spelling (Sleeper playoff_week_start / Yahoo raw
+        # playoff_start_week), then the same default the sim, the odds
+        # route and the scenarios layer all use (15). This gate used to
+        # read the raw settings key with no fallback, so a league whose
+        # settings reached the standings ctx without the key (the Yahoo
+        # globals shape) silently lost its cut line and its Playoff Path
+        # tab while Playoff Odds simulated the race on the default.
+        _pws = 0
+        for _src in ((ctx.get("_league_rules") or {}), _settings):
+            try:
+                _pws = int(_src.get("playoff_week_start")
+                           or _src.get("playoff_start_week") or 0)
+            except (TypeError, ValueError):
+                _pws = 0
+            if _pws:
+                break
+        if not _pws:
+            _pws = 15
         if _pws > 1:
             _reg_weeks = _pws - 1
             _played = int((team_stats["Wins"] + team_stats["Losses"]
