@@ -142,7 +142,8 @@ SYSTEM = (
     "when the question says 'this week'). "
     "playoffs: playoff odds, clinching, elimination, what a team needs to make the playoffs, "
     "or how the odds have moved over the season (how have my odds moved, odds movement, "
-    "biggest odds risers or fallers). "
+    "biggest odds risers or fallers), who to root for in other games, what happens to "
+    "the odds if the user's team wins or loses this week, and the bye / first-seed race. "
     "power_rankings: the power rankings, who is strongest, or the team to beat; a ranking of team "
     "strength, NOT the win-loss standings table. "
     "standings: the standings table itself, records, points for, seeds, or division races; the "
@@ -1325,6 +1326,19 @@ def _keyword_route(message: str) -> dict:
         board = _keyword_board(message, m)
         if board is not None:
             return {**base, **board}
+    # Playoff Path shapes that carry no playoff token: who to root for in
+    # the week's other games, the win/lose fork, and the bye / 1-seed
+    # race. Claimed here, before standings, whose \bseed\b rule would
+    # otherwise eat the seed forms; the settings claim above still owns
+    # "when do playoffs start". "Bye week" coverage questions are waiver
+    # business, not the bye race, and are left to fall through.
+    if (re.search(r"\broot for\b|\brooting for\b", m)
+            or re.search(r"\bif i (win|lose)\b", m)
+            or (re.search(r"\b1 seed\b|\bfirst seed\b|\btop seed\b", m)
+                and re.search(r"\bcan i\b|\bdo i\b|\bget\b|\bstill\b", m))
+            or (re.search(r"\bbye\b", m) and "bye week" not in m
+                and re.search(r"\bcan i\b|\bdo i\b|\bget\b|\bstill\b|\bodds\b", m))):
+        return {**base, "intent": "playoffs", "season": _season_in(m)}
     if re.search(r"standings|division|most points|points leader|highest scoring|"
                  r"\bseed\b|first place|what place am i", m):
         return {**base, "intent": "standings"}

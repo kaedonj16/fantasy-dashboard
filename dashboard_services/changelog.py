@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-10",
         "tag": "update",
+        "text": "The BR Assistant now answers Playoff Path questions down the stretch: who to root for in this week's other games, what your playoff, bye and 1 seed odds become if you win or lose, and where you stand on points-for tiebreakers.",
+        "link": "/standings"
+    },
+    {
+        "date": "2026-11-10",
+        "tag": "update",
         "text": "Standings on mobile is now tabbed with a compact league summary, Playoff Path Overview shows your matchup with bye and 1 seed bars, and Playoff Impact can switch between playoff, bye and 1 seed odds.",
         "link": "/standings"
     },

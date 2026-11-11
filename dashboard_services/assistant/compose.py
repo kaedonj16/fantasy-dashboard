@@ -96,7 +96,12 @@ SYSTEM = (
     "for waivers, the top candidate's value and the user's weakest starter at that position; "
     "for playoffs, the odds, your current seed and first-seed odds when the pack carries them, "
     "the first-round bye odds, and the wins still needed against the "
-    "projected cut line; for standings and power rankings, the user's "
+    "projected cut line; when the playoffs pack carries me.fork, cite the playoff odds "
+    "if the user's team wins and if it loses for a win-or-lose question (and the bye or "
+    "first-seed fork numbers for a bye or 1-seed question); when it carries root_for, name "
+    "the biggest other game and the side to root for with the two playoff percentages; "
+    "when it carries tiebreakers, cite the points-for edge over the named team; "
+    "for standings and power rankings, the user's "
     "own seed or rank and the leader; for a matchup, the win probability and both projected "
     "totals (a matchup answer is only about the matchup: the verdict leads with the win "
     "probability and the projected score, and it never carries waiver targets or weekly "
@@ -1014,8 +1019,28 @@ def _required_receipts(intent: str, pack: dict, question: str | None = None) -> 
     elif intent == "playoffs":
         me = pack.get("me") or {}
         scen = pack.get("scenario") or {}
+        fork = me.get("fork") or {}
+        # A win/lose question is asked about the fork itself, so its two
+        # rows ride directly under the headline odds; on any other
+        # playoffs question they queue behind the standing numbers (and
+        # ahead of weeks remaining) under the 4-row cap.
+        fork_q = bool(question) and re.search(
+            r"\bif i (win|lose)\b", str(question).lower()) is not None
+
+        def _fork_rows():
+            out = []
+            if fork.get("playoff_if_win") is not None:
+                out.append({"label": "Playoff odds if you win (%)",
+                            "value": _fmt_num(fork["playoff_if_win"])})
+            if fork.get("playoff_if_lose") is not None:
+                out.append({"label": "Playoff odds if you lose (%)",
+                            "value": _fmt_num(fork["playoff_if_lose"])})
+            return out
+
         if me.get("playoff_pct") is not None:
             rows.append({"label": "Your playoff odds (%)", "value": _fmt_num(me["playoff_pct"])})
+        if fork_q:
+            rows.extend(_fork_rows())
         if me.get("seed") is not None:
             rows.append({"label": "Current seed", "value": _fmt_num(me["seed"])})
         if me.get("first_seed_pct") is not None:
@@ -1034,6 +1059,11 @@ def _required_receipts(intent: str, pack: dict, question: str | None = None) -> 
             # any seed above it; the label says so.
             rows.append({"label": "Wins still needed (projected cut line)",
                          "value": _fmt_num(me["wins_still_needed"])})
+        # The win/lose fork (in-window packs only) outranks the
+        # weeks-remaining row under the 4-row cap: in the window, what
+        # this week does to the odds is the point of the answer.
+        if not fork_q:
+            rows.extend(_fork_rows())
         if pack.get("weeks_remaining") is not None and len(rows) < 4:
             rows.append({"label": "Weeks remaining", "value": _fmt_num(pack["weeks_remaining"])})
     elif intent == "power_rankings":
@@ -1552,7 +1582,7 @@ def _pair_followup(f) -> dict | None:
     return {"label": label, "ask": ask}
 
 
-def _clean_followups(intent: str, followups) -> list[dict]:
+def _clean_followups(intent: str, followups, pack=None) -> list[dict]:
     """Keep only follow-ups whose ask is in the user's voice; fall back
     to per-intent templates.
 
@@ -1561,6 +1591,11 @@ def _clean_followups(intent: str, followups) -> list[dict]:
     reads as system language (internal terms), as an instruction to
     send/provide data, or as an offer from the assistant is rejected;
     when nothing survives, the intent's templates are used instead.
+
+    The one pack-gated chip: a playoffs answer whose pack carries
+    root-for data (the end-of-season window only) leads with the
+    root-for question; out of window the chip never appears, since the
+    pack cannot answer it yet.
     """
     kept = []
     for f in followups or []:
@@ -1569,6 +1604,10 @@ def _clean_followups(intent: str, followups) -> list[dict]:
             kept.append(pair)
     if not kept:
         kept = [dict(p) for p in (_FOLLOWUP_TEMPLATES.get(intent) or [])]
+    if intent == "playoffs" and pack and pack.get("root_for"):
+        pair = followup_pair("Who should I root for this week?")
+        if all(p.get("ask") != pair["ask"] for p in kept):
+            kept = [pair] + kept
     return kept[:3]
 
 
@@ -2943,7 +2982,7 @@ def _enforce_grounding(answer: dict, intent: str, pack: dict, question: str) -> 
         actions.append(a)
     out["actions"] = actions
     if not out.get("followups"):
-        out["followups"] = _clean_followups(intent, [])
+        out["followups"] = _clean_followups(intent, [], pack)
     # Multi-name coverage, last: deterministic answers that return
     # before the draft hook (no-fit, gated, no-data) still name every
     # player the question named. The lines render pack numbers only,
@@ -3723,7 +3762,7 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         "text": data.get("text") or "",
         "receipts": receipts,
         "caveat": caveat,
-        "followups": _clean_followups(intent, data.get("followups")),
+        "followups": _clean_followups(intent, data.get("followups"), pack),
         "act_link": _resolve_act_link(intent, pack),
         "actions": actions,
         "mentions": _mentions(intent, pack),

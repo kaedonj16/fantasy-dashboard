@@ -6728,9 +6728,111 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
                     if nxt.get("opp") is not None:
                         scenario["next_opponent"] = name_by_rid.get(int(nxt["opp"]))
                     pack["scenario"] = scenario
+                # Playoff Path detail, in-window only: the win/lose fork,
+                # the other games that move the viewer's odds, and the PF
+                # tiebreaker picture. Every number is copied off the raw
+                # rows of the same cached sim run the field above slimmed
+                # (plus the standings machinery's seeds/PF) — nothing is
+                # recomputed here. Outside the window none of these keys
+                # exist, so early-season packs stay exactly as before.
+                try:
+                    _attach_path_detail(pack, odds, rows, me, names,
+                                        pf_by_rid, playoff_teams)
+                except Exception:
+                    logger.debug("[assistant] playoff path detail failed",
+                                 exc_info=True)
     except Exception:
         logger.debug("[assistant] playoff scenarios failed", exc_info=True)
     return pack, tools
+
+
+def _attach_path_detail(pack, odds, rows, me, names, pf_by_rid,
+                        playoff_teams):
+    """Fork / root-for / tiebreakers for the viewer's Playoff Path.
+
+    Called only inside the scenarios window (scen["show"]). Attaches
+    pack["me"]["fork"], pack["root_for"] and pack["tiebreakers"]; each
+    stays absent/None when its source data is missing (a bye-week
+    viewer, a league with no standings snapshot), never estimated.
+    """
+    viewer_rid = str((pack.get("me") or {}).get("roster_id") or "")
+    raw_me = next((r for r in odds
+                   if isinstance(r, dict)
+                   and str(r.get("roster_id")) == viewer_rid), None)
+    if me is not None and raw_me is not None:
+        pack["me"]["fork"] = {
+            "impact_week": raw_me.get("impact_week"),
+            "playoff_if_win": _f(raw_me.get("playoff_if_win")),
+            "playoff_if_lose": _f(raw_me.get("playoff_if_lose")),
+            "bye_if_win": _f(raw_me.get("bye_if_win")),
+            "bye_if_lose": _f(raw_me.get("bye_if_lose")),
+            "first_seed_if_win": _f(raw_me.get("first_seed_if_win")),
+            "first_seed_if_lose": _f(raw_me.get("first_seed_if_lose")),
+            "swing": _f(raw_me.get("swing")),
+        }
+    pack["root_for"] = None
+    if raw_me is not None:
+        row_names = {r["roster_id"]: r["team_name"] for r in rows}
+
+        def _name_of(rid):
+            rid = str(rid)
+            return names.get(rid) or row_names.get(rid) or f"Roster {rid}"
+
+        games = []
+        for g in raw_me.get("root_for") or []:
+            if not isinstance(g, dict):
+                continue
+            pa, pb = _f(g.get("playoff_if_a")), _f(g.get("playoff_if_b"))
+            if pa is None or pb is None:
+                continue
+            a_first = pa >= pb
+            entry = {
+                "a_name": _name_of(g.get("a")),
+                "b_name": _name_of(g.get("b")),
+                "root_for": _name_of(g.get("a") if a_first else g.get("b")),
+                "playoff_if_rooted": pa if a_first else pb,
+                "playoff_if_other": pb if a_first else pa,
+                "delta": round(abs(pa - pb), 1),
+            }
+            ba, bb = _f(g.get("bye_if_a")), _f(g.get("bye_if_b"))
+            if ba is not None and bb is not None:
+                entry["bye_if_rooted"] = ba if a_first else bb
+                entry["bye_if_other"] = bb if a_first else ba
+            games.append(entry)
+        games.sort(key=lambda e: -e["delta"])
+        pack["root_for"] = games[:4] or None
+    pack["tiebreakers"] = None
+    if me is not None and pf_by_rid:
+        from data_building.simulate_playoff_odds import _n_byes
+        seed_to_row = {r["seed"]: r for r in rows if r.get("seed") is not None}
+        wanted = set()
+        my_seed = me.get("seed")
+        if my_seed is not None:
+            wanted.update((my_seed - 1, my_seed, my_seed + 1))
+        # The cut itself (last team in / first team out) and the bye line.
+        wanted.update((playoff_teams, playoff_teams + 1))
+        n_byes = _n_byes(playoff_teams)
+        if n_byes:
+            wanted.add(n_byes)
+        picked = {}
+        for seed in wanted:
+            r = seed_to_row.get(seed)
+            if r is not None:
+                picked[r["roster_id"]] = {
+                    "team_name": r["team_name"],
+                    "pf": pf_by_rid.get(r["roster_id"]),
+                    "seed": r["seed"],
+                }
+        tb_rows = sorted(picked.values(),
+                         key=lambda x: (x["pf"] is None, -(x["pf"] or 0)))
+        my_pf = pf_by_rid.get(me["roster_id"])
+        my_pf_rank = None
+        if my_pf is not None:
+            my_pf_rank = 1 + sum(1 for v in pf_by_rid.values()
+                                 if v is not None and v > my_pf)
+        if tb_rows:
+            pack["tiebreakers"] = {"rows": tb_rows,
+                                   "my_pf_rank": my_pf_rank}
 
 
 def build_power_rankings(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:

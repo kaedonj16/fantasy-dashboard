@@ -1359,6 +1359,13 @@ def _playoffs(pack):
     elif me.get("wins_still_needed") is not None:
         receipts.append({"label": "Wins still needed (projected cut line)",
                          "value": fmt(me["wins_still_needed"])})
+    fork = me.get("fork") or {}
+    if fork.get("playoff_if_win") is not None:
+        receipts.append({"label": "Playoff odds if you win (%)",
+                         "value": fmt(fork["playoff_if_win"])})
+    if fork.get("playoff_if_lose") is not None:
+        receipts.append({"label": "Playoff odds if you lose (%)",
+                         "value": fmt(fork["playoff_if_lose"])})
     if pack.get("weeks_remaining") is not None and len(receipts) < 4:
         receipts.append({"label": "Weeks remaining", "value": fmt(pack["weeks_remaining"])})
     ans = _base("playoffs", pack)
@@ -1379,10 +1386,44 @@ def _playoffs(pack):
                 f"{scen.get('summary')}.")
         if scen.get("next_opponent"):
             text += f" Your next game is against {scen['next_opponent']}."
+        if fork.get("playoff_if_win") is not None and fork.get("playoff_if_lose") is not None:
+            text += (f" Win this week and your playoff odds are {fmt(fork['playoff_if_win'])} "
+                     f"percent; lose and they drop to {fmt(fork['playoff_if_lose'])} percent.")
+        if fork.get("bye_if_win") is not None and fork.get("bye_if_lose") is not None:
+            text += (f" Your bye odds are {fmt(me.get('bye_pct'))} percent: "
+                     f"{fmt(fork['bye_if_win'])} with a win, {fmt(fork['bye_if_lose'])} "
+                     f"with a loss.")
+        root_for = pack.get("root_for") or []
+        if root_for:
+            top = root_for[0]
+            other = top["b_name"] if top.get("root_for") == top.get("a_name") else top["a_name"]
+            text += (f" The other game that matters most: root for {top.get('root_for')} "
+                     f"over {other}, your playoff odds are {fmt(top.get('playoff_if_rooted'))} "
+                     f"percent if they win and {fmt(top.get('playoff_if_other'))} percent "
+                     f"if they lose.")
+        tb_rows = (pack.get("tiebreakers") or {}).get("rows") or []
+        my_idx = next((i for i, r in enumerate(tb_rows)
+                       if r.get("team_name") == me.get("team_name")), None)
+        if my_idx is not None:
+            mine = tb_rows[my_idx]
+            parts = []
+            if my_idx > 0:
+                above = tb_rows[my_idx - 1]
+                parts.append(f"{above.get('team_name')} leads you on points for "
+                             f"{fmt(above.get('pf'))} to {fmt(mine.get('pf'))}")
+            if my_idx < len(tb_rows) - 1:
+                below = tb_rows[my_idx + 1]
+                parts.append(f"you hold the edge over {below.get('team_name')} "
+                             f"{fmt(mine.get('pf'))} to {fmt(below.get('pf'))}")
+            if parts:
+                text += " On tiebreakers, " + ", and ".join(parts) + "."
+        followups = [_fu("What are my odds of a first-round bye?"),
+                     _fu("How hard is my remaining schedule?")]
+        if root_for:
+            followups = [_fu("Who should I root for this week?")] + followups
         ans.update({"verdict": scen.get("summary") or "Alive", "text": text,
                     "receipts": receipts[:4],
-                    "followups": [_fu("What are my odds of a first-round bye?"),
-                                  _fu("How hard is my remaining schedule?")]})
+                    "followups": followups})
         return ans
     text = (f"{me.get('team_name')} sits at {me.get('record')} with "
             f"{fmt(pack.get('weeks_remaining'))} weeks left. Your projected finish is "
