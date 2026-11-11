@@ -38738,6 +38738,15 @@ def api_playoff_scenarios():
         # the card hides instead of showing a made-up number. A bye week
         # (viewer in no pair that week) omits it the same way.
         your_matchup = None
+        # True only when the viewer HAS a game in the first remaining
+        # week but the live matchup bundle for that week has not been
+        # built yet (_build_live_matchups is stale-while-revalidate and
+        # returns None on a cold key while a background rebuild lands).
+        # The client polls on this flag -- the same pending contract the
+        # league-scores endpoint uses -- instead of locking in a
+        # card-less render. Genuine absences (no roster_id, bye week)
+        # leave it False so the card simply stays hidden.
+        your_matchup_pending = False
         viewer_rid_s = (request.args.get("roster_id") or "").strip()
         if viewer_rid_s:
             try:
@@ -38768,6 +38777,8 @@ def api_playoff_scenarios():
                     )
                 except Exception:
                     _live = None
+                if _live is None:
+                    your_matchup_pending = True
                 if _live is not None:
                     _live_matchups, _status_by_pid, _proj_map = _live
                     _you = _opp = None
@@ -38822,6 +38833,7 @@ def api_playoff_scenarios():
             "current_week": current_week,
             "teams": teams_out,
             "your_matchup": your_matchup,
+            "your_matchup_pending": your_matchup_pending,
         })
     except Exception as exc:
         logger.exception("[playoff-scenarios] %s", exc)
