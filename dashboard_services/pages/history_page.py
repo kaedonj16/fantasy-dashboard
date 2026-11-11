@@ -1269,8 +1269,14 @@ def _wrapped_face_row_html(k, n, v, img="", is_top=False) -> str:
         _face += (f"<img class='wrapped-face-img' src='{_esc(str(img))}' alt='' "
                   "loading='lazy' decoding='async' onerror='this.remove()'>")
     if is_top:
-        _face += ("<i class='fa-solid fa-crown wrapped-face-crown' "
-                  "aria-hidden='true'></i>")
+        # Inline SVG, not the fa-crown icon: the site's PNG icon layer
+        # recolors .fa-crown with a dark rust filter chain that overrides
+        # the gold `color`, so the font icon can never render gold here.
+        # The SVG fills with the deck's gold directly (the mock's solid
+        # gold crown) and sizes exactly.
+        _face += ("<svg class='wrapped-face-crown' viewBox='0 0 24 24' "
+                  "aria-hidden='true'><path d='M5 16 3 6l5.5 4L12 4l3.5 6"
+                  "L21 6l-2 10H5Z M5 18h14v2H5Z'/></svg>")
     _face += "</div>"
     _pill = "<span class='wrapped-top-pill'>TOP SCORE</span>" if is_top else ""
     _row_cls = "wrapped-row wrapped-perf wrapped-row-top" if is_top else "wrapped-row wrapped-perf"
@@ -1374,11 +1380,24 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
         elif kind == "cover":
             # Weekly cover: real logo, league, the WEEK N WRAPPED wordmark
             # and the week's headline stat boxes (all count up).
+            def _box_label(_lbl):
+                # Two-part labels ("TOTAL PTS · 10 TEAMS") render as two
+                # deliberate lines; a free wrap strands the separator at a
+                # line start inside the narrow box.
+                _lbl = str(_lbl or "")
+                if " · " not in _lbl:
+                    return f"<span class='wrapped-box-k'>{_esc(_lbl)}</span>"
+                _main, _sub = _lbl.split(" · ", 1)
+                return (f"<span class='wrapped-box-k'>{_esc(_main)}</span>"
+                        f"<span class='wrapped-box-k wrapped-box-k2'>"
+                        f"{_esc(_sub)}</span>")
+
             _boxes = "".join(
                 "<div class='wrapped-box'>"
                 f"<span class='wrapped-box-v'><span data-w-count='{_esc(str(_b.get('num') or '0'))}' "
                 f"data-w-dp='{_esc(str(_b.get('dp') or 0))}'>0</span>{_esc(str(_b.get('suffix') or ''))}</span>"
-                f"<span class='wrapped-box-k'>{_esc(str(_b.get('label') or ''))}</span></div>"
+                + _box_label(_b.get('label'))
+                + "</div>"
                 for _b in (s.get("boxes") or []))
             body = (
                 kicker
@@ -2153,6 +2172,24 @@ def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
         return None  # best-effort slide; the deck renders without it
 
 
+def _wrapped_team_name_is_plural(name) -> bool:
+    """Best-effort plurality of a team name, for headline verb agreement.
+
+    A name whose last word ends in 's' reads plural ("Pittsburgh Pilots
+    are in"); anything else reads singular ("Caleb's Casting Couch is
+    in"). A trailing possessive (…’s / ...'s) stays singular: the name is
+    one team named after someone, not a plural noun."""
+    words = [w.strip(".,!?)(").lower()
+             for w in str(name or "").replace("’", "'").split()]
+    words = [w for w in words if w]
+    if not words:
+        return False
+    last = words[-1]
+    if last.endswith("'s"):
+        return False
+    return last.endswith("s")
+
+
 def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                  include_players: bool = True) -> list:
     """Ordered 'Weekly Wrapped' story slides for one completed week, in the
@@ -2529,13 +2566,30 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 if _bn0.get("name") and isinstance(_bp0, (int, float)):
                     # The same miss the Coaching Report leads with, so the
                     # two slides agree (the mock's cross-slide consistency).
+                    # ONE consistent story per block: the analysis `gap` is
+                    # the FULL hindsight-rotation gain, which only equals
+                    # the headline pair's diff on a single swap. A single
+                    # swap prints the swap gap computed from the two scores
+                    # on the slide (so the numbers always reconcile); a
+                    # rotation labels its total as the rotation's.
+                    _sp0 = float(_st0.get('pts') or 0)
+                    _rot0 = (len(_mo0.get("rotation_in") or []) > 1
+                             or len(_mo0.get("rotation_out") or []) > 1)
+                    if _rot0:
+                        _n_moves = max(len(_mo0.get("rotation_in") or []),
+                                       len(_mo0.get("rotation_out") or []))
+                        _tail = (f"a {_n_moves}-move rotation left "
+                                 f"+{float(_mo0.get('gap') or 0):.1f} "
+                                 "on the table")
+                    else:
+                        _tail = (f"+{float(_bp0) - _sp0:.1f} "
+                                 "left on the table")
                     _om_blocks.append({
                         "k": "BENCH REGRET", "n": str(_bn0["name"]),
                         "value": f"{float(_bp0):.1f} PTS ON THE BENCH",
                         "note": (f"{_mo0.get('team') or 'A team'} started "
                                  f"{_st0.get('name') or '?'} "
-                                 f"({float(_st0.get('pts') or 0):.1f}) instead · "
-                                 f"+{float(_mo0.get('gap') or 0):.1f} left on the table")})
+                                 f"({_sp0:.1f}) instead · {_tail}")})
         if len(_om_blocks) >= 2:
             slides.append({"kind": "ohmy", "eyebrow": "OH MY",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
@@ -2567,15 +2621,20 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             if _sec.get("title") == "CLINCHED A BYE":
                 _bye_names = [str(r[1]) for r in (_sec.get("rows") or [])]
         _plain_in = [n for n in _clinched if n not in _bye_names]
+        def _verb(_ns):
+            # Verb agreement is with the NAME, not the count: a lone
+            # "Pittsburgh Pilots" is plural even though it is one team.
+            if len(_ns) != 1:
+                return "are"
+            return "are" if _wrapped_team_name_is_plural(_ns[0]) else "is"
+
         if _bye_names:
             _clauses.append(f"{_names(_bye_names)} locked up a first-round bye")
         if _plain_in:
-            _clauses.append(
-                f"{_names(_plain_in)} {'is' if len(_plain_in) == 1 else 'are'} in")
+            _clauses.append(f"{_names(_plain_in)} {_verb(_plain_in)} in")
         if _eliminated:
             _clauses.append(
-                f"{_names(_eliminated)} "
-                f"{'is' if len(_eliminated) == 1 else 'are'} out")
+                f"{_names(_eliminated)} {_verb(_eliminated)} out")
         _headline = ". ".join(_clauses) + "."
         if len(_clauses) == 1:
             _headline += f" {hi_team} put up {hi_pts:.1f}, the week's top score."

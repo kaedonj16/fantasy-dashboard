@@ -47761,12 +47761,16 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
 .wrapped-box-v {
     display: block;
-    font-size: 30px;
+    /* The league total is the long value ("1292.2"): size the type to the
+       viewport so it always fits its third of the row, capped at the
+       mock's 30px when the stage is wide. */
+    font-size: clamp(20px, 6vw, 30px);
     font-weight: 900;
     letter-spacing: -.02em;
     line-height: 1;
     color: #f2f7fd;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .wrapped-box-k {
@@ -47778,6 +47782,12 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     text-transform: uppercase;
     color: #9db8d2;
     line-height: 1.45;
+}
+
+/* Second label line ("10 TEAMS" under "TOTAL PTS"): tighter than the
+   value-to-label gap so the two lines read as one label. */
+.wrapped-box-k + .wrapped-box-k {
+    margin-top: 2px;
 }
 
 .wrapped-headline-txt {
@@ -47808,7 +47818,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
 .wrapped-game {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 9px;
     background: var(--wg0);
     border: 1px solid #1b4066;
@@ -47817,19 +47827,24 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     font-size: 14px;
 }
 
+/* Full team names, always: the name columns share what's left after the
+   score and margin chip and wrap inside it (the mock never truncates a
+   name). min-width: min-content keeps a column from shrinking below its
+   longest word, so the wrap — not an ellipsis, and never a paint-over of
+   the neighboring column — absorbs long names; rows grow taller instead. */
 .wrapped-game-w {
+    flex: 1 1 0;
+    min-width: min-content;
     font-weight: 800;
     color: #f2f7fd;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.25;
 }
 
 .wrapped-game-l {
+    flex: 1 1 0;
+    min-width: min-content;
     color: #9db8d2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.25;
 }
 
 .wrapped-game-s {
@@ -48055,6 +48070,45 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     padding-left: 13px;
 }
 
+/* Performer rows are the mock's flat list, not cards: no panel fill or
+   radius, hairline separation only. The crowned row alone keeps a box —
+   a flat gold ring with a whisper of gold wash. */
+.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] .wrapped-row {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(27, 64, 102, .55);
+    border-radius: 0;
+    box-shadow: none;
+    padding: 11px 4px;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] .wrapped-row + .wrapped-row {
+    border-top: none;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] .wrapped-row.wrapped-row-top {
+    background: rgba(233, 185, 73, .05);
+    border: 1px solid rgba(233, 185, 73, .55);
+    border-radius: 12px;
+    box-shadow: none;
+    padding: 11px 12px;
+}
+
+/* Recap finale rows carry long labels (GAME OF THE WEEK) and long values
+   (a full "Team vs Team" matchup): in the one-line row the label and the
+   stat squeezed the name column to a sliver and it wrapped a letter at a
+   time. Like the mock's share card, the label stacks over the name/value
+   line, so the name always gets the row's full width minus the stat. */
+.wrapped-overlay-wk .wrapped-slide[data-kind="recap"] .wrapped-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="recap"] .wrapped-row-m {
+    width: 100%;
+}
+
 /* Playoff Picture section colors: gold bye, green in, red out. */
 .wrapped-overlay-wk .wrapped-row-sec-clinched-a-bye {
     color: #e9b949;
@@ -48124,8 +48178,11 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 }
 
 /* Soft gold halo centered on the headshot only: pixel stops reach full
-   transparency inside the box so it can never clip into a hard edge, and
-   the mask keeps it out of the crown zone above the photo. */
+   transparency inside the box so it can never clip into a hard edge. The
+   mask only clears the sliver of the halo that pokes above the photo
+   (the 74px halo extends 10px past the 54px photo), so no glow sits
+   behind the crown — masking deeper turned the halo into a flat smear
+   under the chin instead of a halo around the head. */
 .wrapped-face-glow {
     position: absolute;
     top: 50%;
@@ -48137,17 +48194,25 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     background: radial-gradient(circle, rgba(233, 185, 73, .5) 0, rgba(233, 185, 73, .26) 16px, rgba(233, 185, 73, 0) 33px);
     z-index: 0;
     pointer-events: none;
-    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 26px, #000 40px, #000 100%);
-    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 26px, #000 40px, #000 100%);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 7px, #000 17px, #000 100%);
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 7px, #000 17px, #000 100%);
 }
 
+/* The crown is an inline SVG filled with the deck's gold (see
+   _wrapped_face_row_html: the fa-crown font icon renders through the
+   site's PNG icon layer, whose rust filter chain overrides any gold
+   `color`). 30px on the 54px photo, worn on the head: its band overlaps
+   the top of the photo, slight -8deg tilt. The base transform matches
+   the float keyframes' rest pose so reduced-motion still centers it. */
 .wrapped-face-crown {
     position: absolute;
-    top: -12px;
+    top: -13px;
     left: 50%;
     z-index: 2;
-    font-size: 25px;
-    color: #e9b949;
+    width: 30px;
+    height: 30px;
+    fill: #e9b949;
+    transform: translateX(-50%) rotate(-8deg);
     filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .4));
     animation: wrapFaceFloat 2.6s ease-in-out infinite;
 }
@@ -48173,12 +48238,15 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     flex-wrap: wrap;
 }
 
+/* Performer meta (POS · Team · manager): the mock's quiet line — muted
+   sky, regular weight and tracking. Gold on this slide is reserved for
+   the points and the TOP SCORE pill. */
 .wrapped-perf-k {
     margin-top: 3px;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: .18em;
-    color: var(--wa);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .03em;
+    color: #9db8d2;
 }
 
 .wrapped-top-pill {
