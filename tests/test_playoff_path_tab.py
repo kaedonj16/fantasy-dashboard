@@ -161,8 +161,12 @@ def test_scenarios_endpoint_adds_pf_and_remaining_schedule():
 
 def test_sim_cache_version_bumped_for_new_fields():
     # Rows cached before the weekly-impact fields existed must never be
-    # served to the Path tab: both cache-key constructions use v4.
-    assert APP_PY.count('"v4"') >= 2
+    # served to the Path tab: both cache-key constructions use v5
+    # (v4 added the weekly-impact conditionals; v5 added the
+    # first-seed conditionals on top).
+    assert APP_PY.count('"v5"') >= 2
+    assert '_sim_key2 = (platform, str(league_id), season, "v5")' in APP_PY
+    assert '(platform, str(league_id), season, "v4")' not in APP_PY
     assert '(platform, str(league_id), season, "v3")' not in APP_PY
 
 
@@ -211,9 +215,15 @@ def test_impact_compact_css_desktop_and_mobile():
     assert "padding:6px 0" in row_rule
     # Expanded rows stay hidden until the toggle opens them.
     assert ".path-imp-more[hidden]{display:none}" in DASH_CSS
-    # Phone: the same row reflows to two lines (name line, bar line).
-    mobile = DASH_CSS[DASH_CSS.index("@media (max-width:640px)"):]
-    assert 'grid-template-areas:"main now swing" "l track w"' in mobile
+    # Phone: the same row reflows to two lines (name line, then the bar
+    # spanning the full card width) via flex order; the name wraps
+    # instead of truncating mid-word and the track is inset so the end
+    # dots never clip, with the axis track inset to match.
+    assert ".path-imp-row{display:flex;flex-wrap:wrap" in DASH_CSS
+    assert ".path-imp-name{white-space:normal;overflow:visible" in DASH_CSS
+    assert ".path-imp-track{order:5;flex:1 1 120px;margin:0 3px}" in DASH_CSS
+    assert ".path-imp-axis{grid-template-columns:44px 1fr 44px" in DASH_CSS
+    assert ".path-imp-axis-track{grid-column:2;margin:0 3px}" in DASH_CSS
 
 
 # ── Sub-tabs: bar markup, grouping, default active ─────────────────────
@@ -316,12 +326,195 @@ def test_picture_css_header_and_out_rows():
     assert ".path-table tr.path-out-row .path-now{" in DASH_CSS
 
 
+# ── Impact metric switcher (Playoffs / Bye / 1 Seed) ────────────────────
+
+def test_metric_switcher_wiring_and_availability():
+    block = _impact_block(APP_JS)
+    # Switching is a global inline-onclick function, like switchPathTab.
+    assert "function switchPathMetric(btn, key)" in APP_JS
+    assert "switchPathMetric(this, '${k}')" in block
+    # Per-metric value sources: each metric reads its own partition of
+    # the same sim rows, and the chart re-sorts per metric.
+    assert "playoff: t => ({ now: t.playoff_pct, win: t.playoff_if_win, lose: t.playoff_if_lose })" in block
+    assert "bye: t => ({ now: t.bye_pct, win: t.bye_if_win, lose: t.bye_if_lose })" in block
+    assert "first: t => ({ now: t.first_seed_pct, win: t.first_seed_if_win, lose: t.first_seed_if_lose })" in block
+    assert "const impLists = { playoff: sorted };" in block
+    assert "impLists.bye = impSort('bye')" in block
+    assert "impLists.first = impSort('first')" in block
+    # Availability gates: Bye needs a bye format AND bye conditionals;
+    # 1 Seed needs first-seed conditionals.
+    assert "const byeAvail = nByes > 0 && odds.some(t => t.bye_if_win != null);" in block
+    assert "const firstAvail = odds.some(t => t.first_seed_if_win != null);" in block
+    # One view per metric, first one visible, the rest hidden.
+    assert 'data-path-metric="${k}"' in APP_JS
+    assert ".path-imp-view[hidden]{display:none}" in DASH_CSS
+    # The subheading swaps with the metric.
+    assert 'data-path-imp-sub' in APP_JS
+    for sub in ("Playoff odds if each team wins or loses",
+                "Bye odds if each team wins or loses",
+                "1 seed odds if each team wins or loses"):
+        assert sub in APP_JS
+
+
+def test_metric_no_path_rows_render_flat_and_muted():
+    block = _impact_block(APP_JS)
+    # Both ends at the clamp floor = no path in this metric: the row
+    # sinks in the sort, carries the muted class, and renders the dot
+    # with no range fill. Equal-but-real ends (a lock) render flat too.
+    assert "const impNoPath = v => v.win != null && v.lose != null && v.win <= 0.1 && v.lose <= 0.1;" in block
+    assert "path-imp-nopath" in block
+    assert "path-imp-flat" in block
+    assert "(noPath || flat) ? '' : `<div class=\"path-imp-range\"" in block
+    # Null ends keep the existing no-game row, per metric.
+    assert '<span class="path-imp-nogame">No game this week</span>' in block
+    assert ".path-imp-row.path-imp-nopath .path-imp-name" in DASH_CSS
+
+
+# ── Overview: Your Matchup card + fork subtext ───────────────────────────
+
+def _endpoint_block(py: str) -> str:
+    start = py.index('"/api/playoff-scenarios"')
+    return py[start:py.index("@app.route", start + 10)]
+
+
+def test_scenarios_endpoint_builds_your_matchup_from_matchup_page_parts():
+    body = _endpoint_block(APP_PY)
+    # Opt-in via the viewer's roster id; absent otherwise.
+    assert 'request.args.get("roster_id")' in body
+    assert '"your_matchup": your_matchup' in body
+    # Projected points and win probability reuse the matchup page's own
+    # machinery over the live matchup bundle: no new formula.
+    assert "from routes.user_pages_bp import _build_live_matchups" in body
+    assert "team_live_totals" in body
+    assert "compute_win_prob" in body
+    for field in ('"viewer_proj"', '"opp_proj"', '"viewer_win_prob"',
+                  '"opp_roster_id"', '"week"'):
+        assert field in body
+
+
+def test_client_requests_matchup_for_the_viewer():
+    assert "roster_id=${encodeURIComponent(String(window._viewerRid))}" in APP_JS
+
+
+def test_matchup_card_gating_and_own_conditionals_bars():
+    start = APP_JS.index("Your Matchup card")
+    block = APP_JS[start:APP_JS.index("heroHtml = `<div class=\"path-hero\">", start)]
+    # Renders only for the viewer's own payload entry with real numbers.
+    assert "String(mu.viewer_roster_id) === viewerRid" in block
+    assert "typeof mu.viewer_proj === 'number'" in block
+    assert "typeof mu.opp_proj === 'number'" in block
+    assert '<h4>Your Matchup</h4>' in block
+    # Win probability split bar, viewer's % on the accent segment.
+    assert "path-mu-split" in block
+    assert "mu.viewer_win_prob" in block
+    # Bars come from each team's OWN odds row: viewer group is Bye then
+    # 1 Seed, opponent group is 1 Seed then Bye.
+    assert "muGroup(viewerOdds, true) + muGroup(oppOdds, false)" in block
+    assert block.index("muBar('Bye', oddsRow.bye_pct") \
+        < block.index("muBar('1 Seed', oddsRow.first_seed_pct")
+    assert block.rindex("muBar('1 Seed', oddsRow.first_seed_pct") \
+        < block.rindex("muBar('Bye', oddsRow.bye_pct")
+    # A bar is omitted when its conditionals are null (no fake flats);
+    # equal ends are the only flat bars.
+    assert "if (win == null || lose == null || now == null) return '';" in block
+    assert "const flat = win === lose;" in block
+    # Opponent "Clinched" subtext rides their scenario status.
+    assert "oppScen.status === 'clinched'" in block
+    assert "path-mu-clinched" in block
+
+
+def test_fork_subtext_carries_bye_and_first_seed_splits():
+    start = APP_JS.index("Second subtext line")
+    block = APP_JS[start:APP_JS.index("Remaining path", start)]
+    assert "path-fork-extra" in block
+    assert "viewerOdds.bye_if_win" in block
+    assert "viewerOdds.bye_if_lose" in block
+    assert "viewerOdds.first_seed_if_win" in block
+    assert "viewerOdds.first_seed_if_lose" in block
+    assert "`Bye ${_pathFmtPct(b)}%`" in block
+    assert "`1 seed ${_pathFmtPct(f)}%`" in block
+    # The old inline bye suffix on the main sub line is gone.
+    assert "% bye`" not in APP_JS
+
+
+# ── Standings mobile section tabs + hero strip ───────────────────────────
+
+STANDINGS_PAGE = (ROOT / "dashboard_services" / "pages" / "standings_page.py").read_text(encoding="utf-8")
+
+
+def test_standings_page_has_mobile_section_switch():
+    assert 'class="opt-seg st-sec-seg"' in STANDINGS_PAGE
+    assert "switchStandingsSection(this, 'standings')" in STANDINGS_PAGE
+    assert "switchStandingsSection(this, 'power')" in STANDINGS_PAGE
+    # The two columns carry the section classes the CSS switches on.
+    assert 'class="standings-col st-sec-col-st"' in STANDINGS_PAGE
+    assert 'class="standings-col st-sec-col-pw"' in STANDINGS_PAGE
+    # The switch lives outside the week-selector's swapped inners, so a
+    # week change cannot wipe it.
+    assert STANDINGS_PAGE.index("st-sec-seg") < STANDINGS_PAGE.index("stStandingsInner")
+
+
+def test_switch_standings_section_lazy_inits_rail_tabs():
+    assert "function switchStandingsSection(btn, key)" in APP_JS
+    start = APP_JS.index("function switchStandingsSection")
+    block = APP_JS[start:APP_JS.index("function _pathFmtPct", start)]
+    assert "st-sec-power-on" in block
+    # On first reveal, a lazy inner tab that is active but unloaded
+    # gets its click, exactly like a direct tab click.
+    assert "tab !== 'playoff-odds' && tab !== 'playoff-path'" in block
+    assert "panelEl.querySelector('.playoff-odds-loading, .loading-spinner-sm')" in block
+    assert "active.click()" in block
+
+
+def test_section_switch_css_is_stacked_widths_only():
+    # Hidden by default (desktop shows both sections); the rules are
+    # scoped through .std-rework so they outrank the generic .opt-seg
+    # display wherever they sit in the file ...
+    assert ".std-rework .st-sec-seg { display: none; }" in DASH_CSS
+    assert ".std-rework .st-sec-seg { display: flex; width: 100%; }" in DASH_CSS
+    assert ".std-rework .standings-main:not(.st-sec-power-on) > .st-sec-col-pw { display: none; }" in DASH_CSS
+    assert ".std-rework .standings-main.st-sec-power-on > .st-sec-col-st { display: none; }" in DASH_CSS
+    # ... and the reveal rules live inside the existing stacking block,
+    # right after the two-col grid collapses to one column.
+    stack = DASH_CSS.index(".standings-main.two-col-standings,\n    .power-two-col,")
+    assert stack < DASH_CSS.index(".std-rework .st-sec-seg { display: flex; width: 100%; }")
+    # ... and the desktop stretch-to-match rules are untouched.
+    assert ".std-rework .standings-main.two-col-standings { align-items: stretch; }" in DASH_CSS
+    assert "@media (min-width: 1025px)" in DASH_CSS
+
+
+def test_hero_tiles_wrap_never_truncate_on_mobile():
+    # Desktop tiles still ellipsize (unchanged) ...
+    desktop = DASH_CSS[DASH_CSS.index(".st-tile-val {"):DASH_CSS.index(".st-tile-sub {")]
+    assert "text-overflow: ellipsis" in desktop
+    # ... while the phone rules wrap all three text lines.
+    start = DASH_CSS.index(".st-tile-label, .st-tile-val, .st-tile-sub {")
+    block = DASH_CSS[start:start + 220]
+    assert "white-space: normal" in block
+    assert "overflow-wrap: break-word" in block
+    # The 2-across phone grid itself is unchanged.
+    assert ".st-tiles { grid-template-columns: 1fr 1fr; gap: 8px; }" in DASH_CSS
+
+
 # ── Changelog: one entry, found by content (pin_helpers) ─────────────────
 
 def test_changelog_has_one_playoff_path_entry():
     from tests.pin_helpers import changelog_entry
 
-    entry = changelog_entry("Playoff Path")
+    # "magic number" keeps the lookup unique: the later standings
+    # update entry also names the Playoff Path.
+    entry = changelog_entry("Playoff Path", "magic number")
     assert entry is not None
     assert entry["tag"] == "new"
     assert "magic number" in entry["text"]
+
+
+def test_changelog_has_standings_mobile_update_entry():
+    from tests.pin_helpers import changelog_entry
+
+    entry = changelog_entry("compact league summary", tag="update",
+                            link="/standings")
+    assert entry is not None
+    assert entry["date"] == "2026-11-10"
+    assert "tabbed" in entry["text"]
+    assert "1 seed" in entry["text"]

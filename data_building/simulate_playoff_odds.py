@@ -1925,6 +1925,8 @@ def _actual_results(teams: list[dict], playoff_teams: int,
         "playoff_if_lose":  None,
         "bye_if_win":       None,
         "bye_if_lose":      None,
+        "first_seed_if_win":  None,
+        "first_seed_if_lose": None,
         "swing":            None,
         "root_for":         [],
     } for t in teams]
@@ -2458,13 +2460,14 @@ def _pack_mc_results(
 
     # ── Playoff Path weekly impact: the same sims, partitioned on the
     # first remaining week's head-to-head results. No extra sim runs: the
-    # in/bye masks above are re-averaged over the sims where a team (or a
-    # game winner) won or lost that week. A tied game sets neither the won
+    # in/bye/first-seed masks above are re-averaged over the sims where a
+    # team (or a game winner) won or lost that week. A tied game sets neither the won
     # nor the lost partition, and a team with no H2H game that week (a bye
     # week) gets nulls rather than a fabricated split. Conditionals are
     # clamped like the headline odds (a projection never reads 0 / 100).
     in_mask  = team_rank < playoff_teams
     bye_mask = (team_rank < n_byes) if n_byes else np.zeros_like(in_mask)
+    first_mask = team_rank == 0
 
     def _clamp_cond(v) -> Optional[float]:
         if v is None:
@@ -2481,6 +2484,7 @@ def _pack_mc_results(
         entry: dict = {
             "playoff_if_win": None, "playoff_if_lose": None,
             "bye_if_win": None, "bye_if_lose": None,
+            "first_seed_if_win": None, "first_seed_if_lose": None,
             "swing": None, "root_for": [],
         }
         if first_won is not None and first_lost is not None:
@@ -2490,6 +2494,10 @@ def _pack_mc_results(
             if n_byes:
                 entry["bye_if_win"]  = _cond(bye_mask, won_i, i)
                 entry["bye_if_lose"] = _cond(bye_mask, lost_i, i)
+            # First seed exists in every format (unlike byes), so its
+            # splits are not gated on n_byes: rank 0 in the same sims.
+            entry["first_seed_if_win"]  = _cond(first_mask, won_i, i)
+            entry["first_seed_if_lose"] = _cond(first_mask, lost_i, i)
             if (entry["playoff_if_win"] is not None
                     and entry["playoff_if_lose"] is not None):
                 entry["swing"] = round(
@@ -2608,6 +2616,8 @@ def _pack_mc_results(
         "playoff_if_lose":  cond[i]["playoff_if_lose"],
         "bye_if_win":       cond[i]["bye_if_win"],
         "bye_if_lose":      cond[i]["bye_if_lose"],
+        "first_seed_if_win":  cond[i]["first_seed_if_win"],
+        "first_seed_if_lose": cond[i]["first_seed_if_lose"],
         "swing":            cond[i]["swing"],
         "root_for":         cond[i]["root_for"],
     } for i, t in enumerate(teams)]

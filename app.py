@@ -633,7 +633,9 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             # v4: rows now also carry the Playoff Path weekly-impact fields
             # (if-win / if-lose conditionals, swing, root-for partitions);
             # a v3 entry must never be served to the Path tab.
-            "v4",
+            # v5: rows also carry first_seed_if_win / first_seed_if_lose
+            # for the Path Impact metric switcher and the matchup card.
+            "v5",
         )
         hit = _PLAYOFF_SIM_CACHE.get(key)
         fresh = bool(hit) and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL
@@ -38543,7 +38545,7 @@ def api_playoff_odds():
         # same cache key/signature/TTL as every other consumer instead of
         # hand-duplicating them and racing the page's background sim with
         # a second, unguarded Monte Carlo on the request thread.
-        _sim_key2 = (platform, str(league_id), season, "v4")
+        _sim_key2 = (platform, str(league_id), season, "v5")
         _sim_sig2 = _playoff_sim_sig(ctx, platform)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
         _fresh_sim = not (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL
@@ -38726,6 +38728,88 @@ def api_playoff_scenarios():
             })
         teams_out.sort(key=lambda x: (x.get("best_seed") or 99, x.get("worst_seed") or 99))
 
+        # Playoff Path "Your Matchup" card (Overview): the viewer's game
+        # in the first remaining week, scored with the matchup page's own
+        # machinery -- projected totals from team_live_totals and the
+        # pregame win probability from compute_win_prob, both over the
+        # live matchup bundle (_build_live_matchups). Only built when the
+        # client names the viewer's roster (roster_id param) and every
+        # piece resolves; anything missing omits the object entirely so
+        # the card hides instead of showing a made-up number. A bye week
+        # (viewer in no pair that week) omits it the same way.
+        your_matchup = None
+        viewer_rid_s = (request.args.get("roster_id") or "").strip()
+        if viewer_rid_s:
+            try:
+                viewer_rid_i = int(viewer_rid_s)
+            except ValueError:
+                viewer_rid_i = None
+            mu_week = None
+            if viewer_rid_i is not None:
+                _matchups_by_week = state.get("matchups") or {}
+                for _wk in sorted(_matchups_by_week.keys(), key=lambda k: int(k)):
+                    _found = False
+                    for _pair in _matchups_by_week[_wk] or []:
+                        if not _pair or len(_pair) < 2:
+                            continue
+                        if int(_pair[0]) == viewer_rid_i or int(_pair[1]) == viewer_rid_i:
+                            mu_week = int(_wk)
+                            _found = True
+                            break
+                    if _found:
+                        break
+            if mu_week is not None:
+                try:
+                    from routes.user_pages_bp import _build_live_matchups
+                    _live = _build_live_matchups(
+                        platform,
+                        ctx.get("resolved_league_id") or league_id,
+                        season, mu_week, ctx,
+                    )
+                except Exception:
+                    _live = None
+                if _live is not None:
+                    _live_matchups, _status_by_pid, _proj_map = _live
+                    _you = _opp = None
+                    for _m in _live_matchups or []:
+                        _l = _m.get("left") or {}
+                        _r = _m.get("right") or {}
+                        if str(_l.get("roster_id") or "") == str(viewer_rid_i):
+                            _you, _opp = _l, _r
+                            break
+                        if str(_r.get("roster_id") or "") == str(viewer_rid_i):
+                            _you, _opp = _r, _l
+                            break
+                    if _you is not None and _opp is not None \
+                            and _opp.get("roster_id") is not None:
+                        try:
+                            from dashboard_services.matchups import (
+                                compute_win_prob, team_live_totals,
+                            )
+                            _you_proj = team_live_totals(
+                                _you, _status_by_pid, _proj_map)[1]
+                            _opp_proj = team_live_totals(
+                                _opp, _status_by_pid, _proj_map)[1]
+                            try:
+                                _wp = compute_win_prob(
+                                    _you, _opp, _status_by_pid, _proj_map)
+                                _wp = round(float(_wp) * 100.0, 1)
+                            except Exception:
+                                _wp = None
+                            _opp_rid_i = int(_opp.get("roster_id"))
+                            your_matchup = {
+                                "week": mu_week,
+                                "viewer_roster_id": viewer_rid_i,
+                                "opp_roster_id": _opp_rid_i,
+                                "opp_name": name_by_rid.get(_opp_rid_i)
+                                            or _opp.get("name") or "",
+                                "viewer_proj": round(float(_you_proj or 0.0), 1),
+                                "opp_proj": round(float(_opp_proj or 0.0), 1),
+                                "viewer_win_prob": _wp,
+                            }
+                        except Exception:
+                            your_matchup = None
+
         return jsonify({
             "show": scen.get("show", False),
             "mode": scen.get("mode"),
@@ -38737,6 +38821,7 @@ def api_playoff_scenarios():
             "n_byes": n_byes,
             "current_week": current_week,
             "teams": teams_out,
+            "your_matchup": your_matchup,
         })
     except Exception as exc:
         logger.exception("[playoff-scenarios] %s", exc)

@@ -19316,6 +19316,12 @@ img, svg, canvas {
     }
 }
 
+/* Standings page section switch: hidden on desktop, where both
+   sections always show side by side; the stacked-widths block below
+   reveals it and switches which single section is visible. Scoped
+   through .std-rework so it outranks the generic .opt-seg display. */
+.std-rework .st-sec-seg { display: none; }
+
 @media (max-width: 1024px) {
     .main-two-col,
     .graphs-page,
@@ -19326,6 +19332,11 @@ img, svg, canvas {
     .sidebar-grid {
         grid-template-columns: 1fr;
     }
+
+    .std-rework .st-sec-seg { display: flex; width: 100%; }
+    .st-sec-seg .st-sec-btn { flex: 1; }
+    .std-rework .standings-main:not(.st-sec-power-on) > .st-sec-col-pw { display: none; }
+    .std-rework .standings-main.st-sec-power-on > .st-sec-col-st { display: none; }
 }
 
 @media (max-width: 768px) {
@@ -49255,6 +49266,13 @@ a, button, [role="button"], [role="tab"], summary, label,
     .st-tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
     .st-tile { padding: 11px 12px; }
     .st-tile-val { font-size: 18px; }
+    /* Tile text wraps instead of truncating at phone width: team names
+       in the value and sub lines are never cut off mid-name. Grid rows
+       already stretch, so wrapped tiles stay equal height per row. */
+    .st-tile-label, .st-tile-val, .st-tile-sub {
+        white-space: normal; overflow: visible; text-overflow: clip;
+        overflow-wrap: break-word;
+    }
 }
 
 /* ---- PF-trend sparkline in the standings table ----------- */
@@ -57787,16 +57805,22 @@ button.mb-fld-link {
   .path-root-row{padding:12px 13px;gap:11px}
   .path-games{grid-template-columns:1fr}
   .path-imp-chart{padding:4px 13px 10px}
-  .path-imp-row{grid-template-columns:1fr auto auto;grid-template-areas:"main now swing" "l track w";row-gap:5px;padding:7px 0}
-  .path-imp-main{grid-area:main}
-  .path-imp-now{grid-area:now}
-  .path-imp-swing{grid-area:swing}
-  .path-imp-end.path-l{grid-area:l}
-  .path-imp-track{grid-area:track}
-  .path-imp-end.path-w{grid-area:w}
-  .path-imp-nogame{grid-area:2 / 1 / 3 / 4}
-  .path-imp-axis{grid-template-columns:42px 1fr 42px;column-gap:10px}
-  .path-imp-axis-track{grid-column:2}
+  /* Two-line rows: name (wrapping, never cut mid-word) + record, Now
+     and swing on line 1; the range bar spans the full card width on
+     line 2 with the lose % at its left end and the win % at its right.
+     The track is inset by its margins so dots at 0% / 99.9% never clip
+     the card edge; the axis row mirrors the same insets. */
+  .path-imp-row{display:flex;flex-wrap:wrap;align-items:center;column-gap:10px;row-gap:6px;padding:7px 0}
+  .path-imp-main{order:1;flex:1 1 52%}
+  .path-imp-name{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:break-word}
+  .path-imp-now{order:2;flex:none}
+  .path-imp-swing{order:3;flex:none;margin-left:auto}
+  .path-imp-end.path-l{order:4;flex:0 0 44px;text-align:left}
+  .path-imp-track{order:5;flex:1 1 120px;margin:0 3px}
+  .path-imp-end.path-w{order:6;flex:0 0 44px}
+  .path-imp-nogame{order:4;flex:1 1 100%}
+  .path-imp-axis{grid-template-columns:44px 1fr 44px;column-gap:10px}
+  .path-imp-axis-track{grid-column:2;margin:0 3px}
   .path-table .path-rec-cell{display:none}
   .path-team-sub-rec{display:block}
   .path-team-recsub{display:inline}
@@ -57804,6 +57828,56 @@ button.mb-fld-link {
   .path-table th,.path-table td{padding-left:11px;padding-right:11px}
   .path-pp-status-txt{display:none}
 }
+
+/* ── Playoff Path upgrades ────────────────────────────────────────────────
+   The Impact metric switcher, flat / no-path rows and the Overview
+   Your Matchup card. (The standings section-switch rules live with
+   the two-column stacking block near the top of this file.) */
+/* Impact metric switcher: same segmented grammar as the Path sub-tabs. */
+.path-metric-seg{display:flex;gap:3px;background:var(--card-soft);border:1px solid var(--border);border-radius:20px;padding:3px;margin-top:14px}
+.path-metric-btn{flex:1;border:0;background:transparent;font:inherit;font-size:13px;font-weight:700;color:var(--text-muted);padding:6px 14px;border-radius:20px;cursor:pointer;white-space:nowrap}
+.path-metric-btn.active{background:var(--accent);color:#fff}
+.path-imp-view[hidden]{display:none}
+/* No-path rows mute wholesale; flat (equal but real) rows mute only
+   their end labels. Both render the dot with no range fill. */
+.path-imp-row.path-imp-nopath .path-imp-name,
+.path-imp-row.path-imp-nopath .path-imp-now,
+.path-imp-row.path-imp-nopath .path-imp-now b{color:var(--text-subtle)}
+.path-imp-row.path-imp-nopath .path-imp-end,
+.path-imp-row.path-imp-flat .path-imp-end{color:var(--text-muted)}
+.path-imp-row.path-imp-nopath .path-imp-dot{border-color:var(--text-subtle)}
+/* Your Matchup card: a light card inside the navy hero, under the
+   stats strip and above the win/lose fork. */
+.path-mu{margin-top:18px;background:var(--card);color:var(--text);border-radius:10px;padding:14px 16px 16px}
+.path-mu-head{display:flex;align-items:center;gap:10px}
+.path-mu-head h4{margin:0;font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--text)}
+.path-mu-head .path-wk-chip{margin-left:auto}
+.path-mu-head + .path-mu-row{margin-top:4px}
+.path-mu-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)}
+.path-mu-team{flex:1;min-width:0}
+.path-mu-name{font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;flex-wrap:wrap;gap:2px}
+.path-mu-sub{font-size:12.5px;color:var(--text-muted);margin-top:2px}
+.path-mu-clinched{color:var(--text-subtle)}
+.path-mu-proj{flex:none;font-size:12.5px;font-weight:600;color:var(--text-muted);white-space:nowrap}
+.path-mu-proj b{color:var(--text);font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+.path-mu-prob{margin-top:10px}
+.path-mu-prob-label{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
+.path-mu-split{display:flex;height:26px;border-radius:7px;overflow:hidden;font-size:12px;font-weight:800}
+.path-mu-seg{display:flex;align-items:center;padding:0 10px;white-space:nowrap;min-width:0;overflow:hidden}
+.path-mu-seg-you{background:var(--accent);color:#fff;justify-content:flex-start;flex:none}
+.path-mu-seg-opp{background:var(--grid,#e5e7eb);color:var(--text);justify-content:flex-end;flex:1}
+.path-mu-bars{margin-top:14px;border-top:1px solid var(--border);padding-top:14px;display:flex;flex-direction:column;gap:14px}
+.path-mu-group-label{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.path-mu-bar + .path-mu-bar{margin-top:10px}
+.path-mu-bar-meta{display:flex;align-items:baseline;gap:10px}
+.path-mu-bar-metric{font-size:12.5px;font-weight:600;color:var(--text-muted);flex:none;width:52px}
+.path-mu-bar-now{margin-left:auto;font-size:12.5px;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.path-mu-bar-now b{color:var(--text);font-weight:800}
+.path-mu-bar-line{display:flex;align-items:center;gap:8px;margin-top:6px}
+.path-mu-bar-line .path-imp-end{flex:none;width:44px}
+.path-mu-bar-line .path-imp-end.path-l{text-align:left}
+.path-mu-bar-line .path-imp-track{flex:1;min-width:0}
+.path-imp-end.path-flat{color:var(--text-muted)}
 
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)

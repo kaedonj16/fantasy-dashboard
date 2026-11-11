@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-10",
+        "tag": "update",
+        "text": "Standings on mobile is now tabbed with a compact league summary, Playoff Path Overview shows your matchup with bye and 1 seed bars, and Playoff Impact can switch between playoff, bye and 1 seed odds.",
+        "link": "/standings"
+    },
+    {
+        "date": "2026-11-10",
         "tag": "new",
         "text": "New Playoff Path tab on Standings: your magic number and earliest clinch, the games to root for this week, tiebreakers, and how every team's odds swing on a win or a loss.",
         "link": "/standings"

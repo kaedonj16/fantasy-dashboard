@@ -52,8 +52,12 @@ def build_standings_body(ctx: dict) -> str:
     <div class="std-rework">
     {week_bar}
     <div id="stTilesInner">{panels.get('tiles', '')}</div>
+    <div class="opt-seg st-sec-seg" role="tablist" aria-label="Standings sections">
+      <button type="button" class="opt-seg-btn st-sec-btn active" role="tab" aria-selected="true" onclick="switchStandingsSection(this, 'standings')">Standings</button>
+      <button type="button" class="opt-seg-btn st-sec-btn" role="tab" aria-selected="false" onclick="switchStandingsSection(this, 'power')">Power Rankings</button>
+    </div>
     <div class="standings-main two-col-standings">
-      <div class="standings-col">
+      <div class="standings-col st-sec-col-st">
         <div class="card">
           <div class="card-tabs">
             <div class="tab-strip">
@@ -76,7 +80,7 @@ def build_standings_body(ctx: dict) -> str:
           </div>
         </div>
       </div>
-      <div class="standings-col">
+      <div class="standings-col st-sec-col-pw">
         <div id="stPowerInner">{panels['power']}</div>
       </div>
     </div>
