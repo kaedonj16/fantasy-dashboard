@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-11-10",
         "tag": "update",
+        "text": "Playoff Path now shows up where you make decisions: the Front Office Report adds a Playoff Path section with the wins you need to clinch, this week's win and lose stakes and the games to root for, and the GM Brief adds a path line under the race line in Next Steps. Both appear only in the final weeks of the regular season and use the same numbers as the Playoff Path tab on Standings.",
+        "link": "/"
+    },
+    {
+        "date": "2026-11-10",
+        "tag": "update",
         "text": "The BR Assistant now answers Playoff Path questions down the stretch: who to root for in this week's other games, what your playoff, bye and 1 seed odds become if you win or lose, and where you stand on points-for tiebreakers.",
         "link": "/standings"
     },

@@ -753,6 +753,174 @@ def build_race_line(ctx, viewer_roster_id, rules=None) -> dict | None:
     return line
 
 
+def _scenarios_for_viewer(ctx, viewer_roster_id):
+    """Assemble ``compute_scenarios`` the way /api/playoff-scenarios does.
+
+    Lazy imports (the sim/scenario modules sit above this one in the
+    import graph). Returns ``(scen, viewer_entry, state, n_byes)`` or
+    None when the sim state cannot be built. The caller gates on
+    ``scen["show"]``; nothing here runs a Monte Carlo — ``build_sim_state``
+    is standings + remaining schedule, not a sim run.
+    """
+    from data_building.playoff_scenarios import compute_scenarios
+    from data_building.simulate_playoff_odds import _n_byes, build_sim_state
+
+    state = build_sim_state(ctx, str(ctx.get("platform") or "sleeper"))
+    if not state:
+        return None
+    settings = ctx.get("league_settings") or {}
+    divisions = int(settings.get("divisions") or 0) >= 2
+    division_map: dict = {}
+    if divisions:
+        for r in ctx.get("rosters") or []:
+            rid = r.get("roster_id")
+            if rid is None:
+                continue
+            try:
+                div = int((r.get("settings") or {}).get("division") or 0)
+            except (TypeError, ValueError):
+                div = 0
+            if div:
+                division_map[int(rid)] = div
+    sim_teams = state.get("teams") or []
+    scen_teams = [
+        {"roster_id": t["roster_id"], "wins": t.get("wins", 0),
+         "ties": t.get("ties", 0), "pf": t.get("pf", 0.0),
+         "division": division_map.get(int(t["roster_id"]))}
+        for t in sim_teams
+    ]
+    playoff_teams = int(state.get("playoff_teams") or 6)
+    n_byes = _n_byes(playoff_teams)
+    scen = compute_scenarios(
+        scen_teams, state.get("matchups") or {}, playoff_teams,
+        n_byes=n_byes, divisions=divisions,
+    )
+    entry = None
+    for rid_key, e in (scen.get("teams") or {}).items():
+        if str(rid_key) == str(viewer_roster_id):
+            entry = e
+            break
+    return scen, entry, state, n_byes
+
+
+def _fmt_pct(value) -> str:
+    return f"{float(value):.1f}"
+
+
+def build_path_line(ctx, viewer_roster_id, rules=None) -> dict | None:
+    """Playoff Path line from the shared sim + scenarios payloads.
+
+    The sim rows come from the app's shared cache: a ``playoff_odds``
+    snapshot already on the ctx when a caller attached one, otherwise
+    ``app._playoff_sim_cached`` with ``block=False`` (the read the
+    assistant's evidence layer makes), lazy-imported because app.py
+    imports this module. The brief never runs its own Monte Carlo and
+    never blocks the Next Steps render on a cold one: cold cache means
+    no line this visit, and it appears on a later one.
+
+    The magic number is ``compute_scenarios``' ``wins_to_clinch`` from
+    exact enumeration — deliberately NOT ``utils.race_path``'s
+    arithmetic number, which answers a different question and stays on
+    the race line only. The two are never blended here.
+
+    Returns None outside the final-weeks window (``scen["show"]``) or
+    when any layer is missing: the line is absent, never approximated.
+    """
+    rows = ctx.get("playoff_odds") or []
+    if not rows:
+        try:
+            from app import _playoff_sim_cached
+
+            rows = _playoff_sim_cached(
+                ctx, str(ctx.get("platform") or "sleeper"), block=False,
+            ) or []
+        except Exception:
+            rows = []
+    row = next(
+        (r for r in rows
+         if isinstance(r, dict)
+         and str(r.get("roster_id")) == str(viewer_roster_id)),
+        None,
+    )
+    if row is None:
+        return None
+    assembled = _scenarios_for_viewer(ctx, viewer_roster_id)
+    if not assembled:
+        return None
+    scen, entry, state, n_byes = assembled
+    if not scen.get("show") or entry is None:
+        return None
+
+    from data_building.playoff_scenarios import scenario_summary
+
+    status = entry.get("status")
+    wins_to_clinch = entry.get("wins_to_clinch")
+    bits = []
+    if status == "clinched_bye":
+        bits.append("Bye clinched")
+    elif status == "clinched":
+        bits.append("Playoff spot clinched")
+    elif isinstance(wins_to_clinch, int) and wins_to_clinch >= 1:
+        bits.append(f"Magic number {wins_to_clinch}")
+        if entry.get("clinch_if_win_next"):
+            bits.append("can clinch this week")
+    elif entry.get("needs_help"):
+        bits.append("Needs help to clinch")
+
+    name_by_rid = {int(t["roster_id"]): t.get("name")
+                   for t in state.get("teams") or []}
+    best_root = None
+    for g in row.get("root_for") or []:
+        pa, pb = g.get("playoff_if_a"), g.get("playoff_if_b")
+        if pa is None or pb is None or pa == pb:
+            continue
+        a_name = name_by_rid.get(int(g["a"]))
+        b_name = name_by_rid.get(int(g["b"]))
+        if not a_name or not b_name:
+            continue
+        cand = {
+            "a_name": a_name,
+            "b_name": b_name,
+            "root_name": a_name if pa > pb else b_name,
+            "other_name": b_name if pa > pb else a_name,
+            "root_pct": max(pa, pb),
+            "other_pct": min(pa, pb),
+            "delta": round(abs(pa - pb), 1),
+        }
+        if best_root is None or cand["delta"] > best_root["delta"]:
+            best_root = cand
+    if best_root:
+        bits.append(
+            f"Root for {best_root['root_name']}: your odds go "
+            f"{_fmt_pct(best_root['root_pct'])}% vs "
+            f"{_fmt_pct(best_root['other_pct'])}%"
+        )
+
+    bye = None
+    if n_byes and row.get("bye_pct") is not None \
+            and row.get("bye_if_win") is not None \
+            and row.get("bye_if_lose") is not None:
+        bye = {
+            "pct": row["bye_pct"],
+            "if_win": row["bye_if_win"],
+            "if_lose": row["bye_if_lose"],
+        }
+        bits.append(
+            f"Bye {_fmt_pct(bye['pct'])}%: {_fmt_pct(bye['if_win'])}% "
+            f"with a win, {_fmt_pct(bye['if_lose'])}% with a loss"
+        )
+    if not bits:
+        return None
+    return {
+        "text": " · ".join(bits),
+        "magic_number": wins_to_clinch,
+        "status": status,
+        "summary": scenario_summary(entry),
+        "root_for": best_root,
+        "bye": bye,
+    }
+
+
 def _ordinal(n) -> str:
     n = int(n)
     if 10 <= n % 100 <= 20:
@@ -806,6 +974,11 @@ def build_gm_brief(ctx, viewer_roster_id, actions=None, now=None) -> dict:
         race_line = build_race_line(ctx, viewer_roster_id, rules)
     except Exception:
         race_line = None
+    path_line = None
+    try:
+        path_line = build_path_line(ctx, viewer_roster_id, rules)
+    except Exception:
+        path_line = None
     week = _i(ctx.get("current_week") or ctx.get("week")) or 0
     claims = []
     try:
@@ -866,6 +1039,7 @@ def build_gm_brief(ctx, viewer_roster_id, actions=None, now=None) -> dict:
         "week": week,
         "actions": ranked,
         "race_line": race_line,
+        "playoff_path": path_line,
         "race_prompt": rules_prompt(rules),
         "qb_coverage": coverage,
         "bye_panel": bye_panel,
@@ -876,6 +1050,7 @@ def build_gm_brief(ctx, viewer_roster_id, actions=None, now=None) -> dict:
             "rules": rules.get("source"),
             "roles": roles_present,
             "partner_model": partner_model,
+            "path": bool(path_line),
         },
     }
 

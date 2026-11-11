@@ -54,10 +54,12 @@ from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-# v8: report prose now runs through the tier-language scrub (exact ranks
-# collapse out of spaced/tier role forms); v7 reports can still carry an
-# exact rank as role language ("RB18 type") and must not hit.
-CACHE_VERSION = "v8"
+# v9: reports gain the Playoff Path section (in-window only); v8 cached
+# reports predate the section and must not hit. v8: report prose runs
+# through the tier-language scrub (exact ranks collapse out of
+# spaced/tier role forms); v7 reports can still carry an exact rank as
+# role language ("RB18 type") and must not hit.
+CACHE_VERSION = "v9"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
 
 
@@ -2093,6 +2095,169 @@ def _movers_by_sign(rows: list[dict], *, rising: bool, n: int = 3) -> list[dict]
     ]
 
 
+def _build_playoff_path(ctx: dict, viewer_roster_id: str) -> dict | None:
+    """Playoff Path block for the report: posture, this week's fork, and
+    the games to root for, all from the two shared payloads the Standings
+    Playoff Path tab reads — the cached sim rows on ``ctx["playoff_odds"]``
+    (attached by ``_ctx_with_playoff_odds``, never a private sim run) and
+    ``compute_scenarios`` assembled from ``build_sim_state`` exactly as
+    ``/api/playoff-scenarios`` assembles it.
+
+    Exists only inside the scenarios window (``scen["show"]``: the final
+    five regular-season weeks) and only when the viewer's sim row is
+    present. Any gap — cold sim cache, season over, outside the window —
+    returns None and the report renders exactly as before: no section,
+    no placeholder. Fail-soft like the rest of this module.
+    """
+    try:
+        rows = ctx.get("playoff_odds") or []
+        row = next(
+            (r for r in rows
+             if isinstance(r, dict)
+             and str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if row is None:
+            return None
+
+        from data_building.playoff_scenarios import (
+            compute_scenarios,
+            scenario_summary,
+        )
+        from data_building.simulate_playoff_odds import _n_byes, build_sim_state
+
+        state = build_sim_state(ctx, str(ctx.get("platform") or "sleeper"))
+        if not state:
+            return None
+        settings = ctx.get("league_settings") or {}
+        divisions = int(settings.get("divisions") or 0) >= 2
+        division_map: dict = {}
+        if divisions:
+            for r in ctx.get("rosters") or []:
+                rid = r.get("roster_id")
+                if rid is None:
+                    continue
+                try:
+                    div = int((r.get("settings") or {}).get("division") or 0)
+                except (TypeError, ValueError):
+                    div = 0
+                if div:
+                    division_map[int(rid)] = div
+        sim_teams = state.get("teams") or []
+        scen_teams = [
+            {"roster_id": t["roster_id"], "wins": t.get("wins", 0),
+             "ties": t.get("ties", 0), "pf": t.get("pf", 0.0),
+             "division": division_map.get(int(t["roster_id"]))}
+            for t in sim_teams
+        ]
+        playoff_teams = int(state.get("playoff_teams") or 6)
+        n_byes = _n_byes(playoff_teams)
+        scen = compute_scenarios(
+            scen_teams, state.get("matchups") or {}, playoff_teams,
+            n_byes=n_byes, divisions=divisions,
+        )
+        if not scen.get("show"):
+            return None
+        entry = None
+        for rid_key, e in (scen.get("teams") or {}).items():
+            if str(rid_key) == str(viewer_roster_id):
+                entry = e
+                break
+        if entry is None:
+            return None
+
+        name_by_rid = {int(t["roster_id"]): t.get("name") for t in sim_teams}
+
+        # Current seed: standings order (wins, then points-for), the same
+        # order the scenarios seeding uses.
+        def _standings_key(t):
+            return (float(t.get("wins", 0)) + 0.5 * float(t.get("ties", 0)),
+                    float(t.get("pf", 0.0) or 0.0))
+
+        seed = None
+        for i, t in enumerate(
+                sorted(sim_teams, key=_standings_key, reverse=True)):
+            if str(t.get("roster_id")) == str(viewer_roster_id):
+                seed = i + 1
+                break
+
+        # The viewer's remaining games in week order (for earliest clinch).
+        own_weeks: list[int] = []
+        for wk in sorted((state.get("matchups") or {}).keys(), key=lambda k: int(k)):
+            for pair in (state.get("matchups") or {}).get(wk) or []:
+                if not pair or len(pair) < 2:
+                    continue
+                if str(pair[0]) == str(viewer_roster_id) \
+                        or str(pair[1]) == str(viewer_roster_id):
+                    own_weeks.append(int(wk))
+                    break
+        wins_to_clinch = entry.get("wins_to_clinch")
+        earliest_clinch_week = None
+        if isinstance(wins_to_clinch, int) and wins_to_clinch >= 1 \
+                and len(own_weeks) >= wins_to_clinch:
+            earliest_clinch_week = own_weeks[wins_to_clinch - 1]
+
+        # This week's stakes: the viewer's win/lose fork from their sim
+        # row. Requires the impact-week splits; a bye-week viewer (null
+        # splits) keeps posture + root-for with no stakes block.
+        stakes = None
+        fork = []
+        for label, win_key, lose_key in (
+            ("Playoffs", "playoff_if_win", "playoff_if_lose"),
+            ("Bye", "bye_if_win", "bye_if_lose"),
+            ("1 seed", "first_seed_if_win", "first_seed_if_lose"),
+        ):
+            w, l = row.get(win_key), row.get(lose_key)
+            if w is not None and l is not None:
+                fork.append({"label": label, "if_win": w, "if_lose": l})
+        next_game = entry.get("next_game") or {}
+        if fork and next_game.get("opp") is not None:
+            stakes = {
+                "week": row.get("impact_week") or next_game.get("week"),
+                "opponent": name_by_rid.get(int(next_game["opp"])),
+                "fork": fork,
+            }
+
+        # Root for: the other first-week games that move the viewer's
+        # playoff odds, biggest swing first. The side to root for is the
+        # one whose win leaves the viewer's odds higher.
+        root_for = []
+        for g in row.get("root_for") or []:
+            pa, pb = g.get("playoff_if_a"), g.get("playoff_if_b")
+            if pa is None or pb is None:
+                continue
+            a_name = name_by_rid.get(int(g["a"]))
+            b_name = name_by_rid.get(int(g["b"]))
+            if not a_name or not b_name:
+                continue
+            root_for.append({
+                "a_name": a_name,
+                "b_name": b_name,
+                "root_name": a_name if pa >= pb else b_name,
+                "other_name": b_name if pa >= pb else a_name,
+                "root_pct": max(pa, pb),
+                "other_pct": min(pa, pb),
+                "delta": round(abs(pa - pb), 1),
+            })
+        root_for.sort(key=lambda g: g["delta"], reverse=True)
+
+        return {
+            "seed": seed,
+            "playoff_pct": row.get("playoff_pct"),
+            "bye_pct": row.get("bye_pct") if n_byes else None,
+            "magic_number": wins_to_clinch,
+            "status": entry.get("status"),
+            "summary": scenario_summary(entry),
+            "can_clinch_this_week": bool(entry.get("clinch_if_win_next")),
+            "earliest_clinch_week": earliest_clinch_week,
+            "stakes": stakes,
+            "root_for": root_for[:3],
+        }
+    except Exception:
+        logger.debug("[front-office] playoff path failed", exc_info=True)
+        return None
+
+
 def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
                             model_value_lookup: dict | None = None,
                             roster_rows: list | None = None,
@@ -2104,7 +2269,8 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
     lookup / roster rows / grades it already computed for the report
     fingerprint; they are the identical computations this function would
     run, so a probe miss does not pay for them twice."""
-    team_ctx = build_team_gm_context(_ctx_with_playoff_odds(ctx, block=False), viewer_roster_id)
+    odds_ctx = _ctx_with_playoff_odds(ctx, block=False)
+    team_ctx = build_team_gm_context(odds_ctx, viewer_roster_id)
     if not team_ctx:
         return None
     scoring_type = normalize_trade_scoring_type(team_ctx.get("scoring_type") or ctx_scoring_type(ctx))
@@ -2266,6 +2432,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
         "urgent_needs": urgent_needs,
         "injury_rows": injury_rows,
         "opponent_injuries": opponent_injuries,
+        "playoff_path": _build_playoff_path(odds_ctx, viewer_roster_id),
         "trade_deadline": _trade_deadline_info(ctx),
         "draft_grade": team_ctx.get("draft_grade"),
     }
@@ -3307,6 +3474,67 @@ def _decision_board_html(data: dict, ai: dict) -> str:
     )
 
 
+def _playoff_path_html(data: dict) -> str:
+    """The Playoff Path section: deterministic stakes under the moves.
+    Renders '' unless build_front_office_data produced the block (the
+    scenarios window is open and the sim row was warm), so out-of-window
+    reports are byte-identical to before."""
+    pp = data.get("playoff_path") or {}
+    if not pp:
+        return ""
+    bits = []
+    if pp.get("seed"):
+        bits.append(f"Seed {int(pp['seed'])}")
+    if pp.get("playoff_pct") is not None:
+        bits.append(f"{_fmt_playoff_pct_display(pp['playoff_pct'])}% playoff odds")
+    if pp.get("bye_pct") is not None:
+        bits.append(f"{_fmt_playoff_pct_display(pp['bye_pct'])}% bye odds")
+    magic = pp.get("magic_number")
+    if isinstance(magic, int) and magic >= 1:
+        bits.append(f"Magic number {magic}")
+    if pp.get("can_clinch_this_week"):
+        bits.append("Can clinch this week")
+    elif pp.get("earliest_clinch_week"):
+        bits.append(f"Earliest clinch: Week {int(pp['earliest_clinch_week'])}")
+    if pp.get("summary"):
+        bits.append(str(pp["summary"]))
+    posture_line = " · ".join(html.escape(b) for b in bits)
+
+    stakes_html = ""
+    stakes = pp.get("stakes") or {}
+    if stakes.get("fork"):
+        fork_bits = [
+            f"{f['label']} {_fmt_playoff_pct_display(f['if_win'])}% with a win, "
+            f"{_fmt_playoff_pct_display(f['if_lose'])}% with a loss"
+            for f in stakes["fork"]
+        ]
+        vs = (f" vs {html.escape(str(stakes['opponent']))}"
+              if stakes.get("opponent") else "")
+        stakes_html = (
+            "<div class='for-sec-note'><strong>This week"
+            f"{vs}:</strong> {html.escape(' · '.join(fork_bits))}</div>"
+        )
+    root_html = ""
+    if pp.get("root_for"):
+        lines = [
+            f"Root for <strong>{html.escape(str(g['root_name']))}</strong> "
+            f"over {html.escape(str(g['other_name']))}: your odds go "
+            f"{_fmt_playoff_pct_display(g['root_pct'])}% vs "
+            f"{_fmt_playoff_pct_display(g['other_pct'])}%"
+            for g in pp["root_for"]
+        ]
+        root_html = "".join(
+            f"<div class='for-sec-note'>{line}</div>" for line in lines
+        )
+    return (
+        "<div class='for-sec' id='forPlayoffPath'>"
+        "<div class='for-sec-title'>Playoff Path</div>"
+        f"<p class='for-posture'>{posture_line}</p>"
+        f"{stakes_html}{root_html}"
+        "</div>"
+    )
+
+
 def _reference_html(data: dict, grades_html: str, roster_html: str,
                     injury_grid_html: str, opp_html: str) -> str:
     """The Reference section under the board (v3): grades in the open,
@@ -3376,6 +3604,7 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
             "<div class='for-sec'><div class='for-sec-title'>GM alert</div>"
             f"<p class='for-alert'>{gm_alert}</p></div>"
         )
+    path_html = _playoff_path_html(data)
     posture_html = f"<p class='for-posture'>{posture}</p>" if posture else ""
     top_move_html = _top_moves_html(data, ai)
     stamp = _verdict_stamp(verdict)
@@ -3399,6 +3628,10 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
         jump_buttons = [
             "<button type='button' data-for-jump='forBoard'>Do this first</button>"
         ]
+        if path_html:
+            jump_buttons.append(
+                "<button type='button' data-for-jump='forPlayoffPath'>Playoff path</button>"
+            )
         if changes_html:
             jump_buttons.append(
                 "<button type='button' data-for-jump='forLastWeek'>Since last week</button>"
@@ -3428,6 +3661,7 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
       {posture_html}
       {jump_html}
       {board_html}
+      {path_html}
       {changes_wrapped}
       {reference_html}
     </div>
@@ -3447,6 +3681,7 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
       <h3 class='for-headline'>{headline}</h3>
       {posture_html}
       {top_move_html}
+      {path_html}
       {changes_html}
       <div class='for-sec'><div class='for-sec-title'>Positional grades</div>{grades_html}</div>
       <div class='for-sec'><div class='for-sec-title'>Roster</div>{roster_html}</div>
