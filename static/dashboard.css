@@ -48329,6 +48329,643 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     }
 }
 
+/* Season Wrapped rework (2026-11): the approved mock's 11-slide deck,
+   mirroring the Weekly skin above but scoped to the season namespace so
+   Weekly keeps its own treatment. Adds the season-only components: the
+   playoff-path timeline, the MVP hero face + crown, the Hardware award
+   plaques, the Best Move verdict block, the Your Season slide and the
+   compact final-standings rows with the playoff cut line. */
+.wrapped-overlay-season {
+    background:
+        radial-gradient(110% 55% at 50% -8%, rgba(37, 99, 235, .13), rgba(37, 99, 235, 0) 62%),
+        radial-gradient(120% 60% at 50% 108%, rgba(233, 185, 73, .06), rgba(233, 185, 73, 0) 60%),
+        linear-gradient(180deg, #0a1e35, #061526 60%, #050f1c);
+}
+
+@media (min-width: 768px) {
+    .wrapped-overlay-season .wrapped-stage {
+        width: min(680px, 92vw);
+        height: min(88vh, 840px);
+        border: 1px solid rgba(27, 64, 102, .7);
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: 0 34px 90px rgba(0, 0, 0, .6), 0 0 0 1px rgba(0, 0, 0, .35);
+    }
+}
+
+.wrapped-overlay-season .wrapped-slide {
+    --wa: #38bdf8;
+    --wg0: #0d2137;
+    --wg1: #081a2d;
+    --wglow: rgba(56, 189, 248, .4);
+    isolation: isolate;
+    background:
+        radial-gradient(90% 46% at 50% -6%, color-mix(in srgb, var(--wa) 13%, transparent), transparent 62%),
+        linear-gradient(180deg, var(--wg0), var(--wg1) 58%, #071627);
+    box-shadow: inset 0 0 0 1px rgba(27, 64, 102, .45);
+}
+
+.wrapped-overlay-season .wrapped-slide[data-kind="champion"],
+.wrapped-overlay-season .wrapped-slide[data-kind="road"],
+.wrapped-overlay-season .wrapped-slide[data-kind="mvp"],
+.wrapped-overlay-season .wrapped-slide[data-kind="performers"] {
+    --wa: #e9b949;
+    --wglow: rgba(233, 185, 73, .4);
+}
+
+.wrapped-overlay-season .wrapped-slide[data-kind="records"],
+.wrapped-overlay-season .wrapped-slide[data-kind="moves"],
+.wrapped-overlay-season .wrapped-slide[data-kind="finalstandings"] {
+    --wa: #6ea8ff;
+    --wglow: rgba(110, 168, 255, .4);
+}
+
+.wrapped-overlay-season .wrapped-slide[data-kind="hardware"] {
+    --wa: #c084fc;
+    --wglow: rgba(192, 132, 252, .4);
+}
+
+.wrapped-overlay-season .wrapped-slide[data-bgword]::after {
+    content: attr(data-bgword);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    font-size: clamp(56px, 17vw, 120px);
+    font-weight: 900;
+    letter-spacing: .06em;
+    color: transparent;
+    -webkit-text-stroke: 1.5px color-mix(in srgb, var(--wa) 16%, transparent);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.wrapped-overlay-season .wrapped-word {
+    background: linear-gradient(180deg, #ffffff, #cfe3f5 55%, #9db8d2);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.wrapped-overlay-season .wrapped-kicker {
+    align-self: stretch;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--wa);
+}
+
+.wrapped-overlay-season .wrapped-kicker::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--wa) 55%, transparent), transparent);
+}
+
+.wrapped-overlay-season .wrapped-slide-title {
+    align-self: stretch;
+    text-align: left;
+    margin-top: 12px;
+    color: #f2f7fd;
+}
+
+.wrapped-overlay-season .wrapped-sub { color: #9db8d2; }
+.wrapped-overlay-season .wrapped-sub .wrapped-accent { color: var(--wa); }
+.wrapped-overlay-season .wrapped-divider { background: #1b4066; }
+.wrapped-overlay-season .wrapped-divider::after { color: #9db8d2; }
+.wrapped-overlay-season .wrapped-num { color: #f2f7fd; }
+.wrapped-overlay-season .wrapped-row-k { color: #9db8d2; }
+
+/* Compact face rows (Top Performers, Your Season roster MVP): flat rows
+   at the mock's uniform 76px geometry, hairline-separated. */
+.wrapped-overlay-season .wrapped-slide .wrapped-row {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 76px;
+    padding: 9px 2px;
+    margin-top: 0;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid rgba(27, 64, 102, .45);
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.wrapped-overlay-season .wrapped-slide .wrapped-perf-k { color: #9db8d2; }
+
+/* The crown and the gold panel already mark the #1 row; the TOP SCORE
+   pill would wrap the name onto a second line and break the uniform
+   76px row geometry, so the season deck does not carry it. */
+.wrapped-overlay-season .wrapped-top-pill { display: none; }
+
+.wrapped-overlay-season .wrapped-slide .wrapped-row:last-of-type { border-bottom: 0; }
+
+.wrapped-overlay-season .wrapped-slide .wrapped-row-top {
+    padding: 10px 13px;
+    margin-top: 8px;
+    background: linear-gradient(180deg, rgba(233, 185, 73, .10), rgba(255, 255, 255, 0) 60%), #102539;
+    border: 1px solid rgba(233, 185, 73, .55);
+    border-radius: 14px;
+    box-shadow: 0 0 0 1px rgba(233, 185, 73, .35), 0 0 34px rgba(233, 185, 73, .12);
+    min-height: 76px;
+}
+
+.wrapped-overlay-season .wrapped-slide .wrapped-row .wrapped-row-v { color: #f2f7fd; }
+.wrapped-overlay-season .wrapped-slide .wrapped-row-top .wrapped-row-v { color: #e9b949; }
+.wrapped-overlay-season .wrapped-slide .wrapped-row-lb { color: #9db8d2; }
+.wrapped-overlay-season .wrapped-slide .wrapped-row .wrapped-row-note { color: #7e97b3; }
+
+.wrapped-overlay-season .wrapped-slide .wrapped-row-crown .wrapped-cname,
+.wrapped-overlay-season .wrapped-slide .wrapped-row-crown .wrapped-row-n { color: #e9b949; }
+
+.wrapped-overlay-season .wrapped-slide .wrapped-om-block {
+    background: var(--wg0);
+    border-color: #1b4066;
+}
+
+.wrapped-overlay-season .wrapped-slide .wrapped-om-k { color: var(--wa); }
+.wrapped-overlay-season .wrapped-slide .wrapped-om-n { color: #f2f7fd; }
+.wrapped-overlay-season .wrapped-slide .wrapped-om-note { color: #9db8d2; }
+.wrapped-overlay-season .wrapped-slide .wrapped-score-w { color: #f2f7fd; }
+.wrapped-overlay-season .wrapped-slide .wrapped-score-x { color: var(--wa); }
+.wrapped-overlay-season .wrapped-slide .wrapped-score-l { color: #9db8d2; }
+
+.wrapped-overlay-season .wrapped-record-badge {
+    background: var(--wa);
+    color: #06121f;
+}
+
+/* Footer bug, same as Weekly: real wordmark at 30px, bottom-right. */
+.wrapped-overlay-season .wrapped-foot img {
+    order: 2;
+    width: auto;
+    height: 30px;
+}
+
+.wrapped-overlay-season .wrapped-foot-line { background: #1b4066; }
+.wrapped-overlay-season .wrapped-foot-season { color: #9db8d2; }
+
+/* Champion: a centered hero block (SVG crown, name, manager, record)
+   over the final-score block, per the mock. */
+.wrapped-overlay-season .wrapped-crown-svg {
+    display: block;
+    width: 46px;
+    height: 46px;
+    margin: 18px auto 14px;
+    fill: #e9b949;
+}
+
+.wrapped-overlay-season .wrapped-slide[data-kind="champion"] .wrapped-cname {
+    align-self: center;
+    font-size: 40px;
+    text-align: center;
+}
+
+.wrapped-overlay-season .wrapped-cmgr {
+    align-self: center;
+    margin-top: 7px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #9db8d2;
+    text-align: center;
+}
+
+.wrapped-overlay-season .wrapped-slide[data-kind="champion"] .wrapped-record {
+    align-self: center;
+}
+
+.wrapped-overlay-season .wrapped-slide[data-kind="champion"] .wrapped-sub {
+    margin-inline: auto;
+    text-align: center;
+}
+
+.wrapped-overlay-season .wrapped-final {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.wrapped-overlay-season .wrapped-final .wrapped-scores { justify-content: center; }
+
+.wrapped-overlay-season .wrapped-final .wrapped-score-w,
+.wrapped-overlay-season .wrapped-final .wrapped-score-l {
+    font-size: 37px;
+    font-weight: 900;
+}
+
+/* League MVP is a hero slide too: face, name and boxes centered (the
+   kicker, title and the why-note keep the full-width editorial frame). */
+.wrapped-overlay-season .wrapped-slide[data-kind="mvp"] { align-items: center; }
+
+.wrapped-overlay-season .wrapped-slide[data-kind="mvp"] .wrapped-note { align-self: stretch; }
+
+.wrapped-overlay-season .wrapped-slide[data-kind="mvp"] .wrapped-boxes { align-self: stretch; }
+
+.wrapped-overlay-season .wrapped-slide[data-kind="mvp"] .wrapped-cname {
+    font-size: 36px;
+    text-align: center;
+}
+
+.wrapped-overlay-season .wrapped-final-k {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: .18em;
+    color: var(--wa);
+}
+
+.wrapped-overlay-season .wrapped-final .wrapped-scores { margin-top: 6px; }
+.wrapped-overlay-season .wrapped-final-opp {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #9db8d2;
+}
+
+/* Road to the Title timeline. */
+.wrapped-overlay-season .wrapped-road-seed {
+    align-self: stretch;
+    margin-top: 12px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #dbe7f5;
+}
+
+.wrapped-overlay-season .wrapped-road {
+    align-self: stretch;
+    position: relative;
+    margin-top: 14px;
+}
+
+.wrapped-overlay-season .wrapped-road::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    background: #1b4066;
+}
+
+.wrapped-overlay-season .wrapped-road-node {
+    position: relative;
+    display: flex;
+    gap: 16px;
+    padding: 7px 0;
+}
+
+.wrapped-overlay-season .wrapped-road-dot {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    margin-top: 6px;
+    border-radius: 50%;
+    border: 2px solid var(--wa);
+    background: #081a2d;
+    z-index: 1;
+}
+
+.wrapped-overlay-season .wrapped-road-final .wrapped-road-dot {
+    background: #e9b949;
+    border-color: #e9b949;
+}
+
+.wrapped-overlay-season .wrapped-road-m {
+    flex: 1;
+    min-width: 0;
+    background: var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 12px;
+    padding: 11px 13px;
+}
+
+.wrapped-overlay-season .wrapped-road-final .wrapped-road-m {
+    border-color: rgba(233, 185, 73, .55);
+    box-shadow: 0 0 0 1px rgba(233, 185, 73, .35), 0 0 26px rgba(233, 185, 73, .10);
+}
+
+.wrapped-overlay-season .wrapped-road-r {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: .16em;
+    color: var(--wa);
+}
+
+.wrapped-overlay-season .wrapped-road-r span {
+    color: #9db8d2;
+    letter-spacing: .08em;
+    white-space: nowrap;
+}
+
+.wrapped-overlay-season .wrapped-road-g {
+    margin-top: 5px;
+    font-size: 16px;
+    font-weight: 800;
+    color: #f2f7fd;
+    overflow-wrap: anywhere;
+}
+
+.wrapped-overlay-season .wrapped-road-bye .wrapped-road-g {
+    font-size: 14px;
+    font-weight: 700;
+    color: #9db8d2;
+}
+
+.wrapped-overlay-season .wrapped-road-s {
+    margin-top: 2px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #9db8d2;
+    font-variant-numeric: tabular-nums;
+}
+
+/* League MVP hero face: the tuned crown treatment at hero scale. */
+.wrapped-overlay-season .wrapped-hero-face {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    margin: 20px 0 8px;
+}
+
+.wrapped-overlay-season .wrapped-hero-face .wrapped-face-init {
+    font-size: 46px;
+}
+
+.wrapped-overlay-season .wrapped-hero-img {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    object-position: 50% 15%;
+    border-radius: 50%;
+}
+
+.wrapped-overlay-season .wrapped-hero-glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 196px;
+    height: 196px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(233, 185, 73, .5) 0, rgba(233, 185, 73, .26) 40px, rgba(233, 185, 73, 0) 92px);
+    z-index: 0;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 52px, #000 84px, #000 100%);
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 52px, #000 84px, #000 100%);
+}
+
+/* 74px on the 132px hero photo (the same 56% ratio as the tuned 30px
+   crown on the 54px row photos), base seated into the hair. Inline SVG
+   filled gold: the fa-crown font icon renders through the site's PNG
+   icon layer, whose rust filter chain overrides any gold color. */
+.wrapped-overlay-season .wrapped-hero-crown {
+    position: absolute;
+    top: -32px;
+    left: 50%;
+    z-index: 2;
+    width: 74px;
+    height: 74px;
+    fill: #e9b949;
+    transform: translateX(-50%) rotate(-8deg);
+    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .4));
+    animation: wrapFaceFloat 2.6s ease-in-out infinite;
+}
+
+.wrapped-overlay-season .wrapped-hero-meta {
+    margin-top: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: #9db8d2;
+    text-align: center;
+}
+
+/* The Hardware: award plaques, not ranked rows. */
+.wrapped-overlay-season .wrapped-award {
+    align-self: stretch;
+    margin-top: 10px;
+    background: var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.wrapped-overlay-season .wrapped-award-k {
+    font-size: 21px;
+    font-weight: 900;
+    letter-spacing: .02em;
+    color: #e9b949;
+}
+
+.wrapped-overlay-season .wrapped-award-green .wrapped-award-k { color: #2ec27e; }
+.wrapped-overlay-season .wrapped-award-red .wrapped-award-k { color: #f0766a; }
+
+.wrapped-overlay-season .wrapped-award-n {
+    margin-top: 6px;
+    font-size: 17px;
+    font-weight: 800;
+    color: #f2f7fd;
+    overflow-wrap: anywhere;
+}
+
+.wrapped-overlay-season .wrapped-award-n .wrapped-row-mgr {
+    font-size: 13px;
+    font-weight: 600;
+    color: #9db8d2;
+}
+
+.wrapped-overlay-season .wrapped-award-s {
+    margin-top: 8px;
+    font-size: 26px;
+    font-weight: 900;
+    color: #f2f7fd;
+    font-variant-numeric: tabular-nums;
+}
+
+.wrapped-overlay-season .wrapped-award-s span {
+    margin-left: 9px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #9db8d2;
+}
+
+/* Best Move verdict block. */
+.wrapped-overlay-season .wrapped-bestmove {
+    align-self: stretch;
+    margin-top: 12px;
+    background: linear-gradient(180deg, rgba(233, 185, 73, .10), rgba(255, 255, 255, 0) 60%), #102539;
+    border: 1px solid rgba(233, 185, 73, .55);
+    border-radius: 14px;
+    padding: 15px 16px 13px;
+    box-shadow: 0 0 0 1px rgba(233, 185, 73, .35), 0 0 30px rgba(233, 185, 73, .10);
+}
+
+.wrapped-overlay-season .wrapped-bestmove .wrapped-om-k { color: #e9b949; }
+.wrapped-overlay-season .wrapped-bestmove .wrapped-om-n { color: #f2f7fd; }
+.wrapped-overlay-season .wrapped-bestmove .wrapped-om-note { color: #9db8d2; }
+
+/* Your Season. */
+.wrapped-overlay-season .wrapped-ys-mvp { align-self: stretch; margin-top: 12px; }
+.wrapped-overlay-season .wrapped-ys-mvp .wrapped-om-k { color: var(--wa); }
+
+/* Final Standings: uniform compact rows + the playoff cut line. */
+.wrapped-overlay-season .wrapped-standings {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.wrapped-overlay-season .wrapped-standing {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 58px;
+    padding: 8px 13px;
+    background: var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 12px;
+}
+
+.wrapped-overlay-season .wrapped-standing-champ {
+    border-color: rgba(233, 185, 73, .55);
+    background: linear-gradient(180deg, rgba(233, 185, 73, .08), rgba(255, 255, 255, 0) 60%), #102539;
+}
+
+.wrapped-overlay-season .wrapped-standing-seed {
+    flex: 0 0 auto;
+    min-width: 26px;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--wa);
+    font-variant-numeric: tabular-nums;
+}
+
+.wrapped-overlay-season .wrapped-standing-m {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.wrapped-overlay-season .wrapped-standing-n {
+    font-size: 16px;
+    font-weight: 800;
+    color: #f2f7fd;
+    overflow-wrap: anywhere;
+}
+
+.wrapped-overlay-season .wrapped-standing-mgr {
+    font-size: 12px;
+    color: #9db8d2;
+    overflow-wrap: anywhere;
+}
+
+.wrapped-overlay-season .wrapped-standing-r {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    text-align: right;
+}
+
+.wrapped-overlay-season .wrapped-standing-rec {
+    font-size: 16px;
+    font-weight: 900;
+    color: #f2f7fd;
+    font-variant-numeric: tabular-nums;
+}
+
+.wrapped-overlay-season .wrapped-standing-pf {
+    font-size: 11.5px;
+    color: #9db8d2;
+    font-variant-numeric: tabular-nums;
+}
+
+.wrapped-overlay-season .wrapped-cutline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 2px 0;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: .16em;
+    color: #f0766a;
+}
+
+.wrapped-overlay-season .wrapped-cutline::before,
+.wrapped-overlay-season .wrapped-cutline::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(240, 118, 106, .45);
+}
+
+/* New components rise in with a stagger when their slide activates. */
+.wrapped-overlay-season .wrapped-slide.active .wrapped-road-node,
+.wrapped-overlay-season .wrapped-slide.active .wrapped-award,
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing,
+.wrapped-overlay-season .wrapped-slide.active .wrapped-slide-title,
+.wrapped-overlay-season .wrapped-slide.active .wrapped-bestmove,
+.wrapped-overlay-season .wrapped-slide.active .wrapped-hero-face {
+    animation: wrapUp .5s var(--ease-out) both;
+}
+
+.wrapped-overlay-season .wrapped-slide.active .wrapped-road-node:nth-child(2),
+.wrapped-overlay-season .wrapped-slide.active .wrapped-award:nth-of-type(2),
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(2) { animation-delay: .08s; }
+
+.wrapped-overlay-season .wrapped-slide.active .wrapped-road-node:nth-child(3),
+.wrapped-overlay-season .wrapped-slide.active .wrapped-award:nth-of-type(3),
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(3) { animation-delay: .16s; }
+
+.wrapped-overlay-season .wrapped-slide.active .wrapped-road-node:nth-child(4),
+.wrapped-overlay-season .wrapped-slide.active .wrapped-award:nth-of-type(4),
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(4) { animation-delay: .24s; }
+
+.wrapped-overlay-season .wrapped-slide.active .wrapped-award:nth-of-type(5),
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(5) { animation-delay: .32s; }
+
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(6) { animation-delay: .40s; }
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(7) { animation-delay: .48s; }
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(8) { animation-delay: .56s; }
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(9) { animation-delay: .64s; }
+.wrapped-overlay-season .wrapped-slide.active .wrapped-standing:nth-child(n+10) { animation-delay: .72s; }
+
+@media (prefers-reduced-motion: reduce) {
+    .wrapped-overlay-season .wrapped-hero-crown {
+        animation: none;
+        transform: translateX(-50%) rotate(-8deg);
+    }
+}
+
+/* Phone: season slides are content-heavy, so they anchor to the top of
+   the fullscreen stage and scroll internally like the Weekly set. */
+@media (max-width: 768px) {
+    .wrapped-overlay-season .wrapped-slide {
+        justify-content: flex-start;
+        padding-top: calc(env(safe-area-inset-top) + 64px);
+        overflow-y: auto;
+    }
+
+    .wrapped-overlay-season .wrapped-slide.active .wrapped-hint {
+        bottom: calc(env(safe-area-inset-bottom) + 10px);
+    }
+
+    .wrapped-overlay-season .wrapped-slide .wrapped-row-top .wrapped-row-v {
+        font-size: 26px;
+    }
+}
+
 /* ============================================
    APP-LIKE INTERACTION FEEL (PWA)
    ============================================
