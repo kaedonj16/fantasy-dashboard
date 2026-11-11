@@ -240,8 +240,8 @@ def test_weekly_overlay_footer_and_recap_finale(offline_client):
         with app.app.test_request_context("/"):
             html = H.render_weekly_wrapped_overlay(ctx, 3)
 
-    # Footer bug reads WEEK 3, never SEASON.
-    assert "wrapped-foot-season'>WEEK 3<" in html
+    # Footer bug reads WEEK 3 WRAPPED, never SEASON.
+    assert "wrapped-foot-season'>WEEK 3 WRAPPED<" in html
     assert "SEASON WRAPPED" not in html
     assert "WEEKLY<br>WRAPPED" in html
     # The deck ends on the shareable recap card, like Season Wrapped.
@@ -515,12 +515,138 @@ def test_wrapped_overlay_has_pause_control():
     assert "e.key === ' '" in js
 
 
+def _playoff_ctx(records):
+    """Late-season ctx: 8 teams, 4 playoff spots, playoffs start Week 14, so
+    a Week 11 wrapped has Weeks 12-13 left. `records` maps team name to
+    (wins, pf_total); weekly points/against rows are fabricated to match
+    (the playoff helper only aggregates points vs points_against)."""
+    import pandas as pd
+
+    names = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta"]
+    rows = []
+    for i, name in enumerate(names):
+        wins, pf = records[name]
+        per = pf / 11.0
+        for wk in range(1, 12):
+            win = wk <= wins
+            rows.append({
+                "week": wk, "owner": name, "points": per,
+                "points_against": per - 10 if win else per + 10,
+                "matchup_id": wk, "finalized": True, "roster_id": i + 1,
+            })
+    remaining = {}
+    remaining[12] = [
+        r for m, (a, b) in enumerate([(1, 8), (2, 7), (3, 6), (4, 5)], start=1)
+        for r in ({"roster_id": a, "matchup_id": m}, {"roster_id": b, "matchup_id": m})
+    ]
+    remaining[13] = [
+        r for m, (a, b) in enumerate([(1, 7), (2, 8), (3, 5), (4, 6)], start=1)
+        for r in ({"roster_id": a, "matchup_id": m}, {"roster_id": b, "matchup_id": m})
+    ]
+    return {
+        "platform": "sleeper", "league_id": "L1", "resolved_league_id": "L1",
+        "season": 2026, "league": {"name": "Test League"},
+        "league_settings": {"playoff_week_start": 14, "playoff_teams": 4,
+                            "divisions": 0},
+        "df_weekly": pd.DataFrame(rows),
+        "roster_map": {i + 1: n for i, n in enumerate(names)},
+        "matchups_by_week": remaining,
+        "players_map": {},
+    }
+
+
+# Alpha 10-1 / Beta 8-3 / Gamma 7-4 are mathematically in with two weeks
+# left; Zeta 4-7 / Eta 3-8 / Theta 1-10 cannot catch the 6-5 floor of the
+# last team they would need to pass, so they are out. Delta/Epsilon alive.
+_SETTLED = {"Alpha": (10, 1430.0), "Beta": (8, 1320.0), "Gamma": (7, 1265.0),
+            "Delta": (6, 1210.0), "Epsilon": (5, 1155.0), "Zeta": (4, 1100.0),
+            "Eta": (3, 1045.0), "Theta": (1, 935.0)}
+
+
+def test_weekly_playoff_slide_lists_clinched_and_eliminated():
+    from dashboard_services.pages import history_page as H
+
+    slide = H._weekly_wrapped_playoff_slide(_playoff_ctx(_SETTLED), 11)
+    assert slide is not None
+    assert slide["kind"] == "playoffs"
+    assert slide["eyebrow"] == "PLAYOFF PICTURE"
+    secs = {s["title"]: s["rows"] for s in slide["sections"]}
+    assert [r[1] for r in secs["CLINCHED"]] == ["Alpha", "Beta", "Gamma"]
+    assert secs["CLINCHED"][0] == ("#1", "Alpha", "10-1")
+    assert [r[1] for r in secs["ELIMINATED"]] == ["Zeta", "Eta", "Theta"]
+    assert slide["clinched"] == ["Alpha", "Beta", "Gamma"]
+    assert slide["eliminated"] == ["Zeta", "Eta", "Theta"]
+    assert slide["sub"] == "3 clinched · 3 eliminated through Week 11"
+
+
+def test_weekly_playoff_slide_skipped_too_early():
+    from dashboard_services.pages import history_page as H
+
+    # Week 5 still has 8 regular-season weeks left: outside the window,
+    # and the helper must bail before touching the schedule.
+    assert H._weekly_wrapped_playoff_slide(_playoff_ctx(_SETTLED), 5) is None
+
+
+def test_weekly_playoff_slide_skipped_when_nothing_settled():
+    from dashboard_services.pages import history_page as H
+
+    bunched = {"Alpha": (6, 1430.0), "Beta": (6, 1320.0), "Gamma": (6, 1265.0),
+               "Delta": (6, 1210.0), "Epsilon": (5, 1155.0), "Zeta": (5, 1100.0),
+               "Eta": (5, 1045.0), "Theta": (5, 935.0)}
+    assert H._weekly_wrapped_playoff_slide(_playoff_ctx(bunched), 11) is None
+
+
+def test_weekly_playoff_slide_in_deck_after_standings():
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _playoff_ctx(_SETTLED)
+    with mock.patch.object(H, "_next_week_gotw_game", return_value=None):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 11)
+    kinds = [s["kind"] for s in slides]
+    assert "playoffs" in kinds
+    assert kinds.index("standings") < kinds.index("playoffs")
+
+
+def test_weekly_playoff_slide_skipped_in_cheap_check():
+    from dashboard_services.pages import history_page as H
+
+    slides = H._build_weekly_wrapped_slides(_playoff_ctx(_SETTLED),
+                                            "Test League", 2026, 11,
+                                            include_players=False)
+    assert "playoffs" not in {s["kind"] for s in slides}
+
+
+def test_wrapped_schedule_pairs_shapes():
+    from dashboard_services.pages import history_page as H
+
+    raw = [{"roster_id": 1, "matchup_id": 9}, {"roster_id": 2, "matchup_id": 9},
+           {"roster_id": 3, "matchup_id": 8}, {"roster_id": 4, "matchup_id": 8}]
+    assert H._wrapped_schedule_pairs(raw) == [("1", "2"), ("3", "4")]
+    preview = [{"matchup_id": 1, "left": {"roster_id": "5"},
+                "right": {"roster_id": "6"}}]
+    assert H._wrapped_schedule_pairs(preview) == [("5", "6")]
+    recap = [{"roster_id_a": 7, "roster_id_b": 8}]
+    assert H._wrapped_schedule_pairs(recap) == [("7", "8")]
+
+
+def test_weekly_playoff_share_highlight():
+    from dashboard_services.pages import history_page as H
+
+    slides = [{"kind": "playoffs", "clinched": ["Alpha", "Beta"],
+               "eliminated": ["Theta"]}]
+    data = H._wrapped_weekly_share_data(slides, "Test League", 2026, 11)
+    hl = {h["k"]: h for h in data["highlights"]}
+    assert hl["PLAYOFF PICTURE"]["v"] == "2 in · 1 out"
+
+
 def test_wrapped_pause_button_css():
-    """The pause pill matches the Share/Link chrome on mobile and desktop."""
+    """The pause button is an icon-only circle matching the Share/Link
+    chrome on mobile and desktop."""
     root = Path(__file__).resolve().parents[1]
     css = (root / "static/dashboard.css").read_text()
     assert ".wrapped-pause {" in css
-    assert "left: 196px" in css
+    assert "left: 108px" in css
     assert "z-index: 6" in css
     assert ".wrapped-pause:hover" in css
 
@@ -557,10 +683,129 @@ def test_wrapped_overlay_renders_row_sections():
     ]
     html = H._wrapped_overlay_markup(slides, None, ns="weekly-wrapped",
                                      footer_label="WEEK 3")
-    assert "<div class='wrapped-row-sec'>LINEUP EFFICIENCY</div>" in html
-    assert "<div class='wrapped-row-sec'>COACHING MISS</div>" in html
+    assert ("<div class='wrapped-row-sec wrapped-row-sec-lineup-efficiency'>"
+            "LINEUP EFFICIENCY</div>" in html)
+    assert ("<div class='wrapped-row-sec wrapped-row-sec-coaching-miss'>"
+            "COACHING MISS</div>" in html)
     # Each section header renders immediately above its first row.
-    assert ("<div class='wrapped-row-sec'>LINEUP EFFICIENCY</div>"
+    assert ("<div class='wrapped-row-sec wrapped-row-sec-lineup-efficiency'>"
+            "LINEUP EFFICIENCY</div>"
             "<div class='wrapped-row'>" in html)
-    assert ("<div class='wrapped-row-sec'>COACHING MISS</div>"
+    assert ("<div class='wrapped-row-sec wrapped-row-sec-coaching-miss'>"
+            "COACHING MISS</div>"
             "<div class='wrapped-row'>" in html)
+
+
+# ── Full-deck restyle (folded into the Playoff Picture PR) ──────────────────
+
+def _three_slides(**over):
+    base = [
+        {"kind": "intro", "eyebrow": "WEEK 3", "big": "T", "num": False,
+         "dp": 0, "suffix": "", "label": "Wrapped", "sub": "s"},
+        {"kind": "topscore", "eyebrow": "HIGH", "big": "150.5", "num": True,
+         "dp": 1, "suffix": "", "label": "Alpha", "sub": "s"},
+    ]
+    base.append(over.pop("extra"))
+    return base
+
+
+def test_wrapped_chrome_buttons_are_icon_only():
+    """Share / Link / Pause render as icon-only buttons (aria-label + title
+    carry the names), in both namespaces; the weekly overlay carries the
+    restyle scope class and the season overlay does not."""
+    from dashboard_services.pages import history_page as H
+
+    extra = {"kind": "standings", "eyebrow": "LEAGUE STANDINGS", "num": False,
+             "big": "", "dp": 0, "suffix": "", "label": "", "sub": "s",
+             "rows": [("#1", "Alpha", "3-0")]}
+    wk = H._wrapped_overlay_markup(_three_slides(extra=extra), None,
+                                   ns="weekly-wrapped", footer_label="WEEK 3 WRAPPED")
+    assert 'class="wrapped-overlay wrapped-overlay-wk"' in wk
+    for ns_html in (wk, H._wrapped_overlay_markup(_three_slides(extra=extra),
+                                                  None, ns="wrapped")):
+        assert "<span>Share</span>" not in ns_html
+        assert "<span>Link</span>" not in ns_html
+        assert "<span>Pause</span>" not in ns_html
+        assert 'title="Share"' in ns_html
+        assert 'title="Copy shareable link"' in ns_html
+        assert 'title="Pause auto-advance"' in ns_html
+    season = H._wrapped_overlay_markup(_three_slides(extra=extra), None,
+                                       ns="wrapped")
+    assert "wrapped-overlay-wk" not in season
+
+
+def test_weekly_playoff_slide_manager_names_and_alive():
+    """With rosters + users in ctx, settled rows gain the manager name as a
+    4th element and the still-alive teams are named on the slide."""
+    from dashboard_services.pages import history_page as H
+
+    ctx = _playoff_ctx(_SETTLED)
+    ctx["rosters"] = [{"roster_id": i + 1, "owner_id": f"u{i + 1}"}
+                      for i in range(8)]
+    ctx["users"] = [{"user_id": "u1", "display_name": "Manager Alpha"},
+                    {"user_id": "u2", "display_name": "Manager Beta"}]
+    slide = H._weekly_wrapped_playoff_slide(ctx, 11)
+    assert slide is not None
+    secs = {s["title"]: s["rows"] for s in slide["sections"]}
+    assert secs["CLINCHED"][0] == ("#1", "Alpha", "10-1", "Manager Alpha")
+    assert secs["CLINCHED"][1] == ("#2", "Beta", "8-3", "Manager Beta")
+    # No user record for Gamma: the row stays a 3-tuple.
+    assert secs["CLINCHED"][2] == ("#3", "Gamma", "7-4")
+    assert slide["alive"] == ["Delta", "Epsilon"]
+    assert slide["bgword"] == "PLAYOFFS"
+
+
+def test_weekly_posleaders_faces_markup():
+    """Performer rows render headshot cutouts; only the top scorer gets the
+    crown, the glow, and the TOP SCORE pill."""
+    from dashboard_services.pages import history_page as H
+
+    extra = {"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
+             "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+             "sub": "s", "bgword": "LEADERS",
+             "rows": [("QB", "Josh Allen", "31.2", "", False),
+                      ("RB", "Jahmyr Gibbs", "34.8", "", True),
+                      ("WR", "Justin Jefferson", "29.6", "", False)],
+             "faces": {"QB": "https://img.example/allen.png",
+                       "RB": "https://img.example/gibbs.png",
+                       "WR": ""}}
+    html = H._wrapped_overlay_markup(_three_slides(extra=extra), None,
+                                     ns="weekly-wrapped", footer_label="WEEK 3 WRAPPED")
+    assert "data-bgword='LEADERS'" in html
+    assert html.count("wrapped-face-img") == 2  # WR has no photo: initial only
+    assert "https://img.example/gibbs.png" in html
+    assert html.count("wrapped-face-crown") == 1
+    assert html.count("wrapped-face-glow") == 1
+    assert html.count("wrapped-top-pill") == 1
+    assert "TOP SCORE" in html
+    # The crowned row is Gibbs's: crown markup sits in his row block.
+    gibbs_row = next(chunk for chunk in html.split("<div class='wrapped-row")
+                     if "Jahmyr Gibbs" in chunk)
+    assert "wrapped-face-crown" in gibbs_row
+
+
+def test_weekly_share_card_painter_uses_navy():
+    """The share-card painter branches to the darker navy + sky accent for
+    weekly decks (data.week) and keeps the season purple ground."""
+    from dashboard_services.pages import history_page as H
+
+    js = H._wrapped_bootstrap_js("weekly-wrapped")
+    assert "WK = !!data.week" in js
+    assert "'#0d2137'" in js and "'#081a2d'" in js
+    assert "'#221247'" in js  # season ground untouched
+    assert "ACC = WK ? '#38bdf8' : PURPLE" in js
+
+
+def test_weekly_restyle_css_scope():
+    """The restyle palette and face treatments live under the weekly scope
+    class; the banned backdrop-word names stay out of the stylesheet."""
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static/dashboard.css").read_text()
+    assert ".wrapped-overlay-wk .wrapped-slide {" in css
+    assert "--wg0: #0d2137" in css
+    assert "--wg1: #081a2d" in css
+    assert ".wrapped-face-glow {" in css
+    assert ".wrapped-face-crown {" in css
+    assert "[data-bgword]::after" in css
+    assert ".wrapped-row-sec-clinched-a-bye" in css
+    assert ".wrapped-row-sec-eliminated" in css
