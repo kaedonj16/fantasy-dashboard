@@ -57621,6 +57621,14 @@ button.mb-fld-link {
    Monte Carlo rows (same run, partitioned) plus the scenarios payload. */
 .path-wrap{padding:2px 0 4px}
 .path-hairline{border:none;border-top:1px solid var(--border);margin:26px 0}
+.path-subtabs{display:flex;gap:3px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;background:var(--card-soft);border:1px solid var(--border);border-radius:20px;padding:3px;margin-bottom:18px}
+.path-subtabs::-webkit-scrollbar{display:none}
+.path-subtab-btn{flex:1 0 auto;border:0;background:transparent;font:inherit;font-size:13px;font-weight:700;color:var(--text-muted);padding:6px 14px;border-radius:20px;cursor:pointer;white-space:nowrap}
+.path-subtab-btn.active{background:var(--accent);color:#fff}
+.path-subpanel{display:none}
+.path-subpanel.active{display:block}
+.path-sect-label{margin:0 0 8px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-subtle)}
+.path-subpanel > .path-clinch:first-child{margin-top:6px}
 .path-you-tag{display:inline-block;margin-left:7px;padding:1px 6px;border-radius:5px;background:#2563eb;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.06em;vertical-align:2px}
 .path-sect-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-top:2px}
 .path-sect-title{margin:0;font-size:19px;font-weight:800;letter-spacing:-.01em;color:var(--text)}
@@ -57741,7 +57749,7 @@ button.mb-fld-link {
 /* Picture table (Path copy; the standings one keeps its own markup) */
 .path-tblwrap{margin-top:12px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;overflow-x:auto}
 .path-table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card)}
-.path-table th{padding:10px 14px;text-align:right;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--text-subtle);border-bottom:1px solid var(--border);background:var(--row)}
+.path-table th{padding:12px 14px;line-height:1.3;vertical-align:middle;text-align:right;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--text-subtle);border-bottom:1px solid var(--border);background:var(--row)}
 .path-table th.path-l{text-align:left}
 .path-table td{padding:11px 14px;vertical-align:middle;text-align:right;border-top:1px solid var(--border)}
 .path-table tbody tr:first-child td{border-top:none}
@@ -57753,14 +57761,13 @@ button.mb-fld-link {
 .path-table .path-rec-cell{text-align:right}
 .path-table th.path-rec-cell{text-align:right}
 .path-table tr.path-you td{background:color-mix(in srgb,#2563eb 7%,transparent)}
-.path-table tr.path-out-row td{opacity:.62}
+.path-table tr.path-out-row .path-now{color:var(--text-muted);font-weight:600}
 .path-team-name{font-size:13.5px;font-weight:700;color:var(--text);display:flex;align-items:center;flex-wrap:wrap;gap:2px}
-.path-team-sub{display:none;margin-top:1px;font-size:11.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.path-team-sub{display:block;margin-top:2px;font-size:11.5px;font-weight:500;color:var(--text-muted);line-height:1.4;font-variant-numeric:tabular-nums}
+.path-team-sub-rec{display:none}
+.path-team-recsub{display:none}
 .path-pp-status{font-weight:700;font-size:12.5px;white-space:nowrap}
 .path-pp-sdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px}
-.path-table tr.path-scnrow td{padding:0 14px 10px 52px;border-top:none;text-align:left;background:transparent}
-.path-table tr.path-scnrow + tr td{border-top:1px solid var(--border)}
-.path-scn{font-size:12px;color:var(--text-muted)}
 .path-table tr.path-cutrow td{padding:7px 14px;border-top:1px solid var(--border);text-align:left;background:var(--row)}
 
 @media (max-width:640px){
@@ -57791,9 +57798,10 @@ button.mb-fld-link {
   .path-imp-axis{grid-template-columns:42px 1fr 42px;column-gap:10px}
   .path-imp-axis-track{grid-column:2}
   .path-table .path-rec-cell{display:none}
-  .path-team-sub{display:block}
+  .path-team-sub-rec{display:block}
+  .path-team-recsub{display:inline}
+  .path-team-recsub::after{content:" · "}
   .path-table th,.path-table td{padding-left:11px;padding-right:11px}
-  .path-table tr.path-scnrow td{padding-left:40px}
   .path-pp-status-txt{display:none}
 }
 
