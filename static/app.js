@@ -7331,9 +7331,12 @@ function _annotatePlayoffScenarios(panel, scen) {
 
 // ---------------------------------------------------------------------------
 // Playoff Path - lazy-loaded on first tab click (mirrors Playoff Odds).
-// Personal hero + remaining path + root-for + tiebreakers for the viewer's
-// team, then the league-wide weekly impact graph, clinch lines and the
-// Playoff Picture. All odds come from the same Monte Carlo rows the Odds
+// The panel is split into sub-tabs so one group shows at a time and the
+// panel stays close to the height of the standings card beside it:
+// Overview (personal hero + remaining path + clinch lines), Root For
+// (biggest games + the root-for list), Impact (the league-wide weekly
+// swing graph) and Picture (tiebreakers + the Playoff Picture table).
+// All odds come from the same Monte Carlo rows the Odds
 // tab renders (the if-win / if-lose fields are partitions of that run),
 // so the Path Now % always equals the Odds %. The tab itself is only in
 // the markup inside the final-weeks window; if the exact scenarios gate
@@ -7384,6 +7387,19 @@ function initPlayoffPath(root = document) {
         window.brErrorState(panel, 'Unable to load playoff path.', () => { delete panel.dataset.loadedAt; btn.click(); }, { compact: true });
       });
     });
+  });
+}
+
+function switchPathTab(btn, key) {
+  const wrap = btn.closest('.path-wrap');
+  if (!wrap) return;
+  wrap.querySelectorAll('.path-subtab-btn').forEach(b => {
+    const on = b === btn;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  wrap.querySelectorAll('.path-subpanel').forEach(p => {
+    p.classList.toggle('active', p.dataset.pathTab === key);
   });
 }
 
@@ -7474,7 +7490,12 @@ function _renderPlayoffPath(data, scen) {
     }).filter(Boolean).sort((x, y) => y.score - x.score);
   }
 
-  const sections = [];
+  // Section blocks are built independently, then grouped into sub-tabs
+  // at the end (see the assembly below). A block stays '' when its data
+  // does not exist for this viewer/league.
+  let heroHtml = '';
+  let rootListHtml = '';
+  let tieHtml = '';
 
   // ── 1. Personal hero ──────────────────────────────────────────────────
   if (hasViewer) {
@@ -7563,13 +7584,13 @@ function _renderPlayoffPath(data, scen) {
         `<div class="path-road-grid">${roadCells}</div></div>`;
     }
 
-    sections.push(`<div class="path-hero">
+    heroHtml = `<div class="path-hero">
       <div class="path-hero-kicker">Your Playoff Path</div>
       <h3>${escapeHtml(viewerOdds.team_name)}<span class="path-you-tag">YOU</span></h3>
       <p class="path-hero-sub">${escapeHtml(recOf(viewerRid))}${oppLine}</p>
       <div class="path-hero-stats">${statsHtml}</div>
       ${forkHtml}${roadHtml}
-    </div>`);
+    </div>`;
   }
 
   // ── 2. Root for this week ─────────────────────────────────────────────
@@ -7598,13 +7619,13 @@ function _renderPlayoffPath(data, scen) {
         </div>
       </div>`;
     }).join('');
-    sections.push(`<div class="path-sect-head">
+    rootListHtml = `<div class="path-sect-head">
         <div><h3 class="path-sect-title">Root for this week</h3>
         <p class="path-sect-sub">Other Week ${week} games, ranked by impact on your team.</p></div>
         <span class="path-wk-chip">Week ${week}</span>
       </div>
       <div class="path-root-list">${rowsHtml}</div>
-      <p class="path-tbl-note">Ranked by impact on your team only.</p>`);
+      <p class="path-tbl-note">Ranked by impact on your team only.</p>`;
   }
 
   // ── 3. Tiebreakers: top-4 PF bars ─────────────────────────────────────
@@ -7639,17 +7660,20 @@ function _renderPlayoffPath(data, scen) {
     } else if (leader) {
       notes.push('You lead the league in points for.');
     }
-    sections.push(`<div class="path-sect-head">
+    tieHtml = `<div class="path-sect-head">
         <div><h3 class="path-sect-title">Tiebreakers</h3>
         <p class="path-sect-sub">Points for breaks a tie after division record.</p></div>
       </div>
       <div class="path-tie-block">
         <div class="path-pf-chart">${barsHtml}</div>
         ${notes.map(n => `<p class="path-tie-note">${n}</p>`).join('')}
-      </div>`);
+      </div>`;
   }
 
-  // ── 4. Week N Playoff Impact ──────────────────────────────────────────
+  // ── 4. Biggest games, clinch lines, Week N Playoff Impact ────────────
+  let gamesHtml = '';
+  let clinchHtml = '';
+  let impactHtml = '';
   {
     // Biggest games: this week's pairings from the scenarios next_game
     // links, ranked by the two teams' combined swing.
@@ -7668,7 +7692,7 @@ function _renderPlayoffPath(data, scen) {
       games.push({ a: t.roster_id, b: ng.opp, combined: swingOf(t.roster_id) + swingOf(ng.opp) });
     });
     games.sort((x, y) => y.combined - x.combined);
-    const gamesHtml = games.slice(0, 3).map((g, i) =>
+    gamesHtml = games.slice(0, 3).map((g, i) =>
       `<div class="path-game">
         <div class="path-game-rank">Biggest game: ${i + 1}</div>
         <div class="path-game-teams">${escapeHtml(nameOf(g.a))} <span class="path-vs">vs</span> ${escapeHtml(nameOf(g.b))}</div>
@@ -7728,25 +7752,24 @@ function _renderPlayoffPath(data, scen) {
         clinchLines.push({ tag: 'OUT', cls: 'path-c-out', html: `${nm} Eliminated.` });
       }
     });
-    const clinchHtml = clinchLines.length
+    clinchHtml = clinchLines.length
       ? `<div class="path-clinch"><h3>Clinch and elimination: Week ${week}</h3>
           <div class="path-clinch-list">${clinchLines.map(l =>
             `<div class="path-clinch-row"><span class="path-c-tag ${l.cls}">${l.tag}</span><span>${l.html}</span></div>`).join('')}
           </div></div>`
       : '';
 
-    sections.push(`<div class="path-sect-head">
+    impactHtml = `<div class="path-sect-head">
         <div><h3 class="path-sect-title">Week ${week} Playoff Impact</h3>
         <p class="path-sect-sub">Playoff odds if each team wins or loses this week, sorted by swing.</p></div>
         <span class="path-wk-chip">Week ${week}</span>
       </div>
-      ${gamesHtml ? `<div class="path-games">${gamesHtml}</div>` : ''}
       <div class="path-imp-chart">${visibleRows}${moreHtml}${axis}${toggleHtml}</div>
-      <p class="path-tbl-note">Bar spans If Lose to If Win. Dot is Now. Longer bar, bigger swing.</p>
-      ${clinchHtml}`);
+      <p class="path-tbl-note">Bar spans If Lose to If Win. Dot is Now. Longer bar, bigger swing.</p>`;
   }
 
   // ── 5. Playoff Picture ────────────────────────────────────────────────
+  let pictureHtml = '';
   {
     const tagFor = t => {
       const seed = seedOf[String(t.roster_id)];
@@ -7765,23 +7788,35 @@ function _renderPlayoffPath(data, scen) {
       const info = tagFor(t);
       const you = viewerRid && String(t.roster_id) === viewerRid;
       const out = info.tag === 'OUT';
+      // The scenario line lives inside the team cell, under the name
+      // (one row per team). Status shows once, in the Status column;
+      // the only tag left by a name is YOU. A team outside the field
+      // but still alive reads "Still alive" so the line never clashes
+      // with its Bubble / Out status word.
+      let scn = t.summary || '';
+      if (seed > spots && scn.indexOf('Alive') === 0) {
+        scn = 'Still alive' + scn.slice('Alive'.length);
+      }
+      let subHtml = '';
+      if (scn) {
+        subHtml = `<div class="path-team-sub">${t.record ? `<span class="path-team-recsub">${escapeHtml(t.record)}</span>` : ''}${escapeHtml(scn)}</div>`;
+      } else if (t.record) {
+        subHtml = `<div class="path-team-sub path-team-sub-rec">${escapeHtml(t.record)}</div>`;
+      }
       body += `<tr class="${i % 2 ? 'path-alt' : ''}${you ? ' path-you' : ''}${out ? ' path-out-row' : ''}">
         <td class="path-l path-num">${seed}</td>
-        <td class="path-team-cell"><div class="path-team-name">${escapeHtml(t.name || nameOf(t.roster_id))}${you ? '<span class="path-you-tag">YOU</span>' : ''}<span class="pp-tag ${info.cls}">${info.tag}</span></div><div class="path-team-sub">${escapeHtml(t.record || '')}</div></td>
+        <td class="path-team-cell"><div class="path-team-name">${escapeHtml(t.name || nameOf(t.roster_id))}${you ? '<span class="path-you-tag">YOU</span>' : ''}</div>${subHtml}</td>
         <td class="path-rec-cell path-num">${escapeHtml(t.record || '')}</td>
         <td class="path-num path-now">${o ? _pathFmtPct(o.playoff_pct) + '%' : '-'}</td>
         <td class="path-pp-status" style="color:${info.color}"><span class="path-pp-sdot" style="background:${info.color}"></span><span class="path-pp-status-txt">${info.word}</span></td>
       </tr>`;
-      if (t.summary) {
-        body += `<tr class="path-scnrow"><td colspan="5"><div class="path-scn">${escapeHtml(t.summary)}</div></td></tr>`;
-      }
       if (seed === spots && seed < seedOrder.length) {
         body += `<tr class="path-cutrow"><td colspan="5"><div class="pp-cut">Playoff cut line</div></td></tr>`;
       }
     });
-    sections.push(`<div class="path-sect-head">
+    pictureHtml = `<div class="path-sect-head">
         <div><h3 class="path-sect-title">Playoff Picture</h3>
-        <p class="path-sect-sub">If the season ended today, with each team's scenario underneath.</p></div>
+        <p class="path-sect-sub">If the season ended today, with each team's scenario under its name.</p></div>
       </div>
       <div class="pp-ctx" style="margin-top:12px">
         <span class="pp-ctx-main">Top ${spots} in${nByes ? ` · Top ${nByes} get a bye` : ''}</span>
@@ -7797,10 +7832,40 @@ function _renderPlayoffPath(data, scen) {
           <thead><tr><th class="path-l">Seed</th><th class="path-l">Team</th><th class="path-rec-cell">Record</th><th>Playoff %</th><th>Status</th></tr></thead>
           <tbody>${body}</tbody>
         </table>
-      </div>`);
+      </div>`;
   }
 
-  return `<div class="path-wrap">${sections.join('<hr class="path-hairline">')}</div>`;
+  // ── Sub-tab assembly ──────────────────────────────────────────────────
+  // One group visible at a time. A group whose content does not exist
+  // for this viewer/league is not rendered at all: no empty tab and no
+  // placeholder. Overview carries the clinch lines even when there is
+  // no personal hero (guest / unlinked viewer); if every Overview piece
+  // is absent the tab drops and the first remaining tab is the default.
+  const overviewHtml = [heroHtml, clinchHtml].filter(Boolean)
+    .join('<hr class="path-hairline">');
+  let rootForHtml = '';
+  if (rootListHtml) {
+    const gamesBlock = gamesHtml
+      ? `<p class="path-sect-label">Biggest games this week</p><div class="path-games">${gamesHtml}</div>`
+      : '';
+    rootForHtml = [gamesBlock, rootListHtml].filter(Boolean)
+      .join('<hr class="path-hairline">');
+  }
+  const pictureTabHtml = seedOrder.length
+    ? [tieHtml, pictureHtml].filter(Boolean).join('<hr class="path-hairline">')
+    : '';
+  const subTabs = [
+    { key: 'overview', label: 'Overview', html: overviewHtml },
+    { key: 'rootfor', label: 'Root For', html: rootForHtml },
+    { key: 'impact', label: 'Impact', html: impactHtml },
+    { key: 'picture', label: 'Picture', html: pictureTabHtml },
+  ].filter(t => t.html);
+  if (!subTabs.length) return '';
+  const tabBtns = subTabs.map((t, i) =>
+    `<button type="button" class="path-subtab-btn${i === 0 ? ' active' : ''}" role="tab" aria-selected="${i === 0 ? 'true' : 'false'}" onclick="switchPathTab(this, '${t.key}')">${t.label}</button>`).join('');
+  const tabPanels = subTabs.map((t, i) =>
+    `<div class="path-subpanel${i === 0 ? ' active' : ''}" data-path-tab="${t.key}" role="tabpanel">${t.html}</div>`).join('');
+  return `<div class="path-wrap"><div class="path-subtabs" role="tablist" aria-label="Playoff Path sections">${tabBtns}</div>${tabPanels}</div>`;
 }
 
 function initTeamTabs(root = document) {

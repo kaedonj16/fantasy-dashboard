@@ -216,6 +216,106 @@ def test_impact_compact_css_desktop_and_mobile():
     assert 'grid-template-areas:"main now swing" "l track w"' in mobile
 
 
+# ── Sub-tabs: bar markup, grouping, default active ─────────────────────
+
+def _assembly_block(js: str) -> str:
+    start = js.index("Sub-tab assembly")
+    return js[start:js.index("function initTeamTabs", start)]
+
+
+def test_subtab_bar_markup_and_default_active():
+    block = _assembly_block(APP_JS)
+    # Bar + panels are built from one ordered tab list; the first
+    # rendered tab is the active one on both the button and its panel.
+    assert 'class="path-subtabs"' in block
+    assert "switchPathTab(this, '${t.key}')" in block
+    assert 'data-path-tab="${t.key}"' in block
+    assert "path-subtab-btn${i === 0 ? ' active' : ''}" in block
+    assert "path-subpanel${i === 0 ? ' active' : ''}" in block
+    for key, label in (("overview", "Overview"), ("rootfor", "Root For"),
+                       ("impact", "Impact"), ("picture", "Picture")):
+        assert f"{{ key: '{key}', label: '{label}'" in block
+    # Switching is a global inline-onclick function, like togglePathImpact.
+    assert "function switchPathTab(btn, key)" in APP_JS
+    # Panels hide until active; the strip scrolls sideways on phones.
+    assert ".path-subpanel{display:none}" in DASH_CSS
+    assert ".path-subpanel.active{display:block}" in DASH_CSS
+    strip = next(line for line in DASH_CSS.splitlines()
+                 if line.startswith(".path-subtabs{"))
+    assert "overflow-x:auto" in strip
+
+
+def test_subtab_grouping_biggest_games_and_clinch_placement():
+    block = _assembly_block(APP_JS)
+    # Biggest Games render only inside the Root For sub-panel.
+    assert 'path-sect-label">Biggest games this week' in block
+    assert "rootForHtml = [gamesBlock, rootListHtml]" in block
+    # Clinch / elimination lines render only inside Overview.
+    assert "const overviewHtml = [heroHtml, clinchHtml]" in block
+    # The Impact sub-panel is the chart alone: no games, no clinch lines.
+    start = APP_JS.index("impactHtml = `")
+    impact = APP_JS[start:APP_JS.index("`;", start)]
+    assert "path-imp-chart" in impact
+    assert "path-games" not in impact
+    assert "path-clinch" not in impact
+
+
+def test_subtab_empty_groups_are_not_rendered():
+    block = _assembly_block(APP_JS)
+    # Tabs with no content for this viewer/league drop out entirely.
+    assert "].filter(t => t.html)" in block
+    # Root For exists only when root-for rows exist.
+    assert "if (rootListHtml) {" in block
+    # The Picture tab (and its tiebreakers) needs a seed order.
+    assert "const pictureTabHtml = seedOrder.length" in block
+
+
+# ── Playoff Picture table: one row per team, single status ─────────────
+
+def _picture_block(js: str) -> str:
+    start = js.index("5. Playoff Picture")
+    return js[start:js.index("Sub-tab assembly", start)]
+
+
+def test_picture_rows_have_no_separate_scenario_rows():
+    block = _picture_block(APP_JS)
+    # The old full-width scenario row is gone from the renderer and CSS.
+    assert "path-scnrow" not in APP_JS
+    assert "path-scnrow" not in DASH_CSS
+    assert ".path-scn{" not in DASH_CSS
+    # The scenario line rides inside the team cell, under the name.
+    assert 'class="path-team-sub"' in block
+    assert "escapeHtml(scn)" in block
+
+
+def test_picture_status_shown_once_with_you_tag_only():
+    block = _picture_block(APP_JS)
+    # No per-name IN / BYE / BUBBLE / OUT tag; YOU is the only name tag.
+    assert "pp-tag" not in block
+    assert "path-you-tag" in block
+    # The dot + word Status column stays.
+    assert "path-pp-status" in block
+    assert "path-pp-sdot" in block
+
+
+def test_picture_out_but_alive_reads_still_alive():
+    block = _picture_block(APP_JS)
+    # Renderer-side relabel only, for teams outside the field whose
+    # scenario line starts with "Alive".
+    assert "if (seed > spots && scn.indexOf('Alive') === 0)" in block
+    assert "'Still alive' + scn.slice('Alive'.length)" in block
+
+
+def test_picture_css_header_and_out_rows():
+    # Header row gets full padding (it rendered clipped at panel top).
+    th_rule = next(line for line in DASH_CSS.splitlines()
+                   if line.startswith(".path-table th{"))
+    assert "padding:12px 14px" in th_rule
+    # Out rows are no longer greyed out wholesale; only the % mutes.
+    assert ".path-table tr.path-out-row td{opacity" not in DASH_CSS
+    assert ".path-table tr.path-out-row .path-now{" in DASH_CSS
+
+
 # ── Changelog: one entry, found by content (pin_helpers) ─────────────────
 
 def test_changelog_has_one_playoff_path_entry():
