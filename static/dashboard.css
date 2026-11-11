@@ -58036,12 +58036,12 @@ button.mb-fld-link {
 .path-hero-path h4,.path-road-head h4{margin:0;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#38bdf8}
 .path-fork{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
 .path-fork-single{grid-template-columns:1fr}
-.path-fork-block{background:var(--row);border:1px solid var(--border);border-radius:10px;padding:13px 15px}
+.path-fork-block{background:var(--row);border:1px solid var(--border);border-radius:10px;padding:11px 13px}
 .path-fork-win{border-color:color-mix(in srgb,var(--win) 45%,transparent);background:color-mix(in srgb,var(--win) 12%,transparent)}
 .path-fork-label{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}
 .path-fork-win .path-fork-label{color:var(--win)}
-.path-fork-head{margin-top:5px;font-size:19px;font-weight:800;color:var(--text)}
-.path-fork-sub{margin-top:3px;font-size:12.5px;color:var(--text-muted)}
+.path-fork-head{margin-top:3px;font-size:19px;font-weight:800;line-height:1.15;color:var(--text)}
+.path-fork-sub{margin-top:2px;font-size:12.5px;line-height:1.35;color:var(--text-muted)}
 .path-road{margin-top:20px}
 .path-road-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .path-road-head span{font-size:11.5px;color:var(--text-muted);font-weight:600}
@@ -58158,14 +58158,12 @@ button.mb-fld-link {
   .path-hero{padding:17px 16px 18px}
   .path-hero h3{font-size:22px}
   .path-hero-stats{display:grid;grid-template-columns:1fr 1fr}
-  .path-hstat{padding:11px 14px}
+  .path-hstat{padding:9px 12px}
   .path-hstat + .path-hstat{border-left:none}
   .path-hstat:nth-child(even){border-left:1px solid var(--border)}
   .path-hstat:nth-child(n+3){border-top:1px solid var(--border)}
   .path-hstat:nth-child(n+3):nth-child(even){border-top:1px solid var(--border)}
-  .path-hstat-seed{grid-column:1 / -1;display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-  .path-hstat-seed .path-hstat-value{margin-top:0}
-  .path-hstat-seed .path-hstat-sub{margin-top:0}
+  .path-hstat-value{font-size:19px;margin-top:3px}
   .path-fork{grid-template-columns:1fr}
   .path-road-grid{grid-template-columns:1fr 1fr}
   .path-root-row{padding:12px 13px;gap:11px}
