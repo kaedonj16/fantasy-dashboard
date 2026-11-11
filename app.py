@@ -14710,11 +14710,19 @@ def _render_next_steps_queue(
     # fork, out of window, no brief) means no subtitle at all - the
     # old filler fallback goes too. One exception:
     # the rules confirmation prompt is an action the user must take,
-    # not filler, and it takes the slot alone when the league's
-    # playoff format is unverified.
+    # not filler, and it takes the slot alone - but ONLY for a
+    # default_unverified league, the one source where the prompt
+    # replaces the race line outright (rules_prompt's own contract).
+    # The brief carries a prompt for every non-user_confirmed source
+    # (feed and derived included); those leagues have a real field
+    # and a live fork, and the old render masked their prompt behind
+    # the race line. Checking the prompt unconditionally, as the
+    # first version of this cleanup did, put the confirmation nag on
+    # every feed/derived league instead of its bye fork.
     _subtitle = ""
-    if _brief and (_brief.get("race_prompt") or {}).get("text"):
-        _subtitle = str(_brief["race_prompt"]["text"])
+    _prompt = (_brief or {}).get("race_prompt") or {}
+    if _prompt.get("text") and _prompt.get("source") == "default_unverified":
+        _subtitle = str(_prompt["text"])
     elif _brief:
         _bye = ((_brief.get("playoff_path") or {}).get("bye") or {})
         try:
