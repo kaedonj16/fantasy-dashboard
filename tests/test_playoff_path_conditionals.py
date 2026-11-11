@@ -229,6 +229,9 @@ def test_root_for_conditions_on_other_games_only():
     # C is never the top seed, so its bye partitions are empty of byes.
     assert entry["bye_if_a"] == 0.1
     assert entry["bye_if_b"] == 0.1
+    # Same for its 1-seed partitions: never rank 0 in any sim.
+    assert entry["first_seed_if_a"] == 0.1
+    assert entry["first_seed_if_b"] == 0.1
     a = by_id[1]
     assert len(a["root_for"]) == 1
     assert (a["root_for"][0]["a"], a["root_for"][0]["b"]) == (3, 4)
@@ -236,6 +239,10 @@ def test_root_for_conditions_on_other_games_only():
     # the two D-won sims.
     assert a["root_for"][0]["bye_if_a"] == 50.0
     assert a["root_for"][0]["bye_if_b"] == 99.9
+    # The 1-seed partitions ride the same masks: with one bye the bye
+    # IS the top seed here, so the values match the bye splits exactly.
+    assert a["root_for"][0]["first_seed_if_a"] == 50.0
+    assert a["root_for"][0]["first_seed_if_b"] == 99.9
 
 
 def test_bye_week_team_gets_nulls_but_keeps_root_for():
@@ -267,6 +274,8 @@ def test_bye_week_team_gets_nulls_but_keeps_root_for():
     assert ab["playoff_if_a"] == 0.1  # E missed in both sims; clamped
     assert ab["playoff_if_b"] == 0.1
     assert ab["bye_if_a"] is not None
+    assert ab["first_seed_if_a"] is not None
+    assert ab["first_seed_if_b"] is not None
 
 
 def test_no_bye_format_nulls_bye_conditionals():
@@ -292,6 +301,10 @@ def test_no_bye_format_nulls_bye_conditionals():
         for g in r["root_for"]:
             assert g["bye_if_a"] is None
             assert g["bye_if_b"] is None
+            # The 1 seed exists in every format, so its root-for
+            # partitions stay real even when there are no byes.
+            assert g["first_seed_if_a"] is not None
+            assert g["first_seed_if_b"] is not None
 
 
 def test_score_map_capture_threads_first_week_results():
@@ -340,3 +353,7 @@ def test_score_map_capture_threads_first_week_results():
     assert (entry["a"], entry["b"]) == (3, 4)
     assert entry["playoff_if_a"] == t1["playoff_pct"]
     assert entry["playoff_if_b"] is None
+    # Headline first_seed_pct has no floor clamp (a never-top team reads
+    # 0.0); the conditional clamps like every other partition, to 0.1.
+    assert entry["first_seed_if_a"] == max(0.1, t1["first_seed_pct"])
+    assert entry["first_seed_if_b"] is None

@@ -125,7 +125,7 @@ def sig_gate(monkeypatch):
 
 def test_block_false_never_signs_on_the_caller_thread(sig_gate):
     sig_calls, main_ident = sig_gate
-    key = ("sleeper", "sig-league", 2026, "v5")
+    key = ("sleeper", "sig-league", 2026, "v6")
 
     # Cold cache: returns [] immediately and kicks the sim; the schedule
     # signature must NOT be computed on this thread.
@@ -195,7 +195,7 @@ def test_rules_correction_invalidates_warm_sim(sig_gate):
         corrected, "sleeper", block=False) == []
     # The kicked re-sim stores an entry stamped with the corrected
     # fingerprint, which then serves the corrected ctx.
-    key = ("sleeper", "sig-league", 2026, "v5")
+    key = ("sleeper", "sig-league", 2026, "v6")
     assert _wait_until(
         lambda: app_mod._PLAYOFF_SIM_CACHE.get(key, {}).get("rules_fp")
         == app_mod._rules_fingerprint(corrected))

@@ -2513,6 +2513,11 @@ def _pack_mc_results(
                     "playoff_if_b": _cond(in_mask, b_won, i),
                     "bye_if_a":     _cond(bye_mask, a_won, i) if n_byes else None,
                     "bye_if_b":     _cond(bye_mask, b_won, i) if n_byes else None,
+                    # First seed, like the team's own first_seed_if_win /
+                    # if_lose, is not gated on n_byes: rank 0 exists in
+                    # every format, so the partition is always honest.
+                    "first_seed_if_a": _cond(first_mask, a_won, i),
+                    "first_seed_if_b": _cond(first_mask, b_won, i),
                 })
         cond.append(entry)
 

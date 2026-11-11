@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-10",
         "tag": "update",
+        "text": "Playoff Path's Root For list now shows how each game also moves your bye and 1 seed odds, next to the playoff swing.",
+        "link": "/standings"
+    },
+    {
+        "date": "2026-11-10",
+        "tag": "update",
         "text": "The BR Assistant now answers Playoff Path questions down the stretch: who to root for in this week's other games, what your playoff, bye and 1 seed odds become if you win or lose, and where you stand on points-for tiebreakers.",
         "link": "/standings"
     },

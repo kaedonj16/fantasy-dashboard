@@ -198,7 +198,7 @@ def test_aggregate_cap_holds_across_sim_and_modal_kicks(agg_gate):
 
     # A dropped kick of each mechanism re-kicks and actually executes.
     dropped_sim = [lid for lid in sim_ids
-                   if ("sleeper", lid, 2026, "v5") not in building]
+                   if ("sleeper", lid, 2026, "v6") not in building]
     sim_before = tracker.sim_calls
     appmod._playoff_sim_cached(_sim_ctx(dropped_sim[0]), "sleeper", block=False)
     assert _wait_for(lambda: tracker.sim_calls > sim_before)

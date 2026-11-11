@@ -161,11 +161,13 @@ def test_scenarios_endpoint_adds_pf_and_remaining_schedule():
 
 def test_sim_cache_version_bumped_for_new_fields():
     # Rows cached before the weekly-impact fields existed must never be
-    # served to the Path tab: both cache-key constructions use v5
+    # served to the Path tab: both cache-key constructions use v6
     # (v4 added the weekly-impact conditionals; v5 added the
-    # first-seed conditionals on top).
-    assert APP_PY.count('"v5"') >= 2
-    assert '_sim_key2 = (platform, str(league_id), season, "v5")' in APP_PY
+    # first-seed conditionals; v6 added the root-for first-seed
+    # partitions on top).
+    assert APP_PY.count('"v6"') >= 2
+    assert '_sim_key2 = (platform, str(league_id), season, "v6")' in APP_PY
+    assert '(platform, str(league_id), season, "v5")' not in APP_PY
     assert '(platform, str(league_id), season, "v4")' not in APP_PY
     assert '(platform, str(league_id), season, "v3")' not in APP_PY
 

@@ -635,7 +635,10 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
             # a v3 entry must never be served to the Path tab.
             # v5: rows also carry first_seed_if_win / first_seed_if_lose
             # for the Path Impact metric switcher and the matchup card.
-            "v5",
+            # v6: root_for entries also carry first_seed_if_a /
+            # first_seed_if_b so the Root For list can show each game's
+            # 1-seed swing next to the playoff and bye swings.
+            "v6",
         )
         hit = _PLAYOFF_SIM_CACHE.get(key)
         fresh = bool(hit) and time.time() - hit["ts"] < _PLAYOFF_SIM_CACHE_TTL
@@ -38565,7 +38568,7 @@ def api_playoff_odds():
         # same cache key/signature/TTL as every other consumer instead of
         # hand-duplicating them and racing the page's background sim with
         # a second, unguarded Monte Carlo on the request thread.
-        _sim_key2 = (platform, str(league_id), season, "v5")
+        _sim_key2 = (platform, str(league_id), season, "v6")
         _sim_sig2 = _playoff_sim_sig(ctx, platform)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
         _fresh_sim = not (_sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL

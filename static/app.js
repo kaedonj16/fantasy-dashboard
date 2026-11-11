@@ -7549,22 +7549,48 @@ function _renderPlayoffPath(data, scen) {
     rootRows = viewerOdds.root_for.map(g => {
       const pa = g.playoff_if_a, pb = g.playoff_if_b;
       const ba = g.bye_if_a, bb = g.bye_if_b;
-      if (pa == null && pb == null && ba == null && bb == null) return null;
+      const fa = g.first_seed_if_a, fb = g.first_seed_if_b;
+      if (pa == null && pb == null && ba == null && bb == null
+          && fa == null && fb == null) return null;
       const dp = (pa != null && pb != null) ? Math.abs(pa - pb) : 0;
       const db = (ba != null && bb != null) ? Math.abs(ba - bb) : 0;
+      const df = (fa != null && fb != null) ? Math.abs(fa - fb) : 0;
+      // The outcome to root for: the side that helps the playoff race,
+      // with the bye and then the 1-seed race breaking exact ties.
       let favIsA = true;
       if (pa != null && pb != null) {
         if (pb > pa) favIsA = false;
         else if (pb === pa && ba != null && bb != null && bb > ba) favIsA = false;
+        else if (pb === pa && !(ba != null && bb != null && bb > ba)
+                 && fa != null && fb != null && fb > fa) favIsA = false;
       }
+      // The headline metric stays the playoff swing; a game that cannot
+      // move it headlines the bye swing instead, then the 1-seed swing,
+      // so a real stake never renders as "No stake".
       const useBye = dp < 0.05 && db >= 0.05;
+      const useFirst = dp < 0.05 && db < 0.05 && df >= 0.05;
+      const metric = useFirst ? 'first' : useBye ? 'bye' : 'playoff';
+      const conds = {
+        playoff: [pa, pb], bye: [ba, bb], first: [fa, fb],
+      };
+      // Secondary figures: the OTHER races' swings, signed from the
+      // rooted-for outcome's side (positive when that outcome also
+      // helps there, negative when it costs). A race this game cannot
+      // move (flat, or no partition for it) is omitted, never a zero.
+      const signed = (va, vb) => (va != null && vb != null)
+        ? (favIsA ? va - vb : vb - va) : null;
+      const extras = [
+        { key: 'playoff', label: 'Playoffs', d: signed(pa, pb) },
+        { key: 'bye', label: 'Bye', d: signed(ba, bb) },
+        { key: 'first', label: '1 seed', d: signed(fa, fb) },
+      ].filter(e => e.key !== metric && e.d != null && Math.abs(e.d) >= 0.05);
+      const [favVal, othVal] = favIsA ? conds[metric] : [conds[metric][1], conds[metric][0]];
       return {
-        a: g.a, b: g.b, score: dp + db,
+        a: g.a, b: g.b, score: dp + db + df,
         favRid: favIsA ? g.a : g.b, othRid: favIsA ? g.b : g.a,
-        useBye,
-        favVal: useBye ? (favIsA ? ba : bb) : (favIsA ? pa : pb),
-        othVal: useBye ? (favIsA ? bb : ba) : (favIsA ? pb : pa),
-        delta: useBye ? db : dp,
+        useBye, metric, extras,
+        favVal, othVal,
+        delta: metric === 'first' ? df : useBye ? db : dp,
         anyVal: pa != null ? pa : pb,
       };
     }).filter(Boolean).sort((x, y) => y.score - x.score);
@@ -7771,15 +7797,20 @@ function _renderPlayoffPath(data, scen) {
         const fav = escapeHtml(nameOf(r.favRid)), oth = escapeHtml(nameOf(r.othRid));
         pick = `Root for: ${fav} win <span class="path-root-vs">vs ${oth}</span>`;
         pill = `<div class="path-root-impact"><span class="path-root-impact-val">+${r.delta.toFixed(1)}%</span>` +
-          `<span class="path-root-impact-lbl">${r.useBye ? 'Bye odds' : 'Your odds'}</span></div>`;
-        why = `Your ${r.useBye ? 'bye ' : ''}odds: ${_pathFmtPct(r.favVal)}% if ${fav} wins, ${_pathFmtPct(r.othVal)}% if ${oth} wins.`;
+          `<span class="path-root-impact-lbl">${r.metric === 'first' ? '1 seed odds' : r.useBye ? 'Bye odds' : 'Your odds'}</span></div>`;
+        why = `Your ${r.metric === 'first' ? '1 seed ' : r.useBye ? 'bye ' : ''}odds: ${_pathFmtPct(r.favVal)}% if ${fav} wins, ${_pathFmtPct(r.othVal)}% if ${oth} wins.`;
       }
+      const extrasHtml = (r.extras && r.extras.length)
+        ? `<div class="path-root-extra">${r.extras.map(e =>
+            `${e.label} ${e.d > 0 ? '+' : ''}${e.d.toFixed(1)}%`).join(' · ')}</div>`
+        : '';
       return `<div class="path-root-row${i % 2 ? ' path-alt' : ''}">
         <div class="path-root-rank">${i + 1}</div>
         <div class="path-root-main">
           <div class="path-root-pick">${pick}</div>
           ${pill}
           <div class="path-root-why">${why}</div>
+          ${extrasHtml}
         </div>
       </div>`;
     }).join('');
