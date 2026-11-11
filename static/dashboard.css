@@ -32525,7 +32525,8 @@ table.mid-table {
 
 /* "Since your last visit" digest - shown as a dismissible popup overlay
    (the card is injected into .slv-wrap by initSinceLastVisit only when there is
-   new activity, so the empty wrap stays out of the layout). */
+   new activity, so the empty wrap stays out of the layout). Action-first
+   order: injuries, roster value moves, league activity, watchlist. */
 .slv-wrap:empty {
     display: none;
 }
@@ -32554,19 +32555,21 @@ table.mid-table {
 .slv-card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, .3);
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, .35);
     width: 100%;
-    max-width: 440px;
+    max-width: 480px;
     max-height: 82vh;
-    overflow-y: auto;
-    padding: 18px 20px;
-    animation: slvPop .16s ease;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-variant-numeric: tabular-nums;
+    animation: slvPop .18s ease;
 }
 
 @keyframes slvPop {
     from {
-        transform: translateY(8px) scale(.98);
+        transform: translateY(6px);
         opacity: 0;
     }
     to {
@@ -32581,15 +32584,21 @@ table.mid-table {
     }
 }
 
+/* Drag handle: phone bottom sheet only. */
+.slv-handle {
+    display: none;
+}
+
 .slv-head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 10px;
+    padding: 18px 20px 0;
 }
 
 .slv-title {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 800;
     margin: 0;
     color: var(--text);
@@ -32601,92 +32610,430 @@ table.mid-table {
     margin-top: 2px;
 }
 
-.slv-dismiss {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-muted);
-    font-size: 22px;
-    line-height: 1;
-    padding: 0 2px;
-}
-
-.slv-list {
-    list-style: none;
-    margin: 10px 0 0;
-    padding: 0;
+.slv-sum {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 6px;
-}
-
-.slv-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    font-size: 13px;
-}
-
-/* Event-feed label: neutral pill with a colored leading icon (the event type). */
-.slv-item-kind {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 9px 3px 7px;
-    border-radius: var(--radius-sm);
-    background: var(--bg-alt);
-    color: var(--text);
-    border: 1px solid var(--border);
-}
-
-.slv-item-kind i {
-    font-size: 11px;
-    color: var(--evt-color, var(--text-muted));
-}
-
-.slv-kind-trade {
-    --evt-color: var(--indigo);
-}
-
-.slv-kind-waiver {
-    --evt-color: var(--win);
-}
-
-.slv-kind-value {
-    --evt-color: var(--accent);
-}
-
-.slv-kind-injury {
-    --evt-color: var(--inj-q);
-}
-
-.slv-item-text {
-    flex: 1;
-    min-width: 0;
-    color: var(--text);
-    overflow-wrap: anywhere;
-}
-
-.slv-item-ago {
-    flex-shrink: 0;
-    color: var(--text-muted);
-    font-size: 11px;
-}
-
-.slv-section + .slv-section {
     margin-top: 10px;
 }
 
+.slv-sum-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.slv-sum-inj {
+    background: color-mix(in srgb, var(--loss) 12%, transparent);
+    border-color: color-mix(in srgb, var(--loss) 25%, transparent);
+    color: var(--loss);
+}
+
+.slv-dismiss {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 15px;
+    padding: 0;
+}
+
+.slv-dismiss:hover {
+    background: var(--bg-alt);
+    color: var(--text);
+}
+
+.slv-body {
+    overflow-y: auto;
+    padding: 2px 20px 16px;
+}
+
+.slv-section + .slv-section {
+    margin-top: 16px;
+}
+
 .slv-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .04em;
     color: var(--text-muted);
-    margin: 12px 0 4px;
+    margin: 14px 0 2px;
+}
+
+.slv-section-count {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.slv-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Hairline dividers indent to the text start (past the 36px avatar disc). */
+.slv-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 0;
+    font-size: 13px;
+}
+
+.slv-item + .slv-item::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 44px;
+    right: 0;
+    height: 1px;
+    background: var(--border);
+    opacity: .6;
+}
+
+/* 36px avatar disc: initials under, photo over (photo removes itself on error). */
+.slv-av {
+    position: relative;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+}
+
+.slv-av-init {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
+.slv-av-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Kind icon disc for feed rows without a photo (trades, fallback rows). */
+.slv-kind-ico {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.slv-kind-trade {
+    color: var(--indigo);
+}
+
+.slv-kind-waiver {
+    color: var(--win);
+}
+
+.slv-item-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 1px;
+}
+
+.slv-item-name {
+    color: var(--text);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.slv-item-sub {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Compact position badge inside digest rows (site .pos-badge palette). */
+.slv-item .pos-badge {
+    height: 18px;
+    width: auto;
+    min-width: 30px;
+    padding: 0 5px;
+    font-size: 10px;
+    border-radius: 5px;
+}
+
+.slv-item-team {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--text-muted);
+}
+
+.slv-item-end {
+    flex-shrink: 0;
+    padding-top: 1px;
+}
+
+/* Value stack: current value small over the delta chip, right aligned. */
+.slv-val {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.slv-val-now {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+/* OUT / IR status: soft red tint (other injuries keep the shared wl-chip-inj). */
+.slv-chip-out {
+    background: color-mix(in srgb, var(--loss) 15%, transparent);
+    color: var(--loss);
+}
+
+.slv-item-line {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.slv-item-line strong {
+    font-weight: 600;
+}
+
+.slv-item-ago {
+    margin-left: auto;
+    flex-shrink: 0;
+    padding-left: 8px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 400;
+}
+
+.slv-act-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.slv-teamline {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.slv-teamname {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.slv-chips {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.slv-teamline .slv-chips {
+    margin-top: 0;
+}
+
+/* One chip system for trade/waiver assets: 22px, boxy radius, aligned signs. */
+.slv-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.slv-chip.player-clickable {
+    cursor: pointer;
+}
+
+.slv-chip-sign {
+    font-weight: 800;
+    width: 8px;
+    text-align: center;
+}
+
+.slv-chip-add .slv-chip-sign {
+    color: var(--win);
+}
+
+.slv-chip-drop {
+    color: var(--text-muted);
+}
+
+.slv-chip-drop .slv-chip-sign {
+    color: var(--loss);
+}
+
+.slv-chip-pos {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.slv-more {
+    display: block;
+    padding-left: 44px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.slv-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--card);
+}
+
+.slv-foot-link {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.slv-foot-link:hover {
+    text-decoration: underline;
+}
+
+.slv-gotit {
+    height: 38px;
+    padding: 0 18px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.slv-gotit:hover {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+}
+
+/* Phone: the digest becomes a bottom sheet. */
+@media (max-width: 640px) {
+    .slv-wrap {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .slv-card {
+        max-width: none;
+        max-height: 88dvh;
+        border-radius: 16px 16px 0 0;
+        border-bottom: none;
+        animation: slvSheet .2s ease;
+    }
+
+    @keyframes slvSheet {
+        from {
+            transform: translateY(16px);
+            opacity: 0;
+        }
+        to {
+            transform: none;
+            opacity: 1;
+        }
+    }
+
+    .slv-handle {
+        display: block;
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+        margin: 8px auto 2px;
+    }
+
+    .slv-head {
+        padding-top: 8px;
+    }
+
+    .slv-foot {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .slv-gotit {
+        width: 100%;
+    }
+
+    .slv-foot-link {
+        text-align: center;
+        order: 2;
+    }
 }
 
 /* Season in Review card */
