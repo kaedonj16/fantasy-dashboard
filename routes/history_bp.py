@@ -184,8 +184,17 @@ def api_history_wrapped(platform: str, season: int, league_id: str):
         history_ctx.setdefault("summary", _build_summary(history_ctx))
         show_pro_cta = not _wrapped_request_has_premium(
             platform, season, resolved_history_league_id)
+        # Your Season slide: resolve the signed-in viewer's team in this
+        # league from the session identity (same keys the PRO check reads).
+        from flask import session as _session
+        viewer = {
+            "user_id": _session.get("viewer_user_id"),
+            "username": _session.get("viewer_username"),
+            "roster_id": _session.get("viewer_roster_id"),
+        }
         html = render_history_wrapped_overlay(history_ctx, history_season,
-                                              show_pro_cta=show_pro_cta)
+                                              show_pro_cta=show_pro_cta,
+                                              viewer=viewer)
         return jsonify({"html": html})
 
     except HTTPException:

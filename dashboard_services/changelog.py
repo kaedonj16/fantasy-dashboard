@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-11",
+        "tag": "new",
+        "text": "Season Wrapped is rebuilt as an 11-slide story: the champion and the final score, their Road to the Title through every playoff round, the league MVP crowned on his headshot, season records including the year's best rivalry, the Hardware for Best Coach, Luckiest and Unluckiest, the Best Move of the season, final standings with the playoff cut line, and a Your Season slide built for your team: your finish, best week, roster MVP and your head-to-head with the champion.",
+        "link": "/history"
+    },
+    {
+        "date": "2026-11-11",
         "tag": "update",
         "text": "Power Rankings now read as a Power Index from 1 to 99: the best team in your league sits in the 90s, a league-average team is a 50, and the bars fill on that same scale. The rankings themselves do not change: same order and same math underneath, just a score that is easier to follow from week to week.",
         "link": "/standings"
