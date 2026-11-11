@@ -108,11 +108,31 @@ def test_no_brief_no_subtitle(monkeypatch):
 
 
 def test_rules_prompt_still_takes_the_slot(monkeypatch):
-    prompt = {"text": "Playoff format not confirmed for this league. "
+    prompt = {"source": "default_unverified",
+              "text": "Playoff format not confirmed for this league. "
                       "Confirm it on the Standings page."}
     html_out = _render(monkeypatch, _brief(race_prompt=prompt))
     assert prompt["text"] in html_out
     assert "bye odds jump" not in html_out
+    assert html_out.count("os-section-subtitle") == 1
+
+
+@pytest.mark.parametrize("source", ["feed", "derived"])
+def test_rules_prompt_does_not_mask_fork_for_real_fields(monkeypatch,
+                                                         source):
+    """Regression (2026-11-11): the brief carries the confirmation
+    prompt for EVERY non-user_confirmed source, feed and derived
+    included. Those leagues have a real playoff field; the old
+    render masked their prompt behind the race line, so it was
+    never seen. The cleanup must not surface it either - only a
+    default_unverified league gets the prompt instead of the fork.
+    """
+    prompt = {"source": source,
+              "text": "Playoff format not confirmed for this league. "
+                      "Confirm it on the Standings page."}
+    html_out = _render(monkeypatch, _brief(race_prompt=prompt))
+    assert prompt["text"] not in html_out
+    assert "bye odds jump to 68.4%" in html_out
     assert html_out.count("os-section-subtitle") == 1
 
 
