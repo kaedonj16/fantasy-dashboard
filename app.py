@@ -32081,6 +32081,8 @@ def _slv_roster_snapshot(ctx: dict, roster_id: str, is_sf: bool) -> list:
             "pid": spid,
             "name": name or spid,
             "pos": meta.get("position") or meta.get("pos") or "",
+            "team": meta.get("team") or "",
+            "headshot": meta.get("espnHeadshot") or "",
             "value": value,
             "injury": injury if inj_active else "",
         })
@@ -32102,6 +32104,7 @@ def api_since_last_visit():
     result = {
         "trades": 0, "waivers": 0, "items": [], "latest_ts": 0,
         "roster": [], "previous_roster": None, "account_scoped": False,
+        "since_ms": 0,
     }
     platform = request.args.get("platform", "sleeper")
     league_id = request.args.get("league_id")
@@ -32174,6 +32177,10 @@ def api_since_last_visit():
             # unavailable; the browser baseline remains a safe fallback.
             logger.debug("since-last-visit account state failed", exc_info=True)
 
+    # Echo the baseline actually used (the account baseline wins over the
+    # browser's for signed-in visitors) so the client can date the digest.
+    result["since_ms"] = int(since_ms or 0)
+
     # Trades + waiver adds newer than the last visit (needs a real baseline).
     if since_ms > 0:
         try:
@@ -32205,21 +32212,58 @@ def api_since_last_visit():
                         result["trades"] = int((rows["kind"] == "trade").sum())
                         result["waivers"] = int((rows["kind"] == "waiver").sum())
                         result["latest_ts"] = int(rows["ts_ms"].iloc[0])
+                        def _asset(p):
+                            return {
+                                "name": str(p.get("name") or "?"),
+                                "pos": str(p.get("pos") or p.get("position") or ""),
+                                "pid": str(p.get("pid") or p.get("player_id") or ""),
+                            }
+
+                        def _pick_label(pick):
+                            try:
+                                rnd = int(pick.get("round") or 0)
+                            except (TypeError, ValueError):
+                                rnd = 0
+                            suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+                            yr = str(pick.get("season") or "").strip()
+                            return (f"{yr} {rnd}{suffix}" if yr and rnd else "Draft pick")
+
                         for _, r in rows.head(8).iterrows():
                             data = r["data"] or {}
+                            item = {"kind": r["kind"], "ts": int(r["ts_ms"]), "week": int(r["week"])}
                             if r["kind"] == "trade":
-                                names = [str(t.get("name") or "?") for t in (data.get("teams") or [])]
-                                text = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
+                                teams = data.get("teams") or []
+                                names = [str(t.get("name") or "?") for t in teams]
+                                item["text"] = "Trade: " + " and ".join(names[:2]) + (" +more" if len(names) > 2 else "")
+                                # Picks move by owner ids, not inside gets/sends.
+                                picks_get, picks_send = {}, {}
+                                for pick in (data.get("draft_picks") or []):
+                                    entry = {"name": _pick_label(pick), "pos": "", "pid": "", "pick": True}
+                                    if pick.get("owner_id") is not None:
+                                        picks_get.setdefault(str(pick["owner_id"]), []).append(entry)
+                                    if pick.get("previous_owner_id") is not None:
+                                        picks_send.setdefault(str(pick["previous_owner_id"]), []).append(entry)
+                                item["teams"] = []
+                                for t in teams:
+                                    rid = str(t.get("roster_id") or t.get("rid") or "")
+                                    item["teams"].append({
+                                        "name": str(t.get("name") or "?"),
+                                        "avatar": str(t.get("avatar") or ""),
+                                        "gets": [_asset(p) for p in (t.get("gets") or [])] + picks_get.get(rid, []),
+                                        "sends": [_asset(p) for p in (t.get("sends") or [])] + picks_send.get(rid, []),
+                                    })
                             else:
                                 nm = str(data.get("name") or "?")
                                 adds = data.get("adds") or []
                                 who = ", ".join(str(p.get("name") or "?") for p in adds[:2])
                                 if len(adds) > 2:
                                     who += f" +{len(adds) - 2}"
-                                text = f"{nm} added {who}" if who else f"{nm} made a move"
-                            result["items"].append(
-                                {"kind": r["kind"], "text": text, "ts": int(r["ts_ms"]), "week": int(r["week"])}
-                            )
+                                item["text"] = f"{nm} added {who}" if who else f"{nm} made a move"
+                                item["team"] = nm
+                                item["avatar"] = str(data.get("avatar") or "")
+                                item["adds"] = [_asset(p) for p in adds]
+                                item["drops"] = [_asset(p) for p in (data.get("drops") or [])]
+                            result["items"].append(item)
         except Exception:
             logger.debug("since-last-visit activity failed", exc_info=True)
 

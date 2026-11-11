@@ -23148,17 +23148,39 @@ const SLV_VALUE_THRESHOLD = 100;
 // the popup aligned with the calibrated values shown everywhere else.
 const SLV_MIN_VALUE = 20;
 
-function _slvSection(title, rowsHtml) {
+function _slvSection(title, count, rowsHtml) {
   if (!rowsHtml) return '';
-  return '<div class="slv-section"><div class="slv-section-title">' + _wlEsc(title) + '</div>' +
+  const badge = count ? ' <span class="slv-section-count">' + count + '</span>' : '';
+  return '<div class="slv-section"><div class="slv-section-title">' + _wlEsc(title) + badge + '</div>' +
     '<ul class="slv-list">' + rowsHtml + '</ul></div>';
+}
+
+function _slvInitials(name) {
+  return String(name || '?').trim().split(/\s+/).slice(0, 2)
+    .map(function (w) { return w[0] || ''; }).join('').toUpperCase() || '?';
+}
+
+// 36px avatar disc: initials underneath, photo laid over the top when one
+// exists (a failed photo removes itself and the initials show through).
+function _slvAvatar(name, imgUrl) {
+  const img = imgUrl
+    ? '<img class="slv-av-img" src="' + _wlEsc(imgUrl) + '" alt="" loading="lazy" onerror="this.remove()">'
+    : '';
+  return '<span class="slv-av"><span class="slv-av-init">' + _wlEsc(_slvInitials(name)) + '</span>' + img + '</span>';
+}
+
+function _slvPosTeam(pos, team) {
+  const badge = pos ? '<span class="pos-badge ' + _wlEsc(String(pos).toUpperCase()) + '">' + _wlEsc(pos) + '</span>' : '';
+  const tm = team ? '<span class="slv-item-team">' + _wlEsc(team) + '</span>' : '';
+  if (!badge && !tm) return '';
+  return '<span class="slv-item-sub">' + badge + tm + '</span>';
 }
 
 // Diff the server's current roster snapshot against the one stored at the last
 // visit to find value moves and newly-injured players. Also persists the fresh
 // snapshot. Returns { movers, injuries } (empty arrays on the first visit).
 function _slvRosterDiff(leagueId, rid, roster, previousRoster, accountScoped) {
-  const out = { movers: [], injuries: [] };
+  const out = { movers: [], injuries: [], moversTotal: 0, injuriesTotal: 0 };
   if (!rid || !Array.isArray(roster) || !roster.length) return out;
   const snapKey = 'brfantasy_slv_snap_' + leagueId + '_' + rid;
   let snap = null;
@@ -23176,11 +23198,17 @@ function _slvRosterDiff(leagueId, rid, roster, previousRoster, accountScoped) {
       const prev = snap.p[p.pid];
       if (prev && typeof prev.v === 'number' && p.value && p.value >= SLV_MIN_VALUE) {
         const dv = p.value - prev.v;
-        if (Math.abs(dv) >= SLV_VALUE_THRESHOLD) out.movers.push({ name: p.name, pos: p.pos, delta: dv, pid: p.pid });
+        if (Math.abs(dv) >= SLV_VALUE_THRESHOLD) {
+          out.movers.push({ name: p.name, pos: p.pos, team: p.team, headshot: p.headshot, delta: dv, value: p.value, pid: p.pid });
+        }
       }
-      if (p.injury && (!prev || !prev.i)) out.injuries.push({ name: p.name, pos: p.pos, status: p.injury, pid: p.pid });
+      if (p.injury && (!prev || !prev.i)) {
+        out.injuries.push({ name: p.name, pos: p.pos, team: p.team, headshot: p.headshot, status: p.injury, pid: p.pid });
+      }
     });
     out.movers.sort(function (a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+    out.moversTotal = out.movers.length;
+    out.injuriesTotal = out.injuries.length;
     out.movers = out.movers.slice(0, 5);
     out.injuries = out.injuries.slice(0, 5);
   }
@@ -23238,24 +23266,6 @@ async function initSinceLastVisit() {
       d && d.previous_roster, !!(d && d.account_scoped)
     );
 
-    // Event-type label: a neutral pill with a colored leading icon (event-feed
-    // look), so the digest scans as a feed rather than a row of status alarms.
-    const _SLV_ICON = { trade: 'fa-arrows-rotate', waiver: 'fa-inbox',
-                        value: 'fa-chart-line', injury: 'fa-triangle-exclamation' };
-    const _slvKind = function (kind, label) {
-      return '<span class="slv-item-kind slv-kind-' + kind + '">' +
-        '<i class="fa-solid ' + (_SLV_ICON[kind] || 'fa-circle') + '" aria-hidden="true"></i> ' +
-        label + '</span>';
-    };
-
-    // Activity rows (trades + waivers).
-    const activityRows = items.map(function (it) {
-      const k = it.kind === 'trade' ? 'trade' : 'waiver';
-      return '<li class="slv-item">' + _slvKind(k, k === 'trade' ? 'Trade' : 'Waiver') +
-        '<span class="slv-item-text">' + _wlEsc(it.text) + '</span>' +
-        '<span class="slv-item-ago">' + _slvTimeAgo(it.ts) + '</span></li>';
-    }).join('');
-
     // Player name, made clickable so it opens the in-app modal (via the global
     // [data-player-id] handler) when we have a player id.
     const _slvName = function (name, pid) {
@@ -23265,70 +23275,167 @@ async function initSinceLastVisit() {
         '" data-player-name="' + _wlEsc(name) + '">' + safe + '</span>';
     };
 
-    // Value-move rows.
-    const moverRows = diff.movers.map(function (m) {
-      const up = m.delta > 0;
-      return '<li class="slv-item">' + _slvKind('value', 'Value') +
-        '<span class="slv-item-text">' + _slvName(m.name, m.pid) +
-          (m.pos ? ' <span class="wl-item-pos">' + _wlEsc(m.pos) + '</span>' : '') + '</span>' +
-        '<span class="slv-item-ago wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '">' +
-          (up ? '+' : '-') + Math.abs(Math.round(m.delta)) + '</span></li>';
-    }).join('');
+    // Asset chip for a trade/waiver player or pick. Players with an id open
+    // the player modal; draft picks stay non-clickable (site rule).
+    const _slvChip = function (a, sign) {
+      const pos = a.pos ? '<span class="slv-chip-pos">' + _wlEsc(a.pos) + '</span>' : '';
+      const body = '<span class="slv-chip-sign">' + sign + '</span>' + pos + _wlEsc(a.name);
+      const cls = 'slv-chip ' + (sign === '+' ? 'slv-chip-add' : 'slv-chip-drop');
+      if (a.pid && !a.pick) {
+        return '<span class="' + cls + ' player-clickable" data-player-id="' + _wlEsc(String(a.pid)) +
+          '" data-player-name="' + _wlEsc(a.name) + '">' + body + '</span>';
+      }
+      return '<span class="' + cls + '">' + body + '</span>';
+    };
 
-    // New-injury rows.
+    // Player row shared by injuries, value moves and the watchlist.
+    const _slvPlayerRow = function (avatarHtml, nameHtml, subHtml, endHtml) {
+      return '<li class="slv-item slv-player">' + avatarHtml +
+        '<span class="slv-item-main"><span class="slv-item-name">' + nameHtml + '</span>' + subHtml + '</span>' +
+        '<span class="slv-item-end">' + endHtml + '</span></li>';
+    };
+
+    // Needs attention: new injuries on your roster, first.
     const injuryRows = diff.injuries.map(function (i) {
       const short = _WL_INJ_SHORT[String(i.status).toUpperCase()] || _wlEsc(String(i.status).slice(0, 4));
-      return '<li class="slv-item">' + _slvKind('injury', 'Injury') +
-        '<span class="slv-item-text">' + _slvName(i.name, i.pid) +
-          (i.pos ? ' <span class="wl-item-pos">' + _wlEsc(i.pos) + '</span>' : '') + '</span>' +
-        '<span class="slv-item-ago wl-chip wl-chip-inj" title="' + _wlEsc(i.status) + '">' + short + '</span></li>';
+      const isOut = String(i.status).toUpperCase().indexOf('OUT') === 0 || String(i.status).toUpperCase() === 'IR';
+      const chip = '<span class="wl-chip ' + (isOut ? 'slv-chip-out' : 'wl-chip-inj') + '" title="' +
+        _wlEsc(i.status) + '">' + short + '</span>';
+      return _slvPlayerRow(_slvAvatar(i.name, i.headshot), _slvName(i.name, i.pid), _slvPosTeam(i.pos, i.team), chip);
     }).join('');
 
-    // Watchlist subsection: watched players that currently carry a meaningful
-    // alert (value swing or injury), reusing the same chip rendering as the nav.
+    // Value moves on your roster: current value over the delta chip.
+    const moverRows = diff.movers.map(function (m) {
+      const up = m.delta > 0;
+      const end = '<span class="slv-val"><span class="slv-val-now">' +
+        Math.round(m.value).toLocaleString() + '</span>' +
+        '<span class="wl-chip ' + (up ? 'wl-chip-up' : 'wl-chip-down') + '">' +
+        (up ? '+' : '-') + Math.abs(Math.round(m.delta)) + '</span></span>';
+      return _slvPlayerRow(_slvAvatar(m.name, m.headshot), _slvName(m.name, m.pid), _slvPosTeam(m.pos, m.team), end);
+    }).join('');
+
+    // League activity feed: trades carry the assets each team received
+    // (the other side's sends are this side's gets, so gets alone cover the
+    // deal), waivers carry adds and drops.
+    const activityRows = items.map(function (it) {
+      const ago = '<span class="slv-item-ago">' + _slvTimeAgo(it.ts) + '</span>';
+      if (it.kind === 'trade' && Array.isArray(it.teams) && it.teams.length) {
+        const names = it.teams.map(function (t) { return '<strong>' + _wlEsc(t.name) + '</strong>'; });
+        const title = names.join(' and ') + (it.teams.length > 2 ? '' : '');
+        const lines = it.teams.map(function (t) {
+          if (!t.gets || !t.gets.length) return '';
+          return '<span class="slv-teamline"><span class="slv-teamname">' + _wlEsc(t.name) + ' got</span>' +
+            '<span class="slv-chips">' + t.gets.map(function (a) { return _slvChip(a, '+'); }).join('') + '</span></span>';
+        }).join('');
+        return '<li class="slv-item slv-act"><span class="slv-kind-ico slv-kind-trade">' +
+          '<i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i></span>' +
+          '<span class="slv-item-main"><span class="slv-item-line">' + title + ago + '</span>' +
+          (lines ? '<span class="slv-act-lines">' + lines + '</span>' : '') + '</span></li>';
+      }
+      if (it.kind !== 'trade' && (Array.isArray(it.adds) || Array.isArray(it.drops))) {
+        const chips = (it.adds || []).map(function (a) { return _slvChip(a, '+'); }).join('') +
+          (it.drops || []).map(function (a) { return _slvChip(a, '-'); }).join('');
+        return '<li class="slv-item slv-act">' + _slvAvatar(it.team || '?', it.avatar) +
+          '<span class="slv-item-main"><span class="slv-item-line"><strong>' + _wlEsc(it.team || '') +
+          '</strong> ' + ((it.adds && it.adds.length) ? 'added' : 'made a move') + ago + '</span>' +
+          (chips ? '<span class="slv-chips">' + chips + '</span>' : '') + '</span></li>';
+      }
+      // Fallback for a payload without structured assets: the summary text.
+      const k = it.kind === 'trade' ? 'trade' : 'waiver';
+      return '<li class="slv-item slv-act"><span class="slv-kind-ico slv-kind-' + k + '">' +
+        '<i class="fa-solid ' + (k === 'trade' ? 'fa-arrows-rotate' : 'fa-inbox') + '" aria-hidden="true"></i></span>' +
+        '<span class="slv-item-main"><span class="slv-item-line">' + _wlEsc(it.text) + ago + '</span></span></li>';
+    }).join('');
+
+    // Watchlist: watched players carrying an alert, chips rendered by the
+    // shared watchlist helper so an injury alert shows as an injury chip.
     let watchRows = '';
+    let watchCount = 0;
     try {
       const _wl = (typeof _getWatchlist === 'function') ? _getWatchlist() : [];
       if (_wl.length && typeof _fetchWatchlistAlerts === 'function') {
         const _alerts = await _fetchWatchlistAlerts(_wl.map(function (p) { return String(p.player_id); }));
-        watchRows = _wl.filter(function (p) { const a = _alerts[String(p.player_id)]; return a && a.alert; })
-          .map(function (p) {
-            const a = _alerts[String(p.player_id)] || {};
-            return '<li class="slv-item">' + _slvKind('value', 'Watch') +
-              '<span class="slv-item-text">' + _slvName(p.name || p.player_id, p.player_id) +
-              (p.position ? ' <span class="wl-item-pos">' + _wlEsc(p.position) + '</span>' : '') + '</span>' +
-              '<span class="slv-item-ago">' + _wlChipsHtml(a) + '</span></li>';
-          }).join('');
+        const alerted = _wl.filter(function (p) { const a = _alerts[String(p.player_id)]; return a && a.alert; });
+        watchCount = alerted.length;
+        watchRows = alerted.map(function (p) {
+          const a = _alerts[String(p.player_id)] || {};
+          return _slvPlayerRow(
+            _slvAvatar(p.name || p.player_id, p.headshot || ''),
+            _slvName(p.name || p.player_id, p.player_id),
+            _slvPosTeam(p.position, p.team),
+            _wlChipsHtml(a)
+          );
+        }).join('');
       }
     } catch (_) { /* watchlist optional */ }
 
     if (!activityRows && !moverRows && !injuryRows && !watchRows) return;  // nothing new -> stay hidden
 
-    const bits = [];
-    if (d.trades) bits.push(d.trades + ' trade' + (d.trades > 1 ? 's' : ''));
-    if (d.waivers) bits.push(d.waivers + ' waiver move' + (d.waivers > 1 ? 's' : ''));
-    if (diff.movers.length) bits.push(diff.movers.length + ' value move' + (diff.movers.length > 1 ? 's' : ''));
-    if (diff.injuries.length) bits.push(diff.injuries.length + ' new injur' + (diff.injuries.length > 1 ? 'ies' : 'y'));
-    const summary = bits.join(', ') || 'New activity';
+    // Header: league + the actual baseline the digest was measured from.
+    const sinceMs = (d && d.since_ms) || since || 0;
+    const leagueName = (typeof window !== 'undefined' && window.__brctx && window.__brctx.leagueName) || '';
+    let sub = '';
+    if (sinceMs > 0) {
+      const when = new Date(sinceMs);
+      const dateTxt = when.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const timeTxt = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      sub = (leagueName ? _wlEsc(leagueName) + ' · ' : '') + 'Since ' + dateTxt + ' at ' + timeTxt;
+    } else if (leagueName) {
+      sub = _wlEsc(leagueName);
+    }
+
+    const leagueMoves = (d.trades || 0) + (d.waivers || 0);
+    const sumChips = [];
+    if (diff.injuriesTotal) sumChips.push('<span class="slv-sum-chip slv-sum-inj">' + diff.injuriesTotal + ' injur' + (diff.injuriesTotal > 1 ? 'ies' : 'y') + '</span>');
+    if (diff.moversTotal) sumChips.push('<span class="slv-sum-chip">' + diff.moversTotal + ' value move' + (diff.moversTotal > 1 ? 's' : '') + '</span>');
+    if (leagueMoves) sumChips.push('<span class="slv-sum-chip">' + leagueMoves + ' league move' + (leagueMoves > 1 ? 's' : '') + '</span>');
+    const sumRow = sumChips.length ? '<div class="slv-sum">' + sumChips.join('') + '</div>' : '';
+
+    // The activity list is capped server-side; name the remainder instead of
+    // truncating silently (totals count every move since the baseline).
+    let moreRow = '';
+    if (leagueMoves > items.length) {
+      moreRow = '<li class="slv-item slv-more">+' + (leagueMoves - items.length) + ' more moves</li>';
+    }
+
+    const activityUrl = '/' + ctx.platform + '/' + ctx.season + '/' + ctx.leagueId + '/activity';
 
     el.innerHTML =
-      '<section class="os-card slv-card">' +
+      '<section class="os-card slv-card" role="dialog" aria-modal="true" aria-label="Since your last visit">' +
+        '<div class="slv-handle" aria-hidden="true"></div>' +
         '<div class="slv-head">' +
-          '<div><h2 class="slv-title">Since your last visit</h2>' +
-          '<div class="slv-sub">' + _wlEsc(summary) + '</div></div>' +
-          '<button class="slv-dismiss" aria-label="Dismiss" onclick="this.closest(\'.slv-wrap\').remove()">&times;</button>' +
+          '<div class="slv-head-main"><h2 class="slv-title">Since your last visit</h2>' +
+          (sub ? '<div class="slv-sub">' + sub + '</div>' : '') + sumRow + '</div>' +
+          '<button type="button" class="slv-dismiss" aria-label="Dismiss"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>' +
         '</div>' +
-        _slvSection('New activity', activityRows) +
-        _slvSection('Value moves on your roster', moverRows) +
-        _slvSection('Watchlist', watchRows) +
-        _slvSection('New injuries on your roster', injuryRows) +
+        '<div class="slv-body">' +
+          _slvSection('Needs attention', diff.injuriesTotal, injuryRows) +
+          _slvSection('Value moves on your roster', diff.moversTotal, moverRows) +
+          _slvSection('League activity', leagueMoves, activityRows + moreRow) +
+          _slvSection('Watchlist', watchCount, watchRows) +
+        '</div>' +
+        '<div class="slv-foot">' +
+          '<a class="slv-foot-link" href="' + activityUrl + '">View full activity</a>' +
+          '<button type="button" class="slv-gotit">Got it</button>' +
+        '</div>' +
       '</section>';
 
-    // Popup dismissal: click the backdrop (outside the card) or press Escape.
-    el.addEventListener('click', function (e) { if (e.target === el) el.remove(); });
-    document.addEventListener('keydown', function _slvEsc(e) {
-      if (e.key === 'Escape') { el.remove(); document.removeEventListener('keydown', _slvEsc); }
-    });
+    // One close path for every dismissal route, so the Escape listener is
+    // always removed with the popup.
+    const _slvClose = function () {
+      document.removeEventListener('keydown', _slvEsc);
+      el.remove();
+    };
+    function _slvEsc(e) { if (e.key === 'Escape') _slvClose(); }
+    document.addEventListener('keydown', _slvEsc);
+    el.addEventListener('click', function (e) { if (e.target === el) _slvClose(); });
+    const dismissBtn = el.querySelector('.slv-dismiss');
+    if (dismissBtn) dismissBtn.addEventListener('click', _slvClose);
+    const gotItBtn = el.querySelector('.slv-gotit');
+    if (gotItBtn) {
+      gotItBtn.addEventListener('click', _slvClose);
+      gotItBtn.focus({ preventScroll: true });
+    }
   } catch (_) {}
 }
 _deferInit(initSinceLastVisit);

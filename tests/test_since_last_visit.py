@@ -105,6 +105,89 @@ def test_slv_value_map_cached_across_calls(monkeypatch):
         r1 = client.get("/api/since-last-visit?platform=sleeper&league_id=L&season=2026&roster_id=7")
         r2 = client.get("/api/since-last-visit?platform=sleeper&league_id=L&season=2026&roster_id=7")
     assert r1.get_json()["roster"] == r2.get_json()["roster"] == [
-        {"pid": "p1", "name": "Player One", "pos": "RB", "value": 123.5,
-         "injury": "Questionable"}
+        {"pid": "p1", "name": "Player One", "pos": "RB", "team": "",
+         "headshot": "", "value": 123.5, "injury": "Questionable"}
     ]
+
+
+def test_since_last_visit_items_carry_assets_and_baseline(monkeypatch):
+    import app as appmod
+
+    monkeypatch.setattr(
+        appmod, "daily_completed", datetime.now(appmod.EASTERN).date(), raising=False
+    )
+    ctx = {
+        "rosters": [],
+        "activity_df": pd.DataFrame([
+            _activity_row("trade", 2, {
+                "teams": [
+                    {"roster_id": 8, "name": "Them",
+                     "gets": [{"name": "Bijan Robinson", "pos": "RB", "pid": "11"}],
+                     "sends": [{"name": "Brock Bowers", "pos": "TE", "pid": "22"}]},
+                    {"roster_id": 9, "name": "Other",
+                     "gets": [{"name": "Brock Bowers", "pos": "TE", "pid": "22"}],
+                     "sends": [{"name": "Bijan Robinson", "pos": "RB", "pid": "11"}]},
+                ],
+                "draft_picks": [
+                    {"season": 2027, "round": 1, "owner_id": 8, "previous_owner_id": 9},
+                ],
+            }),
+            _activity_row("waiver", 3, {
+                "rid": "9", "name": "Other",
+                "adds": [{"name": "Tyler Allgeier", "pos": "RB", "pid": "33"}],
+                "drops": [{"name": "Zonovan Knight", "pos": "RB", "pid": "44"}],
+            }),
+        ]),
+    }
+    monkeypatch.setattr(appmod, "get_league_ctx_from_cache", lambda *args: ctx)
+    appmod.app.config["TESTING"] = True
+
+    with appmod.app.test_client() as client:
+        response = client.get(
+            "/api/since-last-visit?platform=sleeper&league_id=L&season=2026&roster_id=7&since=1"
+        )
+
+    payload = response.get_json()
+    assert payload["since_ms"] == 1
+    trade, waiver = payload["items"]
+    # The summary text is unchanged for older consumers.
+    assert trade["text"] == "Trade: Them and Other"
+    assert waiver["text"] == "Other added Tyler Allgeier"
+    them, other = trade["teams"]
+    assert them["gets"][0] == {"name": "Bijan Robinson", "pos": "RB", "pid": "11"}
+    # The pick lands in the receiving team's gets, labelled by year + round.
+    assert them["gets"][1]["name"] == "2027 1st"
+    assert them["gets"][1]["pick"] is True
+    assert other["sends"][0]["name"] == "Bijan Robinson"
+    assert waiver["team"] == "Other"
+    assert waiver["adds"] == [{"name": "Tyler Allgeier", "pos": "RB", "pid": "33"}]
+    assert waiver["drops"] == [{"name": "Zonovan Knight", "pos": "RB", "pid": "44"}]
+
+
+def test_roster_snapshot_carries_team_and_headshot(monkeypatch):
+    import app as appmod
+
+    monkeypatch.setattr(
+        appmod, "daily_completed", datetime.now(appmod.EASTERN).date(), raising=False
+    )
+    monkeypatch.setattr(appmod, "get_model_value_table_cached", lambda *a, **k: [
+        {"id": "p1", "value": 500.0, "sf_value": 600.0},
+    ])
+    monkeypatch.setattr(appmod, "get_players_index_global", lambda *a, **k: {
+        "p1": {"full_name": "Player One", "position": "WR", "team": "CIN",
+               "espnHeadshot": "https://img.example/p1.png", "injury_status": ""},
+    })
+    appmod._SLV_VMAP_CACHE["key"] = None
+    appmod._SLV_VMAP_CACHE["map"] = None
+    ctx = {"rosters": [{"roster_id": 7, "players": ["p1"]}], "activity_df": pd.DataFrame([])}
+    monkeypatch.setattr(appmod, "get_league_ctx_from_cache", lambda *args: ctx)
+    appmod.app.config["TESTING"] = True
+
+    with appmod.app.test_client() as client:
+        response = client.get(
+            "/api/since-last-visit?platform=sleeper&league_id=L&season=2026&roster_id=7"
+        )
+
+    (row,) = response.get_json()["roster"]
+    assert row["team"] == "CIN"
+    assert row["headshot"] == "https://img.example/p1.png"
