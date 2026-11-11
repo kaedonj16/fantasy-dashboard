@@ -14700,22 +14700,37 @@ def _render_next_steps_queue(
     # layout) instead of sitting in a tall third-of-a-row box. The
     # dismiss script keeps this class in sync as actions come and go.
     _single_cls = " ns-frame-single" if _n == 1 else ""
-    # Race line as the card subtitle; the rules confirmation prompt
-    # takes its place when the field is unverified (Wave 3 spec 3.2).
-    _subtitle = "Most important first."
-    if _brief and (_brief.get("race_line") or {}).get("text"):
-        _subtitle = str(_brief["race_line"]["text"])
-    elif _brief and (_brief.get("race_prompt") or {}).get("text"):
+    # Card subtitle: ONE line, the bye fork only (Kaedon 2026-11-11:
+    # the race line repeated the hero - seed, record, a PF cushion on
+    # the first team out, still-to-play - and the path line stacked
+    # magic number / root-for / three bye percentages under it; "a
+    # lot of nothing being said"). The fork is the only forward
+    # number not already on the page: bye odds with a win this week
+    # vs a loss, base rate dropped. No live fork (no byes, a level
+    # fork, out of window, no brief) means no subtitle at all - the
+    # old filler fallback goes too. One exception:
+    # the rules confirmation prompt is an action the user must take,
+    # not filler, and it takes the slot alone when the league's
+    # playoff format is unverified.
+    _subtitle = ""
+    if _brief and (_brief.get("race_prompt") or {}).get("text"):
         _subtitle = str(_brief["race_prompt"]["text"])
-    # Playoff Path line (final-weeks window only, from the brief's
-    # playoff_path block): a second subtitle line under the race line.
-    # Absent entirely out of window; no placeholder.
-    _path_subtitle_html = ""
-    if _brief and (_brief.get("playoff_path") or {}).get("text"):
-        _path_subtitle_html = (
-            '<div class="os-section-subtitle">'
-            f'{html.escape(str(_brief["playoff_path"]["text"]))}</div>'
-        )
+    elif _brief:
+        _bye = ((_brief.get("playoff_path") or {}).get("bye") or {})
+        try:
+            _bw = float(_bye["if_win"])
+            _bl = float(_bye["if_lose"])
+            if _bw != _bl:
+                _subtitle = (
+                    f"Win this week and your bye odds jump to {_bw:.1f}%. "
+                    f"Lose and they drop to {_bl:.1f}%."
+                )
+        except (KeyError, TypeError, ValueError):
+            _subtitle = ""
+    _subtitle_html = (
+        f'<div class="os-section-subtitle">{html.escape(_subtitle)}</div>'
+        if _subtitle else ""
+    )
     # No standalone brief strips: the coverage line, the claims
     # block and the bye outlook no longer render as prose rows.
     # The brief's intel rides on the action cards themselves (the
@@ -14727,8 +14742,7 @@ def _render_next_steps_queue(
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Next steps</h2>
-              <div class="os-section-subtitle">{html.escape(_subtitle)}</div>
-              {_path_subtitle_html}
+              {_subtitle_html}
             </div>
             <div class="os-section-head-actions">
               <span class="os-card-actions">
