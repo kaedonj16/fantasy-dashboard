@@ -193,6 +193,44 @@ def test_empty_espn_roster_positions_use_default_lineup_guard():
     assert len(starters) == 6
 
 
+def test_expand_espn_slot_counts_emits_canonical_order():
+    # Provider dict in ESPN slot-id order (DEF id 16 before K id 17, FLEX
+    # id 23 last) must still expand canonically: K nearly last, DEF last
+    # among starters, FLEX after TE.
+    slots = espn_api.expand_espn_lineup_slot_counts({
+        "16": 1, "17": 1, "20": 6, "21": 1, "23": 1, "0": 1, "2": 2,
+        "4": 2, "6": 1, "7": 1,
+    })
+    assert slots == [
+        "QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX",
+        "K", "DEF", "BN", "BN", "BN", "BN", "BN", "BN", "IR",
+    ]
+
+
+def test_expand_espn_named_counts_emits_canonical_order():
+    slots = espn_api.expand_espn_lineup_slot_counts({
+        "D/ST": 1, "K": 1, "BE": 5, "OP": 1, "RB/WR/TE": 1,
+        "TE": 1, "WR": 2, "RB": 2, "QB": 1,
+    })
+    assert slots == [
+        "QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX",
+        "K", "DEF", "BN", "BN", "BN", "BN", "BN",
+    ]
+
+
+def test_espn_draft_roster_positions_canonical_order():
+    from dashboard_services.providers import espn_draft
+
+    payload = {"settings": {"rosterSettings": {"lineupSlotCounts": {
+        "16": 1, "20": 6, "17": 1, "23": 1, "6": 1, "4": 2, "2": 2,
+        "0": 1, "21": 1, "7": 1,
+    }}}}
+    assert espn_draft._roster_positions_from_payload(payload) == [
+        "QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX",
+        "K", "DEF", "BN", "BN", "BN", "BN", "BN", "BN", "IR",
+    ]
+
+
 def test_get_league_globals_sets_playoff_week_start_from_reg_season_count(monkeypatch):
     class Request:
         def league_get(self, params):
