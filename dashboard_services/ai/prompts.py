@@ -354,6 +354,30 @@ def build_front_office_prompt_payload(data: dict) -> dict:
     }
     if data.get("draft_grade"):
         payload["draft_grade"] = data["draft_grade"]
+    if data.get("playoff_path"):
+        # Playoff Path stakes (final-weeks window only; the key is absent
+        # otherwise). Every number is copied from the sim/scenarios
+        # payload the report section renders — the model may reference
+        # the stakes, never recompute them.
+        pp = data["playoff_path"]
+        stakes = pp.get("stakes") or {}
+        payload["playoff_path"] = {
+            "seed": pp.get("seed"),
+            "playoff_odds_pct": pp.get("playoff_pct"),
+            "bye_odds_pct": pp.get("bye_pct"),
+            "magic_number": pp.get("magic_number"),
+            "scenario": pp.get("summary"),
+            "can_clinch_this_week": bool(pp.get("can_clinch_this_week")),
+            "earliest_clinch_week": pp.get("earliest_clinch_week"),
+            "this_week_opponent": stakes.get("opponent"),
+            "fork": stakes.get("fork") or [],
+            "root_for": [
+                {"root_for": g.get("root_name"), "over": g.get("other_name"),
+                 "odds_if_rooted": g.get("root_pct"),
+                 "odds_if_not": g.get("other_pct")}
+                for g in pp.get("root_for") or []
+            ],
+        }
     return payload
 
 

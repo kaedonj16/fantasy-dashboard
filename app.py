@@ -14684,6 +14684,15 @@ def _render_next_steps_queue(
         _subtitle = str(_brief["race_line"]["text"])
     elif _brief and (_brief.get("race_prompt") or {}).get("text"):
         _subtitle = str(_brief["race_prompt"]["text"])
+    # Playoff Path line (final-weeks window only, from the brief's
+    # playoff_path block): a second subtitle line under the race line.
+    # Absent entirely out of window; no placeholder.
+    _path_subtitle_html = ""
+    if _brief and (_brief.get("playoff_path") or {}).get("text"):
+        _path_subtitle_html = (
+            '<div class="os-section-subtitle">'
+            f'{html.escape(str(_brief["playoff_path"]["text"]))}</div>'
+        )
     # No standalone brief strips: the coverage line, the claims
     # block and the bye outlook no longer render as prose rows.
     # The brief's intel rides on the action cards themselves (the
@@ -14696,6 +14705,7 @@ def _render_next_steps_queue(
             <div class="os-section-head-content">
               <h2 class="os-section-title">Next steps</h2>
               <div class="os-section-subtitle">{html.escape(_subtitle)}</div>
+              {_path_subtitle_html}
             </div>
             <div class="os-section-head-actions">
               <span class="os-card-actions">
