@@ -191,3 +191,25 @@ def test_roster_snapshot_carries_team_and_headshot(monkeypatch):
     (row,) = response.get_json()["roster"]
     assert row["team"] == "CIN"
     assert row["headshot"] == "https://img.example/p1.png"
+
+
+def test_slv_wrap_stacks_in_front_of_mobile_dock():
+    # The digest is a modal: on phones its bottom sheet (and the Got it
+    # footer) must paint over the bottom dock (--z-chrome) and the assistant
+    # launcher, not slide underneath them. It shares the modal tier with the
+    # player/team modals, which are appended to the body after the wrap and
+    # so still open on top of the digest.
+    import re
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent / "static" / "dashboard.css").read_text()
+
+    def _z(var):
+        m = re.search(rf"--{var}:\s*(\d+)", css)
+        assert m, f"--{var} not defined"
+        return int(m.group(1))
+
+    assert _z("z-modal") > _z("z-chrome")
+    block = re.search(r"\.slv-wrap \{([^}]*)\}", css)
+    assert block, ".slv-wrap rule missing"
+    assert "z-index: var(--z-modal)" in block.group(1)
