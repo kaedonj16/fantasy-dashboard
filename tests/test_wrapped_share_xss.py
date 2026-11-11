@@ -84,6 +84,60 @@ def test_sanitize_keeps_deck_presentation_markup():
     assert "width:72%" in out
 
 
+def test_sanitize_keeps_inline_svg_crown():
+    """The deck's crowns are inline SVG (the fa-crown font icon renders
+    rust through the site's PNG icon layer). The sanitizer must let the
+    glyph through with its inert attributes -- dropping it silently
+    uncrowned every shared deck (the in-app deck kept it)."""
+    html = (
+        "<section class='wrapped-slide'>"
+        "<svg class='wrapped-face-crown' viewBox='0 0 24 24' "
+        "aria-hidden='true'><path d='M5 16 3 6l5.5 4L12 4l3.5 6L21 6l-2 "
+        "10H5Z M5 18h14v2H5Z'/></svg>"
+        "</section>"
+    )
+    out = sanitize_overlay_html(html)
+    assert "<svg" in out and "wrapped-face-crown" in out
+    assert "viewbox=" in out  # parser lowercases; browsers adjust to viewBox
+    assert "<path" in out and "M5 16" in out
+
+
+def test_sanitize_svg_stays_inert():
+    """SVG is only allowed as the crown glyph: event handlers, scripts,
+    links and style are stripped even inside it."""
+    html = (
+        "<section class='wrapped-slide'>"
+        "<svg onload='alert(1)'><script>alert(2)</script>"
+        "<a href='javascript:alert(3)'><path d='M0 0h1' fill='red'/></a>"
+        "<path d='M1 1h1' style='fill:url(https://evil.example/x)'/>"
+        "</svg></section>"
+    )
+    out = sanitize_overlay_html(html)
+    assert "onload" not in out
+    assert "alert" not in out
+    assert "javascript:" not in out
+    assert "evil.example" not in out
+    assert "<a" not in out
+    # The glyph paths themselves survive, with d/fill intact.
+    assert out.count("<path") == 2
+    assert "fill=" in out
+
+
+def test_sanitize_keeps_root_relative_img_src():
+    """The deck's own /static assets (footer wordmark, cover logo) ride
+    root-relative srcs; stripping them broke the images on share pages.
+    Protocol-relative (cross-origin) srcs stay dropped."""
+    html = (
+        "<section class='wrapped-slide'>"
+        "<img src='/static/BR_Logo_dark.png?v=6c0c4828' alt=''>"
+        "<img src='//evil.example/x.png' alt=''>"
+        "</section>"
+    )
+    out = sanitize_overlay_html(html)
+    assert "/static/BR_Logo_dark.png?v=6c0c4828" in out
+    assert "evil.example" not in out
+
+
 def test_sanitize_never_raises_and_handles_empty():
     assert sanitize_overlay_html("") == ""
     assert sanitize_overlay_html(None) == ""
@@ -117,3 +171,38 @@ def test_render_path_sanitizes_legacy_stored_share():
     assert "<script>alert(1)</script>" not in page
     assert "alert(1)" not in page
     assert "wrapped-slide" in page
+
+
+def test_share_page_keeps_crown_and_relative_logos():
+    """The ground-truth failure (Kaedon's shared Week 9 deck, 2026-11):
+    the stored share rendered with no crown on the top performer and a
+    broken cover logo, because the sanitizer dropped <svg> and
+    root-relative img srcs. The public page must keep both."""
+    try:
+        from dashboard_services.pages import history_page as H
+    except ImportError:
+        pytest.skip("history_page imports require full deps (openai)")
+        return
+
+    overlay = (
+        "<div class='wrapped-overlay wrapped-overlay-wk'>"
+        "<section class='wrapped-slide' data-kind='performers'>"
+        "<div class='wrapped-face'>"
+        "<svg class='wrapped-face-crown' viewBox='0 0 24 24' "
+        "aria-hidden='true'><path d='M5 16 3 6Z'/></svg>"
+        "</div></section>"
+        "<section class='wrapped-slide' data-kind='cover'>"
+        "<img src='/static/BR_Logo_dark.png?v=6c0c4828' alt='BR Fantasy' "
+        "class='wrapped-cover-logo'>"
+        "</section></div>"
+    )
+    page = H.render_wrapped_share_page(
+        overlay_html=overlay,
+        share_data={},
+        label="Wrapped",
+        ns="weekly-wrapped",
+        css_url="/static/dashboard.css",
+        logo_url="https://example.com/logo.png",
+    )
+    assert "wrapped-face-crown" in page
+    assert "/static/BR_Logo_dark.png?v=6c0c4828" in page

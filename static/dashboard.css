@@ -48070,29 +48070,11 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     padding-left: 13px;
 }
 
-/* Performer rows are the mock's flat list, not cards: no panel fill or
-   radius, hairline separation only. The crowned row alone keeps a box —
-   a flat gold ring with a whisper of gold wash. */
-.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] .wrapped-row {
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid rgba(27, 64, 102, .55);
-    border-radius: 0;
-    box-shadow: none;
-    padding: 11px 4px;
-}
-
-.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] .wrapped-row + .wrapped-row {
-    border-top: none;
-}
-
-.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] .wrapped-row.wrapped-row-top {
-    background: rgba(233, 185, 73, .05);
-    border: 1px solid rgba(233, 185, 73, .55);
-    border-radius: 12px;
-    box-shadow: none;
-    padding: 11px 12px;
-}
+/* Performer rows are panel cards like every other row in the deck --
+   the mock's player rows carry the same panel fill, border and radius
+   as its standings rows, with the crowned row in the gold treatment
+   (.wrapped-row-top above). An earlier pass made them a flat hairline
+   list; the live-deck diff (2026-11) put the cards back. */
 
 /* Recap finale rows carry long labels (GAME OF THE WEEK) and long values
    (a full "Team vs Team" matchup): in the one-line row the label and the
@@ -48275,6 +48257,494 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
 .wrapped-overlay-wk .wrapped-foot-season {
     order: 3;
+}
+
+/* ── Live-deck parity pass (2026-11): computed-style diff of Kaedon's
+   shared Week 9 deck against the approved mock, element by element.
+   Values below are the mock's own (its CSS or its settled spec). ── */
+
+/* Kicker: the mock's spec -- 11px / 900 / .14em. The base deck kicker
+   (13px / 800 / .22em) also wrapped the GOTW kicker onto two lines. */
+.wrapped-overlay-wk .wrapped-kicker-txt {
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .14em;
+}
+
+/* Lede line under the kicker (Standings / Playoff Picture). */
+.wrapped-lede {
+    margin-top: 10px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #9db8d2;
+}
+
+/* Playoff Picture counts strip (the mock's count boxes). */
+.wrapped-counts {
+    display: flex;
+    gap: 6px;
+    margin-top: 14px;
+    align-self: stretch;
+}
+
+.wrapped-count {
+    flex: 1;
+    text-align: center;
+    background: #15304d;
+    border: 1px solid #1b4066;
+    border-radius: 9px;
+    padding: 7px 4px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #9db8d2;
+}
+
+.wrapped-count strong {
+    font-size: 20px;
+    font-weight: 900;
+    margin-right: 5px;
+}
+
+.wrapped-count-gold {
+    color: #e9b949;
+}
+
+.wrapped-count-green {
+    color: #2ec27e;
+}
+
+.wrapped-count-red {
+    color: #f0766a;
+}
+
+/* Section heads gain the mock's colored dot and right-aligned count. */
+.wrapped-overlay-wk .wrapped-row-sec::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: 0 0 auto;
+}
+
+.wrapped-row-sec-n {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-transform: none;
+    color: #9db8d2;
+}
+
+.wrapped-overlay-wk .wrapped-row-sec-lineup-efficiency {
+    color: #38bdf8;
+}
+
+.wrapped-overlay-wk .wrapped-row-sec-biggest-bust {
+    color: #f0766a;
+}
+
+.wrapped-overlay-wk .wrapped-row-sec-coaching-miss {
+    color: #e9b949;
+}
+
+/* Playoff Picture records read in the ink color, not the slide accent:
+   the accent-green value made eliminated rows read "in". Seeds take
+   the mock's pale slate. */
+.wrapped-overlay-wk .wrapped-slide[data-kind="playoffs"] .wrapped-row-v {
+    color: #f2f7fd;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="playoffs"] .wrapped-row-k {
+    color: #cfe2f5;
+}
+
+/* Playoff Picture row treatments by section (rows carry wrapped-insec-*):
+   bye rows get the gold border, eliminated rows dim with a struck name. */
+.wrapped-overlay-wk .wrapped-row.wrapped-insec-clinched-a-bye {
+    border-color: rgba(233, 185, 73, .45);
+}
+
+.wrapped-overlay-wk .wrapped-row.wrapped-insec-eliminated {
+    opacity: .62;
+}
+
+.wrapped-overlay-wk .wrapped-row.wrapped-insec-eliminated .wrapped-row-n {
+    text-decoration: line-through;
+    text-decoration-color: rgba(224, 101, 90, .7);
+}
+
+/* Still-alive panel: dashed border on the deep panel (the mock's). */
+.wrapped-overlay-wk .wrapped-alive {
+    background: #091a2e; /* mock panel2; --wg2 is not a deck token */
+    border: 1px dashed #1e4a73;
+    border-radius: 10px;
+    padding: 8px 11px;
+    font-size: 12.5px;
+}
+
+/* Inline value note (points-for after a record) and the stacked value
+   caption (PTS SCORED under an efficiency percent). */
+.wrapped-row-vnote {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9db8d2;
+    margin-left: 6px;
+}
+
+.wrapped-row-vwrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.wrapped-row-vsub {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    color: #9db8d2;
+    margin-top: 2px;
+}
+
+.wrapped-overlay-wk .wrapped-row-eff .wrapped-row-v {
+    color: #38bdf8;
+}
+
+/* Flat mover tag: no seed change vs last week (the mock tags them 0). */
+.wrapped-move.flat {
+    color: #9db8d2;
+    background: #15304d;
+}
+
+/* Playoff cut line in weekly standings: a dashed gold divider. */
+.wrapped-overlay-wk .wrapped-cutline {
+    border-top: 2px dashed rgba(233, 185, 73, .6);
+    margin: 5px 0 1px;
+}
+
+/* Weekly cover hero panel: league line, giant word and stat boxes
+   inside one panel (the mock's cover composition). */
+.wrapped-cover-hero {
+    margin-top: 16px;
+    align-self: stretch;
+    background: linear-gradient(155deg, #122c49 0%, #0d2137 58%, #091a2e 100%);
+    border: 1px solid #1b4066;
+    border-radius: 16px;
+    padding: 18px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07);
+}
+
+.wrapped-cover-hero .wrapped-boxes {
+    margin-top: 14px;
+}
+
+/* Scoreboard match cards: winner line, loser line, margin + badge row. */
+.wrapped-match {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, 0) 60%), var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 12px;
+    padding: 9px 11px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.wrapped-match-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #f2f7fd;
+}
+
+.wrapped-match-t {
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.wrapped-match-los {
+    color: #9db8d2;
+    font-weight: 600;
+}
+
+.wrapped-match-s {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+}
+
+.wrapped-match-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 3px;
+    min-height: 16px;
+    font-size: 11.5px;
+    color: #9db8d2;
+}
+
+.wrapped-badge {
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: #eaf6ff;
+    background: #2563eb;
+    padding: 2px 6px;
+    border-radius: 99px; /* full-round pill ends; 999px is banned site-wide */
+}
+
+.wrapped-badge-gold {
+    background: #e9b949;
+    color: #231a02;
+}
+
+/* Outro share card (weekly recap finale). */
+.wrapped-sharecard {
+    margin-top: 14px;
+    align-self: stretch;
+    background: linear-gradient(160deg, #12283f, #0d2137);
+    border: 1px solid #1b4066;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07);
+}
+
+.wrapped-sharecard-big {
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: -.01em;
+    line-height: 1.05;
+    color: #f2f7fd;
+}
+
+.wrapped-sharecard-l {
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #9db8d2;
+}
+
+.wrapped-sharecard-b {
+    margin-top: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.5;
+    color: #f2f7fd;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="recap"] .wrapped-boxes {
+    margin-top: 10px;
+}
+
+/* GOTW duel: two side-by-side boxes, record · seed inside each. */
+.wrapped-overlay-wk .wrapped-vs-hero {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 10px;
+    /* The slide's flex column shrink-wraps the hero to its content;
+       the duel row spans the full content width like the mock's. */
+    width: 100%;
+}
+
+.wrapped-overlay-wk .wrapped-duel-t {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, 0) 60%), var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 14px;
+    padding: 14px 10px;
+    text-align: center;
+    font-size: 20px;
+    text-transform: uppercase;
+    /* The base duel title breaks words anywhere; in the side-by-side
+       boxes a name wraps at its spaces and only breaks a word that
+       truly cannot fit (the mock's behavior). */
+    overflow-wrap: break-word;
+}
+
+.wrapped-overlay-wk .wrapped-vs-hero-x {
+    align-self: center;
+    flex: 0 0 auto;
+    color: #e9b949;
+    font-size: 15px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.wrapped-duel-m {
+    margin-top: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #9db8d2;
+}
+
+/* GOTW stakes become panel cards with accent leads (the mock's). */
+/* The slide's flex column shrink-wraps the stakes list to its widest
+   card; the mock's stake cards span the full content width. */
+.wrapped-overlay-wk .wrapped-stakes {
+    width: 100%;
+}
+
+.wrapped-overlay-wk .wrapped-stake {
+    background: #091a2e; /* mock panel2; --wg2 is not a deck token */
+    border: 1px solid #1b4066;
+    border-radius: 10px;
+    padding: 9px 11px;
+}
+
+.wrapped-overlay-wk .wrapped-stake b {
+    color: var(--wa);
+}
+
+/* Oh My: tinted extreme blocks + the VS panel scoreline. */
+.wrapped-overlay-wk .wrapped-om-heartbreak {
+    border-color: #5a2e2a;
+    background: linear-gradient(180deg, rgba(240, 118, 106, .08), rgba(255, 255, 255, 0) 60%), #241514;
+}
+
+.wrapped-overlay-wk .wrapped-om-blowout {
+    border-color: #5a4a1e;
+    background: linear-gradient(180deg, rgba(233, 185, 73, .08), rgba(255, 255, 255, 0) 60%), #211d10;
+}
+
+.wrapped-vsline {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+    align-items: center;
+    background: #091a2e; /* mock panel2; --wg2 is not a deck token */
+    border: 1px solid #1b4066;
+    border-radius: 10px;
+    padding: 9px 12px;
+    margin-top: 9px;
+}
+
+.wrapped-vs-side .wrapped-vs-t {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #f2f7fd;
+}
+
+.wrapped-vs-side .wrapped-vs-s {
+    display: block;
+    font-size: 29px;
+    font-weight: 900;
+    line-height: 1.05;
+    color: #f2f7fd;
+    font-variant-numeric: tabular-nums;
+}
+
+.wrapped-vs-side.wrapped-vs-r {
+    text-align: right;
+}
+
+.wrapped-vs-dim .wrapped-vs-t,
+.wrapped-vs-dim .wrapped-vs-s {
+    color: #9db8d2;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="ohmy"] .wrapped-score-x {
+    background: #e9b949;
+    color: #231a02;
+    border-radius: 99px; /* full-round pill ends; 999px is banned site-wide */
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .05em;
+}
+
+/* Coaching Report cards: the mock's misscard + bustcard. */
+.wrapped-misscard {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, 0) 60%), var(--wg0);
+    border: 1px solid #1b4066;
+    border-radius: 11px;
+    padding: 8px 11px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.wrapped-miss-t {
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: #9db8d2;
+    margin-bottom: 2px;
+}
+
+.wrapped-miss-l {
+    font-size: 13px;
+    line-height: 1.4;
+    color: #dbe7f5;
+}
+
+.wrapped-gaptag {
+    display: inline-block;
+    font-size: 9.5px;
+    font-weight: 900;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    background: #3a2f10;
+    color: #e9b949;
+    padding: 2px 7px;
+    border-radius: 99px; /* full-round pill ends; 999px is banned site-wide */
+    margin-left: 6px;
+    white-space: nowrap;
+    vertical-align: 1px;
+}
+
+.wrapped-bustcard {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(180deg, rgba(240, 118, 106, .08), rgba(255, 255, 255, 0) 60%), var(--wg0);
+    border: 1px solid #5a2e2a;
+    border-radius: 11px;
+    padding: 8px 11px;
+}
+
+.wrapped-bust-m {
+    flex: 1;
+    min-width: 0;
+}
+
+.wrapped-bust-n {
+    font-size: 14.5px;
+    font-weight: 800;
+    color: #f2f7fd;
+}
+
+.wrapped-bust-k {
+    font-size: 11.5px;
+    line-height: 1.3;
+    color: #9db8d2;
+}
+
+.wrapped-bust-v {
+    margin-left: auto;
+    text-align: right;
+    flex: 0 0 auto;
+    font-size: 27px;
+    font-weight: 900;
+    line-height: 1;
+    color: #f0766a;
+}
+
+.wrapped-bust-v small {
+    display: block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    color: #9db8d2;
+    margin-top: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

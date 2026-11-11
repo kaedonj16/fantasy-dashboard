@@ -1843,25 +1843,41 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     return slides
 
 
-def _wrapped_row_html(k, n, v, deco="", is_top=False, mgr="") -> str:
+def _wrapped_row_html(k, n, v, deco="", is_top=False, mgr="", vnote="",
+                      vsub="", cls="") -> str:
     """One wrapped rows-slide row: kicker, name, value, plus optional raw
     deco HTML (e.g. the crown on the week's top scorer). When is_top is set,
     the row gets the gold accent-bar treatment with a top-scorer label
     instead of the deco. ``mgr`` is an optional manager name rendered muted
-    after the name (Playoff Picture rows carry team + manager)."""
+    after the name (Playoff Picture rows carry team + manager). ``vnote``
+    is a small muted note rendered inline after the value (a standings
+    row's points-for); ``vsub`` is a small caps caption stacked under the
+    value (a coaching row's PTS SCORED). ``cls`` adds a row class hook."""
     _row_cls = "wrapped-row wrapped-row-top" if is_top else "wrapped-row"
+    if cls:
+        _row_cls += f" {_esc(str(cls))}"
     _n_cls = "wrapped-row-n wrapped-crowned" if (deco and not is_top) else "wrapped-row-n"
     _deco = "" if is_top else deco
     _mgr = (f" <span class='wrapped-row-mgr'>{_esc(str(mgr))}</span>"
             if mgr else "")
     _label = ("<div class='wrapped-row-top-label'>&#9733; Highest scorer of the week</div>"
               if is_top else "")
+    _v = ""
+    if v not in (None, ""):
+        _vnote = (f"<span class='wrapped-row-vnote'>{_esc(str(vnote))}</span>"
+                  if vnote else "")
+        if vsub:
+            _v = (f"<span class='wrapped-row-vwrap'>"
+                  f"<span class='wrapped-row-v'>{_esc(str(v))}</span>"
+                  f"<span class='wrapped-row-vsub'>{_esc(str(vsub))}</span></span>")
+        else:
+            _v = f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" + _vnote
     return (
         f"<div class='{_row_cls}'>"
         f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
         "<div class='wrapped-row-m'>"
         f"<span class='{_n_cls}'>{_esc(str(n))}{_deco}{_mgr}</span>"
-        + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
+        + _v
         + "</div>" + _label + "</div>"
     )
 
@@ -1930,21 +1946,76 @@ def _wrapped_boxes_html(boxes) -> str:
 def _wrapped_block_html(b) -> str:
     """One Oh-My-style block (kicker, name, optional VS scoreline, optional
     big value line, optional note) -- shared by the weekly Oh My slide and
-    the season Records / Moves cards."""
+    the season Records / Moves cards. The block carries a tone class from
+    its kicker (wrapped-om-heartbreak, ...) so the weekly Oh My skin can
+    tint the extremes; season skins simply don't style them. When the
+    block names its opponent (``opp``), the scoreline renders as the
+    mock's VS panel: subject team + score, gold VS pill, opponent + score
+    (subject first, the deck's settled order)."""
+    _slug = _esc(str(b.get("k") or "").strip().lower().replace(" ", "-"))
     _bh = f"<div class='wrapped-om-k'>{_esc(str(b.get('k') or ''))}</div>"
     _bh += f"<div class='wrapped-om-n'>{_esc(str(b.get('n') or ''))}</div>"
     _sl = str(b.get("scoreline") or "")
     if "-" in _sl:
         _w, _l = _sl.split("-", 1)
-        _bh += ("<div class='wrapped-scores'>"
-                f"<span class='wrapped-score-w'>{_esc(_w.strip())}</span>"
-                "<span class='wrapped-score-x'>VS</span>"
-                f"<span class='wrapped-score-l'>{_esc(_l.strip())}</span></div>")
+        if b.get("opp"):
+            # The losing side of the panel dims (the mock's treatment);
+            # decided from the scoreline numbers themselves.
+            try:
+                _dim_l = float(_w) < float(_l)
+                _dim_r = float(_l) < float(_w)
+            except (TypeError, ValueError):
+                _dim_l = _dim_r = False
+            _bh += ("<div class='wrapped-vsline'>"
+                    f"<div class='wrapped-vs-side{' wrapped-vs-dim' if _dim_l else ''}'>"
+                    f"<span class='wrapped-vs-t'>{_esc(str(b.get('n') or ''))}</span>"
+                    f"<span class='wrapped-vs-s'>{_esc(_w.strip())}</span></div>"
+                    "<span class='wrapped-score-x'>VS</span>"
+                    f"<div class='wrapped-vs-side wrapped-vs-r{' wrapped-vs-dim' if _dim_r else ''}'>"
+                    f"<span class='wrapped-vs-t'>{_esc(str(b['opp']))}</span>"
+                    f"<span class='wrapped-vs-s'>{_esc(_l.strip())}</span></div>"
+                    "</div>")
+        else:
+            _bh += ("<div class='wrapped-scores'>"
+                    f"<span class='wrapped-score-w'>{_esc(_w.strip())}</span>"
+                    "<span class='wrapped-score-x'>VS</span>"
+                    f"<span class='wrapped-score-l'>{_esc(_l.strip())}</span></div>")
     if b.get("value"):
         _bh += f"<div class='wrapped-om-n'>{_esc(str(b['value']))}</div>"
     if b.get("note"):
         _bh += f"<div class='wrapped-om-note'>{_esc(str(b['note']))}</div>"
-    return f"<div class='wrapped-om-block'>{_bh}</div>"
+    return f"<div class='wrapped-om-block wrapped-om-{_slug}'>{_bh}</div>"
+
+
+def _wrapped_misscard_html(m) -> str:
+    """One Coaching Miss card (weekly Coaching Report): team caps line,
+    the start/sit sentence, and the points-left-back gap pill -- the
+    mock's misscard. The sentence itself is the builder's (a single swap
+    prints the pair; a rotation names the rotation, per the settled
+    labeling rule)."""
+    _team = str(m.get("team") or "")
+    if m.get("mgr") and str(m["mgr"]) != _team:
+        _team = f"{_team} · {m['mgr']}" if _team else str(m["mgr"])
+    _gap = (f"<span class='wrapped-gaptag'>{_esc(str(m['gap']))} PTS LEFT BACK</span>"
+            if m.get("gap") not in (None, "") else "")
+    return (f"<div class='wrapped-misscard'>"
+            f"<div class='wrapped-miss-t'>{_esc(_team)}</div>"
+            f"<div class='wrapped-miss-l'>{_esc(str(m.get('line') or ''))}{_gap}</div>"
+            "</div>")
+
+
+def _wrapped_bustcard_html(b) -> str:
+    """The Biggest Bust card (weekly Coaching Report): player name, the
+    POS · team · manager meta line, and the week's cold score with its
+    PPR PTS caption -- the mock's bustcard."""
+    return (f"<div class='wrapped-bustcard'>"
+            "<div class='wrapped-bust-m'>"
+            f"<div class='wrapped-bust-n'>{_esc(str(b.get('n') or ''))}</div>"
+            f"<div class='wrapped-bust-k'>{_esc(str(b.get('meta') or ''))}</div>"
+            "</div>"
+            f"<div class='wrapped-bust-v'>{_esc(str(b.get('v') or ''))}"
+            "<small>PPR PTS</small></div>"
+            "</div>")
 
 
 def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
@@ -2193,13 +2264,38 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                     + (f"<span class='wrapped-record-badge'>{_esc(rec)}</span>" if rec else "")
                     + "<span class='wrapped-recap-champ-lbl'>Champion</span></div>"
                 )
-            hl = "".join(
-                # Cap at 4 on the slide (the Share card still draws up to 5) so a
-                # champion block + rows never overflow a small phone's story slide.
-                _wrapped_row_html(h.get("k", ""), h.get("n", ""), h.get("v"))
-                for h in (rd.get("highlights") or [])[:4]
-            )
-            body = kicker + champ_html + f"<div class='wrapped-rows'>{hl}</div>" + sub
+            if s.get("outro"):
+                # Weekly outro (the mock's closing slide): title, the
+                # share-card panel (IN · OUT headline, picture line, the
+                # week's headline sentence) and the forward stat boxes.
+                # Only built when a playoff picture exists to summarize;
+                # other weeks keep the highlight-rows finale below.
+                _o = s["outro"]
+                _lines = "".join(
+                    f"<div class='wrapped-sharecard-l'>{_esc(str(_l))}</div>"
+                    for _l in (_o.get("lines") or []))
+                _bold = (f"<div class='wrapped-sharecard-b'>"
+                         f"{_esc(str(_o['bold']))}</div>"
+                         if _o.get("bold") else "")
+                body = (
+                    kicker
+                    + (f"<div class='wrapped-slide-title'>"
+                       f"{_esc(str(s['title']))}</div>"
+                       if s.get("title") else "")
+                    + "<div class='wrapped-sharecard'>"
+                    + f"<div class='wrapped-sharecard-big'>"
+                      f"{_esc(str(_o.get('big') or ''))}</div>"
+                    + _lines + _bold + "</div>"
+                    + _wrapped_boxes_html(_o.get("boxes") or [])
+                )
+            else:
+                hl = "".join(
+                    # Cap at 4 on the slide (the Share card still draws up to 5) so a
+                    # champion block + rows never overflow a small phone's story slide.
+                    _wrapped_row_html(h.get("k", ""), h.get("n", ""), h.get("v"))
+                    for h in (rd.get("highlights") or [])[:4]
+                )
+                body = kicker + champ_html + f"<div class='wrapped-rows'>{hl}</div>" + sub
         elif kind == "cover":
             # Weekly cover: real logo, league, the WEEK N WRAPPED wordmark
             # and the week's headline stat boxes (all count up).
@@ -2222,26 +2318,56 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 + _box_label(_b.get('label'))
                 + "</div>"
                 for _b in (s.get("boxes") or []))
-            body = (
-                kicker
-                + "<img src='/static/BR_Logo_dark.png?v=6c0c4828' alt='BR Fantasy' class='wrapped-cover-logo'>"
-                + f"<div class='wrapped-league'>{_esc(str(s['big']))}</div>"
-                + f"<div class='wrapped-word'>{_esc(str(s.get('word1') or ''))}<br>{_esc(str(s.get('word2') or ''))}</div>"
-                + f"<div class='wrapped-boxes'>{_boxes}</div>"
-            )
+            if s.get("cover_hero"):
+                # Weekly cover (the mock's composition): no logo block --
+                # the wordmark lives in the footer bug only -- and the
+                # league line, giant word and stat boxes sit inside one
+                # hero panel.
+                body = (
+                    kicker
+                    + "<div class='wrapped-cover-hero'>"
+                    + f"<div class='wrapped-league'>{_esc(str(s['big']))}</div>"
+                    + f"<div class='wrapped-word'>{_esc(str(s.get('word1') or ''))}<br>{_esc(str(s.get('word2') or ''))}</div>"
+                    + f"<div class='wrapped-boxes'>{_boxes}</div>"
+                    + "</div>"
+                )
+            else:
+                body = (
+                    kicker
+                    + "<img src='/static/BR_Logo_dark.png?v=6c0c4828' alt='BR Fantasy' class='wrapped-cover-logo'>"
+                    + f"<div class='wrapped-league'>{_esc(str(s['big']))}</div>"
+                    + f"<div class='wrapped-word'>{_esc(str(s.get('word1') or ''))}<br>{_esc(str(s.get('word2') or ''))}</div>"
+                    + f"<div class='wrapped-boxes'>{_boxes}</div>"
+                )
         elif kind == "headline":
             body = (
                 kicker
                 + f"<div class='wrapped-headline-txt'>{_esc(str(s.get('text') or ''))}</div>"
             )
         elif kind == "scoreboard":
-            _games = "".join(
-                "<div class='wrapped-game'>"
-                f"<span class='wrapped-game-w'>{_esc(str(_g.get('winner') or ''))}</span>"
-                f"<span class='wrapped-game-l'>{_esc(str(_g.get('loser') or ''))}</span>"
-                f"<span class='wrapped-game-s'>{float(_g.get('winner_pts') or 0):.1f}–{float(_g.get('loser_pts') or 0):.1f}</span>"
-                f"<span class='wrapped-game-m'>+{float(_g.get('margin') or 0):.1f}</span></div>"
-                for _g in (s.get("games") or []))
+            # Match cards (the mock's scoreboard): winner line and loser
+            # line, each with its own score, then a meta row -- margin on
+            # the left, a flag badge (closest / statement win) on the
+            # right when the game earned one.
+            def _game_html(_g):
+                _badge = ""
+                if _g.get("badge"):
+                    _tone = (" wrapped-badge-gold"
+                             if _g.get("badge_tone") == "gold" else "")
+                    _badge = (f"<span class='wrapped-badge{_tone}'>"
+                              f"{_esc(str(_g['badge']))}</span>")
+                return (
+                    "<div class='wrapped-match'>"
+                    "<div class='wrapped-match-line'>"
+                    f"<span class='wrapped-match-t'>{_esc(str(_g.get('winner') or ''))}</span>"
+                    f"<span class='wrapped-match-s'>{float(_g.get('winner_pts') or 0):.1f}</span></div>"
+                    "<div class='wrapped-match-line wrapped-match-los'>"
+                    f"<span class='wrapped-match-t'>{_esc(str(_g.get('loser') or ''))}</span>"
+                    f"<span class='wrapped-match-s'>{float(_g.get('loser_pts') or 0):.1f}</span></div>"
+                    "<div class='wrapped-match-meta'>"
+                    f"<span>Margin {float(_g.get('margin') or 0):.1f}</span>"
+                    f"{_badge}</div></div>")
+            _games = "".join(_game_html(_g) for _g in (s.get("games") or []))
             body = (
                 kicker
                 + "<div class='wrapped-num'>"
@@ -2261,11 +2387,29 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 for _sec in s["sections"]:
                     _slug = _esc(str(_sec.get('title', '')).strip().lower()
                                  .replace(' ', '-'))
+                    _sec_note = (f"<span class='wrapped-row-sec-n'>"
+                                 f"{_esc(str(_sec['note']))}</span>"
+                                 if _sec.get("note") else "")
                     parts.append(
                         f"<div class='wrapped-row-sec wrapped-row-sec-{_slug}'>"
-                        f"{_esc(str(_sec.get('title', '')))}</div>")
+                        f"{_esc(str(_sec.get('title', '')))}{_sec_note}</div>")
                     for _r in (_sec.get("rows") or []):
-                        if len(_r) > 3:
+                        if isinstance(_r, dict):
+                            # Rich row: value note/sub-caption, per-section
+                            # row class, coaching card layouts.
+                            if _r.get("miss"):
+                                parts.append(_wrapped_misscard_html(_r["miss"]))
+                            elif _r.get("bust"):
+                                parts.append(_wrapped_bustcard_html(_r["bust"]))
+                            else:
+                                parts.append(_wrapped_row_html(
+                                    _r.get("k", ""), _r.get("n", ""),
+                                    _r.get("v"), mgr=_r.get("mgr", ""),
+                                    vnote=_r.get("vnote", ""),
+                                    vsub=_r.get("vsub", ""),
+                                    cls=_r.get("cls", "")
+                                    or f"wrapped-insec-{_slug}"))
+                        elif len(_r) > 3:
                             parts.append(_wrapped_row_html(_r[0], _r[1], _r[2],
                                                            mgr=_r[3]))
                         else:
@@ -2278,7 +2422,19 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                                            bool(len(_r) > 4 and _r[4]))
                     for _r in s["rows"])
             else:
-                parts.extend(_wrapped_row_html(*_r) for _r in s["rows"])
+                for _i, _r in enumerate(s["rows"]):
+                    if isinstance(_r, dict):
+                        parts.append(_wrapped_row_html(
+                            _r.get("k", ""), _r.get("n", ""), _r.get("v"),
+                            deco=_r.get("deco", ""), mgr=_r.get("mgr", ""),
+                            vnote=_r.get("vnote", ""), vsub=_r.get("vsub", ""),
+                            cls=_r.get("cls", "")))
+                    else:
+                        parts.append(_wrapped_row_html(*_r))
+                    if (s.get("cut_after")
+                            and _i + 1 == int(s["cut_after"])):
+                        parts.append("<div class='wrapped-cutline' "
+                                     "aria-hidden='true'></div>")
             _alive_html = ""
             if s.get("alive"):
                 _alive_html = ("<div class='wrapped-alive'><b>Still alive</b> "
@@ -2289,19 +2445,33 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
             _note_html = (f"<div class='wrapped-note'><b>Why it matters:</b> "
                           f"{_esc(str(s['note']))}</div>"
                           if s.get("note") else "")
-            body = (kicker + _title_html
+            _counts_html = ""
+            if s.get("counts"):
+                _counts_html = ("<div class='wrapped-counts'>" + "".join(
+                    f"<div class='wrapped-count'>"
+                    f"<strong class='wrapped-count-{_esc(str(_c.get('tone') or ''))}'>"
+                    f"{_esc(str(_c.get('num') or 0))}</strong>"
+                    f"{_esc(str(_c.get('label') or ''))}</div>"
+                    for _c in s["counts"]) + "</div>")
+            _lede_html = (f"<div class='wrapped-lede'>{_esc(str(s['lede']))}</div>"
+                          if s.get("lede") else "")
+            body = (kicker + _title_html + _lede_html + _counts_html
                     + f"<div class='wrapped-rows'>{''.join(parts)}</div>"
                     + _note_html + _alive_html
-                    + (sub if str(s.get("sub") or "").strip() else ""))
+                    + (sub if (str(s.get("sub") or "").strip()
+                               and not s.get("lede")) else ""))
         elif s.get("preview_teams"):
             # Next week's Game of the Week (a preview: no winner yet). Neutral
             # stacked hero, the projected win-% split bar, projected scoreline.
             _teams = [str(t) for t in (s.get("preview_teams") or [])[:2]]
+            _metas = [str(t) for t in (s.get("duel_meta") or [])[:2]]
             _hero = "<div class='wrapped-vs-hero'>"
             for _i, _t in enumerate(_teams):
                 if _i:
                     _hero += "<div class='wrapped-vs-hero-x'>vs</div>"
-                _hero += f"<div class='wrapped-duel-t'>{_esc(_t)}</div>"
+                _meta = (f"<div class='wrapped-duel-m'>{_esc(_metas[_i])}</div>"
+                         if _i < len(_metas) and _metas[_i] else "")
+                _hero += f"<div class='wrapped-duel-t'>{_esc(_t)}{_meta}</div>"
             _hero += "</div>"
             _winbar = ""
             _wpa = s.get("win_prob_a")
@@ -2317,8 +2487,11 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                     f"<span class='wrapped-winbar-pct wrapped-winbar-pct-r'>{_rpi}%</span>"
                     "</div>")
             _why = str(s.get("why") or "").strip()
+            # With per-team duel metas (record · seed inside each box,
+            # the mock's treatment) the standalone why line repeats them;
+            # it only renders when no metas were built.
             _why_html = (f"<div class='wrapped-why'>{_esc(_why)}</div>"
-                         if _why else "")
+                         if _why and not _metas else "")
             _stakes_html = ""
             if s.get("stakes"):
                 _stakes_html = ("<div class='wrapped-stakes'>" + "".join(
@@ -2957,20 +3130,33 @@ def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
             if int(_r["t"]):
                 _rec += f"-{int(_r['t'])}"
             _mgr = mgr_by_rid.get(str(_rid), "")
-            if _mgr and _mgr != str(_nm):
-                groups[status].append((f"#{_i + 1}", str(_nm), _rec, _mgr))
-            else:
-                groups[status].append((f"#{_i + 1}", str(_nm), _rec))
+            if not (_mgr and _mgr != str(_nm)):
+                _mgr = ""
+            groups[status].append({
+                "k": f"#{_i + 1}", "n": str(_nm), "v": _rec, "mgr": _mgr,
+                "vnote": f"{float(_r['pf']):,.1f} PF"})
         if not any(groups.values()):
             return None
 
+        def _team_word(_n):
+            return "team" if _n == 1 else "teams"
+
         sections = []
         if groups["clinched_bye"]:
-            sections.append({"title": "CLINCHED A BYE", "rows": groups["clinched_bye"]})
+            sections.append({"title": "CLINCHED A BYE",
+                             "note": f"{len(groups['clinched_bye'])} "
+                                     f"{_team_word(len(groups['clinched_bye']))}",
+                             "rows": groups["clinched_bye"]})
         if groups["clinched"]:
-            sections.append({"title": "CLINCHED", "rows": groups["clinched"]})
+            sections.append({"title": "CLINCHED",
+                             "note": f"{len(groups['clinched'])} "
+                                     f"{_team_word(len(groups['clinched']))}",
+                             "rows": groups["clinched"]})
         if groups["eliminated"]:
-            sections.append({"title": "ELIMINATED", "rows": groups["eliminated"]})
+            sections.append({"title": "ELIMINATED",
+                             "note": f"{len(groups['eliminated'])} "
+                                     f"{_team_word(len(groups['eliminated']))}",
+                             "rows": groups["eliminated"]})
         _in = len(groups["clinched_bye"]) + len(groups["clinched"])
         _out = len(groups["eliminated"])
         _parts = []
@@ -2978,13 +3164,34 @@ def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
             _parts.append(f"{_in} clinched")
         if _out:
             _parts.append(f"{_out} eliminated")
+        # The mock's counts strip + lede line, from the same numbers the
+        # sections carry. The strip only renders with 2+ settled groups;
+        # a lone group reads fine as a section on its own.
+        _counts = []
+        if groups["clinched_bye"]:
+            _counts.append({"num": len(groups["clinched_bye"]),
+                            "label": "BYE LOCKED", "tone": "gold"})
+        if groups["clinched"]:
+            _counts.append({"num": len(groups["clinched"]),
+                            "label": "CLINCHED", "tone": "green"})
+        if groups["eliminated"]:
+            _counts.append({"num": len(groups["eliminated"]),
+                            "label": "ELIMINATED", "tone": "red"})
+        _league_nm = str((ctx.get("league") or {}).get("name") or "")
+        _lede = ""
+        if _league_nm and playoff_teams:
+            _lede = f"{_league_nm} · {playoff_teams} make it"
+            if n_byes:
+                _lede += f" · Top {n_byes} get a bye"
         return {"kind": "playoffs", "eyebrow": "PLAYOFF PICTURE",
                 "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                 "sub": f"{' · '.join(_parts)} through Week {week}",
                 "sections": sections, "bgword": "PLAYOFFS",
                 "alive": alive,
-                "clinched": [r[1] for r in groups["clinched_bye"] + groups["clinched"]],
-                "eliminated": [r[1] for r in groups["eliminated"]]}
+                "counts": _counts if len(_counts) >= 2 else [],
+                "lede": _lede,
+                "clinched": [r["n"] for r in groups["clinched_bye"] + groups["clinched"]],
+                "eliminated": [r["n"] for r in groups["eliminated"]]}
     except Exception:
         return None  # best-effort slide; the deck renders without it
 
@@ -3094,15 +3301,26 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
     bo = max(matchup_rows, key=lambda x: x["margin"]) if matchup_rows else None
     nb = min(matchup_rows, key=lambda x: x["margin"]) if matchup_rows else None
 
-    # ── Scoreboard: every game this week, closest first, under the
-    # week-high team total ──
+    # ── Scoreboard: every game this week under the week-high team
+    # total. Order and flags follow the mock: winner's score descending
+    # (the hero's game leads), the closest game and the statement win
+    # badged, nothing else decorated. (The mock's third badge, CLINCHER,
+    # has no per-game clinch attribution in production data, so it is
+    # never emitted.) ──
     if matchup_rows:
+        _games = sorted(matchup_rows,
+                        key=lambda g: -float(g.get("winner_pts") or 0))
+        for _g in _games:
+            if _g is nb and _g is not bo:
+                _g["badge"], _g["badge_tone"] = "CLOSEST GAME", "blue"
+            elif _g is bo:
+                _g["badge"], _g["badge_tone"] = "STATEMENT WIN", "gold"
         slides.append({
             "kind": "scoreboard", "eyebrow": f"WEEK {week} SCOREBOARD",
             "num": False, "big": "", "dp": 0, "suffix": "", "label": "", "sub": "",
             "hi_team": hi_team, "hi_pts": hi_pts,
             "lo_team": lo_team, "lo_pts": lo_pts,
-            "games": sorted(matchup_rows, key=lambda g: g["margin"]),
+            "games": _games,
             "bgword": "SCOREBOARD"})
 
     # ── Player slides: Top Performers (best starters from games that
@@ -3171,13 +3389,19 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             pass
         _eff_section = []
         for _i, _er in enumerate(_eff_rows[:3]):
-            _eff_section.append((
-                f"#{_i + 1}",
-                _owner_by_rid.get(str(_er["rid"]), f"Team {_er['rid']}"),
-                f"{_er['eff']:.0f}% · {_er['actual']:.1f}",
-            ))
+            # The mock's split value: the efficiency percent is the
+            # number; the points scored ride as its caption.
+            _eff_section.append({
+                "k": f"#{_i + 1}",
+                "n": _owner_by_rid.get(str(_er["rid"]), f"Team {_er['rid']}"),
+                "v": f"{_er['eff']:.1f}%",
+                "vsub": f"{_er['actual']:.1f} PTS SCORED",
+                "cls": "wrapped-row-eff",
+            })
         if _eff_section:
-            _coach_sections.append({"title": "LINEUP EFFICIENCY", "rows": _eff_section})
+            _coach_sections.append({"title": "LINEUP EFFICIENCY",
+                                    "note": f"Top {len(_eff_section)}",
+                                    "rows": _eff_section})
         try:
             from dashboard_services.recap_calculations import build_lineup_analysis
             _analysis = build_lineup_analysis(
@@ -3192,12 +3416,16 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 # The coldest starter IS the bust now: the old dud slide
                 # that used to name him separately is folded into this deck
                 # (Cover/Scoreboard/Oh My), so there is no repeat to avoid.
-                _bmeta = " · ".join(x for x in [_b.get("pos"), _b.get("nfl")] if x)
-                _coach_sections.append({"title": "BIGGEST BUST", "rows": [(
-                    "",
-                    str(_b.get("name") or "—") + (f" ({_bmeta})" if _bmeta else ""),
-                    f"{float(_b.get('pts') or 0):.1f} PTS",
-                )]})
+                # Meta follows the mock: POS · fantasy team · manager.
+                _bmeta = " · ".join(
+                    x for x in [_b.get("pos"), _b.get("team"),
+                                _b.get("owner")] if x)
+                _coach_sections.append({"title": "BIGGEST BUST", "rows": [{
+                    "bust": {
+                        "n": str(_b.get("name") or "—"),
+                        "meta": _bmeta,
+                        "v": f"{float(_b.get('pts') or 0):.1f}",
+                    }}]})
             _miss_section = []
             for _i, _mo in enumerate((_analysis.get("missed_opportunities") or [])[:2]):
                 _st, _bn = _mo.get("starter") or {}, _mo.get("bench_player") or {}
@@ -3205,17 +3433,28 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 if _rot:
                     # Multi-player hindsight rotation: the gain belongs to
                     # the whole rotation, not the headline pair alone.
-                    _label = (f"{_mo.get('team') or 'Team'}: {_bn.get('name') or '?'} "
+                    _label = (f"{_bn.get('name') or '?'} "
                               f"headlines a {max(len(_mo.get('rotation_in') or []), len(_mo.get('rotation_out') or []))}-move rotation")
                 else:
-                    _label = f"Started {_st.get('name') or '?'} over {_bn.get('name') or '?'}"
-                _miss_section.append((
-                    f"#{_i + 1}",
-                    _label,
-                    f"+{float(_mo.get('gap') or 0):.1f}",
-                ))
+                    # The mock's sentence, with both scores on it so the
+                    # gap pill always reconciles with the pair shown. A
+                    # score prints only when the analysis carries one.
+                    def _pair(_p):
+                        _pt = _p.get("pts")
+                        if isinstance(_pt, (int, float)):
+                            return f"{_p.get('name') or '?'} ({_pt:.1f})"
+                        return str(_p.get("name") or "?")
+                    _label = f"Started {_pair(_st)} over {_pair(_bn)}"
+                _miss_section.append({"miss": {
+                    "team": str(_mo.get("team") or "Team"),
+                    "mgr": str(_mo.get("owner") or ""),
+                    "line": _label,
+                    "gap": f"{float(_mo.get('gap') or 0):.1f}",
+                }})
             if _miss_section:
-                _coach_sections.append({"title": "COACHING MISS", "rows": _miss_section})
+                _coach_sections.append({"title": "COACHING MISS",
+                                        "note": f"Top {len(_miss_section)}",
+                                        "rows": _miss_section})
         if sum(len(_sec["rows"]) for _sec in _coach_sections) >= 3:
             slides.append({"kind": "coaching", "eyebrow": "COACHING REPORT",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
@@ -3276,12 +3515,33 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                             else:
                                 _deco = (f"<span class='wrapped-move dn'>"
                                          f"&#9660;{_seed_now - _was}</span>")
-                        _srows.append((f"#{_seed_now}", str(_nm), _rec, _deco))
+                        elif _was:
+                            # The mock tags non-movers too (a flat 0), so
+                            # the mover column never jumps in and out.
+                            _deco = "<span class='wrapped-move flat'>0</span>"
+                        _srows.append({
+                            "k": f"#{_seed_now}", "n": str(_nm), "v": _rec,
+                            "deco": _deco,
+                            "vnote": f"{float(_r['pf']):,.1f} PF"})
             if len(_srows) >= 3:
+                # The playoff cut line + lede (the mock's standings
+                # furniture) need the league's playoff spots; settings
+                # ride the league dict like everywhere else in the deck.
+                _set = {}
+                _set.update((ctx.get("league") or {}).get("settings") or {})
+                _set.update(ctx.get("league_settings") or {})
+                _spots = _safe_int(_set.get("playoff_teams"), 0)
+                _ord = {1: "1st", 2: "2nd", 3: "3rd"}.get(
+                    _spots, f"{_spots}th" if _spots else "")
                 slides.append({"kind": "standings", "eyebrow": "LEAGUE STANDINGS",
                                "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                                "sub": f"Through Week {week}",
-                               "rows": _srows, "bgword": "STANDINGS"})
+                               "rows": _srows, "bgword": "STANDINGS",
+                               "cut_after": (_spots
+                                             if 0 < _spots < len(_srows) else 0),
+                               "lede": (f"Playoff cut after {_ord}. Movers "
+                                        "show change from last week."
+                                        if _spots else "")})
         except Exception:
             pass  # standings slide is best-effort; the deck renders without it
 
@@ -3318,9 +3578,20 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             else:
                 _sub = "Next week's featured showdown"
                 _scoreline = ""
+            # Per-team duel meta (record · seed), rendered inside each
+            # duel box -- the mock's treatment; the standalone why line
+            # only renders when a meta is missing.
+            _duel_meta = []
+            for _rec_x, _rank_x in ((_game.get("record_a"), _ra),
+                                    (_game.get("record_b"), _rb)):
+                _bits = [str(_rec_x)] if _rec_x else []
+                if _rank_x:
+                    _bits.append(f"Seed {_rank_x}")
+                _duel_meta.append(" · ".join(_bits))
             _g = {**_txt("gotw", f"WEEK {_nw} · GAME OF THE WEEK",
                          f"{_game['team_a']} vs {_game['team_b']}", "", _sub),
                   "preview_teams": [_game["team_a"], _game["team_b"]],
+                  "duel_meta": _duel_meta,
                   "win_prob_a": _game.get("win_prob_a"),
                   "why": _why}
             _g["scoreline"] = _scoreline
@@ -3367,11 +3638,13 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 # Subject-first scoreline: the loser's score leads, like
                 # the winner's does on the blowout block.
                 "scoreline": f"{nb['loser_pts']:.1f}-{nb['winner_pts']:.1f}",
+                "opp": nb["winner"],
                 "note": f"Lost to {nb['winner']} by {nb['margin']:.1f}"})
         if bo is not None and bo is not nb:
             _om_blocks.append({
                 "k": "BLOWOUT", "n": bo["winner"],
                 "scoreline": f"{bo['winner_pts']:.1f}-{bo['loser_pts']:.1f}",
+                "opp": bo["loser"],
                 "note": f"Beat {bo['loser']} by {bo['margin']:.1f}"})
         if _analysis.get("available"):
             _missed = _analysis.get("missed_opportunities") or []
@@ -3480,6 +3753,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
     slides.insert(0, {"kind": "cover", "eyebrow": f"WEEK {week}",
                       "num": False, "big": str(league_name), "dp": 0, "suffix": "",
                       "label": "", "sub": "", "boxes": _boxes,
+                      "cover_hero": True,
                       "word1": f"WEEK {week}", "word2": "WRAPPED"})
 
     return slides
@@ -3557,13 +3831,62 @@ def render_weekly_wrapped_overlay(ctx: dict, week, show_pro_cta: bool = False) -
     # Finale: the shareable recap card as a slide in the deck itself, so the deck
     # ends on the same one-card summary you get from the Share button.
     if share_data.get("highlights"):
-        slides.append({
+        _recap_slide = {
             "kind": "recap", "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
             "eyebrow": f"WEEK {week} RECAP",
             "sub": "Tap Share to send it to the group chat",
             "recap": share_data,
             "bgword": "RECAP",
-        })
+        }
+        # Outro composition (the mock's closing slide) when the deck has
+        # a Playoff Picture to summarize: the share-card panel carries
+        # the IN · OUT headline, the picture line and the week's own
+        # headline sentence; the stat boxes look forward. Without a
+        # settled picture there is no IN · OUT story, so the slide keeps
+        # the highlight-rows finale.
+        _pic = next((s for s in slides if s.get("kind") == "playoffs"), None)
+        if _pic is not None:
+            _inn = len(_pic.get("clinched") or [])
+            _outn = len(_pic.get("eliminated") or [])
+            _byes = next((len(_sec.get("rows") or [])
+                          for _sec in (_pic.get("sections") or [])
+                          if _sec.get("title") == "CLINCHED A BYE"), 0)
+            _oset: dict = {}
+            _oset.update(league.get("settings") or {})
+            _oset.update(ctx.get("league_settings") or {})
+            _spots_total = _safe_int(_oset.get("playoff_teams"), 0)
+            _pstart = _safe_int(_oset.get("playoff_week_start"), 0)
+            _spots_left = (_spots_total - _inn) if _spots_total else None
+            _lines = [f"Week {week} Wrapped · {league_name}"]
+            _pic_line = "Playoff Picture: "
+            _pic_bits = []
+            if _byes:
+                _pic_bits.append(f"{_byes} bye{'s' if _byes != 1 else ''} locked")
+            if _spots_left is not None:
+                _pic_bits.append(
+                    f"{_spots_left} spot{'s' if _spots_left != 1 else ''} left")
+            if _pic_bits:
+                _lines.append(_pic_line + ", ".join(_pic_bits) + ".")
+            _headline = next((str(s.get("text") or "") for s in slides
+                              if s.get("kind") == "headline"), "")
+            _oboxes = [{"text": f"W{week + 1}", "label": "NEXT WEEK"}]
+            if _spots_left is not None:
+                _oboxes.append({"text": str(_spots_left),
+                                "label": "SPOTS LEFT"})
+            if _pstart:
+                _oboxes.append({"text": f"W{_pstart}",
+                                "label": "PLAYOFFS START"})
+            _recap_slide.update({
+                "title": "THAT IS THE WRAP.",
+                "sub": "",
+                "outro": {
+                    "big": f"{_inn} IN · {_outn} OUT",
+                    "lines": _lines,
+                    "bold": _headline,
+                    "boxes": _oboxes,
+                },
+            })
+        slides.append(_recap_slide)
     return _wrapped_overlay_markup(slides, share_data, ns="weekly-wrapped",
                                    footer_label=f"WEEK {week} WRAPPED",
                                    show_pro_cta=show_pro_cta)

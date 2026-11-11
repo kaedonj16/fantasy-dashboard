@@ -27,20 +27,32 @@ SHARE_TTL_SQL = "INTERVAL '1 year'"
 
 
 #: Tags the Wrapped deck renderer actually emits (presentation only).
+#: "svg"/"path" are here for the deck's inline-SVG crowns: they are inert
+#: with the strict per-tag attribute allowlist in _clean_attrs (no href,
+#: no event handlers, no style), and dropping them silently removed the
+#: crown from every shared deck while the in-app deck kept it.
 _SANITIZE_ALLOWED_TAGS = frozenset({
     "section", "div", "span", "p",
     "h1", "h2", "h3", "h4", "h5", "h6",
     "i", "em", "strong", "b", "small", "br",
-    "ul", "ol", "li", "img",
+    "ul", "ol", "li", "img", "svg", "path",
 })
 
 #: Tags whose content must be dropped entirely (active content / embeds).
 _SANITIZE_DROP_TAGS = frozenset({
     "script", "style", "iframe", "object", "embed", "base", "link", "meta",
     "form", "input", "button", "textarea", "select", "option",
-    "video", "audio", "source", "track", "canvas", "svg", "math",
+    "video", "audio", "source", "track", "canvas", "math",
     "noscript", "template", "slot",
 })
+
+#: The only attributes an inline SVG may carry: geometry + presentation
+#: of the crown glyph itself. No href/xlink (no navigation), no style
+#: (no url() references), nothing else. HTMLParser lowercases attribute
+#: names, so viewBox arrives as "viewbox"; browsers apply the HTML
+#: spec's SVG attribute adjustment (viewbox -> viewBox) when parsing.
+_SANITIZE_SVG_ATTRS = frozenset({"class", "viewbox", "aria-hidden"})
+_SANITIZE_PATH_ATTRS = frozenset({"class", "d", "fill"})
 
 #: Void elements never have end tags; dropping them must not touch the
 #: drop-depth counter or everything after them would be swallowed.
@@ -87,6 +99,13 @@ class _OverlaySanitizer(HTMLParser):
             # No event handlers, no matter the tag.
             if name.startswith("on"):
                 continue
+            if tag == "svg" or tag == "path":
+                # Inline SVG (the crown glyph): inert attributes only.
+                allowed = (_SANITIZE_SVG_ATTRS if tag == "svg"
+                           else _SANITIZE_PATH_ATTRS)
+                if name in allowed:
+                    bits.append(f'{name}="{self._esc_attr(value)}"')
+                continue
             if name in ("class", "id", "title", "alt") or name.startswith("data-"):
                 bits.append(f'{name}="{self._esc_attr(value)}"')
             elif name == "style":
@@ -95,7 +114,12 @@ class _OverlaySanitizer(HTMLParser):
                 bits.append(f'style="{self._esc_attr(value)}"')
             elif name == "src" and tag == "img":
                 low = value.strip().lower()
-                if low.startswith(_SANITIZE_SAFE_SCHEMES):
+                # Absolute http(s)/data-image URLs, plus root-relative
+                # same-origin paths (the deck's own /static assets: the
+                # footer wordmark, the cover logo). "//host" is
+                # protocol-relative, i.e. cross-origin: not allowed.
+                if (low.startswith(_SANITIZE_SAFE_SCHEMES)
+                        or (low.startswith("/") and not low.startswith("//"))):
                     bits.append(f'src="{self._esc_attr(value)}"')
             # href and everything else: dropped (the overlay needs no links).
         return (" " + " ".join(bits)) if bits else ""
