@@ -157,6 +157,9 @@ def test_weekly_wrapped_top_performers_crowns_top_scorer(monkeypatch):
     # The top scorer is crowned on his headshot, with the TOP SCORE pill.
     assert "wrapped-face-crown" in sec
     assert "TOP SCORE" in sec
-    # The crowned row is the top scorer's row.
-    _top_idx = sec.find("wrapped-perf wrapped-row-top")
-    assert "R Bee" in sec[_top_idx:_top_idx + 500]
+    # The crowned row is the top scorer's row (checked to the row's own
+    # boundary, not a char window: the SVG crown markup is longer than
+    # the font icon it replaced).
+    _top_row = sec[sec.find("wrapped-perf wrapped-row-top"):]
+    _top_row = _top_row.split("<div class='wrapped-row", 1)[0]
+    assert "R Bee" in _top_row

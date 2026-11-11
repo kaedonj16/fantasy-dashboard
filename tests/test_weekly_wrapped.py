@@ -1118,6 +1118,230 @@ def test_weekly_performers_markup_title_note_and_crown():
     assert "wrapped-divider" not in sec  # empty sub renders no divider
 
 
+def test_wrapped_team_name_plurality():
+    """Headline verb agreement follows the NAME: plural-sounding team
+    names take 'are' even when they are the only team in the clause."""
+    from dashboard_services.pages import history_page as H
+
+    plural = H._wrapped_team_name_is_plural
+    assert plural("Pittsburgh Pilots") is True
+    assert plural("Veiny Oilers") is True
+    assert plural("Trustfund QBs") is True
+    assert plural("Caleb's Casting Couch") is False
+    assert plural("Fire Riley") is False
+    assert plural("Hit the (Sa)Quon") is False
+    assert plural("Never (Jamar) Chase a Ho!") is False
+    assert plural("Make Kamaraca Great Again") is False
+    assert plural("") is False
+
+
+def _one_clinch_ctx(leader_name):
+    """Playoff ctx where exactly ONE team (the runaway leader) has
+    clinched by Week 11 and exactly two are eliminated, so the headline's
+    clinch clause carries a single team name."""
+    import pandas as pd
+
+    names = [leader_name, "Beta", "Gamma", "Delta", "Epsilon", "Zeta",
+             "Eta", "Theta"]
+    records = {leader_name: (10, 1430.0), "Beta": (7, 1100.0),
+               "Gamma": (6, 1300.0), "Delta": (6, 1280.0),
+               "Epsilon": (6, 1260.0), "Zeta": (5, 1155.0),
+               "Eta": (4, 1050.0), "Theta": (2, 950.0)}
+    rows = []
+    for i, name in enumerate(names):
+        wins, pf = records[name]
+        per = pf / 11.0
+        for wk in range(1, 12):
+            win = wk <= wins
+            rows.append({
+                "week": wk, "owner": name, "points": per,
+                "points_against": per - 10 if win else per + 10,
+                "matchup_id": wk, "finalized": True, "roster_id": i + 1,
+            })
+    remaining = {}
+    for wk, pairings in ((12, [(1, 8), (2, 7), (3, 6), (4, 5)]),
+                         (13, [(1, 7), (2, 8), (3, 5), (4, 6)])):
+        remaining[wk] = [
+            r for m, (a, b) in enumerate(pairings, start=1)
+            for r in ({"roster_id": a, "matchup_id": m},
+                      {"roster_id": b, "matchup_id": m})]
+    return {
+        "platform": "sleeper", "league_id": "L1", "resolved_league_id": "L1",
+        "season": 2026, "league": {"name": "Test League"},
+        "league_settings": {"playoff_week_start": 14, "playoff_teams": 4,
+                            "divisions": 0},
+        "df_weekly": pd.DataFrame(rows),
+        "roster_map": {i + 1: n for i, n in enumerate(names)},
+        "matchups_by_week": remaining,
+        "players_map": {},
+    }
+
+
+def test_weekly_headline_single_clinch_verb_agrees_with_name():
+    """A lone clinched team with a plural name reads 'are in' (the live
+    Week 9 deck printed 'Pittsburgh Pilots is in.'); a lone singular name
+    still reads 'is in'."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    for leader, verb in (("Pittsburgh Pilots", "are"),
+                         ("Caleb's Casting Couch", "is")):
+        ctx = _one_clinch_ctx(leader)
+        with mock.patch("dashboard_services.platform_api.get_matchups",
+                        return_value=[]), \
+             mock.patch.object(H, "_next_week_gotw_game", return_value=None):
+            slides = H._build_weekly_wrapped_slides(ctx, "Test League",
+                                                    2026, 11)
+        by_kind = {s["kind"]: s for s in slides}
+        pp = by_kind["playoffs"]
+        assert pp["clinched"] == [leader]
+        assert pp["eliminated"] == ["Eta", "Theta"]
+        assert by_kind["headline"]["text"] == (
+            f"{leader} {verb} in. Eta and Theta are out.")
+
+
+def test_weekly_ohmy_bench_regret_rotation_gap_is_labeled():
+    """The analysis gap is the FULL rotation gain: when the headline swap
+    is part of a multi-move rotation, the Oh My note must label the total
+    as the rotation's instead of implying the printed pair explains it
+    (live Week 9: Boutte 28.5 / Addison 4.8 printed beside +29.8)."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    def _analysis(*args, **kwargs):
+        return {
+            "available": True, "historical_projections": True,
+            "underperformers": [],
+            "missed_opportunities": [
+                {"starter": {"name": "Jordan Addison", "pts": 4.8},
+                 "bench_player": {"name": "Kayshon Boutte", "pts": 28.5},
+                 "gap": 29.8, "team": "Hit Squad", "rid": "r4",
+                 "rotation_in": [{"name": "Kayshon Boutte"},
+                                 {"name": "Second In"}],
+                 "rotation_out": [{"name": "Jordan Addison"}]}],
+        }
+
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    side_effect=_analysis), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=None):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+
+    blocks = {b["k"]: b for b in
+              {s["kind"]: s for s in slides}["ohmy"]["blocks"]}
+    regret = blocks["BENCH REGRET"]
+    assert regret["n"] == "Kayshon Boutte"
+    assert regret["value"] == "28.5 PTS ON THE BENCH"
+    assert regret["note"] == (
+        "Hit Squad started Jordan Addison (4.8) instead · "
+        "a 2-move rotation left +29.8 on the table")
+    assert "+23.7" not in regret["note"]
+
+
+def test_weekly_ohmy_bench_regret_single_swap_prints_swap_gap():
+    """A single swap prints the swap gap computed from the two scores on
+    the slide, so the printed numbers always reconcile even if the
+    analysis payload's gap field disagrees with its own pair."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    def _analysis(*args, **kwargs):
+        return {
+            "available": True, "historical_projections": True,
+            "underperformers": [],
+            "missed_opportunities": [
+                {"starter": {"name": "Jordan Addison", "pts": 4.8},
+                 "bench_player": {"name": "Kayshon Boutte", "pts": 28.5},
+                 "gap": 99.9, "team": "Hit Squad", "rid": "r4"}],
+        }
+
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    side_effect=_analysis), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=None):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+
+    blocks = {b["k"]: b for b in
+              {s["kind"]: s for s in slides}["ohmy"]["blocks"]}
+    note = blocks["BENCH REGRET"]["note"]
+    assert note == ("Hit Squad started Jordan Addison (4.8) instead · "
+                    "+23.7 left on the table")
+    assert "99.9" not in note
+
+
+def test_weekly_mock_parity_chrome_and_rows_css():
+    """Mock-parity fixes (Kaedon 2026-11-11, 'exactly like the mock'):
+    the performer crown is a gold SVG (not the rust-tinted fa-crown), the
+    performer meta is muted sky, recap rows stack their label over the
+    name line, scoreboard names never ellipsize, and cover stat values
+    scale to fit their box."""
+    import re
+    from dashboard_services.pages import history_page as H
+
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static/dashboard.css").read_text()
+
+    def _rule(selector):
+        m = re.search(re.escape(selector) + r" \{(.*?)\n\}", css, re.S)
+        assert m, f"missing CSS rule {selector}"
+        return m.group(1)
+
+    crown = _rule(".wrapped-face-crown")
+    assert "fill: #e9b949" in crown and "width: 30px" in crown
+    assert "height: 30px" in crown
+
+    meta = _rule(".wrapped-perf-k")
+    assert "color: #9db8d2" in meta and "letter-spacing: .03em" in meta
+
+    recap_row = _rule(
+        '.wrapped-overlay-wk .wrapped-slide[data-kind="recap"] .wrapped-row')
+    assert "flex-direction: column" in recap_row
+
+    perf_row = _rule(
+        '.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] '
+        ".wrapped-row")
+    assert "background: transparent" in perf_row
+    assert "border-radius: 0" in perf_row
+
+    for name_sel in (".wrapped-game-w", ".wrapped-game-l"):
+        block = _rule(name_sel)
+        assert "ellipsis" not in block and "nowrap" not in block
+        # A name column never shrinks below its longest word, so a
+        # one-word name can't paint over the neighboring column.
+        assert "min-width: min-content" in block
+
+    box_v = _rule(".wrapped-box-v")
+    assert "clamp(20px, 6vw, 30px)" in box_v
+    assert "white-space: nowrap" in box_v
+
+    # Markup: the crown is an inline SVG; two-part cover labels split into
+    # two deliberate lines.
+    slides = [
+        {"kind": "cover", "eyebrow": "WEEK 3", "big": "Test League",
+         "num": False, "dp": 0, "suffix": "", "label": "", "sub": "",
+         "word1": "WEEK 3", "word2": "WRAPPED",
+         "boxes": [{"num": "480.1", "dp": 1, "suffix": "",
+                    "label": "TOTAL PTS · 4 TEAMS"}]},
+        {"kind": "performers", "eyebrow": "TOP PERFORMERS",
+         "title": "WHO SWUNG THE WEEK", "num": False, "big": "", "dp": 0,
+         "suffix": "", "label": "", "sub": "", "bgword": "STARS",
+         "rows": [("RB · Alpha", "Alpha Star", "35.0", "", True)],
+         "faces": {"RB · Alpha": ""}, "note": "n"},
+        {"kind": "headline", "eyebrow": "THE HEADLINE", "num": False,
+         "big": "", "dp": 0, "suffix": "", "label": "", "sub": "",
+         "text": "Alpha are in.", "bgword": "HEADLINE"},
+    ]
+    html = H._wrapped_overlay_markup(slides, None, ns="weekly-wrapped",
+                                     footer_label="WEEK 3 WRAPPED")
+    assert "<svg class='wrapped-face-crown'" in html
+    assert "wrapped-box-k'>TOTAL PTS</span>" in html
+    assert "wrapped-box-k wrapped-box-k2'>4 TEAMS</span>" in html
+
+
 def test_wrapped_fullscreen_shell_contract():
     """Fullscreen contract (Kaedon 2026-11-11): the overlay sits at the
     modal tier (above the 9999 dock), the phone stage fills the viewport
