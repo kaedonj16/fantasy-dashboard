@@ -66,6 +66,14 @@ def get_league_ctx_from_cache(*a, **k):
     from app import get_league_ctx_from_cache as _fn
     return _fn(*a, **k)
 
+def _build_start_sit_pool_export(*a, **k):
+    from app import build_start_sit_pool_export as _fn
+    return _fn(*a, **k)
+
+def _get_nfl_state(*a, **k):
+    from app import get_nfl_state as _fn
+    return _fn(*a, **k)
+
 
 # In-memory model value cache (also bust across gunicorn workers via the shared
 # marker in _touch_value_cache_bust). Initialized here so readers like
@@ -597,6 +605,74 @@ def api_debug_values():
     except Exception:
         logger.exception("[api_debug_values] Error")
         return jsonify({"error": "Internal error"}), 500
+
+
+@internal_bp.route("/api/start-sit-pool-export")
+@limiter.limit("30 per minute")
+def api_start_sit_pool_export():
+    """
+    Start/sit live pool export for the Thursday board pipeline: the
+    league-wide start-score pool for one week under standard PPR
+    ({"rec": 1.0} -- fixed, no league context), returned as the bare
+    {QB: [...], RB: [...], WR: [...], TE: [...]} object so it can be
+    saved verbatim as startsit_live_pool_w{W}_ppr.json. The computation
+    lives in app.build_start_sit_pool_export (the old Render-shell
+    snippet, verbatim) and is cached there per (season, week).
+
+    Auth: same CRON_SECRET gate as the sibling admin endpoints
+    (/api/debug-values, /api/flush-value-cache). Pass the secret as
+    ``?secret=``, an ``X-Cron-Secret`` header, or JSON ``{"secret": ...}``.
+    Fails closed with 403 when CRON_SECRET is unset or does not match.
+
+    ?week= defaults to the current NFL week (Sleeper state); ?season=
+    defaults to the current year, matching /api/start-sit-options.
+    503 when no start-score bundles exist for the week (batch not run or
+    DB unreachable) -- never an empty pool dressed up as a real export.
+    """
+    # CRON_SECRET check, identical to the sibling admin endpoints: require
+    # the secret to be set AND match -- when CRON_SECRET is unset the old
+    # `if secret and ...` guard would pass any request (short-circuit on
+    # falsy). GET has no JSON body by convention, so ?secret= and
+    # X-Cron-Secret are accepted in addition to the JSON body form.
+    secret = os.environ.get("CRON_SECRET", "")
+    provided = str(
+        request.args.get("secret")
+        or request.headers.get("X-Cron-Secret")
+        or (request.get_json(silent=True) or {}).get("secret")
+        or ""
+    )
+    if not secret or not provided or not hmac.compare_digest(provided, secret):
+        return jsonify({"error": "unauthorized"}), 403
+
+    try:
+        season = int(request.args.get("season") or datetime.now().year)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid season"}), 400
+    week_arg = request.args.get("week")
+    if week_arg:
+        try:
+            week = int(week_arg)
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid week"}), 400
+    else:
+        try:
+            week = int((_get_nfl_state() or {}).get("week") or 0)
+        except (TypeError, ValueError):
+            week = 0
+    if week <= 0:
+        return jsonify({"error": "week required"}), 400
+
+    try:
+        export = _build_start_sit_pool_export(season, week)
+    except Exception:
+        logger.exception("[start-sit-pool-export] build failed")
+        return jsonify({"error": "Internal error"}), 500
+    if export is None:
+        return jsonify({
+            "error": "no start/sit pool available for season %d week %d"
+                     % (season, week),
+        }), 503
+    return jsonify(export)
 
 
 # ────────────────────────────────────────────────────────────────────────────

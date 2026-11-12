@@ -4227,6 +4227,119 @@ def start_score_league_index(season, week, scoring_settings, pos,
     return start_score_tier_index(pos, rank)
 
 
+# ── Start/sit live pool export (Thursday board pipeline) ───────────────────
+# The Thursday start/sit boards rank off a same-day export of this pool
+# under standard PPR. The pool's factors live in the Postgres-backed
+# bundles, which only this service can read, so the export used to be a
+# manual Render-shell snippet pasted back into chat (saved as
+# startsit_live_pool_w{W}_ppr.json). build_start_sit_pool_export() IS that
+# snippet: same bundle load, same compute_start_score kwargs, same
+# competition ranking + tier index. Served by GET
+# /api/start-sit-pool-export (routes/internal_bp.py, CRON_SECRET gate).
+_SS_EXPORT_SCORING = {"rec": 1.0}
+_SS_EXPORT_POSITIONS = ("QB", "RB", "WR", "TE")
+_SS_EXPORT_TOP_N = 40
+_SS_EXPORT_CACHE: dict = {}
+_SS_EXPORT_CACHE_TS: dict = {}
+_SS_EXPORT_LOCK = threading.Lock()
+_SS_EXPORT_TTL_SEC = 10 * 60
+
+
+def build_start_sit_pool_export(season, week):
+    """League-wide start/sit pool export for one week, standard PPR.
+
+    Returns ``{pos: [rows]}`` for QB/RB/WR/TE (top 40 per position), each
+    row ``{"pid", "name", "team", "value", "proj", "injury", "index"}`` --
+    the exact shape of the hand-pasted startsit_live_pool_w{W}_ppr.json
+    files. ``value`` is the bundle start score, competition-ranked within
+    position descending; ``index`` is start_score_tier_index for that
+    rank (rank computed over the full position list, before the top-40
+    cut, exactly as the shell snippet did).
+
+    Returns None when no bundles exist for the week (batch not run / DB
+    unreachable): an export with no pool behind it must never be served
+    as if it were real. Successful builds are cached per (season, week)
+    for _SS_EXPORT_TTL_SEC.
+    """
+    try:
+        season = int(season)
+        week = int(week)
+    except (TypeError, ValueError):
+        return None
+    if season <= 0 or week <= 0:
+        return None
+    key = (season, week)
+    with _SS_EXPORT_LOCK:
+        cached = _SS_EXPORT_CACHE.get(key)
+        if (cached is not None
+                and time.monotonic() - _SS_EXPORT_CACHE_TS.get(key, 0)
+                < _SS_EXPORT_TTL_SEC):
+            return cached
+    from data_building.start_score_bundle import (
+        load_start_score_bundles,
+        variant_for_exact_scoring,
+    )
+    from utils.start_sit_score import compute_start_score
+
+    variant = variant_for_exact_scoring(dict(_SS_EXPORT_SCORING))
+    index = get_players_index_global() or {}
+    bundles = load_start_score_bundles(
+        season, week, variant, list(index.keys())) or {}
+    if not bundles:
+        return None
+    rows: dict = {}
+    for pid, b in bundles.items():
+        if not isinstance(b, dict):
+            continue
+        pos = str(b.get("pos") or "").upper()
+        if pos not in _SS_EXPORT_POSITIONS:
+            continue
+        try:
+            score, _, _ = compute_start_score(
+                b.get("proj_pts") or 0.0,
+                on_bye=bool(b.get("on_bye")),
+                recent_ppg=b.get("recent_ppg") or 0.0,
+                season_ppg=b.get("season_ppg") or 0.0,
+                usage_delta=b.get("usage_delta"),
+                usage_season_avg=b.get("usage_season_avg"),
+                injury_status=b.get("injury_status"),
+                implied_total=b.get("implied_total"),
+                bust_rate=b.get("bust_rate"),
+                weather_kind=b.get("weather_kind"),
+                position=pos,
+                oline_index=b.get("oline_index"),
+                expected_team_plays=b.get("expected_team_plays"),
+                league_average_plays=b.get("league_average_plays"),
+                role_confidence=b.get("role_confidence"),
+                low_total_team=bool(b.get("low_total_team")),
+            )
+        except Exception:
+            continue
+        if not score or score <= 0:
+            continue
+        meta = index.get(str(pid)) or {}
+        rows.setdefault(pos, []).append({
+            "pid": str(pid),
+            "name": meta.get("full_name") or meta.get("name") or str(pid),
+            "team": meta.get("team") or "",
+            "value": round(float(score), 2),
+            "proj": round(float(b.get("proj_pts") or 0.0), 2),
+            "injury": b.get("injury_status") or "",
+        })
+    out: dict = {}
+    for pos in _SS_EXPORT_POSITIONS:
+        lst = rows.get(pos) or []
+        lst.sort(key=lambda r: -r["value"])
+        for r in lst:
+            rank = 1 + sum(1 for o in lst if o["value"] > r["value"])
+            r["index"] = start_score_tier_index(pos, rank)
+        out[pos] = lst[:_SS_EXPORT_TOP_N]
+    with _SS_EXPORT_LOCK:
+        _SS_EXPORT_CACHE[key] = out
+        _SS_EXPORT_CACHE_TS[key] = time.monotonic()
+    return out
+
+
 def run_daily_data_async(season: int, week: int, owner: str = "web") -> bool:
     """Start daily data build in a background thread."""
     # Never kick off the real daily build under tests: build_daily_data scrapes
