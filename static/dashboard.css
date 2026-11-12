@@ -32561,6 +32561,13 @@ table.mid-table {
     border: 1px solid var(--border);
     border-radius: 16px;
     box-shadow: 0 24px 64px rgba(0, 0, 0, .35);
+    /* The card element also carries .os-card (a page-card class), whose
+       margin-bottom: 18px lifted the phone sheet off the bottom of the
+       screen, leaving a strip of page showing under it, and whose
+       padding added dead space inside the sheet under the footer.
+       The head/body/foot own this card's spacing, so zero both. */
+    margin: 0;
+    padding: 0;
     width: 100%;
     max-width: 480px;
     max-height: 82vh;
