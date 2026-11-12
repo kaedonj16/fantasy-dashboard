@@ -6,7 +6,11 @@
 //
 //   1. The composite is the average of the components that EXIST, one
 //      decimal; a component the server could not compute (null) is
-//      excluded, never defaulted.
+//      excluded, never defaulted. The headline only exists when at
+//      least 3 of the 4 components are computable AND value balance is
+//      among them (an average over a varying component count swung the
+//      headline ~2.5 points on the same trade in backtest); below that
+//      threshold the tile shows the bars with no headline grade.
 //   2. An ungraded trade (graded:false - an asset has no calibrated
 //      value and the totals exclude it) yields NO components at all:
 //      a score built on partial totals would be fiction.
@@ -175,11 +179,17 @@ assert.equal(
   computeTradeFitScore({ value_balance: 8, roster_fit: 6, playoff_impact: 5, acceptance: 9 }),
   7.0);
 assert.equal(
+  computeTradeFitScore({ value_balance: 8, roster_fit: 6, playoff_impact: null, acceptance: 9 }),
+  7.7, 'three components incl. value balance average (23/3 -> 7.7)');
+assert.equal(
   computeTradeFitScore({ value_balance: 8, roster_fit: null, playoff_impact: null, acceptance: null }),
-  8.0, 'single present component is the composite');
+  null, 'a single component is not a grade');
 assert.equal(
   computeTradeFitScore({ value_balance: 7, roster_fit: 8, playoff_impact: null, acceptance: null }),
-  7.5);
+  null, 'two components are not a grade');
+assert.equal(
+  computeTradeFitScore({ value_balance: null, roster_fit: 8, playoff_impact: 8, acceptance: 8 }),
+  null, 'three components without value balance are not a grade');
 assert.equal(
   computeTradeFitScore({ value_balance: 7, roster_fit: 7, playoff_impact: 7, acceptance: 8 }),
   7.3, 'rounds to one decimal (7.25 -> 7.3 via Math.round)');
@@ -221,6 +231,17 @@ comps = _fitComponents();
 assert.equal(comps.playoff_impact, 8, 'matching signature -> playoff included');
 assert.equal(computeTradeFitScore(comps), 6.0, '(6 + 4 + 8) / 3');
 
+// PPG-weighted roster fit rides the same signature guard: present and
+// matched, it replaces the eval's flat roster component (null here);
+// with a stale signature the flat component stands untouched.
+state._lastPiData = { available: true, fit_playoff_impact: 8, fit_roster_fit_ppg: 3 };
+comps = _fitComponents();
+assert.equal(comps.roster_fit, 3, 'matching signature -> PPG roster fit replaces flat');
+state._lastPiSig = 'someone-else|p1|7';
+comps = _fitComponents();
+assert.equal(comps.roster_fit, null, 'stale signature -> flat roster component stands');
+state._lastPiSig = _currentPiSig();
+
 // Signature construction: viewer receives side A, gives side B, picks
 // are not players and never appear.
 state.sideAPlayers = [{ id: 'p1' }, { id: 'pick_2027_2_mid' }];
@@ -259,8 +280,13 @@ state._fitPending = false;
 comps = _fitComponents();
 assert.equal(comps.value_balance, 8, 'fresh-stamped payload: components read');
 renderTradeFit();
-assert.equal(els['#tradeFitTile'].style.display, 'flex', 'graded tile shows');
-assert.equal(els['#tradeFitScore'].textContent, '6.0', '(8 + 4) / 2 paints');
+assert.equal(els['#tradeFitTile'].style.display, 'flex', 'tile shows for the landed trade');
+assert.equal(els['#tradeFitScore'].textContent, '-',
+  'two components (8, 4): bars paint, no headline grade');
+assert.ok(els['#tradeFitTile'].classList.contains('otc-fit--no-headline'),
+  'no-headline class on the tile');
+assert.ok(els['#tradeFitGrid'].innerHTML.includes('>8<'), 'value balance bar paints');
+assert.ok(els['#tradeFitGrid'].innerHTML.includes('>4<'), 'acceptance bar paints');
 assert.equal(els['#tradeAcceptChip'].textContent, 'Acceptance: Possible');
 // The sticky bar shows none of the grade: just the two side values and
 // the mini band, positioned by the shared _balanceGeometry (diff 66.8
@@ -317,7 +343,10 @@ state._lastEvalSig = _currentEvalSig();
 state._lastEffA = 300.0;
 state._lastEffB = 312.0;
 renderTradeFit();
-assert.equal(els['#tradeFitScore'].textContent, '5.0', '(4 + 6) / 2 paints for the new trade');
+assert.equal(els['#tradeFitScore'].textContent, '-',
+  'new trade also has two components: bars only, still no headline');
+assert.ok(els['#tradeFitGrid'].innerHTML.includes('>4<'), 'new value balance bar paints');
+assert.ok(els['#tradeFitGrid'].innerHTML.includes('>6<'), 'new roster bar paints');
 assert.equal(els['#tradeAcceptChip'].style.display, 'none', 'no acceptance -> chip stays hidden');
 assert.equal(els['#tradeStickyValueA'].textContent, '300.0', 'bar swaps in the new values');
 assert.equal(els['#tradeStickyValueB'].textContent, '312.0');

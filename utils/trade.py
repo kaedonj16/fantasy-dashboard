@@ -889,10 +889,11 @@ Extracted from app.py so this logic can be unit-tested without the pandas/DB
 stack.
 
 ``asset_tier`` maps a fantasy value to a tier number (T1 elite ... TN) given a
-set of thresholds. ``apply_tier_stack_adjustment`` applies the depth penalty for
-the side of an unequal trade that gives up more players: the extra players are
-discounted toward true waiver-wire value, mutating the passed-in side dicts in
-place with tier/effective-value annotations.
+set of thresholds. ``apply_tier_stack_adjustment`` computes each side's
+effective value: players are retained at their tier's cap, and the side of an
+unequal trade that gives up more players is further discounted toward true
+waiver-wire value, mutating the passed-in side dicts in place with
+tier/effective-value annotations.
 """
 
 
@@ -924,42 +925,108 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
                                  value_table: list = None,
                                  league_size: int = 10) -> None:
     """
-    Depth penalty for the bigger side in unequal trades.
+    Effective value for both sides of a trade, in two layers.
 
-    The side giving up more players is discounted by a fraction of the value of
-    true waiver-wire players (ranked well below the roster cutoff).  The first
-    reference player sits at roughly rank (league_size × 38) and each successive
-    extra player steps deeper; 50% of that value is applied as the penalty.
+    Layer 1 - stack retention (applies to every trade, any shape): a
+    side's best PLAYER (its headliner) counts at full value; every
+    additional player on that side is retained at its tier's cap from
+    build_tier_caps (T1 keeps 100%, the bottom tier 38%). Raw value
+    sums pretend two ~485 pieces equal a ~971 stud; they do not - the
+    stud starts every week at full value while the second piece
+    competes for a flex slot, so stacked depth is retained at a
+    discount that grows down the tiers. A lone asset is never
+    discounted: single-player sides keep effective == raw, which the
+    veto/ungraded contract (a deliberate raw floor) is calibrated on.
+    Picks are future assets, not roster slots: they are never
+    tier-discounted and never counted as roster assets anywhere in
+    this math. Unvalued rows price at 0 and count for nothing.
 
-    Bigger side: effective_total = raw_total - sum(bench_values).
-    Smaller side: effective_total = raw_total (no adjustment).
+    Layer 2 - roster-slot penalty (unequal PLAYER counts only): the
+    side giving up more players is further discounted by a fraction of
+    true waiver-wire value, because each extra body it sends also costs
+    the receiver a roster slot. The first reference player sits at
+    roughly rank (league_size × 38) and each successive extra player
+    steps deeper; 50% of that value is applied as the penalty. The
+    bench lookup reads the sf_value column in superflex leagues.
+
+    Both sides always get effective_total / adjustment written
+    (adjustment = effective_total - raw_total); raw totals are never
+    mutated.
     """
-    a_count = len(side_a.get("breakdown") or []) or len(side_a.get("player_values") or [])
-    b_count = len(side_b.get("breakdown") or []) or len(side_b.get("player_values") or [])
-
     thresholds = tier_thresholds if tier_thresholds is not None else FALLBACK_THRESHOLDS
+    caps = build_tier_caps(NUM_TIERS)
 
-    # Annotate tiers first (informational, no multiplier applied)
+    def _is_player(item) -> bool:
+        return item.get("type") != "pick" and not item.get("unvalued")
+
+    # Layer 1: annotate tiers, then apply retention to stacked players
+    # only - the side's most valuable player is exempt (headliner rule).
     for side in (side_a, side_b):
-        for item in (side.get("breakdown") or []):
-            val = item.get("value", 0.0)
-            item["tier"]            = asset_tier(val, thresholds)
-            item["stack_mult"]      = 1.0
-            item["effective_value"] = round(val, 1)
+        items = side.get("breakdown") or []
+        headliner = None
+        headliner_val = -1.0
+        for item in items:
+            val = float(item.get("value") or 0.0)
+            if item.get("type") == "pick":
+                item["tier"]            = None
+                item["stack_mult"]      = 1.0
+                item["effective_value"] = round(val, 1)
+                continue
+            item["tier"] = asset_tier(val, thresholds)
+            if _is_player(item) and val > headliner_val:
+                headliner = item
+                headliner_val = val
+        for item in items:
+            if item.get("type") == "pick":
+                continue
+            val = float(item.get("value") or 0.0)
+            if item is headliner:
+                item["stack_mult"]      = 1.0
+                item["effective_value"] = round(val, 1)
+            else:
+                item["stack_mult"]      = caps.get(item["tier"], 1.0)
+                item["effective_value"] = round(val * item["stack_mult"], 1)
+
+    def _player_count(side) -> int:
+        # Roster slots in the deal: every player row counts, including
+        # unvalued ones (a real player we cannot price still changes
+        # hands and occupies a slot); picks never count.
+        breakdown = side.get("breakdown") or []
+        if breakdown:
+            return sum(1 for item in breakdown
+                       if item.get("type") != "pick")
+        return len(side.get("player_values") or [])
+
+    def _retained_total(side) -> float:
+        breakdown = side.get("breakdown") or []
+        if breakdown:
+            return float(sum(float(item.get("effective_value") or 0.0)
+                             for item in breakdown))
+        return float(side.get("raw_total") or 0.0)
+
+    a_count = _player_count(side_a)
+    b_count = _player_count(side_b)
+
+    for side in (side_a, side_b):
+        side["effective_total"] = _retained_total(side)
+        side["adjustment"] = float(
+            side["effective_total"] - float(side.get("raw_total") or 0.0))
 
     if a_count == b_count:
         return
 
+    # Layer 2: roster-slot penalty on the side sending more players.
     delta   = abs(a_count - b_count)
-    smaller = side_a if a_count < b_count else side_b
     bigger  = side_b if a_count < b_count else side_a
 
-    # Build sorted value list for bench-rank lookup
+    # Build sorted value list for bench-rank lookup (SF reads sf_value)
+    _val_key = "sf_value" if is_sf else "value"
     sorted_vals: list = []
     if value_table:
         sorted_vals = sorted(
-            [float(p.get("value") or 0) for p in value_table
-             if isinstance(p, dict) and float(p.get("value") or 0) > 10],
+            [float(p.get(_val_key) or p.get("value") or 0) for p in value_table
+             if isinstance(p, dict)
+             and float(p.get(_val_key) or p.get("value") or 0) > 10],
             reverse=True,
         )
 
@@ -978,10 +1045,9 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
 
     bench_total = sum(_bench_value(i) for i in range(delta))
 
-    bigger["effective_total"]  = float(bigger.get("raw_total") or 0.0) - bench_total
-    bigger["adjustment"]       = -bench_total
-    smaller["effective_total"] = float(smaller.get("raw_total") or 0.0)
-    smaller["adjustment"]      = 0.0
+    bigger["effective_total"] = float(bigger["effective_total"]) - bench_total
+    bigger["adjustment"]      = float(
+        bigger["effective_total"] - float(bigger.get("raw_total") or 0.0))
 
 
 # ======================================================================

@@ -997,19 +997,22 @@ def build_value_table_for_usage(
     snap_norm = _normalize_by_pos({pid: p["snap_hist"] for pid, p in per_pid.items()}, pos_by_pid)
 
     POS_WEIGHTS = {
+        # QB weights were 0.90 in total (every other position sums to
+        # 1.00), leaving QB pre-compression scores ~10% light. Scaled
+        # proportionally by 10/9 so they sum to 1.00 like RB/WR/TE.
         "QB": {
-            "blended_prod": 0.10,
-            "current_prod": 0.20,
-            "ceiling": 0.16,
-            "floor": 0.03,
-            "age": 0.09,
-            "role": 0.11,
-            "trend": 0.07,
-            "invest": 0.04,
+            "blended_prod": 0.1112,
+            "current_prod": 0.2222,
+            "ceiling": 0.1778,
+            "floor": 0.0333,
+            "age": 0.1000,
+            "role": 0.1222,
+            "trend": 0.0778,
+            "invest": 0.0444,
             "rz": 0.00,
             "share": 0.00,
-            "snap": 0.04,
-            "upside": 0.06,
+            "snap": 0.0444,
+            "upside": 0.0667,
         },
         "RB": {
             "blended_prod": 0.16,
