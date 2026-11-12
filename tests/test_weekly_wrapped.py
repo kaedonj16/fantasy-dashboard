@@ -91,13 +91,17 @@ def test_weekly_scoreboard_games_and_totals():
     assert abs(sb["hi_pts"] - 150.5) < 0.01
     assert sb["lo_team"] == "Beta"
     assert abs(sb["lo_pts"] - 90.2) < 0.01
-    # Every game, closest first: Gamma 120.0 over Delta 119.4 (0.6), then
-    # Alpha 150.5 over Beta 90.2 (60.3).
+    # Every game in the mock's order (winner's score descending, so the
+    # hero's game leads): Alpha 150.5 over Beta 90.2 (60.3), then Gamma
+    # 120.0 over Delta 119.4 (0.6). The two extremes carry the mock's
+    # badges: statement win on the blowout, closest game on the nailbiter.
     games = sb["games"]
-    assert [g["winner"] for g in games] == ["Gamma", "Alpha"]
-    assert abs(games[0]["margin"] - 0.6) < 0.01
-    assert abs(games[1]["margin"] - 60.3) < 0.01
-    assert games[1]["loser"] == "Beta"
+    assert [g["winner"] for g in games] == ["Alpha", "Gamma"]
+    assert abs(games[0]["margin"] - 60.3) < 0.01
+    assert abs(games[1]["margin"] - 0.6) < 0.01
+    assert games[0]["loser"] == "Beta"
+    assert games[0]["badge"] == "STATEMENT WIN"
+    assert games[1]["badge"] == "CLOSEST GAME"
 
     # The old standalone score slides are folded into the mock deck.
     for gone in ("intro", "topscore", "lowscore", "blowout", "nailbiter",
@@ -445,16 +449,28 @@ def test_weekly_coaching_slide_combines_efficiency_bust_and_misses():
     sections = coaching["sections"]
     assert [s["title"] for s in sections] == [
         "LINEUP EFFICIENCY", "BIGGEST BUST", "COACHING MISS"]
-    # Mock presentation: efficiency % beside that week's actual score.
+    # Mock presentation: the efficiency percent is the value (one
+    # decimal); that week's actual score is its PTS SCORED caption.
+    assert sections[0]["note"] == "Top 3"
     assert sections[0]["rows"] == [
-        ("#1", "Alpha", "99% · 148.0"),
-        ("#2", "Beta", "93% · 88.0"),
-        ("#3", "Gamma", "88% · 110.0"),
+        {"k": "#1", "n": "Alpha", "v": "98.7%",
+         "vsub": "148.0 PTS SCORED", "cls": "wrapped-row-eff"},
+        {"k": "#2", "n": "Beta", "v": "92.6%",
+         "vsub": "88.0 PTS SCORED", "cls": "wrapped-row-eff"},
+        {"k": "#3", "n": "Gamma", "v": "88.0%",
+         "vsub": "110.0 PTS SCORED", "cls": "wrapped-row-eff"},
     ]
-    assert sections[1]["rows"] == [("", "Bust WR (WR · DAL)", "2.1 PTS")]
+    # The bust is a card: name, POS · team · manager meta, cold score.
+    # (The fake carries no fantasy team/manager, so the meta is POS only.)
+    assert sections[1]["rows"] == [
+        {"bust": {"n": "Bust WR", "meta": "WR", "v": "2.1"}}]
+    # Misses are cards too: team line, the started/over sentence, gap.
+    assert sections[2]["note"] == "Top 2"
     assert sections[2]["rows"] == [
-        ("#1", "Started Cold QB over Hot QB", "+18.4"),
-        ("#2", "Started Cold RB over Hot RB", "+11.2"),
+        {"miss": {"team": "Alpha", "mgr": "",
+                  "line": "Started Cold QB over Hot QB", "gap": "18.4"}},
+        {"miss": {"team": "Beta", "mgr": "",
+                  "line": "Started Cold RB over Hot RB", "gap": "11.2"}},
     ]
 
 
@@ -503,7 +519,7 @@ def test_weekly_coaching_bust_names_the_coldest_starter():
     titles = [s["title"] for s in coaching["sections"]]
     assert "BIGGEST BUST" in titles
     bust = [s for s in coaching["sections"] if s["title"] == "BIGGEST BUST"][0]
-    assert bust["rows"] == [("", "Cold K (K · NE)", "1.2 PTS")]
+    assert bust["rows"] == [{"bust": {"n": "Cold K", "meta": "K", "v": "1.2"}}]
     assert titles.count("COACHING MISS") == 1
     miss = [s for s in coaching["sections"] if s["title"] == "COACHING MISS"][0]
     assert len(miss["rows"]) == 2
@@ -592,12 +608,22 @@ def test_weekly_playoff_slide_lists_clinched_and_eliminated():
     assert slide["kind"] == "playoffs"
     assert slide["eyebrow"] == "PLAYOFF PICTURE"
     secs = {s["title"]: s["rows"] for s in slide["sections"]}
-    assert [r[1] for r in secs["CLINCHED"]] == ["Alpha", "Beta", "Gamma"]
-    assert secs["CLINCHED"][0] == ("#1", "Alpha", "10-1")
-    assert [r[1] for r in secs["ELIMINATED"]] == ["Zeta", "Eta", "Theta"]
+    assert [r["n"] for r in secs["CLINCHED"]] == ["Alpha", "Beta", "Gamma"]
+    # Rows carry the record plus the mock's points-for note.
+    assert secs["CLINCHED"][0] == {"k": "#1", "n": "Alpha", "v": "10-1",
+                                   "mgr": "", "vnote": "1,430.0 PF"}
+    assert [r["n"] for r in secs["ELIMINATED"]] == ["Zeta", "Eta", "Theta"]
     assert slide["clinched"] == ["Alpha", "Beta", "Gamma"]
     assert slide["eliminated"] == ["Zeta", "Eta", "Theta"]
     assert slide["sub"] == "3 clinched · 3 eliminated through Week 11"
+    # Section heads carry their team counts; the counts strip and the
+    # lede ride along for the renderer (the mock's picture furniture).
+    assert {s["title"]: s["note"] for s in slide["sections"]} == {
+        "CLINCHED": "3 teams", "ELIMINATED": "3 teams"}
+    assert slide["counts"] == [
+        {"num": 3, "label": "CLINCHED", "tone": "green"},
+        {"num": 3, "label": "ELIMINATED", "tone": "red"}]
+    assert slide["lede"] == "Test League · 4 make it"
 
 
 def test_weekly_playoff_slide_skipped_too_early():
@@ -768,10 +794,15 @@ def test_weekly_playoff_slide_manager_names_and_alive():
     slide = H._weekly_wrapped_playoff_slide(ctx, 11)
     assert slide is not None
     secs = {s["title"]: s["rows"] for s in slide["sections"]}
-    assert secs["CLINCHED"][0] == ("#1", "Alpha", "10-1", "Manager Alpha")
-    assert secs["CLINCHED"][1] == ("#2", "Beta", "8-3", "Manager Beta")
-    # No user record for Gamma: the row stays a 3-tuple.
-    assert secs["CLINCHED"][2] == ("#3", "Gamma", "7-4")
+    assert secs["CLINCHED"][0] == {"k": "#1", "n": "Alpha", "v": "10-1",
+                                   "mgr": "Manager Alpha",
+                                   "vnote": "1,430.0 PF"}
+    assert secs["CLINCHED"][1] == {"k": "#2", "n": "Beta", "v": "8-3",
+                                   "mgr": "Manager Beta",
+                                   "vnote": "1,320.0 PF"}
+    # No user record for Gamma: the manager slot stays empty.
+    assert secs["CLINCHED"][2] == {"k": "#3", "n": "Gamma", "v": "7-4",
+                                   "mgr": "", "vnote": "1,265.0 PF"}
     assert slide["alive"] == ["Delta", "Epsilon"]
     assert slide["bgword"] == "PLAYOFFS"
 
@@ -992,14 +1023,18 @@ def test_weekly_deck_matches_mock_order_for_settled_week(offline_client):
     assert perf["rows"][0][0] == "RB · Alpha"
     assert all(perf["faces"].values())  # every row resolved a headshot
 
-    # Standings: all 8 teams, Gamma's rise and Beta's fall carry chips.
+    # Standings: all 8 teams, Gamma's rise and Beta's fall carry chips,
+    # and Alpha (held #1) carries the mock's flat 0 tag. Every row also
+    # carries its points-for as the value note.
     st = by_kind["standings"]
     assert len(st["rows"]) == 8
-    gamma_row = next(r for r in st["rows"] if r[1] == "Gamma")
-    beta_row = next(r for r in st["rows"] if r[1] == "Beta")
-    assert "wrapped-move up" in gamma_row[3]
-    assert "wrapped-move dn" in beta_row[3]
-    assert next(r for r in st["rows"] if r[1] == "Alpha")[3] == ""
+    gamma_row = next(r for r in st["rows"] if r["n"] == "Gamma")
+    beta_row = next(r for r in st["rows"] if r["n"] == "Beta")
+    assert "wrapped-move up" in gamma_row["deco"]
+    assert "wrapped-move dn" in beta_row["deco"]
+    assert "wrapped-move flat" in next(
+        r for r in st["rows"] if r["n"] == "Alpha")["deco"]
+    assert all(r["vnote"].endswith(" PF") for r in st["rows"])
 
     # GOTW stakes come from the current seeds vs the cut/bye lines.
     assert by_kind["gotw"]["stakes"] == [
@@ -1017,9 +1052,13 @@ def test_weekly_deck_matches_mock_order_for_settled_week(offline_client):
     assert "Delta started Cold QB (9.4)" in blocks["BENCH REGRET"]["note"]
 
     # Rendered deck: 10 sections, recap finale last, one crown total.
+    # With a settled picture the finale is the mock's outro: the
+    # share-card panel with the IN · OUT headline, not highlight rows.
     assert html.count("<section class='wrapped-slide") == 10
     assert html.rfind("data-kind='recap'") > html.rfind("data-kind='ohmy'")
     assert html.count("wrapped-face-crown") == 1
+    assert "wrapped-sharecard-big'>4 IN · 4 OUT</div>" in html
+    assert "THAT IS THE WRAP." in html
 
 
 def test_weekly_pre_playoff_window_deck_has_no_playoff_slide():
@@ -1044,6 +1083,51 @@ def test_weekly_pre_playoff_window_deck_has_no_playoff_slide():
     assert "playoffs" not in kinds
     cover = slides[0]
     assert cover["boxes"][2]["label"] == "TOP SCORE · Alpha"
+
+
+def test_weekly_live_diff_markup_contract():
+    """Live-deck parity pass (2026-11): the weekly cover renders the
+    mock's hero panel with NO logo block (the wordmark lives in the
+    footer bug only); scoreboard games render as match cards with the
+    mock's badges; GOTW duel boxes carry record · seed metas; coaching
+    renders miss/bust cards."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    game = {"team_a": "Alpha", "team_b": "Beta", "roster_id_a": "1",
+            "roster_id_b": "2", "rank_a": 1, "rank_b": 2,
+            "record_a": "2-0", "record_b": "1-1", "win_prob_a": 60,
+            "proj_a": 140.0, "proj_b": 130.0, "target_week": 4}
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_fake_boxscores), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    side_effect=_fake_coaching_efficiency), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    side_effect=_fake_lineup_analysis), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=game):
+        html = H.render_weekly_wrapped_overlay(ctx, 3)
+
+    # Cover: hero panel, and the only logo in the deck is the footer bug.
+    assert "wrapped-cover-hero" in html
+    assert "wrapped-cover-logo" not in html
+    # Scoreboard: match cards (winner/loser lines + Margin meta), with
+    # the statement-win badge on the blowout and closest on the 0.6 game.
+    assert html.count("wrapped-match'") + html.count('wrapped-match"') >= 2
+    assert "Margin 60.3" in html and "Margin 0.6" in html
+    assert "STATEMENT WIN" in html and "CLOSEST GAME" in html
+    assert "wrapped-game-w" not in html
+    # GOTW: record · seed inside the duel boxes; no standalone why line.
+    assert "wrapped-duel-m'>2-0 · Seed 1</div>" in html
+    assert "wrapped-duel-m'>1-1 · Seed 2</div>" in html
+    assert "wrapped-why" not in html
+    # Coaching: miss cards with team line + gap pill; the bust card.
+    assert "wrapped-misscard" in html
+    assert "wrapped-gaptag'>18.4 PTS LEFT BACK</span>" in html
+    assert "wrapped-bustcard" in html
+    # Recap finale without a playoff picture keeps the highlight rows
+    # (the outro's IN · OUT panel needs a settled picture).
+    assert "wrapped-sharecard" not in html
 
 
 def test_weekly_ohmy_data_mapping():
@@ -1074,8 +1158,10 @@ def test_weekly_ohmy_data_mapping():
     blocks = {b["k"]: b for b in ohmy["blocks"]}
     assert blocks["HEARTBREAK"] == {
         "k": "HEARTBREAK", "n": "Delta", "scoreline": "119.4-120.0",
+        "opp": "Gamma",
         "note": "Lost to Gamma by 0.6"}
     assert blocks["BLOWOUT"]["n"] == "Alpha"
+    assert blocks["BLOWOUT"]["opp"] == "Beta"
     assert blocks["BLOWOUT"]["note"] == "Beat Beta by 60.3"
     assert blocks["BENCH REGRET"]["n"] == "Bench Star"
     assert blocks["BENCH REGRET"]["value"] == "31.8 PTS ON THE BENCH"
@@ -1301,18 +1387,34 @@ def test_weekly_mock_parity_chrome_and_rows_css():
         '.wrapped-overlay-wk .wrapped-slide[data-kind="recap"] .wrapped-row')
     assert "flex-direction: column" in recap_row
 
-    perf_row = _rule(
-        '.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] '
-        ".wrapped-row")
-    assert "background: transparent" in perf_row
-    assert "border-radius: 0" in perf_row
+    # Performer rows are panel cards again (the mock's player rows carry
+    # the deck's panel fill): the flat hairline override is gone, and the
+    # generic weekly row rule supplies the card.
+    assert ('.wrapped-overlay-wk .wrapped-slide[data-kind="performers"] '
+            ".wrapped-row {") not in css
+    row_rule = _rule(".wrapped-overlay-wk .wrapped-slide .wrapped-row")
+    assert "#0d2137" in row_rule and "border-radius: 12px" in row_rule
 
-    for name_sel in (".wrapped-game-w", ".wrapped-game-l"):
-        block = _rule(name_sel)
-        assert "ellipsis" not in block and "nowrap" not in block
-        # A name column never shrinks below its longest word, so a
-        # one-word name can't paint over the neighboring column.
-        assert "min-width: min-content" in block
+    # Kicker matches the mock's spec (11px / 900 / .14em) -- the base
+    # 13px / .22em wrapped the GOTW kicker onto two lines.
+    kicker = _rule(".wrapped-overlay-wk .wrapped-kicker-txt")
+    assert "font-size: 11px" in kicker and "font-weight: 900" in kicker
+    assert "letter-spacing: .14em" in kicker
+
+    # Scoreboard games are match cards: two score lines + a meta row.
+    match = _rule(".wrapped-match")
+    assert "border-radius: 12px" in match and "#1b4066" in match
+    assert "space-between" in _rule(".wrapped-match-line")
+
+    # Playoff records read in the ink color (accent green on an
+    # eliminated row reads "in"), and the GOTW duel row spans the full
+    # content width (the slide's flex column shrink-wraps it otherwise,
+    # squeezing the boxes until names break mid-word).
+    po_v = _rule('.wrapped-overlay-wk .wrapped-slide[data-kind="playoffs"] '
+                 ".wrapped-row-v")
+    assert "color: #f2f7fd" in po_v
+    hero = _rule(".wrapped-overlay-wk .wrapped-vs-hero")
+    assert "flex-direction: row" in hero and "width: 100%" in hero
 
     box_v = _rule(".wrapped-box-v")
     assert "clamp(20px, 6vw, 30px)" in box_v

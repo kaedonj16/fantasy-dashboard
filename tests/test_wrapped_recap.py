@@ -98,14 +98,22 @@ def test_weekly_wrapped_standings_slide_sits_before_gotw(monkeypatch):
     st = next(s for s in slides if s.get("kind") == "standings")
     assert st["eyebrow"] == "LEAGUE STANDINGS"
     # Rows carry every team plus a seed-movement chip in the deco slot:
-    # Alpha held #1 (no chip); Delta jumped #4 -> #2 on PF, Charlie slid.
-    assert st["rows"][0] == ("#1", "Alpha", "2-0", "")
-    assert st["rows"][1][:3] == ("#2", "Delta", "1-1")
-    assert "wrapped-move up" in st["rows"][1][3]
-    assert "&#9650;2" in st["rows"][1][3]
-    assert st["rows"][2][:3] == ("#3", "Charlie", "1-1")
-    assert "wrapped-move dn" in st["rows"][2][3]
-    assert st["rows"][3][:3] == ("#4", "Bravo", "0-2")
+    # Alpha held #1 (the flat 0 tag); Delta jumped #4 -> #2 on PF,
+    # Charlie slid. Points-for rides as each row's value note.
+    assert st["rows"][0]["k"] == "#1"
+    assert st["rows"][0]["n"] == "Alpha"
+    assert st["rows"][0]["v"] == "2-0"
+    assert "wrapped-move flat" in st["rows"][0]["deco"]
+    assert (st["rows"][1]["k"], st["rows"][1]["n"], st["rows"][1]["v"]) == (
+        "#2", "Delta", "1-1")
+    assert "wrapped-move up" in st["rows"][1]["deco"]
+    assert "&#9650;2" in st["rows"][1]["deco"]
+    assert (st["rows"][2]["k"], st["rows"][2]["n"], st["rows"][2]["v"]) == (
+        "#3", "Charlie", "1-1")
+    assert "wrapped-move dn" in st["rows"][2]["deco"]
+    assert (st["rows"][3]["k"], st["rows"][3]["n"], st["rows"][3]["v"]) == (
+        "#4", "Bravo", "0-2")
+    assert all(r["vnote"].endswith(" PF") for r in st["rows"])
     assert len(st["rows"]) == 4
 
 
