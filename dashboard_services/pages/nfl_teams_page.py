@@ -60,10 +60,12 @@ def build_nfl_teams_body(
 .nt-hbtn:hover{{background:var(--row)}}
 .nt-seaslab{{font-size:13px;color:var(--text-muted)}}
 .nt-csel select{{appearance:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 30px 8px 12px;font-size:13px;min-height:38px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}}
-.nt-tabs{{display:flex;gap:8px;margin:12px 0 2px;flex-wrap:wrap}}
-.nt-tabs button{{padding:7px 14px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .14s,border-color .14s;min-height:36px;font-family:inherit}}
-.nt-tabs button:hover{{background:var(--row)}}
-.nt-tabs button[aria-selected="true"]{{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}}
+.nt-tabs{{display:flex;gap:20px;margin:14px 0 0;flex-wrap:wrap;border-bottom:1px solid var(--border);padding:0 2px}}
+.nt-tabs button{{padding:8px 2px 10px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;min-height:36px;font-family:inherit}}
+.nt-tabs button:hover{{color:var(--text)}}
+.nt-tabs button[aria-selected="true"]{{background:transparent;border-bottom-color:var(--accent);color:var(--text);font-weight:700}}
+.nt-legend{{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin:10px 2px 0;font-size:11px;color:var(--text-muted)}}
+.nt-sw{{display:inline-block;width:22px;height:10px;border-radius:3px;flex:none}}
 .nt-tcard{{overflow:hidden;margin-top:12px}}
 .nt-tscroll{{overflow-x:auto}}
 table.nt-rank{{border-collapse:separate;border-spacing:0;width:100%;min-width:680px}}
@@ -75,7 +77,10 @@ table.nt-rank th .nt-arr{{color:var(--text-muted);margin-left:4px}}
 table.nt-rank td{{border-top:1px solid var(--border);padding:9px 10px;vertical-align:middle;font-size:15px}}
 table.nt-rank tbody tr{{cursor:pointer}}
 table.nt-rank tbody tr:hover td{{background:var(--row)}}
-table.nt-rank tbody tr.nt-sel td{{background:var(--accent-soft)}}
+table.nt-rank tbody tr.nt-sel td{{background:var(--accent-soft);box-shadow:inset 0 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}}
+table.nt-rank tbody tr.nt-sel td:first-child{{box-shadow:inset 2px 0 0 var(--accent),inset 0 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}}
+table.nt-rank tbody tr.nt-sel td:last-child{{box-shadow:inset -2px 0 0 var(--accent),inset 0 2px 0 var(--accent),inset 0 -2px 0 var(--accent)}}
+table.nt-rank th.nt-sorted .nt-thbtn{{font-weight:700;color:var(--text)}}
 .nt-rbadge{{display:inline-block;min-width:32px;text-align:center;font-size:11px;font-weight:800;padding:2px 6px;border-radius:999px;background:var(--row);color:var(--text-muted)}}
 .nt-rbadge.nt-gold{{background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold)}}
 .nt-rbadge.nt-tier-g{{background:color-mix(in srgb,var(--win) 15%,transparent);color:var(--win)}}
@@ -94,16 +99,15 @@ table.nt-rank tbody td.nt-teamcol{{position:sticky;left:0;z-index:1;background:v
 table.nt-rank tbody tr:first-child td{{border-top:0}}
 table.nt-rank tbody tr:hover td.nt-teamcol{{background:var(--row)}}
 table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
-.nt-metric{{display:flex;align-items:center;gap:10px;justify-content:flex-end}}
-.nt-mbar{{flex:1;min-width:64px;max-width:170px}}
-.nt-mtrack{{position:relative;background:rgba(128,128,128,.18);border-radius:6px;height:10px;width:100%}}
-.nt-mfill{{position:absolute;left:0;top:0;bottom:0;border-radius:6px}}
-.nt-val{{font-weight:700;font-size:13px;white-space:nowrap;min-width:48px;text-align:right;font-variant-numeric:tabular-nums}}
+.nt-metric{{display:flex;align-items:center;justify-content:center;min-height:38px}}
+table.nt-rank td.nt-mcol{{padding:5px 3px}}
+.nt-wash{{display:flex;align-items:center;justify-content:center;min-height:38px;border-radius:6px;padding:6px 8px}}
+.nt-val{{font-weight:700;font-size:14px;white-space:nowrap;text-align:center;font-variant-numeric:tabular-nums}}
 .nt-val.nt-na{{color:var(--text-muted);font-weight:500}}
-.nt-vwrap{{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}}
+.nt-vwrap{{display:flex;flex-direction:column;align-items:center;line-height:1.25}}
 .nt-eff{{font-size:11px;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums}}
 .nt-tnote{{margin:0;padding:10px 14px;font-size:13px;color:var(--text-muted);border-top:1px solid var(--border);display:none}}
-@media(max-width:600px){{.nt-page{{padding:12px 8px 24px}}.nt-cbody{{padding:0 8px 12px}}.nt-mbar{{display:none}}.nt-metric{{gap:0}}.nt-val{{min-width:40px;font-size:13px}}table.nt-rank{{min-width:0}}table.nt-rank thead th{{padding:8px 7px}}table.nt-rank td{{padding:8px 7px}}.nt-tn{{display:none}}.nt-tabbr{{display:inline;font-size:15px}}.nt-logo{{width:24px;height:24px}}.nt-tleft{{gap:8px}}.nt-gp{{font-size:11px}}}}
+@media(max-width:600px){{.nt-page{{padding:12px 8px 24px}}.nt-cbody{{padding:0 8px 12px}}.nt-val{{font-size:13px}}table.nt-rank{{min-width:0}}table.nt-rank thead th{{padding:8px 7px}}table.nt-rank td{{padding:8px 4px}}.nt-tn{{display:none}}.nt-tabbr{{display:inline;font-size:15px}}.nt-logo{{width:24px;height:24px}}.nt-tleft{{gap:8px}}.nt-gp{{font-size:11px}}.nt-legend{{justify-content:flex-start}}table.nt-rank th.nt-mcol,table.nt-rank td.nt-mcol{{display:none}}table.nt-rank th.nt-mcol.nt-vis,table.nt-rank td.nt-mcol.nt-vis{{display:table-cell}}table.nt-rank td.nt-mcol{{padding:4px 3px}}.nt-wash{{min-height:40px;padding:5px 6px}}}}
 .nt-pcard{{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden}}
 .nt-pcard.nt-empty{{padding:28px 20px;text-align:center;color:var(--text-muted)}}
 .nt-pcard.nt-empty h2{{color:var(--text);margin:0 0 6px;font-size:18px}}
@@ -242,6 +246,7 @@ table.nt-depth>thead>tr>th:first-child{{z-index:2}}
   </div>
   <div class="nt-cbody">
     <div class="nt-tabs" role="tablist" id="ntTabs" aria-label="Ranking views">{tabs}</div>
+    <div class="nt-legend" aria-hidden="true"><span>Strongest</span><span class="nt-sw" style="background:#22c55e18"></span><span class="nt-sw" style="background:#84cc1618"></span><span class="nt-sw" style="background:#f59e0b18"></span><span class="nt-sw" style="background:#ef444418"></span><span>Weakest</span></div>
     <div class="nt-tcard" id="ntListWrap">
       <div class="nt-tscroll"><table class="nt-rank" id="ntTbl" aria-label="NFL team rankings"></table></div>
       <p class="nt-tnote" id="ntTableNote"></p>
@@ -452,12 +457,11 @@ function renderTable(){{
   cols.forEach(function(c){{
     var active=(c.k===skey);
     var arrow=active?(sdir==="asc"?"&#8593;":"&#8595;"):"";
-    h+='<th scope="col" aria-sort="'+(active?(sdir==="asc"?"ascending":"descending"):"none")+'">'+
+    h+='<th scope="col" class="nt-mcol nt-col-'+c.k+(active?" nt-sorted nt-vis":"")+((c.k==="total_yds_pg")?" nt-vis":"")+'" aria-sort="'+(active?(sdir==="asc"?"ascending":"descending"):"none")+'">'+
       '<button class="nt-thbtn" data-col="'+c.k+'" title="'+esc(c.tip)+'" aria-label="Sort by '+esc(c.t)+'">'+esc(c.t)+'<span class="nt-arr">'+arrow+'</span></button></th>';
   }});
   h+='</tr></thead><tbody>';
   rows.forEach(function(t){{
-    var tc=teamColor(t);
     var sc=cellFor(t,scol);
     var isDef=(state.view==="defense");
     var badge=rankBadge(sc&&sc.rank);
@@ -473,18 +477,15 @@ function renderTable(){{
     cols.forEach(function(c){{
       var cell=cellFor(t,c);
       var v=cell?fmtVal(c,cell.v):null;
-      if(v==null){{h+='<td><div class="nt-metric"><span class="nt-val nt-na">N/A</span></div></td>';}}
-      else if(isDef){{
-        var tier=easeTier(cell.rank,cell.total);
-        var w2=cell.rank?Math.max(3,Math.round((33-cell.rank)/32*100)):0;
-        var fg=tier?EASE_FG[tier]:"var(--text)";
-        var effTxt=cell.eff!=null?'<span class="nt-eff">'+Number(cell.eff).toFixed(1)+' '+esc(shortEff(cell.eff_label))+'</span>':"";
-        h+='<td><div class="nt-metric"><span class="nt-mbar"><span class="nt-mtrack"><span class="nt-mfill" style="width:'+w2+'%;background:'+fg+'"></span></span></span>'+
-          '<span class="nt-vwrap"><span class="nt-val" style="color:'+fg+'">'+v+'</span>'+effTxt+'</span></div></td>';
-      }}
+      var cls=' class="nt-mcol nt-col-'+c.k+((c.k===skey||c.k==="total_yds_pg")?" nt-vis":"")+'"';
+      if(v==null){{h+='<td'+cls+'><div class="nt-metric"><span class="nt-val nt-na">N/A</span></div></td>';}}
       else{{
-        var w=cell.rank?Math.max(3,Math.round((33-cell.rank)/32*100)):0;
-        h+='<td><div class="nt-metric"><span class="nt-mbar"><span class="nt-mtrack"><span class="nt-mfill" style="width:'+w+'%;background:'+esc(tc)+'"></span></span></span><span class="nt-val">'+v+'</span></div></td>';
+        var tier=easeTier(cell.rank,cell.total);
+        var fg=tier?EASE_FG[tier]:"var(--text)";
+        var bg=tier?EASE_BG[tier]:"transparent";
+        var effTxt=(isDef&&cell.eff!=null)?'<span class="nt-eff">'+Number(cell.eff).toFixed(1)+' '+esc(shortEff(cell.eff_label))+'</span>':"";
+        var inner=isDef?'<span class="nt-vwrap"><span class="nt-val" style="color:'+fg+'">'+v+'</span>'+effTxt+'</span>':'<span class="nt-val" style="color:'+fg+'">'+v+'</span>';
+        h+='<td'+cls+'><span class="nt-wash" style="background:'+bg+'">'+inner+'</span></td>';
       }}
     }});
     h+='</tr>';
