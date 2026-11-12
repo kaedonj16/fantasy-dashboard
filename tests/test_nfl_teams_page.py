@@ -413,12 +413,19 @@ def test_page_builder_adv_metrics_shell():
 
 
 def test_page_source_adv_metrics_table_markup():
-    # Rank badges and bar-left/value-right cells. The abbr chip was removed;
-    # the team column is sticky instead.
+    # Rank badges and heatmap wash-tile cells (B direction). The abbr chip
+    # was removed; the team column is sticky instead.
     assert "nt-rbadge" in PAGE_SRC
     assert "nt-abbr" not in PAGE_SRC
-    assert "nt-mfill" in PAGE_SRC
-    assert "nt-mtrack" in PAGE_SRC
+    assert "nt-mfill" not in PAGE_SRC
+    assert "nt-mtrack" not in PAGE_SRC
+    # A ranked cell renders a wash tile tinted by its quartile step color.
+    assert '<span class="nt-wash" style="background:' in PAGE_SRC
+    assert "EASE_BG[tier]" in PAGE_SRC
+    assert "EASE_FG[tier]" in PAGE_SRC
+    # Heatmap legend ships in the shell.
+    assert "nt-legend" in PAGE_SRC
+    assert "Strongest" in PAGE_SRC and "Weakest" in PAGE_SRC
     assert "nt-val" in PAGE_SRC
     # Rank column renders before the team column.
     assert 'class=\"nt-rankcol\"' in PAGE_SRC
@@ -444,8 +451,10 @@ def test_page_source_adv_metrics_table_markup():
     assert "nt-opp-logo" in PAGE_SRC
     assert "function ntEnvRank" in PAGE_SRC
     assert "nt-tier-g" in PAGE_SRC
-    # Mobile hides the in-cell bars like Advanced Metrics does.
+    # Mobile keeps the wash tiles and hides all but the sorted + total-yds
+    # metric columns.
     assert "@media(max-width:600px)" in PAGE_SRC
+    assert "nt-mcol.nt-vis" in PAGE_SRC
 
 
 def test_nfl_team_colors_cover_all_32():
