@@ -213,3 +213,19 @@ def test_slv_wrap_stacks_in_front_of_mobile_dock():
     block = re.search(r"\.slv-wrap \{([^}]*)\}", css)
     assert block, ".slv-wrap rule missing"
     assert "z-index: var(--z-modal)" in block.group(1)
+
+
+def test_slv_card_neutralizes_os_card_spacing():
+    # The card element also carries .os-card, whose margin-bottom lifted
+    # the phone bottom sheet off the bottom of the screen (a strip of
+    # page showed under it) and whose padding added dead space inside
+    # the sheet under the footer. .slv-card must zero both; the
+    # head/body/foot own the card's spacing.
+    import re
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent / "static" / "dashboard.css").read_text()
+    block = re.search(r"\.slv-card \{([^}]*)\}", css)
+    assert block, ".slv-card rule missing"
+    assert "margin: 0" in block.group(1)
+    assert "padding: 0" in block.group(1)
