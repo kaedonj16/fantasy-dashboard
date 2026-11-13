@@ -505,11 +505,13 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None,
 FAQ_SECTIONS = [
     ("General", [
         ("What is the BR Fantasy Dashboard?",
-         "It's a custom fantasy football dashboard that pulls in your Sleeper league "
+         "It's a custom fantasy football dashboard that pulls in your league "
          "data and turns it into power rankings, weekly summaries, matchup previews, "
          "graphs, and more - all in one place."),
         ("What do I need to use it?",
-         "All you need is your Sleeper or ESPN league ID. Paste it into the home screen, "
+         "BR Fantasy works with Sleeper, ESPN, Yahoo, MFL, and Fleaflicker leagues. "
+         "Connect yours from the home screen: depending on the platform, paste your "
+         "league link or league ID, enter your username, or connect your account, "
          "and the dashboard will fetch public data for that league."),
         ("Does this change anything in my fantasy league?",
          "No. The dashboard is read-only. It just reads public data from your league's "
@@ -546,8 +548,8 @@ FAQ_SECTIONS = [
     ]),
     ("Premium / Ads / Support", [
         ("Is there a premium or ad-free mode?",
-         "Yes - league and personal subscriptions are available. See the Pricing page "
-         "for details on what's included."),
+         "Yes. Every plan is personal: PRO covers you in the leagues you unlock, "
+         "not your league mates. See the Pricing page for details on what's included."),
         ("How can I support the site?",
          "You can support the project through a premium subscription, donations, "
          "or by sharing the site with your league mates. "
