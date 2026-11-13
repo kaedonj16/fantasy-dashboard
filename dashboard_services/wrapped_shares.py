@@ -31,8 +31,11 @@ SHARE_TTL_SQL = "INTERVAL '1 year'"
 #: with the strict per-tag attribute allowlist in _clean_attrs (no href,
 #: no event handlers, no style), and dropping them silently removed the
 #: crown from every shared deck while the in-app deck kept it.
+#: "article" is here for the Headline slide's story cards: an inert
+#: semantic container under the same strict attribute allowlist; dropping
+#: it left the cards' h3/p children bare in every shared deck.
 _SANITIZE_ALLOWED_TAGS = frozenset({
-    "section", "div", "span", "p",
+    "section", "div", "span", "p", "article",
     "h1", "h2", "h3", "h4", "h5", "h6",
     "i", "em", "strong", "b", "small", "br",
     "ul", "ol", "li", "img", "svg", "path",
