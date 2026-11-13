@@ -18,6 +18,7 @@ def build_dashboard_body(ctx: dict) -> str:
         _championship_sim_cached,
         _render_season_review_card,
         _render_usage_movers,
+        _render_usage_fallers,
         _losing_streak_trade_html,
         _section_title_link,
         _standings_movement,
@@ -65,6 +66,7 @@ def build_dashboard_body(ctx: dict) -> str:
         div_records=division_records(df_weekly, (_div_info or {}).get("by_rid") or {}),
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
+    usage_fallers_html = _render_usage_fallers(ctx, viewer_roster_id)
     losing_trade_html = _losing_streak_trade_html(ctx, viewer_roster_id)
     season_review_html = _render_season_review_card(ctx, viewer_roster_id, df_weekly, team_stats)
 
@@ -1302,6 +1304,8 @@ def build_dashboard_body(ctx: dict) -> str:
         {_action_queue_html}
 
         {usage_movers_html}
+
+        {usage_fallers_html}
 
         {_bb_outlook_html}
 
