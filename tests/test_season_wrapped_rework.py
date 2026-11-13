@@ -286,6 +286,34 @@ def test_final_standings_rows_and_cut_line():
     assert html.count("wrapped-standing") >= 8
 
 
+def test_final_standings_top5_for_big_league():
+    """Same top-5 call as the weekly standings (Kaedon 2026-11-13):
+    the full final table at 58px rows runs under the footer (measured
+    +7px clearance at 10 teams in a flat render, -121px at 12), so a
+    10-team season table also shows five. The cut line survives
+    because the 2 playoff spots sit inside the shown five."""
+    names = {i: f"Team {i}" for i in range(1, 11)}
+    games = []
+    for wk in (1, 2):
+        for mid, (a, b) in enumerate(
+                [(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)], start=1):
+            games.append((wk, mid, a, 100.0 + (11 - a) * 10 + wk))
+            games.append((wk, mid, b, 100.0 + (11 - b) * 10))
+    df = pd.DataFrame([
+        {"season": 2025, "week": wk, "matchup_id": mid, "roster_id": rid,
+         "owner": names[rid], "points": pts, "finalized": True}
+        for wk, mid, rid, pts in games])
+    ctx = _ctx()
+    ctx["df_weekly"] = df
+    ctx["roster_map"] = dict(names)
+    summary = dict(_summary(), champion="Team 1", runner_up="Team 3")
+    slides = H._build_wrapped_slides(ctx, summary, "Rework League", 2025)
+    fs = _by_kind(slides, "finalstandings")
+    assert [r["team"] for r in fs["srows"]] == [
+        "Team 1", "Team 3", "Team 5", "Team 7", "Team 9"]
+    assert fs["cut_after"] == 2
+
+
 def test_season_overlay_scope_and_hero_markup():
     slides = _slides(viewer=VIEWER_BETA)
     html = H._wrapped_overlay_markup(slides, {}, 2025)

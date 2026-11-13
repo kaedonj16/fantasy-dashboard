@@ -246,6 +246,190 @@ def test_weekly_gotw_preview_markup():
     assert "wrapped-vs-hero-w" not in html  # no winner styling in a preview
 
 
+def test_weekly_playoff_watch_pool_from_scenario_levers():
+    """The GOTW third-card pool rides the Playoff Picture slide's own
+    scenario run: with two weeks left the enumerator is exact, so
+    Delta (6-5) clinches with a Week 12 win and Epsilon (5-6) is out
+    with a Week 12 loss -- both against each other."""
+    from dashboard_services.pages import history_page as H
+
+    slide = H._weekly_wrapped_playoff_slide(_playoff_ctx(_SETTLED), 11)
+    watch = slide["watch"]
+    assert [(w["lead"], w["subject"]) for w in watch] == [
+        ("Clinch watch", "Delta"), ("Elimination watch", "Epsilon")]
+    assert watch[0]["text"] == (
+        "Delta locks up a playoff spot with a win in Week 12 "
+        "over Epsilon.")
+    assert watch[0]["tone"] == "green"
+    assert watch[1]["text"] == (
+        "Epsilon is eliminated with a loss in Week 12 to Delta.")
+    assert watch[1]["tone"] == "red"
+
+
+def test_weekly_gotw_form_and_third_stakes_card():
+    """GOTW gains the form strip (last-3 average + streak from the
+    finalized weekly frame) and the first watch candidate whose
+    subject is not a GOTW team. The fabricated _playoff_ctx rows give
+    every team one constant score, so Alpha's form is 130.0 with the
+    Week 11 loss breaking the streak, Beta's 120.0 on a three-loss
+    skid; the shared matchup_id per week means no real meetings, so
+    no season-series line."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _playoff_ctx(_SETTLED)
+    game = {"team_a": "Alpha", "team_b": "Beta",
+            "roster_id_a": 1, "roster_id_b": 2,
+            "rank_a": 1, "rank_b": 2, "record_a": "10-1",
+            "record_b": "8-3", "win_prob_a": 62,
+            "proj_a": 138.0, "proj_b": 121.0, "target_week": 12}
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    return_value=[]), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    return_value={}), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    return_value={"available": False}), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=game):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 11)
+
+    gotw = {s["kind"]: s for s in slides}["gotw"]
+    assert gotw["form"] == [
+        {"team": "Alpha", "avg": 130.0, "n": 3, "streak": "L1"},
+        {"team": "Beta", "avg": 120.0, "n": 3, "streak": "L3"}]
+    assert gotw["watch"]["lead"] == "Clinch watch"
+    assert gotw["watch"]["subject"] == "Delta"
+    assert "series" not in gotw
+
+
+def test_weekly_gotw_watch_skips_gotw_subjects():
+    """When every watch candidate is about one of the two GOTW teams,
+    no third card is added."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _playoff_ctx(_SETTLED)
+    game = {"team_a": "Delta", "team_b": "Epsilon",
+            "roster_id_a": 4, "roster_id_b": 5,
+            "rank_a": 4, "rank_b": 5, "record_a": "6-5",
+            "record_b": "5-6", "win_prob_a": 55,
+            "proj_a": 121.0, "proj_b": 115.0, "target_week": 12}
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    return_value=[]), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    return_value={}), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    return_value={"available": False}), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=game):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 11)
+
+    gotw = {s["kind"]: s for s in slides}["gotw"]
+    assert "watch" not in gotw
+
+
+def _series_ctx():
+    """Four teams, real paired games Weeks 1-3; Alpha and Beta met in
+    Week 2 (Alpha 130.0, Beta 121.5). No playoff settings, so no
+    Playoff Picture slide and no watch pool."""
+    import pandas as pd
+
+    games = [(1, 1, "Alpha", 120.0, "Gamma", 110.0),
+             (1, 2, "Beta", 115.0, "Delta", 105.0),
+             (2, 1, "Alpha", 130.0, "Beta", 121.5),
+             (2, 2, "Gamma", 118.0, "Delta", 112.0),
+             (3, 1, "Alpha", 125.0, "Delta", 119.0),
+             (3, 2, "Beta", 122.0, "Gamma", 117.0)]
+    rid = {"Alpha": 1, "Beta": 2, "Gamma": 3, "Delta": 4}
+    rows = []
+    for wk, mid, a, pa, b, pb in games:
+        rows.append({"week": wk, "owner": a, "points": pa,
+                     "points_against": pb, "matchup_id": mid,
+                     "finalized": True, "roster_id": rid[a]})
+        rows.append({"week": wk, "owner": b, "points": pb,
+                     "points_against": pa, "matchup_id": mid,
+                     "finalized": True, "roster_id": rid[b]})
+    return {"platform": "sleeper", "league_id": "L1",
+            "resolved_league_id": "L1", "season": 2026,
+            "league": {"name": "Test League"},
+            "df_weekly": pd.DataFrame(rows),
+            "roster_map": {i + 1: n for i, n in enumerate(
+                ["Alpha", "Beta", "Gamma", "Delta"])},
+            "players_map": {}}
+
+
+def test_weekly_gotw_season_series_and_small_league_standings():
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    game = {"team_a": "Alpha", "team_b": "Beta",
+            "roster_id_a": 1, "roster_id_b": 2,
+            "rank_a": 1, "rank_b": 2, "record_a": "3-0",
+            "record_b": "2-1", "win_prob_a": 58,
+            "proj_a": 124.0, "proj_b": 119.0, "target_week": 4}
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    return_value=[]), \
+         mock.patch("dashboard_services.season_efficiency.compute_league_season_efficiency",
+                    return_value={}), \
+         mock.patch("dashboard_services.recap_calculations.build_lineup_analysis",
+                    return_value={"available": False}), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=game):
+        slides = H._build_weekly_wrapped_slides(_series_ctx(), "Test League",
+                                                2026, 3)
+
+    by_kind = {s["kind"]: s for s in slides}
+    gotw = by_kind["gotw"]
+    assert gotw["series"] == "Week 2: Alpha beat Beta 130.0–121.5."
+    assert gotw["form"] == [
+        {"team": "Alpha", "avg": 125.0, "n": 3, "streak": "W3"},
+        {"team": "Beta", "avg": 119.5, "n": 3, "streak": "W1"}]
+    # Standings generalize: a 4-team league shows all four (min(5, n)),
+    # the lede counts what is shown, and no cut line without settings.
+    st = by_kind["standings"]
+    assert [r["n"] for r in st["rows"]] == ["Alpha", "Beta", "Gamma", "Delta"]
+    assert st["lede"] == ("Top 4 through Week 3. Movers show change "
+                          "from last week.")
+    assert st["cut_after"] == 0
+
+
+def test_weekly_gotw_additions_markup_order():
+    """Form strip sits between the win bar and the stakes, the watch
+    card rides inside the stakes stack, the series line follows, and
+    the projected sub stays last."""
+    from dashboard_services.pages import history_page as H
+
+    slides = [
+        {"kind": "gotw", "eyebrow": "WEEK 12 · GAME OF THE WEEK",
+         "big": "Alpha vs Beta", "num": False, "dp": 0, "suffix": "",
+         "label": "", "sub": "Projected 138.0–121.0", "bgword": "GOTW",
+         "preview_teams": ["Alpha", "Beta"], "win_prob_a": 62,
+         "duel_meta": ["10-1 · Seed 1", "8-3 · Seed 2"],
+         "form": [{"team": "Alpha", "avg": 130.0, "n": 3, "streak": "L1"},
+                  {"team": "Beta", "avg": 120.0, "n": 3, "streak": "L3"}],
+         "stakes": [("Alpha", "#1 seed · in playoff position"),
+                    ("Beta", "#2 seed · in playoff position")],
+         "watch": {"lead": "Clinch watch", "tone": "green",
+                   "subject": "Delta",
+                   "text": "Delta locks up a playoff spot with a win "
+                           "in Week 12 over Epsilon."},
+         "series": "Week 2: Alpha beat Beta 130.0–121.5."},
+        {"kind": "intro", "eyebrow": "WEEK 11", "big": "Test League",
+         "num": False, "dp": 0, "suffix": "", "label": "", "sub": "x",
+         "bgword": "W11"},
+        {"kind": "topscore", "eyebrow": "HIGH", "big": "150.5", "num": True,
+         "dp": 1, "suffix": " PTS", "label": "Alpha", "sub": "x"},
+    ]
+    html = H._wrapped_overlay_markup(slides, None, ns="weekly-wrapped",
+                                     footer_label="WEEK 11 WRAPPED")
+    assert "wrapped-form-v'>L3 AVG 130.0 · L1<" in html
+    assert "wrapped-form-v'>L3 AVG 120.0 · L3<" in html
+    assert "wrapped-stake wrapped-stake-watch wrapped-watch-green" in html
+    assert "<b>Clinch watch:</b> Delta locks up a playoff spot" in html
+    assert ("<b>Season series:</b> Week 2: Alpha beat Beta "
+            "130.0–121.5.") in html
+    assert (html.index("wrapped-form") < html.index("wrapped-stakes")
+            < html.index("wrapped-series")
+            < html.index("Projected 138.0"))
+
+
 def test_weekly_overlay_footer_and_recap_finale(offline_client):
     import app
     from unittest import mock
@@ -1029,11 +1213,17 @@ def test_weekly_deck_matches_mock_order_for_settled_week(offline_client):
     assert perf["rows"][0][0] == "RB · Alpha"
     assert all(perf["faces"].values())  # every row resolved a headshot
 
-    # Standings: all 8 teams, Gamma's rise and Beta's fall carry chips,
-    # and Alpha (held #1) carries the mock's flat 0 tag. Every row also
-    # carries its points-for as the value note.
+    # Standings: top 5 only (Kaedon 2026-11-13 -- the full table slid
+    # under the footer), Gamma's rise and Beta's fall carry chips, and
+    # Alpha (held #1) carries the mock's flat 0 tag. Every row also
+    # carries its points-for as the value note. With 4 playoff spots
+    # the cut line falls inside the shown five, after #4 Delta.
     st = by_kind["standings"]
-    assert len(st["rows"]) == 8
+    assert [r["n"] for r in st["rows"]] == [
+        "Alpha", "Gamma", "Beta", "Delta", "Epsilon"]
+    assert st["cut_after"] == 4
+    assert st["lede"] == ("Top 5 through Week 11. Movers show change "
+                          "from last week.")
     gamma_row = next(r for r in st["rows"] if r["n"] == "Gamma")
     beta_row = next(r for r in st["rows"] if r["n"] == "Beta")
     assert "wrapped-move up" in gamma_row["deco"]
