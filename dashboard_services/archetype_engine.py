@@ -580,8 +580,8 @@ def _acceptance_fit(pkg: List[Dict], need: Optional[set], stacked: Optional[set]
     return max(-12, min(12, bonus))
 
 
-def _partner_acceptance_cap(
-    pkg: List[Dict], target_pid: Any, target_val: float,
+def _partner_lineup_drop_cap(
+    pkg: List[Dict], target_pids: List[Any], target_max_val: float,
     partner_pids: List[str], values_by_id: Dict[str, Any],
     league_type: str, partner_arch: str = "", season: int = 0,
     eff_ratio: Optional[float] = None,
@@ -595,6 +595,14 @@ def _partner_acceptance_cap(
     viewer-side math uses) drops by 3%+ of its total, acceptance is capped:
     a real hit reads as a long shot no matter how the raw values sum.
 
+    ``target_pids`` is every player the partner surrenders (one in the
+    suggestions shape, N in an arbitrary calculator trade) and
+    ``target_max_val`` the value of the best piece surrendered, both on
+    the same value basis as ``values_by_id``: the headliner exemption
+    compares the best incoming piece against the best surrendered piece,
+    not against the surrendered sum, so a multi-piece return cannot
+    exempt itself merely by adding up.
+
     Exempt, because the lineup hit is compensated or is the point:
     - rebuilding partners (selling production for future value is the deal),
     - packages carrying a 1st-rounder within two drafts (liquid, near-term
@@ -605,7 +613,7 @@ def _partner_acceptance_cap(
       sides); at >= 1.10x the cap softens one tier instead of reading as a
       hard long shot.
     """
-    if not pkg or not partner_pids or target_val <= 0:
+    if not pkg or not partner_pids or target_max_val <= 0:
         return None
     if str(partner_arch or "").strip().lower() == "rebuilding":
         return None
@@ -618,7 +626,7 @@ def _partner_acceptance_cap(
                 continue
             if rnd == 1 and season and 1 <= yr - season <= 2:
                 return None
-        elif _f(a.get("value")) >= 0.80 * target_val:
+        elif _f(a.get("value")) >= 0.80 * target_max_val:
             return None
     before = _optimal_lineup_value(partner_pids, values_by_id, league_type)
     if before <= 0:
@@ -626,7 +634,8 @@ def _partner_acceptance_cap(
     incoming = [str(a.get("player_id")) for a in pkg
                 if not (a.get("is_pick") or a.get("position") == "PICK")
                 and a.get("player_id")]
-    after_pids = [p for p in partner_pids if str(p) != str(target_pid)] + incoming
+    target_set = {str(t) for t in (target_pids or [])}
+    after_pids = [p for p in partner_pids if str(p) not in target_set] + incoming
     after = _optimal_lineup_value(after_pids, values_by_id, league_type)
     drop = (before - after) / before
     if drop >= 0.06:
@@ -641,6 +650,23 @@ def _partner_acceptance_cap(
         if eff_ratio >= 1.10:
             return 35 if cap == 20 else 50
     return cap
+
+
+def _partner_acceptance_cap(
+    pkg: List[Dict], target_pid: Any, target_val: float,
+    partner_pids: List[str], values_by_id: Dict[str, Any],
+    league_type: str, partner_arch: str = "", season: int = 0,
+    eff_ratio: Optional[float] = None,
+) -> Optional[int]:
+    """Single-target form of _partner_lineup_drop_cap (the suggestions
+    shape: the partner surrenders exactly one player). Kept as the
+    original signature so existing call sites and tests are untouched;
+    the trade calculator uses the generalised form directly."""
+    return _partner_lineup_drop_cap(
+        pkg, [target_pid], target_val, partner_pids, values_by_id,
+        league_type, partner_arch=partner_arch, season=season,
+        eff_ratio=eff_ratio,
+    )
 
 
 def _fit_note(pkg: List[Dict], need: Optional[set], target_pos: str,
@@ -1723,19 +1749,19 @@ def _pick_send_candidates(
             else:
                 bucket = "late"
 
-        # Look up value: slot-specific key first, then bucket, then fallbacks
-        val  = 0.0
-        keys: List[str] = []
-        if slot:
-            keys.append(f"{season}_{rnd}_{slot:02d}")
-        keys += [f"{season}_{rnd}_{bucket}", f"{season}_{rnd}_mid",
-                 f"{season}_{rnd}", f"{season}_{rnd}_early"]
-        for key in keys:
-            if key in pick_tbl and float(pick_tbl[key]) > 0:
-                val = float(pick_tbl[key])
-                break
+        # Calibrated hierarchy only (exact slot -> bucket -> round
+        # average -> nearest season; this is an estimate surface). A
+        # pick no calibrated step can price is excluded from send
+        # candidates, never assigned a flat per-round constant.
+        from dashboard_services.trade_hub import (
+            calibrated_pick_value as _cpv_send,
+        )
+        val = _cpv_send(
+            pick_tbl, pick_yr, rnd, slot=slot or None, bucket=bucket,
+            num_teams=num_teams, nearest_season=True,
+        )
         if val <= 0:
-            val = {1: 650.0, 2: 220.0}.get(rnd, 80.0)
+            continue
 
         name = f"{season} {rnd}.{slot:02d}" if slot else f"{season} {_ordinal(rnd)} (Mid)"
         uid  = f"pick_{season}_{rnd}_{slot:02d}" if slot else f"pick_{season}_{rnd}"

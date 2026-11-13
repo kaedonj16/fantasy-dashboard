@@ -58409,6 +58409,11 @@ html:has(.home-page) { scroll-behavior: smooth; }
    tile shows skeleton tracks (the shared .skeleton sweep) and a muted
    placeholder score instead of the previous package's grade. */
 .otc-fit--grading .otc-fit-score { color: var(--text-muted); }
+/* No-headline state: too few computable components for a comparable
+   composite grade, so the tile shows the component bars only - the
+   score slot carries a muted dash and the /10 suffix hides. */
+.otc-fit--no-headline .otc-fit-score { color: var(--text-muted); }
+.otc-fit--no-headline .otc-fit-max { display: none; }
 @media (max-width: 640px) {
     .otc-fit { flex-direction: column; align-items: stretch; gap: 8px; }
     .otc-fit-score-block { flex-direction: row; align-items: baseline; justify-content: space-between; }

@@ -500,11 +500,14 @@ def build_activity_body(ctx: dict) -> str:
                     "raw_picks_total": raw_picks_total,
                     "player_values": in_player_vals,
                     "asset_count": len(in_players) + len(in_picks),
-                    # ALL assets (players + picks) so the tier-stack recount
-                    # inside apply_tier_stack_adjustment sees the true counts.
+                    # ALL assets (players + picks), tagged by type so the
+                    # tier-stack math inside apply_tier_stack_adjustment
+                    # treats picks as picks (never tier-discounted, never
+                    # counted as roster assets), exactly as /api/trade-eval
+                    # builds its breakdown.
                     "breakdown": (
-                        [{"value": v} for v in in_player_vals]
-                        + [{"value": v} for v in in_pick_vals]
+                        [{"value": v, "type": "player"} for v in in_player_vals]
+                        + [{"value": v, "type": "pick"} for v in in_pick_vals]
                     ),
                     "adjustment": 0.0,
                     "effective_total": raw_total,
@@ -515,13 +518,13 @@ def build_activity_body(ctx: dict) -> str:
                 rid_list = list(side_map.keys())
                 side_a = side_map[rid_list[0]]
                 side_b = side_map[rid_list[1]]
-                # Match /api/trade-eval: only apply depth penalty when both sides
-                # have assets and one side sends more than the other. A one-sided
-                # trade has no comparison, and penalising both sides of an
-                # equal-count trade just zeroes out the adjustment and produces
-                # misleadingly negative totals for both teams.
-                if (side_a["asset_count"] > 0 and side_b["asset_count"] > 0
-                        and side_a["asset_count"] != side_b["asset_count"]):
+                # Match /api/trade-eval: apply the effective-value
+                # adjustment whenever both sides have assets. Tier
+                # retention prices every shape including equal-count
+                # trades (symmetrically, so a same-tier swap stays fair);
+                # a one-sided trade has no comparison and keeps full
+                # value.
+                if side_a["asset_count"] > 0 and side_b["asset_count"] > 0:
                     apply_tier_stack_adjustment(
                         side_a, side_b,
                         value_table=players_values_raw,

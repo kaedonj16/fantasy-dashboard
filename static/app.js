@@ -11708,10 +11708,16 @@ window.initTradePage = function initTradePage(root = document) {
   // ── Trade Fit / acceptance / counter / sticky bar ─────────────────────
   // Components arrive from two responses: the eval (value balance,
   // roster fit, acceptance) and the playoff sim (playoff impact). Any
-  // component the server could not compute is null: its bar is hidden
-  // and the composite averages whatever is present. An ungraded trade
-  // (graded:false) shows no Fit and no counter at all - its totals
-  // exclude real assets, so a score built on them would be fiction.
+  // component the server could not compute is null: its bar is hidden.
+  // The composite headline is only shown when at least 3 of the 4
+  // components are computable AND value balance is among them: a
+  // backtest of the old average-whatever-is-present composite measured
+  // a mean 2.49-point headline swing on the same trade purely from how
+  // many components happened to be computable, so a 1- or 2-component
+  // average is not a grade. Below the threshold the tile shows the
+  // component bars with no headline. An ungraded trade (graded:false)
+  // shows no Fit and no counter at all - its totals exclude real
+  // assets, so a score built on them would be fiction.
   const _FIT_COMPONENTS = [
     ["value_balance", "Value balance"],
     ["roster_fit", "Roster fit"],
@@ -11720,10 +11726,12 @@ window.initTradePage = function initTradePage(root = document) {
   ];
 
   function computeTradeFitScore(components) {
+    if (!components || typeof components.value_balance !== "number" ||
+        isNaN(components.value_balance)) return null;
     const vals = _FIT_COMPONENTS
-      .map(([key]) => (components ? components[key] : null))
+      .map(([key]) => components[key])
       .filter(v => typeof v === "number" && !isNaN(v));
-    if (!vals.length) return null;
+    if (vals.length < 3) return null;
     const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
     return Math.round(avg * 10) / 10;
   }
@@ -11768,6 +11776,13 @@ window.initTradePage = function initTradePage(root = document) {
         state._lastPiSig && state._lastPiSig === _currentPiSig()) {
       comps.playoff_impact = pi.fit_playoff_impact;
     }
+    // PPG-weighted roster fit from the same signature-matched sim
+    // payload replaces the eval's flat fill-count component when the
+    // sim produced one; otherwise the flat component stands.
+    if (pi && pi.available && typeof pi.fit_roster_fit_ppg === "number" &&
+        state._lastPiSig && state._lastPiSig === _currentPiSig()) {
+      comps.roster_fit = pi.fit_roster_fit_ppg;
+    }
     return comps;
   }
 
@@ -11796,19 +11811,31 @@ window.initTradePage = function initTradePage(root = document) {
       if (_fitLabel === "Long shot") score = Math.min(score, 4.0);
     }
     const grading = !!state._fitPending;
+    const barsHtml = comps ? _FIT_COMPONENTS
+      .filter(([key]) => typeof comps[key] === "number")
+      .map(([key, label]) => {
+        const v = comps[key];
+        return `<div class="otc-fit-row"><span class="otc-fit-name">${label}</span>` +
+          `<span class="otc-fit-track"><span class="otc-fit-fill" style="width:${v * 10}%"></span></span>` +
+          `<span class="otc-fit-num">${v}</span></div>`;
+      }).join("") : "";
     if (tile && grid && scoreEl) {
       if (comps && score !== null) {
         tile.classList.remove("otc-fit--grading");
+        tile.classList.remove("otc-fit--no-headline");
         tile.removeAttribute("aria-busy");
         scoreEl.textContent = score.toFixed(1);
-        grid.innerHTML = _FIT_COMPONENTS
-          .filter(([key]) => typeof comps[key] === "number")
-          .map(([key, label]) => {
-            const v = comps[key];
-            return `<div class="otc-fit-row"><span class="otc-fit-name">${label}</span>` +
-              `<span class="otc-fit-track"><span class="otc-fit-fill" style="width:${v * 10}%"></span></span>` +
-              `<span class="otc-fit-num">${v}</span></div>`;
-          }).join("");
+        grid.innerHTML = barsHtml;
+        tile.style.display = "flex";
+      } else if (comps && barsHtml && !grading) {
+        // Components exist but too few for a comparable headline (see
+        // computeTradeFitScore): show the real bars with no grade
+        // rather than an average over a varying component count.
+        tile.classList.remove("otc-fit--grading");
+        tile.classList.add("otc-fit--no-headline");
+        tile.removeAttribute("aria-busy");
+        scoreEl.textContent = "-";
+        grid.innerHTML = barsHtml;
         tile.style.display = "flex";
       } else if (grading) {
         // The eval for the trade on screen is still in flight: show the
@@ -11816,6 +11843,7 @@ window.initTradePage = function initTradePage(root = document) {
         // grade. Cleared by the landing render (or the terminal-failure
         // render in recomputeTrade), so it can never strand.
         tile.classList.add("otc-fit--grading");
+        tile.classList.remove("otc-fit--no-headline");
         tile.setAttribute("aria-busy", "true");
         scoreEl.textContent = "…";
         grid.innerHTML = _FIT_COMPONENTS
@@ -11827,6 +11855,7 @@ window.initTradePage = function initTradePage(root = document) {
         tile.style.display = "flex";
       } else {
         tile.classList.remove("otc-fit--grading");
+        tile.classList.remove("otc-fit--no-headline");
         tile.removeAttribute("aria-busy");
         tile.style.display = "none";
       }

@@ -28054,13 +28054,15 @@ def api_trade_eval():
     # current values), memoized on the model-cache timestamp so a burst of trade
     # evals doesn't recompute the O(n·window) scan each request.
     tier_thresholds = _tier_thresholds_cached(league_type, league_size)
-    # Only apply depth adjustment when BOTH sides have assets and the counts
-    # differ. A one-sided trade (nothing on the other side) has no comparison to
-    # make, so each asset should report its full value - no stack penalty.
+    # Effective-value adjustment applies whenever BOTH sides have assets:
+    # tier retention now prices every shape (including equal-count trades),
+    # and the roster-slot penalty inside keys off player counts itself.
+    # A one-sided trade has no comparison to make, so each asset reports
+    # its full value there - no adjustment.
     side_a_count = len(side_a_players) + len(side_a_picks)
     side_b_count = len(side_b_players) + len(side_b_picks)
     both_sides_filled = side_a_count > 0 and side_b_count > 0
-    if both_sides_filled and side_a_count != side_b_count:
+    if both_sides_filled:
         apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"),
                                     value_table=value_table, league_size=league_size)
 
@@ -28347,11 +28349,13 @@ def api_trade_eval():
                 # fills a starter-gap need of the viewer's (cap +3), -3
                 # per danger and -1.5 per caution from the depth model
                 # run on the post-trade roster. Inputs are the depth
-                # model's own outputs, nothing invented. The fill credit
-                # stays flat on purpose: weighting it by lineup PPG gain
-                # needs the sim's projection maps, which only exist in
-                # the playoff-impact endpoint, and this context's value
-                # table carries no projected-PPG field to weight by.
+                # model's own outputs, nothing invented. This flat read
+                # is the fallback: when the playoff-impact sim runs, its
+                # PPG-weighted roster score (_fit_roster_ppg_score, from
+                # the optimal-lineup PPG delta) replaces this component
+                # client-side under the sim signature guard, because the
+                # projection maps needed to weight fills by actual
+                # lineup-PPG gain only exist in that endpoint.
                 _viewer_needs = set(_sgn(_counts(_viewer_roster), _floor))
                 _fit_score = 5.0
                 _fills = sum(
@@ -28378,6 +28382,7 @@ def api_trade_eval():
                     from dashboard_services.archetype_engine import (
                         _acceptance_fit as _afit,
                         _estimate_acceptance as _eacc,
+                        _partner_lineup_drop_cap as _pldc,
                     )
                     _p_counts = _counts(_partner_roster)
                     _p_needs = set(_sgn(_p_counts, _floor))
@@ -28386,15 +28391,85 @@ def api_trade_eval():
                         _viewer_gives.get("assets") or [], _p_needs, _p_surplus)
                     # Partner window: a rebuilder prices picks and youth
                     # up, a contender prices proven age up. Zero whenever
-                    # the context cannot support the read.
-                    _window_nudge = _fit_partner_window(
+                    # the context cannot support the read. The posture
+                    # half of the return feeds the lineup-drop cap below.
+                    _posture, _window_nudge = _fit_partner_window(
                         _viewer_gives.get("assets") or [], _rosters,
-                        _mv_lookup, _partner_roster)[1]
+                        _mv_lookup, _partner_roster)
                     _fit_nudge += _window_nudge
                     _rate = _eacc(
                         float(_viewer_gives.get("effective_total") or 0),
                         float(_viewer_gets.get("effective_total") or 0),
                         is_preferred=False, fit=_fit_nudge)
+                    # Partner lineup cap (the suggestions engine's own
+                    # guard, generalised to N surrendered players): a
+                    # package that sums to fair but guts the partner's
+                    # optimal lineup is capped to Long shot territory.
+                    # Applied last, after the nudges inside the estimate.
+                    # Its own try: a cap failure must not take the
+                    # already-computed roster fit down with it. Package
+                    # and surrendered values are read on the _mv_lookup
+                    # basis the cap's lineup optimizer uses, so the drop
+                    # ratio and the headliner test are internally
+                    # consistent even though the logistic above runs on
+                    # effective totals.
+                    try:
+                        _cap_pkg = []
+                        for _a in (_viewer_gives.get("assets") or []):
+                            _apos = str(_a.get("position") or "").upper()
+                            if _apos == "PICK":
+                                _pparts = str(_a.get("id") or "").split("_")
+                                try:
+                                    _pyr = int(_pparts[0])
+                                    _prnd = int(_pparts[1])
+                                except (IndexError, TypeError, ValueError):
+                                    continue
+                                _cap_pkg.append({
+                                    "player_id": str(_a.get("id")),
+                                    "position": "PICK", "is_pick": True,
+                                    "pick_season": _pyr, "pick_round": _prnd,
+                                    "value": float(_a.get("value") or 0),
+                                })
+                            else:
+                                _apid = str(_a.get("id") or "")
+                                if not _apid:
+                                    continue
+                                _cap_pkg.append({
+                                    "player_id": _apid,
+                                    "position": _a.get("position"),
+                                    "is_pick": False,
+                                    "value": float(
+                                        (_mv_lookup.get(_apid) or {})
+                                        .get("value") or 0),
+                                })
+                        _surrender_pids = [
+                            str(_a.get("id") or "") for _a in _receiving
+                            if str(_a.get("id") or "")
+                        ]
+                        _surrender_max = max(
+                            (float((_mv_lookup.get(_p) or {}).get("value")
+                                   or 0) for _p in _surrender_pids),
+                            default=0.0,
+                        )
+                        _cap = _pldc(
+                            _cap_pkg, _surrender_pids, _surrender_max,
+                            [str(_p) for _p in
+                             (_partner_roster.get("players") or [])],
+                            _mv_lookup, league_type,
+                            partner_arch=_posture, season=season,
+                            eff_ratio=(
+                                float(_viewer_gives.get("effective_total")
+                                      or 0)
+                                / max(float(_viewer_gets.get(
+                                    "effective_total") or 0), 1.0)
+                            ),
+                        )
+                        if _cap is not None:
+                            _rate = min(_rate, _cap)
+                    except Exception:
+                        logger.debug(
+                            "[trade-eval] acceptance cap skipped",
+                            exc_info=True)
                     fit["acceptance_rate"] = _rate
                     fit["acceptance_label"] = _fit_acceptance_label(_rate)
                     fit["acceptance"] = int(max(0, min(10, round(_rate / 10.0))))
@@ -28571,18 +28646,23 @@ def api_trade_eval_playoff_impact():
             except Exception:
                 logger.warning("[trade-eval/playoff-impact] partner sim failed", exc_info=True)
 
-        # Trade Fit's playoff component: a 0-10 read of this sim's own
-        # deltas, computed beside the numbers it summarizes.
-        result["fit_playoff_impact"] = _fit_playoff_score(result.get("delta"))
-
         # Your Lineup After: optimal-lineup PPG and who enters/leaves the
         # starting lineup, from the same sim state (never blocks the card).
+        _lineup = None
         try:
             _lineup = _lineup_after_block(sim_state, roster_id, give_ids, get_ids, ctx)
             if _lineup:
                 result["lineup_after"] = _lineup
         except Exception:
             logger.debug("[trade-eval/playoff-impact] lineup-after failed", exc_info=True)
+
+        # Trade Fit's sim components: 0-10 reads of this sim's own
+        # deltas, computed beside the numbers they summarize. The
+        # PPG-weighted roster-fit read derives from the lineup block
+        # above; the client swaps it in for the eval's flat component
+        # only under the same signature guard as the playoff component.
+        result["fit_playoff_impact"] = _fit_playoff_score(result.get("delta"))
+        result["fit_roster_fit_ppg"] = _fit_roster_ppg_score(_lineup)
 
         return jsonify(result)
 
@@ -28605,30 +28685,36 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
     # Shared id->row index from the value-table sidecar (see api_players).
     vmap = _model_value_sidecar().get("index") or {}
 
+    # Position-specific prime maxima, matching the site's other
+    # prime-window reads (the flat 30-for-all overstated RB prime years:
+    # an RB at 27 is past the site's own RB prime max of 26).
+    _PRIME_MAX = {"QB": 33.0, "RB": 26.0, "WR": 28.0, "TE": 29.0}
+
     def _player_val_age(pid):
         mv = vmap.get(str(pid), {})
         meta = players_index.get(str(pid), {}) or {}
         val = safe_float(mv.get(val_key) or mv.get("value") or 0)
         age = age_from_bday(meta.get("bDay")) or mv.get("age") or meta.get("age")
         age = safe_float(age) if age not in (None, "") else None
-        return val, age
+        pos = str(mv.get("position") or meta.get("position") or "").upper()
+        return val, age, pos
 
     def _resolve(pids):
         total_val = 0.0
         age_num = 0.0
         age_den = 0.0
-        prime_num = 0.0  # value-weighted prime years remaining (max 0, 30-age)
+        prime_num = 0.0  # value-weighted prime years remaining (per-position max)
         prime_den = 0.0
         ages = []
         for pid in pids:
-            val, age = _player_val_age(pid)
+            val, age, pos = _player_val_age(pid)
             total_val += val
             if age:
                 ages.append(age)
                 if val > 0:
                     age_num += age * val
                     age_den += val
-                    prime = max(0.0, 30.0 - age)
+                    prime = max(0.0, _PRIME_MAX.get(pos, 30.0) - age)
                     prime_num += prime * val
                     prime_den += val
         avg_age = round(age_num / age_den, 1) if age_den else (
@@ -28645,7 +28731,7 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
         wage_num = 0.0
         wage_den = 0.0
         for pid in pids:
-            val, age = _player_val_age(pid)
+            val, age, _pos = _player_val_age(pid)
             if age and val > 0:
                 wage_num += age * val
                 wage_den += val
@@ -28806,6 +28892,29 @@ def _fit_playoff_score(delta):
     except (TypeError, ValueError):
         return None
     return int(max(0, min(10, round(5 + po))))
+
+
+def _fit_roster_ppg_score(lineup):
+    """0-10 roster-fit from the sim's optimal-lineup PPG delta: 5 when
+    the starting lineup is unchanged, +1 per lineup PPG gained (the
+    same 5-centred, 1-per-unit shape as _fit_playoff_score). Derived
+    from _lineup_after_block's ppg_before/ppg_after - the exact numbers
+    the Your Lineup After block renders - so the component can never
+    disagree with the card beside it. None when the sim produced no
+    lineup block: the client then keeps the eval's flat fill-count
+    component. Note this read is depth-blind by construction (a bench
+    loss does not move optimal-lineup PPG until a starter slot
+    empties); the depth model's warnings still surface separately."""
+    if not isinstance(lineup, dict):
+        return None
+    try:
+        before = float(lineup.get("ppg_before"))
+        after = float(lineup.get("ppg_after"))
+    except (TypeError, ValueError):
+        return None
+    if before <= 0:
+        return None
+    return int(max(0, min(10, round(5.0 + (after - before)))))
 
 
 def _pick_display_name(pick_id):
@@ -42594,9 +42703,10 @@ def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dic
     bkt = parsed["bucket"]
     name = parsed["name"]
 
-    # Value: in-memory value table → calibrated pick value table → model_values.json
-    # → realistic round default. Mirrors the slot→bucket→round-average hierarchy
-    # used elsewhere so picks are never silently collapsed to a flat number.
+    # Value: in-memory value table → calibrated pick value table →
+    # model_values.json. Mirrors the slot→bucket→round-average hierarchy
+    # used elsewhere so picks are never silently collapsed to a flat number;
+    # no source pricing it means value 0.0, never an invented default.
     val = 0.0
     if values_by_id:
         info = values_by_id.get(str(pick_id)) or {}
@@ -42608,17 +42718,18 @@ def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dic
             tbl = dict(_lpvt(league_teams=num_teams) or {})
         except Exception:
             tbl = {}
-        bucket_l = (bkt or "Mid").lower()
-        for key in (str(pick_id), f"{yr}_{rnd}_{bucket_l}", f"{yr}_{rnd}"):
-            if tbl.get(key) and float(tbl[key]) > 0:
-                val = float(tbl[key]);
-                break
-        if val <= 0:
-            _slots = [float(v) for k, v in tbl.items()
-                      if k.startswith(f"{yr}_{rnd}_") and k.split("_")[-1].isdigit()
-                      and v and float(v) > 0]
-            if _slots:
-                val = round(sum(_slots) / len(_slots), 1)
+        # Shared calibrated hierarchy (exact slot -> bucket -> round
+        # average -> nearest season; an estimate surface). Replaces the
+        # hand-rolled key walk that ended in a flat per-round default.
+        from dashboard_services.trade_hub import (
+            calibrated_pick_value as _cpv_focus,
+        )
+        val = _cpv_focus(
+            tbl, yr, rnd,
+            slot=int(third) if str(third).isdigit() else None,
+            bucket=(bkt or "Mid").lower(),
+            num_teams=num_teams, nearest_season=True,
+        )
     if val <= 0:
         try:
             for _mp in (load_model_value_table(apply_calibration=False) or []):
@@ -42628,8 +42739,9 @@ def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dic
                     break
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
-    if val <= 0:
-        val = {1: 300.0, 2: 150.0, 3: 70.0}.get(rnd, 40.0)
+    # No flat per-round fallback: a pick no calibrated source can price
+    # resolves at 0.0 and the caller's focus_value <= 0 path returns no
+    # packages, rather than pricing it from an invented constant.
 
     return {
         "name": name, "value": round(val, 1), "position": "PICK",
@@ -42845,28 +42957,21 @@ def api_trade_intel_player_packages(player_id: str):
                         else:
                             _sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
                             pk_name = f"{yr} {rnd}{_sfx} (Mid)"
-                        # Resolve pick value robustly. The value table only has
-                        # SLOT keys for the current year (e.g. 2026_1_01) and only
-                        # BUCKET keys for future years (e.g. 2027_1_mid) - never a
-                        # bare "{yr}_{rnd}" key. Try slot → bucket → average of that
-                        # round's slots, and only then a realistic hard default, so
-                        # picks are never silently collapsed to a flat 220.
+                        # Resolve pick value via the shared calibrated
+                        # hierarchy (slot → bucket → round average →
+                        # nearest season; an estimate surface). A pick no
+                        # calibrated step can price is skipped, never
+                        # carried at a flat per-round default.
                         _bucket_l = (_pick_bucket(slot) or "Mid").lower()
-                        pval = 0.0
-                        if slot:
-                            pval = float(pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}") or 0)
+                        from dashboard_services.trade_hub import (
+                            calibrated_pick_value as _cpv_intel,
+                        )
+                        pval = _cpv_intel(
+                            pick_val_lookup, yr, rnd, slot=slot,
+                            bucket=_bucket_l, nearest_season=True,
+                        )
                         if not pval:
-                            pval = float(pick_val_lookup.get(f"{yr}_{rnd}_{_bucket_l}") or 0)
-                        if not pval:
-                            _round_slot_vals = [
-                                float(v) for k, v in pick_val_lookup.items()
-                                if k.startswith(f"{yr}_{rnd}_")
-                                   and k.split("_")[-1].isdigit() and v and float(v) > 0
-                            ]
-                            if _round_slot_vals:
-                                pval = round(sum(_round_slot_vals) / len(_round_slot_vals), 1)
-                        if not pval:
-                            pval = 300.0 if rnd == 1 else 150.0 if rnd == 2 else 70.0
+                            continue
                         viewer_picks.append({
                             "name": pk_name, "value": pval, "is_pick": True,
                             "pick_season": yr, "pick_round": rnd,
@@ -43836,7 +43941,10 @@ def _real_trade_packages_for_target(
             v = _avg_for(None)
         if v:
             return v
-        return 450.0 if rnd == 1 else 175.0 if rnd == 2 else 70.0
+        # No calibrated entries for this round in any season: the pick
+        # contributes 0 to the pattern estimate rather than a flat
+        # per-round constant.
+        return 0.0
 
     # Rough value by tier for pre-filtering low-value patterns
     _TIER_VAL_EST = {1: 1300, 2: 900, 3: 640, 4: 440, 5: 310, 6: 200, 7: 110, 8: 55, 9: 20}
@@ -44650,13 +44758,19 @@ def api_trade_intel_player_send_packages(player_id: str):
                 rnd = int(pk.get("round") or 0)
                 if not yr or rnd <= 0 or yr > season + 1:
                     continue
-                pval = 0.0
-                for key in (f"{yr}_{rnd}_mid", f"{yr}_{rnd}", f"{yr}_{rnd}_early"):
-                    if key in pick_tbl and float(pick_tbl[key]) > 0:
-                        pval = float(pick_tbl[key]);
-                        break
+                # Calibrated table only (exact/bucket/round average, then
+                # nearest season - this is an estimate surface). A pick the
+                # table cannot price is excluded, never assigned a flat
+                # per-round constant.
+                from dashboard_services.trade_hub import (
+                    calibrated_pick_value as _cpv_rival,
+                )
+                pval = _cpv_rival(
+                    pick_tbl, yr, rnd, bucket="mid",
+                    num_teams=num_teams, nearest_season=True,
+                )
                 if pval <= 0:
-                    pval = {1: 220.0, 2: 130.0}.get(rnd, 70.0)
+                    continue
                 out.append({
                     "name": f"{yr} {rnd}{({1: 'st', 2: 'nd', 3: 'rd'}.get(rnd, 'th'))} (Mid)",
                     "value": round(pval, 1),
@@ -45214,6 +45328,7 @@ def api_trade_ideas_for_target():
                     f"{yr}_{rnd}",
                 ]
             else:
+                bucket = "mid"
                 sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
                 label = f"{yr} {rnd}{sfx} (Mid)"
                 val_keys = [f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late", f"{yr}_{rnd}"]
@@ -45222,7 +45337,18 @@ def api_trade_ideas_for_target():
             pick_id = next((k for k in val_keys if k in pick_val_lookup), val_keys[0])
             value = pick_val_lookup.get(pick_id)
             if value is None:
-                value = 650.0 if rnd == 1 else 220.0 if rnd == 2 else 80.0
+                # Calibrated hierarchy over the same lookup (bucket ->
+                # round average -> nearest season; this is an estimate
+                # surface). A pick no calibrated step can price stays
+                # 0.0 and is filtered out of the viewer's pick list
+                # below - never a flat per-round constant.
+                from dashboard_services.trade_hub import (
+                    calibrated_pick_value as _cpv_pick,
+                )
+                value = _cpv_pick(
+                    pick_val_lookup, yr, rnd, slot=slot, bucket=bucket,
+                    nearest_season=True,
+                ) or 0.0
 
             return {"name": label, "pick_id": pick_id, "value": value, "is_pick": True}
 
@@ -45241,10 +45367,16 @@ def api_trade_ideas_for_target():
         }
         viewer_picks = sorted(
             [
-                _resolve_pick(p)
-                for p in picks_by_roster.get(viewer_roster_id, [])
-                if (int(p.get("season", 0)) <= _cur_yr + 1
-                    and (int(p.get("season", 0)), int(p.get("round", 0))) not in traded_away)
+                _rp for _rp in (
+                    _resolve_pick(p)
+                    for p in picks_by_roster.get(viewer_roster_id, [])
+                    if (int(p.get("season", 0)) <= _cur_yr + 1
+                        and (int(p.get("season", 0)), int(p.get("round", 0))) not in traded_away)
+                )
+                # Unpriced picks (no calibrated value) are excluded from
+                # suggestion packages rather than carried at an invented
+                # or zero value.
+                if float(_rp.get("value") or 0) > 0
             ],
             key=lambda x: x["value"],
             reverse=True,

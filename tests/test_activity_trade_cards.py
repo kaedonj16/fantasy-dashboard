@@ -6,8 +6,9 @@ Covers the rebuild of html_trade in build_activity_body:
 - the collapsed summary shows BOTH teams' gets, draft picks included;
 - the winner pill shows the single net (never the doubled abs(netA-netB));
 - an unvalued asset makes the trade Not graded (no verdict on bad math);
-- the consolidation adjustment is printed, and picks count toward the
-  asset-count delta that drives it.
+- the consolidation adjustment is printed; picks never count toward
+  the player-count delta (tier retention drives the adjustment, and
+  the roster-slot penalty keys off player counts only).
 """
 from __future__ import annotations
 
@@ -144,11 +145,16 @@ def test_special_names_priced_by_normalized_fallback(activity_env):
 
 def test_winner_pill_shows_single_net_not_doubled(activity_env):
     html = _render(activity_env, [_wilson_trade()], BASE_TABLE)
-    # Net is +289 for the winner; the old summary printed the doubled
-    # abs(netA - netB) as a delta.
-    assert "I Chase Brown Kids +289" in html
+    # Net is +346 for the winner under stack retention: Wilson is a
+    # lone headliner (full 517.4); the other side keeps Thomas whole
+    # (167.6), retains Dobbins at his tier cap (120.9 -> 64.7) and
+    # takes the roster-slot penalty (60.4) for the extra player, for
+    # an effective 171.9. 517.4 - 171.9 = 345.5, printed as +346.
+    # (It was +289 when only the slot penalty ran, before retention.)
+    # The old summary printed the doubled abs(netA - netB) as a delta.
+    assert "I Chase Brown Kids +346" in html
     assert "<span class='act-swing'>" not in html
-    assert "Δ 579" not in html and "Δ 578" not in html
+    assert "Δ 691" not in html and "Δ 579" not in html
 
 
 def test_adjustment_footer_printed(activity_env):
@@ -156,13 +162,13 @@ def test_adjustment_footer_printed(activity_env):
     assert "Received total" in html
     assert "Consolidation adjustment" in html
     assert "Effective total" in html
-    assert "Net +289 to I Chase Brown Kids" in html
+    assert "Net +346 to I Chase Brown Kids" in html
     assert "Strong win" in html
     # The old duplicated layout / mislabeled total is gone.
     assert "Total Value" not in html
 
 
-def test_pick_chip_in_summary_and_pick_counts_for_adjustment(activity_env):
+def test_pick_chip_in_summary_and_pick_not_a_roster_asset(activity_env):
     wilson = _player("8146", "Garrett Wilson", "WR", "NYJ")
     thomas = _player("11631", "Brian Thomas Jr.", "WR", "JAX")
     pick = {
@@ -179,9 +185,12 @@ def test_pick_chip_in_summary_and_pick_counts_for_adjustment(activity_env):
     assert "2027 2nd" in html
     # ...and in the expanded received column at its price.
     assert "137.7" in html
-    # Players alone are 1-for-1 (no adjustment); the pick makes it
-    # 2-for-1, so the consolidation adjustment must appear.
-    assert "Consolidation adjustment" in html
+    # The players are 1-for-1 (both lone headliners, full value) and
+    # the pick is NOT a roster asset, so no roster-slot penalty fires
+    # and no stack retention applies: the adjustment is exactly zero
+    # and no adjustment footer prints. Any nonzero adjustment here
+    # would mean the pick was counted as a roster slot.
+    assert "Consolidation adjustment" not in html
 
 
 def test_unvalued_asset_makes_trade_not_graded(activity_env):

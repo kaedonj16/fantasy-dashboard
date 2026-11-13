@@ -50,23 +50,39 @@ def _side(values):
     }
 
 
-def test_equal_counts_no_adjustment():
+def _typed_side(players=(), picks=()):
+    breakdown = (
+        [{"value": v, "type": "player"} for v in players]
+        + [{"value": v, "type": "pick"} for v in picks]
+    )
+    return {
+        "breakdown": breakdown,
+        "raw_total": float(sum(players) + sum(picks)),
+    }
+
+
+def test_equal_counts_get_tier_retention():
     a = _side([300, 200])
     b = _side([250, 250])
     apply_tier_stack_adjustment(a, b)
-    # Tiers annotated, but no effective_total / adjustment written.
-    assert all("tier" in item for item in a["breakdown"])
-    assert "adjustment" not in a and "adjustment" not in b
+    # Tier retention prices every shape now, including equal counts:
+    # both sides are written with a (negative) retention adjustment and
+    # an effective total equal to the sum of retained values.
+    for side in (a, b):
+        assert side["adjustment"] < 0
+        assert side["effective_total"] == sum(
+            item["effective_value"] for item in side["breakdown"])
 
 
 def test_bigger_side_is_penalized():
     a = _side([300, 100, 50])   # 3 players
     b = _side([400])            # 1 player
     apply_tier_stack_adjustment(a, b)
-    # a is bigger -> gets a negative adjustment; b is untouched at raw_total.
+    # a is bigger -> stack retention PLUS the roster-slot penalty.
+    # b is a lone headliner: full value, zero adjustment by design.
     assert a["adjustment"] < 0
     assert a["effective_total"] < a["raw_total"]
-    assert b["adjustment"] == 0.0
+    assert b["adjustment"] == 0
     assert b["effective_total"] == b["raw_total"]
 
 
@@ -92,11 +108,86 @@ def test_annotations_written_on_each_item():
     a = _side([300, 100])
     b = _side([250, 150])
     apply_tier_stack_adjustment(a, b)
+    caps = build_tier_caps(NUM_TIERS)
     for side in (a, b):
+        headliner = max(side["breakdown"], key=lambda i: i["value"])
         for item in side["breakdown"]:
             assert "tier" in item
-            assert item["stack_mult"] == 1.0
-            assert "effective_value" in item
+            if item is headliner:
+                # Headliner rule: the side's best player is never
+                # discounted, whatever its tier.
+                assert item["stack_mult"] == 1.0
+            else:
+                # Stacked pieces carry the real tier-retention cap,
+                # not the old hardcoded 1.0.
+                assert item["stack_mult"] == caps[item["tier"]]
+            assert item["effective_value"] == round(
+                item["value"] * item["stack_mult"], 1)
+
+
+# ---- effective value: pinning cases ---------------------------------------
+
+def test_stud_for_two_pieces_lands_outside_fair_band():
+    # Gibbs ~971 for two ~485 pieces: raw sums are level (971 vs 970),
+    # so the old math called this fair. The stud is a lone headliner
+    # (full value); on the other side the second 485 is a stacked piece
+    # retained at its T4 cap, and the slot penalty stacks on the
+    # 2-player side: effective value must land OUTSIDE the 7% band.
+    a = _typed_side(players=[971])
+    b = _typed_side(players=[485, 485])
+    apply_tier_stack_adjustment(a, b)
+    assert a["raw_total"] - b["raw_total"] == 1.0  # level on raw value
+    baseline = max(a["effective_total"], b["effective_total"])
+    assert abs(a["effective_total"] - b["effective_total"]) > 0.07 * baseline
+
+
+def test_equal_count_consolidation_is_adjusted():
+    # 2-for-2, identical raw totals (1000 each): the side holding the
+    # stud plus a throw-in is worth more effectively than two mid
+    # pieces. Equal counts used to mean zero adjustment by rule.
+    a = _typed_side(players=[900, 100])
+    b = _typed_side(players=[500, 500])
+    apply_tier_stack_adjustment(a, b)
+    assert a["effective_total"] > b["effective_total"]
+
+
+def test_equal_value_one_for_one_stays_fair():
+    a = _typed_side(players=[600])
+    b = _typed_side(players=[600])
+    apply_tier_stack_adjustment(a, b)
+    assert a["effective_total"] == b["effective_total"]
+
+
+def test_picks_are_not_roster_slots():
+    # Player + 2 picks vs a single player: player counts are 1 v 1, so
+    # no roster-slot penalty may fire even though total assets are 3 v
+    # 1, and picks keep their full value (no tier discount).
+    a = _typed_side(players=[500], picks=[200, 150])
+    b = _typed_side(players=[850])
+    apply_tier_stack_adjustment(a, b)
+    pick_items = [i for i in a["breakdown"] if i["type"] == "pick"]
+    assert all(i["stack_mult"] == 1.0 for i in pick_items)
+    assert all(i["effective_value"] == i["value"] for i in pick_items)
+    player_item = next(i for i in a["breakdown"] if i["type"] == "player")
+    assert a["effective_total"] == player_item["effective_value"] + 200 + 150
+
+
+def test_sf_bench_lookup_reads_sf_column():
+    # Same trade, same table: the bench penalty must come from the
+    # sf_value column in a superflex league, not the 1QB column.
+    vt = [{"value": 100.0, "sf_value": 20.0} for _ in range(500)]
+    a1 = _side([300, 100])
+    b1 = _side([400])
+    apply_tier_stack_adjustment(a1, b1, value_table=vt, league_size=10,
+                                is_sf=False)
+    a2 = _side([300, 100])
+    b2 = _side([400])
+    apply_tier_stack_adjustment(a2, b2, value_table=vt, league_size=10,
+                                is_sf=True)
+    # 1QB bench reference is 100 (penalty 50); SF reference is 20
+    # (penalty 10). Retention is identical, so the adjustments differ
+    # by exactly the bench-penalty difference.
+    assert a2["adjustment"] - a1["adjustment"] == 40.0
 
 
 # ---- build_tier_caps ------------------------------------------------------
