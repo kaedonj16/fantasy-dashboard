@@ -979,7 +979,7 @@ def build_rankings_hub_body(
     """
     from dashboard_services.pages.player_page import slugify
 
-    date_str   = as_of_date or datetime.now().strftime("%B %Y")
+    date_str   = as_of_date or datetime.now().strftime("%B %d, %Y")
     pos_filter = (position or "").upper() if position else None
 
     rows = [
@@ -994,16 +994,19 @@ def build_rankings_hub_body(
     sort_key = "sf_value" if fmt == "sf" else "value"
     rows.sort(key=lambda r: float(r.get(sort_key) or 0), reverse=True)
 
+    fmt_word = "Superflex" if fmt == "sf" else "1QB"
     if pos_filter:
         title    = f"Dynasty {pos_filter} Rankings {datetime.now().year}"
         subtitle = (
             f"Top dynasty {pos_filter} trade values updated {date_str}. "
+            f"Ranked in {fmt_word} order. "
             f"Rankings based on real dynasty trade data and BR Fantasy model."
         )
     else:
         title    = f"Dynasty Fantasy Football Rankings {datetime.now().year}"
         subtitle = (
             f"Overall dynasty player rankings updated {date_str}. "
+            f"Ranked in {fmt_word} order. "
             f"Values from real dynasty leagues and BR Fantasy model analysis."
         )
 
@@ -1282,6 +1285,15 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             r["_vor"] = ((float(r["ros_ppg"]) - base) * float(r["ros_games"])
                          if base is not None and r.get("ros_ppg") is not None
                          and r.get("ros_games") else 0.0)
+        # Overall board only: a forward floor. The shared ROS eligibility
+        # is season-based, so a player projected for under two expected
+        # games, or below replacement, could hold a top-100 overall spot
+        # on a sliver of work (a 0.9-game, 1-PPG fill-in; an elite rate
+        # over 0.8 games). Replacement is computed from the full pool
+        # above first, then the overall list drops ros_games < 2.0 and
+        # VOR < 0. Position pages take the other branch and are untouched.
+        rows = [r for r in rows
+                if float(r.get("ros_games") or 0) >= 2.0 and r["_vor"] >= 0]
         rows.sort(key=lambda r: (-r["_vor"], -float(r.get("ros_total") or 0),
                                  -float(r.get("ros_ppg") or 0), r["name"]))
     else:

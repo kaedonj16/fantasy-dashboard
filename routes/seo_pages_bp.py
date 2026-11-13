@@ -546,7 +546,7 @@ def _rankings_page(position: str | None = None):
         ), 503, {"Retry-After": "300"}
 
     from datetime import datetime as _dt
-    as_of  = _dt.now().strftime("%B %Y")
+    as_of  = _dt.now().strftime("%B %d, %Y")
     year   = _dt.now().year
     fmt = (request.args.get("format") or "sf").strip().lower()
     if fmt not in ("sf", "1qb"):

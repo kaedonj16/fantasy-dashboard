@@ -448,6 +448,83 @@ def test_public_overall_page_discounts_qb1_in_1qb():
     assert body.index("Back 1") < body.index("Back 3")
 
 
+def _floor_payload():
+    """Fixture for the overall board's forward floor.
+
+    Replacement lines are pinned by monkeypatch in the tests below
+    (RB 10.0, WR 12.0), so every VOR sign is deterministic:
+    wilson (1.1 PPG x 0.9 games) is below replacement AND under the
+    games floor; puka (16.0 PPG x 0.8 games) is above replacement but
+    under the games floor; negvor (5.0 PPG x 7 games) clears the games
+    floor but is below replacement; the rest clear both.
+    """
+    players = {
+        "wilson": {"ros_ppg": 1.1, "ros_total": 1.0, "ros_games": 0.9,
+                   "ros_sched_rank": 9, "ros_pos_rank": 3},
+        "keeper": {"ros_ppg": 15.0, "ros_total": 105.0, "ros_games": 7,
+                   "ros_sched_rank": 4, "ros_pos_rank": 1},
+        "negvor": {"ros_ppg": 5.0, "ros_total": 35.0, "ros_games": 7,
+                   "ros_sched_rank": 6, "ros_pos_rank": 2},
+        "puka": {"ros_ppg": 16.0, "ros_total": 13.1, "ros_games": 0.8,
+                 "ros_sched_rank": 3, "ros_pos_rank": 3},
+        "alpha": {"ros_ppg": 20.0, "ros_total": 140.0, "ros_games": 7,
+                  "ros_sched_rank": 2, "ros_pos_rank": 1},
+        "beta": {"ros_ppg": 14.0, "ros_total": 84.0, "ros_games": 6,
+                 "ros_sched_rank": 5, "ros_pos_rank": 2},
+    }
+    table = [
+        {"id": "wilson", "name": "Wilson Fillin", "team": "GB", "position": "RB"},
+        {"id": "keeper", "name": "Keeper Back", "team": "DET", "position": "RB"},
+        {"id": "negvor", "name": "Below Replacement Back", "team": "MIA", "position": "RB"},
+        {"id": "puka", "name": "Puka Elite", "team": "LAR", "position": "WR"},
+        {"id": "alpha", "name": "Wideout Alpha", "team": "CIN", "position": "WR"},
+        {"id": "beta", "name": "Wideout Beta", "team": "DAL", "position": "WR"},
+    ]
+    return ({"players": players, "window": {"start_week": 11, "end_week": 17},
+             "updated": "November 09, 2026"}, table)
+
+
+def _pin_replacement(monkeypatch):
+    monkeypatch.setattr(
+        "utils.ros_rankings.ros_replacement_map",
+        lambda by_pos, league_size, league_type: {"RB": 10.0, "WR": 12.0},
+    )
+
+
+def test_public_overall_page_applies_forward_floor(monkeypatch):
+    # Overall board only: ros_games < 2.0 is out even with a positive
+    # VOR (the elite-rate sliver), and VOR < 0 is out even with a full
+    # slate of expected games.
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+
+    _pin_replacement(monkeypatch)
+    payload, table = _floor_payload()
+    body = build_ros_rankings_body(payload, table, position=None)
+    assert "Keeper Back" in body
+    assert "Wideout Alpha" in body
+    assert "Wideout Beta" in body
+    assert "Wilson Fillin" not in body          # 0.9 games, below replacement
+    assert "Puka Elite" not in body             # 0.8 games, VOR > 0
+    assert "Below Replacement Back" not in body  # 7 games, VOR < 0
+
+
+def test_public_position_pages_ignore_forward_floor(monkeypatch):
+    # The floor is an overall-board rule: position pages keep the full
+    # eligible pool in ROS-total order, identical to before the floor.
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+
+    _pin_replacement(monkeypatch)
+    payload, table = _floor_payload()
+    rb = build_ros_rankings_body(payload, table, position="RB")
+    assert rb.index("Keeper Back") < rb.index("Below Replacement Back")
+    assert rb.index("Below Replacement Back") < rb.index("Wilson Fillin")
+    wr = build_ros_rankings_body(payload, table, position="WR")
+    assert wr.index("Wideout Alpha") < wr.index("Wideout Beta")
+    # The elite sub-2-games receiver is still on his position page, last
+    # by ROS total, exactly where the live board had him.
+    assert wr.index("Wideout Beta") < wr.index("Puka Elite")
+
+
 def test_public_pages_label_games_as_expected():
     # The stamped ros_games ARE expected games (scheduled games x
     # availability rate), so fractional values like 7.1 are correct data
