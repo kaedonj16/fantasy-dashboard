@@ -70,7 +70,7 @@ def test_weekly_cover_slide_branding_and_boxes():
     # and -- outside the playoff window -- the top-score fallback box.
     boxes = cover["boxes"]
     assert boxes[0] == {"num": "480.1", "dp": 1, "suffix": "",
-                        "label": "TOTAL PTS · 4 TEAMS"}
+                        "label": "TOTAL PTS"}
     assert boxes[1] == {"num": "0.6", "dp": 1, "suffix": "",
                         "label": "CLOSEST MARGIN"}
     assert boxes[2] == {"num": "150.5", "dp": 1, "suffix": "",
@@ -131,7 +131,7 @@ def test_weekly_top_performers_top3_and_crown():
     by_kind = {s["kind"]: s for s in slides}
     perf = by_kind["performers"]
     assert perf["eyebrow"] == "TOP PERFORMERS"
-    assert perf["title"] == "WHO SWUNG THE WEEK"
+    assert perf["title"] == "Who swung the week"
     # Top 3 starters overall; the week's top scorer (Star QB, 32.5) is the
     # crowned first row. Fixture rows carry no roster/matchup ids, so the
     # key falls back to position alone.
@@ -238,8 +238,8 @@ def test_weekly_gotw_preview_markup():
     ]
     html = H._wrapped_overlay_markup(slides, None, ns="preview",
                                      footer_label="WEEK 3")
-    assert "wrapped-duel-t'>Alpha<" in html
-    assert "wrapped-duel-t'>Beta<" in html
+    assert "wrapped-duel-n'>Alpha</span>" in html
+    assert "wrapped-duel-n'>Beta</span>" in html
     assert "wrapped-why'>#1 (2-0) vs #2 (1-1)<" in html
     assert "wrapped-winbar-pct'>58%<" in html
     assert "width:58%" in html
@@ -263,7 +263,8 @@ def test_weekly_overlay_footer_and_recap_finale(offline_client):
     # The deck opens on the mock's Cover: league + WEEK 3 WRAPPED wordmark
     # + the headline stat boxes (which count up: three count targets).
     assert "data-kind='cover'" in html
-    assert "WEEK 3<br>WRAPPED" in html
+    assert "wrapped-word-l1'>WEEK 3</span><br>" in html
+    assert "wrapped-word-l2'>WRAPPED</span>" in html
     assert html.count("wrapped-box") >= 3
     assert "data-w-count='480.1'" in html
     # The deck ends on the shareable recap card, like Season Wrapped.
@@ -611,7 +612,8 @@ def test_weekly_playoff_slide_lists_clinched_and_eliminated():
     assert [r["n"] for r in secs["CLINCHED"]] == ["Alpha", "Beta", "Gamma"]
     # Rows carry the record plus the mock's points-for note.
     assert secs["CLINCHED"][0] == {"k": "#1", "n": "Alpha", "v": "10-1",
-                                   "mgr": "", "vnote": "1,430.0 PF"}
+                                   "mgr": "", "vnote": "1,430.0 PF",
+                                   "seed": 1, "pf": "1,430.0"}
     assert [r["n"] for r in secs["ELIMINATED"]] == ["Zeta", "Eta", "Theta"]
     assert slide["clinched"] == ["Alpha", "Beta", "Gamma"]
     assert slide["eliminated"] == ["Zeta", "Eta", "Theta"]
@@ -621,6 +623,7 @@ def test_weekly_playoff_slide_lists_clinched_and_eliminated():
     assert {s["title"]: s["note"] for s in slide["sections"]} == {
         "CLINCHED": "3 teams", "ELIMINATED": "3 teams"}
     assert slide["counts"] == [
+        {"num": 0, "label": "BYE LOCKED", "tone": "gold"},
         {"num": 3, "label": "CLINCHED", "tone": "green"},
         {"num": 3, "label": "ELIMINATED", "tone": "red"}]
     assert slide["lede"] == "Test League · 4 make it"
@@ -796,13 +799,16 @@ def test_weekly_playoff_slide_manager_names_and_alive():
     secs = {s["title"]: s["rows"] for s in slide["sections"]}
     assert secs["CLINCHED"][0] == {"k": "#1", "n": "Alpha", "v": "10-1",
                                    "mgr": "Manager Alpha",
-                                   "vnote": "1,430.0 PF"}
+                                   "vnote": "1,430.0 PF",
+                                   "seed": 1, "pf": "1,430.0"}
     assert secs["CLINCHED"][1] == {"k": "#2", "n": "Beta", "v": "8-3",
                                    "mgr": "Manager Beta",
-                                   "vnote": "1,320.0 PF"}
+                                   "vnote": "1,320.0 PF",
+                                   "seed": 2, "pf": "1,320.0"}
     # No user record for Gamma: the manager slot stays empty.
     assert secs["CLINCHED"][2] == {"k": "#3", "n": "Gamma", "v": "7-4",
-                                   "mgr": "", "vnote": "1,265.0 PF"}
+                                   "mgr": "", "vnote": "1,265.0 PF",
+                                   "seed": 3, "pf": "1,265.0"}
     assert slide["alive"] == ["Delta", "Epsilon"]
     assert slide["bgword"] == "PLAYOFFS"
 
@@ -1058,7 +1064,7 @@ def test_weekly_deck_matches_mock_order_for_settled_week(offline_client):
     assert html.rfind("data-kind='recap'") > html.rfind("data-kind='ohmy'")
     assert html.count("wrapped-face-crown") == 1
     assert "wrapped-sharecard-big'>4 IN · 4 OUT</div>" in html
-    assert "THAT IS THE WRAP." in html
+    assert "That is the <em>wrap.</em>" in html
 
 
 def test_weekly_pre_playoff_window_deck_has_no_playoff_slide():

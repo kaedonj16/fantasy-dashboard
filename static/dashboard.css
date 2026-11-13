@@ -48425,10 +48425,11 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     background: #15304d;
 }
 
-/* Playoff cut line in weekly standings: a dashed gold divider. */
+/* Playoff cut line in weekly standings: the mock's dashed gold divider
+   (the rows container's gap supplies the rest of its 7px rhythm). */
 .wrapped-overlay-wk .wrapped-cutline {
-    border-top: 2px dashed rgba(233, 185, 73, .6);
-    margin: 5px 0 1px;
+    border-top: 2px dashed #e9b949;
+    margin: 1px 2px;
 }
 
 /* Weekly cover hero panel: league line, giant word and stat boxes
@@ -48804,6 +48805,342 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     .wrapped-overlay-wk .wrapped-slide[data-bgword]::after {
         top: calc(env(safe-area-inset-top) + 70px);
     }
+}
+
+/* ── Exact-match pass 2 (2026-11-13): Kaedon's screenshots of the live
+   post-#3139 deck vs the mock re-captured at 390x844 with its real font.
+   The mock's display font (Barlow Condensed; the wrapped-only font link
+   ships in the overlay markup and the share page head) takes over
+   wrapped titles, backdrop words, big values and cover words in BOTH
+   wrapped scopes. Kickers, labels and body copy keep the site sans. ── */
+.wrapped-overlay-wk .wrapped-slide-title,
+.wrapped-overlay-season .wrapped-slide-title {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-size: 38px;
+    font-weight: 700;
+    line-height: .95;
+    letter-spacing: .01em;
+    text-transform: uppercase;
+}
+
+.wrapped-overlay-wk .wrapped-slide-title {
+    margin: 6px 0 10px;
+}
+
+.wrapped-overlay-wk .wrapped-slide-title em,
+.wrapped-overlay-season .wrapped-slide-title em {
+    font-style: normal;
+    color: var(--wa);
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-bgword]::after,
+.wrapped-overlay-season .wrapped-slide[data-bgword]::after {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-weight: 700;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-bgword]::after {
+    font-size: 118px;
+}
+
+.wrapped-overlay-season .wrapped-word {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-weight: 700;
+}
+
+.wrapped-overlay-wk .wrapped-big,
+.wrapped-overlay-season .wrapped-big {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="scoreboard"] .wrapped-big {
+    font-size: 58px;
+}
+
+.wrapped-overlay-wk .wrapped-cname,
+.wrapped-overlay-season .wrapped-cname {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.wrapped-overlay-season .wrapped-box-v {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+/* Weekly cover word: the mock's two solid lines -- ink, then sky -- at
+   its 64px condensed, replacing the white-to-sky gradient. */
+.wrapped-overlay-wk .wrapped-cover-hero .wrapped-word {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-size: 64px;
+    font-weight: 600;
+    line-height: .88;
+    letter-spacing: 0;
+    background: none;
+    -webkit-background-clip: initial;
+    background-clip: initial;
+    color: #eef4fb;
+}
+
+.wrapped-overlay-wk .wrapped-word-l2 {
+    color: #38bdf8;
+}
+
+/* Stat boxes are the mock's .stat in the weekly scope: panel2 fill,
+   left-aligned, condensed value, one-line label (long labels shrink
+   via the fit class instead of wrapping). */
+.wrapped-overlay-wk .wrapped-boxes {
+    gap: 6px;
+}
+
+.wrapped-overlay-wk .wrapped-box {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, 0) 60%), #091a2e;
+    border-radius: 11px;
+    padding: 10px;
+    text-align: left;
+}
+
+.wrapped-overlay-wk .wrapped-box-v {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-size: 25px;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.05;
+}
+
+.wrapped-overlay-wk .wrapped-box-v-long {
+    font-size: 20px;
+}
+
+.wrapped-overlay-wk .wrapped-box-k {
+    margin-top: 3px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+}
+
+.wrapped-overlay-wk .wrapped-box-k-fit {
+    font-size: 9px;
+    letter-spacing: .02em;
+    white-space: nowrap;
+}
+
+/* Cover headline callout: the mock's gold-ruled block under the hero. */
+.wrapped-cover-callout {
+    margin-top: 10px;
+    align-self: stretch;
+    border-left: 3px solid #e9b949;
+    background: #091a2e;
+    border-radius: 0 11px 11px 0;
+    padding: 10px 12px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #dbe7f5;
+}
+
+.wrapped-cover-callout b {
+    color: #e9b949;
+}
+
+/* Headline story cards: the mock's ohm-article grammar. */
+.wrapped-stories {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+    align-self: stretch;
+}
+
+.wrapped-story {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(255, 255, 255, 0) 60%), #0d2137;
+    border: 1px solid #1b4066;
+    border-radius: 14px;
+    padding: 14px;
+}
+
+.wrapped-story h3 {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+    margin: 0 0 4px;
+    color: #f2f7fd;
+}
+
+.wrapped-story p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #9db8d2;
+}
+
+/* Mock-grammar dict rows (Standings / Playoff Picture): the mock's own
+   .row geometry -- compact two-line rows that fit ten to a slide. */
+.wrapped-overlay-wk .wrapped-drow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, 0) 60%), #0d2137;
+    border: 1px solid #1b4066;
+    border-radius: 11px;
+    padding: 6px 10px;
+    min-height: 38px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.wrapped-drow-seed {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    width: 18px;
+    text-align: center;
+    color: #cfe2f5;
+    flex: none;
+}
+
+.wrapped-drow-ava {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    flex: none;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 10px;
+    color: #0d2137;
+    box-shadow: inset 0 -2px 4px rgba(0, 0, 0, .18);
+}
+
+.wrapped-drow-who {
+    min-width: 0;
+    flex: 1;
+}
+
+.wrapped-drow-team {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.15;
+    overflow-wrap: break-word;
+    color: #f2f7fd;
+}
+
+.wrapped-drow-mgr {
+    font-size: 11px;
+    line-height: 1.25;
+    overflow-wrap: break-word;
+    color: #9db8d2;
+}
+
+.wrapped-dtag {
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    padding: 3px 6px;
+    border-radius: 99px; /* full-round pill ends; 999px is banned site-wide */
+    flex: none;
+}
+
+.wrapped-dtag.up {
+    background: #17382c;
+    color: #5ee0a3;
+}
+
+.wrapped-dtag.dn {
+    background: #3d2321;
+    color: #ff9a90;
+}
+
+.wrapped-dtag.flat {
+    background: #15304d;
+    color: #9db8d2;
+}
+
+.wrapped-drow-rec {
+    text-align: right;
+    flex: none;
+    white-space: nowrap;
+    color: #f2f7fd;
+}
+
+.wrapped-drow-rec strong {
+    font-size: 13.5px;
+}
+
+.wrapped-drow-rec span {
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 5px;
+    color: #9db8d2;
+}
+
+/* Dict-row section treatments (Playoff Picture), mirroring the old
+   row treatments: bye rows gold-bordered, eliminated dimmed + struck. */
+.wrapped-overlay-wk .wrapped-drow.wrapped-insec-clinched-a-bye {
+    border-color: rgba(233, 185, 73, .45);
+}
+
+.wrapped-overlay-wk .wrapped-drow.wrapped-insec-eliminated {
+    opacity: .62;
+}
+
+.wrapped-overlay-wk .wrapped-drow.wrapped-insec-eliminated .wrapped-drow-team {
+    text-decoration: line-through;
+    text-decoration-color: rgba(224, 101, 90, .7);
+}
+
+/* GOTW duel names in the mock's condensed, wrapping on word boundaries
+   only (balanced across the two lines); the meta keeps the site sans. */
+.wrapped-overlay-wk .wrapped-duel-t {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-weight: 700;
+}
+
+.wrapped-overlay-wk .wrapped-duel-n {
+    display: block;
+    line-height: 1.05;
+    overflow-wrap: break-word;
+    text-wrap: balance;
+}
+
+.wrapped-overlay-wk .wrapped-duel-m {
+    font-family: "Archivo", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Performer points: the mock's 30px condensed in ink. */
+.wrapped-overlay-wk .wrapped-row.wrapped-perf .wrapped-row-v {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-size: 30px;
+    font-weight: 600;
+    color: #f2f7fd;
+}
+
+/* Oh My VS-panel scores and the outro share-card numeral: condensed. */
+.wrapped-overlay-wk .wrapped-vs-side .wrapped-vs-s {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.wrapped-overlay-wk .wrapped-sharecard-big {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.wrapped-overlay-wk .wrapped-count {
+    text-align: center;
+}
+
+.wrapped-overlay-wk .wrapped-count strong {
+    font-family: "Barlow Condensed", "Archivo", sans-serif;
+    font-weight: 600;
 }
 
 /* Season Wrapped rework (2026-11): the approved mock's 11-slide deck,
