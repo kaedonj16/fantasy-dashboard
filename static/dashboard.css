@@ -22277,6 +22277,22 @@ img, svg, canvas {
     background: color-mix(in srgb, var(--win) 15%, transparent);
 }
 
+.usage-mover .um-delta.down {
+    color: var(--loss);
+    background: color-mix(in srgb, var(--loss) 15%, transparent);
+}
+
+.usage-fallers-card .um-bar-recent {
+    background: var(--loss);
+}
+
+/* Usage Fallers is a mobile-only dashboard card: the phone stack splits
+   it out of the Usage Risers card, while the desktop three-column layout
+   keeps the Risers card only. The mobile reorg block below turns it on. */
+.os-layout .usage-fallers-card {
+    display: none;
+}
+
 /* Playoff-odds hero tile fades in once the sim resolves */
 .os-stat-playoff .os-stat-value {
     transition: opacity .2s ease;
@@ -55814,6 +55830,15 @@ body.td-lock .br-asst-bubble {
     display: contents;
   }
 
+  /* The <=1280px jump-tab block hides a non-tab-panel left rail with no
+     active tab child, but the in-season hub no longer uses tab panels
+     (its sections stack), so without this the rail's Front Office and
+     Standings cards would drop out of the phone stack entirely. The
+     offseason rail is itself a tab panel and stays untouched. */
+  .os-layout > .os-left-col:not(.os-tab-panel) {
+    display: contents !important;
+  }
+
   /* Belt and suspenders: every banner card is full width on phones. */
   .os-layout .cc-fo-card,
   .os-layout .cc-inj-card,
@@ -55837,17 +55862,25 @@ body.td-lock .br-asst-bubble {
   .os-layout .slv-wrap {
     order: 20;
   }
-  /* Approved mobile flow: ScoreZone banner sits right under the hero. */
+  /* Usage Fallers renders on phones only (base rule hides it on
+     desktop, where the three-column layout is unchanged). */
+  .os-layout .usage-fallers-card {
+    display: block;
+  }
+  /* Approved mobile flow: hero first, ScoreZone banner right under it,
+     then Matchup, Next Steps, Injury Watch, Usage Risers, Usage
+     Fallers, Front Office, Standings, League Activity, League Awards. */
   .os-layout .os-hero-strip { order: 1; }
   .os-layout .weekly-rz-cta { order: 2; }
-  .os-layout .os-action-queue { order: 3; }
-  .os-layout .os-matchup-preview { order: 4; }
-  .os-layout .cc-fo-card { order: 5; }
-  .os-layout .cc-inj-card { order: 6; }
-  .os-layout .cc-st-card { order: 7; }
-  .os-layout .cc-aw-card { order: 8; }
-  .os-layout .cc-act-card { order: 9; }
-  .os-layout .usage-movers-card { order: 10; }
+  .os-layout .os-matchup-preview { order: 3; }
+  .os-layout .os-action-queue { order: 4; }
+  .os-layout .cc-inj-card { order: 5; }
+  .os-layout .usage-movers-card { order: 6; }
+  .os-layout .usage-fallers-card { order: 7; }
+  .os-layout .cc-fo-card { order: 8; }
+  .os-layout .cc-st-card { order: 9; }
+  .os-layout .cc-act-card { order: 10; }
+  .os-layout .cc-aw-card { order: 11; }
 
   /* Compact hero: team + grade + archetype on one line, 2x2 stat grid. */
   .os-hero-strip {

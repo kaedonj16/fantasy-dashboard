@@ -11256,11 +11256,13 @@ def _standings_movement(df_weekly) -> dict:
         return {}
 
 
-def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
+def _render_usage_movers_impl(ctx: dict, viewer_roster_id, falling: bool) -> str:
     """Compact strip of the viewer's rostered players whose recent usage is
-    rising fastest -- last-3-week average vs season average of the position's
-    key volume stat (QB snap %, RB touches, WR/TE targets). Returns '' when
-    there's nothing meaningful to show."""
+    moving fastest -- last-3-week average vs season average of the position's
+    key volume stat (QB snap %, RB touches, WR/TE targets). falling=False
+    renders the Usage risers card (delta >= +1.5); falling=True renders the
+    Usage fallers card (delta <= -1.5) in the same visual grammar. Returns ''
+    when there's nothing meaningful to show."""
     if not viewer_roster_id:
         return ""
     try:
@@ -11290,9 +11292,14 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
             if not t:
                 continue
             delta = t.get("delta")
-            # Genuine risers only (matches the card title); ignore noise and
+            # Genuine movers only (matches the card title); ignore noise and
             # players without enough weeks to trust the trend.
-            if delta is None or delta < 1.5 or int(t.get("weeks_played") or 0) < 3:
+            if delta is None or int(t.get("weeks_played") or 0) < 3:
+                continue
+            if falling:
+                if delta > -1.5:
+                    continue
+            elif delta < 1.5:
                 continue
             pmeta = players_index.get(pid) or {}
             name = pmeta.get("full_name") or pmeta.get("name") or f"Player {pid}"
@@ -11302,8 +11309,8 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
             movers.append((float(delta), str(name), sub, t, pid))
         if not movers:
             return ""
-        movers.sort(key=lambda x: x[0], reverse=True)
-        movers = movers[:3]  # concise: top risers only
+        movers.sort(key=lambda x: x[0], reverse=not falling)
+        movers = movers[:3]  # concise: top movers only
 
         def _num(v: float) -> str:
             return f"{round(float(v), 1):g}"
@@ -11336,6 +11343,14 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
                 )
             else:
                 li_attrs = ' class="usage-mover"'
+            if falling:
+                chip_html = (
+                    f'<span class="um-delta down">&#9660;{_num(abs(delta))}</span>'
+                )
+            else:
+                chip_html = (
+                    f'<span class="um-delta up">&#9650;{_num(delta)}</span>'
+                )
             rows.append(f"""
               <li{li_attrs}>
                 <div class="um-main">
@@ -11346,15 +11361,23 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
                   <span class="um-detail">{html.escape(str(stat))} {_num(avg)} &rarr; {_num(recent)}</span>
                   <span class="um-bars" aria-hidden="true"><span class="um-bar-row"><span class="um-bar-lab">Season</span><span class="um-track"><span class="um-bar um-bar-season" style="width:{season_w:.1f}%"></span></span></span><span class="um-bar-row"><span class="um-bar-lab">Last 3</span><span class="um-track"><span class="um-bar um-bar-recent" style="width:{recent_w:.1f}%"></span></span></span></span>
                 </div>
-                <span class="um-delta up">&#9650;{_num(delta)}</span>
+                {chip_html}
               </li>""")
 
+        if falling:
+            card_cls = "os-card usage-movers-card usage-fallers-card"
+            card_title = "Usage fallers"
+            card_sub = "Your players trending down: last 3 weeks vs season average"
+        else:
+            card_cls = "os-card usage-movers-card"
+            card_title = "Usage risers"
+            card_sub = "Your players trending up: last 3 weeks vs season average"
         return f"""
-        <section class="os-card usage-movers-card">
+        <section class="{card_cls}">
           <div class="os-section-head">
             <div class="os-section-head-content">
-              <h2 class="os-section-title">Usage risers</h2>
-              <div class="os-section-subtitle">Your players trending up: last 3 weeks vs season average</div>
+              <h2 class="os-section-title">{card_title}</h2>
+              <div class="os-section-subtitle">{card_sub}</div>
             </div>
           </div>
           <ul class="usage-movers-list">{''.join(rows)}</ul>
@@ -11362,6 +11385,20 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
     except Exception:
         logger.debug("usage movers failed", exc_info=True)
         return ""
+
+
+def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
+    """Usage risers card: the viewer's players whose usage is rising fastest."""
+    return _render_usage_movers_impl(ctx, viewer_roster_id, falling=False)
+
+
+def _render_usage_fallers(ctx: dict, viewer_roster_id) -> str:
+    """Usage fallers card: the viewer's players whose usage is falling fastest.
+
+    Same trends data and card grammar as Usage risers; rendered as its own
+    card so the mobile dashboard stack can place it directly after Risers.
+    """
+    return _render_usage_movers_impl(ctx, viewer_roster_id, falling=True)
 
 
 
