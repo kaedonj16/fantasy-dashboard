@@ -47,8 +47,6 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
     )
     from dashboard_services.api import get_roster_positions
     from utils.lineup_slots import is_superflex_lineup
-    from utils.live_stats import count_roster_positions
-    from utils.trade import rank_rosters_by_position
 
     rosters = ctx.get("rosters") or []
     if not rosters:
@@ -82,36 +80,31 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
     scoring = ctx_scoring_type(ctx)
     _is_redraft = scoring == "redraft"
 
-    # Per-team position value buckets (for positional ranks).
-    team_pos_values: dict[int, dict[str, list]] = {}
-    for r in rosters:
-        rid = r.get("roster_id")
-        if rid is None:
-            continue
-        try:
-            rid_i = int(rid)
-        except (TypeError, ValueError):
-            continue
-        buckets: dict[str, list] = {p: [] for p in _POS_ORDER}
-        for pid in (r.get("players") or []):
-            row = by_id.get(str(pid))
-            if not row:
-                continue
-            pos = str(row.get("position") or row.get("pos") or "").upper()
-            try:
-                val = float(row.get("value") or 0.0)
-            except (TypeError, ValueError):
-                val = 0.0
-            if val <= 0:
-                continue
-            if pos in buckets:
-                buckets[pos].append(val)
-        team_pos_values[rid_i] = buckets
+    # Positional ranks from the one shared computation (iteration 2,
+    # item 7): context_builders.positional_room_ranks, the same helper
+    # the My Leagues card and Front Office grades read. (This module
+    # previously re-bucketed the same lookup by hand; the helper's
+    # bucketing IS roster_pos_value_lists over that lookup, keyed by
+    # str roster id — converted back to int keys for the grade call.)
+    from dashboard_services.ai.context_builders import positional_room_ranks
 
-    slot_counts = count_roster_positions(_rp)
-    _, pos_rank = rank_rosters_by_position(
-        team_pos_values, slot_counts, positions=_POS_ORDER
-    )
+    _room = positional_room_ranks(ctx)
+
+    def _int_keyed(mapping):
+        out = {}
+        for rid, val in (mapping or {}).items():
+            try:
+                out[int(rid)] = val
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    pos_rank = {
+        pos: _int_keyed(ranks_for_pos)
+        for pos, ranks_for_pos in (_room.get("ranks") or {}).items()
+    }
+    team_pos_values = _int_keyed(
+        {rid: {} for rid in (_room.get("strengths") or {})})
 
     # Dynasty/redraft totals per team (each axis sums its own top 8), then percentiles.
     team_dynasty_total: dict[int, float] = {}
@@ -184,7 +177,7 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
 
     picks_by_roster = ctx.get("picks_by_roster") or {}
     picks = picks_by_roster.get(str(_vid), [])
-    p_ranks = {pos: pos_rank[pos].get(_vid, n_teams) for pos in _POS_ORDER}
+    p_ranks = {pos: (pos_rank.get(pos) or {}).get(_vid, n_teams) for pos in _POS_ORDER}
     # League-relative draft capital (percentile + surplus 1sts) so the
     # window/shape capital tests measure hoarding vs the league, not raw
     # totals. Redraft grades carry no capital, like the Teams page.

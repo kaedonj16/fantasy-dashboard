@@ -478,6 +478,128 @@ def find_repair_player(
     return spares[-1]
 
 
+def gate_package(
+    *,
+    partner_players: list,
+    viewer_players: list,
+    receive: list,
+    package: list,
+    requirements: dict,
+    role_states: Optional[dict] = None,
+    projections: Optional[dict] = None,
+    value_bars: Optional[dict] = None,
+    ctx: Optional[dict] = None,
+    is_dynasty_or_keeper: bool = False,
+    locked_ids=None,
+    blocked_repair_ids=None,
+) -> tuple:
+    """Checks 1-3 as a gate with check-2 repair, for suggestion surfaces.
+
+    Returns ``(ok, package, evaluation)``. ``receive`` is the asset
+    list the partner gives (the target first); ``package`` is what the
+    viewer sends. This is the one gate every suggestion surface runs
+    before a package is surfaced or scored (spec 3.2/3.3: viability is
+    a GATE, and acceptance is computed from the checked evaluation,
+    never a pre-check estimate):
+
+    * A send side carrying a keeper-locked player fails outright.
+      Locked players are untradeable in keeper formats; the ban is a
+      legality rule, checked before any evaluation runs, and is never
+      fail-open. Picks cannot be locked.
+    * A viable + headline-ok package passes as-is.
+    * A package whose ONLY shortfall is at the first receive player's
+      position is repaired with the viewer's cheapest spare startable
+      there (never a locked player, never an id in
+      ``blocked_repair_ids`` — callers pass redraft serious injuries
+      there). The repaired package must re-pass checks 1-3 AND stay
+      inside the fairness band, or the deal drops: it is never pitched
+      broken.
+    * An evaluation error fails OPEN (``ok`` True, evaluation None),
+      matching the engines' shipped behavior: a checker bug must not
+      silently empty a suggestion surface. The keeper-locked ban above
+      still applies in that case.
+    """
+    locked = {str(x) for x in (locked_ids or ())}
+    package = list(package or [])
+    receive = [a for a in (receive or []) if isinstance(a, dict)]
+    if locked:
+        for a in package:
+            if isinstance(a, dict) and not _is_pick(a) \
+                    and _pid(a) in locked:
+                return False, package, None
+    try:
+        ev = evaluate_package(
+            partner_players=partner_players,
+            viewer_players=viewer_players,
+            send=package,
+            receive=receive,
+            requirements=requirements,
+            role_states=role_states,
+            projections=projections,
+            value_bars=value_bars,
+            ctx=ctx,
+            is_dynasty_or_keeper=is_dynasty_or_keeper,
+        )
+    except Exception:
+        return True, package, None
+    if ev["viable"] and ev["headline_ok"]:
+        return True, package, ev
+    target = receive[0] if receive else {}
+    tpos = _pos(target)
+    if set(ev["shortfalls"].keys()) != {tpos}:
+        return False, package, ev
+    blocked = locked | {str(x) for x in (blocked_repair_ids or ())}
+    try:
+        repair = find_repair_player(
+            viewer_players=[
+                p for p in (viewer_players or [])
+                if not (isinstance(p, dict) and _pid(p) in blocked)
+            ],
+            send=package, position=tpos,
+            viewer_requirements=requirements,
+            role_states=role_states, projections=projections,
+            value_bars=value_bars, ctx=ctx,
+        )
+    except Exception:
+        repair = None
+    if repair is None or _pid(repair) in blocked:
+        return False, package, ev
+    if any(_pid(a) == _pid(repair) for a in package if isinstance(a, dict)):
+        return False, package, ev
+    repaired = package + [{
+        "id": _pid(repair), "player_id": _pid(repair),
+        "name": repair.get("name", ""),
+        "value": _f(repair.get("value")),
+        "position": _pos(repair),
+        "age": repair.get("age"),
+    }]
+    try:
+        ev2 = evaluate_package(
+            partner_players=partner_players,
+            viewer_players=viewer_players,
+            send=repaired,
+            receive=receive,
+            requirements=requirements,
+            role_states=role_states,
+            projections=projections,
+            value_bars=value_bars,
+            ctx=ctx,
+            is_dynasty_or_keeper=is_dynasty_or_keeper,
+        )
+    except Exception:
+        return False, package, ev
+    if not (ev2["viable"] and ev2["headline_ok"]):
+        return False, package, ev
+    give = sum(_f(a.get("value")) for a in repaired if isinstance(a, dict))
+    get = sum(_f(a.get("value")) for a in receive)
+    if give <= 0 or get <= 0:
+        return False, package, ev
+    if not (FAIR_BAND_MIN <= fairness_ratio(give, get)
+            and give / get <= FAIR_BAND_MAX):
+        return False, package, ev
+    return True, repaired, ev2
+
+
 def fairness_ratio(send_value: float, receive_value: float) -> float:
     hi = max(_f(send_value), _f(receive_value))
     lo = min(_f(send_value), _f(receive_value))
@@ -745,6 +867,7 @@ __all__ = [
     "player_startable",
     "startable_players",
     "evaluate_package",
+    "gate_package",
     "surplus_ok",
     "find_repair_player",
     "fairness_ratio",

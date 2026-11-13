@@ -424,6 +424,38 @@ def league_format_value_lookup(
     return out
 
 
+def positional_room_ranks(ctx: dict) -> dict:
+    """The one positional room-rank computation every surface reads.
+
+    Returns ``{"ranks": {pos: {roster_id_str: rank}},
+    "strengths": {roster_id_str: {pos: score}}, "of": n_teams}`` from
+    :func:`league_format_value_lookup` + ``roster_pos_value_lists`` +
+    ``rank_rosters_by_position`` — the exact input chain the My
+    Leagues card (portfolio_summary) already used. Front Office
+    grades previously bucketed ``build_model_value_lookup`` values
+    (a different format resolution: no TE premium / scoring-format
+    pass), so the same QB room read 11th of 12 on the card and 12 of
+    12 in the report (iteration 2, item 7). Surfaces must call this
+    instead of re-bucketing values themselves.
+    """
+    from utils.roster_strength import (
+        rank_rosters_by_position,
+        roster_pos_value_lists,
+    )
+    from utils.utils import count_roster_positions
+
+    rosters = ctx.get("rosters") or []
+    values = league_format_value_lookup(ctx)
+    pos_values = roster_pos_value_lists(
+        rosters, values,
+        players_index=ctx.get("players_index") or {}, rid_cast=str,
+    )
+    slot_counts = count_roster_positions(ctx.get("roster_positions") or [])
+    strengths, ranks = rank_rosters_by_position(
+        pos_values, slot_counts, positions=["QB", "RB", "WR", "TE"])
+    return {"ranks": ranks, "strengths": strengths, "of": len(rosters)}
+
+
 def summarize_roster_players(
         roster: dict,
         players_index: dict,
@@ -1661,6 +1693,26 @@ def build_trade_suggestions_context(
     # Pick slot = standings rank of original owner (worst record = 1.01, etc.).
     # Supports both 1QB (value_1qb) and SF (value_sf).
     viewer_rid = str(viewer_roster_id)
+    # Keeper legality (iteration 2): a designated keeper is
+    # untradeable, so he can never fund a suggestion package or a
+    # gate repair on this surface either. The Trade Hub archetype
+    # engine shipped this bug (locked players offered from its own
+    # pools); here the pools and the repair list are filtered, with a
+    # hard backstop where each partner's deal is assembled. Fail
+    # closed when this is a limited-keeper format whose designations
+    # cannot be resolved: no packages are built at all.
+    _locked_viewer_ids: set = set()
+    _keeper_fail_closed = False
+    try:
+        from utils.league_rules import keeper_locked_by_roster as _klbr2
+        from dashboard_services.keeper_core import keeper_limit as _klimit2
+        _locked_map2 = _klbr2(ctx) or {}
+        _locked_viewer_ids = {
+            str(p) for p in (_locked_map2.get(viewer_rid) or ())}
+        if _klimit2(ctx) is not None and not _locked_map2:
+            _keeper_fail_closed = True
+    except Exception:
+        _locked_viewer_ids, _keeper_fail_closed = set(), False
     viewer_picks_list = picks_by_roster.get(viewer_rid, [])
     from datetime import datetime as _dt
     _cur_yr = _dt.now().year
@@ -1852,6 +1904,12 @@ def build_trade_suggestions_context(
         str(r.get("roster_id") or ""): _tp_infos(r) for r in rosters
     }
     _tp_viewer_infos = _tp_infos_by_rid.get(viewer_rid) or _tp_infos(roster)
+    # Repair candidates exclude designated keepers: a repair that
+    # spends a locked player is not a repair (iteration 2).
+    _tp_repair_infos = [
+        i for i in _tp_viewer_infos
+        if str(i.get("id")) not in _locked_viewer_ids
+    ]
     _tp_bye_by_team: dict = {}
     for _pid2, _meta2 in _tp_players_payload.items():
         if not isinstance(_meta2, dict):
@@ -1942,6 +2000,13 @@ def build_trade_suggestions_context(
         inside the fairness band or the deal is dropped, never pitched
         broken.
         """
+        if _keeper_fail_closed:
+            return False, package
+        # A package already carrying a designated keeper fails before
+        # any evaluation runs (the ban is never fail-soft).
+        if any(str(p.get("id")) in _locked_viewer_ids
+               for p in (package or [])):
+            return False, package
         try:
             _ev = _tp_evaluate(partner_roster, target, package)
         except Exception:
@@ -1953,7 +2018,7 @@ def build_trade_suggestions_context(
             return False, package
         try:
             _repair = _tpc.find_repair_player(
-                viewer_players=_tp_viewer_infos,
+                viewer_players=_tp_repair_infos,
                 send=list(package or []), position=_tpos,
                 viewer_requirements=_tp_requirements,
                 role_states=_tp_role_states or None,
@@ -2220,11 +2285,22 @@ def build_trade_suggestions_context(
             ]
 
         def _bench_pool(positions) -> list:
-            """Startable players beyond the starting slots, cheapest first."""
+            """Startable players beyond the starting slots, cheapest first.
+
+            Designated keepers are excluded before the surplus count:
+            an untradeable player is not sendable depth, and counting
+            him would both offer him (when cheapest) and shrink the
+            pool by crediting his slot to the tradeable surplus.
+            """
+            if _keeper_fail_closed:
+                return []
             pool: list = []
             for pos in positions:
                 slots = _ng_depth_floor.get(pos, 1)
-                starters = _startable(_roster_top_players(roster, pos), pos)
+                starters = [
+                    pl for pl in _startable(_roster_top_players(roster, pos), pos)
+                    if str(pl.get("id")) not in _locked_viewer_ids
+                ]
                 n_sendable = max(0, len(starters) - slots)
                 pool.extend(sorted(starters, key=lambda pl: pl["value"])[:n_sendable])
             return sorted(pool, key=lambda pl: pl["value"])
@@ -2407,6 +2483,16 @@ def build_trade_suggestions_context(
                 str(p.get("id")) in _owner_signals["never_offer"]
                 for p in targets_viewer_sends):
             continue
+
+        # Keeper legality backstop (iteration 2): no assembled deal
+        # may spend a designated keeper, whatever path built it.
+        if any(str(p.get("id")) in _locked_viewer_ids
+               for p in targets_viewer_sends):
+            continue
+        if alt_deal is not None and any(
+                str(p.get("id")) in _locked_viewer_ids
+                for p in alt_deal[2]):
+            alt_deal = None
 
         # Compute value sums and classify the trade type
         value_you_get = round(sum(p["value"] for p in targets_they_have[:3]), 1)

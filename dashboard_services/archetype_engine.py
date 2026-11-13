@@ -3223,6 +3223,265 @@ def _get_archetype_suggestions_impl(
             sel_league_avg = sum(_lineup_vals) / max(1, len(_lineup_vals))
             sel_current_wp = _win_prob(viewer_lineup_val, sel_league_avg)
 
+    # ── Keeper legality + the shared partner gate ─────────────────────
+    # This engine historically generated suggestions with no keeper
+    # legality and no partner starter-minimum check at all: in keeper
+    # league 92916, 7 of 8 Trade Hub suggestions sent out a designated
+    # keeper, and Caleb Williams was pitched for Kyren alone / Watson
+    # alone, leaving Goodfellas without a startable QB2. Every package
+    # below now runs the same keeper-legality rule and the same
+    # trade_partner_checks gate (checks 1-3 + check-2 repair) the trade
+    # engines and the Front Office Report use, and acceptance is
+    # stamped from the checked evaluation (conditioned_acceptance),
+    # never from a pre-check estimate.
+    _locked_ids: set = set()
+    _keeper_fail_closed = False
+    try:
+        from utils.league_rules import keeper_locked_by_roster as _klbr
+        from dashboard_services.keeper_core import keeper_limit as _klimit
+        _locked_map = _klbr(ctx) or {}
+        _locked_ids = {
+            str(p) for p in (_locked_map.get(str(viewer_roster_id)) or ())}
+        # Fail closed: a limited-keeper format whose designations
+        # cannot be resolved gets NO player suggestions from this
+        # engine — an unresolvable designation set must never read as
+        # "nobody is locked" (utils.league_rules' enforcement-off
+        # default is for readers, not for a surface that spends
+        # players). Dynasty (no limit) is never triggered.
+        if _klimit(ctx, is_redraft=is_redraft) is not None and not _locked_map:
+            _keeper_fail_closed = True
+    except Exception:
+        _locked_ids, _keeper_fail_closed = set(), False
+    if _locked_ids:
+        # The builders already honor untouchable_ids for every send
+        # pool; folding the locked set in means no builder can assemble
+        # a keeper-illegal package in the first place. The gate below
+        # is the guarantee; this is the steering.
+        untouchable_ids = set(untouchable_ids or ()) | _locked_ids
+
+    _tp = None
+    try:
+        from dashboard_services import trade_partner_checks as _tpc_mod
+        _reqs = _tpc_mod.slot_requirements(
+            roster_positions or [], is_sf=is_sf, num_teams=num_teams)
+        _bars = dict(_tpc_mod.DEFAULT_VALUE_BARS)
+        try:
+            from utils.trade import derive_league_thresholds as _dlt
+            _thr, _floors = _dlt(
+                roster_positions or [], num_teams, is_sf=is_sf)
+            if any(_floors.get(p) for p in _tpc_mod.POSITIONS):
+                _reqs = {p: int(_floors.get(p) or 0)
+                         for p in _tpc_mod.POSITIONS}
+            _bars = {p: float(_thr.get(p, 350))
+                     for p in _tpc_mod.POSITIONS}
+        except Exception:
+            pass
+        # The derived floors count a SUPER_FLEX slot toward QB only
+        # when the slot list carries one; with an unusable slot list
+        # they collapse to 1 and the Superflex QB2 minimum silently
+        # vanishes (the Caleb case: Watson + Kincaid judged the
+        # partner's QB room against a 1-QB line, so no shortfall ever
+        # registered). The format floor stands regardless of the slot
+        # list: in a two-QB format the partner must keep two startable
+        # QBs. The engine's own is_sf reads only the "sf" league_type;
+        # callers also pass the format as "superflex"/"2qb", and the
+        # gate must honor the format it was actually given.
+        _sf_format = is_sf or (league_type or "").lower() in (
+            "superflex", "2qb")
+        if _sf_format and int(_reqs.get("QB") or 0) < 2:
+            _reqs = dict(_reqs, QB=2)
+        _rs_states = None
+        _wk_proj = None
+        try:
+            from utils.role_state import _week_projections as _rsp
+            from utils.role_state import get_role_states as _rsget
+            _wk = int(ctx.get("current_week") or ctx.get("week") or 0)
+            _rs_states = _rsget(ctx, _wk) or None
+            _wk_proj = _rsp(ctx, _wk) or None
+        except Exception:
+            _rs_states, _wk_proj = None, None
+        _tp = {
+            "mod": _tpc_mod, "requirements": _reqs, "value_bars": _bars,
+            "role_states": _rs_states, "projections": _wk_proj,
+        }
+    except Exception:
+        _tp = None
+
+    def _tp_infos(pids) -> List[Dict[str, Any]]:
+        out = []
+        for _pid in pids or []:
+            _info = values_by_id.get(str(_pid)) or {}
+            _pos = str(_info.get("position") or "").upper()
+            if _pos not in ("QB", "RB", "WR", "TE"):
+                continue
+            out.append({
+                "id": str(_pid), "player_id": str(_pid),
+                "name": _info.get("name", ""), "position": _pos,
+                "value": _f(_info.get("value")), "age": _info.get("age"),
+                "team": _info.get("team", ""),
+            })
+        return out
+
+    _tp_viewer_infos = _tp_infos(viewer_players)
+    _tp_partner_infos: Dict[str, List[Dict[str, Any]]] = {
+        str(r.get("roster_id")): _tp_infos(
+            [str(p) for p in (r.get("players") or [])])
+        for r in rosters
+    }
+    _pid_owner: Dict[str, str] = {}
+    for r in rosters:
+        for _p in (r.get("players") or []):
+            _pid_owner.setdefault(str(_p), str(r.get("roster_id")))
+    # League value ladder for depth-penalty math in the sell-row gate
+    # (the contending path builds its own `sorted_vals` further down).
+    _gate_sorted_vals = sorted(
+        (v for v in (_f(x.get("value")) for x in values_by_id.values())
+         if v > 0),
+        reverse=True,
+    )
+
+    def _gate(pkg, receive_assets, partner_rid):
+        """(ok, pkg, evaluation) for one assembled package.
+
+        The keeper ban runs first and never fails open. With no gate
+        state (values layer broken) viability fails open exactly like
+        the engines' shipped gate; acceptance then keeps the legacy
+        estimate and the row is stamped partner_checked=False.
+        """
+        if _keeper_fail_closed:
+            return False, pkg, None
+        if _locked_ids:
+            for _a in pkg or []:
+                if isinstance(_a, dict) and not _a.get("is_pick") \
+                        and str(_a.get("player_id") or "") in _locked_ids:
+                    return False, pkg, None
+        if _tp is None:
+            return True, pkg, None
+        return _tp["mod"].gate_package(
+            partner_players=_tp_partner_infos.get(str(partner_rid), []),
+            viewer_players=_tp_viewer_infos,
+            receive=[dict(a) for a in (receive_assets or [])
+                     if isinstance(a, dict)],
+            package=[dict(a) for a in (pkg or []) if isinstance(a, dict)],
+            requirements=_tp["requirements"],
+            role_states=_tp["role_states"],
+            projections=_tp["projections"],
+            value_bars=_tp["value_bars"],
+            ctx=ctx, is_dynasty_or_keeper=not is_redraft,
+            locked_ids=_locked_ids,
+        )
+
+    def _gate_acquire(pkg, receive_assets, partner_rid):
+        """The gate for acquire rows: strict where a legal fix exists,
+        flagged where the shortfall is structural.
+
+        Keeper legality and the fail-closed state stay absolute: the
+        strict gate returns no evaluation there, and that verdict is
+        final. A checked package that passes, or comes back repaired,
+        surfaces as-is. A checked package that fails is classified by
+        its evaluation:
+
+        * No shortfall at all (check 3, headline caliber only): the
+          partner stays whole, so the headline weakness is a price
+          signal, not a legality one. Surface flagged, with acceptance
+          stamped from the checked evaluation.
+        * A shortfall at the target's own position with NO startable
+          spare on the viewer's roster outside the package: no legal
+          package shape fixes it (a one-player partner roster, or a
+          viewer whose only player at the position is a scrub). The
+          target stays reachable, flagged with the viability notes.
+          This engine historically surfaced these, priced by its
+          acceptance model, and the stretch slate pins that reach.
+        * Anything else drops: a startable spare exists that the
+          package did not send (the orphan pitch: Kyren alone for
+          Caleb, when a startable QB could have gone back), or the
+          deal strands the partner at a second position. The honest
+          repaired shape failed the full gate, so no pitch is better
+          than a broken one.
+        """
+        _ok, _pkg2, _ev = _gate(pkg, receive_assets, partner_rid)
+        if _ok or _ev is None or _tp is None:
+            return _ok, _pkg2, _ev
+        _shortfalls = set((_ev.get("shortfalls") or {}).keys())
+        _tpos = ""
+        for _a in receive_assets or []:
+            if isinstance(_a, dict) and not _a.get("is_pick"):
+                _tpos = str(_a.get("position") or "").upper()
+                break
+        if not _shortfalls:
+            return True, pkg, _ev
+        if _tpos and _shortfalls == {_tpos}:
+            try:
+                _spare = _tp["mod"].find_repair_player(
+                    viewer_players=[
+                        p for p in _tp_viewer_infos
+                        if str(p.get("player_id") or "")
+                        not in _locked_ids],
+                    send=[a for a in (pkg or []) if isinstance(a, dict)],
+                    position=_tpos,
+                    viewer_requirements=_tp["requirements"],
+                    role_states=_tp["role_states"],
+                    projections=_tp["projections"],
+                    value_bars=_tp["value_bars"], ctx=ctx,
+                )
+            except Exception:
+                _spare = None
+            if _spare is None:
+                return True, pkg, _ev
+        return False, pkg, _ev
+
+    def _gate_sell_rows(rows):
+        """The same gate for distribute / rebuilding rows, whose
+        receive side is a package itself. The partner is the owner of
+        the first received player; a picks-only return strands no
+        partner roster, so only the keeper ban applies there."""
+        if _keeper_fail_closed:
+            return []
+        out = []
+        for row in rows or []:
+            send = row.get("suggested_send") or []
+            if _locked_ids and any(
+                    isinstance(a, dict) and not a.get("is_pick")
+                    and str(a.get("player_id") or "") in _locked_ids
+                    for a in send):
+                continue
+            recv_players = [
+                a for a in (row.get("suggested_receive") or [])
+                if isinstance(a, dict) and not a.get("is_pick")]
+            if _tp is None or not recv_players:
+                out.append(row)
+                continue
+            _owner = _pid_owner.get(
+                str(recv_players[0].get("player_id") or ""))
+            if not _owner or _owner == str(viewer_roster_id):
+                out.append(row)
+                continue
+            _ok, _new_send, _ev = _gate(send, recv_players, _owner)
+            if not _ok:
+                continue
+            if _ev is not None:
+                row = dict(row)
+                row["suggested_send"] = _new_send
+                row["partner_checked"] = True
+                if _ev.get("notes"):
+                    row["viability_notes"] = list(_ev["notes"])
+                _eff_send = sum(
+                    _f(a.get("value")) for a in _new_send
+                    if isinstance(a, dict))
+                _eff_send -= _depth_penalty(
+                    max(0, len(_new_send) - 1), _gate_sorted_vals, num_teams)
+                _recv_val = sum(
+                    _f(a.get("value")) for a in recv_players)
+                _acc, _basis = _tp["mod"].conditioned_acceptance(
+                    _eff_send, _recv_val, fit=0, evaluation=_ev,
+                    contention=None,
+                    is_preferred=bool(row.get("is_pref")))
+                # Same [5, 90] surface ceiling as the acquire path.
+                row["acceptance_pct"] = min(_acc, 90)
+                row["acceptance_basis"] = _basis
+            out.append(row)
+        return out
+
     viewer_seed      = _seed(standings_map, viewer_roster_id, num_teams)
     viewer_above     = viewer_seed <= playoff_spots
     preferred_arch   = COMPLEMENT.get(archetype, "balanced")
@@ -3317,7 +3576,7 @@ def _get_archetype_suggestions_impl(
             converted = _pick_send_candidates(pick_list, num_teams, slot_map, current_season=season)
             if converted:
                 picks_by_owner[str(rid)] = converted
-        _sugg = _build_distribute(
+        _sugg = [] if _keeper_fail_closed else _gate_sell_rows(_build_distribute(
             viewer_players, values_by_id, targets_by_owner, owner_meta,
             roster_map, league_type, viewer_lineup_val, league_avg,
             untouchable_ids=untouchable_ids,
@@ -3331,7 +3590,7 @@ def _get_archetype_suggestions_impl(
             picks_by_owner=picks_by_owner,
             group_key=group_key,
             season=season,
-        )
+        ))
         return {
             "suggestions": _sugg,
             "current_playoff_pct": round(current_playoff_pct, 1),
@@ -3352,7 +3611,7 @@ def _get_archetype_suggestions_impl(
             converted = _pick_send_candidates(pick_list, num_teams, slot_map, current_season=season)
             if converted:
                 picks_by_owner[str(rid)] = converted
-        _sugg = _build_rebuilding(
+        _sugg = [] if _keeper_fail_closed else _gate_sell_rows(_build_rebuilding(
             viewer_players, values_by_id, all_targets,
             league_type, viewer_lineup_val, league_avg,
             untouchable_ids=untouchable_ids,
@@ -3366,7 +3625,7 @@ def _get_archetype_suggestions_impl(
             owner_meta=owner_meta,
             group_key=group_key,
             season=season,
-        )
+        ))
         return {
             "suggestions": _sugg,
             "current_playoff_pct": round(current_playoff_pct, 1),
@@ -3750,6 +4009,22 @@ def _get_archetype_suggestions_impl(
             continue
 
         for pkg in pkgs:
+            # Shared partner gate (checks 1-3 + keeper legality) BEFORE
+            # anything is scored. Keeper-illegal packages and orphan
+            # pitches with a legal repair unsent (no QB2 in Superflex,
+            # the Caleb/Kyren case) drop here; a shortfall at the
+            # target's position comes back repaired with a QB back
+            # (the Watson + McCarthy shape) when a spare exists, and a
+            # structural shortfall with no legal repair surfaces
+            # flagged instead of deleting the target. Acceptance below
+            # is stamped from the checked evaluation in every case
+            # that carries one, not from a pre-check estimate.
+            _ok, pkg, _ev = _gate_acquire(pkg, [{
+                "player_id": pid, "id": pid, "name": t["name"],
+                "position": pos, "value": _f(t["value"]),
+            }], t["owner_roster_id"])
+            if not _ok:
+                continue
             send_val = sum(p.get("value", 0) for p in pkg) if pkg else 0
             # Judge acceptance on the depth-adjusted (effective) value the trade
             # card shows, not the raw sum - a multi-piece package looks generous
@@ -3757,9 +4032,24 @@ def _get_archetype_suggestions_impl(
             eff_send = send_val - _depth_penalty(
                 max(0, len(pkg) - 1), sorted_vals, num_teams) if pkg else 0
             recv_val = t["value"]
-            acpt     = _estimate_acceptance(
-                eff_send, recv_val, is_preferred=t["is_pref"],
-                fit=_acceptance_fit(pkg, _p_need, _p_stacked))
+            if _ev is not None and _tp is not None:
+                acpt, _acc_basis = _tp["mod"].conditioned_acceptance(
+                    eff_send, recv_val,
+                    fit=_tp["mod"].acceptance_fit_restricted(
+                        pkg, _p_need, _p_stacked,
+                        _ev.get("starting_pieces")),
+                    evaluation=_ev, contention=None,
+                    is_preferred=t["is_pref"])
+                # The shared model clamps to 93; this surface's
+                # acceptance band is the legacy estimator's [5, 90]
+                # (the quality guardrail pins it), so the restamp
+                # keeps the surface ceiling.
+                acpt = min(acpt, 90)
+            else:
+                acpt = _estimate_acceptance(
+                    eff_send, recv_val, is_preferred=t["is_pref"],
+                    fit=_acceptance_fit(pkg, _p_need, _p_stacked))
+                _acc_basis = "pre_check"
             # Partner-side lineup gate: a package that sums to fair value but
             # leaves the partner's starting lineup materially worse is not a
             # ~50% accept, whatever the ratio says. Cap it so the card and
@@ -3837,6 +4127,14 @@ def _get_archetype_suggestions_impl(
                     "net_win_prob_delta":      round(net_wpd_pkg, 4),
                     "net_playoff_odds_delta":  round(net_pod_pkg, 4),
                     "acceptance_pct":          acpt,
+                    # The shared-gate stamp: acceptance came from the
+                    # checked evaluation (basis recorded). The package
+                    # passed the gate, was repaired by it, or surfaced
+                    # flagged with its viability notes attached; keeper
+                    # legality held in every case.
+                    "partner_checked":         _ev is not None,
+                    "acceptance_basis":        _acc_basis,
+                    "viability_notes":         list(_ev.get("notes") or []) if _ev else [],
                     "fit_note":                _fit_note(pkg, _p_need, pos,
                                                          _pmeta.get("pos_counts")),
                     "direction":               "acquire",

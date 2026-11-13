@@ -109,7 +109,19 @@ def _is_seriously_hurt(players_index: dict, pid: str) -> bool:
 
 
 def _projection_lookup(scoring: dict, season: int, week: int, ctx: dict):
-    """Return a pid -> projected points function (league scoring)."""
+    """Return a pid -> projected points function (league scoring).
+
+    The shared projection source is the ctx ``proj_by_week`` map —
+    the exact per-week map the Weekly Hub renders — so the Lab and
+    the Hub can never publish two different numbers for the same
+    player in the same league-week (iteration 2, item 5: JSN read
+    23.8 in the Lab vs 16.7 in the Hub). This lookup used to prefer
+    re-scoring the raw weekly file itself; for Fleaflicker keeper
+    league 92916 that rescore ran with a scoring dict whose missing
+    reception points defaulted to full PPR, inflating every
+    reception-heavy player over the Hub's non-PPR number. The raw
+    rescore now only fills players the shared map does not carry.
+    """
     raw_week_map: dict = {}
     wk_proj: dict = {}
     try:
@@ -131,6 +143,11 @@ def _projection_lookup(scoring: dict, season: int, week: int, ctx: dict):
         _wpp = None  # type: ignore
 
     def _lookup(pid: str, pos: str = "") -> float:
+        v = wk_proj.get(pid)
+        if v is None:
+            v = wk_proj.get(str(pid))
+        if v is not None:
+            return round(_safe_float(v), 1)
         if _wpp is not None:
             try:
                 pts = _wpp(raw_week_map, pid, scoring, pos)
@@ -138,10 +155,7 @@ def _projection_lookup(scoring: dict, season: int, week: int, ctx: dict):
                 pts = None
             if pts is not None:
                 return round(_safe_float(pts), 1)
-        v = wk_proj.get(pid)
-        if v is None:
-            v = wk_proj.get(str(pid))
-        return round(_safe_float(v), 1)
+        return 0.0
 
     return _lookup
 

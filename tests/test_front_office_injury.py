@@ -157,7 +157,11 @@ def test_build_injury_rows_sorts_and_enriches(monkeypatch):
     assert ir_row["action"] == "Move to IR"
     # Single-letter codes are canonicalized on the row.
     assert out[1]["injury"] == "QUESTIONABLE"
-    assert out[1]["return_label"] == ""
+    # Iteration 2 (item 6): a questionable player is never labeled
+    # with an "out ..." duration; the label is the game-time-decision
+    # framing (the report previously read "out this week" for
+    # questionable starters its own advisor said to start).
+    assert out[1]["return_label"] == "game-time decision"
     assert out[1]["action"] == "Stash"
 
 

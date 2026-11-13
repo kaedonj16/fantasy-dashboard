@@ -1091,6 +1091,43 @@ def api_waiver_candidates():
     # the full players feed.
     candidates = _drop_seriously_hurt(candidates, dynasty=_is_dynasty)
 
+    # Zero-projection gate (iteration 2, item 7): a candidate the live
+    # projection feed does not project at all — forward PPG resolves to
+    # exactly 0.0 on a live feed, the provider's read that he will not
+    # play — is not a Best Move, whatever his static value says. The
+    # Nov 12 list carried Joe Fagnano (dropped by the viewer on Nov 5,
+    # 0.00 projection) and Kenny Pickett (0.00). A starting-role signal
+    # (the site's own verified starter call) exempts a player, since a
+    # projection lag must not kill it, and a dead feed (forward PPG
+    # None = unknown, not zero) never gates. Resolution is lazy and
+    # stops once the shown 30 are settled, so deep also-rans that were
+    # never going to display cost no projection lookups.
+    _fwd_memo: dict = {}
+
+    def _fwd0(pid):
+        if pid not in _fwd_memo:
+            try:
+                _fwd_memo[pid] = _forward_ppg_wv(pid)
+            except Exception:
+                _fwd_memo[pid] = None
+        return _fwd_memo[pid]
+
+    _gated: list = []
+    _kept = 0
+    for c in candidates:
+        if _kept >= 30:
+            _gated.append(c)
+            continue
+        _fwd = c.get("own_proj_ppg")
+        if _fwd is None:
+            _fwd = _fwd0(c["player_id"])
+        if _fwd is not None and float(_fwd or 0) == 0.0 \
+                and not c.get("starting_role"):
+            continue
+        _gated.append(c)
+        _kept += 1
+    candidates = _gated
+
     result = []
     _shown = candidates[:30]
     # One bulk local read. SportsGameOdds ingestion is scheduled separately and
