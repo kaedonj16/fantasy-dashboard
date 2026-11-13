@@ -150,33 +150,28 @@ def _grade_for_percentile(pct: float) -> str:
 def _positional_grades(ctx: dict, viewer_roster_id: str, model_value_lookup: dict) -> list[dict]:
     """League-relative positional grades.
 
-    Ranks come from rank_rosters_by_position, the same starter-weighted
-    ranking the Teams page shows, so the two surfaces always agree. The
-    grade is a coarse letter off the rank percentile (2nd of 10 is an A).
+    Ranks come from context_builders.positional_room_ranks, the one
+    shared computation (league_format_value_lookup buckets ranked by
+    rank_rosters_by_position) that the My Leagues card and the Teams
+    page also read, so the surfaces cannot disagree. This function
+    used to re-bucket build_model_value_lookup values — a different
+    format resolution — and landed a place off the card for the same
+    room (QB 11th of 12 on the card, 12 of 12 here; iteration 2).
+    The grade is a coarse letter off the rank percentile (2nd of 10
+    is an A). ``model_value_lookup`` is still accepted for the
+    callers that pass it; the ranks no longer read it.
     """
-    from utils.roster_strength import rank_rosters_by_position
-    from utils.utils import count_roster_positions
+    from dashboard_services.ai.context_builders import positional_room_ranks
 
-    rosters = ctx.get("rosters") or []
-    n_teams = len(rosters)
-    team_pos_values: dict[str, dict[str, list[float]]] = {}
-    for r in rosters:
-        rid = str(r.get("roster_id"))
-        buckets: dict[str, list[float]] = {pos: [] for pos in _SKILL_POS}
-        for pid in r.get("players") or []:
-            mv = model_value_lookup.get(str(pid)) or {}
-            pos = str(mv.get("position") or "").upper()
-            if pos not in buckets:
-                continue
-            val = safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
-            if val <= 0:
-                continue
-            buckets[pos].append(val)
-        team_pos_values[rid] = buckets
-    slot_counts = count_roster_positions(ctx.get("roster_positions") or [])
-    strengths, ranks = rank_rosters_by_position(
-        team_pos_values, slot_counts, positions=list(_SKILL_POS)
-    )
+    n_teams = len(ctx.get("rosters") or [])
+    try:
+        room = positional_room_ranks(ctx)
+    except Exception:
+        logger.debug("[front-office] shared room ranks failed", exc_info=True)
+        room = {"ranks": {}, "strengths": {}, "of": n_teams}
+    ranks = room.get("ranks") or {}
+    strengths = room.get("strengths") or {}
+    n_teams = int(room.get("of") or n_teams)
     viewer = str(viewer_roster_id)
     grades = []
     for pos in _SKILL_POS:
@@ -1073,6 +1068,32 @@ def _waiver_bar_filter(waiver_targets: list[dict], roster_rows: list[dict],
     return out
 
 
+def _coverage_hole_weeks(coverage: dict | None, player_id) -> list[int]:
+    """Weeks in a gm_brief coverage map where this player is the
+    margin at his position: he is startable that week and the
+    startable count sits at (or below) the requirement, so removing
+    him opens a hole. Pure over the build_coverage output."""
+    if not coverage:
+        return []
+    pid = str(player_id or "")
+    if not pid:
+        return []
+    weeks = []
+    for wk in coverage.get("weeks") or []:
+        for entry in (wk.get("positions") or {}).values():
+            if not isinstance(entry, dict):
+                continue
+            ids = {str(s.get("id")) for s in (entry.get("startable") or [])
+                   if isinstance(s, dict)}
+            if pid in ids and int(entry.get("count") or 0) <= int(
+                    entry.get("required") or 0):
+                try:
+                    weeks.append(int(wk.get("week") or 0))
+                except (TypeError, ValueError):
+                    pass
+    return sorted({w for w in weeks if w})
+
+
 def _build_top_moves(*, trade_targets: list[dict], drop_add_pairs: list[dict],
                      qb: dict, injury_rows: list[dict], roster: dict,
                      ctx: dict, grades: list[dict], holes: list[str],
@@ -1143,7 +1164,34 @@ def _build_top_moves(*, trade_targets: list[dict], drop_add_pairs: list[dict],
         })
     excess = (qb or {}).get("excess") or []
     if excess:
-        q = excess[0]
+        # Coverage horizon (iteration 2, item 3): "excess" is a
+        # current-week read. A QB can be excess today and still be the
+        # ONLY startable cover at QB for a future week inside the
+        # horizon — the report's top move was "Shop Joe Milton III"
+        # in the exact week Milton was the team's Week 11 QB cover
+        # (Lock and Sanders both bye 11). Prefer an excess QB who is
+        # load-bearing in no horizon week; when every excess QB is
+        # load-bearing, the move stays but its why names the hole it
+        # opens, with the first such week.
+        _coverage = None
+        _rid = str((roster or {}).get("roster_id") or "")
+        if _rid:
+            try:
+                from dashboard_services.gm_brief import build_coverage
+                _coverage, _roles = build_coverage(ctx, _rid)
+            except Exception:
+                _coverage = None
+        q = None
+        _cover_weeks: list = []
+        for _cand in excess:
+            _wks = _coverage_hole_weeks(_coverage, _cand.get("id"))
+            if not _wks:
+                q, _cover_weeks = _cand, []
+                break
+            if q is None:
+                q, _cover_weeks = _cand, _wks
+        if q is None:
+            q = excess[0]
         fmt = "superflex" if qb.get("is_sf") else "1QB"
         why_bits = [
             f"You roster {qb.get('total')} QBs in a {fmt} league. "
@@ -1153,6 +1201,11 @@ def _build_top_moves(*, trade_targets: list[dict], drop_add_pairs: list[dict],
             why_bits.append(
                 f"{qb_needy_count} team{'s' if qb_needy_count != 1 else ''} in this "
                 "league are thinner at QB than you."
+            )
+        if _cover_weeks:
+            why_bits.append(
+                f"Coverage cost: he is your only startable QB cover in "
+                f"Week {_cover_weeks[0]}, so shopping him opens that hole."
             )
         moves.append({
             "type": "Trade",
@@ -1822,7 +1875,8 @@ def _roster_injury_map(ctx: dict) -> dict[str, dict]:
     return out
 
 
-def _build_injury_rows(ctx: dict, roster_rows: list[dict]) -> list[dict]:
+def _build_injury_rows(ctx: dict, roster_rows: list[dict],
+                       starter_ids: set | None = None) -> list[dict]:
     """Every rostered player with an injury designation, sorted by severity.
 
     Designations and body parts come from _roster_injury_map (the context's
@@ -1830,6 +1884,13 @@ def _build_injury_rows(ctx: dict, roster_rows: list[dict]) -> list[dict]:
     index). Each row carries the ESPN-derived expected return and the roster
     action from the shared injury_plan kernel. Pure data; renders even when
     the AI is down.
+
+    ``starter_ids`` (the roster's actual starting lineup) stamps
+    ``is_starter`` on each row: the roster-row ``role`` is VALUE-based
+    (Starter = value over the starter threshold), so counting flagged
+    starters by role missed real lineup starters below the value bar
+    (Lock, Kincaid) and the Reference summary read "0 starters
+    flagged" while both were flagged (iteration 2, item 6).
     """
     try:
         from dashboard_services.injury_return import (
@@ -1880,7 +1941,21 @@ def _build_injury_rows(ctx: dict, roster_rows: list[dict]) -> list[dict]:
                 action = str(verdict.get("label") or "")
             except Exception:
                 logger.debug("[front-office] injury verdict failed for %s", pid, exc_info=True)
-        return_label = _fmt_weeks_out(weeks_out, season_weeks_left=season_weeks_left)
+        raw_return = _fmt_weeks_out(weeks_out, season_weeks_left=season_weeks_left)
+        if canon == "QUESTIONABLE":
+            # A questionable player is not "out" (iteration 2, item 6):
+            # the old label printed "out this week" next to the
+            # QUESTIONABLE pill for any questionable player whose
+            # weeks-out resolved near zero — the report called Lock
+            # and Kincaid out while the Start/Sit Advisor said START
+            # both. The label carries the game-time-decision framing
+            # the rest of the report already uses for questionable
+            # starters; a duration is never attached to it.
+            return_label = "game-time decision"
+        elif raw_return:
+            return_label = f"out {raw_return}"
+        else:
+            return_label = ""
         rows.append({
             "id": pid,
             "name": r.get("name"),
@@ -1890,8 +1965,9 @@ def _build_injury_rows(ctx: dict, roster_rows: list[dict]) -> list[dict]:
             "injury": inj,
             "body": body,
             "weeks_out": weeks_out,
-            "return_label": f"out {return_label}" if return_label else "",
+            "return_label": return_label,
             "action": action,
+            "is_starter": bool(starter_ids) and pid in starter_ids,
         })
     rows.sort(key=lambda r: (_inj_severity(r["injury"]), str(r.get("name") or "")))
     return rows
@@ -2330,7 +2406,10 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str, *,
                 f"/{_ba_platform}/{_ba_season}/{_ba_league}/trade"
                 f"?tab=hub&build={_pt.get('id')}&name={quote_plus(str(_pt.get('name') or ''))}"
             )
-    injury_rows = _build_injury_rows(ctx, roster_rows)
+    injury_rows = _build_injury_rows(
+        ctx, roster_rows,
+        starter_ids={str(p) for p in (roster.get("starters") or [])},
+    )
     # Roster table shows the ESPN return estimate next to the injury pill.
     wo_by_id = {r["id"]: r["weeks_out"] for r in injury_rows}
     # The injury rows already resolved the season-aware label; carry
@@ -3542,7 +3621,11 @@ def _reference_html(data: dict, grades_html: str, roster_html: str,
     here asks for a decision."""
     inj_rows = data.get("injury_rows") or []
     roster_rows = data.get("roster_rows") or []
-    starters_flagged = sum(1 for r in inj_rows if r.get("role") == "Starter")
+    # Count LINEUP starters (is_starter, stamped from the roster's
+    # actual starters), not the value-based role: a flagged starter
+    # below the value threshold (Lock, Kincaid) used to leave this at
+    # 0 while the same report flagged both (iteration 2, item 6).
+    starters_flagged = sum(1 for r in inj_rows if r.get("is_starter"))
     inj_summary = (
         f"{len(inj_rows)} player{'s' if len(inj_rows) != 1 else ''}"
         + (f", {starters_flagged} starter{'s' if starters_flagged != 1 else ''} flagged"

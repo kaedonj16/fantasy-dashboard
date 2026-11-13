@@ -210,18 +210,20 @@ def build_league_summary(account_id, membership, context_loader):
     result["pos_league_avgs"] = {}
     values = {}
     try:
-        from dashboard_services.ai.context_builders import league_format_value_lookup
-        from utils.roster_strength import rank_rosters_by_position, roster_pos_value_lists, strength_percentile
+        from dashboard_services.ai.context_builders import (
+            league_format_value_lookup,
+            positional_room_ranks,
+        )
+        from utils.roster_strength import strength_percentile
         values = league_format_value_lookup(ctx)
         if not values:
             raise ValueError("model values unavailable")
-        try:
-            from app import count_roster_positions
-            slots = count_roster_positions(ctx.get("roster_positions") or [])
-        except Exception:
-            slots = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
-        pos_values = roster_pos_value_lists(rosters, values, players_index=ctx.get("players_index") or {}, rid_cast=str)
-        _strengths, ranks = rank_rosters_by_position(pos_values, slots)
+        # The one shared room-rank computation (iteration 2, item 7):
+        # the same helper Front Office grades and the Teams page read,
+        # so a room rank can never differ between the card and the
+        # report again.
+        _room = positional_room_ranks(ctx)
+        _strengths, ranks = _room.get("strengths") or {}, _room.get("ranks") or {}
         result["pos_user_rank"] = {pos: (ranks.get(pos) or {}).get(rid) for pos in POSITIONS}
         result["pos_user_pctile"] = {pos: None for pos in POSITIONS}
         for pos in POSITIONS:

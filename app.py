@@ -13742,12 +13742,49 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
                 injury_status=injury_status,
                 locked_pids=_locked_pids(eligible),
             )
+            _sub_threshold = False
+            if not swaps:
+                # Sub-threshold pass (iteration 2, item 4): the 2.0
+                # nudge bar hides real but small upgrades: the Weekly
+                # Hub's Optimal surfaced a +0.6 D/ST swap the same week
+                # this card read "all set". Any positive swap the
+                # optimizer itself endorses is worth one quiet action
+                # rather than a false all-clear; it sorts last.
+                _sub_threshold = True
+                swaps = projection_upgrades(
+                    starters, eligible, proj_map, pos_map,
+                    roster_positions or [],
+                    min_gain=0.05, max_swaps=1,
+                    injury_status=injury_status,
+                    locked_pids=_locked_pids(eligible),
+                )
+                for s in swaps:
+                    _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"
+                    _out_name = (players_map.get(s["out"]) or {}).get("name") or f"Player {s['out']}"
+                    _gain = float(s.get("gain") or 0)
+                    actions.append({
+                        "priority": "low",
+                        "tag": "Lineup",
+                        "kind": "lineup",
+                        "action": f"Start {_in_name} over {_out_name}",
+                        "why": (
+                            f"{_in_name} projects {float(proj_map.get(s['in']) or 0):.1f} vs "
+                            f"{_out_name}'s {float(proj_map.get(s['out']) or 0):.1f}."
+                        ),
+                        "impact": f"+{_gain:.1f} projected points",
+                        "cta_label": "Fix lineup",
+                        "cta_url": fix_url,
+                        "score": 40 + _gain,
+                        "player_ids": [str(s.get("in") or ""), str(s.get("out") or "")],
+                    })
             # Track players already covered by a swap suggestion so the
             # generic "Address:" alerts below don't duplicate them.
             _swap_covered_pids = set()
             for s in swaps[:2]:
                 _swap_covered_pids.add(str(s.get("in") or ""))
                 _swap_covered_pids.add(str(s.get("out") or ""))
+                if _sub_threshold:
+                    continue  # already appended above as the quiet action
                 _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"
                 _out_name = (players_map.get(s["out"]) or {}).get("name") or f"Player {s['out']}"
                 _in_proj = float(proj_map.get(s["in"]) or 0)
@@ -14631,6 +14668,201 @@ def _next_steps_bench_check_actions(ctx: dict, viewer_roster_id, last_final_week
     return actions
 
 
+def _next_steps_attention_actions(ctx: dict, viewer_roster_id, *, now_ts=None) -> list:
+    """Attention actions that must break the Next steps all-set state
+    (iteration 2, item 4).
+
+    The queue read "You are all set for Week 10" on a roster with two
+    Questionable starters, two empty bench spots, and a starter whose
+    slot locked that night, because no collector covered those states.
+    This one does, narrowly:
+
+    * a starter whose slot locks within 24h on a Thu/Fri/Sat slate
+      (the early-window lock that sneaks up midweek; Sunday/Monday
+      locks ride the normal game-day flow),
+    * a Questionable starter whose game kicks off within 48h, with
+      the best healthy same-position bench plug named when one exists,
+    * open bench spots during the regular season (free claims).
+
+    Time math runs off ``now_ts`` so tests can pin the clock.
+    """
+    actions = []
+    if not viewer_roster_id:
+        return actions
+    try:
+        import time as _time
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo as _ZI
+
+        now = float(now_ts if now_ts is not None else _time.time())
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return actions
+        starters = [
+            str(p) for p in (roster.get("starters") or [])
+            if str(p) not in ("", "0")
+        ]
+        if not starters:
+            return actions
+        season = int(ctx.get("current_season") or 0)
+        current_week = int(ctx.get("current_week") or 0)
+        players_map = ctx.get("players_map") or {}
+        try:
+            full_players = get_players_global() or {}
+        except Exception:
+            full_players = {}
+
+        def _meta(pid):
+            base = players_map.get(pid) or {}
+            full = full_players.get(pid) or {}
+            return {
+                "name": base.get("name") or full.get("full_name") or "",
+                "team": str(base.get("team") or full.get("team") or "").upper(),
+                "pos": str(base.get("pos") or full.get("position") or "").upper(),
+                "injury_status": str(full.get("injury_status") or ""),
+            }
+
+        kickoff_by_team: dict = {}
+        try:
+            for g in (load_week_schedule(season, current_week) or []):
+                try:
+                    ko = float(g.get("gameTime_epoch"))
+                except (TypeError, ValueError):
+                    continue
+                for side in ("home", "away"):
+                    t = str(g.get(side) or "").upper()
+                    if t:
+                        kickoff_by_team[t] = ko
+        except Exception:
+            kickoff_by_team = {}
+
+        platform = ctx.get("platform", "sleeper")
+        league_id = ctx.get("league_id", "")
+        fix_url = url_for(
+            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id
+        ) + "?tab=startsit"
+        _et = _ZI("America/New_York")
+
+        def _ko_label(ko):
+            d = _dt.fromtimestamp(ko, _et)
+            return d.strftime("%I:%M %p").lstrip("0") + " ET"
+
+        starter_set = set(starters)
+        proj_map = {
+            str(k): v
+            for k, v in (
+                ((ctx.get("proj_by_week") or {}).get(current_week) or {}).get("projections") or {}
+            ).items()
+        }
+
+        # 1. Early-window slot locks (Thu/Fri/Sat ET, kicking off < 24h).
+        for pid in starters:
+            m = _meta(pid)
+            ko = kickoff_by_team.get(m["team"])
+            if not ko or ko <= now or ko - now > 24 * 3600:
+                continue
+            if _dt.fromtimestamp(ko, _et).weekday() not in (3, 4, 5):
+                continue
+            if not m["name"]:
+                continue
+            actions.append({
+                "priority": "high",
+                "tag": "Lineup",
+                "kind": "lineup",
+                "action": f"{m['name']}'s slot locks at {_ko_label(ko)}",
+                "why": "Set the slot before kickoff; after that it cannot change.",
+                "impact": None,
+                "cta_label": "Fix lineup",
+                "cta_url": fix_url,
+                "score": 85,
+                "player_ids": [pid],
+            })
+
+        # 2. Questionable starters with a game inside 48h.
+        _OUT_LIKE = {
+            "IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "NA",
+            "O", "D", "QUESTIONABLE", "Q",
+        }
+        bench = [
+            str(p) for p in (roster.get("players") or [])
+            if str(p) not in starter_set
+        ]
+        for pid in starters:
+            m = _meta(pid)
+            if m["injury_status"].strip().upper() not in ("QUESTIONABLE", "Q"):
+                continue
+            ko = kickoff_by_team.get(m["team"])
+            if not ko or ko <= now or ko - now > 48 * 3600:
+                continue
+            if not m["name"]:
+                continue
+            plug = ""
+            cands = []
+            for b in bench:
+                bm = _meta(b)
+                if bm["pos"] != m["pos"]:
+                    continue
+                if bm["injury_status"].strip().upper() in _OUT_LIKE:
+                    continue
+                cands.append((float(proj_map.get(b) or 0), bm["name"]))
+            if cands:
+                cands.sort(reverse=True)
+                if cands[0][1]:
+                    plug = f" {cands[0][1]} is the plug if he sits."
+            actions.append({
+                "priority": "med",
+                "tag": "Lineup",
+                "kind": "lineup",
+                "action": f"{m['name']} is questionable",
+                "why": f"Game-time decision; his game kicks off {_ko_label(ko)}.{plug}",
+                "impact": None,
+                "cta_label": "Fix lineup",
+                "cta_url": fix_url,
+                "score": 70,
+                "player_ids": [pid],
+            })
+
+        # 3. Open bench spots during the regular season.
+        roster_positions = ctx.get("roster_positions")
+        if roster_positions is not None and hasattr(roster_positions, "tolist"):
+            roster_positions = roster_positions.tolist()
+        if roster_positions and current_week >= 1:
+            _playoff_start = None
+            try:
+                _playoff_start = int(
+                    ((ctx.get("league") or {}).get("settings") or {}).get(
+                        "playoff_week_start") or 0
+                ) or None
+            except (TypeError, ValueError):
+                _playoff_start = None
+            _in_season = current_week <= 18 and (
+                _playoff_start is None or current_week < _playoff_start)
+            _open = len(roster_positions) - len(roster.get("players") or [])
+            if _in_season and _open > 0:
+                actions.append({
+                    "priority": "low",
+                    "tag": "Roster",
+                    "kind": "roster",
+                    "action": f"Fill {_open} open bench spot{'s' if _open != 1 else ''}",
+                    "why": "Open spots are free claims: add depth while it costs nothing.",
+                    "impact": None,
+                    "cta_label": "See waivers",
+                    "cta_url": url_for(
+                        "league_pages.page_waivers",
+                        platform=platform, season=season, league_id=league_id,
+                    ),
+                    "score": 25,
+                    "player_ids": [],
+                })
+    except Exception:
+        logger.debug("next-steps attention actions failed", exc_info=True)
+    return actions[:4]
+
+
 def _render_next_steps_queue(
     ctx: dict,
     viewer_roster_id,
@@ -14654,6 +14886,10 @@ def _render_next_steps_queue(
     actions.extend(_next_steps_trade_actions(ctx, viewer_roster_id))
     actions.extend(_next_steps_roster_actions(ctx, viewer_roster_id))
     actions.extend(_next_steps_bench_check_actions(ctx, viewer_roster_id, last_final_week))
+    # Attention states (questionable starters, early-window locks,
+    # open bench spots) break the all-set render below: the all-set
+    # branch only runs when this list is still empty (iteration 2).
+    actions.extend(_next_steps_attention_actions(ctx, viewer_roster_id))
 
     # Sub-threshold bench check (< 5.0) rides along as a quiet line at the
     # foot of this card, never as a counted action. Empty when the bench
@@ -42729,6 +42965,10 @@ def api_trade_intel_player_packages(player_id: str):
         # generated packages below never include them (empty when the
         # league's designations are unknown).
         _locked_ids: frozenset = frozenset()
+        # Iteration 2: unknown designations in a limited-keeper format
+        # fail CLOSED on this spending surface (no player packages at
+        # all), instead of reading as "nobody is locked".
+        _keeper_unknown = False
         if league_id and viewer_roster_id:
             try:
                 if not ctx:
@@ -42739,6 +42979,17 @@ def api_trade_intel_player_packages(player_id: str):
                     _locked_ids = _kli(ctx, [viewer_roster_id])
                 except Exception:
                     _locked_ids = frozenset()
+                try:
+                    from dashboard_services.keeper_core import (
+                        keeper_limit as _klimit3,
+                    )
+                    from utils.league_rules import (
+                        keeper_locked_by_roster as _klbr3,
+                    )
+                    _keeper_unknown = (
+                        _klimit3(ctx) is not None and not _klbr3(ctx))
+                except Exception:
+                    _keeper_unknown = False
                 viewer_roster_obj = next(
                     (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
                 )
@@ -42754,9 +43005,14 @@ def api_trade_intel_player_packages(player_id: str):
                             }
                             for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
                             # Never offer the focus player back to acquire itself
-                            # (mirrors the focus-pick guard below).
+                            # (mirrors the focus-pick guard below), and never
+                            # offer a designated keeper: the Wave 1 comment
+                            # above promised this exclusion but the filter
+                            # was never applied here (iteration 2).
                             if pid in values_by_id and values_by_id[pid]["value"] >= 50
                                and pid != str(player_id)
+                               and pid not in _locked_ids
+                               and not _keeper_unknown
                         ],
                         key=lambda x: x["value"],
                         reverse=True,
@@ -42955,9 +43211,14 @@ def api_trade_intel_player_packages(player_id: str):
                             "pos_rank_label": values_by_id[_pid]["pos_rank_label"],
                         }
                         for _pid in [str(_pp) for _pp in (_rvo.get("players") or [])]
-                        # Never offer the focus player back to acquire itself.
+                        # Never offer the focus player back to acquire itself,
+                        # and never a designated keeper (iteration 2: the
+                        # resync rebuild must keep the same exclusion as
+                        # the initial build above).
                         if _pid in values_by_id and values_by_id[_pid]["value"] >= 50
                            and _pid != str(player_id)
+                           and _pid not in _locked_ids
+                           and not _keeper_unknown
                     ],
                     key=lambda x: x["value"],
                     reverse=True,
@@ -43573,11 +43834,28 @@ def api_trade_intel_player_packages(player_id: str):
 
         # Last resort without a roster: keep the closest value-appropriate
         # historical reference packages rather than show an empty page.
-        if not primary_pkgs:
+        # Iteration 2: these bypassed the locked filter every other path
+        # applies, so a historical package spending the viewer's own
+        # designated keeper could surface here; and under fail-closed
+        # keeper formats (designations unresolvable) no player package
+        # is emitted at all.
+        if not primary_pkgs and not _keeper_unknown:
             refs = []
             for p in real_result.get("packages") or []:
                 _enrich_pkg(p)
                 refs.append(p)
+            if _locked_ids:
+                # Locked-only strip (the block's own value window below
+                # still governs; filter_acquire_packages would also
+                # impose its 1.40 ratio cap, which is not this block's
+                # rule).
+                refs = [
+                    p for p in refs
+                    if not any(
+                        (not a.get("is_pick"))
+                        and str(a.get("player_id") or "") in _locked_ids
+                        for a in (p.get("send") or p.get("assets") or []))
+                ]
             fv = float(focus_value or 0)
             close = [
                 p for p in refs
