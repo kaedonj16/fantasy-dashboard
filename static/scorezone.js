@@ -1259,14 +1259,17 @@
   }
   // Red zone = the ball is inside the *opponent's* 20. yardLine reads like
   // "SEA 16"; it's the red zone only when that team is not the offense's own.
+  // Both sides go through _canonTeam: the feed spells Washington "WSH" in
+  // the yard line while the player's team is stored "WAS", so a raw compare
+  // read White's rush at his own WSH 8 as the opponent's red zone.
   function _isInRedZone(yardLine, offenseTeam) {
     var m = String(yardLine || '').match(/([A-Za-z]{2,3})\s*(\d{1,2})\b/);
     if (!m) return false;
     var n = parseInt(m[2], 10);
     if (!(n >= 1 && n <= 20)) return false;
-    var off = String(offenseTeam || '').toUpperCase();
+    var off = _canonTeam(offenseTeam);
     if (!off) return false; // can't tell own 20 from opponent's -- don't guess
-    return m[1].toUpperCase() !== off;
+    return _canonTeam(m[1]) !== off;
   }
   function _impactLine(ev) {
     var bits = [];

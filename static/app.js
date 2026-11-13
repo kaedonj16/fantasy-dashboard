@@ -33459,14 +33459,21 @@ window.__brSzLiveCache = (function () {
     return dist ? ('& ' + dist) : '';
   }
   // Red zone = the ball is inside the opponent's 20 (ScoreZone's rule).
+  // Normalize both sides (_rzNormalizeTeam): the feed's yard line spells
+  // Washington "WSH" while the player's team is stored "WAS", so a raw
+  // compare flagged a rush at his own WSH 8 as a red-zone play.
   function gsIsInRedZone(yardLine, offenseTeam) {
     var m = String(yardLine || '').match(/([A-Za-z]{2,3})\s*(\d{1,2})\b/);
     if (!m) return false;
     var n = parseInt(m[2], 10);
     if (!(n >= 1 && n <= 20)) return false;
-    var off = String(offenseTeam || '').toUpperCase();
+    var norm = function (t) {
+      var a = window._rzNormalizeTeam ? window._rzNormalizeTeam(t) : String(t || '').trim().toUpperCase();
+      return window.brCanonNflTeam ? window.brCanonNflTeam(a) : a;
+    };
+    var off = norm(offenseTeam);
     if (!off) return false;
-    return m[1].toUpperCase() !== off;
+    return norm(m[1]) !== off;
   }
 
   // One play as a ScoreZone feed row (_eventHtml's markup and conventions),
