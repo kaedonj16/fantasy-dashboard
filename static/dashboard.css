@@ -48620,10 +48620,93 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     background: #091a2e; /* mock panel2; --wg2 is not a deck token */
     border: 1px solid #1b4066;
     border-radius: 10px;
-    padding: 9px 11px;
+    padding: 11px 12px;
 }
 
 .wrapped-overlay-wk .wrapped-stake b {
+    color: var(--wa);
+}
+
+/* Standings top 5 (Kaedon 2026-11-13): with only five rows shown, the
+   rows get the vertical room back -- a taller floor and a wider rhythm
+   than the ten-row squeeze that slid the last rows under the footer. */
+.wrapped-overlay-wk .wrapped-slide[data-kind="standings"] .wrapped-rows {
+    gap: 8px;
+}
+
+.wrapped-overlay-wk .wrapped-slide[data-kind="standings"] .wrapped-drow {
+    min-height: 62px;
+    padding: 10px 12px;
+}
+
+/* GOTW form strip: one compact card per team (last-3 scoring average +
+   current streak), in the stake cards' panel grammar. */
+.wrapped-overlay-wk .wrapped-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 16px;
+}
+
+.wrapped-overlay-wk .wrapped-form-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    background: #091a2e;
+    border: 1px solid #1b4066;
+    border-radius: 10px;
+    padding: 10px 11px;
+}
+
+.wrapped-overlay-wk .wrapped-form-t {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #f2f7fd;
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.wrapped-overlay-wk .wrapped-form-v {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    color: #9db8d2;
+    white-space: nowrap;
+    flex: none;
+    font-variant-numeric: tabular-nums;
+}
+
+/* GOTW watch card: the third stakes card, its lead tinted by what is
+   at stake (green clinch, red elimination, gold spoiler). */
+.wrapped-overlay-wk .wrapped-stake-watch.wrapped-watch-green b {
+    color: #2ec27e;
+}
+
+.wrapped-overlay-wk .wrapped-stake-watch.wrapped-watch-red b {
+    color: #f0766a;
+}
+
+.wrapped-overlay-wk .wrapped-stake-watch.wrapped-watch-gold b {
+    color: #e9b949;
+}
+
+/* GOTW season-series line: the pair's most recent earlier meeting,
+   one stake-grammar card under the stakes. */
+.wrapped-overlay-wk .wrapped-series {
+    width: 100%;
+    margin-top: 12px;
+    background: #091a2e;
+    border: 1px solid #1b4066;
+    border-radius: 10px;
+    padding: 11px 12px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: #dbe7f5;
+}
+
+.wrapped-overlay-wk .wrapped-series b {
     color: var(--wa);
 }
 

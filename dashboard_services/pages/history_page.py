@@ -1835,9 +1835,16 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                 "pf": _safe_float(_r.get("PF")),
                 "champ": bool(champ and _nm == champ),
             })
+        # Top 5 only, same call as the weekly standings (Kaedon
+        # 2026-11-13): the full table at 58px rows runs under the
+        # footer -- measured clearance was +7px at 10 teams in a flat
+        # render (gone once the phone's footer inset applies) and
+        # -121px at 12 teams. The cut line survives only when the cut
+        # itself is inside the shown five.
+        _fs_shown = _srows[:5]
         slides.append(_slide("finalstandings", "FINAL STANDINGS",
-                             srows=_srows,
-                             cut_after=_cut if 0 < _cut < len(_srows) else 0,
+                             srows=_fs_shown,
+                             cut_after=_cut if 0 < _cut < len(_fs_shown) else 0,
                              bgword="STANDINGS"))
 
     return slides
@@ -2633,19 +2640,45 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
             # it only renders when no metas were built.
             _why_html = (f"<div class='wrapped-why'>{_esc(_why)}</div>"
                          if _why and not _metas else "")
+            _form_html = ""
+            if s.get("form"):
+                _form_html = ("<div class='wrapped-form'>" + "".join(
+                    f"<div class='wrapped-form-row'>"
+                    f"<span class='wrapped-form-t'>"
+                    f"{_esc(str(_f.get('team') or ''))}</span>"
+                    f"<span class='wrapped-form-v'>L{_esc(str(_f.get('n') or 3))} "
+                    f"AVG {float(_f.get('avg') or 0):.1f}"
+                    + (f" · {_esc(str(_f['streak']))}" if _f.get("streak")
+                       else "")
+                    + "</span></div>"
+                    for _f in s["form"]) + "</div>")
             _stakes_html = ""
-            if s.get("stakes"):
-                _stakes_html = ("<div class='wrapped-stakes'>" + "".join(
+            if s.get("stakes") or s.get("watch"):
+                _cards = "".join(
                     f"<div class='wrapped-stake'><b>{_esc(str(_t))}</b> "
                     f"{_esc(str(_x))}</div>"
-                    for _t, _x in s["stakes"]) + "</div>")
+                    for _t, _x in (s.get("stakes") or []))
+                if s.get("watch"):
+                    _w = s["watch"]
+                    _cards += (
+                        f"<div class='wrapped-stake wrapped-stake-watch "
+                        f"wrapped-watch-{_esc(str(_w.get('tone') or 'gold'))}'>"
+                        f"<b>{_esc(str(_w.get('lead') or ''))}:</b> "
+                        f"{_esc(str(_w.get('text') or ''))}</div>")
+                _stakes_html = f"<div class='wrapped-stakes'>{_cards}</div>"
+            _series_html = (
+                f"<div class='wrapped-series'><b>Season series:</b> "
+                f"{_esc(str(s['series']))}</div>"
+                if s.get("series") else "")
             body = (
                 kicker
                 + _wrapped_title_html(s)
                 + _why_html
                 + _hero
                 + _winbar
+                + _form_html
                 + _stakes_html
+                + _series_html
                 + sub
             )
         elif s["num"]:
@@ -3313,6 +3346,73 @@ def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
             _lede = f"{_league_nm} · {playoff_teams} make it"
             if n_byes:
                 _lede += f" · Top {n_byes} get a bye"
+
+        # GOTW watch pool: candidates for a third stakes card on the
+        # Game of the Week slide, assembled only from this same
+        # scenario run. Exact mode supplies the per-game levers (an
+        # alive team that clinches with a win / is out with a loss in
+        # its next game); any mode can supply a spoiler (an eliminated
+        # team whose next game is against an alive team, from the
+        # remaining schedule already read above). Bounds mode leaves
+        # the levers at their neutral defaults and, with nobody
+        # eliminated yet (the Week 9 shape), the pool is simply empty.
+        _name_by_idx: dict = {}
+        _seed_by_idx: dict = {}
+        for _i, (_rid, _r) in enumerate(agg.iterrows()):
+            _ix = idx_of[str(_rid)]
+            _name_by_idx[_ix] = str(
+                rmap.get(_rid, rmap.get(str(_rid)))
+                or owner_by_rid.get(str(_rid)) or f"Team {_rid}")
+            _seed_by_idx[_ix] = _i + 1
+        _nw = week + 1
+        _watch: list = []
+        for _ix in sorted(scen_teams, key=lambda k: _seed_by_idx.get(k, 99)):
+            _e = scen_teams.get(_ix) or {}
+            if _e.get("status") != "alive":
+                continue
+            _opp_ix = (_e.get("next_game") or {}).get("opp")
+            _opp_nm = _name_by_idx.get(_opp_ix)
+            if _e.get("clinch_if_win_next"):
+                _txt = (f"{_name_by_idx[_ix]} locks up a playoff spot "
+                        f"with a win in Week {_nw}")
+                if _opp_nm:
+                    _txt += f" over {_opp_nm}"
+                _watch.append({"lead": "Clinch watch", "tone": "green",
+                               "subject": _name_by_idx[_ix],
+                               "text": _txt + "."})
+            elif _e.get("out_if_lose_next"):
+                _txt = (f"{_name_by_idx[_ix]} is eliminated with a "
+                        f"loss in Week {_nw}")
+                if _opp_nm:
+                    _txt += f" to {_opp_nm}"
+                _watch.append({"lead": "Elimination watch", "tone": "red",
+                               "subject": _name_by_idx[_ix],
+                               "text": _txt + "."})
+        _status_by_idx = {ix: (scen_teams.get(ix) or {}).get("status")
+                          for ix in _name_by_idx}
+        _spoiler = None
+        for _a, _b in (remaining.get(_nw) or []):
+            for _out_ix, _alive_ix in ((_a, _b), (_b, _a)):
+                if (_status_by_idx.get(_out_ix) == "eliminated"
+                        and _status_by_idx.get(_alive_ix) == "alive"):
+                    _alive_e = scen_teams.get(_alive_ix) or {}
+                    _chasing = bool(
+                        n_byes and _seed_by_idx.get(_alive_ix, 99) > n_byes
+                        and int(_alive_e.get("best_seed") or 99) <= n_byes)
+                    _txt = (f"{_name_by_idx[_out_ix]} is out, but it can "
+                            f"still play spoiler against "
+                            f"{_name_by_idx[_alive_ix]} in Week {_nw}.")
+                    if _chasing:
+                        _txt += (f" {_name_by_idx[_alive_ix]} is still "
+                                 "chasing a first-round bye.")
+                    _spoiler = {"lead": "Spoiler alert", "tone": "gold",
+                                "subject": _name_by_idx[_out_ix],
+                                "text": _txt}
+                    break
+            if _spoiler:
+                break
+        if _spoiler:
+            _watch.append(_spoiler)
         return {"kind": "playoffs", "eyebrow": "PLAYOFF PICTURE",
                 "title": "Playoff Picture",
                 "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
@@ -3321,6 +3421,7 @@ def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
                 "alive": alive,
                 "counts": _counts,
                 "lede": _lede,
+                "watch": _watch,
                 "clinched": [r["n"] for r in groups["clinched_bye"] + groups["clinched"]],
                 "eliminated": [r["n"] for r in groups["eliminated"]]}
     except Exception:
@@ -3669,25 +3770,28 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                             "pf": f"{float(_r['pf']):,.1f}",
                             "move": (_was - _seed_now) if _was else None})
             if len(_srows) >= 3:
-                # The playoff cut line + lede (the mock's standings
-                # furniture) need the league's playoff spots; settings
-                # ride the league dict like everywhere else in the deck.
+                # Top 5 only (Kaedon 2026-11-13): squeezing all ten rows
+                # onto one slide pushed the last rows under the footer.
+                # Five rows at a comfortable height read better and the
+                # slide count stays put. The lede names what is shown --
+                # no playoff-cut framing, since the cut usually sits
+                # below the shown rows; the gold cut line survives only
+                # when the cut itself is inside the top 5.
                 _set = {}
                 _set.update((ctx.get("league") or {}).get("settings") or {})
                 _set.update(ctx.get("league_settings") or {})
                 _spots = _safe_int(_set.get("playoff_teams"), 0)
-                _ord = {1: "1st", 2: "2nd", 3: "3rd"}.get(
-                    _spots, f"{_spots}th" if _spots else "")
+                _shown = _srows[:5]
                 slides.append({"kind": "standings", "eyebrow": "LEAGUE STANDINGS",
                                "title": "Standings",
                                "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                                "sub": f"Through Week {week}",
-                               "rows": _srows, "bgword": "STANDINGS",
+                               "rows": _shown, "bgword": "STANDINGS",
                                "cut_after": (_spots
-                                             if 0 < _spots < len(_srows) else 0),
-                               "lede": (f"Playoff cut after {_ord}. Movers "
-                                        "show change from last week."
-                                        if _spots else "")})
+                                             if 0 < _spots < len(_shown) else 0),
+                               "lede": (f"Top {len(_shown)} through "
+                                        f"Week {week}. Movers show change "
+                                        "from last week.")})
         except Exception:
             pass  # standings slide is best-effort; the deck renders without it
 
@@ -3772,6 +3876,114 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 _stakes.append((str(_tm), f"#{_sd} seed · {_phrase}"))
             if _stakes:
                 _g["stakes"] = _stakes
+            # Third stakes card: the first watch candidate from the
+            # Playoff Picture slide's scenario run whose subject is
+            # neither GOTW team (clinch / elimination / spoiler). No
+            # candidate (the common bounds-mode case) keeps two cards.
+            for _wc in ((_playoff_slide or {}).get("watch") or []):
+                if _wc.get("subject") not in (_game["team_a"],
+                                              _game["team_b"]):
+                    _g["watch"] = _wc
+                    break
+            # Form strip + season series, from the same finalized
+            # df_weekly the standings slide aggregates: each team's
+            # last-three scoring average and current streak, and the
+            # pair's earlier meetings this season. Best-effort like
+            # the standings slide; absent data simply omits the block.
+            try:
+                _fdf = ctx.get("df_weekly")
+                if (_fdf is not None and not getattr(_fdf, "empty", True)
+                        and "points" in _fdf.columns
+                        and "roster_id" in _fdf.columns):
+                    _fdf = _fdf.copy()
+                    _fdf = _fdf[pd.to_numeric(_fdf["week"], errors="coerce") <= week]
+                    if "finalized" in _fdf.columns:
+                        _fdf = _fdf[_fdf["finalized"] == True]
+                    _fpts = pd.to_numeric(_fdf["points"], errors="coerce")
+                    _fdf = _fdf[_fpts.notna() & (_fpts > 0)]
+                    _fdf["points"] = _fpts.loc[_fdf.index]
+                    _ra_s = str(_game.get("roster_id_a"))
+                    _rb_s = str(_game.get("roster_id_b"))
+                    _form = []
+                    for _rid_x, _tm_x in ((_ra_s, _game["team_a"]),
+                                          (_rb_s, _game["team_b"])):
+                        _t = _fdf[_fdf["roster_id"].astype(str) == _rid_x]
+                        if _t.empty:
+                            continue
+                        _t = _t.sort_values("week")
+                        _last = _t.tail(3)
+                        _streak = ""
+                        if "points_against" in _t.columns:
+                            _res = ["W" if p > a else "L" if p < a else "T"
+                                    for p, a in zip(
+                                        _t["points"],
+                                        pd.to_numeric(_t["points_against"],
+                                                      errors="coerce"))]
+                            if _res:
+                                _cnt = 1
+                                for _r0 in reversed(_res[:-1]):
+                                    if _r0 == _res[-1]:
+                                        _cnt += 1
+                                    else:
+                                        break
+                                _streak = f"{_res[-1]}{_cnt}"
+                        _form.append({
+                            "team": str(_tm_x),
+                            "avg": float(_last["points"].mean()),
+                            "n": int(len(_last)),
+                            "streak": _streak})
+                    if len(_form) == 2:
+                        _g["form"] = _form
+                    if "matchup_id" in _fdf.columns:
+                        _mtg = _aw = _bw = 0
+                        _last_m = None
+                        for (_w_x, _m_x), _grp in _fdf.groupby(
+                                ["week", "matchup_id"]):
+                            if len(_grp) != 2:
+                                continue
+                            _gm = {str(r["roster_id"]): float(r["points"])
+                                   for _, r in _grp.iterrows()}
+                            if _ra_s not in _gm or _rb_s not in _gm:
+                                continue
+                            _mtg += 1
+                            _pa_x, _pb_x = _gm[_ra_s], _gm[_rb_s]
+                            if _pa_x > _pb_x:
+                                _aw += 1
+                            elif _pb_x > _pa_x:
+                                _bw += 1
+                            _last_m = (int(_w_x), _pa_x, _pb_x)
+                        if _last_m:
+                            _w_x, _pa_x, _pb_x = _last_m
+                            if _pa_x == _pb_x:
+                                _g["series"] = (
+                                    f"Week {_w_x}: {_game['team_a']} and "
+                                    f"{_game['team_b']} tied "
+                                    f"{_pa_x:.1f}–{_pb_x:.1f}.")
+                            else:
+                                if _pa_x > _pb_x:
+                                    _win_t, _win_p = _game["team_a"], _pa_x
+                                    _los_t, _los_p = _game["team_b"], _pb_x
+                                else:
+                                    _win_t, _win_p = _game["team_b"], _pb_x
+                                    _los_t, _los_p = _game["team_a"], _pa_x
+                                _stxt = (f"Week {_w_x}: {_win_t} beat "
+                                         f"{_los_t} {_win_p:.1f}–{_los_p:.1f}.")
+                                if _mtg > 1 and _aw != _bw:
+                                    _lead_t = (_game["team_a"] if _aw > _bw
+                                               else _game["team_b"])
+                                    _lead_v = ("lead" if
+                                               _wrapped_team_name_is_plural(
+                                                   _lead_t) else "leads")
+                                    _stxt += (f" {_lead_t} {_lead_v} the "
+                                              f"season series "
+                                              f"{max(_aw, _bw)}–"
+                                              f"{min(_aw, _bw)}.")
+                                elif _mtg > 1:
+                                    _stxt += (f" The season series is "
+                                              f"tied {_aw}–{_bw}.")
+                                _g["series"] = _stxt
+            except Exception:
+                pass  # form/series are best-effort GOTW furniture
             slides.append(_g)
 
     # ── Oh My: the week's extremes — heartbreak, blowout, bench regret —
