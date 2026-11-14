@@ -73,7 +73,12 @@ def test_wash_css_uses_schedule_rankings_palette():
         rule = re.search(rf"\.gl-adv td\.gl-w{step} \{{([^}}]+)\}}", CSS_SRC)
         assert rule, f"gl-w{step} rule missing"
         assert f"color: {hexv}" in rule.group(1)
-        assert f"background-color: {hexv}18" in rule.group(1)
+        # The tint must be a background-IMAGE layer, never a translucent
+        # background-color: the frozen Pts cell's opaque row paint has to
+        # survive underneath the wash, or scrolled columns ghost through
+        # the sticky pane (Kaedon's 2026-11-14 phone screenshots).
+        assert f"background-image: linear-gradient({hexv}18, {hexv}18)" in rule.group(1)
+        assert "background-color" not in rule.group(1)
 
 
 def test_derivation_script_documents_pool():
@@ -356,3 +361,47 @@ def test_qb_verdict_and_passing_columns():
     tcells = [re.sub(r"<[^>]+>", "", t).strip()
               for t in re.findall(r"<td[^>]*>(.*?)</td>", tfoot, re.S)]
     assert tcells[3] == "-"
+
+
+# ── Column-width hardening (Kaedon's 2026-11-14 phone report) ──────────
+# On iOS the auto-layout table collapsed most stat columns and stretched
+# Tar to 161px with boosted text; the renderer now stamps a glc-<key>
+# class on every cell so the CSS can pin each column's width explicitly.
+
+def test_column_width_css_contracts():
+    base = re.search(r"\.game-log-table \{([^}]+)\}", CSS_SRC)
+    assert base and "text-size-adjust: 100%" in base.group(1), \
+        "iOS font boosting must be off for the game-log table"
+    # Every stat column key the renderer can emit has an explicit width.
+    for key in ("pts", "rank", "snppct", "xfp", "patt", "pcmp", "pyd",
+                "pypa", "ptd", "pint", "car", "ryd", "rypa", "carpct",
+                "rtd", "btk", "rzcar", "ybc", "tar", "rec", "recyd",
+                "rectd", "ypt", "tspct", "adot", "rztar", "wopr"):
+        rule = re.search(rf"\.gl-adv td\.glc-{key}, \.gl-adv th\.glc-{key} "
+                         rf"\{{([^}}]+)\}}", CSS_SRC)
+        assert rule and "width:" in rule.group(1), f"glc-{key} width missing"
+    # Backstop cap: no glc column may stretch past stat-column size.
+    assert '.gl-adv td[class*="glc-"]' in CSS_SRC
+    assert "max-width: 88px" in CSS_SRC
+    # The width:1% Date/Opp hint must not reach thead tr.grp, whose second
+    # cell spans the whole Fantasy group.
+    hint = re.search(r"Date \+ Opp are fixed labels.*?\*/\s*(.*?)\{",
+                     CSS_SRC, re.S)
+    assert hint and "tr.grp" not in hint.group(1)
+    assert ".game-log-table thead tr.cols th:nth-child(1)" in hint.group(1)
+
+
+@pytestmark_node
+def test_renderer_stamps_glc_column_classes():
+    html = _render()["rbOff"]
+    cols = re.search(r'<tr class="cols">(.*?)</tr>', html, re.S).group(1)
+    th_classes = re.findall(r'<th[^>]*class="([^"]*)"', cols)
+    assert "glc-date" in th_classes[0] and "glc-opp" in th_classes[1]
+    assert "glc-pts" in th_classes[2] and "glc-rank" in th_classes[3]
+    assert "glc-tar" in th_classes[14]
+    row = _body_rows(html)[0]
+    assert "glc-date" in row[0][0] and "glc-opp" in row[1][0]
+    assert "glc-pts" in row[2][0] and "glc-tar" in row[14][0]
+    tfoot = re.search(r"<tfoot>(.*?)</tfoot>", html, re.S).group(1)
+    td_classes = re.findall(r'<td[^>]*class="([^"]*)"', tfoot)
+    assert "glc-date" in td_classes[0] and "glc-pts" in td_classes[2]

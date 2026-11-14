@@ -23679,6 +23679,11 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
     border-collapse: collapse;
     font-size: 13px;
     background: var(--card);
+    /* iOS Safari font boosting inflates text in whichever table column it
+       deems widest (the Tar column rendered ~2x size on a phone while its
+       neighbours stayed 11px); the table's sizes are already deliberate. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 .game-log-table thead {
@@ -23711,11 +23716,17 @@ ins.adsbygoogle[data-ad-status="unfilled"] {
 
 /* Date + Opp are fixed labels -- shrink them to their content so the wider
    Pts/stat columns absorb the remaining width instead of every column
-   spreading evenly across the table. */
-.game-log-table th:nth-child(1),
-.game-log-table td:nth-child(1),
-.game-log-table th:nth-child(2),
-.game-log-table td:nth-child(2) {
+   spreading evenly across the table. Scoped away from thead tr.grp: that
+   row's cells are the group labels spanning several columns (its second
+   cell spans the whole Fantasy group), and a width:1% hint on a spanning
+   header is exactly the kind of first-row signal some engines (Safari)
+   let crush the columns under it. */
+.game-log-table thead tr.cols th:nth-child(1),
+.game-log-table thead tr.cols th:nth-child(2),
+.game-log-table tbody td:nth-child(1),
+.game-log-table tbody td:nth-child(2),
+.game-log-table tfoot td:nth-child(1),
+.game-log-table tfoot td:nth-child(2) {
     width: 1%;
     white-space: nowrap;
 }
@@ -24067,17 +24078,65 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 
 /* Digestible game-log washes: full-cell tints in the Schedule Rankings
    palette (sched_rank_color's exact pairs, so a great game reads the
-   same green here as an easy matchup does there). background-color is
-   !important so a wash survives the frozen pane's row-state paints,
-   which target the Pts cell with high-specificity nth-child selectors
-   (the same reason the Pts tier colors above need !important). */
-.gl-adv td.gl-w1 { color: #22c55e; background-color: #22c55e18 !important; font-weight: 700; }
-.gl-adv td.gl-w2 { color: #84cc16; background-color: #84cc1618 !important; font-weight: 700; }
-.gl-adv td.gl-w3 { color: #f59e0b; background-color: #f59e0b18 !important; font-weight: 700; }
-.gl-adv td.gl-w4 { color: #ef4444; background-color: #ef444418 !important; font-weight: 700; }
+   same green here as an easy matchup does there). The tint is a flat
+   background-IMAGE layer (an !important one, so it survives the frozen
+   pane's row-state background paints, which target the Pts cell with
+   high-specificity nth-child selectors -- the same reason the Pts tier
+   colors above need !important), never a background-color: a translucent
+   background-color replaced the frozen Pts cell's opaque row paint, so
+   scrolled stat columns ghosted straight through it while the table
+   scrolled sideways. As an image layer the 9% tint composites over the
+   cell's own opaque background (var(--card) / var(--row) / var(--bg-alt)
+   for the frozen cells, the table's card background showing through the
+   transparent scrolling cells), which reads identically at rest and
+   stays opaque in the pane. */
+.gl-adv td.gl-w1 { color: #22c55e; background-image: linear-gradient(#22c55e18, #22c55e18) !important; font-weight: 700; }
+.gl-adv td.gl-w2 { color: #84cc16; background-image: linear-gradient(#84cc1618, #84cc1618) !important; font-weight: 700; }
+.gl-adv td.gl-w3 { color: #f59e0b; background-image: linear-gradient(#f59e0b18, #f59e0b18) !important; font-weight: 700; }
+.gl-adv td.gl-w4 { color: #ef4444; background-image: linear-gradient(#ef444418, #ef444418) !important; font-weight: 700; }
 .gl-adv td.game-log-table-pts.gl-w1 { color: #22c55e !important; }
 .gl-adv td.game-log-table-pts.gl-w3 { color: #f59e0b !important; }
 .gl-adv td.game-log-table-pts.gl-w4 { color: #ef4444 !important; }
+
+/* Explicit per-column widths, carried by a glc-<key> class the renderer
+   stamps on every header, body and totals cell of a column. Auto table
+   layout otherwise takes column widths as negotiable hints, and on iOS
+   Safari the negotiation collapsed most stat columns out of the layout
+   and poured the whole table width into the one remaining column (Tar
+   rendered 161px wide with boosted text while Rank/SNP%/xFP/Rec/Yd/TD
+   vanished). A width on every cell of the column leaves engines nothing
+   to negotiate; the max-width cap is a backstop so no glc column can
+   ever stretch past stat-column size again. Date/Opp/Pts keep the
+   frozen pane's own pinned widths (44/86, and 48 for Pts below 768px);
+   glc-pts only sizes Pts where the pane does not pin it. */
+.gl-adv td.glc-pts, .gl-adv th.glc-pts { width: 52px; }
+.gl-adv td.glc-rank, .gl-adv th.glc-rank { width: 42px; }
+.gl-adv td.glc-snppct, .gl-adv th.glc-snppct { width: 46px; }
+.gl-adv td.glc-xfp, .gl-adv th.glc-xfp { width: 42px; }
+.gl-adv td.glc-patt, .gl-adv th.glc-patt { width: 40px; }
+.gl-adv td.glc-pcmp, .gl-adv th.glc-pcmp { width: 40px; }
+.gl-adv td.glc-pyd, .gl-adv th.glc-pyd { width: 46px; }
+.gl-adv td.glc-pypa, .gl-adv th.glc-pypa { width: 46px; }
+.gl-adv td.glc-ptd, .gl-adv th.glc-ptd { width: 34px; }
+.gl-adv td.glc-pint, .gl-adv th.glc-pint { width: 38px; }
+.gl-adv td.glc-car, .gl-adv th.glc-car { width: 38px; }
+.gl-adv td.glc-ryd, .gl-adv th.glc-ryd { width: 46px; }
+.gl-adv td.glc-rypa, .gl-adv th.glc-rypa { width: 50px; }
+.gl-adv td.glc-carpct, .gl-adv th.glc-carpct { width: 46px; }
+.gl-adv td.glc-rtd, .gl-adv th.glc-rtd { width: 34px; }
+.gl-adv td.glc-btk, .gl-adv th.glc-btk { width: 40px; }
+.gl-adv td.glc-rzcar, .gl-adv th.glc-rzcar { width: 54px; }
+.gl-adv td.glc-ybc, .gl-adv th.glc-ybc { width: 46px; }
+.gl-adv td.glc-tar, .gl-adv th.glc-tar { width: 38px; }
+.gl-adv td.glc-rec, .gl-adv th.glc-rec { width: 38px; }
+.gl-adv td.glc-recyd, .gl-adv th.glc-recyd { width: 46px; }
+.gl-adv td.glc-rectd, .gl-adv th.glc-rectd { width: 34px; }
+.gl-adv td.glc-ypt, .gl-adv th.glc-ypt { width: 50px; }
+.gl-adv td.glc-tspct, .gl-adv th.glc-tspct { width: 46px; }
+.gl-adv td.glc-adot, .gl-adv th.glc-adot { width: 50px; }
+.gl-adv td.glc-rztar, .gl-adv th.glc-rztar { width: 54px; }
+.gl-adv td.glc-wopr, .gl-adv th.glc-wopr { width: 50px; }
+.gl-adv td[class*="glc-"], .gl-adv th[class*="glc-"] { max-width: 88px; }
 
 /* Deep (advanced) columns stay hidden until the section's Detailed
    toggle adds gl-show-detail to the table; group-header colspans swap
