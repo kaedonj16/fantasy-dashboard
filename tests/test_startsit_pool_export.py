@@ -108,7 +108,7 @@ _fake_compute_start_score.seen = []
 
 @pytest.fixture()
 def export_env(monkeypatch):
-    """Fake bundle layer + index + tier index around the real builder."""
+    """Fake bundle layer + players index around the real builder."""
     import app as appmod
     import data_building.start_score_bundle as bundle_mod
     import utils.start_sit_score as score_mod
@@ -136,9 +136,6 @@ def export_env(monkeypatch):
         appmod, "_matchup_rank_table",
         lambda season, position, scoring_settings=None: (
             {"DAL": 32, "NE": 20, "SF": 4}, 32, {}, False))
-    # Deterministic tier index: rank 1 -> 100, rank 2 -> 99, ...
-    monkeypatch.setattr(appmod, "start_score_tier_index",
-                        lambda pos, rank: 101 - rank)
     appmod._SS_EXPORT_CACHE.clear()
     appmod._SS_EXPORT_CACHE_TS.clear()
     yield calls, state
@@ -167,8 +164,11 @@ def test_export_ranks_ties_and_shape(export_env):
     assert set(out.keys()) == {"QB", "RB", "WR", "TE"}
     rb = out["RB"]
     assert [r["pid"] for r in rb] == ["1", "2", "3"]
-    # Competition ranking: the tie shares rank 1, the next rank is 3.
-    assert [r["index"] for r in rb] == [100, 100, 98]
+    # Score-derived index: the anchor is the mean of the top 3 values
+    # (26.67 here), so the tied 30.0 values cap at 100 together and
+    # the 20.0 value (0.75 of the anchor) prints 84 on the compressed
+    # scale.
+    assert [r["index"] for r in rb] == [100, 100, 84]
     assert rb[0] == {
         "pid": "1", "name": "Alpha Back", "team": "DET",
         "value": 30.0, "proj": 15.0, "injury": "", "index": 100,
