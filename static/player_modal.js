@@ -5784,10 +5784,10 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
           const projVal = game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '-';
           rows += `
             <tr class="game-log-table-row game-log-proj-row">
-              <td class="sticky">${_dateStr(game) || `Wk ${game.week}`}</td>
-              <td class="game-log-table-opp">${_oppCell(game, '-')}</td>
-              <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
-              ${allCols.filter((c) => c.k !== 'pts').map((c) => `<td class="dash${c.deep ? ' gl-deep' : ''}">-</td>`).join('')}
+              <td class="sticky glc-date">${_dateStr(game) || `Wk ${game.week}`}</td>
+              <td class="game-log-table-opp glc-opp">${_oppCell(game, '-')}</td>
+              <td class="game-log-table-pts game-log-proj-pts glc-pts">${projVal}</td>
+              ${allCols.filter((c) => c.k !== 'pts').map((c) => `<td class="dash glc-${c.k}${c.deep ? ' gl-deep' : ''}">-</td>`).join('')}
             </tr>
           `;
           return;
@@ -5810,16 +5810,16 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
             if (c.k === 'pts') return; // Pts lives in its own fixed column
             const v = (isBye || !hasAnyStats) ? null : c.get(game);
             const step = _glWashStep(c.k, v);
-            const cls = ((ci === 0 ? 'sec-start ' : '') + (c.deep ? 'gl-deep ' : '') + (step ? 'gl-w' + step : '')).trim();
+            const cls = ((ci === 0 ? 'sec-start ' : '') + 'glc-' + c.k + ' ' + (c.deep ? 'gl-deep ' : '') + (step ? 'gl-w' + step : '')).trim();
             cells += `<td class="${cls}">${v == null ? '-' : c.fmt(v)}</td>`;
           });
         });
 
         rows += `
           <tr class="${rowClass}">
-            <td class="sticky">${isBye ? '<span class="bye-code">BYE</span>' : _dateStr(game)}</td>
-            <td class="game-log-table-opp">${_oppCell(game, '-')}</td>
-            <td class="game-log-table-pts sec-start${ptsStep ? ' gl-w' + ptsStep : ''}">${ptsCell}</td>
+            <td class="sticky glc-date">${isBye ? '<span class="bye-code">BYE</span>' : _dateStr(game)}</td>
+            <td class="game-log-table-opp glc-opp">${_oppCell(game, '-')}</td>
+            <td class="game-log-table-pts sec-start glc-pts${ptsStep ? ' gl-w' + ptsStep : ''}">${ptsCell}</td>
             ${cells}
           </tr>
         `;
@@ -5833,9 +5833,9 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
         tfoot = `
           <tfoot>
             <tr class="game-log-table-total game-log-proj-row">
-              <td class="sticky"><strong>Total</strong></td>
-              <td><strong>${projGames}G</strong></td>
-              <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
+              <td class="sticky glc-date"><strong>Total</strong></td>
+              <td class="glc-opp"><strong>${projGames}G</strong></td>
+              <td class="game-log-table-pts game-log-proj-pts glc-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
               <td colspan="${window._glDetailed ? span : coreSpan}" data-cs-all="${span}" data-cs-core="${coreSpan}" class="gl-tfoot-note">* Projected - actuals update when games are played</td>
             </tr>
           </tfoot>`;
@@ -5843,11 +5843,11 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
         tfoot = `
           <tfoot>
             <tr class="game-log-table-total">
-              <td class="sticky"><strong>Total</strong></td>
-              <td><strong>${agg.n}G</strong></td>
+              <td class="sticky glc-date"><strong>Total</strong></td>
+              <td class="glc-opp"><strong>${agg.n}G</strong></td>
               ${allCols.map((c) => {
                 const t = _totFor(c, realGames);
-                const cls = ((c.k === 'pts' ? 'game-log-table-pts sec-start' : '') + (c.deep ? ' gl-deep' : '')).trim();
+                const cls = ((c.k === 'pts' ? 'game-log-table-pts sec-start ' : '') + 'glc-' + c.k + (c.deep ? ' gl-deep' : '')).trim();
                 return `<td class="${cls}"><strong>${t == null ? '-' : c.fmt(t)}</strong></td>`;
               }).join('')}
             </tr>
@@ -5891,10 +5891,10 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
                     }).join('')}
                   </tr>
                   <tr class="cols">
-                    <th class="sticky">Date</th>
-                    <th>Opp</th>
+                    <th class="sticky glc-date">Date</th>
+                    <th class="glc-opp">Opp</th>
                     ${groups.map((gr) => gr.cols.map((c, ci) =>
-                      `<th class="${((ci === 0 ? 'sec-start' : '') + (c.deep ? ' gl-deep' : '')).trim()}">${c.k === 'pts' && (isProjection || isMixed) ? 'Pts *' : c.h}</th>`
+                      `<th class="${((ci === 0 ? 'sec-start ' : '') + 'glc-' + c.k + (c.deep ? ' gl-deep' : '')).trim()}">${c.k === 'pts' && (isProjection || isMixed) ? 'Pts *' : c.h}</th>`
                     ).join('')).join('')}
                   </tr>
                 </thead>
