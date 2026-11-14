@@ -342,6 +342,7 @@ def _neutral_factors(proj: float) -> dict:
         "expected_plays": 1.0,
         "role": 1.0,
         "def_injuries": 1.0,
+        "role_trend": 1.0,
     }
 
 
@@ -509,6 +510,34 @@ def form_usage_inputs(played_points, played_usage=None) -> dict:
     return out
 
 
+def snap_share_trend(snap_shares) -> Optional[float]:
+    """Role-trend input for the rating: the change in a player's snap
+    share across his last 4 PLAYED weeks — mean share of the last 2
+    weeks minus mean share of the first 2.
+
+    ``snap_shares`` is the chronological list of weekly snap shares
+    (offense snaps / team offense snaps) for played weeks only; callers
+    count a week as played when the stat row shows game participation
+    (``gp`` >= 1 or a snap count present), independent of the points
+    line the form/usage derivation keys on, and a played week whose
+    share cannot be computed does not enter the window. Returns None
+    with fewer than 4 played weeks carrying a share: no trend is
+    claimed off a partial window.
+    """
+    shares = []
+    for s in snap_shares or []:
+        if s is None:
+            continue
+        try:
+            shares.append(float(s))
+        except (TypeError, ValueError):
+            continue
+    if len(shares) < 4:
+        return None
+    last4 = shares[-4:]
+    return (last4[2] + last4[3]) / 2.0 - (last4[0] + last4[1]) / 2.0
+
+
 def compute_start_score(
     proj_pts: float,
     *,
@@ -534,6 +563,7 @@ def compute_start_score(
     played_games: Optional[int] = None,
     last4_ppg: Optional[float] = None,
     last4_games: Optional[int] = None,
+    snap_trend: Optional[float] = None,
 ) -> tuple[float, dict, Optional[str]]:
     """Return ``(score, score_factors, demotion)``.
 
@@ -598,8 +628,18 @@ def compute_start_score(
     ``low_total_team`` marks the player's team as one of the week's bottom-8
     implied-total teams (see ``bottom_teams_by_implied_total``). It only gates
     the "low_total" demotion label; the Vegas score multiplier is unchanged.
+
+    ``snap_trend`` is the role-trend factor (V2 at half strength,
+    backtested 2026-11-13 over Weeks 6-9: fully-ordered boards went
+    6/16 baseline to 9/16): the change in snap share across the
+    player's last 4 played weeks (see :func:`snap_share_trend`),
+    supplied by the caller like ``defensive_injury_impact``; absence
+    is neutral. RB/WR/TE only — a QB's snap share carries no role
+    signal. It enters as its own multiplier,
+    ``clamp(1 + 0.25 * trend, 0.96, 1.04)``: half the strength of the
+    full variant (0.5 coefficient, +/-8% cap), which backtested worse.
     """
-    form = mu = usage = avail = vegas = floor = weather = oline = plays = role = def_inj = 1.0
+    form = mu = usage = avail = vegas = floor = weather = oline = plays = role = def_inj = role_trend = 1.0
     demotion = None
     try:
         proj = float(proj_pts or 0)
@@ -751,11 +791,18 @@ def compute_start_score(
         except (TypeError, ValueError):
             def_inj = 1.0
 
+    if snap_trend is not None and pos in ("RB", "WR", "TE"):
+        try:
+            # Half strength (0.25 coefficient, +/-4% cap) — see docstring.
+            role_trend = min(1.04, max(0.96, 1.0 + 0.25 * float(snap_trend)))
+        except (TypeError, ValueError):
+            role_trend = 1.0
+
     # The form x usage product is capped as a unit: hot form and a rising
     # role describe much of the same signal, so together they may move the
     # score at most +/-10% no matter how extreme each factor is alone.
     form_usage = min(1.10, max(0.90, form * usage))
-    score = base * form_usage * mu * avail * vegas * floor * weather * oline * plays * role * def_inj
+    score = base * form_usage * mu * avail * vegas * floor * weather * oline * plays * role * def_inj * role_trend
     return score, {
         "proj": proj,
         "base": round(base, 2),
@@ -771,6 +818,7 @@ def compute_start_score(
         "expected_plays": round(plays, 3),
         "role": round(role, 3),
         "def_injuries": round(def_inj, 3),
+        "role_trend": round(role_trend, 3),
     }, demotion
 
 

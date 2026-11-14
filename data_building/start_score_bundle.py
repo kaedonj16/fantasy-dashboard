@@ -279,7 +279,11 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     The derivation also carries ``last4_ppg`` (last 4 played weeks):
     the rating's form-blend input (``compute_start_score`` blends it
     into the base at 35% on a full window), and the value the compare
-    rows labeled "L4 PPG" display.
+    rows labeled "L4 PPG" display. It also carries ``snap_trend``:
+    the role-trend input (snap-share change over the last 4 played
+    weeks, see ``utils.start_sit.snap_share_trend``), derived on the
+    trend's own played rule — game participation (``gp`` >= 1 or a
+    snap count), independent of the points line above.
 
     This is the single derivation the bundle build and the Start/Sit page's
     live fallback share, so both paths feed ``compute_start_score`` identical
@@ -308,7 +312,8 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     out: Dict[str, dict] = {}
     try:
         from utils.fantasy_scoring import week_stat_points
-        from utils.start_sit_score import form_usage_inputs, usage_value_from_stats
+        from utils.start_sit_score import (
+            form_usage_inputs, snap_share_trend, usage_value_from_stats)
         from utils.utils import load_players_index
 
         try:
@@ -321,6 +326,7 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
         }
         played_points: Dict[str, list] = {}
         played_usage: Dict[str, list] = {}
+        played_shares: Dict[str, list] = {}
         for path in files:
             try:
                 with open(path) as fh:
@@ -332,6 +338,21 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
             for pid, st in payload.items():
                 if not isinstance(st, dict):
                     continue
+                # Snap shares for the role-trend factor, on the trend's
+                # own played rule (game participation), independent of
+                # the points line below. A played week whose share
+                # cannot be computed does not enter the window.
+                try:
+                    _gp = st.get("gp")
+                    if ((_gp is not None and float(_gp) >= 1)
+                            or "off_snp" in st):
+                        _off = st.get("off_snp")
+                        _tm = st.get("tm_off_snp")
+                        if _off is not None and _tm:
+                            played_shares.setdefault(str(pid), []).append(
+                                float(_off) / float(_tm))
+                except (TypeError, ValueError):
+                    pass
                 if st.get("pts_ppr") is None:
                     continue  # not a played week (phantom row / did not play)
                 pid = str(pid)
@@ -347,6 +368,8 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
             pid: form_usage_inputs(pts, played_usage.get(pid))
             for pid, pts in played_points.items()
         }
+        for _pid, _entry in out.items():
+            _entry["snap_trend"] = snap_share_trend(played_shares.get(_pid))
     except Exception:
         logger.debug("start_score_bundle input derivation failed", exc_info=True)
         out = {}
@@ -627,6 +650,13 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                         round(float(_inp["usage_season_avg"]), 1)
                         if _inp.get("usage_season_avg") is not None else None),
                     "played_games": int(_inp.get("played_games") or 0),
+                    # Role trend from the same derivation (snap-share
+                    # change over the last 4 played weeks); None when
+                    # the window is short — the rating treats it as
+                    # neutral.
+                    "snap_trend": (
+                        round(float(_inp["snap_trend"]), 4)
+                        if _inp.get("snap_trend") is not None else None),
                     "implied_total": implied_total,
                     "low_total_team": team in low_total_teams,
                     "weather_kind": weather_kind,
@@ -908,6 +938,9 @@ def load_start_score_bundles_for_scoring(
                 round(float(_inp["usage_season_avg"]), 1)
                 if _inp.get("usage_season_avg") is not None else None)
             nb["played_games"] = int(_inp.get("played_games") or 0)
+            nb["snap_trend"] = (
+                round(float(_inp["snap_trend"]), 4)
+                if _inp.get("snap_trend") is not None else None)
             bust_rate = None
             try:
                 cur = weekly.get(pid) or []

@@ -4090,6 +4090,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                         league_average_plays=bundle.get(
                             "league_average_plays"),
                         role_confidence=bundle.get("role_confidence"),
+                        snap_trend=bundle.get("snap_trend"),
                         low_total_team=bool(
                             bundle.get("low_total_team")),
                     )
@@ -4311,6 +4312,7 @@ def build_start_sit_pool_export(season, week):
                 expected_team_plays=b.get("expected_team_plays"),
                 league_average_plays=b.get("league_average_plays"),
                 role_confidence=b.get("role_confidence"),
+                snap_trend=b.get("snap_trend"),
                 low_total_team=bool(b.get("low_total_team")),
             )
         except Exception:
@@ -17377,6 +17379,7 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
         out["usage_delta"] = _din.get("usage_delta")
         out["usage_season_avg"] = _din.get("usage_season_avg")
         out["played_games"] = _din.get("played_games")
+        out["snap_trend"] = _din.get("snap_trend")
     except Exception:
         logger.debug("[startsit extras] recent_ppg failed", exc_info=True)
 
@@ -18184,6 +18187,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                       "season_avg": _bun.get("usage_season_avg")}
             _role_conf_ss = _bun.get("role_confidence")
             _played_ss = _bun.get("played_games")
+            _snap_trend_ss = _bun.get("snap_trend")
         else:
             _ut_ss = _ss_usage_trends.get(pid) or {}
             _role_conf_ss = role_confidence_from_trend(_ut_ss)
@@ -18195,6 +18199,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                       "delta": _din_ss.get("usage_delta"),
                       "season_avg": _din_ss.get("usage_season_avg")}
             _played_ss = _din_ss.get("played_games")
+            _snap_trend_ss = _din_ss.get("snap_trend")
         usage_delta = _ut_ss.get("delta")
         # The bundle path never resolves consistency; keep it per-row so a
         # bundle row can never inherit the previous player's value.
@@ -18231,6 +18236,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             league_average_plays=_pace_ss.get("league_average_plays"),
             role_confidence=_role_conf_ss,
             played_games=_played_ss,
+            snap_trend=_snap_trend_ss,
             low_total_team=bool(_bun.get("low_total_team")) if _bun is not None else (team in _ss_low_total_teams),
         )
         _form = _factors["form"]
@@ -18331,6 +18337,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                 "expected_plays": _factors["expected_plays"],
                 "role": _factors["role"],
                 "def_injuries": _factors["def_injuries"],
+                "role_trend": _factors["role_trend"],
             },
             "likely_range": likely_range(score, _role_conf_ss),
             "_score": score,
@@ -34107,6 +34114,7 @@ def api_player_details(player_id: str):
                         league_average_plays=(_ssp.get("pace") or {}).get("league_average_plays"),
                         role_confidence=_ssp.get("role_confidence"),
                         played_games=_ssp.get("played_games"),
+                        snap_trend=_ssp.get("snap_trend"),
                         low_total_team=(_ss_team in _ss_low_total_teams),
                     )
                     _start_score = round(float(_ss_val), 2)

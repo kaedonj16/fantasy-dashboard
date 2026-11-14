@@ -49,6 +49,7 @@ def _bundle(pos, proj, **over):
         "expected_team_plays": None,
         "league_average_plays": None,
         "role_confidence": None,
+        "snap_trend": None,
         "low_total_team": False,
     }
     b.update(over)
@@ -72,6 +73,7 @@ def _fake_compute_start_score(
     expected_team_plays=None,
     league_average_plays=None,
     role_confidence=None,
+    snap_trend=None,
     low_total_team=False,
 ):
     """Mirror of the snippet's call surface: score = 2 x projection.

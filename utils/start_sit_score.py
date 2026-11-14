@@ -20,6 +20,7 @@ from utils.start_sit import (  # noqa: F401,F403
     compute_start_score,
     form_usage_inputs,
     likely_range,
+    snap_share_trend,
     start_sit_pool_excluded,
     usage_value_from_stats,
 )
