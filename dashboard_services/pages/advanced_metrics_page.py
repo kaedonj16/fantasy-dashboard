@@ -2134,6 +2134,20 @@ def build_advanced_metrics_body(
         .am-cmd-controls .am-context-line { grid-area:context; width:100%; align-self:center; }
         .am-cmd-controls .am-movers { grid-area:movers; }
       }
+      /* Hit-area floor (44px rule, 2026-11-14): coarse pointers only.
+         The chip row grows to 44px tall so the remove-x can carry a full
+         44px box inside it instead of the old 10x15px target. */
+      @media (pointer: coarse) {
+        .am-pill { min-height:44px; }
+        .am-cmd-btn { min-width:44px; min-height:44px; }
+        .am-chip { min-height:44px; }
+        .am-chip-x { min-width:44px; min-height:44px; margin:0; }
+        .am-add-stat-btn { min-height:44px; }
+        .am-select, .am-context-line { min-height:44px; }
+        .am-clear-link.am-clear-link-show {
+          display:inline-flex; align-items:center; min-height:44px;
+        }
+      }
     </style>
     """
 

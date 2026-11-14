@@ -57798,6 +57798,92 @@ button, a, [role="button"], input, select, textarea, label, summary {
 }
 
 /* ==========================================================================
+   Hit-area floor (44px rule, 2026-11-14 audit): on coarse pointers every
+   standalone tap target gets at least a 44px box. min-width/min-height
+   override the smaller fixed sizes below them in the cascade, so glyphs,
+   font sizes and desktop geometry are untouched: icon buttons keep their
+   icon (flex-centered in the bigger box) and short controls just get a
+   taller box. Page-local styles that live outside this sheet (.am-*,
+   .pr-*, .ddb-*, .pi-info-btn, .paywall-close) carry the same floor in
+   their own style blocks.
+   ========================================================================== */
+@media (pointer: coarse) {
+    /* Every-page mobile chrome: 38px -> 44px box, same glyph */
+    .top-nav.br-mnav .br-top-search,
+    .top-nav.br-mnav .br-top-notif {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    #darkModeToggle,
+    .utility-icon-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Modal / popup closes and dismiss buttons */
+    .player-modal-close,
+    .team-modal-close,
+    .for-modal-close,
+    .otc-popup-close,
+    .br-asst-bubble-dismiss {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Standalone info buttons */
+    .otc-info-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Short controls: height floor (their width already fits the label) */
+    .btn,
+    .btn-sm,
+    select,
+    .csd-trigger,
+    .otc-main-tab,
+    .pagination-btn,
+    .pagination-page,
+    .fob-skip,
+    .fob-next,
+    .br-asst-chip,
+    .google-continue-btn,
+    .otc-share-btn,
+    .otc-mobile-clear-btn {
+        min-height: 44px;
+    }
+
+    .otc-settings-row .csd-trigger {
+        height: auto;
+        min-height: 44px;
+    }
+
+    /* Filter pills: floor on both axes (the numeric day filters were
+       as narrow as 28px) */
+    .otc-day-filter {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .pagination-page,
+    .bo-page-btn {
+        min-width: 44px;
+    }
+
+    .bo-page-btn {
+        min-height: 44px;
+    }
+
+    /* Text inputs measured 26-38px tall on the database/compare pages */
+    .tdb-search,
+    .compare-pick-input,
+    .ddb-search {
+        min-height: 44px;
+    }
+}
+
+/* ==========================================================================
    Guest landing rework (A+): hero + board, tools strips, live demos, quote,
    PRO card, free tools, light connect card with platform rail.
    This block is maintained identically in dashboard.css and
