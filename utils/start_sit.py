@@ -436,6 +436,14 @@ FORM_SCALES = {"QB": 5.5, "RB": 4.0, "WR": 4.0, "TE": 4.0}
 FORM_BLEND_WEIGHT = 0.35
 #: Games in a full recent-form window for the base blend.
 FORM_BLEND_WINDOW = 4
+#: Elite-form floor lines (last-4-played PPG), 2026-11-13: a player
+#: producing at or above his position's line in absolute terms may not
+#: be form-discounted for running below his own season baseline (the
+#: Gibbs case: an 18.5-PPG last-3 against a 26.2 season line saturated
+#: the -8% clamp even though the stretch itself was elite). The lines
+#: are exact — the sensitivity run showed lower lines start rescuing
+#: merely-good players whose discounts carried real signal.
+ELITE_FORM_FLOOR_PPG = {"QB": 22.0, "RB": 20.0, "WR": 20.0, "TE": 14.0}
 #: Position scale for the absolute usage delta (metric units per game).
 USAGE_SCALES = {"RB": 3.0, "WR": 2.0, "TE": 2.0}
 #: Sleeper stat keys summed into the usage metric, by position. QB is
@@ -592,7 +600,13 @@ def compute_start_score(
       into the pool.
     * ``form`` — absolute PPG delta (``recent_ppg`` over the last 3 played
       weeks minus ``season_ppg`` over all played weeks), scaled per position
-      (``FORM_SCALES``), worth up to ±8%.
+      (``FORM_SCALES``), worth up to ±8%. Elite floor: when ``last4_ppg``
+      is at or above the position's ``ELITE_FORM_FLOOR_PPG`` line, form
+      is never below 1.0 — elite absolute production is not scored as
+      cold form just for running below a huge personal baseline. The
+      floor only lifts a discount to neutral; it never creates a bonus
+      or trims one, and callers that supply no ``last4_ppg`` get no
+      floor.
     * ``usage`` — absolute per-game delta of the position's volume metric
       (``usage_delta``, from :func:`form_usage_inputs`): opportunities for
       RB, targets for WR/TE, worth up to ±5%. A delta under 1.0 per game is
@@ -704,6 +718,19 @@ def compute_start_score(
         # outweigh a projection gap).
         form_scale = FORM_SCALES.get(pos, 4.0)
         form = 1.0 + min(1.0, max(-1.0, (recent - season) / form_scale)) * 0.08 * shrink
+
+    # Elite floor (2026-11-13): applied to the finished, shrunk form
+    # factor, keyed on the last-4-played PPG the base blend also uses.
+    # A player still producing at an elite absolute level is not
+    # discounted for cooling off against his own huge baseline.
+    if form < 1.0 and last4_ppg is not None:
+        _elite_line = ELITE_FORM_FLOOR_PPG.get(pos)
+        if _elite_line is not None:
+            try:
+                if float(last4_ppg) >= _elite_line:
+                    form = 1.0
+            except (TypeError, ValueError):
+                pass
 
     if apply_matchup is not False and def_rank and def_total and def_total > 1:
         ease = (float(def_total) - float(def_rank)) / (float(def_total) - 1)

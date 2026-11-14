@@ -4257,6 +4257,16 @@ def build_start_sit_pool_export(season, week):
     rank (rank computed over the full position list, before the top-40
     cut, exactly as the shell snippet did).
 
+    The score is computed with the SAME inputs start_score_pool_scores
+    feeds the rating (2026-11-13 unification): the bundle's last-4-played
+    PPG (base blend) and played-games count (form/usage shrinkage), the
+    matchup-tiebreaker rank from the same _matchup_rank_table the page's
+    chips use, and the live players-index status overlaid on the
+    batch-time one (with the pool's IR / Out / PUP / NFI exclusion
+    applied before ranking). Before this, the export omitted those
+    inputs, so the boards published a different computation of the
+    rating than the site pool ranks by.
+
     Returns None when no bundles exist for the week (batch not run / DB
     unreachable): an export with no pool behind it must never be served
     as if it were real. Successful builds are cached per (season, week)
@@ -4280,7 +4290,10 @@ def build_start_sit_pool_export(season, week):
         load_start_score_bundles,
         variant_for_exact_scoring,
     )
-    from utils.start_sit_score import compute_start_score
+    from utils.start_sit_score import (
+        compute_start_score,
+        start_sit_pool_excluded as _export_excluded,
+    )
 
     variant = variant_for_exact_scoring(dict(_SS_EXPORT_SCORING))
     index = get_players_index_global() or {}
@@ -4288,6 +4301,25 @@ def build_start_sit_pool_export(season, week):
         season, week, variant, list(index.keys())) or {}
     if not bundles:
         return None
+    # Matchup tiebreaker, identical to start_score_pool_scores: rank maps
+    # from the same _matchup_rank_table the page's chips use (rank 1 =
+    # easiest), loaded once per position; any failure leaves the factor
+    # neutral for that position, never blocks the export.
+    _export_rank_maps: dict = {}
+
+    def _export_def_rank(_pos, _opp):
+        if _pos not in _export_rank_maps:
+            try:
+                _rm, _tot, _ri, _iz = _matchup_rank_table(season, _pos)
+                _export_rank_maps[_pos] = (_rm or {}, _tot or 32)
+            except Exception:
+                _export_rank_maps[_pos] = ({}, 32)
+        _rm, _tot = _export_rank_maps[_pos]
+        if not _opp or not _rm:
+            return None, 32
+        _rank = _rm.get(_norm_sched_team(_opp)) or _rm.get(_opp)
+        return _rank, _tot
+
     rows: dict = {}
     for pid, b in bundles.items():
         if not isinstance(b, dict):
@@ -4295,15 +4327,37 @@ def build_start_sit_pool_export(season, week):
         pos = str(b.get("pos") or "").upper()
         if pos not in _SS_EXPORT_POSITIONS:
             continue
+        meta = index.get(str(pid)) or {}
+        # Live status overlays the batch-time one here too, exactly as
+        # every surface that scores the player directly does; the pool
+        # is one computation, not a second opinion. IR / Out / PUP /
+        # NFI players are excluded before ranking (they backfill below
+        # the pool instead of sitting at the bottom with a zeroed
+        # score), as start_score_pool_scores does.
+        _live_status = (
+            meta.get("injury_status") if isinstance(meta, dict) else None
+        )
+        _eff_status = _live_status or b.get("injury_status")
+        if _export_excluded(_eff_status):
+            continue
         try:
+            _def_rank, _def_total = _export_def_rank(
+                pos, b.get("opponent"))
             score, _, _ = compute_start_score(
                 b.get("proj_pts") or 0.0,
                 on_bye=bool(b.get("on_bye")),
                 recent_ppg=b.get("recent_ppg") or 0.0,
                 season_ppg=b.get("season_ppg") or 0.0,
+                # Form blend: the bundle's last-4-played PPG is the
+                # base's form input (window size derives from the
+                # played_games passed below).
+                last4_ppg=b.get("last4_ppg"),
+                def_rank=_def_rank,
+                def_total=_def_total,
                 usage_delta=b.get("usage_delta"),
                 usage_season_avg=b.get("usage_season_avg"),
-                injury_status=b.get("injury_status"),
+                injury_status=_eff_status,
+                played_games=b.get("played_games"),
                 implied_total=b.get("implied_total"),
                 bust_rate=b.get("bust_rate"),
                 weather_kind=b.get("weather_kind"),
@@ -4319,14 +4373,13 @@ def build_start_sit_pool_export(season, week):
             continue
         if not score or score <= 0:
             continue
-        meta = index.get(str(pid)) or {}
         rows.setdefault(pos, []).append({
             "pid": str(pid),
             "name": meta.get("full_name") or meta.get("name") or str(pid),
             "team": meta.get("team") or "",
             "value": round(float(score), 2),
             "proj": round(float(b.get("proj_pts") or 0.0), 2),
-            "injury": b.get("injury_status") or "",
+            "injury": _eff_status or "",
         })
     out: dict = {}
     for pos in _SS_EXPORT_POSITIONS:
