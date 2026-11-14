@@ -1,10 +1,14 @@
-"""League-wide rank fix for the tier-anchored start/sit index.
+"""League-wide pool fix for the score-derived start/sit index.
 
 Regression: the Start/Sit page mapped each player's rank WITHIN THE
-VIEWER'S OWN ROSTER through the tier bands, which are league-wide
-(36 deep at RB/WR). Every rostered RB/WR landed in the 90-100 band
-(RJ Harvey showed 98 as the roster's RB3). The index must come from
-the player's rank in the full league-wide pool, on every surface.
+VIEWER'S OWN ROSTER through tier bands that are league-wide (36 deep
+at RB/WR). Every rostered RB/WR landed in the 90-100 band (RJ Harvey
+showed 98 as the roster's RB3). The index must come from the player's
+value in the full league-wide pool, on every surface. Since
+2026-11-13 the index is score-derived: the player's pool value as a
+percent of their position pool's anchor (the mean of its top 3
+values, capped at 100), so tied values print tied numbers and
+near-equal values land within a point or two.
 """
 
 import pytest
@@ -130,8 +134,10 @@ def test_pool_exotic_scoring_ranks_on_full_start_score(monkeypatch):
         2026, 6, exotic, "RB", scores[0], proj["rbA"])
     idx_b = appmod.start_score_league_index(
         2026, 6, exotic, "RB", scores[1], proj["rbB"])
-    assert idx_a == appmod.start_score_tier_index("RB", 1) == 100
-    assert idx_b == appmod.start_score_tier_index("RB", 2) == 99
+    anchor = appmod.start_score_pool_anchor(scores)
+    assert idx_a == appmod.start_score_pct_index(
+        scores[0], anchor) == 100
+    assert idx_b == appmod.start_score_pct_index(scores[1], anchor)
     appmod._SS_POOL_CACHE.clear()
 
 
@@ -210,12 +216,15 @@ def test_league_index_ranks_pool_value_not_caller_score(monkeypatch):
 
     # The 94/94 inputs: both callers' live scores sit at 21.09, in the
     # pocket of the pool with exactly three values above. Ranked on the
-    # pool's own values, Maye is QB1 and Stroud QB5 — the caller's
-    # foreign score must not move either index.
+    # pool's own values, Maye tops the pool (his 21.88 sits above the
+    # 21.60 anchor, the mean of 21.88 / 21.82 / 21.10, and caps at 100)
+    # and Stroud's 20.86 (0.966 of the anchor) prints 98 on the
+    # compressed scale — the caller's foreign score must not move
+    # either index.
     assert appmod.start_score_league_index(
         2026, 7, {}, "QB", 21.09, 20.3, player_id="maye") == 100
     assert appmod.start_score_league_index(
-        2026, 7, {}, "QB", 21.09, 18.6, player_id="stroud") == 92
+        2026, 7, {}, "QB", 21.09, 18.6, player_id="stroud") == 98
     # A player with no pool value gets no index, never a ranked guess.
     assert appmod.start_score_league_index(
         2026, 7, {}, "QB", 21.09, 18.6, player_id="ghost") is None
@@ -229,20 +238,22 @@ def test_league_index_proj_kind_ranks_pool_projection(monkeypatch):
             "by_pid": {"rbA": 25.0}}
     monkeypatch.setattr(appmod, "start_score_pool_scores",
                         lambda *a, **k: pool)
-    # Caller score says elite; the pool's projection for rbA ranks 2nd.
-    # Since 2026-11-06 an RB ranks against the combined flex pool: this
-    # pool's only flex values are the three RB projections, so rbA is
-    # rank 2 of a 3-player flex pool (the old per-position mapping
-    # asserted tier_index("RB", 2) == 99 here).
+    # Caller score says elite; the pool's projection for rbA is 25.0,
+    # exactly the pool anchor (the mean of 30.0 / 25.0 / 20.0), so he
+    # prints the 100 cap.
     assert appmod.start_score_league_index(
         2026, 6, {}, "RB", 99.0, 25.0, player_id="rbA") == \
-        appmod.start_score_flex_index(2, 3) == 89
+        appmod.start_score_pct_index(
+            25.0, appmod.start_score_pool_anchor([30.0, 25.0, 20.0])) \
+        == 100
 
 
-def test_qb_acceptance_maye_100_stroud_92_from_pool(monkeypatch):
+def test_qb_acceptance_indexes_derive_from_pool_values(monkeypatch):
     """End to end through the real pool builder, engineered to the
     verified Week 7 QB score set: with foreign live scores supplied by
-    the caller, the indexes still come out Maye 100 / Stroud 92."""
+    the caller, the indexes still come out as each player's pool value
+    mapped against the QB pool's top-3 anchor (Maye himself caps at
+    100)."""
     import app as appmod
 
     def qb(proj, recent, season, bust, oline):
@@ -273,11 +284,13 @@ def test_qb_acceptance_maye_100_stroud_92_from_pool(monkeypatch):
         player_id="maye") == 100
     assert appmod.start_score_league_index(
         2026, 7, {"rec": 1.0}, "QB", 21.09, 18.6,
-        player_id="stroud") == 92
+        player_id="stroud") == appmod.start_score_pct_index(
+            pool["by_pid"]["stroud"],
+            appmod.start_score_pool_anchor(pool["by_pos"]["QB"]))
     appmod._SS_POOL_CACHE.clear()
 
 
-# ── League index (rank -> tier band) ──────────────────────────────────────
+# ── League index (score-derived) ──────────────────────────────────────────
 
 def _pool(monkeypatch, kind, by_pos):
     import app as appmod
@@ -292,8 +305,10 @@ def test_league_index_uses_league_rank_not_roster_rank(monkeypatch):
     _pool(monkeypatch, "score",
           {"RB": [float(v) for v in range(36, 0, -1)]})
     idx = appmod.start_score_league_index(2026, 6, {}, "RB", 13.0, 13.0)
-    # RB24 sits in the FLEX band (23-30 -> 40-69), nowhere near 98.
-    assert idx == appmod.start_score_tier_index("RB", 24) == 65
+    # 13.0 is 0.371 of the pool anchor (35.0, the mean of 36 / 35 /
+    # 34), which the compressed scale prints as 55 — nowhere near the
+    # 90s a roster-local rank printed for this same player.
+    assert idx == appmod.start_score_pct_index(13.0, 35.0) == 55
 
 
 def test_league_index_proj_kind_ranks_on_projection(monkeypatch):
@@ -303,7 +318,7 @@ def test_league_index_proj_kind_ranks_on_projection(monkeypatch):
           {"RB": [float(v) for v in range(36, 0, -1)]})
     # Score says elite, projection says RB24: proj pool ranks the proj.
     idx = appmod.start_score_league_index(2026, 6, {}, "RB", 99.0, 13.0)
-    assert idx == 65
+    assert idx == 55
 
 
 def test_league_index_no_pool_returns_none(monkeypatch):
@@ -312,7 +327,7 @@ def test_league_index_no_pool_returns_none(monkeypatch):
     _pool(monkeypatch, None, {})
     assert appmod.start_score_league_index(
         2026, 6, {}, "RB", 13.0, 13.0) is None
-    # Positions without tier bands never get an index.
+    # Positions without a start/sit pool never get an index.
     _pool(monkeypatch, "score", {"K": [10.0]})
     assert appmod.start_score_league_index(
         2026, 6, {}, "K", 10.0, 10.0) is None
@@ -432,46 +447,92 @@ def test_page_index_is_league_wide_for_roster_and_guest(league_client):
     base = "/api/start-sit-options?platform=sleeper&league_id=L1&season=2026"
     d = league_client.get(base + "&guests=rbF").get_json()
     rows = {p["player_id"]: p for p in d["positions"]["RB"]}
-    # League ranks 5 / 11 / 14 / 17 (guest: 16). Since 2026-11-06 flex
-    # players map through the combined flex pool; this fixture's pool
-    # holds only RBs, so the combined pool is its 17 RB values and the
-    # bands scale to 17. The old per-position mapping gave
-    # 96 / 89 / 84 / 79 (guest 80) for these same rows, and the older
-    # roster-local mapping gave 100 / 99 / 98 / 97.
+    # The league-wide pool tops at 28.0 at both RB (x1) and QB (q2),
+    # and both positions' pool anchors are 26.0 (mean of 28.0 / 26.0 /
+    # 24.0); each index is the row's pool value mapped against that
+    # anchor on the compressed scale. The rank ladders this replaced
+    # printed 90 / 69 / 40 / 1 (guest 20) for these same rows, and the
+    # older roster-local mapping gave 100 / 99 / 98 / 97.
     assert rows["rb1"]["start_score_pct"] == \
-        appmod.start_score_flex_index(5, 17) == 90
+        appmod.start_score_pct_index(20.0, 26.0) == 85
     assert rows["rb2"]["start_score_pct"] == \
-        appmod.start_score_flex_index(11, 17) == 69
+        appmod.start_score_pct_index(14.0, 26.0) == 69
     assert rows["rb3"]["start_score_pct"] == \
-        appmod.start_score_flex_index(14, 17) == 40
+        appmod.start_score_pct_index(11.0, 26.0) == 60
     assert rows["rb4"]["start_score_pct"] == \
-        appmod.start_score_flex_index(17, 17) == 1
-    # Guests get the same league-wide index as roster players (league
-    # rank 16), not a different formula.
+        appmod.start_score_pct_index(8.0, 26.0) == 49
+    # Guests get the same league-wide index as roster players, not a
+    # different formula.
     assert rows["rbF"]["start_score_pct"] == \
-        appmod.start_score_flex_index(16, 17) == 20
+        appmod.start_score_pct_index(9.0, 26.0) == 53
     qb = {p["player_id"]: p for p in d["positions"]["QB"]}
     assert qb["qb1"]["start_score_pct"] == \
-        appmod.start_score_tier_index("QB", 4) == 94
+        appmod.start_score_pct_index(22.0, 26.0) == 90
 
 
-# ── Combined flex pool (2026-11-06) ───────────────────────────────────────
-# RB/WR/TE compete for the same flex slots, so their index ranks ONE
-# combined pool through the tier-band curve shape scaled to the pool
-# size. Before this, one identical raw score printed 79 at RB, 52 at
-# WR and 81 at TE — three numbers that could not be compared at all.
+# ── Score-derived index (compressed scale vs position anchor) ────────────
+# The index maps the player's pool value against the ANCHOR of THEIR
+# OWN position pool — the mean of the pool's top 3 values — as
+# 100 * (value / anchor) ** 0.6, capped at 100 (2026-11-13). The rank
+# ladders this replaced (the per-position tier table, then the
+# combined RB/WR/TE flex mapping of 2026-11-06) gave every rank its
+# own number: two players a hair apart printed a point apart, and
+# genuinely tied scores could print different numbers. Anchoring
+# inside the elite cluster instead of on its single top member means
+# the top two or three share the 100 cap, equal scores print equal
+# numbers, and near-equal scores land within a point or two; the 0.6
+# exponent compresses the printed distance below the literal ratio,
+# so the tail of a board reads in the 50s-80s instead of the 30s-60s.
 
-def test_flex_index_matches_tier_table_at_reference_depth():
+def test_pool_anchor_derivation():
     import app as appmod
 
-    # At the reference depth (36) the scaled bands ARE the RB/WR table.
-    for rank in range(1, 37):
-        assert appmod.start_score_flex_index(rank, 36) == \
-            appmod.start_score_tier_index("RB", rank)
-    # Rank beyond the pool bottoms out; bad inputs get no index.
-    assert appmod.start_score_flex_index(37, 36) == 1
-    assert appmod.start_score_flex_index(0, 36) is None
-    assert appmod.start_score_flex_index(1, 0) is None
+    anchor = appmod.start_score_pool_anchor
+    # The mean of the top 3, independent of input order.
+    assert anchor([30.0, 20.0, 10.0, 5.0]) == pytest.approx(20.0)
+    assert anchor([10.0, 30.0, 20.0]) == pytest.approx(20.0)
+    # Week 10 QB shape: 26.88 / 26.68 / 25.26 -> 26.27.
+    assert anchor([26.88, 26.68, 25.26, 24.62]) == \
+        pytest.approx(26.27, abs=0.01)
+    # Fewer than three values -> the mean of what's there.
+    assert anchor([30.0, 20.0]) == pytest.approx(25.0)
+    assert anchor([30.0]) == pytest.approx(30.0)
+    # No usable values -> no anchor.
+    assert anchor([]) is None
+    assert anchor(None) is None
+    assert anchor([None, None]) is None
+    assert anchor([-5.0, -1.0]) is None
+    assert anchor("x") is None
+
+
+def test_pct_index_derivation():
+    import app as appmod
+
+    pct = appmod.start_score_pct_index
+    # A score at the anchor prints 100, and anything above it caps.
+    assert pct(27.99, 27.99) == 100
+    assert pct(30.0, 28.0) == 100
+    # Week 10 QB shape: Allen's 26.68 sits above his pool's anchor
+    # (26.27) and caps at 100 alongside Burrow — the cap is what lets
+    # the elite cluster share the max.
+    assert pct(26.68, 26.27) == 100
+    # A hair under the anchor prints 99.
+    assert pct(26.0, 26.27) == 99
+    # Half the anchor prints 66 on the compressed scale
+    # (100 * 0.5 ** 0.6 = 65.98); the result is an int in [1, 100].
+    assert pct(14.0, 28.0) == 66
+    # A tiny share of the anchor prints a small number, never 0:
+    # 100 * (0.1 / 28) ** 0.6 = 3.4 -> 3.
+    assert pct(0.1, 28.0) == 3
+    # A non-positive score against a real anchor prints the floor.
+    assert pct(0.0, 28.0) == 1
+    assert pct(-3.0, 28.0) == 1
+    # No usable anchor -> no index (never a divide by zero).
+    assert pct(10.0, 0.0) is None
+    assert pct(10.0, -5.0) is None
+    assert pct(10.0, None) is None
+    assert pct(None, 28.0) is None
+    assert pct("x", 28.0) is None
 
 
 def _flex_pool(monkeypatch, by_pos, by_pid):
@@ -482,12 +543,31 @@ def _flex_pool(monkeypatch, by_pos, by_pid):
     return appmod
 
 
-def test_league_index_same_value_same_index_across_flex_positions(
-        monkeypatch):
-    # One raw score (15.0) held by an RB, a WR and a TE. Their
-    # within-position ranks are 3 / 2 / 1 — the old mapping printed
-    # 98 / 99 / 100 for them — but the combined rank is 4 for all
-    # three, so all three print the same index.
+def test_league_index_tied_values_print_tied_numbers(monkeypatch):
+    # Two RBs on the identical pool value share one index; the old
+    # ladders could split a tie across adjacent rungs. The anchor is
+    # the mean of the pool's top 3 (30.0 / 20.57 / 20.57 -> 23.71).
+    by_pos = {"RB": [30.0, 20.57, 20.57, 10.0]}
+    by_pid = {"rbTop": 30.0, "rbA": 20.57, "rbB": 20.57}
+    appmod = _flex_pool(monkeypatch, by_pos, by_pid)
+
+    idx_a = appmod.start_score_league_index(
+        2026, 10, {}, "RB", 0.0, 0.0, player_id="rbA")
+    idx_b = appmod.start_score_league_index(
+        2026, 10, {}, "RB", 0.0, 0.0, player_id="rbB")
+    anchor = appmod.start_score_pool_anchor(by_pos["RB"])
+    assert idx_a == idx_b == appmod.start_score_pct_index(
+        20.57, anchor) == 92
+
+
+def test_league_index_pools_are_per_position(monkeypatch):
+    # One raw score (15.0) held by an RB, a WR and a TE. Each index is
+    # measured against its OWN position's anchor (top-3 mean): 80 for
+    # RB (anchor 21.67), 89 for WR (anchor 18.33) and 100 for TE (his
+    # 15.0 sits above the two-man pool's 12.0 anchor and caps). The
+    # combined flex pool this replaced printed all three the same
+    # number; Kaedon's derivation prices each position against its
+    # own best.
     by_pos = {"RB": [30.0, 20.0, 15.0, 10.0],
               "WR": [28.0, 15.0, 12.0],
               "TE": [15.0, 9.0],
@@ -496,25 +576,28 @@ def test_league_index_same_value_same_index_across_flex_positions(
               "qbTop": 35.0, "qb2": 22.0}
     appmod = _flex_pool(monkeypatch, by_pos, by_pid)
 
-    for pos, pid in (("RB", "rbS"), ("WR", "wrS"), ("TE", "teS")):
-        assert appmod.start_score_league_index(
-            2026, 9, {}, pos, 0.0, 0.0, player_id=pid) == \
-            appmod.start_score_flex_index(4, 9) == 83
-    # QB neither joins the flex pool (its 35.0 must not shift the flex
-    # ranks above) nor is ranked by it: QB still maps within-position.
     assert appmod.start_score_league_index(
-        2026, 9, {}, "QB", 0.0, 0.0, player_id="qbTop") == \
-        appmod.start_score_tier_index("QB", 1) == 100
+        2026, 9, {}, "RB", 0.0, 0.0, player_id="rbS") == 80
     assert appmod.start_score_league_index(
-        2026, 9, {}, "QB", 0.0, 0.0, player_id="qb2") == \
-        appmod.start_score_tier_index("QB", 2) == 98
+        2026, 9, {}, "WR", 0.0, 0.0, player_id="wrS") == 89
+    assert appmod.start_score_league_index(
+        2026, 9, {}, "TE", 0.0, 0.0, player_id="teS") == 100
+    # QB is priced against the QB pool only: its 35.0 top must not
+    # shift the other positions' numbers (asserted above), and its
+    # own second value (22.0, 0.772 of the 28.5 QB anchor) prints 86.
+    assert appmod.start_score_league_index(
+        2026, 9, {}, "QB", 0.0, 0.0, player_id="qbTop") == 100
+    assert appmod.start_score_league_index(
+        2026, 9, {}, "QB", 0.0, 0.0, player_id="qb2") == 86
 
 
 def test_league_index_week9_shaped_pool_checkpoints(monkeypatch):
-    """The verified Week 9 checkpoint set: a 90-player combined flex
-    pool (36 RB / 36 WR / 18 TE shape) must print Gibbs 100,
-    Smith-Njigba 99, Bowers 92, Rice 92, Cook 92 (distinct values,
-    one printed tie), Moore 72, Downs 45, Charbonnet 28, Singletary 1.
+    """The verified Week 9 value set under the score-derived index:
+    a 90-player pool (36 RB / 36 WR / 18 TE shape) must print Gibbs
+    100, Smith-Njigba 100 (each tops his own pool), Bowers 86 (the TE
+    filler tops that pool at 25.20; his 18.44 is 0.777 of its 23.75
+    top-3 anchor, which the compressed scale prints as 86), Rice 83,
+    Cook 79, Moore 67, Downs 61, Charbonnet 56, Singletary 48.
     """
     checkpoints = {
         "gibbs": ("RB", 28.47), "jsn": ("WR", 26.16),
@@ -523,9 +606,9 @@ def test_league_index_week9_shaped_pool_checkpoints(monkeypatch):
         "downs": ("WR", 11.10), "charb": ("RB", 10.12),
         "sing": ("RB", 7.86),
     }
-    expected = {"gibbs": 100, "jsn": 99, "bowers": 92, "rice": 92,
-                "cook": 92, "moore": 72, "downs": 45, "charb": 28,
-                "sing": 1}
+    expected = {"gibbs": 100, "jsn": 100, "bowers": 86, "rice": 83,
+                "cook": 79, "moore": 67, "downs": 61, "charb": 56,
+                "sing": 48}
     # Filler values strictly between checkpoint values, sized so the
     # combined ranks land on 1 / 3 / 19 / 20 / 21 / 52 / 72 / 80 / 90.
     spans = [(28.47, 26.16, 1), (26.16, 18.44, 15), (18.27, 12.99, 30),
@@ -555,21 +638,22 @@ def test_league_index_week9_shaped_pool_checkpoints(monkeypatch):
             2026, 9, {}, pos, value, value) == want, pid
 
 
-def test_league_index_below_board_depth_flex_player_gets_index(
+def test_league_index_below_board_depth_player_gets_real_index(
         monkeypatch):
     """Addison shape: a WR ranked 38th at his own position — past the
     old 36-deep table, where the tier map had already fallen off its
-    cliff to a flat 1 — still earns a real interpolated index from
-    the combined pool instead of the degenerate cliff value."""
-    wr = [30.0 - 0.4 * i for i in range(40)]   # target: index 37 -> 15.2
+    cliff to a flat 1 — gets his real index against the position
+    anchor (29.6, the mean of 30.0 / 29.6 / 29.2): 15.2 is 0.514 of
+    the anchor, printed as 67 on the compressed scale, instead of
+    the degenerate cliff value."""
+    wr = [30.0 - 0.4 * i for i in range(40)]   # wr[37] = 15.2, rank 38
     rb = [29.0 - 0.4 * i for i in range(40)]
     te = [25.0 - 0.5 * i for i in range(20)]
     by_pos = {"RB": rb, "WR": wr, "TE": te}
     by_pid = {"wrDeep": wr[37]}
     appmod = _flex_pool(monkeypatch, by_pos, by_pid)
 
-    # 37 WR + 35 RB + 20 TE values sit above 15.2: combined rank 93
-    # of 100, inside the scaled SIT band — interpolated, not the cliff.
     assert appmod.start_score_league_index(
         2026, 9, {}, "WR", 0.0, 0.0, player_id="wrDeep") == \
-        appmod.start_score_flex_index(93, 100) == 18
+        appmod.start_score_pct_index(
+            15.2, appmod.start_score_pool_anchor(wr)) == 67
