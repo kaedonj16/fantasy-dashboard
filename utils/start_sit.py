@@ -342,6 +342,7 @@ def _neutral_factors(proj: float) -> dict:
         "expected_plays": 1.0,
         "role": 1.0,
         "def_injuries": 1.0,
+        "role_trend": 1.0,
     }
 
 
@@ -435,6 +436,14 @@ FORM_SCALES = {"QB": 5.5, "RB": 4.0, "WR": 4.0, "TE": 4.0}
 FORM_BLEND_WEIGHT = 0.35
 #: Games in a full recent-form window for the base blend.
 FORM_BLEND_WINDOW = 4
+#: Elite-form floor lines (last-4-played PPG), 2026-11-13: a player
+#: producing at or above his position's line in absolute terms may not
+#: be form-discounted for running below his own season baseline (the
+#: Gibbs case: an 18.5-PPG last-3 against a 26.2 season line saturated
+#: the -8% clamp even though the stretch itself was elite). The lines
+#: are exact — the sensitivity run showed lower lines start rescuing
+#: merely-good players whose discounts carried real signal.
+ELITE_FORM_FLOOR_PPG = {"QB": 22.0, "RB": 20.0, "WR": 20.0, "TE": 14.0}
 #: Position scale for the absolute usage delta (metric units per game).
 USAGE_SCALES = {"RB": 3.0, "WR": 2.0, "TE": 2.0}
 #: Sleeper stat keys summed into the usage metric, by position. QB is
@@ -509,6 +518,34 @@ def form_usage_inputs(played_points, played_usage=None) -> dict:
     return out
 
 
+def snap_share_trend(snap_shares) -> Optional[float]:
+    """Role-trend input for the rating: the change in a player's snap
+    share across his last 4 PLAYED weeks — mean share of the last 2
+    weeks minus mean share of the first 2.
+
+    ``snap_shares`` is the chronological list of weekly snap shares
+    (offense snaps / team offense snaps) for played weeks only; callers
+    count a week as played when the stat row shows game participation
+    (``gp`` >= 1 or a snap count present), independent of the points
+    line the form/usage derivation keys on, and a played week whose
+    share cannot be computed does not enter the window. Returns None
+    with fewer than 4 played weeks carrying a share: no trend is
+    claimed off a partial window.
+    """
+    shares = []
+    for s in snap_shares or []:
+        if s is None:
+            continue
+        try:
+            shares.append(float(s))
+        except (TypeError, ValueError):
+            continue
+    if len(shares) < 4:
+        return None
+    last4 = shares[-4:]
+    return (last4[2] + last4[3]) / 2.0 - (last4[0] + last4[1]) / 2.0
+
+
 def compute_start_score(
     proj_pts: float,
     *,
@@ -534,6 +571,7 @@ def compute_start_score(
     played_games: Optional[int] = None,
     last4_ppg: Optional[float] = None,
     last4_games: Optional[int] = None,
+    snap_trend: Optional[float] = None,
 ) -> tuple[float, dict, Optional[str]]:
     """Return ``(score, score_factors, demotion)``.
 
@@ -562,7 +600,13 @@ def compute_start_score(
       into the pool.
     * ``form`` — absolute PPG delta (``recent_ppg`` over the last 3 played
       weeks minus ``season_ppg`` over all played weeks), scaled per position
-      (``FORM_SCALES``), worth up to ±8%.
+      (``FORM_SCALES``), worth up to ±8%. Elite floor: when ``last4_ppg``
+      is at or above the position's ``ELITE_FORM_FLOOR_PPG`` line, form
+      is never below 1.0 — elite absolute production is not scored as
+      cold form just for running below a huge personal baseline. The
+      floor only lifts a discount to neutral; it never creates a bonus
+      or trims one, and callers that supply no ``last4_ppg`` get no
+      floor.
     * ``usage`` — absolute per-game delta of the position's volume metric
       (``usage_delta``, from :func:`form_usage_inputs`): opportunities for
       RB, targets for WR/TE, worth up to ±5%. A delta under 1.0 per game is
@@ -598,8 +642,18 @@ def compute_start_score(
     ``low_total_team`` marks the player's team as one of the week's bottom-8
     implied-total teams (see ``bottom_teams_by_implied_total``). It only gates
     the "low_total" demotion label; the Vegas score multiplier is unchanged.
+
+    ``snap_trend`` is the role-trend factor (V2 at half strength,
+    backtested 2026-11-13 over Weeks 6-9: fully-ordered boards went
+    6/16 baseline to 9/16): the change in snap share across the
+    player's last 4 played weeks (see :func:`snap_share_trend`),
+    supplied by the caller like ``defensive_injury_impact``; absence
+    is neutral. RB/WR/TE only — a QB's snap share carries no role
+    signal. It enters as its own multiplier,
+    ``clamp(1 + 0.25 * trend, 0.96, 1.04)``: half the strength of the
+    full variant (0.5 coefficient, +/-8% cap), which backtested worse.
     """
-    form = mu = usage = avail = vegas = floor = weather = oline = plays = role = def_inj = 1.0
+    form = mu = usage = avail = vegas = floor = weather = oline = plays = role = def_inj = role_trend = 1.0
     demotion = None
     try:
         proj = float(proj_pts or 0)
@@ -664,6 +718,19 @@ def compute_start_score(
         # outweigh a projection gap).
         form_scale = FORM_SCALES.get(pos, 4.0)
         form = 1.0 + min(1.0, max(-1.0, (recent - season) / form_scale)) * 0.08 * shrink
+
+    # Elite floor (2026-11-13): applied to the finished, shrunk form
+    # factor, keyed on the last-4-played PPG the base blend also uses.
+    # A player still producing at an elite absolute level is not
+    # discounted for cooling off against his own huge baseline.
+    if form < 1.0 and last4_ppg is not None:
+        _elite_line = ELITE_FORM_FLOOR_PPG.get(pos)
+        if _elite_line is not None:
+            try:
+                if float(last4_ppg) >= _elite_line:
+                    form = 1.0
+            except (TypeError, ValueError):
+                pass
 
     if apply_matchup is not False and def_rank and def_total and def_total > 1:
         ease = (float(def_total) - float(def_rank)) / (float(def_total) - 1)
@@ -751,11 +818,18 @@ def compute_start_score(
         except (TypeError, ValueError):
             def_inj = 1.0
 
+    if snap_trend is not None and pos in ("RB", "WR", "TE"):
+        try:
+            # Half strength (0.25 coefficient, +/-4% cap) — see docstring.
+            role_trend = min(1.04, max(0.96, 1.0 + 0.25 * float(snap_trend)))
+        except (TypeError, ValueError):
+            role_trend = 1.0
+
     # The form x usage product is capped as a unit: hot form and a rising
     # role describe much of the same signal, so together they may move the
     # score at most +/-10% no matter how extreme each factor is alone.
     form_usage = min(1.10, max(0.90, form * usage))
-    score = base * form_usage * mu * avail * vegas * floor * weather * oline * plays * role * def_inj
+    score = base * form_usage * mu * avail * vegas * floor * weather * oline * plays * role * def_inj * role_trend
     return score, {
         "proj": proj,
         "base": round(base, 2),
@@ -771,6 +845,7 @@ def compute_start_score(
         "expected_plays": round(plays, 3),
         "role": round(role, 3),
         "def_injuries": round(def_inj, 3),
+        "role_trend": round(role_trend, 3),
     }, demotion
 
 

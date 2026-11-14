@@ -4090,6 +4090,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                         league_average_plays=bundle.get(
                             "league_average_plays"),
                         role_confidence=bundle.get("role_confidence"),
+                        snap_trend=bundle.get("snap_trend"),
                         low_total_team=bool(
                             bundle.get("low_total_team")),
                     )
@@ -4256,6 +4257,16 @@ def build_start_sit_pool_export(season, week):
     rank (rank computed over the full position list, before the top-40
     cut, exactly as the shell snippet did).
 
+    The score is computed with the SAME inputs start_score_pool_scores
+    feeds the rating (2026-11-13 unification): the bundle's last-4-played
+    PPG (base blend) and played-games count (form/usage shrinkage), the
+    matchup-tiebreaker rank from the same _matchup_rank_table the page's
+    chips use, and the live players-index status overlaid on the
+    batch-time one (with the pool's IR / Out / PUP / NFI exclusion
+    applied before ranking). Before this, the export omitted those
+    inputs, so the boards published a different computation of the
+    rating than the site pool ranks by.
+
     Returns None when no bundles exist for the week (batch not run / DB
     unreachable): an export with no pool behind it must never be served
     as if it were real. Successful builds are cached per (season, week)
@@ -4279,7 +4290,10 @@ def build_start_sit_pool_export(season, week):
         load_start_score_bundles,
         variant_for_exact_scoring,
     )
-    from utils.start_sit_score import compute_start_score
+    from utils.start_sit_score import (
+        compute_start_score,
+        start_sit_pool_excluded as _export_excluded,
+    )
 
     variant = variant_for_exact_scoring(dict(_SS_EXPORT_SCORING))
     index = get_players_index_global() or {}
@@ -4287,6 +4301,25 @@ def build_start_sit_pool_export(season, week):
         season, week, variant, list(index.keys())) or {}
     if not bundles:
         return None
+    # Matchup tiebreaker, identical to start_score_pool_scores: rank maps
+    # from the same _matchup_rank_table the page's chips use (rank 1 =
+    # easiest), loaded once per position; any failure leaves the factor
+    # neutral for that position, never blocks the export.
+    _export_rank_maps: dict = {}
+
+    def _export_def_rank(_pos, _opp):
+        if _pos not in _export_rank_maps:
+            try:
+                _rm, _tot, _ri, _iz = _matchup_rank_table(season, _pos)
+                _export_rank_maps[_pos] = (_rm or {}, _tot or 32)
+            except Exception:
+                _export_rank_maps[_pos] = ({}, 32)
+        _rm, _tot = _export_rank_maps[_pos]
+        if not _opp or not _rm:
+            return None, 32
+        _rank = _rm.get(_norm_sched_team(_opp)) or _rm.get(_opp)
+        return _rank, _tot
+
     rows: dict = {}
     for pid, b in bundles.items():
         if not isinstance(b, dict):
@@ -4294,15 +4327,37 @@ def build_start_sit_pool_export(season, week):
         pos = str(b.get("pos") or "").upper()
         if pos not in _SS_EXPORT_POSITIONS:
             continue
+        meta = index.get(str(pid)) or {}
+        # Live status overlays the batch-time one here too, exactly as
+        # every surface that scores the player directly does; the pool
+        # is one computation, not a second opinion. IR / Out / PUP /
+        # NFI players are excluded before ranking (they backfill below
+        # the pool instead of sitting at the bottom with a zeroed
+        # score), as start_score_pool_scores does.
+        _live_status = (
+            meta.get("injury_status") if isinstance(meta, dict) else None
+        )
+        _eff_status = _live_status or b.get("injury_status")
+        if _export_excluded(_eff_status):
+            continue
         try:
+            _def_rank, _def_total = _export_def_rank(
+                pos, b.get("opponent"))
             score, _, _ = compute_start_score(
                 b.get("proj_pts") or 0.0,
                 on_bye=bool(b.get("on_bye")),
                 recent_ppg=b.get("recent_ppg") or 0.0,
                 season_ppg=b.get("season_ppg") or 0.0,
+                # Form blend: the bundle's last-4-played PPG is the
+                # base's form input (window size derives from the
+                # played_games passed below).
+                last4_ppg=b.get("last4_ppg"),
+                def_rank=_def_rank,
+                def_total=_def_total,
                 usage_delta=b.get("usage_delta"),
                 usage_season_avg=b.get("usage_season_avg"),
-                injury_status=b.get("injury_status"),
+                injury_status=_eff_status,
+                played_games=b.get("played_games"),
                 implied_total=b.get("implied_total"),
                 bust_rate=b.get("bust_rate"),
                 weather_kind=b.get("weather_kind"),
@@ -4311,20 +4366,20 @@ def build_start_sit_pool_export(season, week):
                 expected_team_plays=b.get("expected_team_plays"),
                 league_average_plays=b.get("league_average_plays"),
                 role_confidence=b.get("role_confidence"),
+                snap_trend=b.get("snap_trend"),
                 low_total_team=bool(b.get("low_total_team")),
             )
         except Exception:
             continue
         if not score or score <= 0:
             continue
-        meta = index.get(str(pid)) or {}
         rows.setdefault(pos, []).append({
             "pid": str(pid),
             "name": meta.get("full_name") or meta.get("name") or str(pid),
             "team": meta.get("team") or "",
             "value": round(float(score), 2),
             "proj": round(float(b.get("proj_pts") or 0.0), 2),
-            "injury": b.get("injury_status") or "",
+            "injury": _eff_status or "",
         })
     out: dict = {}
     for pos in _SS_EXPORT_POSITIONS:
@@ -17377,6 +17432,7 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
         out["usage_delta"] = _din.get("usage_delta")
         out["usage_season_avg"] = _din.get("usage_season_avg")
         out["played_games"] = _din.get("played_games")
+        out["snap_trend"] = _din.get("snap_trend")
     except Exception:
         logger.debug("[startsit extras] recent_ppg failed", exc_info=True)
 
@@ -18184,6 +18240,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                       "season_avg": _bun.get("usage_season_avg")}
             _role_conf_ss = _bun.get("role_confidence")
             _played_ss = _bun.get("played_games")
+            _snap_trend_ss = _bun.get("snap_trend")
         else:
             _ut_ss = _ss_usage_trends.get(pid) or {}
             _role_conf_ss = role_confidence_from_trend(_ut_ss)
@@ -18195,6 +18252,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                       "delta": _din_ss.get("usage_delta"),
                       "season_avg": _din_ss.get("usage_season_avg")}
             _played_ss = _din_ss.get("played_games")
+            _snap_trend_ss = _din_ss.get("snap_trend")
         usage_delta = _ut_ss.get("delta")
         # The bundle path never resolves consistency; keep it per-row so a
         # bundle row can never inherit the previous player's value.
@@ -18231,6 +18289,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             league_average_plays=_pace_ss.get("league_average_plays"),
             role_confidence=_role_conf_ss,
             played_games=_played_ss,
+            snap_trend=_snap_trend_ss,
             low_total_team=bool(_bun.get("low_total_team")) if _bun is not None else (team in _ss_low_total_teams),
         )
         _form = _factors["form"]
@@ -18331,6 +18390,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                 "expected_plays": _factors["expected_plays"],
                 "role": _factors["role"],
                 "def_injuries": _factors["def_injuries"],
+                "role_trend": _factors["role_trend"],
             },
             "likely_range": likely_range(score, _role_conf_ss),
             "_score": score,
@@ -34107,6 +34167,7 @@ def api_player_details(player_id: str):
                         league_average_plays=(_ssp.get("pace") or {}).get("league_average_plays"),
                         role_confidence=_ssp.get("role_confidence"),
                         played_games=_ssp.get("played_games"),
+                        snap_trend=_ssp.get("snap_trend"),
                         low_total_team=(_ss_team in _ss_low_total_teams),
                     )
                     _start_score = round(float(_ss_val), 2)

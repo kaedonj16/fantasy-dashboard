@@ -2,14 +2,17 @@
 CRON_SECRET-gated GET /api/start-sit-pool-export.
 
 The export replaces the manual Render-shell paste that produced
-startsit_live_pool_w{W}_ppr.json for the Thursday boards. The builder is
-the shell snippet verbatim (bundle load -> compute_start_score with the
-snippet's exact kwargs -> competition rank -> tier index), so the fakes
-below mirror the real signatures of load_start_score_bundles /
-variant_for_exact_scoring (data_building.start_score_bundle) and
-compute_start_score (utils.start_sit_score) exactly -- an extra or
-missing kwarg in the builder makes the fake raise, the row is skipped,
-and the shaping assertions fail.
+startsit_live_pool_w{W}_ppr.json for the Thursday boards. The builder
+loads the PPR bundles and scores them with the SAME inputs
+start_score_pool_scores feeds compute_start_score (last-4 blend,
+played-games shrinkage, _matchup_rank_table matchup ranks, live status
+overlay + pool exclusion), so the fakes below mirror the real
+signatures of load_start_score_bundles / variant_for_exact_scoring
+(data_building.start_score_bundle) and compute_start_score
+(utils.start_sit_score) exactly -- an extra or missing kwarg in the
+builder makes the fake raise, the row is skipped, and the shaping
+assertions fail. The parity section at the bottom runs the REAL
+compute_start_score through both paths and asserts identical values.
 """
 from __future__ import annotations
 
@@ -39,6 +42,9 @@ def _bundle(pos, proj, **over):
         "on_bye": False,
         "recent_ppg": 10.0,
         "season_ppg": 9.0,
+        "last4_ppg": None,
+        "played_games": None,
+        "opponent": None,
         "usage_delta": None,
         "usage_season_avg": None,
         "injury_status": "",
@@ -49,6 +55,7 @@ def _bundle(pos, proj, **over):
         "expected_team_plays": None,
         "league_average_plays": None,
         "role_confidence": None,
+        "snap_trend": None,
         "low_total_team": False,
     }
     b.update(over)
@@ -61,9 +68,13 @@ def _fake_compute_start_score(
     on_bye=False,
     recent_ppg=0.0,
     season_ppg=0.0,
+    last4_ppg=None,
+    def_rank=None,
+    def_total=32,
     usage_delta=None,
     usage_season_avg=None,
     injury_status=None,
+    played_games=None,
     implied_total=None,
     bust_rate=None,
     weather_kind=None,
@@ -72,16 +83,27 @@ def _fake_compute_start_score(
     expected_team_plays=None,
     league_average_plays=None,
     role_confidence=None,
+    snap_trend=None,
     low_total_team=False,
 ):
-    """Mirror of the snippet's call surface: score = 2 x projection.
+    """Mirror of the builder's call surface: score = 2 x projection.
 
     proj == 13.37 is the poison row: the real compute raises on a bad
-    bundle, and the builder must skip just that player.
+    bundle, and the builder must skip just that player. Every call's
+    kwargs are recorded on ``.seen`` so tests can assert the unified
+    inputs (last4_ppg / played_games / def_rank) actually flow through.
     """
+    _fake_compute_start_score.seen.append({
+        "proj_pts": proj_pts, "last4_ppg": last4_ppg,
+        "played_games": played_games, "def_rank": def_rank,
+        "def_total": def_total, "injury_status": injury_status,
+    })
     if proj_pts == 13.37:
         raise ValueError("bad bundle")
     return (float(proj_pts) * 2.0, {}, None)
+
+
+_fake_compute_start_score.seen = []
 
 
 @pytest.fixture()
@@ -106,8 +128,14 @@ def export_env(monkeypatch):
     monkeypatch.setattr(bundle_mod, "load_start_score_bundles", fake_load)
     monkeypatch.setattr(score_mod, "compute_start_score",
                         _fake_compute_start_score)
+    _fake_compute_start_score.seen = []
     monkeypatch.setattr(appmod, "get_players_index_global",
                         lambda: dict(FAKE_INDEX))
+    # Deterministic matchup ranks: DAL is the softest RB matchup here.
+    monkeypatch.setattr(
+        appmod, "_matchup_rank_table",
+        lambda season, position, scoring_settings=None: (
+            {"DAL": 32, "NE": 20, "SF": 4}, 32, {}, False))
     # Deterministic tier index: rank 1 -> 100, rank 2 -> 99, ...
     monkeypatch.setattr(appmod, "start_score_tier_index",
                         lambda pos, rank: 101 - rank)
@@ -176,6 +204,30 @@ def test_export_truncates_to_top_40(export_env):
     assert len(out["WR"]) == 40
     assert out["WR"][0]["value"] == 90.0
     assert out["WR"][-1]["value"] == 12.0  # proj 6 is the last one kept
+
+
+def test_export_passes_unified_inputs(export_env):
+    import app as appmod
+
+    _calls, state = export_env
+    state["bundles"] = {
+        "1": _bundle("RB", 15.0, last4_ppg=17.5, played_games=8,
+                     opponent="DAL"),
+        "2": _bundle("RB", 12.0, last4_ppg=11.0, played_games=9,
+                     opponent="SF"),
+    }
+    out = appmod.build_start_sit_pool_export(2026, 10)
+    assert [r["pid"] for r in out["RB"]] == ["1", "2"]
+    seen = {s["proj_pts"]: s for s in _fake_compute_start_score.seen}
+    # The base blend + shrinkage + matchup inputs the page path passes
+    # must reach the scorer on the export path too.
+    assert seen[15.0]["last4_ppg"] == 17.5
+    assert seen[15.0]["played_games"] == 8
+    assert seen[15.0]["def_rank"] == 32       # DAL, softest in the fake map
+    assert seen[15.0]["def_total"] == 32
+    assert seen[12.0]["def_rank"] == 4        # SF
+    assert seen[12.0]["last4_ppg"] == 11.0
+    assert seen[12.0]["played_games"] == 9
 
 
 def test_export_empty_bundles_returns_none(export_env):
@@ -303,3 +355,106 @@ def test_route_503_when_no_pool(monkeypatch, client):
                       query_string={"secret": "s3cret", "week": 10})
     assert resp.status_code == 503
     assert "error" in resp.get_json()
+
+
+# ── (d) Path parity: export vs start_score_pool_scores, REAL scorer ───────
+# The 2026-11-13 unification: both bundle paths must produce the same
+# value for the same player/week/scoring. These tests run the real
+# compute_start_score through build_start_sit_pool_export and through
+# start_score_pool_scores (the pool the Start/Sit page ranks by) over
+# one shared bundle set and assert the values agree to the cent.
+
+PARITY_INDEX = {
+    "9": {"full_name": "Top Passer", "team": "CIN", "injury_status": ""},
+    "1": {"full_name": "Alpha Back", "team": "SF", "injury_status": ""},
+    "2": {"full_name": "Beta Back", "team": "DET", "injury_status": ""},
+    "5": {"full_name": "Zero Wideout", "team": "NYJ", "injury_status": ""},
+    "11": {"full_name": "Tight End", "team": "KC", "injury_status": ""},
+    "3": {"full_name": "Hurt Back", "team": "MIA", "injury_status": ""},
+    "6": {"full_name": "Back Wideout", "team": "DAL",
+          "injury_status": "Questionable"},
+}
+
+PARITY_BUNDLES = {
+    "9": _bundle("QB", 24.0, recent_ppg=21.0, season_ppg=22.5,
+                 last4_ppg=23.5, played_games=8, opponent="DAL"),
+    "1": _bundle("RB", 22.6, recent_ppg=25.1, season_ppg=20.8,
+                 last4_ppg=23.2, played_games=8, usage_delta=2.0,
+                 usage_season_avg=24.0, bust_rate=0.0, oline_index=85.3,
+                 opponent="DAL"),
+    # Gibbs-shaped: elite last-4, cold last-3 vs his own baseline.
+    "2": _bundle("RB", 24.6, recent_ppg=18.5, season_ppg=26.2,
+                 last4_ppg=23.3, played_games=8, usage_delta=-0.1,
+                 usage_season_avg=26.0, bust_rate=0.0, oline_index=38.1,
+                 opponent="NE"),
+    "5": _bundle("WR", 18.0, recent_ppg=12.0, season_ppg=15.5,
+                 last4_ppg=14.0, played_games=9, usage_delta=-1.5,
+                 usage_season_avg=9.0, opponent="SF"),
+    "11": _bundle("TE", 12.0, recent_ppg=13.0, season_ppg=11.0,
+                  last4_ppg=15.0, played_games=7, usage_delta=0.5,
+                  usage_season_avg=7.0, opponent="NE"),
+    # IR in the bundle and no live override: excluded on both paths.
+    "3": _bundle("RB", 15.0, injury_status="IR"),
+    # IR at batch time but Questionable live: the live status wins and
+    # the player is scored on both paths.
+    "6": _bundle("WR", 14.0, recent_ppg=13.0, season_ppg=12.0,
+                 last4_ppg=13.5, played_games=8, opponent="DAL",
+                 injury_status="IR"),
+}
+
+
+@pytest.fixture()
+def parity_env(monkeypatch):
+    """Both bundle paths over one shared fake bundle set + index.
+
+    compute_start_score is deliberately NOT faked here.
+    """
+    import app as appmod
+    import data_building.start_score_bundle as bundle_mod
+
+    monkeypatch.setattr(bundle_mod, "variant_for_exact_scoring",
+                        lambda scoring: "ppr")
+    monkeypatch.setattr(
+        bundle_mod, "load_start_score_bundles",
+        lambda season, week, variant, pids: dict(PARITY_BUNDLES))
+    monkeypatch.setattr(
+        bundle_mod, "load_start_score_bundles_for_scoring",
+        lambda season, week, scoring, pids: dict(PARITY_BUNDLES))
+    monkeypatch.setattr(appmod, "get_players_index_global",
+                        lambda: dict(PARITY_INDEX))
+    monkeypatch.setattr(
+        appmod, "_matchup_rank_table",
+        lambda season, position, scoring_settings=None: (
+            {"DAL": 32, "NE": 20, "SF": 4}, 32, {}, False))
+    monkeypatch.setattr(appmod, "_SS_POOL_MIN_BUNDLES", 1)
+    appmod._SS_EXPORT_CACHE.clear()
+    appmod._SS_EXPORT_CACHE_TS.clear()
+    appmod._SS_POOL_CACHE.clear()
+    appmod._SS_POOL_CACHE_TS.clear()
+    yield
+    appmod._SS_EXPORT_CACHE.clear()
+    appmod._SS_EXPORT_CACHE_TS.clear()
+    appmod._SS_POOL_CACHE.clear()
+    appmod._SS_POOL_CACHE_TS.clear()
+
+
+def test_export_matches_page_pool_values(parity_env):
+    import app as appmod
+
+    export = appmod.build_start_sit_pool_export(2026, 10)
+    pool = appmod.start_score_pool_scores(2026, 10, {"rec": 1.0})
+    assert pool["kind"] == "score"
+
+    exported = {}
+    for pos_rows in export.values():
+        for row in pos_rows:
+            exported[row["pid"]] = row["value"]
+    # Every scored player matches the page pool's value to the cent
+    # (the export rounds to 2dp; the pool keeps the raw float).
+    assert set(exported) == set(pool["by_pid"])
+    for pid, value in exported.items():
+        assert value == round(pool["by_pid"][pid], 2), pid
+    # The IR bundle row is excluded on both paths; the live-Questionable
+    # overlay row is scored on both.
+    assert "3" not in exported and "3" not in pool["by_pid"]
+    assert "6" in exported and "6" in pool["by_pid"]
