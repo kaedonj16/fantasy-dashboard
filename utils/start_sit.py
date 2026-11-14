@@ -297,8 +297,8 @@ score so they cannot contradict each other. Kept as a pure function so the
 math is unit-tested without Flask.
 
 The expectation being scaled is not the raw projection: when the caller
-supplies the player's last-4-played PPG, the base blends it in at 35%
-(65% projection), shrunk toward the projection on thin samples, so a hot
+supplies the player's last-4-played PPG, the base blends it in at 20%
+(80% projection), shrunk toward the projection on thin samples, so a hot
 player the projection is sleeping on climbs and a cold one it still
 loves sinks, instead of the board merely re-sorting the projection
 list. Without that input the base is the projection itself.
@@ -430,10 +430,14 @@ def bottom_teams_by_implied_total(game_conditions: dict, n: int = 8) -> set:
 
 #: Position scale for the absolute form delta (PPG points per game).
 FORM_SCALES = {"QB": 5.5, "RB": 4.0, "WR": 4.0, "TE": 4.0}
-#: Base blend (2026-11-07): the score's base expectation is
+#: Base blend (2026-11-07; weight cut 0.35 -> 0.20 on 2026-11-13): the
+#: score's base expectation is
 #: (1 - FORM_BLEND_WEIGHT) * projection + FORM_BLEND_WEIGHT * last-4-played
 #: PPG, with the weight scaled by the games actually in the 4-game window.
-FORM_BLEND_WEIGHT = 0.35
+#: The 0.35 weight was the one stack component measurably stretching the
+#: score spread (the gap analysis), and backtests held up at 0.20, so the
+#: blend keeps its direction on a shorter leash.
+FORM_BLEND_WEIGHT = 0.20
 #: Games in a full recent-form window for the base blend.
 FORM_BLEND_WINDOW = 4
 #: Elite-form floor lines (last-4-played PPG), 2026-11-13: a player
@@ -589,7 +593,7 @@ def compute_start_score(
       over the player's last 4 PLAYED games (from
       :func:`form_usage_inputs`; bye, DNP and missed weeks never enter
       that window — the derivation only ever hands over played weeks)
-      and ``w`` is ``FORM_BLEND_WEIGHT`` (0.35) scaled by the games
+      and ``w`` is ``FORM_BLEND_WEIGHT`` (0.20) scaled by the games
       actually in the window: ``last4_games`` when given, else
       ``min(4, played_games)``, else a full window for legacy callers
       that supply no count at all. A 2-game window carries half the
