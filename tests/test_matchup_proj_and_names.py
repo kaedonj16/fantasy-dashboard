@@ -211,6 +211,51 @@ def test_preview_no_bye_verdict_when_schedule_unavailable(monkeypatch):
     assert "mb-info--bye" not in html
 
 
+def test_hyphenated_surname_does_not_split_at_hyphen(monkeypatch):
+    """Kaedon 2026-11-15: in the compact board's narrow cell, Jaxon
+    Smith-Njigba wrapped as "J. Smith-" / "Njigba" because a regular
+    hyphen is a line-break opportunity. The display name must carry a
+    non-breaking hyphen so the surname stays whole (and drops to the
+    next line intact); data-player-name keeps the real name."""
+    mmod = _matchups()
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "build_team_schedule_lookup", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: False)
+    monkeypatch.setattr("utils.utils.load_week_projection", lambda *_a, **_k: {})
+
+    matchup = {
+        "left": {
+            "name": "Team A", "roster_id": "1", "record": "0-0", "username": "a",
+            "avatar": "", "pts_total": None,
+            "starters": [{"pid": "9488", "name": "Jaxon Smith-Njigba", "pos": "WR", "nfl": "SEA", "pts": None}],
+        },
+        "right": {
+            "name": "Team B", "roster_id": "2", "record": "0-0", "username": "b",
+            "avatar": "", "pts_total": None,
+            "starters": [{"pid": "4881", "name": "CeeDee Lamb", "pos": "WR", "nfl": "DAL", "pts": None}],
+        },
+    }
+    html = mmod.render_matchup_slide(
+        "2026", matchup, w=1, proj_week=0,
+        status_by_pid={},
+        projections={},
+        players={"9488": {"name": "Jaxon Smith-Njigba"}, "4881": {"name": "CeeDee Lamb"}},
+        teams={},
+        team_game_lookup={},
+        scoring_settings={"rec": 1.0},
+    )
+    # Display: initial + surname with a non-breaking hyphen (U+2011).
+    assert "J. Smith\u2011Njigba" in html
+    assert "J. Smith-Njigba" not in html
+    # The clickable identity is unchanged.
+    assert "data-player-name='Jaxon Smith-Njigba'" in html
+    # Non-hyphenated names render exactly as before.
+    assert "C. Lamb" in html
+
+
 def test_team_live_totals_uses_yahoo_proj_total_when_starters_have_no_sleeper_proj():
     mmod = _matchups()
     team = {
