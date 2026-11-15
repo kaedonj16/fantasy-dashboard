@@ -1328,6 +1328,22 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
             by_play.setdefault(play_key, []).append(play)
 
         for play_key, rows in by_play.items():
+            # The play's actual TD scorers: rows whose OWN stat line carries
+            # the touchdown. The extractors also emit rows for players merely
+            # mentioned in the booth line (a declined-penalty clause, a
+            # lateral chain), and those rows inherit is_td with an empty or
+            # non-scoring stat line -- see _row_inherits_td in
+            # utils/scorezone.py: the feed keeps them because the stat parse
+            # may have missed the real scorer, but they are NOT scorers and
+            # must never headline a push. (2026-11-15: a "TD: Nico Collins"
+            # push with no points, over a body describing Dalton Schultz's
+            # touchdown, because Collins's mention row was the only row
+            # targeting his owner.)
+            play_has_scorer = any(
+                (r.get("stat_line") or {}).get(k)
+                for r in rows
+                for k in ("rush_td", "rec_td", "pass_td", "def_td")
+            )
             # target → best scoring contribution for that target on this play.
             # The target is the roster owner_id, except for Yahoo: Yahoo
             # stamps the fetching caller's guid on every roster's owner_id,
@@ -1370,6 +1386,16 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
 
             for target, (play, _is_scorer, target_roster_id) in owner_rows.items():
                 owner_id = target
+                if not _is_scorer and play_has_scorer:
+                    # This owner's starter was only mentioned on the play;
+                    # the touchdown belongs to an identified scorer who is
+                    # not their player. Never headline someone else's
+                    # touchdown with this player's name (and never broadcast
+                    # the real scorer's name to a non-owner either) -- the
+                    # scorer's own owner gets their push from their row.
+                    logger.debug("[scorezone-alert] play=%s type=td owner=%s dedupe=not_scorer",
+                                 f"{gid}:{play_key}", target)
+                    continue
                 event_key = f"redzone_td:{league_id}:{gid}:{play_key}:{target}"
                 try:
                     with get_conn() as conn:
@@ -1391,7 +1417,15 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
                 except Exception:
                     pts = 0.0
                 pts_str = f" (+{round(pts, 1)})" if pts else ""
-                title = f"TD: {name}{pts_str}"
+                if _is_scorer:
+                    title = f"TD: {name}{pts_str}"
+                else:
+                    # No row on this play carries a TD stat (the stat parse
+                    # missed the credit entirely), so the scorer cannot be
+                    # named honestly. Keep the alert but title it as
+                    # generically as the body rather than naming a player
+                    # who may not have scored.
+                    title = "Touchdown!"
                 desc = _short_td_desc(play)
                 if league_name:
                     body = f"{desc} · {league_name}" if desc else f"Touchdown! · {league_name}"
