@@ -6841,6 +6841,20 @@ function bindOnce(el, key, type, handler, options) {
     const currentTheme = root.getAttribute('data-theme');
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
+    // Cross-fade the switch: a short-lived class transitions the themed
+    // colour properties for ~320ms, then comes off so it never animates
+    // unrelated state changes. Reduced motion switches instantly.
+    var _reduced = false;
+    try { _reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+    if (!_reduced) {
+      root.classList.add('theme-transition');
+      if (window.__themeTransitionTimer) clearTimeout(window.__themeTransitionTimer);
+      window.__themeTransitionTimer = setTimeout(function() {
+        root.classList.remove('theme-transition');
+        window.__themeTransitionTimer = null;
+      }, 360);
+    }
+
     if (newTheme === 'dark') {
       root.setAttribute('data-theme', 'dark');
       localStorage.setItem('theme', 'dark');
@@ -32409,7 +32423,14 @@ window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
         + '" style="left:' + xOf(p) + '%"></span>';
     });
   }
-  var fd = (fp.ltg != null) ? '<span class="rz-fb-fd" style="left:' + xOf(fp.ltg) + '%"></span>' : '';
+  var fd = (fp.ltg != null) ? '<span class="rz-fb-fd' + ((fbAnim && fbAnim.fd) ? ' rz-fb-fd-pulse' : '') + '" style="left:' + xOf(fp.ltg) + '%"></span>' : '';
+  // Attack depth: how deep the drive has pushed toward the attacked goal.
+  // Steps at the 40 / 30 / 20 (yards to goal) deepen the attacked end
+  // zone's tint; the board border warms via the matching rz-board-heat
+  // class the game board wrapper carries.
+  var atkDepth = fp.toGoal <= 20 ? 3 : (fp.toGoal <= 30 ? 2 : (fp.toGoal <= 40 ? 1 : 0));
+  var rzDeep = atkDepth ? '<span class="rz-fb-rzdeep" style="' + (fp.side === 'away' ? 'left:90%' : 'left:0')
+    + ';background:' + tcEff + '"></span>' : '';
   var flagX = Math.min(Math.max(ballX, 15), 85);
   var pillInk = lum(tcEff) >= 66 ? ';color:#0f2440' : '';
   var flag = '<span class="rz-fb-flag" style="left:' + flagX + '%' + pillInk + '">' + esc(fp.label) + '</span>';
@@ -32444,10 +32465,10 @@ window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
       tdHtml += '<span class="rz-fb-td"' + (pillInk ? ' style="' + pillInk.slice(1) + '"' : '') + '>TOUCHDOWN</span>';
     }
   }
-  return '<div class="rz-fb' + (fbAnim ? ' rz-fb-anim rz-fb-anim-' + fbAnim.type : '') + '"><div class="rz-fb-persp"><div class="rz-fb-field" style="--rz-fb-color:' + tcEff + '" role="img" aria-label="' + esc(aria) + '">'
+  return '<div class="rz-fb' + (fbAnim ? ' rz-fb-anim rz-fb-anim-' + fbAnim.type : '') + '"><div class="rz-fb-persp"><div class="rz-fb-field" data-depth="' + atkDepth + '" style="--rz-fb-color:' + tcEff + '" role="img" aria-label="' + esc(aria) + '">'
     + '<span class="rz-fb-ez" style="left:0;background:' + tint(colors[away] || '#334155') + '"><span>' + esc(away) + '</span></span>'
     + '<span class="rz-fb-ez" style="right:0;background:' + tint(colors[home] || '#334155') + '"><span>' + esc(home) + '</span></span>'
-    + shade + trail + fd + flag
+    + shade + rzDeep + trail + fd + flag
     + '<span class="rz-fb-ball" style="left:' + ballX + '%' + (fbAnim ? ';--rz-fb-ball-from:' + xOf(fbAnim.fromAbs) + '%' : '') + '"></span>'
     + chip + tdHtml
     + '</div></div>'
@@ -32477,7 +32498,7 @@ window._rzRenderGameBoard = function(game, options) {
   // so each team name appears exactly once (chip + score). On a TD arrival
   // the possessing team's score pops (field-board celebration hook).
   var fbTdPop=false;
-  var team=function(t,pts,side){var ball=live&&poss===t;var dot=ball&&!fp;return '<div class="rz-nfl-team rz-nfl-'+side+(ball?' has-ball':'')+'"><span class="rz-nfl-logo-wrap">'+logo(t)+(dot?'<span class="rz-nfl-poss" title="Has possession" aria-label="Has possession"></span>':'')+'</span>'+(showScore?'<span class="rz-nfl-score'+(ball&&fbTdPop?' rz-fb-score-pop':'')+'">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+'</div>';};
+  var team=function(t,pts,side){var ball=live&&poss===t;var dot=ball&&!fp;return '<div class="rz-nfl-team rz-nfl-'+side+(ball?' has-ball':'')+'"><span class="rz-nfl-logo-wrap'+(ball&&fbTdPop?' rz-badge-pop':'')+'">'+logo(t)+(dot?'<span class="rz-nfl-poss" title="Has possession" aria-label="Has possession"></span>':'')+'</span>'+(showScore?'<span class="rz-nfl-score'+(ball&&fbTdPop?' rz-fb-score-pop':'')+'">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+'</div>';};
   var fp=window._rzFieldPosition(Object.assign({},game,{status:status}));
   // Field board (ScoreZone page only): the flag on the field owns the yard
   // line, so the centre line drops it in this presentation.
@@ -32497,11 +32518,12 @@ window._rzRenderGameBoard = function(game, options) {
     var fbPrev=fbReg[fbKey]||null;
     if(fbDrive){
       var fbSig={firstSeq:fbDrive.firstSeq,lastSeq:fbDrive.lastSeq,count:fbDrive.count,
-        points:fbDrive.points,startAbs:fbDrive.startAbs,poss:poss,td:!!fbDrive.td};
+        points:fbDrive.points,startAbs:fbDrive.startAbs,poss:poss,td:!!fbDrive.td,down:String(game.down||'')};
       if(options.fbLive&&fbPrev&&fbPrev.firstSeq===fbSig.firstSeq&&fbPrev.startAbs===fbSig.startAbs
         &&fbPrev.poss===fbSig.poss&&fbSig.count===fbPrev.count+1
         &&fbPrev.points.every(function(p,i){return p===fbSig.points[i];})){
-        fbAnim={type:fbSig.td?'td':'play',fromAbs:fbPrev.points[fbPrev.points.length-1]};
+        fbAnim={type:fbSig.td?'td':'play',fromAbs:fbPrev.points[fbPrev.points.length-1],
+          fd:fbSig.down==='1'&&!!fbPrev.down&&fbPrev.down!=='1'};
       }
       fbReg[fbKey]=fbSig;
     } else fbReg[fbKey]=null;
@@ -32593,7 +32615,16 @@ window._rzRenderGameBoard = function(game, options) {
       +'<span class="rz-field-ezl">'+esc(home)+'</span>'
       +'<span class="rz-field-spot">'+esc(fp.label)+'</span></div></div>';
   }
-  return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(pre?' rz-nfl-board--pregame':'')+(options.modal?' rz-nfl-board--modal':'')+'"'+(options.id?' id="'+esc(options.id)+'"':'')+'>'+header+field+'</div>';
+  var dynCls='', dynStyle='';
+  if(options.fieldBoard){
+    var aP=parseFloat(game.away_pts)||0, hP=parseFloat(game.home_pts)||0, marg=Math.abs(aP-hP);
+    var q4=/4|fourth/i.test(String(game.game_quarter||''));
+    if(live&&q4&&marg<=8) dynCls+=' rz-board-nailbiter';
+    if(status==='final'&&marg>=17) dynCls+=' rz-board-blowout';
+    if(live&&fp) dynCls+=' rz-board-heat-'+(fp.toGoal<=20?3:(fp.toGoal<=30?2:(fp.toGoal<=40?1:0)));
+    dynStyle=' style="--rz-acc-a:'+(colors[away]||'#334155')+';--rz-acc-h:'+(colors[home]||'#334155')+'"';
+  }
+  return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(pre?' rz-nfl-board--pregame':'')+(options.modal?' rz-nfl-board--modal':'')+dynCls+'"'+(options.id?' id="'+esc(options.id)+'"':'')+dynStyle+'>'+header+field+'</div>';
 };
 
 // Build a player's modal log from canonical grouped plays. A feed card has one

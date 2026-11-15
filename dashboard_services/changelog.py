@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-15",
+        "tag": "update",
+        "text": "ScoreZone now feels live: scores count up and flash in the scoring team's colors, plays land with a pop instead of swapping in, the field board deepens as a drive pushes toward the end zone, close fourth-quarter games stand out while blowouts recede, a condensed score bar sticks while you scroll the feed, the biggest plays line up in a Moments rail, and ScoreZone eases into a dark broadcast view while games are live. Light and dark now cross-fade across the whole site instead of snapping.",
+        "link": "/scorezone"
+    },
+    {
         "date": "2026-11-11",
         "tag": "new",
         "text": "Season Wrapped is rebuilt as an 11-slide story: the champion and the final score, their Road to the Title through every playoff round, the league MVP crowned on his headshot, season records including the year's best rivalry, the Hardware for Best Coach, Luckiest and Unluckiest, the Best Move of the season, final standings with the playoff cut line, and a Your Season slide built for your team: your finish, best week, roster MVP and your head-to-head with the champion.",

@@ -3051,6 +3051,155 @@
       + '<div class="rz-field-scale">' + labels + '</div></div>';
   }
 
+
+  // ── Dynamicity (2026-11-15): updates land instead of swapping ─────────────
+  var _dynPrev = { nflKey: null, nflScores: null, clock: '', sit: '', hero: {} };
+  var _dynFlashHero = false;
+  var _dynEntered = false;
+
+  function _dynReduced() {
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+    catch (e) { return false; }
+  }
+  function _dynTeamColor(t) {
+    var pair = (window.BR_TEAM_COLORS || {})[String(t || '').toUpperCase()];
+    return pair ? pair[0] : '#16a34a';
+  }
+
+  // Live-window dark treatment: a ScoreZone-scoped toggle (the mock's
+  // toggle), never a change to the user's global theme. Default on while
+  // games are live until the user picks otherwise on this page.
+  function _liveDarkPref() {
+    try { return localStorage.getItem('rzLiveDark'); } catch (e) { return null; }
+  }
+  function _liveDarkOn(live) {
+    var p = _liveDarkPref();
+    if (p === '1') return true;
+    if (p === '0') return false;
+    return !!live;
+  }
+
+  // Condensed sticky bar: pins under the site nav while the board scrolls
+  // away, synced from the same game object the board renders.
+  function _stickyBarHtml(g) {
+    if (_normGameStatus(g) !== 'live') return '';
+    var aPts = (g.away_pts === '' || g.away_pts == null) ? '0' : g.away_pts;
+    var hPts = (g.home_pts === '' || g.home_pts == null) ? '0' : g.home_pts;
+    var clock = [_fmtQuarter(g.game_quarter || ''), g.game_clock || ''].filter(Boolean).join(' · ') || 'LIVE';
+    var sit = _downDist({ down: g.down, distance: g.distance }) || '';
+    var mini = '';
+    var fp = null;
+    try { fp = window._rzFieldPosition ? window._rzFieldPosition(Object.assign({}, g, { status: 'live' })) : null; } catch (e) {}
+    if (fp) {
+      var bx = 10 + fp.spot * 0.8;
+      var fillW = fp.side === 'away' ? bx : (100 - bx);
+      mini = '<span class="rz-sticky-mini" aria-hidden="true">'
+        + '<span class="rz-sticky-mini-fill is-' + fp.side + '" style="width:' + fillW + '%"></span>'
+        + (fp.ltg != null ? '<span class="rz-sticky-mini-fd" style="left:' + (10 + fp.ltg * 0.8) + '%"></span>' : '')
+        + '<span class="rz-sticky-mini-ball" style="left:' + bx + '%"></span></span>';
+    }
+    return '<div class="rz-sticky-bar" aria-hidden="true">'
+      + '<span class="rz-sticky-team">' + _esc(g.away || '') + ' <b>' + aPts + '</b></span>'
+      + '<span class="rz-sticky-mid"><span class="rz-sticky-clock">' + _esc(clock) + '</span>'
+      + (sit ? '<span class="rz-sticky-sit">' + _esc(sit) + '</span>' : '') + mini + '</span>'
+      + '<span class="rz-sticky-team right"><b>' + hPts + '</b> ' + _esc(g.home || '') + '</span></div>';
+  }
+
+  // Moments film rail: TDs, 40+ style big plays (the feed's own big-play
+  // rule) and turnovers, from the events the feed already carries. A card
+  // only gets a Watch button when the play actually has a clip; tapping it
+  // drives the feed's own clip toggle, so there is one clip contract.
+  function _momentsRailHtml() {
+    if (_activeTab !== 'plays') return '';
+    var seen = {}, items = [];
+    (_feed || []).forEach(function(ev) {
+      if (!ev || items.length >= 10) return;
+      var isTurnover = /interception|fumble/i.test(ev.desc || '');
+      if (!(ev.kind === 'td' || (ev.pts || 0) >= 4 || isTurnover)) return;
+      var k = String(ev.playId || _eid(ev));
+      if (seen[k]) return;
+      seen[k] = 1;
+      items.push(ev);
+    });
+    if (!items.length) return '';
+    var cards = items.map(function(ev) {
+      var isTurnover = /interception|fumble/i.test(ev.desc || '');
+      var label = ev.kind === 'td' ? 'Touchdown' : (isTurnover ? 'Turnover' : 'Big play');
+      var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
+      var poster = ev.clipPosterUrl
+        ? '<img class="rz-moment-poster" src="' + _esc(ev.clipPosterUrl) + '" alt="" loading="lazy">'
+        : '<span class="rz-moment-initials" aria-hidden="true">' + _esc(initials) + '</span>';
+      var d = _n(ev.pts);
+      var delta = (d > 0.0001 ? '+' : '') + _fmtFantasyDelta(d);
+      return '<div class="rz-moment-card">'
+        + '<div class="rz-moment-media">' + poster + '</div>'
+        + '<div class="rz-moment-name">' + _esc(ev.name || '') + '</div>'
+        + '<div class="rz-moment-meta"><span>' + label + '</span><span class="rz-moment-delta">' + delta + '</span></div>'
+        + (ev.clipTweetId && ev.playId
+          ? '<button type="button" class="rz-moment-watch" data-rail-clip="' + _esc(ev.playId) + '">Watch</button>' : '')
+        + '</div>';
+    }).join('');
+    return '<div class="rz-moments-rail-wrap"><div class="rz-moments-rail-label">Moments</div>'
+      + '<div class="rz-moments-rail">' + cards + '</div></div>';
+  }
+
+  // Post-render motion: count NFL scores up with a scoring-team colour
+  // flash, highlight clock / situation changes, cross-animate fantasy
+  // lead flips, and flash the viewer's matchup card on their scoring play.
+  function _dynAfterRender() {
+    var reduced = _dynReduced();
+    var board = document.getElementById('rz-nfl-board');
+    if (board) {
+      var g = _nflGameInfo(_filters.nfl) || {};
+      var key = String(_filters.nfl);
+      var scores = board.querySelectorAll('.rz-nfl-score');
+      var cur = Array.prototype.map.call(scores, function(el) { return parseInt(el.textContent, 10); });
+      var pill = board.querySelector('.rz-nfl-live-pill');
+      var sit = board.querySelector('.rz-nfl-sit');
+      if (!reduced && _dynPrev.nflKey === key && _dynPrev.nflScores) {
+        scores.forEach(function(el, i) {
+          var from = _dynPrev.nflScores[i], to = cur[i];
+          if (from == null || isNaN(from) || isNaN(to) || from === to) return;
+          el.classList.add('rz-score-flash-team');
+          el.style.setProperty('--rz-flash', _dynTeamColor(i === 0 ? g.away : g.home));
+          var t0 = null;
+          var step = function(ts) {
+            if (!t0) t0 = ts;
+            var k = Math.min(1, (ts - t0) / 300);
+            el.textContent = String(Math.round(from + (to - from) * k));
+            if (k < 1) requestAnimationFrame(step); else el.textContent = String(to);
+          };
+          requestAnimationFrame(step);
+        });
+        if (pill && _dynPrev.clock && pill.textContent !== _dynPrev.clock) pill.classList.add('rz-changed-flash');
+        if (sit && _dynPrev.sit && sit.textContent !== _dynPrev.sit) sit.classList.add('rz-changed-flash');
+      }
+      _dynPrev.nflKey = key;
+      _dynPrev.nflScores = cur;
+      _dynPrev.clock = pill ? pill.textContent : '';
+      _dynPrev.sit = sit ? sit.textContent : '';
+    }
+    var cards = root.querySelectorAll('.rz-mc-hero');
+    cards.forEach(function(card) {
+      var key = card.getAttribute('data-heromid');
+      if (!key) return;
+      var leadEl = card.querySelector('.rz-mch-score.lead');
+      var sideEl = leadEl ? leadEl.closest('.rz-mch-side') : null;
+      var side = leadEl ? (sideEl && sideEl.classList.contains('right') ? 'R' : 'L') : '';
+      var prev = _dynPrev.hero[key];
+      if (!reduced && prev !== undefined && prev && side && prev !== side) {
+        card.classList.add('rz-lead-flip');
+        card.querySelectorAll('.rz-mch-score').forEach(function(el) { el.classList.add('rz-score-cross'); });
+      }
+      _dynPrev.hero[key] = side;
+    });
+    if (_dynFlashHero) {
+      _dynFlashHero = false;
+      var mine = root.querySelectorAll('.rz-mc-hero.viewer-matchup');
+      (mine.length ? mine : cards).forEach(function(c) { c.classList.add('rz-card-flash'); });
+    }
+  }
+
   function _renderNflBoard() {
     if (_filters.nfl === 'all') return '';
     var g = _nflGameInfo(_filters.nfl);
@@ -3059,7 +3208,7 @@
       // The shared app.js renderer owns the board markup on the real page, so
       // the button must attach here too. Without this the button only existed
       // in the scorezone.js fallback below, which never runs when app.js loaded.
-      return window._rzRenderGameBoard(g, { id: 'rz-nfl-board', fieldBoard: true, fbLive: _animationMode === 'live', pbpPlays: (_state.pbp_by_game || {})[_filters.nfl] || [] }) + _boxScoreButtonHtml();
+      return window._rzRenderGameBoard(g, { id: 'rz-nfl-board', fieldBoard: true, fbLive: _animationMode === 'live', pbpPlays: (_state.pbp_by_game || {})[_filters.nfl] || [] }) + _boxScoreButtonHtml() + _stickyBarHtml(g);
     }
     var norm = _normGameStatus(g);
     var live = norm === 'live';
@@ -3133,7 +3282,7 @@
       + team(home, hPts, homePoss, 'home')
       + fbHtml
       + _boxScoreButtonHtml()
-      + '</div>';
+      + '</div>' + _stickyBarHtml(g);
   }
 
   // Compact centered status for an NFL game pill. Pregame pills can ask
@@ -3205,7 +3354,13 @@
       var status = _gamePillStatus(g, norm, true);
       var showScore = norm !== 'pregame' && norm !== 'unknown';
       var aria = o.away + (showScore ? ' ' + aPts : '') + ' at ' + o.home + (showScore ? ' ' + hPts : '') + ', ' + ariaStatus;
-      return '<button type="button" class="rz-game-pill is-' + norm
+      var dynCls = '';
+      if (showScore) {
+        var marg = Math.abs((parseFloat(aPts) || 0) - (parseFloat(hPts) || 0));
+        if (norm === 'live' && /4|fourth/i.test(String(g.game_quarter || '')) && marg <= 8) dynCls = ' is-nailbiter';
+        if (norm === 'final' && marg >= 17) dynCls = ' is-blowout-final';
+      }
+      return '<button type="button" class="rz-game-pill is-' + norm + dynCls
         + (selected ? ' is-selected' : '') + '" data-nfl-gid="' + o.id + '"'
         + ' aria-pressed="' + (selected ? 'true' : 'false') + '"'
         + ' aria-label="' + _esc(aria) + '">'
@@ -4569,6 +4724,8 @@
       if (reducedMotion) return;
       if (liveInsert) {
         item.node.classList.add('is-live-enter');
+        if (item.ev.kind === 'td') item.node.classList.add('rz-td-enter');
+        if (item.ev.mine) _dynFlashHero = true;
         _bigPlayFx(item.node, item.ev, container, true);
       } else if (mode === 'bulk') {
         item.node.classList.add('is-bulk-enter');
@@ -5047,7 +5204,7 @@
     var playsScoreBar = _playsScoreBarHtml();
 
     var panels =
-        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div class="rz-feed-hdr" id="rz-feed-hdr"></div><div id="rz-feed-list"></div><div id="rz-feed-pagination"></div>' + playsScoreBar + '</div>'
+        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays">' + _momentsRailHtml() + '<div class="rz-feed-hdr" id="rz-feed-hdr"></div><div id="rz-feed-list"></div><div id="rz-feed-pagination"></div>' + playsScoreBar + '</div>'
       + '<div class="rz-panel' + (_activeTab === 'mine'   ? ' active' : '') + '" id="rz-panel-mine">'   + minePanel              + '</div>'
       + (_scope === 'user' ? '' :
         '<div class="rz-panel' + (_activeTab === 'opp'    ? ' active' : '') + '" id="rz-panel-opp">'    + _rosterCard(oppMatchup) + '</div>')
@@ -5064,6 +5221,14 @@
     // header instead of degrading silently.
     var sbChip = (_state.scoreboard_status === 'stale' || _state.scoreboard_status === 'failed')
       ? '<span class="rz-stale-badge" title="ESPN scoreboard unavailable; some games may show delayed scores.">Scores delayed</span>' : '';
+    var darkOn = _liveDarkOn(live);
+    var darkBtn = live ? '<button class="rz-live-dark-btn' + (darkOn ? ' active' : '') + '" id="rz-live-dark-btn" aria-pressed="' + (darkOn ? 'true' : 'false') + '">Dark</button>' : '';
+    root.classList.toggle('rz-live-dark', darkOn);
+    if (!_dynEntered) {
+      _dynEntered = true;
+      root.classList.add('rz-theme-fade');
+      setTimeout(function() { root.classList.remove('rz-theme-fade'); }, 420);
+    }
     var timerLabel = _lastPollFailed ? '↻' : (idle ? '↻' : _fmtTimer(_countdown));
     // Show the CTA based on REAL push readiness, not merely whether permission
     // was requested. 'granted' (subscribed) shows nothing; a browser-level
@@ -5088,7 +5253,7 @@
       notifCta
       + '<div class="rz-header">'
       + '<div class="rz-brand"><div class="rz-brand-dot' + (live ? ' is-live' : '') + '"></div><span class="rz-brand-name">BR ScoreZone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
-      + '<div class="rz-header-right">' + exitBtn + demoLink + staleChip + sbChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer" aria-label="Refresh ScoreZone data">' + timerLabel + '</button></div>'
+      + '<div class="rz-header-right">' + exitBtn + demoLink + staleChip + sbChip + liveChip + darkBtn + '<button class="rz-refresh-timer" id="rz-timer" aria-label="Refresh ScoreZone data">' + timerLabel + '</button></div>'
       + '</div>'
       + '<div class="rz-content">'
       + _renderScopeToggle()
@@ -5106,6 +5271,26 @@
       + (_historyOpen ? _historyPanelHtml() : '');
 
     _syncFeed();
+    _dynAfterRender();
+
+    // Live-dark toggle + Moments rail Watch wiring (rebuilt each render).
+    var darkBtnEl = root.querySelector('#rz-live-dark-btn');
+    if (darkBtnEl) darkBtnEl.addEventListener('click', function() {
+      var on = !root.classList.contains('rz-live-dark');
+      try { localStorage.setItem('rzLiveDark', on ? '1' : '0'); } catch (e) {}
+      root.classList.add('rz-theme-fade');
+      root.classList.toggle('rz-live-dark', on);
+      darkBtnEl.classList.toggle('active', on);
+      darkBtnEl.setAttribute('aria-pressed', on ? 'true' : 'false');
+      setTimeout(function() { root.classList.remove('rz-theme-fade'); }, 420);
+    });
+    root.querySelectorAll('[data-rail-clip]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var t = null;
+        try { t = root.querySelector('[data-clip-toggle="' + btn.getAttribute('data-rail-clip') + '"]'); } catch (e) {}
+        if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.click(); }
+      });
+    });
 
     // Sync sticky header top to actual nav height (prevents overlap on scroll)
     var topNav = document.querySelector('.top-nav');
