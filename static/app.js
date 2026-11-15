@@ -33428,9 +33428,10 @@ window.__brSzLiveCache = (function () {
       var to = function (v) { var n2 = Math.round((v + m) * 255).toString(16); return n2.length === 1 ? '0' + n2 : n2; };
       return '#' + to(rr) + to(gg) + to(bb);
     };
-    var awayT = norm(game.away), homeT = norm(game.home);
     // S1 slim bar: the fill runs from the goal line to the ball exactly (no
-    // arrowhead overshoot) and the end labels sit outside the track.
+    // arrowhead overshoot). Full-width track (Kaedon's pick, 2026-11-15):
+    // no end labels or spot text on the bar line, so the track spans the
+    // whole cell; the spot rides in the head line instead (below).
     var fillW = (Math.round((atkAway ? fp.spot : (100 - fp.spot)) * 8) / 10) + '%';
     var fd = (fp.ltg != null) ? '<span class="mb-fld-fd" style="left:' + xOf(Math.min(Math.max(fp.ltg, 1), 99)) + '%"></span>' : '';
     var dd = '';
@@ -33441,17 +33442,16 @@ window.__brSzLiveCache = (function () {
     }
     var tcRaw = TEAM_COLORS[norm(team)] || '#334155';
     var tc = dark ? lift(tcRaw) : tcRaw;
-    // Context row: DRIVE + down & distance. The league payload in scope here
-    // carries no play-by-play, so no plays/yards summary is shown -- the spot
-    // rides as plain text at the end of the slim bar line instead.
+    // Context row: DRIVE + down & distance + spot ("3rd & 15 @ IND 46").
+    // The league payload in scope here carries no play-by-play, so no
+    // plays/yards summary is shown.
+    var ddFull = dd ? (dd + (fp.label ? ' @ ' + fp.label : '')) : (fp.label || '');
     var bar = '<div class="mb-fld-in"><div class="mb-fld-head"><span class="mb-fld-live"><i></i>DRIVE</span>'
-      + '<span class="mb-fld-dd">' + esc(dd) + '</span></div>'
-      + '<div class="mb-fld-bar" style="--mb-tc:' + tc + '"><span class="mb-fld-ezl">' + esc(awayT) + '</span>'
+      + '<span class="mb-fld-dd">' + esc(ddFull) + '</span></div>'
+      + '<div class="mb-fld-bar" style="--mb-tc:' + tc + '">'
       + '<div class="mb-fld-track">'
       + '<span class="mb-fld-fill ' + (atkAway ? 'mb-away' : 'mb-home') + '" style="width:' + fillW + '"></span>'
-      + fd + '<span class="mb-fld-ball" style="left:' + ballX + '%"></span></div>'
-      + '<span class="mb-fld-ezl">' + esc(homeT) + '</span>'
-      + '<span class="mb-fld-spot">' + esc(fp.label || '') + '</span></div></div>';
+      + fd + '<span class="mb-fld-ball" style="left:' + ballX + '%"></span></div></div></div>';
     return gid ? '<button type="button" class="mb-fld-link" data-gs-team="' + esc(tn) + '" aria-label="Open this game">' + bar + '</button>' : bar;
   }
 
