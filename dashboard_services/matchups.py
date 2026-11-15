@@ -3085,10 +3085,17 @@ def render_matchup_slide(
         _safe_name = html.escape(name or "")
         _safe_pid = html.escape(str(pid or ""))
         # Display as first initial + last name (e.g. "B. Purdy")
-        _display_name = _safe_name
         _name_parts = str(name or "").strip().split()
         if len(_name_parts) >= 2:
-            _display_name = html.escape(f"{_name_parts[0][0]}. {' '.join(_name_parts[1:])}")
+            _display_raw = f"{_name_parts[0][0]}. {' '.join(_name_parts[1:])}"
+        else:
+            _display_raw = str(name or "")
+        # Hyphenated names must not split at the hyphen in the narrow
+        # compact-board cell (Kaedon 2026-11-15: "J. Smith-" / "Njigba"):
+        # the display copy uses a non-breaking hyphen so the surname drops
+        # whole to the next line instead. data-player-name keeps the real
+        # hyphen (_safe_name), so modal lookups are untouched.
+        _display_name = html.escape(_display_raw.replace("-", "\u2011"))
         clickable_attrs = (
             f" class='pname player-clickable' style='cursor:pointer;'"
             f" data-player-id='{_safe_pid}' data-player-name='{_safe_name}'"
