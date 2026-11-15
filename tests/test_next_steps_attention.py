@@ -141,10 +141,15 @@ DST_PLAYERS = {
 }
 DST_PROJ = {"qb1": 20.0, "rb1": 15.0, "wr1": 14.0, "te1": 8.0,
             "sea_def": 10.2, "no_def": 10.8}
+# Run-time-relative kickoffs: the swap collector reads the real clock, so
+# fixed calendar epochs expire the day the pinned Sunday's 1 PM games lock
+# (this test went red on 2026-11-15 at 13:00 ET for exactly that reason).
+# Same shape as the old SUN_1300 / SUN_1605 pair, always in the future.
+_NOW = datetime.now(ET).timestamp()
 DST_GAMES = [
-    {"home": "BUF", "away": "MIA", "gameTime_epoch": SUN_1300},
-    {"home": "SEA", "away": "LV", "gameTime_epoch": SUN_1605},
-    {"home": "NO", "away": "ATL", "gameTime_epoch": SUN_1300},
+    {"home": "BUF", "away": "MIA", "gameTime_epoch": _NOW + 2 * 3600},
+    {"home": "SEA", "away": "LV", "gameTime_epoch": _NOW + 5 * 3600 + 300},
+    {"home": "NO", "away": "ATL", "gameTime_epoch": _NOW + 2 * 3600},
 ]
 
 

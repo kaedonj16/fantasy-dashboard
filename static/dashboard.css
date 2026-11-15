@@ -60615,6 +60615,187 @@ button.mb-fld-link {
 .path-mu-bar-line .path-imp-track{flex:1;min-width:0}
 .path-imp-end.path-flat{color:var(--text-muted)}
 
+/* ── ScoreZone dynamicity (2026-11-15) ─────────────────────────────────────
+   Motion and state styling for the live ScoreZone view. All animation runs
+   under 400ms on the existing ease tokens; the reduced-motion block at the
+   end of this section disables every piece of it. */
+
+/* Global theme cross-fade: the class is added by toggleDarkMode for ~360ms
+   only, so it can never animate unrelated state changes. */
+html.theme-transition *, html.theme-transition *::before, html.theme-transition *::after {
+    transition: background-color .32s ease, border-color .32s ease, color .32s ease,
+        fill .32s ease, stroke .32s ease, box-shadow .32s ease !important;
+}
+
+/* ScoreZone entry: the view fades in, and the live-dark treatment cross-fades
+   via .rz-theme-fade instead of cutting or flashing the wrong theme. */
+#rz-root { animation: rz-view-in .3s ease-out; }
+@keyframes rz-view-in { from { opacity: .35; } to { opacity: 1; } }
+#rz-root.rz-theme-fade, #rz-root.rz-theme-fade * {
+    transition: background-color .35s ease, color .35s ease, border-color .35s ease !important;
+}
+
+/* Live-window dark treatment, scoped to the ScoreZone view only. The user's
+   global theme is untouched; these overrides ride the rz tokens. */
+#rz-root.rz-live-dark {
+    --rz-text: #e2e8f0; --rz-card: #1e293b; --rz-border: #334155; --rz-muted: #94a3b8;
+    background: #0f172a; color: #e2e8f0; border-radius: 14px;
+}
+#rz-root.rz-live-dark .rz-main-card, #rz-root.rz-live-dark .rz-mc-hero,
+#rz-root.rz-live-dark .rz-event, #rz-root.rz-live-dark .rz-sticky-bar,
+#rz-root.rz-live-dark .rz-moment-card {
+    background: #1e293b; border-color: #334155; color: #e2e8f0;
+}
+#rz-root.rz-live-dark .rz-moment-media { background: #0f172a; }
+.rz-live-dark-btn {
+    border: 1px solid var(--rz-border, var(--border)); background: transparent;
+    color: inherit; font-size: 12px; font-weight: 700; border-radius: 99px;
+    padding: 4px 10px; cursor: pointer;
+}
+.rz-live-dark-btn.active { background: #0f172a; color: #e2e8f0; border-color: #0f172a; }
+#rz-root.rz-live-dark .rz-live-dark-btn.active { background: #e2e8f0; color: #0f172a; border-color: #e2e8f0; }
+
+/* Package 1: scores land. Count-up runs in JS; the flash is the scoring
+   team's colour, extending the rz-score-flash pattern. */
+.rz-score-flash-team { display: inline-block; animation: rz-score-flash-team .7s ease forwards; }
+@keyframes rz-score-flash-team {
+    0% { color: var(--rz-flash, #16a34a); transform: scale(1.18); }
+    55% { color: var(--rz-flash, #16a34a); transform: scale(1.05); }
+    100% { color: inherit; transform: scale(1); }
+}
+.rz-changed-flash { animation: rz-changed-flash .8s ease-out; border-radius: 6px; }
+@keyframes rz-changed-flash {
+    0% { background: rgba(234, 179, 8, .38); }
+    100% { background: transparent; }
+}
+/* Feed arrivals: the delta chip pops; a TD arrival pops bigger with a
+   bolder name. No colour wash: the v3 feed marks TDs structurally. */
+.rz-event.is-live-enter .rz-event-delta-pts { animation: rz-delta-pop .35s cubic-bezier(.2, 1.4, .4, 1) both; }
+.rz-event.rz-td-enter .rz-event-delta-pts { animation: rz-delta-pop .5s cubic-bezier(.2, 1.4, .4, 1) both; }
+.rz-event.rz-td-enter .rz-event-name { font-weight: 800; }
+@keyframes rz-delta-pop {
+    0% { transform: scale(.55); opacity: .4; }
+    60% { transform: scale(1.18); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Package 2: field board depth. The attacked end zone deepens in steps at
+   the 40 / 30 / 20 and the board border warms to match. */
+.rz-fb-rzdeep { position: absolute; top: 0; bottom: 0; width: 10%; z-index: 1; opacity: 0; transition: opacity .4s ease; }
+.rz-fb-field[data-depth="1"] .rz-fb-rzdeep { opacity: .22; }
+.rz-fb-field[data-depth="2"] .rz-fb-rzdeep { opacity: .42; }
+.rz-fb-field[data-depth="3"] .rz-fb-rzdeep { opacity: .62; }
+.rz-nfl-board { transition: border-color .4s ease; }
+.rz-nfl-board.rz-board-heat-1 { border-color: rgba(220, 38, 38, .22); }
+.rz-nfl-board.rz-board-heat-2 { border-color: rgba(220, 38, 38, .38); }
+.rz-nfl-board.rz-board-heat-3 { border-color: rgba(220, 38, 38, .55); }
+.rz-fb-fd-pulse { animation: rz-fb-fd-pulse .9s ease-out 1.3s both; }
+@keyframes rz-fb-fd-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+    35% { box-shadow: 0 0 0 4px rgba(234, 179, 8, .45); }
+}
+.rz-fb-anim-td .rz-fb-field { animation: rz-fb-tdflare 3s ease-out backwards; }
+@keyframes rz-fb-tdflare {
+    0% { box-shadow: inset 0 0 0 0 transparent; }
+    12% { box-shadow: inset 0 0 34px 6px var(--rz-fb-color); }
+    100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+
+/* Package 3: game state restyles the page. */
+.rz-nfl-board.rz-board-nailbiter, .rz-game-pill.is-nailbiter {
+    border-color: rgba(217, 119, 6, .55);
+    box-shadow: 0 2px 14px rgba(217, 119, 6, .16);
+}
+.rz-nfl-board.rz-board-blowout, .rz-game-pill.is-blowout-final {
+    filter: saturate(.72);
+    opacity: .88;
+}
+.rz-badge-pop { display: inline-block; animation: rz-badge-pop .8s cubic-bezier(.2, 1.4, .4, 1) .3s both; }
+@keyframes rz-badge-pop {
+    0% { transform: scale(1); }
+    35% { transform: scale(1.22); filter: drop-shadow(0 0 6px rgba(255, 255, 255, .55)); }
+    100% { transform: scale(1); filter: none; }
+}
+/* Change 8: ambient team wash behind the board only. */
+.rz-nfl-board { position: relative; }
+.rz-nfl-board::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 0; pointer-events: none;
+    background:
+        radial-gradient(240px 130px at 10% 0%, color-mix(in srgb, var(--rz-acc-a, transparent) 13%, transparent), transparent 70%),
+        radial-gradient(240px 130px at 90% 0%, color-mix(in srgb, var(--rz-acc-h, transparent) 13%, transparent), transparent 70%);
+}
+:root[data-theme="dark"] .rz-nfl-board::before, #rz-root.rz-live-dark .rz-nfl-board::before {
+    background:
+        radial-gradient(240px 130px at 10% 0%, color-mix(in srgb, var(--rz-acc-a, transparent) 20%, transparent), transparent 70%),
+        radial-gradient(240px 130px at 90% 0%, color-mix(in srgb, var(--rz-acc-h, transparent) 20%, transparent), transparent 70%);
+}
+.rz-nfl-board > * { position: relative; z-index: 1; }
+
+/* Package 4: fantasy lead flips cross-animate; a rostered scoring play
+   flashes the viewer's matchup card once. */
+.rz-lead-flip { animation: rz-lead-flip 1s ease-out; }
+@keyframes rz-lead-flip {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    25% { box-shadow: 0 0 0 2px rgba(34, 197, 94, .5); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+.rz-score-cross { display: inline-block; animation: rz-score-cross .4s ease; }
+@keyframes rz-score-cross {
+    0% { transform: translateY(3px); opacity: .35; }
+    100% { transform: translateY(0); opacity: 1; }
+}
+.rz-card-flash { animation: rz-card-flash 1s ease-out; }
+@keyframes rz-card-flash {
+    0% { background: rgba(34, 197, 94, .14); }
+    100% { background: transparent; }
+}
+
+/* Change 5: condensed sticky bar, synced from the board's game object. */
+.rz-sticky-bar {
+    position: sticky; top: calc(var(--rz-nav-h, 56px) + 6px); z-index: 40;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: 8px; padding: 6px 12px;
+    background: var(--rz-card, var(--card)); border: 1px solid var(--rz-border, var(--border));
+    border-radius: 10px; font-size: 12px; font-weight: 600;
+}
+.rz-sticky-mid { display: inline-flex; align-items: center; gap: 8px; }
+.rz-sticky-clock { font-weight: 800; font-variant-numeric: tabular-nums; }
+.rz-sticky-sit { color: var(--rz-muted, var(--text-muted)); font-weight: 700; }
+.rz-sticky-mini { position: relative; display: inline-block; width: 92px; height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--rz-muted, #64748b) 22%, transparent); overflow: hidden; }
+.rz-sticky-mini-fill { position: absolute; top: 0; bottom: 0; left: 0; background: #16a34a; }
+.rz-sticky-mini-fill.is-home { left: auto; right: 0; }
+.rz-sticky-mini-fd { position: absolute; top: 0; bottom: 0; width: 2px; background: #eab308; transform: translateX(-50%); }
+.rz-sticky-mini-ball { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #fff; border: 1.5px solid #0f2440; transform: translate(-50%, -50%); }
+
+/* Change 7: Moments film rail. Compact and quiet, subordinate to the board. */
+.rz-moments-rail-wrap { margin: 10px 0 2px; }
+.rz-moments-rail-label { font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--rz-muted, var(--text-muted)); margin-bottom: 6px; }
+.rz-moments-rail { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
+.rz-moment-card {
+    flex: 0 0 128px; scroll-snap-align: start;
+    border: 1px solid var(--rz-border, var(--border)); border-radius: 12px;
+    background: var(--rz-card, var(--card)); padding: 8px;
+}
+.rz-moment-media { height: 52px; border-radius: 8px; background: color-mix(in srgb, var(--rz-muted, #64748b) 14%, transparent); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px; }
+.rz-moment-poster { width: 100%; height: 100%; object-fit: cover; }
+.rz-moment-initials { font-size: 16px; font-weight: 900; color: var(--rz-muted, var(--text-muted)); }
+.rz-moment-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rz-moment-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--rz-muted, var(--text-muted)); margin-top: 2px; }
+.rz-moment-delta { color: var(--rz-green, #16a34a); font-weight: 800; }
+.rz-moment-watch { margin-top: 6px; font-size: 11px; font-weight: 700; border: 1px solid var(--rz-border, var(--border)); background: transparent; color: inherit; border-radius: 99px; padding: 3px 9px; cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+    html.theme-transition *, html.theme-transition *::before, html.theme-transition *::after { transition: none !important; }
+    #rz-root { animation: none; }
+    #rz-root.rz-theme-fade, #rz-root.rz-theme-fade * { transition: none !important; }
+    .rz-score-flash-team, .rz-changed-flash, .rz-badge-pop, .rz-lead-flip,
+    .rz-score-cross, .rz-card-flash, .rz-fb-fd-pulse,
+    .rz-fb-anim-td .rz-fb-field,
+    .rz-event.is-live-enter .rz-event-delta-pts,
+    .rz-event.rz-td-enter .rz-event-delta-pts { animation: none; }
+    .rz-fb-rzdeep { transition: none; }
+}
+
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
