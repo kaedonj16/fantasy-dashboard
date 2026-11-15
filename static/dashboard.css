@@ -60721,25 +60721,18 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     transition: background-color .35s ease, color .35s ease, border-color .35s ease !important;
 }
 
-/* Live-window dark treatment, scoped to the ScoreZone view only. The user's
-   global theme is untouched; these overrides ride the rz tokens. */
-#rz-root.rz-live-dark {
-    --rz-text: #e2e8f0; --rz-card: #1e293b; --rz-border: #334155; --rz-muted: #94a3b8;
-    background: #0f172a; color: #e2e8f0; border-radius: 14px;
-}
-#rz-root.rz-live-dark .rz-main-card, #rz-root.rz-live-dark .rz-mc-hero,
-#rz-root.rz-live-dark .rz-event, #rz-root.rz-live-dark .rz-sticky-bar,
-#rz-root.rz-live-dark .rz-moment-card {
-    background: #1e293b; border-color: #334155; color: #e2e8f0;
-}
-#rz-root.rz-live-dark .rz-moment-media { background: #0f172a; }
+/* Live-window dark: there is deliberately NO scoped palette here.
+   ScoreZone borrows the real site dark mode (data-theme="dark" on <html>,
+   via brBorrowTheme in app.js) while games are live, so every surface,
+   including the top nav, the bottom dock and the body-mounted box-score
+   sheet, renders from the one [data-theme="dark"] token set. The rz
+   tokens already alias the theme vars, so rz surfaces follow for free. */
 .rz-live-dark-btn {
     border: 1px solid var(--rz-border, var(--border)); background: transparent;
     color: inherit; font-size: 12px; font-weight: 700; border-radius: 99px;
     padding: 4px 10px; cursor: pointer;
 }
-.rz-live-dark-btn.active { background: #0f172a; color: #e2e8f0; border-color: #0f172a; }
-#rz-root.rz-live-dark .rz-live-dark-btn.active { background: #e2e8f0; color: #0f172a; border-color: #e2e8f0; }
+.rz-live-dark-btn.active { background: var(--rz-text, #0f172a); color: var(--rz-card, #e2e8f0); border-color: var(--rz-text, #0f172a); }
 
 /* Package 1: scores land. Count-up runs in JS; the flash is the scoring
    team's colour, extending the rz-score-flash pattern. */
@@ -60810,7 +60803,7 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
         radial-gradient(240px 130px at 10% 0%, color-mix(in srgb, var(--rz-acc-a, transparent) 13%, transparent), transparent 70%),
         radial-gradient(240px 130px at 90% 0%, color-mix(in srgb, var(--rz-acc-h, transparent) 13%, transparent), transparent 70%);
 }
-:root[data-theme="dark"] .rz-nfl-board::before, #rz-root.rz-live-dark .rz-nfl-board::before {
+:root[data-theme="dark"] .rz-nfl-board::before {
     background:
         radial-gradient(240px 130px at 10% 0%, color-mix(in srgb, var(--rz-acc-a, transparent) 20%, transparent), transparent 70%),
         radial-gradient(240px 130px at 90% 0%, color-mix(in srgb, var(--rz-acc-h, transparent) 20%, transparent), transparent 70%);
@@ -60862,8 +60855,9 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     border: 1px solid var(--rz-border, var(--border)); border-radius: 12px;
     background: var(--rz-card, var(--card)); padding: 8px;
 }
-.rz-moment-media { height: 52px; border-radius: 8px; background: color-mix(in srgb, var(--rz-muted, #64748b) 14%, transparent); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px; }
-.rz-moment-poster { width: 100%; height: 100%; object-fit: cover; }
+.rz-moment-media { position: relative; height: 52px; border-radius: 8px; background: color-mix(in srgb, var(--rz-muted, #64748b) 14%, transparent); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px; }
+.rz-moment-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.rz-moment-headshot { object-position: center 22%; }
 .rz-moment-initials { font-size: 16px; font-weight: 900; color: var(--rz-muted, var(--text-muted)); }
 .rz-moment-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rz-moment-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--rz-muted, var(--text-muted)); margin-top: 2px; }

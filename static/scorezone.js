@@ -3066,9 +3066,14 @@
     return pair ? pair[0] : '#16a34a';
   }
 
-  // Live-window dark treatment: a ScoreZone-scoped toggle (the mock's
-  // toggle), never a change to the user's global theme. Default on while
-  // games are live until the user picks otherwise on this page.
+  // Live-window dark: ScoreZone borrows the REAL site dark mode
+  // (data-theme="dark" on <html>, via window.brBorrowTheme) instead of
+  // painting a scoped imitation, so the top nav, the bottom dock and the
+  // box-score sheet (mounted outside #rz-root) all share the one palette.
+  // The borrow never writes the persisted 'theme' preference: the choice
+  // lives only in rzLiveDark, and leaving ScoreZone hands the user's own
+  // theme back. Default on while games are live until the user picks
+  // otherwise on this page.
   function _liveDarkPref() {
     try { return localStorage.getItem('rzLiveDark'); } catch (e) { return null; }
   }
@@ -3077,6 +3082,52 @@
     if (p === '1') return true;
     if (p === '0') return false;
     return !!live;
+  }
+  function _globalDark() {
+    return document.documentElement.getAttribute('data-theme') === 'dark';
+  }
+  var _rzBorrowed = false;       // this instance currently holds the borrow
+  var _rzBorrowSettling = false; // our own data-theme write is landing
+  function _applyBorrowed(dark) {
+    if (typeof window.brBorrowTheme !== 'function') return;
+    _rzBorrowSettling = true;
+    try { window.brBorrowTheme(dark); } catch (e) {}
+    // MutationObserver callbacks run as microtasks, before this macrotask
+    // releases the guard, so our own write is never read as external.
+    setTimeout(function() { _rzBorrowSettling = false; }, 0);
+  }
+  function _syncLiveDark(live) {
+    var want = _liveDarkOn(live);
+    if (want && !_rzBorrowed && !_globalDark()) {
+      _rzBorrowed = true;
+      _applyBorrowed(true);
+    } else if (!want && _rzBorrowed) {
+      _rzBorrowed = false;
+      _applyBorrowed(false);
+    }
+    // Global dark already satisfies "on"; global light + no want = nothing.
+  }
+  function _restoreBorrowedTheme() {
+    if (!_rzBorrowed) return;
+    _rzBorrowed = false;
+    _applyBorrowed(false);
+  }
+  // The user flipping the site's own theme toggle mid-borrow takes manual
+  // control: the borrow ends silently (their persisted choice now rules,
+  // so there is nothing to restore on exit).
+  if (window.MutationObserver) {
+    new MutationObserver(function() {
+      if (_rzBorrowSettling) return;
+      if (_rzBorrowed && !_globalDark()) _rzBorrowed = false;
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    // Soft-nav swaps #page-root in place: the moment this page's root is
+    // detached, hand the borrowed theme back (the _tick detach branch is
+    // the backstop if this observer was GC'd with the old DOM).
+    if (root.parentNode) {
+      new MutationObserver(function() {
+        if (root.isConnected === false) _restoreBorrowedTheme();
+      }).observe(root.parentNode, { childList: true });
+    }
   }
 
   // Condensed sticky bar: pins under the site nav while the board scrolls
@@ -3106,16 +3157,46 @@
   }
 
   // Moments film rail: TDs, 40+ style big plays (the feed's own big-play
-  // rule) and turnovers, from the events the feed already carries. A card
-  // only gets a Watch button when the play actually has a clip; tapping it
-  // drives the feed's own clip toggle, so there is one clip contract.
+  // rule) and turnovers, from the events the feed already carries. The
+  // rail is a FILM rail: a play only earns a card when it actually has a
+  // clip (the same clip fields the feed's Watch contract reads) or a
+  // poster image; clipless plays stay in the feed as normal play cards
+  // instead of sitting here as black placeholder boxes. The rail also
+  // honours the feed's active scope via _eventMatches (My Team shows
+  // only the viewer's players, Big Plays / game / position filters
+  // match the feed), and it is rebuilt with every render, so a scope
+  // change re-rails alongside the feed.
+  function _momentMediaHtml(ev, initials) {
+    if (ev.clipPosterUrl) {
+      return '<img class="rz-moment-poster" src="' + _esc(ev.clipPosterUrl) + '" alt="" loading="lazy">';
+    }
+    // Clip but no poster: the player's headshot, resolved exactly like
+    // the feed avatar (Sleeper thumb, team logo for DEF), layered over
+    // the initials so a failed image falls back to them, never to a
+    // black box.
+    var isDef = String(ev.pos || '').toUpperCase() === 'DEF';
+    var src, onErr;
+    if (isDef) {
+      var dt = String(ev.nflTeam || ev.pid || '').toUpperCase();
+      if (dt === 'WSH') dt = 'WAS';
+      src = '/static/images/team_logos/' + dt + '.png';
+      onErr = "this.style.display='none'";
+    } else {
+      src = 'https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg';
+      onErr = "this.style.display='none'";
+    }
+    return '<span class="rz-moment-initials" aria-hidden="true">' + _esc(initials) + '</span>'
+      + '<img class="rz-moment-poster rz-moment-headshot" src="' + _esc(src) + '" alt="" loading="lazy" onerror="' + onErr + '">';
+  }
   function _momentsRailHtml() {
     if (_activeTab !== 'plays') return '';
     var seen = {}, items = [];
     (_feed || []).forEach(function(ev) {
       if (!ev || items.length >= 10) return;
+      if (!_eventMatches(ev)) return;
       var isTurnover = /interception|fumble/i.test(ev.desc || '');
       if (!(ev.kind === 'td' || (ev.pts || 0) >= 4 || isTurnover)) return;
+      if (!(ev.clipTweetId || ev.clipVideoUrl || ev.clipPosterUrl)) return;
       var k = String(ev.playId || _eid(ev));
       if (seen[k]) return;
       seen[k] = 1;
@@ -3126,16 +3207,14 @@
       var isTurnover = /interception|fumble/i.test(ev.desc || '');
       var label = ev.kind === 'td' ? 'Touchdown' : (isTurnover ? 'Turnover' : 'Big play');
       var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
-      var poster = ev.clipPosterUrl
-        ? '<img class="rz-moment-poster" src="' + _esc(ev.clipPosterUrl) + '" alt="" loading="lazy">'
-        : '<span class="rz-moment-initials" aria-hidden="true">' + _esc(initials) + '</span>';
+      var poster = _momentMediaHtml(ev, initials);
       var d = _n(ev.pts);
       var delta = (d > 0.0001 ? '+' : '') + _fmtFantasyDelta(d);
       return '<div class="rz-moment-card">'
         + '<div class="rz-moment-media">' + poster + '</div>'
         + '<div class="rz-moment-name">' + _esc(ev.name || '') + '</div>'
         + '<div class="rz-moment-meta"><span>' + label + '</span><span class="rz-moment-delta">' + delta + '</span></div>'
-        + (ev.clipTweetId && ev.playId
+        + (ev.kind === 'td' && ev.clipTweetId && ev.playId
           ? '<button type="button" class="rz-moment-watch" data-rail-clip="' + _esc(ev.playId) + '">Watch</button>' : '')
         + '</div>';
     }).join('');
@@ -5221,9 +5300,11 @@
     // header instead of degrading silently.
     var sbChip = (_state.scoreboard_status === 'stale' || _state.scoreboard_status === 'failed')
       ? '<span class="rz-stale-badge" title="ESPN scoreboard unavailable; some games may show delayed scores.">Scores delayed</span>' : '';
-    var darkOn = _liveDarkOn(live);
+    // Borrow the real site dark mode for this view (no scoped class):
+    // the button reflects the effective theme, the borrow syncs it.
+    _syncLiveDark(live);
+    var darkOn = _globalDark();
     var darkBtn = live ? '<button class="rz-live-dark-btn' + (darkOn ? ' active' : '') + '" id="rz-live-dark-btn" aria-pressed="' + (darkOn ? 'true' : 'false') + '">Dark</button>' : '';
-    root.classList.toggle('rz-live-dark', darkOn);
     if (!_dynEntered) {
       _dynEntered = true;
       root.classList.add('rz-theme-fade');
@@ -5276,13 +5357,15 @@
     // Live-dark toggle + Moments rail Watch wiring (rebuilt each render).
     var darkBtnEl = root.querySelector('#rz-live-dark-btn');
     if (darkBtnEl) darkBtnEl.addEventListener('click', function() {
-      var on = !root.classList.contains('rz-live-dark');
+      // Flip the ScoreZone preference, then reconcile the borrow. When
+      // the user's own global theme is dark the page stays dark either
+      // way (ScoreZone never overrides it); the pref still records the
+      // choice for visits that start in light mode.
+      var on = !_liveDarkOn(live);
       try { localStorage.setItem('rzLiveDark', on ? '1' : '0'); } catch (e) {}
-      root.classList.add('rz-theme-fade');
-      root.classList.toggle('rz-live-dark', on);
-      darkBtnEl.classList.toggle('active', on);
-      darkBtnEl.setAttribute('aria-pressed', on ? 'true' : 'false');
-      setTimeout(function() { root.classList.remove('rz-theme-fade'); }, 420);
+      _syncLiveDark(live);
+      darkBtnEl.classList.toggle('active', _globalDark());
+      darkBtnEl.setAttribute('aria-pressed', _globalDark() ? 'true' : 'false');
     });
     root.querySelectorAll('[data-rail-clip]').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -6045,7 +6128,9 @@
   function _tick() {
     // Soft-nav swapped this page out: stop the 1s timer for good rather than
     // polling a detached page forever (and stacking one timer per visit).
+    // Backstop for the detach observer: hand back a borrowed theme.
     if (root.isConnected === false) {
+      _restoreBorrowedTheme();
       if (_timer) { clearInterval(_timer); _timer = null; }
       return;
     }
@@ -6129,6 +6214,11 @@
     _lastCollectAt = _bootCollect > 0 ? _bootCollect * 1000 : _lastDataAt;
   }
 
+  // An explicit Dark choice from a previous visit applies BEFORE the
+  // first render, so the page never paints light and then cross-fades.
+  // The default (no stored choice) waits for the first render to confirm
+  // games are live, then borrows with the cross-fade.
+  if (_liveDarkPref() === '1') _syncLiveDark(true);
   _applyGameLink();          // ?game= deep link: focus that NFL game (no-op without one)
   _render();
   _refreshPushState();       // resolve real device-push readiness for the CTA
