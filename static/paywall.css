@@ -856,3 +856,13 @@
     font-size: var(--fs-h2);
   }
 }
+
+/* Hit-area floor (44px rule, 2026-11-14): coarse pointers only.
+   The paywall close was a 32px box; the glyph is flex-centered, so the
+   bigger box does not move it visually. */
+@media (pointer: coarse) {
+  .paywall-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

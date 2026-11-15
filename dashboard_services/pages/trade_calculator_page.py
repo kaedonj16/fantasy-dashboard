@@ -1167,6 +1167,14 @@ def build_trade_calculator_body(
                 font-size:11px;
               }}
             }}
+            /* Hit-area floor (44px rule, 2026-11-14): coarse pointers only.
+               The info glyph was a 15x15px target; negative margins keep the
+               header layout while the box grows to 44px. */
+            @media (pointer: coarse) {{
+              .pi-info-btn {{
+                min-width:44px; min-height:44px; margin:-14px -12px;
+              }}
+            }}
           </style>
 
           </div><!-- /#otcCalcTab -->

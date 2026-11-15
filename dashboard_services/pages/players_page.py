@@ -1095,6 +1095,14 @@ def build_players_shell() -> str:
         z-index: 20;
         box-shadow: 0 8px 12px -10px rgba(0, 0, 0, 0.28);
       }
+      /* Hit-area floor (44px rule, 2026-11-14): coarse pointers only.
+         Segmented control, sort toggle and the CSV export button were
+         26-28px tall. */
+      @media (pointer: coarse) {
+        .pr-segbtn { min-height: 44px; }
+        .pr-sort-toggle button { min-height: 44px; }
+        #prCountRow button { min-height: 44px; }
+      }
     </style>
 
     <!-- Player Rankings JS lives in static/rankings.js (injected below, deferred) -->

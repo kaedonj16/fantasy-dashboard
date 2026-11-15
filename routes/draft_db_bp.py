@@ -654,6 +654,13 @@ _PAGE_CSS = """
       .ddb-adp-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
       .ddb-adp-big { font-weight: 800; color: var(--text); }
       .ddb-adp-tm { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+      /* Hit-area floor (44px rule, 2026-11-14): coarse pointers only.
+         Tabs were 26px tall; board/back buttons carry a fixed 32px height. */
+      @media (pointer: coarse) {
+        .ddb-tab { min-height: 44px; }
+        .ddb-board-btn, .ddb-back { min-height: 44px; }
+        .ddb-search { min-height: 44px; }
+      }
 """
 
 _PAGE_JS = """
