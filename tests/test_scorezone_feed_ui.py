@@ -944,10 +944,11 @@ def test_drive_bar_s1_slim_markup_present_in_both_renderers():
     # The drive summary is caller-supplied only -- never derived or invented
     # inside the renderer.
     assert "options.driveSummary" in app_js
-    # Matchups bar.
+    # Matchups bar (full-width track, 2026-11-15: no end labels or spot
+    # text on the bar line -- the spot rides in the head line instead).
     assert "mb-fld-bar" in app_js
-    assert "mb-fld-ezl" in app_js
-    assert "mb-fld-spot" in app_js
+    assert "mb-fld-ezl" not in app_js
+    assert "mb-fld-spot" not in app_js
     assert "mb-fld-ball" in app_js
     # The bulky first-redesign pieces are gone from both renderers, and the
     # pre-redesign line marker stays gone.
@@ -957,10 +958,12 @@ def test_drive_bar_s1_slim_markup_present_in_both_renderers():
     # CSS for both bars.
     for cls in (".rz-field-line", ".rz-field-ezl", ".rz-field-spot",
                 ".rz-field-ball", ".rz-field-top", ".rz-field-live",
-                ".mb-fld-bar", ".mb-fld-ezl", ".mb-fld-spot", ".mb-fld-ball"):
+                ".mb-fld-bar", ".mb-fld-ball"):
         assert cls in DASHBOARD_CSS, cls
-    # ... and the bulky CSS is gone too.
-    for gone in (".mb-fld-flag", ".mb-fld-twrap", ".mb-fld-ez {", ".rz-field-ez {"):
+    # ... and the bulky CSS is gone too, along with the retired end-label
+    # and spot-text rules from the pre-full-width bar line.
+    for gone in (".mb-fld-flag", ".mb-fld-twrap", ".mb-fld-ez {", ".rz-field-ez {",
+                 ".mb-fld-ezl", ".mb-fld-spot"):
         assert gone not in DASHBOARD_CSS, gone
 
 
@@ -1034,10 +1037,12 @@ console.log(JSON.stringify({{
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
 def test_matchup_bar_geometry_flag_and_defense_state():
     """driveBarHtml (Matchups page) renders the S1 slim bar with the same
-    geometry as the board bar: end labels outside the track, the spot as
-    plain text at the end of the line (no flag, no caps), and the compact
-    defense label when the viewed team does not have the ball. The league
-    payload in scope has no play-by-play, so no plays/yards summary appears."""
+    geometry as the board bar, but full-width (2026-11-15): the bar line is
+    the track alone (no end labels, no spot text, no flag, no caps) and the
+    spot rides in the head line after the down & distance. The compact
+    defense label renders when the viewed team does not have the ball. The
+    league payload in scope has no play-by-play, so no plays/yards summary
+    appears."""
     app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     helpers = app_js[app_js.index("window._rzNormalizeTeam") : app_js.index("window._rzRenderGameBoard")]
     fn = _extract_js_function(app_js, "function driveBarHtml(")
@@ -1063,11 +1068,10 @@ console.log(JSON.stringify({{
     out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
     car, gb = out["car"], out["gb"]
     assert 'mb-fld-live"><i></i>DRIVE' in car
-    assert 'mb-fld-dd">1st &amp; 10<' in car
-    # Slim line: labels outside the track, spot as plain text at the end.
+    # Head line carries down & distance + spot; the bar line is track alone.
+    assert 'mb-fld-dd">1st &amp; 10 @ CAR 36<' in car
     assert 'mb-fld-bar' in car
-    assert 'mb-fld-ezl">CAR<' in car and 'mb-fld-ezl">GB<' in car
-    assert 'mb-fld-spot">CAR 36<' in car
+    assert 'mb-fld-ezl' not in car and 'mb-fld-spot' not in car
     assert 'mb-fld-ball" style="left:38.8%"' in car
     assert 'mb-fld-fill mb-away" style="width:28.8%"' in car
     assert 'mb-fld-fd" style="left:46.8%"' in car
@@ -1078,7 +1082,7 @@ console.log(JSON.stringify({{
     assert "plays" not in car and "yds" not in car
     assert 'mb-fld-ball" style="left:61.2%"' in gb
     assert 'mb-fld-fill mb-home' in gb and 'style="width:28.8%"' in gb
-    assert 'mb-fld-spot">GB 36<' in gb
+    assert 'mb-fld-dd">2nd &amp; 3 @ GB 36<' in gb
     assert out["def"] == '<div class="mb-fld-def">CAR on Defense</div>'
 
 

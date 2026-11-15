@@ -52912,7 +52912,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-fld:empty { display: none; }
 .mb-fld-in { display: flex; flex-direction: column; gap: 3px; padding: 0 1px; }
 /* context row (redesign 2026-10-30): DRIVE label + down & distance, mirroring
-   the board bar's top row; the spot rides as plain text on the bar line */
+   the board bar's top row; the spot rides in this row after the down &
+   distance ("3rd & 15 @ IND 46", full-width track change 2026-11-15) */
 .mb-fld-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .mb-cell-r .mb-fld-head { flex-direction: row-reverse; }
 .mb-fld-live { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 900; letter-spacing: .07em; color: #16a34a; white-space: nowrap; }
@@ -52920,13 +52921,10 @@ a, button, [role="button"], [role="tab"], summary, label,
 :root[data-theme="dark"] .mb-fld-live { color: #22c55e; }
 :root[data-theme="dark"] .mb-fld-live i { background: #22c55e; }
 .mb-fld-dd { font-size: 12.5px; font-weight: 800; color: var(--text); white-space: nowrap; }
-/* S1 ultra-slim inline bar (Kaedon's slimming pick over the first redesign):
-   ONE line -- [away label] [10px track] [home label] [spot text]. The labels
-   are pinned to the track's 10px height so they centre on the track itself. */
+/* S1 ultra-slim inline bar (Kaedon's slimming pick over the first redesign),
+   full-width track (her pick, 2026-11-15): the bar line is the 10px track
+   alone, spanning the whole cell -- no end labels or spot text beside it. */
 .mb-fld-bar { display: flex; align-items: center; gap: 7px; }
-.mb-fld-ezl { height: 10px; display: flex; align-items: center; font-size: 8.5px; font-weight: 900; color: #7d8ea6; white-space: nowrap; }
-:root[data-theme="dark"] .mb-fld-ezl { color: #93a7c0; }
-.mb-fld-spot { height: 10px; display: flex; align-items: center; font-size: 11px; font-weight: 900; color: var(--mb-tc, #1e3a5f); white-space: nowrap; }
 /* Drive-bar chrome (treatment B, Kaedon 2026-10-25): light slate track in
    both themes. The dark track values must stay scoped to [data-theme="dark"]
    ONLY -- the shell never sets data-theme="light" (light = attribute
