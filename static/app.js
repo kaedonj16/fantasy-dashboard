@@ -6836,24 +6836,28 @@ function bindOnce(el, key, type, handler, options) {
   }
   syncThemeColor();
 
+  // Cross-fade a theme switch: a short-lived class transitions the themed
+  // colour properties for ~320ms, then comes off so it never animates
+  // unrelated state changes. Reduced motion switches instantly.
+  function _themeFade() {
+    var _reduced = false;
+    try { _reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+    if (_reduced) return;
+    var root = document.documentElement;
+    root.classList.add('theme-transition');
+    if (window.__themeTransitionTimer) clearTimeout(window.__themeTransitionTimer);
+    window.__themeTransitionTimer = setTimeout(function() {
+      root.classList.remove('theme-transition');
+      window.__themeTransitionTimer = null;
+    }, 360);
+  }
+
   function toggleDarkMode() {
     const root = document.documentElement;
     const currentTheme = root.getAttribute('data-theme');
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
-    // Cross-fade the switch: a short-lived class transitions the themed
-    // colour properties for ~320ms, then comes off so it never animates
-    // unrelated state changes. Reduced motion switches instantly.
-    var _reduced = false;
-    try { _reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
-    if (!_reduced) {
-      root.classList.add('theme-transition');
-      if (window.__themeTransitionTimer) clearTimeout(window.__themeTransitionTimer);
-      window.__themeTransitionTimer = setTimeout(function() {
-        root.classList.remove('theme-transition');
-        window.__themeTransitionTimer = null;
-      }, 360);
-    }
+    _themeFade();
 
     if (newTheme === 'dark') {
       root.setAttribute('data-theme', 'dark');
@@ -6870,6 +6874,22 @@ function bindOnce(el, key, type, handler, options) {
     // Update existing Plotly charts to match new theme
     updatePlotlyChartsTheme();
   }
+
+  // Borrow a theme for one view WITHOUT persisting it. ScoreZone's live
+  // dark uses this to run the page under the REAL site dark mode while the
+  // user is on that page, then hand the user's own theme back on exit. The
+  // persisted 'theme' preference is never written here, so the user's
+  // global choice is untouched and the next full page load re-applies it.
+  window.brBorrowTheme = function(dark) {
+    var rootEl = document.documentElement;
+    var isDark = rootEl.getAttribute('data-theme') === 'dark';
+    if (isDark === !!dark) return;
+    _themeFade();
+    if (dark) rootEl.setAttribute('data-theme', 'dark');
+    else rootEl.removeAttribute('data-theme');
+    updateThemeIcons();
+    syncThemeColor();
+  };
 
   function updatePlotlyChartsTheme() {
     if (typeof Plotly === 'undefined') return;

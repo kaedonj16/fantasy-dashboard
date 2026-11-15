@@ -50,9 +50,23 @@ def test_change5_sticky_bar():
     assert "position: sticky" in CSS
 
 
-def test_change6_live_dark_scoped_toggle():
-    assert "rz-live-dark" in SZ and "rz-live-dark" in CSS
-    assert "rzLiveDark" in SZ  # localStorage pref, global theme untouched
+def test_change6_live_dark_borrows_real_site_theme():
+    # The scoped imitation palette is gone: no #rz-root.rz-live-dark block
+    # redefining rz tokens in either file.
+    assert "#rz-root.rz-live-dark" not in CSS
+    assert "#rz-root.rz-live-dark" not in SZ
+    assert "--rz-card: #1e293b" not in CSS  # the old hardcoded card value
+    # ScoreZone's toggle drives the REAL theme through the borrow helper,
+    # which applies data-theme without persisting the global preference.
+    assert "brBorrowTheme" in APP and "brBorrowTheme" in SZ
+    borrow = APP.split("window.brBorrowTheme")[1].split("};")[0]
+    assert "setAttribute('data-theme', 'dark')" in borrow
+    assert "localStorage.setItem('theme'" not in borrow
+    # ScoreZone's own choice stays in its own key; restore-on-exit exists
+    # for both exits (soft-nav detach observer + tick backstop).
+    assert "rzLiveDark" in SZ
+    assert "_syncLiveDark" in SZ and "_restoreBorrowedTheme" in SZ
+    assert "root.isConnected === false" in SZ
     assert "rz-theme-fade" in SZ
 
 
@@ -61,6 +75,27 @@ def test_change7_moments_rail_uses_existing_clips():
     assert "rz-moments-rail" in CSS
     assert "data-rail-clip" in SZ  # drives the feed's own clip toggle
     assert "clipPosterUrl" in SZ    # poster only when the payload carries one
+
+
+def test_fix2_moments_rail_requires_clip_or_poster():
+    rail = SZ.split("function _momentsRailHtml")[1].split("function _dynAfterRender")[0]
+    # A card requires clip fields (the feed's clip contract) or a poster;
+    # clipless plays never reach the rail (they stay in the feed).
+    assert "ev.clipTweetId || ev.clipVideoUrl || ev.clipPosterUrl" in rail
+    # Clip-but-no-poster falls back to the player's headshot over the
+    # initials, resolved like the feed avatar — not a black box.
+    assert "_momentMediaHtml" in SZ
+    assert "sleepercdn.com/content/nfl/players/thumb/" in SZ
+    assert "rz-moment-headshot" in SZ and "rz-moment-headshot" in CSS
+    # Watch only where the feed card carries the same toggle (TD clips).
+    assert "ev.kind === 'td' && ev.clipTweetId && ev.playId" in rail
+
+
+def test_fix3_moments_rail_respects_feed_scope():
+    rail = SZ.split("function _momentsRailHtml")[1].split("function _dynAfterRender")[0]
+    # The rail applies the feed's own filter predicate: My Team (ev.mine),
+    # Big Plays, game / position / stat filters all match the feed.
+    assert "_eventMatches(ev)" in rail
 
 
 def test_change8_ambient_wash_board_only():
