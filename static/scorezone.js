@@ -24,6 +24,10 @@
   var _timer     = null;
   var _playerCache = {};
   var _isDemo   = !!_state.is_demo;
+  // Shell-first page: the server sent identity only (no snapshot), so the
+  // first payload arrives via the boot fetch below. A shell must never be
+  // treated as data: not cached as last-good, not stamped as fresh.
+  var _isShell  = !!_state.shell;
   var _demoT    = parseFloat(_state.demo_t || 150);
   var _scope    = _state.scope || 'league';
   var _filters  = { nfl: 'all', rostered: 'all', pos: 'all', stat: 'all' };
@@ -152,7 +156,7 @@
   // Canonical PBP is durable and scope-local. Payload caching alone is not
   // enough: an empty/partial poll must not discard already reconciled plays.
   var _scopeRuntime = { league: null, user: null };
-  if (_state && Object.keys(_state).length) {
+  if (_state && !_isShell && Object.keys(_state).length) {
     _scopeCache[_state.scope || 'league'] = _state;
     // Seed the conditional-poll ETag from the server render: the embedded
     // snapshot is the exact payload this ETag names, so the first poll
@@ -6429,7 +6433,7 @@
   // the service-worker page cache reads as stale everywhere downstream
   // (resume-on-visible guard, live/bulk heuristic, stale chip) instead of
   // masquerading as "just updated".
-  if (_state && Object.keys(_state).length) {
+  if (_state && !_isShell && Object.keys(_state).length) {
     var _bootSnapAge = _snapshotAgeMs();
     _lastDataAt = _bootSnapAge >= 0 ? Date.now() - _bootSnapAge : Date.now();
     _lastSuccessAt = _lastDataAt;
@@ -6443,14 +6447,25 @@
   // The default (no stored choice) waits for the first render to confirm
   // games are live, then borrows with the cross-fade.
   if (_liveDarkPref() === '1') _syncLiveDark(true);
+  // Shell-first boot: paint the skeleton/loading state, not an empty board.
+  if (_isShell) _loadingScope = true;
   _applyGameLink();          // ?game= deep link: focus that NFL game (no-op without one)
   _render();
   _refreshPushState();       // resolve real device-push readiness for the CTA
+  if (_isShell) {
+    // No snapshot was embedded: load the first payload now. Backfill
+    // semantics, so plays that already happened land as history instead of
+    // firing a burst of live alerts. A failure lands on the existing
+    // load-error state with Retry (no last-good exists to restore).
+    if (_scope === 'user') _refreshUserStream();
+    else _refresh({ backfill: true });
+  }
   // First load paints the server-injected snapshot immediately (never a blank
   // feed), then _visitReconcile pulls the latest right after paint instead of
   // waiting out the first poll interval. Canonical PBP dedupe means the
   // catch-up only adds genuinely newer plays, so nothing double-renders.
   // Off-days with a fresh snapshot skip it entirely: zero extra requests.
+  // (Shell boots already have their fetch in flight, so this no-ops there.)
   setTimeout(_visitReconcile, 250);
   _timer = setInterval(_tick, 1000);
   // Re-evaluate hero-strip arrows when the viewport width changes.

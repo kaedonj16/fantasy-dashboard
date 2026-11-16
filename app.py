@@ -21139,28 +21139,38 @@ def page_scorezone(platform: str, season: int, league_id: str):
     # account portfolio (all platforms) or a Sleeper viewer, and falls back to
     # this league when neither identity is available.
     if request.args.get("demo") == "1":
+        # Demo data is a local deterministic simulation (no upstream calls),
+        # so it keeps the embedded-snapshot render.
         data = _scorezone_demo_data(scope=scope)
-    else:
-        try:
-            data = _scorezone_fetch(platform, league_id, season, scope=scope)
-        except Exception as _e:
-            logger.warning("[scorezone] initial fetch failed: %s", _e)
-            data = {"matchups": [], "rosters": [], "users": [], "player_info": {},
-                    "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
-                    "platform": platform, "league_id": league_id, "updated_at": time.time()}
-
-    # The fetch above stamped this payload's ETag on g (both scopes now).
-    # Embed it next to the snapshot so the client can seed its conditional-
-    # poll state: the embedded payload IS the body this ETag names, so the
-    # first poll can be answered 304 instead of re-downloading ~1MB.
-    _rz_page_etag = None
-    try:
-        _rz_page_etag = g.get("rz_etag") if hasattr(g, "get") else getattr(g, "rz_etag", None)
-    except Exception:
         _rz_page_etag = None
+        _rz_boot_html = '<div class="rz-boot-spinner">Loading...</div>'
+    else:
+        # Shell-first: return the page immediately with an identity-only
+        # bootstrap and let scorezone.js load the live payload from
+        # /scorezone-data, painting its skeleton meanwhile. This route used
+        # to block on _scorezone_fetch before sending any HTML (the collect
+        # can take tens of seconds cold), so tapping "Watch on ScoreZone"
+        # left the viewer on the old page with no sign anything was loading.
+        try:
+            from dashboard_services.api import get_nfl_state as _rz_nfl_state
+            _rz_week = int((_rz_nfl_state() or {}).get("week") or 0)
+        except Exception:
+            _rz_week = 0
+        data = {"shell": True, "platform": platform, "season": season,
+                "league_id": str(league_id), "scope": scope, "week": _rz_week,
+                "matchups": [], "rosters": [], "users": [], "player_info": {},
+                "scoring": {}, "viewer_roster_id": "", "viewer_roster_ids": []}
+        _rz_page_etag = None
+        _rz_boot_html = (
+            '<div class="rz-boot-spinner" role="status">'
+            '<div class="rz-boot-ring" aria-hidden="true"></div>'
+            'Loading ScoreZone'
+            '<div class="rz-boot-sub">Pulling in live scores and plays.</div>'
+            '</div>'
+        )
 
     body = (
-        '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
+        f'<div id="rz-root" class="rz-page">{_rz_boot_html}</div>'
         f'<script>window.__rz__={json.dumps(data)};'
         f'window.__rz_etag__={json.dumps(_rz_page_etag or "")};</script>'
         # The ScoreZone live module is split out of app.js so it only loads here.

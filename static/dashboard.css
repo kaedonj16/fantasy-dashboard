@@ -40505,6 +40505,25 @@ button:disabled {
     font-size: 13px;
 }
 
+/* Shell-first boot: the page arrives before its data, so the wait gets a
+   real spinner + label instead of bare text. scorezone.js replaces this
+   with the skeleton board the moment it runs. */
+.rz-boot-ring {
+    width: 34px;
+    height: 34px;
+    margin: 0 auto 12px;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    border-top-color: var(--rz-red, #dc2626);
+    animation: spin .8s linear infinite;
+}
+
+.rz-boot-sub {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--rz-muted);
+}
+
 /* Demo pill -- inline in the brand row */
 .rz-demo-pill {
     font-size: 11px;
@@ -43107,6 +43126,33 @@ a.rz-demo-link:hover {
     border: 1px solid rgba(220, 38, 38, .3);
     border-radius: var(--radius);
     transition: background .15s;
+}
+
+/* Tapped state for ScoreZone entry buttons (app.js adds .rz-opening on
+   click): the tap registers instantly with a spinner while the browser
+   swaps to the ScoreZone shell, and repeat taps are inert. */
+.weekly-rz-cta-link.rz-opening,
+.weekly-rz-btn.rz-opening {
+    pointer-events: none;
+    opacity: .75;
+}
+
+.weekly-rz-cta-link.rz-opening {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.weekly-rz-cta-link.rz-opening::after,
+.weekly-rz-btn.rz-opening::after {
+    content: '';
+    width: 12px;
+    height: 12px;
+    flex: none;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    animation: spin .7s linear infinite;
 }
 
 .weekly-rz-cta-link:hover {
