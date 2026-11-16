@@ -217,7 +217,7 @@ def test_poll_once_passes_def_map_to_pbp(monkeypatch):
     fake_alt.fetch_alt_pbp_plays = (
         lambda gid, **kw: seen.update(kw) or [{"play_id": "p1"}]
     )
-    fake_alt.parse_tank_game_id = (
+    fake_alt.parse_game_id = (
         lambda gid: (gid.split("_", 1)[0], "DET", "GB")
     )
     fake_alt._normalize_name = lambda name: name

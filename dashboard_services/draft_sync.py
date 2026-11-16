@@ -637,7 +637,7 @@ def map_espn_player_id(
 def _player_display(canonical_id: Optional[str], lookup: Optional[PlayerLookup]) -> Tuple[str, str, str]:
     """Resolve name / position / team for a canonical id.
 
-    Kickers in ``players_index`` are stored as ``pos="PK"`` (Tank01); normalize
+    Kickers in ``players_index`` are stored as ``pos="PK"``; normalize
     to ``K`` so Draft Room starter slots match. Team-abbr DEF ids (``BAL``,
     ``SF``, …) are usually absent from the index -- synthesize ``BAL D/ST`` like
     ``from_players_map`` so ESPN D/ST picks never paint as ``Unknown``.

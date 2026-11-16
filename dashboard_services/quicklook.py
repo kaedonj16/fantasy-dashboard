@@ -85,7 +85,7 @@ def pct_change_7d(points):
 
 
 def format_kickoff(game_date, game_time):
-    """'Sun 1:00 PM' from a schedule row's YYYYMMDD date + Tank01 time.
+    """'Sun 1:00 PM' from a schedule row's YYYYMMDD date + feed time.
 
     game_time arrives as '1:00p' / '8:15p' / '4:25p' (or occasionally a
     fuller '1:00 PM'). Returns '' when either half is unusable so the

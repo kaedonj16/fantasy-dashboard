@@ -22,7 +22,7 @@ def test_rz_box_cache_stays_bounded(monkeypatch):
 
     monkeypatch.setattr(
         api,
-        "fetch_tank_boxscore",
+        "fetch_espn_boxscore",
         lambda game_id, **kwargs: {"game_id": game_id},
     )
     app._RZ_BOX_CACHE.clear()

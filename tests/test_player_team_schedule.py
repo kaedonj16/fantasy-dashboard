@@ -9,7 +9,7 @@ from utils.player_team_schedule import (
     _TEAM_SCHEDULE_CACHE,
     build_team_schedule,
     shape_boxscore_payload,
-    tank_boxscore_game_id,
+    boxscore_game_id,
 )
 
 
@@ -52,8 +52,8 @@ def setup_function():
     _TEAM_SCHEDULE_CACHE.clear()
 
 
-def test_tank_boxscore_game_id_prefers_at_format():
-    assert tank_boxscore_game_id({
+def test_boxscore_game_id_prefers_at_format():
+    assert boxscore_game_id({
         "gameID": "20250905_KC@LAC",
         "gameDate": "20250905",
         "away": "KC",
@@ -61,8 +61,8 @@ def test_tank_boxscore_game_id_prefers_at_format():
     }) == "20250905_KC@LAC"
 
 
-def test_tank_boxscore_game_id_synthesizes_from_date():
-    assert tank_boxscore_game_id({
+def test_boxscore_game_id_synthesizes_from_date():
+    assert boxscore_game_id({
         "gameID": "2025_01_KC_LAC",
         "gameDate": "20250905",
         "away": "KC",

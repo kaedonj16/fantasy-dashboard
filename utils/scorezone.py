@@ -15,12 +15,13 @@ from __future__ import annotations
 # From utils/scorezone_pbp.py
 # ======================================================================
 
-"""Normalize Tank01 play-by-play into ScoreZone feed events.
+"""Normalize box-score play-by-play into ScoreZone feed events.
 
-Tank01's ``getNFLBoxScore?playByPlay=true`` (also documented as ``playByplay``)
-returns an experimental ``allPlayByPlay`` list. Each play may carry per-player
-fantasy deltas under ``playerStats`` (and DST under ``teamStats``). Field names
-vary across seasons, so every lookup is defensive.
+The ESPN-backed box-score payload (``nfl_game_data.boxscore_for_game`` with
+``play_by_play=True``) returns an ``allPlayByPlay`` list. Each play may carry
+per-player fantasy deltas under ``playerStats`` (and DST under
+``teamStats``). Field names vary across seasons, so every lookup is
+defensive.
 
 Output shape (one entry per fantasy-relevant player on the play)::
 
@@ -35,7 +36,7 @@ Output shape (one entry per fantasy-relevant player on the play)::
       "yard_line": str,
       "play_text": str,
       "pid": str,           # Sleeper id when mapped, else ""
-      "name": str,          # Tank01 longName (fallback match key)
+      "name": str,          # provider longName (fallback match key)
       "team": str,
       "stat_line": dict,    # same keys as rz_stat_line_from_ps
       "is_td": bool,
@@ -504,7 +505,7 @@ def _play_text(play: dict) -> str:
 def _fumble_lost_fumbler(text: str, team: str) -> str:
     """Return the fumbler's booth name if ``text`` describes a fumble LOST by ``team``.
 
-    Tank01 per-play playerStats often omit the fumble, but the booth line
+    The box-score feed's per-play playerStats often omit the fumble, but the booth line
     spells it out ("D.Maye sacked at BUF 30 for -7 yards (E.Oliver).
     FUMBLES (E.Oliver) [E.Oliver], RECOVERED by BUF-G.Gaines at BUF 30.").
     A fumble is LOST only when the other team recovers it, so an own-team
@@ -528,7 +529,7 @@ def _stat_line_nonzero(line: dict) -> bool:
 
 
 def _normalize_player_delta(ps: dict) -> dict:
-    """Map a per-play Tank01 playerStats entry onto our canonical stat_line."""
+    """Map a per-play box-score playerStats entry onto our canonical stat_line."""
     if not isinstance(ps, dict):
         return {}
     # Some payloads nest Passing/Rushing/Receiving; others already look like a
@@ -547,7 +548,7 @@ def _normalize_player_delta(ps: dict) -> dict:
 
 
 def _iter_player_stats(pstats: Any) -> Iterable[dict]:
-    """Yield player-stat dicts whether Tank01 sent a map or a list."""
+    """Yield player-stat dicts whether the feed sent a map or a list."""
     if isinstance(pstats, dict):
         for v in pstats.values():
             if isinstance(v, dict):
@@ -757,7 +758,7 @@ def extract_pbp_plays(
         for ps in _iter_player_stats(pstats):
             line = _normalize_player_delta(ps)
 
-            # Tank01 occasionally marks the play narrative as a touchdown but
+            # The feed occasionally marks the play narrative as a touchdown but
             # omits the per-player TD flag (and, less often, the reception).
             # Recover only the unambiguous role represented by this stat row so
             # a receiving score includes the catch, yards, and six-point TD.
@@ -775,7 +776,7 @@ def extract_pbp_plays(
             elif text_is_td and isinstance(passing, dict) and line.get("pass_yds"):
                 line["pass_td"] = line.get("pass_td") or 1.0
 
-            # Non-TD completed catch: Tank01 sometimes ships receiving yardage
+            # Non-TD completed catch: the feed sometimes ships receiving yardage
             # (or a receiving block on a completion) without the per-play
             # reception count. Left uncorrected, the client scores the yards
             # but drops the +1 PPR reception point, so a catch reads as standard
@@ -796,7 +797,7 @@ def extract_pbp_plays(
                 line["rec"] = 1.0
 
             long_name = _s(_first(ps, "longName", "long_name", "playerName", "name"))
-            # Keep named players (or nonzero deltas) even when Tank01 shipped
+            # Keep named players (or nonzero deltas) even when the feed shipped
             # empty/zero fantasy deltas — the booth line is still real PBP.
             if not _stat_line_nonzero(line) and not long_name:
                 continue
@@ -807,7 +808,7 @@ def extract_pbp_plays(
             if team and not offense_team:
                 offense_team = team
 
-            # Fumble-lost fallback: Tank01 per-play playerStats often omit the
+            # Fumble-lost fallback: per-play playerStats often omit the
             # fumble, but the booth line spells it out ("D.Maye sacked ...
             # FUMBLES ..., RECOVERED by BUF-G.Gaines"). Credit the fumbler
             # when the ball went to the opponent. Sacks stay unscored:
@@ -989,7 +990,7 @@ def extract_pbp_plays(
                     emitted += 1
                     has_resolved_receiver_contrib = True
 
-        # Tank01 sometimes supplies only the final booth narrative for a rush.
+        # The feed sometimes supplies only the final booth narrative for a rush.
         # Recover one carry (including a zero-yard goal-line score), its yards,
         # and a TD only when the actor resolves canonically with team+role proof.
         if not has_resolved_rusher_contrib and not is_no_play:
@@ -1173,7 +1174,7 @@ def normalize_nfl_game_status(game_code: Any, game_status: Any = "") -> str:
     Returns one of ``pregame`` | ``live`` | ``halftime`` | ``final`` |
     ``delayed`` | ``unknown``.
 
-    ``game_code`` is Tank01's ``gameStatusCode`` (ESPN is mapped onto the same
+    ``game_code`` is the shared ``gameStatusCode`` (ESPN is mapped onto the same
     scale by ``_espn_state_to_code``): ``0`` scheduled, ``1`` in progress, ``2``
     final. That numeric code is the game-level source of truth and always wins
     over the free-text ``game_status`` label, which can lag or read stale.
@@ -1328,7 +1329,7 @@ def demo_play_text(kind: str, yds: int = 0, td: int = 0, dist: int = 0) -> str:
 """Alternate play-by-play sources for ScoreZone (Sleeper + ESPN).
 
 ESPN's structured feed is the primary live source. The configurable fallback
-helper can also query Sleeper when ESPN and Tank01 do not return usable rows:
+helper can also query Sleeper when ESPN does not return usable rows:
 
 1. ESPN CDN ``/core/nfl/playbyplay?xhr=1&gameId=…`` (real booth lines)
 2. Sleeper ``GET /scores/nfl/pbp/{game_id}`` (undocumented; often empty today)
@@ -1488,8 +1489,8 @@ def parse_pbp_play_stats(text: str) -> dict[str, dict]:
     main, _conv = _two_point_segments(text)
     # A TD only counts for the offense when the ball wasn't turned over first.
     # Match the touchdown token case-insensitively (and accept "TD"): ESPN --
-    # the primary live source -- writes "Touchdown"/"td", not only Tank01's
-    # uppercase "TOUCHDOWN". A case-sensitive check credited the yards on a
+    # the primary live source -- writes "Touchdown"/"td", not only the
+    # box-score feed's uppercase "TOUCHDOWN". A case-sensitive check credited the yards on a
     # scoring play but silently dropped the 4/6 TD points, so a QB's live total
     # ran ~20 points light versus the box score.
     low = main.lower()
@@ -1672,15 +1673,15 @@ def attach_cumulative(plays: list[dict]) -> list[dict]:
         p["cume"] = dict(acc)
     return plays
 
-# ESPN uses a few abbreviations that differ from Sleeper/Tank01, which key the
-# rest of ScoreZone (player_info["team"], Tank01 game ids). Normalize ESPN → the
+# ESPN uses a few abbreviations that differ from Sleeper/the box-score feed,
+# which key the rest of ScoreZone (player_info["team"], shared game ids). Normalize ESPN → the
 # Sleeper convention so the merged scoreboard lines up with rostered players.
 _ESPN_TEAM_ALIAS = {"WSH": "WAS", "LA": "LAR"}
 
 
 
 
-def parse_tank_game_id(game_id: str) -> tuple[str, str, str]:
+def parse_game_id(game_id: str) -> tuple[str, str, str]:
     """``20260909_NE@SEA`` → (YYYYMMDD, away, home). Empty strings on failure."""
     gid = _s(game_id)
     if "_" not in gid or "@" not in gid:
@@ -2045,7 +2046,7 @@ def fetch_espn_event_id(
                 return event_id
         except Exception:
             logger.debug("[espn-pbp] shared event lookup failed", exc_info=True)
-    # ESPN uses WSH for Washington; Tank01/Sleeper often WAS.
+    # ESPN uses WSH for Washington; Sleeper often WAS.
     alias = {"WAS": "WSH", "WSH": "WAS"}
     key = _espn_matchup_key(away, home, yyyymmdd)
     now = time.time()
@@ -2259,7 +2260,7 @@ def fetch_espn_pbp(event_id: str, *, ttl: float = 30.0) -> dict:
 def espn_payload_completed(payload: dict) -> bool:
     """True when an ESPN gamepackage/summary payload reports the game finished.
 
-    A game can flip to final in Tank01 while ESPN's gamepackage is still mid-Q4,
+    A game can flip to final on the scoreboard while ESPN's gamepackage is still mid-Q4,
     so ``final`` from our status alone is not proof the closing drives are in the
     payload yet. Read ESPN's own completion flag (``status.type.completed``),
     checking the handful of shapes the summary endpoint uses.
@@ -2357,7 +2358,7 @@ def extract_espn_pbp_plays(
         drives = drives_block
 
     full_idx, abbrev_idx = build_name_indexes(name_to_pid)
-    _date_part, _away_team, _home_team = parse_tank_game_id(game_id)
+    _date_part, _away_team, _home_team = parse_game_id(game_id)
     out: list[dict] = []
     seq = 0
     # ESPN's gamepackage lists the in-progress drive under BOTH
@@ -2503,7 +2504,7 @@ def extract_espn_pbp_plays(
             # DEFENDING team's fantasy DST, but the rows above only carry
             # individual pids, so a DST starter never matched them (a
             # pick-six surfaced for the CB, not for the GB DST slot). Emit
-            # one extra row keyed by the DST pid, the same way the Tank01
+            # one extra row keyed by the DST pid, the same way the box-score
             # path tags teamStats deltas, so store readers and Moments can
             # match DST starters like any other starter.
             if team_to_def_pid and drive_team in (_away_team, _home_team):
@@ -2540,7 +2541,7 @@ def _espn_norm_team(abbr: str) -> str:
 
 
 def _espn_state_to_code(state: str, completed: bool) -> str:
-    """Map ESPN status.type → Tank01-style gameStatusCode ('1' live/'2' final)."""
+    """Map ESPN status.type → shared gameStatusCode ('1' live/'2' final)."""
     st = _s(state).lower()
     if completed or st == "post":
         return "2"
@@ -2568,7 +2569,7 @@ def _iso_to_epoch(value: str) -> int:
 def extract_espn_scoreboard_lookup(payload: dict) -> dict[str, dict]:
     """Flatten an ESPN CDN scoreboard payload into ``{team_abv: game_dict}``.
 
-    The game dicts mirror the Tank01 ``getNFLScoresOnly`` shape that ScoreZone's
+    The game dicts mirror the shared scoreboard shape that ScoreZone's
     ``player_info`` builder consumes (``gameID`` in ``YYYYMMDD_AWAY@HOME`` form,
     ``gameStatusCode`` '1'/'2', clock/period, scores). Pure transform — no I/O.
     """
@@ -2637,7 +2638,7 @@ def build_espn_team_game_lookup(
 ) -> tuple[dict[str, dict], str]:
     """ESPN CDN scoreboard for a whole week → ``({team_abv: game_dict}, status)``.
 
-    Lets ESPN transparently fill games Tank01 does not return (provider down,
+    Lets ESPN transparently fill games the primary scoreboard does not return (provider down,
     rate limited, or a game played on a day other than "today").
 
     ``status`` is ``"fresh"`` when the scoreboard was just fetched, ``"stale"``
@@ -2691,7 +2692,7 @@ def build_espn_team_game_lookup(
 
 
 def fetch_alt_pbp_plays(
-    tank_game_id: str,
+    game_id: str,
     *,
     season: int | str,
     week: int | str,
@@ -2702,18 +2703,18 @@ def fetch_alt_pbp_plays(
     final: bool = False,
     providers: tuple[str, ...] = ("espn", "sleeper"),
 ) -> list[dict]:
-    """Best-effort alternate PBP for a Tank01-keyed game.
+    """Best-effort alternate PBP for a game keyed by the shared game id.
 
     ESPN is the default primary because its structured plays consistently carry
-    period and clock fields. ``providers`` lets the caller place Tank01 between
-    ESPN and the undocumented Sleeper fallback without duplicating fetch logic.
+    period and clock fields. ``providers`` controls which alternate sources
+    are tried, in order, without duplicating fetch logic.
 
     ``final`` marks a game our status believes is over. A just-final game must
     not serve the last *live* snapshot (which stops a few plays short) under the
     long final TTL, so its ESPN PBP is force-refreshed until ESPN's own
     gamepackage reports the game completed -- then it's immutable and cached.
     """
-    date_part, away, home = parse_tank_game_id(tank_game_id)
+    date_part, away, home = parse_game_id(game_id)
     if not away or not home:
         return []
     ttl = 15.0 if live else 300.0
@@ -2732,14 +2733,14 @@ def fetch_alt_pbp_plays(
                 if force_fresh and espn_payload_completed(payload):
                     _ESPN_PBP_FINAL_DONE.add(eid)
                 plays = extract_espn_pbp_plays(
-                    payload, tank_game_id, name_to_pid=name_to_pid,
+                    payload, game_id, name_to_pid=name_to_pid,
                     player_meta_by_pid=player_meta_by_pid,
                     team_to_def_pid=team_to_def_pid,
                 )
                 if plays:
                     logger.debug(
                         "[alt-pbp] espn hits game=%s event=%s plays=%d",
-                        tank_game_id, eid, len(plays),
+                        game_id, eid, len(plays),
                     )
                     return plays
         elif provider == "sleeper":
@@ -2749,12 +2750,12 @@ def fetch_alt_pbp_plays(
             if sl_gid:
                 raw = fetch_sleeper_pbp(sl_gid, ttl=ttl)
                 plays = extract_sleeper_pbp_plays(
-                    raw, tank_game_id, name_to_pid=name_to_pid
+                    raw, game_id, name_to_pid=name_to_pid
                 )
                 if plays:
                     logger.debug(
                         "[alt-pbp] sleeper hits game=%s sleeper_id=%s plays=%d",
-                        tank_game_id, sl_gid, len(plays),
+                        game_id, sl_gid, len(plays),
                     )
                     return plays
 
@@ -2767,7 +2768,7 @@ def fetch_alt_pbp_plays(
 
 """Pure red-zone stat-line mappers.
 
-Extracted from app.py so the Tank01 -> canonical stat_line mapping can be
+Extracted from app.py so the box-score -> canonical stat_line mapping can be
 unit-tested without the pandas/DB stack. All functions are pure and tolerant of
 missing / malformed fields (they coerce to 0.0 rather than raising), since the
 upstream feed is external and inconsistent.
@@ -2783,7 +2784,7 @@ def rz_num(v) -> float:
 
 
 def rz_safe_epoch(v) -> float:
-    """Coerce a Tank01 epoch (string/float) to a float seconds value, or 0."""
+    """Coerce a feed epoch (string/float) to a float seconds value, or 0."""
     try:
         return float(v) if v not in (None, "") else 0.0
     except (TypeError, ValueError):
@@ -2799,10 +2800,10 @@ def _pick(d: dict, *keys: str):
 
 
 def rz_stat_line_from_ps(ps: dict) -> dict:
-    """Map a Tank01 playerStats entry to our canonical stat_line (QB/RB/WR/TE/K).
+    """Map a box-score playerStats entry to our canonical stat_line (QB/RB/WR/TE/K).
 
     Accepts nested ``Passing`` / ``Rushing`` / ``Receiving`` / ``Kicking`` blocks
-    (boxscore shape) and flat per-play deltas Tank01 sometimes puts on the same
+    (boxscore shape) and flat per-play deltas the feed sometimes puts on the same
     object (``passYds``, ``recYds``, …). Nested wins when both are present.
     """
     ps = ps or {}
@@ -2822,7 +2823,7 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
     )
     fg_long = nest_or_flat(kicking, "fgLng", "fg_long", "fgLong", "longestFieldGoal")
     fgm = nest_or_flat(kicking, "fgm", "fgMade", "fieldGoalsMade")
-    # Fumbles lost: Tank01 field naming is inconsistent, so check the common
+    # Fumbles lost: feed field naming is inconsistent, so check the common
     # variants across the offensive groups (a sack-fumble lands on Passing,
     # a run fumble on Rushing). Each lookup falls back to the flat keys.
     fum_lost = max(
@@ -2875,7 +2876,7 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
 def resolve_boxscore_player_stats(pstats: dict, player_id: str, player: dict) -> dict | None:
     """Resolve a provider box-score row without relying on exact display names.
 
-    Tank01 has alternated between player ids as mapping keys and names in
+    The provider has alternated between player ids as mapping keys and names in
     ``longName`` (including punctuation/suffix variations).  PBP already uses
     canonical ids, which is why a player could have a log but no summary.
     Prefer a canonical id match, then compare normalized names within the
@@ -2918,7 +2919,7 @@ def resolve_boxscore_player_stats(pstats: dict, player_id: str, player: dict) ->
 
 
 def rz_def_stat_line(team_side: dict) -> dict:
-    """Build DEF stat_line from Tank01 teamStats[home/away] entry.
+    """Build DEF stat_line from box-score teamStats[home/away] entry.
 
     Also accepts a flat Defense-like dict (sacks/int at the top level) used on
     some per-play teamStats rows.

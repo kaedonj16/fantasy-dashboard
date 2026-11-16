@@ -2,7 +2,7 @@
 
 Pure Python (explicit index fixtures, no app import), so this module
 collects in every CI shard. The fixtures mirror the real players index
-shapes: pid -> {name, team, pos}, including the Tank01 index's stored
+shapes: pid -> {name, team, pos}, including the players index's stored
 spelling for Jaxon Smith-Njigba and the two Justin Jeffersons.
 """
 from dashboard_services.assistant.resolve import _normalize, resolve_player

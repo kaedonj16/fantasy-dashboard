@@ -42,7 +42,7 @@ from utils.scorezone import (  # noqa: F401,F403
     attach_cumulative,
     _ESPN_TEAM_ALIAS,
     _s,
-    parse_tank_game_id,
+    parse_game_id,
     _NAME_SUFFIXES,
     _strip_suffix_tokens,
     _canon_abbrev,
@@ -78,7 +78,7 @@ from utils.scorezone import (  # noqa: F401,F403
     fetch_alt_pbp_plays,
 )
 
-__all__ = ['logger', '_SLEEPER_SCORES', '_ESPN_SCOREBOARD', '_ESPN_PBP', '_ESPN_SUMMARY', '_UA', '_SLEEPER_WEEK_CACHE', '_SLEEPER_PBP_CACHE', '_ESPN_EVENT_CACHE', '_ESPN_PBP_CACHE', '_ESPN_SUMMARY_CACHE', '_ESPN_PBP_FINAL_DONE', '_ESPN_SB_CACHE', '_SURNAME_EXTRA', '_ABBREV_RE', '_NAME_TOK', '_RE_PASS', '_RE_INT', '_RE_INCOMP', '_RE_INCOMP_TO', '_RE_INT_TARGET', '_RUSH_ACTION', '_RE_RUSH', '_RE_FG', '_RE_XP', '_KICK_CLAUSE_RE', '_RE_TD_TOKEN', '_scored_offensive_td', '_yards', '_accum', '_fg_bucket', 'parse_pbp_play_stats', '_team_prefix_pid', '_resolve_abbrev_pid', '_stat_lines_by_pid', 'attach_cumulative', '_ESPN_TEAM_ALIAS', '_s', 'parse_tank_game_id', '_NAME_SUFFIXES', '_strip_suffix_tokens', '_canon_abbrev', '_abbrev_forms', 'build_name_indexes', 'pids_mentioned_in_text', '_TACKLE_CREDIT_RE', '_KICK_CREDIT_RE', '_text_without_credits', '_TD_STAT_KEYS', '_NON_TD_SCORE_KEYS', '_row_inherits_td', 'fetch_sleeper_week_scores', 'sleeper_game_id_for_matchup', 'fetch_sleeper_pbp', 'extract_sleeper_pbp_plays', '_espn_matchup_key', 'fetch_espn_event_id', '_espn_drives', '_espn_payload_has_plays', '_espn_latest_play_marker', 'fetch_espn_pbp_summary', '_fetch_espn_pbp_cdn', 'fetch_espn_pbp', 'espn_payload_completed', '_espn_skip_play', 'extract_espn_pbp_plays', '_espn_norm_team', '_espn_state_to_code', '_iso_to_epoch', 'extract_espn_scoreboard_lookup', 'build_espn_team_game_lookup', 'fetch_alt_pbp_plays']
+__all__ = ['logger', '_SLEEPER_SCORES', '_ESPN_SCOREBOARD', '_ESPN_PBP', '_ESPN_SUMMARY', '_UA', '_SLEEPER_WEEK_CACHE', '_SLEEPER_PBP_CACHE', '_ESPN_EVENT_CACHE', '_ESPN_PBP_CACHE', '_ESPN_SUMMARY_CACHE', '_ESPN_PBP_FINAL_DONE', '_ESPN_SB_CACHE', '_SURNAME_EXTRA', '_ABBREV_RE', '_NAME_TOK', '_RE_PASS', '_RE_INT', '_RE_INCOMP', '_RE_INCOMP_TO', '_RE_INT_TARGET', '_RUSH_ACTION', '_RE_RUSH', '_RE_FG', '_RE_XP', '_KICK_CLAUSE_RE', '_RE_TD_TOKEN', '_scored_offensive_td', '_yards', '_accum', '_fg_bucket', 'parse_pbp_play_stats', '_team_prefix_pid', '_resolve_abbrev_pid', '_stat_lines_by_pid', 'attach_cumulative', '_ESPN_TEAM_ALIAS', '_s', 'parse_game_id', '_NAME_SUFFIXES', '_strip_suffix_tokens', '_canon_abbrev', '_abbrev_forms', 'build_name_indexes', 'pids_mentioned_in_text', '_TACKLE_CREDIT_RE', '_KICK_CREDIT_RE', '_text_without_credits', '_TD_STAT_KEYS', '_NON_TD_SCORE_KEYS', '_row_inherits_td', 'fetch_sleeper_week_scores', 'sleeper_game_id_for_matchup', 'fetch_sleeper_pbp', 'extract_sleeper_pbp_plays', '_espn_matchup_key', 'fetch_espn_event_id', '_espn_drives', '_espn_payload_has_plays', '_espn_latest_play_marker', 'fetch_espn_pbp_summary', '_fetch_espn_pbp_cdn', 'fetch_espn_pbp', 'espn_payload_completed', '_espn_skip_play', 'extract_espn_pbp_plays', '_espn_norm_team', '_espn_state_to_code', '_iso_to_epoch', 'extract_espn_scoreboard_lookup', 'build_espn_team_game_lookup', 'fetch_alt_pbp_plays']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---

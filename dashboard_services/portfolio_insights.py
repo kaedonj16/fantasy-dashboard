@@ -127,7 +127,7 @@ def bye_watch_rows(leagues) -> List[dict]:
 # ── Rooting Guide ────────────────────────────────────────────────────────────
 
 def normalize_game(gd: dict) -> dict:
-    """Tank01 game dict -> ScoreZone's normalized game shape."""
+    """Scoreboard game dict -> ScoreZone's normalized game shape."""
     ls = gd.get("lineScore") if isinstance(gd.get("lineScore"), dict) else {}
     code = str(gd.get("gameStatusCode") or "")
     status = {"0": "pre", "1": "in", "2": "final"}.get(code, "pre")

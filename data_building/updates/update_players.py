@@ -6,7 +6,7 @@ Used by the daily cron so trades / signings / cuts land in:
   3. player_values.team for players that already have a values row
 
 Sleeper is the primary source: free, keyed by the same player_id the rest of
-the app uses. Tank01 headshot refresh stays in refresh_player_data.py.
+the app uses.
 """
 from __future__ import annotations
 

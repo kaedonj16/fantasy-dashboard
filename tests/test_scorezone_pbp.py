@@ -1,4 +1,4 @@
-"""Unit tests for utils.scorezone_pbp (Tank01 play-by-play normalization)."""
+"""Unit tests for utils.scorezone_pbp (box-score play-by-play normalization)."""
 from utils.scorezone_pbp import demo_play_text, extract_pbp_plays
 
 
@@ -67,7 +67,7 @@ def test_extract_pbp_empty_box_is_safe():
 
 
 def test_extract_keeps_named_player_when_stats_zero():
-    """Tank01 often ships play text + empty deltas — keep the booth line."""
+    """The feed often ships play text + empty deltas — keep the booth line."""
     box = {
         "allPlayByPlay": [
             {
@@ -117,7 +117,7 @@ def test_extract_flat_player_stats_and_nested_body():
 
 
 def test_extract_kick_keeps_a_non_overlapping_distance_bucket():
-    """Tank01 made-FG rows must remain scoreable after cumulative rebuilds."""
+    """Box-score made-FG rows must remain scoreable after cumulative rebuilds."""
     box = {"allPlayByPlay": [{
         "playId": "fg-1", "play": "Jake Kicker 56 yard field goal",
         "playerStats": {"k": {

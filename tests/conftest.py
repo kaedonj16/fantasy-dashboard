@@ -114,8 +114,8 @@ def offline_client(monkeypatch):
     Every Sleeper HTTP call funnels through dashboard_services.api.fetch_json,
     which otherwise blocks for up to 25s x 3 retries per call in a sandbox with
     no outbound access. Patch it to return canned NFL state (and empty for
-    everything else, so features degrade instead of hanging). Tank01 helpers
-    still used ``SESSION.get`` directly and were hitting the network (HTTP 401
+    everything else, so features degrade instead of hanging). Game-data
+    helpers still used ``SESSION.get`` directly and were hitting the network (HTTP 401
     plus a raise) on every dashboard render — stub those too. Short-circuit the
     once-a-day background build. This lets tour/mock routes and any page that
     doesn't need live league data render in-process.
@@ -135,11 +135,11 @@ def offline_client(monkeypatch):
         return {}
 
     monkeypatch.setattr(api, "fetch_json", _fake_fetch_json)
-    # Tank01 is not Sleeper: fetch_json doesn't cover these. HTTP 401 used to
+    # Game data is not Sleeper: fetch_json doesn't cover these. HTTP 401 used to
     # raise out of get_nfl_games_for_week_raw and add seconds to every page.
     monkeypatch.setattr(api, "get_nfl_games_for_week_raw", lambda *a, **k: [])
     monkeypatch.setattr(api, "get_nfl_scores_for_date", lambda *a, **k: {})
-    # ESPN NFL replaced Tank01 as the shared game-data backend. Keep page
+    # ESPN NFL is the shared game-data backend. Keep page
     # rendering fully offline as promised by this fixture, including callers
     # that import the new service directly rather than through api.py.
     monkeypatch.setattr(nfl_game_data, "_request_json", lambda *a, **k: {})

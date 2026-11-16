@@ -72,7 +72,7 @@ def _maye_box():
 
 
 def test_pbp_fallback_credits_fum_lost():
-    """Booth text names the fumble but Tank01 playerStats omit it."""
+    """Booth text names the fumble but the feed playerStats omit it."""
     plays = extract_pbp_plays(_maye_box(), "NE@BUF")
     maye = [p for p in plays if p.get("name") == "Drake Maye"]
     assert maye, "expected a Drake Maye play row"
@@ -80,7 +80,7 @@ def test_pbp_fallback_credits_fum_lost():
 
 
 def test_pbp_no_double_count_when_feed_has_fumble():
-    """When Tank01 already ships the fumble, the text fallback must not add another."""
+    """When the feed already ships the fumble, the text fallback must not add another."""
     box = _maye_box()
     box["allPlayByPlay"][0]["playerStats"]["maye"]["Rushing"]["fumbles"] = 1
     plays = extract_pbp_plays(box, "NE@BUF")

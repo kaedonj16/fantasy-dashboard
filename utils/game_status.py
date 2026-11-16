@@ -27,7 +27,7 @@ from dashboard_services.api import (
     get_users,
     get_traded_picks,
     get_nfl_state,
-    get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
+    get_nfl_players, fetch_team_game_logs_html, fetch_espn_boxscore, get_matchups,
 )
 from dashboard_services.display_names import team_label_from_user, username_from_user
 
@@ -83,13 +83,13 @@ BEFORE_WINDOW = 5 * 60  # 5 minutes
 IN_WINDOW = 3 * 60 * 60
 
 # --- utils/utils.py L1374 ---
-def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -> str:
+def normalize_game_status_from_scoreboard(game: dict, now: datetime | None = None) -> str:
     """
     Returns: "pre", "in", or "post" using:
       * kickoff time
       * a 5-minute early window
       * a 3-hour game window
-      * Tank01 status fallback
+      * scoreboard status fallback
     """
 
     if now is None:
@@ -122,7 +122,7 @@ def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -
         if delta > IN_WINDOW:
             return "post"
 
-    # --- FALLBACK: Use Tank01’s status fields ---
+    # --- FALLBACK: Use the scoreboard's status fields ---
 
     status = (game.get("gameStatus") or "").lower().strip()
     code = str(game.get("gameStatusCode") or "").strip()
@@ -144,14 +144,14 @@ def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -
 
 # --- utils/utils.py L1434 ---
 def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
-    """True when a Tank01/schedule game is live or final.
+    """True when a scoreboard/schedule game is live or final.
 
     Explicit ``gameStatusCode`` 0 (scheduled) normally wins even if a stale
     ``gameTime_epoch`` would otherwise look like the game already ended —
     that is what painted last year's box scores on the Week 1 preview.
 
     Exception: when ``gameDate`` is a calendar day before today, treat the
-    game as started/final even if Tank01 still reports code 0. Matchup rows
+    game as started/final even if the scoreboard still reports code 0. Matchup rows
     already date-correct the game line to "Final"; without this exception the
     box-score line stays blank after Thursday night while the schedule lags.
 
@@ -184,14 +184,14 @@ def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
             if game_date == today_str and _kickoff_has_passed(game, now):
                 return True
         return False
-    return normalize_game_status_from_tank01(game, now=now) in ("in", "post")
+    return normalize_game_status_from_scoreboard(game, now=now) in ("in", "post")
 
 
 def _kickoff_has_passed(game: dict, now: datetime) -> bool:
     """True when a game's kickoff moment is in the past.
 
     Prefers ``gameTime_epoch``; falls back to ``gameDate`` + ``gameTime``
-    (Tank01 style "9:30a", read as Eastern). Any unparseable shape returns
+    (scoreboard style "9:30a", read as Eastern). Any unparseable shape returns
     False so a malformed schedule row never invents a started game.
     """
     if getattr(now, "tzinfo", None) is None:
@@ -224,7 +224,7 @@ def _kickoff_has_passed(game: dict, now: datetime) -> bool:
 
 # --- utils/utils.py L1468 ---
 def finished_game_ids_for_week(season: int, week: int) -> list[str]:
-    """IDs of the week's games that are final (Tank01/schedule status ``post``).
+    """IDs of the week's games that are final (scoreboard/schedule status ``post``).
 
     Used by the live advanced-metrics refresh to tell "a new game just finished"
     from "nothing changed", so a rebuild happens the moment a slate goes final
@@ -239,7 +239,7 @@ def finished_game_ids_for_week(season: int, week: int) -> list[str]:
     for g in sched:
         if not isinstance(g, dict):
             continue
-        if normalize_game_status_from_tank01(g) == "post":
+        if normalize_game_status_from_scoreboard(g) == "post":
             gid = g.get("gameID") or g.get("gameId") or g.get("id")
             if gid:
                 out.append(str(gid))
@@ -277,7 +277,7 @@ def build_games_by_team(games: list[dict]) -> dict[str, dict]:
     for g in games:
         home = g.get("home")  # e.g. "NE"
         away = g.get("away")  # e.g. "NYJ"
-        norm_status = normalize_game_status_from_tank01(g)  # 'pre' | 'in' | 'post'
+        norm_status = normalize_game_status_from_scoreboard(g)  # 'pre' | 'in' | 'post'
         entry = {"status": norm_status, "game": g}
 
         for raw in (home, away):

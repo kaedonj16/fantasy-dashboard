@@ -5,7 +5,7 @@ from utils.game_conditions import (
     build_week_conditions,
     implied_team_total,
     parse_open_meteo_daily,
-    parse_tank01_odds,
+    parse_betting_odds,
     total_tag,
     weather_tag,
 )
@@ -71,43 +71,43 @@ def test_weather_combines_multiple():
     assert "20 mph wind" in t["label"] and "rain/snow" in t["label"] and "18°" in t["label"]
 
 
-# ---- Tank01 odds parsing --------------------------------------------------
+# ---- Betting odds parsing -------------------------------------------------
 
-def test_parse_tank01_top_level_odds():
+def test_parse_betting_odds_top_level():
     body = {
         "20240101_GB@CHI": {
             "homeTeam": "CHI", "awayTeam": "GB",
             "totalOver": "43.5", "homeTeamSpread": "3.0", "awayTeamSpread": "-3.0",
         }
     }
-    got = parse_tank01_odds(body)
+    got = parse_betting_odds(body)
     assert got["CHI"]["implied"] == implied_team_total(43.5, 3.0)
     assert got["GB"]["implied"] == implied_team_total(43.5, -3.0)
     assert got["GB"]["implied"] > got["CHI"]["implied"]  # GB favored -> more implied
 
 
-def test_parse_tank01_infers_missing_spread():
+def test_parse_betting_odds_infers_missing_spread():
     body = {"g1": {"home": "KC", "away": "DEN", "total": "45", "homeTeamSpread": "-7"}}
-    got = parse_tank01_odds(body)
+    got = parse_betting_odds(body)
     assert got["DEN"]["spread"] == 7.0  # inferred as the negation
 
 
-def test_parse_tank01_sportsbook_sublist():
+def test_parse_betting_odds_sportsbook_sublist():
     body = {
         "g1": {
             "homeTeam": "BUF", "awayTeam": "MIA",
             "sportsBookOdds": [{"total": "49.5", "homeTeamSpread": "-9.5", "awayTeamSpread": "9.5"}],
         }
     }
-    got = parse_tank01_odds(body)
+    got = parse_betting_odds(body)
     assert got["BUF"]["total"] == 49.5
     assert got["BUF"]["implied"] > got["MIA"]["implied"]
 
 
-def test_parse_tank01_garbage_is_safe():
-    assert parse_tank01_odds(None) == {}
-    assert parse_tank01_odds({"g": {"homeTeam": "", "awayTeam": ""}}) == {}
-    assert parse_tank01_odds({"g": "notadict"}) == {}
+def test_parse_betting_odds_garbage_is_safe():
+    assert parse_betting_odds(None) == {}
+    assert parse_betting_odds({"g": {"homeTeam": "", "awayTeam": ""}}) == {}
+    assert parse_betting_odds({"g": "notadict"}) == {}
 
 
 # ---- Open-Meteo parsing ---------------------------------------------------

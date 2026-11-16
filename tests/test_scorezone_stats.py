@@ -69,7 +69,7 @@ def test_stat_line_none_input_does_not_raise():
 
 
 def test_stat_line_flat_fields():
-    """Per-play Tank01 deltas are often flat (no Passing/Rushing nests)."""
+    """Per-play box-score deltas are often flat (no Passing/Rushing nests)."""
     line = rz_stat_line_from_ps({
         "longName": "Patrick Mahomes",
         "passYds": "17",

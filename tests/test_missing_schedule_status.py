@@ -1,4 +1,4 @@
-"""When NFL schedule data is missing (e.g., preseason or Tank01 down),
+"""When NFL schedule data is missing (e.g., preseason or the feed down),
 players must default to NOT_STARTED so projections display instead of
 wall-to-wall 0.0 actuals.
 

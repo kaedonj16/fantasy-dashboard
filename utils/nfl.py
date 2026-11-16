@@ -151,7 +151,7 @@ STADIUMS: dict[str, dict] = {
     "WAS": {"name": "Northwest Stadium", "dome": False, "climate": "cold", "lat": 38.9076, "lon": -76.8645},
 }
 
-# Common alternate abbreviations seen across Sleeper / Tank01 / ESPN feeds.
+# Common alternate abbreviations seen across Sleeper / ESPN feeds.
 ALIASES: dict[str, str] = {
     "JAC": "JAX", "LA": "LAR", "STL": "LAR", "SD": "LAC", "OAK": "LV",
     "WSH": "WAS", "WFT": "WAS", "LVR": "LV", "SFO": "SF", "TAM": "TB",

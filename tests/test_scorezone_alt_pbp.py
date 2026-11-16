@@ -7,7 +7,7 @@ from utils.scorezone_alt_pbp import (
     extract_sleeper_pbp_plays,
     fetch_alt_pbp_plays,
     parse_pbp_play_stats,
-    parse_tank_game_id,
+    parse_game_id,
     pids_mentioned_in_text,
 )
 
@@ -320,7 +320,7 @@ def test_parse_pbp_td_pass_and_extra_point():
 
 
 def test_parse_pbp_td_credit_is_case_insensitive_and_accepts_td_token():
-    # ESPN (the primary live source) writes "Touchdown"/"td", not only Tank01's
+    # ESPN (the primary live source) writes "Touchdown"/"td", not only the box-score feed's
     # uppercase "TOUCHDOWN". The TD points must still be credited, else a live
     # total runs light versus the box score (a QB read ~20 pts low).
     pass_td = parse_pbp_play_stats(
@@ -558,9 +558,9 @@ def test_kicking_unit_linemen_never_headline_a_scoring_play():
     assert by_pid["elliott"]["is_td"] is False
 
 
-def test_parse_tank_game_id():
-    assert parse_tank_game_id("20260909_NE@SEA") == ("20260909", "NE", "SEA")
-    assert parse_tank_game_id("bad") == ("", "", "")
+def test_parse_game_id():
+    assert parse_game_id("20260909_NE@SEA") == ("20260909", "NE", "SEA")
+    assert parse_game_id("bad") == ("", "", "")
 
 
 def test_abbrev_name_matching():
@@ -788,7 +788,7 @@ def _espn_scoreboard_payload():
     }
 
 
-def test_extract_espn_scoreboard_lookup_shapes_tank01_style():
+def test_extract_espn_scoreboard_lookup_shapes_shared_style():
     lookup = extract_espn_scoreboard_lookup(_espn_scoreboard_payload())
     # Both teams of each game are keyed to the same game dict.
     assert lookup["SEA"] is lookup["NE"]
@@ -803,7 +803,7 @@ def test_extract_espn_scoreboard_lookup_shapes_tank01_style():
 
 def test_extract_espn_scoreboard_normalizes_abbrev_and_final():
     lookup = extract_espn_scoreboard_lookup(_espn_scoreboard_payload())
-    # ESPN's WSH is normalized to Sleeper/Tank01 WAS so rostered teams match.
+    # ESPN's WSH is normalized to Sleeper WAS so rostered teams match.
     assert "WAS" in lookup and "WSH" not in lookup
     was = lookup["WAS"]
     assert was["gameID"] == "20260914_DAL@WAS"

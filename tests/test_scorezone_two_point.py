@@ -112,7 +112,7 @@ def test_alt_path_failed_conversion_only_td():
     assert "j.jefferson" not in out
 
 
-# ── End-to-end Tank01 extraction ─────────────────────────────────────────────
+# ── End-to-end box-score extraction ─────────────────────────────────────────────
 
 _PLAYER_META = {
     "jones": {"name": "Aaron Jones", "team": "MIN", "position": "RB"},
@@ -140,7 +140,7 @@ def _combined_box(play_status: str = ""):
     return {"allPlayByPlay": [play]}
 
 
-def test_tank01_combined_td_and_conversion_contributions():
+def test_boxscore_combined_td_and_conversion_contributions():
     plays = extract_pbp_plays(
         _combined_box(), "20260101_MIN@GB",
         name_to_pid=_NAME_TO_PID, player_meta_by_pid=_PLAYER_META,
@@ -160,7 +160,7 @@ def test_tank01_combined_td_and_conversion_contributions():
     assert by_pid["jeff"]["contrib_role"] == "conv_receiver"
 
 
-def test_tank01_all_contributions_share_one_canonical_play():
+def test_boxscore_all_contributions_share_one_canonical_play():
     plays = extract_pbp_plays(
         _combined_box(), "20260101_MIN@GB",
         name_to_pid=_NAME_TO_PID, player_meta_by_pid=_PLAYER_META,
@@ -203,7 +203,7 @@ def test_cross_surface_server_and_client_score_2pt_identically():
     assert client["jones"] == 6.3 and client["wentz"] == 2 and client["jeff"] == 2
 
 
-def test_tank01_nullified_conversion_emits_zero_tombstones():
+def test_boxscore_nullified_conversion_emits_zero_tombstones():
     plays = extract_pbp_plays(
         _combined_box(play_status="overturned"), "20260101_MIN@GB",
         name_to_pid=_NAME_TO_PID, player_meta_by_pid=_PLAYER_META,

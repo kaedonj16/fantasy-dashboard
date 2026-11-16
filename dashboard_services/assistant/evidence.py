@@ -173,7 +173,7 @@ Reality notes vs the workshop tool map (verified in this repo):
   deterministically.
 - The NFL schedule pack reads the same week-schedule store the matchup
   page and start/sit use (utils.data_cache.load_week_schedule over the
-  ESPN-fed week files, both the Tank01-shaped disk rows and the
+  ESPN-fed week files, both the legacy-shaped disk rows and the
   ESPN-normalized shape): real NFL fixtures with kickoff times in
   Eastern and the TV network only when the row carries one (the ESPN
   scoreboard normalizer passes broadcasts through as `network`). It is
@@ -9244,11 +9244,11 @@ def _et_now():
 def _nfl_game_from_row(row, default_week):
     """One normalized NFL game from a week-schedule row, or None.
 
-    Rows arrive in two shapes: the Tank01-shaped disk cache the site
+    Rows arrive in two shapes: the legacy-shaped disk cache the site
     writes (gameDate + "8:15p" gameTime + string gameTime_epoch) and the
     ESPN-normalized shape (ISO gameTime + int epoch + normalized_status).
     Kickoff resolves from the epoch when present, else from the ET wall
-    time the row carries (Tank01 gameTime is an Eastern wall clock; an
+    time the row carries (legacy gameTime is an Eastern wall clock; an
     ISO gameTime's clock half is UTC, so only its date is reused there).
     """
     import re

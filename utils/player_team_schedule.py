@@ -21,7 +21,7 @@ from utils.players import (  # noqa: F401,F403
     _team_keys,
     _teams_match,
     _lookup_team_map,
-    tank_boxscore_game_id,
+    boxscore_game_id,
     _fmt_kickoff,
     _fmt_date_label,
     _status_from_game,
@@ -42,7 +42,7 @@ from utils.players import (  # noqa: F401,F403
     get_shaped_boxscore,
 )
 
-__all__ = ['logger', '_TEAM_SCHEDULE_CACHE', '_TEAM_SCHEDULE_TTL', '_BOX_PAYLOAD_CACHE', '_BOX_PAYLOAD_TTL_LIVE', '_BOX_PAYLOAD_TTL_FINAL', '_BOX_PAYLOAD_TTL_SCHEDULED', '_POST_WEEK_LABELS', '_TEAM_CANON', '_TEAM_ABBR_ALIASES', '_safe_float', '_safe_int', '_block_num', '_canon', '_team_keys', '_teams_match', '_lookup_team_map', 'tank_boxscore_game_id', '_fmt_kickoff', '_fmt_date_label', '_status_from_game', '_result_for_team', '_enrich_from_scores', '_logo_for', '_row_from_game', '_bye_row', 'build_team_schedule', 'resolve_team_for_season', '_POS_ORDER', '_player_identity', '_stat_bundle', '_has_any', '_group_columns', '_cell_value', 'shape_boxscore_payload', 'get_shaped_boxscore']
+__all__ = ['logger', '_TEAM_SCHEDULE_CACHE', '_TEAM_SCHEDULE_TTL', '_BOX_PAYLOAD_CACHE', '_BOX_PAYLOAD_TTL_LIVE', '_BOX_PAYLOAD_TTL_FINAL', '_BOX_PAYLOAD_TTL_SCHEDULED', '_POST_WEEK_LABELS', '_TEAM_CANON', '_TEAM_ABBR_ALIASES', '_safe_float', '_safe_int', '_block_num', '_canon', '_team_keys', '_teams_match', '_lookup_team_map', 'boxscore_game_id', '_fmt_kickoff', '_fmt_date_label', '_status_from_game', '_result_for_team', '_enrich_from_scores', '_logo_for', '_row_from_game', '_bye_row', 'build_team_schedule', 'resolve_team_for_season', '_POS_ORDER', '_player_identity', '_stat_bundle', '_has_any', '_group_columns', '_cell_value', 'shape_boxscore_payload', 'get_shaped_boxscore']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---

@@ -414,7 +414,7 @@ def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
     old = (today - timedelta(days=10)).strftime("%Y%m%d")
     live_date = today.strftime("%Y%m%d")
 
-    # Tank01 game ids carry the date: backfill window is 7 days.
+    # Game ids carry the date: backfill window is 7 days.
     monkeypatch.setattr(rs, "discover_live_games", lambda current_week=None: [
         {"game_id": f"{live_date}_KC@BUF", "live": True, "final": False, "week": 4},
         {"game_id": f"{recent}_NE@MIA", "live": False, "final": True, "week": 3},
@@ -435,7 +435,7 @@ def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
 
     fake_alt = types.ModuleType("utils.scorezone")
     fake_alt.fetch_alt_pbp_plays = fake_pbp
-    fake_alt.parse_tank_game_id = fake_parse
+    fake_alt.parse_game_id = fake_parse
     monkeypatch.setitem(sys.modules, "utils.scorezone", fake_alt)
 
     fake_api = types.ModuleType("dashboard_services.api")

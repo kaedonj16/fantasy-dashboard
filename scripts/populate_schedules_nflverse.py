@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Populate NFL schedules from the free nflverse feed (no Tank01 API key needed).
+Populate NFL schedules from the free nflverse feed (no API key needed).
 
 A drop-in alternative to scripts/populate_schedules.py that works for any season
 back to 1999 with complete coverage. Writes the same cache files the game-logs

@@ -201,7 +201,7 @@ _POST_WEEK_LABELS = {
     4: "Super Bowl",
 }
 
-# Site form is WAS / JAX / LAR; Tank01 and some schedules still send WSH / JAC / LA.
+# Site form is WAS / JAX / LAR; some feeds and schedules still send WSH / JAC / LA.
 _TEAM_CANON = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR"}
 _TEAM_ABBR_ALIASES = {
     "WAS": "WSH",
@@ -236,7 +236,7 @@ def _block_num(block: Optional[dict], *keys: str) -> Optional[float]:
     """Return a numeric value when the key is present; None when unavailable.
 
     Distinguishes missing stats (–) from recorded zeroes (0): only keys that
-    exist on the Tank01 block count as available.
+    exist on the box-score block count as available.
     """
     if not isinstance(block, dict):
         return None
@@ -280,8 +280,8 @@ def _lookup_team_map(mapping: Optional[dict], team: str):
     return None
 
 
-def tank_boxscore_game_id(game: dict) -> str:
-    """Prefer Tank01's date_AWAY@HOME gameID; synthesize from date + sides."""
+def boxscore_game_id(game: dict) -> str:
+    """Prefer the payload's date_AWAY@HOME gameID; synthesize from date + sides."""
     if not isinstance(game, dict):
         return ""
     gid = str(game.get("gameID") or game.get("gameId") or "").strip()
@@ -292,7 +292,7 @@ def tank_boxscore_game_id(game: dict) -> str:
         gdate = gid[:8]
     away = _canon(game.get("away") or "")
     home = _canon(game.get("home") or "")
-    # Tank01 scoreboard often uses WSH while we store WAS — keep schedule-side
+    # The scoreboard often uses WSH while we store WAS — keep schedule-side
     # abbreviations as provided when synthesizing so the boxscore lookup hits.
     raw_away = str(game.get("away") or away).upper()
     raw_home = str(game.get("home") or home).upper()
@@ -310,7 +310,7 @@ def _fmt_kickoff(game: dict) -> str:
         ts = float(raw)
         if ts > 0:
             # Local-ish display without forcing a TZ dependency — epoch from
-            # Tank01 is UTC; format as ET-ish HH:MM when possible.
+            # The feed epoch is UTC; format as ET-ish HH:MM when possible.
             dt = datetime.utcfromtimestamp(ts)
             hour = (dt.hour - 4) % 24  # rough ET offset for display
             ampm = "p" if hour >= 12 else "a"
@@ -480,7 +480,7 @@ def _row_from_game(
         "kickoff": _fmt_kickoff(game) if status == "scheduled" else "",
         "quarter": quarter if status == "live" else "",
         "clock": clock if status == "live" else "",
-        "game_id": tank_boxscore_game_id(game),
+        "game_id": boxscore_game_id(game),
         "season": int(season),
         "season_type": "post" if is_post else "reg",
         "is_postseason": bool(is_post),
@@ -672,15 +672,15 @@ def resolve_team_for_season(player_id: str, season: int, fallback_team: str = ""
 _POS_ORDER = ("QB", "RB", "WR", "TE", "K", "DEF")
 
 
-def _player_identity(ps: dict, tank_idx: dict, name_to_meta: dict) -> dict:
-    """Resolve sleeper id / display name / position for a Tank01 playerStats row."""
-    tank_id = str(ps.get("playerID") or ps.get("playerId") or "")
-    meta = tank_idx.get(tank_id) if tank_id else None
+def _player_identity(ps: dict, box_idx: dict, name_to_meta: dict) -> dict:
+    """Resolve sleeper id / display name / position for a box-score playerStats row."""
+    box_id = str(ps.get("playerID") or ps.get("playerId") or "")
+    meta = box_idx.get(box_id) if box_id else None
     long_name = str(ps.get("longName") or ps.get("playerName") or (meta or {}).get("name") or "").strip()
     team = _canon(ps.get("teamAbv") or ps.get("team") or (meta or {}).get("team") or "")
     pos = str((meta or {}).get("pos") or ps.get("position") or ps.get("pos") or "").upper()
     sleeper_id = ""
-    # Prefer name match against players_index when tankId index missed.
+    # Prefer name match against players_index when the provider-id index missed.
     nkey = long_name.lower()
     if nkey and nkey in name_to_meta:
         m2 = name_to_meta[nkey]
@@ -881,7 +881,7 @@ def shape_boxscore_payload(
     teams_index: Optional[dict] = None,
     schedule_meta: Optional[dict] = None,
 ) -> dict:
-    """Normalize a Tank01 boxscore into Team-tab accordion payload."""
+    """Normalize an ESPN boxscore into Team-tab accordion payload."""
     from utils.nfl import get_team_full_name
 
     view_team = _canon(view_team)
@@ -889,8 +889,8 @@ def shape_boxscore_payload(
     players_index = players_index or {}
     teams_index = teams_index or {}
 
-    # Build tankId → meta and name → meta maps (include sleeper id).
-    tank_idx: dict = {}
+    # Build provider-id → meta and name → meta maps (include sleeper id).
+    box_idx: dict = {}
     name_to_meta: dict = {}
     for sid, meta in players_index.items():
         if not isinstance(meta, dict):
@@ -905,14 +905,14 @@ def shape_boxscore_payload(
         for provider_id in (meta.get("espnID"), meta.get("espn_id"),
                             meta.get("tankId"), meta.get("tank_id")):
             if provider_id:
-                tank_idx[str(provider_id)] = entry
+                box_idx[str(provider_id)] = entry
         n = str(meta.get("name") or "").strip().lower()
         if n:
             name_to_meta[n] = entry
 
     home = _canon((box.get("home") or (schedule_meta or {}).get("home") or ""))
     away = _canon((box.get("away") or (schedule_meta or {}).get("away") or ""))
-    # Some Tank01 bodies nest team info under teamStats.
+    # Some box-score bodies nest team info under teamStats.
     tstats = box.get("teamStats") or {}
     if isinstance(tstats, dict):
         if not home and isinstance(tstats.get("home"), dict):
@@ -970,11 +970,11 @@ def shape_boxscore_payload(
         for _tid, ps in pstats.items():
             if not isinstance(ps, dict):
                 continue
-            # Attach tank id when the map key is the id.
+            # Attach the provider id when the map key is the id.
             if "playerID" not in ps and "playerId" not in ps and _tid:
                 ps = dict(ps)
                 ps["playerID"] = _tid
-            ident = _player_identity(ps, tank_idx, name_to_meta)
+            ident = _player_identity(ps, box_idx, name_to_meta)
             team = ident["team"]
             if not team:
                 continue
@@ -1113,7 +1113,7 @@ def get_shaped_boxscore(
     season_type: str = "reg",
     fetch_box=None,
 ) -> dict:
-    """Fetch (or reuse) a Tank01 boxscore and shape it for the Team tab."""
+    """Fetch (or reuse) an ESPN boxscore and shape it for the Team tab."""
     game_id = str(game_id or "").strip()
     view_team = _canon(view_team)
     focus_pid = str(focus_pid or "")
@@ -1127,8 +1127,8 @@ def get_shaped_boxscore(
     def _fetch():
         if fetch_box:
             return fetch_box(game_id) or {}
-        from dashboard_services.api import fetch_tank_boxscore
-        return fetch_tank_boxscore(game_id) or {}
+        from dashboard_services.api import fetch_espn_boxscore
+        return fetch_espn_boxscore(game_id) or {}
 
     # Peek cache; for live games use short TTL. Scheduled ("not started")
     # payloads use their own short TTL so a transient fetch failure does not

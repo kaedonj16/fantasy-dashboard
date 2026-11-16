@@ -2,8 +2,8 @@
 the players_index espnID, like the full and rankings views already do.
 
 The base payload only carries the stored espnHeadshot string, and newer
-players_index entries (rookie classes added with an espnID only, via
-add_new_players_from_tank01.py) have no stored string. Without the stamp
+players_index entries (rookie classes added with an espnID only) have
+no stored string. Without the stamp
 those players ship blank in ?view=trade / ?view=search and their trade
 chips render an empty face even though ESPN has a photo for them.
 """

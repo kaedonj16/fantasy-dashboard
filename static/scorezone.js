@@ -32,7 +32,7 @@
   var _bigPlaysOnly = false; // TD or >=4 fantasy pts
   var _heroMid    = null;
   var _heroTouched = false; // true once the viewer explicitly picks/clears the hero matchup
-  var _seenPlayIds = new Set(); // Tank01 / demo play ids already in the feed
+  var _seenPlayIds = new Set(); // live / demo play ids already in the feed
   var _seenContributions = new Set(); // contribution keys (play + pid) for deduping
   var _pbpGames = {}; // game_id → true once we have real PBP for that game
   var _pbpHistory = []; // full PBP contribution history (not capped)
@@ -552,7 +552,7 @@
   // `g.status` (utils.scorezone_pbp.normalize_nfl_game_status); we prefer it and
   // only re-derive from the raw code/text when an older payload omits it.
   //
-  // game_code is the game-level source of truth (Tank01 gameStatusCode, with
+  // game_code is the game-level source of truth (shared gameStatusCode, with
   // ESPN mapped onto the same scale): 0 pregame, 1 live, 2 final. A game is
   // FINAL only when that code says 2 (or, lacking a code, the text is
   // explicitly final). A blank/unknown code is 'unknown' -- never final -- so a
@@ -2240,7 +2240,7 @@
       return newData.scoring || {};
     };
     var allEvents = [], handled = {};
-    // Real play-by-play first (Tank01 / demo). Mark those games so we don't
+    // Real play-by-play first (live / demo). Mark those games so we don't
     // also invent bulk-diff blurbs for the same snaps.
     var pbpEvents = _eventsFromPbp(newData, tags, _scFor);
     // No arbitrary limits - full PBP history retained
@@ -2272,7 +2272,7 @@
       if (handled[pid]) return;
       var code = String(pi.game_code || '');
       var gid = pi.game_id || '';
-      // Live/final: real Tank01 play-by-play lines only -- never invent
+      // Live/final: real play-by-play lines only -- never invent
       // boxscore-diff narratives or bulk "Scored X pts" cards.
       if (code === '1' || code === '2' || (gid && _pbpGames[gid])) {
         handled[pid] = true;
@@ -5577,7 +5577,7 @@
       + panels
       + '</div>'
       + '</div>'
-      + '<p class="rz-source-note" style="margin:12px 16px 0;font-size:11px;color:var(--text-muted);">Live scores and player lines use Sleeper ids plus Tank01 box scores. Cross-league “My Leagues” follows your signed-in portfolio.</p>'
+      + '<p class="rz-source-note" style="margin:12px 16px 0;font-size:11px;color:var(--text-muted);">Live scores and player lines use Sleeper ids plus ESPN box scores. Cross-league “My Leagues” follows your signed-in portfolio.</p>'
       + (_historyOpen ? _historyPanelHtml() : '');
 
     _syncFeed();

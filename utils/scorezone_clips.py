@@ -645,7 +645,7 @@ def _http_get_public_json(url: str, params: dict) -> dict:
 
 
 def games_final_on_date(date_str: str, *, http_get=None) -> list[str]:
-    """Payload game ids (Tank01 form) of FINAL games on YYYY-MM-DD.
+    """Payload game ids (shared 'YYYYMMDD_AWAY@HOME' form) of FINAL games on YYYY-MM-DD.
 
     Uses ESPN's dated scoreboard and the same lookup extractor the store's
     discovery uses, so the ids line up with the play store's keys.
@@ -701,10 +701,10 @@ def _rows_from_espn_summary(game_id: str, nfl_players: dict, week: int,
     with ESPN only (the archived summary still carries per-play wallclock,
     which stored rows for older games may lack).
     """
-    from utils.scorezone import fetch_alt_pbp_plays, parse_tank_game_id
+    from utils.scorezone import fetch_alt_pbp_plays, parse_game_id
     from utils.scorezone_store import _build_def_pid_map, _build_name_maps
 
-    _date, away, home = parse_tank_game_id(game_id)
+    _date, away, home = parse_game_id(game_id)
     name_to_pid, meta = _build_name_maps(nfl_players, {away, home})
     return fetch_alt_pbp_plays(
         game_id,
@@ -743,7 +743,7 @@ def run_clip_backfill(
     highlight), so the freed play is re-wanted and re-matched in the
     same run. Ignored under dry_run: a dry run deletes nothing.
     """
-    from utils.scorezone import parse_tank_game_id
+    from utils.scorezone import parse_game_id
     from utils.scorezone_store import get_play_clips, upsert_play_clip
 
     dropped = 0
@@ -767,7 +767,7 @@ def run_clip_backfill(
         games_out.append(gstats)
         try:
             try:
-                _date, away, home = parse_tank_game_id(gid)
+                _date, away, home = parse_game_id(gid)
             except Exception:
                 away = home = ""
             rows = (
@@ -883,7 +883,7 @@ def maybe_run_clip_pass(
     _last_pass_ts = ts_now
 
     try:
-        from utils.scorezone import parse_tank_game_id
+        from utils.scorezone import parse_game_id
         from utils.scorezone_store import (
             get_play_clips,
             get_plays,
@@ -906,7 +906,7 @@ def maybe_run_clip_pass(
         wallclocks: dict = {}
         for gid in gids:
             try:
-                _date, away, home = parse_tank_game_id(gid)
+                _date, away, home = parse_game_id(gid)
             except Exception:
                 away = home = ""
             for w in build_wanted_td_plays(

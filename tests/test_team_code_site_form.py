@@ -1,7 +1,7 @@
 """Site-form team codes everywhere: LAR / WAS / JAX.
 
 The Rams are the trap: history/nflverse data calls them LA, the site
-(players index, Sleeper, Tank01 schedules) calls them LAR. Any raw string
+(players index, Sleeper, feed schedules) calls them LAR. Any raw string
 comparison across that boundary silently misses every Rams game - the
 game-log bug (tests/test_game_log_team_match.py) was one instance. These
 tests pin the other instances found in the site-wide audit:
@@ -70,7 +70,7 @@ def _opp_map(tmp_path, monkeypatch, games):
 
 
 def test_week_opponent_map_resolves_history_form_lookup(tmp_path, monkeypatch):
-    # Schedule file in site form (Tank01 2026); the trend route looks up with
+    # Schedule file in site form (feed 2026); the trend route looks up with
     # team_for_week's history form. Both must hit, value in site form.
     omap = _opp_map(
         tmp_path, monkeypatch, [{"home": "LAR", "away": "SF"}]

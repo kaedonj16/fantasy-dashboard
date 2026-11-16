@@ -38,7 +38,7 @@ from dashboard_services.api import (
     get_users,
     get_traded_picks,
     get_nfl_state,
-    get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
+    get_nfl_players, fetch_team_game_logs_html, fetch_espn_boxscore, get_matchups,
 )
 from dashboard_services.display_names import team_label_from_user, username_from_user
 
@@ -176,7 +176,7 @@ def week_stats_line_points(entry: dict, ss: dict, pos: str = "") -> float | None
 
     The matchup slide shows two numbers from two feeds: the authoritative live
     points (Sleeper ``players_points``) and a human-readable box-score line
-    (Footballguys, Tank01-overlaid). When Footballguys is still republishing a
+    (Footballguys, box-score-overlaid). When Footballguys is still republishing a
     prior week/season, the box-score line can contradict the points. Scoring the
     line lets callers detect that contradiction and hide the stale line.
 
@@ -1066,23 +1066,11 @@ def qualification_policy(season: int, *, week_start: Optional[int] = None,
 # From utils/utils.py (split per consolidation map)
 # ======================================================================
 
-# --- utils/utils.py L221 ---
-TANK01_HOST = "disabled.invalid"
-
-# --- utils/utils.py L222 ---
-BASE = f"https://{TANK01_HOST}"
-
 # --- utils/utils.py L223 ---
 SCHEDULE_CACHE: dict[tuple[int, int], dict] = {}
 
 # --- utils/utils.py L224 ---
 SCHEDULE_TTL = 60 * 10  # seconds
-
-# --- utils/utils.py L226 ---
-TANK01_API_HOST = "disabled.invalid"
-
-# --- utils/utils.py L227 ---
-TANK01_API_KEY = os.environ.get("TANK01_API_KEY", "")  # RapidAPI key — set via env
 
 # --- utils/utils.py L229 ---
 NFL_TEAMS = [
@@ -1091,15 +1079,8 @@ NFL_TEAMS = [
     "PHI", "PIT", "SEA", "SF", "TB", "TEN", "WAS",
 ]
 
-# --- utils/utils.py L240 ---
-def _headers(api_key: str) -> dict:
-    return {
-        "x-rapidapi-host": TANK01_HOST,
-        "x-rapidapi-key": api_key,
-    }
-
 # --- utils/utils.py L1034 ---
-def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
+def fetch_week_from_paid_provider(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
     """Compatibility shim: paid weekly projections are unavailable.
 
     Callers continue through their existing non-paid projection hierarchy; no
@@ -1211,7 +1192,7 @@ def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict =
     The API returns projected stat lines; fantasy points are computed here
     from those raw stats. The raw line is cached so each league applies its
     complete scoring settings at read time.
-    Returns {} on any failure so the caller can fall back to Tank01.
+    Returns {} on any failure so the caller can fall back to the next source.
     """
     from utils.data_cache import load_players_index
     url = f"https://api.sleeper.app/v1/projections/nfl/regular/{season}/{week}"
@@ -1272,7 +1253,7 @@ def map_weekly_projections_to_sleeper(
         idx_sleeper: Dict[str, dict],
 ) -> dict:
     """
-    Convert Tank01 rows -> multi-variant projection dict.
+    Convert weekly projection rows -> multi-variant projection dict.
     { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z, "tep": A, ...} }
 
     Variants (full cross of reception base x TE premium x passing-TD value):
@@ -1297,9 +1278,9 @@ def map_weekly_projections_to_sleeper(
                 continue
 
             team_id_raw = row.get("teamID")
-            tank_id = row.get("playerID")
+            provider_id = row.get("playerID")
 
-            if team_id_raw and not tank_id:
+            if team_id_raw and not provider_id:
                 # DEF / team row — same value for all variants
                 proj = row.get("fantasyPointsDefault")
                 if proj is None:
@@ -1317,7 +1298,7 @@ def map_weekly_projections_to_sleeper(
                         "6pt_tep": v, "6pt_tep_half": v, "6pt_tep_std": v,
                     }
 
-            elif tank_id:
+            elif provider_id:
                 fp = row.get("fantasyPointsDefault") or {}
                 if isinstance(fp, dict):
                     ppr  = float(fp.get("PPR")     or fp.get("ppr")     or 0)
@@ -1330,7 +1311,7 @@ def map_weekly_projections_to_sleeper(
                     continue
 
                 pid = next(
-                    (k for k, v in players_index.items() if v.get("tankId") == str(tank_id)),
+                    (k for k, v in players_index.items() if v.get("tankId") == str(provider_id)),
                     None,
                 )
                 if not pid:
