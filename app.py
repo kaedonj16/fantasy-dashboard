@@ -450,7 +450,7 @@ _ROSTER_API_CACHE_MAX = 300  # entries; oldest ~10% evicted when exceeded
 # Cache for Monte Carlo playoff simulation results (keyed by platform/league_id/season).
 _PLAYOFF_SIM_CACHE: dict = {}
 _PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
-_PLAYOFF_SIM_CACHE_MAX = 200  # entries; oldest ~10% evicted when exceeded
+_PLAYOFF_SIM_CACHE_MAX = 32  # entries; oldest ~10% evicted when exceeded
 
 _PLAYOFF_SIM_BUILDING: set = set()
 _PLAYOFF_SIM_BUILDING_LOCK = threading.Lock()
@@ -684,6 +684,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
                 _heavy_job_end(agg_token, prev)
                 with _PLAYOFF_SIM_BUILDING_LOCK:
                     _PLAYOFF_SIM_BUILDING.discard(key)
+                _release_build_memory()
 
         if not block:
             with _PLAYOFF_SIM_BUILDING_LOCK:
@@ -748,7 +749,7 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
 # cache, a miss kicks ONE bounded background build (aggregate heavy gate
 # plus its own semaphore), and the sim never runs inline on a read.
 _CHAMP_SIM_CACHE: dict = {}
-_CHAMP_SIM_CACHE_MAX = 200
+_CHAMP_SIM_CACHE_MAX = 32
 _CHAMP_SIM_BUILDING: set = set()
 _CHAMP_SIM_BUILDING_LOCK = threading.Lock()
 _CHAMP_SIM_SEM = threading.BoundedSemaphore(1)
@@ -858,6 +859,7 @@ def _championship_sim_cached(ctx: dict, platform: str, odds_rows) -> list:
                 _heavy_job_end(agg_token, prev)
                 with _CHAMP_SIM_BUILDING_LOCK:
                     _CHAMP_SIM_BUILDING.discard(key)
+                _release_build_memory()
 
         try:
             threading.Thread(target=_run, daemon=True).start()
@@ -924,12 +926,18 @@ def _kick_impact_sim_warm(ctx: dict, platform: str, league_id: str, season) -> s
             from data_building.simulate_playoff_odds import (
                 build_sim_state as _build_state,
                 run_base_simulation as _run_base,
+                store_sim_freeze as _store_freeze,
             )
             state = _build_state(snapshot, platform)
             if state is not None:
                 # Freeze the 2000-sim baseline the impact numbers read, so
                 # the first served request pays no Monte Carlo either.
+                # Cached states never carry the freeze themselves (it pins
+                # several MB of NumPy tensors per state), so register the
+                # drawn freeze in the sim module's bounded freeze store;
+                # peek_sim_state hands it out attached to caller copies.
                 _run_base(state, n_sims=2000)
+                _store_freeze(snapshot, platform, state.get("_mc_freeze"))
         except Exception:
             logger.debug("[trade-eval/playoff-impact] sim warm failed", exc_info=True)
         finally:
@@ -938,6 +946,7 @@ def _kick_impact_sim_warm(ctx: dict, platform: str, league_id: str, season) -> s
                 _IMPACT_SIM_BUILDING.discard(warm_key)
             _IMPACT_SIM_WARM_SEM.release()
             _heavy_job_end(agg_token, prev)
+            _release_build_memory()
 
     try:
         threading.Thread(target=_warm, daemon=True).start()
