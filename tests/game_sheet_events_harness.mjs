@@ -421,4 +421,206 @@ function makePtrWorld(mode) {
   console.log('ok - upward reversal = hands off, no fetch');
 }
 
+// ── Swipe-down-to-dismiss ────────────────────────────────────────────
+// The sheet's drag (/* gs-drag:start */ block, extracted verbatim) is
+// the assistant sheet's grab-bar drag carried by cfg: the handle and
+// head always own the gesture, the board area joins only at scroll
+// top, the sheet follows the finger, release past 120px or a fast
+// downward flick dismisses, anything less springs back. Cases: a long
+// drag dismisses; a short slow drag springs back and cleans its inline
+// styles when the glide lands; a flick dismisses below the distance
+// threshold; an upward drag never moves the sheet; the board zone is
+// inert while scrolled and live at the top; a disabled gate (desktop
+// modal widths), a drag starting on a button, a non-primary button,
+// and a detached binding are all inert; reduced motion snaps back
+// with no spring timer.
+
+const dStart = SRC.indexOf('/* gs-drag:start */');
+const dEnd = SRC.indexOf('/* gs-drag:end */');
+assert.ok(dStart >= 0 && dEnd > dStart, 'gs-drag delimiters present in app.js');
+const DRAG_BLOCK = SRC.slice(dStart, dEnd);
+
+function makeDragWorld(opts = {}) {
+  const timers = makeTimers();
+  let now = 0;
+  const fakeDate = { now: () => now };
+  const dragWin = {};
+  new Function('window', 'setTimeout', 'clearTimeout', 'Date', DRAG_BLOCK)(
+    dragWin, timers.setTimeout, timers.clearTimeout, fakeDate);
+  assert.equal(typeof dragWin.__brGsAttachDrag, 'function', '__brGsAttachDrag exported');
+  const sheetEl = new PtrEl();
+  const scroller = new PtrEl();
+  const handle = new PtrEl();
+  const head = new PtrEl();
+  const board = new PtrEl();
+  const state = { enabled: !opts || opts.enabled !== false, reduced: !!(opts && opts.reduced) };
+  let dismissals = 0;
+  const detach = dragWin.__brGsAttachDrag({
+    sheet: sheetEl,
+    scroller,
+    zones: [{ el: handle }, { el: head }, { el: board, needsTop: true }],
+    enabled: () => state.enabled,
+    reduceMotion: () => state.reduced,
+    dismiss: () => { dismissals++; },
+  });
+  const evt = (y, o = {}) => ({
+    pointerId: 1, clientY: y, button: 0,
+    target: { closest: () => null },
+    ...o,
+  });
+  return {
+    timers, sheetEl, scroller, handle, head, board, detach, evt,
+    advance: (ms) => { now += ms; },
+    dismissals: () => dismissals,
+  };
+}
+
+// J. Long drag on the handle: the sheet follows the finger, release
+//    past 120px dismisses exactly once.
+{
+  const w = makeDragWorld();
+  w.handle.fire('pointerdown', w.evt(10));
+  assert.equal(w.sheetEl.style.transition, 'none', 'drag kills the sheet transition');
+  w.advance(100);
+  w.handle.fire('pointermove', w.evt(160));
+  assert.equal(w.sheetEl.style.transform, 'translateY(150px)', 'sheet follows the finger');
+  w.advance(10);
+  w.handle.fire('pointerup', w.evt(160));
+  assert.equal(w.dismissals(), 1, 'release past 120px dismisses');
+  w.handle.fire('pointerup', w.evt(160));
+  assert.equal(w.dismissals(), 1, 'no double dismiss');
+  console.log('ok - drag past 120px = dismiss, sheet follows the finger');
+}
+
+// K. Short slow drag: springs back on the glide curve, inline styles
+//    cleaned when it lands.
+{
+  const w = makeDragWorld();
+  w.head.fire('pointerdown', w.evt(10));
+  w.advance(200);
+  w.head.fire('pointermove', w.evt(70)); // dy 60 at 0.3 px/ms: no flick
+  w.advance(10);
+  w.head.fire('pointerup', w.evt(70));
+  assert.equal(w.dismissals(), 0, 'short slow drag: no dismiss');
+  assert.equal(w.sheetEl.style.transform, 'translateY(0px)', 'spring drives the sheet home');
+  assert.ok(w.sheetEl.style.transition.includes('cubic-bezier(0.22, 1, 0.36, 1)'),
+    'spring uses the glide curve: ' + w.sheetEl.style.transition);
+  w.timers.fireAll();
+  assert.equal(w.sheetEl.style.transform, '', 'spring cleanup clears the transform');
+  assert.equal(w.sheetEl.style.transition, '', 'spring cleanup clears the transition');
+  console.log('ok - short slow drag = spring back, styles cleaned');
+}
+
+// L. Fast downward flick below the distance threshold dismisses.
+{
+  const w = makeDragWorld();
+  w.handle.fire('pointerdown', w.evt(10));
+  w.advance(50);
+  w.handle.fire('pointermove', w.evt(35)); // dy 25
+  w.advance(10);
+  w.handle.fire('pointermove', w.evt(60)); // dy 50, vel 2.5 px/ms
+  w.handle.fire('pointerup', w.evt(60));
+  assert.equal(w.dismissals(), 1, 'flick past 40px at velocity dismisses');
+  console.log('ok - downward flick = dismiss below the distance threshold');
+}
+
+// M. Upward drag: dy clamps at 0, the sheet never moves, release is a
+//    plain cleanup with no dismiss and no spring.
+{
+  const w = makeDragWorld();
+  w.handle.fire('pointerdown', w.evt(100));
+  w.advance(50);
+  w.handle.fire('pointermove', w.evt(40));
+  assert.equal(w.sheetEl.style.transform, 'translateY(0px)', 'upward drag clamps at 0');
+  w.handle.fire('pointerup', w.evt(40));
+  assert.equal(w.dismissals(), 0, 'upward drag: no dismiss');
+  assert.equal(w.sheetEl.style.transform, '', 'upward drag: styles cleaned at once');
+  assert.equal(w.timers.pendingCount(), 0, 'upward drag: no spring timer');
+  console.log('ok - upward drag = sheet stays, no dismiss');
+}
+
+// N. Board zone while the body is scrolled: not a drag zone at all.
+{
+  const w = makeDragWorld();
+  w.scroller.scrollTop = 80;
+  w.board.fire('pointerdown', w.evt(10));
+  w.advance(50);
+  w.board.fire('pointermove', w.evt(200));
+  w.board.fire('pointerup', w.evt(200));
+  assert.equal(w.dismissals(), 0, 'board drag while scrolled: no dismiss');
+  assert.equal(w.sheetEl.style.transform, undefined, 'board drag while scrolled: sheet never moves');
+  console.log('ok - board zone while scrolled = inert');
+}
+
+// O. Board zone at scroll top: a full drag dismisses.
+{
+  const w = makeDragWorld();
+  w.scroller.scrollTop = 0;
+  w.board.fire('pointerdown', w.evt(10));
+  w.advance(100);
+  w.board.fire('pointermove', w.evt(170));
+  assert.equal(w.sheetEl.style.transform, 'translateY(160px)', 'board drag moves the sheet at top');
+  w.board.fire('pointerup', w.evt(170));
+  assert.equal(w.dismissals(), 1, 'board drag at top dismisses');
+  console.log('ok - board zone at scroll top = drag dismisses');
+}
+
+// P. Disabled gate (desktop modal widths): every zone is inert.
+{
+  const w = makeDragWorld({ enabled: false });
+  w.handle.fire('pointerdown', w.evt(10));
+  w.advance(50);
+  w.handle.fire('pointermove', w.evt(200));
+  w.handle.fire('pointerup', w.evt(200));
+  assert.equal(w.dismissals(), 0, 'disabled: no dismiss');
+  assert.equal(w.sheetEl.style.transform, undefined, 'disabled: sheet never moves');
+  console.log('ok - disabled gate = drag inert');
+}
+
+// Q. A drag starting on a button (the head's close button) or with a
+//    non-primary button never starts.
+{
+  const w = makeDragWorld();
+  const onButton = w.evt(10, { target: { closest: () => ({}) } });
+  w.head.fire('pointerdown', onButton);
+  w.advance(50);
+  w.head.fire('pointermove', w.evt(200));
+  w.head.fire('pointerup', w.evt(200));
+  assert.equal(w.dismissals(), 0, 'button start: no dismiss');
+  assert.equal(w.sheetEl.style.transform, undefined, 'button start: sheet never moves');
+  w.handle.fire('pointerdown', w.evt(10, { button: 2 }));
+  w.advance(50);
+  w.handle.fire('pointermove', w.evt(200));
+  w.handle.fire('pointerup', w.evt(200));
+  assert.equal(w.dismissals(), 0, 'right button: no dismiss');
+  assert.equal(w.sheetEl.style.transform, undefined, 'right button: sheet never moves');
+  console.log('ok - button start and non-primary button = no drag');
+}
+
+// R. Reduced motion: a short drag snaps straight back, no spring.
+{
+  const w = makeDragWorld({ reduced: true });
+  w.handle.fire('pointerdown', w.evt(10));
+  w.advance(200);
+  w.handle.fire('pointermove', w.evt(70));
+  w.handle.fire('pointerup', w.evt(70));
+  assert.equal(w.dismissals(), 0, 'reduced motion short drag: no dismiss');
+  assert.equal(w.sheetEl.style.transform, '', 'reduced motion: snapped back at once');
+  assert.equal(w.timers.pendingCount(), 0, 'reduced motion: no spring timer');
+  console.log('ok - reduced motion = snap back, no spring');
+}
+
+// S. Detached binding (sheet closed): the gesture is gone.
+{
+  const w = makeDragWorld();
+  w.detach();
+  w.handle.fire('pointerdown', w.evt(10));
+  w.advance(50);
+  w.handle.fire('pointermove', w.evt(200));
+  w.handle.fire('pointerup', w.evt(200));
+  assert.equal(w.dismissals(), 0, 'detached: no dismiss');
+  assert.equal(w.sheetEl.style.transform, undefined, 'detached: sheet never moves');
+  console.log('ok - detached binding = gesture gone');
+}
+
 console.log('ALL GAME SHEET EVENT HARNESS CHECKS PASSED');

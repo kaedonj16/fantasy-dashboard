@@ -33857,6 +33857,104 @@ window.__brSzLiveCache = (function () {
   };
   /* gs-ptr:end */
 
+  /* gs-drag:start */
+  // Swipe-down-to-dismiss for the game sheet: the assistant sheet's
+  // grab-bar drag (see the .br-asst-grab handler), carried on a
+  // self-contained helper so tests/game_sheet_events_harness.mjs can
+  // drive it by cfg. Zones: the handle and the head strip always own
+  // the gesture; the board area joins only while the sheet body sits
+  // at scroll top, so a downward drag there dismisses instead of
+  // fighting the scroll (and the Plays pull-to-refresh, bound to the
+  // plays panel, never sees these touches). The sheet follows the
+  // finger with dy clamped at 0; release past 120px, or a fast
+  // downward flick, dismisses through cfg.dismiss(); anything less
+  // springs back on the assistant sheet's glide curve. At desktop
+  // widths the sheet is a centred modal and cfg.enabled() keeps the
+  // drag inert there.
+  window.__brGsAttachDrag = function (cfg) {
+    var DISMISS_DY = 120;   // release distance that dismisses
+    var FLICK_DY = 40;      // a flick needs at least this much travel
+    var FLICK_VEL = 0.5;    // px/ms downward that counts as a flick
+    var sheet = cfg.sheet;
+    var drag = null;
+
+    function reduceMotion() {
+      try { return !!cfg.reduceMotion(); } catch (e) { return false; }
+    }
+    function cleanInline() {
+      sheet.style.transition = '';
+      sheet.style.transform = '';
+    }
+    function dragStart(node, needsTop, e) {
+      if (drag) return;
+      if (!cfg.enabled()) return;
+      if (e.button != null && e.button !== 0) return;
+      // Drags starting on a button or link are left to that control
+      // (the head's close button above all).
+      if (e.target && e.target.closest && e.target.closest('button, a')) return;
+      if (needsTop && cfg.scroller && cfg.scroller.scrollTop > 0) return;
+      drag = { id: e.pointerId, startY: e.clientY, dy: 0, lastY: e.clientY, lastT: Date.now(), vel: 0 };
+      try { node.setPointerCapture(e.pointerId); } catch (err) {}
+      sheet.style.transition = 'none';
+    }
+    function dragMove(e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      var now = Date.now();
+      var dt = now - drag.lastT;
+      if (dt > 0) drag.vel = (e.clientY - drag.lastY) / dt;
+      drag.lastY = e.clientY;
+      drag.lastT = now;
+      drag.dy = Math.max(0, e.clientY - drag.startY);
+      sheet.style.transform = 'translateY(' + drag.dy + 'px)';
+    }
+    function dragEnd(e) {
+      if (!drag || (e && e.pointerId !== drag.id)) return;
+      var dy = drag.dy;
+      var vel = drag.vel;
+      drag = null;
+      if (dy > DISMISS_DY || (dy > FLICK_DY && vel > FLICK_VEL)) {
+        // The dismiss path owns the sheet's styles from here: it
+        // slides out from the dragged offset (or closes at once
+        // under reduced motion).
+        try { cfg.dismiss(); } catch (err) {}
+        return;
+      }
+      if (dy > 0 && !reduceMotion()) {
+        // Spring back: keep the dragged offset as the transition's
+        // start value, then drive the transform home on the glide
+        // curve and clean up when it lands.
+        sheet.style.transition = 'transform .28s cubic-bezier(0.22, 1, 0.36, 1)';
+        void sheet.offsetWidth;
+        sheet.style.transform = 'translateY(0px)';
+        setTimeout(function () { cleanInline(); }, 300);
+        return;
+      }
+      cleanInline();
+    }
+    var bound = [];
+    (cfg.zones || []).forEach(function (zone) {
+      if (!zone || !zone.el) return;
+      var node = zone.el;
+      var start = function (e) { dragStart(node, !!zone.needsTop, e); };
+      node.addEventListener('pointerdown', start);
+      node.addEventListener('pointermove', dragMove);
+      node.addEventListener('pointerup', dragEnd);
+      node.addEventListener('pointercancel', dragEnd);
+      bound.push({ node: node, start: start });
+    });
+    return function detach() {
+      bound.forEach(function (b) {
+        b.node.removeEventListener('pointerdown', b.start);
+        b.node.removeEventListener('pointermove', dragMove);
+        b.node.removeEventListener('pointerup', dragEnd);
+        b.node.removeEventListener('pointercancel', dragEnd);
+      });
+      bound = [];
+      drag = null;
+    };
+  }
+  /* gs-drag:end */
+
   function gsPtrEnabled() {
     return !!gsSheet && gsSheet.tab === 'plays' && gsSheet.fullStatus === 'ready';
   }
@@ -33901,13 +33999,45 @@ window.__brSzLiveCache = (function () {
   function gsCloseSheet() {
     if (!gsSheet) return;
     if (gsSheet.fullTimer) clearTimeout(gsSheet.fullTimer);
+    if (gsSheet.dragTimer) clearTimeout(gsSheet.dragTimer);
     if (gsSheet.ptrDetach) { try { gsSheet.ptrDetach(); } catch (e) {} gsSheet.ptrDetach = null; }
+    if (gsSheet.dragDetach) { try { gsSheet.dragDetach(); } catch (e) {} gsSheet.dragDetach = null; }
     var els = gsSheet.els;
     if (els.backdrop.parentNode) els.backdrop.parentNode.removeChild(els.backdrop);
     if (els.sheet.parentNode) els.sheet.parentNode.removeChild(els.sheet);
     gsSheet = null;
     document.removeEventListener('keydown', gsSheetKey);
     document.body.style.overflow = '';
+  }
+  // Swipe-dismiss gates and exit: the drag lives at sheet widths only
+  // (at >=760px the sheet is a centred modal and the gesture stays
+  // inert, the assistant sheet's sheet-widths-only rule).
+  function gsDragEnabled() {
+    if (!gsSheet || gsSheet.dragClosing) return false;
+    try { return window.matchMedia('(max-width: 759px)').matches; } catch (e) { return false; }
+  }
+  function gsDragReducedMotion() {
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+  }
+  // Drag release past the threshold lands here: slide the sheet out
+  // from its dragged offset on the sheet's own enter curve, then run
+  // the normal close once it is off-screen. Reduced motion (and any
+  // other close racing this one) goes through gsCloseSheet at once;
+  // the timer re-checks sheet identity so a sheet opened in the
+  // meantime is never closed by a stale exit.
+  function gsDragDismiss() {
+    if (!gsSheet || gsSheet.dragClosing) return;
+    gsSheet.dragClosing = true;
+    var els = gsSheet.els;
+    var sheetEl = els.sheet;
+    if (gsDragReducedMotion()) { gsCloseSheet(); return; }
+    els.backdrop.classList.remove('open');
+    sheetEl.style.transition = 'transform .3s cubic-bezier(.32, .72, .28, 1)';
+    void sheetEl.offsetWidth;
+    sheetEl.style.transform = 'translateY(105%)';
+    gsSheet.dragTimer = setTimeout(function () {
+      if (gsSheet && gsSheet.els.sheet === sheetEl) gsCloseSheet();
+    }, 320);
   }
   function gsSheetClick(e) {
     if (!gsSheet) return;
@@ -33981,6 +34111,7 @@ window.__brSzLiveCache = (function () {
       game: game, gid: gid, tab: 'stats',
       box: { team: norm(game.away), data: null, error: false },
       full: null, fullStatus: 'loading', fullTimer: null, ptrDetach: null,
+      dragDetach: null, dragTimer: null, dragClosing: false,
       els: {
         backdrop: backdrop, sheet: sheet,
         body: sheet.querySelector('.rz-bs-body'),
@@ -34012,6 +34143,24 @@ window.__brSzLiveCache = (function () {
         note: sheet.querySelector('.gs-ptr-note'),
         enabled: gsPtrEnabled,
         refresh: gsPlaysRefresh
+      });
+    }
+    // Swipe-down-to-dismiss: the handle and the head strip always own
+    // the drag; the board area joins only while the body is at scroll
+    // top (see the gs-drag block above). The plays panel is outside
+    // every zone, so its pull-to-refresh is untouched.
+    if (window.__brGsAttachDrag) {
+      gsSheet.dragDetach = window.__brGsAttachDrag({
+        sheet: sheet,
+        scroller: gsSheet.els.body,
+        zones: [
+          { el: sheet.querySelector('.rz-bs-handle') },
+          { el: sheet.querySelector('.rz-bs-head') },
+          { el: gsSheet.els.board, needsTop: true }
+        ],
+        enabled: gsDragEnabled,
+        reduceMotion: gsDragReducedMotion,
+        dismiss: gsDragDismiss
       });
     }
     gsRenderBoard();

@@ -59505,6 +59505,15 @@ button.mb-fld-link {
     text-align: inherit;
 }
 .rz-bs-sheet.gs-sheet { max-width: 560px; }
+/* Swipe-down-to-dismiss (app.js gs-drag) owns the handle and the head
+   strip at sheet widths: like the assistant sheet's grab/head they
+   take touch-action: none so the drag is never read as a scroll or a
+   zoom, and the handle reads as grabbable. At >=760px the sheet is a
+   centred modal and the drag stays inert, so no rule applies there. */
+@media (max-width: 768px) {
+    .gs-sheet .rz-bs-handle { touch-action: none; cursor: grab; }
+    .gs-sheet .rz-bs-head { touch-action: none; cursor: grab; }
+}
 @media (min-width: 760px) {
     .rz-bs-sheet.gs-sheet {
         left: 50%;

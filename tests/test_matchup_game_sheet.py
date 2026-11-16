@@ -135,6 +135,48 @@ def test_sheet_plays_pull_to_refresh():
     assert "gsSheet.tab === 'plays' && gsSheet.fullStatus === 'ready'" in seg
 
 
+def test_sheet_swipe_down_to_dismiss():
+    seg = _sheet_segment()
+    # The gesture helper is a self-contained, harness-extractable block
+    # carrying the assistant sheet's grab-bar thresholds.
+    assert "/* gs-drag:start */" in seg
+    assert "/* gs-drag:end */" in seg
+    assert "window.__brGsAttachDrag = function (cfg)" in seg
+    block = seg[seg.index("/* gs-drag:start */"):seg.index("/* gs-drag:end */")]
+    assert "var DISMISS_DY = 120;" in block
+    assert "var FLICK_DY = 40;" in block
+    assert "var FLICK_VEL = 0.5;" in block
+    assert "cubic-bezier(0.22, 1, 0.36, 1)" in block  # the glide spring-back
+    # Wiring: handle + head always own the drag, the board only at
+    # scroll top; the plays panel (pull-to-refresh) is in no zone.
+    assert "window.__brGsAttachDrag({" in seg
+    assert "{ el: sheet.querySelector('.rz-bs-handle') }" in seg
+    assert "{ el: sheet.querySelector('.rz-bs-head') }" in seg
+    assert "{ el: gsSheet.els.board, needsTop: true }" in seg
+    assert "playsPanel, needsTop" not in seg
+    # Sheet widths only: at >=760px the centred modal keeps the drag
+    # inert; reduced motion closes at once via the plain close path.
+    assert "'(max-width: 759px)'" in seg
+    assert "prefers-reduced-motion: reduce" in seg
+    assert "if (gsDragReducedMotion()) { gsCloseSheet(); return; }" in seg
+    # The exit slides out, then closes; close detaches the drag and
+    # clears its timer alongside the pull-to-refresh detach.
+    assert "sheetEl.style.transform = 'translateY(105%)';" in seg
+    assert "gsSheet.dragDetach()" in seg
+    assert "if (gsSheet.dragTimer) clearTimeout(gsSheet.dragTimer);" in seg
+    # CSS: the drag zones own their touches at sheet widths only.
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    start = css.index("Matchups game sheet (drive-bar sheet")
+    end = css.index("MERGED: icons.css", start)
+    cblock = css[start:end]
+    assert "@media (max-width: 768px)" in cblock
+    handle = re.search(r"\.gs-sheet \.rz-bs-handle \{(.*?)\}", cblock, flags=re.S)
+    assert handle and "touch-action: none" in handle.group(1)
+    assert handle and "cursor: grab" in handle.group(1)
+    head = re.search(r"\.gs-sheet \.rz-bs-head \{(.*?)\}", cblock, flags=re.S)
+    assert head and "touch-action: none" in head.group(1)
+
+
 def test_sheet_plays_refresh_fetch_path():
     seg = _sheet_segment()
     start = seg.index("function gsPlaysRefresh(done)")
