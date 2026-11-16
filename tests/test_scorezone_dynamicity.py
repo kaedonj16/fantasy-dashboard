@@ -62,6 +62,16 @@ def test_change5_sticky_bar():
     assert "--rz-header-h" in bar_css and "--rz-header-h" in SZ
     assert "IntersectionObserver" in SZ and "_bindStickyBar" in SZ
     assert ".rz-sticky-bar.is-on" in CSS
+    # Animation: entry/exit rides the glide token at 250ms; drive
+    # updates FLIP from the previous render's values (the bar element
+    # is rebuilt every render, so transitions alone never run) and a
+    # changed score takes the hero board's team-colour flash. The
+    # glide transitions stay scoped to the sticky mount -- the shared
+    # .mb-fld-* component itself gains no transition.
+    assert "var(--ease-glide)" in bar_css and ".25s" in bar_css
+    assert "_animStickyBar" in SZ and "_stickyPrev" in SZ and "_stickyCur" in SZ
+    assert ".rz-sticky-bar .mb-fld-fill" in CSS and ".rz-sticky-bar .mb-fld-ball" in CSS
+    assert "\n.mb-fld-fill { transition" not in CSS and "\n.mb-fld-ball { transition" not in CSS
 
 
 def test_moments_and_boxscore_share_board_gutter():
@@ -101,12 +111,13 @@ def test_change6_live_dark_borrows_real_site_theme():
 def test_change7_moments_rail_uses_existing_clips():
     assert "_momentsRailHtml" in SZ
     assert "rz-moments-rail" in CSS
-    assert "data-rail-clip" in SZ  # the rail's own clip surface key
+    assert "data-rail-card" in SZ  # the rail's own clip surface key
     assert "clipPosterUrl" in SZ    # poster only when the payload carries one
-    # The rail toggles its own panel (_toggleRailClip, via the root click
-    # delegation); it must never forward to the feed card's toggle, which
-    # is paginated out of the DOM for most moments (2026-11-15 fix).
-    assert "_toggleRailClip" in SZ
+    # The whole card is the rail's clip surface (_toggleRailCard, via
+    # the root click delegation); it must never forward to the feed
+    # card's toggle, which is paginated out of the DOM for most moments
+    # (2026-11-15 fix).
+    assert "_toggleRailCard" in SZ
     assert "scrollIntoView({ block: 'center', behavior: 'smooth' }); t.click();" not in SZ
 
 
@@ -120,8 +131,12 @@ def test_fix2_moments_rail_requires_clip_or_poster():
     assert "_momentMediaHtml" in SZ
     assert "sleepercdn.com/content/nfl/players/thumb/" in SZ
     assert "rz-moment-headshot" in SZ and "rz-moment-headshot" in CSS
-    # Watch only where the feed card carries the same toggle (TD clips).
-    assert "ev.kind === 'td' && ev.clipTweetId && ev.playId" in rail
+    # No Watch pill anywhere: the whole card is the tap target and grows
+    # in place (Kaedon's locked design). Compact cards carry only the
+    # poster, the name and the points -- no kind label.
+    assert "data-rail-card" in rail and "data-rail-close" in rail
+    assert "rz-moment-watch" not in SZ and "rz-moment-watch" not in CSS
+    assert "rz-moment-meta" not in rail
 
 
 def test_fix3_moments_rail_respects_feed_scope():
@@ -129,6 +144,26 @@ def test_fix3_moments_rail_respects_feed_scope():
     # The rail applies the feed's own filter predicate: My Team (ev.mine),
     # Big Plays, game / position / stat filters all match the feed.
     assert "_eventMatches(ev)" in rail
+
+
+def test_moments_card_grows_in_place():
+    # The tapped card grows to the rail's full width over 450ms on the
+    # calm ease (no overshoot); siblings slide away meanwhile.
+    card_css = CSS.split(".rz-moment-card {", 1)[1].split("}", 1)[0]
+    assert ".45s" in card_css and "--ease-soft" in card_css
+    assert ".rz-moment-card.is-grown" in CSS and "flex-basis: 100%" in CSS
+    # Siblings are never collapsed away: they slide along the scroll
+    # row at full size so a switch tap can always reach them.
+    assert ".rz-moment-card.is-away" not in CSS
+    assert ".rz-moments-rail.has-grown" in CSS and "scroll-snap-type: none" in CSS
+    # The clip panel lives inside the grown card now, not under the
+    # rail, and a rebuild restores the grown card from the open key.
+    rail = SZ.split("function _momentsRailHtml")[1].split("function _dynAfterRender")[0]
+    assert "rz-clip-panel" in rail and "is-grown" in rail
+    assert "_openClipSurface === 'rail'" in rail
+    # Grow/shrink machinery with the settle guard for rapid taps.
+    assert "_growRailCard" in SZ and "_shrinkRailCardEl" in SZ
+    assert "_railSettle" in SZ and "_closeRailClip" in SZ
 
 
 def test_change8_ambient_wash_board_only():

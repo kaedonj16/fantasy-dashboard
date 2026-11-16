@@ -1,25 +1,29 @@
-"""Behavioral harness for the ScoreZone Moments rail Watch buttons.
+"""Behavioral harness for the ScoreZone Moments rail cards.
 
-Kaedon, live on her phone (2026-11-15): "I can't click anything on the
-moments bar." The rail's Watch handler (scorezone.js) did not open a clip
-itself -- it looked up the play's FEED card toggle
-([data-clip-toggle="<playId>"]) and clicked that. But the feed is
-paginated (20 plays per page, only the current page exists in the DOM)
-while the rail is built from the whole feed, so any moment whose feed
-card is not on the current page had no toggle to click: the tap landed,
-the handler ran, the lookup returned null, and nothing happened.
+History: the rail's Watch buttons originally forwarded taps to the
+play's FEED card toggle, but the feed is paginated (20 plays per page)
+while the rail is built from the whole feed, so most moments had no
+toggle in the DOM and their taps silently did nothing (Kaedon,
+2026-11-15: "I can't click anything on the moments bar"). The rail
+became its own clip surface with a panel under the strip.
 
-This harness boots the REAL static/scorezone.js + static/dashboard.css
-in Chromium/WebKit (Playwright, iPhone viewport + touch) against a
-fixture payload shaped exactly like the scorezone-data API response:
+Current model (Kaedon's locked design, 2026-11-15): there is no Watch
+button at all. The WHOLE card is the tap target. Tapping a card grows
+it in place to the rail's full width over 450ms -- its media becomes
+the 16:9 clip and starts playing, siblings slide away -- and an X
+button on the grown card's name line (or another tap on the card)
+shrinks it back. Compact cards carry only a poster, a name and the
+points. This harness boots the REAL static/scorezone.js +
+static/dashboard.css in Playwright (iPhone viewport + touch) against a
+fixture shaped like the scorezone-data API response:
   * a clipped rushing TD early in Q2 (the "rail TD"), buried under 26
     newer plays so its feed card is NOT on feed page 0;
   * a clipped receiving TD late in Q3 (the "control TD") that IS on
     feed page 0.
-It taps the rail Watch buttons with real touch taps and asserts a clip
-panel actually opens -- red before the fix, green after. It also proves
-the taps themselves land on the buttons (elementFromPoint + a click
-counter), so a failure here is the handler, never hit interception.
+It taps cards on their name and on their poster (never a button),
+samples the grow animation mid-flight, switches cards, checks the
+one-clip exclusivity against the feed, re-render survival, and the
+reduced-motion path.
 
 Run: python3 tests/scorezone_moments_click_harness.py  (exit 0 = pass)
 """
@@ -117,7 +121,7 @@ def build_plays(extra_late=False):
                       is_td=True, play_id="ctl-td", clip=CTL_CLIP))
     # 15 ordinary Q3 plays after it (newer than BOTH TDs). Feed page 0 is
     # the newest 20 events: control TD is 16th (on page), rail TD is 27th
-    # (not on page -- the bug case).
+    # (not on page -- the original dead-tap case).
     for i in range(15):
         clk = f"1:{55 - 5 * i:02d}" if i < 12 else f"0:{55 - 5 * (i - 12):02d}"
         pid = ["1003", "1002", "1001"][i % 3]
@@ -212,125 +216,233 @@ def main():
             browser = pw.chromium.launch()
             device = dict(pw.devices["iPhone 14"])
             device.pop("default_browser_type", None)
-        ctx = browser.new_context(**device)
-        page = ctx.new_page()
-        errors = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
 
-        def route_handler(route):
-            url = route.request.url
-            if "scorezone-data" in url:
-                state["fetches"] += 1
-                body = fixture_a if state["fetches"] <= 1 else fixture_b
-                route.fulfill(status=200, content_type="application/json",
-                              body=json.dumps(body))
-            elif url.endswith("/static/scorezone.js"):
-                route.fulfill(status=200, content_type="application/javascript",
-                              body=SCOREZONE_JS)
-            elif url.endswith("/static/dashboard.css"):
-                route.fulfill(status=200, content_type="text/css", body=DASHBOARD_CSS)
-            elif "sleepercdn.com" in url or "pbs.twimg.com" in url:
-                route.fulfill(status=200, content_type="image/png", body=PNG)
-            elif "video.twimg.com" in url:
-                route.fulfill(status=200, content_type="video/mp4", body=b"")
-            elif "rz.test" in url and "scorezone" in url:
-                route.fulfill(status=200, content_type="text/html",
-                              body=HTML.replace("__PAYLOAD__", json.dumps(fixture_a)))
-            else:
-                route.fulfill(status=200, content_type="text/plain", body="")
+        def make_page(reduced=False):
+            ctx_kwargs = dict(device)
+            if reduced:
+                ctx_kwargs["reduced_motion"] = "reduce"
+            ctx = browser.new_context(**ctx_kwargs)
+            page = ctx.new_page()
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
 
-        page.route("**/*", route_handler)
-        # Count real clicks landing on rail Watch buttons (capture phase,
-        # independent of the module's own handlers): proves the tap is
-        # delivered and any failure is downstream of the button.
-        page.add_init_script(
-            "window.__railClicks = 0;"
-            "document.addEventListener('click', function(e){"
-            "  if (e.target && e.target.closest &&"
-            "      e.target.closest('[data-rail-clip],[data-clip-toggle]'))"
-            "    window.__railClicks++;"
-            "}, true);")
-        page.goto("http://rz.test/sleeper/2026/demo/scorezone")
-        page.wait_for_selector(".rz-moments-rail", timeout=15000)
+            def route_handler(route):
+                url = route.request.url
+                if "scorezone-data" in url:
+                    state["fetches"] += 1
+                    body = fixture_a if state["fetches"] <= 1 else fixture_b
+                    route.fulfill(status=200, content_type="application/json",
+                                  body=json.dumps(body))
+                elif url.endswith("/static/scorezone.js"):
+                    route.fulfill(status=200, content_type="application/javascript",
+                                  body=SCOREZONE_JS)
+                elif url.endswith("/static/dashboard.css"):
+                    route.fulfill(status=200, content_type="text/css", body=DASHBOARD_CSS)
+                elif "sleepercdn.com" in url or "pbs.twimg.com" in url:
+                    route.fulfill(status=200, content_type="image/png", body=PNG)
+                elif "video.twimg.com" in url:
+                    route.fulfill(status=200, content_type="video/mp4", body=b"")
+                elif "rz.test" in url and "scorezone" in url:
+                    route.fulfill(status=200, content_type="text/html",
+                                  body=HTML.replace("__PAYLOAD__", json.dumps(fixture_a)))
+                else:
+                    route.fulfill(status=200, content_type="text/plain", body="")
 
-        rail_btns = page.query_selector_all("[data-rail-clip]")
-        check("rail renders both clipped TD moments", len(rail_btns) == 2,
-              f"found {len(rail_btns)}")
+            page.route("**/*", route_handler)
+            page.add_init_script(
+                "window.__cardClicks = 0;"
+                "document.addEventListener('click', function(e){"
+                "  if (e.target && e.target.closest &&"
+                "      e.target.closest('[data-rail-card],[data-clip-toggle]'))"
+                "    window.__cardClicks++;"
+                "}, true);")
+            page.goto("http://rz.test/sleeper/2026/demo/scorezone")
+            page.wait_for_selector(".rz-moments-rail", timeout=15000)
+            return ctx, page, errors
+
+        def open_panels(page):
+            return page.evaluate(
+                "Array.from(document.querySelectorAll('.rz-clip-panel.is-open'))"
+                ".map(function(p){ return { key: p.getAttribute('data-clip-panel'),"
+                "  video: !!p.querySelector('.rz-clip-video'),"
+                "  inCard: !!p.closest('.rz-moment-card'),"
+                "  html: p.innerHTML.length }; })")
+
+        def grown_key(page):
+            return page.evaluate(
+                "var c = document.querySelector('.rz-moment-card.is-grown');"
+                "c ? c.getAttribute('data-rail-card') : null")
+
+        # ── Main flow ────────────────────────────────────────────────
+        ctx, page, errors = make_page()
+
+        cards = page.query_selector_all("[data-rail-card]")
+        check("rail renders both clipped TD moments as cards", len(cards) == 2,
+              f"found {len(cards)}")
+        check("no Watch pill anywhere in the rail",
+              page.query_selector(".rz-moment-watch") is None
+              and page.query_selector("[data-rail-clip]") is None)
+        meta = page.query_selector(".rz-moment-meta")
+        check("compact cards carry no kind label row", meta is None)
         feed_toggle_rail = page.query_selector(f'[data-clip-toggle="{RAIL_PLAY_ID}"]')
         feed_toggle_ctl = page.query_selector(f'[data-clip-toggle="{CTL_PLAY_ID}"]')
         check("fixture: rail TD feed card is NOT on feed page 0", feed_toggle_rail is None)
         check("fixture: control TD feed card IS on feed page 0", feed_toggle_ctl is not None)
 
-        def open_panels():
-            return page.evaluate(
-                "Array.from(document.querySelectorAll('.rz-clip-panel.is-open'))"
-                ".map(function(p){ return { key: p.getAttribute('data-clip-panel'),"
-                "  video: !!p.querySelector('.rz-clip-video'),"
-                "  html: p.innerHTML.length }; })")
-
-        def tap_rail(play_id):
-            page.tap(f'[data-rail-clip="{play_id}"]')
-            page.wait_for_timeout(450)
-
-        # Hit delivery: the topmost element at the rail Watch button's
-        # centre is the button itself (no overlay eats the tap).
+        # Hit delivery: the topmost element at the rail card's name is
+        # inside the card itself (no overlay eats the tap).
         hit = page.evaluate(
-            "var b = document.querySelector('[data-rail-clip=\"" + RAIL_PLAY_ID + "\"]');"
-            "var r = b.getBoundingClientRect();"
+            "var c = document.querySelector('[data-rail-card=\"" + RAIL_PLAY_ID + "\"]');"
+            "var n = c.querySelector('.rz-moment-name');"
+            "var r = n.getBoundingClientRect();"
             "var el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
-            "el === b || b.contains(el)")
-        check("tap point on rail Watch is the button itself (no interception)", hit is True)
+            "!!el && c.contains(el)")
+        check("tap point on the card name is inside the card (no interception)", hit is True)
 
-        # Control: the page-0 moment's rail Watch works through the feed.
-        tap_rail(CTL_PLAY_ID)
-        panels = open_panels()
-        check("control: rail Watch opens the page-0 TD clip",
+        # Grow, sampled mid-flight: tap the NAME of the off-page card.
+        widths = page.evaluate(
+            "(id) => new Promise(function(res){"
+            "  var card = document.querySelector('[data-rail-card=\"' + id + '\"]');"
+            "  var name = card.querySelector('.rz-moment-name');"
+            "  var out = [card.getBoundingClientRect().width];"
+            "  var t0 = performance.now();"
+            "  name.dispatchEvent(new MouseEvent('click', {bubbles: true}));"
+            "  var iv = setInterval(function(){"
+            "    out.push(card.getBoundingClientRect().width);"
+            "    if (performance.now() - t0 > 700) { clearInterval(iv); res(out); }"
+            "  }, 40);"
+            "})", RAIL_PLAY_ID)
+        compact_w, full_w = widths[0], widths[-1]
+        rail_w = page.evaluate(
+            "document.querySelector('.rz-moments-rail').getBoundingClientRect().width")
+        monotonic = all(widths[i + 1] >= widths[i] - 0.6 for i in range(len(widths) - 1))
+        intermediates = [w for w in widths if compact_w + 2 < w < full_w - 2]
+        check("grow animates monotonically (no jump)", monotonic,
+              f"widths={[round(w) for w in widths]}")
+        check("grow passes through intermediate widths", len(intermediates) >= 2,
+              f"widths={[round(w) for w in widths]}")
+        check("grown card takes the rail's full width",
+              abs(full_w - rail_w) <= 3, f"card={full_w} rail={rail_w}")
+        check("off-page card grew in place", grown_key(page) == RAIL_PLAY_ID)
+        panels = open_panels(page)
+        check("clip opens INSIDE the grown card with a video",
+              len(panels) == 1 and panels[0]["key"] == RAIL_PLAY_ID
+              and panels[0]["video"] and panels[0]["inCard"],
+              f"panels={panels}")
+        aspect = page.evaluate(
+            "var v = document.querySelector('.rz-moment-card.is-grown .rz-clip-video');"
+            "var r = v.getBoundingClientRect(); r.width / r.height")
+        check("grown video is 16:9", abs(aspect - 16 / 9) < 0.06, f"aspect={aspect:.3f}")
+        away = page.evaluate(
+            "var rail = document.querySelector('.rz-moments-rail');"
+            "var c = document.querySelector('[data-rail-card=\"" + CTL_PLAY_ID + "\"]');"
+            "var rr = rail.getBoundingClientRect();"
+            "var cr = c.getBoundingClientRect();"
+            "cr.right <= rr.left + 1 || cr.left >= rr.right - 1")
+        check("sibling card slid out of view while one is grown", away is True)
+        x_btn = page.query_selector(f'[data-rail-card="{RAIL_PLAY_ID}"] [data-rail-close]')
+        check("grown card shows its X button", x_btn is not None and x_btn.is_visible())
+
+        # X closes: card shrinks back, siblings return, panel empties.
+        page.tap(f'[data-rail-card="{RAIL_PLAY_ID}"] [data-rail-close]')
+        page.wait_for_timeout(700)
+        check("X closes the grown card", grown_key(page) is None and open_panels(page) == [])
+        back_w = page.evaluate(
+            "document.querySelector('[data-rail-card=\"" + RAIL_PLAY_ID + "\"]')"
+            ".getBoundingClientRect().width")
+        check("card is compact again after close", abs(back_w - compact_w) <= 3,
+              f"width={back_w} compact={compact_w}")
+
+        # Tap the POSTER of the control card: grows that one instead.
+        page.tap(f'[data-rail-card="{CTL_PLAY_ID}"] .rz-moment-media')
+        page.wait_for_timeout(650)
+        check("poster tap grows the control card", grown_key(page) == CTL_PLAY_ID)
+        panels = open_panels(page)
+        check("control clip opens inside its card",
               len(panels) == 1 and panels[0]["key"] == CTL_PLAY_ID and panels[0]["video"],
               f"panels={panels}")
-        tap_rail(CTL_PLAY_ID)
-        check("control: second tap closes it", open_panels() == [])
 
-        # The bug: the off-page moment's rail Watch.
-        clicks_before = page.evaluate("window.__railClicks")
-        tap_rail(RAIL_PLAY_ID)
-        clicks_after = page.evaluate("window.__railClicks")
-        check("bug case: the tap registers as a click on the button",
-              clicks_after > clicks_before,
-              f"clicks {clicks_before} -> {clicks_after}")
-        panels = open_panels()
-        check("bug case: rail Watch opens the off-page TD clip",
+        # Switch: tap the other card -- shrink-then-grow, one clip open.
+        page.tap(f'[data-rail-card="{RAIL_PLAY_ID}"] .rz-moment-name')
+        page.wait_for_timeout(1250)
+        check("switch grows the newly tapped card", grown_key(page) == RAIL_PLAY_ID)
+        panels = open_panels(page)
+        check("switch leaves exactly one open clip (the new one)",
               len(panels) == 1 and panels[0]["key"] == RAIL_PLAY_ID and panels[0]["video"],
               f"panels={panels}")
 
-        # One clip at a time across rail + feed: open the control TD from
-        # its FEED card, then open the rail TD from the rail.
+        # Exclusivity vs the feed, both directions.
         page.tap(f'[data-clip-toggle="{CTL_PLAY_ID}"]')
-        page.wait_for_timeout(450)
-        panels = open_panels()
-        check("feed Watch opens the control TD clip",
-              len(panels) == 1 and panels[0]["key"] == CTL_PLAY_ID, f"panels={panels}")
-        tap_rail(RAIL_PLAY_ID)
-        panels = open_panels()
-        check("rail Watch supersedes the feed clip (one open at a time)",
-              len(panels) == 1 and panels[0]["key"] == RAIL_PLAY_ID and panels[0]["video"],
+        page.wait_for_timeout(700)
+        panels = open_panels(page)
+        check("feed Watch supersedes the grown rail card",
+              len(panels) == 1 and panels[0]["key"] == CTL_PLAY_ID
+              and not panels[0]["inCard"] and grown_key(page) is None,
               f"panels={panels}")
-        tap_rail(RAIL_PLAY_ID)
-        check("rail Watch toggles its own clip closed", open_panels() == [])
+        page.tap(f'[data-rail-card="{RAIL_PLAY_ID}"] .rz-moment-name')
+        page.wait_for_timeout(650)
+        panels = open_panels(page)
+        check("rail card supersedes the feed clip (one open at a time)",
+              len(panels) == 1 and panels[0]["key"] == RAIL_PLAY_ID and panels[0]["inCard"],
+              f"panels={panels}")
 
-        # Re-render survival: a poll applies fixture B (one new play) and
-        # the page re-renders; the rebuilt rail's buttons must still work.
-        old_btn = page.query_selector(f'[data-rail-clip="{RAIL_PLAY_ID}"]')
+        # Poll survival: polls patch in place and never rebuild the
+        # rail, so the grown card and its live clip ride through.
         page.tap("#rz-timer")
-        page.wait_for_timeout(1200)
-        new_btn = page.query_selector(f'[data-rail-clip="{RAIL_PLAY_ID}"]')
-        check("poll re-render rebuilt the rail", new_btn is not None and new_btn != old_btn)
-        tap_rail(RAIL_PLAY_ID)
-        panels = open_panels()
-        check("rail Watch still opens the clip after a re-render",
-              len(panels) == 1 and panels[0]["key"] == RAIL_PLAY_ID and panels[0]["video"],
+        page.wait_for_timeout(1500)
+        check("grown card survives a poll with its clip open",
+              grown_key(page) == RAIL_PLAY_ID and len(open_panels(page)) == 1,
+              f"grown={grown_key(page)} panels={open_panels(page)}")
+
+        # Full re-render survival: a filter toggle rebuilds the page;
+        # the rebuilt rail restores the grown card from the open key.
+        page.evaluate(
+            "document.querySelector('.rz-moment-card.is-grown')"
+            ".setAttribute('data-testmark', 'old')")
+        page.tap("#rz-bigplays-btn")
+        page.wait_for_timeout(900)
+        restored = page.evaluate(
+            "var c = document.querySelector('.rz-moment-card.is-grown');"
+            "c ? { key: c.getAttribute('data-rail-card'),"
+            "      rebuilt: !c.hasAttribute('data-testmark') } : null")
+        check("full re-render restores the grown card by key",
+              restored is not None and restored["key"] == RAIL_PLAY_ID and restored["rebuilt"],
+              f"restored={restored}")
+        panels = open_panels(page)
+        check("restored grown card's clip is open again",
+              len(panels) == 1 and panels[0]["key"] == RAIL_PLAY_ID and panels[0]["inCard"],
               f"panels={panels}")
+        page.tap(f'[data-rail-card="{RAIL_PLAY_ID}"] [data-rail-close]')
+        page.wait_for_timeout(700)
+        check("rebuilt card's X still closes it",
+              grown_key(page) is None and open_panels(page) == [])
 
         check("no page errors", errors == [], "; ".join(errors[:3]))
+        ctx.close()
+
+        # ── Reduced motion: everything lands instantly ───────────────
+        ctx2, page2, errors2 = make_page(reduced=True)
+        page2.tap(f'[data-rail-card="{RAIL_PLAY_ID}"] .rz-moment-name')
+        page2.wait_for_timeout(200)
+        check("reduced motion: card grows instantly",
+              grown_key(page2) == RAIL_PLAY_ID)
+        w2 = page2.evaluate(
+            "var rail = document.querySelector('.rz-moments-rail');"
+            "var card = document.querySelector('.rz-moment-card.is-grown');"
+            "Math.abs(card.getBoundingClientRect().width"
+            "  - rail.getBoundingClientRect().width) <= 3")
+        check("reduced motion: grown width is already final", w2 is True)
+        panels = open_panels(page2)
+        check("reduced motion: clip still opens and plays in the card",
+              len(panels) == 1 and panels[0]["video"] and panels[0]["inCard"],
+              f"panels={panels}")
+        page2.tap(f'[data-rail-card="{RAIL_PLAY_ID}"] [data-rail-close]')
+        page2.wait_for_timeout(200)
+        check("reduced motion: close is instant too",
+              grown_key(page2) is None and open_panels(page2) == [])
+        check("no page errors (reduced motion)", errors2 == [], "; ".join(errors2[:3]))
+        ctx2.close()
+
         browser.close()
 
     print("\n%d failure(s)" % len(failures))
