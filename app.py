@@ -39599,15 +39599,34 @@ def api_playoff_scenarios():
         # card-less render. Genuine absences (no roster_id, bye week)
         # leave it False so the card simply stays hidden.
         your_matchup_pending = False
+        # Live status for every game in the first remaining week (the
+        # Root For games and the viewer's own game share that week):
+        # per-game actual score, live projected total, pre/in/final
+        # status and not-yet-played starter counts, all from the same
+        # live matchup bundle via build_league_scores_list -- the
+        # league-scores machinery, so the proj-to-live transition is
+        # identical everywhere. Empty when no viewer roster is named
+        # or the bundle is unavailable; games_live_pending flags the
+        # cold-bundle case so the client polls instead of locking in
+        # a status-less render.
+        games_live = []
+        games_live_pending = False
         viewer_rid_s = (request.args.get("roster_id") or "").strip()
         if viewer_rid_s:
             try:
                 viewer_rid_i = int(viewer_rid_s)
             except ValueError:
                 viewer_rid_i = None
+            _matchups_by_week = state.get("matchups") or {}
+            # live_week: the first remaining week, whether or not the
+            # viewer plays in it (a bye week still has root-for games).
+            live_week = None
+            for _wk in sorted(_matchups_by_week.keys(), key=lambda k: int(k)):
+                if _matchups_by_week[_wk]:
+                    live_week = int(_wk)
+                    break
             mu_week = None
             if viewer_rid_i is not None:
-                _matchups_by_week = state.get("matchups") or {}
                 for _wk in sorted(_matchups_by_week.keys(), key=lambda k: int(k)):
                     _found = False
                     for _pair in _matchups_by_week[_wk] or []:
@@ -39619,16 +39638,71 @@ def api_playoff_scenarios():
                             break
                     if _found:
                         break
+            # One bundle fetch per week, shared by games_live and
+            # your_matchup (they coincide unless the viewer has a bye
+            # in live_week and plays in a later week).
+            _bundles: dict = {}
+
+            def _get_bundle(_wk):
+                if _wk is None:
+                    return None
+                if _wk not in _bundles:
+                    try:
+                        from routes.user_pages_bp import _build_live_matchups
+                        _bundles[_wk] = _build_live_matchups(
+                            platform,
+                            ctx.get("resolved_league_id") or league_id,
+                            season, _wk, ctx,
+                        )
+                    except Exception:
+                        _bundles[_wk] = None
+                return _bundles[_wk]
+
+            if live_week is not None:
+                _live_bundle = _get_bundle(live_week)
+                if _live_bundle is None:
+                    games_live_pending = True
+                else:
+                    try:
+                        from dashboard_services.matchups import (
+                            STATUS_NOT_STARTED, build_league_scores_list,
+                        )
+                        _lm, _sbp, _pm = _live_bundle
+                        games_live = build_league_scores_list(
+                            _lm, viewer_rid_i, _sbp, _pm)
+                        _team_by_rid = {}
+                        for _m in _lm or []:
+                            for _k in ("left", "right"):
+                                _t = _m.get(_k) or {}
+                                if _t.get("roster_id") is not None:
+                                    _team_by_rid[str(_t.get("roster_id"))] = _t
+
+                        def _yet_count(_team):
+                            _cnt = 0
+                            for _p in (_team.get("starters") or []):
+                                if not _p:
+                                    continue
+                                _pid = _p.get("pid") if isinstance(_p, dict) else _p
+                                if _pid is None:
+                                    continue
+                                _st = _sbp.get(_pid) or _sbp.get(str(_pid)) \
+                                    or STATUS_NOT_STARTED
+                                if _st == STATUS_NOT_STARTED:
+                                    _cnt += 1
+                            return _cnt
+
+                        for _entry in games_live:
+                            for _k in ("left", "right"):
+                                _side = _entry.get(_k)
+                                if not _side:
+                                    continue
+                                _team = _team_by_rid.get(
+                                    str(_side.get("roster_id") or ""))
+                                _side["yet"] = _yet_count(_team) if _team else 0
+                    except Exception:
+                        games_live = []
             if mu_week is not None:
-                try:
-                    from routes.user_pages_bp import _build_live_matchups
-                    _live = _build_live_matchups(
-                        platform,
-                        ctx.get("resolved_league_id") or league_id,
-                        season, mu_week, ctx,
-                    )
-                except Exception:
-                    _live = None
+                _live = _get_bundle(mu_week)
                 if _live is None:
                     your_matchup_pending = True
                 if _live is not None:
@@ -39670,6 +39744,31 @@ def api_playoff_scenarios():
                                 "opp_proj": round(float(_opp_proj or 0.0), 1),
                                 "viewer_win_prob": _wp,
                             }
+                            # Live transition fields from this game's
+                            # games_live entry (same bundle, same week):
+                            # actual scores, pre/in/final status and
+                            # not-yet-played counts. The proj fields
+                            # above stay exactly as they were (they are
+                            # already live projected totals). When the
+                            # pair is not in games_live (different week),
+                            # the fields are omitted and the client
+                            # renders the card as before.
+                            for _e in games_live:
+                                _el = _e.get("left") or {}
+                                _er = _e.get("right") or {}
+                                _eids = {str(_el.get("roster_id") or ""),
+                                         str(_er.get("roster_id") or "")}
+                                if str(viewer_rid_i) in _eids \
+                                        and str(_opp_rid_i) in _eids:
+                                    _vs = _el if str(_el.get("roster_id") or "") \
+                                        == str(viewer_rid_i) else _er
+                                    _os = _er if _vs is _el else _el
+                                    your_matchup["viewer_score"] = _vs.get("score")
+                                    your_matchup["opp_score"] = _os.get("score")
+                                    your_matchup["status"] = _e.get("status")
+                                    your_matchup["viewer_yet"] = _vs.get("yet", 0)
+                                    your_matchup["opp_yet"] = _os.get("yet", 0)
+                                    break
                         except Exception:
                             your_matchup = None
 
@@ -39686,6 +39785,8 @@ def api_playoff_scenarios():
             "teams": teams_out,
             "your_matchup": your_matchup,
             "your_matchup_pending": your_matchup_pending,
+            "games_live": games_live,
+            "games_live_pending": games_live_pending,
         })
     except Exception as exc:
         logger.exception("[playoff-scenarios] %s", exc)

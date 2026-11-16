@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-16",
+        "tag": "update",
+        "text": "Playoff Path root-for games and your matchup now show live scores as games kick off: projections give way to live scores and live projected totals while games are in progress, final scores when they end, and the tab refreshes on its own while any game you are tracking is live.",
+        "link": "/standings"
+    },
+    {
         "date": "2026-11-15",
         "tag": "update",
         "text": "ScoreZone now feels live: scores count up and flash in the scoring team's colors, plays land with a pop instead of swapping in, the field board deepens as a drive pushes toward the end zone, close fourth-quarter games stand out while blowouts recede, a condensed score bar sticks while you scroll the feed, the biggest plays line up in a Moments rail, and ScoreZone eases into a dark broadcast view while games are live. Light and dark now cross-fade across the whole site instead of snapping.",

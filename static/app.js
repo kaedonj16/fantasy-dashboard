@@ -7421,6 +7421,7 @@ function initPlayoffPath(root = document) {
         fetch(`/api/playoff-scenarios${scenQ}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
       ]).then(([oddsData, scen]) => {
         const finishPath = () => {
+          if (panel._pathLiveTimer) { clearTimeout(panel._pathLiveTimer); panel._pathLiveTimer = null; }
           if (!oddsData || oddsData.error || !oddsData.odds || !oddsData.odds.length
               || oddsData.is_complete || !scen || !scen.show) {
             // Exact gate says no Path for this league right now: remove the
@@ -7437,6 +7438,50 @@ function initPlayoffPath(root = document) {
           panel.innerHTML = _renderPlayoffPath(oddsData, scen);
           normalizeClickableAccessibility(panel);
           fadeInCard(panel);
+          _startPathLivePoll();
+        };
+        // Live refresh: while any game this week is in progress (the
+        // viewer's own matchup or any root-for game), re-ask for the
+        // scenarios payload every 60s and re-render in place so scores
+        // move from projections to live to final without a reload.
+        // Stops when nothing is live anymore, when the panel leaves
+        // the DOM, or after 240 polls. The active sub-tab is restored
+        // after each re-render and loadedAt moves with each refresh so
+        // the 5-minute TTL never fights the poll.
+        const _pathHasLive = s => !!s && (
+          (s.your_matchup && s.your_matchup.status === 'in')
+          || (Array.isArray(s.games_live) && s.games_live.some(e => e && e.status === 'in')));
+        const _startPathLivePoll = () => {
+          if (panel._pathLiveTimer) { clearTimeout(panel._pathLiveTimer); panel._pathLiveTimer = null; }
+          if (!_pathHasLive(scen)) return;
+          let _livePolls = 0;
+          const _pollLive = () => {
+            panel._pathLiveTimer = null;
+            if (!document.body.contains(panel)) return;
+            _livePolls += 1;
+            fetch(`/api/playoff-scenarios${scenQ}`).then(r => (r.ok ? r.json() : null)).catch(() => null)
+              .then(s2 => {
+                if (!document.body.contains(panel)) return;
+                if (s2 && s2.show) {
+                  const activePanel = panel.querySelector('.path-subpanel.active');
+                  const activeKey = activePanel ? activePanel.dataset.pathTab : null;
+                  scen = s2;
+                  panel.innerHTML = _renderPlayoffPath(oddsData, scen);
+                  normalizeClickableAccessibility(panel);
+                  if (activeKey && activeKey !== 'overview') {
+                    const btns = panel.querySelectorAll('.path-subtab-btn');
+                    btns.forEach(b => {
+                      if ((b.getAttribute('onclick') || '').includes(`'${activeKey}'`)) switchPathTab(b, activeKey);
+                    });
+                  }
+                  panel.dataset.loadedAt = String(Date.now());
+                }
+                if (_pathHasLive(scen) && _livePolls < 240) {
+                  panel._pathLiveTimer = setTimeout(_pollLive, 60000);
+                }
+              });
+          };
+          panel._pathLiveTimer = setTimeout(_pollLive, 60000);
         };
         // Your Matchup pending: the viewer has a game this week but the
         // live matchup bundle behind the card is still building (the
@@ -7445,7 +7490,8 @@ function initPlayoffPath(root = document) {
         // payload every 3s, bounded, and render with whichever response
         // first carries the card; if the bundle never lands, render
         // without the card rather than inventing one.
-        if (scen && scen.show && scen.your_matchup_pending && !scen.your_matchup) {
+        if (scen && scen.show && ((scen.your_matchup_pending && !scen.your_matchup)
+            || (scen.games_live_pending && !(scen.games_live && scen.games_live.length)))) {
           let _muAttempts = 0;
           const _pollScen = () => {
             _muAttempts += 1;
@@ -7453,7 +7499,9 @@ function initPlayoffPath(root = document) {
               .then(s2 => {
                 if (!document.body.contains(panel)) return;
                 if (s2 && s2.show) scen = s2;
-                if (!scen.your_matchup_pending || scen.your_matchup || _muAttempts >= 5) {
+                const _muDone = (!scen.your_matchup_pending || scen.your_matchup)
+                  && (!scen.games_live_pending || (scen.games_live && scen.games_live.length));
+                if (_muDone || _muAttempts >= 5) {
                   finishPath();
                   return;
                 }
@@ -7574,6 +7622,26 @@ function _renderPlayoffPath(data, scen) {
     const o = byRid[String(rid)];
     return o ? `${o.wins}-${o.losses}${o.ties ? '-' + o.ties : ''}` : '';
   };
+
+  // Live game status for this week's games (root-for rows + the
+  // matchup card), from the scenarios payload's games_live: actual
+  // scores, live projected totals and pre/in/final status per game,
+  // keyed by the roster pair in either order. A game with no entry
+  // renders nothing extra; no placeholders, no invented numbers.
+  const liveByPair = {};
+  (Array.isArray(scen.games_live) ? scen.games_live : []).forEach(e => {
+    if (!e || !e.left || !e.right) return;
+    const k = [String(e.left.roster_id), String(e.right.roster_id)].sort().join(':');
+    liveByPair[k] = e;
+  });
+  const _liveFor = (a, b) => {
+    const e = liveByPair[[String(a), String(b)].sort().join(':')];
+    if (!e) return null;
+    const aSide = String(e.left.roster_id) === String(a) ? e.left : e.right;
+    const bSide = aSide === e.left ? e.right : e.left;
+    return { entry: e, aSide, bSide };
+  };
+  const _liveNum = v => (typeof v === 'number' && isFinite(v)) ? v.toFixed(1) : null;
 
   const week = (odds[0] && odds[0].impact_week) ||
     ((scen.teams || []).map(t => t.next_game && t.next_game.week).filter(Boolean)[0]) || null;
@@ -7801,23 +7869,44 @@ function _renderPlayoffPath(data, scen) {
         && (oppScen.status === 'clinched' || oppScen.status === 'clinched_bye');
       const seedTxt = rid => seedOf[String(rid)] ? ` · Seed ${seedOf[String(rid)]}` : '';
       const wp = (typeof mu.viewer_win_prob === 'number') ? mu.viewer_win_prob : null;
-      const wpHtml = wp != null
+      // Proj-to-live transition: pre-game the card is exactly the
+      // projection card it has always been. Once the game is live the
+      // big number becomes the actual score with the live projected
+      // total underneath; once final, the big number is the final
+      // score, there are no projection lines and the (decided) win
+      // probability bar goes away. Status/scores arrive together from
+      // the server; a status without scores falls back to pre-game.
+      const muStatus = (mu.status === 'in' || mu.status === 'final') ? mu.status : 'pre';
+      const muHasScores = typeof mu.viewer_score === 'number' && typeof mu.opp_score === 'number';
+      const muLive = muStatus !== 'pre' && muHasScores;
+      const muFinal = muLive && muStatus === 'final';
+      const muScoreHtml = (score, proj, yet) => {
+        if (!muLive) return `<div class="path-mu-proj">Proj <b>${proj.toFixed(1)}</b></div>`;
+        if (muFinal) return `<div class="path-mu-proj"><b>${score.toFixed(1)}</b></div>`;
+        const yetHtml = yet > 0 ? `<div class="path-mu-yet">${yet} left</div>` : '';
+        return `<div class="path-mu-proj"><b>${score.toFixed(1)}</b>` +
+          `<div class="path-mu-liveproj">Live proj ${proj.toFixed(1)}</div>${yetHtml}</div>`;
+      };
+      const muChipHtml = muFinal
+        ? '<span class="path-final-chip">Final</span>'
+        : muLive ? '<span class="path-live-chip"><span class="path-live-dot"></span>Live</span>' : '';
+      const wpHtml = (wp != null && !muFinal)
         ? `<div class="path-mu-prob"><div class="path-mu-prob-label">Win probability</div>` +
           `<div class="path-mu-split" role="img" aria-label="Win probability: ${escapeHtml(viewerOdds.team_name)} ${Math.round(wp)} percent, ${escapeHtml(oppName)} ${Math.round(100 - wp)} percent">` +
           `<div class="path-mu-seg path-mu-seg-you" style="width:${Math.max(0, Math.min(100, wp))}%">${Math.round(wp)}%</div>` +
           `<div class="path-mu-seg path-mu-seg-opp">${Math.round(100 - wp)}%</div></div></div>`
         : '';
       matchupHtml = `<div class="path-mu">
-        <div class="path-mu-head"><h4>Your Matchup</h4><span class="path-wk-chip">Week ${mu.week}</span></div>
+        <div class="path-mu-head"><h4>Your Matchup</h4>${muChipHtml}<span class="path-wk-chip">Week ${mu.week}</span></div>
         <div class="path-mu-row">
           <div class="path-mu-team"><div class="path-mu-name">${escapeHtml(viewerOdds.team_name)}<span class="path-you-tag">YOU</span></div>
           <div class="path-mu-sub">${escapeHtml(recOf(viewerRid))}${seedTxt(viewerRid)}</div></div>
-          <div class="path-mu-proj">Proj <b>${mu.viewer_proj.toFixed(1)}</b></div>
+          ${muScoreHtml(mu.viewer_score, mu.viewer_proj, mu.viewer_yet)}
         </div>
         <div class="path-mu-row">
           <div class="path-mu-team"><div class="path-mu-name">${escapeHtml(oppName)}</div>
           <div class="path-mu-sub">${escapeHtml(recOf(mu.opp_roster_id))}${seedTxt(mu.opp_roster_id)}${oppClinched ? ' · <span class="path-mu-clinched">Clinched</span>' : ''}</div></div>
-          <div class="path-mu-proj">Proj <b>${mu.opp_proj.toFixed(1)}</b></div>
+          ${muScoreHtml(mu.opp_score, mu.opp_proj, mu.opp_yet)}
         </div>
         ${wpHtml}
         ${groups ? `<div class="path-mu-bars">${groups}</div>` : ''}
@@ -7854,6 +7943,37 @@ function _renderPlayoffPath(data, scen) {
         ? `<div class="path-root-extra">${r.extras.map(e =>
             `${e.label} ${e.d > 0 ? '+' : ''}${e.d.toFixed(1)}%`).join(' · ')}</div>`
         : '';
+      // Live line: this game's status from games_live, aligned to
+      // the row's A/B. Pre-game shows the projected totals; live
+      // shows the actual score, the live projected finish and how
+      // many starters are yet to play per side; final shows the
+      // final score and, when this row had a rooted-for side,
+      // whether that side actually won. No entry, no line.
+      let liveHtml = '';
+      const lv = _liveFor(r.a, r.b);
+      if (lv) {
+        const aScore = _liveNum(lv.aSide.score), bScore = _liveNum(lv.bSide.score);
+        const aProj = _liveNum(lv.aSide.proj), bProj = _liveNum(lv.bSide.proj);
+        if (lv.entry.status === 'in' && aScore != null && bScore != null) {
+          const yetParts = [];
+          if (lv.aSide.yet > 0) yetParts.push(`${escapeHtml(nameOf(r.a))} ${lv.aSide.yet} left`);
+          if (lv.bSide.yet > 0) yetParts.push(`${escapeHtml(nameOf(r.b))} ${lv.bSide.yet} left`);
+          liveHtml = `<div class="path-live-line"><span class="path-live-dot"></span><span class="path-live-tag">Live</span>` +
+            `<span>${aScore} – ${bScore}</span>` +
+            (aProj != null && bProj != null ? `<span>· Proj ${aProj} – ${bProj}</span>` : '') +
+            (yetParts.length ? `<span>· ${yetParts.join(' · ')}</span>` : '') + `</div>`;
+        } else if (lv.entry.status === 'final' && aScore != null && bScore != null) {
+          let suffix = '';
+          if (r.delta >= 0.05 && lv.aSide.score !== lv.bSide.score) {
+            const winnerRid = lv.aSide.score > lv.bSide.score ? r.a : r.b;
+            suffix = String(winnerRid) === String(r.favRid)
+              ? ' · Rooted team won' : ' · Rooted team lost';
+          }
+          liveHtml = `<div class="path-live-line"><span>Final ${aScore} – ${bScore}${suffix}</span></div>`;
+        } else if (aProj != null && bProj != null) {
+          liveHtml = `<div class="path-live-line"><span>Proj ${aProj} – ${bProj}</span></div>`;
+        }
+      }
       return `<div class="path-root-row${i % 2 ? ' path-alt' : ''}">
         <div class="path-root-rank">${i + 1}</div>
         <div class="path-root-main">
@@ -7861,6 +7981,7 @@ function _renderPlayoffPath(data, scen) {
           ${pill}
           <div class="path-root-why">${why}</div>
           ${extrasHtml}
+          ${liveHtml}
         </div>
       </div>`;
     }).join('');
