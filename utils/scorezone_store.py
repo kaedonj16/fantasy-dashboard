@@ -3,7 +3,7 @@
 One elected poller (see ``start_scorezone_store_thread``) fetches play-by-play
 upstream every ~15s while NFL games are live and upserts into ``redzone_plays``.
 Page loads (``_scorezone_collect``) and the TD notifier read from this table, so
-upstream ESPN/Tank01 is hit once per interval total -- never once per viewer
+upstream ESPN is hit once per interval total -- never once per viewer
 per worker.
 
 Plays are stored exactly as ``fetch_alt_pbp_plays`` returns them (pid-resolved
@@ -685,7 +685,7 @@ def prune_plays(retention_days: int = 7) -> int:
 def discover_live_games(current_week: int | None = None) -> list[dict]:
     """League-agnostic live/final game discovery via the ESPN scoreboard.
 
-    Returns [{game_id (Tank01 'YYYYMMDD_AWAY@HOME' form), live, final, week}].
+    Returns [{game_id ('YYYYMMDD_AWAY@HOME' form), live, final, week}].
 
     The scoreboard is fetched for the current NFL week AND the previous week
     explicitly (``?week=N``). Relying on the unparameterized scoreboard alone
@@ -849,7 +849,7 @@ def _in_nfl_game_window(now=None) -> bool:
 def poll_once() -> dict:
     """One store iteration: discover games, fetch PBP, upsert. Returns stats."""
     from dashboard_services.api import get_nfl_players, get_nfl_state
-    from utils.scorezone import fetch_alt_pbp_plays, parse_tank_game_id
+    from utils.scorezone import fetch_alt_pbp_plays, parse_game_id
 
     stats = {"games": 0, "plays": 0}
     try:
@@ -899,7 +899,7 @@ def poll_once() -> dict:
             if not _cutoff:
                 return False
             try:
-                _date_part = parse_tank_game_id(gid)[0]
+                _date_part = parse_game_id(gid)[0]
             except Exception:
                 return False
             return bool(_date_part) and _date_part >= _cutoff
@@ -912,7 +912,7 @@ def poll_once() -> dict:
     for g in live + finals:
         gid = g["game_id"]
         try:
-            _date_part, away, home = parse_tank_game_id(gid)
+            _date_part, away, home = parse_game_id(gid)
         except Exception:
             continue
         if not away or not home:

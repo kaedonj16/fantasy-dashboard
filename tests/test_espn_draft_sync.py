@@ -229,7 +229,7 @@ def test_dst_display_synthesizes_when_index_misses():
 
 
 def test_kicker_pos_pk_normalizes_to_k():
-    """Tank01 stores kickers as PK; starter slots are labeled K."""
+    """The players index stores kickers as PK; starter slots are labeled K."""
     detail = parse_espn_draft_detail(_detail(
         picks=[_pick(8, 4241457, 2, rnd=2, slot=4)],
         in_progress=True, drafted=False,

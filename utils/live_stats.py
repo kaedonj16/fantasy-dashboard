@@ -1,6 +1,6 @@
 """Consolidated utils module: live_stats.
 
-Live stats normalization and Tank01-backed week-stats builders (split from utils/utils.py).
+Live stats normalization and box-score-backed week-stats builders (split from utils/utils.py).
 """
 
 # --- imports carried over from utils/utils.py ---
@@ -27,10 +27,9 @@ from dashboard_services.api import (
     get_users,
     get_traded_picks,
     get_nfl_state,
-    get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
+    get_nfl_players, fetch_team_game_logs_html, fetch_espn_boxscore, get_matchups,
 )
 from dashboard_services.display_names import team_label_from_user, username_from_user
-from utils.projections import TANK01_API_HOST, TANK01_API_KEY, _headers
 
 # ======================================================================
 # From utils/utils.py (split per consolidation map)
@@ -51,13 +50,13 @@ def _safe_int(val: Any) -> int:
         return 0
 
 # --- utils/utils.py L2031 ---
-def build_tank_player_index(players_index: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def build_boxscore_player_index(players_index: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for sleeper_id, meta in players_index.items():
-        tank_id = meta.get("tankId")
-        if not tank_id:
+        box_id = meta.get("tankId")
+        if not box_id:
             continue
-        out[str(tank_id)] = {
+        out[str(box_id)] = {
             "name": meta.get("name", ""),
             "team": meta.get("team", ""),
             "pos": meta.get("pos", ""),
@@ -94,7 +93,7 @@ def _normalize_skill_stats(ps: Dict[str, Any]) -> Dict[str, int]:
 def _normalize_dst_stats(team_block: Dict[str, Any]) -> Dict[str, int]:
     """
     Normalize team DST block into DEF stats.
-    Example fields from Tank01:
+    Example fields from the box-score payload:
       {
         "teamAbv": "WSH",
         "defTD": "0",
@@ -117,7 +116,7 @@ def _normalize_dst_stats(team_block: Dict[str, Any]) -> Dict[str, int]:
     }
 
 # --- utils/utils.py L2097 ---
-def build_live_stats_for_game_from_tank(
+def build_live_stats_for_game_from_boxscore(
         boxscore: dict,
         players_index: dict,
 ) -> dict:
@@ -135,7 +134,7 @@ def build_live_stats_for_game_from_tank(
       }
     """
 
-    tank_idx = build_tank_player_index(players_index)
+    box_idx = build_boxscore_player_index(players_index)
 
     # Note DEF is included here
     out: dict[str, dict[str, dict[str, dict]]] = defaultdict(
@@ -145,8 +144,8 @@ def build_live_stats_for_game_from_tank(
     # --- Player-level offense stats ---
     player_stats = boxscore.get("playerStats") or {}
     if isinstance(player_stats, dict):
-        for tank_id, ps in player_stats.items():
-            meta = tank_idx.get(str(tank_id))
+        for box_id, ps in player_stats.items():
+            meta = box_idx.get(str(box_id))
             if not meta:
                 continue
 
@@ -197,10 +196,11 @@ def merge_live_stats_into_league_week_stats(
 
       league_week_stats[team][pos][player_name] = {stat_dict}
 
-    Marks each merged player line with ``_src`` (``"tank"`` by default) so
-    matchup rows can tell live-overlaid lines apart from Footballguys
-    prior-season leftovers. The Matchup page's live overlay passes
-    ``src="sleeper_live"`` for lines built from a fresh Sleeper stats fetch.
+    Marks each merged player line with ``_src`` (``"tank"`` by default, a
+    legacy stamp value kept because matchup rows gate on it) so matchup
+    rows can tell live-overlaid lines apart from Footballguys prior-season
+    leftovers. The Matchup page's live overlay passes ``src="sleeper_live"``
+    for lines built from a fresh Sleeper stats fetch.
     """
     for team, pos_map in live_stats.items():
         team_bucket = league_week_stats.setdefault(team, {})
@@ -220,7 +220,7 @@ def get_live_game_ids_for_today(
         today: date | None = None,
 ) -> List[str]:
     """
-    Return Tank01 gameIDs for games:
+    Return gameIDs for games:
       - with gameDate = today's date
       - AND whose epoch time indicates the game is currently within
         the live window (kickoff to +3 hours)
@@ -264,7 +264,7 @@ def get_started_game_ids_for_week(
         schedule: Iterable[Dict[str, Any]],
         now: datetime | None = None,
 ) -> List[str]:
-    """Tank01 gameIDs for games that have kicked off (live or final).
+    """GameIDs for games that have kicked off (live or final).
 
     Includes calendar-past rows even when ``gameStatusCode`` is still ``0``,
     so Thursday finals keep getting boxscore overlays after the live window.
@@ -288,8 +288,8 @@ def get_started_game_ids_for_week(
     return ids
 
 # --- utils/utils.py L2264 ---
-def tank01_status_confirms_started(game: Optional[dict]) -> bool:
-    """True when Tank01 itself reports live/final (not merely a past calendar day)."""
+def scoreboard_status_confirms_started(game: Optional[dict]) -> bool:
+    """True when the scoreboard itself reports live/final (not merely a past calendar day)."""
     if not game or not isinstance(game, dict):
         return False
     return str(game.get("gameStatusCode") or "").strip() in ("1", "2")
@@ -372,14 +372,14 @@ def box_score_line_is_trusted(
     """Whether a week_stats line is safe to show on matchup rows.
 
     Footballguys republishes last year's Wk N under the new season until their
-    logs flip. Calendar-past + Tank code ``0`` used to unlock those leftovers.
-    Trust live-overlaid lines (``_src=tank`` from a Tank01 box score,
-    ``_src=sleeper_live`` from a fresh Sleeper stats fetch) or an explicit
-    Tank live/final code.
+    logs flip. Calendar-past + scoreboard code ``0`` used to unlock those
+    leftovers. Trust live-overlaid lines (``_src=tank`` from an ESPN box
+    score, ``_src=sleeper_live`` from a fresh Sleeper stats fetch) or an
+    explicit scoreboard live/final code.
     """
     if player_stats and player_stats.get("_src") in ("tank", "sleeper_live"):
         return True
-    return tank01_status_confirms_started(game)
+    return scoreboard_status_confirms_started(game)
 
 # --- utils/utils.py L2357 ---
 def sleeper_week_stats_path(season: int, week: int) -> Optional[str]:
@@ -594,7 +594,7 @@ def build_and_save_week_stats_for_league(
 ) -> Path:
     """
     1) Build baseline week stats from your existing HTML pipeline.
-    2) Optionally overlay live Tank01 stats for any provided gameIDs.
+    2) Optionally overlay live ESPN box-score stats for any provided gameIDs.
     3) Overlay IDP stats from Sleeper using idp_players_index + sleeper_stats file.
     """
     from utils.data_cache import write_json
@@ -619,12 +619,13 @@ def build_and_save_week_stats_for_league(
     except Exception:
         schedule = []
 
-    # Calendar-past + Tank code 0 means the game is over but Footballguys may
-    # still be republishing last year. Only scrape FG once Tank itself reports
-    # live/final (or we already have explicit live IDs). Always Tank-overlay
-    # every started game so Thursday finals don't fall back to FG leftovers.
-    tank_confirmed = any(
-        tank01_status_confirms_started(g) for g in schedule if isinstance(g, dict)
+    # Calendar-past + scoreboard code 0 means the game is over but
+    # Footballguys may still be republishing last year. Only scrape FG once
+    # the scoreboard itself reports live/final (or we already have explicit
+    # live IDs). Always box-score-overlay every started game so Thursday
+    # finals don't fall back to FG leftovers.
+    scoreboard_confirmed = any(
+        scoreboard_status_confirms_started(g) for g in schedule if isinstance(g, dict)
     )
     started_ids = get_started_game_ids_for_week(schedule)
     overlay_ids: List[str] = []
@@ -636,7 +637,7 @@ def build_and_save_week_stats_for_league(
         seen_ids.add(key)
         overlay_ids.append(key)
 
-    allow_fg_scrape = tank_confirmed or bool(live_game_ids)
+    allow_fg_scrape = scoreboard_confirmed or bool(live_game_ids)
     if not allow_fg_scrape and not overlay_ids:
         out_path = path_week_stats(season, week)
         if schedule:
@@ -660,28 +661,28 @@ def build_and_save_week_stats_for_league(
                 print(f"[week_stats] Error for {orig_team_abv} week {week}: {e}")
                 league_week_stats[team_abv] = {}
     else:
-        # Preserve any prior Tank-backed lines while we refresh overlays.
+        # Preserve any prior box-score-backed lines while we refresh overlays.
         prior = load_week_stats(season, week)
         if isinstance(prior, dict):
             league_week_stats = prior
 
-    # ---------- Overlay Tank01 stats for started / live games ----------
+    # ---------- Overlay ESPN box-score stats for started / live games ----------
     if overlay_ids:
         # Load players_index once, reuse
         players_index = load_players_index()
 
         session = requests.Session()
 
-        print(f"[week_stats] fetching Tank01 box scores for {len(overlay_ids)} game(s)")
+        print(f"[week_stats] fetching ESPN box scores for {len(overlay_ids)} game(s)")
         for game_id in overlay_ids:
             try:
-                boxscore = fetch_tank_boxscore(game_id, session=session)
+                boxscore = fetch_espn_boxscore(game_id, session=session)
                 if not boxscore:
                     continue
-                live_stats = build_live_stats_for_game_from_tank(boxscore, players_index)
+                live_stats = build_live_stats_for_game_from_boxscore(boxscore, players_index)
                 merge_live_stats_into_league_week_stats(league_week_stats, live_stats)
             except Exception as e:
-                print(f"[week_stats] Tank01 error for {game_id}: {e}")
+                print(f"[week_stats] box score error for {game_id}: {e}")
 
     # ---------- Overlay IDP stats from Sleeper ----------
     overlay_idp_and_k_stats_from_sleeper(

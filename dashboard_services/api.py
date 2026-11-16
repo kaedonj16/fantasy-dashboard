@@ -11,13 +11,7 @@ from typing import Any, List, Dict, Optional, Union
 import requests
 from flask import g, has_app_context
 
-from dashboard_services.circuit_breaker import get_breaker
-
 logger = logging.getLogger(__name__)
-
-# Retained as an import-compatibility sentinel for older tests/extensions.  The
-# paid provider is permanently disabled; NFL game data is served by ESPN.
-_tank01_breaker = get_breaker("tank01-disabled", failure_threshold=1, reset_timeout=300)
 
 # ---- League context (request-scoped) ----
 # League config (scoring/roster/settings) is stored per-request via Flask's ``g``
@@ -67,9 +61,6 @@ SCORING_DEFAULTS = {
     "xpMade": 1,
     "xpMissed": -1,
 }
-TANK01_HOST = "disabled.invalid"
-BASE = "https://disabled.invalid"
-TANK01_API_KEY = None
 FOOTBALLGUYS_TEAM_LOG_URL = "https://www.footballguys.com/stats/game-logs/teams"
 LEAGUE_HISTORY_CACHE: dict[str, dict] = {}
 LEAGUE_HISTORY_TTL = 60 * 60 * 12  # 12 hours
@@ -90,10 +81,7 @@ def _prune_league_history_cache() -> None:
     for k, _v in ordered[:drop]:
         LEAGUE_HISTORY_CACHE.pop(k, None)
 
-# NOTE: Don't check TANK01_API_KEY at import time - only when actually calling Tank01 API
-# This allows model training and other scripts to import this module without requiring the key
-
-# Reuse a single Session and a single headers dict for all Tank01 calls
+# Reuse a single Session for all outbound calls
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -361,16 +349,6 @@ def ttl_cache_entry_counts() -> Dict[str, int]:
             name = item["name"]
             counts[name] = counts.get(name, 0) + len(item["cache"])
     return counts
-
-
-def _headers(rapidapi_key: str) -> Dict[str, str]:
-    return {
-        "x-rapidapi-host": TANK01_HOST,
-        "x-rapidapi-key": str(rapidapi_key),
-    }
-
-
-TANK01_HEADERS = _headers(TANK01_API_KEY) if TANK01_API_KEY else {}
 
 
 @ttl_cache(ttl=300)
@@ -763,10 +741,6 @@ def get_sleeper_user_leagues(user_id: str, season: int, sport: str = "nfl") -> l
     return data if isinstance(data, list) else []
 
 
-class Tank01Error(Exception):
-    pass
-
-
 @ttl_cache(ttl=300)
 def get_nfl_scores_for_date(game_date: str, timeout: int = 20) -> dict:
     """
@@ -778,7 +752,8 @@ def get_nfl_scores_for_date(game_date: str, timeout: int = 20) -> dict:
         generous 20s default; live surfaces (ScoreZone) pass a shorter value so
         the whole server response stays inside the client's abort deadline
         rather than the client giving up on a request the server would answer.
-    Returns: body dict from Tank01 (gameID -> gameDict)
+    Returns: body dict of games (gameID -> gameDict) in the shared
+        scoreboard shape.
     """
     from dashboard_services.nfl_game_data import scoreboard_for_date
     try:
@@ -789,22 +764,19 @@ def get_nfl_scores_for_date(game_date: str, timeout: int = 20) -> dict:
 
 
 @ttl_cache(ttl=300)
-def fetch_tank_boxscore(
+def fetch_espn_boxscore(
     game_id: str,
     session: Optional[requests.Session] = None,
     *,
     play_by_play: bool = False,
 ) -> dict:
     """
-    Fetch a single live boxscore from Tank01 for game_id like '20251207_PIT@BAL'.
-    Returns the parsed JSON body.
+    Fetch a single boxscore from ESPN for game_id like '20251207_PIT@BAL',
+    via ``nfl_game_data.boxscore_for_game``. Returns the parsed body in the
+    shared box-score shape.
 
-    When ``play_by_play`` is True, Tank01 also returns the experimental
+    When ``play_by_play`` is True, the body also carries the
     ``allPlayByPlay`` list (per-play fantasy deltas + play text).
-
-    Tank01's RapidAPI discussion documents the flag as ``playByplay=true``
-    (lowercase ``p`` in ``play``); the playground uses ``playByPlay``. Send both
-    plus ``fantasyPoints=true`` so per-play deltas are more likely to populate.
     """
     del session
     from dashboard_services.nfl_game_data import boxscore_for_game
@@ -813,7 +785,7 @@ def fetch_tank_boxscore(
 
 def build_team_game_lookup(scores_body: dict) -> dict[str, dict]:
     """
-    Given Tank01 scores body (gameID -> game dict),
+    Given a scores body (gameID -> game dict) in the shared scoreboard shape,
     return a map: teamAbv -> game dict.
 
     Example:

@@ -4,7 +4,7 @@ The 2026 draft-week hub showed Jayden Daniels as 233 yds / 1 td / 11 car /
 68 yds — his 2025 Week 1 line — because:
 
 1. Footballguys still publishes last year's Wk 1 under the new season, and
-2. Sleeper stores Washington as WAS while Tank01 schedules use WSH, so
+2. Sleeper stores Washington as WAS while feed schedules use WSH, so
    build_status_by_pid marked Commanders as FINAL and the old
    "hide stats if not_started" gate never fired.
 """
@@ -34,7 +34,7 @@ def _scheduled_wsh_game(**extra):
     # Default kickoff a week out from *now* so the game normalizes to "pre"
     # regardless of the wall clock when the suite runs. A fixed past date (the
     # old 2026-09-13 / epoch) flipped to "in" once real time crossed kickoff,
-    # because normalize_game_status_from_tank01 lets the epoch window win over
+    # because normalize_game_status_from_scoreboard lets the epoch window win over
     # the scheduled code. Tests that need a live/final game override
     # gameStatusCode; date-logic tests override gameTime_epoch or pass `now`.
     future = datetime.now(timezone.utc) + timedelta(days=7)
@@ -78,7 +78,7 @@ def test_game_has_started_respects_scheduled_code_over_stale_epoch():
 
 
 def test_game_has_started_past_game_date_despite_scheduled_code():
-    """TNF finished yesterday but Tank01 still says Scheduled / code 0."""
+    """TNF finished yesterday but the scoreboard still says Scheduled / code 0."""
     now = datetime(2026, 9, 10, 16, 0, tzinfo=timezone.utc)
     finished = {
         "home": "SEA",
@@ -122,7 +122,7 @@ def test_build_status_by_pid_was_player_on_wsh_schedule():
 
 
 def test_build_status_looks_up_alias_when_map_not_preindexed():
-    # Raw map keyed only as Tank01 sent it (WSH), no build_games_by_team.
+    # Raw map keyed only as the feed sent it (WSH), no build_games_by_team.
     games = {"WSH": {"status": "pre", "game": _scheduled_wsh_game()}}
     statuses = build_status_by_pid(
         {"11566": {"team": "WAS"}},
@@ -281,7 +281,7 @@ def test_matchup_hides_footballguys_leftovers_when_tank_code_still_zero(monkeypa
 
 
 def test_matchup_rescues_completed_line_when_points_match_despite_lagging_code(monkeypatch):
-    """A truly completed game (calendar-past) whose Tank01 schedule cache still
+    """A truly completed game (calendar-past) whose schedule cache still
     reports code 0 must not hide a real, current-week line -- only genuine
     leftovers (implied points far from Sleeper's live/final total) get hidden."""
     mmod = _matchups()
@@ -533,7 +533,7 @@ def test_matchup_shows_def_box_score_instead_of_unavailable(monkeypatch):
 
 def test_matchup_trusts_past_week_line_despite_lagging_code(monkeypatch):
     """A strictly-past week (w < proj_week) is finalized: its own week snapshot
-    is authoritative, so a real box-score line shows even when Tank01's schedule
+    is authoritative, so a real box-score line shows even when the schedule
     cache still lags at code 0 and there is no live-points 'rescue' available."""
     mmod = _matchups()
     finished = {
@@ -724,7 +724,7 @@ def test_week_stats_builder_skips_fg_scrape_for_calendar_past_code_zero(monkeypa
         raise AssertionError("Footballguys scrape must not run on code-0 finals alone")
 
     monkeypatch.setattr(umod, "fetch_team_game_logs_html", _boom)
-    monkeypatch.setattr(umod, "fetch_tank_boxscore", lambda *_a, **_k: {})
+    monkeypatch.setattr(umod, "fetch_espn_boxscore", lambda *_a, **_k: {})
 
     path = umod.build_and_save_week_stats_for_league({"NE": {}, "SEA": {}}, 2026, 1)
     assert str(path) == str(out)

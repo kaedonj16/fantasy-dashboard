@@ -4903,7 +4903,7 @@ if (typeof window !== 'undefined') {
   }
   function slotEligible(slot, pos){
     pos = (pos || '').toUpperCase();
-    // players_index stores kickers as PK (Tank01); ESPN D/ST aliases vary.
+    // players_index stores kickers as PK; ESPN D/ST aliases vary.
     if (pos === 'PK') pos = 'K';
     if (pos === 'D/ST' || pos === 'DST' || pos === 'D-ST') pos = 'DEF';
     if (slot === 'FLEX') return pos === 'RB' || pos === 'WR' || pos === 'TE';

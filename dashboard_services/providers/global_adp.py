@@ -95,7 +95,7 @@ def espn_id_to_canonical() -> Dict[str, str]:
     Sleeper's ``espn_id`` is authoritative but *lags for recently-drafted players*
     -- the ESPN ids of the newest stars (e.g. Gibbs/Chase/Nacua) are simply absent
     from the feed, so a Sleeper-only crosswalk drops exactly the top of the ADP
-    board. The Tank01-derived players_index carries ``espnID`` for ~all players, so
+    board. The players_index carries ``espnID`` for ~all players, so
     we merge it in to fill those gaps. Sleeper wins wherever both cover an id."""
     if "espn" in _XWALK_CACHE:
         return _XWALK_CACHE["espn"]

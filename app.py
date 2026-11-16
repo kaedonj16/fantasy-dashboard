@@ -4701,7 +4701,7 @@ def _scorezone_cta_state(season, week, *, lead_minutes=60) -> str:
 
 
 def _parse_schedule_game_date(value) -> Optional[date]:
-    """Parse Tank01 ``gameDate`` (YYYYMMDD, int or str) to a date."""
+    """Parse a schedule ``gameDate`` (YYYYMMDD, int or str) to a date."""
     raw = str(value or "").strip()
     if len(raw) < 8 or not raw[:8].isdigit():
         return None
@@ -6905,7 +6905,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 "<span class='rz-nav-live'><span class='rz-nav-dot'></span>ScoreZone</span>"
                 if _rz_live else "ScoreZone"
             )
-            # Player IDs are canonicalized onto the Tank01 boxscore feed, so
+            # Player IDs are canonicalized onto the ESPN boxscore feed, so
             # ScoreZone works on Sleeper, ESPN, Yahoo, and MFL.
             _rz_item = (_rz_label, "page_scorezone", "scorezone", False)
             # The demo is linked from the ScoreZone page itself (idle header),
@@ -15253,7 +15253,7 @@ _WEEK1_KICKOFF_TTL = 6 * 3600  # 6h -- the schedule is static once published
 def _nfl_regular_season_kickoff_ms(season: int):
     """Epoch-ms kickoff of the FIRST NFL *regular-season* game of `season`.
 
-    Reads the app's schedule data (Tank01 Week 1, seasonType='reg') and takes the
+    Reads the app's schedule data (Week 1, seasonType='reg') and takes the
     earliest game start, so the countdown targets the real Week 1 opener -- never a
     preseason game. Falls back to the Thursday-after-Labor-Day opener (~8:20 PM
     ET) if the schedule isn't published yet. Cached (6h) and fail-soft.
@@ -19394,7 +19394,7 @@ def _start_scorezone_store() -> None:
 
     One 15s upstream PBP fetch per live game, shared by every viewer via the
     ``redzone_plays`` table -- replaces N viewers x M workers of duplicate
-    ESPN/Tank01 polling. The advisory lock in utils.scorezone_store elects a
+    ESPN polling. The advisory lock in utils.scorezone_store elects a
     single leader across gunicorn workers. Skipped under pytest so CI never
     spawns network/DB threads at import time.
 
@@ -19430,7 +19430,7 @@ def _scorezone_boxscore(
 ) -> dict:
     """Fetch the shared ESPN boxscore with a short UI-level TTL cache.
 
-    ``play_by_play=True`` asks Tank01 for ``allPlayByPlay`` and is cached under a
+    ``play_by_play=True`` asks the box-score feed for ``allPlayByPlay`` and is cached under a
     separate key so plain boxscore consumers stay light. Pass ``ttl`` to reuse a
     stable final-game PBP payload longer than the live poll interval.
     """
@@ -19443,8 +19443,8 @@ def _scorezone_boxscore(
     if hit and (now - hit[0]) < use_ttl:
         return hit[1]
     try:
-        from dashboard_services.api import fetch_tank_boxscore
-        box = fetch_tank_boxscore(
+        from dashboard_services.api import fetch_espn_boxscore
+        box = fetch_espn_boxscore(
             game_id, play_by_play=play_by_play, _cache_max_age=use_ttl,
         ) or {}
     except Exception:
@@ -19684,7 +19684,7 @@ def _scorezone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
             info["stat_line"] = line
             pts[pid] = _rz_demo_pts(line)
 
-    # Synthetic play-by-play so the demo exercises the same client path as live Tank01 PBP.
+    # Synthetic play-by-play so the demo exercises the same client path as live PBP.
     pbp_by_game = {}
     for pid, info in PLAYERS.items():
         gid = info.get("game_id") or ""
@@ -20103,15 +20103,16 @@ def _scorezone_collect(platform, league_id, season, week):
         all_pids.update(m.get("starters") or [])
     all_pids.discard("0")
 
-    # Game discovery fallback: Tank01's getNFLScoresOnly is keyed to *today* and
+    # Game discovery fallback: the primary scoreboard is keyed to *today* and
     # goes dark when the provider is down / rate limited, leaving every player
     # with no game_id/game_code -- which strips PBP entirely and drops the client
     # back to bulk "Scored X pts" cards. Fill any rostered team ESPN's free
-    # scoreboard knows about but Tank01 didn't return, so the existing ESPN PBP
-    # path (which needs a discovered live/final game) can actually run.
+    # scoreboard knows about but the primary scoreboard didn't return, so the
+    # existing ESPN PBP path (which needs a discovered live/final game) can
+    # actually run.
     #
-    # ESPN also covers a second gap: Tank01 sometimes keeps a game at status
-    # code "0" (pre) for minutes after kickoff. Tank01 *has* the team, so it is
+    # ESPN also covers a second gap: the primary scoreboard sometimes keeps a
+    # game at status code "0" (pre) for minutes after kickoff. It *has* the team, so it is
     # not "missing" -- but the stale pre code keeps the game out of the PBP path,
     # so the feed stays empty even though the game is live. Treat a rostered
     # team whose game shows pre/unknown after kickoff as a lag candidate and let
@@ -20147,7 +20148,7 @@ def _scorezone_collect(platform, league_id, season, week):
         for team in lag_teams:
             g = lookup_team_map(espn_lookup, team)
             if g and str(g.get("gameStatusCode") or "") in ("1", "2"):
-                team_game[team] = g  # stale Tank01 "pre" → ESPN's live/final
+                team_game[team] = g  # stale scoreboard "pre" → ESPN's live/final
 
     player_info = {}
     for pid in all_pids:
@@ -20174,9 +20175,9 @@ def _scorezone_collect(platform, league_id, season, week):
             "injury_status": inj,
         }
 
-    # Attach per-player stat lines from Tank01 boxscores. Tank01 is keyed by
-    # player name, and player_info now resolves names on every platform, so the
-    # live stat lines work league-wide regardless of provider.
+    # Attach per-player stat lines from ESPN boxscores. The box-score feed is
+    # keyed by player name, and player_info now resolves names on every
+    # platform, so the live stat lines work league-wide regardless of provider.
     # Also pull experimental play-by-play so the client can show real play text
     # (down/distance/clock) instead of inventing copy from box-score deltas.
     games_to_pids: dict = {}
@@ -20215,15 +20216,15 @@ def _scorezone_collect(platform, league_id, season, week):
         final = "2" in codes
         want_pbp = live or final
         store_hit = want_pbp and bool(store_plays.get(gid))
-        # Final PBP is stable; cache longer to avoid re-hitting Tank01 every poll.
+        # Final PBP is stable; cache longer to avoid re-hitting the feed every poll.
         # With a store hit we only need the plain boxscore (stat lines) -- the
-        # Tank01 experimental PBP payload is skipped entirely.
+        # experimental PBP payload is skipped entirely.
         box = _scorezone_boxscore(
             gid,
             play_by_play=(want_pbp and not store_hit),
             ttl=(None if live else 300.0) if want_pbp else None,
         )
-        # Tank01's playByPlay response is experimental and sometimes returns PBP
+        # The playByPlay response is experimental and sometimes returns PBP
         # without aggregate playerStats (or an empty body). Merge a plain
         # boxscore for scoreboard totals only -- Plays never invents boxscore /
         # "Scored X pts" fiction from that merge (client is PBP-lines-only for
@@ -20335,8 +20336,8 @@ def _scorezone_collect(platform, league_id, season, week):
                     }
                 
                 # ESPN is the primary PBP source: its structured records include
-                # a period and display clock on each play. Tank01 remains the
-                # first fallback and continues to supply aggregate box scores.
+                # a period and display clock on each play. The box-score PBP
+                # below is the first fallback and supplies aggregate box scores.
                 plays = _rz_fetch_alt_pbp_plays(
                     gid,
                     season=season,
@@ -20359,7 +20360,7 @@ def _scorezone_collect(platform, league_id, season, week):
                     )
                 # CRITICAL: Keep ALL resolved plays, including unrostered players
                 # Do NOT filter by roster ownership - that defeats the identity fix
-                # Tank01 PBP is experimental and often empty for finals. Fall
+                # Box-score PBP is experimental and often empty for finals. Fall
                 # back to Sleeper's booth lines so
                 # Plays still shows real play-by-play -- never boxscore fiction.
                 if not plays:
@@ -20381,13 +20382,13 @@ def _scorezone_collect(platform, league_id, season, week):
                             "[scorezone] alt pbp failed game=%s", gid, exc_info=True
                         )
                 # Always record the game key when we attempted PBP so the client
-                # can suppress bulk point dumps even if Tank01 returned no rows.
+                # can suppress bulk point dumps even if the feed returned no rows.
                 pbp_by_game[gid] = plays
             except Exception:
                 logger.debug("[scorezone] pbp parse failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
         elif want_pbp:
-            # No usable Tank01 box at all -- ESPN remains primary, with
+            # No usable box score at all -- ESPN remains primary, with
             # Sleeper as the final fallback.
             try:
                 alt = _rz_fetch_alt_pbp_plays(
@@ -21133,7 +21134,7 @@ def page_redzone_legacy(platform: str, season: int, league_id: str):
 def page_scorezone(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
     # League-scope ScoreZone works on every platform: providers canonicalize their
-    # player ids to Sleeper ids, so the live player feed + Tank01 stat lines
+    # player ids to Sleeper ids, so the live player feed + ESPN stat lines
     # resolve regardless of provider. Cross-league "My Leagues" uses the signed-in
     # account portfolio (all platforms) or a Sleeper viewer, and falls back to
     # this league when neither identity is available.
@@ -21324,7 +21325,7 @@ def api_scorezone_data(platform: str, season: int, league_id: str):
 def api_scorezone_player(platform: str, season: int, league_id: str):
     """Return ESPN NFL detail for a player; provider fantasy points stay authoritative."""
     from dashboard_services.api import (
-        get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
+        get_nfl_players, fetch_espn_boxscore, get_normalized_scoring_settings,
     )
     pid = request.args.get("pid", "")
     game_id = request.args.get("game_id", "")
@@ -21341,7 +21342,7 @@ def api_scorezone_player(platform: str, season: int, league_id: str):
         stats = {}
         box = {}
         if game_id:
-            box = fetch_tank_boxscore(game_id) or {}
+            box = fetch_espn_boxscore(game_id) or {}
             player_stats = box.get("playerStats") or {}
             if isinstance(player_stats, dict):
                 for _, ps in player_stats.items():
@@ -31484,7 +31485,7 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
             _kdef_proj = _sl_proj or {}
             _seen = {str(p.get("id")) for p in model_value_table if isinstance(p, dict)}
             _kdef = []
-            # Kickers: players_index stores them as pos="PK" (Tank01 convention), not "K".
+            # Kickers: players_index stores them as pos="PK", not "K".
             for _pid, _info in (_lpi() or {}).items():
                 _pos = str((_info or {}).get("pos") or "").upper()
                 if _pos in ("K", "PK") and str(_pid) not in _seen:
@@ -36723,7 +36724,7 @@ def api_player_team(player_id: str):
                 bye_week=int(bye_week) if bye_week not in (None, "") else None,
                 teams_index=teams_index,
                 include_postseason=(data_mode == "actual"),
-                # Scoreboard enrichment is best-effort; empty without Tank01.
+                # Scoreboard enrichment is best-effort; empty without the scoreboard.
                 enrich_scores=True,
             )
         except Exception:
@@ -36815,7 +36816,7 @@ def api_player_team(player_id: str):
 
 @app.route("/api/player-team-boxscore")
 def api_player_team_boxscore():
-    """Lazy Tank01 box score for a Team-tab schedule accordion expansion."""
+    """Lazy ESPN box score for a Team-tab schedule accordion expansion."""
     try:
         from utils.utils import load_relevant_index, load_teams_index
         from utils.player_team_schedule import get_shaped_boxscore
@@ -36837,8 +36838,8 @@ def api_player_team_boxscore():
             try:
                 return _scorezone_boxscore(gid) or {}
             except Exception:
-                from dashboard_services.api import fetch_tank_boxscore
-                return fetch_tank_boxscore(gid) or {}
+                from dashboard_services.api import fetch_espn_boxscore
+                return fetch_espn_boxscore(gid) or {}
 
         payload = get_shaped_boxscore(
             game_id,

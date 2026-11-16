@@ -32,7 +32,7 @@ from dashboard_services.api import (
     get_users,
     get_traded_picks,
     get_nfl_state,
-    get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
+    get_nfl_players, fetch_team_game_logs_html, fetch_espn_boxscore, get_matchups,
 )
 from dashboard_services.display_names import team_label_from_user, username_from_user
 
@@ -318,7 +318,7 @@ def _overlay_players_index(base: Optional[Dict], cache_slot: Dict[str, object]) 
 
 # --- utils/utils.py L448 ---
 def load_players_index() -> Optional[Dict]:
-    """Returns the cached player index (Sleeper ↔ Tank01/name/team) or None.
+    """Returns the cached player index (Sleeper ↔ provider-id/name/team) or None.
 
     Uses an mtime-guarded in-memory cache: this 1.1 MB file is read dozens of
     times per request, so re-parsing it each time is pure CPU waste. The
@@ -869,8 +869,8 @@ def get_week_schedule_cached(
         season_type: str = "reg",
 ) -> List[Dict]:
     """
-    fetch_fn should call Tank01 /getNFLSchedule (or your schedule endpoint)
-    and return a list[dict] of games.
+    fetch_fn should call the schedule endpoint and return a list[dict]
+    of games.
     """
     cache_path = get_or_refresh_schedule_path(season, week)
 

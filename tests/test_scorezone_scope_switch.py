@@ -23,12 +23,12 @@ def _sz() -> str:
     return (_ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
 
 
-def test_stale_tank01_pre_status_upgraded_by_espn():
+def test_stale_scoreboard_pre_status_upgraded_by_espn():
     """A rostered team stuck 'pre' after kickoff gets ESPN's real live/final
-    status, so Tank01 lag no longer leaves the Plays feed empty."""
+    status, so scoreboard lag no longer leaves the Plays feed empty."""
     app_src = (_ROOT / "app.py").read_text(encoding="utf-8")
     assert "lag_teams" in app_src
-    assert "stale Tank01" in app_src
+    assert "stale scoreboard" in app_src
     # Genuinely-upcoming games (kickoff in the future) must not trigger ESPN.
     assert "now_ts >= ep" in app_src
 
@@ -535,7 +535,7 @@ def test_app_wires_pbp_into_collect_and_demo():
     api = (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
     # Compatibility name remains, but the implementation delegates to the
     # shared ESPN event service and contains no paid request parameters.
-    assert 'fetch_tank_boxscore' in api
+    assert 'fetch_espn_boxscore' in api
     assert 'boxscore_for_game' in api
     assert 'params["playByPlay"]' not in api
     # Finals must still request PBP — otherwise Plays falls back to bulk
@@ -566,7 +566,7 @@ def test_app_falls_back_to_plain_boxscore_when_pbp_empty():
                                     app.index("pbp_by_game[gid] = plays") + 40]
     # Client is responsible for PBP-lines-only; server must not claim narrative diffs.
     assert "narrative diffs" not in app
-    # ESPN is primary; Tank01 and then Sleeper provide fallback coverage.
+    # ESPN is primary; the box-score feed and then Sleeper provide fallback coverage.
     assert "fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays" in app
     assert "_rz_fetch_alt_pbp_plays" in app
     assert 'providers=("espn",)' in app

@@ -175,7 +175,7 @@ def test_week_has_final_game_reads_schedule_status(monkeypatch):
     ]
     monkeypatch.setattr(uu, "load_week_schedule", lambda s, w: sched)
     # Neutralize kickoff-time inference so status comes from the code fallback.
-    monkeypatch.setattr(uu, "normalize_game_status_from_tank01",
+    monkeypatch.setattr(uu, "normalize_game_status_from_scoreboard",
                         lambda g, now=None: "post" if str(g.get("gameStatusCode")) == "2" else "pre")
     assert uu.finished_game_ids_for_week(2026, 5) == ["g1"]
     assert uu.week_has_final_game(2026, 5) is True

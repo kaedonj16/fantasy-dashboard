@@ -1,7 +1,7 @@
 """ScoreZone My Team / Opp roster rows: per-player cumulative stat line.
 
 Kaedon (2026-10-25): 'add the stat lines under each player on the my team/opp
-tabs'. The line comes from player_info[pid].stat_line -- the Tank01 box-score
+tabs'. The line comes from player_info[pid].stat_line -- the ESPN box-score
 cumulative the row's own points are computed from -- formatted per position in
 the same lowercase grammar as the feed's _cumeLine. A player with no stat_line
 (game not started) or a genuinely empty one renders NO line, never zeros.

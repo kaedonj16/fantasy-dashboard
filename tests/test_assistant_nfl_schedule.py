@@ -6,7 +6,7 @@ fantasy matchup's win probability and projections instead). The pack
 reads the site's own week-schedule store (utils.data_cache.
 load_week_schedule over the ESPN-fed week files), stubbed here at the
 evidence module's shim with both row shapes the store carries: the
-Tank01-shaped disk rows and the ESPN-normalized rows. Days resolve
+Legacy-shaped disk rows and the ESPN-normalized rows. Days resolve
 against a stubbed America/New_York clock (Thursday, October 15, 2026,
 the real Week 6 Thursday of the 2026 season).
 """
@@ -140,7 +140,7 @@ def _build(monkeypatch, entities, weeks=None, **bundle_over):
     return pack, used
 
 
-def test_tonight_pack_from_tank_rows(monkeypatch):
+def test_tonight_pack_from_legacy_rows(monkeypatch):
     pack, used = _build(monkeypatch, {"day_hint": "tonight"})
     assert pack["available"] is True
     assert pack["scope"] == "tonight"
@@ -151,7 +151,7 @@ def test_tonight_pack_from_tank_rows(monkeypatch):
     assert g["away_name"] == "Seattle Seahawks"
     assert g["kickoff_label"] == "8:15 PM ET"
     assert g["status"] == "pregame"
-    assert g["network"] is None  # Tank01 rows carry no network: omitted
+    assert g["network"] is None  # Legacy rows carry no network: omitted
     assert "data_cache.load_week_schedule" in used
 
 

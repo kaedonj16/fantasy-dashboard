@@ -8,7 +8,7 @@ from utils.start_sit import (  # noqa: F401,F403
     implied_team_total,
     total_tag,
     weather_tag,
-    parse_tank01_odds,
+    parse_betting_odds,
     parse_open_meteo_daily,
     _to_float,
     _norm,
@@ -23,7 +23,7 @@ from utils.start_sit import (  # noqa: F401,F403
     _day_offset,
 )
 
-__all__ = ['logger', 'implied_team_total', 'total_tag', 'weather_tag', 'parse_tank01_odds', 'parse_open_meteo_daily', '_to_float', '_norm', '_first_book', '_ODDS_CACHE', '_ODDS_TTL', '_WEATHER_CACHE', '_WEATHER_TTL', 'fetch_week_odds', 'fetch_game_weather', 'build_week_conditions', '_day_offset']
+__all__ = ['logger', 'implied_team_total', 'total_tag', 'weather_tag', 'parse_betting_odds', 'parse_open_meteo_daily', '_to_float', '_norm', '_first_book', '_ODDS_CACHE', '_ODDS_TTL', '_WEATHER_CACHE', '_WEATHER_TTL', 'fetch_week_odds', 'fetch_game_weather', 'build_week_conditions', '_day_offset']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---

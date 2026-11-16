@@ -19,9 +19,6 @@ from utils.utils import (
 
 HTTP_SESSION = requests.Session()
 
-TANK01_API_HOST = "disabled.invalid"
-TANK01_BASE_URL = f"https://{TANK01_API_HOST}"
-TANK01_API_KEY = os.getenv("TANK01_API_KEY")
 # TEAMS_INDEX_PATH = "cache" / "teams_index.json"
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
@@ -87,7 +84,7 @@ def _save_teams_index_raw(teams_index: Dict[str, dict]):
 
 
 def _to_float(value) -> float:
-    """Helper: safely convert Tank01 string/None -> float."""
+    """Helper: safely convert a string/None value -> float."""
     if value is None:
         return 0.0
     try:
@@ -116,10 +113,10 @@ def enrich_teams_index_with_team_offense(season: int = 2024) -> None:
         if e.response.status_code == 429:
             return
         else:
-            print(f"Skipping tank01 API call due to HTTP error: {e}")
+            print(f"Skipping team offense enrichment due to HTTP error: {e}")
             return
     except Exception as e:
-        print(f"Skipping tank01 API call due to unexpected error: {e}")
+        print(f"Skipping team offense enrichment due to unexpected error: {e}")
         return
 
     for team_abv, stats in per_game.items():
@@ -137,7 +134,7 @@ def enrich_teams_index_with_team_offense(season: int = 2024) -> None:
         rush_td = stats["rush_td_pg"]
         meta["points_pg"] = round((pass_td + rush_td) * 6.5 + 1.2 * 3.0, 2)
 
-        # red_zone_trips_pg and sacks_allowed_pg are not in the Tank01 team-stats response.
+        # red_zone_trips_pg and sacks_allowed_pg are not in the team-stats response.
         # Set to 0 here so callers know to fall back to NFL averages; the enrichment
         # pipeline can fill these from a dedicated source (e.g. TeamRankings) in the future.
         if not meta.get("red_zone_trips_pg"):
@@ -153,9 +150,8 @@ def enrich_teams_index_with_scoring_and_pressure() -> Dict[str, dict]:
     Fetch points_pg, red_zone_trips_pg, and sacks_allowed_pg from TeamRankings
     and merge into teams_index.json.
 
-    These three stats are not available from the Tank01 team-offense endpoint
-    (which only has passing/rushing yards/attempts/TDs), so we scrape them
-    separately from TeamRankings.
+    These three stats are not available from a team-offense aggregate
+    source, so we scrape them separately from TeamRankings.
 
     Returns the updated teams_index dict.
     """
@@ -205,7 +201,8 @@ def enrich_teams_index_with_scoring_and_pressure() -> Dict[str, dict]:
 def enrich_all_team_info(season: int):
     """
     Convenience: enrich both value table and teams index.
-    Fetches Tank01 offense stats + TeamRankings scoring/pressure stats.
+    Runs the team-offense step (currently an explicit no-op) plus the
+    TeamRankings scoring/pressure stats.
     """
     enrich_teams_index_with_team_offense(season)
     try:

@@ -2,7 +2,7 @@
 Simple in-process circuit breaker for external HTTP APIs.
 
 Usage:
-    breaker = CircuitBreaker("tank01", failure_threshold=5, reset_timeout=300)
+    breaker = CircuitBreaker("provider", failure_threshold=5, reset_timeout=300)
 
     if breaker.is_open():
         return None  # fail fast

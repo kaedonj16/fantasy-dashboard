@@ -23,8 +23,8 @@ POS = {"1": "QB", "2": "RB", "3": "WR", "4": "WR", "5": "TE",
 TEAM = {"1": "LAR", "2": "DET", "3": "LAR", "4": "CIN", "5": "KC",
         "6": "SF", "7": "DAL", "8": "BUF", "9": "BUF", "10": "MIA"}
 
-# gameStatusCode: "2" final, "1" in progress, "0" scheduled (Tank01 codes,
-# read by utils.normalize_game_status_from_tank01).
+# gameStatusCode: "2" final, "1" in progress, "0" scheduled (scoreboard codes,
+# read by utils.normalize_game_status_from_scoreboard).
 SCHED = [
     {"home": "LAR", "away": "SF", "gameStatusCode": "2"},
     {"home": "DET", "away": "KC", "gameStatusCode": "1"},

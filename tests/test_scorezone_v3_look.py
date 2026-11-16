@@ -6,7 +6,7 @@ Covers:
 - the as-of-play score line (item 8): provider stamp first, then a
   derivation over the game's play rows that is trusted only when it
   reconciles exactly with the game's current score,
-- extractor carry-through of ESPN/Tank01 per-play score fields,
+- extractor carry-through of ESPN/box-score per-play score fields,
 - CSS source contracts for the de-chrome / color-job treatments (1, 2, 5,
   6, 7).
 """
@@ -320,7 +320,7 @@ def test_espn_extractor_carries_per_play_score_stamp():
     assert all("score_home" not in p and "score_away" not in p for p in unstamped)
 
 
-def test_tank01_extractor_carries_per_play_score_stamp_when_sent():
+def test_boxscore_extractor_carries_per_play_score_stamp_when_sent():
     from utils.scorezone import extract_pbp_plays
 
     box = {

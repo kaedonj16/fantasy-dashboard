@@ -136,7 +136,7 @@ def test_paywall_lists_shipped_pro_features_only():
     assert "Sleeper dynasty comps" in calc
     assert "Market comps come from real Sleeper dynasty trades" in TRADE_INTEL_PAGE
     rz = (ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
-    assert "Tank01 box scores" in rz
+    assert "ESPN box scores" in rz
     recap = (ROOT / "dashboard_services" / "pages" / "recap_page.py").read_text(encoding="utf-8")
     assert "recap-preview-watermark" in recap
     assert "SAMPLE PREVIEW" in APP_PY

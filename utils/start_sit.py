@@ -872,8 +872,8 @@ def likely_range(expected: float, role_confidence: Optional[float] = None) -> tu
 
 Two enrichments layered on top of the static venue tags (utils.nfl_stadiums):
 
-  * **Vegas implied team total** - from Tank01's betting-odds endpoint (the same
-    RapidAPI key the app already uses for projections). The game total plus a
+  * **Vegas implied team total** - from the SportsGameOdds betting lines. The
+    game total plus a
     team's spread give its *implied team total*, the single best one-number read
     on how much scoring the market expects from that team this week.
 
@@ -967,12 +967,12 @@ def weather_tag(
     return {"label": " · ".join(parts), "kind": kind, "note": "Notable weather"}
 
 
-def parse_tank01_odds(body) -> dict:
-    """Parse a Tank01 getNFLBettingOdds `body` into per-team totals/spreads.
+def parse_betting_odds(body) -> dict:
+    """Parse a betting-odds `body` into per-team totals/spreads.
 
-    Tank01 keys the body by gameID; each game carries team abbreviations and,
+    The body is keyed by gameID; each game carries team abbreviations and,
     either at the top level or under a sportsbook sub-dict, a total and home/away
-    spreads. We read defensively across the field names Tank01 has used
+    spreads. We read defensively across the field names books have used
     (totalUnder/totalOver/total, homeTeamSpread/awayTeamSpread) and take the first
     sportsbook when a `sportsBookOdds` list/dict is present.
 

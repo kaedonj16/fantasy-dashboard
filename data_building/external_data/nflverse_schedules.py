@@ -1,12 +1,12 @@
 """
 Build NFL schedules from the open nflverse feed (nfl_data_py.import_schedules).
 
-This is a free, no-API-key alternative to the Tank01 schedule fetcher. nflverse
-schedules are complete back to 1999, so they fix both the Tank01 401 (no key
-needed) and Tank01's sparse historical coverage (e.g. older seasons returning
+This is a free, no-API-key schedule source. nflverse
+schedules are complete back to 1999, so they fix both the old paid fetcher's
+401 (no key needed) and its sparse historical coverage (e.g. older seasons returning
 only a handful of games).
 
-Output matches the Tank01 cache shape the game-logs reader expects
+Output matches the schedule cache shape the game-logs reader expects
 (cache/schedule/schedule_s{Y}_w{W}.json — a list of game dicts with at least
 `home`, `away`, and `gameDate` in YYYYMMDD). Team codes are run through
 canon_team so they line up with the Sleeper team codes used elsewhere.

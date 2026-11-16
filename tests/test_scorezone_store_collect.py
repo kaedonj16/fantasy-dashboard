@@ -4,7 +4,7 @@ Contracts:
   * A store hit assigns the stored plays directly and never calls
     _rz_fetch_alt_pbp_plays (no upstream PBP fetch on page load / poll).
   * The store hit fetches only the plain boxscore (stat lines), never the
-    experimental Tank01 PBP payload.
+    experimental box-score PBP payload.
   * A missing/failed store read falls through to the existing live-fetch
     path unchanged.
 """
@@ -99,7 +99,7 @@ def test_store_hit_skips_upstream_pbp(monkeypatch):
 
     assert out["pbp_by_game"][GID] == STORED
     assert calls["pbp"] == [], "store hit must not fetch upstream PBP"
-    # Only the plain boxscore (stat lines) is fetched, never the Tank01 PBP.
+    # Only the plain boxscore (stat lines) is fetched, never the PBP payload.
     assert calls["box"], "stat-line boxscore still fetched"
     assert all(not c["play_by_play"] for c in calls["box"])
 
