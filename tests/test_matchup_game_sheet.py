@@ -246,6 +246,111 @@ def test_sheet_name_cell_is_a_flex_row():
     assert "gs-pname" not in sz
 
 
+def test_stat_row_tap_wiring():
+    js = _js()
+    # One shared resolver: the drive bar and the stat line open the sheet
+    # through the same team -> game -> openGameSheet flow (no duplicate
+    # handler logic), claimed in the capture phase like the bar's tap.
+    assert "function openSheetForTeam(team)" in js
+    assert (
+        "e.target.closest('.mb-fld-link, .mb-stat-row[data-gs-team]')" in js
+    )
+    assert "openSheetForTeam(link.getAttribute('data-gs-team'))" in js
+    # Keyboard parity: stat rows are focusable buttons server-side, and
+    # Enter / Space on one opens the sheet through the same resolver.
+    kb = js[js.index("Keyboard parity for the stat rows"):]
+    kb = kb[: kb.index("}, true);")]
+    assert "document.addEventListener('keydown'" in kb
+    assert "e.key !== 'Enter' && e.key !== ' '" in kb
+    assert "e.target.closest('.mb-stat-row[data-gs-team]')" in kb
+    assert "openSheetForTeam(row.getAttribute('data-gs-team'))" in kb
+    # Server render: the attribute + button semantics are emitted only by
+    # _stat_row, gated on real stats and a non-empty team.
+    py = (ROOT / "dashboard_services" / "matchups.py").read_text(encoding="utf-8")
+    assert "data-gs-team='{html.escape(str(team))}'" in py
+    assert "\" role='button' tabindex='0'\"" in py
+    assert 'team=left_nfl' in py and 'team=right_nfl' in py
+    # CSS affordance: pointer + quiet press fade on tagged rows only.
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".mb-stat-row[data-gs-team] { cursor: pointer;" in css
+    assert ".mb-stat-row[data-gs-team]:active { opacity: .65; }" in css
+
+
+def _render_slide(monkeypatch, weekly, matchup, schedule_rows=None):
+    from dashboard_services import matchups as mmod
+
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_: weekly)
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_: schedule_rows or [])
+    monkeypatch.setattr(
+        mmod,
+        "build_team_schedule_lookup",
+        lambda rows: {r["teamAbv"]: r for r in rows},
+    )
+    monkeypatch.setattr(mmod, "_sleeper_skill_stat_line", lambda *a, **k: None)
+    return mmod.render_matchup_slide("2025", matchup, 2, 2, {}, {}, {}, {}, {})
+
+
+def test_stat_rows_with_real_stats_carry_gs_team_both_sides(monkeypatch):
+    weekly = {
+        "BUF": {"QB": {"starter qb": {"pass_yds": 200}}},
+        "MIA": {"RB": {"right rb": {"rush_att": 12, "rush_yds": 80}}},
+    }
+    matchup = {
+        "left": {"name": "Left", "roster_id": "1", "pts_total": 12.0,
+                 "starters": [{"pid": "1", "name": "Starter QB", "pos": "QB",
+                               "nfl": "BUF", "pts": 12.0}], "bench": []},
+        "right": {"name": "Right", "roster_id": "2", "pts_total": 9.0,
+                  "starters": [{"pid": "9", "name": "Right RB", "pos": "RB",
+                                "nfl": "MIA", "pts": 9.0}], "bench": []},
+    }
+    html = _render_slide(monkeypatch, weekly, matchup)
+    assert "PASS 200 yds" in html and "RUSH 12 80 yds" in html
+    # Both sides' real stat rows are game-sheet entry points.
+    assert html.count("data-gs-team=") == 2
+    assert "data-gs-team='BUF'" in html
+    assert "data-gs-team='MIA'" in html
+    assert html.count("role='button' tabindex='0'") == 2
+
+
+def test_unavailable_stat_row_stays_inert(monkeypatch):
+    # Final game, no usable stat line anywhere: the "Stats unavailable"
+    # marker renders, but it is NOT a game-sheet entry point.
+    matchup = {
+        "left": {"name": "Left", "roster_id": "1", "pts_total": 12.0,
+                 "starters": [{"pid": "1", "name": "Starter QB", "pos": "QB",
+                               "nfl": "BUF", "pts": 12.0}], "bench": []},
+        "right": {"name": "Right", "roster_id": "2", "pts_total": 0.0,
+                  "starters": [], "bench": []},
+    }
+    html = _render_slide(
+        monkeypatch,
+        {},
+        matchup,
+        schedule_rows=[{
+            "teamAbv": "BUF", "opponent": "MIA", "gameStatusCode": "2",
+            "gameDate": "20250907",
+        }],
+    )
+    assert "Stats unavailable" in html
+    assert "data-gs-team" not in html
+    assert "tabindex='0'" not in html
+
+
+def test_teamless_player_renders_no_gs_stat_row(monkeypatch):
+    matchup = {
+        "left": {"name": "Left", "roster_id": "1", "pts_total": 0.0,
+                 "starters": [{"pid": "5", "name": "Free Agent", "pos": "WR",
+                               "nfl": "", "pts": 0.0}], "bench": []},
+        "right": {"name": "Right", "roster_id": "2", "pts_total": 0.0,
+                  "starters": [], "bench": []},
+    }
+    html = _render_slide(monkeypatch, {}, matchup)
+    assert "data-gs-team" not in html
+    assert "mb-stat-row" not in html
+
+
 def test_game_sheet_css_block():
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     start = css.index("Matchups game sheet (drive-bar sheet")

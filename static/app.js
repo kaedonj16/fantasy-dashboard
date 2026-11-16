@@ -33455,16 +33455,10 @@ window.__brSzLiveCache = (function () {
     return gid ? '<button type="button" class="mb-fld-link" data-gs-team="' + esc(tn) + '" aria-label="Open this game">' + bar + '</button>' : bar;
   }
 
-  // The bar sits inside the matchup row's click surface: keep a tap on it
-  // from also firing the row's own handlers (player modal / carousel), and
-  // open the game sheet in place instead of navigating to ScoreZone.
-  // Capture phase + stopPropagation + preventDefault.
-  document.addEventListener('click', function (e) {
-    var link = e.target && e.target.closest ? e.target.closest('.mb-fld-link') : null;
-    if (!link) return;
-    e.stopPropagation();
-    e.preventDefault();
-    var team = link.getAttribute('data-gs-team');
+  // Resolve a team abbr to its game and open the sheet for it. The lite
+  // games map is the full week's games, finals included, so this works
+  // the same before, during and after a game.
+  function openSheetForTeam(team) {
     var game = team ? gameForTeam(lastState, team) : null;
     if (game) { openGameSheet(game); return; }
     // First tap before the lite payload has painted: fetch it, then open.
@@ -33472,6 +33466,33 @@ window.__brSzLiveCache = (function () {
       var g = team ? gameForTeam(s, team) : null;
       if (g) openGameSheet(g);
     });
+  }
+
+  // The bar sits inside the matchup row's click surface: keep a tap on it
+  // from also firing the row's own handlers (player modal / carousel), and
+  // open the game sheet in place instead of navigating to ScoreZone.
+  // The player's stat line (server-tagged .mb-stat-row[data-gs-team] when
+  // it carries real stats) is the same entry point, so the box score is
+  // reachable after the game ends, when no drive bar renders.
+  // Capture phase + stopPropagation + preventDefault.
+  document.addEventListener('click', function (e) {
+    var link = e.target && e.target.closest ? e.target.closest('.mb-fld-link, .mb-stat-row[data-gs-team]') : null;
+    if (!link) return;
+    e.stopPropagation();
+    e.preventDefault();
+    openSheetForTeam(link.getAttribute('data-gs-team'));
+  }, true);
+
+  // Keyboard parity for the stat rows: the server renders them focusable
+  // (role="button" tabindex="0"), so Enter / Space opens the sheet too.
+  // The drive bar is a real <button> and already fires click natively.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var row = e.target && e.target.closest ? e.target.closest('.mb-stat-row[data-gs-team]') : null;
+    if (!row) return;
+    e.stopPropagation();
+    e.preventDefault();
+    openSheetForTeam(row.getAttribute('data-gs-team'));
   }, true);
 
   // ── Game sheet ──────────────────────────────────────────────────────────

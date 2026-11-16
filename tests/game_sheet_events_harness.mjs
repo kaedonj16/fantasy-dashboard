@@ -623,4 +623,345 @@ function makeDragWorld(opts = {}) {
   console.log('ok - detached binding = gesture gone');
 }
 
+// ── Stat-row / drive-bar taps open the game sheet ────────────────────
+// The matchup board's delegated capture-phase handler (in the "Matchup
+// board live widgets" IIFE, extracted whole) resolves data-gs-team to a
+// game from the lite games map and opens the REAL openGameSheet. The
+// lite map is the full week's games, so a stat-row tap must open the
+// sheet for a FINAL game too -- that is the only box-score path once
+// the drive bar stops rendering. Driven against a hand-rolled DOM:
+// _rzRenderGameBoard is a recording stub (the real board renderer is
+// exercised by the ScoreZone harnesses); everything else in the open
+// path -- handler, gameForTeam, sheet mount, box-score fetch, Stats /
+// Plays renders -- is the shipped code.
+
+const IIFE_START = SRC.indexOf('// ── Matchup board live widgets');
+const IIFE_END = SRC.indexOf('/* ── Shared TD clip panels');
+assert.ok(IIFE_START >= 0 && IIFE_END > IIFE_START, 'matchup live IIFE present in app.js');
+const MB_IIFE = SRC.slice(IIFE_START, IIFE_END);
+
+function tapMatches(el, sel) {
+  let rest = sel.trim();
+  const tagM = rest.match(/^[a-zA-Z][\w-]*/);
+  if (tagM) {
+    if (el.tagName !== tagM[0].toUpperCase()) return false;
+    rest = rest.slice(tagM[0].length);
+  }
+  while (rest) {
+    let m;
+    if ((m = rest.match(/^\.([\w-]+)/))) {
+      if (!el._classes.has(m[1])) return false;
+    } else if ((m = rest.match(/^\[([\w-]+)(?:="([^"]*)")?\]/))) {
+      const v = el.getAttribute(m[1]);
+      if (v === null) return false;
+      if (m[2] !== undefined && v !== m[2]) return false;
+    } else return false;
+    rest = rest.slice(m[0].length);
+  }
+  return true;
+}
+
+class TapEl {
+  constructor(tag) {
+    this.tagName = String(tag || 'div').toUpperCase();
+    this._classes = new Set();
+    this._attrs = {};
+    this._listeners = {};
+    this.children = [];
+    this.parentNode = null;
+    this.style = {};
+    this.hidden = false;
+    this.scrollTop = 0;
+    this._innerHTML = '';
+    this._text = '';
+    this._qs = {};
+  }
+  get className() { return [...this._classes].join(' '); }
+  set className(v) { this._classes = new Set(String(v).split(/\s+/).filter(Boolean)); }
+  get classList() {
+    const s = this._classes;
+    return {
+      add: (...cs) => cs.forEach((c) => s.add(c)),
+      remove: (...cs) => cs.forEach((c) => s.delete(c)),
+      toggle: (c, force) => {
+        const on = force === undefined ? !s.has(c) : !!force;
+        if (on) s.add(c); else s.delete(c);
+        return on;
+      },
+      contains: (c) => s.has(c),
+    };
+  }
+  setAttribute(k, v) { this._attrs[k] = String(v); }
+  getAttribute(k) { return k in this._attrs ? this._attrs[k] : null; }
+  get innerHTML() { return this._innerHTML; }
+  set innerHTML(v) { this._innerHTML = String(v); }
+  get textContent() { return this._text; }
+  set textContent(v) {
+    this._text = String(v);
+    this._innerHTML = this._text.replace(/[&<>"]/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+  appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
+  removeChild(child) {
+    const i = this.children.indexOf(child);
+    if (i >= 0) this.children.splice(i, 1);
+    child.parentNode = null;
+    return child;
+  }
+  addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); }
+  removeEventListener(type, fn) {
+    const a = this._listeners[type] || [];
+    const i = a.indexOf(fn);
+    if (i >= 0) a.splice(i, 1);
+  }
+  querySelector(sel) {
+    if (!this._qs[sel]) this._qs[sel] = new TapEl('div');
+    return this._qs[sel];
+  }
+  querySelectorAll() { return []; }
+  closest(selList) {
+    let el = this;
+    const sels = String(selList).split(',').map((s) => s.trim()).filter(Boolean);
+    while (el) {
+      if (el instanceof TapEl && sels.some((s) => tapMatches(el, s))) return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+  contains(other) {
+    let el = other;
+    while (el) { if (el === this) return true; el = el.parentNode; }
+    return false;
+  }
+}
+
+function makeTapWorld() {
+  const lite = {
+    games: {
+      'g-live': { game_id: 'g-live', away: 'IND', home: 'MIA', status: 'live', away_pts: 14, home_pts: 10, possession: 'IND', down: '3', distance: '15' },
+      'g-final': { game_id: 'g-final', away: 'CAR', home: 'GB', status: 'final', away_pts: 17, home_pts: 24 },
+    },
+  };
+  const full = {
+    scoring, player_info: state.player_info, games: lite.games,
+    pbp_by_game: { 'g-final': state.pbp_by_game['CAR@GB'], 'g-live': [] },
+  };
+  const boxFor = (gid) => (gid === 'g-final' ? {
+    away: { team: 'CAR' }, home: { team: 'GB' }, view_team: 'CAR',
+    teams: {
+      CAR: { groups: [{ pos: 'RB',
+        columns: [{ key: 'rush_yds', label: 'RuYd' }, { key: 'rush_td', label: 'RuTD' }, { key: 'rec', label: 'Rec' }],
+        players: [{ id: '3', name: 'Chuba Hubbard', cells: { rush_yds: 96, rush_td: 1, rec: 3, rec_yds: 18 } }] }] },
+      GB: { groups: [] },
+    },
+  } : {
+    away: { team: 'IND' }, home: { team: 'MIA' }, view_team: 'IND',
+    teams: {
+      IND: { groups: [{ pos: 'RB',
+        columns: [{ key: 'rush_yds', label: 'RuYd' }],
+        players: [{ id: '31', name: 'Jonathan Taylor', cells: { rush_yds: 88, rush_td: 1 } }] }] },
+      MIA: { groups: [] },
+    },
+  });
+  const boardCalls = [];
+  const fetches = [];
+  const doc = {
+    _listeners: {},
+    hidden: false,
+    body: new TapEl('body'),
+    addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); },
+    removeEventListener(type, fn) {
+      const a = this._listeners[type] || [];
+      const i = a.indexOf(fn);
+      if (i >= 0) a.splice(i, 1);
+    },
+    createElement: (tag) => new TapEl(tag),
+    querySelector: () => null,
+    fire(type, ev) { (this._listeners[type] || []).slice().forEach((fn) => fn(ev)); },
+  };
+  const win = {
+    _rzGameEvents: window._rzGameEvents,
+    _rzRenderGameBoard: (g, opts) => {
+      boardCalls.push({ game: g, opts });
+      return 'BOARD ' + g.away + ' ' + g.away_pts + ' @ ' + g.home + ' ' + g.home_pts + ' [' + g.status + ']';
+    },
+    _rzFieldPosition: () => ({ spot: 46, side: 'away', label: 'MIA 46', ltg: 61, goalToGo: false }),
+    __brSzLiveCache: {
+      get(variant, ms, cb) { const s = variant === 'lite' ? lite : full; if (cb) cb(s); return s; },
+      invalidate() {},
+      peek() { return full; },
+    },
+    location: { pathname: '/hub/league-9/matchups' },
+  };
+  const fetchStub = (url) => {
+    fetches.push(String(url));
+    const gid = decodeURIComponent(String(url).split('game_id=')[1] || '');
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(boxFor(gid)) });
+  };
+  new Function('window', 'document', 'fetch', 'requestAnimationFrame', 'setInterval', 'clearInterval',
+    MB_IIFE)(win, doc, fetchStub, (fn) => { fn(); return 1; }, () => 1, () => {});
+  const slide = new TapEl('div');
+  slide.querySelector = (sel) => (sel === '.mb-fld, .mb-moments' ? new TapEl('div') : null);
+  slide.querySelectorAll = () => [];
+  return { win, doc, boardCalls, fetches, slide };
+}
+
+function tapEl(classes, attrs, parent) {
+  const el = new TapEl('div');
+  (classes || []).forEach((c) => el._classes.add(c));
+  Object.entries(attrs || {}).forEach(([k, v]) => el.setAttribute(k, v));
+  if (parent) parent.appendChild(el);
+  return el;
+}
+function clickEv(target) {
+  return { target, _stopped: false, _prevented: false,
+    stopPropagation() { this._stopped = true; },
+    preventDefault() { this._prevented = true; } };
+}
+function keyEv(target, key) {
+  return { target, key, _stopped: false, _prevented: false,
+    stopPropagation() { this._stopped = true; },
+    preventDefault() { this._prevented = true; } };
+}
+const sheetOf = (w) => w.doc.body.children.find((c) => c._classes.has('rz-bs-sheet'));
+const flushMicro = async () => {
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+};
+
+async function tapScenarios() {
+  // J. Stat-row tap on a LIVE game opens the sheet for that game, and
+  //    the tap is claimed (the row's own handlers never also fire).
+  {
+    const w = makeTapWorld();
+    w.win.brInitMatchupLive(w.slide); // paints: lastState = lite payload
+    const row = tapEl(['mb-stat-row', 'mb-fld-span-l'],
+      { 'data-gs-team': 'IND', role: 'button', tabindex: '0' });
+    const inner = tapEl(['meta', 'm-cell-stats', 'mb-stat'], {}, row);
+    const ev = clickEv(inner);
+    w.doc.fire('click', ev);
+    assert.equal(ev._stopped, true, 'live stat tap: propagation stopped');
+    assert.equal(ev._prevented, true, 'live stat tap: default prevented');
+    assert.equal(w.boardCalls[w.boardCalls.length - 1].game.game_id, 'g-live',
+      'live stat tap opens the live game');
+    const sheet = sheetOf(w);
+    assert.ok(sheet, 'live stat tap: sheet mounted');
+    assert.ok(sheet.querySelector('.gs-board-wrap').innerHTML.includes('[live]'),
+      'live board rendered in the sheet');
+    assert.ok(w.fetches.some((u) => u.includes('game_id=g-live')),
+      'box score fetched for the live game');
+    await flushMicro();
+    assert.ok(sheet.querySelector('[data-gpanel="stats"]').innerHTML.includes('Jonathan Taylor'),
+      'live stats tab shows the box score');
+    console.log('ok - stat-row tap on a live game opens the sheet + box score');
+  }
+
+  // K. Stat-row tap on a FINAL game: the sheet opens in final state and
+  //    the Stats tab renders the real (fetched) box score -- the whole
+  //    point of the feature, since finals render no drive bar.
+  {
+    const w = makeTapWorld();
+    w.win.brInitMatchupLive(w.slide);
+    const row = tapEl(['mb-stat-row', 'mb-fld-span-r', 'mb-cell-r'],
+      { 'data-gs-team': 'CAR', role: 'button', tabindex: '0' });
+    const inner = tapEl(['meta', 'm-cell-stats', 'mb-stat'], {}, row);
+    const ev = clickEv(inner);
+    w.doc.fire('click', ev);
+    assert.equal(ev._prevented, true, 'final stat tap: default prevented');
+    const call = w.boardCalls[w.boardCalls.length - 1];
+    assert.equal(call.game.game_id, 'g-final', 'final stat tap resolves the final game');
+    assert.equal(call.game.status, 'final', 'resolved game is final');
+    const sheet = sheetOf(w);
+    assert.ok(sheet, 'final stat tap: sheet mounted');
+    const boardHtml = sheet.querySelector('.gs-board-wrap').innerHTML;
+    assert.ok(boardHtml.includes('[final]'), 'board renders the final state: ' + boardHtml);
+    assert.ok(boardHtml.includes('CAR 17') && boardHtml.includes('GB 24'),
+      'board carries the final score: ' + boardHtml);
+    await flushMicro();
+    const statsHtml = sheet.querySelector('[data-gpanel="stats"]').innerHTML;
+    assert.ok(statsHtml.includes('Player stats'), 'stats tab header renders');
+    assert.ok(statsHtml.includes('Chuba Hubbard'), 'stats tab shows the real box score rows');
+    assert.ok(statsHtml.includes('<td>96</td>'), 'box score stat cells render (96 rush yds)');
+    assert.ok(statsHtml.includes('20.4'), 'box score fantasy points render (20.4 FP)');
+    const playsHtml = sheet.querySelector('.gs-plays-host').innerHTML;
+    assert.ok(playsHtml.includes('gs-plays'), 'plays tab renders the final game plays');
+    console.log('ok - stat-row tap on a FINAL game opens the sheet: final board + real box score');
+  }
+
+  // L. Inert stat rows (the "Stats unavailable" marker, team-less rows:
+  //    the server emits no data-gs-team for either) open nothing and the
+  //    event is left completely alone.
+  {
+    const w = makeTapWorld();
+    w.win.brInitMatchupLive(w.slide);
+    const row = tapEl(['mb-stat-row', 'mb-fld-span-l'], {});
+    const inner = tapEl(['meta', 'm-cell-stats', 'mb-stat', 'm-cell-stats--unavailable'], {}, row);
+    const ev = clickEv(inner);
+    w.doc.fire('click', ev);
+    assert.equal(ev._stopped, false, 'inert stat row: event not stopped');
+    assert.equal(ev._prevented, false, 'inert stat row: event not prevented');
+    assert.equal(w.boardCalls.length, 0, 'inert stat row: no sheet');
+    assert.equal(w.doc.body.children.length, 0, 'inert stat row: nothing mounted');
+    assert.equal(w.fetches.length, 0, 'inert stat row: no fetch');
+    console.log('ok - unavailable / team-less stat row stays inert');
+  }
+
+  // M. Drive-bar regression: the bar's own tap still opens its game.
+  {
+    const w = makeTapWorld();
+    w.win.brInitMatchupLive(w.slide);
+    const btn = tapEl(['mb-fld-link'], { 'data-gs-team': 'IND' });
+    btn.tagName = 'BUTTON';
+    const inner = tapEl(['mb-fld-in'], {}, btn);
+    const ev = clickEv(inner);
+    w.doc.fire('click', ev);
+    assert.equal(ev._prevented, true, 'drive bar tap: default prevented');
+    assert.equal(w.boardCalls[w.boardCalls.length - 1].game.game_id, 'g-live',
+      'drive bar still opens its game');
+    console.log('ok - drive-bar tap still opens the sheet (regression)');
+  }
+
+  // N. Keyboard: Enter / Space on a focused stat row opens the sheet;
+  //    other keys and inert rows are untouched.
+  {
+    const w = makeTapWorld();
+    w.win.brInitMatchupLive(w.slide);
+    const row = tapEl(['mb-stat-row'], { 'data-gs-team': 'CAR', role: 'button', tabindex: '0' });
+    let ev = keyEv(row, 'Enter');
+    w.doc.fire('keydown', ev);
+    assert.equal(ev._prevented, true, 'Enter on stat row: default prevented');
+    assert.equal(w.boardCalls[w.boardCalls.length - 1].game.game_id, 'g-final',
+      'Enter opens the sheet');
+    ev = keyEv(row, ' ');
+    w.doc.fire('keydown', ev);
+    assert.equal(w.boardCalls[w.boardCalls.length - 1].game.game_id, 'g-final',
+      'Space opens the sheet');
+    const before = w.boardCalls.length;
+    ev = keyEv(row, 'Tab');
+    w.doc.fire('keydown', ev);
+    assert.equal(ev._prevented, false, 'unrelated key left alone');
+    assert.equal(w.boardCalls.length, before, 'unrelated key: no sheet');
+    const inert = tapEl(['mb-stat-row'], {});
+    ev = keyEv(inert, 'Enter');
+    w.doc.fire('keydown', ev);
+    assert.equal(ev._prevented, false, 'Enter on inert row left alone');
+    assert.equal(w.boardCalls.length, before, 'inert row Enter: no sheet');
+    console.log('ok - Enter/Space on a stat row opens the sheet; inert rows and other keys untouched');
+  }
+
+  // O. First tap before the lite payload has painted (lastState null):
+  //    the handler's fetch fallback still resolves and opens, finals too.
+  {
+    const w = makeTapWorld();
+    const row = tapEl(['mb-stat-row'], { 'data-gs-team': 'CAR' });
+    const ev = clickEv(row);
+    w.doc.fire('click', ev);
+    assert.equal(w.boardCalls[w.boardCalls.length - 1].game.game_id, 'g-final',
+      'cold stat tap fetches state, then opens the final game');
+    console.log('ok - stat tap before first paint resolves through the fetch fallback');
+  }
+}
+
+await tapScenarios();
+
 console.log('ALL GAME SHEET EVENT HARNESS CHECKS PASSED');
