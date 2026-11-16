@@ -30,6 +30,11 @@ _SERIOUS_INJURY = frozenset(
 
 _N_SIMS = 2000
 
+# Freshness bound for the Lab's live-points provider re-read: the same 12s
+# ScoreZone's collect and the Matchup live overlay use, instead of the
+# provider ttl_cache default (300s).
+_LIVE_POINTS_CACHE_TTL = 12
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -616,6 +621,44 @@ def build_lineup_lab_payload(
         _is_current_week = int(week) == int(ctx.get("current_week") or 0)
     except (TypeError, ValueError):
         _is_current_week = False
+    if _is_current_week and (mine_points or opp_points):
+        # Fresh points for the live state below: the base rows above came
+        # through the provider's 300s default cache, which leaves the Lab's
+        # per-player points minutes behind ScoreZone during games. Re-read
+        # with the same 12s bound ScoreZone's collect and the Matchup live
+        # overlay use. Gated on the live block's own condition (current
+        # week, points published), so the one-fetch pre-game path -- and
+        # its exactly-one-canonical-fetch contract -- is unchanged. The
+        # re-read only replaces the points maps; starters/opponent identity
+        # still come from the single fetch above. Fail-soft, exactly like
+        # the overlay: any failure, an empty result, or a row without
+        # players_points keeps the base map.
+        try:
+            from dashboard_services.platform_api import (
+                get_matchups as _fresh_get_matchups,
+            )
+            _fresh_rows = _fresh_get_matchups(
+                platform, str(league_id), int(week), int(season),
+                cache_ttl=_LIVE_POINTS_CACHE_TTL,
+            ) or []
+            _fresh_mine = next(
+                (m for m in _fresh_rows
+                 if str(m.get("roster_id")) == str(viewer_roster_id)),
+                None,
+            )
+            if _fresh_mine and _fresh_mine.get("players_points"):
+                mine_points = _fresh_mine.get("players_points") or {}
+            if opponent_roster_id is not None:
+                _fresh_opp = next(
+                    (m for m in _fresh_rows
+                     if str(m.get("roster_id")) == str(opponent_roster_id)),
+                    None,
+                )
+                if _fresh_opp and _fresh_opp.get("players_points"):
+                    opp_points = _fresh_opp.get("players_points") or {}
+        except Exception:
+            logger.debug(
+                "lineup-lab: fresh live points fetch failed", exc_info=True)
     if _is_current_week and (mine_points or opp_points):
         try:
             from utils.utils import build_games_by_team as _bgbt

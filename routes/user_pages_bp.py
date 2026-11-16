@@ -4075,9 +4075,15 @@ def _compute_live_matchups(key, platform, resolved_league_id, season, week, ctx)
     under the lock."""
     import time as _time
 
-    from dashboard_services.matchups import build_matchup_preview
+    from dashboard_services.matchups import (
+        _LIVE_OVERLAY_CACHE_TTL,
+        build_matchup_preview,
+    )
     from utils.utils import build_status_for_week
 
+    # This is the live-preview path (Portfolio live cards + League Scores):
+    # bound the provider read to the same 12s ScoreZone/overlay freshness
+    # instead of the 300s provider default.
     matchups = build_matchup_preview(
         league_id=resolved_league_id,
         week=week,
@@ -4085,6 +4091,7 @@ def _compute_live_matchups(key, platform, resolved_league_id, season, week, ctx)
         players_map=ctx.get("players") or {},
         season=season,
         platform=platform,
+        live_cache_ttl=_LIVE_OVERLAY_CACHE_TTL,
     ) or []
     status_by_pid = build_status_for_week(
         season, week, ctx.get("players_index") or {}, ctx.get("teams_index") or {},

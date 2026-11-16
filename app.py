@@ -26213,6 +26213,29 @@ def api_weekly_week():
                             _bw += 1
             _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
 
+    # Live overlay: same render-time freshness as the hub's initial render --
+    # on the current week with games today, points and box-score lines are
+    # re-fetched the ScoreZone way instead of serving the cached context's
+    # stale numbers. This is what the 20s auto-refresh, week changes and
+    # pull-to-refresh all hit, so they return fresh data without a
+    # /api/refresh-league rebuild. Fail-soft: renders as before on failure.
+    _api_live_week_stats = None
+    if week == current_week and not ctx.get("offseason_mode"):
+        try:
+            if _games_scheduled_today(season, current_week):
+                from dashboard_services.matchups import apply_live_matchup_overlay
+                matchups, _api_live_week_stats = apply_live_matchup_overlay(
+                    matchups,
+                    platform=platform,
+                    league_id=resolved_league_id,
+                    season=season, week=week, current_week=current_week,
+                    team_game_lookup=team_game_lookup,
+                    scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+                )
+        except Exception:
+            logger.debug("[api_weekly_week] live overlay skipped", exc_info=True)
+            _api_live_week_stats = None
+
     slides = [
         render_matchup_slide(
             season,
@@ -26238,6 +26261,7 @@ def api_weekly_week():
             league_id=ctx.get("resolved_league_id") or league_id,
             rzm_hub_html=_api_rzm_for_matchup(m),
             div_by_rid=_api_div_by_rid,
+            live_week_stats=_api_live_week_stats,
         )
         for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]
@@ -26268,7 +26292,7 @@ def api_weekly_week():
     # The game-day auto-refresh passes ls=0: it repaints only the top /
     # highlights / matchups panels and never reads league_scores, so the
     # build is skipped on polls instead of being computed and thrown away
-    # every 60 s (the week-change fetch, which does consume it, omits ls).
+    # every 20 s (the week-change fetch, which does consume it, omits ls).
     _api_ls_payload = []
     if request.args.get("ls") != "0":
         try:

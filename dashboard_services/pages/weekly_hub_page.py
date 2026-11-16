@@ -219,6 +219,27 @@ def build_weekly_hub_body(ctx: dict) -> str:
             _aw, _bw = _h2h_record(_la, _ra)
             _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
 
+    # Live overlay: on the current week with games today, re-fetch points and
+    # box-score lines the ScoreZone way so the slides don't sit on the cached
+    # context's stale numbers. Fail-soft: any failure renders as before.
+    _hub_live_week_stats = None
+    if _show_matchup_preview and default_matchups and not offseason_mode \
+            and default_week == current_week:
+        try:
+            if _games_scheduled_today(season, current_week):
+                from dashboard_services.matchups import apply_live_matchup_overlay
+                default_matchups, _hub_live_week_stats = apply_live_matchup_overlay(
+                    default_matchups,
+                    platform=platform,
+                    league_id=ctx.get("resolved_league_id") or league_id,
+                    season=season, week=default_week, current_week=current_week,
+                    team_game_lookup=team_game_lookup,
+                    scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+                )
+        except Exception:
+            logger.debug("[weekly-hub] live overlay skipped", exc_info=True)
+            _hub_live_week_stats = None
+
     _fpts_against_weekly = _compute_fpts_against(
         season,
         scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
@@ -263,6 +284,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             rzm_hub_html=_rzm_html_for_matchup(m),
             div_by_rid=_hub_div_by_rid,
             streaks=_hub_streaks,
+            live_week_stats=_hub_live_week_stats,
         )
         for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]
@@ -756,7 +778,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     }}
   }}
 
-  // Auto-refresh the week every 60 s only when a game is happening today
+  // Auto-refresh the week every 20 s only when a game is happening today
   if (!liveActive()) return;
   var _autoRefreshSeq = 0;
   // Polls never read league_scores, so ls=0 skips building it server-side;
@@ -808,7 +830,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         else _applyMatchups();
       }}
     }}).catch(function() {{}});
-  }}, 60000);
+  }}, 20000);
 }})();
 
 // Activate a weekly left-tab by name and switch its panel
