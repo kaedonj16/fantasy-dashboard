@@ -60974,8 +60974,18 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
 .rz-moment-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .rz-moment-headshot { object-position: center 22%; }
 .rz-moment-initials { font-size: 16px; font-weight: 900; color: var(--rz-muted, var(--text-muted)); }
-.rz-moment-row { display: flex; align-items: center; gap: 6px; }
-.rz-moment-name { flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rz-moment-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* Player names are never truncated (Kaedon, 2026-11-15): a name that
+   does not fit beside the points wraps instead of ellipsizing, and
+   when name + points cannot share the line at all the points drop to
+   their own line so the name gets the full card width (a name never
+   squeezes into the narrow beside-points column, where a long first
+   name would have to break mid-word). Rail cards stretch to one
+   height, so a wrapped card makes the whole row taller rather than
+   looking ragged; names that fit beside their points render exactly
+   as before. break-word is only the last resort for a single word
+   wider than the whole card. */
+.rz-moment-name { flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 700; overflow-wrap: break-word; }
 .rz-moment-delta { flex: none; font-size: 11px; color: var(--rz-green, #16a34a); font-weight: 800; }
 /* Close X: lives on every card's name line but shows only on the grown
    card. The 44px hit area is pulled into the card's padding so the

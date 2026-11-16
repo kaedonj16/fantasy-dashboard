@@ -23,7 +23,10 @@ fixture shaped like the scorezone-data API response:
 It taps cards on their name and on their poster (never a button),
 samples the grow animation mid-flight, switches cards, checks the
 one-clip exclusivity against the feed, re-render survival, and the
-reduced-motion path.
+reduced-motion path. A third fixture loads six clipped TDs with long
+player names (Pat Freiermuth ... Equanimeous St. Brown) and asserts
+names render in full in compact cards and on the grown header --
+the 2026-11-15 "don't truncate the names" fix.
 
 Run: python3 tests/scorezone_moments_click_harness.py  (exit 0 = pass)
 """
@@ -177,6 +180,72 @@ def payload(extra_late=False):
     }
 
 
+LONG_PLAYERS = {
+    "2001": {"name": "Pat Freiermuth", "pos": "TE", "team": "KC"},
+    "2002": {"name": "Samaje Perine", "pos": "RB", "team": "KC"},
+    "2003": {"name": "Jaxon Smith-Njigba", "pos": "WR", "team": "KC"},
+    "2004": {"name": "Amon-Ra St. Brown", "pos": "WR", "team": "KC"},
+    "2005": {"name": "Equanimeous St. Brown", "pos": "WR", "team": "KC"},
+    "2006": {"name": "DK Metcalf", "pos": "WR", "team": "KC"},
+}
+LONG_NAMES = [p["name"] for p in LONG_PLAYERS.values()]
+
+
+def payload_long_names():
+    """Six clipped TD moments whose names stress the compact card's
+    name line (the 2026-11-15 truncation bug: 'Pat Freierm…',
+    'Samaje Per…'). DK Metcalf is the short-name control."""
+    specs = [
+        ("2001", "ln-1", line(rec=1, targets=1, rec_yds=11, rec_td=1)),
+        ("2002", "ln-2", line(carries=1, rush_yds=8, rush_td=1)),
+        ("2003", "ln-3", line(rec=1, targets=1, rec_yds=25, rec_td=1)),
+        ("2004", "ln-4", line(rec=1, targets=1, rec_yds=14, rec_td=1)),
+        ("2005", "ln-5", line(rec=1, targets=1, rec_yds=40, rec_td=1)),
+        ("2006", "ln-6", line(rec=1, targets=1, rec_yds=9, rec_td=1)),
+    ]
+    plays = []
+    for i, (pid, play_id, stat_line) in enumerate(specs):
+        clip = {
+            "clip_tweet_id": f"179000000000000001{i}",
+            "clip_url": f"https://x.com/NFL/status/179000000000000001{i}",
+            "clip_video_url": f"https://video.twimg.com/ext_tw_video/1790/pu/vid/avc1/ln{i}.mp4",
+            "clip_poster_url": f"https://pbs.twimg.com/ext_tw_video_thumb/1790/pu/img/ln{i}.jpg",
+        }
+        _seq[0] += 1
+        plays.append({
+            "play_id": play_id, "seq": _seq[0], "game_id": GID,
+            "quarter": "Q2", "clock": f"{10 - i}:00",
+            "down": "2", "distance": "6", "yard_line": "BUF 30",
+            "play_text": f"{LONG_PLAYERS[pid]['name']} scores a touchdown",
+            "pid": pid, "name": LONG_PLAYERS[pid]["name"], "team": "KC",
+            "stat_line": stat_line, "is_td": True, **clip,
+        })
+    player_info = {}
+    for pid, p in LONG_PLAYERS.items():
+        player_info[pid] = {
+            "name": p["name"], "pos": p["pos"], "team": p["team"],
+            "game_id": GID, "game_code": "1", "game_quarter": "Q3",
+            "game_clock": "0:45", "game_status": "",
+            "away": "BUF", "home": "KC", "away_pts": "17", "home_pts": "24",
+            "game_time_epoch": KICKOFF,
+            "stat_line": line(carries=8, rush_yds=40, rec=4, targets=6,
+                              rec_yds=50, pass_yds=180),
+        }
+    base = payload(False)
+    base["player_info"] = player_info
+    base["pbp_by_game"] = {GID: plays}
+    base["matchups"] = [
+        {"roster_id": 1, "matchup_id": 1, "points": 24.0,
+         "projected_pts": 30.0, "starters": list(LONG_PLAYERS),
+         "players": list(LONG_PLAYERS),
+         "players_points": {pid: 7.0 for pid in LONG_PLAYERS}},
+        {"roster_id": 2, "matchup_id": 1, "points": 17.0,
+         "projected_pts": 28.0, "starters": [], "players": [],
+         "players_points": {}},
+    ]
+    return base
+
+
 HTML = """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -217,7 +286,7 @@ def main():
             device = dict(pw.devices["iPhone 14"])
             device.pop("default_browser_type", None)
 
-        def make_page(reduced=False):
+        def make_page(reduced=False, fixture=None):
             ctx_kwargs = dict(device)
             if reduced:
                 ctx_kwargs["reduced_motion"] = "reduce"
@@ -229,8 +298,11 @@ def main():
             def route_handler(route):
                 url = route.request.url
                 if "scorezone-data" in url:
-                    state["fetches"] += 1
-                    body = fixture_a if state["fetches"] <= 1 else fixture_b
+                    if fixture is not None:
+                        body = fixture
+                    else:
+                        state["fetches"] += 1
+                        body = fixture_a if state["fetches"] <= 1 else fixture_b
                     route.fulfill(status=200, content_type="application/json",
                                   body=json.dumps(body))
                 elif url.endswith("/static/scorezone.js"):
@@ -244,7 +316,9 @@ def main():
                     route.fulfill(status=200, content_type="video/mp4", body=b"")
                 elif "rz.test" in url and "scorezone" in url:
                     route.fulfill(status=200, content_type="text/html",
-                                  body=HTML.replace("__PAYLOAD__", json.dumps(fixture_a)))
+                                  body=HTML.replace("__PAYLOAD__",
+                                                    json.dumps(fixture if fixture is not None
+                                                               else fixture_a)))
                 else:
                     route.fulfill(status=200, content_type="text/plain", body="")
 
@@ -442,6 +516,167 @@ def main():
               grown_key(page2) is None and open_panels(page2) == [])
         check("no page errors (reduced motion)", errors2 == [], "; ".join(errors2[:3]))
         ctx2.close()
+
+        # ── Long names: never truncated (Kaedon, 2026-11-15) ────────
+        # Compact cards must show every name IN FULL beside the points:
+        # no ellipsis, no clipping, at phone width. Long names wrap to
+        # a second line; single-line names render exactly as before.
+        ctx3, page3, errors3 = make_page(fixture=payload_long_names())
+        cards3 = page3.query_selector_all("[data-rail-card]")
+        check("long-name fixture renders all six moment cards", len(cards3) == 6,
+              f"found {len(cards3)}")
+
+        def measure_names(page):
+            return page.evaluate(
+                "Array.from(document.querySelectorAll('[data-rail-card]')).map(function(card){"
+                "  var name = card.querySelector('.rz-moment-name');"
+                "  var delta = card.querySelector('.rz-moment-delta');"
+                "  var cs = getComputedStyle(name);"
+                "  var probe = document.createElement('div');"
+                "  probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;'"
+                "    + 'font-size:' + cs.fontSize + ';font-weight:' + cs.fontWeight"
+                "    + ';font-family:' + cs.fontFamily + ';line-height:' + cs.lineHeight"
+                "    + ';letter-spacing:' + cs.letterSpacing"
+                "    + ';white-space:normal;overflow-wrap:break-word;'"
+                "    + 'width:' + name.clientWidth + 'px;';"
+                "  probe.textContent = name.textContent;"
+                "  document.body.appendChild(probe);"
+                "  var needH = probe.clientHeight;"
+                "  probe.remove();"
+                "  var nr = name.getBoundingClientRect();"
+                "  var dr = delta.getBoundingClientRect();"
+                "  var cr = card.getBoundingClientRect();"
+                "  var tnode = name.firstChild;"
+                "  var broken = [];"
+                "  if (tnode) {"
+                "    var segs = name.textContent.split(/[\\s-]+/).filter(Boolean);"
+                "    var sidx = 0;"
+                "    for (var si = 0; si < segs.length; si++) {"
+                "      var at = name.textContent.indexOf(segs[si], sidx);"
+                "      var rg = document.createRange();"
+                "      rg.setStart(tnode, at); rg.setEnd(tnode, at + segs[si].length);"
+                "      if (rg.getClientRects().length !== 1) broken.push(segs[si]);"
+                "      sidx = at + segs[si].length;"
+                "    }"
+                "  }"
+                "  return { text: name.textContent, brokenWords: broken,"
+                "    whiteSpace: cs.whiteSpace, textOverflow: cs.textOverflow,"
+                "    scrollW: name.scrollWidth, clientW: name.clientWidth,"
+                "    clientH: name.clientHeight, needH: needH,"
+                "    deltaText: delta.textContent,"
+                "    deltaScrollW: delta.scrollWidth, deltaClientW: delta.clientWidth,"
+                "    deltaInside: dr.left >= cr.left - 1 && dr.right <= cr.right + 1,"
+                "    nameCenterY: nr.top + nr.height / 2,"
+                "    deltaCenterY: dr.top + dr.height / 2,"
+                "    cardH: cr.height,"
+                "    mediaTop: card.querySelector('.rz-moment-media')"
+                "      .getBoundingClientRect().top };"
+                "})")
+
+        measured = {m["text"]: m for m in measure_names(page3)}
+        check("every long-name card carries its full name text",
+              all(n in measured for n in LONG_NAMES),
+              f"cards={sorted(measured)}")
+        for long_name in LONG_NAMES[:-1]:
+            m = measured.get(long_name)
+            if not m:
+                continue
+            check(f"compact name not on the ellipsis path: {long_name}",
+                  m["whiteSpace"] != "nowrap" and m["textOverflow"] != "ellipsis",
+                  f"whiteSpace={m['whiteSpace']} textOverflow={m['textOverflow']}")
+            check(f"compact name fully rendered (no clip): {long_name}",
+                  m["scrollW"] <= m["clientW"] + 1 and m["clientH"] >= m["needH"] - 1,
+                  f"scrollW={m['scrollW']} clientW={m['clientW']} "
+                  f"clientH={m['clientH']} needH={m['needH']}")
+            check(f"points fully visible with the name: {long_name}",
+                  m["deltaScrollW"] <= m["deltaClientW"] + 1 and m["deltaInside"]
+                  and m["deltaText"].startswith("+"),
+                  f"delta={m['deltaText']} scrollW={m['deltaScrollW']} "
+                  f"clientW={m['deltaClientW']} inside={m['deltaInside']}")
+            check(f"name never breaks mid-word: {long_name}",
+                  m["brokenWords"] == [], f"broken={m['brokenWords']}")
+        if len(measured) == len(LONG_NAMES):
+            heights = [measured[n]["cardH"] for n in LONG_NAMES]
+            tops = [measured[n]["mediaTop"] for n in LONG_NAMES]
+            check("rail row stays even: all cards share one height",
+                  max(heights) - min(heights) <= 2, f"heights={[round(h) for h in heights]}")
+            check("rail row stays even: posters align at the top",
+                  max(tops) - min(tops) <= 2, f"tops={[round(t) for t in tops]}")
+            one_line_h = measured["DK Metcalf"]["clientH"]
+            check("long names actually wrap to a second line",
+                  max(measured[n]["clientH"] for n in LONG_NAMES[:-1]) > one_line_h + 4,
+                  f"one_line_h={one_line_h}")
+            dk = measured["DK Metcalf"]
+            check("short name stays on one line beside its points (unchanged)",
+                  dk["clientH"] <= dk["needH"] + 1
+                  and abs(dk["nameCenterY"] - dk["deltaCenterY"]) <= 2,
+                  f"clientH={dk['clientH']} needH={dk['needH']}")
+            check("short name not broken mid-word either",
+                  dk["brokenWords"] == [], f"broken={dk['brokenWords']}")
+
+        # The grown card's header line must not truncate either.
+        eq_key = page3.evaluate(
+            "var c = Array.from(document.querySelectorAll('[data-rail-card]'))"
+            ".find(function(x){ return x.querySelector('.rz-moment-name')"
+            "  .textContent === 'Equanimeous St. Brown'; });"
+            "c ? c.getAttribute('data-rail-card') : null")
+        check("found the Equanimeous St. Brown card", eq_key is not None)
+        if eq_key:
+            page3.tap(f'[data-rail-card="{eq_key}"] .rz-moment-name')
+            page3.wait_for_timeout(700)
+            check("long-name card grows in place", grown_key(page3) == eq_key)
+            # NB: no top-level `var name` here -- at global scope that
+            # assigns window.name (a string), not the element.
+            grown_m = page3.evaluate(
+                "var gCard = document.querySelector('.rz-moment-card.is-grown');"
+                "var nm = gCard.querySelector('.rz-moment-name');"
+                "var xBtn = gCard.querySelector('[data-rail-close]');"
+                "var cs = getComputedStyle(nm);"
+                "var probe = document.createElement('div');"
+                "probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;'"
+                "  + 'font-size:' + cs.fontSize + ';font-weight:' + cs.fontWeight"
+                "  + ';font-family:' + cs.fontFamily + ';line-height:' + cs.lineHeight"
+                "  + ';letter-spacing:' + cs.letterSpacing"
+                "  + ';white-space:normal;overflow-wrap:break-word;'"
+                "  + 'width:' + nm.clientWidth + 'px;';"
+                "probe.textContent = nm.textContent;"
+                "document.body.appendChild(probe);"
+                "var needH = probe.clientHeight;"
+                "probe.remove();"
+                "var tnode = nm.firstChild;"
+                "var broken = [];"
+                "if (tnode) {"
+                "  var segs = nm.textContent.split(/[\\s-]+/).filter(Boolean);"
+                "  var sidx = 0;"
+                "  for (var si = 0; si < segs.length; si++) {"
+                "    var at = nm.textContent.indexOf(segs[si], sidx);"
+                "    var rg = document.createRange();"
+                "    rg.setStart(tnode, at); rg.setEnd(tnode, at + segs[si].length);"
+                "    if (rg.getClientRects().length !== 1) broken.push(segs[si]);"
+                "    sidx = at + segs[si].length;"
+                "  }"
+                "}"
+                "({ text: nm.textContent, whiteSpace: cs.whiteSpace, brokenWords: broken,"
+                "   scrollW: nm.scrollWidth, clientW: nm.clientWidth,"
+                "   clientH: nm.clientHeight, needH: needH,"
+                "   nameRight: nm.getBoundingClientRect().right,"
+                "   xLeft: xBtn.getBoundingClientRect().left,"
+                "   xVisible: !!(xBtn.offsetWidth || xBtn.offsetHeight) })")
+            check("grown header shows the full name (no truncation)",
+                  grown_m["text"] == "Equanimeous St. Brown"
+                  and grown_m["whiteSpace"] != "nowrap"
+                  and grown_m["scrollW"] <= grown_m["clientW"] + 1
+                  and grown_m["clientH"] >= grown_m["needH"] - 1
+                  and grown_m["brokenWords"] == [],
+                  f"grown={grown_m}")
+            check("grown name does not run under the X button",
+                  grown_m["xVisible"] and grown_m["nameRight"] <= grown_m["xLeft"] + 2,
+                  f"nameRight={grown_m['nameRight']} xLeft={grown_m['xLeft']}")
+            page3.tap(f'[data-rail-card="{eq_key}"] [data-rail-close]')
+            page3.wait_for_timeout(700)
+            check("long-name card closes again", grown_key(page3) is None)
+        check("no page errors (long names)", errors3 == [], "; ".join(errors3[:3]))
+        ctx3.close()
 
         browser.close()
 
