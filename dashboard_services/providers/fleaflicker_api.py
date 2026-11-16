@@ -2108,13 +2108,26 @@ class FleaflickerProvider(ProviderAdapter):
         return out
 
     def _playoff_seeds(self, league_id, season, *, token: Optional[str] = None) -> list[int]:
-        """Team ids in standings order (best first)."""
+        """Team ids in the site's standings seed order (best first).
+
+        Same order the Standings table prints (utils.standings
+        playoff_seed_order): division winners first, then wins ->
+        division win% -> PF -> PA. FetchLeagueStandings carries every
+        input per team: recordOverall, recordDivision, pointsFor /
+        pointsAgainst, plus the divisions[] grouping. Fleaflicker's own
+        ``rank`` is NOT the seed order (it is PF-first among tied
+        records: in 92916 it put Fearless #1 where the standings seed
+        is #3), so it is only the fallback when the seed inputs are
+        missing from the payload.
+        """
         try:
             standings = self._call(
                 "FetchLeagueStandings", league_id, season, ttl=1800, token=token,
             )
         except Exception:
             return []
+        div_by_team = self._divisions_from_standings(standings)["by_team"]
+        teams = []
         ranked = []
         for i, team in enumerate(self._teams_from_standings(standings), 1):
             team_id = _get(team, "id")
@@ -2128,6 +2141,36 @@ class FleaflickerProvider(ProviderAdapter):
             except (TypeError, ValueError):
                 rank = i
             ranked.append((rank, _int(team_id)))
+            stats = self._settings_from_standings_team(team)
+            div_rec = team.get("recordDivision") or team.get("record_division") or {}
+            if not isinstance(div_rec, dict):
+                div_rec = {}
+            div = div_by_team.get(str(team_id))
+            teams.append({
+                "_tid": _int(team_id),
+                "wins": stats.get("wins", 0),
+                "ties": stats.get("ties", 0),
+                "pf": (stats.get("fpts", 0) or 0)
+                      + (stats.get("fpts_decimal", 0) or 0) / 100.0,
+                "pa": (stats.get("fpts_against", 0) or 0)
+                      + (stats.get("fpts_against_decimal", 0) or 0) / 100.0,
+                "division": div[0] if div else 0,
+                "div_record": (
+                    (_int(_get(div_rec, "wins")), _int(_get(div_rec, "losses")),
+                     _int(_get(div_rec, "ties")))
+                    if div_rec else None
+                ),
+            })
+        if len(teams) >= 2 and any(t["wins"] or t["pf"] for t in teams):
+            try:
+                from utils.standings import playoff_seed_order
+                order = playoff_seed_order(teams)
+                return [teams[i]["_tid"] for i in order if teams[i]["_tid"]]
+            except Exception:
+                logger.debug(
+                    "Fleaflicker playoff seed order failed; using provider rank",
+                    exc_info=True,
+                )
         ranked.sort(key=lambda x: x[0])
         return [tid for _, tid in ranked if tid]
 
@@ -2144,6 +2187,24 @@ class FleaflickerProvider(ProviderAdapter):
         settings = (league or {}).get("settings") or {}
         start = _int(settings.get("playoff_week_start"), 15)
         playoff_teams = _int(settings.get("playoff_teams"), 6)
+        # The settings above carry unverified defaults (Fleaflicker
+        # publishes no playoff format, so get_league defaults to 6).
+        # The league-rules record is the same source the Standings page
+        # reads; a resolved format (confirmed / feed / derived) wins so
+        # the Picture shows the real field (92916: 8 teams, no byes).
+        try:
+            from utils.league_rules import resolved_playoff_format
+            _fmt = resolved_playoff_format(
+                "fleaflicker", league_id, season,
+                provider_settings=settings,
+                total_rosters=_int((league or {}).get("total_rosters")) or None,
+            )
+        except Exception:
+            _fmt = None
+        if _fmt:
+            playoff_teams = _fmt["playoff_teams"]
+            if _fmt.get("playoff_week_start"):
+                start = _fmt["playoff_week_start"]
         by_week: dict[int, list] = {}
         for week in range(start, start + 4):
             try:

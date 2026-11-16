@@ -671,6 +671,45 @@ def resolve_league_rules(platform, league_id, season, provider_settings=None,
     return default
 
 
+def resolved_playoff_format(platform, league_id, season,
+                            provider_settings=None, total_rosters=None):
+    """Resolved playoff format for consumers that bypass the league ctx.
+
+    Returns ``{"playoff_teams": int, "playoff_week_start": int | None}``
+    when the league's rules record carries a format from a trusted source
+    (user_confirmed / feed / derived), else None. The projected Playoff
+    Picture bracket is built by provider ``get_bracket`` methods, which
+    never see the serve-time ctx overlay: without this they read the
+    provider adapter's raw settings, where Fleaflicker/MFL silently
+    default ``playoff_teams=6`` even when the record (the same one the
+    Standings page reads) says 8. A ``default_unverified`` record is NOT
+    trusted here: its values are just those same provider defaults, so
+    the caller keeps its current behavior. No deriver is passed, so this
+    never triggers derivation (the ctx deriver itself calls
+    ``get_bracket`` for the prior season). Fails soft: any error -> None.
+    """
+    try:
+        record = resolve_league_rules(
+            platform, league_id, season,
+            provider_settings=provider_settings,
+            total_rosters=total_rosters,
+        )
+    except Exception:
+        logger.debug("[league-rules] format resolve failed", exc_info=True)
+        return None
+    if not record or record.get("source") not in (
+        SOURCE_USER_CONFIRMED, SOURCE_FEED, SOURCE_DERIVED,
+    ):
+        return None
+    teams = _as_int(record.get("playoff_teams"))
+    if teams is None or teams < 2:
+        return None
+    return {
+        "playoff_teams": teams,
+        "playoff_week_start": _as_int(record.get("playoff_week_start")),
+    }
+
+
 def confirm_league_rules(platform, league_id, season, *, playoff_teams=None,
                          playoff_week_start=None, waiver_type=None,
                          waiver_process_time=None, waiver_process_days=None,

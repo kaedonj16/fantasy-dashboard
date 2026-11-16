@@ -1435,6 +1435,115 @@ def test_fleaflicker_bracket_projects_from_seeds(monkeypatch):
     assert provider.get_bracket("14153", 2026, "losers") == []
 
 
+def _standings_92916_shape():
+    """12-team, 3-division standings payload in the real 92916 shape.
+
+    recordOverall.rank is Fleaflicker's own PF-first order (Fearless 1st
+    among the 7-2 teams); the site's standings seeds differ and are what
+    the bracket must use: division winners first (Triple B II 3-0 in
+    division, dolphins fan 3-0, Fearless 2-1), then wild cards by wins ->
+    division win% -> PF (Spartyhater's 2-1 division record puts him 4th
+    despite the lowest PF of the 5-4 group).
+    """
+    def team(tid, name, w, l, dw, dl, pf, pa, rank):
+        return {
+            "id": tid, "name": name,
+            "recordOverall": {"wins": w, "losses": l, "ties": 0, "rank": rank},
+            "recordDivision": {"wins": dw, "losses": dl, "ties": 0},
+            "pointsFor": {"value": pf}, "pointsAgainst": {"value": pa},
+        }
+
+    return {
+        "league": {"id": 92916, "name": "All American All Star League",
+                   "size": 12},
+        "season": 2026,
+        "divisions": [
+            {"name": "Division 1", "teams": [
+                team(11, "Fearless And Ready To Rumble", 7, 2, 2, 1, 1183.4, 928.8, 1),
+                team(12, "Password is Taco", 5, 4, 1, 2, 1094.0, 1052.2, 4),
+                team(13, "American Dream", 5, 4, 1, 2, 944.95, 946.6, 7),
+                team(14, "East Bay Biters", 3, 6, 2, 1, 967.05, 987.9, 10),
+            ]},
+            {"name": "Division 2", "teams": [
+                team(21, "Triple B II", 7, 2, 3, 0, 1053.7, 861.7, 2),
+                team(22, "Spartyhater", 5, 4, 2, 1, 997.8, 901.6, 6),
+                team(23, "FLASHOVERS", 5, 4, 1, 2, 1078.7, 1106.0, 5),
+                team(24, "Filler Four", 2, 7, 0, 3, 700.0, 1000.0, 11),
+            ]},
+            {"name": "Division 3", "teams": [
+                team(31, "dolphins fan", 7, 2, 3, 0, 1043.6, 900.0, 3),
+                team(32, "Filler Five", 4, 5, 1, 2, 850.0, 950.0, 8),
+                team(33, "Filler Six", 3, 6, 1, 2, 800.0, 990.0, 9),
+                team(34, "Filler Seven", 1, 8, 0, 3, 600.0, 1100.0, 12),
+            ]},
+        ],
+    }
+
+
+# Standings seed order for the fixture above (see its docstring).
+_SEEDS_92916 = [21, 31, 11, 22, 12, 23, 13, 32, 14, 33, 24, 34]
+
+
+def test_playoff_seeds_use_standings_seed_order(monkeypatch):
+    provider = FleaflickerProvider()
+    payload = _standings_92916_shape()
+    monkeypatch.setattr(
+        provider, "_call", lambda method, *a, **k: payload)
+    assert provider._playoff_seeds("92916", 2026) == _SEEDS_92916
+
+
+def _bracket_provider(monkeypatch, resolved_record):
+    provider = FleaflickerProvider()
+    monkeypatch.setattr(provider, "get_league", lambda *a, **k: {
+        "total_rosters": 12,
+        "settings": {"playoff_week_start": 15, "playoff_teams": 6},
+    })
+    monkeypatch.setattr(provider, "get_matchups", lambda *a, **k: [])
+    payload = _standings_92916_shape()
+    monkeypatch.setattr(
+        provider, "_call", lambda method, *a, **k: payload)
+    from utils import league_rules as lr
+    monkeypatch.setattr(
+        lr, "resolve_league_rules", lambda *a, **k: resolved_record)
+    return provider
+
+
+def test_bracket_uses_resolved_format_over_raw_default(monkeypatch):
+    # Provider settings say 6 (the unverified Fleaflicker default); the
+    # resolved rules record says 8, Week 15. The Picture must show the
+    # 8-team field: 4 first-round games, no byes, seeds matching the
+    # standings order.
+    provider = _bracket_provider(monkeypatch, {
+        "source": "user_confirmed", "playoff_teams": 8,
+        "playoff_week_start": 15,
+    })
+    games = provider.get_bracket("92916", 2026, "winners")
+    field = {g[s] for g in games for s in ("t1", "t2") if g[s] is not None}
+    assert field == set(_SEEDS_92916[:8])
+    by_round = {}
+    for g in games:
+        by_round.setdefault(g["r"], []).append(g)
+    assert {r: len(gs) for r, gs in by_round.items()} == {1: 4, 2: 2, 3: 1}
+    round1_pairs = {
+        tuple(sorted((g["t1"], g["t2"]))) for g in by_round[1]
+    }
+    # Canonical 8-team pairings in standings seed order: 1v8, 4v5, 2v7, 3v6.
+    assert round1_pairs == {(21, 32), (12, 22), (13, 31), (11, 23)}
+
+
+def test_bracket_keeps_default_when_no_resolved_format(monkeypatch):
+    # No trusted record (default_unverified only): today's 6-team
+    # projection is unchanged.
+    provider = _bracket_provider(monkeypatch, {
+        "source": "default_unverified", "playoff_teams": 6,
+        "playoff_week_start": 15,
+    })
+    games = provider.get_bracket("92916", 2026, "winners")
+    field = {g[s] for g in games for s in ("t1", "t2") if g[s] is not None}
+    assert field == set(_SEEDS_92916[:6])
+    assert len(games) == 5
+
+
 def _et_ms(year, month, day, hour=12):
     return int(datetime(year, month, day, hour, tzinfo=ZoneInfo("America/New_York")).timestamp() * 1000)
 

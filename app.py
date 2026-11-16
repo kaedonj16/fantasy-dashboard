@@ -11847,6 +11847,7 @@ def render_power_and_playoffs(
         season,
         bracket_override=None,
         seed_map_override=None,
+        standings_seed_map=None,
         power_rankings=None,
         prev_power_ranks=None,
         playoff_week_start=None,
@@ -11859,6 +11860,11 @@ def render_power_and_playoffs(
       - Playoff Picture (using bracket)
     bracket_override: pre-built bracket list; skips API fetch when provided.
     seed_map_override: {roster_id: seed_int}; skips seed_top6 calculation.
+    standings_seed_map: {roster_id: seed_int} in the Standings table's
+        playoff seed order (division winners first, division-record
+        tiebreak). Used for the Playoff Picture seed pills when no
+        seed_map_override is given, so the pills match the standings
+        seeds instead of the Wins/PF sort in seed_top6.
     power_rankings: list of team dicts from build_power_rankings_context()
         ({"team_name", "power_score", "rank"}). When provided, the podium's
         order and PowerScore are taken from here so this card matches the
@@ -12133,7 +12139,12 @@ def render_power_and_playoffs(
         if pd.notna(owner)
     }
 
-    seed_map = seed_map_override if seed_map_override is not None else seed_top6_from_team_stats(team_stats, roster_map)
+    if seed_map_override is not None:
+        seed_map = seed_map_override
+    elif standings_seed_map:
+        seed_map = standings_seed_map
+    else:
+        seed_map = seed_top6_from_team_stats(team_stats, roster_map)
 
     # ---- Losers (Toilet Bowl) bracket + team meta for the tree ----
     # Skipped entirely when a bracket_override is supplied (the offseason
@@ -13264,6 +13275,50 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
             _path_live = 1 <= (_pp_weeks - _played_max) <= SHOW_WITHIN_WEEKS
         except Exception:
             _path_live = False
+    # Bracket seed pills must match the seeds the standings table just
+    # printed (division winners first, division-record tiebreak), not
+    # the Wins/PF sort seed_top6 uses. Computed only for divisional
+    # leagues, which is where the two orders diverge; flat leagues keep
+    # today's pills. Same inputs render_standings seeds from: the
+    # week-capped team_stats plus division records off detailed_df.
+    _bracket_seed_map = None
+    try:
+        _div_by_rid = (_div_info or {}).get("by_rid") or {}
+        if len({d for d in _div_by_rid.values() if d}) >= 2:
+            from utils.standings_divisions import (
+                assign_playoff_seeds, division_records as _div_records_fn,
+            )
+            _drecs = _div_records_fn(detailed_df, _div_by_rid)
+            _seed_teams, _seed_rids = [], []
+            for _, _rr in team_stats.iterrows():
+                _rid = _o2r.get(str(_rr.get("owner")))
+                if _rid is None:
+                    continue
+                try:
+                    _rid_i = int(_rid)
+                except (TypeError, ValueError):
+                    _rid_i = None
+                _seed_rids.append(str(_rid))
+                _seed_teams.append({
+                    "wins": float(_rr.get("Wins", 0) or 0),
+                    "ties": float(_rr.get("Ties", 0) or 0),
+                    "pf": float(_rr.get("PF", 0) or 0),
+                    "pa": float(_rr.get("PA", 0) or 0),
+                    "division": int(
+                        _div_by_rid.get(_rid_i)
+                        or _div_by_rid.get(str(_rid)) or 0
+                    ),
+                    "div_record": _drecs.get(_rid_i) if _rid_i is not None else None,
+                })
+            if len(_seed_teams) >= 2:
+                _bracket_seed_map = {
+                    rid: seed
+                    for rid, seed in zip(
+                        _seed_rids, assign_playoff_seeds(_seed_teams))
+                }
+    except Exception:
+        logger.debug("[standings] bracket seed map skipped", exc_info=True)
+        _bracket_seed_map = None
     power_html = render_power_and_playoffs(
         team_stats,
         roster_map,
@@ -13274,6 +13329,7 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         prev_power_ranks=prev_power_ranks,
         playoff_week_start=_pws,
         playoff_path_live=_path_live,
+        standings_seed_map=_bracket_seed_map,
     )
     # Roster values only feed the preseason tiles (records all 0-0); skip the DB
     # read once games are being played and the game-derived tiles take over.
