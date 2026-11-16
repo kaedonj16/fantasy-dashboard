@@ -52987,6 +52987,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-row:has(> .mb-stat-row) > .mb-cell,
 .mb-row:has(> .mb-fld:not(:empty)) > .mb-cell { padding-bottom: 0; }
 .mb-stat-row { min-width: 0; padding: 0 9px; margin-top: -3px; }
+/* A stat row carrying real stats is the game-sheet entry point (tap opens
+   the sheet, live or final): pointer affordance + a quiet press fade,
+   mirroring .mb-fld-link's treatment. Inert rows get neither. */
+.mb-stat-row[data-gs-team] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.mb-stat-row[data-gs-team]:active { opacity: .65; }
+.mb-stat-row[data-gs-team]:focus-visible { outline: 2px solid var(--accent, #122d4b); outline-offset: 2px; border-radius: 6px; }
 .mb-row:has(> .mb-fld:not(:empty)) .mb-stat-row { margin-top: -2px; }
 .mb-stat-row .mb-stat {
     display: block;

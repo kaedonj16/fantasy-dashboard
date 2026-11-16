@@ -3631,7 +3631,7 @@ def render_matchup_slide(
         # Stat line sits UNDER the drive bar (Kaedon's call), never truncated.
         # Stats come back from player_bits as element 6; keep the
         # "Stats unavailable" fallback that player_bits already builds.
-        def _stat_row(stats_tuple, span_cls, side_cls=""):
+        def _stat_row(stats_tuple, span_cls, side_cls="", team=""):
             if not stats_tuple:
                 return ""
             stats_val, unavailable = stats_tuple
@@ -3647,10 +3647,26 @@ def render_matchup_slide(
                 )
             else:
                 return ""
-            return f"<div class='mb-stat-row {span_cls} {side_cls}'>{inner}</div>"
+            # A real stat line doubles as the game-sheet entry point: the
+            # client resolves data-gs-team to the player's game (live OR
+            # final) exactly like the drive bar's .mb-fld-link does, so a
+            # tap on the stats opens the sheet with the box score. The
+            # "Stats unavailable" marker and team-less rows stay inert.
+            gs_attrs = ""
+            if stats_val and not unavailable and team:
+                gs_attrs = (
+                    f" data-gs-team='{html.escape(str(team))}'"
+                    " role='button' tabindex='0'"
+                )
+            return (
+                f"<div class='mb-stat-row {span_cls} {side_cls}'{gs_attrs}>"
+                f"{inner}</div>"
+            )
 
-        left_stat_row = _stat_row(_left_stats, "mb-fld-span-l")
-        right_stat_row = _stat_row(_right_stats, "mb-fld-span-r", "mb-cell-r")
+        left_stat_row = _stat_row(_left_stats, "mb-fld-span-l", team=left_nfl)
+        right_stat_row = _stat_row(
+            _right_stats, "mb-fld-span-r", "mb-cell-r", team=right_nfl
+        )
 
         rows_html.append(
             "<div class=\"mb-row\">"

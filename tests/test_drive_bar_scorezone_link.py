@@ -10,6 +10,9 @@ tests/test_matchup_game_sheet.py). The contract pinned here:
   pre-link markup.
 - A capture-phase handler stops the tap from also firing the matchup row's
   own click handlers and opens the sheet (preventDefault: no navigation).
+  The player's stat line shares the same handler and resolver
+  (.mb-stat-row[data-gs-team], 2026-11-15), so the sheet -- and the box
+  score -- opens for finished games too, when no drive bar renders.
 - The ScoreZone deep link survives as the sheet's footer link, still built
   by scorezoneGameUrl from the current URL's league scope.
 - scorezone.js consumes ?game= lazily and one-shot via _applyGameLink: it
@@ -51,11 +54,16 @@ def test_drive_bar_click_opens_sheet_not_row_handlers():
     start = js.index("var link = e.target && e.target.closest")
     handler = js[js.rindex("document.addEventListener('click'", 0, start):]
     handler = handler[: handler.index("}, true);")]
-    assert "closest('.mb-fld-link')" in handler
+    # The bar and the stat line share one handler (widened selector) and
+    # one resolver: no duplicated open logic between the two entry points.
+    assert "closest('.mb-fld-link, .mb-stat-row[data-gs-team]')" in handler
     assert "e.stopPropagation()" in handler
     assert "e.preventDefault()" in handler
-    assert "openGameSheet(game)" in handler
-    assert "gameForTeam(lastState, team)" in handler
+    assert "openSheetForTeam(link.getAttribute('data-gs-team'))" in handler
+    resolver = js[js.index("function openSheetForTeam(team)"):]
+    resolver = resolver[: resolver.index("\n  }\n")]
+    assert "gameForTeam(lastState, team)" in resolver
+    assert "openGameSheet(game)" in resolver
 
 
 def test_scorezone_consumes_game_param_into_canonical_filter():
