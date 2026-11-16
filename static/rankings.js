@@ -1205,9 +1205,13 @@ function prReloadAdpSource() {
   prAdpSource = sel.value;
   // "Auto" re-fetches the server default (no adp_source override); any real
   // source overlays via the resolver.
-  let url = '/api/league-players';
+  // view=rankings: this reload merges only the six ADP fields below (plus
+  // the top-level adp_sources block, which the slim view preserves), all of
+  // which RANKINGS_PLAYER_KEYS carries. The full view shipped the whole
+  // ~4MB pool for those six numbers on every source switch.
+  let url = '/api/league-players?view=rankings';
   if (prAdpSource && prAdpSource !== 'auto') {
-    url += '?adp_source=' + encodeURIComponent(prAdpSource);
+    url += '&adp_source=' + encodeURIComponent(prAdpSource);
     if (window.__leagueId) url += '&league_id=' + encodeURIComponent(window.__leagueId);
     if (window.__platform) url += '&platform=' + encodeURIComponent(window.__platform);
   }

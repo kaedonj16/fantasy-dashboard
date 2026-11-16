@@ -109,6 +109,24 @@ def test_rankings_js_uses_slim_view_and_parallel_fetches():
     assert RANKINGS_JS.count("fetch('/api/sparklines?v=4')") == 1
 
 
+def test_adp_source_reload_uses_slim_view():
+    # prReloadAdpSource merges only six ADP fields (avg_pick, sf_avg_pick,
+    # rookie_avg_pick, sf_rookie_avg_pick, redraft_avg_pick,
+    # sf_redraft_avg_pick) plus the top-level adp_sources block. All six
+    # are in RANKINGS_PLAYER_KEYS and slim_rankings_payload preserves
+    # top-level blocks, so the reload must use view=rankings, not the
+    # full pool it used to download on every source switch.
+    for field in ("avg_pick", "sf_avg_pick", "rookie_avg_pick",
+                  "sf_rookie_avg_pick", "redraft_avg_pick",
+                  "sf_redraft_avg_pick"):
+        assert field in RANKINGS_PLAYER_KEYS
+    start = RANKINGS_JS.index("function prReloadAdpSource()")
+    end = RANKINGS_JS.index("prAdpReloading = true;", start)
+    segment = RANKINGS_JS[start:end]
+    assert "'/api/league-players?view=rankings'" in segment
+    assert "&adp_source=" in segment
+
+
 def test_changelog_announces_one_pass_load():
     entry = changelog_entry("loads in one pass", "less than half its old size")
     assert entry["tag"] == "fix"
