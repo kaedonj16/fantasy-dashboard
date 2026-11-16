@@ -815,7 +815,16 @@ class MFLProvider(ProviderAdapter):
                 for p in picks]
 
     def _playoff_seeds(self, league_id, season) -> list[int]:
-        """Roster ids in standings order when leagueStandings is available."""
+        """Roster ids in the site's standings seed order (best first).
+
+        Same order the Standings table prints (utils.standings
+        playoff_seed_order): division winners first, then wins ->
+        division win% -> PF -> PA, using the record fields the
+        leagueStandings export carries (h2hw/h2hl/h2ht, pf, pa,
+        division, divw/divl/divt) when present. The export's own rank
+        order is only the fallback when those fields are absent, so a
+        payload without them behaves exactly as before.
+        """
         try:
             raw = self._export("leagueStandings", league_id, season, ttl=1800)
         except Exception:
@@ -826,6 +835,7 @@ class MFLProvider(ProviderAdapter):
             "franchise",
         )
         ranked = []
+        teams = []
         for i, fr in enumerate(franchises, 1):
             fid = _int(fr.get("id"))
             if not fid:
@@ -835,6 +845,45 @@ class MFLProvider(ProviderAdapter):
             except (TypeError, ValueError):
                 rank = i
             ranked.append((rank, fid))
+
+            def _f(*keys):
+                for key in keys:
+                    val = fr.get(key)
+                    if val is not None:
+                        try:
+                            return float(val)
+                        except (TypeError, ValueError):
+                            continue
+                return None
+
+            wins = _f("h2hw", "wins")
+            if wins is None:
+                continue
+            div_w, div_l, div_t = _f("divw"), _f("divl"), _f("divt")
+            teams.append({
+                "_fid": fid,
+                "wins": wins,
+                "ties": _f("h2ht", "ties") or 0,
+                "pf": _f("pf", "pointsFor") or 0,
+                "pa": _f("pa", "pointsAgainst") or 0,
+                "division": _int(fr.get("division") or fr.get("div") or 0),
+                "div_record": (
+                    (int(div_w or 0), int(div_l or 0), int(div_t or 0))
+                    if div_w is not None or div_l is not None else None
+                ),
+            })
+        if len(teams) >= 2 and len(teams) == len(ranked) and any(
+            t["wins"] or t["pf"] for t in teams
+        ):
+            try:
+                from utils.standings import playoff_seed_order
+                order = playoff_seed_order(teams)
+                return [teams[i]["_fid"] for i in order if teams[i]["_fid"]]
+            except Exception:
+                logger.debug(
+                    "MFL playoff seed order failed; using provider rank",
+                    exc_info=True,
+                )
         ranked.sort(key=lambda x: x[0])
         return [fid for _, fid in ranked]
 
@@ -851,6 +900,23 @@ class MFLProvider(ProviderAdapter):
         settings = (league or {}).get("settings") or {}
         start = _int(settings.get("playoff_week_start"), 15)
         playoff_teams = _int(settings.get("playoff_teams"), 6)
+        # The settings above can carry the adapter's `or 6` fallback
+        # when the payload published no playoff field. The league-rules
+        # record is the same source the Standings page reads; a resolved
+        # format (confirmed / feed / derived) wins.
+        try:
+            from utils.league_rules import resolved_playoff_format
+            _fmt = resolved_playoff_format(
+                "mfl", league_id, season,
+                provider_settings=settings,
+                total_rosters=_int((league or {}).get("total_rosters")) or None,
+            )
+        except Exception:
+            _fmt = None
+        if _fmt:
+            playoff_teams = _fmt["playoff_teams"]
+            if _fmt.get("playoff_week_start"):
+                start = _fmt["playoff_week_start"]
         by_week: dict[int, list] = {}
         for week in range(start, start + 4):
             try:

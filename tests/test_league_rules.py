@@ -509,3 +509,45 @@ def test_resolve_top_up_refuses_unmarked_waiver_values(store):
     # No claim-history marker: the time is not evidence, not merged.
     assert out["waiver_process_time"] is None
     assert store["saved"] == []
+
+
+# ── resolved_playoff_format (bracket consumers bypassing the ctx) ───
+
+def test_resolved_playoff_format_returns_confirmed_format(store):
+    store["stored"] = _record(
+        source=lr.SOURCE_USER_CONFIRMED, playoff_teams=8,
+        playoff_week_start=15,
+    )
+    fmt = lr.resolved_playoff_format(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12,
+    )
+    assert fmt == {"playoff_teams": 8, "playoff_week_start": 15}
+
+
+def test_resolved_playoff_format_returns_derived_format(store):
+    store["stored"] = _record(
+        source=lr.SOURCE_DERIVED, playoff_teams=8, playoff_week_start=15,
+    )
+    fmt = lr.resolved_playoff_format(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12,
+    )
+    assert fmt == {"playoff_teams": 8, "playoff_week_start": 15}
+
+
+def test_resolved_playoff_format_ignores_default_unverified(store):
+    # A default_unverified record is just the provider's own defaults
+    # (Fleaflicker's silent 6) round-tripped through the store; the
+    # bracket must keep behaving as it does today for such leagues.
+    store["stored"] = _record(
+        source=lr.SOURCE_DEFAULT, playoff_teams=6, playoff_week_start=15,
+    )
+    fmt = lr.resolved_playoff_format(
+        "fleaflicker", "92916", 2026,
+        provider_settings={"playoff_teams": 6, "playoff_week_start": 15},
+        total_rosters=12,
+    )
+    assert fmt is None
