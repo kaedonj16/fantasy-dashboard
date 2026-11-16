@@ -188,6 +188,7 @@ def build_live_stats_for_game_from_tank(
 def merge_live_stats_into_league_week_stats(
         league_week_stats: dict,
         live_stats: dict,
+        src: str = "tank",
 ) -> None:
     """
     Mutates league_week_stats in-place, overwriting or adding stats
@@ -196,8 +197,10 @@ def merge_live_stats_into_league_week_stats(
 
       league_week_stats[team][pos][player_name] = {stat_dict}
 
-    Marks each merged player line with ``_src: "tank"`` so matchup rows can
-    tell Tank01 box scores apart from Footballguys prior-season leftovers.
+    Marks each merged player line with ``_src`` (``"tank"`` by default) so
+    matchup rows can tell live-overlaid lines apart from Footballguys
+    prior-season leftovers. The Matchup page's live overlay passes
+    ``src="sleeper_live"`` for lines built from a fresh Sleeper stats fetch.
     """
     for team, pos_map in live_stats.items():
         team_bucket = league_week_stats.setdefault(team, {})
@@ -206,7 +209,7 @@ def merge_live_stats_into_league_week_stats(
             for name_key, stat_dict in players.items():
                 if isinstance(stat_dict, dict):
                     merged = dict(stat_dict)
-                    merged["_src"] = "tank"
+                    merged["_src"] = src
                     pos_bucket[name_key] = merged
                 else:
                     pos_bucket[name_key] = stat_dict
@@ -370,9 +373,11 @@ def box_score_line_is_trusted(
 
     Footballguys republishes last year's Wk N under the new season until their
     logs flip. Calendar-past + Tank code ``0`` used to unlock those leftovers.
-    Trust Tank-overlaid lines (``_src=tank``) or an explicit Tank live/final code.
+    Trust live-overlaid lines (``_src=tank`` from a Tank01 box score,
+    ``_src=sleeper_live`` from a fresh Sleeper stats fetch) or an explicit
+    Tank live/final code.
     """
-    if player_stats and player_stats.get("_src") == "tank":
+    if player_stats and player_stats.get("_src") in ("tank", "sleeper_live"):
         return True
     return tank01_status_confirms_started(game)
 

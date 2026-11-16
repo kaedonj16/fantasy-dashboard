@@ -6,6 +6,7 @@ import json
 import os
 import re
 import threading
+import time
 from collections import OrderedDict
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -37,6 +38,7 @@ from utils.utils import (
     player_week_stat_entry,
     overlay_idp_and_k_stats_from_sleeper,
     load_sleeper_week_stats,
+    merge_live_stats_into_league_week_stats,
 )
 from utils.matchup_schedule import lineup_from_roster, _starters_look_like_full_roster
 from utils.week_proj import week_proj_map_from_bundles as _week_proj_map_from_bundles
@@ -167,6 +169,366 @@ def _week_stats_for_slide(season, w, ensure_sleeper: bool = False) -> dict:
             season, w, exc_info=True,
         )
     return week_stats
+
+# ── Live overlay (Matchup page freshness) ────────────────────────────────────
+# The matchup slides render from the cached league context, whose points and
+# stat lines can trail live games by minutes. ScoreZone stays fresh by
+# re-fetching provider matchups on a 12s cache. This overlay applies the same
+# freshness at render time -- provider points from that 12s re-fetch, stat
+# lines from a fresh Sleeper week-stats fetch (Sleeper's stats endpoint is
+# live during games) behind a short in-memory TTL -- current week only, only
+# for games live/final today, so the Matchup page (initial render and
+# /api/weekly-week polls alike) shows current numbers without rebuilding
+# the league context.
+# Fail-soft throughout: any failure renders exactly as the cached context did.
+_LIVE_OVERLAY_CACHE_TTL = 12  # mirrors ScoreZone's _RZ_LIVE_CACHE_TTL
+
+# Sleeper kicker keys beyond _SLEEPER_TO_WEEKSTATS -- the same set
+# _sleeper_skill_stat_line reads when it builds a K line from the feed.
+_SLEEPER_K_STAT_KEYS = ("fgm", "fga", "xpm", "xpa", "fgm_yds")
+
+# Sleeper team-defense keys -- the same set _sleeper_skill_stat_line reads
+# for a DEF line. The stats payload keys team defenses by team abbreviation
+# (and Sleeper leagues use that abbreviation as the DEF starter's pid).
+_SLEEPER_DEF_STAT_KEYS = (
+    "sack", "int", "pts_allow", "def_td", "fum_rec", "ff", "yds_allow",
+    "sack_yd",
+)
+
+_LIVE_OVERLAY_POS = ("QB", "RB", "WR", "TE", "K", "DEF", "DST")
+
+# Sleeper's stats endpoint is live during games, but the hub polls every
+# 20s per viewer: memoize the forced fetch briefly so a burst of renders
+# shares one upstream call. Failures and empty payloads are NOT memoized --
+# the next render retries, and the overlay falls back to snapshot lines.
+_SLEEPER_LIVE_STATS_TTL = 25.0
+_sleeper_live_stats_memo: Dict[tuple, tuple] = {}
+
+
+def _fetch_sleeper_live_week_stats(season: Any, week: Any) -> dict:
+    """Fresh Sleeper per-player stats for one week ({pid: raw stat dict}),
+    behind a short in-memory TTL. Returns {} on any failure or empty
+    payload so callers fall back to the snapshot lines."""
+    try:
+        key = (int(season), int(week))
+    except (TypeError, ValueError):
+        return {}
+    now = time.monotonic()
+    hit = _sleeper_live_stats_memo.get(key)
+    if hit and (now - hit[0]) < _SLEEPER_LIVE_STATS_TTL:
+        return hit[1]
+    try:
+        from data_building.external_data.sleeper_bulk_stats import (
+            fetch_week_stats,
+        )
+        data = fetch_week_stats(key[0], key[1], force=True)
+    except Exception:
+        logger.debug(
+            "[matchups] live overlay Sleeper stats fetch failed", exc_info=True,
+        )
+        return {}
+    if not isinstance(data, dict) or not data:
+        return {}
+    _sleeper_live_stats_memo[key] = (now, data)
+    return data
+
+
+def _sleeper_live_stat_entry(row: dict, pos: str) -> dict:
+    """One player's week_stats entry from a raw Sleeper stats row, using the
+    same key mapping _sleeper_skill_stat_line trusts (plus its K keys)."""
+    entry: Dict[str, Any] = {}
+    for src, dst in _SLEEPER_TO_WEEKSTATS.items():
+        v = row.get(src)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            entry[dst] = v
+    if pos == "K":
+        for k in _SLEEPER_K_STAT_KEYS:
+            v = row.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                entry[k] = v
+    return entry
+
+
+def _sleeper_live_def_entry(row: dict) -> dict:
+    """A team-defense week_stats entry from the Sleeper payload's
+    team-abbreviation row. Only the defensive keys are read: the row also
+    carries whole-team aggregates (total yards, TDs) that are not the
+    defense's line."""
+    entry: Dict[str, Any] = {}
+    for k in _SLEEPER_DEF_STAT_KEYS:
+        v = row.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            entry[k] = v
+    return entry
+
+
+def _live_overlay_game_lookup(team_game_lookup) -> dict:
+    """Fresh team -> game lookup for today, via the TTL-cached scores feed
+    (the same call ScoreZone's collect makes). Falls back to the caller's
+    (context-build-time) lookup when the fresh fetch is unavailable."""
+    try:
+        today_str = date.today().strftime("%Y%m%d")
+        scores_body = get_nfl_scores_for_date(
+            today_str, timeout=12, _cache_max_age=_LIVE_OVERLAY_CACHE_TTL,
+        ) or {}
+        fresh = build_team_game_lookup(scores_body) if scores_body else {}
+        if fresh:
+            return fresh
+    except Exception:
+        logger.debug("[matchups] live overlay scores fetch failed", exc_info=True)
+    return team_game_lookup or {}
+
+
+def apply_live_matchup_overlay(
+        matchups: List[dict],
+        *,
+        platform: str,
+        league_id: str,
+        season: Any,
+        week: Any,
+        current_week: Any,
+        team_game_lookup: Optional[dict] = None,
+        scoring_settings: Optional[dict] = None,
+) -> tuple[List[dict], Optional[dict]]:
+    """Overlay live-fresh points + stat lines onto built matchup dicts.
+
+    Returns ``(matchups, week_stats_overlay)``: matchup copies whose starter /
+    bench ``pts`` and team ``pts_total`` come from a fresh provider re-fetch
+    (12s cache, the ScoreZone collect call), plus a week_stats-shaped overlay
+    of Sleeper live stat lines for ``render_matchup_slide``'s
+    ``live_week_stats`` parameter. Provider points are authoritative when
+    present (even 0); a player the provider has no actual for falls back to
+    points derived from his live stat line with the league's scoring.
+    Past/future weeks and days with no live/final game return the inputs
+    untouched.
+    """
+    try:
+        return _apply_live_matchup_overlay(
+            matchups, platform=platform, league_id=league_id, season=season,
+            week=week, current_week=current_week,
+            team_game_lookup=team_game_lookup,
+            scoring_settings=scoring_settings,
+        )
+    except Exception:
+        logger.info("[matchups] live overlay failed; serving cached data", exc_info=True)
+        return matchups, None
+
+
+def _apply_live_matchup_overlay(
+        matchups, *, platform, league_id, season, week, current_week,
+        team_game_lookup, scoring_settings,
+) -> tuple[List[dict], Optional[dict]]:
+    if not matchups or int(week) != int(current_week):
+        return matchups, None
+
+    # Player identity straight off the built team blocks (name/pos/team are
+    # already resolved there); first occurrence wins.
+    player_meta: Dict[str, dict] = {}
+    for m in matchups:
+        for side_key in ("left", "right"):
+            side = m.get(side_key) or {}
+            for p in (side.get("starters") or []) + (side.get("bench") or []):
+                if not p:
+                    continue
+                pid = str(p.get("pid") or "")
+                if pid and pid not in player_meta:
+                    player_meta[pid] = {
+                        "name": p.get("name") or "",
+                        "pos": str(p.get("pos") or "").upper(),
+                        "nfl": str(p.get("nfl") or "").upper(),
+                    }
+    if not player_meta:
+        return matchups, None
+
+    game_lookup = _live_overlay_game_lookup(team_game_lookup)
+    games_to_pids: Dict[str, List[str]] = {}
+    for pid, meta in player_meta.items():
+        if not meta["nfl"]:
+            continue
+        game = lookup_team_map(game_lookup, meta["nfl"]) or {}
+        gid = str(game.get("gameID") or "")
+        code = str(game.get("gameStatusCode") or "").strip()
+        if gid and code in ("1", "2"):
+            games_to_pids.setdefault(gid, []).append(pid)
+    if not games_to_pids:
+        return matchups, None
+
+    # Fresh points: the exact provider re-fetch ScoreZone's collect makes.
+    fresh_by_rid: Dict[str, dict] = {}
+    fresh_ok = False
+    try:
+        rows = get_matchups(
+            platform, league_id, int(week), int(season),
+            cache_ttl=_LIVE_OVERLAY_CACHE_TTL,
+        ) or []
+        for row in rows:
+            if isinstance(row, dict) and row.get("roster_id") is not None:
+                fresh_by_rid[str(row["roster_id"])] = row
+        fresh_ok = bool(fresh_by_rid)
+    except Exception:
+        logger.debug("[matchups] live overlay matchup re-fetch failed", exc_info=True)
+
+    # Fresh stat lines: Sleeper's per-player stats for the current week
+    # (the endpoint is live during games), fetched fresh behind a short
+    # in-memory TTL and converted with the same mapping the slide's Sleeper
+    # gap-fill trusts. Only players in live/final games today get lines.
+    lines_by_pid: Dict[str, dict] = {}
+    def_entry_by_team: Dict[str, dict] = {}
+    if games_to_pids:
+        try:
+            sleeper_stats = _fetch_sleeper_live_week_stats(season, week)
+        except Exception:
+            logger.debug(
+                "[matchups] live overlay Sleeper stats failed", exc_info=True,
+            )
+            sleeper_stats = {}
+        if sleeper_stats:
+            wanted: set = set()
+            for pids in games_to_pids.values():
+                wanted.update(pids)
+            for pid in wanted:
+                meta = player_meta[pid]
+                pos = meta["pos"]
+                if pos not in _LIVE_OVERLAY_POS:
+                    continue
+                if pos in ("DEF", "DST"):
+                    # Team defenses are keyed by team abbreviation in the
+                    # payload (Sleeper leagues also use it as the starter's
+                    # pid, so try the pid first, then the team codes).
+                    team = canon_team(meta["nfl"]) or meta["nfl"]
+                    if not team:
+                        continue
+                    row = None
+                    for key in (pid, meta["nfl"], team):
+                        cand = sleeper_stats.get(key)
+                        if isinstance(cand, dict):
+                            row = cand
+                            break
+                    if row is not None:
+                        entry = _sleeper_live_def_entry(row)
+                        if entry:
+                            def_entry_by_team[team] = entry
+                    continue
+                row = sleeper_stats.get(pid)
+                if not isinstance(row, dict):
+                    continue
+                entry = _sleeper_live_stat_entry(row, pos)
+                if entry:
+                    lines_by_pid[pid] = entry
+
+    if not fresh_ok and not lines_by_pid and not def_entry_by_team:
+        return matchups, None
+
+    # week_stats-shaped overlay for the slide's stat-line rendering.
+    week_stats_overlay: Dict[str, Any] = {}
+    for pid, entry in lines_by_pid.items():
+        meta = player_meta[pid]
+        team = canon_team(meta["nfl"]) or meta["nfl"]
+        if not team or not meta["name"]:
+            continue
+        week_stats_overlay.setdefault(team, {}).setdefault(
+            meta["pos"], {},
+        )[normalize_name(meta["name"])] = entry
+    for team, entry in def_entry_by_team.items():
+        # The slide's DEF line sums the team's IDP bucket (see
+        # format_player_stats); the fresh team-defense line rides in the
+        # "team defense" slot the Sleeper IDP/K overlay already uses, and
+        # _merge_live_week_stats swaps it in for the stale bucket sum.
+        week_stats_overlay.setdefault(team, {}).setdefault(
+            "IDP", {},
+        )["team defense"] = entry
+
+    def _overlay_players(players, fresh_pts, state):
+        out = []
+        for p in players or []:
+            if not p:
+                out.append(p)
+                continue
+            np_ = dict(p)
+            pid = str(np_.get("pid") or "")
+            if pid in fresh_pts:
+                if np_.get("pts") != fresh_pts[pid]:
+                    state["changed"] = True
+                np_["pts"] = fresh_pts[pid]
+            elif fresh_ok and pid in lines_by_pid:
+                # Provider has no actual for this player but his game is
+                # live/final and the live stats feed has him: derive the
+                # points from the line with the league's scoring (the
+                # shared helper the slide's stale-line guard uses).
+                derived = None
+                try:
+                    from utils.fantasy_scoring import week_stats_line_points
+                    derived = week_stats_line_points(
+                        lines_by_pid[pid], scoring_settings or {},
+                        np_.get("pos") or "",
+                    )
+                except Exception:
+                    derived = None
+                if derived is not None:
+                    np_["pts"] = round(float(derived), 2)
+                    state["changed"] = True
+            out.append(np_)
+        return out
+
+    def _overlay_side(side):
+        if not isinstance(side, dict):
+            return side
+        new_side = dict(side)
+        fresh_row = fresh_by_rid.get(str(side.get("roster_id") or ""))
+        fresh_pts: Dict[str, float] = {}
+        if fresh_row is not None:
+            for k, v in (fresh_row.get("players_points") or {}).items():
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    fresh_pts[str(k)] = float(v)
+        state = {"changed": False}
+        new_side["starters"] = _overlay_players(side.get("starters"), fresh_pts, state)
+        if side.get("bench") is not None:
+            new_side["bench"] = _overlay_players(side.get("bench"), fresh_pts, state)
+        row_points = fresh_row.get("points") if fresh_row is not None else None
+        if isinstance(row_points, (int, float)) and not isinstance(row_points, bool):
+            new_side["pts_total"] = float(row_points)
+        elif state["changed"]:
+            starters = [p for p in new_side["starters"] if p]
+            if starters and all(
+                isinstance(p.get("pts"), (int, float)) and not isinstance(p.get("pts"), bool)
+                for p in starters
+            ):
+                new_side["pts_total"] = round(
+                    sum(float(p["pts"]) for p in starters), 2,
+                )
+        return new_side
+
+    new_matchups = []
+    for m in matchups:
+        nm = dict(m)
+        nm["left"] = _overlay_side(m.get("left"))
+        nm["right"] = _overlay_side(m.get("right"))
+        new_matchups.append(nm)
+    return new_matchups, (week_stats_overlay or None)
+
+
+def _merge_live_week_stats(week_stats: dict, overlay: dict) -> dict:
+    """Merge a live Sleeper overlay into a slide's week_stats copy.
+
+    The underlying week_stats dict is shared (mtime-cached), so the buckets
+    the overlay touches are copied before the merge stamps its
+    ``_src: "sleeper_live"`` trust marker onto the merged entries. A fresh
+    team-defense entry replaces the team's whole IDP bucket: the slide's
+    DEF line sums that bucket, so keeping the snapshot's stale individual
+    lines alongside the fresh team total would double-count the defense.
+    """
+    merged = dict(week_stats or {})
+    for team, pos_map in (overlay or {}).items():
+        team_bucket = dict(merged.get(team) or {})
+        for pos in pos_map or {}:
+            if isinstance(team_bucket.get(pos), dict):
+                team_bucket[pos] = dict(team_bucket[pos])
+        if "team defense" in ((pos_map or {}).get("IDP") or {}):
+            team_bucket["IDP"] = {}
+        merged[team] = team_bucket
+    merge_live_stats_into_league_week_stats(merged, overlay, src="sleeper_live")
+    return merged
+
 
 # NFL regulation clock: 4 quarters of 15 minutes.
 _QUARTERS = 4
@@ -720,10 +1082,24 @@ def build_matchup_preview(
         roster_map: Dict[str, str],
         players_map: Dict[str, Dict[str, str]],
         season: str,
-        platform: str
+        platform: str,
+        live_cache_ttl: Optional[float] = None
 ) -> List[dict]:
+    # live_cache_ttl is passed ONLY by the live-preview call chain
+    # (routes/user_pages_bp._compute_live_matchups: Portfolio live cards +
+    # League Scores). It bounds the provider read to ScoreZone's freshness
+    # (12s) instead of the provider ttl_cache default (300s) that otherwise
+    # leaves live totals minutes behind. Every other caller (ctx builds via
+    # build_matchups_by_week, next-week recap) leaves it None, so their
+    # provider reads are unchanged.
     try:
-        mlist = get_matchups(platform, league_id, week, season) or []
+        if live_cache_ttl is not None:
+            mlist = get_matchups(
+                platform, league_id, week, season,
+                cache_ttl=live_cache_ttl,
+            ) or []
+        else:
+            mlist = get_matchups(platform, league_id, week, season) or []
     except Exception as e:
         # 404s are expected for future weeks - log at debug level without traceback
         # Other errors get full warning with traceback for investigation
@@ -2247,14 +2623,13 @@ def _sleeper_skill_stat_line(season, w, pid, pos, name, team_code) -> Optional[s
             mapped[dst] = v
     # Kicker stats: Sleeper uses fgm/fga/xpm/xpa directly.
     if pos == "K":
-        for k in ("fgm", "fga", "xpm", "xpa", "fgm_yds"):
+        for k in _SLEEPER_K_STAT_KEYS:
             v = row.get(k)
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 mapped[k] = v
     # Defense stats: Sleeper uses sack/int/pts_allow/def_td etc. directly.
     if pos == "DEF":
-        for k in ("sack", "int", "pts_allow", "def_td", "fum_rec",
-                  "ff", "yds_allow", "sack_yd"):
+        for k in _SLEEPER_DEF_STAT_KEYS:
             v = row.get(k)
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 mapped[k] = v
@@ -2388,6 +2763,7 @@ def render_matchup_slide(
         rzm_hub_html: str = "",
         div_by_rid: Optional[dict] = None,
         streaks: Optional[dict] = None,
+        live_week_stats: Optional[dict] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -2439,6 +2815,15 @@ def render_matchup_slide(
         teams_index, offense_ranks, team_schedule_lookup = slide_shared_lookups(season, w)
         _fpts_data = fpts_against or {}
         week_stats = _week_stats_for_slide(season, w, ensure_sleeper=past_week)
+        if live_week_stats:
+            # Live stat-line overlay (current week, live/final games only;
+            # built by apply_live_matchup_overlay). Sleeper-live-stamped
+            # entries win over the snapshot's lines for the players the
+            # fresh feed has.
+            try:
+                week_stats = _merge_live_week_stats(week_stats, live_week_stats)
+            except Exception:
+                logger.debug("[matchups] live week-stats merge failed", exc_info=True)
 
     # Live game progress: lets in-progress starters project their finish (banked
     # points + remaining projection) instead of freezing at their current score,
@@ -2975,7 +3360,8 @@ def render_matchup_slide(
         #
         # Prefer the schedule row when we have one. Fall back to pid status only
         # when schedule lookup missed. Even after kickoff, hide Footballguys
-        # leftovers unless Tank01 confirms live/final or the line was Tank-overlaid.
+        # leftovers unless Tank01 confirms live/final or the line was
+        # live-overlaid (_src=tank / _src=sleeper_live).
         raw_stat_entry = None
         if stats and nfl:
             raw_stat_entry = player_week_stat_entry(
@@ -3031,14 +3417,16 @@ def render_matchup_slide(
         # live total; the box-score line is a separate Footballguys/Tank feed.
         # Footballguys republishes a prior week/season until its logs flip, so an
         # in-progress game can surface last week's full stat line beside this
-        # week's real, low points. Tank-overlaid lines (_src=tank) are built from
-        # the current game and trusted as-is; a non-Tank line whose implied score
-        # is far from the points shown is stale -- hide it so stats match scoring.
+        # week's real, low points. Live-overlaid lines (_src=tank from a Tank01
+        # box score, _src=sleeper_live from the fresh Sleeper fetch) are built
+        # from the current game and trusted as-is; any other line whose implied
+        # score is far from the points shown is stale -- hide it so stats match
+        # scoring.
         if (
             stats
             and pos in ("QB", "RB", "WR", "TE")
             and isinstance(raw_stat_entry, dict)
-            and raw_stat_entry.get("_src") != "tank"
+            and raw_stat_entry.get("_src") not in ("tank", "sleeper_live")
             and status == STATUS_IN_PROGRESS
             and scoring_settings and "rec" in scoring_settings
         ):
