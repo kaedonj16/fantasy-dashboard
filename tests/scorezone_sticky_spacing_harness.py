@@ -21,7 +21,13 @@ asserts:
     scrolled under it, and hides again scrolled back;
   * measured insets: Moments label/rail, Box score box (re-parented to
     the board's next sibling, the shared renderer's DOM shape) and the
-    board card share left/right edges within 2px.
+    board card share left/right edges within 2px;
+  * the sticky bar animates: a poll that moves the ball (BUF 30 ->
+    BUF 18) glides the ball/fill through intermediate positions to the
+    new spot (sampled every 30ms), a score change (KC 24 -> 31) puts
+    the hero board's team-colour flash on the bar's home score only,
+    and under prefers-reduced-motion the same update lands instantly
+    with no intermediate samples.
 
 Env: RZ_STATIC_DIR overrides where scorezone.js/dashboard.css are read
 from (for before/after screenshots); RZ_SHOT_DIR is where the top and
@@ -145,6 +151,12 @@ def payload():
     return {
         "week": 11, "season": 2026, "platform": "sleeper", "league_id": "demo",
         "scope": "league",
+        # A poll payload without viewer identity fields is discarded by
+        # _refresh before _setState (refresh-no-identity), so refreshes
+        # would rebuild from the boot snapshot forever. Production
+        # payloads carry the field; the animation checks below need
+        # their updated snapshots to actually apply.
+        "viewer_roster_ids": [1],
         "player_info": player_info,
         "scoring": dict(SCORING),
         "pbp_by_game": {GID: build_plays()},
@@ -168,6 +180,34 @@ def payload():
         ],
         "updated_at": 1763325000,
     }
+
+
+def payload_with(**kw):
+    """payload() with the game's live state moved: the games entry and
+    the mirrored fields on every player_info row change together, the
+    way a real poll snapshot would carry them. Situation fields (yard
+    line / down / distance) are read from the newest PBP play rather
+    than the scoreboard row, so the snapshot also appends the play
+    that moved the ball, sequenced past every existing play."""
+    data = payload()
+    g = data["games"][GID]
+    g.update(kw)
+    for info in data["player_info"].values():
+        info["game_clock"] = g["game_clock"]
+        info["away_pts"] = g["away_pts"]
+        info["home_pts"] = g["home_pts"]
+    plays = data["pbp_by_game"][GID]
+    seq = max(p["seq"] for p in plays) + 1
+    plays.append({
+        "play_id": f"p{seq}", "seq": seq, "game_id": GID,
+        "quarter": g["game_quarter"], "clock": g["game_clock"],
+        "down": str(g["down"]), "distance": str(g["distance"]),
+        "yard_line": g["yard_line"],
+        "play_text": "Pass Man pass for 12 yards",
+        "pid": "1003", "name": "Pass Man", "team": "KC",
+        "stat_line": line(pass_yds=12), "is_td": False,
+    })
+    return data
 
 
 HTML = """<!DOCTYPE html>
@@ -200,6 +240,11 @@ def main():
             failures.append(name)
 
     fixture = payload()
+    # The scorezone-data route serves whatever `current` holds, so the
+    # test can move the drive/score between polls; an auto-poll that
+    # lands between flips just re-serves the same snapshot (a no-op
+    # re-render), never the next one early.
+    current = {"body": json.dumps(fixture)}
     SHOT_DIR.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as pw:
@@ -220,7 +265,7 @@ def main():
             url = route.request.url
             if "scorezone-data" in url:
                 route.fulfill(status=200, content_type="application/json",
-                              body=json.dumps(fixture))
+                              body=current["body"])
             elif url.endswith("/static/scorezone.js"):
                 route.fulfill(status=200, content_type="application/javascript",
                               body=SCOREZONE_JS)
@@ -373,8 +418,146 @@ def main():
             hidden = False
         check("sticky bar hides again when the board returns", hidden)
 
+        # --- Animation: drive updates glide, score changes flash. -----
+        # Scroll the field board away again so the bar is on screen and
+        # sample the ball/fill positions (as % of the track) every 30ms
+        # across a poll that moves the ball BUF 30 -> BUF 18. A jump
+        # would step 34% -> 24.4% (ball) / 56% -> 65.6% (fill) between
+        # two samples; a glide passes through the values in between.
+        scroll_away = (
+            "var navH = parseFloat(getComputedStyle(document.documentElement)"
+            "  .getPropertyValue('--rz-nav-h')) || 0;"
+            "var headH = document.querySelector('.rz-header')"
+            "  .getBoundingClientRect().height;"
+            "var fr = document.querySelector('#rz-nfl-board .rz-fb')"
+            "  .getBoundingClientRect();"
+            "document.body.scrollTop = document.body.scrollTop"
+            "  + fr.bottom - (navH + headH) + 80;")
+        sampler = (
+            "window.__glide = [];"
+            "window.__glideTimer = setInterval(function(){"
+            "var track = document.querySelector('.rz-sticky-bar .mb-fld-track');"
+            "var ball = document.querySelector('.rz-sticky-bar .mb-fld-ball');"
+            "var fill = document.querySelector('.rz-sticky-bar .mb-fld-fill');"
+            "if (!track || !ball || !fill) return;"
+            "var tr = track.getBoundingClientRect();"
+            "if (!tr.width) return;"
+            "var br = ball.getBoundingClientRect();"
+            "var fr2 = fill.getBoundingClientRect();"
+            "window.__glide.push({"
+            "  ball: (br.left + br.width / 2 - tr.left) / tr.width * 100,"
+            "  fill: fr2.width / tr.width * 100 });"
+            "}, 30);")
+        page.evaluate(scroll_away)
+        page.wait_for_function(
+            "document.querySelector('.rz-sticky-bar')"
+            ".classList.contains('is-on')", timeout=5000)
+        page.wait_for_timeout(450)  # entry slide settles
+        page.evaluate(sampler)
+        page.wait_for_timeout(250)  # baseline samples at the old spot
+        current["body"] = json.dumps(payload_with(
+            yard_line="BUF 18", game_clock="0:38"))
+        page.tap("#rz-timer")
+        page.wait_for_timeout(1150)
+        samples = page.evaluate(
+            "clearInterval(window.__glideTimer); window.__glide")
+        ball_vals = [s["ball"] for s in samples]
+        fill_vals = [s["fill"] for s in samples]
+        check("glide: ball passes through intermediate positions",
+              any(25.5 < v < 33.0 for v in ball_vals),
+              f"ball samples={[round(v, 1) for v in ball_vals]}")
+        check("glide: fill passes through intermediate widths",
+              any(57.5 < v < 64.0 for v in fill_vals),
+              f"fill samples={[round(v, 1) for v in fill_vals]}")
+        check("glide: ball lands on the new spot (24.4%)",
+              bool(ball_vals) and abs(ball_vals[-1] - 24.4) <= 1.5,
+              f"last ball={ball_vals[-1] if ball_vals else None}")
+        check("glide: fill lands on the new width (65.6%)",
+              bool(fill_vals) and abs(fill_vals[-1] - 65.6) <= 1.5,
+              f"last fill={fill_vals[-1] if fill_vals else None}")
+        page.screenshot(path=str(SHOT_DIR / "updated.png"))
+
+        # Score change while the bar is up: KC TD, 24 -> 31. The home
+        # score in the bar takes the hero board's team-colour flash;
+        # the unchanged away score stays plain.
+        current["body"] = json.dumps(payload_with(
+            yard_line="BUF 18", game_clock="0:31", home_pts="31"))
+        page.tap("#rz-timer")
+        page.wait_for_timeout(400)
+        flash = page.evaluate(
+            "(function(){"
+            "var bs = document.querySelectorAll('.rz-sticky-bar .rz-sticky-team b');"
+            "return { away: bs[0] ? bs[0].className : '',"
+            "  home: bs[1] ? bs[1].className : '',"
+            "  homeVar: bs[1] ? bs[1].style.getPropertyValue('--rz-flash') : '' };"
+            "})()")
+        check("score change flashes the scoring team's bar score",
+              "rz-score-flash-team" in flash["home"] and bool(flash["homeVar"]),
+              json.dumps(flash))
+        check("unchanged score does not flash",
+              "rz-score-flash-team" not in flash["away"],
+              json.dumps(flash))
+
         check("no page errors", errors == [], "; ".join(errors[:3]))
         browser.close()
+
+        # --- Reduced motion: the same update lands instantly. ---------
+        # Chromium: it reliably emulates prefers-reduced-motion.
+        current_rm = {"body": json.dumps(payload())}
+        browser2 = pw.chromium.launch()
+        ctx2 = browser2.new_context(reduced_motion="reduce", **device)
+        page2 = ctx2.new_page()
+        errors2 = []
+        page2.on("pageerror", lambda e: errors2.append(str(e)))
+
+        def route_handler_rm(route):
+            url = route.request.url
+            if "scorezone-data" in url:
+                route.fulfill(status=200, content_type="application/json",
+                              body=current_rm["body"])
+            elif url.endswith("/static/scorezone.js"):
+                route.fulfill(status=200, content_type="application/javascript",
+                              body=SCOREZONE_JS)
+            elif url.endswith("/static/dashboard.css"):
+                route.fulfill(status=200, content_type="text/css", body=DASHBOARD_CSS)
+            elif "sleepercdn.com" in url or "pbs.twimg.com" in url:
+                route.fulfill(status=200, content_type="image/png", body=PNG)
+            elif "video.twimg.com" in url:
+                route.fulfill(status=200, content_type="video/mp4", body=b"")
+            elif "rz.test" in url and "scorezone" in url:
+                route.fulfill(status=200, content_type="text/html",
+                              body=HTML.replace("__PAYLOAD__", json.dumps(fixture)))
+            else:
+                route.fulfill(status=200, content_type="text/plain", body="")
+
+        page2.route("**/*", route_handler_rm)
+        page2.goto("http://rz.test/sleeper/2026/demo/scorezone?game=g1")
+        page2.wait_for_selector("#rz-nfl-board .rz-fb", timeout=15000)
+        page2.wait_for_selector(".rz-sticky-bar", state="attached", timeout=15000)
+        page2.wait_for_timeout(300)
+        page2.evaluate(scroll_away)
+        page2.wait_for_function(
+            "document.querySelector('.rz-sticky-bar')"
+            ".classList.contains('is-on')", timeout=5000)
+        page2.wait_for_timeout(200)
+        page2.evaluate(sampler)
+        page2.wait_for_timeout(250)
+        current_rm["body"] = json.dumps(payload_with(
+            yard_line="BUF 18", game_clock="0:38"))
+        page2.tap("#rz-timer")
+        page2.wait_for_timeout(900)
+        samples2 = page2.evaluate(
+            "clearInterval(window.__glideTimer); window.__glide")
+        ball2 = [s["ball"] for s in samples2]
+        check("reduced motion: no intermediate ball positions",
+              bool(ball2) and all(v >= 32.5 or v <= 25.9 for v in ball2),
+              f"ball samples={[round(v, 1) for v in ball2]}")
+        check("reduced motion: ball lands on the new spot instantly",
+              bool(ball2) and abs(ball2[-1] - 24.4) <= 1.5,
+              f"last ball={ball2[-1] if ball2 else None}")
+        check("reduced motion: no page errors", errors2 == [],
+              "; ".join(errors2[:3]))
+        browser2.close()
 
     print("\n%d failure(s)" % len(failures))
     return 1 if failures else 0

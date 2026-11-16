@@ -43,6 +43,7 @@
   var _playGroupsByKey = {}; // canonical play groups: nflPlayKey → {contributionsByKey, primaryEvent, playState}
   var _openClipKey = null; // playId of the TD clip embed currently open (one at a time)
   var _openClipSurface = null; // surface that owns the open clip: 'feed' | 'rail'
+  var _railCloseTimer = null; // pending cleanup for a shrinking rail card
   var _contributionsByKey = {}; // global contribution storage: contribKey → contribution (for revisions)
   var _alertsArmed = false; // suppress TD beep/push until the first hydration seeds the feed
   var _slideDir   = 'none';
@@ -199,6 +200,17 @@
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
+  // Keyboard activation for the Moments rail cards (role=button): Enter
+  // / Space on the focused card toggles its clip, same as a tap. Inner
+  // controls (the grown card's X button) keep their native behaviour.
+  root.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains('rz-moment-card')) return;
+    e.preventDefault();
+    _toggleRailCard(t);
+  });
+
   // Keep player-modal wiring in one delegated handler. ScoreZone replaces most of
   // its DOM on every render; attaching another listener to each rendered row as
   // well as this delegate opens two overlays from a single click (most visibly
@@ -214,11 +226,13 @@
       e.stopPropagation();
       return;
     }
-    // Moments rail Watch: the rail owns its clip panel (see
-    // _toggleRailClip), so it is handled here too, before the data-pid walk.
-    var railBtn = target && target.closest ? target.closest('[data-rail-clip]') : null;
-    if (railBtn && root.contains(railBtn)) {
-      _toggleRailClip(railBtn);
+    // Moments rail: the whole card is the tap target (see
+    // _toggleRailCard). The grown card's X button closes it; both are
+    // handled here, before the data-pid walk. The X sits inside the
+    // card, so it is checked first.
+    var railClose = target && target.closest ? target.closest('[data-rail-close]') : null;
+    if (railClose && root.contains(railClose)) {
+      _closeRailClip();
       e.stopPropagation();
       return;
     }
@@ -227,6 +241,12 @@
     // data-pid walk that opens the player modal for the card's player.
     var clipPanel = target && target.closest ? target.closest('.rz-clip-panel') : null;
     if (clipPanel && root.contains(clipPanel)) {
+      return;
+    }
+    var railCard = target && target.closest ? target.closest('[data-rail-card]') : null;
+    if (railCard && root.contains(railCard)) {
+      _toggleRailCard(railCard);
+      e.stopPropagation();
       return;
     }
     // Box score button on the filtered-game board. Delegated because the board
@@ -3197,13 +3217,22 @@
     return '#' + to(rr) + to(g2) + to(bb);
   }
 
+  // Animation state for the sticky bar: _stickyBarHtml records the
+  // values it rendered into _stickyCur; after the rebuilt bar is in the
+  // DOM, _animStickyBar FLIPs the moving parts from _stickyPrev (what
+  // the previous bar showed) so a drive update glides instead of
+  // jumping, and flashes a changed score like the hero board does.
+  var _stickyPrev = null;
+  var _stickyCur = null;
+
   function _stickyBarHtml(g) {
-    if (_normGameStatus(g) !== 'live') return '';
+    if (_normGameStatus(g) !== 'live') { _stickyCur = null; return ''; }
     var aPts = (g.away_pts === '' || g.away_pts == null) ? '0' : g.away_pts;
     var hPts = (g.home_pts === '' || g.home_pts == null) ? '0' : g.home_pts;
     var clock = [_fmtQuarter(g.game_quarter || ''), g.game_clock || ''].filter(Boolean).join(' · ') || 'LIVE';
     var sit = _downDist({ down: g.down, distance: g.distance }) || '';
     var drive = '';
+    var fillW = null, ballPct = null, fdPct = null;
     var fp = _stickyFieldPos(g);
     if (fp && fp.spot != null) {
       // The Matchups drive bar, verbatim markup: striped pill track,
@@ -3212,14 +3241,23 @@
       // the fill runs from the offence's own goal line to the ball).
       var xOf = function(a) { return Math.round((10 + a * 0.8) * 10) / 10; };
       var atkAway = fp.side === 'away';
-      var fillW = (Math.round((atkAway ? fp.spot : (100 - fp.spot)) * 8) / 10) + '%';
-      var fdTick = (fp.ltg != null)
-        ? '<span class="mb-fld-fd" style="left:' + xOf(Math.min(Math.max(fp.ltg, 1), 99)) + '%"></span>' : '';
+      fillW = (Math.round((atkAway ? fp.spot : (100 - fp.spot)) * 8) / 10) + '%';
+      ballPct = xOf(fp.spot) + '%';
+      fdPct = (fp.ltg != null) ? xOf(Math.min(Math.max(fp.ltg, 1), 99)) + '%' : null;
+      var fdTick = (fdPct != null)
+        ? '<span class="mb-fld-fd" style="left:' + fdPct + '"></span>' : '';
       drive = '<div class="mb-fld-bar rz-sticky-drive" style="--mb-tc:' + _stickyTc(atkAway ? g.away : g.home) + '" aria-hidden="true">'
         + '<div class="mb-fld-track">'
         + '<span class="mb-fld-fill ' + (atkAway ? 'mb-away' : 'mb-home') + '" style="width:' + fillW + '"></span>'
-        + fdTick + '<span class="mb-fld-ball" style="left:' + xOf(fp.spot) + '%"></span></div></div>';
+        + fdTick + '<span class="mb-fld-ball" style="left:' + ballPct + '"></span></div></div>';
     }
+    _stickyCur = {
+      key: String(g.away || '') + '@' + String(g.home || ''),
+      side: fp ? fp.side : null,
+      fillW: fillW, ballX: ballPct, fdX: fdPct,
+      aPts: aPts, hPts: hPts, clock: clock, sit: sit,
+      away: g.away || '', home: g.home || ''
+    };
     return '<div class="rz-sticky-bar" aria-hidden="true">'
       + '<span class="rz-sticky-team">' + _esc(g.away || '') + ' <b>' + aPts + '</b></span>'
       + '<span class="rz-sticky-mid"><span class="rz-sticky-clock">' + _esc(clock) + '</span>'
@@ -3234,12 +3272,62 @@
   // when it has scrolled under the header, so there is no scroll zone
   // where both show or neither does. Rebound after every render because
   // _render/_partialUpdate rebuild the board and bar elements.
+  // Post-render motion for the rebuilt sticky bar. The bar element is
+  // replaced wholesale on every render, so CSS transitions alone never
+  // run: park each moving part at the previous render's value, force a
+  // reflow, then restore the new value and let the scoped .rz-sticky-bar
+  // transitions (dashboard.css) carry it there. A changed score gets
+  // the hero board's team-colour flash; clock / situation changes get
+  // the same quiet changed-flash the board's pill uses. Same game only:
+  // a game switch snaps. Reduced motion: everything lands instantly.
+  function _animStickyBar(bar) {
+    var cur = _stickyCur;
+    var prev = _stickyPrev;
+    _stickyPrev = cur;
+    if (!bar || !cur || !prev || prev.key !== cur.key || _dynReduced()) return;
+    var glide = function(el, prop, from, to) {
+      if (!el || from == null || to == null || from === to) return;
+      el.style.transition = 'none';
+      el.style[prop] = from;
+      void el.offsetWidth;
+      el.style.transition = '';
+      el.style[prop] = to;
+    };
+    // The fill is anchored to the attacking team's goal line, so it
+    // only glides within the same possession; the ball and the FD tick
+    // live in absolute field coordinates and glide across a flip too.
+    if (prev.side === cur.side) {
+      glide(bar.querySelector('.mb-fld-fill'), 'width', prev.fillW, cur.fillW);
+    }
+    glide(bar.querySelector('.mb-fld-ball'), 'left', prev.ballX, cur.ballX);
+    glide(bar.querySelector('.mb-fld-fd'), 'left', prev.fdX, cur.fdX);
+    var num = function(v) { var n = parseFloat(v); return isNaN(n) ? null : n; };
+    var scoreChanged = function(a, b) {
+      var na = num(a), nb = num(b);
+      return (na != null && nb != null) ? na !== nb : String(a) !== String(b);
+    };
+    var bs = bar.querySelectorAll('.rz-sticky-team b');
+    if (bs[0] && scoreChanged(prev.aPts, cur.aPts)) {
+      bs[0].classList.add('rz-score-flash-team');
+      bs[0].style.setProperty('--rz-flash', _dynTeamColor(cur.away));
+    }
+    if (bs[1] && scoreChanged(prev.hPts, cur.hPts)) {
+      bs[1].classList.add('rz-score-flash-team');
+      bs[1].style.setProperty('--rz-flash', _dynTeamColor(cur.home));
+    }
+    var clockEl = bar.querySelector('.rz-sticky-clock');
+    if (clockEl && prev.clock !== cur.clock) clockEl.classList.add('rz-changed-flash');
+    var sitEl = bar.querySelector('.rz-sticky-sit');
+    if (sitEl && prev.sit !== cur.sit) sitEl.classList.add('rz-changed-flash');
+  }
+
   var _stickyObs = null;
   function _bindStickyBar() {
     if (_stickyObs) { _stickyObs.disconnect(); _stickyObs = null; }
     if (!root || !root.querySelector) return;
     var bar = root.querySelector('.rz-sticky-bar');
     if (!bar) return;
+    _animStickyBar(bar);
     var board = root.querySelector('#rz-nfl-board');
     var field = board ? (board.querySelector('.rz-fb') || board) : null;
     var header = root.querySelector('.rz-header');
@@ -3271,11 +3359,18 @@
   // honours the feed's active scope via _eventMatches (My Team shows
   // only the viewer's players, Big Plays / game / position filters
   // match the feed), and it is rebuilt with every render, so a scope
-  // change re-rails alongside the feed. Its Watch buttons are the rail's
-  // own clip surface (a panel under the strip, sharing the feed's
-  // one-open-clip key), NOT a forward to the feed card's toggle: the
-  // feed is paginated, so a moment whose card is on another page has no
-  // feed toggle in the DOM to forward to.
+  // change re-rails alongside the feed.
+  //
+  // The whole card is the player (Kaedon's locked design, 2026-11-15):
+  // no Watch pill -- tapping anywhere on a card grows it in place to
+  // the rail's full width over 450ms, its media becoming the 16:9 clip
+  // (which starts playing), while the sibling cards slide away; an X
+  // button on the grown card's name line closes it. The clip lives
+  // INSIDE the grown card (the rail is still its own clip surface,
+  // sharing the feed's one-open-clip key -- never a forward to the feed
+  // card's toggle: the feed is paginated, so a moment whose card is on
+  // another page has no feed toggle in the DOM to forward to). A render
+  // that rebuilds the rail restores the grown card from _openClipKey.
   function _momentMediaHtml(ev, initials) {
     if (ev.clipPosterUrl) {
       return '<img class="rz-moment-poster" src="' + _esc(ev.clipPosterUrl) + '" alt="" loading="lazy">';
@@ -3312,42 +3407,43 @@
       seen[k] = 1;
       items.push(ev);
     });
+    // Restore-by-key: if the rail owns the open clip, its card renders
+    // grown with the player filled in. If the play fell
+    // out of the rail (scope change, clip aged out), the surface closes
+    // gracefully instead of pointing at a card that no longer exists.
+    var railOpenEv = null;
+    if (_openClipSurface === 'rail' && _openClipKey) {
+      for (var _ri = 0; _ri < items.length; _ri++) {
+        if (String(items[_ri].playId || _eid(items[_ri])) === _openClipKey) { railOpenEv = items[_ri]; break; }
+      }
+      if (!railOpenEv) { _openClipKey = null; _openClipSurface = null; }
+    }
     if (!items.length) return '';
     var cards = items.map(function(ev) {
-      var isTurnover = /interception|fumble/i.test(ev.desc || '');
-      var label = ev.kind === 'td' ? 'Touchdown' : (isTurnover ? 'Turnover' : 'Big play');
+      var k = String(ev.playId || _eid(ev));
+      var grown = !!railOpenEv && ev === railOpenEv;
       var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
       var poster = _momentMediaHtml(ev, initials);
       var d = _n(ev.pts);
       var delta = (d > 0.0001 ? '+' : '') + _fmtFantasyDelta(d);
-      return '<div class="rz-moment-card">'
+      return '<div class="rz-moment-card' + (grown ? ' is-grown' : '') + '"'
+        + ' data-rail-card="' + _esc(k) + '"'
+        + ' data-tweet="' + _esc(ev.clipTweetId || '') + '" data-clip-url="' + _esc(ev.clipUrl || '')
+        + '" data-clip-video="' + _esc(ev.clipVideoUrl || '') + '" data-clip-poster="' + _esc(ev.clipPosterUrl || '') + '"'
+        + ' role="button" tabindex="0" aria-expanded="' + (grown ? 'true' : 'false')
+        + '" aria-label="Watch clip: ' + _esc(ev.name || '') + '">'
         + '<div class="rz-moment-media">' + poster + '</div>'
-        + '<div class="rz-moment-name">' + _esc(ev.name || '') + '</div>'
-        + '<div class="rz-moment-meta"><span>' + label + '</span><span class="rz-moment-delta">' + delta + '</span></div>'
-        + (ev.kind === 'td' && ev.clipTweetId && ev.playId
-          ? '<button type="button" class="rz-moment-watch" data-rail-clip="' + _esc(ev.playId) + '"'
-            + ' data-tweet="' + _esc(ev.clipTweetId) + '" data-clip-url="' + _esc(ev.clipUrl || '')
-            + '" data-clip-video="' + _esc(ev.clipVideoUrl || '') + '" data-clip-poster="' + _esc(ev.clipPosterUrl || '') + '">'
-            + ((_openClipSurface === 'rail' && _openClipKey === ev.playId) ? 'Close' : 'Watch') + '</button>' : '')
+        + '<div class="rz-moment-row"><span class="rz-moment-name">' + _esc(ev.name || '') + '</span>'
+        + '<span class="rz-moment-delta">' + delta + '</span>'
+        + '<button type="button" class="rz-moment-x" data-rail-close aria-label="Close clip">'
+        + '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>'
+        + '</button></div>'
+        + '<div class="rz-clip-panel' + (grown ? ' is-open' : '') + '" data-clip-panel="' + (grown ? _esc(k) : '') + '">'
+        + (grown ? _clipFrameHtml(ev) : '') + '</div>'
         + '</div>';
     }).join('');
-    // The rail is its own clip surface: its panel lives under the strip
-    // (full panel width, not squeezed into a 128px card), keyed by the
-    // open play and rendered on every build -- empty and display:none
-    // while closed -- so the delegated rail toggle can fill it whether
-    // or not the play's feed card is in the DOM (the feed is paginated;
-    // see _toggleRailClip).
-    var railOpenEv = null;
-    if (_openClipSurface === 'rail' && _openClipKey) {
-      for (var _ri = 0; _ri < items.length; _ri++) {
-        if (items[_ri].playId === _openClipKey) { railOpenEv = items[_ri]; break; }
-      }
-    }
-    var railPanel = '<div class="rz-clip-panel' + (railOpenEv ? ' is-open' : '')
-      + '" data-clip-panel="' + (railOpenEv ? _esc(railOpenEv.playId) : '') + '">'
-      + (railOpenEv ? _clipFrameHtml(railOpenEv) : '') + '</div>';
     return '<div class="rz-moments-rail-wrap"><div class="rz-moments-rail-label">Moments</div>'
-      + '<div class="rz-moments-rail">' + cards + '</div>' + railPanel + '</div>';
+      + '<div class="rz-moments-rail' + (railOpenEv ? ' has-grown' : '') + '">' + cards + '</div></div>';
   }
 
   // Post-render motion: count NFL scores up with a scoring-team colour
@@ -4352,10 +4448,10 @@
     var btn = null;
     if (card) {
       // The toggle for THIS panel's play: feed cards key theirs by
-      // data-clip-toggle, the Moments rail by data-rail-clip.
+      // data-clip-toggle, the Moments rail by its card's data-rail-card.
       var pkey = panel.getAttribute('data-clip-panel');
       if (pkey) {
-        try { btn = card.querySelector('[data-clip-toggle="' + pkey + '"], [data-rail-clip="' + pkey + '"]'); } catch (e) {}
+        try { btn = card.querySelector('[data-clip-toggle="' + pkey + '"], [data-rail-card="' + pkey + '"]'); } catch (e) {}
       }
       if (!btn) btn = card.querySelector('[data-clip-toggle]');
     }
@@ -4434,6 +4530,29 @@
     root.querySelectorAll('.rz-clip-panel.is-open').forEach(_wireClipPanel);
   }
 
+  // Reset the Moments rail's grown state without touching clip
+  // ownership: the grown card shrinks back (its CSS transition runs
+  // because the element persists), siblings return, and every in-card
+  // panel is emptied. Used when the other surface takes the open clip.
+  function _resetRailDom() {
+    if (_railCloseTimer) { clearTimeout(_railCloseTimer); _railCloseTimer = null; }
+    var rail = root.querySelector('.rz-moments-rail');
+    if (rail) rail.classList.remove('has-grown');
+    root.querySelectorAll('.rz-moment-card.is-grown').forEach(function(c) {
+      c.classList.remove('is-grown');
+      c.setAttribute('aria-expanded', 'false');
+    });
+    root.querySelectorAll('.rz-moment-card .rz-clip-panel').forEach(function(p) {
+      var v = p.querySelector('.rz-clip-video');
+      if (v && v.pause) { try { v.pause(); } catch (e) {} }
+      p.classList.remove('is-open');
+      p.classList.remove('is-closing');
+      p.innerHTML = '';
+      p.style.height = '';
+      p.setAttribute('data-clip-panel', '');
+    });
+  }
+
   // Collapse whatever clip is open on either surface. Feed cards and
   // the Moments rail share one open clip (_openClipKey), so opening or
   // closing on one surface always resets the other's panel and labels.
@@ -4445,9 +4564,7 @@
     root.querySelectorAll('[data-clip-toggle]').forEach(function(b) {
       b.innerHTML = _clipBtnLabel(false);
     });
-    root.querySelectorAll('[data-rail-clip]').forEach(function(b) {
-      b.textContent = 'Watch';
-    });
+    _resetRailDom();
     _openClipSurface = null;
   }
 
@@ -4493,43 +4610,57 @@
     btn.innerHTML = _clipBtnLabel(true);
   }
 
-  // Moments rail Watch. The rail used to forward the tap to the play's
-  // feed card toggle (find [data-clip-toggle="<playId>"], click it), but
-  // the feed renders only the current page of 20 plays while the rail is
-  // built from the whole feed -- a moment whose card sat on another page
-  // had no toggle in the DOM, the lookup returned null, and the tap
-  // silently did nothing (Kaedon, 2026-11-15: "I can't click anything on
-  // the moments bar"). The rail is therefore its own clip surface: it
-  // fills the rail wrap's panel directly, sharing _openClipKey with the
-  // feed so exactly one clip is open across both surfaces.
-  function _toggleRailClip(btn) {
-    var wrap = btn.closest ? btn.closest('.rz-moments-rail-wrap') : null;
-    if (!wrap) return;
-    var panel = wrap.querySelector('[data-clip-panel]');
-    var key = btn.getAttribute('data-rail-clip');
-    var wasOpen = !!panel && panel.classList.contains('is-open')
-      && _openClipKey === key && _openClipSurface === 'rail';
-    _collapseAllClips();
-    if (wasOpen || !panel) {
-      _openClipKey = null;
-      return;
+  // Moments rail: the whole card is the player. The rail used to
+  // forward taps to the play's feed card toggle, but the feed renders
+  // only the current page of 20 plays while the rail is built from the
+  // whole feed -- a moment whose card sat on another page had no toggle
+  // in the DOM, the lookup returned null, and the tap silently did
+  // nothing (Kaedon, 2026-11-15: "I can't click anything on the moments
+  // bar"). The rail is therefore its own clip surface, sharing
+  // _openClipKey with the feed so exactly one clip is open across both
+  // surfaces. Tapping a card grows it in place (450ms, siblings slide
+  // away) with the clip playing inside it; the X on its name line, or
+  // another tap on the grown card, shrinks it back.
+  function _railSettle() {
+    // Finish any in-flight rail shrink instantly so the next action
+    // starts from a settled DOM; a pending switch-grow is discarded
+    // (the new tap supersedes it).
+    if (_railCloseTimer) {
+      clearTimeout(_railCloseTimer);
+      _railCloseTimer = null;
+      root.querySelectorAll('.rz-moment-card .rz-clip-panel.is-closing').forEach(function(p) {
+        p.classList.remove('is-open');
+        p.classList.remove('is-closing');
+        p.innerHTML = '';
+        p.style.height = '';
+        p.setAttribute('data-clip-panel', '');
+      });
     }
-    _openClipKey = key;
-    _openClipSurface = 'rail';
-    panel.setAttribute('data-clip-panel', key);
-    // The button's data attributes are a render-time snapshot; the
-    // feed's current event for this play is fresher (its clip video may
-    // have landed since the rail last rebuilt). Same rule as _toggleClip.
+  }
+
+  function _railClipSnapshot(key, card) {
+    // The card's data attributes are a render-time snapshot; the feed's
+    // current event for this play is fresher (its clip video may have
+    // landed since the rail last rebuilt). Same rule as _toggleClip.
     var freshEv = null;
     for (var _fi = 0; _fi < _feed.length; _fi++) {
       if (_feed[_fi] && _feed[_fi].playId === key) { freshEv = _feed[_fi]; break; }
     }
-    panel.innerHTML = _clipFrameHtml({
-      clipTweetId: (freshEv && freshEv.clipTweetId) || btn.getAttribute('data-tweet') || '',
-      clipUrl: (freshEv && freshEv.clipUrl) || btn.getAttribute('data-clip-url') || '',
-      clipVideoUrl: (freshEv && freshEv.clipVideoUrl) || btn.getAttribute('data-clip-video') || '',
-      clipPosterUrl: (freshEv && freshEv.clipPosterUrl) || btn.getAttribute('data-clip-poster') || ''
-    });
+    return {
+      clipTweetId: (freshEv && freshEv.clipTweetId) || card.getAttribute('data-tweet') || '',
+      clipUrl: (freshEv && freshEv.clipUrl) || card.getAttribute('data-clip-url') || '',
+      clipVideoUrl: (freshEv && freshEv.clipVideoUrl) || card.getAttribute('data-clip-video') || '',
+      clipPosterUrl: (freshEv && freshEv.clipPosterUrl) || card.getAttribute('data-clip-poster') || ''
+    };
+  }
+
+  function _growRailCard(card, key) {
+    var panel = card.querySelector('[data-clip-panel]');
+    if (!panel) return;
+    _openClipKey = key;
+    _openClipSurface = 'rail';
+    panel.setAttribute('data-clip-panel', key);
+    panel.innerHTML = _clipFrameHtml(_railClipSnapshot(key, card));
     panel.classList.add('is-open');
     _wireClipPanel(panel);
     var vid = panel.querySelector('.rz-clip-video');
@@ -4537,7 +4668,108 @@
       var pr = vid.play();
       if (pr && pr.catch) pr.catch(function() {});
     }
-    btn.textContent = 'Close';
+    var rail = card.parentElement;
+    if (rail) {
+      rail.classList.add('has-grown');
+      // Align the growing card to the rail's left edge: as it takes
+      // the full visible width, its siblings slide away along the
+      // scroll row (still full-size and tappable once scrolled to --
+      // that is how a switch starts).
+      var rr = rail.getBoundingClientRect();
+      var cr = card.getBoundingClientRect();
+      rail.scrollLeft += Math.round(cr.left - rr.left);
+    }
+    card.classList.add('is-grown');
+    card.setAttribute('aria-expanded', 'true');
+    if (rail) _pinRailCardLeft(rail, card);
+  }
+
+  function _pinRailCardLeft(rail, card) {
+    // Keep the growing card's left edge pinned to the rail's left edge
+    // for the duration of the grow. In the usual case (a full rail
+    // that already overflows) the one-shot scroll in _growRailCard
+    // aligns it before the first frame and this loop exits at once;
+    // in a short rail the row only starts overflowing as the basis
+    // grows, so the pin applies progressively as scroll room appears.
+    if (!rail || !card || typeof requestAnimationFrame !== 'function') return;
+    var t0 = Date.now();
+    (function step() {
+      if (!card.isConnected || !card.classList.contains('is-grown')) return;
+      var rr = rail.getBoundingClientRect();
+      var cr = card.getBoundingClientRect();
+      var d = Math.round(cr.left - rr.left);
+      if (d) rail.scrollLeft += d;
+      if (d && Date.now() - t0 < 480) requestAnimationFrame(step);
+    })();
+  }
+
+  function _shrinkRailCardEl(card, done) {
+    // Shrink a grown card back to its compact slot. The panel's height
+    // is pinned then collapsed so the video folds away with the card
+    // instead of vanishing at the first frame. (A switch reuses this:
+    // the siblings stay along the scroll row throughout.)
+    var panel = card.querySelector('[data-clip-panel]');
+    var vid = panel ? panel.querySelector('.rz-clip-video') : null;
+    if (vid && vid.pause) { try { vid.pause(); } catch (e) {} }
+    card.classList.remove('is-grown');
+    card.setAttribute('aria-expanded', 'false');
+    if (!panel) { if (done) done(); return; }
+    if (_dynReduced()) {
+      panel.classList.remove('is-open');
+      panel.innerHTML = '';
+      panel.setAttribute('data-clip-panel', '');
+      if (done) done();
+      return;
+    }
+    panel.style.height = panel.offsetHeight + 'px';
+    void panel.offsetHeight; // reflow: pin before collapsing
+    panel.classList.add('is-closing');
+    panel.style.height = '0px';
+    _railCloseTimer = setTimeout(function() {
+      _railCloseTimer = null;
+      panel.classList.remove('is-open');
+      panel.classList.remove('is-closing');
+      panel.innerHTML = '';
+      panel.style.height = '';
+      panel.setAttribute('data-clip-panel', '');
+      // A re-render during the shrink replaces the rail wholesale; the
+      // fresh build already restored state from _openClipKey, so a
+      // pending switch-grow for the detached card is dropped.
+      if (done && panel.isConnected) done();
+    }, 470);
+  }
+
+  function _closeRailClip() {
+    _railSettle();
+    var card = root.querySelector('.rz-moment-card.is-grown');
+    _openClipKey = null;
+    _openClipSurface = null;
+    if (!card) { _resetRailDom(); return; }
+    var rail = card.parentElement;
+    _shrinkRailCardEl(card, null);
+    if (rail) rail.classList.remove('has-grown');
+  }
+
+  function _toggleRailCard(card) {
+    _railSettle();
+    var key = card.getAttribute('data-rail-card');
+    if (!key) return;
+    if (_openClipSurface === 'rail' && _openClipKey === key) {
+      _closeRailClip();
+      return;
+    }
+    // One open clip across surfaces: a feed clip closes first.
+    if (_openClipSurface === 'feed') _collapseAllClips();
+    var cur = root.querySelector('.rz-moment-card.is-grown');
+    if (cur && cur !== card) {
+      // Switch: shrink the open card back into its slot first (the
+      // siblings stay away), then grow the tapped card.
+      _openClipKey = null;
+      _openClipSurface = null;
+      _shrinkRailCardEl(cur, function() { _growRailCard(card, key); });
+      return;
+    }
+    _growRailCard(card, key);
   }
 
   function _clipBtnLabel(open) {
@@ -5587,9 +5819,9 @@
     _syncFeed();
     _dynAfterRender();
 
-    // Live-dark toggle (rebuilt each render). Moments rail Watch needs
-    // no per-render wiring: the root click delegation owns it
-    // (_toggleRailClip), so it survives rail rebuilds by construction.
+    // Live-dark toggle (rebuilt each render). Moments rail cards need
+    // no per-render wiring: the root click delegation owns them
+    // (_toggleRailCard), so they survive rail rebuilds by construction.
     var darkBtnEl = root.querySelector('#rz-live-dark-btn');
     if (darkBtnEl) darkBtnEl.addEventListener('click', function() {
       // Flip the ScoreZone preference, then reconcile the borrow. When
@@ -5609,6 +5841,15 @@
       if (navH > 0) document.documentElement.style.setProperty('--rz-nav-h', navH + 'px');
     }
     _bindStickyBar();
+    // A clip restored grown by key renders mid-row; align it to the
+    // rail's left edge (the row is at final size here, so one scroll
+    // lands it -- the same end state _pinRailCardLeft produces).
+    var grownCard = root.querySelector('.rz-moment-card.is-grown');
+    if (grownCard && grownCard.parentElement) {
+      var railEl = grownCard.parentElement;
+      railEl.scrollLeft += Math.round(
+        grownCard.getBoundingClientRect().left - railEl.getBoundingClientRect().left);
+    }
 
     // Slide animation when hero card selection changes
     if (_slideDir !== 'none') {

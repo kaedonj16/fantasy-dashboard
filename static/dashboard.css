@@ -60918,7 +60918,7 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
    only gives that bar's track room to stretch inside this row. */
 .rz-sticky-bar {
     position: fixed; top: calc(var(--rz-nav-h, 56px) + var(--rz-header-h, 58px) + 6px);
-    left: 50%; transform: translate(-50%, -6px);
+    left: 50%; transform: translate(-50%, -8px);
     width: min(666px, calc(100vw - 54px));
     z-index: 40;
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -60926,17 +60926,24 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     background: var(--rz-card, var(--card)); border: 1px solid var(--rz-border, var(--border));
     border-radius: 10px; font-size: 12px; font-weight: 600;
     opacity: 0; visibility: hidden; pointer-events: none;
-    transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+    transition: opacity .25s var(--ease-glide), transform .25s var(--ease-glide), visibility 0s linear .25s;
 }
 .rz-sticky-bar.is-on {
     opacity: 1; visibility: visible; pointer-events: auto;
     transform: translate(-50%, 0);
-    transition: opacity .18s ease, transform .18s ease;
+    transition: opacity .25s var(--ease-glide), transform .25s var(--ease-glide);
 }
 .rz-sticky-mid { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
 .rz-sticky-clock { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rz-sticky-sit { color: var(--rz-muted, var(--text-muted)); font-weight: 700; white-space: nowrap; }
 .rz-sticky-drive { flex: 1 1 auto; min-width: 48px; }
+/* Drive updates glide: when a poll moves the ball, the fill, ball and
+   FD tick travel to their new spots instead of jumping. Scoped to the
+   sticky bar's mount on purpose -- the shared .mb-fld-* component (the
+   Matchups page) keeps its own behaviour. scorezone.js FLIPs the start
+   values onto the rebuilt elements; these transitions do the travel. */
+.rz-sticky-bar .mb-fld-fill { transition: width .4s var(--ease-glide); }
+.rz-sticky-bar .mb-fld-ball, .rz-sticky-bar .mb-fld-fd { transition: left .4s var(--ease-glide); }
 
 /* Change 7: Moments film rail. Compact and quiet, subordinate to the board.
    The wrap takes the board card's 12px side inset inside the main card
@@ -60945,19 +60952,41 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
 .rz-moments-rail-wrap { margin: 10px 12px 4px; }
 .rz-moments-rail-label { font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--rz-muted, var(--text-muted)); margin-bottom: 6px; }
 .rz-moments-rail { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
+/* Grown state: snapping stops so it cannot fight the grow; the rail
+   still scrolls, which is how the slid-away siblings are reached. */
+.rz-moments-rail.has-grown { scroll-snap-type: none; }
 .rz-moment-card {
-    flex: 0 0 128px; scroll-snap-align: start;
+    flex: 0 0 128px; min-width: 0; scroll-snap-align: start;
     border: 1px solid var(--rz-border, var(--border)); border-radius: 12px;
     background: var(--rz-card, var(--card)); padding: 8px;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: flex-basis .45s var(--ease-soft), border-color .45s var(--ease-soft);
 }
-.rz-moment-media { position: relative; height: 52px; border-radius: 8px; background: color-mix(in srgb, var(--rz-muted, #64748b) 14%, transparent); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px; }
+.rz-moment-card:focus-visible { outline: 2px solid var(--rz-accent, var(--accent)); outline-offset: 2px; }
+/* The tapped card grows in place to the rail's full width (450ms, the
+   calm ease -- no overshoot); a single hairline accent border is its
+   only chrome, and the win-green points its only other accent. */
+.rz-moment-card.is-grown { flex-basis: 100%; cursor: default; border-color: var(--rz-accent, var(--accent)); }
+.rz-moment-media { position: relative; height: 52px; border-radius: 8px; background: color-mix(in srgb, var(--rz-muted, #64748b) 14%, transparent); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px; transition: height .45s var(--ease-soft), opacity .3s var(--ease-soft), margin-bottom .45s var(--ease-soft); }
+/* On the grown card the compact poster folds away as the clip (inside
+   the card's own panel, below the name line) takes its place. */
+.rz-moment-card.is-grown .rz-moment-media { height: 0; opacity: 0; margin-bottom: 0; }
 .rz-moment-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .rz-moment-headshot { object-position: center 22%; }
 .rz-moment-initials { font-size: 16px; font-weight: 900; color: var(--rz-muted, var(--text-muted)); }
-.rz-moment-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rz-moment-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--rz-muted, var(--text-muted)); margin-top: 2px; }
-.rz-moment-delta { color: var(--rz-green, #16a34a); font-weight: 800; }
-.rz-moment-watch { margin-top: 6px; font-size: 11px; font-weight: 700; border: 1px solid var(--rz-border, var(--border)); background: transparent; color: inherit; border-radius: 99px; padding: 3px 9px; cursor: pointer; }
+.rz-moment-row { display: flex; align-items: center; gap: 6px; }
+.rz-moment-name { flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rz-moment-delta { flex: none; font-size: 11px; color: var(--rz-green, #16a34a); font-weight: 800; }
+/* Close X: lives on every card's name line but shows only on the grown
+   card. The 44px hit area is pulled into the card's padding so the
+   line itself stays slim. */
+.rz-moment-x { display: none; flex: none; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -14px -12px -14px 0; padding: 0; border: 0; background: transparent; color: var(--rz-muted, var(--text-muted)); cursor: pointer; }
+.rz-moment-card.is-grown .rz-moment-x { display: inline-flex; }
+.rz-moment-x:focus-visible { outline: 2px solid var(--rz-accent, var(--accent)); outline-offset: -6px; border-radius: 8px; }
+/* The clip panel lives inside the grown card (it used to sit under the
+   rail). On close, JS pins its height and this transition folds it. */
+.rz-moment-card .rz-clip-panel { flex: none; }
+.rz-moment-card .rz-clip-panel.is-closing { overflow: hidden; transition: height .45s var(--ease-soft); }
 
 @media (prefers-reduced-motion: reduce) {
     html.theme-transition *, html.theme-transition *::before, html.theme-transition *::after { transition: none !important; }
@@ -60970,6 +60999,8 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     .rz-event.rz-td-enter .rz-event-delta-pts { animation: none; }
     .rz-fb-rzdeep { transition: none; }
     .rz-sticky-bar { transition: none; }
+    .rz-sticky-bar .mb-fld-fill, .rz-sticky-bar .mb-fld-ball, .rz-sticky-bar .mb-fld-fd { transition: none; }
+    .rz-moment-card, .rz-moment-media, .rz-moment-card .rz-clip-panel.is-closing { transition: none; }
 }
 
 /* ============================================================
