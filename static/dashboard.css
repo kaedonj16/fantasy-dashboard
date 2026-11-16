@@ -60604,6 +60604,18 @@ button.mb-fld-link {
 .path-root-why{margin-top:7px;font-size:12.5px;color:var(--text-muted)}
 .path-root-extra{margin-top:4px;font-size:12px;font-weight:600;color:var(--text-muted);font-variant-numeric:tabular-nums}
 
+/* Live game status (Root For rows + Your Matchup card): a static red
+   dot marks a game in progress (no pulse animation, so nothing to
+   disable for reduced motion); scores and yet-to-play counts ride the
+   same muted tabular style as the root-for extras. */
+.path-live-line{margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;font-weight:600;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.path-live-dot{flex:none;width:7px;height:7px;border-radius:50%;background:#dc2626;display:inline-block}
+.path-live-tag{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#dc2626}
+.path-live-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#dc2626}
+.path-final-chip{display:inline-flex;align-items:center;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}
+.path-mu-liveproj{margin-top:2px;font-size:11.5px;font-weight:600;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.path-mu-yet{margin-top:1px;font-size:11.5px;font-weight:600;color:var(--text-muted);white-space:nowrap}
+
 /* Tiebreakers */
 .path-tie-block{margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);padding:16px 18px 14px}
 .path-pf-chart{display:flex;flex-direction:column;gap:12px}
