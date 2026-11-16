@@ -52932,13 +52932,13 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* context row (redesign 2026-10-30): DRIVE label + down & distance, mirroring
    the board bar's top row; the spot rides in this row after the down &
    distance ("3rd & 15 @ IND 46", full-width track change 2026-11-15) */
-.mb-fld-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mb-fld-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .mb-cell-r .mb-fld-head { flex-direction: row-reverse; }
-.mb-fld-live { display: inline-flex; align-items: center; gap: 5px; font-size: 9px; font-weight: 900; letter-spacing: .07em; color: #16a34a; white-space: nowrap; }
+.mb-fld-live { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 900; letter-spacing: .07em; color: #16a34a; white-space: nowrap; }
 .mb-fld-live i { width: 6px; height: 6px; border-radius: 50%; background: #16a34a; flex: 0 0 auto; }
 :root[data-theme="dark"] .mb-fld-live { color: #22c55e; }
 :root[data-theme="dark"] .mb-fld-live i { background: #22c55e; }
-.mb-fld-dd { font-size: 9px; font-weight: 800; color: var(--text); white-space: nowrap; }
+.mb-fld-dd { font-size: 12.5px; font-weight: 800; color: var(--text); white-space: nowrap; }
 /* S1 ultra-slim inline bar (Kaedon's slimming pick over the first redesign),
    full-width track (her pick, 2026-11-15): the bar line is the 10px track
    alone, spanning the whole cell -- no end labels or spot text beside it. */
@@ -52987,12 +52987,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-row:has(> .mb-stat-row) > .mb-cell,
 .mb-row:has(> .mb-fld:not(:empty)) > .mb-cell { padding-bottom: 0; }
 .mb-stat-row { min-width: 0; padding: 0 9px; margin-top: -3px; }
-/* A stat row carrying real stats is the game-sheet entry point (tap opens
-   the sheet, live or final): pointer affordance + a quiet press fade,
-   mirroring .mb-fld-link's treatment. Inert rows get neither. */
-.mb-stat-row[data-gs-team] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.mb-stat-row[data-gs-team]:active { opacity: .65; }
-.mb-stat-row[data-gs-team]:focus-visible { outline: 2px solid var(--accent, #122d4b); outline-offset: 2px; border-radius: 6px; }
 .mb-row:has(> .mb-fld:not(:empty)) .mb-stat-row { margin-top: -2px; }
 .mb-stat-row .mb-stat {
     display: block;
@@ -59529,15 +59523,6 @@ button.mb-fld-link {
     text-align: inherit;
 }
 .rz-bs-sheet.gs-sheet { max-width: 560px; }
-/* Swipe-down-to-dismiss (app.js gs-drag) owns the handle and the head
-   strip at sheet widths: like the assistant sheet's grab/head they
-   take touch-action: none so the drag is never read as a scroll or a
-   zoom, and the handle reads as grabbable. At >=760px the sheet is a
-   centred modal and the drag stays inert, so no rule applies there. */
-@media (max-width: 768px) {
-    .gs-sheet .rz-bs-handle { touch-action: none; cursor: grab; }
-    .gs-sheet .rz-bs-head { touch-action: none; cursor: grab; }
-}
 @media (min-width: 760px) {
     .rz-bs-sheet.gs-sheet {
         left: 50%;
@@ -60872,7 +60857,7 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
    only gives that bar's track room to stretch inside this row. */
 .rz-sticky-bar {
     position: fixed; top: calc(var(--rz-nav-h, 56px) + var(--rz-header-h, 58px) + 6px);
-    left: 50%; transform: translate(-50%, -6px);
+    left: 50%; transform: translate(-50%, -8px);
     width: min(666px, calc(100vw - 54px));
     z-index: 40;
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -60880,17 +60865,24 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     background: var(--rz-card, var(--card)); border: 1px solid var(--rz-border, var(--border));
     border-radius: 10px; font-size: 12px; font-weight: 600;
     opacity: 0; visibility: hidden; pointer-events: none;
-    transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+    transition: opacity .25s var(--ease-glide), transform .25s var(--ease-glide), visibility 0s linear .25s;
 }
 .rz-sticky-bar.is-on {
     opacity: 1; visibility: visible; pointer-events: auto;
     transform: translate(-50%, 0);
-    transition: opacity .18s ease, transform .18s ease;
+    transition: opacity .25s var(--ease-glide), transform .25s var(--ease-glide);
 }
 .rz-sticky-mid { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
 .rz-sticky-clock { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rz-sticky-sit { color: var(--rz-muted, var(--text-muted)); font-weight: 700; white-space: nowrap; }
 .rz-sticky-drive { flex: 1 1 auto; min-width: 48px; }
+/* Drive updates glide: when a poll moves the ball, the fill, ball and
+   FD tick travel to their new spots instead of jumping. Scoped to the
+   sticky bar's mount on purpose -- the shared .mb-fld-* component (the
+   Matchups page) keeps its own behaviour. scorezone.js FLIPs the start
+   values onto the rebuilt elements; these transitions do the travel. */
+.rz-sticky-bar .mb-fld-fill { transition: width .4s var(--ease-glide); }
+.rz-sticky-bar .mb-fld-ball, .rz-sticky-bar .mb-fld-fd { transition: left .4s var(--ease-glide); }
 
 /* Change 7: Moments film rail. Compact and quiet, subordinate to the board.
    The wrap takes the board card's 12px side inset inside the main card
@@ -60924,6 +60916,7 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     .rz-event.rz-td-enter .rz-event-delta-pts { animation: none; }
     .rz-fb-rzdeep { transition: none; }
     .rz-sticky-bar { transition: none; }
+    .rz-sticky-bar .mb-fld-fill, .rz-sticky-bar .mb-fld-ball, .rz-sticky-bar .mb-fld-fd { transition: none; }
 }
 
 /* ============================================================

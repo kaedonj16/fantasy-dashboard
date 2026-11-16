@@ -62,6 +62,16 @@ def test_change5_sticky_bar():
     assert "--rz-header-h" in bar_css and "--rz-header-h" in SZ
     assert "IntersectionObserver" in SZ and "_bindStickyBar" in SZ
     assert ".rz-sticky-bar.is-on" in CSS
+    # Animation: entry/exit rides the glide token at 250ms; drive
+    # updates FLIP from the previous render's values (the bar element
+    # is rebuilt every render, so transitions alone never run) and a
+    # changed score takes the hero board's team-colour flash. The
+    # glide transitions stay scoped to the sticky mount -- the shared
+    # .mb-fld-* component itself gains no transition.
+    assert "var(--ease-glide)" in bar_css and ".25s" in bar_css
+    assert "_animStickyBar" in SZ and "_stickyPrev" in SZ and "_stickyCur" in SZ
+    assert ".rz-sticky-bar .mb-fld-fill" in CSS and ".rz-sticky-bar .mb-fld-ball" in CSS
+    assert "\n.mb-fld-fill { transition" not in CSS and "\n.mb-fld-ball { transition" not in CSS
 
 
 def test_moments_and_boxscore_share_board_gutter():

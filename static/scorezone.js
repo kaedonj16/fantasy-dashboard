@@ -3193,13 +3193,22 @@
     return '#' + to(rr) + to(g2) + to(bb);
   }
 
+  // Animation state for the sticky bar: _stickyBarHtml records the
+  // values it rendered into _stickyCur; after the rebuilt bar is in the
+  // DOM, _animStickyBar FLIPs the moving parts from _stickyPrev (what
+  // the previous bar showed) so a drive update glides instead of
+  // jumping, and flashes a changed score like the hero board does.
+  var _stickyPrev = null;
+  var _stickyCur = null;
+
   function _stickyBarHtml(g) {
-    if (_normGameStatus(g) !== 'live') return '';
+    if (_normGameStatus(g) !== 'live') { _stickyCur = null; return ''; }
     var aPts = (g.away_pts === '' || g.away_pts == null) ? '0' : g.away_pts;
     var hPts = (g.home_pts === '' || g.home_pts == null) ? '0' : g.home_pts;
     var clock = [_fmtQuarter(g.game_quarter || ''), g.game_clock || ''].filter(Boolean).join(' · ') || 'LIVE';
     var sit = _downDist({ down: g.down, distance: g.distance }) || '';
     var drive = '';
+    var fillW = null, ballPct = null, fdPct = null;
     var fp = _stickyFieldPos(g);
     if (fp && fp.spot != null) {
       // The Matchups drive bar, verbatim markup: striped pill track,
@@ -3208,14 +3217,23 @@
       // the fill runs from the offence's own goal line to the ball).
       var xOf = function(a) { return Math.round((10 + a * 0.8) * 10) / 10; };
       var atkAway = fp.side === 'away';
-      var fillW = (Math.round((atkAway ? fp.spot : (100 - fp.spot)) * 8) / 10) + '%';
-      var fdTick = (fp.ltg != null)
-        ? '<span class="mb-fld-fd" style="left:' + xOf(Math.min(Math.max(fp.ltg, 1), 99)) + '%"></span>' : '';
+      fillW = (Math.round((atkAway ? fp.spot : (100 - fp.spot)) * 8) / 10) + '%';
+      ballPct = xOf(fp.spot) + '%';
+      fdPct = (fp.ltg != null) ? xOf(Math.min(Math.max(fp.ltg, 1), 99)) + '%' : null;
+      var fdTick = (fdPct != null)
+        ? '<span class="mb-fld-fd" style="left:' + fdPct + '"></span>' : '';
       drive = '<div class="mb-fld-bar rz-sticky-drive" style="--mb-tc:' + _stickyTc(atkAway ? g.away : g.home) + '" aria-hidden="true">'
         + '<div class="mb-fld-track">'
         + '<span class="mb-fld-fill ' + (atkAway ? 'mb-away' : 'mb-home') + '" style="width:' + fillW + '"></span>'
-        + fdTick + '<span class="mb-fld-ball" style="left:' + xOf(fp.spot) + '%"></span></div></div>';
+        + fdTick + '<span class="mb-fld-ball" style="left:' + ballPct + '"></span></div></div>';
     }
+    _stickyCur = {
+      key: String(g.away || '') + '@' + String(g.home || ''),
+      side: fp ? fp.side : null,
+      fillW: fillW, ballX: ballPct, fdX: fdPct,
+      aPts: aPts, hPts: hPts, clock: clock, sit: sit,
+      away: g.away || '', home: g.home || ''
+    };
     return '<div class="rz-sticky-bar" aria-hidden="true">'
       + '<span class="rz-sticky-team">' + _esc(g.away || '') + ' <b>' + aPts + '</b></span>'
       + '<span class="rz-sticky-mid"><span class="rz-sticky-clock">' + _esc(clock) + '</span>'
@@ -3230,12 +3248,62 @@
   // when it has scrolled under the header, so there is no scroll zone
   // where both show or neither does. Rebound after every render because
   // _render/_partialUpdate rebuild the board and bar elements.
+  // Post-render motion for the rebuilt sticky bar. The bar element is
+  // replaced wholesale on every render, so CSS transitions alone never
+  // run: park each moving part at the previous render's value, force a
+  // reflow, then restore the new value and let the scoped .rz-sticky-bar
+  // transitions (dashboard.css) carry it there. A changed score gets
+  // the hero board's team-colour flash; clock / situation changes get
+  // the same quiet changed-flash the board's pill uses. Same game only:
+  // a game switch snaps. Reduced motion: everything lands instantly.
+  function _animStickyBar(bar) {
+    var cur = _stickyCur;
+    var prev = _stickyPrev;
+    _stickyPrev = cur;
+    if (!bar || !cur || !prev || prev.key !== cur.key || _dynReduced()) return;
+    var glide = function(el, prop, from, to) {
+      if (!el || from == null || to == null || from === to) return;
+      el.style.transition = 'none';
+      el.style[prop] = from;
+      void el.offsetWidth;
+      el.style.transition = '';
+      el.style[prop] = to;
+    };
+    // The fill is anchored to the attacking team's goal line, so it
+    // only glides within the same possession; the ball and the FD tick
+    // live in absolute field coordinates and glide across a flip too.
+    if (prev.side === cur.side) {
+      glide(bar.querySelector('.mb-fld-fill'), 'width', prev.fillW, cur.fillW);
+    }
+    glide(bar.querySelector('.mb-fld-ball'), 'left', prev.ballX, cur.ballX);
+    glide(bar.querySelector('.mb-fld-fd'), 'left', prev.fdX, cur.fdX);
+    var num = function(v) { var n = parseFloat(v); return isNaN(n) ? null : n; };
+    var scoreChanged = function(a, b) {
+      var na = num(a), nb = num(b);
+      return (na != null && nb != null) ? na !== nb : String(a) !== String(b);
+    };
+    var bs = bar.querySelectorAll('.rz-sticky-team b');
+    if (bs[0] && scoreChanged(prev.aPts, cur.aPts)) {
+      bs[0].classList.add('rz-score-flash-team');
+      bs[0].style.setProperty('--rz-flash', _dynTeamColor(cur.away));
+    }
+    if (bs[1] && scoreChanged(prev.hPts, cur.hPts)) {
+      bs[1].classList.add('rz-score-flash-team');
+      bs[1].style.setProperty('--rz-flash', _dynTeamColor(cur.home));
+    }
+    var clockEl = bar.querySelector('.rz-sticky-clock');
+    if (clockEl && prev.clock !== cur.clock) clockEl.classList.add('rz-changed-flash');
+    var sitEl = bar.querySelector('.rz-sticky-sit');
+    if (sitEl && prev.sit !== cur.sit) sitEl.classList.add('rz-changed-flash');
+  }
+
   var _stickyObs = null;
   function _bindStickyBar() {
     if (_stickyObs) { _stickyObs.disconnect(); _stickyObs = null; }
     if (!root || !root.querySelector) return;
     var bar = root.querySelector('.rz-sticky-bar');
     if (!bar) return;
+    _animStickyBar(bar);
     var board = root.querySelector('#rz-nfl-board');
     var field = board ? (board.querySelector('.rz-fb') || board) : null;
     var header = root.querySelector('.rz-header');
