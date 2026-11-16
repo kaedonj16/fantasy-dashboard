@@ -47,7 +47,35 @@ def test_package4_lead_flip_hooks():
 
 def test_change5_sticky_bar():
     assert "_stickyBarHtml" in SZ and "rz-sticky-bar" in CSS
-    assert "position: sticky" in CSS
+    # The bar's field is the Matchups drive bar (mb-fld-* markup fed with
+    # the game's drive state), not the old rz-sticky-mini custom field.
+    assert "mb-fld-track" in SZ and "mb-fld-fill" in SZ and "mb-fld-ball" in SZ
+    assert "mb-fld-fd" in SZ  # yellow first-down tick
+    assert "rz-sticky-mini" not in SZ and "rz-sticky-mini" not in CSS
+    # Fixed under the ScoreZone header (nav + measured header height) and
+    # shown only while the hero field board is out of view: an
+    # IntersectionObserver toggles .is-on; it never sits in flow.
+    # The base rule is the one opening with position: fixed (a 640px
+    # width override and a reduced-motion rule share the selector).
+    assert ".rz-sticky-bar {\n    position: fixed" in CSS
+    bar_css = CSS.split(".rz-sticky-bar {\n    position: fixed", 1)[1].split("}", 1)[0]
+    assert "--rz-header-h" in bar_css and "--rz-header-h" in SZ
+    assert "IntersectionObserver" in SZ and "_bindStickyBar" in SZ
+    assert ".rz-sticky-bar.is-on" in CSS
+
+
+def test_moments_and_boxscore_share_board_gutter():
+    # Inside the main card the board card's side inset is 12px; the
+    # Moments wrap (label + rail + clip panel) takes the same inset
+    # instead of running edge to edge.
+    wrap = CSS.rsplit(".rz-moments-rail-wrap {", 1)[1].split("}", 1)[0]
+    assert "margin: 10px 12px 4px" in wrap
+    # Shared-renderer path: the Box score button is the board's next
+    # sibling and takes the board's inset too (the base rule keeps
+    # width: 100% for the fallback renderer's nested button).
+    sib = CSS.split(".rz-nfl-board + .rz-boxscore-btn {", 1)[1].split("}", 1)[0]
+    assert "width: calc(100% - 24px)" in sib
+    assert "margin-left: 12px" in sib and "margin-right: 12px" in sib
 
 
 def test_change6_live_dark_borrows_real_site_theme():
@@ -73,8 +101,13 @@ def test_change6_live_dark_borrows_real_site_theme():
 def test_change7_moments_rail_uses_existing_clips():
     assert "_momentsRailHtml" in SZ
     assert "rz-moments-rail" in CSS
-    assert "data-rail-clip" in SZ  # drives the feed's own clip toggle
+    assert "data-rail-clip" in SZ  # the rail's own clip surface key
     assert "clipPosterUrl" in SZ    # poster only when the payload carries one
+    # The rail toggles its own panel (_toggleRailClip, via the root click
+    # delegation); it must never forward to the feed card's toggle, which
+    # is paginated out of the DOM for most moments (2026-11-15 fix).
+    assert "_toggleRailClip" in SZ
+    assert "scrollIntoView({ block: 'center', behavior: 'smooth' }); t.click();" not in SZ
 
 
 def test_fix2_moments_rail_requires_clip_or_poster():

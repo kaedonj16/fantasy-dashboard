@@ -38,6 +38,7 @@
   var _pbpHistory = []; // full PBP contribution history (not capped)
   var _playGroupsByKey = {}; // canonical play groups: nflPlayKey → {contributionsByKey, primaryEvent, playState}
   var _openClipKey = null; // playId of the TD clip embed currently open (one at a time)
+  var _openClipSurface = null; // surface that owns the open clip: 'feed' | 'rail'
   var _contributionsByKey = {}; // global contribution storage: contribKey → contribution (for revisions)
   var _alertsArmed = false; // suppress TD beep/push until the first hydration seeds the feed
   var _slideDir   = 'none';
@@ -206,6 +207,14 @@
     var clipBtn = target && target.closest ? target.closest('[data-clip-toggle]') : null;
     if (clipBtn && root.contains(clipBtn)) {
       _toggleClip(clipBtn);
+      e.stopPropagation();
+      return;
+    }
+    // Moments rail Watch: the rail owns its clip panel (see
+    // _toggleRailClip), so it is handled here too, before the data-pid walk.
+    var railBtn = target && target.closest ? target.closest('[data-rail-clip]') : null;
+    if (railBtn && root.contains(railBtn)) {
+      _toggleRailClip(railBtn);
       e.stopPropagation();
       return;
     }
@@ -3130,30 +3139,123 @@
     }
   }
 
-  // Condensed sticky bar: pins under the site nav while the board scrolls
-  // away, synced from the same game object the board renders.
+  // Condensed sticky bar: pins under the ScoreZone header while the hero
+  // field board is scrolled out of view, synced from the same game object
+  // the board renders. Its field is the Matchups drive bar (mb-fld-*
+  // markup/CSS) fed with this game's drive state; the bar itself only
+  // appears once the field board is gone (see _bindStickyBar).
+  function _stickyFieldPos(g) {
+    try {
+      if (window._rzFieldPosition) {
+        var fp = window._rzFieldPosition(Object.assign({}, g, { status: 'live' }));
+        if (fp) return fp;
+      }
+    } catch (e) {}
+    // Fallback derivation, mirroring _nflFieldBoardHtml (used when the
+    // shared app.js helpers did not load).
+    if (!g.field_position_reliable) return null;
+    var away = _fbNormTeam(g.away), home = _fbNormTeam(g.home);
+    var poss = _fbNormTeam(g.possession);
+    if (!poss || (poss !== away && poss !== home)) return null;
+    var spot = _fbSpotAbs(g.yard_line, away, home);
+    if (spot == null) return null;
+    var side = poss === away ? 'away' : 'home';
+    var ltg = null, distN = parseInt(String(g.distance), 10);
+    var toGoal = side === 'away' ? 100 - spot : spot;
+    var goalToGo = /goal/i.test(String(g.distance)) || (!isNaN(distN) && distN >= toGoal);
+    if (!isNaN(distN) && distN >= 1 && !goalToGo) {
+      var gain = side === 'away' ? spot + distN : spot - distN;
+      if (gain > 0 && gain < 100) ltg = gain;
+    }
+    return { spot: spot, side: side, ltg: ltg, label: g.yard_line || '', toGoal: toGoal, goalToGo: goalToGo };
+  }
+
+  // Possession colour for the drive bar: the site team colour, lifted to
+  // the same 0.45 HSL lightness floor the Matchups bar applies in dark
+  // mode so dark primaries (GB, CHI, LV) stay readable on the dark card.
+  function _stickyTc(team) {
+    var raw = _dynTeamColor(team);
+    var dark = false;
+    try { dark = document.documentElement.getAttribute('data-theme') === 'dark'; } catch (e) {}
+    if (!dark) return raw;
+    var h = String(raw).replace('#', '');
+    if (h.length !== 6) return raw;
+    var r = parseInt(h.slice(0, 2), 16) / 255, gg = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
+    var mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), l = (mx + mn) / 2;
+    if (l >= 0.45) return raw;
+    var d = mx - mn, s = d === 0 ? 0 : (l < 0.5 ? d / (mx + mn) : d / (2 - mx - mn)), hue = 0;
+    if (d !== 0) { if (mx === r) hue = ((gg - b) / d) % 6; else if (mx === gg) hue = (b - r) / d + 2; else hue = (r - gg) / d + 4; hue *= 60; if (hue < 0) hue += 360; }
+    l = 0.45;
+    var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((hue / 60) % 2) - 1)), m = l - c / 2, rr = 0, g2 = 0, bb = 0;
+    if (hue < 60) { rr = c; g2 = x; } else if (hue < 120) { rr = x; g2 = c; } else if (hue < 180) { g2 = c; bb = x; }
+    else if (hue < 240) { g2 = x; bb = c; } else if (hue < 300) { rr = x; bb = c; } else { rr = c; bb = x; }
+    var to = function(v) { var n2 = Math.round((v + m) * 255).toString(16); return n2.length === 1 ? '0' + n2 : n2; };
+    return '#' + to(rr) + to(g2) + to(bb);
+  }
+
   function _stickyBarHtml(g) {
     if (_normGameStatus(g) !== 'live') return '';
     var aPts = (g.away_pts === '' || g.away_pts == null) ? '0' : g.away_pts;
     var hPts = (g.home_pts === '' || g.home_pts == null) ? '0' : g.home_pts;
     var clock = [_fmtQuarter(g.game_quarter || ''), g.game_clock || ''].filter(Boolean).join(' · ') || 'LIVE';
     var sit = _downDist({ down: g.down, distance: g.distance }) || '';
-    var mini = '';
-    var fp = null;
-    try { fp = window._rzFieldPosition ? window._rzFieldPosition(Object.assign({}, g, { status: 'live' })) : null; } catch (e) {}
-    if (fp) {
-      var bx = 10 + fp.spot * 0.8;
-      var fillW = fp.side === 'away' ? bx : (100 - bx);
-      mini = '<span class="rz-sticky-mini" aria-hidden="true">'
-        + '<span class="rz-sticky-mini-fill is-' + fp.side + '" style="width:' + fillW + '%"></span>'
-        + (fp.ltg != null ? '<span class="rz-sticky-mini-fd" style="left:' + (10 + fp.ltg * 0.8) + '%"></span>' : '')
-        + '<span class="rz-sticky-mini-ball" style="left:' + bx + '%"></span></span>';
+    var drive = '';
+    var fp = _stickyFieldPos(g);
+    if (fp && fp.spot != null) {
+      // The Matchups drive bar, verbatim markup: striped pill track,
+      // team-colour gradient fill ending on the ball, yellow FD tick.
+      // Geometry matches driveBarHtml in app.js (x = 10 + spot * 0.8;
+      // the fill runs from the offence's own goal line to the ball).
+      var xOf = function(a) { return Math.round((10 + a * 0.8) * 10) / 10; };
+      var atkAway = fp.side === 'away';
+      var fillW = (Math.round((atkAway ? fp.spot : (100 - fp.spot)) * 8) / 10) + '%';
+      var fdTick = (fp.ltg != null)
+        ? '<span class="mb-fld-fd" style="left:' + xOf(Math.min(Math.max(fp.ltg, 1), 99)) + '%"></span>' : '';
+      drive = '<div class="mb-fld-bar rz-sticky-drive" style="--mb-tc:' + _stickyTc(atkAway ? g.away : g.home) + '" aria-hidden="true">'
+        + '<div class="mb-fld-track">'
+        + '<span class="mb-fld-fill ' + (atkAway ? 'mb-away' : 'mb-home') + '" style="width:' + fillW + '"></span>'
+        + fdTick + '<span class="mb-fld-ball" style="left:' + xOf(fp.spot) + '%"></span></div></div>';
     }
     return '<div class="rz-sticky-bar" aria-hidden="true">'
       + '<span class="rz-sticky-team">' + _esc(g.away || '') + ' <b>' + aPts + '</b></span>'
       + '<span class="rz-sticky-mid"><span class="rz-sticky-clock">' + _esc(clock) + '</span>'
-      + (sit ? '<span class="rz-sticky-sit">' + _esc(sit) + '</span>' : '') + mini + '</span>'
+      + (sit ? '<span class="rz-sticky-sit">' + _esc(sit) + '</span>' : '') + drive + '</span>'
       + '<span class="rz-sticky-team right"><b>' + hPts + '</b> ' + _esc(g.home || '') + '</span></div>';
+  }
+
+  // The sticky bar is position:fixed under the ScoreZone header and shows
+  // ONLY while the hero field board is not visible. An IntersectionObserver
+  // on the field board with a negative top root margin (site nav + sticky
+  // header height) does the flipping: the board counts as gone exactly
+  // when it has scrolled under the header, so there is no scroll zone
+  // where both show or neither does. Rebound after every render because
+  // _render/_partialUpdate rebuild the board and bar elements.
+  var _stickyObs = null;
+  function _bindStickyBar() {
+    if (_stickyObs) { _stickyObs.disconnect(); _stickyObs = null; }
+    if (!root || !root.querySelector) return;
+    var bar = root.querySelector('.rz-sticky-bar');
+    if (!bar) return;
+    var board = root.querySelector('#rz-nfl-board');
+    var field = board ? (board.querySelector('.rz-fb') || board) : null;
+    var header = root.querySelector('.rz-header');
+    var navH = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--rz-nav-h')) || 0;
+    var headH = 0;
+    if (header) {
+      headH = Math.ceil(header.getBoundingClientRect().height);
+      if (headH > 0) document.documentElement.style.setProperty('--rz-header-h', headH + 'px');
+    }
+    if (!field || typeof window.IntersectionObserver !== 'function') {
+      bar.classList.remove('is-on');
+      return;
+    }
+    var topOff = Math.max(0, Math.round(navH + headH));
+    _stickyObs = new window.IntersectionObserver(function(entries) {
+      for (var i = 0; i < entries.length; i++) {
+        bar.classList.toggle('is-on', !entries[i].isIntersecting);
+      }
+    }, { rootMargin: '-' + topOff + 'px 0px 0px 0px', threshold: 0 });
+    _stickyObs.observe(field);
   }
 
   // Moments film rail: TDs, 40+ style big plays (the feed's own big-play
@@ -3165,7 +3267,11 @@
   // honours the feed's active scope via _eventMatches (My Team shows
   // only the viewer's players, Big Plays / game / position filters
   // match the feed), and it is rebuilt with every render, so a scope
-  // change re-rails alongside the feed.
+  // change re-rails alongside the feed. Its Watch buttons are the rail's
+  // own clip surface (a panel under the strip, sharing the feed's
+  // one-open-clip key), NOT a forward to the feed card's toggle: the
+  // feed is paginated, so a moment whose card is on another page has no
+  // feed toggle in the DOM to forward to.
   function _momentMediaHtml(ev, initials) {
     if (ev.clipPosterUrl) {
       return '<img class="rz-moment-poster" src="' + _esc(ev.clipPosterUrl) + '" alt="" loading="lazy">';
@@ -3215,11 +3321,29 @@
         + '<div class="rz-moment-name">' + _esc(ev.name || '') + '</div>'
         + '<div class="rz-moment-meta"><span>' + label + '</span><span class="rz-moment-delta">' + delta + '</span></div>'
         + (ev.kind === 'td' && ev.clipTweetId && ev.playId
-          ? '<button type="button" class="rz-moment-watch" data-rail-clip="' + _esc(ev.playId) + '">Watch</button>' : '')
+          ? '<button type="button" class="rz-moment-watch" data-rail-clip="' + _esc(ev.playId) + '"'
+            + ' data-tweet="' + _esc(ev.clipTweetId) + '" data-clip-url="' + _esc(ev.clipUrl || '')
+            + '" data-clip-video="' + _esc(ev.clipVideoUrl || '') + '" data-clip-poster="' + _esc(ev.clipPosterUrl || '') + '">'
+            + ((_openClipSurface === 'rail' && _openClipKey === ev.playId) ? 'Close' : 'Watch') + '</button>' : '')
         + '</div>';
     }).join('');
+    // The rail is its own clip surface: its panel lives under the strip
+    // (full panel width, not squeezed into a 128px card), keyed by the
+    // open play and rendered on every build -- empty and display:none
+    // while closed -- so the delegated rail toggle can fill it whether
+    // or not the play's feed card is in the DOM (the feed is paginated;
+    // see _toggleRailClip).
+    var railOpenEv = null;
+    if (_openClipSurface === 'rail' && _openClipKey) {
+      for (var _ri = 0; _ri < items.length; _ri++) {
+        if (items[_ri].playId === _openClipKey) { railOpenEv = items[_ri]; break; }
+      }
+    }
+    var railPanel = '<div class="rz-clip-panel' + (railOpenEv ? ' is-open' : '')
+      + '" data-clip-panel="' + (railOpenEv ? _esc(railOpenEv.playId) : '') + '">'
+      + (railOpenEv ? _clipFrameHtml(railOpenEv) : '') + '</div>';
     return '<div class="rz-moments-rail-wrap"><div class="rz-moments-rail-label">Moments</div>'
-      + '<div class="rz-moments-rail">' + cards + '</div></div>';
+      + '<div class="rz-moments-rail">' + cards + '</div>' + railPanel + '</div>';
   }
 
   // Post-render motion: count NFL scores up with a scoring-team colour
@@ -4219,8 +4343,18 @@
     // the pre-fix content policy that blocks video.twimg.com, or the
     // network dropped the file. Swap this panel to the X embed so the
     // play still shows instead of a dead black box.
-    var card = panel.closest ? panel.closest('.rz-event') : null;
-    var btn = card ? card.querySelector('[data-clip-toggle]') : null;
+    var card = panel.closest
+      ? (panel.closest('.rz-event') || panel.closest('.rz-moments-rail-wrap')) : null;
+    var btn = null;
+    if (card) {
+      // The toggle for THIS panel's play: feed cards key theirs by
+      // data-clip-toggle, the Moments rail by data-rail-clip.
+      var pkey = panel.getAttribute('data-clip-panel');
+      if (pkey) {
+        try { btn = card.querySelector('[data-clip-toggle="' + pkey + '"], [data-rail-clip="' + pkey + '"]'); } catch (e) {}
+      }
+      if (!btn) btn = card.querySelector('[data-clip-toggle]');
+    }
     var tweet = btn ? btn.getAttribute('data-tweet') : '';
     if (!tweet) return;
     panel.innerHTML = _clipEmbedHtml({
@@ -4296,13 +4430,10 @@
     root.querySelectorAll('.rz-clip-panel.is-open').forEach(_wireClipPanel);
   }
 
-  function _toggleClip(btn) {
-    var card = btn.closest ? btn.closest('.rz-event') : null;
-    if (!card) return;
-    var panel = card.querySelector('[data-clip-panel]');
-    var key = btn.getAttribute('data-clip-toggle');
-    var wasOpen = panel && panel.classList.contains('is-open');
-    // Collapse whatever is open anywhere in the feed first.
+  // Collapse whatever clip is open on either surface. Feed cards and
+  // the Moments rail share one open clip (_openClipKey), so opening or
+  // closing on one surface always resets the other's panel and labels.
+  function _collapseAllClips() {
     root.querySelectorAll('.rz-clip-panel.is-open').forEach(function(p) {
       p.classList.remove('is-open');
       p.innerHTML = '';
@@ -4310,11 +4441,29 @@
     root.querySelectorAll('[data-clip-toggle]').forEach(function(b) {
       b.innerHTML = _clipBtnLabel(false);
     });
+    root.querySelectorAll('[data-rail-clip]').forEach(function(b) {
+      b.textContent = 'Watch';
+    });
+    _openClipSurface = null;
+  }
+
+  function _toggleClip(btn) {
+    var card = btn.closest ? btn.closest('.rz-event') : null;
+    if (!card) return;
+    var panel = card.querySelector('[data-clip-panel]');
+    var key = btn.getAttribute('data-clip-toggle');
+    // A feed panel can only be open when the feed owns the clip (the
+    // rail-owned case renders this card closed -- see _eventHtml), so
+    // the panel's own state is the toggle truth here.
+    var wasOpen = panel && panel.classList.contains('is-open');
+    // Collapse whatever is open anywhere (feed or Moments rail) first.
+    _collapseAllClips();
     if (wasOpen) {
       _openClipKey = null;
       return;
     }
     _openClipKey = key;
+    _openClipSurface = 'feed';
     if (panel) {
       // The button's data attributes are a render-time snapshot; the
       // feed's current event for this play is fresher (its clip video
@@ -4338,6 +4487,53 @@
       }
     }
     btn.innerHTML = _clipBtnLabel(true);
+  }
+
+  // Moments rail Watch. The rail used to forward the tap to the play's
+  // feed card toggle (find [data-clip-toggle="<playId>"], click it), but
+  // the feed renders only the current page of 20 plays while the rail is
+  // built from the whole feed -- a moment whose card sat on another page
+  // had no toggle in the DOM, the lookup returned null, and the tap
+  // silently did nothing (Kaedon, 2026-11-15: "I can't click anything on
+  // the moments bar"). The rail is therefore its own clip surface: it
+  // fills the rail wrap's panel directly, sharing _openClipKey with the
+  // feed so exactly one clip is open across both surfaces.
+  function _toggleRailClip(btn) {
+    var wrap = btn.closest ? btn.closest('.rz-moments-rail-wrap') : null;
+    if (!wrap) return;
+    var panel = wrap.querySelector('[data-clip-panel]');
+    var key = btn.getAttribute('data-rail-clip');
+    var wasOpen = !!panel && panel.classList.contains('is-open')
+      && _openClipKey === key && _openClipSurface === 'rail';
+    _collapseAllClips();
+    if (wasOpen || !panel) {
+      _openClipKey = null;
+      return;
+    }
+    _openClipKey = key;
+    _openClipSurface = 'rail';
+    panel.setAttribute('data-clip-panel', key);
+    // The button's data attributes are a render-time snapshot; the
+    // feed's current event for this play is fresher (its clip video may
+    // have landed since the rail last rebuilt). Same rule as _toggleClip.
+    var freshEv = null;
+    for (var _fi = 0; _fi < _feed.length; _fi++) {
+      if (_feed[_fi] && _feed[_fi].playId === key) { freshEv = _feed[_fi]; break; }
+    }
+    panel.innerHTML = _clipFrameHtml({
+      clipTweetId: (freshEv && freshEv.clipTweetId) || btn.getAttribute('data-tweet') || '',
+      clipUrl: (freshEv && freshEv.clipUrl) || btn.getAttribute('data-clip-url') || '',
+      clipVideoUrl: (freshEv && freshEv.clipVideoUrl) || btn.getAttribute('data-clip-video') || '',
+      clipPosterUrl: (freshEv && freshEv.clipPosterUrl) || btn.getAttribute('data-clip-poster') || ''
+    });
+    panel.classList.add('is-open');
+    _wireClipPanel(panel);
+    var vid = panel.querySelector('.rz-clip-video');
+    if (vid && vid.play) {
+      var pr = vid.play();
+      if (pr && pr.catch) pr.catch(function() {});
+    }
+    btn.textContent = 'Close';
   }
 
   function _clipBtnLabel(open) {
@@ -4434,7 +4630,10 @@
         + (isDef && defTeam ? ' data-team="' + String(defTeam).replace(/"/g, '') + '"' : '')
         + ' onerror="' + avOnErr + '">';
     var hasClip = !!(ev.clipTweetId && ev.kind === 'td');
-    var clipOpen = hasClip && _openClipKey === ev.playId;
+    // The open clip belongs to one surface: when the Moments rail owns
+    // it, the feed card for the same play renders closed (and vice
+    // versa) so the clip never plays twice at once.
+    var clipOpen = hasClip && _openClipKey === ev.playId && _openClipSurface !== 'rail';
     // The clip row is button-left / source-right (Kaedon's pick over the
     // old right-pushed button with dead space beside it): the source is
     // the posting account's handle parsed from the tweet URL.
@@ -5168,10 +5367,25 @@
     // Refresh NFL matchup scoreboard (score / clock / d&d / possession)
     var boardEl = root.querySelector('#rz-nfl-board');
     var boardHtml = showFilters ? _renderNflBoard() : '';
+    // The board HTML string also carries trailing siblings (shared
+    // renderer): the Box score button and the sticky bar. The fallback
+    // renderer nests the button inside the board instead, but the sticky
+    // bar is a sibling either way. Capture the old siblings so they can
+    // be refreshed with the board -- otherwise the bar's score / clock /
+    // drive would freeze between full renders.
+    var sib1 = boardEl ? boardEl.nextElementSibling : null;
+    var oldBtn = (sib1 && sib1.classList.contains('rz-boxscore-btn')) ? sib1 : null;
+    var sib2 = oldBtn ? oldBtn.nextElementSibling : sib1;
+    var oldBar = (sib2 && sib2.classList.contains('rz-sticky-bar')) ? sib2 : null;
     if (boardHtml) {
       var boardWrap = document.createElement('div');
       boardWrap.innerHTML = boardHtml;
       var newBoard = boardWrap.firstChild;
+      var newBtn = null, newBar = null;
+      for (var ci = 0; ci < boardWrap.children.length; ci++) {
+        if (boardWrap.children[ci].classList.contains('rz-boxscore-btn')) newBtn = boardWrap.children[ci];
+        if (boardWrap.children[ci].classList.contains('rz-sticky-bar')) newBar = boardWrap.children[ci];
+      }
       if (boardEl && newBoard) boardEl.parentNode.replaceChild(newBoard, boardEl);
       else if (newBoard) {
         var chipBar2 = root.querySelector('.rz-chip-bar');
@@ -5181,8 +5395,22 @@
         if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(newBoard, anchor.nextSibling);
         else if (panelsHost) panelsHost.insertBefore(newBoard, panelsHost.firstChild);
       }
+      if (newBoard && newBoard.parentNode) {
+        var cursor = newBoard;
+        if (newBtn) {
+          if (oldBtn) oldBtn.replaceWith(newBtn);
+          else cursor.parentNode.insertBefore(newBtn, cursor.nextSibling);
+          cursor = newBtn;
+        } else if (oldBtn) oldBtn.remove();
+        if (newBar) {
+          if (oldBar) oldBar.replaceWith(newBar);
+          else cursor.parentNode.insertBefore(newBar, cursor.nextSibling);
+        } else if (oldBar) oldBar.remove();
+      }
     } else if (boardEl) {
       boardEl.remove();
+      if (oldBtn) oldBtn.remove();
+      if (oldBar) oldBar.remove();
     }
 
     // Refresh every mounted fantasy view from the same accepted state. This
@@ -5203,6 +5431,7 @@
 
     // Sync feed (live-patches page 0)
     _syncFeed();
+    _bindStickyBar();
   }
 
   function _tabsFor() {
@@ -5354,7 +5583,9 @@
     _syncFeed();
     _dynAfterRender();
 
-    // Live-dark toggle + Moments rail Watch wiring (rebuilt each render).
+    // Live-dark toggle (rebuilt each render). Moments rail Watch needs
+    // no per-render wiring: the root click delegation owns it
+    // (_toggleRailClip), so it survives rail rebuilds by construction.
     var darkBtnEl = root.querySelector('#rz-live-dark-btn');
     if (darkBtnEl) darkBtnEl.addEventListener('click', function() {
       // Flip the ScoreZone preference, then reconcile the borrow. When
@@ -5367,20 +5598,13 @@
       darkBtnEl.classList.toggle('active', _globalDark());
       darkBtnEl.setAttribute('aria-pressed', _globalDark() ? 'true' : 'false');
     });
-    root.querySelectorAll('[data-rail-clip]').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var t = null;
-        try { t = root.querySelector('[data-clip-toggle="' + btn.getAttribute('data-rail-clip') + '"]'); } catch (e) {}
-        if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.click(); }
-      });
-    });
-
     // Sync sticky header top to actual nav height (prevents overlap on scroll)
     var topNav = document.querySelector('.top-nav');
     if (topNav) {
       var navH = Math.ceil(topNav.getBoundingClientRect().height);
       if (navH > 0) document.documentElement.style.setProperty('--rz-nav-h', navH + 'px');
     }
+    _bindStickyBar();
 
     // Slide animation when hero card selection changes
     if (_slideDir !== 'none') {
@@ -6499,5 +6723,8 @@
   }
   window.addEventListener('scroll', _syncHeaderStuck, { passive: true });
 
+  // A resize can change the sticky header's height (it wraps), which moves
+  // both the sticky bar's pin line and its observer margin: rebind.
+  window.addEventListener('resize', _bindStickyBar);
   window.addEventListener('resize', _updateHeroArrows);
 })();
