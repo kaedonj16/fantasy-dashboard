@@ -635,6 +635,22 @@ document.body.scrollTop = 0;
   window.addEventListener('DOMContentLoaded', finishBar);
 })();
 
+// ── ScoreZone entry buttons ──────────────────────────────────────────────────
+// The dashboard "Watch on ScoreZone" CTA and the weekly hub ScoreZone button
+// navigate to the (shell-first) ScoreZone page. Mark the tapped button as
+// opening the moment it is clicked, so the tap visibly registers while the
+// browser swaps pages instead of the button sitting unchanged. The class
+// also blocks a second tap from queueing a duplicate navigation.
+document.addEventListener('click', function (e) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button) return;
+  var tapTarget = e.target;
+  var link = tapTarget && tapTarget.closest
+    ? tapTarget.closest('a.weekly-rz-cta-link, a.weekly-rz-btn') : null;
+  if (!link || link.target === '_blank') return;
+  link.classList.add('rz-opening');
+  link.setAttribute('aria-busy', 'true');
+}, true);
+
 // Shared accessible custom select enhancer. Keep this block byte-identical in app.js.
 (function () {
   if (window.__brCustomSelectInstalled) return;
