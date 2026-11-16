@@ -44578,6 +44578,17 @@ a.rz-demo-link:hover {
     outline-offset: 2px;
 }
 .rz-boxscore-ico { font-size: 15px; color: var(--rz-muted); }
+/* Shared-renderer path: the button is the board card's next sibling (not
+   nested inside it), so it takes the board's own 12px inset instead of
+   spanning the main card edge to edge. The fallback renderer nests the
+   button inside the board, where width: 100% already matches the board's
+   content box, so this only targets the sibling. The pregame pill rules
+   below follow with equal specificity and still win for pregame boards. */
+.rz-nfl-board + .rz-boxscore-btn {
+    width: calc(100% - 24px);
+    margin-left: 12px;
+    margin-right: 12px;
+}
 /* Pregame only: the Box score control shrinks from the full-width slab to
    a compact pill centered under the B1 header. The board carries the
    pregame state, so this follows it live -- the button is the board's next
@@ -44998,6 +45009,13 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     .rz-page { --rz-content-gutter: 10px; }
     .rz-game-pill { min-width: 0; }
     .rz-mc-hero { width: 74vw; max-width: 300px; }
+
+    /* The board's side inset inside the main card is 10px at this width
+       (see .rz-nfl-board above); the sections aligned to its gutter in
+       the base rules follow it down. */
+    .rz-moments-rail-wrap { margin-left: 10px; margin-right: 10px; }
+    .rz-nfl-board + .rz-boxscore-btn { width: calc(100% - 20px); margin-left: 10px; margin-right: 10px; }
+    .rz-sticky-bar { width: calc(100vw - 50px); }
 
     .rz-header {
         padding: 11px 12px;
@@ -60827,25 +60845,43 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     100% { background: transparent; }
 }
 
-/* Change 5: condensed sticky bar, synced from the board's game object. */
+/* Change 5: condensed sticky bar, synced from the board's game object.
+   Fixed under the ScoreZone header (top = site nav + sticky header, the
+   header height measured into --rz-header-h by scorezone.js) and shown
+   ONLY while the hero field board is scrolled out of view: scorezone.js
+   toggles .is-on from an IntersectionObserver on the field board. Its
+   width matches the board card exactly (the 720px column minus the main
+   card's 14px side margins, its 1px borders and the board's 12px side
+   margins), so it lands on the same gutter as everything else. Its field
+   is the reused Matchups drive bar (mb-fld-* CSS above); .rz-sticky-drive
+   only gives that bar's track room to stretch inside this row. */
 .rz-sticky-bar {
-    position: sticky; top: calc(var(--rz-nav-h, 56px) + 6px); z-index: 40;
+    position: fixed; top: calc(var(--rz-nav-h, 56px) + var(--rz-header-h, 58px) + 6px);
+    left: 50%; transform: translate(-50%, -6px);
+    width: min(666px, calc(100vw - 54px));
+    z-index: 40;
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    margin-top: 8px; padding: 6px 12px;
+    padding: 6px 12px;
     background: var(--rz-card, var(--card)); border: 1px solid var(--rz-border, var(--border));
     border-radius: 10px; font-size: 12px; font-weight: 600;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
 }
-.rz-sticky-mid { display: inline-flex; align-items: center; gap: 8px; }
-.rz-sticky-clock { font-weight: 800; font-variant-numeric: tabular-nums; }
-.rz-sticky-sit { color: var(--rz-muted, var(--text-muted)); font-weight: 700; }
-.rz-sticky-mini { position: relative; display: inline-block; width: 92px; height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--rz-muted, #64748b) 22%, transparent); overflow: hidden; }
-.rz-sticky-mini-fill { position: absolute; top: 0; bottom: 0; left: 0; background: #16a34a; }
-.rz-sticky-mini-fill.is-home { left: auto; right: 0; }
-.rz-sticky-mini-fd { position: absolute; top: 0; bottom: 0; width: 2px; background: #eab308; transform: translateX(-50%); }
-.rz-sticky-mini-ball { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #fff; border: 1.5px solid #0f2440; transform: translate(-50%, -50%); }
+.rz-sticky-bar.is-on {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transform: translate(-50%, 0);
+    transition: opacity .18s ease, transform .18s ease;
+}
+.rz-sticky-mid { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.rz-sticky-clock { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rz-sticky-sit { color: var(--rz-muted, var(--text-muted)); font-weight: 700; white-space: nowrap; }
+.rz-sticky-drive { flex: 1 1 auto; min-width: 48px; }
 
-/* Change 7: Moments film rail. Compact and quiet, subordinate to the board. */
-.rz-moments-rail-wrap { margin: 10px 0 2px; }
+/* Change 7: Moments film rail. Compact and quiet, subordinate to the board.
+   The wrap takes the board card's 12px side inset inside the main card
+   (the label, rail and clip panel all land on the board/feed gutter);
+   vertical margins keep the page's 10px section rhythm. */
+.rz-moments-rail-wrap { margin: 10px 12px 4px; }
 .rz-moments-rail-label { font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--rz-muted, var(--text-muted)); margin-bottom: 6px; }
 .rz-moments-rail { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
 .rz-moment-card {
@@ -60872,6 +60908,7 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     .rz-event.is-live-enter .rz-event-delta-pts,
     .rz-event.rz-td-enter .rz-event-delta-pts { animation: none; }
     .rz-fb-rzdeep { transition: none; }
+    .rz-sticky-bar { transition: none; }
 }
 
 /* ============================================================
