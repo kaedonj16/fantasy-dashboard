@@ -10050,6 +10050,52 @@ def _fill_activity_section_async(platform: str, league_id: str, season: int) -> 
             _ACTIVITY_FILL_INFLIGHT.discard(key)
 
 
+_INJURY_FILL_INFLIGHT: set = set()
+_INJURY_FILL_LOCK = threading.Lock()
+
+
+def _fill_injury_section_async(platform: str, league_id: str, season: int) -> None:
+    """Background-fill a cached ctx's deferred injury section.
+
+    Same bounded shape as _fill_activity_section_async: deduped per league,
+    one aggregate background slot (_BG_HEAVY_SEM, dropped kicks un-mark so
+    a later read can re-kick), daemon thread. Used by the shell-first
+    dashboard Injury Watch section API so the page load never pays the
+    injury sweep inline."""
+    key = _cache_key(platform, season, league_id)
+    with _INJURY_FILL_LOCK:
+        if key in _INJURY_FILL_INFLIGHT:
+            return
+        _INJURY_FILL_INFLIGHT.add(key)
+
+    if not _BG_HEAVY_SEM.acquire(blocking=False):
+        with _INJURY_FILL_LOCK:
+            _INJURY_FILL_INFLIGHT.discard(key)
+        return
+
+    def _run() -> None:
+        _prev = _heavy_job_start("slot")
+        try:
+            entry = DASHBOARD_CACHE.get(key)
+            if entry and entry.get("ctx"):
+                ensure_injury_bits(entry["ctx"])
+        except Exception:
+            logger.debug("[injury-fill] background fill failed", exc_info=True)
+        finally:
+            _heavy_job_end("slot", _prev)
+            with _INJURY_FILL_LOCK:
+                _INJURY_FILL_INFLIGHT.discard(key)
+
+    try:
+        threading.Thread(
+            target=_run, name=f"injury-fill-{platform}-{league_id}", daemon=True,
+        ).start()
+    except Exception:
+        _BG_HEAVY_SEM.release()
+        with _INJURY_FILL_LOCK:
+            _INJURY_FILL_INFLIGHT.discard(key)
+
+
 def refresh_league_ctx_section(platform: str, league_id: str, page: str, season: int,
                                full: bool = False) -> dict:
     """Refresh the cached league context. By default only the sections the given
@@ -13069,10 +13115,12 @@ def _playoff_rules_confirm_note(ctx: dict, total_rosters: int,
     rules = ctx.get("_league_rules") or {}
     if rules.get("source") != "default_unverified":
         return ""
-    viewer = ctx.get("viewer") or {}
-    if not (viewer.get("viewer_roster_id") is not None
-            or viewer.get("roster_id") is not None):
-        return ""
+    # The linked-viewer gate is applied client-side, not here: the standings
+    # body is cached per league and shared by every viewer, so this builder
+    # must not read the viewer at all. The note renders inside a hidden
+    # [data-confirm-note] container and the standings page script reveals it
+    # when window._viewerRid shows a linked viewer (applyConfirmNoteGate).
+    # The note's contents are league settings only, never viewer identity.
     platform = html.escape(str(ctx.get("platform") or ""), quote=True)
     league_id = html.escape(
         str(ctx.get("resolved_league_id", ctx.get("league_id")) or ""),
@@ -13100,6 +13148,7 @@ def _playoff_rules_confirm_note(ctx: dict, total_rosters: int,
         return " selected" if cur_wtype == value else ""
 
     return (
+        "<div data-confirm-note hidden>"
         "<div class='pp-confirm'>"
         "<span class='pp-confirm-lead'>Playoff format not confirmed for "
         "this league.</span>"
@@ -13134,6 +13183,7 @@ def _playoff_rules_confirm_note(ctx: dict, total_rosters: int,
         "</select></label>"
         "<button type='submit'>Confirm</button>"
         "</form></div>"
+        "</div>"
     )
 
 
@@ -13354,6 +13404,7 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
               }}
             }});
             if (window.applyStandingsDetail) window.applyStandingsDetail();
+            if (window.applyConfirmNoteGate) window.applyConfirmNoteGate();
           }})
           .catch(function(err) {{ if (err && err.name === 'AbortError') return; }})
           .finally(function() {{ if (my === seq) setLoading(false); }});
@@ -16882,6 +16933,48 @@ def _get_league_ctx_from_cache_impl(
 # /api/trade-count extracted to routes/misc_api_bp.py
 
 
+@app.route("/api/dashboard-section")
+def api_dashboard_section():
+    """Shell-first dashboard sections (Option C), filled client-side.
+
+    section=injury: the Injury Watch card. Cache-only: a cold league ctx
+    answers pending (the best-effort getter kicks a background warm); a
+    warm ctx whose injury sweep is still deferred kicks the bounded
+    background fill and answers pending; once the sweep lands, the section
+    renders for this request's viewer (from the ctx's per-request viewer
+    stamp) and is returned per request, never stored league-keyed.
+    """
+    section = request.args.get("section", "")
+    platform = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    try:
+        season = int(request.args.get("season", 0))
+    except (TypeError, ValueError):
+        season = 0
+    resp = None
+    if section != "injury" or not league_id or not season:
+        resp = jsonify({"ready": False, "error": "bad params"})
+        resp.status_code = 400
+    else:
+        ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+        if not ctx:
+            resp = jsonify({"ready": False, "pending": True})
+        elif ctx.get("injury_df") is None:
+            _fill_injury_section_async(platform, league_id, season)
+            resp = jsonify({"ready": False, "pending": True})
+        else:
+            from dashboard_services.pages.dashboard_page import (
+                _dashboard_injury_watch_html,
+            )
+            viewer_rid = (ctx.get("viewer") or {}).get("viewer_roster_id")
+            resp = jsonify({
+                "ready": True,
+                "html": _dashboard_injury_watch_html(ctx, viewer_rid),
+            })
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
 @app.route("/<platform>/<int:season>/<league_id>/dashboard")
 def page_dashboard(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -16890,7 +16983,11 @@ def page_dashboard(platform: str, season: int, league_id: str):
         body = build_offseason_dashboard_body(ctx)
     else:
         ensure_weekly_bits(ctx)
-        body = build_dashboard_body(ctx)
+        # Shell-first: Injury Watch is a pending mount filled from
+        # /api/dashboard-section, so the page load no longer pays the
+        # injury sweep inline. The body itself is NOT cached (Dashboard
+        # stays Option C only: its personalized sections are the product).
+        body = build_dashboard_body(ctx, defer_injury=True)
 
     if str(request.args.get("league_pro") or "") == "1":
         body = (
@@ -19198,8 +19295,6 @@ def api_lineup_lab():
 
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
 def page_weekly(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-
     if not has_draft_ended(league_id, platform, season):
         body = """
         <div class="card central">
@@ -19210,11 +19305,65 @@ def page_weekly(platform: str, season: int, league_id: str):
           </div>
         </div>
         """
-    else:
+        return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
+
+    if _is_nfl_live_window():
+        # Live windows bypass the body cache (scope decision 1): live
+        # scores and win probability must never freeze into a 30-min body.
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
         ensure_weekly_bits(ctx)
         body = build_weekly_hub_body(ctx)
+        return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
 
-    return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
+    def _build() -> str:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        ensure_weekly_bits(ctx)
+        return build_weekly_hub_body(ctx, generic=True)
+
+    return _serve_cached_or_background(
+        platform, season, league_id, "weekly",
+        "BR Fantasy Weekly Hub", "weekly", _build, "Loading weekly hub")
+
+
+@app.route("/api/weekly-tab")
+def api_weekly_tab():
+    """Viewer-only Weekly Hub tabs (Scout, Lineup) for the generic body.
+
+    The cached generic body renders these tabs as lazy slots; this endpoint
+    builds the tab for the requesting viewer only. Cache-only in spirit: a
+    cold league ctx answers pending (the best-effort getter kicks a
+    background warm) instead of blocking on a build, and the per-viewer
+    response is never stored in a league-keyed cache.
+    """
+    platform = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    tab = request.args.get("tab", "")
+    try:
+        season = int(request.args.get("season", 0))
+    except (TypeError, ValueError):
+        season = 0
+    resp = None
+    if not league_id or not season or tab not in ("scout", "optimal"):
+        resp = jsonify({"ready": False, "error": "bad params"})
+        resp.status_code = 400
+    else:
+        ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+        if not ctx:
+            resp = jsonify({"ready": False, "pending": True})
+        else:
+            try:
+                ensure_weekly_bits(ctx)
+                if tab == "scout":
+                    tab_html = build_scout_body(ctx)
+                else:
+                    tab_html = build_optimal_body(ctx)
+                resp = jsonify({"ready": True, "html": tab_html or ""})
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[weekly-tab] render failed: %s", exc, exc_info=True)
+                resp = jsonify({"ready": False, "error": "render failed"})
+                resp.status_code = 500
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
 
 
 # ─── BR ScoreZone ────────────────────────────────────────────────────────────────
@@ -24054,11 +24203,12 @@ def api_page_ready():
 
 
 def _serve_cached_or_background(platform, season, league_id, cache_key,
-                                title, active, build_fn, label):
+                                title, active, build_fn, label, og_tags=None):
     """Serve cached page HTML, or background-build it and return a polling skeleton."""
     cached = get_page_html_from_cache(platform, season, league_id, cache_key)
     if cached:
-        return render_page(title, league_id, active, cached, platform, season)
+        return render_page(title, league_id, active, cached, platform, season,
+                           og_tags=og_tags)
 
     build_key = f"{cache_key}:{platform}:{season}:{league_id}"
     with _PAGE_BG_LOCK:
@@ -24083,7 +24233,8 @@ def _serve_cached_or_background(platform, season, league_id, cache_key,
                     raise
 
     skeleton = _page_skeleton(platform, season, league_id, cache_key, label)
-    resp = make_response(render_page(title, league_id, active, skeleton, platform, season))
+    resp = make_response(render_page(title, league_id, active, skeleton, platform, season,
+                                     og_tags=og_tags))
     resp.headers["Cache-Control"] = "no-store"
     return resp
 

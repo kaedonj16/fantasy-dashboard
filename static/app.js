@@ -36836,6 +36836,24 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         + ' <button type="button" data-ls-retry>Retry</button></div>';
       return;
     }
+    // is_you is re-derived client-side from the payload's roster ids: the
+    // Weekly Hub body is cached per league in generic form, so its embedded
+    // payload carries no viewer flags. The sort is stable, so the server
+    // points order survives inside each group. Idempotent for API payloads
+    // that already carry the viewing user's flags.
+    var _vid = (window._viewerRid !== undefined && window._viewerRid !== null)
+      ? String(window._viewerRid) : '';
+    if (_vid) {
+      matchups = matchups.map(function (m) {
+        var l = m.left || {}, r = m.right || {};
+        var you = String(l.roster_id || '') === _vid || String(r.roster_id || '') === _vid;
+        return Object.assign({}, m, { is_you: you });
+      });
+      matchups.sort(function (a, b) {
+        if (!!a.is_you === !!b.is_you) return 0;
+        return a.is_you ? -1 : 1;
+      });
+    }
     var html = '<div class="ls-list">';
     matchups.forEach(function (m) {
       var left = m.left || {}, right = m.right;

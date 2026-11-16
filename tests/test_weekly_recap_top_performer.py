@@ -100,7 +100,10 @@ def test_completed_recap_cache_version_is_refreshed():
 def test_recap_route_hydrates_matchups_before_rendering():
     """The recap must have normalized weekly data even on a direct page visit."""
     source = (ROOT / "routes/league_pages_bp.py").read_text()
-    route = source.split("def page_recap", 1)[1].split("def ", 1)[0]
+    # The route now delegates to a background build closure (the generic body
+    # is cached per league); the hydrate-before-render contract lives inside
+    # that closure, so scan from the route to the end of its build helper.
+    route = source.split("def page_recap", 1)[1].split("def _recap_snapshot", 1)[0]
 
     assert "ensure_weekly_bits(ctx)" in route
     assert route.index("ensure_weekly_bits(ctx)") < route.index("build_recap_body(")

@@ -40,8 +40,16 @@ def get_league_ctx_from_cache(*args, **kwargs):
     from app import get_league_ctx_from_cache as _fn
     return _fn(*args, **kwargs)
 
+def get_league(*args, **kwargs):
+    from app import get_league as _fn
+    return _fn(*args, **kwargs)
+
 def build_recap_body(*args, **kwargs):
     from app import build_recap_body as _fn
+    return _fn(*args, **kwargs)
+
+def _fill_activity_section_async(*args, **kwargs):
+    from app import _fill_activity_section_async as _fn
     return _fn(*args, **kwargs)
 
 
@@ -64,6 +72,14 @@ def get_model_value_table_cached(*args, **kwargs):
 
 def _serve_cached_or_background(*args, **kwargs):
     from app import _serve_cached_or_background as _fn
+    return _fn(*args, **kwargs)
+
+def get_page_html_from_cache(*args, **kwargs):
+    from app import get_page_html_from_cache as _fn
+    return _fn(*args, **kwargs)
+
+def store_page_html(*args, **kwargs):
+    from app import store_page_html as _fn
     return _fn(*args, **kwargs)
 
 def _build_tour_mock_df_weekly(*args, **kwargs):
@@ -97,18 +113,36 @@ def _use_offseason_standings(ctx) -> bool:
 
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/standings")
 def page_standings(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    # The standings body carries no viewer-valued data (the one viewer-gated
+    # piece, the playoff-rules confirm note, is rendered hidden and revealed
+    # client-side from window._viewerRid), so it is safe to cache per league
+    # and serve through the Teams/Activity cached-or-background pattern: a
+    # warm body serves instantly, a cold one builds in the background while
+    # the client polls a skeleton.
+    def _build() -> str:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        # Before any games are on this week's slate the in-season standings
+        # are all 0-0, so show the populated value-based layout. It switches
+        # to in-season automatically once a regular-season game is scheduled
+        # this NFL week, not only after the first week finalizes.
+        if _use_offseason_standings(ctx):
+            return _build_offseason_standings_body(ctx)
+        return build_standings_body(ctx)
 
-    # Before any games are on this week's slate the in-season standings are all
-    # 0-0, so show the populated value-based layout. It switches to in-season
-    # automatically once a regular-season game is scheduled this NFL week --
-    # not only after the first week finalizes.
-    if _use_offseason_standings(ctx):
-        body = _build_offseason_standings_body(ctx)
-    else:
-        body = build_standings_body(ctx)
+    # Warm tier (the Teams pattern the cached-or-background helper lacks):
+    # when a ctx is already available without a build (local cache, Redis,
+    # or the stale window), the body build is cheap, so serve it inline and
+    # populate the page cache instead of making the reader poll a skeleton.
+    # The best-effort probe returns {} on a true cold league (and kicks the
+    # background warm), which falls through to the background path below.
+    if get_league_ctx_from_cache(platform, league_id, season, allow_build=False):
+        body = _build()
+        store_page_html(platform, season, league_id, "standings", body)
+        return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
 
-    return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
+    return _serve_cached_or_background(
+        platform, season, league_id, "standings",
+        "BR Fantasy Standings", "standings", _build, "Loading standings")
 
 
 @league_pages_bp.route("/api/standings-week")
@@ -170,8 +204,35 @@ def api_standings_week():
 
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/waivers")
 def page_waivers(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    # The waivers body is a league-generic shell (all data loads client-side
+    # per viewer); the only ctx read in the builder is the is_best_ball
+    # boolean. Serve the cached shell when present, and on a miss use a
+    # best-effort ctx so a cold league never blocks this route on a full
+    # context build: allow_build=False serves a warm/stale ctx (or {} while
+    # a background warm runs). With {} the Start/Sit tab shows until the
+    # client learns the format, the accepted cold best-ball flash.
+    cached = get_page_html_from_cache(platform, season, league_id, "waivers")
+    if cached:
+        return render_page("BR Fantasy Waivers", league_id, "waivers", cached, platform, season)
+    ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+    if not ctx:
+        # No usable ctx and no cached shell: this league has never loaded
+        # here, so serving a blind shell would also mask a league that
+        # cannot load at all. One light league fetch (the context build's
+        # own first call) separates cold-but-loadable from provider-down:
+        # an outage raises ProviderUnavailableError, which the app
+        # errorhandler maps to the branded 503 this page has always
+        # returned on provider failure. A healthy fetch also supplies the
+        # league dict the shell reads for is_best_ball, so the format is
+        # known before the shell is cached below.
+        _league = get_league(platform, league_id, season)
+        if _league:
+            ctx = {"league": _league}
     body = build_waivers_body(platform, season, league_id, ctx)
+    if ctx:
+        # Only cache once the format is known (a warm ctx), so a best-ball
+        # league's shell is never cached with the Start/Sit tab visible.
+        store_page_html(platform, season, league_id, "waivers", body)
     return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
 
 
@@ -189,15 +250,25 @@ def page_scout(platform: str, season: int, league_id: str):
 
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/recap")
 def page_recap(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    # Reuse the same normalized historical lineups and authoritative scoring as
-    # Matchups. This cached league-level hydrate avoids per-team/player calls.
-    ensure_weekly_bits(ctx)
     try:
         week = int(request.args.get("week") or 0) or None
     except (ValueError, TypeError):
         week = None
-    body = build_recap_body(ctx, selected_week=week)
+
+    def _build() -> str:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        # Reuse the same normalized historical lineups and authoritative
+        # scoring as Matchups. This cached league-level hydrate avoids
+        # per-team/player calls.
+        ensure_weekly_bits(ctx)
+        # Generic body: no session reads, no viewer data, no premium AI
+        # column, no inline activity sweep (see build_recap_body). The
+        # per-viewer pieces are filled client-side from the section APIs
+        # below, so this body is safe to cache per league.
+        return build_recap_body(ctx, selected_week=week, generic=True)
+
+    # League name for the OG tags only: best-effort, never a blocking build.
+    ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
     league_name = html.escape((ctx.get("league") or {}).get("name") or "Fantasy League")
     week_label = f"Week {week} Recap" if week else "Weekly Recap"
     page_url = request.url
@@ -221,7 +292,115 @@ def page_recap(platform: str, season: int, league_id: str):
         f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
         f"<meta name='twitter:image' content='{og_image}'>"
     )
-    return render_page("Weekly Recap", league_id, "recap", body, platform, season, og_tags=og_tags)
+    return _serve_cached_or_background(
+        platform, season, league_id, f"recap:{week or 'latest'}",
+        "Weekly Recap", "recap", _build, "Loading weekly recap",
+        og_tags=og_tags)
+
+
+def _recap_snapshot() -> dict:
+    """Session values the recap builder needs, captured on the request
+    thread (the builder itself never reads the session)."""
+    return {
+        "viewer_roster_id": session.get("viewer_roster_id"),
+        "viewer_username": session.get("viewer_username"),
+        "viewer_user_id": session.get("viewer_user_id"),
+    }
+
+
+def _recap_section_params():
+    platform = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    try:
+        season = int(request.args.get("season", 0))
+        week = int(request.args.get("week") or 0) or None
+    except (TypeError, ValueError):
+        return None
+    if not league_id or not season:
+        return None
+    return platform, season, league_id, week
+
+
+def _extract_marked(body: str, name: str) -> str:
+    start = f"<!--recap-{name}-start-->"
+    end = f"<!--recap-{name}-end-->"
+    if start not in body or end not in body:
+        return ""
+    return body.split(start, 1)[1].split(end, 1)[0]
+
+
+def _private_json(payload, status=200):
+    resp = jsonify(payload)
+    resp.status_code = status
+    # Per-viewer section HTML: never store it in a shared or league cache.
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
+@league_pages_bp.route("/api/recap-ai-column")
+def api_recap_ai_column():
+    """Per-viewer Weekly Story + Up Next sections for the cached recap body.
+
+    Cache-only in spirit: a cold league ctx answers pending (the getter's
+    best-effort path kicks a background warm) instead of blocking on a
+    build. The response is built for this request's viewer (premium gate
+    from the session snapshot) and is never cached league-keyed.
+    """
+    params = _recap_section_params()
+    if params is None:
+        return _private_json({"ready": False, "error": "bad params"}, 400)
+    platform, season, league_id, week = params
+    ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+    if not ctx:
+        return _private_json({"ready": False, "pending": True})
+    try:
+        ensure_weekly_bits(ctx)
+        # defer_activity: this endpoint only extracts the story sections, so
+        # the builder must not pay the transactions sweep for them.
+        body = build_recap_body(ctx, selected_week=week,
+                                viewer_snapshot=_recap_snapshot(),
+                                defer_activity=True)
+    except Exception as e:
+        logger.warning("[recap-ai-column] render failed: %s", e, exc_info=True)
+        return _private_json({"ready": False, "error": "render failed"}, 500)
+    return _private_json({
+        "ready": True,
+        "story_html": _extract_marked(body, "ai"),
+        "upnext_html": _extract_marked(body, "upnext"),
+    })
+
+
+@league_pages_bp.route("/api/recap-activity")
+def api_recap_activity():
+    """League Activity section for the cached recap body.
+
+    While the ctx's deferred activity sweep is still pending, kick the
+    bounded background fill (the same helper since-last-visit uses) and
+    answer pending; once it lands, extract the rendered section from a
+    viewer-built body. The section itself is league-generic, but it is
+    served per request and never stored in a league-keyed cache.
+    """
+    params = _recap_section_params()
+    if params is None:
+        return _private_json({"ready": False, "error": "bad params"}, 400)
+    platform, season, league_id, week = params
+    ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+    if not ctx:
+        return _private_json({"ready": False, "pending": True})
+    if ctx.get("activity_df") is None:
+        _fill_activity_section_async(platform, league_id, season)
+        return _private_json({"ready": False, "pending": True})
+    try:
+        ensure_weekly_bits(ctx)
+        body = build_recap_body(ctx, selected_week=week,
+                                viewer_snapshot=_recap_snapshot())
+    except Exception as e:
+        logger.warning("[recap-activity] render failed: %s", e, exc_info=True)
+        return _private_json({"ready": False, "error": "render failed"}, 500)
+    return _private_json({
+        "ready": True,
+        "html": _extract_marked(body, "activity"),
+    })
 
 
 # ── Advanced metrics leaderboard ──────────────────────────────────────────────

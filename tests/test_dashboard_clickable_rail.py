@@ -102,8 +102,10 @@ def test_dashboard_activity_players_clickable_except_def_k():
 
 
 def test_dashboard_injury_watch_players_clickable_except_def_k():
-    inj = DASH.split("# ---- Command Center: injury watch")[1].split(
-        "# Standings card subtitle")[0]
+    # The injury-watch markup moved verbatim out of build_dashboard_body
+    # into _dashboard_injury_watch_html (shell-first section API); the
+    # clickability contract lives in that renderer now.
+    inj = DASH.split("def _dashboard_injury_watch_html")[1]
     assert 'str(_row.get("PlayerID")' in inj
     assert "player-clickable" in inj
     assert '"DEF", "K"' in inj

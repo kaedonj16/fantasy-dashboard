@@ -5,7 +5,7 @@ live in app.py are lazy-imported inside the builder (request time).
 """
 from __future__ import annotations
 
-def build_dashboard_body(ctx: dict) -> str:
+def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _scorezone_cta_state,
         _render_next_steps_queue,
@@ -1211,65 +1211,14 @@ def build_dashboard_body(ctx: dict) -> str:
         _activity_html = ""
 
     # ---- Command Center: injury watch (viewer's roster only) ----
-    _injury_watch_html = ""
-    try:
-        from app import ensure_injury_bits
-        ensure_injury_bits(ctx)
-        _inj_df = ctx.get("injury_df")
-        _vid_s = str(viewer_roster_id or "")
-        _inj_rows = []
-        if _inj_df is not None and not getattr(_inj_df, "empty", True) and _vid_s:
-            _has_rid = "RosterID" in getattr(_inj_df, "columns", [])
-            for _, _row in _inj_df.iterrows():
-                try:
-                    if _has_rid and str(_row.get("RosterID") or "") != _vid_s:
-                        continue
-                    _st = str(_row.get("Status") or _row.get("Injury") or "").strip()
-                    if not _st or _st.lower() in ("active", "healthy", ""):
-                        continue
-                    _pn = str(_row.get("Player") or "")
-                    _pos = str(_row.get("Pos") or "")
-                    # Player name opens the player modal when the row
-                    # carries a real player id; defenses and kickers stay
-                    # plain (their modal is not a real player profile).
-                    _pid = str(_row.get("PlayerID") or "").strip()
-                    if (_pid and _pid.lower() not in ("nan", "none")
-                            and _pos.strip().upper() not in ("DEF", "K")):
-                        _pn_html = (
-                            f"<span class='player-clickable' style='cursor:pointer;' "
-                            f"data-player-id='{html.escape(_pid, quote=True)}' "
-                            f"data-player-name='{html.escape(_pn, quote=True)}'>"
-                            f"{html.escape(_pn)}</span>"
-                        )
-                    else:
-                        _pn_html = html.escape(_pn)
-                    _inj_rows.append(
-                        '<div class="cc-inj-row">'
-                        f'<span><strong>{_pn_html}</strong> '
-                        f'<span class="cc-muted">{html.escape(_pos)}</span></span>'
-                        f'<span class="cc-inj-status">{html.escape(_st)}</span>'
-                        '</div>'
-                    )
-                except Exception:
-                    continue
-                if len(_inj_rows) >= 6:
-                    break
-        if _inj_rows:
-            _injury_watch_html = (
-                '<section class="os-side-plain cc-inj-card">'
-                '<div class="cc-inj-head">'
-                '<div class="cc-inj-head-icon"><i class="fa-solid fa-heart-crack" aria-hidden="true"></i></div>'
-                '<div><h2 class="cc-inj-title">Injury Watch</h2>'
-                '<div class="cc-inj-sub">Your roster</div></div>'
-                '<button type="button" class="card-collapse-toggle cc-head-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-inj-body">&#9660;</button>'
-                '</div>'
-                '<div class="card-collapsible-body" id="dash-inj-body">'
-                + "".join(_inj_rows) +
-                '</div></section>'
-            )
-    except Exception:
-        logger.debug("dashboard injury watch failed", exc_info=True)
-        _injury_watch_html = ""
+    # Shell-first mode defers this section to /api/dashboard-section so the
+    # page load never pays ensure_injury_bits inline; the client fills the
+    # pending mount when the section API answers (and the mount is removed
+    # when the viewer has no injured players, matching the empty render).
+    if defer_injury:
+        _injury_watch_html = _DASH_INJURY_PENDING_HTML
+    else:
+        _injury_watch_html = _dashboard_injury_watch_html(ctx, viewer_roster_id)
 
     # Standings card subtitle: "LeagueName · N teams" (character-card header).
     _st_league_name = html.escape(str((ctx.get("league") or {}).get("name") or "League"))
@@ -1402,5 +1351,130 @@ def build_dashboard_body(ctx: dict) -> str:
     </script>
     """
 
+    if defer_injury:
+        body += _dash_injury_fill_script(platform, season, league_id)
     return body
+
+
+_DASH_INJURY_PENDING_HTML = (
+    '<section class="os-side-plain cc-inj-card" id="dashInjuryWatch" '
+    'data-dash-section="injury">'
+    '<div class="cc-inj-head">'
+    '<div class="cc-inj-head-icon"><i class="fa-solid fa-heart-crack" aria-hidden="true"></i></div>'
+    '<div><h2 class="cc-inj-title">Injury Watch</h2>'
+    '<div class="cc-inj-sub">Your roster</div></div>'
+    '</div>'
+    '<div class="card-collapsible-body" id="dash-inj-body">'
+    '<div style="padding:10px 2px;color:var(--text-muted);font-size:13px;">'
+    'Loading injury watch...</div>'
+    '</div></section>'
+)
+
+
+def _dash_injury_fill_script(platform, season, league_id) -> str:
+    """Client fill for the deferred Injury Watch mount (playoff-tile
+    pattern): poll the cache-only section API while it reports pending,
+    then swap the mount for the rendered section, or remove the mount
+    when the section renders empty (no injured players on the roster)."""
+    import json as _json
+
+    qs = (
+        "section=injury&platform=" + str(platform)
+        + "&season=" + str(season) + "&league_id=" + str(league_id)
+    )
+    return f"""
+<script>
+(function() {{
+  var mount = document.getElementById('dashInjuryWatch');
+  if (!mount) return;
+  var qs = {_json.dumps(qs)};
+  var tries = 0;
+  function attempt() {{
+    fetch('/api/dashboard-section?' + qs)
+      .then(function(r) {{ return r.json(); }})
+      .then(function(d) {{
+        if (d && d.ready) {{
+          if (d.html) {{
+            var t = document.createElement('div');
+            t.innerHTML = d.html;
+            mount.replaceWith(t.firstElementChild || mount);
+          }} else {{
+            mount.remove();
+          }}
+          return;
+        }}
+        if (tries++ < 10) setTimeout(attempt, 2000);
+      }})
+      .catch(function() {{ if (tries++ < 10) setTimeout(attempt, 3000); }});
+  }}
+  attempt();
+}})();
+</script>"""
+
+
+def _dashboard_injury_watch_html(ctx: dict, viewer_roster_id) -> str:
+    """Injury Watch section (viewer's roster only), extracted verbatim
+    from build_dashboard_body so the shell-first section API renders the
+    exact same markup as the inline path."""
+    from app import ensure_injury_bits, html, logger
+
+    _injury_watch_html = ""
+    try:
+        ensure_injury_bits(ctx)
+        _inj_df = ctx.get("injury_df")
+        _vid_s = str(viewer_roster_id or "")
+        _inj_rows = []
+        if _inj_df is not None and not getattr(_inj_df, "empty", True) and _vid_s:
+            _has_rid = "RosterID" in getattr(_inj_df, "columns", [])
+            for _, _row in _inj_df.iterrows():
+                try:
+                    if _has_rid and str(_row.get("RosterID") or "") != _vid_s:
+                        continue
+                    _st = str(_row.get("Status") or _row.get("Injury") or "").strip()
+                    if not _st or _st.lower() in ("active", "healthy", ""):
+                        continue
+                    _pn = str(_row.get("Player") or "")
+                    _pos = str(_row.get("Pos") or "")
+                    # Player name opens the player modal when the row
+                    # carries a real player id; defenses and kickers stay
+                    # plain (their modal is not a real player profile).
+                    _pid = str(_row.get("PlayerID") or "").strip()
+                    if (_pid and _pid.lower() not in ("nan", "none")
+                            and _pos.strip().upper() not in ("DEF", "K")):
+                        _pn_html = (
+                            f"<span class='player-clickable' style='cursor:pointer;' "
+                            f"data-player-id='{html.escape(_pid, quote=True)}' "
+                            f"data-player-name='{html.escape(_pn, quote=True)}'>"
+                            f"{html.escape(_pn)}</span>"
+                        )
+                    else:
+                        _pn_html = html.escape(_pn)
+                    _inj_rows.append(
+                        '<div class="cc-inj-row">'
+                        f'<span><strong>{_pn_html}</strong> '
+                        f'<span class="cc-muted">{html.escape(_pos)}</span></span>'
+                        f'<span class="cc-inj-status">{html.escape(_st)}</span>'
+                        '</div>'
+                    )
+                except Exception:
+                    continue
+                if len(_inj_rows) >= 6:
+                    break
+        if _inj_rows:
+            _injury_watch_html = (
+                '<section class="os-side-plain cc-inj-card">'
+                '<div class="cc-inj-head">'
+                '<div class="cc-inj-head-icon"><i class="fa-solid fa-heart-crack" aria-hidden="true"></i></div>'
+                '<div><h2 class="cc-inj-title">Injury Watch</h2>'
+                '<div class="cc-inj-sub">Your roster</div></div>'
+                '<button type="button" class="card-collapse-toggle cc-head-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-inj-body">&#9660;</button>'
+                '</div>'
+                '<div class="card-collapsible-body" id="dash-inj-body">'
+                + "".join(_inj_rows) +
+                '</div></section>'
+            )
+    except Exception:
+        logger.debug("dashboard injury watch failed", exc_info=True)
+        _injury_watch_html = ""
+    return _injury_watch_html
 
