@@ -99,7 +99,19 @@ def build_standings_body(ctx: dict) -> str:
         var cb = document.getElementById('stDetailToggle');
         if (cb) cb.checked = on;
       }};
+      // The playoff-rules confirm note is league-generic markup rendered
+      // hidden in the cached body; reveal it only for a linked viewer.
+      // Re-applied after week-selector swaps (the app.py swap handler calls
+      // it alongside applyStandingsDetail).
+      window.applyConfirmNoteGate = function() {{
+        var linked = window._viewerRid !== undefined && window._viewerRid !== null
+          && String(window._viewerRid) !== '';
+        document.querySelectorAll('[data-confirm-note]').forEach(function(n) {{
+          n.hidden = !linked;
+        }});
+      }};
       function init() {{
+        window.applyConfirmNoteGate();
         var cb = document.getElementById('stDetailToggle');
         if (!cb || cb.__stDetailBound) return;
         cb.__stDetailBound = true;

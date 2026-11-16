@@ -3861,9 +3861,17 @@ def render_matchup_slide(
     moments_attrs = ""
     moments_mount = ""
     if not compact:
+        # Roster ids are league data (not viewer data): they let a cached
+        # generic slide be personalized client-side (viewer-first reorder,
+        # win-moment upgrade) from window._viewerRid. data-mo-proj marks
+        # the projected/current week, the only week the viewer win moment
+        # may upgrade on.
         moments_attrs = (
             f" data-mb-left-pids='{_starter_pids(m['left'])}'"
             f" data-mb-right-pids='{_starter_pids(m['right'])}'"
+            f" data-mb-left-rid='{html.escape(str((m.get('left') or {}).get('roster_id') or ''), quote=True)}'"
+            f" data-mb-right-rid='{html.escape(str((m.get('right') or {}).get('roster_id') or ''), quote=True)}'"
+            + (" data-mo-proj='1'" if w == proj_week else "")
         )
         moments_mount = "<div class=\"mb-moments\" hidden></div>"
 

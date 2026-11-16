@@ -514,7 +514,24 @@ def _recap_standings_rows(df_weekly, division_by_rid, has_divisions, *, median_m
     return rows
 
 
-def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
+def build_recap_body(ctx: dict, selected_week: Optional[int] = None,
+                     viewer_snapshot: Optional[dict] = None,
+                     generic: bool = False,
+                     defer_activity: bool = False) -> str:
+    """Build the weekly recap body.
+
+    ``viewer_snapshot`` carries the request-thread session values the builder
+    used to read from Flask ``session`` directly (viewer_roster_id,
+    viewer_username, viewer_user_id); the builder never touches ``session``
+    itself, so it can run in the session-less background build thread.
+
+    ``generic=True`` builds the league-generic body that is cached per
+    league in page_html: no viewer highlight (rows carry data-rid and the
+    client adds the class from window._viewerRid), no premium AI column
+    (a slot the client fills from /api/recap-ai-column), no viewer lineup
+    banner, and no inline activity sweep (a slot filled from
+    /api/recap-activity once the background fill lands).
+    """
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _build_lineup_analysis_html,
         _build_next_week_ctx,
@@ -527,9 +544,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         html,
         json,
         rank_mark,
-        session,
         team_crest,
     )
+
+    _snap = viewer_snapshot or {}
+    _viewer_rid = str(_snap.get("viewer_roster_id") or "")
 
     df_weekly = ctx.get("df_weekly")
     roster_map = ctx.get("roster_map") or {}
@@ -1232,7 +1251,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                     f'<span class="st-movement down">↓{abs(move)}</span>' if move and move < 0 else
                     '<span class="st-movement flat">—</span>' if prior_standings else '')
         return f"""
-<div class="st-row{' recap-viewer-team' if str(session.get('viewer_roster_id') or '') == s['rid'] else ''}">
+<div class="st-row" data-rid="{s['rid']}">
   <div class="st-rank{lead}">{rank}</div>
   {ava_img(s["owner"], s["rid"], 28)}
   <div class="st-main">
@@ -1287,7 +1306,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         delta = power_deltas.get(i)
         move = (f"<span class='st-movement {'up' if delta > 0 else 'down'}'>{'↑' if delta > 0 else '↓'}{abs(delta)}</span>"
                 if delta else ("<span class='st-movement flat'>—</span>" if prior_power_teams else ""))
-        power_rows.append(f'<div class="st-row{" recap-viewer-team" if str(session.get("viewer_roster_id") or "") == rid else ""}"><div class="st-rank{(" lead" if i == 1 else "")}">{i}</div>'
+        power_rows.append(f'<div class="st-row" data-rid="{rid}"><div class="st-rank{(" lead" if i == 1 else "")}">{i}</div>'
                           f'{ava_img(team_by_rid.get(rid, ""), rid, 28)}<div class="st-main"><div class="st-name">'
                           f'{team_link(team_by_rid.get(rid, ""), rid)}</div></div><div class="st-rec"><div class="wl">{score_text}</div>{score_label}</div>{move}</div>')
     power_html = f'<div class="card recap-rank-card" style="overflow:hidden"><div class="card-header"><h3>Power Rankings</h3>' \
@@ -1308,6 +1327,12 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     if preview_mode:
         from dashboard_services.ai.weekly_recap import get_weekly_ai_recap_preview
         ai_column_html, next_week_html = get_weekly_ai_recap_preview()
+    elif generic:
+        # The premium AI column is account-gated, so it never enters the
+        # cached generic body. A slot renders here instead and the client
+        # fills it from /api/recap-ai-column (see the generic slot override
+        # below and the client script appended to the body).
+        ai_column_html, next_week_html = "", ""
     else:
         # Build a next-week preview only when this recap is for the latest
         # finalized week overall (so the "upcoming" game is genuinely upcoming and
@@ -1322,7 +1347,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
         from dashboard_services.ai.weekly_recap import get_weekly_ai_recap, get_weekly_ai_recap_teaser
         _has_prem = has_premium_for_viewer(
-            session.get("viewer_username"), session.get("viewer_user_id"),
+            _snap.get("viewer_username"), _snap.get("viewer_user_id"),
             _league_id, _platform, _season,
         )
         if not _has_prem:
@@ -1353,7 +1378,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             team_by_rid,
             owner_avatar,
             ctx.get("roster_positions") or [],
-            str(session.get("viewer_roster_id") or ""),
+            "" if generic else _viewer_rid,
         )
 
     if lineup_html:
@@ -1429,8 +1454,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             )
 
     # ── League activity: this week's trades & waiver adds ─────────────────
+    # Generic (cached) bodies never pay the deferred transactions sweep
+    # inline: the section renders as a pending slot and the client fills it
+    # from /api/recap-activity after the bounded background fill lands.
     activity_html = ""
-    if not preview_mode:
+    if not preview_mode and not generic and not defer_activity:
         try:
             ensure_activity_bits(ctx)
             recent_activity = _recent_activity(ctx.get("activity_df"), selected_week)
@@ -1542,17 +1570,105 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                         f'<h2>Season Complete</h2></div><div class="card recap-next-history">'
                         f'<a href="{history_url}">Open season history and recap</a>.</div></section>')
 
+    if generic and not preview_mode:
+        # Slots the client fills per viewer (see the script appended below):
+        # the activity section, the premium AI story column, and Up Next.
+        activity_html = (
+            '<section class="recap-section recap-activity" data-recap-activity-slot>'
+            '<div class="recap-section-heading"><h2>League Activity</h2></div>'
+            '<div class="card rc-act-card"><div style="padding:14px 16px;'
+            'color:var(--text-muted);font-size:13px;">Loading league activity...</div>'
+            '</div></section>'
+        )
+        story_html = (
+            '<section class="recap-section recap-story" data-recap-ai-slot>'
+            '<div class="recap-section-heading"><h2>Weekly Story</h2></div>'
+            '<div class="card" style="padding:14px 16px;color:var(--text-muted);'
+            'font-size:13px;">Loading analysis...</div></section>'
+        )
+        up_next_html = '<div data-recap-upnext-slot></div>'
+
     # Mock A layout (approved 2026-10-13): Scoreboard + Week at a Glance in
     # the main column, Lineup Efficiency / League Activity / Injury Report
     # in a 336px right rail, and Lineup Review, Weekly Story, Standings &
     # Power Rankings and Up Next full width below. Visual only: every
     # section builder above is unchanged.
-    return ('<main class="weekly-recap">' + week_selector + preview_banner + history_banner
+    # The recap-* markers delimit the per-viewer sections the section APIs
+    # extract from a viewer-built body; they are invisible HTML comments.
+    body = ('<main class="weekly-recap">' + week_selector + preview_banner + history_banner
             + '<div class="recap-layout"><div class="recap-main">'
             + scoreboard_html + cards_html
             + '</div><aside class="recap-rail">'
-            + efficiency_html + activity_html + injuries_html
+            + efficiency_html
+            + '<!--recap-activity-start-->' + activity_html + '<!--recap-activity-end-->'
+            + injuries_html
             + '</aside></div>'
             + '<div class="recap-below">'
-            + lineup_html + story_html + standings_html + up_next_html
+            + lineup_html
+            + '<!--recap-ai-start-->' + story_html + '<!--recap-ai-end-->'
+            + standings_html
+            + '<!--recap-upnext-start-->' + up_next_html + '<!--recap-upnext-end-->'
             + '</div></main>')
+    body += _recap_client_script(_platform, _season, _league_id, selected_week,
+                                 generic=generic)
+    return body
+
+
+def _recap_client_script(platform, season, league_id, week, *, generic: bool) -> str:
+    """Client personalization for the recap body.
+
+    Always: add the recap-viewer-team highlight to the rows whose data-rid
+    matches window._viewerRid (the highlight used to be baked server-side
+    from the session, which is exactly what kept this body out of the
+    per-league cache). Generic bodies additionally fill the activity and
+    AI-column slots from the cache-only section APIs, polling briefly while
+    the server reports the section still warming.
+    """
+    import json as _json
+
+    qs = (
+        "platform=" + str(platform) + "&season=" + str(season)
+        + "&league_id=" + str(league_id) + "&week=" + str(week or "")
+    )
+    fill_js = ""
+    if generic:
+        fill_js = f"""
+      var qs = {_json.dumps(qs)};
+      function swapIn(slotSel, htmlText) {{
+        var slot = document.querySelector(slotSel);
+        if (!slot) return;
+        if (!htmlText) {{ slot.remove(); return; }}
+        var t = document.createElement('div');
+        t.innerHTML = htmlText;
+        slot.replaceWith(t.firstElementChild || slot);
+      }}
+      function fill(url, tries, apply) {{
+        fetch(url + '?' + qs).then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d && d.ready) {{ apply(d); return; }}
+            if (tries < 8) setTimeout(function() {{ fill(url, tries + 1, apply); }}, 2000);
+          }})
+          .catch(function() {{
+            if (tries < 8) setTimeout(function() {{ fill(url, tries + 1, apply); }}, 3000);
+          }});
+      }}
+      fill('/api/recap-ai-column', 0, function(d) {{
+        swapIn('[data-recap-ai-slot]', d.story_html || '');
+        swapIn('[data-recap-upnext-slot]', d.upnext_html || '');
+      }});
+      fill('/api/recap-activity', 0, function(d) {{
+        swapIn('[data-recap-activity-slot]', d.html || '');
+      }});"""
+    return f"""
+<script>
+(function() {{
+  var rid = window._viewerRid;
+  if (rid !== undefined && rid !== null && String(rid) !== '') {{
+    document.querySelectorAll('.weekly-recap [data-rid]').forEach(function(el) {{
+      if (el.getAttribute('data-rid') === String(rid)) {{
+        el.classList.add('recap-viewer-team');
+      }}
+    }});
+  }}{fill_js}
+}})();
+</script>"""

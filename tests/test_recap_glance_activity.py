@@ -222,7 +222,10 @@ def test_recap_source_contracts_for_new_sections():
     # Mock A layout: activity and injuries live in the right rail with
     # efficiency, ahead of the full-width sections below the layout grid.
     assert "<h2>League Activity</h2>" in page
-    ret = page.split("return ('<main class=\"weekly-recap\">'", 1)[1]
+    # The final assembly is assigned to `body` (a client script is appended
+    # before returning) since the generic-body recap rework; the section
+    # order assertions below are unchanged.
+    ret = page.split("body = ('<main class=\"weekly-recap\">'", 1)[1]
     assert '<div class="recap-layout"><div class="recap-main">' in ret
     assert '<aside class="recap-rail">' in ret
     assert ret.index("scoreboard_html") < ret.index("cards_html") < ret.index("efficiency_html")

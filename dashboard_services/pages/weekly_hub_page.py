@@ -42,7 +42,17 @@ def scorezone_moments_hub_html(platform: str, league_id: str, season, week=None)
     )
 
 
-def build_weekly_hub_body(ctx: dict) -> str:
+def build_weekly_hub_body(ctx: dict, generic: bool = False) -> str:
+    """Weekly Hub body.
+
+    ``generic=True`` builds the league-generic body cached per league in
+    page_html: slides are not viewer-sorted and carry no viewer flags (the
+    client reorders the viewer's slide first, recomputes League Scores
+    is_you, and moves the Moments launcher, all from window._viewerRid and
+    the slides' data-mb-*-rid attributes), and the viewer-only Scout and
+    Lineup tabs render as lazy slots filled from /api/weekly-tab on first
+    open. Live windows bypass the cached path entirely (route decision).
+    """
     import json
 
     import pandas as pd
@@ -126,7 +136,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         season_complete=season_complete, offseason_mode=offseason_mode,
         last_final_week=last_final_week)
 
-    _hub_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    _hub_vid = "" if generic else str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     default_matchups = sorted(
         matchups_by_week.get(default_week, []) or [],
         key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")),
@@ -393,30 +403,42 @@ def build_weekly_hub_body(ctx: dict) -> str:
     games_today = (not offseason_mode) and _games_scheduled_today(season, current_week)
     games_today_js = json.dumps(bool(games_today))
 
-    scout_tab_html = ""
-    try:
-        scout_tab_html = build_scout_body(ctx)
-    except Exception:
-        logger.warning(
-            "weekly: scout body build failed (platform=%s season=%s league=%s)",
-            platform, season, league_id, exc_info=True,
-        )
-
     _scout_sign_in_hint = platform_sign_in_hint(platform)
     _scout_unavail = (
         "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
         f"Scout report unavailable - sign in with {_scout_sign_in_hint} to see your opponent's breakdown."
         "</div>"
     )
-    scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
+    if generic:
+        # Viewer-only tabs are lazy cache-only sections in the generic body:
+        # a pending slot the client fills from /api/weekly-tab on first open
+        # (the endpoint resolves the viewer per request, never cached).
+        scout_panel_content = (
+            "<div data-hub-lazy-tab='scout' style='padding:20px;text-align:center;"
+            "color:var(--muted);font-size:0.9em;'>Loading scout report...</div>"
+        )
+        optimal_panel_content = (
+            "<div data-hub-lazy-tab='optimal' style='padding:20px;text-align:center;"
+            "color:var(--muted);font-size:0.9em;'>Loading lineup analysis...</div>"
+        )
+    else:
+        scout_tab_html = ""
+        try:
+            scout_tab_html = build_scout_body(ctx)
+        except Exception:
+            logger.warning(
+                "weekly: scout body build failed (platform=%s season=%s league=%s)",
+                platform, season, league_id, exc_info=True,
+            )
+        scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
 
-    optimal_panel_content = ""
-    try:
-        optimal_panel_content = build_optimal_body(ctx)
-    except (LookupError, ValueError, RuntimeError, OSError):
-        logger.warning("weekly: lineup analysis unavailable", exc_info=True)
-        optimal_panel_content = ("<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
-                                 "Optimal lineup data unavailable.</div>")
+        optimal_panel_content = ""
+        try:
+            optimal_panel_content = build_optimal_body(ctx)
+        except (LookupError, ValueError, RuntimeError, OSError):
+            logger.warning("weekly: lineup analysis unavailable", exc_info=True)
+            optimal_panel_content = ("<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
+                                     "Optimal lineup data unavailable.</div>")
 
     _lw_swap_count = ctx.get("lineup_swap_count")
     _lw_chip = (
@@ -483,11 +505,19 @@ def build_weekly_hub_body(ctx: dict) -> str:
             '</div>'
             "</div>"
         )
+        # Generic bodies park the Moments launcher in a holder; the client
+        # moves it under the viewer's own slide (it is viewer-placed, so no
+        # slide carries it server-side in a cached body).
+        _rzm_holder = (
+            f'<div data-rzm-hub-holder hidden>{_rzm_hub_html}</div>'
+            if generic and _rzm_hub_html else ""
+        )
         _wk_matchups_panel = f"""
             <div class="tab-panel active" data-tab="matchups">
               <div class="matchups-shell">
                 {_ls_tabs_html}
                 {_ls_embedded_json}
+                {_rzm_holder}
                 <div id="weeklyMatchupsContainer">
                   {matchup_html}
                 </div>
@@ -496,7 +526,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     _wk_scorers_panel_cls = "tab-panel" if _show_matchup_preview else "tab-panel active"
     show_matchups_js = json.dumps(bool(_show_matchup_preview))
 
-    return f"""
+    body = f"""
     <div class="page-layout weekly-hub">
       <main class="page-main">
         <div class="card weekly-hub-head-card">
@@ -1020,6 +1050,96 @@ if (!window.__wkLeagueTabBound && document.addEventListener) {{
 }})();
 </script>
 """ + _WK_OPT_SEG_JS
+    if generic:
+        body += _hub_generic_script(platform, season, league_id)
+    return body
+
+
+def _hub_generic_script(platform, season, league_id) -> str:
+    """Client personalization for the cached generic Weekly Hub body.
+
+    Runs at body parse time (before the app bundle initializes the
+    carousel on DOMContentLoaded):
+    - moves the viewer's matchup slide first in the carousel,
+    - upgrades the viewer's win moment on the current week,
+    - moves the parked Moments launcher under the viewer's slide,
+    - lazy-fills the Scout / Lineup tabs from /api/weekly-tab on first
+      open (per-viewer, never cached).
+    """
+    import json as _json
+
+    qs = (
+        "platform=" + str(platform) + "&season=" + str(season)
+        + "&league_id=" + str(league_id)
+    )
+    return f"""
+<script>
+(function() {{
+  var qs = {_json.dumps(qs)};
+  var rid = window._viewerRid;
+  var hasViewer = rid !== undefined && rid !== null && String(rid) !== '';
+  var mySlide = null;
+  if (hasViewer) {{
+    var slides = document.querySelectorAll('#weeklyMatchupsContainer .m-slide');
+    slides.forEach(function(s) {{
+      if (mySlide) return;
+      if (s.getAttribute('data-mb-left-rid') === String(rid)
+          || s.getAttribute('data-mb-right-rid') === String(rid)) mySlide = s;
+    }});
+    if (mySlide && mySlide.parentElement) {{
+      mySlide.parentElement.insertBefore(mySlide, mySlide.parentElement.firstChild);
+      if (mySlide.getAttribute('data-br-moment') === 'matchupwin'
+          && mySlide.hasAttribute('data-mo-proj')) {{
+        var wonSide = mySlide.getAttribute('data-mo-win');
+        var wonRid = wonSide === 'left'
+          ? mySlide.getAttribute('data-mb-left-rid')
+          : mySlide.getAttribute('data-mb-right-rid');
+        if (wonRid === String(rid)) {{
+          mySlide.setAttribute('data-br-moment', 'whistle');
+          mySlide.setAttribute('data-br-confetti', 'green');
+          mySlide.setAttribute('data-br-confetti-delay', '250');
+        }}
+      }}
+      var hub = document.querySelector('[data-rzm-hub-holder] [data-rzm-hub]');
+      if (hub) {{
+        var dots = mySlide.querySelector('.m-dots');
+        if (dots) dots.insertAdjacentElement('afterend', hub);
+        else mySlide.insertBefore(hub, mySlide.firstChild);
+      }}
+    }}
+  }}
+  var loaded = {{}};
+  function fillTab(tab) {{
+    if (loaded[tab]) return;
+    loaded[tab] = true;
+    var slot = document.querySelector('[data-hub-lazy-tab="' + tab + '"]');
+    if (!slot) return;
+    var tries = 0;
+    function attempt() {{
+      fetch('/api/weekly-tab?' + qs + '&tab=' + tab)
+        .then(function(r) {{ return r.json(); }})
+        .then(function(d) {{
+          if (d && d.ready) {{
+            var host = tab === 'optimal'
+              ? document.getElementById('optimalLineupContent') : slot.parentElement;
+            if (host) host.innerHTML = d.html || '';
+            if (window.initPageRoot) window.initPageRoot(host);
+            return;
+          }}
+          if (tries++ < 8) setTimeout(attempt, 2000);
+        }})
+        .catch(function() {{ if (tries++ < 8) setTimeout(attempt, 3000); }});
+    }}
+    attempt();
+  }}
+  document.addEventListener('click', function(e) {{
+    var btn = e.target && e.target.closest ? e.target.closest('#weeklyLeftTabs .tab-btn') : null;
+    if (!btn) return;
+    var tab = btn.getAttribute('data-tab');
+    if (tab === 'scout' || tab === 'optimal') fillTab(tab);
+  }});
+}})();
+</script>"""
 
 
 _WK_OPT_SEG_JS = """

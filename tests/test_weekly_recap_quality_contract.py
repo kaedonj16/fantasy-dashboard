@@ -42,7 +42,9 @@ def test_recap_uses_shared_historical_and_picture_resolvers():
 def test_recap_sections_follow_editorial_order_and_end_with_up_next():
     """The recap moves from the completed week to its forward-looking ending."""
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
-    returned = source.split("    return ('<main class=\"weekly-recap\">'", 1)[1]
+    # The assembly is assigned to `body` (a client script is appended
+    # before returning) since the generic-body recap rework.
+    returned = source.split("    body = ('<main class=\"weekly-recap\">'", 1)[1]
     expected = ["week_selector", "scoreboard_html", "cards_html",
                 "efficiency_html", "lineup_html", "story_html",
                 "standings_html", "up_next_html"]
@@ -118,7 +120,7 @@ def test_weekly_efficiency_math_order_missing_data_and_ties():
 def test_lineup_efficiency_section_and_share_contract():
     page = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     js = (ROOT / "static/app.js").read_text()
-    returned = page.split("    return ('<main class=\"weekly-recap\">'", 1)[1]
+    returned = page.split("    body = ('<main class=\"weekly-recap\">'", 1)[1]
 
     assert returned.index("scoreboard_html") < returned.index("cards_html")
     assert returned.index("cards_html") < returned.index("efficiency_html")
