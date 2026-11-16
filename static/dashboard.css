@@ -52914,13 +52914,13 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* context row (redesign 2026-10-30): DRIVE label + down & distance, mirroring
    the board bar's top row; the spot rides in this row after the down &
    distance ("3rd & 15 @ IND 46", full-width track change 2026-11-15) */
-.mb-fld-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mb-fld-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .mb-cell-r .mb-fld-head { flex-direction: row-reverse; }
-.mb-fld-live { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 900; letter-spacing: .07em; color: #16a34a; white-space: nowrap; }
+.mb-fld-live { display: inline-flex; align-items: center; gap: 5px; font-size: 9px; font-weight: 900; letter-spacing: .07em; color: #16a34a; white-space: nowrap; }
 .mb-fld-live i { width: 6px; height: 6px; border-radius: 50%; background: #16a34a; flex: 0 0 auto; }
 :root[data-theme="dark"] .mb-fld-live { color: #22c55e; }
 :root[data-theme="dark"] .mb-fld-live i { background: #22c55e; }
-.mb-fld-dd { font-size: 12.5px; font-weight: 800; color: var(--text); white-space: nowrap; }
+.mb-fld-dd { font-size: 9px; font-weight: 800; color: var(--text); white-space: nowrap; }
 /* S1 ultra-slim inline bar (Kaedon's slimming pick over the first redesign),
    full-width track (her pick, 2026-11-15): the bar line is the 10px track
    alone, spanning the whole cell -- no end labels or spot text beside it. */
