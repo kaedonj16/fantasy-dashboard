@@ -44,6 +44,7 @@
   var _openClipKey = null; // playId of the TD clip embed currently open (one at a time)
   var _openClipSurface = null; // surface that owns the open clip: 'feed' | 'rail'
   var _railCloseTimer = null; // pending cleanup for a shrinking rail card
+  var _railAnimSeq = 0; // token guarding a grow's settle cleanup
   var _contributionsByKey = {}; // global contribution storage: contribKey → contribution (for revisions)
   var _alertsArmed = false; // suppress TD beep/push until the first hydration seeds the feed
   var _slideDir   = 'none';
@@ -3371,6 +3372,12 @@
   // card's toggle: the feed is paginated, so a moment whose card is on
   // another page has no feed toggle in the DOM to forward to). A render
   // that rebuilds the rail restores the grown card from _openClipKey.
+  // The clip panel lives inside the card's media box: the thumbnail IS
+  // the player surface, its own box growing from the compact rect into
+  // the 16:9 player (Kaedon, 2026-11-16: the clip must grow from the
+  // little thumbnail, not from below it -- the first build collapsed
+  // the thumbnail away and popped a separate panel in under the name
+  // line, so the expansion appeared to start below the thumbnail).
   function _momentMediaHtml(ev, initials) {
     if (ev.clipPosterUrl) {
       return '<img class="rz-moment-poster" src="' + _esc(ev.clipPosterUrl) + '" alt="" loading="lazy">';
@@ -3432,14 +3439,14 @@
         + '" data-clip-video="' + _esc(ev.clipVideoUrl || '') + '" data-clip-poster="' + _esc(ev.clipPosterUrl || '') + '"'
         + ' role="button" tabindex="0" aria-expanded="' + (grown ? 'true' : 'false')
         + '" aria-label="Watch clip: ' + _esc(ev.name || '') + '">'
-        + '<div class="rz-moment-media">' + poster + '</div>'
+        + '<div class="rz-moment-media">' + poster
+        + '<div class="rz-clip-panel' + (grown ? ' is-open' : '') + '" data-clip-panel="' + (grown ? _esc(k) : '') + '">'
+        + (grown ? _clipFrameHtml(ev) : '') + '</div></div>'
         + '<div class="rz-moment-row"><span class="rz-moment-name">' + _esc(ev.name || '') + '</span>'
         + '<span class="rz-moment-delta">' + delta + '</span>'
         + '<button type="button" class="rz-moment-x" data-rail-close aria-label="Close clip">'
         + '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>'
         + '</button></div>'
-        + '<div class="rz-clip-panel' + (grown ? ' is-open' : '') + '" data-clip-panel="' + (grown ? _esc(k) : '') + '">'
-        + (grown ? _clipFrameHtml(ev) : '') + '</div>'
         + '</div>';
     }).join('');
     return '<div class="rz-moments-rail-wrap"><div class="rz-moments-rail-label">Moments</div>'
@@ -4530,27 +4537,70 @@
     root.querySelectorAll('.rz-clip-panel.is-open').forEach(_wireClipPanel);
   }
 
+  // Empty a rail card's clip panel (inside its media box) and release
+  // it back to the plain thumbnail surface.
+  function _finalizeRailPanel(panel) {
+    var v = panel.querySelector('.rz-clip-video');
+    if (v && v.pause) { try { v.pause(); } catch (e) {} }
+    panel.classList.remove('is-open');
+    panel.classList.remove('is-closing');
+    panel.innerHTML = '';
+    panel.style.height = '';
+    panel.setAttribute('data-clip-panel', '');
+  }
+
+  // Finish a shrinking card instantly: thumbnail geometry restored,
+  // panel emptied. Used by the settle guard when a new tap supersedes
+  // an in-flight shrink.
+  function _settleShrunkCard(card) {
+    card.classList.remove('is-shrinking');
+    var media = card.querySelector('.rz-moment-media');
+    if (media) {
+      media.removeAttribute('data-grow-token');
+      media.style.height = '';
+      media.style.width = '';
+    }
+    var panel = card.querySelector('[data-clip-panel]');
+    if (panel) _finalizeRailPanel(panel);
+  }
+
   // Reset the Moments rail's grown state without touching clip
-  // ownership: the grown card shrinks back (its CSS transition runs
-  // because the element persists), siblings return, and every in-card
+  // ownership: the grown card's media box folds back into the
+  // thumbnail (height pinned, then released to the compact 52px so
+  // the CSS transition runs), siblings return, and every in-card
   // panel is emptied. Used when the other surface takes the open clip.
   function _resetRailDom() {
     if (_railCloseTimer) { clearTimeout(_railCloseTimer); _railCloseTimer = null; }
     var rail = root.querySelector('.rz-moments-rail');
     if (rail) rail.classList.remove('has-grown');
+    root.querySelectorAll('.rz-moment-card.is-shrinking').forEach(_settleShrunkCard);
     root.querySelectorAll('.rz-moment-card.is-grown').forEach(function(c) {
-      c.classList.remove('is-grown');
+      var media = c.querySelector('.rz-moment-media');
+      if (media) {
+        media.removeAttribute('data-grow-token');
+        if (_dynReduced()) {
+          c.classList.remove('is-grown');
+          media.style.height = '';
+          media.style.width = '';
+        } else {
+          media.style.width = '100%';
+          media.style.height = media.offsetHeight + 'px';
+          void media.offsetHeight; // reflow: pin before folding
+          c.classList.remove('is-grown');
+          media.style.height = '52px';
+          setTimeout(function() {
+            if (!c.classList.contains('is-grown') && !c.classList.contains('is-shrinking')) {
+              media.style.height = '';
+              media.style.width = '';
+            }
+          }, 480);
+        }
+      } else {
+        c.classList.remove('is-grown');
+      }
       c.setAttribute('aria-expanded', 'false');
     });
-    root.querySelectorAll('.rz-moment-card .rz-clip-panel').forEach(function(p) {
-      var v = p.querySelector('.rz-clip-video');
-      if (v && v.pause) { try { v.pause(); } catch (e) {} }
-      p.classList.remove('is-open');
-      p.classList.remove('is-closing');
-      p.innerHTML = '';
-      p.style.height = '';
-      p.setAttribute('data-clip-panel', '');
-    });
+    root.querySelectorAll('.rz-moment-card .rz-clip-panel').forEach(_finalizeRailPanel);
   }
 
   // Collapse whatever clip is open on either surface. Feed cards and
@@ -4628,14 +4678,8 @@
     if (_railCloseTimer) {
       clearTimeout(_railCloseTimer);
       _railCloseTimer = null;
-      root.querySelectorAll('.rz-moment-card .rz-clip-panel.is-closing').forEach(function(p) {
-        p.classList.remove('is-open');
-        p.classList.remove('is-closing');
-        p.innerHTML = '';
-        p.style.height = '';
-        p.setAttribute('data-clip-panel', '');
-      });
     }
+    root.querySelectorAll('.rz-moment-card.is-shrinking').forEach(_settleShrunkCard);
   }
 
   function _railClipSnapshot(key, card) {
@@ -4654,9 +4698,22 @@
     };
   }
 
+  function _grownMediaTargetH(card, media, rail) {
+    // The grown media box is the rail's full width at 16:9. The card's
+    // flex-basis grows to 100% of the rail's content box, so the media
+    // target width is that minus the card's own padding + border (the
+    // current card/media width gap). Computed arithmetically: a
+    // measure-by-class-toggle would coalesce with the real class add
+    // in WebKit and kill the card's flex-basis transition.
+    var chrome = card.offsetWidth - media.offsetWidth;
+    var w = (rail ? rail.clientWidth : card.offsetWidth) - chrome;
+    return Math.max(0, Math.round(w * 9 / 16));
+  }
+
   function _growRailCard(card, key) {
     var panel = card.querySelector('[data-clip-panel]');
     if (!panel) return;
+    var media = card.querySelector('.rz-moment-media');
     _openClipKey = key;
     _openClipSurface = 'rail';
     panel.setAttribute('data-clip-panel', key);
@@ -4679,7 +4736,43 @@
       var cr = card.getBoundingClientRect();
       rail.scrollLeft += Math.round(cr.left - rr.left);
     }
-    card.classList.add('is-grown');
+    // The thumbnail IS the player surface: animate the media box's
+    // own height from its compact rect (its top edge never moves --
+    // it is the card's first block) to the 16:9 player height, in
+    // sync with the card's width grow on the same 450ms ease. The
+    // box's width is pinned to 100% of the card during the grow so
+    // it tracks the card's animated width exactly (with only a
+    // transitioning height set, WebKit would derive the width from
+    // the height via the grown aspect-ratio instead of filling the
+    // card). The clip panel fills the box, its video poster
+    // continuous with the thumbnail poster underneath. Once settled,
+    // the inline size is released so the grown CSS aspect-ratio
+    // holds the geometry (and a resize re-derives it).
+    if (media && !_dynReduced()) {
+      var targetH = _grownMediaTargetH(card, media, rail);
+      var startH = media.offsetHeight;
+      if (targetH > startH + 1) {
+        var token = ++_railAnimSeq;
+        media.setAttribute('data-grow-token', String(token));
+        media.style.width = '100%';
+        media.style.height = startH + 'px';
+        void media.offsetHeight; // reflow: pin before growing
+        card.classList.add('is-grown');
+        media.style.height = targetH + 'px';
+        setTimeout(function() {
+          if (media.getAttribute('data-grow-token') !== String(token)) return;
+          media.removeAttribute('data-grow-token');
+          if (card.classList.contains('is-grown')) {
+            media.style.height = '';
+            media.style.width = '';
+          }
+        }, 480);
+      } else {
+        card.classList.add('is-grown');
+      }
+    } else {
+      card.classList.add('is-grown');
+    }
     card.setAttribute('aria-expanded', 'true');
     if (rail) _pinRailCardLeft(rail, card);
   }
@@ -4704,38 +4797,44 @@
   }
 
   function _shrinkRailCardEl(card, done) {
-    // Shrink a grown card back to its compact slot. The panel's height
-    // is pinned then collapsed so the video folds away with the card
-    // instead of vanishing at the first frame. (A switch reuses this:
-    // the siblings stay along the scroll row throughout.)
+    // Shrink a grown card back to its compact slot: the reverse of
+    // the grow. The media box's height is pinned then released to
+    // the compact 52px, so the player surface folds back into the
+    // thumbnail it grew from, the clip fading out over the poster as
+    // it goes. (A switch reuses this: the siblings stay along the
+    // scroll row throughout.)
     var panel = card.querySelector('[data-clip-panel]');
+    var media = card.querySelector('.rz-moment-media');
     var vid = panel ? panel.querySelector('.rz-clip-video') : null;
     if (vid && vid.pause) { try { vid.pause(); } catch (e) {} }
-    card.classList.remove('is-grown');
     card.setAttribute('aria-expanded', 'false');
-    if (!panel) { if (done) done(); return; }
+    if (media) media.removeAttribute('data-grow-token');
     if (_dynReduced()) {
-      panel.classList.remove('is-open');
-      panel.innerHTML = '';
-      panel.setAttribute('data-clip-panel', '');
+      card.classList.remove('is-grown');
+      if (media) { media.style.height = ''; media.style.width = ''; }
+      if (panel) _finalizeRailPanel(panel);
       if (done) done();
       return;
     }
-    panel.style.height = panel.offsetHeight + 'px';
-    void panel.offsetHeight; // reflow: pin before collapsing
-    panel.classList.add('is-closing');
-    panel.style.height = '0px';
+    if (media) {
+      // Width pinned to the card (as in the grow) so the box tracks
+      // the card's shrinking width instead of being derived from the
+      // folding height via the aspect-ratio.
+      media.style.width = '100%';
+      media.style.height = media.offsetHeight + 'px';
+      void media.offsetHeight; // reflow: pin before folding
+    }
+    card.classList.remove('is-grown');
+    card.classList.add('is-shrinking');
+    if (media) media.style.height = '52px';
+    if (panel) panel.classList.add('is-closing');
     _railCloseTimer = setTimeout(function() {
       _railCloseTimer = null;
-      panel.classList.remove('is-open');
-      panel.classList.remove('is-closing');
-      panel.innerHTML = '';
-      panel.style.height = '';
-      panel.setAttribute('data-clip-panel', '');
+      _settleShrunkCard(card);
       // A re-render during the shrink replaces the rail wholesale; the
       // fresh build already restored state from _openClipKey, so a
       // pending switch-grow for the detached card is dropped.
-      if (done && panel.isConnected) done();
+      if (done && card.isConnected) done();
     }, 470);
   }
 

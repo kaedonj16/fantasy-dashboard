@@ -13,7 +13,26 @@ it in place to the rail's full width over 450ms -- its media becomes
 the 16:9 clip and starts playing, siblings slide away -- and an X
 button on the grown card's name line (or another tap on the card)
 shrinks it back. Compact cards carry only a poster, a name and the
-points. This harness boots the REAL static/scorezone.js +
+points.
+
+From-the-thumbnail refinement (Kaedon, 2026-11-16): the clip must
+grow FROM the little thumbnail, not from below it. The first build
+collapsed the thumbnail away and popped a separate panel in under
+the name line, so the expansion appeared to start underneath the
+thumbnail. Now the clip panel lives inside the card's media box and
+the thumbnail's own box is the expanding surface: its top edge stays
+anchored, its width and height grow monotonically from the compact
+thumbnail rect to the full-width 16:9 player rect, the grown card
+holds exactly one media surface, and closing returns the box to the
+thumbnail rect. The grow geometry is sampled by seeking the running
+CSS transitions (headless WebKit starves rAF/setInterval sampling
+down to a handful of frames, which made tick-based sampling report
+a jump that the transition timeline disproves; seeking the
+transition's own currentTime reads the same per-frame geometry
+deterministically, and a build with no transition has nothing to
+seek and fails).
+
+This harness boots the REAL static/scorezone.js +
 static/dashboard.css in Playwright (iPhone viewport + touch) against a
 fixture shaped like the scorezone-data API response:
   * a clipped rushing TD early in Q2 (the "rail TD"), buried under 26
@@ -374,18 +393,46 @@ def main():
         check("tap point on the card name is inside the card (no interception)", hit is True)
 
         # Grow, sampled mid-flight: tap the NAME of the off-page card.
-        widths = page.evaluate(
-            "(id) => new Promise(function(res){"
+        # Sampling seeks the running transitions (see module docstring):
+        # each seek lands on a real frame of the grow, so the recorded
+        # card widths and media rects are the animation's own geometry.
+        # Do NOT rewrite this as rAF/setInterval tick sampling: headless
+        # WebKit starves those callbacks to a few frames per animation,
+        # so tick sampling sees only the endpoints and reports a phantom
+        # jump. Seeking transition.currentTime is what makes the
+        # intermediate frames observable at all. The two transitions
+        # sought below are the card's flex-basis and the media box's
+        # height; both must exist or the grow is not actually animating.
+        # The first snap() in the series is the pre-tap compact rect:
+        # every later frame is asserted against it (anchored media top,
+        # monotonic growth), never against fixed pixel expectations.
+        frames = page.evaluate(
+            "(id) => {"
             "  var card = document.querySelector('[data-rail-card=\"' + id + '\"]');"
+            "  var media = card.querySelector('.rz-moment-media');"
             "  var name = card.querySelector('.rz-moment-name');"
-            "  var out = [card.getBoundingClientRect().width];"
-            "  var t0 = performance.now();"
+            "  function snap(){"
+            "    var cr = card.getBoundingClientRect();"
+            "    var mr = media.getBoundingClientRect();"
+            "    return { cw: cr.width, mw: mr.width, mh: mr.height, mt: mr.top };"
+            "  }"
+            "  var out = [snap()];"
             "  name.dispatchEvent(new MouseEvent('click', {bubbles: true}));"
-            "  var iv = setInterval(function(){"
-            "    out.push(card.getBoundingClientRect().width);"
-            "    if (performance.now() - t0 > 700) { clearInterval(iv); res(out); }"
-            "  }, 40);"
-            "})", RAIL_PLAY_ID)
+            "  var cardAnim = null, mediaAnim = null;"
+            "  card.getAnimations().forEach(function(a){"
+            "    if (a.transitionProperty === 'flex-basis') cardAnim = a; });"
+            "  media.getAnimations().forEach(function(a){"
+            "    if (a.transitionProperty === 'height') mediaAnim = a; });"
+            "  if (cardAnim && mediaAnim) {"
+            "    [90, 180, 270, 360, 450].forEach(function(t){"
+            "      cardAnim.currentTime = t; mediaAnim.currentTime = t;"
+            "      out.push(snap());"
+            "    });"
+            "    cardAnim.finish(); mediaAnim.finish();"
+            "  }"
+            "  return out;"
+            "}", RAIL_PLAY_ID)
+        widths = [f["cw"] for f in frames]
         compact_w, full_w = widths[0], widths[-1]
         rail_w = page.evaluate(
             "document.querySelector('.rz-moments-rail').getBoundingClientRect().width")
@@ -395,6 +442,27 @@ def main():
               f"widths={[round(w) for w in widths]}")
         check("grow passes through intermediate widths", len(intermediates) >= 2,
               f"widths={[round(w) for w in widths]}")
+        # The thumbnail is the expanding surface: its top edge never
+        # moves, and its own width/height grow monotonically from the
+        # compact thumbnail rect to the full-width 16:9 player rect.
+        m0 = frames[0]
+        m_top_ok = all(abs(f["mt"] - m0["mt"]) <= 2 for f in frames)
+        check("grow: media top edge stays anchored at the thumbnail's top",
+              m_top_ok, f"tops={[round(f['mt']) for f in frames]}")
+        m_mono = all(frames[i + 1]["mw"] >= frames[i]["mw"] - 0.6
+                     and frames[i + 1]["mh"] >= frames[i]["mh"] - 0.6
+                     for i in range(len(frames) - 1))
+        check("grow: media width and height grow monotonically from the thumbnail",
+              m_mono, f"frames={[(round(f['mw']), round(f['mh'])) for f in frames]}")
+        m_inter = [f for f in frames if m0["mh"] + 2 < f["mh"] < frames[-1]["mh"] - 2]
+        check("grow: media height passes through intermediate sizes",
+              len(m_inter) >= 2,
+              f"heights={[round(f['mh']) for f in frames]}")
+        chrome = m0["cw"] - m0["mw"]
+        check("grow: media ends at the rail's full width at 16:9",
+              abs(frames[-1]["mw"] - (rail_w - chrome)) <= 3
+              and abs(frames[-1]["mh"] - frames[-1]["mw"] * 9 / 16) <= 3,
+              f"final media={frames[-1]['mw']}x{frames[-1]['mh']} rail={rail_w}")
         check("grown card takes the rail's full width",
               abs(full_w - rail_w) <= 3, f"card={full_w} rail={rail_w}")
         check("off-page card grew in place", grown_key(page) == RAIL_PLAY_ID)
@@ -407,6 +475,35 @@ def main():
             "var v = document.querySelector('.rz-moment-card.is-grown .rz-clip-video');"
             "var r = v.getBoundingClientRect(); r.width / r.height")
         check("grown video is 16:9", abs(aspect - 16 / 9) < 0.06, f"aspect={aspect:.3f}")
+        # One media surface in the grown card: the clip panel lives
+        # INSIDE the thumbnail's media box (never a second block below
+        # it), the box itself is the full 16:9 player (not collapsed
+        # away, the original from-below build had it at height 0), and
+        # the video fills that box exactly.
+        surface = page.evaluate(
+            "var c = document.querySelector('.rz-moment-card.is-grown');"
+            "var media = c.querySelector('.rz-moment-media');"
+            "var open = c.querySelector('.rz-clip-panel.is-open');"
+            "var v = c.querySelector('.rz-clip-video');"
+            "var mr = media.getBoundingClientRect();"
+            "var vr = v ? v.getBoundingClientRect() : null;"
+            "({ mediaCount: c.querySelectorAll('.rz-moment-media').length,"
+            "   panelCount: c.querySelectorAll('.rz-clip-panel').length,"
+            "   panelInMedia: !!(open && media.contains(open)),"
+            "   mediaW: mr.width, mediaH: mr.height,"
+            "   videoFillsBox: !!vr && Math.abs(vr.width - mr.width) <= 2"
+            "     && Math.abs(vr.height - mr.height) <= 2"
+            "     && Math.abs(vr.top - mr.top) <= 2 })")
+        check("grown card holds exactly one media surface (panel inside the thumbnail box)",
+              surface["mediaCount"] == 1 and surface["panelCount"] == 1
+              and surface["panelInMedia"],
+              f"surface={surface}")
+        check("grown media box is the player itself (full width, 16:9, not collapsed)",
+              surface["mediaH"] > 100
+              and abs(surface["mediaH"] - surface["mediaW"] * 9 / 16) <= 3,
+              f"media={surface['mediaW']}x{surface['mediaH']}")
+        check("video fills the media box exactly (one continuous surface)",
+              surface["videoFillsBox"], f"surface={surface}")
         away = page.evaluate(
             "var rail = document.querySelector('.rz-moments-rail');"
             "var c = document.querySelector('[data-rail-card=\"" + CTL_PLAY_ID + "\"]');"
@@ -426,6 +523,15 @@ def main():
             ".getBoundingClientRect().width")
         check("card is compact again after close", abs(back_w - compact_w) <= 3,
               f"width={back_w} compact={compact_w}")
+        closed_m = page.evaluate(
+            "var m = document.querySelector('[data-rail-card=\"" + RAIL_PLAY_ID + "\"]')"
+            "  .querySelector('.rz-moment-media').getBoundingClientRect();"
+            "({ w: m.width, h: m.height, top: m.top })")
+        check("media box returns to the thumbnail rect on close",
+              abs(closed_m["w"] - m0["mw"]) <= 3
+              and abs(closed_m["h"] - m0["mh"]) <= 3
+              and abs(closed_m["top"] - m0["mt"]) <= 3,
+              f"closed={closed_m} compact={m0}")
 
         # Tap the POSTER of the control card: grows that one instead.
         page.tap(f'[data-rail-card="{CTL_PLAY_ID}"] .rz-moment-media')
@@ -510,6 +616,13 @@ def main():
         check("reduced motion: clip still opens and plays in the card",
               len(panels) == 1 and panels[0]["video"] and panels[0]["inCard"],
               f"panels={panels}")
+        rm_media = page2.evaluate(
+            "var m = document.querySelector('.rz-moment-card.is-grown .rz-moment-media')"
+            ".getBoundingClientRect(); ({ w: m.width, h: m.height })")
+        check("reduced motion: media box is instantly at the final 16:9 player size",
+              rm_media["h"] > 100
+              and abs(rm_media["h"] - rm_media["w"] * 9 / 16) <= 3,
+              f"media={rm_media}")
         page2.tap(f'[data-rail-card="{RAIL_PLAY_ID}"] [data-rail-close]')
         page2.wait_for_timeout(200)
         check("reduced motion: close is instant too",
