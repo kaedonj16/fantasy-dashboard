@@ -79,10 +79,16 @@ def _tier_label(value: float) -> str:
 
 
 def _val_color(value: float) -> str:
-    if value >= 850: return "#38bdf8"
-    if value >= 650: return "#a78bfa"
-    if value >= 400: return "#e2e8f0"
-    return "#94a3b8"
+    # Same hue ladder as the original scale (sky / violet / blue / slate),
+    # darkened two steps so every band clears readable contrast on BOTH the
+    # light default theme and the dark theme. The old GOOD band (#e2e8f0)
+    # sat at ~1.2:1 on the light background and rendered near-invisible
+    # (Caleb Williams' 463 on /rankings/dynasty). Worst band here is now
+    # ~3.9:1 on light (#f8fafc) and ~3.9:1 on dark (#020617).
+    if value >= 850: return "#0284c7"
+    if value >= 650: return "#8b5cf6"
+    if value >= 400: return "#2563eb"
+    return "#64748b"
 
 
 # ── Dynasty Trade Value Chart ─────────────────────────────────────────────────
@@ -966,16 +972,28 @@ def _position_analysis_html(pos_filter: str | None) -> str:
 
 # ── Rankings Hub ──────────────────────────────────────────────────────────────
 
+# Rows rendered on the default rankings-hub view. The full board (264+
+# players overall) made the page ~291KB; the server still sorts the FULL
+# dataset before truncating, so the top 100 is correct for either format,
+# and every remaining row is one click away on the crawlable ?show=all
+# view (which the position/format nav links preserve once active).
+_HUB_PAGE_SIZE = 100
+
+
 def build_rankings_hub_body(
     value_table: list[dict],
     position: str | None = None,
     as_of_date: str | None = None,
     format: str | None = None,
+    show_all: bool = False,
 ) -> str:
     """Dynasty rankings hub page, optionally filtered to a single position.
 
     ``format`` is ``sf`` (default Superflex sort), ``1qb``, or None/both for
     showing both columns with Superflex as the primary sort.
+
+    ``show_all`` renders every row; the default view renders the top
+    ``_HUB_PAGE_SIZE`` rows plus a "Show all" link to the full view.
     """
     from dashboard_services.pages.player_page import slugify
 
@@ -1010,7 +1028,7 @@ def build_rankings_hub_body(
             f"Values from real dynasty leagues and BR Fantasy model analysis."
         )
 
-    qs = f"?format={fmt}"
+    qs = f"?format={fmt}" + ("&show=all" if show_all else "")
     pos_nav_items = [
         ("All",  "/rankings/dynasty" + qs),
         ("QB",   "/rankings/dynasty-qb" + qs),
@@ -1023,15 +1041,37 @@ def build_rankings_hub_body(
         f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if path == active_path else ""}" href="{path}">{label}</a>'
         for label, path in pos_nav_items
     )
+    _base_path = (f"/rankings/dynasty-{pos_filter.lower()}" if pos_filter else "/rankings/dynasty")
+    _show_qs = "&show=all" if show_all else ""
     fmt_nav = (
         f'<div class="rnk-pos-nav" style="margin-top:8px">'
-        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if fmt=="sf" else ""}" href="{(f"/rankings/dynasty-{pos_filter.lower()}" if pos_filter else "/rankings/dynasty")}?format=sf">Superflex</a>'
-        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if fmt=="1qb" else ""}" href="{(f"/rankings/dynasty-{pos_filter.lower()}" if pos_filter else "/rankings/dynasty")}?format=1qb">1QB</a>'
+        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if fmt=="sf" else ""}" href="{_base_path}?format=sf{_show_qs}">Superflex</a>'
+        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if fmt=="1qb" else ""}" href="{_base_path}?format=1qb{_show_qs}">1QB</a>'
         f'</div>'
     )
 
+    total_rows = len(rows)
+    visible_rows = rows if show_all else rows[:_HUB_PAGE_SIZE]
+    if total_rows > _HUB_PAGE_SIZE:
+        if show_all:
+            show_toggle = (
+                f'<div class="rnk-pos-nav" style="margin-top:16px">'
+                f'<a class="rnk-nav-btn" href="{_base_path}?format={fmt}">Show top {_HUB_PAGE_SIZE}</a>'
+                f'</div>'
+            )
+        else:
+            show_toggle = (
+                f'<p style="text-align:center;color:var(--text-muted);font-size:13px;margin:16px 0 0;">'
+                f'Showing the top {_HUB_PAGE_SIZE} of {total_rows} players.</p>'
+                f'<div class="rnk-pos-nav" style="margin-top:10px">'
+                f'<a class="rnk-nav-btn" href="{_base_path}?format={fmt}&show=all">Show all {total_rows} players</a>'
+                f'</div>'
+            )
+    else:
+        show_toggle = ""
+
     table_rows = ""
-    for rank, row in enumerate(rows, 1):
+    for rank, row in enumerate(visible_rows, 1):
         name   = row.get("name") or "Unknown"
         pos    = (row.get("position") or "").upper()
         team   = row.get("team") or ""
@@ -1108,6 +1148,7 @@ def build_rankings_hub_body(
       </tbody>
     </table>
   </div>
+  {show_toggle}
   {_rankings_tier3_html(pos_filter)}
   <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
     <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to see rankings for your roster</a>
