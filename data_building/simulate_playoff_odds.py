@@ -20,6 +20,7 @@ each time.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import threading
@@ -319,7 +320,19 @@ def _attach_division_records(teams: list, ctx: dict, division_map) -> None:
 # settings change — so we key on exactly that and reuse otherwise.
 _SIM_STATE_CACHE: dict = {}
 _SIM_STATE_TTL   = 600        # seconds
-_SIM_STATE_MAX   = 64         # cap entries to bound memory
+_SIM_STATE_MAX   = 12         # cap entries to bound memory
+
+# Frozen Monte Carlo baselines (see _ensure_freeze) live in their own tiny
+# store, keyed by the same ctx signature as the state cache — never inside
+# the cached states themselves. A freeze pins the NumPy score tensor from a
+# full sim run (several MB), so letting one ride inside every cached state
+# multiplied the sim stack's footprint by the state cap. The only
+# cross-request freeze consumer (trade Playoff Impact) needs the handful of
+# leagues being actively traded in, so this store is capped far below the
+# state cache; everyone else regenerates a freeze on demand via
+# _ensure_freeze (same seed, identical draw — slower, never different).
+_SIM_FREEZE_CACHE: dict = {}
+_SIM_FREEZE_MAX   = 4          # entries; oldest evicted when exceeded
 
 
 def _team_stats_signature(team_stats) -> str:
@@ -392,12 +405,93 @@ def _evict_sim_cache() -> None:
         _SIM_STATE_CACHE.pop(key, None)
 
 
+def _evict_freeze_cache() -> None:
+    if len(_SIM_FREEZE_CACHE) <= _SIM_FREEZE_MAX:
+        return
+    # Drop the oldest entries down to the cap.
+    for key in sorted(_SIM_FREEZE_CACHE, key=lambda k: _SIM_FREEZE_CACHE[k][0])[
+        : len(_SIM_FREEZE_CACHE) - _SIM_FREEZE_MAX
+    ]:
+        _SIM_FREEZE_CACHE.pop(key, None)
+
+
+def _sweep_expired_sim_caches(now: float) -> None:
+    """Drop TTL-expired sim states and freezes.
+
+    Eviction alone only runs on overflow, so in a long-lived worker expired
+    entries stayed resident until unrelated inserts pushed them out.
+    Sweeping on every store keeps the resident set close to the live set.
+    """
+    for key in [k for k, (ts, _s) in list(_SIM_STATE_CACHE.items())
+                if now - ts >= _SIM_STATE_TTL]:
+        _SIM_STATE_CACHE.pop(key, None)
+    for key in [k for k, (ts, _f) in list(_SIM_FREEZE_CACHE.items())
+                if now - ts >= _SIM_STATE_TTL]:
+        _SIM_FREEZE_CACHE.pop(key, None)
+
+
+def _state_for_caller(sig: str, stored: dict) -> dict:
+    """Shallow copy of a cached state for one caller, with the league's
+    frozen baseline attached when one is registered for ``sig``.
+
+    Callers never receive the cached dict itself: ``_ensure_freeze``
+    mutates the state it is given (``sim_state["_mc_freeze"] = ...``), so
+    handing out the stored dict would pin a several-MB freeze inside the
+    cache entry for its whole TTL. The copy shares the state's nested
+    structures (the swap functions never mutate those) and only rebinds
+    the top-level freeze slot.
+    """
+    out = dict(stored)
+    hit = _SIM_FREEZE_CACHE.get(sig)
+    if hit and (time.time() - hit[0]) < _SIM_STATE_TTL:
+        out["_mc_freeze"] = hit[1]
+    return out
+
+
+def store_sim_freeze(ctx: dict, platform: str, freeze: Optional[dict]) -> None:
+    """Register a drawn baseline freeze for this ctx in the freeze store.
+
+    The regeneration path for cross-request freeze consumers: a background
+    builder draws the freeze on its own state copy via ``_ensure_freeze`` /
+    ``run_base_simulation``, then registers it here so later build/peek
+    calls for the same ctx hand it out attached to their state copies.
+    """
+    if not freeze:
+        return
+    sig = _ctx_signature(ctx, platform)
+    now = time.time()
+    _sweep_expired_sim_caches(now)
+    _SIM_FREEZE_CACHE[sig] = (now, freeze)
+    _evict_freeze_cache()
+
+
+def _log_sim_state_store(sig: str) -> None:
+    """One INFO line per sim-state store, mirroring ``league_context_build``
+    so the sim caches' memory weight shows up in the same log stream."""
+    rss_after = None
+    try:
+        import psutil
+
+        rss_after = psutil.Process().memory_info().rss
+    except Exception:
+        pass
+    logger.info("sim_state_store %s", json.dumps({
+        "sig": sig[:12],
+        "state_entries": len(_SIM_STATE_CACHE),
+        "freeze_entries": len(_SIM_FREEZE_CACHE),
+        "rss_after": rss_after,
+    }, separators=(",", ":")))
+
+
 def build_sim_state(ctx: dict, platform: str = "sleeper", use_cache: bool = True) -> Optional[dict]:
     """Cached wrapper around the sim-state build (see _build_sim_state_impl).
 
     Reuses a recently built state when the league, week, settings, and every
-    roster are unchanged; the swap functions never mutate the state, so sharing
-    it across requests is safe.
+    roster are unchanged; the swap functions never mutate the state's nested
+    structures, so sharing those across requests is safe. The cached entry
+    itself is never handed out and never carries a ``_mc_freeze``: callers
+    receive a shallow copy (see _state_for_caller), because _ensure_freeze
+    would otherwise pin a several-MB freeze inside the cache entry.
     """
     if not use_cache:
         return _build_sim_state_impl(ctx, platform)
@@ -405,11 +499,15 @@ def build_sim_state(ctx: dict, platform: str = "sleeper", use_cache: bool = True
     now = time.time()
     hit = _SIM_STATE_CACHE.get(sig)
     if hit and (now - hit[0]) < _SIM_STATE_TTL:
-        return hit[1]
+        return _state_for_caller(sig, hit[1])
     state = _build_sim_state_impl(ctx, platform)
     if state is not None:
-        _SIM_STATE_CACHE[sig] = (now, state)
+        _sweep_expired_sim_caches(now)
+        stored = {k: v for k, v in state.items() if k != "_mc_freeze"}
+        _SIM_STATE_CACHE[sig] = (now, stored)
         _evict_sim_cache()
+        _log_sim_state_store(sig)
+        return _state_for_caller(sig, stored)
     return state
 
 
@@ -419,12 +517,14 @@ def peek_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
     Read-only counterpart to build_sim_state for request paths that must not
     block on a cold build (trade Playoff Impact): on a miss the caller kicks
     a background build and answers with a deferred state instead of paying
-    the projection fetches inline.
+    the projection fetches inline. The returned dict is a caller copy with
+    the league's registered freeze attached when one exists (see
+    _state_for_caller); the impact handler's freeze check reads it there.
     """
     sig = _ctx_signature(ctx, platform)
     hit = _SIM_STATE_CACHE.get(sig)
     if hit and (time.time() - hit[0]) < _SIM_STATE_TTL:
-        return hit[1]
+        return _state_for_caller(sig, hit[1])
     return None
 
 
