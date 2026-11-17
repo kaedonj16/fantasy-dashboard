@@ -854,6 +854,229 @@ function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve,
     assert res.returncode == 0, res.stderr or res.stdout
 
 
+def test_refresh_busy_tap_feedback_and_watchdog_pins():
+    """A manual tap while a run holds _busy must not vanish silently, and a
+    run that never settles must not hold _busy (and the button) forever."""
+    src = _freshness_iife()
+    # The watchdog is a named 90s constant, armed once per run on BOTH the
+    # manual and the silent path, and recovers through cancelRefresh().
+    assert "REFRESH_WATCHDOG_MS = 90 * 1000" in src
+    assert "function armRefreshWatchdog(runId)" in src
+    assert "function clearRefreshWatchdog(runId)" in src
+    assert src.count("armRefreshWatchdog(runId);") == 2
+    arm = src[src.index("function armRefreshWatchdog") : src.index("function cancelRefresh")]
+    assert "if (doRefresh._watchdogRun !== runId) return;" in arm
+    assert "if (doRefresh._run !== runId) return;" in arm
+    assert "cancelRefresh();" in arm
+    # Runs are tagged manual vs silent so the busy-tap branch can tell them
+    # apart; every settle/cancel path clears the tag and the timer.
+    assert "doRefresh._manual = true;" in src
+    assert src.count("clearRefreshWatchdog(runId);") >= 2
+    cancel = src[src.index("function cancelRefresh") : src.index("async function doRefresh")]
+    assert "clearRefreshWatchdog();" in cancel
+    assert "doRefresh._manual = false;" in cancel
+    # The busy branch itself: no second run, no cancel of the in-flight
+    # run -- a silent run just gets its in-progress state surfaced.
+    _dr = src.index("async function doRefresh()")
+    busy = src[_dr : src.index("if (doRefresh._controller) doRefresh._controller.abort();", _dr)]
+    assert "if (doRefresh._busy) {" in busy
+    assert "if (!doRefresh._manual) {" in busy
+    assert "doRefresh._tapFeedback = true;" in busy
+    assert "setRefreshingLabel();" in busy
+    assert "expireLeague" not in busy
+    assert "cancelRefresh" not in busy
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_manual_tap_during_silent_revalidate_shows_refreshing_node():
+    """Behavioral: start the silent auto-revalidate with its page fetch
+    held open, tap Refresh Data, and the tap must surface the refreshing
+    label WITHOUT starting a second expire/fetch; when the silent run
+    lands, the real freshness label is restored and _busy is clear."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _freshness_iife()
+    harness = r"""
+var window = globalThis;
+var location = { href: 'http://x/sleeper/2026/abc/dashboard', pathname: '/sleeper/2026/abc/dashboard', reload: function(){} };
+window.location = location;
+var navigator = { serviceWorker: null };
+var postCount = 0, getCount = 0;
+var timers = {}, nextTimerId = 1;
+var realSetTimeout = globalThis.setTimeout;
+var setTimeout = function(fn, ms){ var id = nextTimerId++; timers[id] = { fn: fn, ms: ms, cleared: false }; return id; };
+var clearTimeout = function(id){ if (timers[id]) timers[id].cleared = true; };
+var root = { dataset: { cacheTs: String(Date.now() - 120000), season: String(new Date().getFullYear()) }, querySelectorAll: function(){ return []; } };
+var sheetTime = { textContent: '', classList: { toggle: function(){} } };
+var btnLabel = { textContent: 'Refresh Data' };
+var button = { disabled: false, _brWired: false, setAttribute: function(){}, removeAttribute: function(){}, addEventListener: function(){}, querySelector: function(){ return btnLabel; } };
+var elements = { 'page-root': root, 'brSheetRefreshTime': sheetTime, 'brSheetRefresh': button };
+var document = {
+  visibilityState: 'visible',
+  getElementById: function(id){ return elements[id] || null; },
+  querySelector: function(){ return null; },
+  addEventListener: function(){},
+  createElement: function(){ return { style: {}, setAttribute: function(){}, innerHTML: '' }; },
+  body: { appendChild: function(el){ elements[el.id] = el; } }
+};
+window.matchMedia = function(){ return { matches: true }; };
+var setInterval = function(){ return 0; };
+var DOMParser = function(){};
+DOMParser.prototype.parseFromString = function(html){
+  var m = /data-cache-ts=["'](\d+)/.exec(html);
+  return { getElementById: function(id){ return id === 'page-root' && m ? { dataset: { cacheTs: m[1] } } : null; } };
+};
+window.brSwapPageRoot = function(html){
+  var m = /data-cache-ts=["'](\d+)/.exec(html);
+  if (!m) return false;
+  root.dataset.cacheTs = m[1];
+  return true;
+};
+function response(ok, body){ return { ok: ok, status: ok ? 200 : 500, text: function(){ return Promise.resolve(body || ''); } }; }
+var resolveGet = null;
+window.brFetchWithTimeout = function(url, opts){
+  if (url === '/api/refresh-league') { postCount++; return Promise.resolve(response(true)); }
+  getCount++;
+  return new Promise(function(res){ resolveGet = function(){ res(response(true, '<main id="page-root" data-cache-ts="' + Date.now() + '"></main>')); }; });
+};
+""" + src + r"""
+function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve, ms); }); }
+function watchdogTimers(){ return Object.keys(timers).map(function(k){ return timers[k]; }).filter(function(t){ return t.ms === 90000; }); }
+(async function(){
+  var p = window.brMaybeAutoRevalidate();
+  await wait(30);
+  if (!window.brRefreshLeague._busy) process.exit(2);
+  if (window.brRefreshLeague._manual) process.exit(3);
+  if (postCount !== 1 || getCount !== 1) process.exit(4);
+  // The manual tap: registers on the label, starts nothing new.
+  await window.brRefreshLeague();
+  if (sheetTime.textContent !== '…') process.exit(5);
+  if (btnLabel.textContent !== 'Refreshing…') process.exit(6);
+  if (postCount !== 1 || getCount !== 1) process.exit(7);
+  if (!window.brRefreshLeague._busy) process.exit(8);
+  // The silent run lands: labels restored, busy cleared, watchdog disarmed.
+  resolveGet();
+  await p;
+  if (window.brRefreshLeague._busy) process.exit(9);
+  if (sheetTime.textContent === '…' || sheetTime.textContent === '') process.exit(10);
+  var wd = watchdogTimers();
+  if (wd.length !== 1 || !wd[0].cleared) process.exit(11);
+  process.exit(0);
+})().catch(function(e){ console.error(e); process.exit(12); });
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "busy_tap_feedback.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_refresh_watchdog_recovers_stuck_run_and_spares_newer_run_node():
+    """Behavioral: a manual run whose fetch never settles is recovered by
+    the watchdog at REFRESH_WATCHDOG_MS (busy cleared, button re-enabled,
+    overlay hidden); a stale watchdog firing late must not touch a newer
+    run that replaced the cancelled one."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _freshness_iife()
+    harness = r"""
+var window = globalThis;
+var location = { href: 'http://x/sleeper/2026/abc/dashboard', pathname: '/sleeper/2026/abc/dashboard', reload: function(){} };
+window.location = location;
+var navigator = { serviceWorker: null };
+var postCount = 0, getCount = 0;
+var timers = {}, nextTimerId = 1;
+var realSetTimeout = globalThis.setTimeout;
+var setTimeout = function(fn, ms){ var id = nextTimerId++; timers[id] = { fn: fn, ms: ms, cleared: false }; return id; };
+var clearTimeout = function(id){ if (timers[id]) timers[id].cleared = true; };
+var root = { dataset: { cacheTs: '1000' }, querySelectorAll: function(){ return []; } };
+var sheetTime = { textContent: '', classList: { toggle: function(){} } };
+var btnLabel = { textContent: 'Refresh Data' };
+var button = { disabled: false, _brWired: false, setAttribute: function(){}, removeAttribute: function(){}, addEventListener: function(){}, querySelector: function(){ return btnLabel; } };
+var elements = { 'page-root': root, 'brSheetRefreshTime': sheetTime, 'brSheetRefresh': button };
+var document = {
+  visibilityState: 'visible',
+  getElementById: function(id){ return elements[id] || null; },
+  querySelector: function(){ return null; },
+  addEventListener: function(){},
+  createElement: function(){ return { style: {}, setAttribute: function(){}, innerHTML: '' }; },
+  body: { appendChild: function(el){ elements[el.id] = el; } }
+};
+window.matchMedia = function(){ return { matches: true }; };
+var setInterval = function(){ return 0; };
+var DOMParser = function(){};
+DOMParser.prototype.parseFromString = function(html){
+  var m = /data-cache-ts=["'](\d+)/.exec(html);
+  return { getElementById: function(id){ return id === 'page-root' && m ? { dataset: { cacheTs: m[1] } } : null; } };
+};
+window.brSwapPageRoot = function(html){
+  var m = /data-cache-ts=["'](\d+)/.exec(html);
+  if (!m) return false;
+  root.dataset.cacheTs = m[1];
+  return true;
+};
+function response(ok, body){ return { ok: ok, status: ok ? 200 : 500, text: function(){ return Promise.resolve(body || ''); } }; }
+var resolveGet = null;
+window.brFetchWithTimeout = function(url, opts){
+  if (url === '/api/refresh-league') { postCount++; return Promise.resolve(response(true)); }
+  getCount++;
+  return new Promise(function(res){ resolveGet = function(){ res(response(true, '<main id="page-root" data-cache-ts="2000"></main>')); }; });
+};
+""" + src + r"""
+function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve, ms); }); }
+function lastWatchdog(){ var ks = Object.keys(timers).filter(function(k){ return timers[k].ms === 90000; }); return ks.length ? timers[ks[ks.length - 1]] : null; }
+function fireWatchdog(){ Object.keys(timers).forEach(function(k){ var t = timers[k]; if (t.ms === 90000 && !t.cleared) { t.cleared = true; t.fn(); } }); }
+(async function(){
+  // Run A never settles (its page fetch is held open forever).
+  var a = window.brRefreshLeague();
+  a.catch(function(){});
+  await wait(30);
+  if (!window.brRefreshLeague._busy || !button.disabled) process.exit(2);
+  if (postCount !== 1 || getCount !== 1) process.exit(3);
+  // The watchdog fires: the stuck run is cancelled and the button revives.
+  fireWatchdog();
+  if (window.brRefreshLeague._busy) process.exit(4);
+  if (button.disabled) process.exit(5);
+  if (!elements['brRefreshOverlay'] || elements['brRefreshOverlay'].style.display !== 'none') process.exit(6);
+  if (btnLabel.textContent !== 'Refresh Data') process.exit(7);
+  // Run B starts, is cancelled, and run C replaces it. Firing run B's
+  // (already cleared) watchdog late must not touch run C.
+  var b = window.brRefreshLeague();
+  b.catch(function(){});
+  await wait(30);
+  if (!window.brRefreshLeague._busy) process.exit(8);
+  var staleWatchdog = lastWatchdog();
+  window.brCancelRefresh();
+  var c = window.brRefreshLeague();
+  await wait(30);
+  if (!window.brRefreshLeague._busy) process.exit(9);
+  staleWatchdog.fn();
+  if (!window.brRefreshLeague._busy) process.exit(10);
+  // Run C settles normally; its watchdog is disarmed, busy clears.
+  resolveGet();
+  await c;
+  if (window.brRefreshLeague._busy) process.exit(11);
+  if (!lastWatchdog().cleared) process.exit(12);
+  if (root.dataset.cacheTs !== '2000') process.exit(13);
+  process.exit(0);
+})().catch(function(e){ console.error(e); process.exit(14); });
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "refresh_watchdog.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
+
+
 def test_resume_revalidate_hooks_present():
     """Opening the PWA usually RESUMES the page iOS kept alive instead of
     loading it, so the load-time auto-revalidate never runs and the data

@@ -5072,6 +5072,8 @@ function showLoginGate(target, opts) {
         } catch (_) {}
         doRefresh._run = (doRefresh._run || 0) + 1;
         doRefresh._busy = false;
+        doRefresh._manual = false;
+        clearRefreshWatchdog();
         var btn = document.getElementById('brSheetRefresh');
         if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
         showRefreshOverlay(false);
@@ -5112,7 +5114,39 @@ function showLoginGate(target, opts) {
     }).then(function (html) { return extractFreshDocument(html, beforeTs); });
   }
 
+  // Stuck-run watchdog: a refresh run (manual or silent auto-revalidate)
+  // whose promise never settles would otherwise hold _busy forever and
+  // leave the Refresh Data button dead until a reload. Arm one timer per
+  // run; if the SAME run is still busy when it fires, recover through
+  // cancelRefresh(). The runId guard means a settled run's timer and a
+  // newer run are never touched.
+  var REFRESH_WATCHDOG_MS = 90 * 1000;
+
+  function clearRefreshWatchdog(runId) {
+    if (runId != null && doRefresh._watchdogRun != null && doRefresh._watchdogRun !== runId) return;
+    if (doRefresh._watchdog) { clearTimeout(doRefresh._watchdog); doRefresh._watchdog = null; }
+    doRefresh._watchdogRun = null;
+  }
+
+  function armRefreshWatchdog(runId) {
+    clearRefreshWatchdog();
+    doRefresh._watchdogRun = runId;
+    doRefresh._watchdog = setTimeout(function () {
+      // A stale timer (its run was cancelled and a newer run armed its
+      // own) must not touch the newer run's handle or state.
+      if (doRefresh._watchdogRun !== runId) return;
+      doRefresh._watchdog = null;
+      doRefresh._watchdogRun = null;
+      if (!doRefresh._busy) return;
+      if (doRefresh._run !== runId) return;
+      cancelRefresh();
+    }, REFRESH_WATCHDOG_MS);
+  }
+
   function cancelRefresh() {
+    clearRefreshWatchdog();
+    doRefresh._manual = false;
+    doRefresh._tapFeedback = false;
     doRefresh._run = (doRefresh._run || 0) + 1;
     if (doRefresh._controller) doRefresh._controller.abort();
     doRefresh._controller = null;
@@ -5128,13 +5162,26 @@ function showLoginGate(target, opts) {
   }
 
   async function doRefresh() {
-    if (doRefresh._busy) return;
+    if (doRefresh._busy) {
+      // A tap while a run is in flight must visibly register instead of
+      // vanishing. A manual run already shows the overlay; a silent
+      // auto-revalidate shows nothing, so surface its in-progress state
+      // on the label/chip and let that run's completion restore them.
+      // Never start a second run and never cancel the in-flight one.
+      if (!doRefresh._manual) {
+        doRefresh._tapFeedback = true;
+        setRefreshingLabel();
+      }
+      return;
+    }
     if (doRefresh._controller) doRefresh._controller.abort();
     if (window.brCancelPrewarm) window.brCancelPrewarm();
     doRefresh._busy = true;
+    doRefresh._manual = true;
     var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     doRefresh._controller = controller;
     var runId = doRefresh._run = (doRefresh._run || 0) + 1;
+    armRefreshWatchdog(runId);
     var beforeTs = cacheTs();
     var startHref = location.href;
     var acceptedTs = 0;
@@ -5188,6 +5235,8 @@ function showLoginGate(target, opts) {
     } finally {
       if (runId === doRefresh._run && !reloadStarted) {
         doRefresh._busy = false;
+        doRefresh._manual = false;
+        clearRefreshWatchdog(runId);
         if (doRefresh._controller === controller) doRefresh._controller = null;
         if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
         showRefreshOverlay(false);
@@ -5249,9 +5298,11 @@ function showLoginGate(target, opts) {
   async function autoRevalidate() {
     if (!autoRevalidateEligible()) return;
     doRefresh._busy = true;
+    doRefresh._manual = false;
     var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     doRefresh._controller = controller;
     var runId = doRefresh._run = (doRefresh._run || 0) + 1;
+    armRefreshWatchdog(runId);
     var beforeTs = cacheTs();
     // The page this pass started on. On first launch the served snapshot is
     // stale, so this pass fires immediately -- exactly when the user is most
@@ -5280,7 +5331,16 @@ function showLoginGate(target, opts) {
     } finally {
       if (runId === doRefresh._run) {
         doRefresh._busy = false;
+        doRefresh._manual = false;
+        clearRefreshWatchdog(runId);
         if (doRefresh._controller === controller) doRefresh._controller = null;
+        // A manual tap during this silent run upgraded the label/chip to
+        // the refreshing state; if the run did not swap (so nothing else
+        // restored them), put the real freshness labels back.
+        if (doRefresh._tapFeedback) {
+          doRefresh._tapFeedback = false;
+          updateLabels();
+        }
       }
     }
   }
