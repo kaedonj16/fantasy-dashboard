@@ -393,11 +393,11 @@ _RECAP_INJURIES_CSS = """<style>
                    border-radius:999px; color:var(--rc-inj); flex-shrink:0;
                    background:color-mix(in srgb, var(--rc-inj) 14%, transparent); }
   .rc-inj-main { min-width:0; }
-  .rc-inj-name { flex:1; min-width:0; font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rc-inj-name { flex:1; min-width:0; font-size:15px; font-weight:600; white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
   .rc-inj-sub { display:flex; align-items:baseline; gap:6px; min-width:0; margin-top:2px;
-                font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; }
+                font-size:11px; color:var(--muted); white-space:normal; overflow:visible; flex-wrap:wrap; }
   .rc-inj-detail { flex-shrink:0; }
-  .rc-inj-team { min-width:0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rc-inj-team { min-width:0; font-weight:600; white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
 </style>"""
 
 _RECAP_ACTIVITY_CSS = """<style>
@@ -853,7 +853,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None,
     <div style="display:flex;align-items:center;gap:10px;">
       {ava_img(name, rid, 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(name, rid)}</div>
+        <div style="font-size:15px;font-weight:700;overflow-wrap:anywhere;">{team_link(name, rid)}</div>
       </div>
       <div style="font-size:22px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
     </div>
@@ -861,7 +861,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None,
     <div style="display:flex;align-items:center;gap:10px;opacity:0.5;">
       {ava_img(opp["owner"], opp["rid"], 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(opp["owner"], opp["rid"])}</div>
+        <div style="font-size:15px;font-weight:600;overflow-wrap:anywhere;">{team_link(opp["owner"], opp["rid"])}</div>
       </div>
       <div style="font-size:22px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.2f}</div>
     </div>
@@ -873,7 +873,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None,
     <div style="display:flex;align-items:center;gap:10px;min-width:0;">
       {ava_img(name, rid, 42)}
       <div style="min-width:0;">
-        <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(name, rid)}</div>
+        <div style="font-weight:700;font-size:15px;overflow-wrap:anywhere;">{team_link(name, rid)}</div>
         <div style="font-size:13px;color:var(--muted);">@{html.escape(handle)}</div>
       </div>
     </div>
@@ -899,7 +899,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None,
     <div style="display:flex;align-items:center;gap:10px;">
       {ava_img(m["winner"], m["w_rid"], 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
+        <div style="font-size:15px;font-weight:700;overflow-wrap:anywhere;">{w_team}</div>
       </div>
       <div style="font-size:22px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
     </div>
@@ -907,7 +907,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None,
     <div style="display:flex;align-items:center;gap:10px;opacity:0.5;">
       {ava_img(m["loser"], m["l_rid"], 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
+        <div style="font-size:15px;font-weight:600;overflow-wrap:anywhere;">{l_team}</div>
       </div>
       <div style="font-size:22px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
     </div>
@@ -975,8 +975,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None,
   .rc-pos-row {{ display:flex; align-items:center; gap:8px; min-width:0; }}
   .rc-pos-rank {{ font-size:11px; font-weight:800; color:var(--muted); width:12px; flex-shrink:0; }}
   .rc-pos-main {{ flex:1; min-width:0; }}
-  .rc-pos-name {{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-  .rc-pos-team {{ font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+  .rc-pos-name {{ font-size:13px; font-weight:600; white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }}
+  .rc-pos-team {{ font-size:11px; color:var(--muted); white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }}
   .rc-pos-pts {{ font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; flex-shrink:0; }}
 </style>
 <section class="recap-section"><div class="recap-section-heading"><h2>Week at a Glance</h2></div>
