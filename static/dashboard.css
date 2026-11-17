@@ -39707,23 +39707,29 @@ button:disabled {
     text-transform: uppercase;
 }
 
+/* Tier label colors follow the same darkened ladder as _val_color in
+   dynasty_pages.py (sky / violet / blue / slate, two steps darker) so
+   every band stays readable on the light default theme as well as dark.
+   The old elite/great/good colors were the dark-theme palette and sat
+   at ~1.2-2.4:1 on light. Solid/depth already resolve to #64748b,
+   the ladder's sub-400 color. */
 .dvt-tier-elite {
-    background: rgba(56, 189, 248, .15);
-    color: #38bdf8;
+    background: rgba(2, 132, 199, .15);
+    color: #0284c7;
 }
 
 .dvt-tier-great {
-    background: rgba(167, 139, 250, .15);
-    color: #a78bfa;
+    background: rgba(139, 92, 246, .15);
+    color: #8b5cf6;
 }
 
 .dvt-tier-good {
-    background: rgba(226, 232, 240, .1);
-    color: #e2e8f0;
+    background: rgba(37, 99, 235, .1);
+    color: #2563eb;
 }
 
 .dvt-tier-solid {
-    background: rgba(148, 163, 184, .1);
+    background: rgba(100, 116, 139, .1);
     color: var(--text-subtle);
 }
 

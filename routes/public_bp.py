@@ -297,7 +297,8 @@ def privacy_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">What We Collect</div>
               <p>
                 We process the league IDs, usernames, team names, rosters, scores, and other
-                league information you ask us to load from Sleeper, ESPN, or Yahoo. If you create
+                league information you ask us to load from Sleeper, ESPN, Yahoo, MFL, or
+                Fleaflicker. If you create
                 an account, we also process your email address, account identifier, linked leagues,
                 and subscription status. We do not receive your platform password or full payment
                 card number; authentication and payment details are handled by the relevant login
@@ -457,12 +458,13 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">2. Go Premium</div>
               <p>
                 Premium unlocks AI-powered insights, breakout candidate rankings, advanced
-                metrics, and a trade intelligence database, either for your whole league
-                or just your own account across all leagues.
+                metrics, and a trade intelligence database. Every plan is personal:
+                it covers your own account in the leagues you unlock, not your
+                league mates.
               </p>
               <p style="margin-top:8px;">
-                Visit the <strong>Settings</strong> menu inside your league dashboard to
-                subscribe, or reach out on the Contact page with any questions.
+                See the plans and subscribe on the <a href="/pricing">Pricing</a> page,
+                or reach out on the Contact page with any questions.
               </p>
             </div>
 
@@ -543,8 +545,8 @@ FAQ_SECTIONS = [
          "(rosters, users, scores, projections, etc.). We do not store your "
          "password or payment information. See the Privacy Policy for more details."),
         ("Can I have my league data removed?",
-         "Yes. Use the Contact page to send your Sleeper league ID and request "
-         "removal. We'll clear cached data for that league."),
+         "Yes. Use the Contact page to send your league ID and which platform "
+         "it is on, and request removal. We'll clear cached data for that league."),
     ]),
     ("Premium / Ads / Support", [
         ("Is there a premium or ad-free mode?",
@@ -678,7 +680,7 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
             <div class="static-section">
               <div class="static-section-title">What to include</div>
               <ul style="margin-left:20px; font-size:15px;">
-                <li>Your Sleeper league ID</li>
+                <li>Your league ID (and the platform it is on)</li>
                 <li>Which page you were on</li>
                 <li>What wasn't working or looked incorrect</li>
                 <li>Screenshots if possible</li>
@@ -714,7 +716,8 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">What Is This?</div>
               <p>
                 BR Fantasy is a custom fantasy football dashboard built on top of public
-                Sleeper API data. It transforms raw league stats into power rankings,
+                league data from Sleeper, ESPN, Yahoo, MFL, and Fleaflicker. It transforms
+                raw league stats into power rankings,
                 weekly matchup previews, trade analysis, graphs, standings, and more, 
                 all in one place.
               </p>

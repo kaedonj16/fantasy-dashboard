@@ -7373,6 +7373,16 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     bottom:calc(var(--dock-safe-bottom) + 14px) !important;
   }}
 }}
+/* On desktop the bottom-right corner belongs to the floating controls:
+   the pill group (bottom 14px, 40px tall) and the BR Assistant launcher
+   (bottom 66px, 56px tall). Lift the banner above the launcher, the same
+   clearance pattern the phone rule above uses for the dock:
+   66 + 56 + 14px gap = 136px. */
+@media (min-width: 769px) {{
+  #recapReadyBanner {{
+    bottom:136px !important;
+  }}
+}}
 </style>
 <div id="recapReadyBanner" style="
      display:none;
@@ -7652,6 +7662,15 @@ def _google_link_pro_banner() -> str:
     bottom:calc(var(--dock-safe-bottom) + 14px) !important;
   }}
 }}
+/* On desktop the bottom-right corner belongs to the floating controls:
+   the pill group (bottom 14px, 40px tall) and the BR Assistant launcher
+   (bottom 66px, 56px tall). Lift the banner above the launcher, the same
+   clearance the recap banner uses: 66 + 56 + 14px gap = 136px. */
+@media (min-width: 769px) {{
+  #proGoogleBanner {{
+    bottom:136px !important;
+  }}
+}}
 </style>
 <div id="proGoogleBanner" role="status" style="
      display:{display};
@@ -7786,6 +7805,15 @@ def _pro_trial_banner() -> str:
     bottom:calc(var(--dock-safe-bottom) + 14px) !important;
   }}
 }}
+/* On desktop the bottom-right corner belongs to the floating controls:
+   the pill group (bottom 14px, 40px tall) and the BR Assistant launcher
+   (bottom 66px, 56px tall). Lift the banner above the launcher, the same
+   clearance the recap banner uses: 66 + 56 + 14px gap = 136px. */
+@media (min-width: 769px) {{
+  #proTrialBanner {{
+    bottom:136px !important;
+  }}
+}}
 </style>
 <div id="proTrialBanner" role="status" style="
      display:none;
@@ -7900,6 +7928,18 @@ def _dunning_banner() -> str:
     except Exception:
         return ""
     return """
+<style>
+/* On desktop the bottom-right corner belongs to the floating controls:
+   the pill group (bottom 14px, 40px tall) and the BR Assistant launcher
+   (bottom 66px, 56px tall). Lift the banner above the launcher, the same
+   clearance the recap banner uses: 66 + 56 + 14px gap = 136px. This
+   overrides the inline style on the element, so it must be !important. */
+@media (min-width: 769px) {
+  #brDunningBanner {
+    bottom:136px !important;
+  }
+}
+</style>
 <div id="brDunningBanner" role="alert" style="
      position:fixed;bottom:24px;right:24px;z-index:10000;
      background:var(--card);border:1px solid var(--border);
@@ -8003,6 +8043,15 @@ def _discord_banner() -> str:
   }}
   #discordBanner #discordBannerClose {{
     order:5; flex:0 0 auto; margin:0 !important; padding:6px 6px !important;
+  }}
+}}
+/* On desktop the bottom-right corner belongs to the floating controls:
+   the pill group (bottom 14px, 40px tall) and the BR Assistant launcher
+   (bottom 66px, 56px tall). Lift the banner above the launcher, the same
+   clearance the recap banner uses: 66 + 56 + 14px gap = 136px. */
+@media (min-width: 769px) {{
+  #discordBanner {{
+    bottom:136px !important;
   }}
 }}
 </style>
