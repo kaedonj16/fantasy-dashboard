@@ -60979,10 +60979,14 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
    calm ease -- no overshoot); a single hairline accent border is its
    only chrome, and the win-green points its only other accent. */
 .rz-moment-card.is-grown { flex-basis: 100%; cursor: default; border-color: var(--rz-accent, var(--accent)); }
-.rz-moment-media { position: relative; height: 52px; border-radius: 8px; background: color-mix(in srgb, var(--rz-muted, #64748b) 14%, transparent); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px; transition: height .45s var(--ease-soft), opacity .3s var(--ease-soft), margin-bottom .45s var(--ease-soft); }
-/* On the grown card the compact poster folds away as the clip (inside
-   the card's own panel, below the name line) takes its place. */
-.rz-moment-card.is-grown .rz-moment-media { height: 0; opacity: 0; margin-bottom: 0; }
+.rz-moment-media { position: relative; height: 52px; border-radius: 8px; background: color-mix(in srgb, var(--rz-muted, #64748b) 14%, transparent); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px; transition: height .45s var(--ease-soft); }
+/* The thumbnail IS the player surface (Kaedon, 2026-11-16): on the
+   grown card the media box itself is the 16:9 player -- JS animates
+   its height from the compact 52px to the rail-width 16:9 height,
+   then releases the inline height so this aspect-ratio holds the
+   final geometry. The clip panel fills the box (below); there is
+   no second media block and the thumbnail never folds away. */
+.rz-moment-card.is-grown .rz-moment-media { aspect-ratio: 16 / 9; height: auto; }
 .rz-moment-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .rz-moment-headshot { object-position: center 22%; }
 .rz-moment-initials { font-size: 16px; font-weight: 900; color: var(--rz-muted, var(--text-muted)); }
@@ -61005,10 +61009,23 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
 .rz-moment-x { display: none; flex: none; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -14px -12px -14px 0; padding: 0; border: 0; background: transparent; color: var(--rz-muted, var(--text-muted)); cursor: pointer; }
 .rz-moment-card.is-grown .rz-moment-x { display: inline-flex; }
 .rz-moment-x:focus-visible { outline: 2px solid var(--rz-accent, var(--accent)); outline-offset: -6px; border-radius: 8px; }
-/* The clip panel lives inside the grown card (it used to sit under the
-   rail). On close, JS pins its height and this transition folds it. */
-.rz-moment-card .rz-clip-panel { flex: none; }
-.rz-moment-card .rz-clip-panel.is-closing { overflow: hidden; transition: height .45s var(--ease-soft); }
+/* The clip panel lives inside the card's media box and fills it:
+   one surface, the thumbnail growing into the player. The frame's
+   pieces fill the box (the feed's fixed 460px embed height and the
+   video's own aspect-ratio belong to the in-flow feed panel). On
+   close, the panel fades out over the poster while JS folds the
+   media box's height back to the thumbnail. */
+.rz-moment-card .rz-clip-panel { position: absolute; inset: 0; flex: none; }
+.rz-moment-card .rz-clip-panel.is-open { margin-top: 0; }
+.rz-moment-card .rz-clip-panel.is-closing { opacity: 0; transition: opacity .45s var(--ease-soft); }
+.rz-moment-card .rz-clip-video { width: 100%; height: 100%; aspect-ratio: auto; object-fit: cover; border-radius: 0; }
+.rz-moment-card .rz-clip-frame { width: 100%; height: 100%; border-radius: 0; }
+.rz-moment-card .rz-clip-processing { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
+.rz-moment-card .rz-clip-loading { position: absolute; top: 6px; left: 6px; z-index: 2; padding: 4px 8px; border-radius: 8px; background: rgba(2, 6, 23, .55); color: #fff; }
+/* "View on X" stays a quiet link in the grown unit, overlaid on the
+   player's top-right corner (clear of the video's bottom controls). */
+.rz-moment-card .rz-clip-src { position: absolute; top: 6px; right: 6px; z-index: 2; margin-top: 0; padding: 2px 7px; border-radius: 8px; background: rgba(2, 6, 23, .55); }
+.rz-moment-card .rz-clip-src a { color: rgba(255, 255, 255, .85); }
 
 @media (prefers-reduced-motion: reduce) {
     html.theme-transition *, html.theme-transition *::before, html.theme-transition *::after { transition: none !important; }
