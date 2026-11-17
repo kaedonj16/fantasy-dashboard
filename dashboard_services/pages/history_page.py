@@ -1742,7 +1742,11 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                               if x) or str(_e.get("nfl") or "")
             _perf_rows.append((_key, _e["name"], f"{_safe_float(_e['pts']):.1f}",
                                "", _i == 0))
-            _perf_faces[_key] = _wrapped_face_url(
+            # Keyed by NAME, not the sub-line: two top scorers can share
+            # position + team + manager, and a sub-line key overwrote the
+            # first player's photo with the second's (the weekly deck's
+            # McCaffrey/Gibbs bug, same shape here).
+            _perf_faces[str(_e["name"])] = _wrapped_face_url(
                 _e.get("pid"), _pmap.get(str(_e.get("pid") or "")),
                 _e.get("pos"), _e.get("nfl"), history_ctx.get("platform"))
         slides.append(_slide("performers", "TOP PERFORMERS",
@@ -1825,16 +1829,23 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         _pset.update((league.get("settings") or {}))
         _pset.update(history_ctx.get("league_settings") or {})
         _cut = _safe_int(_pset.get("playoff_teams"), 0)
+        _ava_by_rid = _wrapped_team_avatar_map(history_ctx)
+        _ava_by_name = {str(_nm2): _ava_by_rid[str(_rid2)]
+                        for _rid2, _nm2 in rmap.items()
+                        if str(_rid2) in _ava_by_rid}
         _srows = []
         for _, _r in stats.iterrows():
             _nm = str(_r.get("owner"))
-            _srows.append({
+            _srow = {
                 "seed": _safe_int(_r.get("Rank"), 0),
                 "team": _nm, "mgr": managers.get(_nm, ""),
                 "record": _record_str(_r),
                 "pf": _safe_float(_r.get("PF")),
                 "champ": bool(champ and _nm == champ),
-            })
+            }
+            if _ava_by_name.get(_nm):
+                _srow["ava"] = _ava_by_name[_nm]
+            _srows.append(_srow)
         # Top 5 only, same call as the weekly standings (Kaedon
         # 2026-11-13): the full table at 58px rows runs under the
         # footer -- measured clearance was +7px at 10 teams in a flat
@@ -1869,6 +1880,31 @@ def _wrapped_mgr_by_rid(ctx: dict) -> dict:
     except Exception:
         mgr_by_rid = {}
     return mgr_by_rid
+
+
+def _wrapped_team_avatar_map(ctx: dict) -> dict:
+    """roster_id (str) -> the team's real league photo URL, resolved the
+    same way the rest of the site resolves team avatars (roster/user team
+    picture, then the manager's profile picture). The resolver's generated
+    crest is a data URI, not a league photo, so it is dropped here: a team
+    with no real photo keeps the initials-disc fallback instead of a
+    generated monogram. {} when the ctx carries no roster/user data."""
+    ava_by_rid: dict = {}
+    try:
+        from dashboard_services.api import team_avatar
+        _platform = str(ctx.get("platform") or "sleeper")
+        _users = ctx.get("users") or []
+        for _ro in (ctx.get("rosters") or []):
+            if isinstance(_ro, dict) and _ro.get("roster_id") is not None:
+                try:
+                    _url = team_avatar(_platform, _ro, _users)
+                except Exception:
+                    _url = None
+                if _url and not str(_url).startswith("data:"):
+                    ava_by_rid[str(_ro["roster_id"])] = str(_url)
+    except Exception:
+        ava_by_rid = {}
+    return ava_by_rid
 
 
 #: The mock's avatar palette: ten pastel disc colors, assigned to teams
@@ -1919,11 +1955,19 @@ def _wrapped_dict_row_html(r, extra_cls="") -> str:
             _tag = "<span class='wrapped-dtag flat'>0</span>"
     _pf = (f"<span>{_esc(str(r['pf']))} PF</span>" if r.get("pf") else "")
     _cls = "wrapped-drow" + (f" {extra_cls}" if extra_cls else "")
+    # The team's real league photo covers the initials disc when the row
+    # carries one; the disc stays underneath as the no-photo / load-failure
+    # fallback (the img removes itself on error).
+    _ava_img = ""
+    if r.get("ava"):
+        _ava_img = (f"<img class='wrapped-drow-ava-img' "
+                    f"src='{_esc(str(r['ava']))}' alt='' loading='lazy' "
+                    f"decoding='async' onerror='this.remove()'>")
     return (
         f"<div class='{_cls}'>"
         f"<span class='wrapped-drow-seed'>{_esc(str(r.get('seed') or ''))}</span>"
         f"<span class='wrapped-drow-ava' style='background:{_col}'>"
-        f"{_esc(_ini)}</span>"
+        f"{_esc(_ini)}{_ava_img}</span>"
         "<div class='wrapped-drow-who'>"
         f"<div class='wrapped-drow-team'>{_esc(str(r.get('n') or ''))}</div>"
         f"{_mgr}</div>"
@@ -2344,9 +2388,15 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
             for _i, _r in enumerate(s.get("srows") or []):
                 _smgr = (f"<span class='wrapped-standing-mgr'>{_esc(str(_r['mgr']))}</span>"
                          if _r.get("mgr") else "")
+                _sava_html = (f"<img class='wrapped-standing-ava' "
+                              f"src='{_esc(str(_r['ava']))}' alt='' "
+                              f"loading='lazy' decoding='async' "
+                              f"onerror='this.remove()'>"
+                              if _r.get("ava") else "")
                 _srow_html.append(
                     f"<div class='wrapped-standing{' wrapped-standing-champ' if _r.get('champ') else ''}'>"
                     f"<span class='wrapped-standing-seed'>#{_esc(str(_r.get('seed') or ''))}</span>"
+                    f"{_sava_html}"
                     "<div class='wrapped-standing-m'>"
                     f"<span class='wrapped-standing-n'>{_esc(str(_r.get('team') or ''))}</span>"
                     f"{_smgr}</div>"
@@ -2475,9 +2525,15 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                         f"<p>{_esc(str(_st.get('x') or ''))}</p></article>"
                         for _st in s["stories"])
                     + "</div>")
+            _hl_txt = str(s.get('text') or '')
+            _hl_cls = "wrapped-headline-txt"
+            if len(_hl_txt) > 110:
+                _hl_cls += " wrapped-headline-txt-xl"
+            elif len(_hl_txt) > 70:
+                _hl_cls += " wrapped-headline-txt-lg"
             body = (
                 kicker
-                + f"<div class='wrapped-headline-txt'>{_esc(str(s.get('text') or ''))}</div>"
+                + f"<div class='{_hl_cls}'>{_esc(_hl_txt)}</div>"
                 + _story_html
             )
         elif kind == "scoreboard":
@@ -2558,9 +2614,16 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                             parts.append(_wrapped_row_html(*_r))
             elif s.get("faces") is not None:
                 _faces = s.get("faces") or {}
+                # Faces are keyed by player name first: two rows can share
+                # the row key (same position, same fantasy team, same
+                # manager -- McCaffrey and Gibbs on one roster), and keying
+                # by the shared sub-line alone painted the later player's
+                # photo onto both rows. The row key stays as the fallback
+                # for decks that still key faces that way (position rows).
                 parts.extend(
                     _wrapped_face_row_html(_r[0], _r[1], _r[2],
-                                           _faces.get(str(_r[0]), ""),
+                                           _faces.get(str(_r[1]),
+                                                      _faces.get(str(_r[0]), "")),
                                            bool(len(_r) > 4 and _r[4]))
                     for _r in s["rows"])
             else:
@@ -3280,6 +3343,7 @@ def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
         # Manager names from the same ctx the standings slide reads:
         # rosters carry owner_id, users carry the public display name.
         mgr_by_rid = _wrapped_mgr_by_rid(ctx)
+        ava_by_rid = _wrapped_team_avatar_map(ctx)
 
         groups = {"clinched_bye": [], "clinched": [], "eliminated": []}
         alive = []
@@ -3297,10 +3361,13 @@ def _weekly_wrapped_playoff_slide(ctx: dict, week: int):
             _mgr = mgr_by_rid.get(str(_rid), "")
             if not (_mgr and _mgr != str(_nm)):
                 _mgr = ""
-            groups[status].append({
+            _grow = {
                 "k": f"#{_i + 1}", "n": str(_nm), "v": _rec, "mgr": _mgr,
                 "vnote": f"{float(_r['pf']):,.1f} PF",
-                "seed": _i + 1, "pf": f"{float(_r['pf']):,.1f}"})
+                "seed": _i + 1, "pf": f"{float(_r['pf']):,.1f}"}
+            if ava_by_rid.get(str(_rid)):
+                _grow["ava"] = ava_by_rid[str(_rid)]
+            groups[status].append(_grow)
         if not any(groups.values()):
             return None
 
@@ -3579,7 +3646,12 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 _key = _sub_line or str(_e.get("nfl") or "")
                 _perf_rows.append((_key, _e["name"], f"{_e['pts']:.1f}", "",
                                    _i == 0))
-                _perf_faces[_key] = str(_e.get("img") or "")
+                # Keyed by NAME, not the sub-line: two of the week's top
+                # three can share position + fantasy team + manager (the
+                # live Week 10 deck had McCaffrey and Gibbs, both
+                # "RB · Nunky Figgas · Lurkzx901"), and a sub-line key
+                # overwrote the first player's photo with the second's.
+                _perf_faces[str(_e["name"])] = str(_e.get("img") or "")
             _mode = (leaders or {}).get("top3_mode")
             if _mode == "close":
                 _mm = max((float(_e["margin"]) for _e in _top3
@@ -3735,6 +3807,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                           in enumerate(_seed_table(_pw).iterrows())}
                     _rmap = ctx.get("roster_map") or {}
                     _smgr = _wrapped_mgr_by_rid(ctx)
+                    _sava = _wrapped_team_avatar_map(ctx)
                     for _i, (_rid, _r) in enumerate(_agg.iterrows()):
                         _nm = _rmap.get(_rid, _rmap.get(str(_rid), f"Team {_rid}"))
                         _rec = f"{int(_r['w'])}-{int(_r['l'])}"
@@ -3758,7 +3831,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                         _mgr = _smgr.get(str(_rid), "")
                         if _mgr == str(_nm):
                             _mgr = ""
-                        _srows.append({
+                        _srow = {
                             "k": f"#{_seed_now}", "n": str(_nm), "v": _rec,
                             "deco": _deco,
                             "vnote": f"{float(_r['pf']):,.1f} PF",
@@ -3768,7 +3841,12 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                             # points-for as data (rendered inline).
                             "seed": _seed_now, "mgr": _mgr,
                             "pf": f"{float(_r['pf']):,.1f}",
-                            "move": (_was - _seed_now) if _was else None})
+                            "move": (_was - _seed_now) if _was else None}
+                        # The team's real league photo replaces the
+                        # initials disc when the league has one.
+                        if _sava.get(str(_rid)):
+                            _srow["ava"] = _sava[str(_rid)]
+                        _srows.append(_srow)
             if len(_srows) >= 3:
                 # Top 5 only (Kaedon 2026-11-13): squeezing all ten rows
                 # onto one slide pushed the last rows under the footer.
@@ -4087,7 +4165,15 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 f"{_names(_eliminated)} {_verb(_eliminated)} out")
         _headline = ". ".join(_clauses) + "."
         if len(_clauses) == 1:
-            _headline += f" {hi_team} put up {hi_pts:.1f}, the week's top score."
+            # The top-score sentence pads a short single-clause headline,
+            # but with long team names it balloons the slide's big type
+            # until the story cards run under the footer (live Week 10:
+            # three long clinched names + the sentence = ~150 chars).
+            # The top score already gets its own story card below, so a
+            # headline that is already long simply stands on its own.
+            _extra = f" {hi_team} put up {hi_pts:.1f}, the week's top score."
+            if len(_headline) + len(_extra) <= 110:
+                _headline += _extra
     elif nb is not None:
         _headline = (f"{hi_team} hung {hi_pts:.1f} on the league. "
                      f"{nb['winner']} survived {nb['loser']} by {nb['margin']:.1f}.")

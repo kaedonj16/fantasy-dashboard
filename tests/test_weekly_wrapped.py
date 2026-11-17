@@ -139,8 +139,118 @@ def test_weekly_top_performers_top3_and_crown():
     assert [r[1] for r in rows] == ["Star QB", "Star RB", "Star WR"]
     assert [r[2] for r in rows] == ["32.5", "28.0", "24.1"]
     assert [bool(r[4]) for r in rows] == [True, False, False]
-    assert set(perf["faces"]) == {r[0] for r in rows}
+    # Faces are keyed by player NAME: keying by the row sub-line collided
+    # whenever two top performers shared position + team + manager.
+    assert set(perf["faces"]) == {r[1] for r in rows}
     assert perf["note"]  # the "why it matters" line is always composed
+
+
+def test_weekly_top_performers_same_team_faces_do_not_collide():
+    """Regression (live Week 10): McCaffrey and Gibbs were both
+    'RB · Nunky Figgas · Lurkzx901' on the Top Performers slide, and the
+    faces dict keyed by that shared sub-line overwrote McCaffrey's photo
+    with Gibbs's. Each row must render its own player's photo."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    ctx = _mock_week_ctx()
+    ctx["roster_map"] = {"r1": "Nunky Figgas", "r2": "Beta"}
+    ctx["players_map"] = {
+        "101": {"name": "Christian McCaffrey", "pos": "RB", "team": "SF",
+                "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/3892774.png"},
+        "102": {"name": "Jahmyr Gibbs", "pos": "RB", "team": "DET",
+                "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4567146.png"},
+        "103": {"name": "George Pickens", "pos": "WR", "team": "DAL",
+                "espnHeadshot": "https://a.espncdn.com/i/headshots/nfl/players/full/4426354.png"},
+    }
+
+    def _boxes(platform, league_id, week, season):
+        return [
+            {"roster_id": "r1", "matchup_id": 1,
+             "players_points": {"101": 46.3, "102": 44.2},
+             "starters": ["101", "102"]},
+            {"roster_id": "r2", "matchup_id": 1,
+             "players_points": {"103": 43.5}, "starters": ["103"]},
+        ]
+
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    side_effect=_boxes):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+    perf = {s["kind"]: s for s in slides}["performers"]
+    assert [r[1] for r in perf["rows"]] == [
+        "Christian McCaffrey", "Jahmyr Gibbs", "George Pickens"]
+    # The two RB rows share one sub-line key; their faces must not.
+    assert perf["rows"][0][0] == perf["rows"][1][0]
+    assert "3892774" in perf["faces"]["Christian McCaffrey"]
+    assert "4567146" in perf["faces"]["Jahmyr Gibbs"]
+
+    html = H._wrapped_overlay_markup(slides, None, ns="weekly-wrapped",
+                                     footer_label="WEEK 3 WRAPPED")
+    cmc_row = next(c for c in html.split("<div class='wrapped-row")
+                   if "Christian McCaffrey" in c)
+    assert "3892774" in cmc_row and "4567146" not in cmc_row
+
+
+def test_wrapped_team_avatar_map_and_dict_row_photo():
+    """Standings / Playoff Picture rows show the team's real league photo
+    instead of the generic initials disc; a team with no real photo keeps
+    the disc (the resolver's generated crest is not a league photo)."""
+    from dashboard_services.pages import history_page as H
+
+    ctx = {"platform": "sleeper",
+           "rosters": [
+               {"roster_id": 1, "owner_id": "u1",
+                "metadata": {"avatar": "https://sleepercdn.com/content/nfl/league/avatars/abc.jpg",
+                             "team_name": "Alpha"}},
+               {"roster_id": 2, "owner_id": "u2",
+                "metadata": {"team_name": "Beta"}}],
+           "users": [{"user_id": "u1", "username": "a", "metadata": {}},
+                     {"user_id": "u2", "username": "b", "metadata": {}}]}
+    ava = H._wrapped_team_avatar_map(ctx)
+    assert ava.get("1") == ("https://sleepercdn.com/content/nfl/league/"
+                            "avatars/abc.jpg")
+    assert "2" not in ava
+
+    html = H._wrapped_dict_row_html(
+        {"seed": 1, "n": "Alpha", "mgr": "a", "v": "8-2",
+         "pf": "1,580.0", "move": 1, "ava": ava["1"]})
+    assert "wrapped-drow-ava-img" in html and "abc.jpg" in html
+    html = H._wrapped_dict_row_html(
+        {"seed": 2, "n": "Beta", "mgr": "b", "v": "8-2",
+         "pf": "1,545.8", "move": -1})
+    assert "wrapped-drow-ava-img" not in html and "PP" not in html
+
+
+def test_weekly_headline_long_single_clause_drops_top_score_sentence():
+    """Live Week 10: three long clinched names plus the appended top-score
+    sentence made a ~150-char headline whose story cards ran under the
+    footer. A long single-clause headline stands on its own (the top
+    score keeps its story card), and long headlines get the stepped-down
+    type class in the markup."""
+    from unittest import mock
+    from dashboard_services.pages import history_page as H
+
+    stub = {"kind": "playoffs", "eyebrow": "PLAYOFF PICTURE",
+            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+            "sub": "", "title": "Playoff Picture",
+            "clinched": ["Caleb's Casting Couch", "Make Kamaraca Great Again",
+                         "Pittsburgh Pilots"],
+            "eliminated": [], "alive": ["Delta"], "sections": []}
+    ctx = _mock_week_ctx()
+    with mock.patch("dashboard_services.platform_api.get_matchups",
+                    return_value=[]), \
+         mock.patch.object(H, "_weekly_wrapped_playoff_slide",
+                           return_value=stub), \
+         mock.patch.object(H, "_next_week_gotw_game", return_value=None):
+        slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
+    by_kind = {s["kind"]: s for s in slides}
+    assert by_kind["headline"]["text"] == (
+        "Caleb's Casting Couch, Make Kamaraca Great Again and "
+        "Pittsburgh Pilots are in.")
+    html = H._wrapped_overlay_markup(slides, None, ns="weekly-wrapped",
+                                     footer_label="WEEK 3 WRAPPED")
+    assert "wrapped-headline-txt-lg" in html or \
+        "wrapped-headline-txt-xl" in html
 
 
 def test_weekly_player_leaders_by_pos_and_dud():

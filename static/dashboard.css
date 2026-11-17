@@ -47945,6 +47945,19 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     max-width: 15ch;
 }
 
+/* Long headlines step the big type down so the sentence plus its story
+   cards stay clear of the footer bug on a phone-height slide. */
+.wrapped-headline-txt-lg {
+    font-size: 27px;
+    max-width: 22ch;
+}
+
+.wrapped-headline-txt-xl {
+    font-size: 22px;
+    line-height: 1.2;
+    max-width: none;
+}
+
 .wrapped-slide-title {
     font-size: 30px;
     font-weight: 900;
@@ -49235,6 +49248,27 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     font-size: 10px;
     color: #0d2137;
     box-shadow: inset 0 -2px 4px rgba(0, 0, 0, .18);
+    position: relative;
+    overflow: hidden;
+}
+
+/* The team's real league photo, covering the initials disc (which stays
+   as the fallback when there is no photo or the image fails). */
+.wrapped-drow-ava-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.wrapped-standing-ava {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: none;
 }
 
 .wrapped-drow-who {
