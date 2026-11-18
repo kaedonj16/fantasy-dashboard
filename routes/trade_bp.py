@@ -609,6 +609,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       [data-theme="dark"] .tdb-hs-init {{ color: #9fc3e8; }}
       .tdb-hs img {{ position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }}
+      .tdb-hs-def img {{ object-fit: contain; object-position: center; padding: 3px; box-sizing: border-box; }}
       .tdb-a-main {{ display: flex; flex-direction: column; min-width: 0; }}
       .tdb-a-name {{
         font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.15;
@@ -976,6 +977,26 @@ def page_trade_database(platform: str, season: int, league_id: str):
         s.textContent = img.dataset.init || '';
         img.replaceWith(s);
       }}
+      // Defenses have no Sleeper headshot (their player id is the team
+      // abbreviation); the avatar is the team logo, local first, then the
+      // ESPN CDN, then the monogram. Mirrors brCanonNflTeam in app.js.
+      function tdbCanonTeam(t) {{
+        t = String(t || '').trim().toUpperCase();
+        if (t === 'WSH') return 'WAS';
+        if (t === 'JAC') return 'JAX';
+        if (t === 'LA') return 'LAR';
+        return t;
+      }}
+      function tdbDefFallback(img) {{
+        const t = tdbCanonTeam(img.dataset.team || '');
+        if (t && !img.dataset.espnTried) {{
+          img.dataset.espnTried = '1';
+          const slug = t === 'WAS' ? 'wsh' : t.toLowerCase();
+          img.src = 'https://a.espncdn.com/i/teamlogos/nfl/500/' + slug + '.png';
+          return;
+        }}
+        tdbHsFallback(img);
+      }}
       function tdbWhen(t) {{
         if (t.created_at) {{
           const d = new Date(t.created_at);
@@ -1018,15 +1039,22 @@ def page_trade_database(platform: str, season: int, league_id: str):
             const pid   = a.player_id ? String(a.player_id) : '';
             const match = pid && (matchIdsA.has(pid) || matchIdsB.has(pid));
             const sub = [a.position, a.team].filter(Boolean).join(' · ');
-            const hs = pid
-              ? `<span class="tdb-hs"><img loading="lazy" alt="" src="https://sleepercdn.com/content/nfl/players/thumb/${{encodeURIComponent(pid)}}.jpg" data-init="${{tdbInitials(a.name)}}" onerror="tdbHsFallback(this)"></span>`
-              : `<span class="tdb-hs"><span class="tdb-hs-init">${{tdbInitials(a.name)}}</span></span>`;
             // Player names open the player modal (global delegated
             // handler); defenses and kickers stay plain, like elsewhere.
             const posU = String(a.position || '').toUpperCase();
+            const isDef = posU === 'DEF' || posU === 'DST';
+            const defTeam = isDef ? tdbCanonTeam(a.team || pid) : '';
+            const hs = isDef && defTeam
+              ? `<span class="tdb-hs tdb-hs-def"><img loading="lazy" alt="" src="/static/images/team_logos/${{encodeURIComponent(defTeam)}}.png" data-team="${{tdbEsc(defTeam)}}" data-init="${{tdbInitials(a.name)}}" onerror="tdbDefFallback(this)"></span>`
+              : pid
+              ? `<span class="tdb-hs"><img loading="lazy" alt="" src="https://sleepercdn.com/content/nfl/players/thumb/${{encodeURIComponent(pid)}}.jpg" data-init="${{tdbInitials(a.name)}}" onerror="tdbHsFallback(this)"></span>`
+              : `<span class="tdb-hs"><span class="tdb-hs-init">${{tdbInitials(a.name)}}</span></span>`;
+            // Defenses show the full team name; everyone else gets the
+            // initial-surname treatment.
+            const displayName = isDef ? (a.name || '') : tdbShortName(a.name);
             const nameHtml = (pid && posU !== 'DEF' && posU !== 'K')
-              ? `<span class="tdb-a-name player-clickable" style="cursor:pointer;" data-player-id="${{tdbEsc(pid)}}" data-player-name="${{tdbEsc(a.name)}}">${{tdbEsc(tdbShortName(a.name))}}</span>`
-              : `<span class="tdb-a-name">${{tdbEsc(tdbShortName(a.name))}}</span>`;
+              ? `<span class="tdb-a-name player-clickable" style="cursor:pointer;" data-player-id="${{tdbEsc(pid)}}" data-player-name="${{tdbEsc(a.name)}}">${{tdbEsc(displayName)}}</span>`
+              : `<span class="tdb-a-name">${{tdbEsc(displayName)}}</span>`;
             return `<div class="tdb-asset${{match ? ' tdb-match' : ''}}" title="${{tdbEsc(a.name)}}">${{hs}}<span class="tdb-a-main">${{nameHtml}}${{sub ? `<span class="tdb-a-sub">${{tdbEsc(sub)}}</span>` : ''}}</span></div>`;
           }}
           const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
