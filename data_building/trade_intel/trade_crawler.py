@@ -270,15 +270,20 @@ def _fetch_week(league_id: str, week: int) -> tuple[int, list[dict]]:
     return week, trades
 
 
-def crawl_league(
+def crawl_league_detailed(
     league_id: str,
     season: int,
     start_week: int = 1,
     end_week: Optional[int] = None,
     week_workers: int = 2,
-) -> int:
+) -> Tuple[int, Optional[datetime]]:
     """
-    Crawl all trades for one league. Returns count of newly inserted trades.
+    Crawl all trades for one league.
+
+    Returns (new_trades, max_created_at): the count of newly inserted
+    trades and the newest ``created_at`` among them (None when nothing
+    was inserted). Callers use max_created_at to advance the league's
+    last_trade_at with the *trade's* time, never the crawl time.
 
     Fetches up to `week_workers` weeks in parallel, then bulk-inserts into
     a single DB connection.
@@ -291,7 +296,7 @@ def crawl_league(
 
     weeks = list(range(start_week, end_week + 1))
     if not weeks:
-        return 0
+        return 0, None
 
     # Fetch all weeks in parallel
     week_trades: dict[int, list[dict]] = {}
@@ -306,7 +311,7 @@ def crawl_league(
                 logger.debug("[crawler] week fetch failed for %s: %s", league_id, exc)
 
     if not week_trades:
-        return 0
+        return 0, None
 
     # Build slot map once per league so every pick gets its exact draft position
     slot_map = _fetch_draft_slot_map(league_id)
@@ -318,6 +323,7 @@ def crawl_league(
     # connection is released — trade_time_values opens its own conn and would
     # deadlock a small pool if nested inside this block.
     new_trades = 0
+    max_created_at: Optional[datetime] = None
     pending_value_snaps: list[tuple[list[str], Any]] = []
     with get_conn() as conn:
         for week, trades in sorted(week_trades.items()):
@@ -347,6 +353,10 @@ def crawl_league(
                 if not result:
                     continue
 
+                if created_at is not None and (
+                        max_created_at is None or created_at > max_created_at):
+                    max_created_at = created_at
+
                 trade_db_id = result["id"]
                 assets = _extract_assets(txn, slot_map=slot_map)
                 if assets:
@@ -375,6 +385,24 @@ def crawl_league(
 
     week_trades.clear()
     _snapshot_trade_time_values(pending_value_snaps)
+    return new_trades, max_created_at
+
+
+def crawl_league(
+    league_id: str,
+    season: int,
+    start_week: int = 1,
+    end_week: Optional[int] = None,
+    week_workers: int = 2,
+) -> int:
+    """Crawl all trades for one league. Returns count of newly inserted trades.
+
+    Thin wrapper over crawl_league_detailed for callers that do not need
+    the newest inserted trade's timestamp.
+    """
+    new_trades, _max_created_at = crawl_league_detailed(
+        league_id, season, start_week=start_week, end_week=end_week,
+        week_workers=week_workers)
     return new_trades
 
 
@@ -488,6 +516,80 @@ def _merge_crawl_batches(velocity_rows, reserve_rows, batch_size: int,
     return merged[:batch_size]
 
 
+def _format_guarantee_size(batch_size: int) -> int:
+    """Minimum slots of a 'both' batch guaranteed to each league format.
+
+    A third of the batch, rounded up. Since 2026-11-05 the velocity pick
+    alone decided the batch: last_trade_at was stamped with the crawl
+    time, so whichever format yielded trades one night topped the
+    velocity order the next night and kept the whole batch (keeper took
+    it; dynasty and redraft inserted zero trades for 13 days while every
+    run reported success). A per-format floor breaks that capture the
+    same way the new/reserve guarantees broke the earlier starvations.
+    """
+    return (batch_size + 2) // 3
+
+
+def _merge_with_format_guarantees(merged, per_format_rows,
+                                  batch_size: int) -> list[dict]:
+    """Top up a merged 'both' batch so every format gets its floor.
+
+    ``per_format_rows`` maps league_type -> that format's own
+    velocity-ordered pick (same eligibility as the global velocity pick).
+    For each format below its guaranteed share that still has eligible
+    leagues outside the batch, unused rows from its pick are swapped in;
+    the eviction victim is a row from the most over-represented format
+    (never dropping any format below its own floor, and never evicting
+    when the batch still has room to just append). Dedupes by league_id
+    and keeps the batch at exactly batch_size when the pool allows.
+    """
+    if batch_size <= 0 or not per_format_rows:
+        return list(merged)[:batch_size]
+    guarantee = _format_guarantee_size(batch_size)
+    result = list(merged)[:batch_size]
+    present = {row["league_id"] for row in result}
+    counts: dict = {}
+    for row in result:
+        counts[row.get("league_type")] = counts.get(row.get("league_type"), 0) + 1
+
+    for fmt in (int(LeagueType.REDRAFT), int(LeagueType.KEEPER),
+                int(LeagueType.DYNASTY)):
+        # Only rows that actually are this format count toward its
+        # floor (the pick queries filter on league_type, but never let
+        # a mislabelled row satisfy or evict for another format).
+        picks = [row for row in (per_format_rows.get(fmt) or [])
+                 if row.get("league_type") is None
+                 or int(row["league_type"]) == fmt]
+        eligible = {row["league_id"] for row in picks}
+        want = min(guarantee, len(eligible))
+        for row in picks:
+            if counts.get(fmt, 0) >= want:
+                break
+            lid = row["league_id"]
+            if lid in present:
+                continue
+            if len(result) >= batch_size:
+                # Evict the last row of the most over-represented format
+                # (one above its own floor), so no format is pushed
+                # below its guarantee to feed another's.
+                evict_idx = None
+                evict_over = 0
+                for idx in range(len(result) - 1, -1, -1):
+                    over = counts.get(result[idx].get("league_type"), 0) - guarantee
+                    if over > evict_over:
+                        evict_idx = idx
+                        evict_over = over
+                if evict_idx is None:
+                    break
+                evicted = result.pop(evict_idx)
+                present.discard(evicted["league_id"])
+                counts[evicted.get("league_type")] -= 1
+            result.append(row)
+            present.add(lid)
+            counts[fmt] = counts.get(fmt, 0) + 1
+    return result[:batch_size]
+
+
 def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_days: int = 7) -> list[dict]:
     """Return leagues based on crawl mode.
 
@@ -598,27 +700,71 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
                      discovered_at DESC
             LIMIT %s
         """
+        # Per-format velocity picks: same eligibility and ordering as the
+        # global velocity pick, one format at a time. They feed the
+        # format-guarantee merge below so a format whose leagues fell
+        # behind in the global velocity order still gets its floor of
+        # the batch (see _format_guarantee_size).
+        format_velocity_query = """
+            SELECT league_id, season, last_crawled_week, league_type
+            FROM trade_intel_leagues
+            WHERE crawl_enabled = TRUE
+              AND league_type = %s
+              AND (
+                last_crawled_week IS NULL
+                OR last_crawled_at IS NULL
+                OR last_crawled_at < NOW() - make_interval(days => %s)
+              )
+            ORDER BY last_trade_at DESC NULLS LAST,
+                     (last_crawled_week IS NULL) DESC,
+                     last_crawled_at ASC NULLS FIRST,
+                     discovered_at DESC
+            LIMIT %s
+        """
         new_rows = conn.execute(
             new_query, (_new_reserve_size(batch_size),)
         ).fetchall()
         reserve_rows = conn.execute(
             reserve_query, (recrawl_days, _reserve_size(batch_size))
         ).fetchall()
+        per_format_rows = {}
+        for fmt in (int(LeagueType.REDRAFT), int(LeagueType.KEEPER),
+                    int(LeagueType.DYNASTY)):
+            per_format_rows[fmt] = conn.execute(
+                format_velocity_query,
+                (fmt, recrawl_days, _format_guarantee_size(batch_size)),
+            ).fetchall()
         velocity_rows = conn.execute(
             velocity_query, (recrawl_days, batch_size)
         ).fetchall()
-        return _merge_crawl_batches(
+        merged = _merge_crawl_batches(
             velocity_rows, reserve_rows, batch_size, new_rows=new_rows)
+        return _merge_with_format_guarantees(
+            merged, per_format_rows, batch_size)
 
 
-def _mark_crawled_batch(updates: list[tuple[int, str, int]]) -> None:
+def _mark_crawled_batch(updates: list) -> None:
     """Batch-update last_crawled_at/week plus velocity counters for multiple leagues.
 
-    Each update is (week, league_id, new_trades): total_trades accumulates,
-    last_trade_at advances only when new trades were found.
+    Each update is (week, league_id, new_trades) or
+    (week, league_id, new_trades, last_trade_at): total_trades
+    accumulates, and last_trade_at advances to the provided timestamp -
+    the newest *actually inserted* trade's created_at - when one is
+    given, and is left unchanged when it is not.
+
+    last_trade_at must never be stamped with the crawl time (the old
+    NOW() behaviour): the velocity pick orders by it, so crawl-time
+    stamps made whichever format yielded trades last night top the
+    order again tonight, a self-reinforcing capture that starved
+    dynasty and redraft of batch slots for 13 days in Nov 2026.
     """
     if not updates:
         return
+    normalized = []
+    for update in updates:
+        week, lid, n = update[0], update[1], update[2]
+        last_trade_at = update[3] if len(update) > 3 else None
+        normalized.append((week, lid, n, last_trade_at))
     with get_conn() as conn:
         conn.execute(
             """
@@ -626,16 +772,25 @@ def _mark_crawled_batch(updates: list[tuple[int, str, int]]) -> None:
             SET last_crawled_at = NOW(),
                 last_crawled_week = v.week,
                 total_trades = t.total_trades + v.new_trades,
-                last_trade_at = CASE WHEN v.new_trades > 0 THEN NOW() ELSE t.last_trade_at END
-            FROM (VALUES """ + ",".join(["(%s::int, %s::text, %s::int)"] * len(updates)) + """) AS v(week, league_id, new_trades)
+                last_trade_at = CASE
+                    WHEN v.last_trade_at IS NULL THEN t.last_trade_at
+                    ELSE GREATEST(COALESCE(t.last_trade_at, v.last_trade_at),
+                                  v.last_trade_at)
+                END
+            FROM (VALUES """ + ",".join(["(%s::int, %s::text, %s::int, %s::timestamptz)"] * len(normalized)) + """) AS v(week, league_id, new_trades, last_trade_at)
             WHERE t.league_id = v.league_id
             """,
-            [val for week, lid, n in updates for val in (week, lid, n)]
+            [val for week, lid, n, ts in normalized
+             for val in (week, lid, n, ts)]
         )
 
 
-def _crawl_one(row: dict, end_week: int, override_start_week: Optional[int] = None) -> Tuple[str, int, str]:
-    """Crawl a single league. Runs inside a thread pool worker."""
+def _crawl_one(row: dict, end_week: int, override_start_week: Optional[int] = None) -> Tuple[str, int, Any, Optional[datetime]]:
+    """Crawl a single league. Runs inside a thread pool worker.
+
+    Returns (league_id, new_trades, league_type, max_created_at), where
+    max_created_at is the newest inserted trade's timestamp (or None).
+    """
     league_id = row["league_id"]
     season = row["season"]
     league_type = row.get("league_type", int(LeagueType.DYNASTY))
@@ -647,15 +802,22 @@ def _crawl_one(row: dict, end_week: int, override_start_week: Optional[int] = No
         # them for every league's first crawl.
         start_week = 0
     else:
-        start_week = (row["last_crawled_week"] or 0) + 1
+        # Refetch the last marked week: a league is marked AT the week
+        # it was crawled through, but that week's Sleeper transaction
+        # bucket keeps filling until the week ends. Starting at
+        # last_crawled_week + 1 (the old behaviour) permanently skipped
+        # every trade made later in an already-marked week. Inserts are
+        # idempotent (ON CONFLICT DO NOTHING), so the refetch is cheap.
+        start_week = row["last_crawled_week"] or 0
     if start_week > end_week:
-        return league_id, 0, league_type
+        return league_id, 0, league_type, None
     try:
-        n = crawl_league(league_id, season, start_week=start_week, end_week=end_week)
-        return league_id, n, league_type
+        n, max_created_at = crawl_league_detailed(
+            league_id, season, start_week=start_week, end_week=end_week)
+        return league_id, n, league_type, max_created_at
     except Exception as exc:
         logger.warning("[crawler] League %s failed: %s", league_id, exc)
-        return league_id, 0, league_type
+        return league_id, 0, league_type, None
 
 
 def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new", recrawl_days: int = 7) -> dict:
@@ -686,7 +848,7 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     dynasty_leagues = 0
     redraft_leagues = 0
     keeper_leagues = 0
-    mark_batch: list[tuple[int, str, int]] = []
+    mark_batch: list[tuple] = []
 
     # For existing-mode re-crawls, always start from week 0 so we pick up
     # the full season including offseason trades - and any weeks whose
@@ -717,10 +879,10 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
             for future in done:
                 futures.pop(future, None)
                 completed_count += 1
-                league_id, n, league_type = future.result()
+                league_id, n, league_type, max_created_at = future.result()
                 mark_batch.append(
                     (end_week_by_league.get(league_id, current_week),
-                     league_id, n))
+                     league_id, n, max_created_at))
 
                 if n > 0:
                     if league_type == LeagueType.DYNASTY:
