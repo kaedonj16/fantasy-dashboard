@@ -1278,11 +1278,45 @@ def default_through_week(season: int) -> Optional[int]:
     return int(row["w"]) if row and row.get("w") is not None else None
 
 
-def load_season_series(season: int, through_week: int) -> Dict[str, List[Dict[str, Any]]]:
+def _series_loader_accepts_ids(fn) -> bool:
+    """True when a series loader accepts a player_ids argument.
+
+    Callers (and tests) substitute loaders with the historical two-argument
+    shape; scoping must degrade to the unscoped call for those instead of
+    raising, because the unscoped load returns the same rows for the
+    players a scoped load would keep.
+    """
+    try:
+        import inspect
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    if "player_ids" in params:
+        return True
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return True
+    positional = [p for p in params.values()
+                  if p.kind in (inspect.Parameter.POSITIONAL_ONLY,
+                                inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+    return len(positional) >= 3
+
+
+def load_season_series(season: int, through_week: int,
+                       player_ids=None) -> Dict[str, List[Dict[str, Any]]]:
     """player_id -> weekly_metrics rows through ``through_week``. The same
-    loader the engine reads, so grading sees exactly the engine's source."""
+    loader the engine reads, so grading sees exactly the engine's source.
+
+    ``player_ids`` optionally scopes the load to those players (identical
+    rows for the players kept); forecasts pass the open calls' ids so a
+    board read no longer loads the whole season's universe. The default
+    None is the full load grading uses.
+    """
     from data_building.weekly_metrics import get_weekly_series_by_player
-    return get_weekly_series_by_player(int(season), int(through_week))
+    if player_ids is None:
+        return get_weekly_series_by_player(int(season), int(through_week))
+    return get_weekly_series_by_player(
+        int(season), int(through_week),
+        player_ids=[str(pid) for pid in player_ids])
 
 
 # Whole-season frontier for prior-season series loads: a prior-season
@@ -1290,13 +1324,19 @@ def load_season_series(season: int, through_week: int) -> Dict[str, List[Dict[st
 PRIOR_SEASON_THROUGH_WEEK = 18
 
 
-def load_prior_season_series(season: int) -> Dict[str, List[Dict[str, Any]]]:
+def load_prior_season_series(season: int,
+                             player_ids=None) -> Dict[str, List[Dict[str, Any]]]:
     """player_id -> every weekly_metrics row of the season BEFORE
     ``season``. Supplies the baseline PPG fill for prior-season-baseline
     calls (see :func:`resolve_baseline`). Bulk callers load this only
     when a call actually needs the fill; a failed or empty load degrades
     to no fill, never to a fabricated baseline."""
     try:
+        if player_ids is not None and _series_loader_accepts_ids(
+                load_season_series):
+            return load_season_series(
+                int(season) - 1, PRIOR_SEASON_THROUGH_WEEK,
+                player_ids=[str(pid) for pid in player_ids])
         return load_season_series(int(season) - 1, PRIOR_SEASON_THROUGH_WEEK)
     except Exception:
         logger.warning(

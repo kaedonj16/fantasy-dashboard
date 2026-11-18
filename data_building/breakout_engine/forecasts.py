@@ -345,10 +345,28 @@ def weekly_forecasts_for_calls(
                   if not wg.is_mature(int(c.get("as_of_week") or 0), through)]
     if not open_calls:
         return {}
-    series = wg.load_season_series(season, through)
+    # Scope the series loads to the open calls' own players: a forecast
+    # only ever reads its own call's series (the cohort aggregate below is
+    # a separate position-level load and stays unscoped), so the scoped
+    # load returns identical forecasts without pulling the whole season's
+    # universe. Loaders substituted with the historical two-argument shape
+    # simply get the unscoped call, which returns the same rows.
+    open_ids = sorted({str(c.get("player_id") or "")
+                       for c in open_calls if c.get("player_id")})
+    if wg._series_loader_accepts_ids(wg.load_season_series):
+        series = wg.load_season_series(season, through, player_ids=open_ids)
+    else:
+        series = wg.load_season_series(season, through)
     prior_series: Dict[str, List[Dict[str, Any]]] = {}
-    if any(wg.call_needs_prior_ppg(c) for c in open_calls):
-        prior_series = wg.load_prior_season_series(season)
+    prior_calls = [c for c in open_calls if wg.call_needs_prior_ppg(c)]
+    if prior_calls:
+        prior_ids = sorted({str(c.get("player_id") or "")
+                            for c in prior_calls if c.get("player_id")})
+        if wg._series_loader_accepts_ids(wg.load_prior_season_series):
+            prior_series = wg.load_prior_season_series(
+                season, player_ids=prior_ids)
+        else:
+            prior_series = wg.load_prior_season_series(season)
     cohort: Dict[str, float] = {}
     if any(wg.call_needs_cohort_baseline(c) for c in open_calls):
         cohort = wg.load_cohort_baselines(season)

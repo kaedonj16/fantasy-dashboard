@@ -6,6 +6,7 @@ Includes detailed breakout type classification (readiness vs opportunity driven)
 """
 
 import copy
+import json
 import logging
 import os
 import threading
@@ -1497,6 +1498,10 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
 # long anything can be served even if a watermark source is ever missed.
 # Gunicorn workers are separate processes, so the cache is per worker; that
 # still turns every repeat view in a worker into one light watermark query.
+# A shared cross-worker layer sits under it (see _breakout_shared_lookup):
+# on an in-process miss the shared store is consulted under the same
+# watermark key before any compute, and fresh computes are written through,
+# so a cold worker no longer repays the full build a sibling already paid.
 #
 # The watermark check is fail-soft: if it cannot be read, nothing is served
 # from or written to the cache and the caller computes fresh, exactly the
@@ -1589,6 +1594,97 @@ def _clear_breakout_payload_caches() -> None:
         _breakout_track_record_cache.clear()
 
 
+# ── Shared (cross-worker) layer over the in-process payload caches ───────────
+#
+# The in-process caches above are per gunicorn worker, so a cold worker, a
+# worker recycle, or a deploy repaid the full multi-second build even though
+# a sibling worker had just computed the identical payload. The shared layer
+# stores the same payloads in the already-provisioned Redis store behind
+# dashboard_services.player_details_store (the store the player modal's
+# breakout flags already use), keyed by the same request inputs PLUS the
+# data watermark, so the watermark remains the one invalidation contract:
+# a shared entry is only ever served for the exact watermark it was built
+# under, and the store's own TTL check uses the same TTL backstop as the
+# in-process cache. Every shared operation is fail-soft: Redis down, slow,
+# unconfigured, disabled, or an unserializable payload degrades to exactly
+# the pre-existing in-process behavior.
+#
+# Payloads are JSON-normalized on write with the app's canonical DB JSON
+# conversion (Decimal -> int/float, dates -> ISO strings, sets -> lists),
+# so a shared-served payload renders identically to a freshly computed one.
+
+_BREAKOUT_SHARED_NAMESPACES = {"board": "bob", "track": "botr"}
+
+
+def _breakout_payload_jsonable(payload: Dict) -> Optional[Dict]:
+    """JSON round-trip of a payload using the DB layer's canonical default
+    conversion, or None when the payload cannot be represented."""
+    try:
+        from dashboard_services.db import _json_default
+        return json.loads(json.dumps(payload, default=_json_default))
+    except Exception:
+        logger.debug("breakout_api: payload JSON normalization failed",
+                     exc_info=True)
+        return None
+
+
+def _breakout_shared_lookup(kind: str, key: Any,
+                            watermark: tuple) -> Optional[Dict]:
+    """Shared-store payload for (kind, key, watermark), or None on any miss.
+
+    The watermark is part of the store key, so a hit is by construction a
+    payload built under the caller's current watermark.
+    """
+    try:
+        from dashboard_services import player_details_store as _pd_store
+        shared = _pd_store.get_json(
+            _BREAKOUT_SHARED_NAMESPACES[kind], (key, watermark),
+            _breakout_cache_ttl_seconds())
+    except Exception:
+        logger.debug("breakout_api: shared payload read failed",
+                     exc_info=True)
+        return None
+    if shared is None:
+        return None
+    payload = shared.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def _breakout_shared_store(kind: str, key: Any, watermark: tuple,
+                           payload: Dict) -> None:
+    """Best-effort shared-store write of a freshly computed payload."""
+    jsonable = _breakout_payload_jsonable(payload)
+    if jsonable is None:
+        return
+    try:
+        from dashboard_services import player_details_store as _pd_store
+        _pd_store.set_json(
+            _BREAKOUT_SHARED_NAMESPACES[kind], (key, watermark), jsonable,
+            time.time(), int(_breakout_cache_ttl_seconds()))
+    except Exception:
+        logger.debug("breakout_api: shared payload write failed",
+                     exc_info=True)
+
+
+def warm_breakout_payload_caches(season: Optional[int] = None) -> None:
+    """Compute the default board + track record so their payloads land in
+    the in-process and shared caches before the first page view.
+
+    Called by the weekly runner right after a snapshot is published (the
+    one moment the data is known to have moved). Fail-soft: warming must
+    never fail the run that published the snapshot.
+    """
+    try:
+        get_breakout_board_candidates(season)
+    except Exception:
+        logger.warning("breakout_api: board warm failed", exc_info=True)
+    try:
+        get_breakout_track_record(season)
+    except Exception:
+        logger.warning("breakout_api: track record warm failed",
+                       exc_info=True)
+
+
 def _compute_breakout_board_candidates(
     requested_season: Optional[int] = None,
     min_score: float = BREAKOUT_BOARD_MIN_SCORE,
@@ -1636,9 +1732,14 @@ def get_breakout_board_candidates(
     cached = _breakout_cache_lookup(_breakout_board_cache, key, watermark)
     if cached is not None:
         return cached
+    shared = _breakout_shared_lookup("board", key, watermark)
+    if shared is not None:
+        _breakout_cache_store(_breakout_board_cache, key, watermark, shared)
+        return shared
     payload = _compute_breakout_board_candidates(
         requested_season, min_score, limit, week)
     _breakout_cache_store(_breakout_board_cache, key, watermark, payload)
+    _breakout_shared_store("board", key, watermark, payload)
     return payload
 
 
@@ -2716,9 +2817,15 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
         _breakout_track_record_cache, season, watermark)
     if cached is not None:
         return cached
+    shared = _breakout_shared_lookup("track", season, watermark)
+    if shared is not None:
+        _breakout_cache_store(
+            _breakout_track_record_cache, season, watermark, shared)
+        return shared
     payload = _compute_breakout_track_record(requested_season)
     _breakout_cache_store(
         _breakout_track_record_cache, season, watermark, payload)
+    _breakout_shared_store("track", season, watermark, payload)
     return payload
 
 

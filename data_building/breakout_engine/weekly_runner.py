@@ -674,6 +674,15 @@ def run_weekly_breakout(
                    coverage=coverage, baseline_coverage=coverage_detail,
                    score_distribution=distribution,
                    classifications=_class_counts(results), pipeline_telemetry=telemetry)
+    # Warm the board + track-record payload caches (in-process here, shared
+    # across web workers via Redis) while the publishing process is already
+    # hot, so the first page view after a new snapshot does not pay the
+    # multi-second cold build. Fail-soft: warming never fails the run.
+    try:
+        from dashboard_services.breakout_api import warm_breakout_payload_caches
+        warm_breakout_payload_caches(season)
+    except Exception:
+        print("[weekly_breakout] payload cache warm skipped (non-fatal)")
     _log_summary(summary, context)
     return summary
 
