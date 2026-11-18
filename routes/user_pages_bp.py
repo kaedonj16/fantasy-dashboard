@@ -4065,6 +4065,90 @@ def _finalized_fantasy_week(ctx: dict, roster_id: str, requested_week: int,
         return None
 
 
+def _portfolio_week_receipts(platform, resolved_league_id, season, week, ctx,
+                             viewer_rid, current_leg=None):
+    """Current-week {you, opp} slice for the My Leagues proj tile.
+
+    The summary tile is "This week (proj)": it must only ever count the
+    CURRENT NFL week. On the Tuesday rollover the card band deliberately
+    keeps showing last week's final (see api_portfolio_matchup), so the
+    endpoint attaches this separately-built current-week slice as the
+    payload's ``receipts`` and the client feeds the tile from it instead.
+    Mirrors the endpoint's own scoring for one week (same live build,
+    same raw-file projection backfill, same finalized rule). Returns
+    None when the week's matchup is not buildable yet, so the caller
+    omits the slice and the tile simply gets no row for this league.
+    """
+    try:
+        _live = _build_live_matchups(
+            platform, resolved_league_id, season, week, ctx)
+    except Exception:
+        logger.debug("[portfolio-matchup] receipts build failed", exc_info=True)
+        return None
+    if _live is None:
+        return None
+    matchups, status_by_pid, proj_map = _live
+    you = opp = None
+    for m in matchups:
+        left = m.get("left") or {}
+        right = m.get("right") or {}
+        if str(left.get("roster_id") or "") == viewer_rid:
+            you, opp = left, right
+            break
+        if str(right.get("roster_id") or "") == viewer_rid:
+            you, opp = right, left
+            break
+    if not you or not (opp and opp.get("roster_id")):
+        return None
+    from dashboard_services.matchups import (
+        _proj_value_for_pid, team_live_totals,
+    )
+    scoring_settings = ctx.get("raw_scoring_settings") or {}
+    try:
+        from utils.utils import load_week_projection
+        raw_week_map = load_week_projection(int(season), int(week)) or {}
+    except Exception:
+        raw_week_map = {}
+    if raw_week_map:
+        proj_map = dict(proj_map)  # never mutate the TTL-cached bundle
+        for _team in (you, opp):
+            for _p in ((_team or {}).get("starters") or []):
+                if not _p:
+                    continue  # empty slot placeholder
+                _pid = _p.get("pid")
+                if _pid is None or str(_pid) in proj_map or _pid in proj_map:
+                    continue
+                _val = _proj_value_for_pid(
+                    proj_map, _pid, raw_week_map=raw_week_map,
+                    scoring_settings=scoring_settings, pos=_p.get("pos") or "",
+                )
+                if _val:
+                    proj_map[str(_pid)] = _val
+    fantasy_final = _finalized_fantasy_week(
+        ctx, viewer_rid, week, current_leg=current_leg) == week
+
+    def _side(team):
+        actual, proj = team_live_totals(team, status_by_pid, proj_map)
+        if fantasy_final and isinstance(team.get("pts_total"), (int, float)):
+            actual = float(team["pts_total"])
+        return {
+            "name": team.get("name") or "",
+            "score": round(float(actual or 0.0), 2 if fantasy_final else 1),
+            "proj": round(float(proj or 0.0), 1),
+        }
+
+    pids = [p.get("pid") for p in (you.get("starters") or []) if p]
+    pids += [p.get("pid") for p in (opp.get("starters") or []) if p]
+    status = "final" if fantasy_final else _matchup_status_label(
+        status_by_pid, pids)
+    return {
+        "week": week,
+        "status": status,
+        "you": _side(you),
+        "opp": _side(opp),
+    }
+
+
 def _compute_live_matchups(key, platform, resolved_league_id, season, week, ctx):
     """Compute the live pieces for one league/week and store them in the cache.
 
@@ -4596,6 +4680,10 @@ def api_portfolio_matchup():
     # Some feeds advance nfl_state before the just-finished fantasy result has
     # cleared on Tuesday. Use that final only during the rollover window; later
     # in the week the card must move on to the scheduled/current matchup.
+    # The card BAND keeps that Tuesday final, but the summary proj tile is
+    # "This week (proj)" and must never count it: when the rewrite below
+    # fires, the current week's slice is attached as `receipts` at the end.
+    requested_week = week
     if finalized_week == week - 1 and today.weekday() == 1:
         week = finalized_week
 
@@ -4734,7 +4822,7 @@ def api_portfolio_matchup():
             matchup_result = "T"
         margin = round(abs(my_score - opp_score), 2)
 
-    return jsonify({
+    payload = {
         "live": True,
         "week": week,
         "status": status,
@@ -4743,7 +4831,18 @@ def api_portfolio_matchup():
         "win_prob": win_prob,
         "result": matchup_result,
         "margin": margin,
-    })
+    }
+    if week != requested_week:
+        # Tuesday rollover: the band above is last week's final, so attach
+        # the current week's slice for the proj tile (see the rewrite note
+        # at the top of this endpoint). No slice -> no tile row for this
+        # league, never a prior-week final counted as this week's proj.
+        _receipts = _portfolio_week_receipts(
+            platform, resolved_league_id, season, requested_week, ctx,
+            viewer_rid, current_leg=current_leg)
+        if _receipts is not None:
+            payload["receipts"] = _receipts
+    return jsonify(payload)
 
 
 @user_pages_bp.route("/api/matchup/league-scores")
