@@ -35654,30 +35654,56 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       if (!rows.length) {
         box.innerHTML = '<div class="pf-receipts-empty">Scores are still loading.</div>';
       } else {
+        // The big number is the projected final in every state, so the
+        // score columns never change meaning and the pill always matches
+        // it. Only a FINAL row graduates the actual score into the big
+        // slot (the projection is gone); live rows keep the projection
+        // big and sit the current points small underneath it.
+        function bigVals(r) {
+          return (r.status === 'final' && r.youScore != null && r.oppScore != null)
+            ? [Number(r.youScore), Number(r.oppScore)]
+            : [Number(r.youProj), Number(r.oppProj)];
+        }
         var totYou = 0, totOpp = 0, totOk = true;
         rows.forEach(function (r) {
-          var y = Number(r.youProj), o = Number(r.oppProj);
+          var bv = bigVals(r);
+          var y = bv[0], o = bv[1];
           if (!Number.isFinite(y) || !Number.isFinite(o)) { totOk = false; return; }
           totYou += y; totOpp += o;
         });
         var html = rows.map(function (r) {
-          var y = Number(r.youProj), o = Number(r.oppProj);
+          var isFinal = r.status === 'final' && r.youScore != null && r.oppScore != null;
+          var isLive = r.status === 'in' && r.youScore != null && r.oppScore != null;
+          var bv = bigVals(r);
+          var y = bv[0], o = bv[1];
           var d = y - o;
           var md = Math.round(d * 10) / 10;
           var margin = (md < 0 ? '-' : '+') + Math.abs(md).toFixed(1);
-          var mCls = r._tag === 'W' ? 'w' : r._tag === 'L' ? 'l' : 't';
-          var now = (r.status && r.status !== 'pre' && r.youScore != null)
-            ? '<span class="pf-rc-now">' + fmt1(r.youScore) + ' · ' + fmt1(r.oppScore) + '</span> '
+          // Final rows are graded on the actual score, not the projection;
+          // the tile count above stays projection-based for every row.
+          var tagStr = isFinal ? (d > 0 ? 'W' : d < 0 ? 'L' : 'T') : r._tag;
+          var mCls = tagStr === 'W' ? 'w' : tagStr === 'L' ? 'l' : 't';
+          var stateTag = isLive
+            ? '<span class="pf-rc-live"><span class="pf-rc-live-dot"></span>Live</span>'
+            : (isFinal ? '<span class="pf-rc-state">Final</span>' : '');
+          var live = isLive
+            ? '<span class="pf-rc-now pf-rc-y2">' + fmt1(r.youScore) + '</span>' +
+              '<span class="pf-rc-nsep">·</span>' +
+              '<span class="pf-rc-now pf-rc-o2">' + fmt1(r.oppScore) + '</span>'
             : '';
-          var tag = r._tag
-            ? '<span class="pf-rc-tag ' + (r._tag === 'W' ? 'w' : r._tag === 'L' ? 'l' : 't') + '">' + r._tag + '</span>'
+          var tag = tagStr
+            ? '<span class="pf-rc-tag ' + mCls + (isFinal ? ' solid' : '') + '" title="' +
+              (tagStr === 'Toss-up' ? 'Toss-up' : tagStr === 'T' ? 'Tied' : tagStr === 'W' ? 'Win' : 'Loss') + '">' +
+              (tagStr === 'Toss-up' ? 'T' : tagStr) + '</span>'
             : '';
-          return '<div class="pf-rc-row"><span class="pf-rc-main"><span class="pf-rc-lg">' + esc(r.name) + '</span>' +
-            '<span class="pf-rc-opp">vs ' + esc(r.opp) + '</span></span>' +
-            '<span class="pf-rc-right"><span class="pf-rc-proj">' +
-            '<span class="' + (y > o ? 'pf-rc-win' : '') + '">' + fmt1(r.youProj) + '</span> · ' +
-            '<span class="' + (o > y ? 'pf-rc-win' : '') + '">' + fmt1(r.oppProj) + '</span></span>' +
-            '<span>' + now + '<span class="pf-rc-margin ' + mCls + '">' + margin + '</span></span></span>' + tag + '</div>';
+          return '<div class="pf-rc-row' + (isLive ? ' is-live' : isFinal ? ' is-final' : '') + '"><span class="pf-rc-main"><span class="pf-rc-lg">' + esc(r.name) + '</span>' +
+            '<span class="pf-rc-opp">vs ' + esc(r.opp) + '</span>' + stateTag + '</span>' +
+            '<span class="pf-rc-right">' +
+            '<span class="pf-rc-big pf-rc-y1 ' + (y > o ? 'pf-rc-win' : '') + '">' + fmt1(y) + '</span>' +
+            '<span class="pf-rc-bsep">·</span>' +
+            '<span class="pf-rc-big pf-rc-o1 ' + (o > y ? 'pf-rc-win' : '') + '">' + fmt1(o) + '</span>' +
+            live +
+            '<span class="pf-rc-margin ' + mCls + '">' + margin + '</span></span>' + tag + '</div>';
         }).join('');
         if (totOk) {
           var net = totYou - totOpp;
@@ -35685,7 +35711,8 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
             return v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
           };
           html += '<div class="pf-rc-total">' + fmtT(totYou) + ' for · ' + fmtT(totOpp) +
-            ' against · net ' + (net < 0 ? '-' : '+') + fmtT(Math.abs(net)) + '</div>';
+            ' against · net ' + '<span class="pf-rc-net ' + (net < 0 ? 'l' : 'w') + '">' +
+            (net < 0 ? '-' : '+') + fmtT(Math.abs(net)) + '</span></div>';
         }
         box.innerHTML = html;
       }
