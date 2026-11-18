@@ -1165,17 +1165,20 @@ def build_rankings_hub_body(
 # Read-only snapshots of the same ROS compute that powers the /players ROS
 # mode (utils/ros_rankings.py): no separate numbers path. Defaults stated on
 # the page: full PPR scoring, 12-team 1QB replacement level for the overall
-# order. Position pages order by ROS total within the position.
+# order. Position pages order by the ROS factor model within the position.
 
 _ROS_ANALYSIS = {
     None: (
         "How rest-of-season rankings work",
         "<p>Rest-of-season rankings answer a different question than dynasty "
-        "values or weekly start/sit calls: who scores the most points from "
-        "now through Week 17? The board below is built from each player's "
-        "projected points in every remaining week, so a player with seven "
-        "games left can outrank a better per-game player who only has five. "
-        "That is why the board carries two numbers side by side: ROS PPG for "
+        "values or weekly start/sit calls: who helps your lineup most from "
+        "now through Week 17? The order is a weighted model, not a raw "
+        "points total: each player's rest-of-season projection per game "
+        "leads, with smaller inputs for expected games, his best games, "
+        "recent form, role trend, the remaining schedule, consistency, "
+        "and his offense. A better per-game player no longer sits below a "
+        "lesser one just because his bye is still ahead of him. The board "
+        "still carries two numbers side by side: ROS PPG for "
         "the per-game rate, and ROS Pts for the total your lineup actually "
         "banks. The Games column (Exp. Games) is expected games over the "
         "rest of the season: each player's remaining scheduled games "
@@ -1187,8 +1190,8 @@ _ROS_ANALYSIS = {
         "least five games played, and either their team's top option at the "
         "position or a workload that clears the position's volume bar. The "
         "Sched column is the strength of the remaining schedule (1 is the "
-        "softest run left); it is context, not a score input, because the "
-        "weekly projections already price the opponent in.</p>"
+        "softest run left); it feeds the order at a small weight, as "
+        "context the per-game projection does not fully carry.</p>"
     ),
     "QB": (
         "Rest-of-season QB rankings",
@@ -1198,21 +1201,21 @@ _ROS_ANALYSIS = {
         "Weekly quarterback projections are the noisiest on the board, and a "
         "passer's recent form carries real signal about his offense's shape "
         "that a projection alone smooths away.</p>"
-        "<p>Games left matter more here than anywhere else. A top-five "
-        "per-game quarterback whose bye is still ahead of him, or whose team "
-        "has a Week 17 rest risk, can be worth fewer total points than the "
-        "steady starter a tier below. Read the ROS Pts column as the "
-        "tiebreaker for every start/sit and trade call from here in.</p>"
+        "<p>Games left still matter, but they no longer decide the order "
+        "on their own: expected games is one input in the model, weighed "
+        "against the per-game blend, recent form, and the remaining "
+        "schedule. Read ROS PPG for the rate and ROS Pts for the banked "
+        "total when you make start/sit and trade calls from here in.</p>"
     ),
     "RB": (
         "Rest-of-season RB rankings",
-        "<p>Running back rest-of-season value is a volume bet. The board "
-        "runs on forward projections alone at this position, because a "
-        "back's projected workload already reflects his recent form, and "
-        "adding a form bonus on top double-counts the same signal. What "
-        "separates the top of the board is projected games: a workhorse "
-        "with seven games left laps a committee back with five, even at a "
-        "lower weekly rate.</p>"
+        "<p>Running back rest-of-season value is a volume bet. The "
+        "per-game rate at this position is the forward projection alone, "
+        "because a back's projected workload already reflects his recent "
+        "form. What separates the top of the board is that projection "
+        "first; expected games, role trend, and recent form adjust the "
+        "order around it, so a workhorse with seven games left no longer "
+        "laps a better back with five on games alone.</p>"
         "<p>The role gate does the quality control. A back needs his team's "
         "top rushing role or roughly twelve touches a game to appear here, "
         "so one-week injury fill-ins and goal-line vultures do not crowd "
@@ -1220,12 +1223,11 @@ _ROS_ANALYSIS = {
     ),
     "WR": (
         "Rest-of-season WR rankings",
-        "<p>Wide receiver is the deepest position on the board, which makes "
-        "the games-left column decisive: with this many startable receivers, "
-        "the edge goes to the target earners who still have their bye "
-        "behind them and a full slate ahead. The rankings run on forward "
-        "projections, which already bake in target share, matchup, and "
-        "recent form.</p>"
+        "<p>Wide receiver is the deepest position on the board. With this "
+        "many startable receivers, the order leans on the per-game "
+        "projection first, then expected games, target trend, and the "
+        "remaining schedule: a full slate ahead helps, but it no longer "
+        "buries the better receiver whose bye is still to come.</p>"
         "<p>Eligibility requires a real target diet: a team's top receiver, "
         "or about five and a half targets a game. That keeps the board "
         "honest about the difference between a receiver producing on "
@@ -1237,10 +1239,11 @@ _ROS_ANALYSIS = {
         "Rest-of-season TE rankings",
         "<p>Tight end is where rest-of-season totals and per-game rates "
         "diverge the most. The position is so thin past the first few names "
-        "that a mid-tier tight end with seven games left can be worth more "
-        "to your season than an elite one with five, and the value-over-"
-        "replacement gap between the top tier and the streaming pool is the "
-        "largest on the board.</p>"
+        "that the order has to weigh both: the model leads with the "
+        "per-game rate and lets expected games adjust it, so an elite rate "
+        "is not buried by a two-game edge in games left, and the value-"
+        "over-replacement gap between the top tier and the streaming pool "
+        "is the largest on the board.</p>"
         "<p>The gate is a target floor: a team's top tight end, or about "
         "five and a half targets a game. Touchdown-dependent names without "
         "the weekly volume do not make the board, because a scoring drought "
@@ -1278,7 +1281,8 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
     ``ros_payload`` is utils.ros_rankings.load_ros_map's output; player
     names / teams come from the model value table, the same rows the
     dynasty hub reads. Overall order: ROS value over replacement at
-    12-team 1QB defaults. Position order: ROS total within the position.
+    12-team 1QB defaults. Position order: the ROS factor model within
+    the position.
     """
     from dashboard_services.pages.player_page import slugify
 
@@ -1338,8 +1342,15 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         rows.sort(key=lambda r: (-r["_vor"], -float(r.get("ros_total") or 0),
                                  -float(r.get("ros_ppg") or 0), r["name"]))
     else:
-        rows.sort(key=lambda r: (-float(r.get("ros_total") or 0),
-                                 -float(r.get("ros_ppg") or 0), r["name"]))
+        # Position order is the factor model (ros_score, stamped by
+        # utils/ros_rankings.py) when the payload carries it; a payload
+        # without scores falls back to the old ROS-total order.
+        if any(r.get("ros_score") is not None for r in rows):
+            rows.sort(key=lambda r: (-float(r.get("ros_score") or 0),
+                                     -float(r.get("ros_ppg") or 0), r["name"]))
+        else:
+            rows.sort(key=lambda r: (-float(r.get("ros_total") or 0),
+                                     -float(r.get("ros_ppg") or 0), r["name"]))
 
     window_txt = (f"Weeks {start_week} to {end_week}" if start_week
                   else "the rest of the season")

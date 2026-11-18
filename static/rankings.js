@@ -474,11 +474,16 @@ function prSortBase(a, b, sortBy) {
   if (sortBy === 'ros_total') {
     // All-positions view: order by total value over replacement for the
     // active window (the spec's cross-position ROS ordering). A single
-    // position filter makes VOR a constant shift per game, so there the
-    // window total itself is the order (and matches ros_pos_rank).
+    // position filter in the full window orders by the factor model
+    // (ros_score, which is what ros_pos_rank ranks); the sub-windows
+    // keep the window total as their order.
     if (prScoringType === 'ros' && prPosFilters.size === 0) {
       var aV = prRosVor(a), bV = prRosVor(b);
       if (aV != null && bV != null) return aV - bV;
+    }
+    if (prScoringType === 'ros' && prRosWindow === 'all' && prPosFilters.size > 0) {
+      var aS = prRosVal(a, 'score'), bS = prRosVal(b, 'score');
+      if (aS != null && bS != null) return aS - bS;
     }
     var aRT = prRosVal(a, 'total'), bRT = prRosVal(b, 'total');
     return (aRT != null ? aRT : -1) - (bRT != null ? bRT : -1);
@@ -701,7 +706,7 @@ function prFuzzyScore(name, query) {
 // Field names per sub-window. The payload stamps all three windows from the
 // same weekly projections (utils/ros_rankings.py); the board only reads.
 var PR_ROS_WINDOWS = {
-  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         ptsLabel: 'ROS Pts',     ppgLabel: 'ROS PPG',     valueLabel: 'ROS Value',     totalLabel: 'ROS Total' },
+  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         score: 'ros_score', ptsLabel: 'ROS Pts',     ppgLabel: 'ROS PPG',     valueLabel: 'ROS Value',     totalLabel: 'ROS Total' },
   stretch:  { ppg: 'ros_stretch_ppg', total: 'ros_stretch_total', games: 'ros_stretch_games', rank: 'ros_stretch_pos_rank', ptsLabel: 'Stretch Pts', ppgLabel: 'Stretch PPG', valueLabel: 'Stretch Value', totalLabel: 'Stretch Total' },
   playoffs: { ppg: 'ros_playoff_ppg', total: 'ros_playoff_total', games: 'ros_playoff_games', rank: 'ros_playoff_pos_rank', ptsLabel: 'Playoff Pts', ppgLabel: 'Playoff PPG', valueLabel: 'Playoff Value', totalLabel: 'Playoff Total' },
 };
@@ -1970,12 +1975,15 @@ function prGetTier(p) {
       }
       return vtbl.length + 1;
     }
-    // Position views: tiers are computed from the ROS totals actually
-    // displayed (per window), never the dynasty thresholds: the scales
-    // differ by an order of magnitude and by games left.
-    tbl = prTierThresholdsRos[prRosWindow] || prTierThresholdsRos['all'] || [];
+    // Position views: tiers are computed from the same numbers the view
+    // orders by (per window), never the dynasty thresholds: the full
+    // window's thresholds are on the factor-model score, the
+    // sub-windows' on their totals. Each window reads only its own
+    // table now: the scales differ, so the old borrow of the 'all'
+    // table by a sub-window no longer holds.
+    tbl = prTierThresholdsRos[prRosWindow] || [];
     if (!tbl.length) return null;
-    const rv = prRosVal(p, 'total');
+    const rv = prRosWindow === 'all' ? prRosVal(p, 'score') : prRosVal(p, 'total');
     if (rv == null) return null;
     for (let i = 0; i < tbl.length; i++) {
       if (rv >= tbl[i]) return i + 1;
@@ -2175,6 +2183,7 @@ return Promise.all([
         ros_games:        p.ros_games != null ? Number(p.ros_games) : null,
         ros_sched_rank:   p.ros_sched_rank != null ? Number(p.ros_sched_rank) : null,
         ros_pos_rank:     p.ros_pos_rank != null ? Number(p.ros_pos_rank) : null,
+        ros_score:        p.ros_score != null ? Number(p.ros_score) : null,
         ros_stretch_ppg:   p.ros_stretch_ppg != null ? Number(p.ros_stretch_ppg) : null,
         ros_stretch_total: p.ros_stretch_total != null ? Number(p.ros_stretch_total) : null,
         ros_stretch_games: p.ros_stretch_games != null ? Number(p.ros_stretch_games) : null,

@@ -3,8 +3,9 @@
 Covers the ROS compute (utils/ros_rankings.py): the backtested
 position-aware formula (projection-only for RB/WR/TE, 40/30/30 with
 form shrinkage for QB), the eligibility gates, weeks-out / bye handling
-inside each window, per-window positional ranks, tier thresholds derived
-from the ROS totals displayed, the payload whitelist, the public
+inside each window, per-window positional ranks (the full window by the
+factor model, the sub-windows by total), tier thresholds derived from
+the numbers each window displays, the payload whitelist, the public
 /rest-of-season page bodies, the sitemap registration, and the
 rankings.js / players-shell mode wiring (static guards, the established
 style for this page).
@@ -16,15 +17,23 @@ import pytest
 pytest.importorskip("pandas")
 
 from utils.ros_rankings import (
+    ROS_MODEL_WEIGHTS,
     assign_ros_ranks,
     availability_rate,
+    ceiling_ppg,
     compute_player_ros,
     compute_ros_tier_thresholds,
     compute_ros_vor_tier_thresholds,
+    consistency_rate,
+    form_ppg,
     is_season_out,
     passes_role_gate,
+    player_model_factors,
     qb_ros_ppg,
+    role_share_series,
+    role_trend,
     ros_flex_replacement_ppgs,
+    ros_model_scores,
     ros_qb_replacement_ppg,
     ros_replacement_map,
     ros_vor_totals,
@@ -194,6 +203,144 @@ def test_assign_ros_ranks_per_window():
     assert "ros_playoff_pos_rank" not in pool["c"]
 
 
+# ── Factor model (full-window positional order) ─────────────────────────────
+
+def test_model_weights_are_the_locked_set():
+    assert ROS_MODEL_WEIGHTS == {
+        "ppg": 0.58, "ceiling": 0.08, "games": 0.09, "sched": 0.05,
+        "form": 0.08, "role": 0.07, "consistency": 0.03, "offense": 0.02,
+    }
+    assert sum(ROS_MODEL_WEIGHTS.values()) == pytest.approx(1.0)
+
+
+def test_form_ppg_last_four_played():
+    assert form_ppg([10.0, 20.0, 30.0, 40.0, 50.0]) == pytest.approx(35.0)
+    # Played games he scored 0.0 in count: they are real games.
+    assert form_ppg([0.0, 0.0]) == pytest.approx(0.0)
+    assert form_ppg([25.0]) is None
+    assert form_ppg([]) is None
+
+
+def test_ceiling_ppg_best_three():
+    assert ceiling_ppg([5.0, 30.0, 10.0, 25.0]) == pytest.approx(
+        (30.0 + 25.0 + 10.0) / 3)
+    assert ceiling_ppg([10.0, 20.0]) is None
+
+
+def test_consistency_rate_floors():
+    assert consistency_rate([12.0, 8.0, 20.0, 4.0], "RB") == pytest.approx(0.5)
+    assert consistency_rate([16.0, 15.9], "QB") == pytest.approx(0.5)
+    assert consistency_rate([7.0, 6.9], "TE") == pytest.approx(0.5)
+    assert consistency_rate([], "WR") is None
+
+
+def test_role_trend_windows():
+    assert role_trend([10.0, 10.0, 10.0, 16.0, 16.0, 16.0]) == pytest.approx(6.0)
+    assert role_trend([10.0] * 5) is None  # prior window incomplete
+    assert role_trend([]) is None
+
+
+def test_role_share_series_bases():
+    usage = {1: (6.0, 2.0, 0.0), 2: (3.0, 4.0, 0.0)}
+    tgt = {("DET", 1): 30.0, ("DET", 2): 30.0}
+    rush = {("DET", 1): 20.0, ("DET", 2): 20.0}
+    # WR/TE: target share of the team's targets.
+    assert role_share_series("WR", [1, 2], usage, tgt, rush, "DET") == [
+        pytest.approx(20.0), pytest.approx(10.0)]
+    # RB: (rush attempts + targets) share of the team's combined volume.
+    assert role_share_series("RB", [1, 2], usage, tgt, rush, "DET") == [
+        pytest.approx(16.0), pytest.approx(14.0)]
+    # QB: raw pass attempts, no share.
+    qb_usage = {1: (0.0, 0.0, 33.0), 2: (0.0, 0.0, 41.0)}
+    assert role_share_series("QB", [1, 2], qb_usage, tgt, rush, "DET") == [33.0, 41.0]
+    # A week with no team denominator reads 0.0 rather than raising.
+    assert role_share_series("WR", [3], usage, tgt, rush, "DET") == [0.0]
+
+
+def test_player_model_factors_assembly():
+    fac = player_model_factors(
+        "WR", ppg=18.0, games=5.5, sched_rank=4,
+        game_points={1: 10.0, 2: 20.0, 3: 30.0, 4: 12.0, 5: 22.0, 6: 26.0},
+        role_series=[20.0, 20.0, 20.0, 26.0, 26.0, 26.0],
+        offense=27.5)
+    assert fac["ppg"] == 18.0 and fac["games"] == 5.5
+    assert fac["sched"] == -4.0  # inverted: softer slate, larger number
+    assert fac["form"] == pytest.approx(22.5)       # last 4: 30, 12, 22, 26
+    assert fac["ceiling"] == pytest.approx(26.0)    # best 3: 30, 26, 22
+    assert fac["consistency"] == pytest.approx(1.0)
+    assert fac["role"] == pytest.approx(6.0)
+    assert fac["offense"] == 27.5
+
+
+def test_model_order_beats_total_order():
+    # The case that killed the total order: "volume" owns the bigger
+    # total on expected games alone; "rate" is the better per-game
+    # player with two fewer games. The factor model ranks rate first.
+    factors = {
+        "rate": {"ppg": 20.0, "ceiling": 30.0, "games": 5.0, "sched": -10.0,
+                 "form": 21.0, "role": 2.0, "consistency": 0.8,
+                 "offense": 25.0},
+        "volume": {"ppg": 17.0, "ceiling": 24.0, "games": 7.0,
+                   "sched": -12.0, "form": 16.0, "role": 0.0,
+                   "consistency": 0.7, "offense": 24.0},
+        "third": {"ppg": 12.0, "ceiling": 18.0, "games": 6.0,
+                  "sched": -20.0, "form": 11.0, "role": -2.0,
+                  "consistency": 0.5, "offense": 20.0},
+    }
+    scores = ros_model_scores(factors)
+    assert scores["rate"] > scores["volume"] > scores["third"]
+
+
+def test_model_missing_factor_is_neutral():
+    base = {"ppg": 15.0, "ceiling": 22.0, "games": 6.0, "sched": -15.0,
+            "form": 15.0, "consistency": 0.6, "offense": 22.0}
+    factors = {
+        "hot_role": {**base, "role": 6.0},
+        "no_role": {**base, "role": None},
+        "cold_role": {**base, "role": -6.0},
+    }
+    scores = ros_model_scores(factors)
+    assert scores["hot_role"] > scores["no_role"] > scores["cold_role"]
+
+
+def test_assign_ros_ranks_model_order_full_window_only():
+    pool = {
+        "a": {"ros_total": 100.0, "ros_ppg": 20.0,
+              "ros_playoff_total": 30.0, "ros_playoff_ppg": 15.0},
+        "b": {"ros_total": 120.0, "ros_ppg": 18.0,
+              "ros_playoff_total": 40.0, "ros_playoff_ppg": 20.0},
+    }
+    pos = {"a": "RB", "b": "RB"}
+    assign_ros_ranks(pool, pos, model_scores={"a": 0.9, "b": 0.4})
+    # Full window follows the model, not b's bigger total; score stamped.
+    assert pool["a"]["ros_pos_rank"] == 1
+    assert pool["a"]["ros_score"] == 0.9
+    assert pool["b"]["ros_pos_rank"] == 2
+    # Sub-windows keep the total-points order, untouched by the model.
+    assert pool["b"]["ros_playoff_pos_rank"] == 1
+    assert "ros_playoff_score" not in pool["b"]
+
+
+def test_tier_thresholds_all_window_uses_scores():
+    pool, pos = {}, {}
+    for i in range(60):
+        pid = str(i)
+        total = 200.0 - i * 3.0
+        pool[pid] = {"ros_total": total, "ros_ppg": total / 7,
+                     "ros_score": 2.0 - i * 0.03,
+                     "ros_stretch_total": total * 0.6,
+                     "ros_stretch_ppg": total / 7,
+                     "ros_playoff_total": total * 0.4,
+                     "ros_playoff_ppg": total / 7}
+        pos[pid] = "RB" if i % 2 == 0 else "WR"
+    out = compute_ros_tier_thresholds(pool, pos)
+    # Full-window thresholds live on the score scale (max score 2.0),
+    # not the 200-point total scale the sub-windows still use.
+    assert out["all"] and out["all"] == sorted(out["all"], reverse=True)
+    assert max(out["all"]) <= 2.0
+    assert max(out["stretch"]) > 2.0
+
+
 def test_tier_thresholds_come_from_ros_totals():
     pool, pos = {}, {}
     for i in range(60):
@@ -359,7 +506,7 @@ def test_slim_payload_keeps_ros_fields_and_blocks():
     payload = {
         "players": [{"id": "1", "name": "X", "position": "RB",
                      "ros_ppg": 20.0, "ros_total": 120.0, "ros_games": 6,
-                     "ros_sched_rank": 3, "ros_pos_rank": 2,
+                     "ros_sched_rank": 3, "ros_pos_rank": 2, "ros_score": 1.25,
                      "ros_stretch_total": 80.0, "ros_playoff_total": 40.0,
                      "internal_only": 1}],
         "ros_window": {"start_week": 11, "end_week": 17},
@@ -368,6 +515,7 @@ def test_slim_payload_keeps_ros_fields_and_blocks():
     out = slim_rankings_payload(payload)
     row = out["players"][0]
     assert row["ros_total"] == 120.0 and row["ros_sched_rank"] == 3
+    assert row["ros_score"] == 1.25
     assert row["ros_stretch_total"] == 80.0 and row["ros_playoff_total"] == 40.0
     assert "internal_only" not in row
     assert out["ros_window"] == {"start_week": 11, "end_week": 17}
@@ -406,7 +554,9 @@ def _fake_ros_payload():
              "updated": "November 09, 2026"}, table)
 
 
-def test_public_position_page_orders_by_ros_total():
+def test_public_position_page_orders_by_ros_total_without_scores():
+    # Fallback: a payload carrying no factor-model scores keeps the old
+    # ROS-total order (the live payload always carries scores).
     from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
 
     payload, table = _fake_ros_payload()
@@ -415,6 +565,17 @@ def test_public_position_page_orders_by_ros_total():
     assert "Quarterback One" not in body
     assert "Updated November 09, 2026" in body or "updated November 09, 2026" in body
     assert "Full PPR" in body
+
+
+def test_public_position_page_orders_by_model_score():
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+
+    payload, table = _fake_ros_payload()
+    # Back Two owns the smaller total but the better model score.
+    payload["players"]["rb1"]["ros_score"] = 0.4
+    payload["players"]["rb2"]["ros_score"] = 1.1
+    body = build_ros_rankings_body(payload, table, position="RB")
+    assert body.index("Back Two") < body.index("Back One")
 
 
 def test_public_overall_page_discounts_qb1_in_1qb():
@@ -510,7 +671,8 @@ def test_public_overall_page_applies_forward_floor(monkeypatch):
 
 def test_public_position_pages_ignore_forward_floor(monkeypatch):
     # The floor is an overall-board rule: position pages keep the full
-    # eligible pool in ROS-total order, identical to before the floor.
+    # eligible pool (this fixture carries no model scores, so the
+    # fallback ROS-total order applies), identical to before the floor.
     from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
 
     _pin_replacement(monkeypatch)
@@ -605,6 +767,12 @@ def test_rankings_js_ros_mode():
     assert "'Rest of Season'" in js
     assert "prTierThresholdsRos" in js
     assert "ros_stretch_total" in js and "ros_playoff_total" in js
+    # The full-window position views order and tier by the factor model:
+    # the window config carries the score field, the sort comparator and
+    # the tier getter both read it.
+    assert "score: 'ros_score'" in js
+    assert "prRosVal(a, 'score')" in js
+    assert "prRosVal(p, 'score')" in js
     # League Size stays visible in ROS mode (only redraft hides it).
     assert "type === 'redraft' ? 'none' : ''" in js
 

@@ -325,6 +325,7 @@ RANKINGS_PLAYER_KEYS = (
     "ppg_rank", "total_pts_rank", "ppg_ovr_rank", "total_pts_ovr_rank",
     "ppg_season",
     "ros_ppg", "ros_total", "ros_games", "ros_sched_rank", "ros_pos_rank",
+    "ros_score",
     "ros_stretch_ppg", "ros_stretch_total", "ros_stretch_games",
     "ros_stretch_pos_rank",
     "ros_playoff_ppg", "ros_playoff_total", "ros_playoff_games",
