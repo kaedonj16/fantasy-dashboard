@@ -42033,6 +42033,18 @@ def api_trade_database():
             if a["asset_type"] == "player":
                 pid = a["player_id"]
                 info = players_map.get(pid) or {}
+                if not info:
+                    # Sleeper keys team defenses by team abbreviation
+                    # (player_id "CLE", "PIT", ...) and the players index
+                    # carries no DEF entries, so a traded defense would
+                    # render as the raw id with a "?" position. Synthesize
+                    # the defense row from the id itself.
+                    _def_team = canon_team(pid) or ""
+                    if _def_team and get_team_full_name(_def_team) != _def_team:
+                        return {"type": "player", "player_id": pid,
+                                "name": get_team_full_name(_def_team),
+                                "position": "DEF",
+                                "team": _def_team}
                 return {"type": "player", "player_id": pid,
                         "name": info.get("name") or pid,
                         "position": info.get("pos") or "?",
