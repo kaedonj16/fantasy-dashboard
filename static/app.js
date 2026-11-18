@@ -35298,14 +35298,22 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     var matchupOK = slot ? renderMatchup(slot, payload.matchup || (payload.pending ? { pending: true } : { failed: true })) : true;
     // Feed the summary receipts panel (v25): each hydrated card contributes
     // its projected final; the panel + projected tile render from these.
-    if (payload.matchup && payload.matchup.you && payload.matchup.opp && window.__pfReceiptPush) {
+    // The tile is "This week (proj)", so it only ever counts the CURRENT
+    // NFL week: on the Tuesday rollover the card band deliberately keeps
+    // showing last week's final, and the server attaches that week's
+    // slice as `receipts` for the tile instead. Any payload whose week
+    // is not the board week is never counted here.
+    var _rcSrc = payload.matchup && (payload.matchup.receipts || payload.matchup);
+    var _boardWk = Number(window.__pfBoardWeek || 0);
+    if (_rcSrc && _rcSrc.you && _rcSrc.opp && window.__pfReceiptPush
+        && (!_boardWk || !_rcSrc.week || Number(_rcSrc.week) === _boardWk)) {
       window.__pfReceiptPush({
         key: card.dataset.platform + '|' + card.dataset.leagueId + '|' + card.dataset.season,
         name: (payload.summary && payload.summary.name) || card.dataset.leagueId || '',
-        opp: payload.matchup.opp.name || '',
-        status: payload.matchup.status || 'pre',
-        youScore: payload.matchup.you.score, oppScore: payload.matchup.opp.score,
-        youProj: payload.matchup.you.proj, oppProj: payload.matchup.opp.proj
+        opp: _rcSrc.opp.name || '',
+        status: _rcSrc.status || 'pre',
+        youScore: _rcSrc.you.score, oppScore: _rcSrc.opp.score,
+        youProj: _rcSrc.you.proj, oppProj: _rcSrc.opp.proj
       });
     }
     return { summary: summaryOK, matchup: matchupOK, pending: !!(payload.pending || payload.matchup && payload.matchup.pending) };

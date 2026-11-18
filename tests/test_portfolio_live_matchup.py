@@ -249,3 +249,61 @@ def test_matchup_endpoint_passes_current_leg():
     # (the same source service.py stamped the ctx with at build time).
     assert 'nfl_state.get("leg")' in fn
     assert "current_leg=current_leg" in fn
+
+
+def test_matchup_endpoint_attaches_current_week_receipts_on_tuesday_holdover():
+    """Regression (2026-11-17): the Tuesday rollover rewrites the card week
+    to last week's final, and the summary proj tile was fed from that same
+    payload -- so "This week (proj)" counted last week's finals. The band
+    keeps the Tuesday final (Kaedon's pick), but the endpoint must attach
+    the current week's slice as `receipts` whenever the rewrite fires."""
+    source = (ROOT / "routes" / "user_pages_bp.py").read_text()
+    fn = source.split("def api_portfolio_matchup")[1].split("\n@user_pages_bp.route")[0]
+    assert "requested_week = week" in fn
+    assert "if week != requested_week:" in fn
+    assert "_portfolio_week_receipts(" in fn
+    assert 'payload["receipts"] = _receipts' in fn
+    # The receipts build is for the REQUESTED (current) week, never the
+    # rewritten final week.
+    assert "season, requested_week, ctx" in fn
+
+
+def test_receipts_slice_builds_requested_week_projections(monkeypatch):
+    import routes.user_pages_bp as bp
+
+    matchups = [{
+        "left": {"roster_id": "9", "name": "You FC",
+                 "starters": [{"pid": "1", "pos": "QB"}]},
+        "right": {"roster_id": "4", "name": "Opp FC",
+                  "starters": [{"pid": "2", "pos": "RB"}]},
+    }]
+    monkeypatch.setattr(
+        bp, "_build_live_matchups",
+        lambda platform, lid, season, week, ctx: (
+            matchups, {}, {"1": 20.0, "2": 11.5}))
+    monkeypatch.setattr(
+        "utils.utils.load_week_projection", lambda season, week: {})
+
+    out = bp._portfolio_week_receipts(
+        "sleeper", "lg1", 2026, 11, {}, "9", current_leg=11)
+    assert out["week"] == 11
+    assert out["status"] == "pre"
+    assert out["you"] == {"name": "You FC", "score": 0.0, "proj": 20.0}
+    assert out["opp"] == {"name": "Opp FC", "score": 0.0, "proj": 11.5}
+    # No viewer matchup / pending build -> no slice (tile gets no row).
+    monkeypatch.setattr(
+        bp, "_build_live_matchups",
+        lambda platform, lid, season, week, ctx: None)
+    assert bp._portfolio_week_receipts(
+        "sleeper", "lg1", 2026, 11, {}, "9", current_leg=11) is None
+
+
+def test_proj_tile_never_counts_a_prior_week_final():
+    """The client feeds the proj tile from the `receipts` slice when the
+    server attached one, and gates every push on the board (current NFL)
+    week, so a prior week's final can never land in the tile."""
+    js = (ROOT / "static" / "app.js").read_text()
+    apply_fn = js.split("function applyCard(")[1].split("function requestCard(")[0]
+    assert "payload.matchup.receipts || payload.matchup" in apply_fn
+    assert "window.__pfBoardWeek" in apply_fn
+    assert "Number(_rcSrc.week) === _boardWk" in apply_fn
