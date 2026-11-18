@@ -35,7 +35,58 @@ def test_receipts_rows_stack_full_league_name_over_opponent():
 
 def test_receipts_rows_are_compact():
     row_rule = _css_rule(".pf-rc-row")
-    assert "min-height:46px" in row_rule
+    # Tightened ~11% in the approved states redesign (46px -> 41px).
+    assert "min-height:41px" in row_rule
+    assert "padding:4px 0" in row_rule
+
+
+def test_score_columns_are_fixed_width_and_tabular():
+    right_rule = _css_rule(".pf-rc-right")
+    assert "grid-template-columns:46px 10px 46px" in right_rule
+    big_rule = _css_rule(".pf-rc-big")
+    assert "tabular-nums" in big_rule
+
+
+def test_tossup_pill_is_a_compact_t_the_same_size_as_w_and_l():
+    js = _receipts_js()
+    # The wide "Toss-up" pill is gone: the tag renders a single T (the
+    # panel header still spells the band out) in the one fixed-size pill
+    # every tag shares, so no row's scores shift for a wider pill.
+    assert "tagStr === 'Toss-up' ? 'T' : tagStr" in js
+    tag_rule = _css_rule(".pf-rc-tag")
+    assert "width:30px" in tag_rule and "height:22px" in tag_rule
+
+
+def test_live_rows_keep_projection_big_with_current_points_underneath():
+    js = _receipts_js()
+    assert "r.status === 'in'" in js
+    assert "pf-rc-live" in js
+    # Current points render small in the same fixed columns (y2/o2 grid
+    # row) from the real delivered scores, never invented.
+    assert "pf-rc-now pf-rc-y2" in js and "fmt1(r.youScore)" in js
+    assert "pf-rc-now pf-rc-o2" in js and "fmt1(r.oppScore)" in js
+    # Phone widths used to hide the current-points line entirely.
+    assert ".pf-rc-now{display:none" not in APP_PY
+
+
+def test_final_rows_show_actual_score_and_solid_pill():
+    js = _receipts_js()
+    # bigVals graduates the actual score into the big slot only at final;
+    # every other state keeps the projected final there.
+    assert "r.status === 'final' && r.youScore != null" in js
+    assert "pf-rc-state" in js
+    assert "(isFinal ? ' solid' : '')" in js
+    tag_rule = _css_rule(".pf-rc-tag.w.solid")
+    assert "background:#15803d" in tag_rule
+
+
+def test_footer_net_is_the_bold_payoff():
+    js = _receipts_js()
+    assert "pf-rc-net" in js
+    net_rule = _css_rule(".pf-rc-net")
+    assert "font-weight:800" in net_rule
+    net_w_rule = _css_rule(".pf-rc-net.w")
+    assert "color:var(--win)" in net_w_rule
 
 
 def test_winning_projected_score_is_bold_and_margin_is_signed():
