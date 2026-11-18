@@ -2752,6 +2752,31 @@ def _compute_breakout_track_record(requested_season: Optional[int] = None) -> Di
             exc_info=True)
         _completed_weeks = []
     _current_week = board.get("as_of_week") if isinstance(board, dict) else None
+    # Maturity trim: only unmatured weeks' boards can contribute to the
+    # merged pool. Both consumers of the merge (_forecast_outlook and
+    # _still_tracking_by_week) count only candidates carrying a forecast,
+    # and forecasts exist only for unmatured calls: the forecast builder
+    # skips calls where weekly_grading.is_mature(call_week, through) is
+    # true, and a mature call's own forecast is None. A fully matured
+    # week's board therefore contributes zero, so loading it is pure
+    # cost (this loop was the track record's cold-build bottleneck).
+    # Mature-but-ungraded weeks stay visible via
+    # _mature_ungraded_tracking_rows below, which reads the completed
+    # weeks list, not the boards, so skipping them here changes nothing.
+    # Fail-safe: when the through week cannot be determined (None or the
+    # lookup raises), fall back to loading every week, exactly the old
+    # behavior, rather than risk altering the payload.
+    _wg_trim = None
+    _through_week = None
+    try:
+        from data_building.breakout_engine import weekly_grading as _wg_trim
+        _through_week = _wg_trim.default_through_week(season)
+    except Exception:
+        logger.warning(
+            "breakout track record: through-week lookup failed; "
+            "loading every completed week's board", exc_info=True)
+        _wg_trim = None
+        _through_week = None
     for _week_row in _completed_weeks:
         try:
             _week_int = int(_week_row.get("as_of_week"))
@@ -2760,6 +2785,12 @@ def _compute_breakout_track_record(requested_season: Optional[int] = None) -> Di
         if _current_week is not None:
             try:
                 if _week_int == int(_current_week):
+                    continue
+            except (TypeError, ValueError):
+                pass
+        if _through_week is not None and _wg_trim is not None:
+            try:
+                if _wg_trim.is_mature(_week_int, int(_through_week)):
                     continue
             except (TypeError, ValueError):
                 pass
