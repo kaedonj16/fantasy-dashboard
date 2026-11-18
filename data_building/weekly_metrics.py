@@ -318,14 +318,26 @@ def get_player_weekly_series(player_id: str, season: int) -> List[Dict[str, Any]
     return [dict(r) for r in rows]
 
 
-def get_weekly_series_by_player(season: int, through_week: int) -> Dict[str, List[Dict[str, Any]]]:
+def get_weekly_series_by_player(season: int, through_week: int, player_ids=None) -> Dict[str, List[Dict[str, Any]]]:
     """Load the raw scoring universe in one query, including unmatched IDs.
 
     Iterating the player index first made identity misses invisible and issued a
     query per player.  This raw-first shape is both faster and makes the first
     two pipeline stages auditable.
+
+    ``player_ids`` optionally scopes the load to those players only (same
+    rows, same order for the players kept); the default None keeps the
+    full-universe load grading and reconstruction rely on.
     """
     init_weekly_metrics_db()
+    scope_clause = ""
+    params: list = [int(season), int(through_week)]
+    if player_ids is not None:
+        ids = [str(pid) for pid in player_ids]
+        if not ids:
+            return {}
+        scope_clause = " AND player_id = ANY(%s)"
+        params.append(ids)
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -334,10 +346,10 @@ def get_weekly_series_by_player(season: int, through_week: int) -> Dict[str, Lis
                    rec_yards, rush_yards, pass_att, rec_tds, rush_tds, pass_tds,
                    rz_targets, rz_carries
             FROM player_weekly_metrics
-            WHERE season=%s AND week <= %s
+            WHERE season=%s AND week <= %s""" + scope_clause + """
             ORDER BY player_id, week
             """,
-            (int(season), int(through_week)),
+            tuple(params),
         ).fetchall()
     out: Dict[str, List[Dict[str, Any]]] = {}
     for raw in rows:

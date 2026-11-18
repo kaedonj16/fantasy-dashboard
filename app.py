@@ -4492,6 +4492,61 @@ def _games_scheduled_today(season, week) -> bool:
         return False
 
 
+# Cache for the Breakout page shell's two header lookups (latest breakout
+# season + last-updated stamp). Both move at most weekly, so they are
+# refreshed at most once per hour, same discipline as the nav caches below,
+# instead of two DB queries on every page load. Only a successful season
+# read is cached: a transient failure keeps the per-request fallback.
+_bo_page_meta_cache = {"ts": 0.0, "season": None, "last_updated": ""}
+
+
+def _bo_page_meta(league_season: int):
+    """(bo_season, last_updated_html) for the Breakout Engine page shell."""
+    import time
+    now = time.time()
+    if _bo_page_meta_cache["season"] is not None and \
+            now - _bo_page_meta_cache["ts"] < 3600:
+        return _bo_page_meta_cache["season"], _bo_page_meta_cache["last_updated"]
+    season_ok = False
+    try:
+        from dashboard_services.breakout_api import get_conn as _bo_conn
+        with _bo_conn() as _bc:
+            with _bc.cursor() as _bcur:
+                _bcur.execute("SELECT MAX(season) FROM breakout_opportunity_scores")
+                _bo_row = _bcur.fetchone()
+                # dict_row: MAX(season) comes back as {"max": ...}; the old
+                # _bo_row[0] fallback would KeyError on the empty-table case.
+                bo_season = int((_bo_row or {}).get("max") or league_season)
+                season_ok = True
+    except Exception:
+        bo_season = max(league_season, datetime.now().year)
+    # Last-updated timestamp for the breakout page header. The weekly runs
+    # table records when each Wednesday calculation finished.
+    _bo_last_updated = ""
+    try:
+        from dashboard_services.breakout_api import get_conn as _bo_conn2
+        with _bo_conn2() as _bc2:
+            with _bc2.cursor() as _bcur2:
+                _bcur2.execute(
+                    "SELECT MAX(completed_at) AS m FROM weekly_breakout_runs "
+                    "WHERE status = 'complete'"
+                )
+                _bo_ts = (_bcur2.fetchone() or {}).get("m")
+                if _bo_ts:
+                    _bo_last_updated = (
+                        f'<div style="font-size: 13px; color: var(--text-muted); '
+                        f'margin-top: 4px;">Last Updated: '
+                        f'{_bo_ts.strftime("%b %d, %Y")}</div>'
+                    )
+    except Exception:
+        pass
+    if season_ok:
+        _bo_page_meta_cache["ts"] = now
+        _bo_page_meta_cache["season"] = bo_season
+        _bo_page_meta_cache["last_updated"] = _bo_last_updated
+    return bo_season, _bo_last_updated
+
+
 # Cache for the "new breakouts" Wednesday check (nav badge). Refreshed at
 # most once per hour so the nav doesn't hit the DB on every page load.
 _breakouts_new_cache = {"ts": 0.0, "is_new": False}
@@ -22110,39 +22165,9 @@ def page_breakouts(platform: str, season: int, league_id: str):
     # Breakout predictions are always for the UPCOMING NFL season, not the
     # Sleeper league's season number (which lags by one year in the offseason).
     # Use the latest season for which breakout data actually exists in the DB,
-    # falling back to max(league_season, current_year).
-    try:
-        from dashboard_services.breakout_api import get_conn as _bo_conn
-        with _bo_conn() as _bc:
-            with _bc.cursor() as _bcur:
-                _bcur.execute("SELECT MAX(season) FROM breakout_opportunity_scores")
-                _bo_row = _bcur.fetchone()
-                # dict_row: MAX(season) comes back as {"max": ...}; the old
-                # _bo_row[0] fallback would KeyError on the empty-table case.
-                bo_season = int((_bo_row or {}).get("max") or season)
-    except Exception:
-        bo_season = max(season, datetime.now().year)
-
-    # Last-updated timestamp for the breakout page header. The weekly runs
-    # table records when each Wednesday calculation finished.
-    _bo_last_updated = ""
-    try:
-        from dashboard_services.breakout_api import get_conn as _bo_conn2
-        with _bo_conn2() as _bc2:
-            with _bc2.cursor() as _bcur2:
-                _bcur2.execute(
-                    "SELECT MAX(completed_at) AS m FROM weekly_breakout_runs "
-                    "WHERE status = 'complete'"
-                )
-                _bo_ts = (_bcur2.fetchone() or {}).get("m")
-                if _bo_ts:
-                    _bo_last_updated = (
-                        f'<div style="font-size: 13px; color: var(--text-muted); '
-                        f'margin-top: 4px;">Last Updated: '
-                        f'{_bo_ts.strftime("%b %d, %Y")}</div>'
-                    )
-    except Exception:
-        pass
+    # falling back to max(league_season, current_year). Both header lookups
+    # are served from the hourly _bo_page_meta cache, not the DB per load.
+    bo_season, _bo_last_updated = _bo_page_meta(season)
 
     body_html = f"""
     <div class="card central">
@@ -22221,6 +22246,19 @@ def page_breakouts(platform: str, season: int, league_id: str):
       var PAGE_SIZE = 12;
 
       var currentWeek = 'latest';
+      var boRequestedWeek = 'latest';
+      var boSidebarStarted = false;
+
+      // The sidebar (track record) is the expensive payload on this page;
+      // it starts only once the board itself has rendered (on idle when
+      // available), so it never competes with the players on first paint.
+      function _boMaybeStartSidebar() {{
+        if (boSidebarStarted) return;
+        boSidebarStarted = true;
+        var start = function () {{ loadBreakoutSidebar(); }};
+        if (window.requestIdleCallback) window.requestIdleCallback(start, {{ timeout: 2000 }});
+        else setTimeout(start, 0);
+      }}
 
       // Fetch breakout candidates (using new BreakoutEngine API).
       // Server selects the engine-specific floor: weekly watchlist calibration
@@ -22254,10 +22292,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
         }} else {{
           renderBreakouts();
         }}
+        _boMaybeStartSidebar();
       }}
 
       function loadBreakouts(weekValue) {{
         currentWeek = weekValue || 'latest';
+        boRequestedWeek = currentWeek;
         currentPage = 1;
         var loadingEl = document.getElementById('breakoutsLoading');
         if (loadingEl) {{
@@ -22274,6 +22314,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           .catch(err => {{
             console.error('Error loading breakouts:', err);
             document.getElementById('breakoutsLoading').innerHTML = '<div style="color: #ef4444;">Failed to load breakout candidates</div>';
+            _boMaybeStartSidebar();
           }});
       }}
 
@@ -22282,12 +22323,22 @@ def page_breakouts(platform: str, season: int, league_id: str):
         loadBreakouts(sel ? sel.value : 'latest');
       }}
 
+      // Candidates and the week list load IN PARALLEL: the board renders
+      // as soon as candidates land (the API's default is the latest week,
+      // the same week the selector defaults to), instead of waiting behind
+      // the weeks fetch as a serial waterfall.
+      loadBreakouts('latest');
+
       // Populate the week selector: Preseason (offseason board) plus every
       // completed weekly snapshot. Defaults to the latest available week.
+      // The weeks response only fills the selector and syncs its value; it
+      // refetches the board only if the board on screen is not the week
+      // the selector ends up showing.
       fetch('/api/breakout/weeks?season={bo_season}')
         .then(res => res.json())
         .then(function (data) {{
           var sel = document.getElementById('breakoutWeekSelect');
+          var latest = (data && data.latest_week != null) ? String(data.latest_week) : 'preseason';
           if (sel && data && Array.isArray(data.weeks)) {{
             sel.innerHTML = '';
             data.weeks.forEach(function (w) {{
@@ -22296,19 +22347,21 @@ def page_breakouts(platform: str, season: int, league_id: str):
               opt.textContent = w.label;
               sel.appendChild(opt);
             }});
-            var latest = data.latest_week != null ? String(data.latest_week) : 'preseason';
             sel.value = latest;
             if (window.initCustomSelects) window.initCustomSelects(sel.closest('div') || document);
           }}
-          var initWeek = (sel && sel.value) ? sel.value : 'latest';
-          sel.addEventListener('change', onBreakoutWeekChange);
-          loadBreakouts(initWeek);
+          if (sel) sel.addEventListener('change', onBreakoutWeekChange);
+          // 'latest' already serves exactly the selector's default week,
+          // so the normal path never refetches. Reload only when the
+          // in-flight board was requested for a different week.
+          if (boRequestedWeek !== 'latest' && String(boRequestedWeek) !== latest) {{
+            loadBreakouts(latest);
+          }}
         }})
         .catch(function (err) {{
           console.error('Error loading breakout weeks:', err);
           var sel = document.getElementById('breakoutWeekSelect');
           if (sel) sel.addEventListener('change', onBreakoutWeekChange);
-          loadBreakouts('latest');
         }});
 
       // Sidebar: track record (finished grades only), the live forecast
@@ -22629,7 +22682,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
             _boRailSet('boRailTrackRecord', '<div class="bo-rail-title">Track Record</div>' + msg);
           }});
       }}
-      loadBreakoutSidebar();
+      // Started by _boMaybeStartSidebar once the board has rendered.
 
       function filterBreakouts(position) {{
         currentFilter = position;
