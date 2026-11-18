@@ -78,9 +78,9 @@ def test_crawl_one_never_crawled_starts_at_week_zero():
 
     def fake_crawl(league_id, season, start_week=None, end_week=None):
         captured.update(start=start_week, end=end_week)
-        return 0
+        return 0, None
 
-    with patch.object(tc, "crawl_league", side_effect=fake_crawl):
+    with patch.object(tc, "crawl_league_detailed", side_effect=fake_crawl):
         tc._crawl_one(_row("a", last_crawled_week=None), end_week=18)
     assert captured == {"start": 0, "end": 18}
 
@@ -90,11 +90,14 @@ def test_crawl_one_incremental_and_override():
 
     def fake_crawl(league_id, season, start_week=None, end_week=None):
         captured.update(start=start_week, end=end_week)
-        return 0
+        return 0, None
 
-    with patch.object(tc, "crawl_league", side_effect=fake_crawl):
+    with patch.object(tc, "crawl_league_detailed", side_effect=fake_crawl):
         tc._crawl_one(_row("a", last_crawled_week=10), end_week=18)
-        assert captured["start"] == 11
+        # Refetches the last marked week (10), not 11: trades made later
+        # in an already-marked week must not be skipped. See
+        # test_trade_crawl_format_fix.py for the full regression set.
+        assert captured["start"] == 10
         tc._crawl_one(_row("a", last_crawled_week=10), end_week=18,
                       override_start_week=0)
         assert captured["start"] == 0
