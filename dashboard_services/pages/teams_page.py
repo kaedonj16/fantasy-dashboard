@@ -104,6 +104,26 @@ def _dw_hires_headshot(url, width=128):
     return f"https://a.espncdn.com/combiner/i?img={m.group(1)}&w={width}&scale=crop&cquality=100"
 
 
+def _dw_headshot_url(meta, width=128):
+    """Drawer headshot URL for one players_index entry.
+
+    Newer index entries (rookie classes) carry an espnID but no stored
+    espnHeadshot string, so reading espnHeadshot alone leaves rookies on
+    initials while veterans show photos. Build the canonical ESPN URL from
+    the espnID when the stored string is missing, exactly like
+    routes/players_bp.py and app.py's _stamp_espn_headshot, then upgrade it
+    through the combiner. Empty when neither field is present; the row's
+    onerror handler also covers an espnID ESPN has no photo for.
+    """
+    meta = meta or {}
+    raw = str(meta.get("espnHeadshot") or "").strip()
+    if not raw:
+        espn_id = str(meta.get("espnID") or meta.get("espn_id") or "").strip()
+        if espn_id:
+            raw = f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png"
+    return _dw_hires_headshot(raw, width)
+
+
 def build_teams_body(ctx: dict) -> str:
     """
     Teams page:
@@ -504,8 +524,7 @@ def build_teams_body(ctx: dict) -> str:
                 # (_hiResHeadshot); tapping a row opens the modal, so the photo
                 # must not visibly change. Omitted when unknown (initials show).
                 player_id = str(p.get("id", ""))
-                raw_hs = str((index.get(player_id) or {}).get("espnHeadshot") or "").strip()
-                hs_url = _dw_hires_headshot(raw_hs, 128)
+                hs_url = _dw_headshot_url(index.get(player_id), 128)
                 if hs_url:
                     # The initials sit under the photo as a loading/failure
                     # fallback only: onload hides them, because ESPN headshots
