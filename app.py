@@ -1984,6 +1984,14 @@ except Exception as e:
     logger.warning("[league-pages-bp] skipped: %s", e)
 
 try:
+    from routes.player_roles_bp import player_roles_bp
+
+    app.register_blueprint(player_roles_bp)
+    logger.info("[player-roles-bp] registered")
+except Exception as e:
+    logger.warning("[player-roles-bp] skipped: %s", e)
+
+try:
     from utils.ui_audit_fixture import install_ui_audit_hooks
 
     install_ui_audit_hooks()

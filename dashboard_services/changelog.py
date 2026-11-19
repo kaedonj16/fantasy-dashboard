@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-19",
+        "tag": "new",
+        "text": "Compare now reads roles, not just stats: every player gets a job title and role axes for his position, a target map showing where his targets (or throws) actually go by depth and side, a gap map for his carries by lane, a role timeline for how the job changed across the season, and the closest role matches across the league.",
+        "link": "/compare"
+    },
+    {
         "date": "2026-11-18",
         "tag": "new",
         "text": "The home page is rebuilt around your Sunday: the live values ticker now sits on top, the matchup, start/sit, ScoreZone, trade and Wrapped previews live in one tappable gallery, and connecting a league starts with one field. Paste a league link or type your Sleeper username and we find your platform and league for you, then you pick your team.",
