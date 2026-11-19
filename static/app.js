@@ -18502,7 +18502,7 @@ if (!platformBtns.length) return;
     if (homeAccountEntry) homeAccountEntry.hidden = connected || returning;
     if (returningHomeCta) returningHomeCta.hidden = !returning;
     if (homeConnectBack) homeConnectBack.hidden = state !== "connect" || (!window._hasAccount && !returningHomeCta);
-    if (homeCardTitle) homeCardTitle.textContent = connected ? "Your leagues" : returning ? "Welcome back" : "Get started";
+    if (homeCardTitle) homeCardTitle.textContent = connected ? "Your leagues" : returning ? "Welcome back" : "Load your league.";
     document.querySelector(".home-card")?.setAttribute("data-home-state", state);
   }
   window.setHomeCardState = setHomeCardState;
@@ -18618,6 +18618,20 @@ if (!platformBtns.length) return;
         }));
       };
       renderLeaguePage();
+      // Quick actions under the card jump into the first saved league's
+      // tools (Matchups hub, Start/Sit, ScoreZone, league dashboard).
+      const quick = document.getElementById("signedQuickActions");
+      if (quick) {
+        const first = leagues.find((league) => !league.needs_reconnect) || leagues[0];
+        if (first) {
+          const base = `/${encodeURIComponent(first.platform)}/${encodeURIComponent(first.season)}/${encodeURIComponent(first.league_id)}`;
+          const paths = { matchup: "/weekly", startsit: "/waivers", scorezone: "/scorezone", more: "/dashboard" };
+          quick.querySelectorAll("[data-quick]").forEach((link) => {
+            link.href = base + (paths[link.dataset.quick] || "/dashboard");
+          });
+          quick.hidden = false;
+        }
+      }
     }).catch(() => { signedInLeagueList.textContent = "Could not load saved leagues. Try again shortly."; });
     window.refreshHomeLeagues = loadSignedInLeagues;
     loadSignedInLeagues();
@@ -22151,7 +22165,7 @@ if (document.readyState === 'loading') {
 })();
 // [tooltip-positioner:end]
 
-// ── Guest landing rework: reveal, hero count-up, live demos ─────────────
+// ── Guest landing rework: reveal, hero count-up ────────────────────────
 // Defined before the @public-js:core-end marker so the guest bundle
 // (public.js) carries it. Everything is element-guarded: it only runs on
 // the guest landing, and if any piece is missing the page stays static.
@@ -22207,12 +22221,6 @@ if (document.readyState === 'loading') {
     requestAnimationFrame(step);
   }
 
-  // Live demos (pools rendered server-side from the site's own data).
-  let data = null;
-  try {
-    const raw = document.getElementById("ldDemoData");
-    if (raw) data = JSON.parse(raw.textContent || "{}");
-  } catch (e) { data = null; }
   // The lite shell scrolls inside body, so plain #homeCardTitle fragment
   // jumps never move the page, and a global mobile reset zeroes every
   // scroll-margin. Intercept the Connect CTAs and scroll with an explicit
@@ -22378,82 +22386,6 @@ if (document.readyState === 'loading') {
       if (step3TeamWraps.some((w) => w.style.display && w.style.display !== "none")) setStep3Label("team");
     });
     step3TeamWraps.forEach((w) => step3TeamObs.observe(w, { attributes: true, attributeFilter: ["style"] }));
-  }
-  const shuffle = (arr) => {
-    const a = (arr || []).slice();
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  };
-  function runDemo(ids, pool, label) {
-    const qEl = document.getElementById(ids.q), optsEl = document.getElementById(ids.opts);
-    const vEl = document.getElementById(ids.v), nEl = document.getElementById(ids.n);
-    if (!qEl || !optsEl || !vEl || !nEl) return;
-    if (!pool || !pool.length) {
-      const sec = qEl.closest(".ld-sec");
-      if (sec) sec.style.display = "none";
-      return;
-    }
-    const order = shuffle(pool);
-    let idx = 0, cur = null, locked = false;
-    function render() {
-      locked = false;
-      const pair = order[idx % order.length];
-      const flip = Math.random() < 0.5;
-      const disp = flip ? [pair.b, pair.a] : [pair.a, pair.b];
-      const winner = pair.pick === 1 ? pair.b : pair.a;
-      cur = { pair, disp, winSide: disp.indexOf(winner) };
-      const L = disp[0], R = disp[1];
-      qEl.textContent = pair.q;
-      vEl.hidden = true; vEl.className = "ld-demo-verdict"; vEl.innerHTML = "";
-      nEl.hidden = true;
-      optsEl.innerHTML = "";
-      [L, R].forEach((pl, side) => {
-        const b = document.createElement("button");
-        b.type = "button"; b.className = "ld-opt";
-        b.innerHTML = `<div class="nm"></div><div class="meta"></div><div class="pr"></div>`;
-        b.querySelector(".nm").textContent = pl.n;
-        b.querySelector(".meta").textContent = pl.m;
-        const pr = b.querySelector(".pr");
-        if (label === "value") pr.textContent = "?";
-        else pr.innerHTML = `${pl.pr}<span>PROJ PTS</span>`;
-        b.addEventListener("click", () => answer(side, b));
-        optsEl.appendChild(b);
-      });
-    }
-    function countVal(el, target) {
-      if (reduceMotion) { el.innerHTML = `${Math.round(target).toLocaleString()}<span>VALUE</span>`; return; }
-      const t0 = performance.now(), dur = 600;
-      const step = (now) => {
-        const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
-        el.innerHTML = `${Math.round(target * e).toLocaleString()}<span>VALUE</span>`;
-        if (p < 1) requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    }
-    function answer(side, btn) {
-      if (locked) return;
-      locked = true;
-      const right = side === cur.winSide;
-      const opts = Array.from(optsEl.children);
-      opts.forEach((o, i) => {
-        o.classList.toggle("pick", o === btn);
-        o.classList.toggle("dim", o !== btn);
-        if (label === "value") countVal(o.querySelector(".pr"), cur.disp[i].v);
-      });
-      vEl.className = `ld-demo-verdict ${right ? "win" : "lose"}`;
-      vEl.innerHTML = `<b>${right ? "Called it." : "Not quite."}</b> ${cur.pair.why}`;
-      vEl.hidden = false;
-      nEl.hidden = false;
-    }
-    nEl.addEventListener("click", () => { idx += 1; render(); });
-    render();
-  }
-  if (data) {
-    runDemo({ q: "ldSsQ", opts: "ldSsOpts", v: "ldSsVerdict", n: "ldSsNext" }, data.start_sit_pairs, "startsit");
-    runDemo({ q: "ldValQ", opts: "ldValOpts", v: "ldValVerdict", n: "ldValNext" }, data.value_pairs, "value");
   }
 })();
 
@@ -22928,6 +22860,221 @@ if (typeof window !== 'undefined') {
   }, { passive: true });
 })();
 /* br-ptr:end */
+
+
+// ── Home reimagine: preview gallery + paged smart connect ─────────────────
+// Gallery tabs switch which preview card is featured; the cards themselves
+// are static snapshots in the site's real component markup. The smart
+// connect page (Page 1) detects a platform from a pasted link or bare ID,
+// fills the EXISTING per-platform flow fields, and flips the card to Page 2
+// (the existing flow) instead of replacing any of its handlers.
+document.addEventListener("DOMContentLoaded", () => {
+  // Gallery
+  const gal = document.getElementById("homeGallery");
+  const CAPTIONS = {
+    matchup: 'Your matchup, rebuilt for your phone. <span>Live score, win chance, and the points you need.</span>',
+    scorezone: 'Every game that matters, in one live feed. <span>Your players, scored as it happens.</span>',
+    startsit: 'Close calls, settled with the matchup math. <span>Start and sit calls for your actual roster.</span>',
+    wrapped: 'Your season, wrapped and ready to share. <span>Best week, MVP, and the moments that made it.</span>',
+    trade: 'Trades graded before you send them. <span>Value, fit, and what it does to your playoff odds.</span>',
+  };
+  if (gal) {
+    const caption = document.getElementById("homeGalCaption");
+    gal.querySelectorAll("[data-gal-tab]").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const key = tab.getAttribute("data-gal-tab");
+        gal.querySelectorAll("[data-gal-tab]").forEach((t) => {
+          const on = t === tab;
+          t.classList.toggle("active", on);
+          t.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        gal.querySelectorAll("[data-gal-panel]").forEach((panel) => {
+          panel.hidden = panel.getAttribute("data-gal-panel") !== key;
+        });
+        if (caption && CAPTIONS[key]) caption.innerHTML = CAPTIONS[key];
+      });
+    });
+  }
+
+  // Wrapped deck rotation (the home tour deck cadence)
+  const deck = gal ? gal.querySelector("[data-ld-deck]") : null;
+  if (deck) {
+    const slides = Array.from(deck.querySelectorAll(".ld-slide"));
+    const dotsWrap = gal.querySelector("[data-ld-dots]");
+    const dots = dotsWrap ? Array.from(dotsWrap.querySelectorAll(".ld-pager-dot")) : [];
+    if (slides.length > 1) {
+      let cur = 0;
+      setInterval(() => {
+        slides[cur].classList.remove("is-active");
+        if (dots[cur]) dots[cur].classList.remove("is-active");
+        cur = (cur + 1) % slides.length;
+        slides[cur].classList.add("is-active");
+        if (dots[cur]) dots[cur].classList.add("is-active");
+      }, 3200);
+    }
+  }
+
+  // Signed-in order: testimonials sit below PRO (guests keep them above).
+  if (document.querySelector(".ld-main-row.is-signed")) {
+    const quote = document.querySelector(".home-testimonials");
+    const pro = document.querySelector("#homeProSignup");
+    if (quote && pro && pro.parentNode) pro.parentNode.insertBefore(quote, pro.nextSibling);
+  }
+
+  // Paged smart connect
+  const page1 = document.getElementById("connectPage1");
+  const page2 = document.getElementById("connectPage2");
+  const flow = document.getElementById("connectLeagueFlow");
+  if (!page1 || !page2 || !flow) return;
+  const smartInput = document.getElementById("smartLeagueInput");
+  const smartFind = document.getElementById("smartFindBtn");
+  const smartDetect = document.getElementById("smartDetect");
+  const smartDetectText = document.getElementById("smartDetectText");
+  const smartError = document.getElementById("smartError");
+  const chips = Array.from(document.querySelectorAll(".smart-plat-chip"));
+  const LABELS = { sleeper: "Sleeper", espn: "ESPN", yahoo: "Yahoo", mfl: "MFL", fleaflicker: "Fleaflicker" };
+  const HINTS = {
+    sleeper: "Paste your Sleeper league link, or type your Sleeper username",
+    espn: "Paste your ESPN league link, or type the league ID",
+    yahoo: "Paste your Yahoo league link, or type the league ID",
+    mfl: "Paste your MFL league link, or type the league ID",
+    fleaflicker: "Paste your Fleaflicker league link, or type the league ID",
+  };
+  let smartPlatform = "sleeper";
+
+  function showPage(n) {
+    page1.hidden = n !== 1;
+    page2.hidden = n !== 2;
+    flow.setAttribute("data-connect-page", String(n));
+  }
+  function setSmartPlatform(platform, focus) {
+    if (!LABELS[platform]) return;
+    smartPlatform = platform;
+    chips.forEach((c) => c.classList.toggle("active", c.getAttribute("data-smart-platform") === platform));
+    if (smartInput) smartInput.placeholder = HINTS[platform];
+    if (focus && smartInput) smartInput.focus({ preventScroll: true });
+  }
+  chips.forEach((chip) => chip.addEventListener("click", () => {
+    setSmartPlatform(chip.getAttribute("data-smart-platform"), true);
+    if (smartDetectText) smartDetectText.textContent = LABELS[smartPlatform] + " selected. Paste a link or ID above.";
+    if (smartDetect) smartDetect.hidden = false;
+  }));
+
+  function detectSmart(raw) {
+    const u = String(raw || "").trim();
+    if (!u) return null;
+    const sl = u.match(/sleeper\.(?:app|com)\/leagues\/(\d+)/i);
+    if (sl) return { platform: "sleeper", leagueId: sl[1], kind: "link" };
+    const parse = window.brParseLeagueUrl;
+    if (typeof parse === "function") {
+      for (const platform of Object.keys(LABELS)) {
+        const hit = parse(platform, u);
+        if (hit && hit.league_id) return { platform, leagueId: hit.league_id, season: hit.season || "", kind: "link" };
+      }
+    }
+    if (/^\d{5,}$/.test(u)) return { platform: smartPlatform, leagueId: u, kind: "id" };
+    if (smartPlatform === "sleeper" && /^[A-Za-z0-9_.-]+$/.test(u)) {
+      return { platform: "sleeper", username: u, kind: "username" };
+    }
+    return null;
+  }
+  function refreshDetect() {
+    const hit = detectSmart(smartInput ? smartInput.value : "");
+    if (hit && hit.kind === "link") {
+      if (smartDetectText) smartDetectText.innerHTML = LABELS[hit.platform] + ' league detected <span class="smart-detect-from">from your link</span>';
+      if (smartDetect) smartDetect.hidden = false;
+    } else if (hit && hit.kind === "id") {
+      if (smartDetectText) smartDetectText.textContent = LABELS[hit.platform] + " league ID";
+      if (smartDetect) smartDetect.hidden = false;
+    } else if (smartDetect) {
+      smartDetect.hidden = true;
+    }
+    return hit;
+  }
+  if (smartInput) smartInput.addEventListener("input", refreshDetect);
+
+  function fillExistingFlow(hit) {
+    const btn = document.querySelector('.platform-btn[data-platform="' + hit.platform + '"]');
+    if (btn) btn.click();
+    const setVal = (id, value) => {
+      const el = document.getElementById(id);
+      if (el && value) {
+        el.value = value;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    };
+    if (hit.kind === "username") {
+      setVal("username", hit.username);
+      return "username";
+    }
+    if (hit.platform === "sleeper") setVal("sleeperUrlInput", "https://sleeper.app/leagues/" + hit.leagueId);
+    if (hit.platform === "espn") { setVal("espnLeagueIdInput", hit.leagueId); setVal("espnUrlInput", "https://fantasy.espn.com/football/league?leagueId=" + hit.leagueId); }
+    if (hit.platform === "yahoo") { setVal("yahooLeagueIdInput", hit.leagueId); setVal("yahooUrlInput", "https://football.fantasysports.yahoo.com/f1/" + hit.leagueId); }
+    if (hit.platform === "mfl") { setVal("mflLeagueIdInput", hit.leagueId); if (hit.season) setVal("mflSeasonInput", hit.season); }
+    if (hit.platform === "fleaflicker") { setVal("fleaLeagueIdInput", hit.leagueId); setVal("fleaUrlInput", "https://www.fleaflicker.com/nfl/leagues/" + hit.leagueId); }
+    return "league";
+  }
+
+  if (smartFind) smartFind.addEventListener("click", () => {
+    const hit = refreshDetect();
+    if (!hit) {
+      if (smartError) {
+        smartError.textContent = "Paste a league link, a league ID, or your Sleeper username.";
+        smartError.hidden = false;
+      }
+      if (smartInput) smartInput.focus();
+      return;
+    }
+    if (smartError) smartError.hidden = true;
+    const mode = fillExistingFlow(hit);
+    showPage(2);
+    if (mode === "username") {
+      const lookup = document.getElementById("lookupBtn");
+      if (lookup) lookup.click();
+    }
+  });
+  if (smartInput) smartInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); if (smartFind) smartFind.click(); }
+  });
+  const pageBack = document.getElementById("connectPageBack");
+  if (pageBack) pageBack.addEventListener("click", () => {
+    showPage(1);
+    if (smartInput) smartInput.focus({ preventScroll: true });
+  });
+  // Signed-in "Connect another league" always restarts at the smart page.
+  const addLeague = document.getElementById("signedInAddLeague");
+  if (addLeague) addLeague.addEventListener("click", () => showPage(1));
+  // ESPN reconnect deep links land in the existing flow on Page 2.
+  document.querySelectorAll(".reconnect-home-espn").forEach((b) =>
+    b.addEventListener("click", () => showPage(2), true));
+  const espnErr = document.getElementById("espnError");
+  if (espnErr && espnErr.style.display === "block" && document.getElementById("espnLeagueIdInput")?.value) showPage(2);
+
+  // No height pin between the pages: the mock's Page 2 is compact, but
+  // the real Page 2 flow is tall, and pinning the flow to its height left
+  // a large empty void under Page 1. Each page takes its natural height.
+  showPage(1);
+
+  // Sticky mobile connect bar: visible only while neither the gallery nor
+  // the connect card is on screen.
+  const sticky = document.getElementById("homeStickyConnect");
+  const card = document.querySelector(".home-card");
+  if (sticky && "IntersectionObserver" in window) {
+    const seen = { gal: false, card: false };
+    const update = () => { sticky.hidden = seen.gal || seen.card; };
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.target === gal) seen.gal = en.isIntersecting;
+        if (en.target === card) seen.card = en.isIntersecting;
+      });
+      update();
+    }, { rootMargin: "-80px 0px 0px 0px" });
+    if (gal) io.observe(gal);
+    if (card) io.observe(card);
+    update();
+  }
+});
 
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 

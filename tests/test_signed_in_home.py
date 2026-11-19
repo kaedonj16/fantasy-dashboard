@@ -65,7 +65,8 @@ def test_saved_league_list_is_client_paginated_and_card_width_is_stable():
 
 def test_home_copy_touched_by_state_machine_has_no_em_dash():
     markup = (ROOT / "app.py").read_text()
-    home_form = markup[markup.index('FORM_BODY = """'):markup.index('<div class="home-content-wrapper">')]
+    _start = markup.index('FORM_BODY = """')
+    home_form = markup[_start:markup.index('\n"""\n', _start)]
     assert "—" not in home_form
     assert "&mdash;" not in home_form
 

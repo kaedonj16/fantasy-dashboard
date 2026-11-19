@@ -51,10 +51,14 @@ def test_landing_stacks_on_phones(sheet):
         assert rule in block, f"{sheet} lost its phone stacking rule: {rule}"
 
 
-# The signed-in home kept the old dark-card palette after the card went
-# white, so the greeting and league rows rendered white-on-white, and its
-# author display:flex beat the [hidden] attribute, so card states stacked
-# instead of switching. Pin the light re-skin and the hidden enforcement.
+# The connect card is the site's dark .home-card in every theme (the
+# reimagine mock's shell), so the signed-in contents keep their base
+# dark-card palette. A light re-skin once existed for a white card and
+# must not come back: on the dark card its near-white surfaces and navy
+# text are the wrong grammar, and the white-on-white hazard it fixed
+# cannot recur while the card surface itself is dark. The [hidden]
+# enforcement below still applies (author display:flex would otherwise
+# beat the attribute and stack the card states).
 SIGNED_IN_LIGHT_RULES = [
     'html:not([data-theme="dark"]) .home-card .signed-in-home-greeting { color: #64748b; }',
     'html:not([data-theme="dark"]) .home-card .signed-home-league { background: #f1f5f9; border-color: #e2e8f0; color: #122d4b; }',
@@ -67,10 +71,14 @@ SIGNED_IN_LIGHT_RULES = [
 
 
 @pytest.mark.parametrize("sheet", ["static/landing_lite.css", "static/dashboard.css"])
-def test_signed_in_home_readable_on_white_card(sheet):
+def test_signed_in_home_uses_dark_card_palette(sheet):
     css = (ROOT / sheet).read_text()
     for rule in SIGNED_IN_LIGHT_RULES:
-        assert rule in css, f"{sheet} lost its signed-in light rule: {rule}"
+        assert rule not in css, f"{sheet} regained its signed-in light rule: {rule}"
+    start = css.index(".signed-home-league {")
+    block = css[start:css.index("}", start)]
+    assert "background: rgba(255, 255, 255, .045)" in block
+    assert "color: #f8fafc" in block
 
 
 @pytest.mark.parametrize("sheet", ["static/landing_lite.css", "static/dashboard.css"])

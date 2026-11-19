@@ -35,15 +35,16 @@ def test_step3_subtitle_names_the_team_for_username_picks():
 
 
 def test_board_strip_labels_the_hardcoded_board_as_a_sample():
-    assert "hp-mb-strip" in APP_PY
-    # The hero board's rows are a hardcoded illustration, so the strip
-    # labels it a sample and must not wear the live week (the dynamic
-    # "Week {{ current_week }}" chip claimed it was this week's real
-    # matchup while 8 of its 10 opponent labels were wrong).
-    assert "Sample matchup" in APP_PY
+    # The reimagine's gallery board is the classic .hp-mb preview card
+    # (You/Opp, no strip): its rows are a hardcoded illustration, so it
+    # must not wear the live week (the dynamic "Week {{ current_week }}"
+    # chip claimed it was this week's real matchup while 8 of its 10
+    # opponent labels were wrong).
+    assert '<div class="hp-mb-team">You</div>' in APP_PY
+    assert "hp-mb-strip" not in APP_PY
     assert "This week&#x27;s matchup" not in APP_PY
     assert "Week {{ current_week }}" not in APP_PY
-    # The ScoreZone feature strip states no hardcoded game count either
-    # (it said "13 games" regardless of the actual slate size).
+    # No hardcoded game count anywhere either (the old ScoreZone feature
+    # strip said "13 games" regardless of the actual slate size; the
+    # strip itself was removed with the 2026-11-19 extras).
     assert "13 games" not in APP_PY
-    assert "Live scores" in APP_PY
