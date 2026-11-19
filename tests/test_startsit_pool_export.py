@@ -131,6 +131,10 @@ def export_env(monkeypatch):
     _fake_compute_start_score.seen = []
     monkeypatch.setattr(appmod, "get_players_index_global",
                         lambda: dict(FAKE_INDEX))
+    # Live injury statuses come from the Sleeper feed map; tests drive
+    # it through state["live_players"] (default: nobody designated).
+    monkeypatch.setattr(appmod, "get_players_global",
+                        lambda: dict(state.get("live_players") or {}))
     # Deterministic matchup ranks: DAL is the softest RB matchup here.
     monkeypatch.setattr(
         appmod, "_matchup_rank_table",
@@ -228,6 +232,36 @@ def test_export_passes_unified_inputs(export_env):
     assert seen[12.0]["def_rank"] == 4        # SF
     assert seen[12.0]["last4_ppg"] == 11.0
     assert seen[12.0]["played_games"] == 9
+
+
+def test_export_live_feed_status_tags_and_excludes(export_env):
+    """Regression (2026-11-19), export side: the slim players index has
+    no injury_status field and the bundles' batch-time status can be
+    blank too, so the live Sleeper feed map alone must tag a
+    Questionable player (row field + scorer input) and exclude an IR
+    player before ranking. Live, every export row shipped injury=""
+    and an IR back ranked RB34."""
+    import app as appmod
+
+    _calls, state = export_env
+    state["bundles"] = {
+        "1": _bundle("RB", 15.0),
+        "2": _bundle("RB", 14.0),
+        "3": _bundle("RB", 10.0),
+    }
+    state["live_players"] = {
+        "2": {"injury_status": "IR"},
+        "3": {"injury_status": "Questionable"},
+    }
+    out = appmod.build_start_sit_pool_export(2026, 10)
+    rb = out["RB"]
+    assert [r["pid"] for r in rb] == ["1", "3"]
+    assert rb[0]["injury"] == ""
+    assert rb[1]["injury"] == "Questionable"
+    seen = {s["proj_pts"]: s for s in _fake_compute_start_score.seen}
+    assert 14.0 not in seen  # the IR back is never even scored
+    assert seen[10.0]["injury_status"] == "Questionable"
+    assert seen[15.0]["injury_status"] == ""
 
 
 def test_export_empty_bundles_returns_none(export_env):
@@ -422,6 +456,9 @@ def parity_env(monkeypatch):
         lambda season, week, scoring, pids: dict(PARITY_BUNDLES))
     monkeypatch.setattr(appmod, "get_players_index_global",
                         lambda: dict(PARITY_INDEX))
+    # The parity index carries the live statuses by design; the Sleeper
+    # feed map stays empty unless a test overrides it.
+    monkeypatch.setattr(appmod, "get_players_global", lambda: {})
     monkeypatch.setattr(
         appmod, "_matchup_rank_table",
         lambda season, position, scoring_settings=None: (
@@ -458,3 +495,26 @@ def test_export_matches_page_pool_values(parity_env):
     # overlay row is scored on both.
     assert "3" not in exported and "3" not in pool["by_pid"]
     assert "6" in exported and "6" in pool["by_pid"]
+
+
+def test_live_feed_status_excludes_on_both_paths(parity_env, monkeypatch):
+    """Regression (2026-11-19), pool side: a live IR / Out designation
+    from the Sleeper feed map excludes the player from BOTH the export
+    and the page pool even when his bundle and index rows look healthy
+    (the production failure: the index simply has no injury_status
+    field, so the exclusion read "" for everyone)."""
+    import app as appmod
+
+    monkeypatch.setattr(appmod, "get_players_global", lambda: {
+        "1": {"injury_status": "IR"},
+        "2": {"injury_status": "Out"},
+    })
+    export = appmod.build_start_sit_pool_export(2026, 10)
+    exported = {row["pid"] for rows in export.values() for row in rows}
+    assert "1" not in exported and "2" not in exported
+
+    pool = appmod.start_score_pool_scores(2026, 10, {"rec": 1.0})
+    assert pool["kind"] == "score"
+    assert "1" not in pool["by_pid"] and "2" not in pool["by_pid"]
+    # Untouched rows behave as before: bundle-IR out, live-Q in.
+    assert "3" not in pool["by_pid"] and "6" in pool["by_pid"]

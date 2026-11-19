@@ -3603,6 +3603,34 @@ def get_players_index_global():
     return _PLAYERS_INDEX_GLOBAL
 
 
+def _live_injury_status_map() -> dict:
+    """{pid: injury_status} from the live Sleeper players feed.
+
+    The slim players index (cache/players_index.json) carries identity
+    only -- name / team / pos / provider ids -- and has never carried
+    injury_status, so every reader of ``meta.get("injury_status")`` on
+    that index silently saw "" (the start/sit pool shipped with no Q
+    tags and its IR / Out / PUP / NFI exclusion never fired: verified
+    live 2026-11-19, all 146 export rows blank, an IR running back
+    ranked RB34). The raw Sleeper players map behind
+    get_players_global() is the feed that actually carries
+    injury_status -- the same source the player modal and the injury
+    surfaces read. Returns {} when the feed is unavailable so callers
+    degrade to the bundle's batch-time status, never to a crash.
+    """
+    try:
+        players = get_players_global() or {}
+    except Exception:
+        return {}
+    out: dict = {}
+    for pid, meta in players.items():
+        if isinstance(meta, dict):
+            status = meta.get("injury_status")
+            if status:
+                out[str(pid)] = str(status)
+    return out
+
+
 _USAGE_TABLE_GLOBAL = None
 _USAGE_TABLE_GLOBAL_TS = 0
 _USAGE_TABLE_GLOBAL_TTL = 6 * 3600
@@ -3928,6 +3956,11 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 and time.monotonic() - _built_at < _SS_POOL_TTL_SEC):
             return cached
     pool: dict = {"kind": None, "by_pos": {}, "by_pid": {}}
+    # Live injury statuses from the Sleeper feed map: the slim players
+    # index has no injury_status field, so reading status from it (as
+    # this pool used to) silently disabled the exclusion below and
+    # every status overlay. See _live_injury_status_map.
+    live_status_map = _live_injury_status_map()
     # Primary: rebuild league-wide start scores from the daily bundles.
     # The for-scoring loader keeps the bundles' scoring-dependent fields
     # exact under the requested scoring, so a league whose scoring is not
@@ -3983,7 +4016,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 # / PUP / NFI players are removed before ranking and the
                 # pool backfills, instead of sitting at the bottom with a
                 # zeroed score. Live status wins over the batch-time one.
-                _live_status = (
+                _live_status = live_status_map.get(str(_pid)) or (
                     (index.get(str(_pid)) or {}).get("injury_status")
                     if isinstance(index.get(str(_pid)), dict) else None
                 )
@@ -4063,7 +4096,8 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 # Same pool exclusion as the bundle path: IR / Out / PUP /
                 # NFI never enter the ranked pool (feeds sometimes keep a
                 # stale projection line for them).
-                if _pool_excluded_fb(meta.get("injury_status")):
+                if _pool_excluded_fb(live_status_map.get(str(pid))
+                                     or meta.get("injury_status")):
                     continue
                 try:
                     pts = _pool_wpp(proj_map, pid, scoring_settings, pos)
@@ -4184,7 +4218,7 @@ def build_start_sit_pool_export(season, week):
     feeds the rating (2026-11-13 unification): the bundle's last-4-played
     PPG (base blend) and played-games count (form/usage shrinkage), the
     matchup-tiebreaker rank from the same _matchup_rank_table the page's
-    chips use, and the live players-index status overlaid on the
+    chips use, and the live Sleeper-feed status overlaid on the
     batch-time one (with the pool's IR / Out / PUP / NFI exclusion
     applied before ranking). Before this, the export omitted those
     inputs, so the boards published a different computation of the
@@ -4194,7 +4228,7 @@ def build_start_sit_pool_export(season, week):
     feeds the rating (2026-11-13 unification): the bundle's last-4-played
     PPG (base blend) and played-games count (form/usage shrinkage), the
     matchup-tiebreaker rank from the same _matchup_rank_table the page's
-    chips use, and the live players-index status overlaid on the
+    chips use, and the live Sleeper-feed status overlaid on the
     batch-time one (with the pool's IR / Out / PUP / NFI exclusion
     applied before ranking). Before this, the export omitted those
     inputs, so the boards published a different computation of the
@@ -4230,6 +4264,9 @@ def build_start_sit_pool_export(season, week):
 
     variant = variant_for_exact_scoring(dict(_SS_EXPORT_SCORING))
     index = get_players_index_global() or {}
+    # Live status comes from the Sleeper feed map, NOT the slim index
+    # (which has no injury_status field -- see _live_injury_status_map).
+    live_status = _live_injury_status_map()
     bundles = load_start_score_bundles(
         season, week, variant, list(index.keys())) or {}
     if not bundles:
@@ -4267,7 +4304,7 @@ def build_start_sit_pool_export(season, week):
         # NFI players are excluded before ranking (they backfill below
         # the pool instead of sitting at the bottom with a zeroed
         # score), as start_score_pool_scores does.
-        _live_status = (
+        _live_status = live_status.get(str(pid)) or (
             meta.get("injury_status") if isinstance(meta, dict) else None
         )
         _eff_status = _live_status or b.get("injury_status")
