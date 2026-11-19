@@ -2413,7 +2413,12 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             "role_reason": (_sr or {}).get("reason") if _sr else None,
         })
     _order = {"add": 0, "add_drop": 0, "cannot_evaluate": 1, None: 1, "stash": 2}
-    results.sort(key=lambda r: (_order.get(r.get("outcome"), 1), -float(r.get("score") or 0)))
+    # Deterministic tie-breaks (iteration 3): score ties must resolve
+    # identically on every load, never by input iteration order.
+    results.sort(key=lambda r: (
+        _order.get(r.get("outcome"), 1), -float(r.get("score") or 0),
+        -float(r.get("value") or 0), str(r.get("name") or ""),
+        str(r.get("player_id") or "")))
     if limit is not None:
         results = results[:max(0, int(limit))]
     return results
@@ -2448,6 +2453,112 @@ def weekly_maps_from_per_week_points(roster_pids, candidate_pid,
         pts_map[str(candidate_pid)] = max(0.0, float(cand_pts))
         weekly.append({"pts_map": pts_map, "covered": True, "bye": bye})
     return weekly
+
+
+def deterministic_candidate_order(candidates, score_fn) -> list:
+    """Order waiver candidates deterministically (iteration 3, item 6).
+
+    The Best Moves list sorted on pickup score alone: ties (common at
+    the shown-30 boundary, where many candidates share a rounded or
+    zero score component) resolved by whatever order the candidate
+    pool happened to be built in, so a player could appear in one
+    load and vanish from the next with no data change (the Mason
+    Taylor case). The full key is score, then model value, then name,
+    then player id: identical inputs always produce an identical
+    list, including at the cutoff boundary, regardless of the input
+    order. ``score_fn`` is called once per candidate.
+    """
+    scored = []
+    for c in candidates or []:
+        try:
+            score = float(score_fn(c) or 0.0)
+        except (TypeError, ValueError):
+            score = 0.0
+        scored.append((score, c))
+    scored.sort(key=lambda sc: (
+        -sc[0],
+        -float(sc[1].get("value") or 0.0),
+        str(sc[1].get("name") or ""),
+        str(sc[1].get("player_id") or sc[1].get("id") or ""),
+    ))
+    return [c for _s, c in scored]
+
+
+def effective_roster_positions(roster, roster_positions) -> list:
+    """Roster positions with the bench capacity the list may omit.
+
+    Some providers (Fleaflicker) build ``roster_positions`` from the
+    START group only: bench slots are dropped by design, so every
+    downstream "is the roster full?" check (len(players) >=
+    len(positions), the lineup solver's bench count) reads a full
+    roster as permanently full, and add moves get a drop attached
+    even with empty bench spots (iteration 3, item 3: the Jets D/ST
+    add arrived with "DROP J.J. McCarthy" on a roster with two open
+    bench slots). Those providers carry the bench on the roster
+    itself as ``bench_slots`` (empty slots are "0" placeholders), so
+    restore the capacity from there. Lists that already carry bench
+    entries (Sleeper shape) pass through unchanged.
+    """
+    rp = [str(s) for s in (roster_positions or [])]
+    if any(s.upper() in ("BN", "BENCH") for s in rp):
+        return rp
+    bench_slots = (roster or {}).get("bench_slots") or []
+    if bench_slots:
+        return rp + ["BN"] * len(bench_slots)
+    return rp
+
+
+def forward_coverage_protected_ids(roster_pids, positions_by_pid,
+                                   weekly_pts, roster_positions) -> set:
+    """Roster players a drop suggestion must never name (iteration 3).
+
+    A player is protected when, in ANY of the supplied future weeks,
+    he is one of the startable (projected > 0) players at his position
+    and removing him would drop that week's startable count at the
+    position below the league's dedicated starting requirement
+    (Superflex counts toward QB). This is the GM brief's coverage
+    rule applied to drop suggestions: the Nov 19 list suggested
+    dropping Drew Lock for a waiver QB, when Lock is the Week 12
+    starting QB once his bye passes. Pure; fail-soft to no protection
+    on unusable input.
+    """
+    try:
+        from utils.lineups import starter_need_counts
+        reqs = starter_need_counts(roster_positions, extra_depth=0)
+    except Exception:
+        return set()
+    pids = [str(p) for p in (roster_pids or [])]
+    pos_of = {str(k): str(v or "").upper()
+              for k, v in (positions_by_pid or {}).items()}
+    protected: set = set()
+    for week_map in weekly_pts or []:
+        if not isinstance(week_map, dict):
+            continue
+        counts: dict = {}
+        for pid in pids:
+            pos = pos_of.get(pid)
+            if pos not in ("QB", "RB", "WR", "TE"):
+                continue
+            try:
+                pts = float(week_map.get(pid) or 0.0)
+            except (TypeError, ValueError):
+                pts = 0.0
+            if pts > 0:
+                counts[pos] = counts.get(pos, 0) + 1
+        for pid in pids:
+            pos = pos_of.get(pid)
+            if pos not in counts:
+                continue
+            try:
+                pts = float(week_map.get(pid) or 0.0)
+            except (TypeError, ValueError):
+                pts = 0.0
+            if pts <= 0:
+                continue
+            need = int(reqs.get(pos) or 0)
+            if need > 0 and counts[pos] - 1 < need <= counts[pos]:
+                protected.add(pid)
+    return protected
 
 
 # ======================================================================

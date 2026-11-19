@@ -27,6 +27,11 @@ from utils.lineup_slots import canonicalize_slot as _canonicalize_slot
 from utils.lineup_slots import starter_need_counts as _starter_need_counts
 from utils.validation import safe_int as _safe_int
 from utils.value_helpers import apply_te_premium, te_premium_from_settings
+from utils.waivers import (
+    deterministic_candidate_order as _deterministic_candidate_order,
+    effective_roster_positions as _effective_roster_positions,
+    forward_coverage_protected_ids as _forward_coverage_protected_ids,
+)
 from utils.waiver_score import (
     HORIZONS as _HORIZONS,
     WAIVER_PRIME_MAX as _WAIVER_PRIME_MAX,
@@ -520,6 +525,10 @@ def api_waiver_candidates():
     model_value_table = list(get_model_value_table_cached() or [])
 
     _rp_wv = ctx.get("roster_positions") or []
+    # Bench capacity some providers omit from roster_positions
+    # (Fleaflicker: starters only) is restored from the viewer's
+    # bench_slots once the viewer roster is known below; until then
+    # the raw list stands. See effective_roster_positions.
     # Pick the value column that matches this league's format (redraft vs
     # dynasty, 1QB vs Superflex) -- shared with the offseason/Season-Hub card so
     # both waiver surfaces rank and display off identical values.
@@ -692,7 +701,9 @@ def api_waiver_candidates():
         if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
             from dashboard_services.breakout_api import aligned_breakout_scores as _abs
             _by_value = sorted(
-                candidates, key=lambda c: c.get("value") or 0.0, reverse=True)
+                candidates,
+                key=lambda c: (-(c.get("value") or 0.0),
+                               str(c.get("player_id") or "")))
             _breakout_ids = {c["player_id"] for c in _by_value[:150]}
             _breakout_ids |= {c["player_id"] for c in candidates
                               if c.get("discovery") or str(c["player_id"]) in _signal_ids}
@@ -773,11 +784,19 @@ def api_waiver_candidates():
     _enrich_ids: set[str] = set()
     try:
         _by_value_enrich = sorted(
-            candidates, key=lambda c: c.get("value") or 0.0, reverse=True)
+            candidates,
+            key=lambda c: (-(c.get("value") or 0.0),
+                           str(c.get("player_id") or "")))
         _enrich_ids = {c["player_id"] for c in _by_value_enrich[:_WAIVER_ENRICH_POOL]}
         _enrich_ids |= {c["player_id"] for c in candidates
                         if c.get("discovery") or c.get("starting_role")
                         or str(c["player_id"]) in _signal_ids}
+        # Iteration 3, item 2: a just-dropped player (the user's own
+        # Wednesday-batch drop especially) must be enriched like a
+        # signal candidate — full forward projections — so he ranks
+        # on his projection instead of falling below the shown cutoff
+        # unenriched (Joe Milton never appeared in Best Moves at all).
+        _enrich_ids |= {str(p) for p in (_wv_dropped or {}).keys()}
     except Exception:
         # Fail open: if the pool can't be built, enrich everyone (correct, slow)
         # rather than starving the ranking of signals.
@@ -1080,7 +1099,11 @@ def api_waiver_candidates():
             logger.exception("[waiver-candidates] pickup score failed for %s", c.get("player_id"))
             return 0.0
 
-    candidates.sort(key=_safe_pickup_score, reverse=True)
+    # Deterministic multi-key order (iteration 3, item 6): score ties
+    # at the shown-30 boundary previously resolved by pool-build
+    # order, so a candidate could appear in one load and vanish in
+    # the next with no data change.
+    candidates = _deterministic_candidate_order(candidates, _safe_pickup_score)
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
         candidates = [c for c in candidates if c["position"] == position_filter]
 
@@ -1223,6 +1246,7 @@ def api_waiver_candidates():
         _active = [str(p) for p in (_viewer_roster.get("players") or [])
                    if str(p) not in _res and str(p) not in _tax]
         _viewer_active = list(_active)
+        _rp_wv = _effective_roster_positions(_viewer_roster, _rp_wv)
         _slot_n = len([s for s in (_rp_wv or [])
                        if str(s).upper() not in ("IR", "TAXI", "RESERVE", "IR+")])
         _roster_full = _roster_needs_drop(len(_active), _slot_n)
@@ -1249,7 +1273,7 @@ def api_waiver_candidates():
                 continue
             _drop_pool.append({"player_id": pid, "name": name, "position": pos,
                                "value": _roster_val(pid)})
-        _drop_pool.sort(key=lambda d: d["value"])  # weakest first
+        _drop_pool.sort(key=lambda d: (d["value"], str(d["player_id"])))  # weakest first, deterministic
 
     def _drop_for(_c):
         if not _roster_full or not _drop_pool:
@@ -1314,6 +1338,26 @@ def api_waiver_candidates():
     except Exception:
         logger.debug("per-week roster points failed", exc_info=True)
         _weekly_roster_pts = []
+
+    # Forward-coverage drop protection (iteration 3, item 2): a player
+    # who is a projected starter at his position in a future week —
+    # the coverage the GM brief maps — is never the suggested drop.
+    # The Nov 19 list paired a QB add with dropping Drew Lock, her
+    # Week 12 starting QB. Mutates _drop_pool in place (the lineup
+    # evaluator reads it by closure) and rebuilds _drop_by_id.
+    if _weekly_roster_pts and _drop_pool:
+        try:
+            _cov_protected = _forward_coverage_protected_ids(
+                _viewer_active, _roster_pos, _weekly_roster_pts, _rp_wv)
+        except Exception:
+            _cov_protected = set()
+        if _cov_protected:
+            _drop_pool[:] = [
+                d for d in _drop_pool
+                if str(d["player_id"]) not in _cov_protected]
+            _drop_by_id.clear()
+            _drop_by_id.update(
+                {d["player_id"]: d for d in _drop_pool})
 
     def _lineup_eval_for(_c, _bscore=0.0):
         """PickupEvaluation for the viewer's roster, or None if not evaluable."""
@@ -1665,6 +1709,25 @@ def _forward_ppg_map(season, raw_scoring, entries):
     return out
 
 
+def _kdef_drop_pool(viewer_active, viewer_pos, fwd) -> list:
+    """Drop pool for the K/D/ST waiver path: every active player,
+    weakest first by forward projection, with a player-id tie-break.
+
+    The tie-break matters (iteration 3, items 3/6): forward
+    projections are fetched only for K/DEF players, so skill players
+    tie at 0.0 and the old unstable order let whichever 0.0 player
+    iterated first become the suggested drop (J.J. McCarthy, for a
+    D/ST add). Whether a drop attaches at all is governed by the
+    caller's true-capacity check, not by this pool.
+    """
+    pool = [{"player_id": pid,
+             "ppg": (fwd or {}).get(pid) or 0.0,
+             "position": (viewer_pos or {}).get(pid, "")}
+            for pid in (viewer_active or [])]
+    pool.sort(key=lambda d: (d["ppg"], str(d["player_id"])))
+    return pool
+
+
 def _api_waiver_candidates_kdef(position, platform, league_id, season, ctx):
     """K / D/ST waiver ranks, scored by the shared streaming rankers.
 
@@ -1714,19 +1777,19 @@ def _api_waiver_candidates_kdef(position, platform, league_id, season, ctx):
                  for pid in viewer_active if viewer_pos.get(pid) in ("K", "DEF")]
     fwd = _forward_ppg_map(season, raw_scoring, _entries)
 
+    # True capacity (iteration 3, item 3): Fleaflicker roster_positions
+    # carry starters only, so the raw count read this roster as
+    # permanently full and every add got a drop attached despite two
+    # empty bench slots. Bench capacity comes from the roster itself.
+    rp = _effective_roster_positions(viewer_roster, rp)
     _slot_n = len([s for s in (rp or [])
                    if str(s).upper() not in ("IR", "TAXI", "RESERVE", "IR+")])
     roster_full = bool(viewer_active) and _roster_needs_drop(len(viewer_active), _slot_n)
 
-    # Drop pool: active roster ordered by forward projection (K/DEF carry no
-    # model value, so projections are the honest comparator).
-    drop_pool = []
-    if viewer_active:
-        for pid in viewer_active:
-            drop_pool.append({"player_id": pid,
-                              "ppg": fwd.get(pid) or 0.0,
-                              "position": viewer_pos.get(pid, "")})
-        drop_pool.sort(key=lambda d: d["ppg"])
+    # Drop pool: every active player ordered by forward projection
+    # (K/DEF carry no model value, so projections are the honest
+    # comparator), deterministically. See _kdef_drop_pool.
+    drop_pool = _kdef_drop_pool(viewer_active, viewer_pos, fwd)
 
     def _brief_kd(pid):
         pid = str(pid)
@@ -1811,6 +1874,10 @@ def _api_waiver_candidates_kdef(position, platform, league_id, season, ctx):
                 # candidate): fall back to the projection-based pairing, which
                 # still only suggests a cut when the roster is full.
                 drop = _drop_for_kd(cand_ppg, position)
+            if not roster_full:
+                # Iteration 3, item 3: open bench slots mean the add
+                # needs no drop at all, whatever any pairing suggested.
+                drop = None
 
             if position == "DEF":
                 imp = r.get("opp_implied")

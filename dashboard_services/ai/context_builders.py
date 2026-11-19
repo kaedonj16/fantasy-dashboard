@@ -1702,6 +1702,7 @@ def build_trade_suggestions_context(
     # closed when this is a limited-keeper format whose designations
     # cannot be resolved: no packages are built at all.
     _locked_viewer_ids: set = set()
+    _locked_by_rid2: dict = {}
     _keeper_fail_closed = False
     try:
         from utils.league_rules import keeper_locked_by_roster as _klbr2
@@ -1709,10 +1710,15 @@ def build_trade_suggestions_context(
         _locked_map2 = _klbr2(ctx) or {}
         _locked_viewer_ids = {
             str(p) for p in (_locked_map2.get(viewer_rid) or ())}
+        # Iteration 3: partner-side locks for GET-side legality.
+        _locked_by_rid2 = {
+            str(rid): {str(p) for p in (ids or ())}
+            for rid, ids in _locked_map2.items()}
         if _klimit2(ctx) is not None and not _locked_map2:
             _keeper_fail_closed = True
     except Exception:
         _locked_viewer_ids, _keeper_fail_closed = set(), False
+        _locked_by_rid2 = {}
     viewer_picks_list = picks_by_roster.get(viewer_rid, [])
     from datetime import datetime as _dt
     _cur_yr = _dt.now().year
@@ -2006,6 +2012,13 @@ def build_trade_suggestions_context(
         # any evaluation runs (the ban is never fail-soft).
         if any(str(p.get("id")) in _locked_viewer_ids
                for p in (package or [])):
+            return False, package
+        # GET-side (iteration 3): the target himself is a designated
+        # keeper on the partner's roster — untradeable, deal fails.
+        _partner_locked = _locked_by_rid2.get(
+            str(partner_roster.get("roster_id") or ""), ())
+        if str(target.get("id") or target.get("player_id") or "") \
+                in _partner_locked:
             return False, package
         try:
             _ev = _tp_evaluate(partner_roster, target, package)
