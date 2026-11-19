@@ -20,7 +20,8 @@ LANDING_CSS = (ROOT / "static" / "landing_lite.css").read_text(encoding="utf-8")
 
 
 def _home_form() -> str:
-    return APP_PY[APP_PY.index('FORM_BODY = """'):APP_PY.index('<div class="home-content-wrapper">')]
+    start = APP_PY.index('FORM_BODY = """')
+    return APP_PY[start:APP_PY.index('\n"""\n', start)]
 
 
 def test_home_proof_is_replaced_by_pro_signup():

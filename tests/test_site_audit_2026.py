@@ -208,8 +208,6 @@ def test_adsense_reviewers_can_see_publisher_content():
     """Site-review crawlers must see HTML content, not a splash or delayed ads."""
     assert "<noscript><style>#appSplash{{display:none!important}}</style></noscript>" in APP_PY
     assert "mediapartners-google" in APP_PY
-    assert 'class="home-publisher"' in APP_PY
-    assert 'class="home-hero-editorial"' in APP_PY
     guides = (ROOT / "routes" / "guides_content.py").read_text(encoding="utf-8")
     assert 'GUIDE_ORDER = [' in guides
     assert guides.count('"title":') >= 12

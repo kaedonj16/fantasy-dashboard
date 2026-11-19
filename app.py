@@ -2135,37 +2135,24 @@ FORM_BODY = """
 {{ landing_bg_svg | safe }}
   <section class="home-hero ld-hero">
     <div class="ld-hero-card">
+      <p class="ld-eyebrow">BR FANTASY</p>
       <h1 class="ld-hero-title">Your dynasty league, <span class="ld-accent">decoded.</span></h1>
-      <p class="home-subtitle">Live matchup board, start/sit verdicts and trade values, wired to your league&#x27;s real scoring.</p>
-      <p class="home-hero-editorial">
-        Original dynasty strategy, daily player values, and league dashboards.
-        No account needed to read the <a href="/guides">guides</a>, browse
-        <a href="/rankings/dynasty">dynasty rankings</a>, or use the
-        <a href="/dynasty-trade-value-chart">trade value chart</a>.
-      </p>
-      <div class="ld-hero-ctas">
-        <a class="ld-btn ld-btn-navy" href="#homeCardTitle" onclick="var t=document.getElementById('homeCardTitle');if(t){t.scrollIntoView();return false;}">Connect your league</a>
-        <a class="ld-btn ld-btn-royal" href="/players">Player rankings</a>
-        <a class="ld-btn ld-btn-sky" href="/trade">Trade calculator</a>
-      </div>
-      <p class="ld-hero-note"><strong>Free for your first league</strong> &middot; Read-only &middot; 2-minute setup</p>
-      <p class="ld-hero-note">{% if hero_trade_count %}{{ hero_trade_count }} real trades analyzed{% else %}Real trades analyzed{% endif %}</p>
-      <div class="home-platform-row" aria-label="Supported platforms">
-        <span class="home-platform-chip">Sleeper</span>
-        <span class="home-platform-chip">ESPN</span>
-        <span class="home-platform-chip">Yahoo</span>
-        <span class="home-platform-chip">MFL</span>
-        <span class="home-platform-chip">Fleaflicker</span>
-      </div>
+      <p class="home-subtitle">Trade values, start/sit and matchup tools for Sleeper, ESPN, Yahoo, MFL, and Fleaflicker.</p>
     </div>
-    <div class="ld-board-wrap">
-      <div class="hp-mb">
-          <div class="hp-mb-strip"><span class="hp-mb-strip-t">Sample matchup</span></div>
+  </section>
+
+  <div class="ld-main-row{% if session.get('account_id') %} is-signed{% endif %}">
+    <section class="ld-gallery" id="homeGallery" aria-label="Preview gallery">
+      <h2 class="ld-sec-h">{% if session.get('account_id') %}Take a look{% else %}This is what Sundays look like here.{% endif %}</h2>
+      <p class="ld-gal-sub">{% if session.get('account_id') %}The boards your leagues unlock. Tap one to look closer.{% else %}Real screens from a connected league. Tap one to look closer.{% endif %}</p>
+      <div class="ld-gal-panels">
+              <div class="ld-gal-panel" data-gal-panel="matchup">
+<div class="hp-mb">
           <div class="hp-mb-head">
-            <div><div class="hp-mb-team">Caleb&#x27;s Casting Couch</div><div class="hp-mb-score" data-count="132.4">132.4</div></div>
-            <div class="is-right"><div class="hp-mb-team">Pittsburgh Pilots</div><div class="hp-mb-score" data-count="128.9">128.9</div></div>
+            <div><div class="hp-mb-team">You</div><div class="hp-mb-score">132.4</div></div>
+            <div class="is-right"><div class="hp-mb-team">Opp</div><div class="hp-mb-score">128.9</div></div>
           </div>
-          <div class="m-win-bar" role="img" aria-label="Win probability: Caleb&#x27;s Casting Couch 64 percent, Pittsburgh Pilots 36 percent">
+          <div class="m-win-bar" role="img" aria-label="Win probability: You 64 percent, Opp 36 percent">
             <span class="m-wp-pct" style="color:#22c55e;">64%</span>
             <div class="m-wp-track" style="background:linear-gradient(to right,#22c55e 64%,rgba(148,163,184,0.35) 64%);"></div>
             <span class="m-wp-pct" style="color:var(--text-muted);text-align:right;">36%</span>
@@ -2221,59 +2208,155 @@ FORM_BODY = """
               <div class="mb-score"><span class="mb-a">12.3</span><span class="mb-pj">19.1</span></div>
             </div></div>
           </div>
-        
-          <div class="mb-row">
-            <div class="mb-cell mb-cell-l"><div class="mb-cell-row">
-              <div class="mb-info">
-                <div class="p-name-line mb-nameline"><span class="pname">Sam LaPorta</span><span class="meta p-team mb-team">DET &bull; TE</span></div>
-                <span class="meta p-game-line mb-game">vs CLE</span>
+        </div>
               </div>
-              <div class="mb-score"><span class="mb-a mb-win">11.2</span><span class="mb-pj">12.6</span></div>
-            </div></div>
-            <div class="mb-pos"><span class="pos-badge TE">TE</span></div>
-            <div class="mb-cell mb-cell-r"><div class="mb-cell-row">
-              <div class="mb-info">
-                <div class="p-name-line mb-nameline"><span class="pname">Mark Andrews</span><span class="meta p-team mb-team">BAL &bull; TE</span></div>
-                <span class="meta p-game-line mb-game">@ KC</span>
-              </div>
-              <div class="mb-score"><span class="mb-a">9.8</span><span class="mb-pj">11.4</span></div>
-            </div></div>
+              <div class="ld-gal-panel" data-gal-panel="startsit" hidden>
+<div class="wv-cx-group">
+          <div class="wv-cx-group-head">
+            <div class="wv-cx-group-title">RB <span>(2 starters)</span></div>
+            <div class="wv-cx-verdict">Start <b>Gibbs</b> and <b>Jeanty</b>. Flex <b>London</b> over <b>Kamara</b>.</div>
           </div>
-          <div class="mb-row">
-            <div class="mb-cell mb-cell-l"><div class="mb-cell-row">
-              <div class="mb-info">
-                <div class="p-name-line mb-nameline"><span class="pname">Justin Herbert</span><span class="meta p-team mb-team">LAC &bull; SF</span></div>
-                <span class="meta p-game-line mb-game">vs DEN</span>
-              </div>
-              <div class="mb-score"><span class="mb-a">17.8</span><span class="mb-pj">20.1</span></div>
-            </div></div>
-            <div class="mb-pos"><span class="pos-badge SF">SF</span></div>
-            <div class="mb-cell mb-cell-r"><div class="mb-cell-row">
-              <div class="mb-info">
-                <div class="p-name-line mb-nameline"><span class="pname">Joe Burrow</span><span class="meta p-team mb-team">CIN &bull; SF</span></div>
-                <span class="meta p-game-line mb-game">vs PIT</span>
-              </div>
-              <div class="mb-score"><span class="mb-a mb-win">19.5</span><span class="mb-pj">21.0</span></div>
-            </div></div>
+          <div class="wv-cx-card">
+            <div class="wv-cx-row-wrap">
+              <button type="button" class="wv-cx-row" aria-expanded="false">
+                <span class="wv-cx-badge wv-cx-start">START</span>
+                <span class="wv-cx-main">
+                  <span class="wv-cx-name">Jahmyr Gibbs</span>
+                  <span class="wv-cx-why">vs CLE <span class="wv-cx-chip">#4 easiest</span></span>
+                </span>
+                <span class="wv-cx-proj"><span class="wv-cx-proj-num">18.4</span><span class="wv-cx-proj-lbl">PROJ</span></span>
+                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
+              </button>
+            </div>
+            <div class="wv-cx-row-wrap">
+              <button type="button" class="wv-cx-row" aria-expanded="false">
+                <span class="wv-cx-badge wv-cx-start">START</span>
+                <span class="wv-cx-main">
+                  <span class="wv-cx-name">Ashton Jeanty</span>
+                  <span class="wv-cx-why">vs CHI <span class="wv-cx-chip">#11 favorable</span></span>
+                </span>
+                <span class="wv-cx-proj"><span class="wv-cx-proj-num">15.2</span><span class="wv-cx-proj-lbl">PROJ</span></span>
+                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
+              </button>
+            </div>
+            <div class="wv-cx-benchline">BENCH LINE</div>
+            <div class="wv-cx-row-wrap">
+              <button type="button" class="wv-cx-row" aria-expanded="false">
+                <span class="wv-cx-badge wv-cx-sit">SIT</span>
+                <span class="wv-cx-main">
+                  <span class="wv-cx-name">Alvin Kamara</span>
+                  <span class="wv-cx-why">@ TB <span class="wv-cx-chip bad">#24 hardest</span></span>
+                </span>
+                <span class="wv-cx-proj"><span class="wv-cx-proj-num">9.3</span><span class="wv-cx-proj-lbl">PROJ</span></span>
+                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
+              </button>
+            </div>
           </div>
         </div>
-    </div>
-  </section>
+              </div>
+              <div class="ld-gal-panel" data-gal-panel="scorezone" hidden>
+<div class="hp-rz">
+          <div class="rz-game-strip"><div class="rz-game-strip-scroll" role="group" aria-label="NFL games">
+            <button type="button" class="rz-game-pill is-live is-selected" aria-pressed="true" aria-label="KC 24 at BUF 27, Q4 2:14">
+              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">KC</span><span class="rz-gp-abv">KC</span><span class="rz-gp-score">24</span></span>
+              <span class="rz-gp-status">Q4 2:14</span>
+              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">BUF</span><span class="rz-gp-abv">BUF</span><span class="rz-gp-score">27</span></span>
+            </button>
+            <button type="button" class="rz-game-pill is-live" aria-pressed="false" aria-label="DET 17 at GB 14, Q3 5:41">
+              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">DET</span><span class="rz-gp-abv">DET</span><span class="rz-gp-score">17</span></span>
+              <span class="rz-gp-status">Q3 5:41</span>
+              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">GB</span><span class="rz-gp-abv">GB</span><span class="rz-gp-score">14</span></span>
+            </button>
+            <button type="button" class="rz-game-pill is-final" aria-pressed="false" aria-label="PHI 31 at DAL 24, FINAL">
+              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">PHI</span><span class="rz-gp-abv">PHI</span><span class="rz-gp-score">31</span></span>
+              <span class="rz-gp-status">FINAL</span>
+              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">DAL</span><span class="rz-gp-abv">DAL</span><span class="rz-gp-score">24</span></span>
+            </button>
+          </div></div>
+          <div class="rz-player-row">
+            <span class="rz-pos-badge rz-pos-QB">QB</span>
+            <div class="rz-player-info"><div class="rz-player-name">Josh Allen</div><div class="rz-player-meta"><span class="rz-live-dot-sm"></span><span class="rz-meta-game live">Q4 2:14</span></div></div>
+            <div class="rz-player-pts live-pts">28.4</div>
+          </div>
+          <div class="rz-player-row">
+            <span class="rz-pos-badge rz-pos-RB">RB</span>
+            <div class="rz-player-info"><div class="rz-player-name">Jahmyr Gibbs</div><div class="rz-player-meta"><span class="rz-live-dot-sm"></span><span class="rz-meta-game live">Q3 5:41</span></div></div>
+            <div class="rz-player-pts live-pts">21.7</div>
+          </div>
+          <div class="rz-player-row">
+            <span class="rz-pos-badge rz-pos-WR">WR</span>
+            <div class="rz-player-info"><div class="rz-player-name">Drake London</div><div class="rz-player-meta"><span class="rz-meta-game final">Final</span></div></div>
+            <div class="rz-player-pts">18.9</div>
+          </div>
+        </div>
+              </div>
+              <div class="ld-gal-panel" data-gal-panel="trade" hidden>
+<div class="otc-real-trade-card">
+          <div class="otc-rt-body">
+            <div class="otc-rt-side">
+              <div class="otc-rt-label">You Get</div>
+              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#8b5cf618;color:#8b5cf6;">TE</span><span class="otc-rt-name">Trey McBride</span></div>
+            </div>
+            <div class="otc-rt-divider"></div>
+            <div class="otc-rt-side">
+              <div class="otc-rt-label">You Give</div>
+              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#22c55e18;color:#22c55e;">RB</span><span class="otc-rt-name">Brian Robinson Jr.</span></div>
+              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#6366f112;color:#6366f1;">PICK</span><span class="otc-rt-name">2027 R2 pick</span></div>
+            </div>
+          </div>
+          <div class="otc-rt-footer">
+            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
+              <span class="ld-otc-grade">Steal</span>
+              <span class="ld-otc-delta wk">+1.8% wk</span>
+              <span class="ld-otc-delta po">+4.2% po</span>
+            </div>
+            <button type="button" class="sugg-target-get-btn otc-sugg-pkg-load-btn">Analyze</button>
+          </div>
+        </div>
+              </div>
+              <div class="ld-gal-panel" data-gal-panel="wrapped" hidden>
+<div class="ld-deck" data-ld-deck>
+          <section class="ld-slide is-active">
+            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Season Wrapped</span></div>
+            <div class="wrapped-num"><span class="wrapped-big">1,284</span><span class="wrapped-unit">pts</span></div>
+            <div class="wrapped-name">Points scored</div>
+            <div class="wrapped-sub">3rd place in Blackedraw</div>
+          </section>
+          <section class="ld-slide">
+            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Best week</span></div>
+            <div class="wrapped-num"><span class="wrapped-big">146.2</span></div>
+            <div class="wrapped-name">Week 9</div>
+            <div class="wrapped-sub">Never forget it.</div>
+          </section>
+          <section class="ld-slide">
+            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Biggest dud</span></div>
+            <div class="wrapped-num"><span class="wrapped-big">4.1</span><span class="wrapped-unit">pts</span></div>
+            <div class="wrapped-name">Your first-round pick</div>
+            <div class="wrapped-sub">Week 6. We do not talk about Week 6.</div>
+          </section>
+        </div>
+        <div class="ld-dots" data-ld-dots>
+          <span class="ld-pager-dot is-active"></span><span class="ld-pager-dot"></span><span class="ld-pager-dot"></span>
+        </div>
+              </div>
+      </div>
+      <p class="ld-gal-caption" id="homeGalCaption">Your matchup, rebuilt for your phone. <span>Live score, win chance, and the points you need.</span></p>
+              <div class="ld-gal-tabs" role="tablist" aria-label="Choose a preview">
+                <button type="button" class="ld-gal-tab active" data-gal-tab="matchup" role="tab" aria-selected="true"><span class="ld-gal-tab-ic"><svg class="nav-svg-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="M16 16l4 4"/><path d="M19 21l2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/><path d="M5 14l4 4"/><path d="M7 17l-3 3"/><path d="M3 19l2 2"/></svg></span><span class="ld-gal-tab-lb">Matchup</span></button>
+                <button type="button" class="ld-gal-tab" data-gal-tab="startsit" role="tab" aria-selected="false"><span class="ld-gal-tab-ic"><svg class="nav-svg-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span><span class="ld-gal-tab-lb">Start/Sit</span></button>
+                <button type="button" class="ld-gal-tab" data-gal-tab="scorezone" role="tab" aria-selected="false"><span class="ld-gal-tab-ic"><svg class="nav-svg-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 13H6l2-6 4 12 2-6h2.5"/><path d="M20.5 13a5 5 0 0 0-8.5-4"/></svg></span><span class="ld-gal-tab-lb">ScoreZone</span></button>
+                <button type="button" class="ld-gal-tab" data-gal-tab="trade" role="tab" aria-selected="false"><span class="ld-gal-tab-ic"><svg class="nav-svg-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></span><span class="ld-gal-tab-lb">Trade</span></button>
+                <button type="button" class="ld-gal-tab" data-gal-tab="wrapped" role="tab" aria-selected="false"><span class="ld-gal-tab-ic"><svg class="nav-svg-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8z"/></svg></span><span class="ld-gal-tab-lb">Wrapped</span></button>
+              </div>
+    </section>
+
 
     <div class="home-hero-right">
 
-      <h2 class="home-card-title ld-sec-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
       <div class="home-card">
+      <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Load your league.{% endif %}</h2>
 
-        {% if not session.get('account_id') %}
-        <div class="home-account-entry home-account-top">
-          <div class="home-account-text">
-            <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
-            <p class="home-hero-trust">Free for your first league · 2-minute setup</p>
-          </div>
-          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Sign in with Google</span></a>
-        </div>
-        {% else %}
+        {% if session.get('account_id') %}
         <div id="signedInHome" class="signed-in-home">
           <div class="signed-in-home-header"><p class="signed-in-home-greeting">Welcome back{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</p><a class="home-reset-user" href="/reset-user">Not me?</a></div>
           <div id="signedInLeagueList">Loading your saved leagues…</div>
@@ -2282,6 +2365,37 @@ FORM_BODY = """
         {% endif %}
 
         <div id="connectLeagueFlow"{% if session.get('account_id') %} hidden{% endif %}>
+        <div id="connectPage1" class="connect-page connect-page1">
+          <p class="smart-sub">Paste a link or type a username. We find your league for you.</p>
+          <div class="smart-row">
+            <input type="text" id="smartLeagueInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="Paste your league link, or type your Sleeper username" aria-label="League link or Sleeper username">
+            <button type="button" id="smartFindBtn">Find my league</button>
+          </div>
+          <p class="smart-detect" id="smartDetect" hidden><span class="smart-detect-dot" aria-hidden="true"></span><span id="smartDetectText"></span></p>
+          <p class="smart-error" id="smartError" role="alert" hidden></p>
+          <div class="smart-plat">
+            <span class="smart-plat-label">No link handy? Pick your platform:</span>
+            <div class="smart-plat-chips">
+              <button type="button" class="smart-plat-chip active" data-smart-platform="sleeper">Sleeper</button>
+              <button type="button" class="smart-plat-chip" data-smart-platform="espn">ESPN</button>
+              <button type="button" class="smart-plat-chip" data-smart-platform="yahoo">Yahoo</button>
+              <button type="button" class="smart-plat-chip" data-smart-platform="mfl">MFL</button>
+              <button type="button" class="smart-plat-chip" data-smart-platform="fleaflicker">Fleaflicker</button>
+            </div>
+          </div>
+          <p class="smart-trust">Free for your first league. Read-only, never touches your lineups.</p>
+          {% if not session.get('account_id') %}
+          <div class="smart-returning">
+            <span>Returning? Sign in with Google to load your saved leagues.</span>
+            <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Sign in with Google</span></a>
+          </div>
+          {% endif %}
+        </div>
+        <div id="connectPage2" class="connect-page connect-page2" hidden>
+        <div class="connect-page2-head">
+          <button type="button" id="connectPageBack" class="home-connect-back">&#8249; Back</button>
+          <span class="connect-step-label">Step 2 of 2</span>
+        </div>
         <button type="button" id="homeConnectBack" class="home-connect-back"{% if not session.get('account_id') %} hidden{% endif %}>← Back</button>
         <div class="ld-connect-grid">
         <div class="ld-connect-col ld-col-platform">
@@ -2606,316 +2720,144 @@ FORM_BODY = """
           <div class="ld-cardfoot">Read-only either way. BR Fantasy never touches your lineups, rosters or waivers.</div>
         </div>
         </div>
+        </div><!-- /connectPage2 -->
         </div>
       </div>
+
+  {% if session.get('account_id') %}
+  <div class="ld-quick" id="signedQuickActions" hidden>
+    <a class="ld-quick-btn" data-quick="matchup" href="#"><svg class="nav-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="M16 16l4 4"/><path d="M19 21l2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/><path d="M5 14l4 4"/><path d="M7 17l-3 3"/><path d="M3 19l2 2"/></svg>Matchup</a>
+    <a class="ld-quick-btn" data-quick="startsit" href="#"><svg class="nav-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>Start/Sit</a>
+    <a class="ld-quick-btn" data-quick="scorezone" href="#"><svg class="nav-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 13H6l2-6 4 12 2-6h2.5"/><path d="M20.5 13a5 5 0 0 0-8.5-4"/></svg>ScoreZone</a>
+    <a class="ld-quick-btn" data-quick="more" href="#"><svg class="nav-svg-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>More</a>
+  </div>
+  {% endif %}
     </div>
+
+</div><!-- /ld-main-row -->
 
   {% if not session.get('account_id') %}
-<section class="ld-sec">
-  <div class="ld-card ld-rv">
-    <h2 class="ld-sec-h">Built for the whole week</h2>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#ef4444"></span><div class="ld-strip-main"><strong>ScoreZone</strong><span>Every NFL game and your players&#x27; points, live on one screen.</span></div><span class="ld-strip-stat" style="color:#ef4444">Live scores</span></div>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#16a34a"></span><div class="ld-strip-main"><strong>Start / Sit</strong><span>A verdict, a projection and the matchup case for every starter.</span></div><span class="ld-strip-stat" style="color:#16a34a">Start Gibbs</span></div>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#4f46e5"></span><div class="ld-strip-main"><strong>Trade Strategy</strong><span>See how a trade moves your playoff odds before you send it. <em class="ld-pro-tag">PRO</em></span></div><span class="ld-strip-stat" style="color:#4f46e5">+6.2% odds</span></div>
-    <div class="ld-strip"><span class="ld-dot" style="--d:#ca8a04"></span><div class="ld-strip-main"><strong>Weekly Wrapped</strong><span>Your week, told back as a story with the receipts. Only the AI storyline is PRO; the rest stays free.</span></div><span class="ld-strip-stat" style="color:#ca8a04">New</span></div>
+<section class="ld-sec ld-get-sec" aria-label="What you get">
+  <div class="ld-card">
+    <h2 class="ld-sec-h">What you get</h2>
+    <div class="ld-strip"><span class="ld-get-ic"><svg class="nav-svg-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="M16 16l4 4"/><path d="M19 21l2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/><path d="M5 14l4 4"/><path d="M7 17l-3 3"/><path d="M3 19l2 2"/></svg></span><div class="ld-strip-main"><strong>Matchup board</strong><span>Your game this week, projected live, with the points you need to win.</span></div></div>
+    <div class="ld-strip"><span class="ld-get-ic"><svg class="nav-svg-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span><div class="ld-strip-main"><strong>Start/Sit for your roster</strong><span>Every close call on your bench, ranked with the matchup behind it.</span></div></div>
+    <div class="ld-strip"><span class="ld-get-ic"><svg class="nav-svg-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></span><div class="ld-strip-main"><strong>Trade values for your players</strong><span>Every player on your roster, priced and graded before you send an offer.</span></div></div>
   </div>
 </section>
-
-<section class="ld-sec">
-  <div class="ld-card ld-rv">
-    <div class="ld-demo-head"><h2 class="ld-sec-h">Try a start/sit call</h2><span class="ld-demo-tag">LIVE DEMO</span></div>
-    <p class="ld-demo-q" id="ldSsQ"></p>
-    <div class="ld-demo-opts" id="ldSsOpts"></div>
-    <div class="ld-demo-verdict" id="ldSsVerdict" hidden></div>
-    <div class="ld-demo-foot"><button type="button" class="ld-mini-btn" id="ldSsNext" hidden>Try another</button><span class="ld-demo-note">Projections from our start/sit board, matchup ratings from our ratings model. The full tool makes this call for your whole lineup.</span></div>
-  </div>
-</section>
-
-<section class="ld-sec">
-  <div class="ld-card ld-rv">
-    <div class="ld-demo-head"><h2 class="ld-sec-h">Who&#x27;s more valuable?</h2><span class="ld-demo-tag">LIVE DEMO</span></div>
-    <p class="ld-demo-q" id="ldValQ"></p>
-    <div class="ld-demo-opts" id="ldValOpts"></div>
-    <div class="ld-demo-verdict" id="ldValVerdict" hidden></div>
-    <div class="ld-demo-foot"><button type="button" class="ld-mini-btn" id="ldValNext" hidden>Try another</button><span class="ld-demo-note">Dynasty superflex values from our values board, the same numbers as the ticker up top.</span></div>
-  </div>
-</section>
-<script type="application/json" id="ldDemoData">{{ landing_demo_json | safe }}</script>
-
-<section class="ld-sec">
-  <figure class="ld-quote ld-rv">
-    <blockquote>&ldquo;THATS ACTUALLY <span>SO SICK</span> BRO&rdquo;</blockquote>
-    <figcaption><strong>Jayden Waddell</strong> &middot; Pittsburgh Pilots, on the weekly recap</figcaption>
-  </figure>
-</section>
-
   {% endif %}
 
-  <section class="home-pro ld-pro" id="homeProSignup" aria-labelledby="homeProTitle">
-    <div class="ld-pro-main">
-      <span class="ld-pro-kicker">BR FANTASY PRO</span>
-      <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
-      <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice.</p>
-      <ul class="ld-pro-grid">
-      <li><span class="ld-pro-dot" style="--d:#4f46e5"></span><div><strong>Trade Strategy</strong><span>See exactly how each trade shifts your playoff odds before you send it</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#0284c7"></span><div><strong>Trade Intelligence</strong><span>Buy low and sell high on live market values from real trades</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#ea580c"></span><div><strong>Breakout Engine</strong><span>Next week&#x27;s breakouts, flagged before your league notices</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#ca8a04"></span><div><strong>Playoff Impact</strong><span>Week-by-week simulations of your path to the playoffs</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#122d4b"></span><div><strong>Front Office Report</strong><span>A weekly GM memo on your roster needs and next moves</span></div></li>
-      <li><span class="ld-pro-dot" style="--d:#8b5cf6"></span><div><strong>Draft Grades</strong><span>Grade every pick and see how the class actually landed</span></div></li>
-      </ul>
+
+<section class="home-testimonials" aria-label="What managers say">
+    <div class="home-testimonials-inner">
+      <h2 class="home-testimonials-title">Managers are talking</h2>
+      <div class="home-testimonials-grid">
+        <figure class="home-testimonial">
+          <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
+          <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots &middot; on the weekly recap</span></figcaption>
+        </figure>
+      </div>
     </div>
-    <div class="ld-pro-side">
-      <div class="ld-pro-price">$10</div>
-      <p>per year &middot; all PRO tools for 1 league</p>
-      <button type="button" class="ld-btn ld-btn-navy" data-home-pro-open>Get PRO</button>
-      <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
-      <a class="ld-pro-pricing-link" href="/pricing">See all plans and pricing</a>
-    </div>
+  </section>
+
+  <section class="home-pro" id="homeProSignup" aria-labelledby="homeProTitle">
+<div class="home-pro-inner">
+              <header class="home-pro-head">
+                <span class="home-pro-eyebrow">Get PRO</span>
+                <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
+                <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
+              </header>
+              <ul class="home-pro-benefits">
+                <li>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-scale-balanced"></i></span>
+                  <strong>Trade Strategy</strong>
+                  <span>See exactly how each trade shifts your playoff odds before you send it</span>
+                </li>
+                <li>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-chart-line"></i></span>
+                  <strong>Trade Intelligence</strong>
+                  <span>Buy low and sell high on live market values from real trades</span>
+                </li>
+                <li>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-fire"></i></span>
+                  <strong>Breakout Engine</strong>
+                  <span>Next week's breakouts, flagged before your league notices</span>
+                </li>
+                <li>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-trophy"></i></span>
+                  <strong>Playoff Impact</strong>
+                  <span>Week-by-week simulations of your path to the playoffs</span>
+                </li>
+                <li>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-chart-bar"></i></span>
+                  <strong>Front Office Report</strong>
+                  <span>A weekly GM memo on your roster needs and next moves</span>
+                </li>
+                <li>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-newspaper"></i></span>
+                  <strong>Weekly Recap</strong>
+                  <span>What happened in your league, written for managers. Only the AI storyline is PRO; the rest stays free</span>
+                </li>
+                <li>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
+                  <strong>Custom Draft Board</strong>
+                  <span>Your board, your values, with a live overlay on draft day</span>
+                </li>
+                <li>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass-chart"></i></span>
+                  <strong>Draft Grades</strong>
+                  <span>Grade every pick and see how the class actually landed</span>
+                </li>
+              </ul>
+              <div class="home-pro-cta-row">
+                <button type="button" class="home-pro-open-btn" data-home-pro-open>Get PRO</button>
+                <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
+              </div>
+            <p class="home-pro-plans-line">$10/year covers all PRO tools for 1 league. <a class="ld-pro-pricing-link" href="/pricing">See all plans and pricing</a></p>
+  </div>
   </section>
 
   {% if not session.get('account_id') %}
 
 
-<section class="freeband ld-free">
-  <div class="ld-card ld-rv">
-    <h2 class="ld-sec-h">Free, no league required</h2>
-    <div class="ld-free-grid">
-      <a class="ld-free-row" href="/rankings/dynasty"><strong>Dynasty rankings</strong><span class="ld-arrow" style="color:#3b82f6">&rarr;</span></a>
-      <a class="ld-free-row" href="/dynasty-trade-value-chart"><strong>Trade value chart</strong><span class="ld-arrow" style="color:#14b8a6">&rarr;</span></a>
-      <a class="ld-free-row" href="/guides"><strong>Strategy guides</strong><span class="ld-arrow" style="color:#8b5cf6">&rarr;</span></a>
-      <a class="ld-free-row" href="/nfl-teams"><strong>NFL Teams</strong><span class="ld-arrow" style="color:#ea580c">&rarr;</span></a>
-    </div>
-  </div>
-</section>
 
 
 
 <section class="faq">
-  <div style="text-align:center; margin-bottom: 12px;">
-    <span class="section-kicker">FAQ</span>
-    <h2 class="section-title">Common questions</h2>
-  </div>
+  <h2 class="ld-sec-h">Two quick answers</h2>
   <details class="faq-item">
-    <summary><h4>Is it really free?</h4><span class="faq-plus">+</span></summary>
-    <p>Looking around is free, no account needed. PRO adds roster-aware tools like trade strategy and the breakout engine, from $10/year.</p>
+    <summary>Is it really read-only?</summary>
+    <p>Yes. BR Fantasy reads your league to build your boards. It never sets lineups, makes moves, or changes anything on your platform.</p>
   </details>
   <details class="faq-item">
-    <summary><h4>Will it mess with my league?</h4><span class="faq-plus">+</span></summary>
-    <p>No. The connection is read-only. It cannot change lineups, rosters, waivers, or settings anywhere.</p>
-  </details>
-  <details class="faq-item">
-    <summary><h4>Which platforms work?</h4><span class="faq-plus">+</span></summary>
-    <p>Sleeper, ESPN, Yahoo, MFL, and Fleaflicker. Both redraft and dynasty leagues work.</p>
-  </details>
-  <details class="faq-item">
-    <summary><h4>Do my leaguemates need accounts?</h4><span class="faq-plus">+</span></summary>
-    <p>No. Connect once and share links to recaps, Wrapped, and matchup pages. They just open them.</p>
+    <summary>What if I do not have my league link?</summary>
+    <p>Type your Sleeper username and we will list your leagues, or pick your platform from the small chips in the connect panel and paste your league ID instead.</p>
   </details>
 </section>
 
-  <!-- AdSense Tier 2: the connect card sits after the editorial sections in DOM
-       order so crawlers meet hero/editorial content before account machinery.
-       Grid placement in dashboard.css keeps it visually beside the hero. -->
-
+  
   
 {% endif %}
 
-  <div class="home-content-wrapper">
-    <section class="home-feature-list-card">
-      <div class="home-features-header">
-        <span class="home-features-label">Platform Features</span>
-        <span class="home-features-count">12 tools</span>
-      </div>
-      <div class="home-feature-list">
 
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-1">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span> <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
-            <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability. See exactly how each trade shifts your playoff odds</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-2">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Trade Calculator</span>
-            <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real trade comparisons from thousands of logged transactions</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-3">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Trade Intelligence <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
-            <span class="home-feature-row-desc">Real market values from thousands of actual trades. Trending, buy-low, and sell-high signals updated daily</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-4">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Player Rankings</span>
-            <span class="home-feature-row-desc">Calibrated dynasty and redraft values updated daily, blending consensus data with advanced metrics and trend charts</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-5">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Advanced Metrics</span>
-            <span class="home-feature-row-desc">Air yards, target share, snap counts, red zone usage, and 20+ efficiency metrics with positional percentile rankings</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-6">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Rookie Prospects</span>
-            <span class="home-feature-row-desc">Full prospect profiles with college metrics, RAS athleticism scores, draft capital analysis, and real-time ADP movement</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-7">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Playoff Odds</span>
-            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week. Know your exact path to the playoffs and championship probability</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-8">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Weekly Hub</span>
-            <span class="home-feature-row-desc">Game-day command center with live scoring, optimal lineup suggestions, injury news, and head-to-head matchup breakdowns</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-9">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Breakout Engine <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
-            <span class="home-feature-row-desc">Spot value shifts before the market moves. Tracks target share, snap counts, and depth chart changes to surface opportunities</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-10">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Waivers &amp; Start/Sit</span>
-            <span class="home-feature-row-desc">Personalized pickup rankings tailored to your roster's needs, scoring format, positional scarcity, and remaining schedule</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-11">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Team Analytics</span>
-            <span class="home-feature-row-desc">Roster grades by position group, strength-of-schedule projections, and side-by-side comparisons across your entire league</span>
-          </div>
-        </div>
-
-        <div class="home-feature-row">
-          <div class="home-feature-row-icon home-fi-12">
-            <i class="fa-solid fa-trophy" aria-hidden="true"></i>
-          </div>
-          <div class="home-feature-row-body">
-            <span class="home-feature-row-title">League History</span>
-            <span class="home-feature-row-desc">AI season recaps, head-to-head rivalry records, historical draft grades, and complete year-by-year standings</span>
-          </div>
-        </div>
-
-      </div>
-    </section>
-
-    <aside class="home-updates-sidebar">
-      <h3 class="home-updates-sidebar-title">Recent Updates</h3>
-      <div class="home-updates-list">
-        {{ recent_updates | safe }}
-      </div>
-    </aside>
-  </div>
-
-  <section class="home-publisher" aria-labelledby="homePublisherTitle">
-    <div class="home-publisher-inner">
-      <header class="home-publisher-head">
-        <span class="home-publisher-eyebrow">Strategy &amp; resources</span>
-        <h2 class="home-publisher-title" id="homePublisherTitle">Dynasty tools with original strategy writing</h2>
-        <p class="home-publisher-lead">
-          BR Fantasy is a fantasy football site for dynasty and redraft managers. Read how values are built,
-          compare players, and study prospect profiles before you connect a league.
-        </p>
-      </header>
-      <div class="home-publisher-grid">
-        <div class="home-publisher-copy">
-          <p>
-            Daily <a href="/rankings/dynasty">dynasty rankings</a> blend consensus market
-            prices with production, age curves, and opportunity metrics such as target
-            share and snap counts. The
-            <a href="/dynasty-trade-value-chart">dynasty trade value chart</a> is the
-            same model in a full positional view. Superflex and 1QB are separate
-            because quarterback scarcity changes every other price on the board. That
-            methodology is explained in
-            <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>
-            and <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.
-          </p>
-          <p>
-            The <a href="/trade">trade calculator</a> grades both sides of a deal with
-            those values. <a href="/top-movers">Top movers</a> shows who is rising or
-            falling. <a href="/prospects">Rookie prospects</a> collect draft capital,
-            college production, and athleticism for the next rookie draft. The
-            <a href="/glossary">glossary</a> defines the vocabulary those pages use.
-          </p>
-          <p>
-            Strategy guides are long-form original writing, not captions under a widget.
-            Start with <a href="/guides">all guides</a> or jump to
-            <a href="/guides/evaluating-a-trade">evaluating a trade</a>,
-            <a href="/guides/dynasty-rebuild-strategy">rebuilding</a>,
-            <a href="/guides/contending-in-dynasty">contending</a>, or
-            <a href="/guides/startup-draft-guide">startup drafts</a>. About the author
-            and how we correct mistakes lives on the <a href="/about">About</a> page.
-            Questions go to <a href="/contact">Contact</a>.
-          </p>
-        </div>
-        <nav class="home-publisher-aside" aria-label="Featured guides and tools">
-          <span class="home-publisher-aside-label">Start here</span>
-          <ul class="home-publisher-links">
-            <li><a href="/guides">Strategy guides</a></li>
-            <li><a href="/rankings/dynasty">Dynasty rankings</a></li>
-            <li><a href="/dynasty-trade-value-chart">Trade value chart</a></li>
-            <li><a href="/trade">Trade calculator</a></li>
-            <li><a href="/glossary">Glossary</a></li>
-            <li><a href="/about">About BR Fantasy</a></li>
-          </ul>
-        </nav>
-      </div>
+  <section class="ld-final-cta" aria-label="Connect your league">
+    <div class="ld-final-cta-inner">
+      <h2>Your league has a story. Start reading it.</h2>
+      <p>Connect a league and see your matchup board in under a minute.</p>
+      <a href="#homeCardTitle" class="ld-final-cta-btn" onclick="var t=document.getElementById('homeCardTitle');if(t){t.scrollIntoView();}var i=document.getElementById('smartLeagueInput');if(i){setTimeout(function(){i.focus({preventScroll:true});},450);}return false;">Load your league</a>
     </div>
   </section>
+
+  <section class="ld-indie">
+    <p>I built this for my own leagues. Then I let everyone else in.<span>Designed for leagues like yours. Tuned every week of the season.</span></p>
+  </section>
 </div>
+
+{% if not session.get('account_id') %}
+<div class="ld-sticky-connect" id="homeStickyConnect" hidden>
+  <a href="#homeCardTitle" class="ld-sticky-connect-btn" onclick="var t=document.getElementById('homeCardTitle');if(t){t.scrollIntoView();}var i=document.getElementById('smartLeagueInput');if(i){setTimeout(function(){i.focus({preventScroll:true});},450);}return false;">Load your league</a>
+</div>
+{% endif %}
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
   <img src="/static/BR_Mark.png?v=6c0c4828"      alt="BR Fantasy" class="flo-logo flo-logo-light">
@@ -26351,7 +26293,7 @@ def index():
         next_url = ""
 
     # Signed-in users skip the guest landing page entirely -- otherwise they'd see
-    # the logged-out "Get started" onboarding underneath their logged-in nav.
+    # the logged-out "Load your league" onboarding underneath their logged-in nav.
     # Send them to ?next= if provided, else their last league dashboard.
     # Google-only accounts have account_id without a Sleeper username.
     if _session_signed_in():

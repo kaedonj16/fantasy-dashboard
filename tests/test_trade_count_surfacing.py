@@ -8,9 +8,10 @@ metadata in four places, per Kaedon's approved legit mock.
    still refreshes it and the tooltip's #tradeCount after load).
 3. Trade Intelligence: subtitle leads with the live dynasty trade count
    (/api/trade-count?format=dynasty&season=<year>).
-4. Guest landing hero: one rounded line, "<count>+ real trades analyzed",
-   under the free-league note, server-rendered from the same shared count
-   (floored to the nearest 10,000 for the hero's rounded format).
+4. Guest landing hero (RETIRED 2026-11-19): the hero's rounded
+   "<count>+ real trades analyzed" line was removed with the reimagine
+   extras. The shared label helper stays (floored to the nearest 10,000)
+   and its flooring is still pinned below.
 
 No count is hardcoded in page copy. The calculator's and the hero's
 numbers are read at render time from the same 1h cache the count endpoint
@@ -244,19 +245,7 @@ def test_ti_body_renders_with_count_span():
     assert "/api/trade-count?format=dynasty&season=" in html
 
 
-# ── Landing hero placement ───────────────────────────────────────────────────
-
-def test_hero_count_line_is_rendered_from_the_shared_count():
-    # The hero figure used to be a hardcoded "530,000+" that drifted
-    # ~100k behind the site's own real count (633,080 when found). It is
-    # now rendered from the same get_trade_count_total the calculator
-    # uses, so the two pages cannot disagree again.
-    assert "530,000" not in APP_PY
-    assert "{{ hero_trade_count }} real trades analyzed" in APP_PY
-    assert APP_PY.count("hero_trade_count=_hero_trade_count_label()") == 3
-    free_note = APP_PY.index("Free for your first league")
-    assert APP_PY.index("{{ hero_trade_count }}") > free_note
-
+# ── Hero count label helper (hero placement retired 2026-11-19) ──
 
 def test_hero_count_label_floors_to_nearest_10k(monkeypatch):
     import app as app_module
@@ -271,29 +260,6 @@ def test_hero_count_label_floors_to_nearest_10k(monkeypatch):
     monkeypatch.setattr(misc_mod, "get_trade_count_total", lambda: 0)
     assert app_module._hero_trade_count_label() is None
 
-
-def test_hero_line_renders_the_live_rounded_count(offline_client, monkeypatch):
-    import routes.misc_api_bp as misc_mod
-
-    monkeypatch.setattr(misc_mod, "get_trade_count_total", lambda: 633080)
-    html = offline_client.get("/").get_data(as_text=True)
-    assert "630,000+ real trades analyzed" in html
-    assert "530,000" not in html
-
-
-def test_hero_line_drops_the_number_when_count_unavailable(
-    offline_client, monkeypatch
-):
-    import routes.misc_api_bp as misc_mod
-
-    monkeypatch.setattr(misc_mod, "get_trade_count_total", lambda: None)
-    html = offline_client.get("/").get_data(as_text=True)
-    # Honest degradation: the note survives with no number at all rather
-    # than a stale or invented figure.
-    assert '<p class="ld-hero-note">Real trades analyzed</p>' in html
-
-
-# ── No hardcoded live totals in page copy ────────────────────────────────────
 
 def test_no_hardcoded_trade_total_in_surfaces():
     for src in (TRADE_BP_SRC, CALC_PAGE_SRC, TI_PAGE_SRC, APP_JS):
