@@ -283,7 +283,13 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     the role-trend input (snap-share change over the last 4 played
     weeks, see ``utils.start_sit.snap_share_trend``), derived on the
     trend's own played rule — game participation (``gp`` >= 1 or a
-    snap count), independent of the points line above.
+    snap count), independent of the points line above. RB/WR/TE
+    entries for non-lead players also carry ``lead_pid`` /
+    ``last4_ppg_lead``: the room lead (highest season usage per played
+    game at his team + position) and the player's last-4 average over
+    only the weeks that lead also played — the handcuff form filter
+    the ranked pools apply when the lead is active (see
+    ``utils.start_sit.lead_adjusted_last4_ppg``).
 
     This is the single derivation the bundle build and the Start/Sit page's
     live fallback share, so both paths feed ``compute_start_score`` identical
@@ -324,10 +330,16 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
             str(pid): str((meta or {}).get("pos") or (meta or {}).get("position") or "")
             for pid, meta in index.items()
         }
+        teams = {
+            str(pid): str((meta or {}).get("team") or "").upper()
+            for pid, meta in index.items()
+        }
         played_points: Dict[str, list] = {}
+        played_weeks: Dict[str, list] = {}
         played_usage: Dict[str, list] = {}
         played_shares: Dict[str, list] = {}
         for path in files:
+            wnum = _week_num(path)
             try:
                 with open(path) as fh:
                     payload = json.load(fh)
@@ -362,12 +374,69 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                     continue
                 pos = positions.get(pid) or str(st.get("position") or st.get("pos") or "")
                 played_points.setdefault(pid, []).append(pts)
+                played_weeks.setdefault(pid, []).append(wnum)
                 played_usage.setdefault(pid, []).append(
                     usage_value_from_stats(st, pos))
         out = {
             pid: form_usage_inputs(pts, played_usage.get(pid))
             for pid, pts in played_points.items()
         }
+        # Room leads + lead-filtered form (Kaedon, 2026-11-19): a
+        # handcuff's last-4 must not be built on the starter's absence.
+        # For RB/WR/TE, group each team's room from the players index
+        # and name the lead as the teammate with the highest season
+        # usage per played game (opportunities for RB, targets for
+        # WR/TE -- the same usage metric derived above, so no new data
+        # source enters the pipeline; the lead must have a 2+ game
+        # usage sample so a one-week stand-in never becomes the lead).
+        # Every other measurable player in the room gets ``lead_pid``
+        # and ``last4_ppg_lead``: his last-4 average over only the
+        # weeks the lead also played (fallbacks in
+        # utils.start_sit.lead_filtered_last4_ppg). Whether the
+        # filtered value REPLACES the raw one is a current-week
+        # decision -- the lead must be active this week -- made by the
+        # scoring paths via utils.start_sit.lead_adjusted_last4_ppg.
+        try:
+            from utils.start_sit_score import lead_filtered_last4_ppg
+
+            rooms: Dict = {}
+            for _pid in played_points:
+                _pos = (positions.get(_pid) or "").upper()
+                _team = teams.get(_pid) or ""
+                if _pos in ("RB", "WR", "TE") and _team:
+                    rooms.setdefault((_team, _pos), []).append(_pid)
+            for _room_pids in rooms.values():
+                if len(_room_pids) < 2:
+                    continue
+                _usage_pg: Dict[str, tuple] = {}
+                for _pid in _room_pids:
+                    _u = [u for u in (played_usage.get(_pid) or [])
+                          if u is not None]
+                    if _u:
+                        _usage_pg[_pid] = (sum(_u) / len(_u), sum(_u),
+                                           len(_u))
+                _eligible = [p for p, v in _usage_pg.items() if v[2] >= 2]
+                if not _eligible:
+                    continue
+                _lead = max(
+                    _eligible,
+                    key=lambda p: (_usage_pg[p][0], _usage_pg[p][1], p))
+                _lead_weeks = set(played_weeks.get(_lead) or [])
+                for _pid in _room_pids:
+                    if _pid == _lead or _pid not in _usage_pg:
+                        continue
+                    if _usage_pg[_lead][0] <= _usage_pg[_pid][0]:
+                        continue  # co-lead on usage: no filter
+                    _entry = out.get(_pid)
+                    if _entry is None:
+                        continue
+                    _entry["lead_pid"] = _lead
+                    _entry["last4_ppg_lead"] = lead_filtered_last4_ppg(
+                        played_points.get(_pid), played_weeks.get(_pid),
+                        _lead_weeks)
+        except Exception:
+            logger.debug("start_score_bundle lead-form derivation failed",
+                         exc_info=True)
         for _pid, _entry in out.items():
             _entry["snap_trend"] = snap_share_trend(played_shares.get(_pid))
     except Exception:
@@ -637,6 +706,14 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                     "proj_pts": round(proj_pts, 1),
                     "recent_ppg": recent_ppg,
                     "last4_ppg": last4_ppg,
+                    # Lead-filtered form candidate + the lead it was
+                    # filtered on (2026-11-19 handcuff rule): the
+                    # ranked pools swap this in for last4_ppg when the
+                    # lead is active this week. See utils.start_sit.
+                    "last4_ppg_lead": (
+                        round(float(_inp["last4_ppg_lead"]), 1)
+                        if _inp.get("last4_ppg_lead") is not None else None),
+                    "lead_pid": _inp.get("lead_pid") or None,
                     "season_ppg": season_ppg,
                     "bust_rate": bust_rate,
                     # Rating inputs from the played-week derivation (NOT the
@@ -930,6 +1007,13 @@ def load_start_score_bundles_for_scoring(
             _inp = derived.get(pid) or {}
             nb["recent_ppg"] = round(float(_inp.get("recent_ppg") or 0.0), 1)
             nb["last4_ppg"] = round(float(_inp.get("last4_ppg") or 0.0), 1)
+            # Lead-filtered form rides the re-derivation too, so a
+            # non-canonical league's pool applies the same handcuff
+            # rule as the canonical bundles (see utils.start_sit).
+            nb["last4_ppg_lead"] = (
+                round(float(_inp["last4_ppg_lead"]), 1)
+                if _inp.get("last4_ppg_lead") is not None else None)
+            nb["lead_pid"] = _inp.get("lead_pid") or bundle.get("lead_pid")
             nb["season_ppg"] = round(float(_inp.get("season_ppg") or 0.0), 1)
             nb["usage_delta"] = (
                 round(float(_inp["usage_delta"]), 1)

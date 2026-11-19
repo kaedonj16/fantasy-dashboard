@@ -3979,6 +3979,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
             list(index.keys())) or {}
         if len(bundles) >= _SS_POOL_MIN_BUNDLES:
             from utils.start_sit_score import (
+                lead_adjusted_last4_ppg as _pool_lead_adj,
                 start_sit_pool_excluded as _pool_excluded,
             )
             by_pos: dict = {}
@@ -4022,6 +4023,26 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 )
                 if _pool_excluded(_live_status or bundle.get("injury_status")):
                     continue
+                # Handcuff form filter (2026-11-19): when the lead at
+                # this player's position on his team is active this
+                # week, the form input counts only games that lead also
+                # played (the bundle's last4_ppg_lead); when the lead
+                # is out / excluded or on bye, the raw last-4 stands.
+                _p_last4 = bundle.get("last4_ppg")
+                _lead_pid = bundle.get("lead_pid")
+                if _lead_pid:
+                    _lead_bundle = bundles.get(str(_lead_pid)) or {}
+                    _lead_meta = index.get(str(_lead_pid))
+                    _lead_status = live_status_map.get(str(_lead_pid)) or (
+                        _lead_meta.get("injury_status")
+                        if isinstance(_lead_meta, dict) else None
+                    ) or _lead_bundle.get("injury_status")
+                    _p_last4 = _pool_lead_adj(
+                        _p_last4, bundle.get("last4_ppg_lead"), _lead_pid,
+                        lead_status=_lead_status,
+                        lead_on_bye=(bool(_lead_bundle.get("on_bye"))
+                                     if _lead_bundle
+                                     else bool(bundle.get("on_bye"))))
                 try:
                     _p_def_rank, _p_def_total = _pool_def_rank(
                         pos, bundle.get("opponent"))
@@ -4033,7 +4054,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                         # Form blend: the bundle's last-4-played PPG is
                         # the base's form input (window size derives
                         # from the played_games passed below).
-                        last4_ppg=bundle.get("last4_ppg"),
+                        last4_ppg=_p_last4,
                         def_rank=_p_def_rank,
                         def_total=_p_def_total,
                         usage_delta=bundle.get("usage_delta"),
@@ -4259,6 +4280,7 @@ def build_start_sit_pool_export(season, week):
     )
     from utils.start_sit_score import (
         compute_start_score,
+        lead_adjusted_last4_ppg as _export_lead_adj,
         start_sit_pool_excluded as _export_excluded,
     )
 
@@ -4310,6 +4332,25 @@ def build_start_sit_pool_export(season, week):
         _eff_status = _live_status or b.get("injury_status")
         if _export_excluded(_eff_status):
             continue
+        # Handcuff form filter (2026-11-19): identical to
+        # start_score_pool_scores -- when the room lead is active this
+        # week the form input is the bundle's lead-filtered last-4;
+        # when he is out / excluded or on bye the raw last-4 stands.
+        _e_last4 = b.get("last4_ppg")
+        _lead_pid = b.get("lead_pid")
+        if _lead_pid:
+            _lead_bundle = bundles.get(str(_lead_pid)) or {}
+            _lead_meta = index.get(str(_lead_pid)) or {}
+            _lead_status = live_status.get(str(_lead_pid)) or (
+                _lead_meta.get("injury_status")
+                if isinstance(_lead_meta, dict) else None
+            ) or _lead_bundle.get("injury_status")
+            _e_last4 = _export_lead_adj(
+                _e_last4, b.get("last4_ppg_lead"), _lead_pid,
+                lead_status=_lead_status,
+                lead_on_bye=(bool(_lead_bundle.get("on_bye"))
+                             if _lead_bundle
+                             else bool(b.get("on_bye"))))
         try:
             _def_rank, _def_total = _export_def_rank(
                 pos, b.get("opponent"))
@@ -4321,7 +4362,7 @@ def build_start_sit_pool_export(season, week):
                 # Form blend: the bundle's last-4-played PPG is the
                 # base's form input (window size derives from the
                 # played_games passed below).
-                last4_ppg=b.get("last4_ppg"),
+                last4_ppg=_e_last4,
                 def_rank=_def_rank,
                 def_total=_def_total,
                 usage_delta=b.get("usage_delta"),
@@ -17810,6 +17851,21 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
             out["recent_ppg"] = round(_din["recent_ppg"], 1)
             if _din.get("last4_ppg") is not None:
                 out["last4_ppg"] = round(_din["last4_ppg"], 1)
+        # Lead-filtered form for the modal's start score (the compare
+        # row's displayed L4 PPG above stays the raw average): the same
+        # handcuff rule the ranked pools apply, decided on the live
+        # status map. The lead shares this player's team, so his bye
+        # state is this call's on_bye.
+        if _din.get("lead_pid") and _din.get("last4_ppg_lead") is not None \
+                and out["last4_ppg"] is not None:
+            from utils.start_sit_score import (
+                lead_adjusted_last4_ppg as _lead_adj,
+            )
+            out["form_last4_ppg"] = round(_lead_adj(
+                _din["last4_ppg"], _din["last4_ppg_lead"], _din["lead_pid"],
+                lead_status=_live_injury_status_map().get(
+                    str(_din["lead_pid"])),
+                lead_on_bye=on_bye), 1)
         out["usage_delta"] = _din.get("usage_delta")
         out["usage_season_avg"] = _din.get("usage_season_avg")
         out["played_games"] = _din.get("played_games")
@@ -18615,7 +18671,8 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         # ── Start/sit score: one engine (utils.start_sit_score). Matchup is not
         # re-multiplied -- weekly proj already reflects the opponent. Weather and
         # Vegas are applied here because projection feeds usually omit them.
-        from utils.start_sit_score import compute_start_score, likely_range
+        from utils.start_sit_score import (
+            compute_start_score, lead_adjusted_last4_ppg, likely_range)
         if _bun is not None:
             _ut_ss = {"delta": _bun.get("usage_delta"),
                       "season_avg": _bun.get("usage_season_avg")}
@@ -18635,6 +18692,26 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             _played_ss = _din_ss.get("played_games")
             _snap_trend_ss = _din_ss.get("snap_trend")
         usage_delta = _ut_ss.get("delta")
+        # Lead-filtered form (Kaedon, 2026-11-19): when the lead at
+        # this player's position on his team is active this week, the
+        # rating's form input counts only games that lead also played,
+        # so a handcuff's injury-replacement spike cannot prop up his
+        # rank in the world where the starter plays -- the same rule
+        # the ranked pools apply. The row's displayed L4 PPG stays the
+        # raw last-4 average; only the score's form input swaps. The
+        # lead shares this player's team, so his bye state is this
+        # row's on_bye.
+        _form_last4 = last4_ppg
+        _lead_src = _bun if _bun is not None else (
+            _ss_derived.get(pid) or _ss_derived.get(str(pid)) or {})
+        if _lead_src.get("lead_pid"):
+            _lead_full = players_full.get(str(_lead_src["lead_pid"])) or {}
+            _form_last4 = lead_adjusted_last4_ppg(
+                last4_ppg, _lead_src.get("last4_ppg_lead"),
+                _lead_src["lead_pid"],
+                lead_status=(_lead_full.get("injury_status")
+                             or _lead_full.get("status")),
+                lead_on_bye=on_bye)
         # The bundle path never resolves consistency; keep it per-row so a
         # bundle row can never inherit the previous player's value.
         _cons = None
@@ -18654,8 +18731,9 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             recent_ppg=recent_ppg,
             season_ppg=s_ppg,
             # Form blend: last-4-played PPG resolved above from the same
-            # bundle/derivation as every other rating input here.
-            last4_ppg=last4_ppg,
+            # bundle/derivation as every other rating input here, with
+            # the lead filter applied when the room lead is active.
+            last4_ppg=_form_last4,
             def_rank=def_rank,
             def_total=def_total,
             usage_delta=usage_delta,
@@ -34620,8 +34698,11 @@ def api_player_details(player_id: str):
                         season_ppg=float(_ppg or 0),
                         # Form blend: the compare payload's last-4-played
                         # PPG, from the same derivation as its recent PPG
-                        # (played_games is passed below).
-                        last4_ppg=_ssp.get("last4_ppg"),
+                        # (played_games is passed below), with the lead
+                        # filter applied when the room lead is active.
+                        last4_ppg=(_ssp.get("form_last4_ppg")
+                                   if _ssp.get("form_last4_ppg") is not None
+                                   else _ssp.get("last4_ppg")),
                         def_rank=_ssp.get("def_rank"),
                         def_total=_ssp.get("def_total") or 32,
                         usage_delta=_ss_ud,

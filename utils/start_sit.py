@@ -522,6 +522,59 @@ def form_usage_inputs(played_points, played_usage=None) -> dict:
     return out
 
 
+def lead_filtered_last4_ppg(played_points, played_weeks, lead_played_weeks,
+                            window: int = 4) -> float:
+    """Last-``window`` played PPG counting only games the room's lead
+    also played.
+
+    ``played_points`` / ``played_weeks`` are the player's chronological
+    played-week points and their week numbers (aligned lists);
+    ``lead_played_weeks`` is the collection of week numbers the lead at
+    his position on his team played. Shared games keep their chronology
+    and the window takes the most recent ``window`` of them.
+
+    Fallbacks (the filter never zeroes a player out over bookkeeping):
+    at least one shared game -> average what remains, even a single
+    game; zero shared games (the two were never on the field together
+    in the sample -- a mid-season arrival, or the lead missed exactly
+    the weeks the player produced) -> the unfiltered last-``window``
+    average. No played games at all -> 0.0.
+    """
+    pts = [float(p) for p in (played_points or [])]
+    if not pts:
+        return 0.0
+    lead_weeks = set(lead_played_weeks or ())
+    shared = [p for p, w in zip(pts, list(played_weeks or []))
+              if w in lead_weeks]
+    if not shared:
+        shared = pts
+    tail = shared[-window:] if window and window > 0 else shared
+    return sum(tail) / len(tail)
+
+
+def lead_adjusted_last4_ppg(last4_ppg, last4_ppg_lead, lead_pid,
+                            lead_status=None, lead_on_bye=False):
+    """The last-4 PPG a ranked pool should feed the rating for a player.
+
+    Kaedon's handcuff rule (2026-11-19): when the lead at a player's
+    position on his team is ACTIVE for the current week, the player's
+    form counts only the games that lead also played
+    (``last4_ppg_lead``, derived alongside the raw window) -- a
+    backup's rank must not be built on the starter's absence (Emmett
+    Johnson's 35.1 came in his only start, with Kenneth Walker III
+    out, yet his raw last-4 of 18.4 parked him at RB17 in the world
+    where Walker plays). When the lead is out / excluded (IR / Out /
+    PUP / NFI) or on bye, the injury-replacement world is the real one
+    and the raw ``last4_ppg`` stands. No identified lead, or no
+    filtered value derived, also leaves the raw value untouched.
+    """
+    if not lead_pid or last4_ppg_lead is None:
+        return last4_ppg
+    if lead_on_bye or start_sit_pool_excluded(lead_status):
+        return last4_ppg
+    return last4_ppg_lead
+
+
 def snap_share_trend(snap_shares) -> Optional[float]:
     """Role-trend input for the rating: the change in a player's snap
     share across his last 4 PLAYED weeks — mean share of the last 2
