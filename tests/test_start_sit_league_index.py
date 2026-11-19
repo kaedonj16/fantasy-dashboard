@@ -29,6 +29,10 @@ def _fake_bundles(monkeypatch, bundles):
                         lambda *a, **k: dict(bundles))
     monkeypatch.setattr(appmod, "get_players_index_global",
                         lambda *a, **k: {pid: {} for pid in bundles})
+    # The pool reads live injury statuses from the Sleeper feed map;
+    # keep it empty so these fakes stay hermetic.
+    monkeypatch.setattr(appmod, "get_players_global",
+                        lambda *a, **k: {})
     appmod._SS_POOL_CACHE.clear()
 
 
@@ -121,6 +125,8 @@ def test_pool_exotic_scoring_ranks_on_full_start_score(monkeypatch):
                         lambda m, pid, s, pos: proj.get(str(pid)))
     monkeypatch.setattr(appmod, "get_players_index_global",
                         lambda *a, **k: {pid: {} for pid in pids})
+    monkeypatch.setattr(appmod, "get_players_global",
+                        lambda *a, **k: {})
     appmod._SS_POOL_CACHE.clear()
 
     pool = appmod.start_score_pool_scores(2026, 6, exotic)

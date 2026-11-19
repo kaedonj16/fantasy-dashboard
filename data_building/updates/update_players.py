@@ -1,9 +1,13 @@
-"""Refresh current NFL team affiliations from Sleeper.
+"""Refresh current NFL team affiliations + injury statuses from Sleeper.
 
 Used by the daily cron so trades / signings / cuts land in:
   1. cache/players_index.json (+ relevant index) on the cron disk
   2. player_current_team (shared Postgres — what the web service reads)
   3. player_values.team for players that already have a values row
+
+Each index record also gets its live ``injury_status`` stamped from the
+same Sleeper payload ("" when healthy): the start-score bundle build
+runs later in the same daily run and reads the status from this index.
 
 Sleeper is the primary source: free, keyed by the same player_id the rest of
 the app uses.
@@ -93,6 +97,15 @@ def _apply_teams_to_index(
         fresh = sleeper_players.get(str(sleeper_id))
         if not isinstance(fresh, dict):
             continue
+
+        # Injury status rides the same Sleeper refresh. The slim index
+        # historically carried identity only (name/team/pos), so every
+        # reader of meta["injury_status"] -- the start-score bundle
+        # builder above all -- silently saw "" and the start/sit pool's
+        # IR / Out / PUP / NFI exclusion never fired. Stamp the live
+        # value ("" when Sleeper reports no designation) for every
+        # indexed player, not just team-changers.
+        existing["injury_status"] = str(fresh.get("injury_status") or "")
 
         old_team = normalize_nfl_team(existing.get("team"))
         new_team_raw = fresh.get("team")

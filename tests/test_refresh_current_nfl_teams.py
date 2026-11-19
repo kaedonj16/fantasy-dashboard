@@ -92,6 +92,42 @@ def test_update_player_teams_from_sleeper_writes_changes(tmp_path, monkeypatch):
     assert written["102"]["team"] == "KC"  # kept — missing on Sleeper
 
 
+def test_update_player_teams_stamps_injury_status(tmp_path, monkeypatch):
+    """Regression (2026-11-19): the index carried no injury_status at
+    all, so the start-score bundle builder read "" for everyone and the
+    start/sit pool's IR/Out exclusion never fired. The daily refresh
+    must stamp the live Sleeper designation onto every indexed player
+    ("" when healthy), including players whose team did not change,
+    and clear a stale designation once Sleeper drops it."""
+    index_path = tmp_path / "players_index.json"
+    index_path.write_text(json.dumps({
+        "100": {"name": "Hurt", "team": "LV", "pos": "TE"},
+        "101": {"name": "Healthy", "team": "BUF", "pos": "RB"},
+        "102": {"name": "Recovered", "team": "KC", "pos": "WR",
+                "injury_status": "IR"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(up, "_bye_by_team", lambda: {})
+
+    result = up.update_player_teams_from_sleeper(
+        index_path,
+        write=True,
+        keep_missing_team=True,
+        sleeper_players={
+            "100": {"full_name": "Hurt", "team": "LV",
+                    "injury_status": "Questionable"},
+            "101": {"full_name": "Healthy", "team": "BUF"},
+            "102": {"full_name": "Recovered", "team": "KC",
+                    "injury_status": None},
+        },
+    )
+
+    assert result["changed_count"] == 0  # no team moved
+    written = json.loads(index_path.read_text(encoding="utf-8"))
+    assert written["100"]["injury_status"] == "Questionable"
+    assert written["101"]["injury_status"] == ""
+    assert written["102"]["injury_status"] == ""  # stale IR cleared
+
+
 def test_update_keeps_team_when_sleeper_blank(tmp_path, monkeypatch):
     index_path = tmp_path / "players_index.json"
     index_path.write_text(json.dumps({
