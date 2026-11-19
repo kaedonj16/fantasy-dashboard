@@ -3242,6 +3242,12 @@ def _get_archetype_suggestions_impl(
         _locked_map = _klbr(ctx) or {}
         _locked_ids = {
             str(p) for p in (_locked_map.get(str(viewer_roster_id)) or ())}
+        # Iteration 3: the same map, keyed by partner roster, drives
+        # GET-side keeper legality (a partner's designated keeper,
+        # e.g. Mahomes at FLASHOVERS, can never be a target).
+        _partner_locked_map = {
+            str(rid): {str(p) for p in (ids or ())}
+            for rid, ids in _locked_map.items()}
         # Fail closed: a limited-keeper format whose designations
         # cannot be resolved gets NO player suggestions from this
         # engine — an unresolvable designation set must never read as
@@ -3252,6 +3258,7 @@ def _get_archetype_suggestions_impl(
             _keeper_fail_closed = True
     except Exception:
         _locked_ids, _keeper_fail_closed = set(), False
+        _partner_locked_map = {}
     if _locked_ids:
         # The builders already honor untouchable_ids for every send
         # pool; folding the locked set in means no builder can assemble
@@ -3355,6 +3362,14 @@ def _get_archetype_suggestions_impl(
                 if isinstance(_a, dict) and not _a.get("is_pick") \
                         and str(_a.get("player_id") or "") in _locked_ids:
                     return False, pkg, None
+        # GET-side keeper legality holds even with no gate state: a
+        # partner's designated keeper is untradeable, full stop.
+        _recv_locked = _partner_locked_map.get(str(partner_rid), ())
+        if _recv_locked:
+            for _a in receive_assets or []:
+                if isinstance(_a, dict) and not _a.get("is_pick") \
+                        and str(_a.get("player_id") or "") in _recv_locked:
+                    return False, pkg, None
         if _tp is None:
             return True, pkg, None
         return _tp["mod"].gate_package(
@@ -3369,6 +3384,8 @@ def _get_archetype_suggestions_impl(
             value_bars=_tp["value_bars"],
             ctx=ctx, is_dynasty_or_keeper=not is_redraft,
             locked_ids=_locked_ids,
+            receive_locked_ids=_partner_locked_map.get(
+                str(partner_rid), ()),
         )
 
     def _gate_acquire(pkg, receive_assets, partner_rid):
@@ -3410,6 +3427,20 @@ def _get_archetype_suggestions_impl(
                 break
         if not _shortfalls:
             return True, pkg, _ev
+        # Iteration 3: in a Superflex format (QB requirement >= 2) a
+        # QB shortfall is never a "structural, surface it flagged"
+        # case. The live Caleb pitches (Kyren alone, Kyren+Kincaid,
+        # Watson alone, Kyren+Moore) all reached this branch because
+        # the viewer's only spare QB was not spare under her own
+        # two-QB requirement that week, and resurfaced as flagged
+        # suggestions that leave Goodfellas without a startable QB2.
+        # The strict gate already ran its repair; if the package is
+        # still short at QB in Superflex, it drops. (The 1QB flagged
+        # reach the stretch slate pins is untouched: its requirement
+        # is 1.)
+        if "QB" in _shortfalls \
+                and int(_tp["requirements"].get("QB") or 0) >= 2:
+            return False, pkg, _ev
         if _tpos and _shortfalls == {_tpos}:
             try:
                 _spare = _tp["mod"].find_repair_player(
@@ -3448,6 +3479,14 @@ def _get_archetype_suggestions_impl(
             recv_players = [
                 a for a in (row.get("suggested_receive") or [])
                 if isinstance(a, dict) and not a.get("is_pick")]
+            # GET-side keeper legality for sell rows too: a return
+            # carrying the partner's designated keeper is illegal
+            # even when the shared gate is unavailable.
+            if any(
+                    str(a.get("player_id") or "") in _partner_locked_map.get(
+                        _pid_owner.get(str(a.get("player_id") or "")), ())
+                    for a in recv_players):
+                continue
             if _tp is None or not recv_players:
                 out.append(row)
                 continue
@@ -3531,6 +3570,8 @@ def _get_archetype_suggestions_impl(
         for pid in pids:
             if pid in viewer_players:
                 continue  # never suggest the viewer's own players as targets
+            if pid in _partner_locked_map.get(rid, ()):
+                continue  # designated keeper: untradeable (iteration 3)
             info = values_by_id.get(pid)
             if not info:
                 continue

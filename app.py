@@ -15000,6 +15000,16 @@ def _next_steps_attention_actions(ctx: dict, viewer_roster_id, *, now_ts=None) -
                 "team": str(base.get("team") or full.get("team") or "").upper(),
                 "pos": str(base.get("pos") or full.get("position") or "").upper(),
                 "injury_status": str(full.get("injury_status") or ""),
+                # Trending-out signals (iteration 3): consecutive DNPs
+                # in practice, when the feed carries them under any of
+                # the known key shapes.
+                "dnp_streak": (
+                    full.get("dnp_streak") or full.get("consecutive_dnp")
+                    or base.get("dnp_streak") or base.get("consecutive_dnp")
+                    or 0),
+                "practice": str(
+                    full.get("practice_status") or full.get("practice")
+                    or base.get("practice_status") or ""),
             }
 
         kickoff_by_team: dict = {}
@@ -15102,10 +15112,151 @@ def _next_steps_attention_actions(ctx: dict, viewer_roster_id, *, now_ts=None) -
                 "player_ids": [pid],
             })
 
+        # 2b. Trending-out starters (iteration 3, item 1b): a starter
+        # whose week is going the wrong way: Doubtful, or Questionable
+        # with consecutive DNP practices (Kincaid: DNP Wed AND Thu) -
+        # breaks the all-set state even when his game is more than 48h
+        # out, and the action names the cover or says there is none.
+        _TREND_STATUSES = ("DOUBTFUL", "D")
+        for pid in starters:
+            m = _meta(pid)
+            status = m["injury_status"].strip().upper()
+            try:
+                _dnp = int(m.get("dnp_streak") or 0)
+            except (TypeError, ValueError):
+                _dnp = 0
+            _practice = str(m.get("practice") or "").upper()
+            if _practice.count("DNP") >= 2:
+                _dnp = max(_dnp, 2)
+            _trending_out = status in _TREND_STATUSES or (
+                status in ("QUESTIONABLE", "Q") and _dnp >= 2)
+            if not _trending_out or not m["name"]:
+                continue
+            if any(a.get("player_ids") == [pid] for a in actions):
+                continue  # the 48h questionable action already covers him
+            plug = ""
+            cands = []
+            for b in bench:
+                bm = _meta(b)
+                if bm["pos"] != m["pos"]:
+                    continue
+                if bm["injury_status"].strip().upper() in _OUT_LIKE:
+                    continue
+                cands.append((float(proj_map.get(b) or 0), bm["name"]))
+            if cands:
+                cands.sort(reverse=True)
+                if cands[0][1]:
+                    plug = f" {cands[0][1]} is the plug if he sits."
+            if not plug:
+                plug = f" No healthy {m['pos']} cover on the bench."
+            actions.append({
+                "priority": "high",
+                "tag": "Lineup",
+                "kind": "lineup",
+                "action": f"{m['name']} is trending out",
+                "why": f"His practice week points the wrong way.{plug}",
+                "impact": None,
+                "cta_label": "Fix lineup",
+                "cta_url": fix_url,
+                "score": 75,
+                "player_ids": [pid],
+            })
+
+        # 2c. Unowned starter-grade free agents (iteration 3, items
+        # 1a/1c): a player on no roster in this league whose projection
+        # beats the weakest projected starter at his position projects
+        # INTO the lineup: with open bench spots he is a free add, and
+        # the all-set state must not fire over him (Joe Milton, dropped
+        # in the user's own Wednesday batch, was her SFlex starter).
+        _rp_list = ctx.get("roster_positions")
+        if _rp_list is not None and hasattr(_rp_list, "tolist"):
+            _rp_list = _rp_list.tolist()
+        _open_spots = 0
+        if _rp_list:
+            # True capacity: providers like Fleaflicker list only
+            # starting slots in roster_positions; the bench lives on
+            # the roster as bench_slots.
+            try:
+                from utils.waivers import (
+                    effective_roster_positions as _eff_rp)
+                _rp_list = _eff_rp(roster, _rp_list)
+            except Exception:
+                pass
+            _open_spots = len(_rp_list) - len(roster.get("players") or [])
+        if _open_spots > 0 and proj_map:
+            _rostered_all = {
+                str(p) for r in rosters for p in (r.get("players") or [])}
+            _slot_by_pid = {}
+            _slots = [str(s).upper() for s in (_rp_list or [])]
+            for _i, _pid in enumerate(starters):
+                if _i < len(_slots):
+                    _slot_by_pid[_pid] = _slots[_i]
+            _weakest: dict = {}
+            for _pid in starters:
+                _m = _meta(_pid)
+                _slot = _slot_by_pid.get(_pid, "")
+                _keys = {_m["pos"]}
+                if _slot in ("SUPER_FLEX", "SUPERFLEX"):
+                    _keys.add("QB")
+                for _k in _keys:
+                    _v = float(proj_map.get(_pid) or 0)
+                    if _k not in _weakest or _v < _weakest[_k][0]:
+                        _weakest[_k] = (_v, _m["name"])
+            _best_fa = None
+            for _pid, _raw in proj_map.items():
+                _pid = str(_pid)
+                if _pid in _rostered_all or _pid in starter_set:
+                    continue
+                try:
+                    _v = float(_raw or 0)
+                except (TypeError, ValueError):
+                    continue
+                if _v <= 0:
+                    continue
+                _m = _meta(_pid)
+                if not _m["name"] or not _m["pos"]:
+                    continue
+                if _m["injury_status"].strip().upper() in _OUT_LIKE:
+                    continue
+                _bar = _weakest.get(_m["pos"])
+                if _bar is None or _v <= _bar[0]:
+                    continue
+                if _best_fa is None or _v - _bar[0] > _best_fa[0]:
+                    _best_fa = (_v - _bar[0], _pid, _m, _v, _bar)
+            if _best_fa is not None:
+                _gain, _pid, _m, _v, _bar = _best_fa
+                actions.append({
+                    "priority": "med",
+                    "tag": "Waivers",
+                    "kind": "waiver",
+                    "action": f"Add {_m['name']}",
+                    "why": (
+                        f"Projects {_v:.1f} this week, ahead of "
+                        f"{_bar[1]} ({_bar[0]:.1f}), and you have "
+                        f"{_open_spots} open bench spot"
+                        f"{'s' if _open_spots != 1 else ''}."),
+                    "impact": f"+{_gain:.1f} projected points",
+                    "cta_label": "See waivers",
+                    "cta_url": url_for(
+                        "league_pages.page_waivers",
+                        platform=platform, season=season, league_id=league_id,
+                    ),
+                    "score": 65,
+                    "player_ids": [_pid],
+                    "player_id": _pid,
+                })
+
         # 3. Open bench spots during the regular season.
         roster_positions = ctx.get("roster_positions")
         if roster_positions is not None and hasattr(roster_positions, "tolist"):
             roster_positions = roster_positions.tolist()
+        if roster_positions:
+            try:
+                from utils.waivers import (
+                    effective_roster_positions as _eff_rp3)
+                roster_positions = _eff_rp3(roster, roster_positions)
+            except Exception:
+                pass
         if roster_positions and current_week >= 1:
             _playoff_start = None
             try:
@@ -44084,10 +44235,21 @@ def api_trade_intel_player_packages(player_id: str):
                 _rp2 = ctx.get("roster_positions") or []
                 _is_sf2 = (league_type == "sf") or any(
                     "SUPER" in str(s).upper() for s in _rp2)
+                # Iteration 3: callers pass the format as
+                # "superflex"/"2qb" too, and the derived floors
+                # collapse the QB requirement to 1 when the slot list
+                # is unusable — the Superflex QB2 minimum then
+                # silently vanishes and Caleb-style packages that
+                # return no QB pass the gate (the archetype engine
+                # already floors this; this surface did not).
+                if (league_type or "").lower() in ("superflex", "2qb"):
+                    _is_sf2 = True
                 _thr2, _floors2 = _dlt2(
                     _rp2, len(rosters) or 12, is_sf=_is_sf2)
                 _tp_requirements = {
                     p: int(_floors2.get(p) or 0) for p in _tpc2.POSITIONS}
+                if _is_sf2 and int(_tp_requirements.get("QB") or 0) < 2:
+                    _tp_requirements = dict(_tp_requirements, QB=2)
                 _tp_value_bars = {
                     p: float(_thr2.get(p) or 350) for p in _tpc2.POSITIONS}
 
@@ -44564,6 +44726,23 @@ def api_trade_intel_player_packages(player_id: str):
             pkg["send"] = _orig_send
             _enrich_pkg(pkg)
             return None
+
+        # GET-side keeper legality (iteration 3): the focus player
+        # himself may be a designated keeper on his owner's roster
+        # (Patrick Mahomes at FLASHOVERS) — untradeable in this
+        # league, so no package for him may be emitted at all. Fail
+        # closed when keeper data is present; leagues without keeper
+        # data are unchanged.
+        _target_is_keeper = False
+        if _tp_owner_roster is not None and not _focus_is_pick:
+            try:
+                from utils.league_rules import keeper_locked_ids as _kli_t
+                _target_is_keeper = str(player_id) in _kli_t(
+                    ctx, [_tp_owner_roster.get("roster_id")])
+            except Exception:
+                _target_is_keeper = False
+        if _target_is_keeper:
+            primary_pkgs = []
 
         # Viability is a GATE (spec 3.3): packages failing checks 1-3
         # (after repair) are never emitted, so grades/acceptance below

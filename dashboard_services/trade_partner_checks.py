@@ -492,6 +492,7 @@ def gate_package(
     is_dynasty_or_keeper: bool = False,
     locked_ids=None,
     blocked_repair_ids=None,
+    receive_locked_ids=None,
 ) -> tuple:
     """Checks 1-3 as a gate with check-2 repair, for suggestion surfaces.
 
@@ -526,6 +527,18 @@ def gate_package(
         for a in package:
             if isinstance(a, dict) and not _is_pick(a) \
                     and _pid(a) in locked:
+                return False, package, None
+    # Iteration 3, GET-side keeper legality: a designated keeper on the
+    # PARTNER's roster is just as untradeable as one on the viewer's.
+    # Iter2 locked the give side only, so the Trade Hub could still
+    # pitch GET Patrick Mahomes (a verified keeper at FLASHOVERS).
+    # The ban is absolute and never fails open, exactly like the send
+    # side: it runs before any evaluation.
+    receive_locked = {str(x) for x in (receive_locked_ids or ())}
+    if receive_locked:
+        for a in receive:
+            if isinstance(a, dict) and not _is_pick(a) \
+                    and _pid(a) in receive_locked:
                 return False, package, None
     try:
         ev = evaluate_package(

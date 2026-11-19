@@ -157,11 +157,28 @@ def get_transactions_delta(platform: str, league_id: str, season: int,
                            weeks: Optional[list] = None) -> dict:
     """Cached transactions delta for one league ctx. Never raises."""
     try:
-        ctx_ts = _parse_ts((ctx or {}).get("_cache_synced_at"))
-        if ctx_ts is None or not league_id:
+        if not league_id:
             return {"adds": set(), "drops": {}, "hash": ""}
-        key = (str(platform), str(league_id), int(season),
-               ctx_ts.isoformat())
+        ctx_ts = _parse_ts((ctx or {}).get("_cache_synced_at"))
+        if ctx_ts is None:
+            # Iteration 3: some provider ctxs (Fleaflicker) carry no
+            # build timestamp, and the old code returned an empty
+            # delta for them unconditionally — so a player dropped in
+            # the user's own Wednesday waiver batch (Joe Milton,
+            # Nov 19) never entered the pool at all. Fall back to a
+            # trailing 48h baseline: netting the last 48h of
+            # transactions over the ctx rosters is idempotent when
+            # the ctx already reflects them (a reflected drop is no
+            # longer rostered; a reflected add already is), so the
+            # fallback can only correct a stale rostered set, never
+            # corrupt a fresh one. build_delta's own contract is
+            # unchanged (a None baseline there still yields empty).
+            ctx_ts = datetime.now(timezone.utc) - timedelta(hours=48.0)
+            key = (str(platform), str(league_id), int(season),
+                   "fallback48h", ctx_ts.strftime("%Y%m%d%H"))
+        else:
+            key = (str(platform), str(league_id), int(season),
+                   ctx_ts.isoformat())
         now = time.monotonic()
         hit = _DELTA_CACHE.get(key)
         if hit and (now - hit[0]) < DELTA_TTL_SECONDS:
