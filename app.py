@@ -2769,7 +2769,7 @@ FORM_BODY = """
               </header>
               <ul class="home-pro-benefits">
                 <li>
-                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-handshake"></i></span>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-scale-balanced"></i></span>
                   <strong>Trade Strategy</strong>
                   <span>See exactly how each trade shifts your playoff odds before you send it</span>
                 </li>
@@ -2789,7 +2789,7 @@ FORM_BODY = """
                   <span>Week-by-week simulations of your path to the playoffs</span>
                 </li>
                 <li>
-                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-briefcase"></i></span>
+                  <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-chart-bar"></i></span>
                   <strong>Front Office Report</strong>
                   <span>A weekly GM memo on your roster needs and next moves</span>
                 </li>
