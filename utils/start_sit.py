@@ -575,6 +575,71 @@ def lead_adjusted_last4_ppg(last4_ppg, last4_ppg_lead, lead_pid,
     return last4_ppg_lead
 
 
+#: How far the lead rule pulls a non-lead's projection toward what he
+#: actually scores in games his room lead also played. Halfway: the
+#: projection still prices the matchup and the chance the lead sits,
+#: the shared-games average is what the player has demonstrated in
+#: the world where the starter plays.
+LEAD_PROJ_BLEND = 0.5
+
+
+def lead_adjusted_score_inputs(proj_pts, recent_ppg, season_ppg,
+                               usage_delta, snap_trend, *,
+                               season_ppg_lead=None, recent_ppg_lead=None,
+                               usage_delta_lead=None, snap_trend_lead=None,
+                               lead_pid=None, lead_status=None,
+                               lead_on_bye=False):
+    """The rating inputs a ranked pool should feed the scorer for a
+    non-lead player, extending :func:`lead_adjusted_last4_ppg`'s rule
+    to the rest of the inputs (Kaedon, 2026-11-19).
+
+    Filtering the last-4 alone left a handcuff startable on paper:
+    Emmett Johnson's filtered form still scored RB20 because his
+    projection (the base's dominant term) priced a starter's role,
+    and his usage delta and snap trend still counted the week his
+    lead missed at full weight. When the lead is ACTIVE for the
+    current week, then:
+
+    * the projection blends halfway toward ``season_ppg_lead`` --
+      the player's per-game scoring over only the games the lead
+      also played -- but only downward: a projection already below
+      what he scores alongside the lead is left alone;
+    * recent PPG, season PPG, the usage delta and the snap trend
+      swap to their shared-games derivations (``*_lead``) wherever
+      one was derived; a missing derivation keeps the raw input.
+
+    When the lead is out / excluded (IR / Out / PUP / NFI) or on
+    bye, the injury-replacement world is the real one and every raw
+    input stands. No identified lead, or no shared-games derivation
+    at all, also leaves the inputs untouched. Returns the tuple
+    ``(proj_pts, recent_ppg, season_ppg, usage_delta, snap_trend)``.
+    """
+    raw = (proj_pts, recent_ppg, season_ppg, usage_delta, snap_trend)
+    if not lead_pid:
+        return raw
+    if (season_ppg_lead is None and recent_ppg_lead is None
+            and usage_delta_lead is None and snap_trend_lead is None):
+        return raw
+    if lead_on_bye or start_sit_pool_excluded(lead_status):
+        return raw
+    proj = proj_pts
+    if season_ppg_lead is not None:
+        try:
+            _proj = float(proj_pts or 0)
+            _lead_ppg = float(season_ppg_lead)
+        except (TypeError, ValueError):
+            _proj, _lead_ppg = 0.0, None
+        if _lead_ppg is not None and _proj > 0 and _lead_ppg < _proj:
+            proj = (1.0 - LEAD_PROJ_BLEND) * _proj + LEAD_PROJ_BLEND * _lead_ppg
+    return (
+        proj,
+        recent_ppg_lead if recent_ppg_lead is not None else recent_ppg,
+        season_ppg_lead if season_ppg_lead is not None else season_ppg,
+        usage_delta_lead if usage_delta_lead is not None else usage_delta,
+        snap_trend_lead if snap_trend_lead is not None else snap_trend,
+    )
+
+
 def snap_share_trend(snap_shares) -> Optional[float]:
     """Role-trend input for the rating: the change in a player's snap
     share across his last 4 PLAYED weeks — mean share of the last 2

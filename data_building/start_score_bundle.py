@@ -289,7 +289,12 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     game at his team + position) and the player's last-4 average over
     only the weeks that lead also played — the handcuff form filter
     the ranked pools apply when the lead is active (see
-    ``utils.start_sit.lead_adjusted_last4_ppg``).
+    ``utils.start_sit.lead_adjusted_last4_ppg``). The same entries
+    carry the shared-games versions of the remaining rating inputs
+    (``season_ppg_lead`` / ``recent_ppg_lead`` / ``usage_delta_lead``
+    / ``snap_trend_lead``) for the projection blend and input swaps
+    the pools apply alongside it (see
+    ``utils.start_sit.lead_adjusted_score_inputs``).
 
     This is the single derivation the bundle build and the Start/Sit page's
     live fallback share, so both paths feed ``compute_start_score`` identical
@@ -338,6 +343,7 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
         played_weeks: Dict[str, list] = {}
         played_usage: Dict[str, list] = {}
         played_shares: Dict[str, list] = {}
+        played_share_weeks: Dict[str, list] = {}
         for path in files:
             wnum = _week_num(path)
             try:
@@ -363,6 +369,8 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                         if _off is not None and _tm:
                             played_shares.setdefault(str(pid), []).append(
                                 float(_off) / float(_tm))
+                            played_share_weeks.setdefault(
+                                str(pid), []).append(wnum)
                 except (TypeError, ValueError):
                     pass
                 if st.get("pts_ppr") is None:
@@ -434,6 +442,36 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                     _entry["last4_ppg_lead"] = lead_filtered_last4_ppg(
                         played_points.get(_pid), played_weeks.get(_pid),
                         _lead_weeks)
+                    # The rest of the rating's inputs over the same
+                    # shared games (Kaedon, 2026-11-19): what the
+                    # player scores per game alongside his lead, his
+                    # recent form and usage delta in those games, and
+                    # his snap trend across them. The scoring paths
+                    # swap these in (and blend the projection toward
+                    # season_ppg_lead) only while the lead is active --
+                    # see utils.start_sit.lead_adjusted_score_inputs.
+                    # No shared game at all: nothing is derived and
+                    # the raw inputs stand, as with the last-4 above.
+                    _p_weeks = played_weeks.get(_pid) or []
+                    _shared_idx = [i for i, w in enumerate(_p_weeks)
+                                   if w in _lead_weeks]
+                    if _shared_idx:
+                        _p_usage = played_usage.get(_pid) or []
+                        _lead_inputs = form_usage_inputs(
+                            [played_points[_pid][i] for i in _shared_idx],
+                            [_p_usage[i] if i < len(_p_usage) else None
+                             for i in _shared_idx])
+                        _entry["season_ppg_lead"] = _lead_inputs[
+                            "season_ppg"]
+                        _entry["recent_ppg_lead"] = _lead_inputs[
+                            "recent_ppg"]
+                        _entry["usage_delta_lead"] = _lead_inputs[
+                            "usage_delta"]
+                        _s_weeks = played_share_weeks.get(_pid) or []
+                        _entry["snap_trend_lead"] = snap_share_trend(
+                            [s for s, w in zip(
+                                played_shares.get(_pid) or [], _s_weeks)
+                             if w in _lead_weeks])
         except Exception:
             logger.debug("start_score_bundle lead-form derivation failed",
                          exc_info=True)
@@ -714,6 +752,27 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                         round(float(_inp["last4_ppg_lead"]), 1)
                         if _inp.get("last4_ppg_lead") is not None else None),
                     "lead_pid": _inp.get("lead_pid") or None,
+                    # Shared-games versions of the remaining rating
+                    # inputs (same handcuff rule, extended): the pools
+                    # blend the projection toward season_ppg_lead and
+                    # swap the rest in while the lead is active. See
+                    # utils.start_sit.lead_adjusted_score_inputs.
+                    "season_ppg_lead": (
+                        round(float(_inp["season_ppg_lead"]), 1)
+                        if _inp.get("season_ppg_lead") is not None
+                        else None),
+                    "recent_ppg_lead": (
+                        round(float(_inp["recent_ppg_lead"]), 1)
+                        if _inp.get("recent_ppg_lead") is not None
+                        else None),
+                    "usage_delta_lead": (
+                        round(float(_inp["usage_delta_lead"]), 1)
+                        if _inp.get("usage_delta_lead") is not None
+                        else None),
+                    "snap_trend_lead": (
+                        round(float(_inp["snap_trend_lead"]), 4)
+                        if _inp.get("snap_trend_lead") is not None
+                        else None),
                     "season_ppg": season_ppg,
                     "bust_rate": bust_rate,
                     # Rating inputs from the played-week derivation (NOT the

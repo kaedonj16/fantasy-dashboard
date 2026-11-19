@@ -17,6 +17,15 @@ Layers covered:
   form when the lead is active and the raw form when he is out or on
   bye, identically on both paths. The export assertions fail on
   pre-fix code, where the export always passed the raw last-4.
+
+Extension (same day, Kaedon's follow-up): filtering the form alone
+left the handcuff startable on his projection and on usage / snap
+trends that still counted the lead's missed week, so the rule now
+covers the remaining rating inputs -- the projection blends toward
+what the player scores in shared games, and recent PPG, season PPG,
+the usage delta and the snap trend swap to their shared-games
+derivations while the lead is active
+(utils.start_sit.lead_adjusted_score_inputs).
 """
 import json
 
@@ -25,7 +34,9 @@ import pytest
 pytest.importorskip("flask")
 pytest.importorskip("pandas")
 
-from utils.start_sit import lead_adjusted_last4_ppg, lead_filtered_last4_ppg
+from utils.start_sit import (
+    lead_adjusted_last4_ppg, lead_adjusted_score_inputs,
+    lead_filtered_last4_ppg)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +177,8 @@ def _bundle(pos, proj, **over):
         "pos": pos, "proj_pts": proj, "on_bye": False,
         "recent_ppg": 10.0, "season_ppg": 9.0, "last4_ppg": None,
         "last4_ppg_lead": None, "lead_pid": None, "played_games": None,
+        "season_ppg_lead": None, "recent_ppg_lead": None,
+        "usage_delta_lead": None, "snap_trend_lead": None,
         "opponent": None, "usage_delta": None, "usage_season_avg": None,
         "injury_status": "", "implied_total": None, "bust_rate": None,
         "weather_kind": None, "oline_index": None,
@@ -186,7 +199,9 @@ def _fake_compute_start_score(
     role_confidence=None, snap_trend=None, low_total_team=False,
 ):
     _fake_compute_start_score.seen.append(
-        {"proj_pts": proj_pts, "last4_ppg": last4_ppg})
+        {"proj_pts": proj_pts, "last4_ppg": last4_ppg,
+         "recent_ppg": recent_ppg, "season_ppg": season_ppg,
+         "usage_delta": usage_delta, "snap_trend": snap_trend})
     return (float(proj_pts) * 2.0, {}, None)
 
 
@@ -347,3 +362,224 @@ def test_pool_and_export_agree_on_filtered_form(parity_env):
     lead_val, _, _ = compute_start_score(22.0, last4_ppg=22.5,
                                          **lead_common)
     assert exported["1"] == round(lead_val, 2)
+
+
+# ---------------------------------------------------------------------------
+# Extension: lead-adjusted score inputs (projection blend + shared swaps)
+# ---------------------------------------------------------------------------
+
+def test_score_inputs_blend_and_swap_when_lead_active():
+    out = lead_adjusted_score_inputs(
+        10.7, 13.9, 10.7, 3.0, 0.10,
+        season_ppg_lead=7.6, recent_ppg_lead=12.8,
+        usage_delta_lead=0.5, snap_trend_lead=0.0,
+        lead_pid="8151", lead_status="Questionable")
+    # Projection blends halfway toward his shared-games scoring...
+    assert out[0] == pytest.approx(0.5 * 10.7 + 0.5 * 7.6)
+    # ...and form / usage / snap trend run on the shared games.
+    assert out[1:] == (12.8, 7.6, 0.5, 0.0)
+
+
+def test_score_inputs_never_blend_projection_up():
+    out = lead_adjusted_score_inputs(
+        10.7, 13.9, 10.7, 3.0, 0.10,
+        season_ppg_lead=12.0, recent_ppg_lead=12.8,
+        usage_delta_lead=0.5, snap_trend_lead=0.0, lead_pid="8151")
+    assert out[0] == 10.7   # already below what he scores alongside the lead
+    assert out[2] == 12.0   # the form inputs still swap
+
+
+def test_score_inputs_raw_when_lead_out_or_on_bye():
+    raw = (10.7, 13.9, 10.7, 3.0, 0.10)
+    kw = dict(season_ppg_lead=7.6, recent_ppg_lead=12.8,
+              usage_delta_lead=0.5, snap_trend_lead=0.0, lead_pid="8151")
+    for status in ("IR", "Out", "PUP", "NFI"):
+        assert lead_adjusted_score_inputs(
+            *raw, lead_status=status, **kw) == raw
+    assert lead_adjusted_score_inputs(*raw, lead_on_bye=True, **kw) == raw
+
+
+def test_score_inputs_untouched_without_lead_or_derivation():
+    raw = (10.7, 13.9, 10.7, 3.0, 0.10)
+    assert lead_adjusted_score_inputs(*raw) == raw
+    assert lead_adjusted_score_inputs(*raw, lead_pid="8151") == raw
+
+
+def test_score_inputs_partial_derivation_keeps_raw_gaps():
+    out = lead_adjusted_score_inputs(
+        10.7, 13.9, 10.7, 3.0, 0.10,
+        season_ppg_lead=7.6, recent_ppg_lead=12.8,
+        usage_delta_lead=None, snap_trend_lead=None, lead_pid="8151")
+    assert out[0] == pytest.approx(9.15)
+    assert out[3] == 3.0 and out[4] == 0.10  # no derivation: raw stands
+
+
+def test_score_inputs_lower_the_handcuff_score():
+    from utils.start_sit import compute_start_score
+
+    common = dict(on_bye=False, def_rank=6, def_total=32,
+                  usage_season_avg=None, injury_status="", played_games=9,
+                  implied_total=None, bust_rate=None, weather_kind=None,
+                  position="RB", oline_index=None,
+                  expected_team_plays=None, league_average_plays=None,
+                  role_confidence=None, low_total_team=False)
+    raw, _, _ = compute_start_score(
+        10.7, recent_ppg=13.9, season_ppg=10.7, last4_ppg=10.7,
+        usage_delta=3.0, snap_trend=0.10, **common)
+    adj = lead_adjusted_score_inputs(
+        10.7, 13.9, 10.7, 3.0, 0.10,
+        season_ppg_lead=7.6, recent_ppg_lead=12.8,
+        usage_delta_lead=0.5, snap_trend_lead=0.0,
+        lead_pid="8151", lead_status="Questionable")
+    adjusted, _, _ = compute_start_score(
+        adj[0], recent_ppg=adj[1], season_ppg=adj[2], last4_ppg=10.7,
+        usage_delta=adj[3], snap_trend=adj[4], **common)
+    assert adjusted < raw
+
+
+def test_derive_shared_games_inputs(tmp_path, monkeypatch):
+    from data_building import start_score_bundle as ssb
+    from utils.fantasy_scoring import week_stat_points
+
+    season = 2026
+    scoring = dict(ssb.VARIANT_SCORING["ppr"])
+    lead, cuff = "900", "901"          # KC RB room; the lead sits week 6
+    cuff_use = {1: (3, 2), 2: (3, 2), 3: (5, 3), 4: (5, 3), 5: (5, 3),
+                6: (22, 7)}            # the week-6 spike: 29 opportunities
+    cuff_yd = {1: 40, 2: 30, 3: 50, 4: 20, 5: 45, 6: 350}
+    cuff_off = {1: 12, 2: 12, 3: 18, 4: 18, 5: 24, 6: 54}  # of 60 team snaps
+    rows = {}
+    for w in range(1, 7):
+        att, tgt = cuff_use[w]
+        rows[w] = {cuff: {"position": "RB", "pts_ppr": cuff_yd[w] / 10.0,
+                          "rush_att": att, "rec_tgt": tgt,
+                          "rush_yd": cuff_yd[w], "rec": 0, "rec_yd": 0,
+                          "fum_lost": 0, "gp": 1,
+                          "off_snp": cuff_off[w], "tm_off_snp": 60}}
+        if w <= 5:
+            rows[w][lead] = _rb_line(200, 20, 5)
+    for w, payload in rows.items():
+        _write_stat_file(tmp_path, season, w, payload)
+    monkeypatch.setattr(ssb, "_stat_files",
+                        lambda s: [str(tmp_path / f"sleeper_stats_s{s}_w{w}.json")
+                                   for w in range(1, 7)])
+    monkeypatch.setattr("utils.utils.load_players_index", lambda: {
+        lead: {"pos": "RB", "team": "KC"},
+        cuff: {"pos": "RB", "team": "KC"},
+    })
+    ssb._DERIVE_CACHE.clear()
+    out = ssb.derive_start_sit_inputs(season, scoring)
+    ssb._DERIVE_CACHE.clear()
+
+    scored = {w: week_stat_points(rows[w][cuff], scoring, "")
+              for w in range(1, 7)}
+    entry = out[cuff]
+    assert entry["lead_pid"] == lead
+    # Shared games are weeks 1-5: his scoring there, not the spike week.
+    assert entry["season_ppg_lead"] == pytest.approx(
+        sum(scored[w] for w in range(1, 6)) / 5)
+    assert entry["recent_ppg_lead"] == pytest.approx(
+        sum(scored[w] for w in (3, 4, 5)) / 3)
+    # Usage delta on shared games: recent 8.0 vs season 6.8; the raw
+    # delta (4.5) is built on the 29-opportunity spike week.
+    assert entry["usage_delta"] == pytest.approx(4.5)
+    assert entry["usage_delta_lead"] == pytest.approx(1.2)
+    # Snap trend likewise: raw counts the spike week's 90% share.
+    assert entry["snap_trend"] == pytest.approx(0.35)
+    assert entry["snap_trend_lead"] == pytest.approx(0.10)
+
+
+def _kc_bundles_ext(**cuff_over):
+    base = {"last4_ppg": 18.4, "last4_ppg_lead": 12.8, "lead_pid": "1",
+            "played_games": 9, "season_ppg_lead": 7.0,
+            "recent_ppg_lead": 6.5, "usage_delta_lead": -2.0,
+            "snap_trend_lead": -0.05}
+    base.update(cuff_over)
+    return {
+        "1": _bundle("RB", 20.0, last4_ppg=22.0, played_games=9),
+        "2": _bundle("RB", 14.0, recent_ppg=11.0, season_ppg=10.0,
+                     usage_delta=4.0, snap_trend=0.12, **base),
+    }
+
+
+def test_export_blends_handcuff_projection_when_lead_active(export_env):
+    import app as appmod
+
+    export_env["bundles"] = _kc_bundles_ext()
+    appmod.build_start_sit_pool_export(2026, 11)
+    cuff = next(s for s in _fake_compute_start_score.seen
+                if s["last4_ppg"] == 12.8)
+    # Projection halfway from 14.0 toward his 7.0 shared-games PPG,
+    # and every other input swapped to the shared-games derivation.
+    # Regression: pre-extension the export fed the raw 14.0 / 11.0 /
+    # 10.0 / 4.0 / 0.12 here.
+    assert cuff["proj_pts"] == pytest.approx(10.5)
+    assert cuff["recent_ppg"] == 6.5
+    assert cuff["season_ppg"] == 7.0
+    assert cuff["usage_delta"] == -2.0
+    assert cuff["snap_trend"] == -0.05
+
+
+def test_export_keeps_raw_inputs_when_lead_out(export_env):
+    import app as appmod
+
+    export_env["bundles"] = _kc_bundles_ext()
+    export_env["live_players"] = {"1": {"injury_status": "Out"}}
+    appmod.build_start_sit_pool_export(2026, 11)
+    cuff = next(s for s in _fake_compute_start_score.seen
+                if s["proj_pts"] == 14.0)
+    assert cuff["recent_ppg"] == 11.0 and cuff["season_ppg"] == 10.0
+    assert cuff["usage_delta"] == 4.0 and cuff["snap_trend"] == 0.12
+
+
+@pytest.fixture()
+def export_env_real(monkeypatch):
+    import app as appmod
+    import data_building.start_score_bundle as bundle_mod
+
+    state = {"bundles": {}, "live_players": {}}
+    monkeypatch.setattr(bundle_mod, "variant_for_exact_scoring",
+                        lambda scoring: "ppr")
+    monkeypatch.setattr(
+        bundle_mod, "load_start_score_bundles",
+        lambda season, week, variant, pids: dict(state["bundles"]))
+    monkeypatch.setattr(appmod, "get_players_index_global",
+                        lambda: dict(FAKE_INDEX))
+    monkeypatch.setattr(appmod, "get_players_global",
+                        lambda: dict(state["live_players"]))
+    monkeypatch.setattr(
+        appmod, "_matchup_rank_table",
+        lambda season, position, scoring_settings=None: (
+            {"DAL": 32, "NE": 20, "SF": 4}, 32, {}, False))
+    appmod._SS_EXPORT_CACHE.clear()
+    appmod._SS_EXPORT_CACHE_TS.clear()
+    yield state
+    appmod._SS_EXPORT_CACHE.clear()
+    appmod._SS_EXPORT_CACHE_TS.clear()
+
+
+def test_export_real_scorer_drops_handcuff_with_lead_inputs(export_env_real):
+    import app as appmod
+    from utils.start_sit_score import compute_start_score
+
+    export_env_real["bundles"] = _kc_bundles_ext()
+    out = appmod.build_start_sit_pool_export(2026, 11)
+    exported = {r["pid"]: r["value"] for r in out["RB"]}
+    common = dict(on_bye=False, def_rank=None, def_total=32,
+                  usage_season_avg=None, injury_status="",
+                  played_games=9, implied_total=None, bust_rate=None,
+                  weather_kind=None, position="RB", oline_index=None,
+                  expected_team_plays=None, league_average_plays=None,
+                  role_confidence=None, low_total_team=False)
+    # The extended rule: blended projection + shared-games inputs on
+    # top of the filtered form.
+    adjusted, _, _ = compute_start_score(
+        10.5, recent_ppg=6.5, season_ppg=7.0, last4_ppg=12.8,
+        usage_delta=-2.0, snap_trend=-0.05, **common)
+    # The form filter alone (pre-extension) scored him on the raw
+    # projection and raw usage / trend.
+    form_only, _, _ = compute_start_score(
+        14.0, recent_ppg=11.0, season_ppg=10.0, last4_ppg=12.8,
+        usage_delta=4.0, snap_trend=0.12, **common)
+    assert exported["2"] == round(adjusted, 2)
+    assert exported["2"] < round(form_only, 2)
