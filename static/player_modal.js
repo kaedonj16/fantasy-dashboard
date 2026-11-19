@@ -62,6 +62,107 @@ function _pmSmallFetch(key, url, timeoutMs) {
   return entry.promise;
 }
 
+
+
+// ── Advanced tab: Role sub-view ─────────────────────────────────────────
+// The Advanced panel carries a Metrics | Role sub-toggle. Role renders the
+// FULL single-player role experience with the same builders the Compare
+// Roles tab uses (_cmpRoleCardHTML / _cmpRoleCompsHTML / _cmpRolesPaintMaps
+// in app.js, which loads before this bundle), so the two surfaces cannot
+// drift. The payload loads lazily on first Role open per player + window
+// through _pmSmallFetch; nothing is fetched on modal open or for the
+// default Metrics sub-view.
+var _pmRoleState = { pid: '', win: 'season', loadedKey: '' };
+function pmAdvSetSub(sub) {
+  var panel = document.getElementById('pm-panel-metrics');
+  if (!panel) return;
+  panel.querySelectorAll('[data-pmsub]').forEach(function (b) {
+    b.classList.toggle('is-active', b.getAttribute('data-pmsub') === sub);
+  });
+  var mv = document.getElementById('pmAdvMetricsView');
+  var rv = document.getElementById('pmRoleView');
+  if (mv) mv.hidden = sub !== 'metrics';
+  if (rv) rv.hidden = sub !== 'role';
+  if (sub === 'role') pmRoleLoad(false);
+}
+function pmRoleSetWindow(win) {
+  if (_pmRoleState.win === win) return;
+  _pmRoleState.win = win;
+  document.querySelectorAll('[data-pmrolewin]').forEach(function (b) {
+    b.classList.toggle('is-active', b.getAttribute('data-pmrolewin') === win);
+  });
+  pmRoleLoad(false);
+}
+function pmRoleRetry() { pmRoleLoad(true); }
+function _pmRoleSeasonBase() {
+  var bar = document.getElementById('pmTabBar');
+  var s = parseInt(bar && bar.dataset ? bar.dataset.pmSeason : '', 10);
+  return isNaN(s) ? new Date().getFullYear() : s;
+}
+function pmRoleLoad(force) {
+  var body = document.getElementById('pmRoleBody');
+  var bar = document.getElementById('pmTabBar');
+  if (!body || !bar) return;
+  var pid = bar.dataset.pmPlayerId;
+  if (!pid) return;
+  if (_pmRoleState.pid !== pid) { _pmRoleState.pid = pid; _pmRoleState.loadedKey = ''; }
+  var base = _pmRoleSeasonBase();
+  var season = _pmRoleState.win === 'lastseason' ? base - 1 : base;
+  var key = 'role:' + pid + ':' + season + ':' + _pmRoleState.win;
+  if (!force && _pmRoleState.loadedKey === key && body.innerHTML) return;
+  if (typeof _cmpRoleCardHTML !== 'function' || typeof _cmpRolesPaintMaps !== 'function') {
+    body.innerHTML = '<div class="compare-roles-note-card">Role view is unavailable right now. <button type="button" class="pm-role-retry" onclick="pmRoleRetry()">Retry</button></div>';
+    return;
+  }
+  if (force) _pmSmallCache.delete(key);
+  body.innerHTML = '<div class="compare-roles-loading"><div class="loading-spinner" style="width:16px;height:16px;"></div><span>Loading role...</span></div>';
+  var url = '/api/player-role/' + encodeURIComponent(pid) + '?season=' + season + '&window=' + encodeURIComponent(_pmRoleState.win);
+  _pmSmallFetch(key, url).then(function (d) {
+    if (!body.isConnected || _pmRoleState.pid !== pid) return;
+    if (!d || !d.role) {
+      body.innerHTML = '<div class="compare-roles-note-card">Could not load role data for this window. <button type="button" class="pm-role-retry" onclick="pmRoleRetry()">Retry</button></div>';
+      return;
+    }
+    _pmRoleState.loadedKey = key;
+    if (typeof _cmpRoleRegisterData === 'function') _cmpRoleRegisterData(d);
+    _pmRenderRoleView(d);
+  }).catch(function () {
+    if (body.isConnected) body.innerHTML = '<div class="compare-roles-note-card">Could not load role data for this window. <button type="button" class="pm-role-retry" onclick="pmRoleRetry()">Retry</button></div>';
+  });
+}
+function _pmRenderRoleView(d) {
+  var body = document.getElementById('pmRoleBody');
+  if (!body) return;
+  var stub = { player_id: d.player_id, name: d.name, position: d.pos, team: d.team, espnHeadshot: '' };
+  body.innerHTML = '<div class="compare-roles-grid pm-role-grid">' + _cmpRoleCardHTML(stub, d, []) + '</div>'
+    + (typeof _cmpRoleCompsHTML === 'function' ? _cmpRoleCompsHTML(d, _pmRoleCompRow) : '');
+  _cmpRolesPaintMaps([d]);
+}
+// Comp rows in the modal open the comp's own player modal (staying in the
+// modal flow) instead of deep-linking to /compare like the Compare view.
+function _pmRoleCompRow(c, pid) {
+  var esc = (typeof _cmpRolesEsc === 'function') ? _cmpRolesEsc : function (s) { return String(s == null ? '' : s); };
+  var sim = (typeof _cmpRoleNum === 'function') ? _cmpRoleNum(c.similarity) : parseFloat(c.similarity);
+  return '<button type="button" class="compare-roles-comp" data-compid="' + esc(String(c.player_id || '')) + '" data-compname="' + esc(c.name || '') + '" onclick="pmRoleOpenComp(this)">'
+    + '<span class="compare-roles-comp-name">' + esc(c.name || '') + (c.pos || c.team ? ' <span class="compare-roles-comp-meta">' + esc([c.pos, c.team].filter(Boolean).join(' · ')) + '</span>' : '') + '</span>'
+    + '<span class="compare-roles-comp-sim">' + (c.similarity != null && sim != null && !isNaN(sim) ? Math.round(sim) + '%' : '') + '</span>'
+    + (c.match_line ? '<span class="compare-roles-comp-line">' + esc(c.match_line) + '</span>' : '')
+    + (c.differ_line ? '<span class="compare-roles-comp-line compare-roles-comp-diff">' + esc(c.differ_line) + '</span>' : '')
+    + '</button>';
+}
+function pmRoleOpenComp(el) {
+  var cid = el && el.getAttribute('data-compid');
+  var cname = (el && el.getAttribute('data-compname')) || '';
+  if (!cid) return;
+  if (typeof openPlayerModal === 'function') {
+    openPlayerModal(cid, cname, { force: true });
+  } else {
+    var bar = document.getElementById('pmTabBar');
+    var pid = bar && bar.dataset ? bar.dataset.pmPlayerId : '';
+    window.location.href = '/compare?p1=' + encodeURIComponent(pid || '') + '&p2=' + encodeURIComponent(cid);
+  }
+}
+
 // Shared game-logs JSON for the modal session, keyed by the exact URL.
 // The Stats tab is the remaining in-modal consumer of the full game-logs
 // payload; a repeat open (or a retry after a successful load in the same
@@ -1536,7 +1637,20 @@ function openPlayerModal(playerId, playerName, opts) {
         ? `<a href="${_advPageUrl}" class="pm-section-label-link" title="Open ${_posSet.label} leaderboard">Advanced Metrics</a>`
         : 'Advanced Metrics';
       const _metricsPanelHTML = function(_hm) {
-        return _hm ? `
+        const _advSubToggle = `
+        <div class="compare-trends-mode pm-adv-submode" role="group" aria-label="Advanced sub-view">
+          <button type="button" class="compare-trends-mode-btn is-active" data-pmsub="metrics" onclick="pmAdvSetSub('metrics')">Metrics</button>
+          <button type="button" class="compare-trends-mode-btn" data-pmsub="role" onclick="pmAdvSetSub('role')">Role</button>
+        </div>
+        <div id="pmRoleView" class="pm-role-view" hidden>
+          <div class="compare-trends-mode pm-role-winmode" role="group" aria-label="Role window">
+            <button type="button" class="compare-trends-mode-btn is-active" data-pmrolewin="season" onclick="pmRoleSetWindow('season')">Season to date</button>
+            <button type="button" class="compare-trends-mode-btn" data-pmrolewin="last4" onclick="pmRoleSetWindow('last4')">Last 4</button>
+            <button type="button" class="compare-trends-mode-btn" data-pmrolewin="lastseason" onclick="pmRoleSetWindow('lastseason')">Last season</button>
+          </div>
+          <div id="pmRoleBody"></div>
+        </div>`;
+        const _metricsView = _hm ? `
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
             <span class="pm-section-label">${_advTitle} <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span><span class="adv-info-icon" onclick="advShowInfoTip(event)" aria-label="About metric tooltips">ⓘ</span></span>
@@ -1556,6 +1670,7 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>
         </div>
       ` : _pmAdvEmptyHTML();
+        return _advSubToggle + '<div id="pmAdvMetricsView">' + _metricsView + '</div>';
       };
       const metricsHTML = _metricsPanelHTML(hasMetrics);
 
