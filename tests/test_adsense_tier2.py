@@ -78,19 +78,17 @@ def test_guides_are_long_form_with_sections():
         )
 
 
-def test_homepage_editorial_precedes_connect_card_in_dom():
+def test_homepage_connect_card_precedes_faq_in_dom():
     source = (ROOT / "app.py").read_text()
     hero = source.index('<section class="home-hero')
-    previews = source.index("Built for the whole week")
     faq = source.index('<section class="faq">')
     card = source.index('<div class="home-hero-right">')
     # Hero intro first, then the connect card directly (owner's call: the
     # card must be findable in the first scroll; it previously sat after
     # the FAQ and signed-in visitors never received it at all), then the
-    # editorial sections and the FAQ.
-    assert hero < card < previews < faq
-
-
+    # FAQ. The editorial sections that used to sit between the card and
+    # the FAQ were removed 2026-11-19 (reimagine extras removal).
+    assert hero < card < faq
 def test_player_trade_value_page_is_noindex():
     source = (ROOT / "routes" / "seo_pages_bp.py").read_text()
     start = source.index("def page_player_trade_value")

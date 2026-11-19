@@ -28,16 +28,12 @@ TRADE_PAGE = (ROOT / "dashboard_services" / "pages" / "trade_calculator_page.py"
 APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 
 
-def test_home_platform_chips_label_yahoo_and_mfl():
-    assert '<span class="home-platform-chip">Yahoo</span>' in APP_PY
-    assert 'Yahoo <span class="home-chip-note">Soon</span>' not in APP_PY
-    assert '<span class="home-platform-chip">MFL</span>' in APP_PY
-    assert '<span class="home-platform-chip">Fleaflicker</span>' in APP_PY
+def test_home_platform_buttons_label_yahoo_and_mfl():
+    # The hero platform chips were removed with the 2026-11-19 extras;
+    # the connect card's platform buttons carry the honest labels now.
     assert 'data-platform="yahoo"><span class="plat-name">Yahoo</span>' in APP_PY
     assert 'data-platform="mfl"><span class="plat-name">MFL</span>' in APP_PY
     assert 'data-platform="fleaflicker"><span class="plat-name">Fleaflicker</span>' in APP_PY
-    assert 'MFL <span class="home-chip-note">Public leagues</span>' not in APP_PY
-    assert 'MFL <span class="platform-limit">Public</span>' not in APP_PY
     assert "Sleeper, ESPN, Yahoo, MFL, and Fleaflicker." in APP_PY
     assert "Yahoo coming soon" not in APP_PY
 

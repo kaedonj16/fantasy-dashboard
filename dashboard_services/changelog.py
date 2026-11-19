@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-18",
+        "tag": "new",
+        "text": "The home page is rebuilt around your Sunday: the live values ticker now sits on top, the matchup, start/sit, ScoreZone, trade and Wrapped previews live in one tappable gallery, and connecting a league starts with one field. Paste a league link or type your Sleeper username and we find your platform and league for you, then you pick your team.",
+        "link": "/"
+    },
+    {
         "date": "2026-11-16",
         "tag": "update",
         "text": "Playoff Path root-for games and your matchup now show live scores as games kick off: projections give way to live scores and live projected totals while games are in progress, final scores when they end, and the tab refreshes on its own while any game you are tracking is live.",

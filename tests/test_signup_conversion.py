@@ -25,14 +25,13 @@ QUOTE = "THATS ACTUALLY SO SICK BRO"
 
 
 def _hero() -> str:
-    # A+ landing: the hero section (headline card + matchup board) plus the
-    # connect card (.home-hero-right), which sits after the editorial
-    # sections in DOM order (AdSense Tier 2). Together they hold the funnel
-    # content the old in-hero card held.
+    # The hero section (headline card + matchup board) plus everything
+    # from the connect card (.home-hero-right) to the end of FORM_BODY:
+    # together they hold the funnel content the old in-hero card held.
     hero_start = APP_PY.index('<section class="home-hero')
     hero_end = APP_PY.index("</section>", hero_start) + len("</section>")
     card_start = APP_PY.index('<div class="home-hero-right">', hero_end)
-    card_end = APP_PY.index('<div class="home-content-wrapper">', card_start)
+    card_end = APP_PY.index('\n"""\n', card_start)
     return APP_PY[hero_start:hero_end] + APP_PY[card_start:card_end]
 
 
@@ -44,21 +43,24 @@ def _plain(text: str) -> str:
     return _html.unescape(_re.sub(r"<[^>]+>", "", text))
 
 
-# ── Hero funnel order: free path (Get started) before the PRO CTA ────────────
+# ── Hero funnel order: free path (connect card) before the PRO CTA ──────────
 
 def test_get_started_card_comes_before_pro_cta():
     # The connect card follows the hero directly (the approved mock's
-    # order): a scrolling visitor reaches Get started before the tools
-    # strip, the quote, the PRO pitch, the freeband and the FAQ. It used
-    # to sit after the FAQ, ~5,000px down the phone page, and was
-    # effectively unfindable without the hero CTA.
+    # order): a scrolling visitor reaches the card (titled "Load your
+    # league.") before what-you-get, the quote, the PRO pitch, the FAQ,
+    # the final CTA and the indie sign-off. It used to sit after the FAQ,
+    # ~5,000px down the phone page, and was effectively unfindable
+    # without the hero CTA. This is the full final section order after
+    # the 2026-11-19 extras removal (no strips, demos, freeband, feature
+    # list or publisher section remain).
     hero = _hero()
-    assert "Get started" in hero
+    assert "Load your league." in hero
     body = APP_PY[APP_PY.index("FORM_BODY"):]
     order = [body.index(marker) for marker in (
-        '<div class="home-hero-right">', "Built for the whole week",
-        "ld-quote", 'id="homeProSignup"', '<section class="freeband',
-        '<section class="faq">')]
+        '<div class="home-hero-right">', '<section class="ld-sec ld-get-sec"',
+        'class="home-testimonials"', 'id="homeProSignup"', '<section class="faq">',
+        '<section class="ld-final-cta"', '<section class="ld-indie">')]
     assert order == sorted(order)
 
 
@@ -71,11 +73,12 @@ def test_right_column_stacks_card_over_cta():
 # ── Social proof near CTAs: verbatim testimonial, never invented numbers ──────
 
 def test_hero_has_testimonial_near_cta():
-    # The quote now lives in its own section between the demos and PRO.
-    assert "ld-quote" in APP_PY
+    # The quote lives in the classic testimonials section, between the
+    # demos and PRO (signed-in order moves it below PRO at runtime).
+    assert 'class="home-testimonials"' in APP_PY
     assert QUOTE in _plain(APP_PY)
     assert "Jayden Waddell" in APP_PY
-    assert APP_PY.index("ld-quote") < APP_PY.index('id="homeProSignup"')
+    assert APP_PY.index('class="home-testimonials"') < APP_PY.index('id="homeProSignup"')
 
 def test_pricing_page_has_testimonial_near_plan_ctas():
     assert "pricing-proof" in BILLING_PY
@@ -95,7 +98,7 @@ def test_social_proof_uses_the_existing_verbatim_quote():
 
 
 def test_no_invented_user_counts_in_new_proof():
-    quote = APP_PY[APP_PY.index("ld-quote"):APP_PY.index("</figure>", APP_PY.index("ld-quote"))]
+    quote = APP_PY[APP_PY.index('class="home-testimonial"'):APP_PY.index("</figure>", APP_PY.index('class="home-testimonial"'))]
     for snippet in ("managers strong", "happy managers", "users", "members"):
         assert snippet not in quote
 
@@ -116,16 +119,26 @@ def test_no_em_dashes_in_new_copy():
 
 def test_guest_card_sign_in_is_a_full_google_button():
     assert 'class="google-continue-btn" href="/auth/google?intent=login' in APP_PY
+    # Exactly one account Google button in the home source.
+    assert APP_PY.count(
+        'class="google-continue-btn" href="/auth/google?intent=login') == 1
     assert "Sign in with Google" in APP_PY
     assert "home-signin-link" not in APP_PY
 
 
 def test_guest_access_still_prominent():
     hero = _hero()
-    assert "No account needed to look around" in hero
-    assert "Connect your league below" in hero
-    # The free trust strip right under the hero is untouched.
-    assert "Connect your league below. No account needed to look around." in APP_PY
+    # The old top-of-card account block ("Connect your league below. No
+    # account needed to look around.") is gone by design; guest sign-in
+    # is the quiet returning row at the bottom of connect Page 1.
+    assert "No account needed to look around" not in APP_PY
+    assert "Connect your league below" not in APP_PY
+    assert "home-account-top" not in hero
+    assert "Returning? Sign in with Google to load your saved leagues." in hero
+    page1 = APP_PY[APP_PY.index('id="connectPage1"'):APP_PY.index('id="connectPage2"')]
+    assert page1.index('id="smartFindBtn"') < page1.index("smart-returning")
+    row = page1[page1.index("smart-returning"):]
+    assert 'class="google-continue-btn" href="/auth/google?intent=login' in row
 
 
 def test_oauth_state_nonce_pkce_untouched():

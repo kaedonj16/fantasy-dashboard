@@ -151,20 +151,6 @@ def test_robots_allows_adsense_crawlers(offline_client):
     assert "Allow: /" in body
 
 
-def test_homepage_has_crawlable_publisher_content(offline_client):
-    """AdSense reviewers land on / first. The connect-league card is not enough
-    publisher content; the homepage must also ship original HTML articles/links."""
-    html = _html(offline_client, "/")
-    assert "home-publisher" in html
-    assert "home-hero-editorial" in html
-    assert 'href="/guides"' in html
-    assert 'href="/rankings/dynasty"' in html
-    assert 'href="/dynasty-trade-value-chart"' in html
-    assert "How Dynasty Trade Value Works" in html
-    # Full-screen splash must not hide the page from no-JS reviewers.
-    assert "#appSplash{display:none!important}" in html
-
-
 def test_guides_are_substantial_articles_with_schema(offline_client):
     from routes.guides_content import GUIDE_ORDER, GUIDES
 
