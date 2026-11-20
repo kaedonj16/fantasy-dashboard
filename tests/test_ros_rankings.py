@@ -185,6 +185,77 @@ def test_no_projection_no_fields():
     assert _ros("RB", windows={"all": [0.0, 0.0], "stretch": [], "playoffs": []}) is None
 
 
+def test_ros_coleman_shape_participation_week_counts(tmp_path, monkeypatch):
+    """End-to-end (Coleman, DEN 2026): 4 points-line games plus one
+    participation game (gp=1, 3 snaps, zero touches, NO pts_ppr line)
+    must make 5 played games, so the back is ROS-eligible. His touches
+    (60) divide by the 5 played games: exactly 12.0/game, which passes
+    the RB role gate on its own — a higher-scoring teammate holds the
+    team-top spot, so team-top cannot be what lets him in."""
+    import json as _json
+    import os as _os
+
+    from data_building import start_score_bundle as ssb
+    from utils import ros_rankings as rr
+
+    season, pid, mate = 2026, "13345", "9999"
+    cache = tmp_path / "sleeper_stats"
+    cache.mkdir()
+    # Coleman-shaped lines: W1 participation-only, W2/W7/W8/W9 real lines
+    # (14.8 / 8.9 / 20.4 / 18.8 PPR points, 13/11/15/21 touches).
+    coleman = {
+        1: {"gp": 1, "gms_active": 1, "off_snp": 3},
+        2: {"gp": 1, "gms_active": 1, "off_snp": 25, "pts_ppr": 14.8,
+            "rush_att": 10, "rush_yd": 39, "rec": 3, "rec_tgt": 3, "rec_yd": 19},
+        7: {"gp": 1, "gms_active": 1, "off_snp": 30, "pts_ppr": 8.9,
+            "rush_att": 9, "rush_yd": 49, "rec": 2, "rec_tgt": 2, "rec_yd": 10},
+        8: {"gp": 1, "gms_active": 1, "off_snp": 41, "pts_ppr": 20.4,
+            "rush_att": 11, "rush_yd": 84, "rec": 4, "rec_tgt": 4, "rec_yd": 30},
+        9: {"gp": 1, "gms_active": 1, "off_snp": 58, "pts_ppr": 18.8,
+            "rush_att": 17, "rush_yd": 88, "rec": 4, "rec_tgt": 4, "rec_yd": 20},
+    }
+    # Teammate out-scores him on the season (80 > 62.9), taking team-top.
+    mate_line = {"gp": 1, "gms_active": 1, "off_snp": 50, "pts_ppr": 20.0,
+                 "rush_att": 15, "rush_yd": 100, "rec": 5, "rec_tgt": 5,
+                 "rec_yd": 50}
+    files = []
+    for w in range(1, 10):
+        rows = {}
+        if w in coleman:
+            rows[pid] = dict(coleman[w], position="RB")
+        if w in (2, 7, 8, 9):
+            rows[mate] = dict(mate_line, position="RB")
+        p = cache / f"sleeper_stats_s{season}_w{w}.json"
+        p.write_text(_json.dumps(rows))
+        files.append(str(p))
+    index = {pid: {"pos": "RB", "team": "DEN"},
+             mate: {"pos": "RB", "team": "DEN"}}
+    monkeypatch.setattr("utils.utils.load_players_index", lambda: index)
+    monkeypatch.setattr("utils.utils.load_week_schedule", lambda s, w: [])
+    monkeypatch.setattr(ssb, "_stat_files", lambda s: files)
+    ssb._DERIVE_CACHE.clear()
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        "utils.data_cache._read_week_projection_file",
+        lambda s, w: {pid: {}, mate: {}})
+    monkeypatch.setattr(
+        "utils.projections.weekly_projection_points",
+        lambda week_map, p, scoring, pos: 15.0 if str(p) in week_map else None)
+
+    payload = rr._build_ros_map(season, 11, "November 20, 2026")
+    ssb._DERIVE_CACHE.clear()
+    assert payload is not None
+    # The shared derivation now counts the participation week: 5 games.
+    from data_building.start_score_bundle import derive_start_sit_inputs
+    derived = derive_start_sit_inputs(season, {"rec": 1.0})
+    ssb._DERIVE_CACHE.clear()
+    assert derived[pid]["played_games"] == 5
+    # Eligible, with fields stamped from the projection series.
+    fields = payload["players"][pid]
+    assert fields["ros_ppg"] == pytest.approx(15.0)
+    assert fields["ros_pos_rank"] >= 1
+
+
 # ── Ranks + tiers ───────────────────────────────────────────────────────────
 
 def test_assign_ros_ranks_per_window():

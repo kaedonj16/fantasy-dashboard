@@ -416,10 +416,11 @@ def bottom_teams_by_implied_total(game_conditions: dict, n: int = 8) -> set:
 # ---------------------------------------------------------------------------
 # Start/sit rating inputs (2026-10 rework: backtested Weeks 2-5, approved)
 #
-# A week counts as PLAYED only when the player's stat row carries a points
-# line (``pts_ppr`` present). Sleeper rows with ``gp`` set but no points line
-# (a handful of snaps, no recorded production) are not games and never enter
-# any average. Recent form is the last 3 PLAYED weeks; the season baseline is
+# A week counts as PLAYED when the player actually participated (``gp``
+# >= 1 or an offensive snap count present). A participated week with no
+# production (Sleeper emits no points line for it) is a real 0.0 game and
+# enters every average as 0.0; rows with neither marker are did-not-play
+# rows and never enter any average. Recent form is the last 3 PLAYED weeks; the season baseline is
 # all played weeks. Form is an ABSOLUTE per-game PPG delta (recent - season)
 # scaled per position, and usage is an ABSOLUTE per-game delta of the
 # position's volume metric (opportunities for RB, targets for WR/TE; QB
@@ -489,8 +490,9 @@ def form_usage_inputs(played_points, played_usage=None) -> dict:
     """Derive the rating's form/usage inputs from PLAYED weeks only.
 
     ``played_points`` is the player's fantasy points for each played week,
-    chronological (callers include a week only when its stat row carried a
-    points line). ``played_usage`` is the aligned per-week usage metric (see
+    chronological (callers include a week when the player participated:
+    ``gp`` >= 1 or a snap count present; a no-production week enters as
+    0.0). ``played_usage`` is the aligned per-week usage metric (see
     :func:`usage_value_from_stats`); entries may be None.
 
     Returns season PPG (all played weeks), recent PPG (last 3 played

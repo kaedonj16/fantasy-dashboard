@@ -17884,8 +17884,9 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
 
     # Recent-form PPG scored with this league's settings (not hardcoded
     # PPR): the played-week derivation shared with the bundle build and the
-    # Start/Sit page (last 3 played weeks; a week counts only when its stat
-    # row carries a points line). The same derivation supplies the rating's
+    # Start/Sit page (last 3 played weeks; a week counts when the player
+    # participated — gp >= 1 or a snap count present, with a no-production
+    # week counting as 0.0). The same derivation supplies the rating's
     # usage delta and played-game count for the modal's start score, plus
     # last4_ppg (last 4 played weeks): the base blend's form input for the
     # modal's start score, and the value the compare row labeled "L4 PPG"
@@ -18523,7 +18524,8 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     # ── Season-long and recent-form PPG scored with this league's settings ──
     # Played-week derivation shared with the daily bundle build
     # (data_building.start_score_bundle.derive_start_sit_inputs): a week
-    # counts only when its stat row carries a points line, season PPG is all
+    # counts when the player participated (gp >= 1 or a snap count
+    # present; a no-production week counts as 0.0), season PPG is all
     # played weeks, recent PPG is the last 3 played weeks. The same
     # derivation supplies the rating's usage delta and played-game count.
     # Skipped when precomputed bundles cover the roster (the inputs come
