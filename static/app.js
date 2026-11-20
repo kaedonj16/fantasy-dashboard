@@ -15469,6 +15469,16 @@ window.initTradePage = function initTradePage(root = document) {
         desc.textContent = txt;
         desc.style.display = txt ? "" : "none";
       }
+      // Hub mobile stepper: a strategy is now selected, so Goal is done
+      // and Deals is the current step (Review happens on a card's Analyze).
+      const hubStepper = root.querySelector("#otcHubStepper");
+      if (hubStepper) {
+        hubStepper.querySelectorAll(".otc-hub-step").forEach(s => {
+          const n = Number(s.dataset.hubstep || 0);
+          s.classList.toggle("is-done", n === 1);
+          s.classList.toggle("is-active", n === 2);
+        });
+      }
     }
 
     hubSubBtns.forEach(b => b.addEventListener("click", () => _setSuggSubtab(b.dataset.hubtab)));

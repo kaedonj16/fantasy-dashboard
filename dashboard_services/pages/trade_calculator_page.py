@@ -1048,6 +1048,8 @@ def build_trade_calculator_body(
               scrollbar-width:none;
             }}
             .otc-strategy-chips::-webkit-scrollbar {{ display:none; }}
+            /* Hub flow stepper: mobile only (shown in the 600px block below). */
+            .otc-hub-stepper {{ display:none; }}
             .otc-strategy-section-head {{
               display:flex;align-items:center;justify-content:space-between;
               padding:8px 14px 4px;
@@ -1167,6 +1169,60 @@ def build_trade_calculator_body(
                 font-size:11px;
               }}
             }}
+            /* ── Trade Hub mobile flow: one sticky hub bar, a Goal / Deals /
+               Review stepper, the strategy picker as a 2x2 grid of large
+               targets, Impact attached directly above the deal cards,
+               a sticky Targets search head, and de-nested Market / Saved
+               panels. Mobile only: desktop keeps the existing layout. ── */
+            @media (max-width:600px) {{
+              .otc-hub-stepper {{
+                display:flex;align-items:center;gap:8px;padding:10px 14px 0;
+              }}
+              .otc-hub-step {{
+                display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+                font-size:11px;font-weight:700;letter-spacing:.04em;
+                text-transform:uppercase;color:var(--text-muted);
+              }}
+              .otc-hub-step-num {{
+                display:inline-flex;align-items:center;justify-content:center;
+                width:18px;height:18px;border-radius:50%;flex-shrink:0;
+                border:1px solid var(--border);background:var(--card);
+                font-size:11px;font-weight:700;color:var(--text-muted);
+              }}
+              .otc-hub-step.is-active {{ color:var(--text); }}
+              .otc-hub-step.is-active .otc-hub-step-num {{
+                background:var(--accent);border-color:var(--accent);color:#fff;
+              }}
+              .otc-hub-step.is-done .otc-hub-step-num {{
+                background:var(--row);color:var(--text);
+              }}
+              .otc-hub-step-sep {{ flex:1;height:1px;background:var(--border); }}
+              .otc-sugg-subtab-bar {{ position:sticky;top:0;z-index:30; }}
+              .otc-sugg-subtab-toggle {{ display:flex;width:100%; }}
+              .otc-sugg-subtab {{
+                flex:1 1 0;min-height:44px;padding:10px 4px;font-size:12px;
+                display:inline-flex;align-items:center;justify-content:center;
+              }}
+              .otc-strategy-chips {{
+                display:grid;grid-template-columns:1fr 1fr;gap:8px;
+                overflow:visible;padding:12px 14px 4px;
+              }}
+              .otc-arch-chip {{
+                min-height:48px;padding:10px 12px;font-size:13px;
+                border-radius:12px;white-space:normal;text-align:center;
+              }}
+              #otcStrategyDeals {{
+                border-top:1px solid var(--border);margin-top:10px;
+              }}
+              .otc-sugg-build-head {{
+                position:sticky;top:64px;z-index:20;
+                background:var(--card);padding:10px 0 8px;
+              }}
+              .otc-top-chips {{ scroll-snap-type:x proximity; }}
+              .otc-top-chip {{ scroll-snap-align:start; }}
+              #otcMarketIntelPanel {{ padding:8px !important; }}
+              #otcSavedPanel {{ padding:10px !important; }}
+            }}
             /* Hit-area floor (44px rule, 2026-11-14): coarse pointers only.
                The info glyph was a 15x15px target; negative margins keep the
                header layout while the box grows to 44px. */
@@ -1262,7 +1318,18 @@ def build_trade_calculator_body(
             <!-- ── Suggestions panel (archetype engine) ───────────────────────────── -->
             <div id="otcStrategyPanel">
 
-              <!-- Archetype chips (single scrollable pill row) -->
+              <!-- Mobile flow stepper: Goal -> Deals -> Review (CSS shows
+                   it on phones only; app.js syncs it in _setStrategyChip) -->
+              <div class="otc-hub-stepper" id="otcHubStepper" aria-hidden="true">
+                <span class="otc-hub-step is-active" data-hubstep="1"><span class="otc-hub-step-num">1</span>Goal</span>
+                <span class="otc-hub-step-sep"></span>
+                <span class="otc-hub-step" data-hubstep="2"><span class="otc-hub-step-num">2</span>Deals</span>
+                <span class="otc-hub-step-sep"></span>
+                <span class="otc-hub-step" data-hubstep="3"><span class="otc-hub-step-num">3</span>Review</span>
+              </div>
+
+              <!-- Archetype chips (single scrollable pill row on desktop,
+                   2x2 grid on mobile) -->
               <div id="otcStrategyChips" class="otc-strategy-chips">
                 <button class="otc-arch-chip" data-arch="contending">Contending</button>
                 {"" if scoring_type_val == "redraft" else '<button class="otc-arch-chip" data-arch="rebuilding">Rebuilding</button>'}
@@ -1273,6 +1340,9 @@ def build_trade_calculator_body(
               <!-- One-line explanation of the selected strategy -->
               <div id="otcStrategyDesc" class="otc-strategy-desc" style="display:none;font-size:13px;line-height:1.45;color:var(--text-muted);margin:8px 2px 4px;"></div>
 
+              <!-- Deals: Impact stays attached directly above the cards it
+                   filters (one wrapper so mobile can hairline them together) -->
+              <div id="otcStrategyDeals">
               <!-- Impact table (current PO badge is inline on the right) -->
               <div class="otc-strategy-section-head">
                 <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:11px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>
@@ -1295,6 +1365,7 @@ def build_trade_calculator_body(
                 <button class="otc-strategy-clear-filter" id="otcStrategyClearFilter" style="display:none;">Show all</button>
               </div>
               <div id="otcStrategyCards"></div>
+              </div><!-- /#otcStrategyDeals -->
 
             </div><!-- /#otcStrategyPanel -->
 
