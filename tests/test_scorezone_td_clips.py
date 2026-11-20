@@ -170,10 +170,22 @@ def test_roundup_caption_rejected_even_when_it_names_the_scorer():
 def test_tweet_outside_window_does_not_match():
     matches = clips.match_tweets(
         [_tweet("n3", "Kyren Williams extends the lead for the Rams.",
-                "2026-10-25T22:05:49Z")],  # 20 minutes after the play
+                "2026-10-25T22:10:49Z")],  # 25 minutes after the play
         _wanted(),
     )
     assert matches == []
+
+
+def test_tweet_late_in_the_widened_window_matches():
+    # Team accounts regularly post the clip 13-19 minutes after the
+    # play; the old 12-minute window lost those plays forever
+    # (Colts@Texans, 2026-11-19: 1 of 3 TDs matched).
+    matches = clips.match_tweets(
+        [_tweet("n3b", "Kyren Williams extends the lead for the Rams.",
+                "2026-10-25T22:03:49Z")],  # 18 minutes after the play
+        _wanted(),
+    )
+    assert len(matches) == 1
 
 
 def test_unrelated_account_does_not_match():
@@ -381,6 +393,105 @@ def test_passer_only_caption_ambiguous_between_his_two_tds():
     assert [m["play_id"] for m in matches] == ["a2"]
 
 
+def _nrow(play_id, pid, stat, wallclock, text=""):
+    """A non-TD stored row (same shape as _row, is_td False)."""
+    r = _row(play_id, pid, stat, wallclock)
+    r["is_td"] = False
+    r["play_text"] = text
+    return r
+
+
+_NAMES_EXT = {"burrow": "Joe Burrow", "chase": "Ja'Marr Chase",
+              "higgins": "Tee Higgins", "bijan": "Bijan Robinson"}
+
+
+def test_wanted_includes_big_gain_and_turnover_plays():
+    rows = [
+        # 47-yd completion, no TD: big gain, receiver featured.
+        _nrow("g1", "burrow", {"pass_yds": 47}, "2026-11-08T15:00:00Z"),
+        _nrow("g1", "chase", {"rec_yds": 47}, "2026-11-08T15:00:00Z"),
+        # 52-yd run: big gain, rusher featured.
+        _nrow("g2", "bijan", {"rush_yds": 52}, "2026-11-08T15:10:00Z"),
+        # 39-yd gain: below the bar, not wanted.
+        _nrow("g3", "burrow", {"pass_yds": 39}, "2026-11-08T15:20:00Z"),
+        _nrow("g3", "higgins", {"rec_yds": 39}, "2026-11-08T15:20:00Z"),
+        # Interception: turnover, the QB is the featured name.
+        _nrow("g4", "burrow", {"pass_att": 1, "int": 1},
+              "2026-11-08T15:30:00Z", "Burrow pass intercepted"),
+        _nrow("g4", "chase", {"targets": 1}, "2026-11-08T15:30:00Z",
+              "Burrow pass intercepted"),
+        # Fumble lost on a short run: turnover, carrier featured.
+        _nrow("g5", "bijan", {"rush_yds": 12, "fum_lost": 1},
+              "2026-11-08T15:40:00Z", "Robinson fumbles, recovered"),
+        # A 47-yd TD is a TD, wanted once, as a TD.
+        _row("g6", "burrow", {"pass_td": 1, "pass_yds": 47},
+             "2026-11-08T15:50:00Z"),
+        _row("g6", "chase", {"rec_td": 1, "rec_yds": 47},
+             "2026-11-08T15:50:00Z"),
+        # A 47-yd catch that ends in a lost fumble: turnover wins
+        # over big_gain (the Moments priority).
+        _nrow("g7", "burrow", {"pass_yds": 47}, "2026-11-08T16:00:00Z"),
+        _nrow("g7", "chase", {"rec_yds": 47, "fum_lost": 1},
+              "2026-11-08T16:00:00Z", "Chase fumbles after the catch"),
+    ]
+    wanted = clips.build_wanted_plays(
+        "20261108_CIN@ATL", rows, _NAMES_EXT, away="CIN", home="ATL")
+    by_id = {w["play_id"]: w for w in wanted}
+    assert set(by_id) == {"g1", "g2", "g4", "g5", "g6", "g7"}
+    assert by_id["g1"]["kind"] == "big_gain"
+    assert by_id["g1"]["scorers"] == ["Ja'Marr Chase"]
+    assert by_id["g1"]["passers"] == ["Joe Burrow"]
+    assert by_id["g2"]["kind"] == "big_gain"
+    assert by_id["g2"]["scorers"] == ["Bijan Robinson"]
+    assert by_id["g4"]["kind"] == "turnover"
+    assert by_id["g4"]["scorers"] == ["Joe Burrow"]
+    assert by_id["g5"]["kind"] == "turnover"
+    assert by_id["g5"]["scorers"] == ["Bijan Robinson"]
+    assert by_id["g6"]["kind"] == "td"
+    assert by_id["g7"]["kind"] == "turnover"
+    assert by_id["g7"]["scorers"] == ["Ja'Marr Chase"]
+    # The TD-only wrapper still returns TDs alone.
+    td_only = clips.build_wanted_td_plays(
+        "20261108_CIN@ATL", rows, _NAMES_EXT, away="CIN", home="ATL")
+    assert [w["play_id"] for w in td_only] == ["g6"]
+
+
+def test_big_gain_and_turnover_captions_match():
+    rows = [
+        _nrow("g1", "burrow", {"pass_yds": 47}, "2026-11-08T15:00:00Z"),
+        _nrow("g1", "chase", {"rec_yds": 47}, "2026-11-08T15:00:00Z"),
+        _nrow("g4", "burrow", {"pass_att": 1, "int": 1},
+              "2026-11-08T15:30:00Z", "Burrow pass intercepted"),
+        _nrow("g5", "bijan", {"rush_yds": 12, "fum_lost": 1},
+              "2026-11-08T15:40:00Z", "Robinson fumbles, recovered"),
+    ]
+    wanted = clips.build_wanted_plays(
+        "20261108_CIN@ATL", rows, _NAMES_EXT, away="CIN", home="ATL")
+    gain = _tweet("bg1", "Burrow finds Chase for 47 yards and a huge gain!",
+                  "2026-11-08T15:01:00Z")
+    pick = _tweet("to1", "Joe Burrow is intercepted!",
+                  "2026-11-08T15:30:45Z")
+    fumble = _tweet("to2", "Bijan Robinson fumbles and Cincinnati recovers!",
+                    "2026-11-08T15:40:30Z")
+    matches = clips.match_tweets([gain, pick, fumble], wanted)
+    by_play = {m["play_id"]: m for m in matches}
+    assert set(by_play) == {"g1", "g4", "g5"}
+    assert by_play["g1"]["scorer"] == "Ja'Marr Chase"
+    assert by_play["g4"]["scorer"] == "Joe Burrow"
+    assert by_play["g5"]["scorer"] == "Bijan Robinson"
+
+
+def test_play_signal_big_gain_and_turnover_shapes():
+    assert clips.has_play_signal("Chase goes for 47 yards")
+    assert clips.has_play_signal("HUGE GAIN for the Bengals")
+    assert clips.has_play_signal("Burrow is intercepted")
+    assert clips.has_play_signal("Robinson fumbles it away")
+    assert clips.has_play_signal("An explosive play from Bijan")
+    # Name + hype with no play description is still not a signal.
+    assert not clips.has_play_signal(
+        "Bijan Robinson is having a huge day at the Bernabeu")
+
+
 def test_caption_naming_other_scorer_outside_his_window_does_not_match():
     # Tucker's real caption text, posted during Kyren's window: Tucker's own
     # play is hours from its window, and Kyren is not named. No match.
@@ -584,7 +695,8 @@ def test_match_output_carries_media():
     assert matches[0]["poster_url"] == "https://pbs.twimg.com/p.jpg"
 
 
-def test_attach_helpers_stamp_only_matched_td_plays(fake_clips_db):
+def test_attach_helpers_stamp_matched_plays_of_any_highlight_kind(
+        fake_clips_db):
     store.upsert_play_clip(2026, RAMS_GAME, "404", {
         "tweet_id": "2114474206234918976",
         "tweet_url": "https://x.com/NFL/status/2114474206234918976",
@@ -599,20 +711,26 @@ def test_attach_helpers_stamp_only_matched_td_plays(fake_clips_db):
     ]}
     n = store.attach_clips_to_plays(plays_by_game, clips_map)
     rows = plays_by_game[RAMS_GAME]
-    assert n == 1
+    # Both rows of the matched play are stamped (the client lifts the
+    # clip from any row of the play); the unmatched play is untouched.
+    assert n == 2
     assert rows[0]["clip_tweet_id"] == "2114474206234918976"
-    assert "clip_tweet_id" not in rows[1]  # unmatched TD: payload unchanged
-    assert "clip_tweet_id" not in rows[2]  # non-TD row of the same play
+    assert rows[2]["clip_tweet_id"] == "2114474206234918976"
+    assert "clip_tweet_id" not in rows[1]  # unmatched play: unchanged
 
     moments = [
         {"kind": "td", "game_id": RAMS_GAME, "play_id": "404"},
         {"kind": "td", "game_id": RAMS_GAME, "play_id": "403"},
         {"kind": "big_gain", "game_id": RAMS_GAME, "play_id": "404"},
+        {"kind": "turnover", "game_id": RAMS_GAME, "play_id": "404"},
+        {"kind": "other", "game_id": RAMS_GAME, "play_id": "404"},
     ]
-    assert store.attach_clips_to_moments(moments, clips_map) == 1
+    assert store.attach_clips_to_moments(moments, clips_map) == 3
     assert moments[0]["clip_url"].endswith("2114474206234918976")
+    assert moments[2]["clip_url"].endswith("2114474206234918976")
+    assert moments[3]["clip_url"].endswith("2114474206234918976")
     assert "clip_url" not in moments[1]
-    assert "clip_url" not in moments[2]
+    assert "clip_url" not in moments[4]
 
 
 # ---------------------------------------------------------------------------
@@ -1214,3 +1332,139 @@ def test_clip_pass_fills_pending_clip_after_match_window_closes(monkeypatch):
     assert fetcher.looked_up == ["111"]
     assert stats["filled"] == 1
     assert len(upserts) == 1
+
+
+# ---------------------------------------------------------------------------
+# Interceptions: the defender is a featured name too (2026-11-19)
+# ---------------------------------------------------------------------------
+
+def test_interception_matches_defender_caption():
+    # Tonight's shape (Colts@Texans): the pick caption leads with the
+    # defender who took it, not the QB who threw it. The def_int row is
+    # an individual defender, so his surname is scorer tier alongside
+    # the QB's.
+    names = {**_NAMES_EXT, "haulcy": "A.J. Haulcy"}
+    rows = [
+        _nrow("p1", "burrow", {"pass_att": 1, "int": 1},
+              "2026-11-08T15:30:00Z", "Burrow pass intercepted by Haulcy"),
+        _nrow("p1", "haulcy", {"def_int": 1},
+              "2026-11-08T15:30:00Z", "Burrow pass intercepted by Haulcy"),
+    ]
+    wanted = clips.build_wanted_plays(
+        "20261108_CIN@ATL", rows, names, away="CIN", home="ATL")
+    assert len(wanted) == 1
+    w = wanted[0]
+    assert w["kind"] == "turnover"
+    assert set(w["scorers"]) == {"Joe Burrow", "A.J. Haulcy"}
+    matches = clips.match_tweets(
+        [_tweet("int1", "A.J. Haulcy picks off Joe Burrow!",
+                "2026-11-08T15:31:00Z")],
+        wanted,
+    )
+    assert [m["play_id"] for m in matches] == ["p1"]
+    # The stored scorer label is one of the play's featured names.
+    assert matches[0]["scorer"] in {"Joe Burrow", "A.J. Haulcy"}
+    # The INT shorthand is a play signal too.
+    assert clips.has_play_signal("Haulcy with the INT!")
+
+
+# ---------------------------------------------------------------------------
+# Live pass second look: the since_id cursor can scroll past a clip
+# ---------------------------------------------------------------------------
+
+def test_clip_pass_rescan_recovers_cursor_missed_tweet(monkeypatch):
+    # The incremental read advanced past Kyren's clip tweet in an
+    # earlier pass (before the play was stored), so user_tweets returns
+    # nothing -- but the play is 6 minutes old and unmatched, so the
+    # pass takes its one time-window second look and recovers it.
+    rows = _rams_rows()
+    upserts = []
+    monkeypatch.setattr(store, "get_plays",
+                        lambda season, gids: {RAMS_GAME: rows})
+    monkeypatch.setattr(store, "get_play_clips",
+                        lambda season, gids: {})
+    monkeypatch.setattr(
+        store, "upsert_play_clip",
+        lambda season, gid, pid, clip: upserts.append((gid, pid, clip)) or True)
+
+    class _FakeFetcher:
+        def __init__(self):
+            self.user_ids = {}
+            self.window_calls = []
+
+        def user_tweets(self, username, since_id=None, max_results=25):
+            return []
+
+        def user_tweets_window(self, username, start_ts, end_ts):
+            self.window_calls.append((username, start_ts, end_ts))
+            return [_tweet("2114474206234918976",
+                           "Kyren Williams extends the lead for the Rams.",
+                           "2026-10-25T21:48:30Z")]
+
+    fetcher = _FakeFetcher()
+    from utils.scorezone import _iso_to_epoch
+
+    now = _iso_to_epoch("2026-10-25T21:51:49Z")  # 6 min after the TD
+    stats = clips.maybe_run_clip_pass(
+        2026,
+        [{"game_id": RAMS_GAME, "live": True, "final": False}],
+        {pid: {"full_name": name, "position": "WR"}
+         for pid, name in PID_TO_NAME.items()},
+        now=float(now), fetcher=fetcher,
+    )
+    assert fetcher.window_calls  # the second look actually fired
+    assert stats["matched"] == 1
+    assert [(g, p) for g, p, _c in upserts] == [(RAMS_GAME, "404")]
+
+
+# ---------------------------------------------------------------------------
+# TNF 2026-11-19 (Colts@Texans): the two missed TDs, real captions
+# ---------------------------------------------------------------------------
+
+def test_tnf_hype_captions_match_their_tds():
+    # Verified live 2026-11-19: all three @NFL TD clips posted ~2-3
+    # minutes after the plays, landscape video, official account -- but
+    # only Klein's caption carried TD vocabulary ("finds ... for six").
+    # Collins' and Boutte's were pure hype and the play-signal gate
+    # killed both, leaving 1 moment from a 3-TD game.
+    names = {"stroud": "C.J. Stroud", "collins": "Nico Collins",
+             "boutte": "Kayshon Boutte", "klein": "Marlin Klein"}
+
+    def trow(play_id, pid, stat, wallclock):
+        r = _row(play_id, pid, stat, wallclock)
+        return r
+
+    rows = [
+        trow("c1", "stroud", {"pass_td": 1}, "2026-11-20T01:49:58Z"),
+        trow("c1", "collins", {"rec_td": 1}, "2026-11-20T01:49:58Z"),
+        trow("b1", "stroud", {"pass_td": 1}, "2026-11-20T02:09:14Z"),
+        trow("b1", "boutte", {"rec_td": 1}, "2026-11-20T02:09:14Z"),
+        trow("k1", "stroud", {"pass_td": 1}, "2026-11-20T03:22:56Z"),
+        trow("k1", "klein", {"rec_td": 1}, "2026-11-20T03:22:56Z"),
+    ]
+    wanted = clips.build_wanted_td_plays(
+        "20261119_IND@HOU", rows, names, away="IND", home="HOU")
+    tweets = [
+        _tweet("2123595089394229303",
+               "STROUD. NICO. SIX.  INDvsHOU on Prime Stream on @NFLPlus",
+               "2026-11-20T01:51:38Z"),
+        _tweet("2123599940811387062",
+               "BOUTTE JUMP BALL. ANOTHER ONE FOR STROUD.  "
+               "INDvsHOU on Prime Stream on @NFLPlus",
+               "2026-11-20T02:10:55Z"),
+        _tweet("2123618818589429900",
+               "Stroud finds German TE Marlin Klein for six! "
+               "@nfldeutschland  INDvsHOU on Prime Stream on @NFLPlus",
+               "2026-11-20T03:25:55Z"),
+    ]
+    matches = clips.match_tweets(tweets, wanted)
+    got = {m["play_id"]: m["tweet_id"] for m in matches}
+    assert got == {
+        "c1": "2123595089394229303",
+        "b1": "2123599940811387062",
+        "k1": "2123618818589429900",
+    }
+    # Collins' caption names only the passer + first name: the clip
+    # still lands on Collins' play with Collins as the stored scorer.
+    collins = next(m for m in matches if m["play_id"] == "c1")
+    assert collins["scorer"] == "Nico Collins"

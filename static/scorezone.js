@@ -4378,8 +4378,8 @@
     return '';
   }
 
-  // ── TD clips ────────────────────────────────────────────────────────────
-  // A TD card whose play has a matched official X clip gets a quiet Watch
+  // ── Play clips ──────────────────────────────────────────────────────────
+  // A card whose play has a matched official X clip gets a quiet Watch
   // button; tapping lazy-loads the X embed inside the card. Only one embed
   // is open at a time (phone memory), and cards without a clip render
   // exactly as before: no button, no placeholder.
@@ -4964,7 +4964,9 @@
       : '<img class="rz-headshot' + (isDef ? ' rz-team-logo' : '') + '" src="' + avSrc + '" alt=""'
         + (isDef && defTeam ? ' data-team="' + String(defTeam).replace(/"/g, '') + '"' : '')
         + ' onerror="' + avOnErr + '">';
-    var hasClip = !!(ev.clipTweetId && ev.kind === 'td');
+    // Clips exist only for matched highlight plays (TDs, 40+ gains,
+    // turnovers): the stamp is the gate, whatever the event kind.
+    var hasClip = !!ev.clipTweetId;
     // The open clip belongs to one surface: when the Moments rail owns
     // it, the feed card for the same play renders closed (and vice
     // versa) so the clip never plays twice at once.
@@ -7013,6 +7015,53 @@
     document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', _boxSheetKey);
     backdrop.addEventListener('click', _closeBoxScore);
+    // Pull down to close: the sheet has always rendered a grab handle, but
+    // no drag handler ever existed, so the gesture did nothing (only the
+    // X, the backdrop and Escape closed it). Mirrors the More sheet's
+    // swipe-down: drag from the handle/head at any time, or from the body
+    // once it is scrolled to the top; past 90px the sheet closes, short
+    // of that it snaps back. A downward drag while the body can still
+    // scroll is left alone so the stat tables scroll normally.
+    var _bsDrag = null; // { startY, delta, active, fromHead }
+    sheet.addEventListener('touchstart', function(e) {
+      _bsDrag = null;
+      if (!e.touches || e.touches.length !== 1) return;
+      var t = e.target;
+      var closest = function(sel) { return t && t.closest ? t.closest(sel) : null; };
+      if (closest('button')) return; // X / team toggle keep their taps
+      var fromHead = !!(closest('.rz-bs-handle') || closest('.rz-bs-head'));
+      if (!fromHead && _boxSheetEls.body.scrollTop > 0) return;
+      _bsDrag = { startY: e.touches[0].clientY, delta: 0, active: false, fromHead: fromHead };
+    }, { passive: true });
+    sheet.addEventListener('touchmove', function(e) {
+      if (!_bsDrag || !e.touches || e.touches.length !== 1) return;
+      var dy = e.touches[0].clientY - _bsDrag.startY;
+      if (!_bsDrag.active) {
+        if (dy > 6 && (_bsDrag.fromHead || _boxSheetEls.body.scrollTop <= 0)) {
+          _bsDrag.active = true;
+          sheet.style.transition = 'none';
+        } else if (dy < 0 || (!_bsDrag.fromHead && _boxSheetEls.body.scrollTop > 0)) {
+          _bsDrag = null;
+          return;
+        } else return;
+      }
+      _bsDrag.delta = Math.max(0, dy);
+      if (e.cancelable) e.preventDefault();
+      sheet.style.transform = 'translateY(' + _bsDrag.delta + 'px)';
+      backdrop.style.opacity = String(Math.max(0, 1 - _bsDrag.delta / 420));
+    }, { passive: false });
+    function _bsDragEnd() {
+      if (!_bsDrag) return;
+      var drag = _bsDrag;
+      _bsDrag = null;
+      if (!drag.active) return;
+      sheet.style.transition = '';
+      sheet.style.transform = '';
+      backdrop.style.opacity = '';
+      if (drag.delta > 90) _closeBoxScore();
+    }
+    sheet.addEventListener('touchend', _bsDragEnd);
+    sheet.addEventListener('touchcancel', _bsDragEnd);
     sheet.addEventListener('click', function(e) {
       var t = e.target;
       var closest = function(sel) { return t && t.closest ? t.closest(sel) : null; };

@@ -127,6 +127,24 @@ def test_sheet_closes_via_x_backdrop_and_escape():
     assert "Escape" in SCOREZONE_JS
 
 
+def test_sheet_pull_down_to_close_is_wired():
+    # The sheet renders a grab handle, so a downward pull must actually
+    # drag and close it: touch handlers on the sheet, a head/handle drag
+    # zone, a body-at-top gate (a scrolled body keeps scrolling), and a
+    # close threshold with snap-back below it.
+    assert "sheet.addEventListener('touchstart'" in SCOREZONE_JS
+    assert "sheet.addEventListener('touchmove'" in SCOREZONE_JS
+    assert "sheet.addEventListener('touchend'" in SCOREZONE_JS
+    assert "'.rz-bs-handle'" in SCOREZONE_JS and "'.rz-bs-head'" in SCOREZONE_JS
+    assert "_boxSheetEls.body.scrollTop" in SCOREZONE_JS
+    assert "drag.delta > 90" in SCOREZONE_JS
+    # The drag zones opt out of browser gesture claiming.
+    handle = DASHBOARD_CSS.split(".rz-bs-handle {", 1)[1].split("}", 1)[0]
+    head = DASHBOARD_CSS.split(".rz-bs-head {", 1)[1].split("}", 1)[0]
+    assert "touch-action: none" in handle
+    assert "touch-action: none" in head
+
+
 # ── CSS ──────────────────────────────────────────────────────────────────
 def test_boxscore_css_exists_without_pill_radii():
     for cls in (".rz-boxscore-btn", ".rz-bs-sheet", ".rz-bs-backdrop",

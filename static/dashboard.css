@@ -44915,6 +44915,9 @@ a.rz-demo-link:hover {
     background: var(--rz-border);
     margin: 10px auto 2px;
     flex: 0 0 auto;
+    /* Pull-down-to-close drag zone: the browser must not claim the
+       vertical gesture as a scroll/refresh before the sheet sees it. */
+    touch-action: none;
 }
 .rz-bs-head {
     display: flex;
@@ -44923,6 +44926,7 @@ a.rz-demo-link:hover {
     padding: 8px 16px 10px;
     border-bottom: 1px solid var(--rz-border);
     flex: 0 0 auto;
+    touch-action: none;
 }
 .rz-bs-title { font-size: 15px; font-weight: 800; }
 .rz-bs-sub { font-size: 11px; color: var(--rz-muted); font-weight: 600; margin-top: 1px; font-variant-numeric: tabular-nums; }

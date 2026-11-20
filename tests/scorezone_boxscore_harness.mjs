@@ -199,4 +199,39 @@ api._closeBoxScore();
 assert.equal(api._getSheet(), null, 'sheet state cleared');
 assert.equal(api._getEls(), null, 'sheet elements cleared');
 
+// ── 7. Pull down to close ────────────────────────────────────────────────
+fetchImpl = () => ok(LIVE);
+api._openBoxScore('20240905_DET@GB');
+await tick(); await tick();
+els = api._getEls();
+const dragSheet = els.sheet;
+const bodyTarget = { closest: () => null };
+const headTarget = { closest: (sel) => (sel === '.rz-bs-head' ? {} : null) };
+const touch = (y, target) => ({
+  touches: [{ clientY: y }], target, cancelable: true, preventDefault() {},
+});
+// 7a. Body scrolled down: a downward drag scrolls the tables, never drags
+// the sheet.
+els.body.scrollTop = 50;
+dragSheet._fire('touchstart', touch(100, bodyTarget));
+dragSheet._fire('touchmove', touch(280, bodyTarget));
+dragSheet._fire('touchend', {});
+assert.ok(api._getSheet(), 'sheet stays open when dragging a scrolled body');
+assert.ok(!dragSheet.style.transform, 'sheet does not move when body is scrolled');
+// 7b. Body at top, short pull: sheet follows the finger, then snaps back.
+els.body.scrollTop = 0;
+dragSheet._fire('touchstart', touch(100, bodyTarget));
+dragSheet._fire('touchmove', touch(150, bodyTarget));
+assert.equal(dragSheet.style.transform, 'translateY(50px)', 'sheet follows a top-of-body pull');
+dragSheet._fire('touchend', {});
+assert.ok(api._getSheet(), 'short pull does not close the sheet');
+assert.equal(dragSheet.style.transform, '', 'short pull snaps back');
+// 7c. Long pull from the head: closes.
+dragSheet._fire('touchstart', touch(100, headTarget));
+dragSheet._fire('touchmove', touch(240, headTarget));
+assert.equal(dragSheet.style.transform, 'translateY(140px)', 'sheet follows a head pull');
+dragSheet._fire('touchend', {});
+assert.equal(api._getSheet(), null, 'pull past the threshold closes the sheet');
+assert.equal(api._getEls(), null, 'pull-down clears sheet elements');
+
 console.log('box score harness: all assertions passed');
