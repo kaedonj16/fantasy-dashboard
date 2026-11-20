@@ -20218,6 +20218,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return _NI_SCOREZONE_TYPES.has(type) ? "scorezone" : "updates";
   }
 
+  // Default tab when the bell opens: ScoreZone when the user has no
+  // regular (Updates-tab inbox) notifications and ScoreZone has alerts.
+  // The synthetic changelog entries folded into Updates do not count as
+  // regular notifications: they are always present, so counting them
+  // would pin the panel to Updates even when nothing was sent to the user.
+  function _niDefaultTab(hasRegular, hasScoreZone) {
+    return hasScoreZone && !hasRegular ? "scorezone" : "updates";
+  }
+
   // Switch the visible list + active tab styling inside the open panel.
   function _niActivateTab(name) {
     niActiveTab = name;
@@ -20306,6 +20315,7 @@ document.addEventListener("DOMContentLoaded", () => {
       items.push({
         ts: Date.parse(it.created_at) || 0,
         tab: _niTabFor(it.type),
+        inbox: true,
         read: !!it.read,
         html: _niItemHtml({ id: it.id, type: it.type, title: it.title, body: it.body, url: it.url, meta: meta, read: !!it.read }),
       });
@@ -20329,6 +20339,7 @@ document.addEventListener("DOMContentLoaded", () => {
       items.push({
         ts: Date.parse(entry.date) || 0,
         tab: "updates",
+        inbox: false,
         read: !(entry.date > lastSeen),
         html: _niItemHtml({
           type: "changelog", title: hb.title, body: hb.body, url: link,
@@ -20343,10 +20354,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const szItems = items.filter(i => i.tab === "scorezone");
     const updUnread = updItems.filter(i => !i.read).length;
     const szUnread = szItems.filter(i => !i.read).length;
-    // Land on ScoreZone only when Updates has nothing at all and the
-    // user has not explicitly picked a tab this session.
-    if (!niTabChosen && niActiveTab === "updates" && !updItems.length && szItems.length) {
-      niActiveTab = "scorezone";
+    // Land on ScoreZone when the user has no regular notifications:
+    // no inbox items on the Updates tab (changelog entries folded into
+    // Updates do not count), and ScoreZone has alerts. An explicit tab
+    // tap this session always wins over this default.
+    if (!niTabChosen) {
+      const hasRegular = updItems.some(i => i.inbox);
+      niActiveTab = _niDefaultTab(hasRegular, szItems.length > 0);
     }
     const updHtml = updItems.length
       ? updItems.map(i => i.html).join("")
