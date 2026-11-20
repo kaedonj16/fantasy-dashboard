@@ -38,6 +38,14 @@ ZONE_ROWS = ["Deep", "Inter", "Short", "Behind"]
 ZONE_COLS = ["left", "middle", "right"]
 LANES = ["LE", "LT", "LG", "M", "RG", "RT", "RE"]
 
+# Minimum-volume guard for the maps: below these window volumes a map
+# still renders, but the payload flags it thin so the renderers can mute
+# the surface and label it instead of letting a handful of plays read as
+# an authoritative tendency.
+THIN_TARGET_MIN = 10
+THIN_CARRIES_MIN = 15
+THIN_ATTEMPTS_MIN = 20
+
 _LANE_BY_LOC_GAP = {
     ("left", "end"): "LE",
     ("left", "tackle"): "LT",
@@ -486,6 +494,38 @@ def trend_for(feats: Dict[str, Any]) -> str:
     return "Steady"
 
 
+def verdict_for(job: str, tags: List[str], trend: str, security: str,
+                lead_name: Optional[str], recent_share: Optional[float],
+                season_share: Optional[float],
+                share_label: str = "opportunity share") -> str:
+    """One plain-language line for the role card, built ONLY from facts
+    already in the payload: the job, the primary tag, and the largest
+    factual change available (a contingent security state first, then
+    the trend direction with its opportunity-share driver, then a
+    locked/volatile security state). With no change signal the line is
+    job + tag only. Shares are percents (0-100)."""
+    job = job or "Role not classified"
+    if security == "Contingent" and lead_name:
+        return (f"{job} whose production is contingent on "
+                f"{lead_name}'s health.")
+    head = job
+    if tags:
+        head += f" riding a {str(tags[0]).lower().replace(' ', '-')} role"
+    driver = ""
+    if recent_share is not None and season_share is not None:
+        driver = (f"{share_label} {recent_share:.0f}% over the last 4 "
+                  f"weeks vs {season_share:.0f}% for the season")
+    if trend == "Rising" and driver:
+        return f"{head}, and the last 4 weeks strengthened it: {driver}."
+    if trend == "Fading" and driver:
+        return f"{head}, but the last 4 weeks cooled it: {driver}."
+    if security == "Locked":
+        return f"{head}, with the job locked in."
+    if security == "Volatile":
+        return f"{head}, though the week-to-week role has been volatile."
+    return f"{head}."
+
+
 def build_role(pid: str, pool: Dict[str, Dict[str, Any]],
                computed: Dict[str, Dict[str, Any]],
                prior_score: Optional[float] = None) -> Dict[str, Any]:
@@ -499,16 +539,29 @@ def build_role(pid: str, pool: Dict[str, Dict[str, Any]],
         score = round(0.7 * score + 0.3 * prior_score, 1)
         force_provisional = True
     job = job_for(pos, score, feats)
-    security, note, _lead = security_for(pid, pool, computed)
+    security, note, lead_pid = security_for(pid, pool, computed)
     confidence = "Provisional" if (force_provisional or feats["games"] < 5
                                    or feats["snaps"] < 100) else "High"
+    tags = tags_for(pos, mine["axes"], mine["feat_pct"], feats)
+    trend = trend_for(feats)
+    shares = feats.get("weekly_opp_shares") or []
+    recent_share = (sum(shares[-4:]) / len(shares[-4:])
+                    if len(shares) >= 2 else None)
+    season_share = (sum(shares) / len(shares)
+                    if len(shares) >= 2 else None)
+    lead_name = (pool[lead_pid].get("name")
+                 if lead_pid and lead_pid in pool else None)
     return {
         "job": job,
-        "tags": tags_for(pos, mine["axes"], mine["feat_pct"], feats),
+        "tags": tags,
         "security": security,
         "security_note": note,
         "confidence": confidence,
-        "trend": trend_for(feats),
+        "trend": trend,
+        "verdict": verdict_for(job, tags, trend, security, lead_name,
+                               recent_share, season_share,
+                               share_label=("snap share" if pos == "QB"
+                                            else "opportunity share")),
         "axes": mine["axes"],
         "games": int(feats["games"]),
         "snaps": int(feats["snaps"]),
@@ -567,21 +620,69 @@ def build_timeline(pid: str, pool: Dict[str, Dict[str, Any]],
     return segments
 
 
+# Job-tier ladder per position (lower = bigger job). Comps must sit in
+# the player's own tier or one tier adjacent: an Alpha WR1 is never a
+# "match" for a WR2-role player no matter how close one axis is.
+JOB_TIER_RANK: Dict[str, Dict[str, int]] = {
+    "WR": {"Alpha WR1": 0, "WR1": 1, "WR2": 2, "WR3": 3, "Rotational": 4},
+    "RB": {"Workhorse": 0, "Lead 1A": 1, "Committee 1B": 2,
+           "Passing-Down Specialist": 2, "Depth": 3},
+    "TE": {"Alpha TE1": 0, "TE1": 1, "Committee TE": 2, "Blocking-First": 3},
+    "QB": {"Franchise QB1": 0, "QB1": 1, "QB2-Streamer": 2,
+           "Timeshare-Backup": 3},
+}
+
+
+def _dist_block_distance(a: List[float], b: List[float]) -> float:
+    """Distance between two share vectors (each sums to ~1), scaled so
+    two completely disjoint distributions are 1.0."""
+    if len(a) != len(b) or not a:
+        return 0.0
+    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b))) / math.sqrt(2.0)
+
+
+def _similarity(d_axes: float, d_dist: Optional[float]) -> float:
+    """Honest 0-99 similarity from profile distance. A genuinely close
+    profile (axis RMS gap ~8, near-identical shape) lands ~85-95, a
+    decent one ~70-84, and 100 is unreachable by construction. Kept as
+    a float for ranking: rounding first makes near-ties common, and a
+    name tie-break then orders comps arbitrarily."""
+    if d_dist is None:
+        dist = d_axes
+    else:
+        dist = math.sqrt((d_axes ** 2 + d_dist ** 2) / 2.0)
+    return max(0.0, min(99.0, 99 - 130 * dist))
+
+
 def build_comparables(pid: str, pool: Dict[str, Dict[str, Any]],
                       computed: Dict[str, Dict[str, Any]],
-                      jobs: Dict[str, str]):
+                      jobs: Dict[str, str],
+                      distributions: Optional[Dict[str, Dict[str, List[float]]]] = None):
+    """Role comps from the FULL profile: Euclidean distance over every
+    axis plus the zone-distribution shape (and lane shape for RBs),
+    gated to the same Job tier or one tier adjacent. The old cosine
+    similarity saturated at 99-100 for almost everyone and its twin
+    ignored the tier sort, so the twin and the comp list disagreed."""
     pos = pool[pid].get("pos")
     axis_names = list(AXIS_FEATURES.get(pos, {}).keys())
     mine = computed[pid]["axes"]
+    distributions = distributions or {}
+    my_dist = distributions.get(pid) or {}
+    tier_rank = JOB_TIER_RANK.get(pos, {})
+    my_tier = tier_rank.get(jobs.get(pid))
 
-    def _vec(axes):
-        return [axes.get(a, 0) / 100.0 for a in axis_names]
-
-    def _cos(a, b):
-        dot = sum(x * y for x, y in zip(a, b))
-        na = math.sqrt(sum(x * x for x in a))
-        nb = math.sqrt(sum(y * y for y in b))
-        return dot / (na * nb) if na > 0 and nb > 0 else 0.0
+    def _profile_distance(other: str) -> float:
+        o_axes = computed[other]["axes"]
+        d_axes = math.sqrt(
+            sum((mine.get(a, 0) - o_axes.get(a, 0)) ** 2 for a in axis_names)
+            / max(1, len(axis_names))) / 100.0
+        o_dist = distributions.get(other) or {}
+        blocks = []
+        for block in ("zones", "lanes"):
+            if my_dist.get(block) and o_dist.get(block):
+                blocks.append(_dist_block_distance(my_dist[block], o_dist[block]))
+        d_dist = (sum(blocks) / len(blocks)) if blocks else None
+        return _similarity(d_axes, d_dist)
 
     scored = []
     for other, comp in computed.items():
@@ -589,13 +690,14 @@ def build_comparables(pid: str, pool: Dict[str, Dict[str, Any]],
             continue
         if comp["feats"]["games"] < 1:
             continue
-        sim = _cos(_vec(mine), _vec(comp["axes"]))
-        scored.append((other, sim))
+        o_tier = tier_rank.get(jobs.get(other))
+        if my_tier is not None and o_tier is not None \
+                and abs(o_tier - my_tier) > 1:
+            continue
+        scored.append((other, _profile_distance(other)))
     if not scored:
         return [], None
-    my_job = jobs.get(pid)
-    ranked = sorted(scored, key=lambda t: (jobs.get(t[0]) == my_job, t[1]),
-                    reverse=True)
+    ranked = sorted(scored, key=lambda t: (-t[1], pool[t[0]].get("name") or ""))
     comps = []
     for other, sim in ranked[:3]:
         o_axes = computed[other]["axes"]
@@ -606,14 +708,14 @@ def build_comparables(pid: str, pool: Dict[str, Dict[str, Any]],
             "name": pool[other].get("name") or "",
             "pos": pos,
             "team": pool[other].get("team") or "",
-            "similarity": int(round(sim * 100)),
+            "similarity": int(round(sim)),
             "match_line": f"Closest on {closest} ({mine.get(closest, 0)} vs {o_axes.get(closest, 0)})",
             "differ_line": f"Biggest gap on {farthest} ({mine.get(farthest, 0)} vs {o_axes.get(farthest, 0)})",
         })
-    twin_pid, twin_sim = max(scored, key=lambda t: t[1])
-    twin = {"player_id": twin_pid, "name": pool[twin_pid].get("name") or "",
-            "pos": pos, "team": pool[twin_pid].get("team") or "",
-            "similarity": int(round(twin_sim * 100))}
+    top = comps[0]
+    twin = {"player_id": top["player_id"], "name": top["name"],
+            "pos": pos, "team": top["team"],
+            "similarity": top["similarity"]}
     return comps, twin
 
 
@@ -628,8 +730,35 @@ def _blank_zone():
             "primary_last4": 0, "primary_base": 0}
 
 
-def _accumulate_pass(rows, key_field, last4_weeks, base_weeks, window_weeks=None):
-    """Aggregate pass rows into per-player zone tables."""
+def _fill_zone(cell, r, air):
+    cell["primary"] += 1
+    cell["secondary"] += 1 if _f(r.get("complete_pass")) == 1 else 0
+    cell["yards"] += _f(r.get("yards_gained"))
+    cell["td"] += 1 if _f(r.get("pass_touchdown")) == 1 else 0
+    cell["int"] += 1 if _f(r.get("interception")) == 1 else 0
+    cell["first_downs"] += 1 if _f(r.get("first_down_pass")) == 1 else 0
+    cell["air"] += air
+    cell["big"] += 1 if _f(r.get("yards_gained")) >= 20 else 0
+
+
+def _trend_zone(cell, wk, last4_weeks, base_weeks):
+    if wk in last4_weeks:
+        cell["primary_last4"] += 1
+    if wk in base_weeks:
+        cell["primary_base"] += 1
+
+
+def _accumulate_pass(rows, key_field, last4_weeks, base_weeks, window_weeks=None,
+                     player_trend=None, player_window=None):
+    """Aggregate pass rows into per-player zone tables.
+
+    The league store always uses the global (calendar) week sets. The
+    per-player store uses the player's OWN game weeks when player_trend
+    / player_window are supplied: a receiver who missed three of the
+    last four calendar weeks has his "last 4" built from the last four
+    games he actually played, matching how the role engine windows his
+    weekly series (rows[-4:]). Calendar weeks made his trend read
+    "0% last 4" off a single game."""
     per_player: Dict[str, Dict[tuple, dict]] = {}
     league: Dict[tuple, dict] = {}
     team_air: Dict[str, float] = {}
@@ -655,30 +784,23 @@ def _accumulate_pass(rows, key_field, last4_weeks, base_weeks, window_weeks=None
             continue
         wk = int(_f(r.get("week")))
         in_window = window_weeks is None or wk in window_weeks
-        for store in (per_player.setdefault(pid, {}), league):
-            cell = store.setdefault(key, _blank_zone())
-            if not in_window:
-                if wk in last4_weeks:
-                    cell["primary_last4"] += 1
-                if wk in base_weeks:
-                    cell["primary_base"] += 1
-                continue
-            cell["primary"] += 1
-            cell["secondary"] += 1 if _f(r.get("complete_pass")) == 1 else 0
-            cell["yards"] += _f(r.get("yards_gained"))
-            cell["td"] += 1 if _f(r.get("pass_touchdown")) == 1 else 0
-            cell["int"] += 1 if _f(r.get("interception")) == 1 else 0
-            cell["first_downs"] += 1 if _f(r.get("first_down_pass")) == 1 else 0
-            cell["air"] += air
-            cell["big"] += 1 if _f(r.get("yards_gained")) >= 20 else 0
-            if wk in last4_weeks:
-                cell["primary_last4"] += 1
-            if wk in base_weeks:
-                cell["primary_base"] += 1
-        if not in_window:
+        lg_cell = league.setdefault(key, _blank_zone())
+        if in_window:
+            _fill_zone(lg_cell, r, air)
+        _trend_zone(lg_cell, wk, last4_weeks, base_weeks)
+        p_tr = (player_trend or {}).get(pid)
+        p_l4, p_base = p_tr if p_tr else (last4_weeks, base_weeks)
+        p_weeks = (player_window or {}).get(pid, window_weeks)
+        in_p_window = p_weeks is None or wk in p_weeks
+        p_cell = per_player.setdefault(pid, {}).setdefault(key, _blank_zone())
+        if in_p_window:
+            _fill_zone(p_cell, r, air)
+        _trend_zone(p_cell, wk, p_l4, p_base)
+        if in_window:
+            team = str(r.get("posteam") or "")
+            team_air[team] = team_air.get(team, 0.0) + air
+        if not in_p_window:
             continue
-        team = str(r.get("posteam") or "")
-        team_air[team] = team_air.get(team, 0.0) + air
         recv_pid = str(recv)
         player_air[recv_pid] = player_air.get(recv_pid, 0.0) + air
         t = totals.setdefault(pid, {"att": 0, "comp": 0, "yards": 0.0, "td": 0,
@@ -707,7 +829,29 @@ def _blank_lane():
             "carries_last4": 0, "carries_base": 0}
 
 
-def _accumulate_rush(rows, last4_weeks, base_weeks, window_weeks=None):
+def _fill_lane(cell, r, yards):
+    cell["carries"] += 1
+    cell["yards"] += yards
+    cell["td"] += 1 if _f(r.get("rush_touchdown")) == 1 else 0
+    cell["first_downs"] += 1 if _f(r.get("first_down_rush")) == 1 else 0
+    cell["stuffed"] += 1 if yards <= 0 else 0
+    cell["explosive"] += 1 if yards >= 10 else 0
+    cell["success"] += 1 if is_success(r.get("down"), r.get("ydstogo"), yards) else 0
+    cell["longest"] = max(cell["longest"], int(yards))
+
+
+def _trend_lane(cell, wk, last4_weeks, base_weeks):
+    if wk in last4_weeks:
+        cell["carries_last4"] += 1
+    if wk in base_weeks:
+        cell["carries_base"] += 1
+
+
+def _accumulate_rush(rows, last4_weeks, base_weeks, window_weeks=None,
+                     player_trend=None, player_window=None):
+    """Rushing counterpart of _accumulate_pass: league on calendar
+    weeks, per-player lanes/QB/direction on the rusher's own game
+    weeks when supplied."""
     per_player: Dict[str, Dict[str, dict]] = {}
     league: Dict[str, dict] = {}
     qb: Dict[str, dict] = {}
@@ -726,8 +870,12 @@ def _accumulate_rush(rows, last4_weeks, base_weeks, window_weeks=None):
         yards = _f(r.get("yards_gained"))
         wk = int(_f(r.get("week")))
         in_window = window_weeks is None or wk in window_weeks
+        p_tr = (player_trend or {}).get(pid)
+        p_l4, p_base = p_tr if p_tr else (last4_weeks, base_weeks)
+        p_weeks = (player_window or {}).get(pid, window_weeks)
+        in_p_window = p_weeks is None or wk in p_weeks
         lane = lane_for(r.get("run_location"), r.get("run_gap"))
-        if in_window:
+        if in_p_window:
             q = qb.setdefault(pid, {"att": 0, "yards": 0.0, "td": 0,
                                     "scramble": 0})
             q["att"] += 1
@@ -740,39 +888,60 @@ def _accumulate_rush(rows, last4_weeks, base_weeks, window_weeks=None):
                 d[loc] += 1
         if lane is None:
             continue
-        for store in (per_player.setdefault(pid, {}), league):
-            cell = store.setdefault(lane, _blank_lane())
-            if not in_window:
-                if wk in last4_weeks:
-                    cell["carries_last4"] += 1
-                if wk in base_weeks:
-                    cell["carries_base"] += 1
-                continue
-            cell["carries"] += 1
-            cell["yards"] += yards
-            cell["td"] += 1 if _f(r.get("rush_touchdown")) == 1 else 0
-            cell["first_downs"] += 1 if _f(r.get("first_down_rush")) == 1 else 0
-            cell["stuffed"] += 1 if yards <= 0 else 0
-            cell["explosive"] += 1 if yards >= 10 else 0
-            cell["success"] += 1 if is_success(r.get("down"), r.get("ydstogo"), yards) else 0
-            cell["longest"] = max(cell["longest"], int(yards))
-            if wk in last4_weeks:
-                cell["carries_last4"] += 1
-            if wk in base_weeks:
-                cell["carries_base"] += 1
+        lg_cell = league.setdefault(lane, _blank_lane())
+        if in_window:
+            _fill_lane(lg_cell, r, yards)
+        _trend_lane(lg_cell, wk, last4_weeks, base_weeks)
+        p_cell = per_player.setdefault(pid, {}).setdefault(lane, _blank_lane())
+        if in_p_window:
+            _fill_lane(p_cell, r, yards)
+        _trend_lane(p_cell, wk, p_l4, p_base)
     return {"lanes": per_player, "league": league, "qb": qb,
             "direction": direction}
+
+
+def _player_week_sets(rows: List[Dict[str, Any]], id_field: str,
+                      window: str, base_weeks: set):
+    """Per-player trend/window week sets from the player's OWN game
+    weeks (weeks he appears in these rows). Returns (trend, window_map)
+    where trend[pid] = (last4_game_weeks, base_set) and window_map[pid]
+    = the window's week set (only for the last4 window; the season
+    window is every week). For the season window the trend base stays
+    the global base (the full season); for last4 the base is the prior
+    four game weeks."""
+    active: Dict[str, set] = {}
+    for r in rows:
+        p = str(r.get(id_field) or "")
+        if p:
+            active.setdefault(p, set()).add(int(_f(r.get("week"))))
+    trend: Dict[str, tuple] = {}
+    window_map: Dict[str, set] = {}
+    for p, weeks in active.items():
+        ordered = sorted(weeks)
+        l4 = set(ordered[-4:])
+        if window == "last4":
+            trend[p] = (l4, set(ordered[-8:-4]))
+            window_map[p] = l4
+        else:
+            trend[p] = (l4, set(base_weeks))
+    return trend, window_map
 
 
 def build_pbp_tables_from_rows(rows: List[Dict[str, Any]],
                                xwalk: Optional[Dict[str, str]] = None,
                                last4_weeks: Optional[set] = None,
                                base_weeks: Optional[set] = None,
-                               window_weeks: Optional[set] = None) -> Dict[str, Any]:
+                               window_weeks: Optional[set] = None,
+                               window: str = "season",
+                               player_weeks: bool = False) -> Dict[str, Any]:
     """Build zone/lane tables from plain PBP row dicts (GSIS ids).
 
     xwalk maps GSIS -> Sleeper; ids missing from the crosswalk are kept
     under their GSIS id so partial crosswalks still aggregate.
+
+    player_weeks=True switches the per-player stores to each player's
+    own game weeks for trend counting (and for the last4 window's
+    window itself); the league store always stays on calendar weeks.
     """
     xwalk = xwalk or {}
     last4_weeks = last4_weeks or set()
@@ -803,9 +972,22 @@ def build_pbp_tables_from_rows(rows: List[Dict[str, Any]],
                 r2["rusher_player_id"] = _map(str(r2["rusher_player_id"]))
             rush_rows.append(r2)
 
-    receiving = _accumulate_pass(recv_rows, "receiver_player_id", last4_weeks, base_weeks, window_weeks)
-    passing = _accumulate_pass(pass_rows, "passer_player_id", last4_weeks, base_weeks, window_weeks)
-    rushing = _accumulate_rush(rush_rows, last4_weeks, base_weeks, window_weeks)
+    recv_trend = recv_window = pass_trend = pass_window = None
+    rush_trend = rush_window = None
+    if player_weeks:
+        recv_trend, recv_window = _player_week_sets(
+            recv_rows, "receiver_player_id", window, base_weeks)
+        pass_trend, pass_window = _player_week_sets(
+            pass_rows, "passer_player_id", window, base_weeks)
+        rush_trend, rush_window = _player_week_sets(
+            rush_rows, "rusher_player_id", window, base_weeks)
+
+    receiving = _accumulate_pass(recv_rows, "receiver_player_id", last4_weeks,
+                                 base_weeks, window_weeks, recv_trend, recv_window)
+    passing = _accumulate_pass(pass_rows, "passer_player_id", last4_weeks,
+                               base_weeks, window_weeks, pass_trend, pass_window)
+    rushing = _accumulate_rush(rush_rows, last4_weeks, base_weeks, window_weeks,
+                               rush_trend, rush_window)
 
     # Per-player PBP features for the axes engine.
     feats: Dict[str, Dict[str, float]] = {}
@@ -838,16 +1020,20 @@ def build_pbp_tables_from_rows(rows: List[Dict[str, Any]],
 def build_pbp_tables(df, xwalk: Optional[Dict[str, str]] = None,
                      last4_weeks: Optional[set] = None,
                      base_weeks: Optional[set] = None,
-                     window_weeks: Optional[set] = None) -> Dict[str, Any]:
+                     window_weeks: Optional[set] = None,
+                     window: str = "season",
+                     player_weeks: bool = False) -> Dict[str, Any]:
     """Pandas entry point: DataFrame -> build_pbp_tables_from_rows."""
     if df is None or len(df) == 0:
-        return build_pbp_tables_from_rows([], xwalk, last4_weeks, base_weeks, window_weeks)
+        return build_pbp_tables_from_rows([], xwalk, last4_weeks, base_weeks,
+                                          window_weeks, window, player_weeks)
     # Prune to the columns the aggregation reads before materialising
     # row dicts: to_dict("records") over the full ~372-column frame was
     # the production OOM (see _PBP_COLUMNS).
     cols = [c for c in _PBP_COLUMNS if c in df.columns]
     rows = df[cols].to_dict("records") if cols else df.to_dict("records")
-    return build_pbp_tables_from_rows(rows, xwalk, last4_weeks, base_weeks, window_weeks)
+    return build_pbp_tables_from_rows(rows, xwalk, last4_weeks, base_weeks,
+                                      window_weeks, window, player_weeks)
 
 
 # ---------------------------------------------------------------------------
@@ -1044,17 +1230,18 @@ def get_pbp_tables(season: int, window: str) -> Optional[Dict[str, Any]]:
         last4 = set(weeks[-4:])
         if window == "last4":
             base = set(weeks[-8:-4])
-            use_weeks = last4
         else:
             base = set(weeks)
-            use_weeks = set(weeks)
-        try:
-            sub = df[df["week"].isin(sorted(use_weeks | base))] if window == "last4" else df
-        except Exception:
-            sub = df
-        tables = build_pbp_tables(sub, get_gsis_crosswalk(), last4, base,
-                                  window_weeks=set(weeks) if window != "last4" else last4)
-        del df, sub
+        # No calendar subsetting: per-player trend/window weeks are the
+        # player's own game weeks, and a player who missed time has
+        # prior-4 game weeks that can sit outside the last eight
+        # calendar weeks (Egbuka: prior-4 game weeks 2-5 vs calendar
+        # 4-7). The pruned full-frame build is the measured-cheap path
+        # from the OOM fix, so the whole frame is safe to pass.
+        tables = build_pbp_tables(df, get_gsis_crosswalk(), last4, base,
+                                  window_weeks=set(weeks) if window != "last4" else last4,
+                                  window=window, player_weeks=True)
+        del df
         with _CACHE_LOCK:
             _PBP_TABLES_CACHE[key] = (time.time(), tables)
             while len(_PBP_TABLES_CACHE) > _TABLES_MAX:
@@ -1102,6 +1289,37 @@ def load_pool(season: int) -> Dict[str, Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def _distribution_vectors(tables: Dict[str, Any], pos: str):
+    """Per-player target/throw shape for comparables: {pid: {"zones":
+    [12 share fractions in ZONE_ROWS x ZONE_COLS order], "lanes":
+    [7 carry-share fractions] (RB only)}}. Shares come from the same
+    window-filtered PBP tables the maps render, so a comp's shape is
+    the shape its own map would show."""
+    if not tables:
+        return None
+    side = tables["passing"] if pos == "QB" else tables["receiving"]
+    out: Dict[str, Dict[str, List[float]]] = {}
+    for pid_, zones in (side.get("zones") or {}).items():
+        total = sum(c["primary"] for c in zones.values())
+        if total <= 0:
+            continue
+        vec = []
+        for row_name in ZONE_ROWS:
+            for col in ZONE_COLS:
+                cell = zones.get((row_name, col)) or _blank_zone()
+                vec.append(cell["primary"] / total)
+        out.setdefault(pid_, {})["zones"] = vec
+    if pos == "RB":
+        for pid_, lanes in (tables["rushing"].get("lanes") or {}).items():
+            total = sum(c["carries"] for c in lanes.values())
+            if total <= 0:
+                continue
+            out.setdefault(pid_, {})["lanes"] = [
+                ((lanes.get(lane) or _blank_lane())["carries"] / total)
+                for lane in LANES]
+    return out
+
+
 def _window_series(series, window: str):
     rows = sorted(series or [], key=lambda r: int(r.get("week") or 0))
     if window == "last4":
@@ -1109,8 +1327,15 @@ def _window_series(series, window: str):
     return rows
 
 
+def _r1(value: float) -> float:
+    """Round to 1 decimal, normalising -0.0 to 0.0 (a tiny negative
+    air-yards share must never render as '-0%')."""
+    r = round(float(value), 1)
+    return 0.0 if r == 0 else r
+
+
 def _share(part: float, total: float) -> float:
-    return round(part / total * 100.0, 1) if total > 0 else 0.0
+    return _r1(part / total * 100.0) if total > 0 else 0.0
 
 
 def _trend_label(last4: float, base: float) -> str:
@@ -1149,16 +1374,21 @@ def _zone_payload(player_zones, league_zones, is_qb: bool,
                 "td": int(cell["td"]),
                 "int": int(cell["int"]) if is_qb else 0,
                 "first_downs": int(cell["first_downs"]),
-                "avg_depth": round(cell["air"] / cell["primary"], 1) if cell["primary"] else 0.0,
-                "catch_rate": (round(cell["secondary"] / cell["primary"], 3)
+                "avg_depth": _r1(cell["air"] / cell["primary"]) if cell["primary"] else 0.0,
+                # Percent units (0-100), like every other rate in this
+                # payload: the renderers format rates with a plain
+                # "%" suffix, and a 0-1 fraction rendered as "1%".
+                "catch_rate": (_r1(cell["secondary"] / cell["primary"] * 100.0)
                                if cell["primary"] else None),
                 "rating": (passer_rating(cell["primary"], cell["secondary"],
                                          cell["yards"], cell["td"], cell["int"])
                            if is_qb and cell["primary"] else None),
-                "league_catch_rate": (round(lg_catch, 3) if lg_catch is not None else None),
+                "league_catch_rate": (_r1(lg_catch * 100.0) if lg_catch is not None else None),
                 "league_rating": lg_rating,
-                "trend_last4": _share(cell["primary_last4"], total_last4),
-                "trend_base": _share(cell["primary_base"], total_base),
+                "trend_last4": (_share(cell["primary_last4"], total_last4)
+                                if total_last4 else None),
+                "trend_base": (_share(cell["primary_base"], total_base)
+                               if total_base else None),
                 "trend_label": _trend_label(_share(cell["primary_last4"], total_last4),
                                             _share(cell["primary_base"], total_base)),
             })
@@ -1169,13 +1399,13 @@ def _zone_payload(player_zones, league_zones, is_qb: bool,
     att = totals.get("att", 0) if totals else 0
     comp = totals.get("comp", 0) if totals else 0
     summary = {
-        "adot": round(totals["air"] / att, 1) if att and totals else 0.0,
-        "air_yards_share": (round(player_air / team_air_total * 100.0, 1)
+        "adot": _r1(totals["air"] / att) if att and totals else 0.0,
+        "air_yards_share": (_r1(player_air / team_air_total * 100.0)
                             if not is_qb and team_air_total > 0 else None),
-        "catch_rate": round(comp / att, 3) if att else 0.0,
-        "ypt_or_ypa": round(totals["yards"] / att, 1) if att and totals else 0.0,
-        "deep_rate": round(totals["deep"] / att * 100.0, 1) if att and totals else 0.0,
-        "comp_pct": round(comp / att * 100.0, 1) if att else 0.0,
+        "catch_rate": _r1(comp / att * 100.0) if att else 0.0,
+        "ypt_or_ypa": _r1(totals["yards"] / att) if att and totals else 0.0,
+        "deep_rate": _r1(totals["deep"] / att * 100.0) if att and totals else 0.0,
+        "comp_pct": _r1(comp / att * 100.0) if att else 0.0,
     }
     if league_primary == 0:
         pass  # baselines simply stay as computed (None rates when empty)
@@ -1204,16 +1434,18 @@ def _gap_payload(player_lanes, league_lanes, qb_row, directions):
             "share": _share(cell["carries"], total_car),
             "carries": int(cell["carries"]),
             "yards": int(cell["yards"]),
-            "ypc": round(cell["yards"] / cell["carries"], 1) if cell["carries"] else 0.0,
+            "ypc": _r1(cell["yards"] / cell["carries"]) if cell["carries"] else 0.0,
             "td": int(cell["td"]),
             "first_downs": int(cell["first_downs"]),
             "stuffed_pct": _share(cell["stuffed"], cell["carries"]),
             "explosive_pct": _share(cell["explosive"], cell["carries"]),
             "longest": int(cell["longest"]),
             "league_share": _share(lg["carries"], league_car),
-            "league_ypc": round(lg["yards"] / lg["carries"], 1) if lg["carries"] else 0.0,
-            "trend_last4": _share(cell["carries_last4"], total_last4),
-            "trend_base": _share(cell["carries_base"], total_base),
+            "league_ypc": _r1(lg["yards"] / lg["carries"]) if lg["carries"] else 0.0,
+            "trend_last4": (_share(cell["carries_last4"], total_last4)
+                            if total_last4 else None),
+            "trend_base": (_share(cell["carries_base"], total_base)
+                           if total_base else None),
         })
         if cell["td"] > 0:
             td_lanes.append(lane)
@@ -1234,7 +1466,9 @@ def _gap_payload(player_lanes, league_lanes, qb_row, directions):
     }
     _ = (tot_fd, league_yards)
     return {"lanes": lanes, "summary": summary, "tendency": tendency,
-            "td_lanes": td_lanes, "big_lanes": big_lanes}
+            "td_lanes": td_lanes, "big_lanes": big_lanes,
+            "volume": int(total_car),
+            "thin": total_car < THIN_CARRIES_MIN}
 
 
 def build_player_payload(sleeper_id: str, season: int, window: str,
@@ -1307,10 +1541,46 @@ def build_player_payload(sleeper_id: str, season: int, window: str,
 
     role = build_role(pid, win_pool, computed, prior_score=prior_score)
     role_out = {k: v for k, v in role.items() if not k.startswith("_")}
+    # Evidence strip (the mock's card shows the Job blend's inputs):
+    # job-score percentile within the position pool, team rank by
+    # opportunity, opportunity share, snap share, per-game volume.
+    my_feats = computed[pid]["feats"]
+    pos_scores = [c["score"] for p2, c in computed.items()
+                  if win_pool[p2].get("pos") == pos]
+    role_out["job_score_pct"] = (
+        int(round(100.0 * sum(1 for s in pos_scores
+                              if s <= computed[pid]["score"]) / len(pos_scores)))
+        if pos_scores else None)
+    mates = sorted(
+        ((p2, computed[p2]["feats"].get("opp", 0)) for p2 in win_pool
+         if p2 in computed and win_pool[p2].get("pos") == pos
+         and win_pool[p2].get("team") == entry.get("team")),
+        key=lambda t: -t[1])
+    team_rank = next((i + 1 for i, (p2, _o) in enumerate(mates)
+                      if p2 == pid), None)
+    games_n = max(1, int(my_feats.get("games") or 1))
+    if pos == "QB":
+        fourth = ("Attempts per game", my_feats.get("pass_att", 0) / games_n)
+    elif pos == "RB":
+        fourth = ("Carries per game", my_feats.get("carries", 0) / games_n)
+    else:
+        fourth = ("Targets per game", my_feats.get("targets", 0) / games_n)
+    role_out["evidence"] = [
+        {"label": "Team rank",
+         "value": (f"{pos}{team_rank} on {entry.get('team')}"
+                   if team_rank else None)},
+        {"label": "Opportunity share",
+         "value": f"{int(round(my_feats.get('opp_share', 0)))}%"},
+        {"label": "Snap share",
+         "value": f"{int(round(my_feats.get('snap_pct', 0)))}%"},
+        {"label": fourth[0], "value": f"{_r1(fourth[1]):g}"},
+    ]
     jobs = {p: job_for(e.get("pos"), computed[p]["score"], computed[p]["feats"])
             for p, e in win_pool.items() if p in computed}
     timeline = build_timeline(pid, win_pool, pbp_feats)
-    comparables, twin = build_comparables(pid, win_pool, computed, jobs)
+    distributions = _distribution_vectors(tables, pos) if tables else None
+    comparables, twin = build_comparables(pid, win_pool, computed, jobs,
+                                          distributions)
 
     # Target map / gap map from PBP tables.
     target_map = None
@@ -1334,11 +1604,19 @@ def build_player_payload(sleeper_id: str, season: int, window: str,
                 summary["play_action_rate"] = pa_feats[pid].get("play_action_rate")
                 if pa_feats[pid].get("play_action_epa") is not None:
                     summary["play_action_epa"] = pa_feats[pid]["play_action_epa"]
+            att_total = int(totals.get("att", 0))
             target_map = {"kind": "passing" if is_qb else "receiving",
                           "zones": zones, "summary": summary,
-                          "td_cells": td_cells, "big_cells": big_cells}
+                          "td_cells": td_cells, "big_cells": big_cells,
+                          "volume": att_total,
+                          "thin": att_total < (THIN_ATTEMPTS_MIN if is_qb
+                                               else THIN_TARGET_MIN)}
         lanes = tables["rushing"]["lanes"].get(pid) or {}
-        if sum(c["carries"] for c in lanes.values()) > 0:
+        # The gap map is an RB surface (the mock gives WR/TE no lane map
+        # and QBs the compact rushing strip instead): a WR with a few
+        # carries must not sprout a run-tendency block over his target
+        # map.
+        if pos == "RB" and sum(c["carries"] for c in lanes.values()) > 0:
             gap_map = _gap_payload(lanes, tables["rushing"]["league"],
                                    tables["rushing"]["qb"].get(pid),
                                    tables["rushing"]["direction"].get(pid))

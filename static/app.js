@@ -24794,6 +24794,19 @@ function initComparePage() {
 
   _renderRecent();
 
+  // Programmatic slot load for the Roles tab's comparables: tapping a
+  // comp loads him into a slot through the same path as a picker pick
+  // (URL sync + details fetch + full re-render).
+  window._cmpSetSlot = function (slot, stub) {
+    if (!stub || !stub.player_id) return;
+    chosen[slot] = { player_id: String(stub.player_id), name: stub.name || '', position: stub.position || '', team: stub.team || '' };
+    const inp = document.getElementById('cmpPick' + slot);
+    if (inp) inp.value = stub.name || '';
+    if (slot === 3) _revealThird(false);
+    _syncClears();
+    _maybeCompare();
+  };
+
   function _syncClears() {
     [1, 2, 3].forEach(s => {
       const inp = document.getElementById('cmpPick' + s);
@@ -27352,8 +27365,8 @@ function _cmpRolesEsc(s) {
   return (typeof _wlEsc === 'function') ? _wlEsc(s) : String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function _cmpRoleNum(v) { const n = parseFloat(v); return (v == null || v === '' || isNaN(n)) ? null : n; }
-function _cmpRoleFmt(v, d) { const n = _cmpRoleNum(v); return n == null ? '&ndash;' : n.toFixed(d == null ? 1 : d); }
-function _cmpRolePct(v, d) { const n = _cmpRoleNum(v); return n == null ? '&ndash;' : n.toFixed(d == null ? 0 : d) + '%'; }
+function _cmpRoleFmt(v, d) { const n = _cmpRoleNum(v); if (n == null) return '&ndash;'; const s = n.toFixed(d == null ? 1 : d); return parseFloat(s) === 0 ? s.replace('-', '') : s; }
+function _cmpRolePct(v, d) { const n = _cmpRoleNum(v); if (n == null) return '&ndash;'; const s = n.toFixed(d == null ? 0 : d); return (parseFloat(s) === 0 ? s.replace('-', '') : s) + '%'; }
 // Axis scores arrive as 0-100 in the contract; tolerate 0-1 / 0-10 scales.
 function _cmpRoleAxisVal(v) {
   const n = _cmpRoleNum(v);
@@ -27429,11 +27442,26 @@ function cmpRolesEnsure() {
   _cmpRolesLoad(false);
 }
 
+// Card-shaped skeleton for the Role views while the payload loads, in
+// the site's standard .skeleton shimmer treatment: job line bar, two
+// tag-band blocks, axis lines, a map rectangle and the meta strip.
+function _cmpRoleSkeletonHTML() {
+  return '<div class="compare-roles-card compare-roles-skel" aria-hidden="true">'
+    + '<div class="skeleton skeleton-line w-60 compare-roles-skel-job"></div>'
+    + '<div class="compare-roles-skel-tags"><div class="skeleton"></div><div class="skeleton"></div></div>'
+    + '<div class="skeleton skeleton-line w-80"></div>'
+    + '<div class="skeleton skeleton-line w-80"></div>'
+    + '<div class="skeleton skeleton-line w-60"></div>'
+    + '<div class="skeleton compare-roles-skel-map"></div>'
+    + '<div class="compare-roles-skel-meta"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line"></div></div>'
+    + '</div>';
+}
+
 function _cmpRolesLoad(force) {
   const st = _cmpRoleState();
   const body = document.getElementById('cmpRolesBody');
   if (!body) return;
-  if (!force) body.innerHTML = '<div class="compare-roles-loading"><div class="loading-spinner" style="width:16px;height:16px;"></div><span>Loading roles...</span></div>';
+  if (!force) body.innerHTML = '<div class="compare-roles-grid">' + (st.players.length ? st.players.map(() => _cmpRoleSkeletonHTML()).join('') : _cmpRoleSkeletonHTML()) + '</div>';
   const jobs = st.players.map(p => {
     const pid = String((p && p.player_id) || '');
     if (!pid || pid.indexOf('avg-') === 0) return Promise.resolve(null);
@@ -27510,53 +27538,79 @@ function _cmpRoleSecurityDot(security) {
   else if (/low|volatile|risk|fragile|unstable/.test(s)) cls = 'compare-roles-dot-low';
   return '<span class="compare-roles-dot ' + cls + '" aria-hidden="true"></span>';
 }
+// Tag label -> the axis whose score the mock's tag band shows.
+const _ROLE_TAG_AXIS = {
+  'Target Hog': 'Volume', 'Possession': 'Volume', 'Deep Threat': 'Deep Work',
+  'Red Zone Threat': 'Red Zone', 'YAC Creator': 'Explosiveness',
+  'Receiving Back': 'Receiving', 'Goal-Line Back': 'Red Zone',
+  'Home-Run Hitter': 'Explosiveness', 'Gunslinger': 'Deep Work',
+  'Dual Threat': 'Mobility', 'Surgical': 'Efficiency',
+  'Quick Game': 'Efficiency', 'Explosive': 'Explosiveness'
+};
 function _cmpRoleTagsHTML(role) {
   const tags = (role && role.tags) || [];
   const axes = (role && role.axes) || {};
-  if (!tags.length) return '<div class="compare-roles-tags"><div class="compare-roles-tag compare-roles-tag-muted">No defining trait tags for this window.</div></div>';
-  return '<div class="compare-roles-tags">' + tags.map(t => {
+  const head = '<div class="compare-roles-sub">How he wins</div>';
+  if (!tags.length) return '<div class="compare-roles-tags">' + head + '<div class="compare-roles-tag compare-roles-tag-muted">No defining trait tags for this window.</div></div>';
+  return '<div class="compare-roles-tags">' + head + tags.map(t => {
     const label = typeof t === 'string' ? t : (t && (t.label || t.name)) || '';
-    const axisName = (t && typeof t === 'object' && (t.axis || t.key)) || label;
+    const axisName = (t && typeof t === 'object' && (t.axis || t.key)) || _ROLE_TAG_AXIS[label] || label;
     const score = _cmpRoleAxisVal(axes[axisName]);
     return '<div class="compare-roles-tag"><span class="compare-roles-tag-label">' + _cmpRolesEsc(label) + '</span>'
-      + (score != null ? '<span class="compare-roles-tag-score">' + Math.round(score) + '</span>' : '') + '</div>';
+      + (score != null ? '<span class="compare-roles-tag-score">' + Math.round(score) + '<span>Axis</span></span>' : '') + '</div>';
   }).join('') + '</div>';
 }
 function _cmpRoleAxesHTML(role, others) {
   const axes = (role && role.axes) || {};
   const keys = Object.keys(axes);
   if (!keys.length) return '';
+  let anyLead = false;
   const rows = keys.map(k => {
     const v = _cmpRoleAxisVal(axes[k]);
     const leads = (others || []).every(o => {
       const ov = o && o.role && o.role.axes ? _cmpRoleAxisVal(o.role.axes[k]) : null;
       return ov == null || (v != null && v >= ov);
     }) && (others || []).some(o => o && o.role && o.role.axes && o.role.axes[k] != null);
+    if (leads) anyLead = true;
     return '<div class="compare-roles-axis"><span class="compare-roles-axis-name">' + _cmpRolesEsc(k) + '</span>'
       + '<span class="compare-roles-axis-track"><i style="width:' + (v == null ? 0 : v) + '%"></i>' + (leads ? '<span class="compare-roles-axis-dot" title="Leads this comparison"></span>' : '') + '</span>'
       + '<span class="compare-roles-axis-val">' + (v == null ? '&ndash;' : Math.round(v)) + '</span></div>';
   }).join('');
-  return '<div class="compare-roles-axes"><div class="compare-roles-sub">How he wins</div>' + rows + '</div>';
+  return '<div class="compare-roles-axes"><div class="compare-roles-subrow"><span class="compare-roles-sub">Axis scores</span><span class="compare-roles-subnote">0 to 100 vs position</span></div>' + rows
+    + (anyLead ? '<div class="compare-roles-legend"><span class="compare-roles-leaddot"></span>Dot means he leads this compare on that axis in this window.</div>' : '')
+    + '</div>';
 }
 function _cmpRoleTimelineHTML(d) {
   const tl = (d && d.timeline) || [];
   if (!tl.length) return '';
+  const span = s => Math.max(1, (s.to_week != null ? s.to_week : s.from_week || 1) - (s.from_week || 1) + 1);
   const segs = tl.map((s, i) => {
-    const wks = 'W' + (s.from_week != null ? s.from_week : '?') + (s.to_week != null && s.to_week !== s.from_week ? '-' + s.to_week : '');
-    return '<div class="compare-roles-tl-seg' + (i > 0 ? ' compare-roles-tl-change' : '') + '">'
-      + '<span class="compare-roles-tl-wks">' + _cmpRolesEsc(wks) + '</span>'
-      + '<span class="compare-roles-tl-job">' + _cmpRolesEsc(s.job || '') + '</span>'
-      + (i > 0 && s.reason ? '<span class="compare-roles-tl-reason">' + _cmpRolesEsc(s.reason) + '</span>' : '')
-      + '</div>';
+    return '<div class="compare-roles-tl-seg' + (i === tl.length - 1 ? ' is-cur' : '') + '" style="flex-grow:' + span(s) + '">'
+      + (i > 0 ? '<span class="compare-roles-tl-change">Week ' + _cmpRolesEsc(String(s.from_week)) + '</span>' : '')
+      + '<span class="compare-roles-tl-job">' + _cmpRolesEsc(s.job || '') + '</span></div>';
   }).join('');
-  return '<div class="compare-roles-timeline"><div class="compare-roles-sub">Role timeline</div><div class="compare-roles-tl-track">' + segs + '</div></div>';
+  const wks = tl.map(s => {
+    const lbl = s.from_week === s.to_week ? 'Wk ' + s.from_week : 'Wk ' + s.from_week + ' to ' + s.to_week;
+    return '<span class="compare-roles-tl-wks" style="flex-grow:' + span(s) + '">' + _cmpRolesEsc(lbl) + '</span>';
+  }).join('');
+  let notes = '';
+  if (tl.length === 1) {
+    notes = '<div class="compare-roles-tl-note compare-roles-tl-note-plain">No job change in this window.</div>';
+  } else {
+    notes = tl.slice(1).filter(s => s.reason).map(s =>
+      '<div class="compare-roles-tl-note"><span class="compare-roles-tl-dot"></span><span><b>Changed Week ' + _cmpRolesEsc(String(s.from_week)) + ':</b> ' + _cmpRolesEsc(s.reason) + '</span></div>').join('');
+  }
+  const range = 'Weeks ' + tl[0].from_week + ' to ' + tl[tl.length - 1].to_week;
+  return '<div class="compare-roles-timeline' + (tl.length > 1 ? ' has-changes' : '') + '"><div class="compare-roles-subrow"><span class="compare-roles-sub">Role timeline</span><span class="compare-roles-subnote">' + _cmpRolesEsc(range) + '</span></div>'
+    + '<div class="compare-roles-tl-track">' + segs + '</div><div class="compare-roles-tl-wkrow">' + wks + '</div>' + notes + '</div>';
 }
 function _cmpRoleMetaHTML(role) {
   if (!role) return '';
   const cell = (label, val, dot) => '<div class="compare-roles-meta-cell"><span class="compare-roles-meta-label">' + label + '</span><span class="compare-roles-meta-val">' + (dot || '') + _cmpRolesEsc(val == null || val === '' ? 'n/a' : String(val)) + '</span></div>';
+  const trendArrow = { Rising: '↑ ', Fading: '↓ ', Steady: '→ ' }[role.trend] || '';
   let out = '<div class="compare-roles-meta">'
     + cell('Security', role.security, role.security != null ? _cmpRoleSecurityDot(role.security) : '')
-    + cell('Trend', role.trend)
+    + cell('Trend', role.trend != null ? trendArrow + role.trend : role.trend)
     + cell('Confidence', role.confidence)
     + '</div>';
   if (role.security_note) out += '<div class="compare-roles-note">' + _cmpRolesEsc(role.security_note) + '</div>';
@@ -27585,9 +27639,9 @@ function _roleRamp(u, dark) {
 function _roleIsDark() {
   return document.documentElement.getAttribute('data-theme') === 'dark';
 }
-// Smooth heat surface: zone shares are painted as plateaued radial blobs on a
-// small offscreen intensity canvas, colorized through the blue ramp, then
-// upscaled with smoothing so the surface blends between zone centers.
+// Smooth heat surface: the 3x4 zone grid is interpolated per pixel
+// (plateau-remapped Catmull-Rom, the mock's construction), colorized
+// through the blue ramp and upscaled over the field base.
 function _roleDrawHeat(canvas, d, mode) {
   if (!canvas || !d || !d.target_map) return;
   const kind = d.target_map.kind || 'receiving';
@@ -27600,63 +27654,71 @@ function _roleDrawHeat(canvas, d, mode) {
   const fx = railW, fy = headH, fw = W - railW - 10, fh = H - headH - 12;
   const cw = fw / 3, ch = fh / 4;
   const shareOf = z => _cmpRoleNum(mode === 'secondary' ? z.share_secondary : z.share_primary) || 0;
-  // Intensity field on a small offscreen canvas.
-  const SW = 120, SH = 80;
-  const ic = document.createElement('canvas'); ic.width = SW; ic.height = SH;
-  const ictx = ic.getContext('2d');
-  ictx.clearRect(0, 0, SW, SH);
-  ictx.globalCompositeOperation = 'lighter';
-  _ROLE_ROWS.forEach((row, r) => {
-    _ROLE_COLS.forEach((col, c) => {
-      const z = _roleZone(d, row, col);
-      if (!z) return;
-      const u = Math.max(0, Math.min(1, shareOf(z) / 25));
-      if (u <= 0) return;
-      const cx = (c + 0.5) / 3 * SW, cy = (r + 0.5) / 4 * SH;
-      const rad = SW / 3 * 0.78;
-      const g = ictx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-      const a = Math.pow(u, 0.75);
-      g.addColorStop(0, 'rgba(255,255,255,' + a + ')');
-      g.addColorStop(0.38, 'rgba(255,255,255,' + a + ')');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ictx.fillStyle = g;
-      ictx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
-    });
-  });
-  // Colorize per-pixel through the ramp.
+  // Intensity field, per pixel over the zone grid. Grid coordinates
+  // put zone centres on integers; each axis fraction is plateau-
+  // remapped (smootherstep: zero derivative at centres) before
+  // Catmull-Rom interpolation, so a centre holds its own value as a
+  // broad patch and the surface falls off gradually between zones.
+  // The previous radial-blob painting additively saturated into hard
+  // dark cores and left a stark field-coloured cross wherever a
+  // column was all zeros.
+  const grid = _ROLE_ROWS.map(row => _ROLE_COLS.map(col => {
+    const z = _roleZone(d, row, col);
+    return z ? shareOf(z) : 0;
+  }));
+  const SW = 240, SH = 160;
   const oc = document.createElement('canvas'); oc.width = SW; oc.height = SH;
   const octx = oc.getContext('2d');
-  const img = ictx.getImageData(0, 0, SW, SH);
   const out = octx.createImageData(SW, SH);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const u = img.data[i + 3] / 255;
-    const rgb = _roleRamp(Math.pow(u, 0.75), dark);
-    out.data[i] = rgb[0]; out.data[i + 1] = rgb[1]; out.data[i + 2] = rgb[2];
-    out.data[i + 3] = Math.round(255 * Math.min(1, 1.05 * Math.pow(u, 0.82)));
+  const plat = t => t * t * t * (t * (t * 6 - 15) + 10);
+  const cubic = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+  const gat = (r, c) => grid[Math.max(0, Math.min(3, r))][Math.max(0, Math.min(2, c))];
+  for (let y = 0; y < SH; y++) {
+    const gy = (y + 0.5) / SH * 4 - 0.5;
+    const r0 = Math.floor(gy), fr = plat(gy - r0);
+    for (let x = 0; x < SW; x++) {
+      const gx = (x + 0.5) / SW * 3 - 0.5;
+      const c0 = Math.floor(gx), fc = plat(gx - c0);
+      const rv0 = cubic(gat(r0 - 1, c0 - 1), gat(r0 - 1, c0), gat(r0 - 1, c0 + 1), gat(r0 - 1, c0 + 2), fc);
+      const rv1 = cubic(gat(r0, c0 - 1), gat(r0, c0), gat(r0, c0 + 1), gat(r0, c0 + 2), fc);
+      const rv2 = cubic(gat(r0 + 1, c0 - 1), gat(r0 + 1, c0), gat(r0 + 1, c0 + 1), gat(r0 + 1, c0 + 2), fc);
+      const rv3 = cubic(gat(r0 + 2, c0 - 1), gat(r0 + 2, c0), gat(r0 + 2, c0 + 1), gat(r0 + 2, c0 + 2), fc);
+      const v = Math.max(0, Math.min(30, cubic(rv0, rv1, rv2, rv3, fr)));
+      const u = Math.max(0, Math.min(1, v / 25));
+      const rgb = _roleRamp(Math.pow(u, 0.75), dark);
+      const i = (y * SW + x) * 4;
+      out.data[i] = rgb[0]; out.data[i + 1] = rgb[1]; out.data[i + 2] = rgb[2];
+      out.data[i + 3] = Math.round(255 * Math.min(1, 1.05 * Math.pow(u, 0.82)));
+    }
   }
   octx.putImageData(out, 0, 0);
-  // Field base + heat.
+  // Field base, then the field furniture UNDER the heat surface: faint
+  // yard lines at each depth-band boundary and two hash columns down
+  // the middle like a real field. Very low contrast in both themes:
+  // visible on a close look through the heat's pale areas, never
+  // competing with the surface itself.
   ctx.fillStyle = dark ? '#0d2137' : '#f4f8fd';
   ctx.fillRect(0, 0, W, H);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(oc, fx, fy, fw, fh);
-  // Chrome: yard lines, hashes, LOS.
-  ctx.strokeStyle = dark ? 'rgba(224,242,254,0.28)' : 'rgba(18,45,75,0.22)';
+  ctx.strokeStyle = dark ? 'rgba(224,242,254,0.13)' : 'rgba(18,45,75,0.10)';
   ctx.lineWidth = 1;
   for (let r = 1; r < 4; r++) {
     const y = fy + r * ch;
     ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx + fw, y); ctx.stroke();
-    for (let x = fx + 14; x < fx + fw - 6; x += 26) { ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.stroke(); }
   }
-  for (let c = 1; c < 3; c++) {
-    const x = fx + c * cw;
-    ctx.beginPath(); ctx.moveTo(x, fy); ctx.lineTo(x, fy + fh); ctx.stroke();
-  }
-  const losY = fy + 3 * ch;
-  ctx.strokeStyle = dark ? 'rgba(224,242,254,0.65)' : 'rgba(18,45,75,0.55)';
   ctx.lineWidth = 2;
+  [0.42, 0.58].forEach(f => {
+    const hx = fx + f * fw;
+    for (let y = fy + 9; y < fy + fh - 4; y += 16) {
+      ctx.beginPath(); ctx.moveTo(hx - 5, y); ctx.lineTo(hx + 5, y); ctx.stroke();
+    }
+  });
+  const losY = fy + 3 * ch;
+  ctx.strokeStyle = dark ? 'rgba(224,242,254,0.20)' : 'rgba(18,45,75,0.16)';
   ctx.beginPath(); ctx.moveTo(fx, losY); ctx.lineTo(fx + fw, losY); ctx.stroke();
+  // Heat surface over the furniture.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(oc, fx, fy, fw, fh);
   // Depth rail + column headers.
   ctx.fillStyle = dark ? '#cbd5e1' : '#122d4b';
   ctx.font = '700 12px Archivo, sans-serif';
@@ -27695,7 +27757,7 @@ function _roleDrawHeat(canvas, d, mode) {
       ctx.fillStyle = txt;
       ctx.textAlign = 'center';
       ctx.font = '800 21px Archivo, sans-serif';
-      ctx.fillText(share.toFixed(share >= 10 ? 0 : 1) + '%', cx, cy + 2);
+      ctx.fillText(Math.round(share) + '%', cx, cy + 2);
       ctx.font = '600 11px Archivo, sans-serif';
       const prim = _cmpRoleNum(z.primary) || 0, sec = _cmpRoleNum(z.secondary) || 0, yds = _cmpRoleNum(z.yards) || 0;
       const line2 = mode === 'secondary'
@@ -27705,7 +27767,8 @@ function _roleDrawHeat(canvas, d, mode) {
       const td = tdCells.find(t => String(t.row).toLowerCase() === row.toLowerCase() && String(t.col).toLowerCase() === col.toLowerCase());
       if (td && td.count) {
         ctx.beginPath(); ctx.arc(cx + cw / 2 - 16, cy - ch / 2 + 15, 8, 0, Math.PI * 2);
-        ctx.fillStyle = '#dc2626'; ctx.fill();
+        ctx.fillStyle = '#122d4b'; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = '#ffffff'; ctx.stroke();
         ctx.fillStyle = '#ffffff'; ctx.font = '800 10px Archivo, sans-serif';
         ctx.fillText(String(td.count), cx + cw / 2 - 16, cy - ch / 2 + 18.5);
       }
@@ -27720,26 +27783,67 @@ function _roleDrawHeat(canvas, d, mode) {
   });
   canvas._roleGeom = { fx: fx, fy: fy, fw: fw, fh: fh };
 }
+function _roleHotZone(d) {
+  const zones = (d.target_map && d.target_map.zones) || [];
+  return zones.slice().sort((a, b) => (_cmpRoleNum(b.share_primary) || 0) - (_cmpRoleNum(a.share_primary) || 0))[0];
+}
+function _roleEffZone(d) {
+  const zones = (d.target_map && d.target_map.zones) || [];
+  return zones.filter(x => (_cmpRoleNum(x.primary) || 0) >= 5).sort((a, b) => ((_cmpRoleNum(b.yards) || 0) / Math.max(1, _cmpRoleNum(b.primary) || 1)) - ((_cmpRoleNum(a.yards) || 0) / Math.max(1, _cmpRoleNum(a.primary) || 1)))[0];
+}
+// Bold factual line at the top of the detail panel, mock shape:
+// "His highest-volume zone: 22 targets here in this window, 18 of
+// them caught for 167 yards."
+function _roleZoneFactLine(d, z) {
+  const kind = (d.target_map && d.target_map.kind) || 'receiving';
+  const work = kind === 'passing' ? 'attempts' : 'targets';
+  const prim = _cmpRoleNum(z.primary) || 0, sec = _cmpRoleNum(z.secondary) || 0;
+  const hot = _roleHotZone(d), eff = _roleEffZone(d);
+  if (hot && hot.row === z.row && hot.col === z.col) {
+    return 'His highest-volume zone: ' + prim + ' ' + work + ' here in this window, '
+      + sec + ' of them ' + (kind === 'passing' ? 'completed' : 'caught')
+      + ' for ' + _cmpRoleFmt(z.yards, 0) + ' yards.';
+  }
+  if (eff && eff.row === z.row && eff.col === z.col) {
+    return 'His most efficient zone: ' + _cmpRoleFmt((_cmpRoleNum(z.yards) || 0) / Math.max(1, prim), 1)
+      + ' yards per ' + (kind === 'passing' ? 'attempt' : 'target') + ' on ' + prim + ' ' + work + ' in this window.';
+  }
+  return z.row + ' ' + z.col + ' accounts for ' + _cmpRolePct(z.share_primary) + ' of his ' + work + ' in this window.';
+}
+// Tinted takeaway box at the bottom of the detail panel, mock shape:
+// "Short middle: his bread and butter, 24% of targets in this window.
+// Selected zone is outlined, tap any zone for its full line."
+// (An earlier build derived a name from the last name token, which
+// rendered James Cook III as "III"; the mock's lines use "his".)
 function _roleZoneTakeaway(d, z) {
   if (!d || !z) return '';
-  const zones = (d.target_map && d.target_map.zones) || [];
-  const name = _cmpRolesEsc(String(d.name || '').split(' ').slice(-1)[0] || d.name || '');
+  const kind = (d.target_map && d.target_map.kind) || 'receiving';
   const label = z.row + ' ' + z.col;
-  const hot = zones.slice().sort((a, b) => (_cmpRoleNum(b.share_primary) || 0) - (_cmpRoleNum(a.share_primary) || 0))[0];
-  const eff = zones.filter(x => (_cmpRoleNum(x.primary) || 0) >= 5).sort((a, b) => ((_cmpRoleNum(b.yards) || 0) / Math.max(1, _cmpRoleNum(b.primary) || 1)) - ((_cmpRoleNum(a.yards) || 0) / Math.max(1, _cmpRoleNum(a.primary) || 1)))[0];
-  let out = '';
-  if (hot && hot.row === z.row && hot.col === z.col) out = label + ' is ' + name + "'s hottest zone.";
-  else if (eff && eff.row === z.row && eff.col === z.col) out = label + ' is ' + name + "'s most efficient zone.";
-  else out = label + ' accounts for ' + _cmpRolePct(z.share_primary) + ' of the work.';
-  return out;
+  const work = kind === 'passing' ? 'attempts' : 'targets';
+  const hot = _roleHotZone(d);
+  const tail = ' Selected zone is outlined, tap any zone for its full line.';
+  if (hot && hot.row === z.row && hot.col === z.col) {
+    return label + ': his bread and butter, ' + _cmpRolePct(z.share_primary) + ' of ' + work + ' in this window.' + tail;
+  }
+  return label + ': ' + _cmpRolePct(z.share_primary) + ' of his ' + work + ' in this window.' + tail;
+}
+// Trend sentence in the mock's shape: "24% season → 26% last 4, up 2
+// pts" / "holding around 14% (15% season, 14% last 4)" /
+// "no earlier window in this view". The window comes from the
+// payload (the modal keeps its own window state, separate from the
+// compare page's).
+function _roleTrendText(base, last4, baseLabel) {
+  if (base == null || last4 == null) return 'no earlier window in this view';
+  const diff = last4 - base;
+  if (Math.abs(diff) < 2) return 'holding around ' + Math.round(last4) + '% (' + Math.round(base) + '% ' + baseLabel + ', ' + Math.round(last4) + '% last 4)';
+  return Math.round(base) + '% ' + baseLabel + ' → ' + Math.round(last4) + '% last 4, '
+    + (diff > 0 ? 'up ' : 'down ') + Math.abs(Math.round(diff)) + ' pts';
 }
 function _roleTrendLine(z, d) {
-  const st = _cmpRoleState();
-  if (st.window === 'lastseason' && z.trend_label) return _cmpRolesEsc(z.trend_label);
-  const base = _cmpRoleNum(z.trend_base), last4 = _cmpRoleNum(z.trend_last4);
-  if (base == null || last4 == null) return z.trend_label ? _cmpRolesEsc(z.trend_label) : '';
-  const diff = last4 - base;
-  return base.toFixed(0) + '% season, ' + last4.toFixed(0) + '% last 4: ' + (diff > 0 ? 'up ' : diff < 0 ? 'down ' : 'flat at ') + (diff !== 0 ? Math.abs(diff).toFixed(0) + ' pts' : '');
+  const win = (d && d.window) || _cmpRoleState().window;
+  if (win === 'lastseason') return 'no earlier window in this view';
+  return _roleTrendText(_cmpRoleNum(z.trend_base), _cmpRoleNum(z.trend_last4),
+                        win === 'last4' ? 'prior 4' : 'season');
 }
 function _roleZoneDetailHTML(d, z) {
   if (!z) return '<div class="compare-roles-detail-empty">Tap a zone for detail.</div>';
@@ -27755,12 +27859,15 @@ function _roleZoneDetailHTML(d, z) {
     + kv('TD', _cmpRoleFmt(z.td, 0));
   if (kind === 'passing') rows += kv('INT', _cmpRoleFmt(z.int, 0)) + kv('Rating', _cmpRoleFmt(z.rating, 1));
   rows += kv('First downs', _cmpRoleFmt(z.first_downs, 0)) + kv('Avg depth', _cmpRoleFmt(z.avg_depth, 1));
-  let lines = '<div class="compare-roles-dtake">' + _cmpRolesEsc(_roleZoneTakeaway(d, z)) + '</div>';
+  let lines = '<div class="compare-roles-dfact">' + _cmpRolesEsc(_roleZoneFactLine(d, z)) + '</div>';
   const trend = _roleTrendLine(z, d);
-  if (trend) lines += '<div class="compare-roles-dline">Trend: ' + trend + '</div>';
-  if (kind === 'passing' && z.league_rating != null) lines += '<div class="compare-roles-dline">Rating ' + _cmpRoleFmt(z.rating, 1) + ' here vs ' + _cmpRoleFmt(z.league_rating, 1) + ' league average.</div>';
-  else if (z.league_catch_rate != null) lines += '<div class="compare-roles-dline">Catch rate ' + _cmpRolePct(z.catch_rate) + ' here vs ' + _cmpRolePct(z.league_catch_rate) + ' league average.</div>';
-  return '<div class="compare-roles-dhead">' + _cmpRolesEsc(z.row) + ' ' + _cmpRolesEsc(z.col) + '</div>'
+  if (trend) lines += '<div class="compare-roles-dline">Zone trend: ' + trend + '</div>';
+  if (kind === 'passing' && z.league_rating != null) lines += '<div class="compare-roles-dline">League baseline: his rating here ' + _cmpRoleFmt(z.rating, 1) + ', league average ' + _cmpRoleFmt(z.league_rating, 1) + ' in this zone.</div>';
+  else if (z.league_catch_rate != null) lines += '<div class="compare-roles-dline">League baseline: his catch rate here ' + _cmpRolePct(z.catch_rate) + ', league average ' + _cmpRolePct(z.league_catch_rate) + ' in this zone.</div>';
+  lines += '<div class="compare-roles-dtake">' + _cmpRolesEsc(_roleZoneTakeaway(d, z)) + '</div>';
+  const rowDesc = { Deep: '20+ air yds', Inter: '10 to 19 air yds', Short: '0 to 9 air yds', Behind: 'under 0 air yds' }[z.row] || '';
+  const colCap = String(z.col || '').charAt(0).toUpperCase() + String(z.col || '').slice(1);
+  return '<div class="compare-roles-dhead"><span>' + _cmpRolesEsc(z.row) + ' ' + _cmpRolesEsc(colCap) + (rowDesc ? ' · ' + rowDesc : '') + '</span><span class="compare-roles-dtag">Throw location</span></div>'
     + '<div class="compare-roles-dgrid">' + rows + '</div>' + lines;
 }
 function _cmpRoleMapHTML(d, small) {
@@ -27776,15 +27883,49 @@ function _cmpRoleMapHTML(d, small) {
     ? [['primary', 'Attempts'], ['secondary', 'Completions']] : [['primary', 'Targets'], ['secondary', 'Receptions']];
   const st = _cmpRoleState();
   const mode = st.mapMode[pid] || 'primary';
-  return '<div class="compare-roles-mapwrap' + (small ? ' compare-roles-mapwrap-sm' : '') + '">'
-    + '<div class="compare-roles-maphead"><span class="compare-roles-sub">' + (kind === 'passing' ? 'Throw map' : 'Target map') + '</span>'
-    + '<span class="compare-trends-mode compare-roles-mapmode">' + modeBtns.map(b =>
-      '<button type="button" class="compare-trends-mode-btn' + (mode === b[0] ? ' is-active' : '') + '" onclick="cmpRoleSetMapMode(\'' + pid + '\',\'' + b[0] + '\')">' + b[1] + '</button>').join('') + '</span></div>'
+  const thinN = Math.round(_cmpRoleNum(tm.volume) || 0);
+  const thinNote = tm.thin ? '<div class="compare-roles-thinnote">Thin volume: ' + thinN + ' ' + (kind === 'passing' ? (thinN === 1 ? 'attempt' : 'attempts') : (thinN === 1 ? 'target' : 'targets')) + ' in this window</div>' : '';
+  return '<div class="compare-roles-mapwrap' + (small ? ' compare-roles-mapwrap-sm' : '') + (tm.thin ? ' compare-roles-thin' : '') + '">'
+    + '<div class="compare-roles-maphead"><span class="compare-roles-sub">' + (kind === 'passing' ? 'Throw map' : 'Target map') + '</span></div>'
+    + '<div class="compare-roles-mapsub">% of ' + (kind === 'passing' ? 'attempts' : 'targets') + ' by zone, throw location, incompletions included</div>'
+    + thinNote
+    + '<div class="compare-trends-mode compare-roles-mapmode">' + modeBtns.map(b =>
+      '<button type="button" class="compare-trends-mode-btn' + (mode === b[0] ? ' is-active' : '') + '" onclick="cmpRoleSetMapMode(\'' + pid + '\',\'' + b[0] + '\')">' + b[1] + '</button>').join('') + '</div>'
     + '<div class="compare-roles-summary">' + summary + '</div>'
-    + '<canvas class="compare-roles-canvas" data-rolecanvas="' + pid + '" onclick="cmpRoleCanvasClick(event,\'' + pid + '\')" role="img" aria-label="' + (kind === 'passing' ? 'Throw' : 'Target') + ' heat map"></canvas>'
-    + '<div class="compare-roles-legend">Red dot: touchdowns in the zone. Circled 20+: a 20+ yard play from the zone.</div>'
-    + '<div class="compare-roles-detail" id="cmpRoleDetail-' + pid + '"></div>'
-    + '</div>';
+    + '<div class="compare-roles-mapbox"><canvas class="compare-roles-canvas" data-rolecanvas="' + pid + '" onclick="cmpRoleCanvasClick(event,\'' + pid + '\')" role="img" aria-label="' + (kind === 'passing' ? 'Throw' : 'Target') + ' heat map"></canvas>'
+    + '<div class="compare-roles-legend">Dot marker: touchdowns ' + (kind === 'passing' ? 'thrown' : 'caught') + ' from that zone, the number is the count. Circled 20+: a ' + (kind === 'passing' ? 'throw' : 'catch') + ' of 20+ yards came from that zone.</div>'
+    + '<div class="compare-roles-pop" id="cmpRolePop-' + pid + '" hidden><button type="button" class="compare-roles-pop-close" onclick="cmpRoleClosePop(this)" aria-label="Close detail">&times;</button><div class="compare-roles-pop-body" id="cmpRoleDetail-' + pid + '"></div></div>'
+    + '</div></div>';
+}
+// ---- Role detail popovers ---------------------------------------------------
+// Zone and lane details open as floating popovers over the map, never as
+// inline panels that push the card around. One open at a time; the close
+// button, a tap outside, or Escape dismisses; re-tapping the same zone or
+// lane toggles it closed.
+function _roleOpenPop(popId, bodyId, html, caretX) {
+  document.querySelectorAll('.compare-roles-pop').forEach(p => { if (p.id !== popId) p.hidden = true; });
+  const pop = document.getElementById(popId);
+  const body = document.getElementById(bodyId);
+  if (!pop || !body) return;
+  body.innerHTML = html;
+  if (caretX != null) pop.style.setProperty('--pop-caret-x', caretX + '%');
+  pop.hidden = false;
+  _roleEnsurePopDismiss();
+}
+function cmpRoleClosePop(btn) {
+  const pop = btn && btn.closest ? btn.closest('.compare-roles-pop') : null;
+  if (pop) pop.hidden = true;
+}
+function _roleEnsurePopDismiss() {
+  if (window._cmpRolePopDismiss) return;
+  window._cmpRolePopDismiss = true;
+  document.addEventListener('click', ev => {
+    if (ev.target.closest('.compare-roles-pop, canvas[data-rolecanvas], .compare-roles-lane')) return;
+    document.querySelectorAll('.compare-roles-pop').forEach(p => { p.hidden = true; });
+  }, true);
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape') document.querySelectorAll('.compare-roles-pop').forEach(p => { p.hidden = true; });
+  });
 }
 function cmpRoleSetMapMode(pid, mode) {
   const st = _cmpRoleState();
@@ -27810,10 +27951,13 @@ function cmpRoleCanvasClick(ev, pid) {
   const c = Math.min(2, Math.floor((x - g.fx) / (g.fw / 3)));
   const r = Math.min(3, Math.floor((y - g.fy) / (g.fh / 4)));
   const row = _ROLE_ROWS[r], col = _ROLE_COLS[c];
+  const prev = st.selZone[pid];
+  const pop = document.getElementById('cmpRolePop-' + pid);
+  const sameOpen = !!(pop && !pop.hidden && prev && prev.row === row && prev.col === col);
   st.selZone[pid] = { row: row, col: col };
   _roleDrawHeat(canvas, d, st.mapMode[pid] || 'primary');
-  const det = document.getElementById('cmpRoleDetail-' + pid);
-  if (det) det.innerHTML = _roleZoneDetailHTML(d, _roleZone(d, row, col));
+  if (sameOpen) { pop.hidden = true; return; }
+  _roleOpenPop('cmpRolePop-' + pid, 'cmpRoleDetail-' + pid, _roleZoneDetailHTML(d, _roleZone(d, row, col)), (c + 0.5) / 3 * 100);
 }
 
 // ---- RB gap map -------------------------------------------------------------
@@ -27832,11 +27976,9 @@ function _cmpRoleGapHTML(d) {
     const l = byLane[name] || {};
     const share = _cmpRoleNum(l.share) || 0;
     const h = Math.max(2, Math.min(100, share * 2));
-    const tick = _cmpRoleNum(l.league_share);
     return '<button type="button" class="compare-roles-lane" onclick="cmpRoleLaneClick(\'' + pid + '\',\'' + name + '\')" aria-label="Lane ' + name + '">'
       + '<span class="compare-roles-lane-top"><b>' + share.toFixed(0) + '%</b><span>' + _cmpRoleFmt(l.ypc, 1) + ' ypc</span><span>' + (_cmpRoleFmt(l.carries, 0)) + ' att</span></span>'
       + '<span class="compare-roles-lane-track"><i style="height:' + h + '%"></i>'
-      + (tick != null ? '<span class="compare-roles-lane-tick" style="bottom:' + Math.min(100, tick * 2) + '%"></span>' : '')
       + (tdLanes.indexOf(name) >= 0 ? '<span class="compare-roles-lane-mark compare-roles-lane-td">TD</span>' : '')
       + (bigLanes.indexOf(name) >= 0 ? '<span class="compare-roles-lane-mark compare-roles-lane-big">10+</span>' : '')
       + '</span>'
@@ -27845,36 +27987,47 @@ function _cmpRoleGapHTML(d) {
   const t = gm.tendency || {};
   const tendency = (t.left != null || t.middle != null || t.right != null)
     ? '<div class="compare-roles-tendency">Run tendency: Left ' + _cmpRolePct(t.left) + ' · Middle ' + _cmpRolePct(t.middle) + ' · Right ' + _cmpRolePct(t.right) + '</div>' : '';
-  return '<div class="compare-roles-gapwrap">'
+  const gapThinN = Math.round(_cmpRoleNum(gm.volume) || 0);
+  const gapThinNote = gm.thin ? '<div class="compare-roles-thinnote">Thin volume: ' + gapThinN + ' ' + (gapThinN === 1 ? 'carry' : 'carries') + ' in this window</div>' : '';
+  return '<div class="compare-roles-gapwrap' + (gm.thin ? ' compare-roles-thin' : '') + '">'
     + '<div class="compare-roles-sub">Gap map: where the carries go</div>'
+    + gapThinNote
     + '<div class="compare-roles-summary">' + summary + '</div>'
-    + '<div class="compare-roles-lanes">' + cols + '</div>'
-    + '<div class="compare-roles-formation" aria-hidden="true"><span class="compare-roles-te">TE</span><span class="compare-roles-ol">LT</span><span class="compare-roles-ol">LG</span><span class="compare-roles-ol compare-roles-c">C</span><span class="compare-roles-ol">RG</span><span class="compare-roles-ol">RT</span><span class="compare-roles-rb-dot"></span></div>'
-    + '<div class="compare-roles-legend">Dark tick: league average share for the lane. TD and 10+ mark lanes with a rushing touchdown or a 10+ yard run.</div>'
+    + '<div class="compare-roles-lanebox"><div class="compare-roles-lanes">' + cols + '</div>'
+    + '<div class="compare-roles-pop" id="cmpRoleLanePop-' + pid + '" hidden><button type="button" class="compare-roles-pop-close" onclick="cmpRoleClosePop(this)" aria-label="Close detail">&times;</button><div class="compare-roles-pop-body" id="cmpRoleLaneDetail-' + pid + '"></div></div></div>'
+    + '<div class="compare-roles-legend">TD and 10+ mark lanes with a rushing touchdown or a 10+ yard run.</div>'
     + tendency
-    + '<div class="compare-roles-detail" id="cmpRoleLaneDetail-' + pid + '"></div>'
     + '</div>';
 }
 function cmpRoleLaneClick(pid, laneName) {
   const st = _cmpRoleState();
   const d = _cmpRoleDataByPid(pid);
-  const det = document.getElementById('cmpRoleLaneDetail-' + pid);
-  if (!d || !d.gap_map || !det) return;
+  if (!d || !d.gap_map) return;
+  const pop = document.getElementById('cmpRoleLanePop-' + pid);
+  if (pop && !pop.hidden && st.selLane[pid] === laneName) { pop.hidden = true; return; }
+  st.selLane[pid] = laneName;
   const l = (d.gap_map.lanes || []).find(x => String(x.lane).toUpperCase() === laneName);
-  if (!l) { det.innerHTML = '<div class="compare-roles-detail-empty">No carries charted in this lane.</div>'; return; }
+  const laneCaretX = (_ROLE_LANES.indexOf(laneName) + 0.5) / _ROLE_LANES.length * 100;
+  if (!l) { _roleOpenPop('cmpRoleLanePop-' + pid, 'cmpRoleLaneDetail-' + pid, '<div class="compare-roles-detail-empty">No carries charted in this lane.</div>', laneCaretX); return; }
   const kv = (lb, v) => '<span class="compare-roles-dkv"><span>' + lb + '</span><b>' + v + '</b></span>';
   let rows = kv('Carries', _cmpRoleFmt(l.carries, 0)) + kv('Yards', _cmpRoleFmt(l.yards, 0)) + kv('YPC', _cmpRoleFmt(l.ypc, 1))
     + kv('TDs', _cmpRoleFmt(l.td, 0)) + kv('First downs', _cmpRoleFmt(l.first_downs, 0)) + kv('Stuffed %', _cmpRolePct(l.stuffed_pct))
     + kv('Explosive %', _cmpRolePct(l.explosive_pct)) + kv('Longest', _cmpRoleFmt(l.longest, 0));
-  const last = String(d.name || '').split(' ').slice(-1)[0] || d.name || '';
-  let lines = '<div class="compare-roles-dtake">' + _cmpRolesEsc(laneName) + ' is ' + _cmpRolePct(l.share) + ' of ' + _cmpRolesEsc(last) + "'s carries at " + _cmpRoleFmt(l.ypc, 1) + ' a carry.</div>';
-  const base = _cmpRoleNum(l.trend_base), last4 = _cmpRoleNum(l.trend_last4);
-  if (base != null && last4 != null) {
-    const diff = last4 - base;
-    lines += '<div class="compare-roles-dline">Trend: ' + base.toFixed(0) + '% season, ' + last4.toFixed(0) + '% last 4: ' + (diff > 0 ? 'up ' : diff < 0 ? 'down ' : 'flat at ') + (diff !== 0 ? Math.abs(diff).toFixed(0) + ' pts' : '') + '</div>';
+  const best = (d.gap_map.lanes || []).filter(x => (_cmpRoleNum(x.carries) || 0) >= 5)
+    .sort((a, b) => (_cmpRoleNum(b.ypc) || 0) - (_cmpRoleNum(a.ypc) || 0))[0];
+  let lines = '<div class="compare-roles-dfact">Lane ' + _cmpRolesEsc(laneName) + ' is ' + _cmpRolePct(l.share) + ' of his carries at ' + _cmpRoleFmt(l.ypc, 1) + ' a carry.</div>';
+  const win = d.window || _cmpRoleState().window;
+  if (win !== 'lastseason') {
+    lines += '<div class="compare-roles-dline">Lane trend: ' + _roleTrendText(_cmpRoleNum(l.trend_base), _cmpRoleNum(l.trend_last4), win === 'last4' ? 'prior 4' : 'season') + '</div>';
+  } else {
+    lines += '<div class="compare-roles-dline">Lane trend: no earlier window in this view</div>';
   }
-  if (l.league_share != null) lines += '<div class="compare-roles-dline">League average ' + _cmpRolePct(l.league_share) + ' of carries here at ' + _cmpRoleFmt(l.league_ypc, 1) + ' a carry.</div>';
-  det.innerHTML = '<div class="compare-roles-dhead">Lane ' + _cmpRolesEsc(laneName) + '</div><div class="compare-roles-dgrid">' + rows + '</div>' + lines;
+  if (l.league_share != null) lines += '<div class="compare-roles-dline">League baseline: his ' + _cmpRolePct(l.share) + ' of carries at ' + _cmpRoleFmt(l.ypc, 1) + ' a carry, league average ' + _cmpRolePct(l.league_share) + ' at ' + _cmpRoleFmt(l.league_ypc, 1) + '.</div>';
+  if (best && String(best.lane).toUpperCase() === laneName) {
+    lines += '<div class="compare-roles-dtake">His best gap: ' + _cmpRoleFmt(l.ypc, 1) + ' a carry through lane ' + _cmpRolesEsc(laneName) + ', '
+      + ((_cmpRoleNum(l.share) || 0) < 25 ? 'but only ' : '') + _cmpRolePct(l.share) + ' of his runs go there.</div>';
+  }
+  _roleOpenPop('cmpRoleLanePop-' + pid, 'cmpRoleLaneDetail-' + pid, '<div class="compare-roles-dhead">Lane ' + _cmpRolesEsc(laneName) + '</div><div class="compare-roles-dgrid">' + rows + '</div>' + lines, laneCaretX);
 }
 
 // ---- QB rushing strip -------------------------------------------------------
@@ -27893,6 +28046,22 @@ function _cmpRoleQbRushHTML(d) {
     + '</div>';
 }
 
+function _cmpRoleOrdinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+function _cmpRoleEvidenceHTML(role, d) {
+  const ev = (role && role.evidence) || [];
+  if (!ev.length) return '';
+  const winLabel = d.window === 'last4' ? 'Last 4 weeks'
+    : d.window === 'lastseason' ? (d.season || '') + ' season'
+    : (d.season || '') + ' season to date';
+  return '<div class="compare-roles-evidence"><div class="compare-roles-subrow"><span class="compare-roles-sub">Evidence</span><span class="compare-roles-subnote">' + _cmpRolesEsc(winLabel) + '</span></div>'
+    + '<div class="compare-roles-evgrid">' + ev.map(e =>
+      '<div class="compare-roles-ev"><span class="compare-roles-ev-label">' + _cmpRolesEsc(e.label || '') + '</span><span class="compare-roles-ev-val">' + _cmpRolesEsc(e.value == null ? 'n/a' : String(e.value)) + '</span></div>').join('')
+    + '</div></div>';
+}
+
 // ---- Card + render ----------------------------------------------------------
 function _cmpRoleCardHTML(p, d, others) {
   const esc = _cmpRolesEsc;
@@ -27905,13 +28074,20 @@ function _cmpRoleCardHTML(p, d, others) {
   if (d.target_map) maps += _cmpRoleMapHTML(d, !!d.gap_map);
   if (d.qb_rush) maps += _cmpRoleQbRushHTML(d);
   const games = role.games != null ? '<span class="compare-roles-games">' + esc(String(role.games)) + ' games · ' + esc(String(role.snaps != null ? role.snaps : '')) + (role.snaps != null ? ' snaps' : '') + '</span>' : '';
+  const winText = d.window === 'last4' ? 'Last 4 weeks' : d.window === 'lastseason' ? 'Last season' : 'Season to date';
+  const jobScore = role.job_score_pct != null
+    ? '<div class="compare-roles-jobscore">Job score <b>' + _cmpRoleOrdinal(role.job_score_pct) + ' percentile</b> at ' + esc(d.pos || '') + '.</div>' : '';
   return '<article class="compare-roles-card">'
     + head
+    + '<div class="compare-roles-subrow"><span class="compare-roles-eyebrow">Primary role: Job</span><span class="compare-roles-subnote">' + esc(String(d.season || '')) + ' · ' + winText + '</span></div>'
     + '<div class="compare-roles-jobrow"><span class="compare-roles-job">' + esc(role.job || 'Role not classified') + '</span>' + games + '</div>'
     + _cmpRoleTagsHTML(role)
+    + jobScore
+    + _cmpRoleEvidenceHTML(role, d)
     + _cmpRoleAxesHTML(role, others)
-    + _cmpRoleTimelineHTML(d)
     + maps
+    + _cmpRoleTimelineHTML(d)
+    + (role.verdict ? '<div class="compare-roles-cardverdict">' + esc(role.verdict) + '</div>' : '')
     + _cmpRoleMetaHTML(role)
     + '</article>';
 }
@@ -27942,8 +28118,9 @@ function _cmpRolesRender() {
   _cmpRolesPaintMaps(datas);
   _cmpRolesRenderComps(datas);
 }
-// Default-select each map's hottest zone, fill its detail panel, then paint
-// the canvases. Shared with the player modal's Role sub-view.
+// Default-select each map's hottest zone (it stays outlined on the canvas;
+// its detail opens as a popover only on tap), then paint the canvases.
+// Shared with the player modal's Role sub-view.
 function _cmpRolesPaintMaps(datas) {
   const st = _cmpRoleState();
   datas.forEach(d => {
@@ -27951,15 +28128,7 @@ function _cmpRolesPaintMaps(datas) {
     const pid = String(d.player_id || '');
     if (!st.selZone[pid]) {
       const hot = (d.target_map.zones || []).slice().sort((a, b) => (_cmpRoleNum(b.share_primary) || 0) - (_cmpRoleNum(a.share_primary) || 0))[0];
-      if (hot) {
-        st.selZone[pid] = { row: hot.row, col: hot.col };
-        const det = document.getElementById('cmpRoleDetail-' + pid);
-        if (det) det.innerHTML = _roleZoneDetailHTML(d, hot);
-      }
-    } else {
-      const z = _roleZone(d, st.selZone[pid].row, st.selZone[pid].col);
-      const det = document.getElementById('cmpRoleDetail-' + pid);
-      if (det && z) det.innerHTML = _roleZoneDetailHTML(d, z);
+      if (hot) st.selZone[pid] = { row: hot.row, col: hot.col };
     }
   });
   requestAnimationFrame(() => {
@@ -27976,22 +28145,49 @@ function _cmpRolesPaintMaps(datas) {
 function _cmpRoleCompsHTML(d, renderRow) {
   if (!d || !((d.comparables && d.comparables.length) || d.twin)) return '';
   const pid = String(d.player_id || '');
+  const compBtn = (c, cls, inner) => '<button type="button" class="' + cls + '" data-compid="' + _cmpRolesEsc(String(c.player_id || '')) + '" data-compname="' + _cmpRolesEsc(c.name || '') + '" data-comppos="' + _cmpRolesEsc(c.pos || '') + '" data-compteam="' + _cmpRolesEsc(c.team || '') + '" onclick="cmpRoleOpenComp(this,\'' + pid + '\')">' + inner + '</button>';
   let out = '<div class="compare-roles-comps"><div class="compare-roles-sub">Closest matches for ' + _cmpRolesEsc(d.name || '') + '</div>';
   if (d.twin && d.twin.name) {
-    out += '<div class="compare-roles-twin">Closest league-wide twin: ' + _cmpRolesEsc(d.twin.name)
-      + (d.twin.similarity != null ? ' (' + Math.round(_cmpRoleNum(d.twin.similarity) || 0) + '%)' : '') + '</div>';
+    if (renderRow && typeof pmRoleOpenComp === 'function') {
+      out += '<button type="button" class="compare-roles-twin compare-roles-twin-btn" data-compid="' + _cmpRolesEsc(String(d.twin.player_id || '')) + '" data-compname="' + _cmpRolesEsc(d.twin.name || '') + '" onclick="pmRoleOpenComp(this)">Closest league-wide twin: ' + _cmpRolesEsc(d.twin.name)
+        + (d.twin.similarity != null ? ' (' + Math.round(_cmpRoleNum(d.twin.similarity) || 0) + '%)' : '') + '</button>';
+    } else if (renderRow) {
+      out += '<div class="compare-roles-twin">Closest league-wide twin: ' + _cmpRolesEsc(d.twin.name)
+        + (d.twin.similarity != null ? ' (' + Math.round(_cmpRoleNum(d.twin.similarity) || 0) + '%)' : '') + '</div>';
+    } else {
+      out += compBtn(d.twin, 'compare-roles-twin compare-roles-twin-btn', 'Closest league-wide twin: ' + _cmpRolesEsc(d.twin.name)
+        + (d.twin.similarity != null ? ' (' + Math.round(_cmpRoleNum(d.twin.similarity) || 0) + '%)' : ''));
+    }
   }
   out += (d.comparables || []).slice(0, 3).map(c => {
     if (renderRow) return renderRow(c, pid);
-    const href = '/compare?p1=' + encodeURIComponent(pid) + '&p2=' + encodeURIComponent(String(c.player_id || ''));
-    return '<a class="compare-roles-comp" href="' + href + '">'
-      + '<span class="compare-roles-comp-name">' + _cmpRolesEsc(c.name || '') + (c.pos || c.team ? ' <span class="compare-roles-comp-meta">' + _cmpRolesEsc([c.pos, c.team].filter(Boolean).join(' · ')) + '</span>' : '') + '</span>'
+    return compBtn(c, 'compare-roles-comp',
+      '<span class="compare-roles-comp-name">' + _cmpRolesEsc(c.name || '') + (c.pos || c.team ? ' <span class="compare-roles-comp-meta">' + _cmpRolesEsc([c.pos, c.team].filter(Boolean).join(' · ')) + '</span>' : '') + '</span>'
       + '<span class="compare-roles-comp-sim">' + (c.similarity != null ? Math.round(_cmpRoleNum(c.similarity) || 0) + '%' : '') + '</span>'
       + (c.match_line ? '<span class="compare-roles-comp-line">' + _cmpRolesEsc(c.match_line) + '</span>' : '')
-      + (c.differ_line ? '<span class="compare-roles-comp-line compare-roles-comp-diff">' + _cmpRolesEsc(c.differ_line) + '</span>' : '')
-      + '</a>';
+      + (c.differ_line ? '<span class="compare-roles-comp-line compare-roles-comp-diff">' + _cmpRolesEsc(c.differ_line) + '</span>' : ''));
   }).join('');
   return out + '</div>';
+}
+// Tapping a comparable in Compare loads him into the opposing slot (the
+// other slot of a pair; the next slot over in the 3-player bar). If he
+// already occupies a slot, the tap is a no-op. The compare page's picker
+// exposes window._cmpSetSlot; off that page, fall back to the deep link
+// with the comp placed in the opposing slot.
+function cmpRoleOpenComp(el, ownerPid) {
+  const cid = el && el.getAttribute('data-compid');
+  if (!cid) return;
+  const st = _cmpRoleState();
+  const players = st.players || [];
+  if (players.some(p => String(p.player_id) === String(cid))) return;
+  const ownerIdx = players.findIndex(p => String(p.player_id) === String(ownerPid));
+  if (ownerIdx < 0 || players.length < 2) return;
+  const target = players.length === 2 ? (ownerIdx === 0 ? 1 : 0) : (ownerIdx + 1) % players.length;
+  const stub = { player_id: String(cid), name: el.getAttribute('data-compname') || '', position: el.getAttribute('data-comppos') || '', team: el.getAttribute('data-compteam') || '' };
+  if (typeof window._cmpSetSlot === 'function') { window._cmpSetSlot(target + 1, stub); return; }
+  const ids = players.map(p => String(p.player_id));
+  ids[target] = String(cid);
+  window.location.href = '/compare?p1=' + encodeURIComponent(ids[0]) + '&p2=' + encodeURIComponent(ids[1]) + (ids[2] ? '&p3=' + encodeURIComponent(ids[2]) : '');
 }
 function _cmpRolesRenderComps(datas) {
   const host = document.getElementById('cmpRolesComps');

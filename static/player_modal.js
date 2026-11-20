@@ -73,6 +73,41 @@ function _pmSmallFetch(key, url, timeoutMs) {
 // through _pmSmallFetch; nothing is fetched on modal open or for the
 // default Metrics sub-view.
 var _pmRoleState = { pid: '', win: 'season', loadedKey: '' };
+// ── Header meta: role job ─────────────────────────────────────────
+// The header meta line gains the player's role Job (season window)
+// as one more quiet meta fact once the role payload lands:
+// "WR21 · TB · 24.0 yrs · Alpha WR1". Job only: no Security, Trend
+// or Confidence up here (the header already carries the separate
+// value-trend pill, and a second trend-flavoured item would read as
+// a duplicate of it). Fails silent: no payload or no role data, the
+// header simply never shows a job.
+var _pmRoleHeaderJob = { pid: '', job: '' };
+function _pmRoleNoteHeaderJob(pid, d) {
+  var job = d && d.role && d.role.job ? String(d.role.job) : '';
+  if (!pid || !job) return;
+  _pmRoleHeaderJob = { pid: String(pid), job: job };
+  _pmRolePaintHeaderJob();
+}
+function _pmRolePaintHeaderJob() {
+  var bar = document.getElementById('pmTabBar');
+  var pid = bar && bar.dataset ? bar.dataset.pmPlayerId : '';
+  if (!pid || _pmRoleHeaderJob.pid !== String(pid)) return;
+  var metaEl = document.getElementById('playerModalMeta');
+  if (!metaEl || metaEl.querySelector('.pm-role-job')) return;
+  var row = metaEl.querySelector('div');
+  if (!row) return;
+  var sep = document.createElement('span');
+  sep.setAttribute('style', 'opacity:.35;margin:0 3px;');
+  sep.textContent = '·';
+  var el = document.createElement('span');
+  el.className = 'pm-role-job';
+  el.textContent = _pmRoleHeaderJob.job;
+  // Sit right after the age fact: ahead of the value-trend pill when
+  // the initial render already placed one in the row.
+  var pill = row.querySelector('.pm-trend-pill');
+  if (pill) { row.insertBefore(sep, pill); row.insertBefore(el, pill); }
+  else { row.appendChild(sep); row.appendChild(el); }
+}
 function pmAdvSetSub(sub) {
   var panel = document.getElementById('pm-panel-metrics');
   if (!panel) return;
@@ -115,7 +150,7 @@ function pmRoleLoad(force) {
     return;
   }
   if (force) _pmSmallCache.delete(key);
-  body.innerHTML = '<div class="compare-roles-loading"><div class="loading-spinner" style="width:16px;height:16px;"></div><span>Loading role...</span></div>';
+  body.innerHTML = '<div class="compare-roles-grid pm-role-grid">' + (typeof _cmpRoleSkeletonHTML === 'function' ? _cmpRoleSkeletonHTML() : '<div class="compare-roles-loading"><div class="loading-spinner" style="width:16px;height:16px;"></div><span>Loading role...</span></div>') + '</div>';
   var url = '/api/player-role/' + encodeURIComponent(pid) + '?season=' + season + '&window=' + encodeURIComponent(_pmRoleState.win);
   _pmSmallFetch(key, url).then(function (d) {
     if (!body.isConnected || _pmRoleState.pid !== pid) return;
@@ -125,6 +160,9 @@ function pmRoleLoad(force) {
     }
     _pmRoleState.loadedKey = key;
     if (typeof _cmpRoleRegisterData === 'function') _cmpRoleRegisterData(d);
+    // The header shows the season window's Job only; loads for other
+    // windows never touch it.
+    if (_pmRoleState.win === 'season') _pmRoleNoteHeaderJob(pid, d);
     _pmRenderRoleView(d);
   }).catch(function () {
     if (body.isConnected) body.innerHTML = '<div class="compare-roles-note-card">Could not load role data for this window. <button type="button" class="pm-role-retry" onclick="pmRoleRetry()">Retry</button></div>';
@@ -155,7 +193,7 @@ function pmRoleOpenComp(el) {
   var cname = (el && el.getAttribute('data-compname')) || '';
   if (!cid) return;
   if (typeof openPlayerModal === 'function') {
-    openPlayerModal(cid, cname, { force: true });
+    openPlayerModal(cid, cname, { force: true, tab: 'metrics', roleSub: true });
   } else {
     var bar = document.getElementById('pmTabBar');
     var pid = bar && bar.dataset ? bar.dataset.pmPlayerId : '';
@@ -258,6 +296,20 @@ function _pmStartEarlyFetches(playerId, descriptor) {
     // and URL _pmLoadNews uses, so the Overview news loader adopts this
     // in-flight request instead of starting after the core render.
     _pmSmallFetch('news:' + playerId, '/api/player-news/' + encodeURIComponent(playerId));
+    // Role payload (season window) through the same small-fetch cache
+    // and key pmRoleLoad uses, so Advanced > Role renders instantly
+    // from the adopted in-flight/cached promise instead of fetching on
+    // first open. The header meta line also takes the Job from this
+    // payload when it lands (see _pmRoleNoteHeaderJob); beyond that
+    // one meta fact there is no behaviour change if the user never
+    // opens Role.
+    _pmSmallFetch('role:' + playerId + ':' + season + ':season',
+      '/api/player-role/' + encodeURIComponent(playerId) + '?season=' + encodeURIComponent(season) + '&window=season')
+      .then(function (d) {
+        if (!d) return;
+        if (typeof _cmpRoleRegisterData === 'function') _cmpRoleRegisterData(d);
+        _pmRoleNoteHeaderJob(playerId, d);
+      });
     // Recent Form: shared URL helper (see _pmRecentFormUrl) so the
     // loader's registry lookup hits.
     _pmEarlyResponseFetch(_pmRecentFormUrl(playerId, season));
@@ -1007,6 +1059,9 @@ function openPlayerModal(playerId, playerName, opts) {
         metaHTML += `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px;opacity:.9;">${_teamHTML}${_ownerStr}</div>`;
       }
       metaEl.innerHTML = metaHTML;
+      // If the role payload landed before this header render, the
+      // Job joins the meta line now; otherwise it fills in on arrival.
+      _pmRolePaintHeaderJob();
 
       // Watchlist note beneath the ownership line. When the player is watched it
       // is editable: _pmWlNoteHtml renders the saved note with an Edit button
@@ -1905,6 +1960,9 @@ function openPlayerModal(playerId, playerName, opts) {
       if (_initTabBtn && _initTabBtn.style.display !== 'none') {
         _initTabBtn.classList.add('active');
         pmSwitchTab(_initialTab);
+        // Comp taps from the Role sub-view land back on Advanced > Role
+        // for the swapped-in player, not on the default Metrics pane.
+        if (_initialTab === 'metrics' && opts && opts.roleSub && typeof pmAdvSetSub === 'function') pmAdvSetSub('role');
       } else {
         const overviewTabBtn = document.querySelector('.pm-tab[data-tab="overview"]');
         if (overviewTabBtn) overviewTabBtn.classList.add('active');
