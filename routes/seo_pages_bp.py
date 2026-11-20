@@ -552,6 +552,9 @@ def _rankings_page(position: str | None = None):
     if fmt not in ("sf", "1qb"):
         fmt = "sf"
     show_all = (request.args.get("show") or "").strip().lower() == "all"
+    # No role job labels on the dynasty hub: dynasty value is a
+    # multi-year asset price, so a current-season job label would
+    # mislead here. Labels live on /players, the ROS hub and Start/Sit.
     body   = build_rankings_hub_body(value_table, position=position, as_of_date=as_of, format=fmt, show_all=show_all)
     pos_lbl = f" {position}" if position else ""
     return render_page(
@@ -619,7 +622,13 @@ def _ros_rankings_page(position: str | None = None):
 
     year = datetime.now().year
     updated = ros_payload.get("updated") or datetime.now().strftime("%B %d, %Y")
-    body = build_ros_rankings_body(ros_payload, value_table, position=position)
+    # Role job labels for row decoration; fail-soft like the dynasty hub.
+    try:
+        from dashboard_services.player_roles import get_role_labels
+        role_labels = get_role_labels(season)
+    except Exception:
+        role_labels = None
+    body = build_ros_rankings_body(ros_payload, value_table, position=position, role_labels=role_labels)
     pos_lbl = f" {position}" if position else ""
     return render_page(
         f"Rest of Season{pos_lbl} Rankings {year} | BR Fantasy",

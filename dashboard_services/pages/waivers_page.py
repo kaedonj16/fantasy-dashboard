@@ -826,6 +826,29 @@ var wvTrendingData = [];
 var wvBigGamesData = [];
 var wvStartSitData = {{}};
 var wvStartSitLoaded = false;  // set true once wvLoadStartSit has run
+// Role job labels for Start/Sit rows: one bulk fetch per page (never one
+// request per row), decorating rows client-side once it lands. null =
+// not fetched yet, {{}} = fetched (or failed) with nothing to add.
+var wvRoleLabels = null;
+function wvRoleLabelText(pid) {{
+  if (!wvRoleLabels) return '';
+  const e = wvRoleLabels[String(pid)];
+  if (!e || !e.job) return '';
+  return e.security === 'Contingent' ? e.job + ' · Contingent' : e.job;
+}}
+function wvFetchRoleLabels() {{
+  if (wvRoleLabels !== null) return;
+  wvRoleLabels = {{}};
+  fetch('/api/player-roles/labels')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {{
+      if (d && d.labels) {{
+        wvRoleLabels = d.labels;
+        if (wvStartSitData && wvStartSitData.positions) wvRenderStartSit();
+      }}
+    }})
+    .catch(() => {{}});
+}}
 var wvCompare = [null, null]; // [playerA, playerB]
 var wvUsesK = false;   // league starts kickers (start-sit data or waiver-candidates)
 var wvUsesDef = false; // league starts team defenses (same two sources)
@@ -2661,6 +2684,7 @@ var wvStartSitAttempts = 0;
 function wvLoadStartSit() {{
   wvStartSitAttempts = 0;
   wvStartSitLoaded = true;
+  wvFetchRoleLabels();
   wvFetchStartSit();
 }}
 // Returns true if the Start/Sit section is currently visible (not hidden by
@@ -3776,6 +3800,8 @@ function wvRenderStartSit() {{
       const qbChip = wvQbChip(p);
       const newsChip = wvNewsChip(p);
       const roleChip = wvRoleChip(p);
+      const jobLabel = wvRoleLabelText(p.player_id);
+      const jobLabelHtml = jobLabel ? `<span class="wv-cx-role">${{jobLabel}}</span>` : '';
       const escName = (p.name || '').replace(/'/g, "\\'");
       const matchup = p.opponent
         ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
@@ -3815,7 +3841,7 @@ function wvRenderStartSit() {{
               onclick="wvToggleSsRow(this)">
             ${{badge}}
             <span class="wv-cx-main">
-              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}${{newsChip}}${{roleChip}}</span>
+              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}${{newsChip}}${{roleChip}}${{jobLabelHtml}}</span>
               ${{matchup ? `<span class="wv-cx-why">${{matchup}}</span>` : ''}}
               ${{demoteChip ? `<span class="wv-cx-why">${{demoteChip}}</span>` : ''}}
               ${{p.guest && p.guest_note ? `<span class="wv-ss-guest-note">${{wvEsc(p.guest_note)}}</span>` : ''}}

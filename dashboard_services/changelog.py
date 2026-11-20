@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-19",
         "tag": "new",
+        "text": "Start/Sit, Player Rankings and Rest of Season rows now carry his role job next to his name: Workhorse, Alpha WR1, Committee 1B and the rest, with a Contingent note when his production depends on an injured roommate. It is the same role engine as Compare, readable at a glance.",
+        "link": "/rankings/rest-of-season"
+    },
+    {
+        "date": "2026-11-19",
+        "tag": "new",
         "text": "Compare now reads roles, not just stats: every player gets a job title and role axes for his position, a target map showing where his targets (or throws) actually go by depth and side, a gap map for his carries by lane, a role timeline for how the job changed across the season, and the closest role matches across the league.",
         "link": "/compare"
     },

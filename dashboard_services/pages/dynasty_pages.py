@@ -994,6 +994,10 @@ def build_rankings_hub_body(
 
     ``show_all`` renders every row; the default view renders the top
     ``_HUB_PAGE_SIZE`` rows plus a "Show all" link to the full view.
+
+    Deliberately no role job labels here (unlike the ROS hub below):
+    dynasty value is a multi-year asset price, and a current-season
+    job label would mislead on this surface.
     """
     from dashboard_services.pages.player_page import slugify
 
@@ -1275,7 +1279,8 @@ def _fmt_ros_games(games) -> str:
 
 
 def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
-                            position: str | None = None) -> str:
+                            position: str | None = None,
+                            role_labels: dict | None = None) -> str:
     """Public rest-of-season rankings page body (overall or one position).
 
     ``ros_payload`` is utils.ros_rankings.load_ros_map's output; player
@@ -1378,6 +1383,13 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         for label, path in pos_nav_items
     )
 
+    # Role job labels: quiet text next to the team when the caller
+    # supplies the bulk labels map; players without role data simply
+    # get no span. (The dynasty hub above intentionally has none.)
+    _role_text = None
+    if role_labels:
+        from dashboard_services.player_roles import role_label_text as _role_text
+
     table_rows = ""
     for rank, row in enumerate(rows, 1):
         name = row.get("name") or "Unknown"
@@ -1388,6 +1400,10 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             "" if pos_filter
             else f'<span class="rnk-pos-badge" style="background:{_pc(pos)};">{html.escape(pos)}</span>'
         )
+        role_txt = (_role_text(role_labels.get(str(row.get("id") or "")))
+                    if _role_text else "")
+        role_span = (f'<span class="rnk-role">{html.escape(role_txt)}</span>'
+                     if role_txt else '')
         sched = row.get("ros_sched_rank")
         table_rows += (
             f'<tr>'
@@ -1396,6 +1412,7 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             f'{pos_badge}'
             f'<a class="rnk-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
             f'<span class="rnk-team">{html.escape(team)}</span>'
+            f'{role_span}'
             f'</td>'
             f'<td class="rnk-val">{_fmt_ros_games(row.get("ros_games"))}</td>'
             f'<td class="rnk-val">{float(row.get("ros_ppg") or 0):.1f}</td>'

@@ -1373,3 +1373,93 @@ def build_player_payload(sleeper_id: str, season: int, window: str,
         "comparables": comparables,
         "twin": twin,
     }
+
+
+# ---------------------------------------------------------------------------
+# Bulk role labels (Start/Sit board + Rankings rows)
+# ---------------------------------------------------------------------------
+# Boards decorate hundreds of rows at once, so they cannot call the
+# per-player payload endpoint per row. Labels are the Job + Security
+# slice of the same season-window compute: one compute_pool pass over
+# the pool, then build_role per player. Job and Security depend only on
+# the weekly series (opportunity / snap percentiles, team rank, the
+# room-lead split in security_for) -- never on PBP or FTN features --
+# so this pass skips both data sources and still matches the job and
+# security build_player_payload returns for the season window. (The
+# payload's early-season prior blend applies to weeks 1-3 only and is
+# not replicated here.)
+
+_LABELS_CACHE: "OrderedDict[int, Any]" = OrderedDict()  # season -> (ts, labels)
+_LABELS_TTL = 900
+_LABELS_MAX = 4
+_LABELS_BUILD_LOCK = threading.Lock()
+
+
+def role_label_text(entry: Optional[Dict[str, Any]]) -> str:
+    """Display text for one labels entry: the Job, plus Contingent.
+
+    Security is only surfaced when it is Contingent (the job is borrowed
+    from an injured room lead); Locked / Stable / Volatile stay quiet.
+    """
+    job = (entry or {}).get("job") or ""
+    if not job:
+        return ""
+    if (entry or {}).get("security") == "Contingent":
+        return f"{job} · Contingent"
+    return job
+
+
+def build_role_labels(season: int,
+                      pool: Optional[Dict[str, Dict[str, Any]]] = None
+                      ) -> Dict[str, Dict[str, str]]:
+    """{player_id: {"job", "security", "pos"}} for the season window."""
+    season = int(season)
+    if pool is None:
+        try:
+            pool = load_pool(season)
+        except Exception:
+            pool = {}
+    if not pool:
+        return {}
+    computed = compute_pool(pool, {})
+    labels: Dict[str, Dict[str, str]] = {}
+    for pid, entry in pool.items():
+        if pid not in computed:
+            continue
+        role = build_role(pid, pool, computed)
+        labels[pid] = {"job": role["job"], "security": role["security"],
+                       "pos": entry.get("pos") or ""}
+    return labels
+
+
+def _labels_cache_fresh(season: int):
+    with _CACHE_LOCK:
+        hit = _LABELS_CACHE.get(season)
+        if hit is not None and time.time() - hit[0] < _LABELS_TTL:
+            _LABELS_CACHE.move_to_end(season)
+            return hit[1]
+    return None
+
+
+def get_role_labels(season: int) -> Dict[str, Dict[str, str]]:
+    """Bounded-cache accessor mirroring get_pbp_tables: concurrent
+    first-hits share one build, and an expired entry rebuilds."""
+    season = int(season)
+    fresh = _labels_cache_fresh(season)
+    if fresh is not None:
+        return fresh
+    with _LABELS_BUILD_LOCK:
+        fresh = _labels_cache_fresh(season)
+        if fresh is not None:
+            return fresh
+        labels = build_role_labels(season)
+        with _CACHE_LOCK:
+            _LABELS_CACHE[season] = (time.time(), labels)
+            while len(_LABELS_CACHE) > _LABELS_MAX:
+                _LABELS_CACHE.popitem(last=False)
+        return labels
+
+
+def clear_labels_cache() -> None:
+    with _CACHE_LOCK:
+        _LABELS_CACHE.clear()
