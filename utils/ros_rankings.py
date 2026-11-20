@@ -47,11 +47,21 @@ season AND a real role: the team's #1 at his position (by points per
 played game, so a back who missed weeks is not buried under a healthy
 teammate's season total), or RB >= 12 touches/game, or WR/TE >= 5.5
 targets/game, or QB >= 25 pass attempts/game. IR / PUP / NFI /
-suspended players are excluded entirely (season-out is read from the
-live Sleeper status overlay at build time, falling back to the players
-index: the index's stamped status lags the feed). A player who fails
-any gate gets NO ROS fields, so the board hides him in ROS mode rather
-than ranking him on a number the model does not stand behind.
+suspended players are excluded when the designation is a season
+verdict, but a returner stays ranked (Kaedon, 2026-11-18: NO
+availability floor on the ranking): when the feed carries no
+season-ending note for him and his projection series is dark for at
+least the first window week before real projections resume inside the
+window, he flows through the model and his missed weeks price into
+expected games through the same weeks-out machinery as everyone else
+(see is_in_window_returner). A series that never resumes keeps the
+exclusion, and so does a series that projects him from the first
+window week: that contradicts the designation, and the designation
+wins. Season-out is read from the live Sleeper status overlay at
+build time, falling back to the players index: the index's stamped
+status lags the feed. A player who fails any gate gets NO ROS fields,
+so the board hides him in ROS mode rather than ranking him on a
+number the model does not stand behind.
 
 Schedule rank (the average Schedule Rankings matchup value of the
 player's remaining opponents, ranked across teams, 1 = softest
@@ -121,12 +131,83 @@ PPR_SCORING = {"rec": 1.0}
 # come out of the games count through the projection zero-run instead.
 SEASON_OUT_MARKERS = ("IR", "PUP", "NFI", "SUS")
 
+# Season-ending language in the feed's injury notes. Sleeper's notes
+# vocabulary is terse ("Surgery", "Sprain", "Fracture", ...): a surgery
+# note is the feed's own season-ending signal, and it outranks the
+# projection series, because the feed keeps projecting some surgery
+# players at full volume anyway (verified live 2026-11-20: Davante
+# Adams, hamstring surgery, still carried ~15 PPR projections for
+# every remaining week). Matched as substrings so "Surgery" and any
+# "... season ..." phrasing both land.
+SEASON_ENDING_NOTE_MARKERS = ("SURGER", "SEASON")
+
+# A weekly projection above this is a real projection; at or below it
+# the week reads as a week out. The same threshold the waiver path's
+# weeks-out read uses (utils.waivers.weeks_out_from_projections).
+PROJECTION_REAL_THRESHOLD = 1.0
+
 
 # ── Pure pieces (unit-tested directly) ──────────────────────────────────────
 
 def is_season_out(injury_status) -> bool:
     status = str(injury_status or "").upper()
     return any(marker in status for marker in SEASON_OUT_MARKERS)
+
+
+def has_season_ending_note(injury_notes) -> bool:
+    notes = str(injury_notes or "").upper()
+    return any(marker in notes for marker in SEASON_ENDING_NOTE_MARKERS)
+
+
+def first_projected_week(series) -> Optional[int]:
+    """Index of the first week in ``series`` carrying a real projection
+    (above PROJECTION_REAL_THRESHOLD), or None when the feed never
+    projects the player inside the window. ``series`` is the builder's
+    per-week projection list (None = absent from that week's feed,
+    ~0 = an explicit zero: both read as a week out)."""
+    for i, value in enumerate(series or []):
+        if value is None:
+            continue
+        try:
+            points = float(value)
+        except (TypeError, ValueError):
+            continue
+        if points > PROJECTION_REAL_THRESHOLD:
+            return i
+    return None
+
+
+def is_in_window_returner(injury_status, injury_notes, all_series) -> bool:
+    """True when a season-out-marked player is a returner, not a
+    season-ender: the designation is real (a marker status), the feed
+    carries no season-ending note for him, and his own projection
+    series is dark for at least the first window week before real
+    projections resume inside the window (the feed's timeline read,
+    the same one the weeks-out machinery prices). The dark first week
+    is required: a series projecting him from the first window week
+    contradicts the designation, and the designation wins (the audit
+    D2 shape, where the live IR tag is the freshest fact on the page).
+    A series that never resumes is a season-ender the status already
+    named. The returner then flows through the normal model: his
+    expected games come out low on their own, discounted by the games
+    factor alone, with no special-casing past any other gate."""
+    if not is_season_out(injury_status):
+        return False
+    if has_season_ending_note(injury_notes):
+        return False
+    first = first_projected_week(all_series)
+    return first is not None and first >= 1
+
+
+def _season_out_verdict(injury_status, injury_notes, all_series) -> bool:
+    """The builder's exclusion verdict for one player: a marker status
+    excludes UNLESS the player is an in-window returner (Kaedon's
+    2026-11-18 no-availability-floor ruling, restored 2026-11-20 after
+    the blanket IR exclusion dropped Puka Nacua, a Week 15 returner,
+    from every ROS board)."""
+    if not is_season_out(injury_status):
+        return False
+    return not is_in_window_returner(injury_status, injury_notes, all_series)
 
 
 def live_injury_status_map() -> Dict[str, str]:
@@ -149,6 +230,31 @@ def live_injury_status_map() -> Dict[str, str]:
         return _live_injury_status_map() or {}
     except Exception:
         return {}
+
+
+def live_injury_notes_map() -> Dict[str, str]:
+    """{pid: injury_notes} from the same live Sleeper players feed.
+
+    The returner read (is_in_window_returner) needs the feed's injury
+    notes ("Surgery" is its season-ending signal); the raw player
+    record behind ``get_players_global()`` carries them, the slim
+    players index does not. Fail-soft: {} when the feed (or the app
+    module, in offline/cron contexts) is unavailable, so callers
+    degrade to the index value, never to a crash. Only players WITH
+    notes appear in the map.
+    """
+    try:
+        from app import get_players_global
+        players = get_players_global() or {}
+    except Exception:
+        return {}
+    out: Dict[str, str] = {}
+    for pid, meta in players.items():
+        if isinstance(meta, dict):
+            notes = meta.get("injury_notes")
+            if notes:
+                out[str(pid)] = str(notes)
+    return out
 
 
 def qb_ros_ppg(fwd_ppg: float, form_ppg: Optional[float],
@@ -1126,8 +1232,11 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
         # Season-out overlay: the live Sleeper status map wins over the
         # players index's stamped injury_status, which lags the feed
         # (audit D2: Harvey and Love were Sleeper-listed IR yet ranked
-        # because the index had not picked up their designations).
+        # because the index had not picked up their designations). The
+        # notes map rides the same feed: it is the returner read's
+        # season-ending signal (see is_in_window_returner).
         live_status = live_injury_status_map()
+        live_notes = live_injury_notes_map()
 
         ros_by_pid: Dict[str, dict] = {}
         positions_by_pid: Dict[str, str] = {}
@@ -1163,9 +1272,11 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                 targets_per_game=(u["targets"] / played_games) if played_games else None,
                 pass_attempts_per_game=(u["pass_att"] / played_games) if played_games else None,
                 is_team_top=pid in team_top,
-                season_out=is_season_out(live_status.get(pid)
-                                         or meta.get("injury_status")
-                                         or meta.get("status")),
+                season_out=_season_out_verdict(
+                    live_status.get(pid) or meta.get("injury_status")
+                    or meta.get("status"),
+                    live_notes.get(pid) or meta.get("injury_notes"),
+                    windows["all"]),
                 windows=windows,
                 sched_rank=sched_rank.get((pos, norm_sched_team(team))),
                 availability_rate=availability_rate(

@@ -25,7 +25,10 @@ from utils.ros_rankings import (
     compute_ros_tier_thresholds,
     compute_ros_vor_tier_thresholds,
     consistency_rate,
+    first_projected_week,
     form_ppg,
+    has_season_ending_note,
+    is_in_window_returner,
     is_season_out,
     order_overall,
     passes_role_gate,
@@ -207,6 +210,34 @@ def test_three_game_floor_and_season_out_exclusion():
 
 def test_no_projection_no_fields():
     assert _ros("RB", windows={"all": [0.0, 0.0], "stretch": [], "playoffs": []}) is None
+
+
+def test_in_window_returner_reads():
+    # Puka shape (verified live 2026-11-20): IR, knee MCL sprain, the
+    # feed dark for Weeks 11-14 and real projections back from Week 15.
+    puka_series = [None, None, None, None, 18.2, 15.5, 16.8]
+    assert first_projected_week(puka_series) == 4
+    assert is_in_window_returner("IR", "Sprain", puka_series)
+    # Explicit zeros are weeks out too: a resumption after them counts.
+    assert is_in_window_returner("IR", None, [0.0, 0.0, 15.0, 15.0])
+    # A surgery note is the feed's season-ending signal and outranks a
+    # resuming series (Davante Adams shape: still projected weekly).
+    assert has_season_ending_note("Surgery")
+    assert has_season_ending_note("Out for the season")
+    assert not has_season_ending_note("Sprain")
+    assert not has_season_ending_note(None)
+    assert not is_in_window_returner("IR", "Surgery", [None, 15.5, 15.2, 15.9])
+    # A series that never resumes is a season-ender the status named.
+    assert not is_in_window_returner("IR", None, [None] * 7)
+    assert not is_in_window_returner("IR", "Sprain", [0.0, 0.0])
+    assert first_projected_week([None, None]) is None
+    # Projected from the first window week contradicts the designation:
+    # the designation wins (the audit D2 shape).
+    assert not is_in_window_returner("IR", None, [15.0, 15.0, 15.0])
+    assert first_projected_week([0.4, 12.0]) == 1
+    # No marker status: the returner question does not arise.
+    assert not is_in_window_returner("Questionable", None, puka_series)
+    assert not is_in_window_returner(None, None, puka_series)
 
 
 def test_ros_coleman_shape_participation_week_counts(tmp_path, monkeypatch):
@@ -443,6 +474,97 @@ def test_live_ir_status_excludes_despite_blank_index(tmp_path, monkeypatch):
     assert "hurt" not in payload["players"]
     assert "back" not in payload["players"]
     assert "fine" in payload["players"]
+
+
+def _fixture_build_weeks(tmp_path, monkeypatch, *, index, rows_by_year,
+                         proj_by_week, live_status=None, live_notes=None):
+    """_fixture_build variant with a per-week projection table:
+    proj_by_week = {week: {pid: points}}; a pid absent from a week's
+    dict is absent from that week's feed (a None week in his series)."""
+    import json as _json
+
+    from data_building import start_score_bundle as ssb
+    from utils import ros_rankings as rr
+
+    season = 2026
+    cache = tmp_path / "sleeper_stats"
+    cache.mkdir(exist_ok=True)
+    files = []
+    for yr, weeks in rows_by_year.items():
+        for w, rows in weeks.items():
+            p = cache / f"sleeper_stats_s{yr}_w{w}.json"
+            p.write_text(_json.dumps(rows))
+            if yr == season:
+                files.append(str(p))
+    monkeypatch.setattr("utils.utils.load_players_index", lambda: index)
+    monkeypatch.setattr("utils.utils.load_week_schedule", lambda s, w: [])
+    monkeypatch.setattr(ssb, "_stat_files", lambda s: files)
+    ssb._DERIVE_CACHE.clear()
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        "utils.data_cache._read_week_projection_file",
+        lambda s, w: {pid: {"v": v}
+                      for pid, v in (proj_by_week.get(w) or {}).items()})
+    monkeypatch.setattr(
+        "utils.projections.weekly_projection_points",
+        lambda week_map, p, scoring, pos: (week_map.get(str(p)) or {}).get("v"))
+    monkeypatch.setattr(rr, "live_injury_status_map",
+                        lambda: dict(live_status or {}))
+    monkeypatch.setattr(rr, "live_injury_notes_map",
+                        lambda: dict(live_notes or {}))
+    payload = rr._build_ros_map(season, 11, "November 20, 2026")
+    ssb._DERIVE_CACHE.clear()
+    assert payload is not None
+    return payload
+
+
+def _wr_line(rec, tgt, rec_yd):
+    # PPR points = rec + rec_yd / 10, stamped as pts_ppr like the feed.
+    return {"gp": 1, "gms_active": 1, "off_snp": 55, "rec": rec,
+            "rec_tgt": tgt, "rec_yd": rec_yd,
+            "pts_ppr": rec + rec_yd / 10.0, "position": "WR"}
+
+
+def test_ir_returner_ranked_season_enders_stay_out(tmp_path, monkeypatch):
+    # The 2026-11-20 shapes, all WRs with nine strong played games so
+    # only the season-out verdict decides who is missing:
+    #   puka: IR + sprain, feed dark Weeks 11-14, back Week 15 (in,
+    #         priced on the three post-return weeks alone)
+    #   surg: IR + surgery note, still projected every week (out)
+    #   done: IR, feed dark for the whole window (out)
+    #   flat: IR, projected from Week 11 (designation wins, out)
+    #   mate: healthy roommate, projected all seven weeks (in)
+    strong = _wr_line(8, 10, 110)  # 19.0 PPR, 10 targets a game
+    weeks = {w: {"puka": strong, "mate": _wr_line(6, 8, 60),
+                 "surg": strong, "done": strong, "flat": strong}
+             for w in range(1, 10)}
+    index = {"puka": {"pos": "WR", "team": "LAR"},
+             "mate": {"pos": "WR", "team": "LAR"},
+             "surg": {"pos": "WR", "team": "KC"},
+             "done": {"pos": "WR", "team": "KC"},
+             "flat": {"pos": "WR", "team": "KC"}}
+    proj_by_week = {}
+    for w in range(11, 18):
+        proj_by_week[w] = {"mate": 12.0, "surg": 15.0, "flat": 15.0}
+    for w, pts in ((15, 18.2), (16, 15.5), (17, 16.8)):
+        proj_by_week[w]["puka"] = pts
+    payload = _fixture_build_weeks(
+        tmp_path, monkeypatch, index=index, rows_by_year={2026: weeks},
+        proj_by_week=proj_by_week,
+        live_status={pid: "IR" for pid in ("puka", "surg", "done", "flat")},
+        live_notes={"puka": "Sprain", "surg": "Surgery"})
+    players = payload["players"]
+    assert "surg" not in players
+    assert "done" not in players
+    assert "flat" not in players
+    assert "mate" in players
+    puka = players["puka"]
+    # Priced on the post-return weeks only: 3 expected games at the
+    # resumed series' per-game rate, against the roommate's full slate.
+    assert puka["ros_ppg"] == pytest.approx((18.2 + 15.5 + 16.8) / 3, abs=0.01)
+    assert puka["ros_games"] == pytest.approx(3.0)
+    assert players["mate"]["ros_games"] == pytest.approx(7.0)
+    assert puka["ros_pos_rank"] >= 1
 
 
 # ── Ranks + tiers ───────────────────────────────────────────────────────────
