@@ -3991,6 +3991,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
         if len(bundles) >= _SS_POOL_MIN_BUNDLES:
             from utils.start_sit_score import (
                 cap_projection as _pool_cap,
+                return_adjusted_projection as _pool_return,
                 lead_adjusted_last4_ppg as _pool_lead_adj,
                 lead_adjusted_score_inputs as _pool_lead_inputs,
                 start_sit_pool_excluded as _pool_excluded,
@@ -4054,6 +4055,14 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 # displayed proj_pts stays raw. Applied to the raw
                 # projection, ahead of the lead adjustments below.
                 _p_proj = _pool_cap(_p_proj, bundle.get("exp_last4_ppg"))
+                # First-game-back discount (2026-11-20): a player
+                # returning from a multi-week absence is shaded on
+                # the capped projection (the cap's trigger above
+                # still judges the raw line); the bundle's displayed
+                # proj_pts stays raw. See utils.start_sit
+                # .return_adjusted_projection.
+                _p_proj = _pool_return(
+                    _p_proj, bundle.get("absence_weeks"))
                 _lead_pid = bundle.get("lead_pid")
                 if _lead_pid:
                     _lead_bundle = bundles.get(str(_lead_pid)) or {}
@@ -4321,6 +4330,7 @@ def build_start_sit_pool_export(season, week):
     )
     from utils.start_sit_score import (
         cap_projection as _export_cap,
+        return_adjusted_projection as _export_return,
         compute_start_score,
         lead_adjusted_last4_ppg as _export_lead_adj,
         lead_adjusted_score_inputs as _export_lead_inputs,
@@ -4390,6 +4400,10 @@ def build_start_sit_pool_export(season, week):
         # against the bundle's expected-points evidence; the exported
         # "proj" field below stays the raw bundle value.
         _e_proj = _export_cap(_e_proj, b.get("exp_last4_ppg"))
+        # First-game-back discount (2026-11-20): identical to
+        # start_score_pool_scores -- the capped projection is shaded
+        # for a returning player; the exported "proj" stays raw.
+        _e_proj = _export_return(_e_proj, b.get("absence_weeks"))
         _lead_pid = b.get("lead_pid")
         if _lead_pid:
             _lead_bundle = bundles.get(str(_lead_pid)) or {}
@@ -17931,7 +17945,15 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
         # lead adjustment below and is emitted as form_proj_pts when
         # there is no lead adjustment to carry it.
         from utils.start_sit_score import cap_projection as _cap_proj
+        from utils.start_sit_score import (
+            return_adjusted_projection as _return_proj)
         _scoring_proj = _cap_proj(proj_pts, _din.get("exp_last4_ppg"))
+        # First-game-back discount (2026-11-20): the modal's start
+        # score shades a returning player's capped projection by the
+        # derivation's absence count, exactly as the ranked pools do;
+        # the displayed proj_pts stays raw.
+        _scoring_proj = _return_proj(
+            _scoring_proj, _din.get("absence_weeks"))
         if _din.get("played_games"):
             out["recent_ppg"] = round(_din["recent_ppg"], 1)
             if _din.get("last4_ppg") is not None:
@@ -18793,7 +18815,8 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         # Vegas are applied here because projection feeds usually omit them.
         from utils.start_sit_score import (
             cap_projection, compute_start_score, lead_adjusted_last4_ppg,
-            lead_adjusted_score_inputs, likely_range)
+            lead_adjusted_score_inputs, likely_range,
+            return_adjusted_projection)
         if _bun is not None:
             _ut_ss = {"delta": _bun.get("usage_delta"),
                       "season_avg": _bun.get("usage_season_avg")}
@@ -18834,6 +18857,12 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         # projection, ahead of the lead adjustments, as in the pools.
         _adj_proj = cap_projection(
             _adj_proj, _lead_src.get("exp_last4_ppg"))
+        # First-game-back discount (2026-11-20): shade the capped
+        # projection for a player returning from a multi-week
+        # absence, from the same bundle / derivation as the cap
+        # evidence; the row's displayed projection stays raw.
+        _adj_proj = return_adjusted_projection(
+            _adj_proj, _lead_src.get("absence_weeks"))
         if _lead_src.get("lead_pid"):
             _lead_full = players_full.get(str(_lead_src["lead_pid"])) or {}
             _lead_status = (_lead_full.get("injury_status")
