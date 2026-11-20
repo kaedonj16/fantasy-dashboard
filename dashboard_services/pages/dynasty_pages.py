@@ -1257,13 +1257,20 @@ _ROS_ANALYSIS = {
 
 
 def _ros_analysis_html(pos_filter: str | None) -> str:
+    # Collapsed by default behind a native <details> dropdown (Kaedon,
+    # 2026-11-20): the explainer no longer pushes the board below the fold.
+    # The prose stays in the HTML (inside the closed details) for SEO, and
+    # no "optional read" style label is rendered anywhere.
     entry = _ROS_ANALYSIS.get(pos_filter) or _ROS_ANALYSIS.get(None)
     heading, prose = entry
     return (
-        '<section class="rnk-analysis">'
-        f'<h2 class="rnk-analysis-title">{html.escape(heading)}</h2>'
-        f'{prose}'
-        "</section>"
+        '<details class="rnk-analysis rnk-analysis-details">'
+        '<summary class="rnk-analysis-summary">'
+        f'<span class="rnk-analysis-title">{html.escape(heading)}</span>'
+        '<span class="rnk-analysis-chevron" aria-hidden="true"></span>'
+        "</summary>"
+        f'<div class="rnk-analysis-body">{prose}</div>'
+        "</details>"
     )
 
 
@@ -1405,6 +1412,10 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         role_span = (f'<span class="rnk-role">{html.escape(role_txt)}</span>'
                      if role_txt else '')
         sched = row.get("ros_sched_rank")
+        sched_html = (
+            f'<span class="rnk-sched-pill">#{html.escape(str(sched))}</span>'
+            if sched else '<span class="rnk-sched-none">-</span>'
+        )
         table_rows += (
             f'<tr>'
             f'<td class="rnk-rank">{rank}</td>'
@@ -1414,10 +1425,10 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             f'<span class="rnk-team">{html.escape(team)}</span>'
             f'{role_span}'
             f'</td>'
-            f'<td class="rnk-val">{_fmt_ros_games(row.get("ros_games"))}</td>'
+            f'<td class="rnk-val rnk-col-games">{_fmt_ros_games(row.get("ros_games"))}</td>'
             f'<td class="rnk-val">{float(row.get("ros_ppg") or 0):.1f}</td>'
             f'<td class="rnk-val rnk-val-primary">{float(row.get("ros_total") or 0):.1f}</td>'
-            f'<td class="rnk-age">{("#" + str(sched)) if sched else "-"}</td>'
+            f'<td class="rnk-age rnk-col-sched">{sched_html}</td>'
             f'</tr>'
         )
     if not table_rows:
@@ -1459,10 +1470,10 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         <tr>
           <th class="rnk-rank">#</th>
           <th class="rnk-player">Player</th>
-          <th class="rnk-val">Exp. Games</th>
+          <th class="rnk-val rnk-col-games">Exp. Games</th>
           <th class="rnk-val">ROS PPG</th>
-          <th class="rnk-val">ROS Pts</th>
-          <th class="rnk-age">Sched</th>
+          <th class="rnk-val rnk-val-primary">ROS Pts</th>
+          <th class="rnk-age rnk-col-sched">Sched</th>
         </tr>
       </thead>
       <tbody>
