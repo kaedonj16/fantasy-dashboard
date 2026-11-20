@@ -76,12 +76,6 @@ def test_otc_view_all_link_has_one_base_hover_rule():
     assert _CSS.count(".otc-view-all-link:hover") == 2
 
 
-def test_trend_pill_tooltip_is_capped_and_focusable():
-    body = _rule_body(_CSS, ".pm-trend-pill::after")
-    assert "max-width" in body
-    assert ".pm-trend-pill:focus-visible::after" in _CSS
-
-
 def test_floating_pills_expand_on_keyboard_focus():
     assert "#discord-pill:focus-visible" in _CSS
     assert "#cache-freshness:focus-visible" in _CSS
@@ -189,12 +183,6 @@ def test_portfolio_league_name_accent_only_on_the_link():
 
 
 # ── Player modal ─────────────────────────────────────────────────────────
-
-def test_trend_pill_is_keyboard_focusable():
-    js = _read("static/player_modal.js")
-    assert 'class=\\"pm-trend-pill\\" tabindex=\\"0\\"' in js or \
-        'class="pm-trend-pill" tabindex="0"' in js
-
 
 def test_wk_tip_clamps_to_the_viewport():
     js = _read("static/player_modal.js")

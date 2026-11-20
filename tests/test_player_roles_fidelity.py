@@ -693,17 +693,34 @@ def test_popover_has_no_internal_scroll_cap():
     assert "overflow" not in rule
 
 
-def test_header_job_separator_is_single_with_pill():
+def test_header_job_separator_is_single():
     src = PM_JS.read_text(encoding="utf-8")
     paint = src.split("function _pmRolePaintHeaderJob(")[1]
     paint = paint.split("\nfunction ")[0]
-    # The old code inserted its own separator ahead of the pill even
-    # though the joined meta row already ends with one there.
-    assert "row.insertBefore(sep, pill)" not in paint
-    # With a pill: the job goes in first (reusing the separator that
-    # already precedes the pill), then ONE separator before the pill.
-    assert "row.insertBefore(el, pill); row.insertBefore(mkSep(), pill);" in paint
-    # Without a pill: separator + job appended at the end.
+    # The value-trend pill is gone from the header, and with it the
+    # pill-relative insertion branch: the job is simply appended at
+    # the end of the meta row behind exactly one fresh separator
+    # (the #3200 double-separator fix, preserved without the pill).
+    assert "pm-trend-pill" not in paint
+    assert "insertBefore" not in paint
+    assert "row.appendChild(mkSep()); row.appendChild(el);" in paint
+
+
+def test_header_meta_has_no_value_trend_pill():
+    src = PM_JS.read_text(encoding="utf-8")
+    # The value-trend pill ("Recovering", "Declining", ...) never
+    # renders into the modal header again: neither the details render
+    # nor the deferred patch-in may emit its markup, in any state.
+    assert "pm-trend-pill" not in src
+    assert "data-trend-tip" not in src
+    # The trend state still arrives inside the deferred payload (the
+    # trend computation feeds other surfaces); the modal just never
+    # renders it in the header.
+    assert "data.value_trend = dfd.value_trend || null;" in src
+    # And the role Job still paints, at the end of the meta line.
+    paint = src.split("function _pmRolePaintHeaderJob(")[1]
+    paint = paint.split("\nfunction ")[0]
+    assert "el.className = 'pm-role-job'" in paint
     assert "row.appendChild(mkSep()); row.appendChild(el);" in paint
 
 
