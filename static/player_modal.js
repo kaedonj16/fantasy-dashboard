@@ -77,10 +77,8 @@ var _pmRoleState = { pid: '', win: 'season', loadedKey: '' };
 // The header meta line gains the player's role Job (season window)
 // as one more quiet meta fact once the role payload lands:
 // "WR21 · TB · 24.0 yrs · Alpha WR1". Job only: no Security, Trend
-// or Confidence up here (the header already carries the separate
-// value-trend pill, and a second trend-flavoured item would read as
-// a duplicate of it). Fails silent: no payload or no role data, the
-// header simply never shows a job.
+// or Confidence up here. Fails silent: no payload or no role data,
+// the header simply never shows a job.
 var _pmRoleHeaderJob = { pid: '', job: '' };
 function _pmRoleNoteHeaderJob(pid, d) {
   var job = d && d.role && d.role.job ? String(d.role.job) : '';
@@ -105,16 +103,12 @@ function _pmRolePaintHeaderJob() {
   var el = document.createElement('span');
   el.className = 'pm-role-job';
   el.textContent = _pmRoleHeaderJob.job;
-  // Sit right after the age fact: ahead of the value-trend pill when
-  // the initial render already placed one in the row. The meta row is
-  // built by joining its parts with separator spans, so a separator
-  // already sits immediately before the pill: reuse it (job goes
-  // between that separator and the pill) and add ONE fresh separator
-  // between the job and the pill. Inserting a separator of our own
-  // ahead of the job as well produced "22.8 yrs · · Lead 1A".
-  var pill = row.querySelector('.pm-trend-pill');
-  if (pill) { row.insertBefore(el, pill); row.insertBefore(mkSep(), pill); }
-  else { row.appendChild(mkSep()); row.appendChild(el); }
+  // The job goes at the end of the meta row. The row is built by
+  // joining its parts with separator spans, so appending ONE
+  // separator plus the job yields exactly one separator before it
+  // ("22.8 yrs · Workhorse"); when no job paints, nothing is
+  // appended and the row never ends on a trailing separator.
+  row.appendChild(mkSep()); row.appendChild(el);
 }
 function pmAdvSetSub(sub) {
   var panel = document.getElementById('pm-panel-metrics');
@@ -1040,20 +1034,6 @@ function openPlayerModal(playerId, playerName, opts) {
       const ageNum = parseFloat(data.age);
       if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
       
-      // ── Value trend classification (small meta pill) ──────────────────────
-      const vt = data.value_trend || {};
-      const vtClass = vt.class || 'unknown';
-      const vtIcons = { rising:'↑', declining:'↓', stable:'→', volatile:'↕', peaked:'↘', recovering:'↗', unknown:'' };
-      const vtIcon = vtIcons[vtClass] || '';
-      
-      if (vtClass && vtClass !== 'unknown' && vtIcon) {
-        const _slopeTxt = vt.slope_pct_month != null
-          ? ' · ' + (vt.slope_pct_month >= 0 ? '+' : '') + vt.slope_pct_month.toFixed(1) + '%/mo'
-          : '';
-        const _tipTxt = (vt.description || vt.label) + _slopeTxt;
-        metaParts.push(`<span class="pm-trend-pill" tabindex="0" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
-      }
-
       const metaEl = document.getElementById('playerModalMeta');
       let metaHTML = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">${metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>')}</div>`;
       if (data.fantasy_team) {
@@ -2154,34 +2134,6 @@ function openPlayerModal(playerId, playerName, opts) {
           if (pmTabBar) {
             pmTabBar.dataset.pmPpg = dfd.stats.ppg != null ? String(dfd.stats.ppg) : '';
             pmTabBar.dataset.pmPpgRank = dfd.stats.ppg_rank != null ? String(dfd.stats.ppg_rank) : '';
-          }
-        }
-
-        // Value-trend pill in the header meta row.
-        var _vt = dfd.value_trend;
-        if (_vt && _vt.class && _vt.class !== 'unknown') {
-          var _metaEl = document.getElementById('playerModalMeta');
-          if (_metaEl && !_metaEl.querySelector('.pm-trend-pill')) {
-            var _vtIcons = { rising: '↑', declining: '↓', stable: '→', volatile: '↕', peaked: '↘', recovering: '↗' };
-            var _vtIcon = _vtIcons[_vt.class] || '';
-            if (_vtIcon) {
-              var _slopeTxt = _vt.slope_pct_month != null
-                ? ' · ' + (_vt.slope_pct_month >= 0 ? '+' : '') + _vt.slope_pct_month.toFixed(1) + '%/mo' : '';
-              var _pill = document.createElement('span');
-              _pill.className = 'pm-trend-pill';
-              _pill.setAttribute('tabindex', '0');
-              _pill.setAttribute('data-trend-tip', (_vt.description || _vt.label) + _slopeTxt);
-              _pill.setAttribute('style', 'padding:1px 6px;border-radius:4px;background:' + _vt.color + '18;border:1px solid ' + _vt.color + '40;color:' + _vt.color + ';font-size:10px;font-weight:700;cursor:help;');
-              _pill.textContent = _vtIcon + ' ' + _vt.label;
-              var _metaRow = _metaEl.querySelector('div');
-              if (_metaRow) {
-                var _sep = document.createElement('span');
-                _sep.setAttribute('style', 'opacity:.35;margin:0 3px;');
-                _sep.textContent = '·';
-                _metaRow.appendChild(_sep);
-                _metaRow.appendChild(_pill);
-              }
-            }
           }
         }
 
