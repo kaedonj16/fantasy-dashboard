@@ -40181,17 +40181,17 @@ button:disabled {
 .rnk-page {
     max-width: 860px;
     margin: 0 auto;
-    padding: 16px 16px 48px;
+    padding: 12px 16px 40px;
 }
 
 .rnk-hero {
-    margin-bottom: 16px;
+    margin-bottom: 8px;
     position: relative;
     z-index: 1;
 }
 
 .rnk-title {
-    font-size: clamp(24px, 4.2vw, 34px);
+    font-size: clamp(24px, 3vw, 28px);
     font-weight: 800;
     color: var(--text);
     margin: 0 0 8px;
@@ -40200,10 +40200,10 @@ button:disabled {
 }
 
 .rnk-subtitle {
-    font-size: 15px;
+    font-size: 13px;
     color: var(--text-muted);
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.45;
 }
 
 /* Position nav as a segmented control: one shared shell, the active
@@ -40484,7 +40484,10 @@ button:disabled {
 
 /* Phone: the board fits without sideways scrolling. Exp. Games and
    Sched drop out (ROS Pts and PPG carry the row); desktop keeps all
-   six columns. */
+   six columns. The wrap is NOT a scroll box on phones: a fixed-height
+   inner scroller traps the gesture against the fixed bottom dock
+   (worst in in-app browsers), so the table flows with the page's one
+   scroll and the column header sticks to the viewport instead. */
 @media (max-width: 640px) {
     .rnk-table .rnk-col-games,
     .rnk-table .rnk-col-sched {
@@ -40492,7 +40495,15 @@ button:disabled {
     }
 
     .rnk-table-wrap {
-        max-height: 75vh;
+        max-height: none;
+        overflow: visible;
+        overscroll-behavior: auto;
+    }
+
+    /* Page-scroll sticky: the lite shell's top nav is sticky and
+       ~60px tall on phones, so the header parks just below it. */
+    .rnk-table thead th {
+        top: 60px;
     }
 }
 
