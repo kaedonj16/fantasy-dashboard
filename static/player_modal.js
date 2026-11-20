@@ -3414,7 +3414,7 @@ function pmSwitchTab(tab, clickEvent) {
           window.brEmptyState(panel, { icon: 'search', title: 'No game logs', message: 'No game-by-game data is available for this player yet.', compact: true });
           return;
         }
-        panel.innerHTML = _buildStatsHTML(logsByYear, false, (pmTabBar && pmTabBar.dataset.pmPosition) || '', data.season_teams || {}, { showSummaryStrip: true, ppgRank: (pmTabBar && pmTabBar.dataset.pmPpgRank) || '' });
+        panel.innerHTML = _buildStatsHTML(logsByYear, false, (pmTabBar && pmTabBar.dataset.pmPosition) || '', data.season_teams || {}, { ppgRank: (pmTabBar && pmTabBar.dataset.pmPpgRank) || '' });
       })
       .catch(() => {
         if (panel.isConnected) {
@@ -5821,52 +5821,31 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
     return ds;
   };
 
-  // Optional headline strip for the player modal's Stats tab (opt-in via
-  // opts.showSummaryStrip; Compare's summary-only reuse never sets it, so its
-  // output is unchanged). Latest season only, real games only, reusing the
-  // same aggregates as the season cards below. Renders nothing when the
-  // latest season has no real games; the PPG Rank cell appears only when a
-  // rank was passed in opts.
-  let _summaryStripHTML = '';
-  if (opts && opts.showSummaryStrip && !_summaryOnly && game_logs_by_year) {
-    const _stripYears = Object.keys(game_logs_by_year).sort((a, b) => b - a);
-    const _stripYear = _stripYears[0];
-    if (_stripYear != null) {
-      const _stripReal = (game_logs_by_year[_stripYear] || []).filter((g) => {
-        if (g.is_bye || g.is_projection) return false;
-        const s = g.stats || {};
-        return s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null;
-      });
-      if (_stripReal.length) {
-        const _sAgg = _seasonAgg(_stripReal);
-        const _wkPts = _stripReal.map((g) => _num(g.fantasy_pts)).filter((v) => v != null).sort((a, b) => a - b);
-        const _median = !_wkPts.length ? null
-          : _wkPts.length % 2 ? _wkPts[(_wkPts.length - 1) / 2]
-          : (_wkPts[_wkPts.length / 2 - 1] + _wkPts[_wkPts.length / 2]) / 2;
-        let _bestPts = null, _bestWeek = null;
-        _stripReal.forEach((g) => {
-          const v = _num(g.fantasy_pts);
-          if (v != null && (_bestPts == null || v > _bestPts)) { _bestPts = v; _bestWeek = g.week; }
-        });
-        const _rankStr = (opts.ppgRank != null && String(opts.ppgRank).trim() !== '') ? String(opts.ppgRank).trim() : '';
-        const _scell = (label, val) => `<div class="pm-strip-cell"><span class="pm-strip-label">${label}</span><span class="pm-strip-val">${val}</span></div>`;
-        _summaryStripHTML = '<div class="pm-stats-strip">'
-          + _scell('Season', _pmEsc(_stripYear))
-          + _scell('Games', String(_sAgg.n))
-          + _scell('PPG', _sAgg.n ? _r1(_sAgg.pts / _sAgg.n) : '-')
-          + ((_rankStr && POS) ? `<div class="pm-strip-cell"><span class="pm-strip-label">PPG Rank</span><span class="pm-strip-chip">${_pmEsc(POS + _rankStr)}</span></div>` : '')
-          + _scell('Total Pts', _r1(_sAgg.pts))
-          + _scell('Median Week', _median != null ? _r1(_median) : '-')
-          + _scell('Best Week', _bestPts != null ? _r1(_bestPts) + (_bestWeek != null ? ` <span class="pm-strip-sub">W${_bestWeek}</span>` : '') : '-')
-          + '</div>';
-      }
-    }
-  }
+  // Per-season headline stats for the merged season summary card (below).
+  // Real games only: total is the sum of the season's fantasy points and
+  // median / best come from that season's played weeks, exactly as the old
+  // standalone top strip computed them for the latest season. The PPG Rank
+  // is only passed in (opts.ppgRank) for the current season, so past-season
+  // cards render a blank Rank cell instead of a fabricated rank.
+  const _seasonHeadline = (realGames, agg) => {
+    const _wkPts = realGames.map((g) => _num(g.fantasy_pts)).filter((v) => v != null).sort((a, b) => a - b);
+    const median = !_wkPts.length ? null
+      : _wkPts.length % 2 ? _wkPts[(_wkPts.length - 1) / 2]
+      : (_wkPts[_wkPts.length / 2 - 1] + _wkPts[_wkPts.length / 2]) / 2;
+    let bestPts = null, bestWeek = null;
+    realGames.forEach((g) => {
+      const v = _num(g.fantasy_pts);
+      if (v != null && (bestPts == null || v > bestPts)) { bestPts = v; bestWeek = g.week; }
+    });
+    return { total: agg.pts, ppg: agg.n ? agg.pts / agg.n : null, median, bestPts, bestWeek };
+  };
+  const _rankStr = (opts && opts.ppgRank != null && String(opts.ppgRank).trim() !== '')
+    ? String(opts.ppgRank).trim() : '';
 
   let statsHTML = '';
   if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
     const _mode = window._glAvgTot || 'avg';
-    statsHTML += _summaryStripHTML + `
+    statsHTML += `
       <div class="player-modal-section">
         ${skipHeader ? '' : `
         <div class="pm-section-header">
@@ -5928,6 +5907,39 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
         })
         : _stripItems(agg, d);
       const stripN = isProjection ? projGames : agg.n;
+
+      // Merged concise summary card for this season (full-log view only;
+      // the summary-only compare strip stays in the season header). Row 1
+      // carries the old top strip's headline stats for THIS season; row 2
+      // is the season strip minus its duplicated G / Pts cells. The Rank
+      // pill shows only for the latest season, the one opts.ppgRank
+      // describes; past seasons get a blank Rank cell.
+      let _sumCardHTML = '';
+      if (!_summaryOnly) {
+        const _hl = _seasonHeadline(realGames, agg);
+        const _cell = (label, val) => `<div class="gl-sum-cell"><span class="gl-sum-label">${label}</span><span class="gl-sum-val">${val}</span></div>`;
+        let _row1;
+        if (isProjection) {
+          _row1 = _cell('Total', '~' + fmtPts(projTotalPts))
+            + _cell('PPG', '~' + _r1(projPpg))
+            + _cell('Rank', '-')
+            + _cell('Gms', String(projGames))
+            + _cell('Median', '-')
+            + _cell('Best', '-');
+        } else {
+          const _rankCell = (isFirstYear && _rankStr && POS)
+            ? `<div class="gl-sum-cell"><span class="gl-sum-label">Rank</span><span class="gl-sum-rank">${_pmEsc(POS + _rankStr)}</span></div>`
+            : _cell('Rank', '-');
+          _row1 = _cell('Total', agg.n ? _r1(_hl.total) : '-')
+            + _cell('PPG', _hl.ppg != null ? _r1(_hl.ppg) : '-')
+            + _rankCell
+            + _cell('Gms', String(agg.n))
+            + _cell('Median', _hl.median != null ? _r1(_hl.median) : '-')
+            + _cell('Best', _hl.bestPts != null ? _r1(_hl.bestPts) + (_hl.bestWeek != null ? ` <span class="gl-sum-sub">W${_hl.bestWeek}</span>` : '') : '-');
+        }
+        _sumCardHTML = `<div class="gl-sum-card"><div class="gl-sum-main">${_row1}</div>`
+          + `<div class="mini-stats gl-sum-avgs">${_stripHTML(stripItems.slice(2), stripN)}</div></div>`;
+      }
 
       let rows = '';
       gameLogs.forEach((game) => {
@@ -6021,9 +6033,10 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
               ${team ? `<span class="season-team">${team}</span>` : ''}
               ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
             </div>
-            <div class="mini-stats">${_stripHTML(stripItems, stripN)}</div>
+            ${_summaryOnly ? `<div class="mini-stats">${_stripHTML(stripItems, stripN)}</div>` : ''}
           </div>${_summaryOnly ? '' : `
           <div class="game-log-year-content${isFirstYear ? ' expanded' : ''}" id="year-${year}">
+            ${_sumCardHTML}
             <div class="table-wrap">
               <table class="game-log-table gl-adv${window._glDetailed ? ' gl-show-detail' : ''}">
                 <thead>
@@ -6163,15 +6176,16 @@ window.glSetDetailed = function (input) {
   });
 };
 
-// Averages/Totals toggle for the game-log mini strips. Flips the value shown
-// in every CLOSED season row; expanded tables are unaffected by design.
+// Averages/Totals toggle for the game-log season summary cards. Flips the
+// per-game average values in every season's card (and in the summary-only
+// compare strip in the season header); the weekly tables are unaffected.
 window.glSetAvgTot = function (mode, el) {
   window._glAvgTot = mode;
   const section = (el && el.closest('.player-modal-section')) || document;
   section.querySelectorAll('.gl-toggle span').forEach((s) => {
     s.classList.toggle('on', s.dataset.mode === mode);
   });
-  section.querySelectorAll('.season-row.closed .ms b').forEach((b) => {
+  section.querySelectorAll('.ms b').forEach((b) => {
     b.textContent = mode === 'tot' ? b.dataset.tot : b.dataset.avg;
   });
 };

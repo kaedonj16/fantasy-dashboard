@@ -179,3 +179,19 @@ def test_gamelog_js_toggle_wired_in_both_modals():
     assert "data.season_teams || {}" in pm
     app = (ROOT / "static" / "app.js").read_text()
     assert "_buildStatsHTML(logsByYear, true, position || '', data.season_teams || {}" in app
+
+
+def test_gamelog_js_merged_concise_summary_card():
+    # The old standalone top strip is gone; each season section carries one
+    # merged card (headline row + averages row) instead.
+    js = _new_gamelog_js()
+    assert "gl-sum-card" in js
+    assert "gl-sum-rank" in js
+    assert "_seasonHeadline" in js
+    assert "pm-stats-strip" not in js
+    # Averages/Totals flips every season card's values, not just closed rows.
+    assert "querySelectorAll('.ms b')" in js
+    assert "season-row.closed .ms b" not in js
+    css = (ROOT / "static" / "dashboard.css").read_text()
+    assert ".gl-sum-card" in css
+    assert "grid-template-columns: repeat(6, 1fr)" in css
