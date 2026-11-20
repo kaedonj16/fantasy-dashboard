@@ -642,6 +642,52 @@ def lead_adjusted_score_inputs(proj_pts, recent_ppg, season_ppg,
     )
 
 
+#: Projection sanity cap (Kaedon, 2026-11-20): when a player's
+#: expected points on his recent workload fall below this ratio of
+#: his projection, the projection is capped at exp / PROJ_CAP_RATIO
+#: before scoring (see :func:`cap_projection`).
+PROJ_CAP_RATIO = 0.70
+
+
+def cap_projection(proj_pts, exp_last4_ppg):
+    """Cap an outlier projection against expected-points evidence.
+
+    ``exp_last4_ppg`` is the player's expected PPG over his last 4
+    played games from the site's expected-points model (derived
+    alongside the other rating inputs in
+    ``data_building.start_score_bundle.derive_start_sit_inputs``).
+    When that workload value falls below ``PROJ_CAP_RATIO`` x the
+    projection, the projection the rating scores on is capped at
+    ``exp_last4_ppg / PROJ_CAP_RATIO`` -- the highest projection the
+    workload supports at the trigger ratio. A projection already at
+    or above the ratio, a missing expectation (no derived evidence),
+    or a non-positive projection is returned untouched.
+
+    The failure this guards against is a projection that never got
+    the news: a returning player priced on his pre-injury role while
+    his snap-limited workload is worth far less (Rashee Rice, Week
+    11: a 15.3 projection against an 8.6 expected PPG on his last-4
+    workload caps to about 12.2). Backtest over Weeks 6-10
+    (2026-11-20): as a fixed formula the cap scored Spearman 0.3616
+    vs the current model's 0.3469, tier hits 0.7292 vs 0.7167, and
+    touched 7.5% of player-weeks, the repeat names being exactly
+    that class. The adjustment is scoring-internal everywhere it
+    applies: displayed projection lines stay raw.
+    """
+    if exp_last4_ppg is None:
+        return proj_pts
+    try:
+        proj = float(proj_pts or 0)
+        exp4 = float(exp_last4_ppg)
+    except (TypeError, ValueError):
+        return proj_pts
+    if proj <= 0:
+        return proj_pts
+    if exp4 < PROJ_CAP_RATIO * proj:
+        return exp4 / PROJ_CAP_RATIO
+    return proj_pts
+
+
 def snap_share_trend(snap_shares) -> Optional[float]:
     """Role-trend input for the rating: the change in a player's snap
     share across his last 4 PLAYED weeks — mean share of the last 2

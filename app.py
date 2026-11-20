@@ -3990,6 +3990,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
             list(index.keys())) or {}
         if len(bundles) >= _SS_POOL_MIN_BUNDLES:
             from utils.start_sit_score import (
+                cap_projection as _pool_cap,
                 lead_adjusted_last4_ppg as _pool_lead_adj,
                 lead_adjusted_score_inputs as _pool_lead_inputs,
                 start_sit_pool_excluded as _pool_excluded,
@@ -4046,6 +4047,13 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                 _p_season = bundle.get("season_ppg") or 0.0
                 _p_usage = bundle.get("usage_delta")
                 _p_trend = bundle.get("snap_trend")
+                # Projection sanity cap (2026-11-20): an outlier
+                # projection -- one far above what the player's last-4
+                # workload was worth in the site's expected-points
+                # model -- is capped before scoring; the bundle's
+                # displayed proj_pts stays raw. Applied to the raw
+                # projection, ahead of the lead adjustments below.
+                _p_proj = _pool_cap(_p_proj, bundle.get("exp_last4_ppg"))
                 _lead_pid = bundle.get("lead_pid")
                 if _lead_pid:
                     _lead_bundle = bundles.get(str(_lead_pid)) or {}
@@ -4312,6 +4320,7 @@ def build_start_sit_pool_export(season, week):
         variant_for_exact_scoring,
     )
     from utils.start_sit_score import (
+        cap_projection as _export_cap,
         compute_start_score,
         lead_adjusted_last4_ppg as _export_lead_adj,
         lead_adjusted_score_inputs as _export_lead_inputs,
@@ -4376,6 +4385,11 @@ def build_start_sit_pool_export(season, week):
         _e_season = b.get("season_ppg") or 0.0
         _e_usage = b.get("usage_delta")
         _e_trend = b.get("snap_trend")
+        # Projection sanity cap (2026-11-20): identical to
+        # start_score_pool_scores -- the scoring projection is capped
+        # against the bundle's expected-points evidence; the exported
+        # "proj" field below stays the raw bundle value.
+        _e_proj = _export_cap(_e_proj, b.get("exp_last4_ppg"))
         _lead_pid = b.get("lead_pid")
         if _lead_pid:
             _lead_bundle = bundles.get(str(_lead_pid)) or {}
@@ -17910,6 +17924,14 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
             derive_start_sit_inputs as _derive_ss_extras,
         )
         _din = (_derive_ss_extras(int(season), scoring_settings) or {}).get(str(pid)) or {}
+        # Projection sanity cap (2026-11-20): the modal's start score
+        # caps an outlier projection against the derivation's
+        # expected-points evidence, exactly as the ranked pools do;
+        # the displayed proj_pts stays raw. The capped value feeds the
+        # lead adjustment below and is emitted as form_proj_pts when
+        # there is no lead adjustment to carry it.
+        from utils.start_sit_score import cap_projection as _cap_proj
+        _scoring_proj = _cap_proj(proj_pts, _din.get("exp_last4_ppg"))
         if _din.get("played_games"):
             out["recent_ppg"] = round(_din["recent_ppg"], 1)
             if _din.get("last4_ppg") is not None:
@@ -17941,7 +17963,7 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
                 lead_adjusted_score_inputs as _lead_inputs,
             )
             (_fp, _fr, _fs, _fu, _ft) = _lead_inputs(
-                proj_pts, _din.get("recent_ppg") or 0.0,
+                _scoring_proj, _din.get("recent_ppg") or 0.0,
                 _din.get("season_ppg") or 0.0, _din.get("usage_delta"),
                 _din.get("snap_trend"),
                 season_ppg_lead=_din.get("season_ppg_lead"),
@@ -17957,6 +17979,12 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
             out["form_season_ppg"] = _fs
             out["form_usage_delta"] = _fu
             out["form_snap_trend"] = _ft
+        elif (_scoring_proj is not None and proj_pts is not None
+                and _scoring_proj != proj_pts):
+            # No lead adjustment to carry the capped projection: emit
+            # it under the form_* key the consumer prefers, so the
+            # modal's score still uses it.
+            out["form_proj_pts"] = _scoring_proj
         out["usage_delta"] = _din.get("usage_delta")
         out["usage_season_avg"] = _din.get("usage_season_avg")
         out["played_games"] = _din.get("played_games")
@@ -18764,7 +18792,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         # re-multiplied -- weekly proj already reflects the opponent. Weather and
         # Vegas are applied here because projection feeds usually omit them.
         from utils.start_sit_score import (
-            compute_start_score, lead_adjusted_last4_ppg,
+            cap_projection, compute_start_score, lead_adjusted_last4_ppg,
             lead_adjusted_score_inputs, likely_range)
         if _bun is not None:
             _ut_ss = {"delta": _bun.get("usage_delta"),
@@ -18799,6 +18827,13 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         _adj_usage, _adj_trend = usage_delta, _snap_trend_ss
         _lead_src = _bun if _bun is not None else (
             _ss_derived.get(pid) or _ss_derived.get(str(pid)) or {})
+        # Projection sanity cap (2026-11-20): cap the score's
+        # projection input against the expected-points evidence from
+        # the same bundle / derivation as every other input here; the
+        # row's displayed projection stays raw. Runs on the raw
+        # projection, ahead of the lead adjustments, as in the pools.
+        _adj_proj = cap_projection(
+            _adj_proj, _lead_src.get("exp_last4_ppg"))
         if _lead_src.get("lead_pid"):
             _lead_full = players_full.get(str(_lead_src["lead_pid"])) or {}
             _lead_status = (_lead_full.get("injury_status")
@@ -18814,7 +18849,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             # inputs swap, exactly as with the form window above.
             (_adj_proj, _adj_recent, _adj_season, _adj_usage,
              _adj_trend) = lead_adjusted_score_inputs(
-                proj_pts, recent_ppg, s_ppg, usage_delta, _snap_trend_ss,
+                _adj_proj, recent_ppg, s_ppg, usage_delta, _snap_trend_ss,
                 season_ppg_lead=_lead_src.get("season_ppg_lead"),
                 recent_ppg_lead=_lead_src.get("recent_ppg_lead"),
                 usage_delta_lead=_lead_src.get("usage_delta_lead"),
