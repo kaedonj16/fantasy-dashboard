@@ -1049,13 +1049,24 @@ def _get_mock_trend(player_id: str) -> Any:
 #
 # A component percentile is computed within position against the
 # historical drafted population (draft classes 2016-2024, migration
-# 050): the player's share of that population at or below his stored
-# component score, x100, rounded. Never against the current class or
-# any stored pipeline prospects. The population source is
-# reference_population() alone, so the v4 anchor table can replace it
-# later without touching display code. A percentile is omitted (hidden,
-# never faked) when the population at the position is thinner than
-# PCT_MIN_POPULATION or the player's component score is missing.
+# 050): the player's share of that population at or below his value,
+# x100, rounded. Never against the current class or any stored
+# pipeline prospects. The population source is reference_population()
+# alone, so the v4 anchor table can replace it later without touching
+# display code. A percentile is omitted (hidden, never faked) when the
+# population at the position is thinner than PCT_MIN_POPULATION or the
+# player's value is missing.
+#
+# Competition and athleticism are priced off the stored component
+# scores. Production, efficiency and breakout are NOT (2026-11-20):
+# those scores clip at 100 and the historical pool plateaus at the cap
+# (22 of 918 drafted WRs store a production score of exactly 100), so
+# a score share prints 100 for every maxed player and cannot separate
+# them. Those three percentiles instead rank the component's primary
+# raw driver over the same population, one value per drafted player,
+# using the definitions the reference backfill itself stored:
+# production = best completed-season primary per-game rate,
+# efficiency = best per-play rate, breakout = best dominator.
 
 PCT_COMPONENTS = ("production", "efficiency", "breakout", "competition",
                   "athleticism")
@@ -1066,6 +1077,21 @@ _PCT_SCORE_FIELD = {
     "competition": "competition_score",
     "athleticism": "athleticism_score",
 }
+# Raw-driver mapping for the three non-score percentiles: efficiency
+# reads the position's per-play rate (stored season field on the
+# player side, the matching Advanced mark on the population side, both
+# produced by _build_advanced_metrics' best-season collection);
+# breakout reads the stored dominator on both sides. Production has no
+# mark: it is priced off season rates (see _component_drivers).
+_PCT_EFFICIENCY_DRIVER = {  # position -> (season field, advanced mark)
+    "QB": ("yds_per_attempt", "Yds/Att"),
+    "RB": ("yds_per_carry", "Yds/Carry"),
+    "WR": ("yds_per_reception", "Yds/Rec"),
+    "TE": ("yds_per_reception", "Yds/Rec"),
+}
+_PCT_BREAKOUT_FIELD = "dominator_rating"
+_PCT_BREAKOUT_MARK = "Dominator"
+_PCT_RAW_COMPONENTS = ("production", "efficiency", "breakout")
 PCT_MIN_POPULATION = 30
 # Model versions whose component scores are on a comparable scale.
 # The percentile pools are historical-only and no longer read stored
@@ -1131,7 +1157,8 @@ def _reference_rows(position):
 def reference_population(position, ref_rows=None):
     """Reference population for percentile computation at one position.
 
-    Returns {"values": {component: sorted [scores]}, "classes": [years],
+    Returns {"values": {component: sorted [scores]}, "drivers":
+    {component: sorted [raw driver values]}, "classes": [years],
     "n": int}. The population is the migration-050 reference rows ONLY:
     the drafted classes 2016-2024 graded by the production model at
     backfill time. Percentiles are graded against this historical
@@ -1153,6 +1180,9 @@ def reference_population(position, ref_rows=None):
         ref_rows = _reference_rows(pos)
     refs = ref_rows or []
     values: dict = {c: [] for c in PCT_COMPONENTS}
+    drivers: dict = {c: [] for c in _PCT_RAW_COMPONENTS}
+    _eff_mark = _PCT_EFFICIENCY_DRIVER.get(
+        pos, _PCT_EFFICIENCY_DRIVER["WR"])[1]
     classes: set = set()
     for r in refs:
         for comp, field in _PCT_SCORE_FIELD.items():
@@ -1161,6 +1191,23 @@ def reference_population(position, ref_rows=None):
             v = _safe_float(r.get(field))
             if v is not None:
                 values[comp].append(v)
+        # Raw drivers, one value per drafted player: his best stored
+        # completed-season primary rate (the backfill's season_rates
+        # list) and his best Advanced marks.
+        rates = _json_obj(r.get("season_rates"), [])
+        if isinstance(rates, list):
+            rvals = [x for x in (_safe_float(v) for v in rates)
+                     if x is not None]
+            if rvals:
+                drivers["production"].append(max(rvals))
+        marks = _json_obj(r.get("advanced_marks"), {})
+        if isinstance(marks, dict):
+            v = _safe_float(marks.get(_eff_mark))
+            if v is not None:
+                drivers["efficiency"].append(v)
+            v = _safe_float(marks.get(_PCT_BREAKOUT_MARK))
+            if v is not None:
+                drivers["breakout"].append(v)
         yr = r.get("draft_class_year")
         if yr is not None:
             try:
@@ -1169,6 +1216,7 @@ def reference_population(position, ref_rows=None):
                 pass
     pop = {
         "values": {c: sorted(v) for c, v in values.items()},
+        "drivers": {c: sorted(v) for c, v in drivers.items()},
         "classes": sorted(classes),
         "n": len(refs),
     }
@@ -1205,20 +1253,82 @@ def player_has_testing(row) -> bool:
             or row.get("ras_score") is not None)
 
 
-def component_percentiles(row, population) -> dict:
+def _component_drivers(position, seasons) -> dict:
+    """The player's raw driver values for the three raw-driver
+    percentiles, from his stored seasons only (never derived from the
+    component scores). Each definition mirrors the one the reference
+    backfill stored for the population, so a value and its
+    distribution can never drift apart:
+
+    production: best primary per-game rate over completed seasons
+        with a real sample (GP >= _SEASON_MIN_GP, in-progress season
+        excluded), the stored season_rates rule.
+    efficiency: best stored per-play rate for the position
+        (yds_per_attempt / yds_per_carry / yds_per_reception), the
+        best-season collection _build_advanced_metrics stores as the
+        matching Advanced mark.
+    breakout: best stored dominator_rating (the "Dominator" mark).
+
+    A driver with no usable stored season is None: its percentile
+    hides and nothing is fabricated.
+    """
+    pos = (position or "").upper()
+    out: dict = {c: None for c in _PCT_RAW_COMPONENTS}
+    if not seasons:
+        return out
+    rates = []
+    for s in seasons:
+        if not s:
+            continue
+        gp = _safe_float(s.get("games_played"))
+        if not gp or gp < _SEASON_MIN_GP:
+            continue
+        if is_in_season(s.get("season"), gp):
+            continue
+        rate = _season_primary_rate(pos, s)
+        if rate is not None:
+            rates.append(rate)
+    if rates:
+        out["production"] = max(rates)
+    _eff_field = _PCT_EFFICIENCY_DRIVER.get(
+        pos, _PCT_EFFICIENCY_DRIVER["WR"])[0]
+    for comp, field in (("efficiency", _eff_field),
+                        ("breakout", _PCT_BREAKOUT_FIELD)):
+        best = None
+        for s in seasons:
+            if not s:
+                continue
+            v = _safe_float(s.get(field))
+            if v is not None and (best is None or v > best):
+                best = v
+        out[comp] = best
+    return out
+
+
+def component_percentiles(row, population, seasons=None) -> dict:
     """Full percentile panel for one player against his position population.
 
-    The athleticism percentile is present only when the player has testing
-    data; it is omitted entirely otherwise (never a placeholder).
+    Production, efficiency and breakout are raw-driver percentiles
+    (see _component_drivers): they need the player's stored seasons
+    and hide when the player has no driver value or the position has
+    no driver distribution. Competition and athleticism stay
+    score-based. The athleticism percentile is present only when the
+    player has testing data; it is omitted entirely otherwise (never
+    a placeholder).
     """
     out: dict = {}
+    drivers = _component_drivers(row.get("position"), seasons)
+    dists = population.get("drivers") or {}
+    for comp in _PCT_RAW_COMPONENTS:
+        out[comp] = component_percentile(
+            drivers.get(comp), dists.get(comp))
     tested = player_has_testing(row)
-    for comp, field in _PCT_SCORE_FIELD.items():
+    for comp in ("competition", "athleticism"):
         if comp == "athleticism" and not tested:
             out[comp] = None
             continue
         out[comp] = component_percentile(
-            row.get(field), population["values"].get(comp))
+            row.get(_PCT_SCORE_FIELD[comp]), population["values"].get(comp))
     return out
 
 
@@ -1325,6 +1435,34 @@ def _get_latest_season_map(player_ids) -> dict:
                 for r in rows if r.get("player_id")}
     except Exception:
         log.debug("[rookie_api] latest-season map failed", exc_info=True)
+        return {}
+
+
+def _get_seasons_map(player_ids) -> dict:
+    """{player_id: [stored season dicts]} for the board's raw-driver
+    percentiles: one query for the whole board, the same season rows
+    the modal loads per player. Fail-soft: {} on any error (the three
+    driver percentiles simply hide)."""
+    if not player_ids:
+        return {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT player_id, " + ", ".join(_SEASON_COLS) +
+                " FROM rookie_prospect_source_data"
+                " WHERE player_id = ANY(%s) ORDER BY player_id, season",
+                (list(player_ids),),
+            ).fetchall() or []
+        out: dict = {}
+        for r in rows:
+            d = _row_to_dict(r)
+            pid = d.get("player_id")
+            if pid:
+                out.setdefault(pid, []).append(d)
+        return out
+    except Exception:
+        log.debug("[rookie_api] seasons map failed", exc_info=True)
         return {}
 
 
@@ -1610,7 +1748,8 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
     _pct_row["forty_yard"] = (athleticism or {}).get("forty_yard")
     _pct_row["ras_score"] = (athleticism or {}).get("ras_score")
     _pcts = component_percentiles(
-        _pct_row, reference_population(row.get("position")))
+        _pct_row, reference_population(row.get("position")),
+        seasons=seasons)
     detail["percentiles"] = _pcts
     detail["tag"] = prospect_tag(row.get("prospect_score"))
     _latest = (max(seasons, key=lambda s: s.get("season") or 0)
@@ -1762,11 +1901,15 @@ def rankings():
             _pops: dict = {}
             _season_map = _get_latest_season_map(
                 [d.get("player_id") for d in result])
+            _seasons_map = _get_seasons_map(
+                [d.get("player_id") for d in result])
             for d in result:
                 _pos = (d.get("position") or "").upper()
                 if _pos not in _pops:
                     _pops[_pos] = reference_population(_pos)
-                d["percentiles"] = component_percentiles(d, _pops[_pos])
+                d["percentiles"] = component_percentiles(
+                    d, _pops[_pos],
+                    seasons=_seasons_map.get(d.get("player_id")))
                 d["tag"] = prospect_tag(d.get("prospect_score"))
                 _ls = _season_map.get(d.get("player_id"))
                 d["in_season"] = chip_in_season(
