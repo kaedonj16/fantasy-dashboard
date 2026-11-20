@@ -42,12 +42,16 @@ and 2.584 for the originally pitched 65/35 blend):
     availability floor on the ranking: a returner priced at 2.5 expected
     games stays ranked, discounted by the games factor alone.
 
-Eligibility (the playoff boards' gates): at least 5 games played this
-season AND a real role: the team's #1 at his position (by season points),
-or RB >= 12 touches/game, or WR/TE >= 5.5 targets/game. IR / PUP / NFI /
-suspended players are excluded entirely. A player who fails any gate gets
-NO ROS fields, so the board hides him in ROS mode rather than ranking him
-on a number the model does not stand behind.
+Eligibility (the playoff boards' gates): at least 3 games played this
+season AND a real role: the team's #1 at his position (by points per
+played game, so a back who missed weeks is not buried under a healthy
+teammate's season total), or RB >= 12 touches/game, or WR/TE >= 5.5
+targets/game, or QB >= 25 pass attempts/game. IR / PUP / NFI /
+suspended players are excluded entirely (season-out is read from the
+live Sleeper status overlay at build time, falling back to the players
+index: the index's stamped status lags the feed). A player who fails
+any gate gets NO ROS fields, so the board hides him in ROS mode rather
+than ranking him on a number the model does not stand behind.
 
 Schedule rank (the average Schedule Rankings matchup value of the
 player's remaining opponents, ranked across teams, 1 = softest
@@ -57,7 +61,11 @@ order only, as the factor model's schedule input at a 0.05 weight.
 
 Cross-position order (the All view) is by VOR total: (window PPG minus
 the replacement PPG at his position) x expected window games, with the
-replacement convention in ros_replacement_map below. The All view's tier dividers
+replacement convention in ros_replacement_map below. The All view
+slot-fills that order (order_overall): VOR decides which slots each
+position occupies, and each position's players fill their slots in
+factor order, so within-position order on the All view always matches
+the position views. The All view's tier dividers
 are computed from those VOR totals (compute_ros_vor_tier_thresholds), NOT
 from the positional totals: a mixed list keyed to raw totals stamps each
 player with his own position's scale, so the dividers repeat and run out
@@ -87,9 +95,10 @@ ROS_END_WEEK = 17
 PLAYOFF_START_WEEK = 15
 STRETCH_END_WEEK = 14
 
-MIN_GAMES_PLAYED = 5
+MIN_GAMES_PLAYED = 3
 RB_MIN_TOUCHES_PER_GAME = 12.0
 REC_MIN_TARGETS_PER_GAME = 5.5
+QB_MIN_PASS_ATT_PER_GAME = 25.0
 
 QB_W_PROJ = 0.40
 QB_W_FORM = 0.30
@@ -120,6 +129,28 @@ def is_season_out(injury_status) -> bool:
     return any(marker in status for marker in SEASON_OUT_MARKERS)
 
 
+def live_injury_status_map() -> Dict[str, str]:
+    """{pid: injury_status} from the live Sleeper players feed.
+
+    The players index's stamped injury_status lags the feed (the daily
+    updater stamps it once a day, and the copy the web service reads can
+    be older still): two Sleeper-listed IR players (Harvey, Love) stayed
+    ROS-ranked in the 2026-11-20 audit because the index had not picked
+    up their designations. app.py's ``_live_injury_status_map`` (PR
+    #3190) reads the same raw feed behind ``get_players_global()``; the
+    ROS build overlays it the same way, live status winning over the
+    index value. Fail-soft: {} when the feed (or the app module, in
+    offline/cron contexts) is unavailable, so callers degrade to the
+    index value, never to a crash. Only players WITH a designation
+    appear in the map.
+    """
+    try:
+        from app import _live_injury_status_map
+        return _live_injury_status_map() or {}
+    except Exception:
+        return {}
+
+
 def qb_ros_ppg(fwd_ppg: float, form_ppg: Optional[float],
                form_games: int, season_ppg: Optional[float]) -> float:
     """QB ROS PPG: 40% forward projection + 30% last-4 form + 30% season.
@@ -145,12 +176,15 @@ def availability_rate(appearances: Optional[int], team_games: Optional[int],
     """Share of his team's games a player actually appears in, shrunk
     toward the positional mean.
 
-    appearances / team_games over the current plus prior season (a week
-    counts as an appearance when the weekly stat feed marks the player
-    active). The raw share is shrunk with a prior of
-    AVAILABILITY_PRIOR_GAMES team games at the positional mean rate, then
-    clamped to [AVAILABILITY_FLOOR, 1.00]. None when there is no data to
-    rate (the caller then prices scheduled games unweighted).
+    appearances / team_games, where the caller's team_games counts only
+    the seasons in which the player actually appeared (a week counts as
+    an appearance when the weekly stat feed marks the player active):
+    a rookie is rated on his first season only, never against a prior
+    season of team games he could not have played in. The raw share is
+    shrunk with a prior of AVAILABILITY_PRIOR_GAMES team games at the
+    positional mean rate, then clamped to [AVAILABILITY_FLOOR, 1.00].
+    None when there is no data to rate (the caller then prices
+    scheduled games unweighted).
     """
     if not team_games or appearances is None or pos_mean_rate is None:
         return None
@@ -218,19 +252,25 @@ def consistency_rate(game_points, position) -> Optional[float]:
 
 
 def role_trend(series) -> Optional[float]:
-    """Opportunity trend: last-3-played mean minus prior-3-played mean.
+    """Opportunity trend: recent-window mean minus prior-window mean.
 
     ``series`` is the per-played-game opportunity series in week order:
     target share in percent (WR/TE), rush+target share in percent (RB),
     or pass attempts per game (QB, a raw attempts delta, not points).
-    None when either 3-game window is incomplete (fewer than 6 played
-    games): a partial window is neutral, never a guessed trend.
+    The window is min(3, len // 2): 3v3 at 6+ played games, 2v2 at 4-5
+    (a 5-game player's earliest game falls outside both windows). None
+    under 4 played games: under two games a side there is no trend to
+    read, and the factor stays neutral rather than guessed. (Before
+    2026-11-20 this was all-or-nothing at 6 games, which neutralised
+    the factor for every 5-game player: exactly the takeover profile
+    whose trend is the story.)
     """
     vals = [float(v) for v in (series or [])]
-    if len(vals) < 2 * ROLE_TREND_WINDOW:
+    if len(vals) < 4:
         return None
-    last = vals[-ROLE_TREND_WINDOW:]
-    prior = vals[-2 * ROLE_TREND_WINDOW:-ROLE_TREND_WINDOW]
+    window = min(ROLE_TREND_WINDOW, len(vals) // 2)
+    last = vals[-window:]
+    prior = vals[-2 * window:-window]
     return sum(last) / len(last) - sum(prior) / len(prior)
 
 
@@ -326,17 +366,20 @@ def window_projection_stats(series: List[Optional[float]]) -> Optional[dict]:
     ``series`` is the player's projected points for the window's non-bye
     weeks in order, one entry per week whose projection feed exists; None
     means the player is absent from that week's feed. The leading run of
-    ~zero-or-absent weeks is weeks out for an injured returner: those weeks
-    leave the count entirely. Absent weeks after the return are skipped,
-    not scored as zero games (the waiver forward-PPG read: only weeks where
-    the player actually has a projection count). Returns None when no
-    playable week remains.
+    explicit ~zero weeks is weeks out for an injured returner: those weeks
+    leave the count entirely. A MISSING week is not proof of an absence
+    (the waiver path's safer semantics, treat_missing_as_out=False): it
+    stops the zero-run rather than extending it, so a feed that simply
+    has not loaded a player yet cannot fabricate an injury timeline.
+    Absent weeks after the return are skipped, not scored as zero games
+    (the waiver forward-PPG read: only weeks where the player actually
+    has a projection count). Returns None when no playable week remains.
     """
     from utils.waivers import weeks_out_from_projections
 
     if not series:
         return None
-    weeks_out = weeks_out_from_projections(series, treat_missing_as_out=True)
+    weeks_out = weeks_out_from_projections(series, treat_missing_as_out=False)
     remaining = list(series[weeks_out:])
     present = [max(0.0, float(v)) for v in remaining if v is not None]
     if not present:
@@ -349,10 +392,15 @@ def window_projection_stats(series: List[Optional[float]]) -> Optional[dict]:
 
 def passes_role_gate(position: str, *, is_team_top: bool,
                      touches_per_game: Optional[float],
-                     targets_per_game: Optional[float]) -> bool:
+                     targets_per_game: Optional[float],
+                     pass_attempts_per_game: Optional[float] = None) -> bool:
     """The playoff boards' role gate: team #1 at the position, or a real
-    workload (RB >= ~12 touches/game, WR/TE >= ~5.5 targets/game). QBs pass
-    only as their team's #1: a backup's projection spike is not a role."""
+    workload (RB >= ~12 touches/game, WR/TE >= ~5.5 targets/game,
+    QB >= ~25 pass attempts/game). The QB attempts fallback exists
+    because a midseason takeover may not yet lead his room on a per-game
+    basis either (his early relief appearances drag the rate); a backup's
+    projection spike is still not a role, because a backup does not
+    attempt 25 passes a game."""
     if is_team_top:
         return True
     pos = str(position or "").upper()
@@ -360,6 +408,9 @@ def passes_role_gate(position: str, *, is_team_top: bool,
         return touches_per_game is not None and touches_per_game >= RB_MIN_TOUCHES_PER_GAME
     if pos in ("WR", "TE"):
         return targets_per_game is not None and targets_per_game >= REC_MIN_TARGETS_PER_GAME
+    if pos == "QB":
+        return (pass_attempts_per_game is not None
+                and pass_attempts_per_game >= QB_MIN_PASS_ATT_PER_GAME)
     return False
 
 
@@ -368,6 +419,7 @@ def compute_player_ros(position: str, *, played_games: int,
                        last4_games: int, touches_per_game: Optional[float],
                        targets_per_game: Optional[float], is_team_top: bool,
                        season_out: bool,
+                       pass_attempts_per_game: Optional[float] = None,
                        windows: Dict[str, List[Optional[float]]],
                        sched_rank: Optional[int],
                        availability_rate: Optional[float] = None) -> Optional[dict]:
@@ -390,7 +442,8 @@ def compute_player_ros(position: str, *, played_games: int,
         return None
     if not passes_role_gate(pos, is_team_top=is_team_top,
                             touches_per_game=touches_per_game,
-                            targets_per_game=targets_per_game):
+                            targets_per_game=targets_per_game,
+                            pass_attempts_per_game=pass_attempts_per_game):
         return None
     all_stats = window_projection_stats(windows.get("all") or [])
     if not all_stats or all_stats["total"] <= 0:
@@ -657,6 +710,61 @@ def ros_vor_totals(ros_by_pid: Dict[str, dict],
     return out
 
 
+def order_overall(rows: List[dict]) -> List[dict]:
+    """Overall (All-view) order for ROS rows: VOR slot-fill.
+
+    Pure VOR sorting decides WHICH slots each position occupies in the
+    combined list (the cross-position allocation is exactly what pure
+    VOR sorting produces), but each position's slots are filled by that
+    position's players in factor order (ros_score desc, the position
+    view's order, the order ros_pos_rank follows), so the relative
+    order inside a position on the overall board always matches the
+    position board. Pure VOR disagreed with the factor model inside
+    positions (Chuba Hubbard, RB8 by score, sat below Javonte Williams,
+    RB10, on the All page over a 0.1 VOR gap), which read as a
+    contradiction between two pages carrying the same ranking.
+
+    Rows are dicts carrying "position", "_vor" (the VOR total at the
+    surface's replacement defaults), "ros_score", "ros_total",
+    "ros_ppg" and "name". A pool whose rows carry no factor scores
+    fills in ROS-total order, the position views' own fallback. The
+    /players board mirrors this rule in JS (prRosSlotFillOrder in
+    static/rankings.js).
+    """
+    def _vor_key(r: dict):
+        return (-float(r.get("_vor") or 0.0),
+                -float(r.get("ros_total") or 0),
+                -float(r.get("ros_ppg") or 0),
+                str(r.get("name") or ""))
+
+    def _score_key(r: dict):
+        return (-float(r.get("ros_score") or 0),
+                -float(r.get("ros_ppg") or 0),
+                str(r.get("name") or ""))
+
+    def _total_key(r: dict):
+        return (-float(r.get("ros_total") or 0),
+                -float(r.get("ros_ppg") or 0),
+                str(r.get("name") or ""))
+
+    by_pos: Dict[str, List[dict]] = {}
+    for r in rows:
+        by_pos.setdefault(str(r.get("position") or "").upper(), []).append(r)
+    queues: Dict[str, List[dict]] = {}
+    for pos, members in by_pos.items():
+        key = _score_key if any(
+            m.get("ros_score") is not None for m in members) else _total_key
+        queues[pos] = sorted(members, key=key)
+    out: List[dict] = []
+    cursor: Dict[str, int] = {}
+    for r in sorted(rows, key=_vor_key):
+        pos = str(r.get("position") or "").upper()
+        i = cursor.get(pos, 0)
+        out.append(queues[pos][i])
+        cursor[pos] = i + 1
+    return out
+
+
 def compute_ros_vor_tier_thresholds(ros_by_pid: Dict[str, dict],
                                     positions_by_pid: Dict[str, str]) -> dict:
     """Tier thresholds for the All view, computed on VOR totals.
@@ -779,10 +887,11 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
         played_inputs = derive_start_sit_inputs(season, dict(PPR_SCORING)) or {}
 
         # Usage + team-points pass over the completed weeks' stat files:
-        # touches / targets per game for the role gate, and each team's #1
-        # at a position by season points. The same pass also collects the
-        # availability inputs over the current AND prior seasons: a week
-        # is an appearance when the feed marks the player active
+        # touches / targets / pass attempts per game for the role gate,
+        # and each team's #1 at a position by points PER PLAYED GAME
+        # (decided after the pass, below). The same pass also collects
+        # the availability inputs over the current AND prior seasons: a
+        # week is an appearance when the feed marks the player active
         # (gms_active), and a team game week when any of the team's
         # players was active that week (bye weeks never appear). Prior
         # season team attribution uses the player's current team: every
@@ -791,6 +900,7 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
         usage: Dict[str, dict] = {}
         team_points: Dict[Tuple[str, str], Dict[str, float]] = {}
         appearances: Dict[str, int] = {}
+        appearance_seasons: Dict[str, set] = {}
         team_weeks: Dict[Tuple[int, str], set] = {}
         # Factor-model inputs (full-window order), this season only:
         # per-player played-game logs, team-week opportunity denominators
@@ -837,6 +947,7 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                     _played = st.get("off_snp") is not None
                 if float(st.get("gms_active") or 0) > 0:
                     appearances[pid] = appearances.get(pid, 0) + 1
+                    appearance_seasons.setdefault(pid, set()).add(yr)
                     if team:
                         team_weeks.setdefault((yr, team), set()).add(week)
                 if yr == season:
@@ -872,9 +983,11 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                 pos = str(meta.get("pos") or meta.get("position") or "").upper()
                 if pos not in ROS_POSITIONS:
                     continue
-                u = usage.setdefault(pid, {"touches": 0.0, "targets": 0.0})
+                u = usage.setdefault(pid, {"touches": 0.0, "targets": 0.0,
+                                           "pass_att": 0.0})
                 u["touches"] += float(st.get("rush_att") or 0) + float(st.get("rec") or 0)
                 u["targets"] += float(st.get("rec_tgt") or 0)
+                u["pass_att"] += float(st.get("pass_att") or 0)
                 if team:
                     try:
                         pts = float(week_stat_points(st, dict(PPR_SCORING), ""))
@@ -882,10 +995,28 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                         pts = 0.0
                     bucket = team_points.setdefault((team, pos), {})
                     bucket[pid] = bucket.get(pid, 0.0) + pts
+        # Team #1 at each position by points PER PLAYED GAME, not the
+        # season total (2026-11-20 audit D1/D7): the totals leader is
+        # whoever stayed healthy, so a takeover who missed weeks (or a
+        # starter who banked points before being benched) held the spot
+        # all season: Coleman could not lead DEN while Harvey out-
+        # totalled him, Lloyd kept GB's spot at a 3.3 forward PPG while
+        # Jacobs (14.6 PPG, fewer games) sat outside, and Winston's
+        # total blocked McCarthy in NYG. Per-game with a >= 1 played
+        # game requirement (played games from the shared derivation,
+        # the same count the eligibility floor reads) prices the role
+        # the player actually holds when he plays.
+        def _team_top_key(item):
+            _pid, _total = item
+            _pg = int((played_inputs.get(_pid) or {}).get("played_games") or 0)
+            return (_total / _pg) if _pg >= 1 else float("-inf")
+
         team_top: set = set()
         for bucket in team_points.values():
             if bucket:
-                team_top.add(max(bucket.items(), key=lambda kv: kv[1])[0])
+                _lead = max(bucket.items(), key=_team_top_key)
+                if _team_top_key(_lead) != float("-inf"):
+                    team_top.add(_lead[0])
 
         # Team offense environment for the factor model: mean offensive
         # output per team game. This pipeline carries no real team-score
@@ -898,16 +1029,24 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
         team_offense_ppg = {t: sum(v) / len(v)
                             for t, v in _off_by_team.items() if v}
 
-        # Availability: team games over the two-season window per team,
-        # and each position's mean raw appearance share (the shrinkage
-        # prior in availability_rate). The prior population is the board's
-        # own population, players who clear the same 5-game floor this
-        # season: the mean over every indexed name with a stat row would
-        # mostly measure roster churn (deep-bench players active a few
-        # weeks a year) and drag every regular's rate toward it.
-        team_games_by_team: Dict[str, int] = {}
-        for (_yr, team), weeks in team_weeks.items():
-            team_games_by_team[team] = team_games_by_team.get(team, 0) + len(weeks)
+        # Availability: each player's team-games denominator counts ONLY
+        # the seasons in which he actually appeared (2026-11-20 audit
+        # D4): the old two-season sum rated a 2026 rookie against ~17
+        # prior-season team games he could never have played in, pinning
+        # Coleman and Love at the 0.70 clamp (Coleman ~72.6 ROS pts
+        # instead of ~92 at a veteran-like rate). A veteran with
+        # appearances in both seasons keeps the two-season denominator.
+        # The positional mean (the shrinkage prior in availability_rate)
+        # is recomputed on the same per-player denominators. The prior
+        # population is the board's own population, players who clear
+        # the same games floor this season: the mean over every indexed
+        # name with a stat row would mostly measure roster churn
+        # (deep-bench players active a few weeks a year) and drag every
+        # regular's rate toward it.
+        def _player_team_games(pid: str, team: str) -> int:
+            return sum(len(team_weeks.get((yr, team)) or ())
+                       for yr in appearance_seasons.get(pid) or ())
+
         raw_rates: Dict[str, List[float]] = {}
         for pid, apps in appearances.items():
             if int((played_inputs.get(pid) or {}).get("played_games") or 0) \
@@ -915,7 +1054,7 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                 continue
             meta = index.get(pid) or {}
             pos = str(meta.get("pos") or meta.get("position") or "").upper()
-            tg = team_games_by_team.get(str(meta.get("team") or "").upper()) or 0
+            tg = _player_team_games(pid, str(meta.get("team") or "").upper())
             if pos in ROS_POSITIONS and tg > 0:
                 raw_rates.setdefault(pos, []).append(apps / tg)
         pos_mean_rate = {pos: sum(v) / len(v)
@@ -984,6 +1123,12 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
         stretch_weeks = [w for w in all_weeks if w <= STRETCH_END_WEEK]
         playoff_weeks = [w for w in all_weeks if w >= PLAYOFF_START_WEEK]
 
+        # Season-out overlay: the live Sleeper status map wins over the
+        # players index's stamped injury_status, which lags the feed
+        # (audit D2: Harvey and Love were Sleeper-listed IR yet ranked
+        # because the index had not picked up their designations).
+        live_status = live_injury_status_map()
+
         ros_by_pid: Dict[str, dict] = {}
         positions_by_pid: Dict[str, str] = {}
         factors_by_pid: Dict[str, dict] = {}
@@ -999,7 +1144,8 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
             if played_games <= 0:
                 continue
             team = str(meta.get("team") or "").upper()
-            u = usage.get(pid) or {"touches": 0.0, "targets": 0.0}
+            u = usage.get(pid) or {"touches": 0.0, "targets": 0.0,
+                                   "pass_att": 0.0}
             windows = {
                 "all": _series(pid, pos, team, all_weeks),
                 "stretch": _series(pid, pos, team, stretch_weeks),
@@ -1015,12 +1161,15 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                 last4_games=min(FORM_WINDOW, played_games),
                 touches_per_game=(u["touches"] / played_games) if played_games else None,
                 targets_per_game=(u["targets"] / played_games) if played_games else None,
+                pass_attempts_per_game=(u["pass_att"] / played_games) if played_games else None,
                 is_team_top=pid in team_top,
-                season_out=is_season_out(meta.get("injury_status") or meta.get("status")),
+                season_out=is_season_out(live_status.get(pid)
+                                         or meta.get("injury_status")
+                                         or meta.get("status")),
                 windows=windows,
                 sched_rank=sched_rank.get((pos, norm_sched_team(team))),
                 availability_rate=availability_rate(
-                    appearances.get(pid), team_games_by_team.get(team),
+                    appearances.get(pid), _player_team_games(pid, team),
                     pos_mean_rate.get(pos)),
             )
             if fields:

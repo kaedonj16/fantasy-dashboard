@@ -474,7 +474,9 @@ function prSortBase(a, b, sortBy) {
   if (sortBy === 'ros_ppg')   { var aR = prRosVal(a, 'ppg'), bR = prRosVal(b, 'ppg'); return (aR != null ? aR : -1) - (bR != null ? bR : -1); }
   if (sortBy === 'ros_total') {
     // All-positions view: order by total value over replacement for the
-    // active window (the spec's cross-position ROS ordering). A single
+    // active window (the spec's cross-position ROS ordering). prRender
+    // then slot-fills that order (prRosSlotFillOrder) so each position
+    // keeps its position-view order inside the combined list. A single
     // position filter in the full window orders by the factor model
     // (ros_score, which is what ros_pos_rank ranks); the sub-windows
     // keep the window total as their order.
@@ -782,6 +784,47 @@ function prRosVor(p) {
   var repl = prRosReplacementMap()[p.position];
   if (repl == null) return null;
   return (ppg - repl) * g;
+}
+// Overall (All-view) order: slot-fill, mirroring order_overall in
+// utils/ros_rankings.py. Pure VOR sorting decides WHICH slots each
+// position occupies in the combined list, but each position's slots
+// are filled by that position's players in position-view order, so the
+// relative order inside a position on the All board always matches the
+// position board. Pure VOR disagreed with the factor model inside
+// positions (Hubbard over Williams on the RB board, Williams over
+// Hubbard on the All board), which read as a contradiction between
+// two views of the same ranking.
+function prRosPosViewCmp(a, b) {
+  // Position-view order for the active window: the full window orders
+  // by the factor model (ros_score), the sub-windows by window total,
+  // exactly the branches prSortBase takes under a position filter.
+  if (prRosWindow === 'all') {
+    var aS = prRosVal(a, 'score'), bS = prRosVal(b, 'score');
+    if (aS != null && bS != null && aS !== bS) return bS - aS;
+  }
+  var aT = prRosVal(a, 'total'), bT = prRosVal(b, 'total');
+  return (bT != null ? bT : -1) - (aT != null ? aT : -1);
+}
+function prRosSlotFillOrder(players) {
+  var slotted = players.slice().sort(function(a, b) { return prSortCmp(a, b, 'ros_total'); });
+  var queues = {};
+  players.forEach(function(p) {
+    (queues[p.position] = queues[p.position] || []).push(p);
+  });
+  Object.keys(queues).forEach(function(pos) { queues[pos].sort(prRosPosViewCmp); });
+  var cursor = {};
+  return slotted.map(function(p) {
+    var i = cursor[p.position] || 0;
+    cursor[p.position] = i + 1;
+    return queues[p.position][i];
+  });
+}
+function prRosSlotFillActive(sortBy) {
+  // Only the default descending All-view ROS Total order slot-fills;
+  // a flipped direction or any other sort key keeps the plain
+  // comparator order.
+  return prScoringType === 'ros' && sortBy === 'ros_total'
+    && prPosFilters.size === 0 && prSortDir === 'desc';
 }
 function prRosSubtitle() {
   if (prRosWindowInfo && prRosWindowInfo.start_week) {
@@ -1446,9 +1489,10 @@ function prRender() {
   const _rankMap = new Map();
   {
     let _rankIdx = 0;
-    players.slice()
-      .filter(p => p.position !== 'PICK' && !(p.is_rookie && !isDrafted(p)))
-      .sort(_rankSort)
+    const _rankPool = players.slice()
+      .filter(p => p.position !== 'PICK' && !(p.is_rookie && !isDrafted(p)));
+    (prRosSlotFillActive(sortBy) ? prRosSlotFillOrder(_rankPool)
+                                 : _rankPool.sort(_rankSort))
       .forEach(p => {
         // PPG / Total Points sorts show the player's ACTUAL overall rank
         // (server-computed on unrounded values over the full stat-line
@@ -1495,6 +1539,9 @@ function prRender() {
     if (_nonPicks.length > 500) _nonPicks.length = 500;
     players = _nonPicks.concat(_picks);
     players.sort((a, b) => prSortCmp(a, b, sortBy));
+    // ROS All view: slot-fill the VOR order so each position's players
+    // appear in position-view order (prRosSlotFillOrder).
+    if (prRosSlotFillActive(sortBy)) players = prRosSlotFillOrder(players);
   }
 
   const list   = document.getElementById('prList');
