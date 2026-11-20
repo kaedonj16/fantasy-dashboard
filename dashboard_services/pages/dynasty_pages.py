@@ -1190,12 +1190,17 @@ _ROS_ANALYSIS = {
         "<p>The overall order is by value over replacement in a 12-team 1QB "
         "league, which is what makes a quarterback comparable to a tight end: "
         "both are measured against the best player you could stream at their "
-        "position for free. Only players with a real role are ranked: at "
-        "least five games played, and either their team's top option at the "
+        "position for free. Within each position, the overall list follows "
+        "the positional ranking, so a player never sits below a "
+        "same-position player he outranks on his position page. Only "
+        "players with a real role are ranked: at "
+        "least three games played, and either their team's top option at the "
         "position or a workload that clears the position's volume bar. The "
         "Sched column is the strength of the remaining schedule (1 is the "
         "softest run left); it feeds the order at a small weight, as "
-        "context the per-game projection does not fully carry.</p>"
+        "context the per-game projection does not fully carry. The Stretch "
+        "and Playoff windows rank the same players over just those weeks, "
+        "so a player's rank can move between windows.</p>"
     ),
     "QB": (
         "Rest-of-season QB rankings",
@@ -1293,8 +1298,9 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
     ``ros_payload`` is utils.ros_rankings.load_ros_map's output; player
     names / teams come from the model value table, the same rows the
     dynasty hub reads. Overall order: ROS value over replacement at
-    12-team 1QB defaults. Position order: the ROS factor model within
-    the position.
+    12-team 1QB defaults, slot-filled so each position's players appear
+    in factor-model order (utils.ros_rankings.order_overall). Position
+    order: the ROS factor model within the position.
     """
     from dashboard_services.pages.player_page import slugify
 
@@ -1330,7 +1336,7 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
     # below rides the same games the position pages total from.
     repl: dict = {}
     if not pos_filter:
-        from utils.ros_rankings import ros_replacement_map
+        from utils.ros_rankings import order_overall, ros_replacement_map
 
         by_pos: dict = {}
         for r in rows:
@@ -1342,17 +1348,19 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             r["_vor"] = ((float(r["ros_ppg"]) - base) * float(r["ros_games"])
                          if base is not None and r.get("ros_ppg") is not None
                          and r.get("ros_games") else 0.0)
-        # Overall board only: a forward floor. The shared ROS eligibility
-        # is season-based, so a player projected for under two expected
-        # games, or below replacement, could hold a top-100 overall spot
-        # on a sliver of work (a 0.9-game, 1-PPG fill-in; an elite rate
-        # over 0.8 games). Replacement is computed from the full pool
-        # above first, then the overall list drops ros_games < 2.0 and
-        # VOR < 0. Position pages take the other branch and are untouched.
-        rows = [r for r in rows
-                if float(r.get("ros_games") or 0) >= 2.0 and r["_vor"] >= 0]
-        rows.sort(key=lambda r: (-r["_vor"], -float(r.get("ros_total") or 0),
-                                 -float(r.get("ros_ppg") or 0), r["name"]))
+        # No guest-only floor (2026-11-20 audit D3): this branch used to
+        # drop ros_games < 2.0 and VOR < 0 on the overall board only,
+        # which silently cut 60 of the 140 pool players (including
+        # Mahomes) while the /players ROS All view, reading the same
+        # map, listed everyone. One computation, every surface reads
+        # the same pool: the overall list is the full eligible pool, so
+        # sub-replacement players land at the bottom, which is the
+        # honest order. The order itself is the shared slot-fill
+        # (utils.ros_rankings.order_overall): VOR decides which slots
+        # each position occupies, and each position's players fill
+        # their slots in factor order, so within-position order here
+        # always matches the position pages.
+        rows = order_overall(rows)
     else:
         # Position order is the factor model (ros_score, stamped by
         # utils/ros_rankings.py) when the payload carries it; a payload

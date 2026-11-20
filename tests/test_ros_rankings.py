@@ -27,6 +27,7 @@ from utils.ros_rankings import (
     consistency_rate,
     form_ppg,
     is_season_out,
+    order_overall,
     passes_role_gate,
     player_model_factors,
     qb_ros_ppg,
@@ -90,12 +91,27 @@ def test_window_stats_leading_zero_run_is_weeks_out():
 
 
 def test_window_stats_absent_weeks():
-    # Absent before the return counts as out; absent mid-window is skipped,
-    # never scored as a zero game.
+    # Absent mid-window is skipped, never scored as a zero game.
     assert window_projection_stats([None, 15.0])["games"] == 1
     stats = window_projection_stats([20.0, None, 18.0])
     assert stats["games"] == 2
     assert stats["fwd_ppg"] == pytest.approx(19.0)
+
+
+def test_window_stats_missing_week_is_not_a_week_out():
+    # treat_missing_as_out=False (audit D8): a missing (None) week is
+    # unknown, not an absence. It stops the leading zero-run instead of
+    # extending it, so the explicit zeros behind it stay in the count
+    # as 0-point games rather than being deleted as "weeks out".
+    stats = window_projection_stats([None, 0.0, 18.0])
+    assert stats["weeks_out"] == 0
+    assert stats["games"] == 2  # the explicit 0.0 counts, the None does not
+    assert stats["total"] == pytest.approx(18.0)
+    # An explicit leading zero still counts as out, up to the missing
+    # week that stops the run.
+    stats = window_projection_stats([0.0, None, 0.0, 18.0])
+    assert stats["weeks_out"] == 1
+    assert stats["games"] == 2
 
 
 def test_window_stats_no_playable_week():
@@ -166,16 +182,24 @@ def test_role_gate_matrix():
                             targets_per_game=5.5)
     assert not passes_role_gate("TE", is_team_top=False, touches_per_game=None,
                                 targets_per_game=4.0)
-    # A backup QB passes only as his team's #1.
+    # A backup QB passes only as his team's #1 or on a starter's
+    # attempt volume (>= 25 pass attempts/game): a relief arm's cameo
+    # rate does not clear it.
     assert not passes_role_gate("QB", is_team_top=False, touches_per_game=None,
                                 targets_per_game=None)
     assert passes_role_gate("QB", is_team_top=True, touches_per_game=None,
                             targets_per_game=None)
+    assert passes_role_gate("QB", is_team_top=False, touches_per_game=None,
+                            targets_per_game=None, pass_attempts_per_game=25.0)
+    assert not passes_role_gate("QB", is_team_top=False, touches_per_game=None,
+                                targets_per_game=None, pass_attempts_per_game=24.9)
 
 
-def test_five_game_floor_and_season_out_exclusion():
-    assert _ros("RB", played_games=4) is None
-    assert _ros("RB", played_games=5) is not None
+def test_three_game_floor_and_season_out_exclusion():
+    # Floor is 3 played games (2026-11-20: the 5-game floor kept
+    # Josh Jacobs, GB's RB1 at 14.6 PPG over 3 games, off the board).
+    assert _ros("RB", played_games=2) is None
+    assert _ros("RB", played_games=3) is not None
     assert _ros("RB", season_out=True) is None
     assert is_season_out("IR") and is_season_out("PUP")
     assert not is_season_out("Out") and not is_season_out("Questionable")
@@ -241,6 +265,7 @@ def test_ros_coleman_shape_participation_week_counts(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "utils.projections.weekly_projection_points",
         lambda week_map, p, scoring, pos: 15.0 if str(p) in week_map else None)
+    monkeypatch.setattr(rr, "live_injury_status_map", lambda: {})
 
     payload = rr._build_ros_map(season, 11, "November 20, 2026")
     ssb._DERIVE_CACHE.clear()
@@ -254,6 +279,170 @@ def test_ros_coleman_shape_participation_week_counts(tmp_path, monkeypatch):
     fields = payload["players"][pid]
     assert fields["ros_ppg"] == pytest.approx(15.0)
     assert fields["ros_pos_rank"] >= 1
+
+
+# ── Audit fixes (2026-11-20): end-to-end shapes ────────────────────────────
+
+def _fixture_build(tmp_path, monkeypatch, *, index, rows_by_year,
+                   live_status=None, proj=15.0):
+    """Drive _build_ros_map on shaped stat files (the Coleman test's
+    pattern): rows_by_year = {year: {week: {pid: statrow}}}."""
+    import json as _json
+
+    from data_building import start_score_bundle as ssb
+    from utils import ros_rankings as rr
+
+    season = 2026
+    cache = tmp_path / "sleeper_stats"
+    cache.mkdir(exist_ok=True)
+    files = []
+    for yr, weeks in rows_by_year.items():
+        for w, rows in weeks.items():
+            p = cache / f"sleeper_stats_s{yr}_w{w}.json"
+            p.write_text(_json.dumps(rows))
+            if yr == season:
+                files.append(str(p))
+    monkeypatch.setattr("utils.utils.load_players_index", lambda: index)
+    monkeypatch.setattr("utils.utils.load_week_schedule", lambda s, w: [])
+    monkeypatch.setattr(ssb, "_stat_files", lambda s: files)
+    ssb._DERIVE_CACHE.clear()
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        "utils.data_cache._read_week_projection_file",
+        lambda s, w: {pid: {} for pid in index})
+    monkeypatch.setattr(
+        "utils.projections.weekly_projection_points",
+        lambda week_map, p, scoring, pos: proj if str(p) in week_map else None)
+    monkeypatch.setattr(rr, "live_injury_status_map",
+                        lambda: dict(live_status or {}))
+    payload = rr._build_ros_map(season, 11, "November 20, 2026")
+    ssb._DERIVE_CACHE.clear()
+    assert payload is not None
+    return payload
+
+
+def _rb_line(rush_yd, att):
+    # PPR points = rush_yd / 10 exactly; touches = att (no receptions).
+    return {"gp": 1, "gms_active": 1, "off_snp": 50, "rush_att": att,
+            "rush_yd": rush_yd, "rec": 0, "rec_tgt": 0, "rec_yd": 0,
+            "position": "RB"}
+
+
+def _qb_line(att, pass_yd, pass_td):
+    # PPR points = pass_yd * 0.04 + pass_td * 4.
+    return {"gp": 1, "gms_active": 1, "off_snp": 60, "pass_att": att,
+            "pass_yd": pass_yd, "pass_td": pass_td, "position": "QB"}
+
+
+def test_team_top_is_by_points_per_game_not_totals(tmp_path, monkeypatch):
+    # Audit D1/D7: the healthy veteran owns the season total (10 games
+    # x 9 pts = 90) but the takeover is the better per-game player
+    # (4 x 20 = 80). Totals made the veteran team-top and gated the
+    # takeover out (his 10 touches/game is under the RB bar); per-game
+    # team-top admits the takeover and leaves the veteran to the
+    # touches gate, which his 8/game fails.
+    weeks = {}
+    for w in range(1, 11):
+        rows = {"vet": _rb_line(90, 8)}
+        if w >= 7:
+            rows["take"] = _rb_line(200, 10)
+        weeks[w] = rows
+    index = {"vet": {"pos": "RB", "team": "DEN"},
+             "take": {"pos": "RB", "team": "DEN"}}
+    payload = _fixture_build(tmp_path, monkeypatch, index=index,
+                             rows_by_year={2026: weeks})
+    assert "take" in payload["players"]
+    assert "vet" not in payload["players"]
+
+
+def test_qb_attempts_fallback_admits_takeover(tmp_path, monkeypatch):
+    # McCarthy shape (audit D1): the incumbent leads NYG per game
+    # (20 PPG) and is team-top; the takeover (12 PPG) is not, but his
+    # 28 pass attempts/game clear the QB volume fallback. A true
+    # backup (10 att/game, not his team's top) stays out.
+    weeks = {}
+    for w in range(1, 11):
+        rows = {}
+        if w <= 6:
+            rows["inc"] = _qb_line(32, 300, 2)       # 20.0 pts
+        if w >= 6:
+            rows["take"] = _qb_line(28, 200, 1)      # 12.0 pts
+        if w <= 5:
+            rows["start"] = _qb_line(35, 300, 2)     # KC starter, 20.0
+            rows["back"] = _qb_line(10, 100, 0)      # KC backup, 4.0
+        weeks[w] = rows
+    index = {"inc": {"pos": "QB", "team": "NYG"},
+             "take": {"pos": "QB", "team": "NYG"},
+             "start": {"pos": "QB", "team": "KC"},
+             "back": {"pos": "QB", "team": "KC"}}
+    payload = _fixture_build(tmp_path, monkeypatch, index=index,
+                             rows_by_year={2026: weeks})
+    assert "inc" in payload["players"]
+    assert "take" in payload["players"]
+    assert "start" in payload["players"]
+    assert "back" not in payload["players"]
+
+
+def test_three_game_floor_admits_jacobs_shape(tmp_path, monkeypatch):
+    # Jacobs shape: GB's RB1 with exactly 3 played games at ~14.7 PPG
+    # and 15 touches/game is in; a 2-game flash (20 PPG, 20 touches)
+    # is still under the floor and out.
+    weeks = {
+        1: {"jj": _rb_line(150, 15), "thin": _rb_line(200, 20)},
+        2: {"jj": _rb_line(140, 15), "thin": _rb_line(200, 20)},
+        3: {"jj": _rb_line(150, 15)},
+    }
+    index = {"jj": {"pos": "RB", "team": "GB"},
+             "thin": {"pos": "RB", "team": "GB"}}
+    payload = _fixture_build(tmp_path, monkeypatch, index=index,
+                             rows_by_year={2026: weeks})
+    assert "jj" in payload["players"]
+    assert "thin" not in payload["players"]
+
+
+def test_rookie_availability_denominator_first_season_only(tmp_path, monkeypatch):
+    # Audit D4: the rookie appeared in all 9 of his team's 2026 games.
+    # His denominator must be those 9 games, not 9 + the team's 17
+    # games from 2025, a season he was not in the league: at the old
+    # denominator his rate clamped to 0.70 (4.9 expected games); on
+    # the first-season denominator it is 1.0 (7.0 expected games).
+    rows25 = {w: {"f25": {"gms_active": 1, "position": "RB"},
+                  "vet": {"gms_active": 1, "position": "RB"}}
+              for w in range(1, 18)}
+    weeks26 = {}
+    for w in range(1, 10):
+        rows = {"vet": {"gms_active": 1, "position": "RB"},
+                "rook": {"gms_active": 1, "position": "RB"}}
+        if w <= 5:
+            rows["rook"] = _rb_line(130, 13)
+        if w <= 6:
+            rows["vet"] = _rb_line(130, 13)
+        weeks26[w] = rows
+    index = {"rook": {"pos": "RB", "team": "DEN"},
+             "vet": {"pos": "RB", "team": "DEN"},
+             "f25": {"pos": "RB", "team": "DEN"}}
+    payload = _fixture_build(tmp_path, monkeypatch, index=index,
+                             rows_by_year={2025: rows25, 2026: weeks26})
+    assert payload["players"]["rook"]["ros_games"] == pytest.approx(7.0)
+    assert payload["players"]["vet"]["ros_games"] == pytest.approx(7.0)
+
+
+def test_live_ir_status_excludes_despite_blank_index(tmp_path, monkeypatch):
+    # Audit D2 (Harvey/Love shape): the index carries no designation
+    # for "hurt", but the live Sleeper overlay says IR, so he is out.
+    # A stale index IR with no live designation still excludes (the
+    # fallback), and a healthy roommate is ranked.
+    weeks = {w: {"hurt": _rb_line(150, 15), "fine": _rb_line(140, 14),
+                 "back": _rb_line(130, 13)} for w in range(1, 6)}
+    index = {"hurt": {"pos": "RB", "team": "DEN"},
+             "fine": {"pos": "RB", "team": "DEN"},
+             "back": {"pos": "RB", "team": "DEN", "injury_status": "IR"}}
+    payload = _fixture_build(tmp_path, monkeypatch, index=index,
+                             rows_by_year={2026: weeks},
+                             live_status={"hurt": "IR"})
+    assert "hurt" not in payload["players"]
+    assert "back" not in payload["players"]
+    assert "fine" in payload["players"]
 
 
 # ── Ranks + tiers ───────────────────────────────────────────────────────────
@@ -306,8 +495,16 @@ def test_consistency_rate_floors():
 
 
 def test_role_trend_windows():
+    # 6+ played games: the full 3v3 window.
     assert role_trend([10.0, 10.0, 10.0, 16.0, 16.0, 16.0]) == pytest.approx(6.0)
-    assert role_trend([10.0] * 5) is None  # prior window incomplete
+    # 4-5 played games: a partial 2v2 window (audit D6: the old
+    # all-or-nothing 6-game rule neutralised the factor for every
+    # 5-game player, exactly the takeover profile).
+    assert role_trend([10.0, 10.0, 16.0, 16.0]) == pytest.approx(6.0)
+    assert role_trend([10.0, 10.0, 10.0, 16.0, 16.0]) == pytest.approx(6.0)
+    assert role_trend([10.0] * 5) == pytest.approx(0.0)
+    # Under 4 played games there is no trend to read.
+    assert role_trend([10.0, 16.0, 16.0]) is None
     assert role_trend([]) is None
 
 
@@ -681,7 +878,7 @@ def test_public_overall_page_discounts_qb1_in_1qb():
 
 
 def _floor_payload():
-    """Fixture for the overall board's forward floor.
+    """Fixture shaped like the old overall board's forward-floor cases.
 
     Replacement lines are pinned by monkeypatch in the tests below
     (RB 10.0, WR 12.0), so every VOR sign is deterministic:
@@ -723,27 +920,116 @@ def _pin_replacement(monkeypatch):
     )
 
 
-def test_public_overall_page_applies_forward_floor(monkeypatch):
-    # Overall board only: ros_games < 2.0 is out even with a positive
-    # VOR (the elite-rate sliver), and VOR < 0 is out even with a full
-    # slate of expected games.
+def test_public_overall_page_has_no_guest_only_floor(monkeypatch):
+    # Audit D3: the overall board used to drop ros_games < 2.0 and
+    # VOR < 0 on the guest page only (60 of 140 pool players, Mahomes
+    # included), while /players ROS All listed the same pool in full.
+    # The guest overall now shows the full eligible pool in VOR order:
+    # sub-replacement and short-slate players land at the bottom.
     from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
 
     _pin_replacement(monkeypatch)
     payload, table = _floor_payload()
     body = build_ros_rankings_body(payload, table, position=None)
-    assert "Keeper Back" in body
-    assert "Wideout Alpha" in body
-    assert "Wideout Beta" in body
-    assert "Wilson Fillin" not in body          # 0.9 games, below replacement
-    assert "Puka Elite" not in body             # 0.8 games, VOR > 0
-    assert "Below Replacement Back" not in body  # 7 games, VOR < 0
+    for name in ("Keeper Back", "Wideout Alpha", "Wideout Beta",
+                 "Wilson Fillin", "Puka Elite", "Below Replacement Back"):
+        assert name in body
+    # VOR slots (RB line 10.0, WR line 12.0): alpha +56, keeper +35,
+    # beta +12, puka +3.2, wilson -8.0, negvor -35, so the position
+    # sequence is WR, RB, WR, WR, RB, RB. This fixture carries no
+    # factor scores, so each position fills its slots in ROS-total
+    # order (keeper 105, negvor 35, wilson 1.0): negvor takes the
+    # second RB slot ahead of wilson despite the lower VOR.
+    order = ["Wideout Alpha", "Keeper Back", "Wideout Beta", "Puka Elite",
+             "Below Replacement Back", "Wilson Fillin"]
+    idx = [body.index(n) for n in order]
+    assert idx == sorted(idx)
 
 
-def test_public_position_pages_ignore_forward_floor(monkeypatch):
-    # The floor is an overall-board rule: position pages keep the full
-    # eligible pool (this fixture carries no model scores, so the
-    # fallback ROS-total order applies), identical to before the floor.
+def _slot_fill_rows():
+    """Mixed pool where VOR and the factor model disagree inside RB:
+    the Javonte-shaped back owns the higher VOR (38.6 on a higher PPG
+    x games), the Chuba-shaped back owns the higher factor score
+    (0.670, RB1) on a 0.1-lower VOR."""
+    def row(name, pos, vor, score, rank, total, ppg):
+        return {"name": name, "position": pos, "_vor": vor,
+                "ros_score": score, "ros_pos_rank": rank,
+                "ros_total": total, "ros_ppg": ppg}
+    return [
+        row("Qb One", "QB", 60.0, 0.90, 1, 180.0, 25.0),
+        row("Qb Two", "QB", 10.0, 0.80, 2, 150.0, 21.0),
+        row("Back Vor", "RB", 38.6, 0.571, 2, 92.6, 17.02),
+        row("Back Score", "RB", 38.5, 0.670, 1, 96.5, 16.41),
+        row("Back Three", "RB", 5.0, 0.40, 3, 80.0, 13.0),
+        row("Wideout One", "WR", 55.0, 0.85, 1, 170.0, 24.0),
+        row("Wideout Two", "WR", 20.0, 0.70, 2, 140.0, 20.0),
+        row("Tight One", "TE", 30.0, 0.88, 1, 120.0, 17.0),
+        row("Tight Two", "TE", 2.0, 0.60, 2, 95.0, 13.5),
+    ]
+
+
+def test_order_overall_slot_fills_factor_order():
+    rows = _slot_fill_rows()
+    out = order_overall(rows)
+    # The slots each position occupies are exactly the pure-VOR slots:
+    # the position sequence of the combined list is unchanged.
+    pure = sorted(rows, key=lambda r: -r["_vor"])
+    assert [r["position"] for r in out] == [r["position"] for r in pure]
+    # Inside RB the factor winner fills the first RB slot even though
+    # his VOR is 0.1 lower: the All view now agrees with the RB page.
+    names = [r["name"] for r in out]
+    assert names.index("Back Score") < names.index("Back Vor")
+
+
+def test_order_overall_matches_position_rank_within_every_position():
+    rows = _slot_fill_rows()
+    out = order_overall(rows)
+    for pos in ("QB", "RB", "WR", "TE"):
+        sub = [r for r in out if r["position"] == pos]
+        by_rank = sorted((r for r in rows if r["position"] == pos),
+                         key=lambda r: r["ros_pos_rank"])
+        assert [r["name"] for r in sub] == [r["name"] for r in by_rank]
+
+
+def test_public_overall_page_slot_fills_like_position_pages(monkeypatch):
+    # Same Chuba/Javonte shape through the guest builder: pinned
+    # replacement lines (RB 10.0, WR 12.0) make "Back Vor" the VOR
+    # winner (84 vs 77) and "Back Score" the factor winner (0.95).
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+
+    _pin_replacement(monkeypatch)
+    players = {
+        "wideout1": {"ros_ppg": 25.0, "ros_total": 175.0, "ros_games": 7,
+                     "ros_sched_rank": 5, "ros_pos_rank": 1, "ros_score": 0.80},
+        "backvor": {"ros_ppg": 22.0, "ros_total": 154.0, "ros_games": 7,
+                    "ros_sched_rank": 5, "ros_pos_rank": 2, "ros_score": 0.50},
+        "backscore": {"ros_ppg": 21.0, "ros_total": 147.0, "ros_games": 7,
+                      "ros_sched_rank": 5, "ros_pos_rank": 1, "ros_score": 0.95},
+        "wideout2": {"ros_ppg": 15.0, "ros_total": 105.0, "ros_games": 7,
+                     "ros_sched_rank": 5, "ros_pos_rank": 2, "ros_score": 0.70},
+    }
+    table = [
+        {"id": "wideout1", "name": "Wideout One", "team": "CIN", "position": "WR"},
+        {"id": "backvor", "name": "Back Vor", "team": "DAL", "position": "RB"},
+        {"id": "backscore", "name": "Back Score", "team": "CAR", "position": "RB"},
+        {"id": "wideout2", "name": "Wideout Two", "team": "DAL", "position": "WR"},
+    ]
+    payload = {"players": players, "window": {"start_week": 11, "end_week": 17},
+               "updated": "November 09, 2026"}
+    body = build_ros_rankings_body(payload, table, position=None)
+    # Pure VOR order would be One, Vor, Score, Two; the slots stay
+    # WR, RB, RB, WR but the RB slots fill in factor order.
+    order = ["Wideout One", "Back Score", "Back Vor", "Wideout Two"]
+    idx = [body.index(n) for n in order]
+    assert idx == sorted(idx)
+    # And the RB position page agrees: Back Score is its RB1.
+    rb = build_ros_rankings_body(payload, table, position="RB")
+    assert rb.index("Back Score") < rb.index("Back Vor")
+
+
+def test_public_position_pages_keep_full_pool(monkeypatch):
+    # Position pages keep the full eligible pool (this fixture carries
+    # no model scores, so the fallback ROS-total order applies).
     from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
 
     _pin_replacement(monkeypatch)
@@ -846,6 +1132,23 @@ def test_rankings_js_ros_mode():
     assert "prRosVal(p, 'score')" in js
     # League Size stays visible in ROS mode (only redraft hides it).
     assert "type === 'redraft' ? 'none' : ''" in js
+
+
+def test_rankings_js_ros_all_view_slot_fills():
+    # The /players board mirrors the guest page's slot-fill rule
+    # (utils.ros_rankings.order_overall): its All view re-fills the VOR
+    # slots in position-view order, in both the displayed list and the
+    # overall rank numbers, so the two surfaces cannot disagree inside
+    # a position.
+    js = open(os.path.join(_ROOT, "static", "rankings.js"), encoding="utf-8").read()
+    assert "function prRosSlotFillOrder" in js
+    assert "function prRosPosViewCmp" in js
+    assert "mirroring order_overall in" in js and "utils/ros_rankings.py" in js
+    assert js.count("prRosSlotFillActive(sortBy)") >= 3  # gate + both sort sites
+    pages = open(os.path.join(
+        _ROOT, "dashboard_services", "pages", "dynasty_pages.py"),
+        encoding="utf-8").read()
+    assert "rows = order_overall(rows)" in pages
 
 
 def test_rankings_js_ros_all_view_uses_vor():
