@@ -849,6 +849,20 @@ function openPlayerModal(playerId, playerName, opts) {
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+  // Bind the tab bar to this player NOW, not when the details payload
+  // lands further down: the header-Job painter (_pmRolePaintHeaderJob)
+  // is guarded on dataset.pmPlayerId, and both of its triggers (the
+  // role payload landing via _pmRoleNoteHeaderJob, the meta render in
+  // the details callback) can fire before the details callback assigns
+  // the dataset below — with a warm role endpoint or the session
+  // small-fetch cache, the Job then never painted at all. Setting the
+  // identity here is safe: every other pmPlayerId consumer is either
+  // click-driven (tab switches, Role load) or additionally requires
+  // rendered panels / a visible tab bar (live-panel refresh, modal
+  // tour), none of which exist in the skeleton state, and the
+  // painter's own pid check still blocks a stale player's job.
+  const _pmBarEarly = modal.querySelector('#pmTabBar');
+  if (_pmBarEarly) _pmBarEarly.dataset.pmPlayerId = String(playerId);
   document.body.style.overflow = 'hidden';
   overlay.dataset.playerId = String(playerId);
   overlay.dataset.playerName = playerName || '';
@@ -1909,6 +1923,11 @@ function openPlayerModal(playerId, playerName, opts) {
       pmTabBar.dataset.pmPlayerName = data.name || playerName || '';
       pmTabBar.dataset.pmPosition = data.position || '';
       pmTabBar.dataset.pmPpgRank = (data.stats && data.stats.ppg_rank != null) ? String(data.stats.ppg_rank) : '';
+      // Belt-and-braces: the meta render above already ran, so if the
+      // role payload was noted while this callback was still running
+      // (its paint attempt found no bound player), paint the header
+      // Job now that the tab bar carries this player's identity.
+      _pmRolePaintHeaderJob();
       const _teamPanel = document.getElementById('pm-panel-team');
       if (_teamPanel && opts.teamSeason) _teamPanel.dataset.pmTeamSeason = String(opts.teamSeason);
 
