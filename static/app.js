@@ -27884,15 +27884,22 @@ function _roleZoneDetailHTML(d, z) {
   return '<div class="compare-roles-dhead"><span>' + _cmpRolesEsc(z.row) + ' ' + _cmpRolesEsc(colCap) + (rowDesc ? ' · ' + rowDesc : '') + '</span><span class="compare-roles-dtag">Throw location</span></div>'
     + '<div class="compare-roles-dgrid">' + rows + '</div>' + lines;
 }
+// Summary strip wrapper: the cr-n* count class lets the phone layout
+// reflow the strip into a 2- or 3-column grid (see dashboard.css) so
+// no stat label ever wraps or collides at 360-390px.
+function _cmpRoleSummaryHTML(stats) {
+  return '<div class="compare-roles-summary cr-n' + stats.length + '">'
+    + stats.join('') + '</div>';
+}
 function _cmpRoleMapHTML(d, small) {
   const tm = d.target_map;
   const kind = tm.kind || 'receiving';
   const s = tm.summary || {};
   const pid = String(d.player_id || '');
   const stat = (l, v) => '<span class="compare-roles-stat"><span>' + l + '</span><b>' + v + '</b></span>';
-  const summary = kind === 'passing'
-    ? stat('aDOT', _cmpRoleFmt(s.adot, 1)) + stat('Deep att %', _cmpRolePct(s.deep_rate)) + (s.play_action_rate != null ? stat('Play-Action %', _cmpRolePct(s.play_action_rate)) : '') + stat('Comp %', _cmpRolePct(s.comp_pct)) + stat('Yards / attempt', _cmpRoleFmt(s.ypt_or_ypa, 1))
-    : stat('aDOT', _cmpRoleFmt(s.adot, 1)) + stat('Air yards share', _cmpRolePct(s.air_yards_share)) + stat('Catch rate', _cmpRolePct(s.catch_rate)) + stat('Yards / target', _cmpRoleFmt(s.ypt_or_ypa, 1));
+  const stats = kind === 'passing'
+    ? [stat('aDOT', _cmpRoleFmt(s.adot, 1)), stat('Deep att %', _cmpRolePct(s.deep_rate)), (s.play_action_rate != null ? stat('Play-Action %', _cmpRolePct(s.play_action_rate)) : ''), stat('Comp %', _cmpRolePct(s.comp_pct)), stat('Yards / attempt', _cmpRoleFmt(s.ypt_or_ypa, 1))].filter(Boolean)
+    : [stat('aDOT', _cmpRoleFmt(s.adot, 1)), stat('Air yards share', _cmpRolePct(s.air_yards_share)), stat('Catch rate', _cmpRolePct(s.catch_rate)), stat('Yards / target', _cmpRoleFmt(s.ypt_or_ypa, 1))];
   const modeBtns = kind === 'passing'
     ? [['primary', 'Attempts'], ['secondary', 'Completions']] : [['primary', 'Targets'], ['secondary', 'Receptions']];
   const st = _cmpRoleState();
@@ -27905,7 +27912,7 @@ function _cmpRoleMapHTML(d, small) {
     + thinNote
     + '<div class="compare-trends-mode compare-roles-mapmode">' + modeBtns.map(b =>
       '<button type="button" class="compare-trends-mode-btn' + (mode === b[0] ? ' is-active' : '') + '" onclick="cmpRoleSetMapMode(\'' + pid + '\',\'' + b[0] + '\')">' + b[1] + '</button>').join('') + '</div>'
-    + '<div class="compare-roles-summary">' + summary + '</div>'
+    + _cmpRoleSummaryHTML(stats)
     + '<div class="compare-roles-mapbox"><canvas class="compare-roles-canvas" data-rolecanvas="' + pid + '" onclick="cmpRoleCanvasClick(event,\'' + pid + '\')" role="img" aria-label="' + (kind === 'passing' ? 'Throw' : 'Target') + ' heat map"></canvas>'
     + '<div class="compare-roles-legend">Dot marker: touchdowns ' + (kind === 'passing' ? 'thrown' : 'caught') + ' from that zone, the number is the count. Circled 20+: a ' + (kind === 'passing' ? 'throw' : 'catch') + ' of 20+ yards came from that zone.</div>'
     + '<div class="compare-roles-pop" id="cmpRolePop-' + pid + '" hidden><button type="button" class="compare-roles-pop-close" onclick="cmpRoleClosePop(this)" aria-label="Close detail">&times;</button><div class="compare-roles-pop-body" id="cmpRoleDetail-' + pid + '"></div></div>'
@@ -27980,7 +27987,7 @@ function _cmpRoleGapHTML(d) {
   const s = gm.summary || {};
   const pid = String(d.player_id || '');
   const stat = (l, v) => '<span class="compare-roles-stat"><span>' + l + '</span><b>' + v + '</b></span>';
-  const summary = stat('Carries', _cmpRoleFmt(s.carries, 0)) + stat('YPC', _cmpRoleFmt(s.ypc, 1)) + stat('Success rate', _cmpRolePct(s.success_rate)) + stat('Stuffed %', _cmpRolePct(s.stuffed_pct)) + stat('Explosive %', _cmpRolePct(s.explosive_pct)) + stat('Rush TDs', _cmpRoleFmt(s.rush_td, 0));
+  const stats = [stat('Carries', _cmpRoleFmt(s.carries, 0)), stat('YPC', _cmpRoleFmt(s.ypc, 1)), stat('Success rate', _cmpRolePct(s.success_rate)), stat('Stuffed %', _cmpRolePct(s.stuffed_pct)), stat('Explosive %', _cmpRolePct(s.explosive_pct)), stat('Rush TDs', _cmpRoleFmt(s.rush_td, 0))];
   const lanes = gm.lanes || [];
   const byLane = {};
   lanes.forEach(l => { byLane[String(l.lane).toUpperCase()] = l; });
@@ -28006,7 +28013,7 @@ function _cmpRoleGapHTML(d) {
   return '<div class="compare-roles-gapwrap' + (gm.thin ? ' compare-roles-thin' : '') + '">'
     + '<div class="compare-roles-sub">Gap map: where the carries go</div>'
     + gapThinNote
-    + '<div class="compare-roles-summary">' + summary + '</div>'
+    + _cmpRoleSummaryHTML(stats)
     + '<div class="compare-roles-lanebox"><div class="compare-roles-lanes">' + cols + '</div>'
     + '<div class="compare-roles-pop" id="cmpRoleLanePop-' + pid + '" hidden><button type="button" class="compare-roles-pop-close" onclick="cmpRoleClosePop(this)" aria-label="Close detail">&times;</button><div class="compare-roles-pop-body" id="cmpRoleLaneDetail-' + pid + '"></div></div></div>'
     + '<div class="compare-roles-legend">TD and 10+ mark lanes with a rushing touchdown or a 10+ yard run.</div>'
@@ -28054,7 +28061,7 @@ function _cmpRoleQbRushHTML(d) {
     ? '<div class="compare-roles-qbsplit"><span class="compare-roles-qb-scr" style="width:' + (scr / tot * 100) + '%"></span><span class="compare-roles-qb-des" style="width:' + (des / tot * 100) + '%"></span></div>'
     + '<div class="compare-roles-legend">Scrambles ' + scr + ' · Designed runs ' + des + '</div>' : '';
   return '<div class="compare-roles-qbrush"><div class="compare-roles-sub">Rushing</div>'
-    + '<div class="compare-roles-summary">' + stat('Attempts', _cmpRoleFmt(q.att, 0)) + stat('Yards', _cmpRoleFmt(q.yards, 0)) + stat('YPC', _cmpRoleFmt(q.ypc, 1)) + stat('Rush TDs', _cmpRoleFmt(q.td, 0)) + '</div>'
+    + _cmpRoleSummaryHTML([stat('Attempts', _cmpRoleFmt(q.att, 0)), stat('Yards', _cmpRoleFmt(q.yards, 0)), stat('YPC', _cmpRoleFmt(q.ypc, 1)), stat('Rush TDs', _cmpRoleFmt(q.td, 0))])
     + split
     + (q.top_direction ? '<div class="compare-roles-dline">Most of the designed work goes ' + _cmpRolesEsc(q.top_direction) + '.</div>' : '')
     + '</div>';

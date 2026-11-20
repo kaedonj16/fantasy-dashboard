@@ -12660,7 +12660,7 @@ select:focus {
 .compare-roles-mapmode .compare-trends-mode-btn { padding: 4px 12px; font-size: 12px; }
 .compare-roles-summary { display: flex; flex-wrap: wrap; gap: 8px 0; padding: 9px 2px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 10px; }
 .compare-roles-stat { display: flex; flex-direction: column-reverse; gap: 1px; font-size: 12px; padding: 0 10px; flex: 1 1 0; min-width: 0; }
-.compare-roles-stat span { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.02em; }
+.compare-roles-stat span { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.02em; white-space: nowrap; }
 .compare-roles-stat:first-child { padding-left: 2px; }
 .compare-roles-stat + .compare-roles-stat { border-left: 1px solid var(--border); }
 .compare-roles-stat span { color: var(--text-muted); font-weight: 600; }
@@ -12668,7 +12668,7 @@ select:focus {
 .compare-roles-canvas { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
 .compare-roles-legend { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; }
 .compare-roles-mapbox, .compare-roles-lanebox { position: relative; }
-.compare-roles-pop { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 30; max-height: calc(100% - 16px); overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--row); box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15); animation: compare-roles-pop-in 0.16s ease; }
+.compare-roles-pop { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 30; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--row); box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15); animation: compare-roles-pop-in 0.16s ease; }
 :root[data-theme="dark"] .compare-roles-pop { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
 @keyframes compare-roles-pop-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .compare-roles-pop { animation: none; } }
@@ -12683,7 +12683,7 @@ select:focus {
 .compare-roles-dtag { font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #2563eb; white-space: nowrap; }
 .compare-roles-dgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 8px; }
 .compare-roles-dkv { display: flex; flex-direction: column-reverse; gap: 1px; font-size: 12.5px; min-width: 0; }
-.compare-roles-dkv span { color: var(--text-muted); font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.compare-roles-dkv span { color: var(--text-muted); font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
 .compare-roles-dkv b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
 .compare-roles-dfact { font-size: 13px; font-weight: 700; color: var(--text); margin-top: 10px; }
 .compare-roles-dtake { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 10px; background: color-mix(in srgb, #2563eb 9%, var(--row)); border-radius: 6px; padding: 10px 12px; }
@@ -12725,6 +12725,24 @@ button.compare-roles-comp:hover .compare-roles-comp-name { text-decoration: unde
   .compare-roles-grid { grid-template-columns: 1fr; }
   .compare-roles-lane-track { height: 96px; }
   .compare-roles-axis { grid-template-columns: 86px 1fr 28px; }
+  /* Summary strips reflow into a grid so every label fits its column
+     on one line: 4 stats go 2x2, 5-6 stats go 3 across x 2 rows. The
+     flex row's border-left scheme is replaced by per-cell hairlines. */
+  .compare-roles-summary { display: grid; grid-template-columns: repeat(2, 1fr); padding: 4px 2px; }
+  .compare-roles-summary.cr-n5, .compare-roles-summary.cr-n6 { grid-template-columns: repeat(3, 1fr); }
+  .compare-roles-summary .compare-roles-stat { padding: 5px 10px; }
+  .compare-roles-summary .compare-roles-stat + .compare-roles-stat { border-left: none; }
+  .compare-roles-summary:not(.cr-n5):not(.cr-n6) .compare-roles-stat:nth-child(even) { border-left: 1px solid var(--border); }
+  .compare-roles-summary:not(.cr-n5):not(.cr-n6) .compare-roles-stat:nth-child(n+3) { border-top: 1px solid var(--border); }
+  .compare-roles-summary.cr-n5 .compare-roles-stat:nth-child(3n+2),
+  .compare-roles-summary.cr-n5 .compare-roles-stat:nth-child(3n+3),
+  .compare-roles-summary.cr-n6 .compare-roles-stat:nth-child(3n+2),
+  .compare-roles-summary.cr-n6 .compare-roles-stat:nth-child(3n+3) { border-left: 1px solid var(--border); }
+  .compare-roles-summary.cr-n5 .compare-roles-stat:nth-child(n+4),
+  .compare-roles-summary.cr-n6 .compare-roles-stat:nth-child(n+4) { border-top: 1px solid var(--border); }
+  /* Popover stat grids: 3 columns at phone width so labels like
+     "First downs" and "Explosive %" sit on one line. */
+  .compare-roles-dgrid { grid-template-columns: repeat(3, 1fr); }
 }
 
 
