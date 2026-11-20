@@ -64,6 +64,7 @@ def api_player_role(sleeper_id: str):
     cached = _cache_get(key)
     if cached is not None:
         return jsonify(cached)
+    started = time.time()
     try:
         from dashboard_services.player_roles import build_player_payload
 
@@ -71,10 +72,14 @@ def api_player_role(sleeper_id: str):
     except Exception:
         logger.exception("[player-role] build failed for %s", sleeper_id)
         return jsonify({"player_id": str(sleeper_id),
-                        "error": "Failed to build player role"}), 500
+                        "error": "Failed to build player role",
+                        "code": "role_build_failed"}), 500
+    logger.info("[player-role] built %s season=%s window=%s in %.2fs",
+                sleeper_id, season, window, time.time() - started)
     if payload is None:
         return jsonify({"player_id": str(sleeper_id),
-                        "error": "No role data for this player"}), 404
+                        "error": "No role data for this player",
+                        "code": "no_role_data"}), 404
     _cache_put(key, payload)
     resp = jsonify(payload)
     resp.headers["Cache-Control"] = "private, max-age=300"
