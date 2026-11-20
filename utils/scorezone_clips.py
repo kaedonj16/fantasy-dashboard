@@ -1,26 +1,27 @@
-"""ScoreZone TD clip matcher: official X clips for stored touchdown plays.
+"""ScoreZone clip matcher: official X clips for stored highlight plays.
 
 Pipeline (runs inside the scorezone-store poll, see ``poll_once``):
 
-1. Wanted list: TD plays already in the play store (``redzone_plays``) that
-   carry an ESPN ``wallclock`` and have no clip yet.
+1. Wanted list: plays already in the play store (``redzone_plays``) that
+   carry an ESPN ``wallclock``, have no clip yet, and are a TD, a 40+
+   yard gain, or a turnover (the kinds ScoreZone Moments surfaces).
 2. Fetch: recent tweets from @NFL plus the two team accounts of each game
    with an open wanted play, via the X API v2 user-tweets endpoint with
    ``since_id`` incremental reads (smallest reads possible; X reads are
    pay-per-use and were authorized for this job only).
 3. Gate (precision over coverage): a tweet becomes a play's clip only when
    the author is @NFL or one of the game's team accounts, the tweet was
-   posted within [play wallclock, +12 minutes], the caption names the TD
-   scorer's surname (or, on a pass TD, the passer's surname: @NFL's house
-   style is "BURROW. JA'MARR. TOUCHDOWN.", passer + first name only), the
+   posted within [play wallclock, +20 minutes], the caption names the
+   playmaker's surname (or the passer's surname: @NFL's house style is
+   "BURROW. JA'MARR. TOUCHDOWN.", passer + first name only), the
    caption actually describes the play or the score
    (a play signal: touchdown / end zone / a yardage line / "extends the
-   lead" etc. -- a surname-only caption matched a post-TD fan moment on
-   2026-11-08), the caption is not a multi-play roundup, and exactly
-   one wanted play in the whole slate fits. Anything ambiguous stores
-   nothing, so a Watch button can never point at the wrong play.
+   lead" / "intercepted" etc. -- a surname-only caption matched a post-TD
+   fan moment on 2026-11-08), the caption is not a multi-play roundup, and
+   exactly one wanted play in the whole slate fits. Anything ambiguous
+   stores nothing, so a Watch button can never point at the wrong play.
 4. Store: ``redzone_play_clips`` via utils.scorezone_store; the feed and
-   moments payloads stamp the clip onto the TD play at read time.
+   moments payloads stamp the clip onto the play at read time.
 
 Credentials: the poller runs server-side on Render with no access to the
 custom.x connector's OAuth store, so fetches use an app bearer token from
@@ -63,8 +64,14 @@ TEAM_X_HANDLES = {
     "TB": "Buccaneers", "TEN": "Titans", "WAS": "Commanders",
 }
 
-_WINDOW_S = 12 * 60          # tweet must land within 12 min of the play
+_WINDOW_S = 20 * 60          # tweet must land within 20 min of the play
+                             # (was 12: team accounts regularly post the
+                             # clip 13-19 min after the play, and those
+                             # plays missed forever -- Colts@Texans,
+                             # 2026-11-19, 1 of 3 TDs matched)
 _FETCH_GRACE_S = 5 * 60      # keep polling a play a bit past its window
+_RESCAN_AFTER_S = 5 * 60     # an unmatched play this old gets one
+                             # time-window re-read (see maybe_run_clip_pass)
 _FILL_WINDOW_S = 48 * 3600   # a matched clip stays fill-eligible 48h: X's
                              # media transcoding has been observed lagging
                              # the post by 30+ min, far past the match
@@ -86,6 +93,18 @@ _ROUNDUP_RE = re.compile(r"highlights|best plays|every touchdown", re.IGNORECASE
 # shapes (yardage lines, "finds X for...", "takes it to the house") and
 # the terse team-account shape "THE CATCH. THE SCORE." (Chiefs,
 # 2026-11-08), which is why the bare noun "score" counts as a signal.
+# Big-gain and turnover shapes ("for 47 yards", "huge gain",
+# "intercepted", "fumbles") joined when the wanted list widened past
+# TDs; they describe the play the same way, and every other gate
+# (official account, window, exactly one play) still applies.
+# The bare word "six" and "jump ball" joined 2026-11-19: @NFL's TNF
+# captions for two of the night's three Texans TDs were pure hype with
+# no TD vocabulary at all ("STROUD. NICO. SIX." for Collins, "BOUTTE
+# JUMP BALL. ANOTHER ONE FOR STROUD." for Boutte, both ~100s after the
+# plays) and the signal gate killed both. A bare "six" is safe inside
+# this gate stack: the caption must still name the scorer (or passer),
+# come from an official account inside the window, and fit exactly one
+# play -- the Higgins fan post that motivated the gate has no "six".
 _PLAY_SIGNAL_RE = re.compile(
     r"touchdowns?\b"
     r"|\btd\b"
@@ -93,6 +112,8 @@ _PLAY_SIGNAL_RE = re.compile(
     r"|for (6|six)\b"
     r"|adds six\b"
     r"|six more\b"
+    r"|\bsix\b"
+    r"|jump ball\b"
     r"|on the board\b"
     r"|extends the lead\b"
     r"|pick[ -]?six\b"
@@ -108,7 +129,16 @@ _PLAY_SIGNAL_RE = re.compile(
     r"|connects with\b"
     r"|floats it\b"
     r"|finds .{1,40}? for\b"
-    r"|\d{1,3}[- ](yd|yard)\b",
+    r"|intercept\w*"
+    r"|picked off\b"
+    r"|picks off\b"
+    r"|\bint\b"
+    r"|\bfumble[ds]?\b|\bfumbling\b"
+    r"|huge gain\b"
+    r"|big gain\b"
+    r"|explosive\b"
+    r"|deep (ball|shot|strike)\b"
+    r"|\d{1,3}[- ](yds?|yards?)\b",
     re.IGNORECASE,
 )
 _SUFFIX_TOKENS = {"jr", "sr", "ii", "iii", "iv", "v"}
@@ -197,7 +227,7 @@ def has_play_signal(text: str) -> bool:
 
     Naming the scorer is not enough: celebration, fan-moment, injury and
     interview posts all name him too, and they post inside the same
-    12-minute window with landscape video.
+    match window with landscape video.
     """
     return bool(_PLAY_SIGNAL_RE.search(str(text or "")))
 
@@ -206,7 +236,33 @@ def has_play_signal(text: str) -> bool:
 # Wanted list
 # ---------------------------------------------------------------------------
 
-def build_wanted_td_plays(
+_BIG_GAIN_YDS = 40.0
+
+
+def _row_yards(stat: dict) -> float:
+    """Play yards credited on one stat line (max of pass/rush/rec)."""
+    try:
+        return max(
+            float(stat.get("pass_yds") or 0),
+            float(stat.get("rush_yds") or 0),
+            float(stat.get("rec_yds") or 0),
+        )
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _is_turnover_row(stat: dict) -> bool:
+    try:
+        return (
+            float(stat.get("int") or 0) > 0
+            or float(stat.get("def_int") or 0) > 0
+            or float(stat.get("fum_lost") or 0) > 0
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def build_wanted_plays(
     game_id: str,
     rows: list[dict],
     pid_to_name: dict,
@@ -215,18 +271,27 @@ def build_wanted_td_plays(
     away: str = "",
     home: str = "",
 ) -> list[dict]:
-    """Wanted TD plays for one game from stored play rows.
+    """Wanted plays for one game from stored play rows.
 
-    A play is wanted when any of its rows is a TD and some row carries an
-    ESPN wallclock (the window anchor). Scorers are the players credited
-    with the TD in their stat line (rec/rush/def); when attribution credited
-    nobody, every involved non-DEF player is a candidate scorer. Passers
-    (pass_td in their stat line) are recorded separately: they never become
-    the play's scorer, but their surname is an accepted matching name,
-    because official captions routinely name the passer and only the
-    scorer's first name ("Burrow finds Tee in the end zone"). Plays with
-    no resolvable scorer name are dropped: an unnameable play can never be
-    matched precisely.
+    A play is wanted when some row carries an ESPN wallclock (the window
+    anchor) and the play is one of the kinds ScoreZone Moments surfaces:
+    a TD (``kind="td"``), a 40+ yard gain (``"big_gain"``), or a turnover
+    (``"turnover"``; a play that is both a big gain and a turnover is a
+    turnover, mirroring the Moments priority td > turnover > big_gain).
+
+    Scorers are the featured playmakers: for a TD, the players credited
+    with it in their stat line (rec/rush/def); for a big gain, the
+    receiver or rusher who gained the yards; for a turnover, both sides
+    of the takeaway: the QB who threw the interception or the carrier
+    who lost the fumble, and the individual defender credited with the
+    pick or recovery (def_int / fum_rec rows; team DEF pids are excluded
+    as always). When attribution credits nobody,
+    every involved non-DEF player is a candidate. Passers are recorded
+    separately: they never become the play's scorer, but their surname is
+    an accepted matching name, because official captions routinely name
+    the passer and only the playmaker's first name ("Burrow finds Tee in
+    the end zone"). Plays with no resolvable playmaker name are dropped:
+    an unnameable play can never be matched precisely.
     """
     from utils.nfl import canon_team
     from utils.scorezone import _iso_to_epoch
@@ -244,9 +309,6 @@ def build_wanted_td_plays(
 
     wanted: list[dict] = []
     for play_id, group in by_play.items():
-        td_rows = [r for r in group if r.get("is_td")]
-        if not td_rows:
-            continue
         wallclock = 0
         for r in group:
             if r.get("wallclock"):
@@ -255,20 +317,72 @@ def build_wanted_td_plays(
                     break
         if not wallclock:
             continue
+        td_rows = [r for r in group if r.get("is_td")]
+        if td_rows:
+            kind = "td"
+            credit_rows = td_rows
+        else:
+            play_text = ""
+            for r in group:
+                if r.get("play_text"):
+                    play_text = str(r["play_text"]).lower()
+                    break
+            is_turnover = (
+                any(_is_turnover_row(r.get("stat_line") or {}) for r in group)
+                or "intercepted" in play_text
+                or "fumble" in play_text
+            )
+            is_big_gain = any(
+                _row_yards(r.get("stat_line") or {}) >= _BIG_GAIN_YDS
+                for r in group
+            )
+            if is_turnover:
+                kind = "turnover"
+            elif is_big_gain:
+                kind = "big_gain"
+            else:
+                continue
+            credit_rows = group
         scorer_pids: list[str] = []
         passer_pids: list[str] = []
         involved_pids: list[str] = []
-        for r in td_rows:
+        for r in credit_rows:
             pid = str(r.get("pid") or "")
             if not pid or pid in def_pids:
                 continue
             involved_pids.append(pid)
             stat = r.get("stat_line") or {}
             try:
-                if any(float(stat.get(k) or 0) > 0 for k in _TD_STAT_KEYS):
-                    scorer_pids.append(pid)
-                if float(stat.get("pass_td") or 0) > 0:
-                    passer_pids.append(pid)
+                if kind == "td":
+                    if any(float(stat.get(k) or 0) > 0 for k in _TD_STAT_KEYS):
+                        scorer_pids.append(pid)
+                    if float(stat.get("pass_td") or 0) > 0:
+                        passer_pids.append(pid)
+                elif kind == "big_gain":
+                    if (
+                        float(stat.get("rec_yds") or 0) >= _BIG_GAIN_YDS
+                        or float(stat.get("rush_yds") or 0) >= _BIG_GAIN_YDS
+                    ):
+                        scorer_pids.append(pid)
+                    if float(stat.get("pass_yds") or 0) >= _BIG_GAIN_YDS:
+                        passer_pids.append(pid)
+                else:  # turnover
+                    # Both sides of the takeaway are featured names:
+                    # official captions name the QB who threw the pick /
+                    # the carrier who lost the fumble AND, just as often,
+                    # the defender who took it (def_int / fum_rec rows are
+                    # individual defenders, not DEF pids). All are scorer
+                    # tier for this one play; the exactly-one-candidate
+                    # gate still decides.
+                    if (
+                        float(stat.get("int") or 0) > 0
+                        or float(stat.get("fum_lost") or 0) > 0
+                        or float(stat.get("def_int") or 0) > 0
+                        or float(stat.get("fum_rec") or 0) > 0
+                    ):
+                        scorer_pids.append(pid)
+                    if float(stat.get("pass_yds") or 0) > 0:
+                        passer_pids.append(pid)
             except (TypeError, ValueError):
                 continue
         scorers: list[str] = []
@@ -283,10 +397,11 @@ def build_wanted_td_plays(
             name = str((pid_to_name or {}).get(pid) or "")
             if name and surname_of(name) and name not in scorers:
                 passers.append(name)
-        first = td_rows[0]
+        first = credit_rows[0]
         wanted.append({
             "game_id": str(game_id),
             "play_id": play_id,
+            "kind": kind,
             "wallclock": wallclock,
             "quarter": first.get("quarter") or "",
             "clock": first.get("clock") or "",
@@ -301,6 +416,25 @@ def build_wanted_td_plays(
             "accounts": accounts,
         })
     return wanted
+
+
+def build_wanted_td_plays(
+    game_id: str,
+    rows: list[dict],
+    pid_to_name: dict,
+    *,
+    def_pids=frozenset(),
+    away: str = "",
+    home: str = "",
+) -> list[dict]:
+    """TD-only wanted list (back-compat wrapper over build_wanted_plays)."""
+    return [
+        w for w in build_wanted_plays(
+            game_id, rows, pid_to_name,
+            def_pids=def_pids, away=away, home=home,
+        )
+        if w["kind"] == "td"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -777,7 +911,7 @@ def run_clip_backfill(
             )
             existing = get_play_clips(int(season), [gid])
             wanted = [
-                w for w in build_wanted_td_plays(
+                w for w in build_wanted_plays(
                     gid, rows or [], pid_to_name,
                     def_pids=def_pids, away=away, home=home,
                 )
@@ -909,7 +1043,7 @@ def maybe_run_clip_pass(
                 _date, away, home = parse_game_id(gid)
             except Exception:
                 away = home = ""
-            for w in build_wanted_td_plays(
+            for w in build_wanted_plays(
                 gid, rows_by_game.get(gid) or [], pid_to_name,
                 def_pids=def_pids, away=away, home=home,
             ):
@@ -963,6 +1097,49 @@ def maybe_run_clip_pass(
                     since[account] = str(max(int(t["id"]) for t in got))
                 except Exception:
                     pass
+        # Second look: the since_id cursor above is a one-way ratchet --
+        # a clip tweet fetched in a pass before its play was stored (or
+        # before the play's row carried a wallclock) scrolls behind the
+        # cursor and the incremental read never returns it again, so the
+        # play missed forever even though the tweet was seen. Any wanted
+        # play still unmatched _RESCAN_AFTER_S after it happened gets ONE
+        # time-window re-read per account (the backfill's fetcher),
+        # anchored on the oldest such play; the plays it covers are
+        # marked in state so the re-read fires once per play, not on
+        # every pass. Precision is unchanged: the re-read feeds the same
+        # match_tweets gate.
+        window_fetch = getattr(fetcher, "user_tweets_window", None)
+        if window_fetch is not None and wanted:
+            rescan_state = state.get("rescan") or {}
+            seen_ids = {str(t.get("id") or "") for t in tweets}
+            for account in accounts:
+                eligible = [
+                    w for w in wanted
+                    if account in w["accounts"]
+                    and ts_now - w["wallclock"] >= _RESCAN_AFTER_S
+                    and (w["game_id"], w["play_id"]) not in pending
+                    and f'{w["game_id"]}:{w["play_id"]}' not in rescan_state
+                ]
+                if not eligible:
+                    continue
+                start = min(w["wallclock"] for w in eligible) - 60
+                end = max(w["wallclock"] for w in eligible) + _WINDOW_S + 60
+                try:
+                    extra = window_fetch(account, start, end)
+                except Exception as exc:
+                    logger.warning(
+                        "[scorezone-clips] rescan failed account=%s: %s",
+                        account, exc,
+                    )
+                    continue
+                for t in extra or []:
+                    tid = str(t.get("id") or "")
+                    if tid and tid not in seen_ids:
+                        seen_ids.add(tid)
+                        tweets.append(t)
+                for w in eligible:
+                    rescan_state[f'{w["game_id"]}:{w["play_id"]}'] = ts_now
+            state["rescan"] = rescan_state
         matches = match_tweets(tweets, wanted)
         matched = 0
         for clip in matches:
@@ -997,6 +1174,8 @@ def maybe_run_clip_pass(
         if own_fetcher:
             state["user_ids"] = fetcher.user_ids
             state["since"] = since
+            # state["rescan"] was updated in place above when a second
+            # look fired; it rides along on this same save.
             _save_state(state)
         logger.info(
             "[scorezone-clips] wanted=%s tweets=%s matched=%s filled=%s",

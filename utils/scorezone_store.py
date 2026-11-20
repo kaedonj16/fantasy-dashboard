@@ -397,9 +397,10 @@ def set_watermark(ts: float) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TD play clips (utils.scorezone_clips matcher writes, feed payloads read)
+# Play clips (utils.scorezone_clips matcher writes, feed payloads read)
 #
-# One row per play: the official X clip matched to that exact touchdown.
+# One row per play: the official X clip matched to that exact play
+# (a touchdown, a 40+ yard gain, or a turnover).
 # Keyed by the same (season, game_id, play_id) identity redzone_plays uses,
 # so serving joins on the ids the play payloads already carry. First match
 # wins (the matcher gate is precision-first); re-runs are idempotent.
@@ -619,16 +620,19 @@ def get_play_clips(season: int, game_ids: list[str]) -> dict:
 
 
 def attach_clips_to_plays(plays_by_game: dict, clips: dict) -> int:
-    """Stamp clip fields onto TD play rows in a {game_id: [plays]} map.
+    """Stamp clip fields onto play rows in a {game_id: [plays]} map.
 
     Pure: mutates the play dicts in place, returns how many rows gained a
-    clip. Rows without a stored clip are left exactly as they were, so the
-    payload (and the client) cannot tell clips exist for unmatched plays.
+    clip. Clips only exist for wanted plays (TDs, 40+ gains, turnovers),
+    so clip presence is the only gate: any row of a matched play is
+    stamped. Rows without a stored clip are left exactly as they were,
+    so the payload (and the client) cannot tell clips exist for
+    unmatched plays.
     """
     n = 0
     for gid, plays in (plays_by_game or {}).items():
         for play in plays or []:
-            if not isinstance(play, dict) or not play.get("is_td"):
+            if not isinstance(play, dict):
                 continue
             clip = (clips or {}).get((str(gid), str(play.get("play_id") or "")))
             if clip:
@@ -644,10 +648,16 @@ def attach_clips_to_plays(plays_by_game: dict, clips: dict) -> int:
 
 
 def attach_clips_to_moments(moments: list, clips: dict) -> int:
-    """Stamp clip fields onto TD moments (routes payload shape). Pure."""
+    """Stamp clip fields onto highlight moments (routes payload shape).
+
+    Pure. Moments come in exactly the kinds the clip matcher wants
+    (td / big_gain / turnover), so all three can carry a clip.
+    """
     n = 0
     for m in moments or []:
-        if not isinstance(m, dict) or m.get("kind") != "td":
+        if not isinstance(m, dict) or m.get("kind") not in (
+            "td", "big_gain", "turnover",
+        ):
             continue
         clip = (clips or {}).get(
             (str(m.get("game_id") or ""), str(m.get("play_id") or ""))
