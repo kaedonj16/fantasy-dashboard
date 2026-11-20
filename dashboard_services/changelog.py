@@ -11,6 +11,12 @@ CHANGELOG = [
         "link": "/compare"
     },
     {
+        "date": "2026-11-20",
+        "tag": "fix",
+        "text": "Prospect percentiles no longer pile up at 100. Production, efficiency and breakout percentiles on the board and in the prospect modal are now ranked on the raw numbers behind them: his best season's yards per game, his best yards per catch, carry or pass attempt, and his best dominator rating, still against the same drafted 2016 to 2024 pool. Two players whose model scores both top out can now separate, and a 100 has to be earned on the stat itself. Competition and athleticism percentiles are unchanged.",
+        "link": "/prospects"
+    },
+    {
         "date": "2026-11-19",
         "tag": "update",
         "text": "Role jobs now respect his own depth chart: a back, receiver or tight end who owns his room (at least half of his team's opportunities at his position, and at least 1.8x the next man up) earns the top job title even when his raw share trails the league's true bell cows. Committees stay committees: a close split at the top of a room changes nothing.",

@@ -36,6 +36,17 @@ def _pop_rows(n=40, base=50.0, tested=0, year=2026):
             "competition_score": 20.0 + i,
             "athleticism_score": 60.0 + i,
             "tested": i < tested,
+            # Raw-driver anchors: one best completed-season rate and
+            # best Advanced marks per drafted player, as the backfill
+            # stores them. Production bests run 40..(39+n); the marks
+            # step evenly so expected percentiles are exact.
+            "season_rates": [40.0 + i],
+            "advanced_marks": {
+                "Yds/Rec": 10.0 + 0.25 * i,
+                "Yds/Carry": 3.0 + 0.25 * i,
+                "Yds/Att": 6.0 + 0.25 * i,
+                "Dominator": round(0.10 + 0.01 * i, 2),
+            },
         })
     return rows
 
@@ -91,13 +102,22 @@ class TestReferencePopulation:
 class TestComponentPercentiles:
     def test_untested_player_gets_no_athleticism(self):
         pop = ra.reference_population("WR", ref_rows=_pop_rows(40, tested=40))
-        row = {"production_score": 89.0, "efficiency_score": 59.5,
+        row = {"position": "WR",
+               "production_score": 89.0, "efficiency_score": 59.5,
                "breakout_profile_score": 69.0, "competition_score": 59.0,
                "athleticism_score": 99.0,
                "forty_yard": None, "ras_score": None}
-        out = ra.component_percentiles(row, pop)
+        seasons = [{"season": 2024, "games_played": 13,
+                    "receiving_yards": 780, "yds_per_reception": 13.0,
+                    "dominator_rating": 0.25}]
+        out = ra.component_percentiles(row, pop, seasons=seasons)
         assert out["athleticism"] is None
-        assert out["production"] == 100
+        # Production is a raw-driver percentile now: his best rate is
+        # 60.0 rec yds/gm against bests of 40..79 -> 21/40 -> 53. The
+        # old score share would have printed 100 for his 89.0 score.
+        assert out["production"] == 53
+        # Competition stays score-based: 59.0 tops the 20..59 pool.
+        assert out["competition"] == 100
 
     def test_tested_player_gets_athleticism(self):
         pop = ra.reference_population("RB", ref_rows=_pop_rows(40, tested=40))
@@ -113,6 +133,156 @@ class TestComponentPercentiles:
         row = {"production_score": 89.0, "forty_yard": 4.5}
         out = ra.component_percentiles(row, pop)
         assert all(v is None for v in out.values())
+
+
+class TestRawDriverPercentiles:
+    """Production / efficiency / breakout percentiles rank the raw
+    driver, not the clipped component score (2026-11-20). The pool
+    plateaus at the score cap (many drafted players store a 100), so
+    two maxed scores must still separate on the stat itself."""
+
+    def test_population_drivers_built_from_reference_rows(self):
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(40))
+        assert pop["drivers"]["production"] == [40.0 + i for i in range(40)]
+        assert pop["drivers"]["efficiency"] == [
+            10.0 + 0.25 * i for i in range(40)]
+        assert pop["drivers"]["breakout"] == [
+            round(0.10 + 0.01 * i, 2) for i in range(40)]
+
+    def test_production_driver_is_best_season_not_every_season(self):
+        refs = _pop_rows(39)
+        refs.append({
+            "draft_class_year": 2026, "production_score": 1.0,
+            "efficiency_score": None, "breakout_profile_score": None,
+            "competition_score": None, "athleticism_score": None,
+            "tested": False, "advanced_marks": {},
+            "season_rates": [55.0, 82.0, 61.0],
+        })
+        pop = ra.reference_population("WR", ref_rows=refs)
+        # One value per drafted player: the appended row's three rates
+        # contribute only its best (82.0, above the whole fixture
+        # range), exactly once; 40 values for 40 players.
+        assert pop["drivers"]["production"].count(82.0) == 1
+        assert pop["drivers"]["production"][-1] == 82.0
+        assert len(pop["drivers"]["production"]) == 40
+
+    def test_plateau_separation(self):
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(40))
+        base = {"position": "WR", "production_score": 100.0,
+                "efficiency_score": 100.0, "breakout_profile_score": 100.0,
+                "competition_score": 50.0, "athleticism_score": None,
+                "forty_yard": None, "ras_score": None}
+        star = dict(base)
+        star_seasons = [{"season": 2024, "games_played": 13,
+                         "receiving_yards": 1014,
+                         "yds_per_reception": 18.0,
+                         "dominator_rating": 0.40}]
+        other = dict(base)
+        other_seasons = [{"season": 2024, "games_played": 13,
+                          "receiving_yards": 650,
+                          "yds_per_reception": 12.0,
+                          "dominator_rating": 0.20}]
+        a = ra.component_percentiles(star, pop, seasons=star_seasons)
+        b = ra.component_percentiles(other, pop, seasons=other_seasons)
+        # Identical (maxed) scores, different raw drivers: the three
+        # percentiles separate, at the driver-implied values.
+        assert a["production"] == 98 and b["production"] == 28
+        assert a["efficiency"] == 83 and b["efficiency"] == 23
+        assert a["breakout"] == 78 and b["breakout"] == 28
+        # Score-based components are untouched by the seasons.
+        assert a["competition"] == b["competition"] == 78
+
+    def test_driver_mapping_by_position(self):
+        wr = ra._component_drivers("WR", [
+            {"season": 2024, "games_played": 12, "receiving_yards": 1200,
+             "yds_per_reception": 15.0, "dominator_rating": 0.33}])
+        assert wr == {"production": 100.0, "efficiency": 15.0,
+                      "breakout": 0.33}
+        rb = ra._component_drivers("RB", [
+            {"season": 2024, "games_played": 12, "rush_yards": 900,
+             "receiving_yards": 300, "yds_per_carry": 5.5,
+             "dominator_rating": 0.30}])
+        assert rb == {"production": 100.0, "efficiency": 5.5,
+                      "breakout": 0.30}
+        qb = ra._component_drivers("QB", [
+            {"season": 2024, "games_played": 12, "pass_yards": 3600,
+             "yds_per_attempt": 9.2, "dominator_rating": 0.50}])
+        assert qb == {"production": 300.0, "efficiency": 9.2,
+                      "breakout": 0.50}
+        te = ra._component_drivers("TE", [
+            {"season": 2024, "games_played": 12, "receiving_yards": 960,
+             "yds_per_reception": 12.0, "dominator_rating": 0.22}])
+        assert te == {"production": 80.0, "efficiency": 12.0,
+                      "breakout": 0.22}
+
+    def test_qb_breakout_hides_without_dominator_pool(self):
+        # QBs carry no Dominator advanced mark, so the historical pool
+        # has no breakout distribution: the percentile hides rather
+        # than falling back to the clipped score.
+        refs = [{
+            "draft_class_year": 2020, "production_score": 50.0 + i,
+            "efficiency_score": 50.0, "breakout_profile_score": 50.0,
+            "competition_score": 50.0, "athleticism_score": None,
+            "tested": False, "season_rates": [200.0 + i],
+            "advanced_marks": {"Yds/Att": 6.0 + 0.25 * i},
+        } for i in range(40)]
+        pop = ra.reference_population("QB", ref_rows=refs)
+        assert pop["drivers"]["breakout"] == []
+        row = {"position": "QB", "competition_score": 50.0,
+               "forty_yard": None, "ras_score": None}
+        seasons = [{"season": 2024, "games_played": 12,
+                    "pass_yards": 3600, "yds_per_attempt": 9.0,
+                    "dominator_rating": 0.50}]
+        out = ra.component_percentiles(row, pop, seasons=seasons)
+        assert out["breakout"] is None
+        assert out["production"] == 100
+        assert out["efficiency"] == 33
+
+    def test_in_progress_season_never_anchors_production(self):
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(40))
+        cur = ra.current_college_season()
+        row = {"position": "WR", "competition_score": 50.0,
+               "forty_yard": None, "ras_score": None}
+        seasons = [
+            {"season": cur - 1, "games_played": 13,
+             "receiving_yards": 650, "yds_per_reception": 12.0,
+             "dominator_rating": 0.20},
+            {"season": cur, "games_played": 7,
+             "receiving_yards": 1400, "yds_per_reception": 20.0,
+             "dominator_rating": 0.50},
+        ]
+        drivers = ra._component_drivers("WR", seasons)
+        # The completed season's 50.0 anchors production; the live
+        # season's 200.0 pace never does.
+        assert drivers["production"] == 50.0
+        out = ra.component_percentiles(row, pop, seasons=seasons)
+        assert out["production"] == 28
+        live_only = ra.component_percentiles(
+            row, pop, seasons=[seasons[1]])
+        assert live_only["production"] is None
+
+    def test_missing_driver_fields_hide(self):
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(40))
+        row = {"position": "WR", "competition_score": 50.0,
+               "forty_yard": None, "ras_score": None}
+        seasons = [{"season": 2024, "games_played": 13,
+                    "receiving_yards": 780}]
+        out = ra.component_percentiles(row, pop, seasons=seasons)
+        assert out["production"] == 53
+        assert out["efficiency"] is None
+        assert out["breakout"] is None
+
+    def test_no_seasons_no_driver_percentiles(self):
+        pop = ra.reference_population("WR", ref_rows=_pop_rows(40))
+        row = {"position": "WR", "production_score": 100.0,
+               "efficiency_score": 100.0, "breakout_profile_score": 100.0,
+               "competition_score": 59.0,
+               "forty_yard": None, "ras_score": None}
+        out = ra.component_percentiles(row, pop)
+        assert out["production"] is None
+        assert out["efficiency"] is None
+        assert out["breakout"] is None
+        assert out["competition"] == 100
 
 
 class TestProspectTag:
