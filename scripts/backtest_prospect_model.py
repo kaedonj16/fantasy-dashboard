@@ -32,6 +32,7 @@ from data_building.rookie_pipeline.historical_calibration import (
     _NFLVERSE_ROSTER,
     _NFLVERSE_BASE,
     _NFLVERSE_COMBINE,
+    _NFLVERSE_DRAFT_PICKS,
     _safe_float,
     _calc_ppr_points,
 )
@@ -96,6 +97,29 @@ def _load_draft_class(draft_year: int) -> List[Dict[str, Any]]:
                 "college":    (row.get("college") or "").strip(),
                 "birth_date": (row.get("birth_date") or "").strip(),
             }
+
+    # The roster file leaves draft_number empty for a slice of
+    # 2016-2019 draftees (109 skill players, incl. overall picks 8, 9,
+    # 12, 15, 19 and 21); without a fill those players fall back to
+    # the pick-300 default and price their draft capital at the
+    # floor. Fill from the authoritative draft_picks table by
+    # gsis_id. Fail-soft: a failed fetch leaves the old behavior.
+    missing = [gid for gid, r in seen.items() if not r.get("draft_pick")]
+    if missing:
+        by_gid: Dict[str, int] = {}
+        for r in _fetch_csv(_NFLVERSE_DRAFT_PICKS):
+            if (r.get("season") or "") != str(draft_year):
+                continue
+            gid = r.get("gsis_id") or ""
+            raw = (r.get("pick") or "").strip()
+            if gid and raw:
+                try:
+                    by_gid[gid] = int(float(raw))
+                except ValueError:
+                    pass
+        for gid in missing:
+            if gid in by_gid:
+                seen[gid]["draft_pick"] = by_gid[gid]
 
     return list(seen.values())
 
