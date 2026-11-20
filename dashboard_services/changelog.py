@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-19",
+        "tag": "update",
+        "text": "Role jobs now respect his own depth chart: a back, receiver or tight end who owns his room (at least half of his team's opportunities at his position, and at least 1.8x the next man up) earns the top job title even when his raw share trails the league's true bell cows. Committees stay committees: a close split at the top of a room changes nothing.",
+        "link": "/compare"
+    },
+    {
+        "date": "2026-11-19",
         "tag": "new",
         "text": "Start/Sit, Player Rankings and Rest of Season rows now carry his role job next to his name: Workhorse, Alpha WR1, Committee 1B and the rest, with a Contingent note when his production depends on an injured roommate. It is the same role engine as Compare, readable at a glance.",
         "link": "/rankings/rest-of-season"

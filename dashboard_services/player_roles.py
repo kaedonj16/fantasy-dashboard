@@ -307,6 +307,7 @@ def compute_pool(pool: Dict[str, Dict[str, Any]],
             axes[axis] = int(round(_pctile(raw, pool_vals)))
         for key in ("opp_share", "snap_pct", "catch_rate", "rz_per_game",
                     "dropbacks_per_game", "start_share", "rec_share_of_opp",
+                    "rush_ypc",
                     "pbp_adot", "pbp_yac_per_rec", "pbp_deep_rate",
                     "pbp_explosive_rate", "pbp_rating",
                     "pbp_play_action_rate", "pbp_play_action_epa"):
@@ -373,6 +374,75 @@ def job_for(pos: str, score: float, feats: Dict[str, Any]) -> str:
     return "Rotational"
 
 
+# ---------------------------------------------------------------------------
+# Room dominance: a promotion path to the top Job tier
+# ---------------------------------------------------------------------------
+# The Job blend percentiles a player's opportunity share league-wide,
+# where true bell cows pull ~70%, so a back who owns his own room still
+# grades Lead 1A (Ollie Gordon II: 65% of Miami's RB opportunities, 3.1x
+# the next back, Lead 1A). Room dominance adds ONE promotion step: a
+# player the blend already places one tier below the top (Lead 1A /
+# WR1 / TE1) reaches the top tier when he is his room's clear winner:
+# at least half of his team's position-group opportunities AND at least
+# 1.8x the next teammate's opportunities. A genuine committee cannot
+# pass either test (the tightest real committee lead in the 2026 pool
+# sits at 1.77x / 43%), and nothing ever demotes. QB is exempt: there
+# is no room split to dominate.
+_ROOM_PROMOTE = {"RB": ("Lead 1A", "Workhorse"),
+                 "WR": ("WR1", "Alpha WR1"),
+                 "TE": ("TE1", "Alpha TE1")}
+ROOM_DOM_SHARE_MIN = 50.0
+ROOM_DOM_RATIO_MIN = 1.8
+
+
+def room_dominance(pid: str, pool: Dict[str, Dict[str, Any]],
+                   computed: Dict[str, Dict[str, Any]]):
+    """(his share %, next teammate's share %, ratio) of the team's
+    position-group opportunities for one player, from the same windowed
+    feats the Job blend uses. None when the room cannot be measured."""
+    entry = pool.get(pid) or {}
+    pos, team = entry.get("pos"), entry.get("team")
+    if pid not in computed or pos not in _ROOM_PROMOTE or not team:
+        return None
+    mine = _f(computed[pid]["feats"].get("opp"))
+    total = 0.0
+    next_opp = 0.0
+    for p, e in pool.items():
+        if p not in computed or e.get("pos") != pos or e.get("team") != team:
+            continue
+        o = _f(computed[p]["feats"].get("opp"))
+        total += o
+        if p != pid and o > next_opp:
+            next_opp = o
+    if total <= 0 or mine <= 0:
+        return None
+    share = mine / total * 100.0
+    ratio = mine / next_opp if next_opp > 0 else float("inf")
+    return share, next_opp / total * 100.0, ratio
+
+
+def _room_promoted_job(pid: str, pool: Dict[str, Dict[str, Any]],
+                       computed: Dict[str, Dict[str, Any]], job: str) -> str:
+    promo = _ROOM_PROMOTE.get((pool.get(pid) or {}).get("pos") or "")
+    if not promo or job != promo[0]:
+        return job
+    dom = room_dominance(pid, pool, computed)
+    if dom and dom[0] >= ROOM_DOM_SHARE_MIN and dom[2] >= ROOM_DOM_RATIO_MIN:
+        return promo[1]
+    return job
+
+
+def job_for_player(pid: str, pool: Dict[str, Dict[str, Any]],
+                   computed: Dict[str, Dict[str, Any]]) -> str:
+    """The full Job for one player: score tier plus room promotion.
+    Every surface that names a Job (role card, timeline, comparables
+    tier gate, board labels via build_role) goes through this or
+    build_role so they can never disagree."""
+    mine = computed[pid]
+    job = job_for(pool[pid].get("pos"), mine["score"], mine["feats"])
+    return _room_promoted_job(pid, pool, computed, job)
+
+
 # (axis, tag, confirming feature-percentile key)
 _TAG_RULES: Dict[str, List[tuple]] = {
     "WR": [("Volume", "Target Hog", "opp_share"),
@@ -383,9 +453,15 @@ _TAG_RULES: Dict[str, List[tuple]] = {
            ("Deep Work", "Deep Threat", "pbp_deep_rate"),
            ("Red Zone", "Red Zone Threat", "rz_per_game"),
            ("Explosiveness", "YAC Creator", "pbp_yac_per_rec")],
+    # Home-Run Hitter confirms on yards per carry, NOT pbp_explosive_rate:
+    # for an RB that feature is the RECEIVING explosive rate (20+ yard
+    # share of his receptions), which sits at ~0 for pure runners and
+    # blocked the very trait the Explosiveness axis (explosive RUN rate)
+    # measures. Ollie Gordon II: axis 82, old confirm percentile 34.6 on
+    # a raw 0.0, while his YPC percentile is 69.2.
     "RB": [("Receiving", "Receiving Back", "rec_share_of_opp"),
            ("Red Zone", "Goal-Line Back", "rz_per_game"),
-           ("Explosiveness", "Home-Run Hitter", "pbp_explosive_rate")],
+           ("Explosiveness", "Home-Run Hitter", "rush_ypc")],
     "QB": [("Deep Work", "Gunslinger", "pbp_deep_rate"),
            ("Mobility", "Dual Threat", "opp_share"),
            ("Efficiency", "Surgical", "pbp_rating")],
@@ -538,7 +614,7 @@ def build_role(pid: str, pool: Dict[str, Dict[str, Any]],
     if prior_score is not None:
         score = round(0.7 * score + 0.3 * prior_score, 1)
         force_provisional = True
-    job = job_for(pos, score, feats)
+    job = _room_promoted_job(pid, pool, computed, job_for(pos, score, feats))
     security, note, lead_pid = security_for(pid, pool, computed)
     confidence = "Provisional" if (force_provisional or feats["games"] < 5
                                    or feats["snaps"] < 100) else "High"
@@ -600,7 +676,7 @@ def build_timeline(pid: str, pool: Dict[str, Dict[str, Any]],
         comp = compute_pool(sub_pool, pbp_feats_by_player)
         if pid not in comp:
             continue
-        job = job_for(pool[pid].get("pos"), comp[pid]["score"], comp[pid]["feats"])
+        job = job_for_player(pid, sub_pool, comp)
         share = comp[pid]["feats"]["opp_share"]
         if job != prev_job:
             reason = None
@@ -1575,7 +1651,7 @@ def build_player_payload(sleeper_id: str, season: int, window: str,
          "value": f"{int(round(my_feats.get('snap_pct', 0)))}%"},
         {"label": fourth[0], "value": f"{_r1(fourth[1]):g}"},
     ]
-    jobs = {p: job_for(e.get("pos"), computed[p]["score"], computed[p]["feats"])
+    jobs = {p: job_for_player(p, win_pool, computed)
             for p, e in win_pool.items() if p in computed}
     timeline = build_timeline(pid, win_pool, pbp_feats)
     distributions = _distribution_vectors(tables, pos) if tables else None

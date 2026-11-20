@@ -96,17 +96,25 @@ function _pmRolePaintHeaderJob() {
   if (!metaEl || metaEl.querySelector('.pm-role-job')) return;
   var row = metaEl.querySelector('div');
   if (!row) return;
-  var sep = document.createElement('span');
-  sep.setAttribute('style', 'opacity:.35;margin:0 3px;');
-  sep.textContent = '·';
+  var mkSep = function () {
+    var s = document.createElement('span');
+    s.setAttribute('style', 'opacity:.35;margin:0 3px;');
+    s.textContent = '·';
+    return s;
+  };
   var el = document.createElement('span');
   el.className = 'pm-role-job';
   el.textContent = _pmRoleHeaderJob.job;
   // Sit right after the age fact: ahead of the value-trend pill when
-  // the initial render already placed one in the row.
+  // the initial render already placed one in the row. The meta row is
+  // built by joining its parts with separator spans, so a separator
+  // already sits immediately before the pill: reuse it (job goes
+  // between that separator and the pill) and add ONE fresh separator
+  // between the job and the pill. Inserting a separator of our own
+  // ahead of the job as well produced "22.8 yrs · · Lead 1A".
   var pill = row.querySelector('.pm-trend-pill');
-  if (pill) { row.insertBefore(sep, pill); row.insertBefore(el, pill); }
-  else { row.appendChild(sep); row.appendChild(el); }
+  if (pill) { row.insertBefore(el, pill); row.insertBefore(mkSep(), pill); }
+  else { row.appendChild(mkSep()); row.appendChild(el); }
 }
 function pmAdvSetSub(sub) {
   var panel = document.getElementById('pm-panel-metrics');

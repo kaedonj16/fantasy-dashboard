@@ -651,3 +651,57 @@ def test_modal_header_job_from_role_payload():
     load = load.split("\nfunction ")[0]
     assert "_pmRoleState.win === 'season'" in load
     assert "_pmRoleNoteHeaderJob(pid, d)" in load
+
+
+# ---------------------------------------------------------------------------
+# 15. Summary strips carry a stat-count class; labels never wrap;
+#     popovers grow to full height instead of scrolling internally;
+#     the header job never doubles its separator.
+# ---------------------------------------------------------------------------
+
+CSS = Path(__file__).resolve().parent.parent / "static" / "dashboard.css"
+
+
+def _css_rule(css, selector):
+    i = css.index(selector)
+    return css[i:css.index("}", i)]
+
+
+def test_summary_strips_emit_count_class():
+    src = APP_JS.read_text(encoding="utf-8")
+    assert "function _cmpRoleSummaryHTML(stats)" in src
+    assert "compare-roles-summary cr-n' + stats.length" in src
+    # All three strips (map, gap, QB rushing) route through the helper.
+    assert src.count("_cmpRoleSummaryHTML(") >= 4  # helper + 3 call sites
+    assert 'class="compare-roles-summary">' not in src
+
+
+def test_role_labels_nowrap_and_phone_grid():
+    css = CSS.read_text(encoding="utf-8")
+    assert "white-space: nowrap" in _css_rule(css, ".compare-roles-stat span {")
+    assert "white-space: nowrap" in _css_rule(css, ".compare-roles-dkv span {")
+    phone = css[css.index("@media (max-width: 640px)"):]
+    assert ".compare-roles-summary.cr-n5, .compare-roles-summary.cr-n6" in phone
+    assert "grid-template-columns: repeat(3, 1fr)" in phone
+    assert ".compare-roles-dgrid { grid-template-columns: repeat(3, 1fr); }" in phone
+
+
+def test_popover_has_no_internal_scroll_cap():
+    css = CSS.read_text(encoding="utf-8")
+    rule = _css_rule(css, ".compare-roles-pop {")
+    assert "max-height" not in rule
+    assert "overflow" not in rule
+
+
+def test_header_job_separator_is_single_with_pill():
+    src = PM_JS.read_text(encoding="utf-8")
+    paint = src.split("function _pmRolePaintHeaderJob(")[1]
+    paint = paint.split("\nfunction ")[0]
+    # The old code inserted its own separator ahead of the pill even
+    # though the joined meta row already ends with one there.
+    assert "row.insertBefore(sep, pill)" not in paint
+    # With a pill: the job goes in first (reusing the separator that
+    # already precedes the pill), then ONE separator before the pill.
+    assert "row.insertBefore(el, pill); row.insertBefore(mkSep(), pill);" in paint
+    # Without a pill: separator + job appended at the end.
+    assert "row.appendChild(mkSep()); row.appendChild(el);" in paint
