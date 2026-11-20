@@ -57,6 +57,13 @@ _NFLVERSE_COMBINE = (
     "combine/combine.csv"
 )
 
+# nflverse draft picks (authoritative pick by gsis_id; the roster
+# file leaves draft_number empty for a slice of 2016-2019 draftees)
+_NFLVERSE_DRAFT_PICKS = (
+    "https://github.com/nflverse/nflverse-data/releases/download/"
+    "draft_picks/draft_picks.csv"
+)
+
 # CFBD API - reuse the helper from ingestion.py
 try:
     from .ingestion import _cfbd_get
