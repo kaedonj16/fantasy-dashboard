@@ -40310,6 +40310,14 @@ button:disabled {
     color: var(--text-muted);
 }
 
+/* Role job label on rankings rows: quiet secondary text, never a badge. */
+.rnk-role {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
 .rnk-val {
     text-align: right;
     font-weight: 700;
@@ -53847,6 +53855,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 .wv-cx-stash { background: var(--bg-alt); color: var(--text-muted); }
 .wv-cx-main { flex: 1; min-width: 0; }
 .wv-cx-name { font-size: 15px; font-weight: 700; letter-spacing: -0.1px; color: var(--text); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wv-cx-role { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
 .wv-cx-sub { display: block; margin-top: 3px; font-size: 13px; color: var(--text-muted); }
 .wv-cx-why { display: block; margin-top: 3px; font-size: 13px; color: var(--text-muted); }
 .wv-cx-why .wv-cx-k { font-weight: 800; font-size: 11px; letter-spacing: 0.8px; color: var(--text-subtle); margin-right: 4px; }

@@ -313,6 +313,7 @@ function prTeBoost(pos) {
   } catch(e) {}
 })();
 var prPosFilters = new Set();   // empty = All
+var prRoleLabels = null;   // bulk role job labels; null = not fetched yet
 var prSearchQuery = '';
 var prLoaded = false;
 var _prLoadGen = 0;  // ignore stale fetch results if prLoadData re-enters
@@ -1272,8 +1273,34 @@ function prFlipRender() {
 }
 
 // Sort and filter players, then render rows into the main table
+// Role job labels for row decoration: one bulk fetch per page (never
+// one request per row). Rows render without labels until it lands,
+// then the list re-renders once with them.
+function prRoleLabelText(pid) {
+  if (!prRoleLabels) return '';
+  const e = prRoleLabels[String(pid)];
+  if (!e || !e.job) return '';
+  return e.security === 'Contingent' ? e.job + ' · Contingent' : e.job;
+}
+
+function prFetchRoleLabels() {
+  if (prRoleLabels !== null) return;
+  prRoleLabels = {};
+  fetch('/api/player-roles/labels')
+    .then(r => (r && r.ok) ? r.json() : null)
+    .then(d => {
+      if (d && d.labels) {
+        prRoleLabels = d.labels;
+        const list = document.getElementById('prList');
+        if (list && list.children.length) prRender();
+      }
+    })
+    .catch(() => {});
+}
+
 function prRender() {
   if (!prLoaded) return;
+  prFetchRoleLabels();
   prQlHide();  // a re-render replaces the rows; any open quick-look is stale
   const sortBy = prSortKey;
   prSyncAdpSourceUI(sortBy);
@@ -1560,6 +1587,11 @@ function prRender() {
     else if (prIsProspect(p.id)) badges += '<span class="player-badge player-badge-prospect player-badge-collapsible" title="Prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> <span class="player-badge-label">PROSPECT</span></span>';
     if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout player-badge-collapsible" title="Breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> <span class="player-badge-label">BREAKOUT</span></span>';
 
+    // Role job label: quiet slate text after the name (not a badge);
+    // empty when the player has no role data.
+    const roleLabel = isPick ? '' : prRoleLabelText(p.id);
+    const roleLabelHTML = roleLabel ? `<span class="pr-role-label">${roleLabel}</span>` : '';
+
     // Movement must match the ordering of the current view. We only track
     // dynasty value history, so:
     //   • Redraft has no redraft-ordered movement -- hide the arrow rather than
@@ -1696,7 +1728,7 @@ function prRender() {
       const _activeAdp = prAdpSourceVal(p, adpActive);
       row.innerHTML =
         '<span class="pr-rank pr-adp-pin pr-adp-pin-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
-        '<span class="pr-name pr-adp-pin pr-adp-pin-player' + (isPick ? '' : ' player-clickable') + '">'  + prHeadshotHTML(p, isPick) + '<span class="pr-name-text">' + (p.name || 'Unknown') + wlStar + badges + '</span></span>' +
+        '<span class="pr-name pr-adp-pin pr-adp-pin-player' + (isPick ? '' : ' player-clickable') + '">'  + prHeadshotHTML(p, isPick) + '<span class="pr-name-text">' + (p.name || 'Unknown') + wlStar + badges + roleLabelHTML + '</span></span>' +
         metaCells +
         adpCols.map(function (c) {
           const v = prAdpSourceVal(p, c.value);
@@ -1720,7 +1752,7 @@ function prRender() {
     } else {
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
-        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">' + prHeadshotHTML(p, isPick) + '<span class="pr-name-text"><span class="pr-name-main">'  + (p.name || 'Unknown') + wlStar + badges + ((prScoringType === 'ros' && p.ros_sched_rank != null) ? '<span class="pr-sched">Sched #' + p.ros_sched_rank + '</span>' : '') + '</span>' + sublineHTML + '</span></span>' +
+        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">' + prHeadshotHTML(p, isPick) + '<span class="pr-name-text"><span class="pr-name-main">'  + (p.name || 'Unknown') + wlStar + badges + roleLabelHTML + ((prScoringType === 'ros' && p.ros_sched_rank != null) ? '<span class="pr-sched">Sched #' + p.ros_sched_rank + '</span>' : '') + '</span>' + sublineHTML + '</span></span>' +
         '<span class="pr-ppg">' + ppgCellHTML + '</span>' +
         '<span class="pr-total">' + totalCellHTML + '</span>' +
         '<span class="pr-value">' + sortDisplayHTML + '</span>';

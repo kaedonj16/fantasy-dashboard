@@ -307,6 +307,9 @@ def build_players_shell() -> str:
       /* ROS mode: remaining-schedule rank muted after the player name
          (desktop). On phones it rides the subline instead. */
       .pr-sched { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; margin-left: 6px; }
+      /* Role job label after the player name: same quiet treatment as
+         the schedule rank, never a badge. */
+      .pr-role-label { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; margin-left: 6px; }
       .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
       #prTableScroll.pr-adp-scroll {
         overflow-x: auto;
