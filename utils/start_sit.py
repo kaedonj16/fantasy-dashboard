@@ -688,6 +688,69 @@ def cap_projection(proj_pts, exp_last4_ppg):
     return proj_pts
 
 
+#: First-game-back discount ladder (Kaedon, 2026-11-20): (minimum
+#: consecutive non-bye weeks missed immediately before this week,
+#: multiplier on the projection the rating scores on). A one-week
+#: absence is a 2% shade, two to three weeks 5%, four or more 10% --
+#: "slightly unsure of their output early", scaled by how long the
+#: layoff was. The absence count is derived alongside the other
+#: rating inputs in
+#: ``data_building.start_score_bundle.derive_start_sit_inputs``
+#: (``absence_weeks``): bye weeks never count (a week his team did
+#: not play is excluded), and no count is derived when a bye cannot
+#: be ruled out for the gap.
+RETURN_DISCOUNT_LADDER = ((4, 0.90), (2, 0.95), (1, 0.98))
+
+
+def return_discount_multiplier(absence_weeks) -> float:
+    """Projection multiplier for a first game back: 1.0 unless
+    ``absence_weeks`` (consecutive non-bye weeks missed immediately
+    before this week) reaches a ladder rung. Missing / junk counts
+    are neutral -- no evidence of a layoff, no discount."""
+    try:
+        missed = int(absence_weeks)
+    except (TypeError, ValueError):
+        return 1.0
+    for rung, mult in RETURN_DISCOUNT_LADDER:
+        if missed >= rung:
+            return mult
+    return 1.0
+
+
+def return_adjusted_projection(proj_pts, absence_weeks):
+    """Shade a projection for a player's first game back from a
+    multi-week absence (see :data:`RETURN_DISCOUNT_LADDER`).
+
+    The failure this guards against is a projection priced on a
+    pre-injury role for a player whose output in his first game back
+    is genuinely uncertain: Mike Evans was boarded WR11 in Week 11
+    on a 13.3 projection and Weeks 3-6 form after missing Weeks
+    7-10; at four missed weeks the scoring projection becomes
+    13.3 x 0.90 = 11.97 (his score moves 15.68 -> ~14.5, WR11 ->
+    ~WR13 on the Week 11 pool). Backtest over Weeks 6-10
+    (2026-11-20), applied to the projection ahead of scoring like
+    the cap: Spearman 0.3493 vs the current model's 0.3469, tier
+    hits 0.7188 vs 0.7167, points captured 0.8363 vs 0.8356,
+    touching 13.3% of player-weeks at one-plus missed weeks and
+    3.8% at two-plus. A missing count, or a non-positive
+    projection, is returned untouched. Scoring-internal everywhere
+    it applies: displayed projection lines stay raw. Composition
+    with :func:`cap_projection`: the cap runs first on the raw
+    projection (its trigger compares the raw line against workload
+    evidence, unchanged), then this discount shades what survives.
+    """
+    mult = return_discount_multiplier(absence_weeks)
+    if mult >= 1.0:
+        return proj_pts
+    try:
+        proj = float(proj_pts or 0)
+    except (TypeError, ValueError):
+        return proj_pts
+    if proj <= 0:
+        return proj_pts
+    return proj * mult
+
+
 def snap_share_trend(snap_shares) -> Optional[float]:
     """Role-trend input for the rating: the change in a player's snap
     share across his last 4 PLAYED weeks — mean share of the last 2

@@ -358,7 +358,11 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     (``season_ppg_lead`` / ``recent_ppg_lead`` / ``usage_delta_lead``
     / ``snap_trend_lead``) for the projection blend and input swaps
     the pools apply alongside it (see
-    ``utils.start_sit.lead_adjusted_score_inputs``).
+    ``utils.start_sit.lead_adjusted_score_inputs``). Entries also
+    carry ``absence_weeks``: consecutive non-bye weeks missed
+    immediately before the newest stat-file week -- the
+    first-game-back discount's input (bye weeks never count, and no
+    value is derived when a bye cannot be ruled out for the gap).
 
     This is the single derivation the bundle build and the Start/Sit page's
     live fallback share, so both paths feed ``compute_start_score`` identical
@@ -405,6 +409,12 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
         }
         played_points: Dict[str, list] = {}
         played_weeks: Dict[str, list] = {}
+        # Teams with at least one played row per week, on the same
+        # participation rule as played_weeks: the bye evidence the
+        # first-game-back absence count below is built from (a week
+        # where a team shows no played row is a week that team did
+        # not play -- its bye, or indistinguishable from one).
+        team_played: Dict[int, set] = {}
         played_usage: Dict[str, list] = {}
         played_shares: Dict[str, list] = {}
         played_share_weeks: Dict[str, list] = {}
@@ -451,6 +461,9 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                 if not _played_week:
                     continue  # did not play (no gp, no snaps)
                 pid = str(pid)
+                _team = teams.get(pid) or ""
+                if _team:
+                    team_played.setdefault(wnum, set()).add(_team)
                 try:
                     pts = float(week_stat_points(st, scoring_settings, ""))
                 except Exception:
@@ -509,6 +522,38 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                     _entry["exp_last4_ppg"] = _exp
         except Exception:
             logger.debug("start_score_bundle exp derivation failed",
+                         exc_info=True)
+        # First-game-back absence (Kaedon, 2026-11-20): consecutive
+        # weeks missed immediately before the newest stat-file week,
+        # counting only weeks his team actually played. A week where
+        # his team shows no played row is that team's bye (or a week
+        # the data cannot distinguish from one) and never counts --
+        # a bye is not an injury absence. No team on the index, or a
+        # last played game in the newest week, derives no value: no
+        # evidence of a layoff, no discount (the scoring paths shade
+        # the projection via utils.start_sit
+        # .return_adjusted_projection). A player with no played game
+        # at all is not in ``out`` and gets nothing either: a debut
+        # is not a return.
+        try:
+            _file_weeks = sorted({_week_num(p) for p in files})
+            _last_week = _file_weeks[-1] if _file_weeks else 0
+            if _last_week:
+                for _pid, _entry in out.items():
+                    _weeks = played_weeks.get(_pid) or []
+                    if not _weeks or _weeks[-1] >= _last_week:
+                        continue
+                    _team = teams.get(_pid) or ""
+                    if not _team:
+                        continue
+                    _missed = sum(
+                        1 for _w in range(_weeks[-1] + 1,
+                                           _last_week + 1)
+                        if _team in team_played.get(_w, ()))
+                    if _missed >= 1:
+                        _entry["absence_weeks"] = _missed
+        except Exception:
+            logger.debug("start_score_bundle absence derivation failed",
                          exc_info=True)
         # Room leads + lead-filtered form (Kaedon, 2026-11-19): a
         # handcuff's last-4 must not be built on the starter's absence.
@@ -904,6 +949,16 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                         round(float(_inp["exp_last4_ppg"]), 2)
                         if _inp.get("exp_last4_ppg") is not None
                         else None),
+                    # First-game-back absence (2026-11-20):
+                    # consecutive non-bye weeks missed immediately
+                    # before this week. The ranked pools shade the
+                    # scoring projection by it after the cap
+                    # (utils.start_sit.return_adjusted_projection);
+                    # scoring-internal only -- proj_pts stays raw.
+                    "absence_weeks": (
+                        int(_inp["absence_weeks"])
+                        if _inp.get("absence_weeks") is not None
+                        else None),
                     "season_ppg": season_ppg,
                     "bust_rate": bust_rate,
                     # Rating inputs from the played-week derivation (NOT the
@@ -1209,6 +1264,13 @@ def load_start_score_bundles_for_scoring(
             nb["exp_last4_ppg"] = (
                 round(float(_inp["exp_last4_ppg"]), 2)
                 if _inp.get("exp_last4_ppg") is not None else None)
+            # First-game-back absence rides the re-derivation too,
+            # so non-canonical variants shade a returner's projection
+            # the same way (utils.start_sit
+            # .return_adjusted_projection).
+            nb["absence_weeks"] = (
+                int(_inp["absence_weeks"])
+                if _inp.get("absence_weeks") is not None else None)
             nb["lead_pid"] = _inp.get("lead_pid") or bundle.get("lead_pid")
             nb["season_ppg"] = round(float(_inp.get("season_ppg") or 0.0), 1)
             nb["usage_delta"] = (
