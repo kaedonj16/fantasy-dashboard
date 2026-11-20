@@ -705,3 +705,46 @@ def test_header_job_separator_is_single_with_pill():
     assert "row.insertBefore(el, pill); row.insertBefore(mkSep(), pill);" in paint
     # Without a pill: separator + job appended at the end.
     assert "row.appendChild(mkSep()); row.appendChild(el);" in paint
+
+
+# ---------------------------------------------------------------------------
+# 16. Header Job paint ordering: the tab bar is bound to the player
+#     when the modal DOM is built, not when the details payload lands.
+#     The painter is guarded on dataset.pmPlayerId, and both paint
+#     triggers (the role payload landing, the meta render) run inside
+#     the same synchronous details callback that used to be the FIRST
+#     place the dataset was assigned — so with a warm role endpoint
+#     (or the session small-fetch cache resolving on a microtask) the
+#     guard failed at both triggers and the Job never painted.
+#     No JS harness exercises the modal's async ordering, so this pins
+#     the source invariant both payload orders depend on.
+# ---------------------------------------------------------------------------
+
+def test_header_job_identity_bound_before_any_paint_trigger():
+    src = PM_JS.read_text(encoding="utf-8")
+    open_fn = src.split("function openPlayerModal(")[1]
+    # The early bind lives in openPlayerModal, on the freshly built
+    # tab bar, after the modal is in the document.
+    early = "_pmBarEarly.dataset.pmPlayerId = String(playerId);"
+    assert early in open_fn
+    assert open_fn.index("document.body.appendChild(overlay)") \
+        < open_fn.index(early)
+    # It precedes every paint trigger: the payload-landing note (fired
+    # from the early fetches kicked off in the same function) and the
+    # meta render's paint call in the details callback.
+    assert open_fn.index(early) < open_fn.index("_pmRolePaintHeaderJob();")
+    # It also precedes the details callback's own dataset assignment,
+    # which remains (it re-binds the same identity alongside season /
+    # name / position).
+    assert open_fn.index(early) \
+        < open_fn.index("pmTabBar.dataset.pmPlayerId = playerId;")
+    # Belt-and-braces: immediately after that dataset block, the
+    # painter runs again, covering a payload noted mid-callback.
+    block = open_fn.split("pmTabBar.dataset.pmPlayerId = playerId;")[1]
+    block = block.split("const _teamPanel")[0]
+    assert "_pmRolePaintHeaderJob();" in block
+    # The stale-player protection is untouched: the painter still
+    # refuses to paint when the noted job belongs to another player.
+    paint = src.split("function _pmRolePaintHeaderJob(")[1]
+    paint = paint.split("\nfunction ")[0]
+    assert "_pmRoleHeaderJob.pid !== String(pid)" in paint
