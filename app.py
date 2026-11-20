@@ -2153,10 +2153,11 @@ FORM_BODY = """
   <div class="ld-main-row{% if session.get('account_id') %} is-signed{% endif %}">
     <section class="ld-gallery" id="homeGallery" aria-label="Preview gallery">
       <h2 class="ld-sec-h">{% if session.get('account_id') %}Take a look{% else %}This is what Sundays look like here.{% endif %}</h2>
-      <p class="ld-gal-sub">{% if session.get('account_id') %}The boards your leagues unlock. Tap one to look closer.{% else %}Real screens from a connected league. Tap one to look closer.{% endif %}</p>
+      <p class="ld-gal-sub">{% if session.get('account_id') %}The boards your leagues unlock. Tap one to look closer.{% else %}Sample screens with sample data. Tap one to look closer.{% endif %}</p>
       <div class="ld-gal-panels">
               <div class="ld-gal-panel" data-gal-panel="matchup">
 <div class="hp-mb">
+          <div class="hp-mb-strip"><span class="hp-mb-strip-t">Sample matchup</span></div>
           <div class="hp-mb-head">
             <div><div class="hp-mb-team">You</div><div class="hp-mb-score">132.4</div></div>
             <div class="is-right"><div class="hp-mb-team">Opp</div><div class="hp-mb-score">128.9</div></div>
