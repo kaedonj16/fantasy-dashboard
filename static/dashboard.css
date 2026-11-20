@@ -40206,13 +40206,22 @@ button:disabled {
     line-height: 1.5;
 }
 
+/* Position nav as a segmented control: one shared shell, the active
+   segment filled with the site navy accent (never a hardcoded sky blue). */
 .rnk-pos-nav {
-    display: flex;
-    gap: 6px;
+    display: inline-flex;
+    gap: 2px;
     flex-wrap: wrap;
     margin-bottom: 16px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card-soft);
 }
 
+/* Explainer: a native <details> dropdown on the ROS pages (collapsed by
+   default; prose stays in the HTML for SEO). The dynasty hub still
+   renders the plain .rnk-analysis section, so the base card styles stay. */
 .rnk-analysis {
     margin: 0 0 20px;
     padding: 16px 18px;
@@ -40220,6 +40229,52 @@ button:disabled {
     border-radius: var(--radius);
     background: var(--card);
     max-width: 78ch;
+}
+
+.rnk-analysis-details {
+    padding: 0;
+}
+
+.rnk-analysis-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.rnk-analysis-summary::-webkit-details-marker {
+    display: none;
+}
+
+.rnk-analysis-summary .rnk-analysis-title {
+    margin: 0;
+}
+
+.rnk-analysis-chevron {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.rnk-analysis-details[open ] .rnk-analysis-chevron {
+    transform: rotate(225deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rnk-analysis-chevron {
+        transition: none;
+    }
+}
+
+.rnk-analysis-body {
+    padding: 0 18px 16px;
 }
 
 .rnk-analysis-title {
@@ -40245,34 +40300,72 @@ button:disabled {
 }
 
 .rnk-nav-btn {
-    padding: 5px 14px;
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
     border-radius: var(--radius-sm);
     font-size: 13px;
     font-weight: 600;
     text-decoration: none;
-    border: 1px solid var(--border);
-    background: var(--card-bg);
+    border: 1px solid transparent;
+    background: transparent;
     color: var(--text-muted);
 }
 
-.rnk-nav-btn-active {
-    border-color: #38bdf8;
-    color: #38bdf8;
-    background: rgba(56, 189, 248, .1);
+.rnk-nav-btn:hover {
+    color: var(--text);
+    background: var(--accent-soft);
 }
 
+.rnk-nav-btn-active {
+    border-color: var(--accent);
+    color: var(--on-accent);
+    background: var(--accent);
+}
+
+.rnk-nav-btn-active:hover {
+    color: var(--on-accent);
+    background: var(--accent-strong);
+}
+
+/* One unified panel: the wrap owns the card chrome and the scrolling,
+   so the header can stick inside it and rows never scroll sideways
+   past the panel edge. */
 .rnk-table-wrap {
-    overflow-x: auto;
+    overflow: auto;
+    max-height: 80vh;
+    overscroll-behavior: contain;
+    scroll-padding-top: 41px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.rnk-table-wrap::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.rnk-table-wrap::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+.rnk-table-wrap::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .rnk-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 13px;
 }
 
 .rnk-table th {
-    padding: 8px 10px;
+    padding: 10px;
     text-align: left;
     color: var(--text-muted);
     font-size: 11px;
@@ -40280,16 +40373,33 @@ button:disabled {
     text-transform: uppercase;
     letter-spacing: .05em;
     border-bottom: 1px solid var(--border);
-}
-
-.rnk-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid rgba(30, 58, 95, .5);
     vertical-align: middle;
 }
 
+/* Sticky header inside the panel scroll region: opaque card background,
+   the hairline rule, and a soft shadow so rows slide under it cleanly. */
+.rnk-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: var(--card);
+    box-shadow: 0 1px 0 var(--border), 0 6px 12px -8px rgba(15, 23, 42, .18);
+}
+
+.rnk-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.rnk-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Theme-aware hover: a real tint in light mode, not a white overlay
+   that only showed on dark. */
 .rnk-table tr:hover td {
-    background: rgba(255, 255, 255, .03);
+    background: var(--row);
 }
 
 .rnk-rank {
@@ -40342,10 +40452,48 @@ button:disabled {
     color: var(--text);
 }
 
+/* The primary number on the board (ROS Pts on the ROS pages, the
+   viewer's format value on the dynasty hub): one step larger and
+   heavier than the secondary figures around it. */
+.rnk-val-primary {
+    font-size: 14px;
+    font-weight: 800;
+}
+
 .rnk-age {
     color: var(--text-muted);
     text-align: center;
     font-size: 13px;
+}
+
+/* Remaining-schedule rank as a quiet pill, never a loud badge. */
+.rnk-sched-pill {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-soft);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.rnk-sched-none {
+    color: var(--text-muted);
+}
+
+/* Phone: the board fits without sideways scrolling. Exp. Games and
+   Sched drop out (ROS Pts and PPG carry the row); desktop keeps all
+   six columns. */
+@media (max-width: 640px) {
+    .rnk-table .rnk-col-games,
+    .rnk-table .rnk-col-sched {
+        display: none;
+    }
+
+    .rnk-table-wrap {
+        max-height: 75vh;
+    }
 }
 
 /* ── Share Card Modal ────────────────────────────────────────────────────────── */
@@ -54187,23 +54335,38 @@ body:has(.home-hero) { background: var(--bg); color: var(--text); font-family: -
    sticky cells use var(--bg) (theme-aware: #ffffff light / #020617 dark)
    and replicate the translucent row-hover overlay. */
 #dvtTable th.dvt-player,
-#dvtTable td.dvt-name-cell,
-.rnk-table th.rnk-player,
-.rnk-table td.rnk-name-cell {
+#dvtTable td.dvt-name-cell {
     position: sticky;
     left: 0;
     z-index: 2;
     background: var(--bg);
     border-right: 1px solid var(--border);
 }
-#dvtTable th.dvt-player,
-.rnk-table th.rnk-player {
+/* Rankings tables sit inside the unified .rnk-table-wrap panel, so
+   their sticky Player cells take the panel's card background and the
+   theme-aware row hover instead of the page background. */
+.rnk-table th.rnk-player,
+.rnk-table td.rnk-name-cell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+}
+#dvtTable th.dvt-player {
     z-index: 3;
 }
-#dvtTable tr:hover td.dvt-name-cell,
-.rnk-table tr:hover td.rnk-name-cell {
+/* The rankings corner cell sticks on both axes (left + the panel's
+   sticky header), so it sits above the other header cells. */
+.rnk-table th.rnk-player {
+    z-index: 5;
+}
+#dvtTable tr:hover td.dvt-name-cell {
     background-color: var(--bg);
     background-image: linear-gradient(rgba(255, 255, 255, .03), rgba(255, 255, 255, .03));
+}
+.rnk-table tr:hover td.rnk-name-cell {
+    background-color: var(--row);
 }
 /* Sticky identifying Team column for the history standings table.
    Only the Team column sticks at left:0; the Rank column scrolls

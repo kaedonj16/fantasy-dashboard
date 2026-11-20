@@ -769,10 +769,10 @@ def test_public_pages_label_games_as_expected():
     payload["players"]["rb1"]["ros_games"] = 7.1
     for pos in (None, "RB"):
         body = build_ros_rankings_body(payload, table, position=pos)
-        assert '<th class="rnk-val">Exp. Games</th>' in body
+        assert '<th class="rnk-val rnk-col-games">Exp. Games</th>' in body
         assert '<th class="rnk-val">Games</th>' not in body
     body = build_ros_rankings_body(payload, table, position=None)
-    assert '<td class="rnk-val">7.1</td>' in body
+    assert '<td class="rnk-val rnk-col-games">7.1</td>' in body
     assert "expected games over the rest of the season" in body
 
 

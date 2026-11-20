@@ -1405,6 +1405,7 @@ _SCOREZONE_JS_FILE, _SCOREZONE_JS_V = _min_asset("scorezone.js")
 _RANKINGS_JS_FILE, _RANKINGS_JS_V = _min_asset("rankings.js")
 _TEAMS_JS_FILE, _TEAMS_JS_V = _min_asset("teams.js")
 _SEO_LITE_CSS_FILE, _SEO_LITE_CSS_V = _min_asset("seo_lite.css")
+_LITE_NAV_JS_FILE, _LITE_NAV_JS_V = _min_asset("lite_nav.js")
 _LANDING_LITE_CSS_FILE, _LANDING_LITE_CSS_V = _min_asset("landing_lite.css")
 # Warm the draft-room / cheat-sheet / player-page bundles so the first visit
 # does not pay minify cost on-request (those pages resolve via served_name).
@@ -3142,6 +3143,7 @@ BASE_HTML = """
         if (el) el.textContent = new Date().getFullYear();
       }})();
     </script>
+    {lite_nav_js}
   </body>
 </html>
 """
@@ -8513,6 +8515,16 @@ def render_page(
         description, canonical, noindex,
         is_league_scoped=bool(league_id and platform and season),
     )
+    # Guest lite shells carry a marker the lite_nav.js swapper checks on
+    # BOTH ends of a soft navigation: this page is a lite shell (the tag
+    # below only ships then), and a fetched target is one too (this meta).
+    # Signed-in / full-bundle pages have neither, so they never swap.
+    if _use_lite:
+        meta_tags += '<meta name="br-shell" content="lite">'
+    _lite_nav_js_tag = (
+        f'<script src="/static/{_LITE_NAV_JS_FILE}?v={_LITE_NAV_JS_V}" defer></script>'
+        if _use_lite else ""
+    )
 
     # Pages may pass their own richer og_tags; otherwise emit sensible defaults
     # so every shared link gets a preview card.
@@ -8637,6 +8649,7 @@ def render_page(
         ad_eligible="true" if show_ads else "false",
         adsense_script="" if (_soft_nav or not show_ads) else _AD_SCRIPT,
         funding_choices="" if (_soft_nav or not show_ads) else _FUNDING_CHOICES,
+        lite_nav_js="" if _soft_nav else _lite_nav_js_tag,
         grow_script="" if (_soft_nav or not show_ads) else _grow_script_tag(),
         ad_top="" if (_soft_nav or not show_ads) else _AD_TOP,
         ad_bottom="" if (_soft_nav or not show_ads) else _AD_BOTTOM,
