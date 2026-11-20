@@ -609,14 +609,14 @@ def _ros_rankings_page(position: str | None = None):
         label = f" {position}" if position else ""
         body = (
             "<div class='static-page'><div class='static-card-page'>"
-            f"<h1>Rest of season{label} rankings temporarily unavailable</h1>"
+            f"<h1>ROS{label} rankings temporarily unavailable</h1>"
             "<p>The remaining schedule and projections for this week are not "
             "published yet. Please try again shortly. You can still read the "
             "<a href='/guides'>strategy guides</a>.</p>"
             "</div></div>"
         )
         return render_page(
-            f"Rest of Season{label} Rankings | BR Fantasy", None, "players", body,
+            f"ROS{label} Rankings | BR Fantasy", None, "players", body,
             noindex=True, ad_eligible=False, lite_js=True,
         ), 503, {"Retry-After": "300"}
 
@@ -631,7 +631,7 @@ def _ros_rankings_page(position: str | None = None):
     body = build_ros_rankings_body(ros_payload, value_table, position=position, role_labels=role_labels)
     pos_lbl = f" {position}" if position else ""
     return render_page(
-        f"Rest of Season{pos_lbl} Rankings {year} | BR Fantasy",
+        f"ROS{pos_lbl} Rankings {year} | BR Fantasy",
         None, "players", body,
         description=(
             f"Rest of season fantasy football{pos_lbl.lower()} rankings, updated {updated}. "

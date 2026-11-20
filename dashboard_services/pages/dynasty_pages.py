@@ -1017,20 +1017,13 @@ def build_rankings_hub_body(
     rows.sort(key=lambda r: float(r.get(sort_key) or 0), reverse=True)
 
     fmt_word = "Superflex" if fmt == "sf" else "1QB"
+    # One meta line, but it still states the sort format and the full-date
+    # freshness stamp (the 2026-11-13 subtitle contract).
+    subtitle = f"Ranked in {fmt_word} order. Last updated {date_str}"
     if pos_filter:
         title    = f"Dynasty {pos_filter} Rankings {datetime.now().year}"
-        subtitle = (
-            f"Top dynasty {pos_filter} trade values updated {date_str}. "
-            f"Ranked in {fmt_word} order. "
-            f"Rankings based on real dynasty trade data and BR Fantasy model."
-        )
     else:
         title    = f"Dynasty Fantasy Football Rankings {datetime.now().year}"
-        subtitle = (
-            f"Overall dynasty player rankings updated {date_str}. "
-            f"Ranked in {fmt_word} order. "
-            f"Values from real dynasty leagues and BR Fantasy model analysis."
-        )
 
     qs = f"?format={fmt}" + ("&show=all" if show_all else "")
     pos_nav_items = [
@@ -1173,7 +1166,7 @@ def build_rankings_hub_body(
 
 _ROS_ANALYSIS = {
     None: (
-        "How rest-of-season rankings work",
+        "How ROS rankings work",
         "<p>Rest-of-season rankings answer a different question than dynasty "
         "values or weekly start/sit calls: who helps your lineup most from "
         "now through Week 17? The order is a weighted model, not a raw "
@@ -1203,7 +1196,7 @@ _ROS_ANALYSIS = {
         "so a player's rank can move between windows.</p>"
     ),
     "QB": (
-        "Rest-of-season QB rankings",
+        "ROS QB rankings",
         "<p>Quarterback is the one position where the model blends the "
         "forward projection with what a passer has actually done: 40% "
         "projection, 30% last-four-games form, and 30% season-long scoring. "
@@ -1217,7 +1210,7 @@ _ROS_ANALYSIS = {
         "total when you make start/sit and trade calls from here in.</p>"
     ),
     "RB": (
-        "Rest-of-season RB rankings",
+        "ROS RB rankings",
         "<p>Running back rest-of-season value is a volume bet. The "
         "per-game rate at this position is the forward projection alone, "
         "because a back's projected workload already reflects his recent "
@@ -1231,7 +1224,7 @@ _ROS_ANALYSIS = {
         "out the backs who will actually carry your playoff run.</p>"
     ),
     "WR": (
-        "Rest-of-season WR rankings",
+        "ROS WR rankings",
         "<p>Wide receiver is the deepest position on the board. With this "
         "many startable receivers, the order leans on the per-game "
         "projection first, then expected games, target trend, and the "
@@ -1245,7 +1238,7 @@ _ROS_ANALYSIS = {
         "softer run of secondaries left.</p>"
     ),
     "TE": (
-        "Rest-of-season TE rankings",
+        "ROS TE rankings",
         "<p>Tight end is where rest-of-season totals and per-game rates "
         "diverge the most. The position is so thin past the first few names "
         "that the order has to weigh both: the model leads with the "
@@ -1375,14 +1368,11 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
     window_txt = (f"Weeks {start_week} to {end_week}" if start_week
                   else "the rest of the season")
     if pos_filter:
-        title = f"Rest of Season {pos_filter} Rankings {year}"
-        subtitle = (f"Top rest-of-season {pos_filter} rankings for {window_txt}, "
-                    f"updated {updated}. Full PPR scoring.")
+        title = f"ROS {pos_filter} Rankings {year}"
+        subtitle = f"{window_txt} · Full PPR · Updated {updated}"
     else:
-        title = f"Rest of Season Fantasy Football Rankings {year}"
-        subtitle = (f"Overall rest-of-season player rankings for {window_txt}, "
-                    f"updated {updated}. Full PPR scoring, 12-team 1QB "
-                    f"replacement level for the overall order.")
+        title = f"ROS Fantasy Football Rankings {year}"
+        subtitle = f"{window_txt} · Full PPR · Updated {updated}"
 
     pos_nav_items = [
         ("All", "/rankings/rest-of-season"),
