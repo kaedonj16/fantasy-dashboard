@@ -461,7 +461,13 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
                 f"<meta name=\"twitter:description\" content=\"{d}\">"
                 f"<meta name=\"twitter:image\" content=\"{img}\">"
             )
-    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season, og_tags=og_tags)
+    # Guests get the lite shell: the body is server-rendered with its own
+    # inline styles and a self-contained inline script (every bundle global
+    # it touches is typeof-guarded, and the player modal force-loads the
+    # features bundle on demand), so it paints from seo_lite.css instead of
+    # splash-gating on the full dashboard bundle. Signed-in viewers are
+    # unaffected (render_page only goes lite for logged-out sessions).
+    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season, og_tags=og_tags, lite_js=True)
 
 # ── NFL Teams (public research page; league variant keeps nav context) ────────
 
@@ -493,6 +499,10 @@ def page_nfl_teams(platform: str = None, season: int = None, league_id: str = No
         "NFL Teams", league_id, "nfl-teams", body, platform, season,
         description="NFL team rankings: real points per game, per-game offense splits, O-line ratings, depth charts, and schedules.",
         canonical="/nfl-teams",
+        # Guests get the lite shell (see page_advanced_metrics): the body is
+        # server-rendered, inline-styled, and its inline script only touches
+        # bundle globals behind typeof guards.
+        lite_js=True,
     )
 
 # ── Optimal lineup (redirect to the Matchups tab) ─────────────────────────────

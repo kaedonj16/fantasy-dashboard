@@ -384,7 +384,7 @@ def build_compare_page_body(popular_html: str = "", show_connect_cta: bool = Tru
         <div class="compare-page">
           <header class="compare-page-head">
             <h1 class="compare-page-title">Compare Players</h1>
-            <p class="compare-page-sub">Put two players side by side and see who comes out ahead, or add a third for a shortlist. Type a tier like <strong>WR1</strong> or <strong>RB2</strong> to compare against the average of those top players.</p>
+            <p class="compare-page-sub">Two players side by side, or add a third. Type a tier like <strong>WR1</strong> to face that tier's average.</p>
           </header>
           <div class="compare-pickers">
             <div class="compare-picker">

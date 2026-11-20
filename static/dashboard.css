@@ -18692,7 +18692,7 @@ html[data-theme="dark"] .contact-social-pill img {
     padding: 20px;
     border-radius: var(--radius);
     background: var(--card-soft);
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--border);
 }
 
 .static-section-title {
@@ -34070,7 +34070,7 @@ table.mid-table {
 
 .compare-page-title {
     margin: 0;
-    font-size: clamp(28px, 4vw, 36px);
+    font-size: clamp(24px, 3vw, 28px);
     font-weight: 800;
     letter-spacing: -0.03em;
     color: var(--text);
@@ -38786,7 +38786,7 @@ button:disabled {
 
     .teams-head-row1 .teams-mode-toggle button {
         padding: 5px 7px;
-        font-size: 10.5px;
+        font-size: 11px;
     }
 }
 
@@ -39690,7 +39690,7 @@ button:disabled {
 }
 
 .dvt-title { font-size: clamp(24px, 4.2vw, 34px); }
-.rf-title { font-size: clamp(24px, 4.2vw, 34px); }
+.rf-title { font-size: clamp(24px, 3vw, 28px); }
 .rnk-title { font-size: clamp(24px, 4.2vw, 34px); }
 
 /* ── Dynasty Trade Value Chart ───────────────────────────────────────────── */
@@ -39961,13 +39961,13 @@ button:disabled {
 }
 
 .rf-hero {
-    margin-bottom: 20px;
+    margin-bottom: 12px;
     position: relative;
     z-index: 1;
 }
 
 .rf-title {
-    font-size: clamp(24px, 4.2vw, 34px);
+    font-size: clamp(24px, 3vw, 28px);
     font-weight: 800;
     color: var(--text);
     margin: 0 0 8px;
@@ -39993,10 +39993,10 @@ button:disabled {
 }
 
 .rf-subtitle {
-    font-size: 15px;
+    font-size: 13px;
     color: var(--text-muted);
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.45;
 }
 
 .rf-subtitle a {
@@ -40174,7 +40174,7 @@ button:disabled {
 }
 
 .rf-seo-content a {
-    color: #38bdf8;
+    color: var(--accent);
 }
 
 /* ── Rankings Hub ────────────────────────────────────────────────────────── */
