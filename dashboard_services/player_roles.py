@@ -215,6 +215,12 @@ def player_features(series: List[Dict[str, Any]], pos: str,
         "rush_ypc": (sum(_f(r.get("rush_yards")) for r in rows) / carries) if carries > 0 else 0.0,
         "rush_yd_per_game": (sum(_f(r.get("rush_yards")) for r in rows) / games) if games else 0.0,
         "dropbacks_per_game": (pass_att / games) if games else 0.0,
+        # Total plays with the ball per game (pass attempts + rush
+        # attempts). This is the QB volume measure for the Job blend and
+        # the Volume axis: dropbacks alone price a QB as a pocket
+        # passer and erase a dual-threat's rushing workload (Josh
+        # Allen: 28.6 att/g but 35.9 plays/g with his 66 rush att).
+        "plays_per_game": ((pass_att + carries) / games) if games else 0.0,
         "start_share": (
             100.0 * sum(1 for p in snap_pcts if p >= 50) / len(snap_pcts)
         ) if snap_pcts else 0.0,
@@ -236,7 +242,7 @@ AXIS_FEATURES: Dict[str, Dict[str, str]] = {
            "Red Zone": "rz_share", "Explosiveness": "pbp_explosive_rate"},
     "RB": {"Volume": "opp_share", "Receiving": "rec_share_of_opp",
            "Red Zone": "rz_share", "Explosiveness": "pbp_explosive_run_rate"},
-    "QB": {"Volume": "dropbacks_per_game", "Deep Work": "pbp_deep_att_rate",
+    "QB": {"Volume": "plays_per_game", "Deep Work": "pbp_deep_att_rate",
            "Mobility": "rush_yd_per_game", "Efficiency": "pbp_rating",
            "Red Zone": "pbp_rz_att_rate"},
 }
@@ -306,16 +312,19 @@ def compute_pool(pool: Dict[str, Dict[str, Any]],
             pool_vals = [_axis_raw(feats_by_pid[p], key) for p in peers]
             axes[axis] = int(round(_pctile(raw, pool_vals)))
         for key in ("opp_share", "snap_pct", "catch_rate", "rz_per_game",
-                    "dropbacks_per_game", "start_share", "rec_share_of_opp",
-                    "rush_ypc",
+                    "dropbacks_per_game", "plays_per_game", "start_share",
+                    "rec_share_of_opp", "rush_ypc",
                     "pbp_adot", "pbp_yac_per_rec", "pbp_deep_rate",
                     "pbp_explosive_rate", "pbp_rating",
                     "pbp_play_action_rate", "pbp_play_action_epa"):
             pool_vals = [_f(feats_by_pid[p].get(key)) for p in peers]
             feat_pct[key] = _pctile(_f(feats.get(key)), pool_vals)
         if pos == "QB":
-            score = 0.6 * _pctile(feats["dropbacks_per_game"],
-                                  [feats_by_pid[p]["dropbacks_per_game"] for p in peers]) \
+            # Volume is plays per game (pass + rush attempts), not
+            # dropbacks alone, so a rushing QB's workload counts toward
+            # his job the way a pocket passer's dropbacks do.
+            score = 0.6 * _pctile(feats["plays_per_game"],
+                                  [feats_by_pid[p]["plays_per_game"] for p in peers]) \
                 + 0.4 * feats["start_share"]
         else:
             score = (0.5 * feat_pct["opp_share"] + 0.3 * feat_pct["snap_pct"]
@@ -329,6 +338,16 @@ def compute_pool(pool: Dict[str, Dict[str, Any]],
 # ---------------------------------------------------------------------------
 # Job tiers, tags, security, trend
 # ---------------------------------------------------------------------------
+
+
+# Franchise QB1 is a season-long job title, so it carries a games
+# floor aligned with the engine's Provisional boundary (Confidence
+# reads Provisional under 5 games): a QB whose score clears the bar in
+# fewer games lands at QB1 instead of holding the top tier on a
+# one-game sample (Joe Milton / Athan Kaliakmanis / Kyle McCord each
+# held Franchise QB1 on 1 game). QB-only; other positions' top tiers
+# have no floor.
+FRANCHISE_QB_MIN_GAMES = 5
 
 
 def job_for(pos: str, score: float, feats: Dict[str, Any]) -> str:
@@ -364,7 +383,7 @@ def job_for(pos: str, score: float, feats: Dict[str, Any]) -> str:
             return "Committee TE"
         return "Blocking-First" if feats.get("snap_pct", 0) >= 55 else "Committee TE"
     if pos == "QB":
-        if score >= 80:
+        if score >= 80 and feats.get("games", 0) >= FRANCHISE_QB_MIN_GAMES:
             return "Franchise QB1"
         if score >= 60:
             return "QB1"

@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-20",
+        "tag": "update",
+        "text": "Quarterback role jobs now count his legs: QB volume is plays per game, pass attempts plus rush attempts, so a dual-threat's rushing workload counts toward Franchise QB1 the way a pocket passer's dropbacks do. Franchise QB1 also takes at least 5 games in the window now, so a one-game fill-in no longer holds the top title.",
+        "link": "/compare"
+    },
+    {
         "date": "2026-11-19",
         "tag": "update",
         "text": "Role jobs now respect his own depth chart: a back, receiver or tight end who owns his room (at least half of his team's opportunities at his position, and at least 1.8x the next man up) earns the top job title even when his raw share trails the league's true bell cows. Committees stay committees: a close split at the top of a room changes nothing.",
