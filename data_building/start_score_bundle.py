@@ -36,7 +36,8 @@ for the week, cached for a few minutes, and silently keeps the batch value
 whenever the live feed is unavailable or has no line for the player.
 
 Form/usage inputs follow the 2026-10 rating rework: only PLAYED weeks count
-(a stat row carrying a points line), recent form is the last 3 played weeks,
+(participation: ``gp`` >= 1 or an offensive snap count present; a
+participated week with no production counts as a 0.0 game), recent form is the last 3 played weeks,
 and usage is the absolute per-game delta of opportunities (RB) or targets
 (WR/TE). ``derive_start_sit_inputs`` is the one derivation behind both this
 bundle and the Start/Sit page's live fallback.
@@ -269,21 +270,24 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     """Per-player form/usage inputs for the start/sit rating, derived from
     the cached weekly stat files under ``scoring_settings``.
 
-    A week counts as PLAYED only when the player's stat row carries a points
-    line (``pts_ppr`` present): Sleeper rows with ``gp`` set but no points
-    line are phantom weeks (a few snaps, no production) and never enter any
-    average. Points are scored with ``week_stat_points`` (the same scorer
-    the Start/Sit page's live path uses), recent form is the last 3 played
-    weeks, and the usage delta is the absolute per-game change of the
-    position's volume metric (see ``utils.start_sit.form_usage_inputs``).
+    A week counts as PLAYED when the player actually participated:
+    ``gp`` >= 1 or an offensive snap count (``off_snp``) present. A
+    participated week with no production — Sleeper emits no points line
+    (``pts_ppr``) for it at all — is a real 0.0 game: it scores 0.0 with
+    ``week_stat_points`` and enters every average as 0.0, with 0 usage.
+    Rows with neither participation marker are did-not-play /
+    bookkeeping rows and never enter any average. Points are scored with
+    ``week_stat_points`` (the same scorer the Start/Sit page's live path
+    uses), recent form is the last 3 played weeks, and the usage delta
+    is the absolute per-game change of the position's volume metric (see
+    ``utils.start_sit.form_usage_inputs``).
     The derivation also carries ``last4_ppg`` (last 4 played weeks):
     the rating's form-blend input (``compute_start_score`` blends it
     into the base at 35% on a full window), and the value the compare
     rows labeled "L4 PPG" display. It also carries ``snap_trend``:
     the role-trend input (snap-share change over the last 4 played
     weeks, see ``utils.start_sit.snap_share_trend``), derived on the
-    trend's own played rule — game participation (``gp`` >= 1 or a
-    snap count), independent of the points line above. RB/WR/TE
+    same participation rule. RB/WR/TE
     entries for non-lead players also carry ``lead_pid`` /
     ``last4_ppg_lead``: the room lead (highest season usage per played
     game at his team + position) and the player's last-4 average over
@@ -373,8 +377,17 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                                 str(pid), []).append(wnum)
                 except (TypeError, ValueError):
                     pass
-                if st.get("pts_ppr") is None:
-                    continue  # not a played week (phantom row / did not play)
+                # Played-week rule (participation): gp >= 1 or an
+                # offensive snap count present. A participated week with
+                # no points line scores 0.0 below and counts as a game;
+                # a row with neither marker is a did-not-play row.
+                try:
+                    _played_week = float(st.get("gp") or 0) >= 1 \
+                        or st.get("off_snp") is not None
+                except (TypeError, ValueError):
+                    _played_week = st.get("off_snp") is not None
+                if not _played_week:
+                    continue  # did not play (no gp, no snaps)
                 pid = str(pid)
                 try:
                     pts = float(week_stat_points(st, scoring_settings, ""))

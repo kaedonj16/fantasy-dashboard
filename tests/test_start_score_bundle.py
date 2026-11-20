@@ -99,48 +99,56 @@ def test_variant_week_points_matches_live_scorers(tmp_path, monkeypatch):
 
 
 def test_derive_start_sit_inputs_played_weeks(tmp_path, monkeypatch):
-    """Phantom rows (gp set, no points line) never count as played; recent
-    form is the last 3 PLAYED weeks; usage is the absolute per-game delta of
-    opportunities (RB) / targets (WR) from the raw stat rows."""
+    """Played weeks are participation weeks (gp >= 1 or a snap count
+    present): a participated week with no points line counts as a real
+    0.0 game (the Jonah Coleman Week 1 2026 shape: gp=1, 3 snaps, zero
+    touches, Sleeper emits no pts_ppr). A row with neither marker is a
+    did-not-play row and never counts. Recent form is the last 3 PLAYED
+    weeks; usage is the absolute per-game delta of opportunities (RB) /
+    targets (WR) from the raw stat rows."""
     from utils.fantasy_scoring import week_stat_points
 
     season = 2026
     scoring = dict(ssb.VARIANT_SCORING["ppr"])
     rb = "101"
-    # w2 is a phantom week for the RB: dressed, 3 snaps, no points line.
+    # w2 is a participation week for the RB: dressed, 3 snaps, played,
+    # but no production and no points line. It counts, as 0.0.
+    # w6 is a did-not-play row: bookkeeping keys only, no gp, no snaps.
     rows = {
-        1: {rb: {"position": "RB", "pts_ppr": 10.0, "rush_att": 8, "rec_tgt": 2,
+        1: {rb: {"position": "RB", "gp": 1, "off_snp": 40, "pts_ppr": 10.0, "rush_att": 8, "rec_tgt": 2,
                  "rush_yd": 100, "rec": 0, "rec_yd": 0}},
         2: {rb: {"position": "RB", "gp": 1, "off_snp": 3}},
-        3: {rb: {"position": "RB", "pts_ppr": 20.0, "rush_att": 10, "rec_tgt": 4,
+        3: {rb: {"position": "RB", "gp": 1, "off_snp": 40, "pts_ppr": 20.0, "rush_att": 10, "rec_tgt": 4,
                  "rush_yd": 200, "rec": 0, "rec_yd": 0}},
-        4: {rb: {"position": "RB", "pts_ppr": 30.0, "rush_att": 14, "rec_tgt": 4,
+        4: {rb: {"position": "RB", "gp": 1, "off_snp": 40, "pts_ppr": 30.0, "rush_att": 14, "rec_tgt": 4,
                  "rush_yd": 300, "rec": 0, "rec_yd": 0}},
-        5: {rb: {"position": "RB", "pts_ppr": 40.0, "rush_att": 18, "rec_tgt": 4,
+        5: {rb: {"position": "RB", "gp": 1, "off_snp": 40, "pts_ppr": 40.0, "rush_att": 18, "rec_tgt": 4,
                  "rush_yd": 400, "rec": 0, "rec_yd": 0}},
+        6: {rb: {"position": "RB", "gms_active": 1.0, "pos_rank_ppr": 999.0}},
     }
     for w, payload in rows.items():
         _write_stat_file(tmp_path, season, w, payload)
     monkeypatch.setattr(ssb, "_stat_files",
                         lambda s: [str(tmp_path / f"sleeper_stats_s{s}_w{w}.json")
-                                   for w in (1, 2, 3, 4, 5)])
+                                   for w in (1, 2, 3, 4, 5, 6)])
     monkeypatch.setattr("utils.utils.load_players_index",
                         lambda: {rb: {"pos": "RB", "team": "DET"}})
     ssb._DERIVE_CACHE.clear()
 
     out = ssb.derive_start_sit_inputs(season, scoring)
     inp = out[rb]
-    scored = [week_stat_points(rows[w][rb], scoring, "") for w in (1, 3, 4, 5)]
-    assert inp["played_games"] == 4  # the phantom week is not a game
-    assert inp["season_ppg"] == pytest.approx(sum(scored) / 4)
+    scored = [week_stat_points(rows[w][rb], scoring, "") for w in (1, 2, 3, 4, 5)]
+    assert scored[1] == 0.0  # the participation week scores zero
+    assert inp["played_games"] == 5  # w2 counts; the w6 DNP row does not
+    assert inp["season_ppg"] == pytest.approx(sum(scored) / 5)
     assert inp["recent_ppg"] == pytest.approx(sum(scored[-3:]) / 3)
     # Display-only L4 (the compare rows labeled "L4 PPG"): last 4 played,
-    # which here is every played week and differs from the last-3 input.
+    # which here includes the 0.0 week and differs from the last-3 input.
     assert inp["last4_ppg"] == pytest.approx(sum(scored[-4:]) / 4)
     assert inp["last4_ppg"] != pytest.approx(inp["recent_ppg"])
-    # Opportunities per played week: 10, 14, 18, 22.
-    assert inp["usage_season_avg"] == pytest.approx(16.0)
-    assert inp["usage_delta"] == pytest.approx(2.0)
+    # Opportunities per played week: 10, 0, 14, 18, 22.
+    assert inp["usage_season_avg"] == pytest.approx(12.8)
+    assert inp["usage_delta"] == pytest.approx(5.2)
     ssb._DERIVE_CACHE.clear()
 
 

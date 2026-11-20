@@ -98,11 +98,12 @@ def _write_stat_file(tmp_path, season, week, rows):
 
 
 def _rb_line(yd, att, tgt):
-    # Points come from the rushing yards under PPR scoring; pts_ppr is
-    # the played-week marker the derivation keys on.
+    # Points come from the rushing yards under PPR scoring; gp / off_snp
+    # are the participation markers the derivation keys on (real Sleeper
+    # rows carry them on every played week).
     return {"position": "RB", "pts_ppr": yd / 10.0, "rush_att": att,
             "rec_tgt": tgt, "rush_yd": yd, "rec": 0, "rec_yd": 0,
-            "fum_lost": 0}
+            "fum_lost": 0, "gp": 1, "off_snp": 40}
 
 
 def test_derive_identifies_lead_and_filters_handcuff(tmp_path, monkeypatch):
@@ -121,9 +122,9 @@ def test_derive_identifies_lead_and_filters_handcuff(tmp_path, monkeypatch):
         rows[w] = {
             cuff: _rb_line(cuff_yd[w], 3, 2),
             qb1: {"position": "QB", "pts_ppr": 20.0, "pass_yd": 250,
-                  "pass_td": 2},
+                  "pass_td": 2, "gp": 1, "off_snp": 60},
             qb2: {"position": "QB", "pts_ppr": 5.0, "pass_yd": 60,
-                  "pass_td": 0},
+                  "pass_td": 0, "gp": 1, "off_snp": 10},
             solo: _rb_line(150, 15, 3),
         }
         if w in lead_yd:

@@ -825,6 +825,16 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                 pid = str(pid)
                 meta = index.get(pid) or {}
                 team = str(meta.get("team") or "").upper()
+                # Played-week rule (participation), shared by the
+                # game log below and the usage / team-points pass: gp
+                # >= 1 or an offensive snap count present. A
+                # participated week with no points line is a real
+                # 0.0 game; a row with neither marker did not play.
+                try:
+                    _played = float(st.get("gp") or 0) >= 1 \
+                        or st.get("off_snp") is not None
+                except (TypeError, ValueError):
+                    _played = st.get("off_snp") is not None
                 if float(st.get("gms_active") or 0) > 0:
                     appearances[pid] = appearances.get(pid, 0) + 1
                     if team:
@@ -841,11 +851,6 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                         team_week_rushes[(team, week)] = \
                             team_week_rushes.get((team, week), 0.0) \
                             + float(st.get("rush_att") or 0)
-                    try:
-                        _played = float(st.get("gp") or 0) >= 1 \
-                            or st.get("off_snp") is not None
-                    except (TypeError, ValueError):
-                        _played = False
                     if _played:
                         try:
                             _pts = float(week_stat_points(
@@ -862,8 +867,8 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                         if team and _pos in ROS_POSITIONS:
                             team_week_points[(team, week)] = \
                                 team_week_points.get((team, week), 0.0) + _pts
-                if yr != season or st.get("pts_ppr") is None:
-                    continue  # usage / team points are this season's facts
+                if yr != season or not _played:
+                    continue  # usage / team points are this season's played weeks
                 pos = str(meta.get("pos") or meta.get("position") or "").upper()
                 if pos not in ROS_POSITIONS:
                     continue
