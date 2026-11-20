@@ -55,6 +55,21 @@ _PBP_CACHE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache", "pbp"
 )
 
+# The only PBP columns the zone/lane aggregation reads. The raw nflverse
+# frame carries ~372 columns; materialising all of them (plus a
+# to_dict("records") over the full frame) peaked at ~1.65 GB RSS and
+# OOM-killed the web worker in production (PR #3193 follow-up). Every
+# read of the parquet is pruned to this list.
+_PBP_COLUMNS = [
+    "week", "season_type", "play_type", "posteam", "yardline_100",
+    "down", "ydstogo", "yards_gained", "qb_spike", "qb_kneel",
+    "qb_scramble", "two_point_attempt", "passer_player_id",
+    "receiver_player_id", "rusher_player_id", "pass_location",
+    "air_yards", "complete_pass", "pass_touchdown", "interception",
+    "first_down_pass", "yards_after_catch", "run_location", "run_gap",
+    "rush_touchdown", "first_down_rush",
+]
+
 # ---------------------------------------------------------------------------
 # Small numeric helpers
 # ---------------------------------------------------------------------------
@@ -511,9 +526,19 @@ def build_timeline(pid: str, pool: Dict[str, Dict[str, Any]],
     segments: List[Dict[str, Any]] = []
     prev_job = None
     prev_share = None
+    pos = pool[pid].get("pos")
     for w in weeks:
+        # Restrict the per-week pool to the player's own position: a
+        # player's score/job inside compute_pool depends only on
+        # same-position peers (percentiles are per position, team rank
+        # is per team+position), so this is output-identical for the
+        # target player and ~4x cheaper than recomputing every position
+        # for every week (the old loop was ~10 full-pool computes per
+        # payload build).
         sub_pool = {}
         for p, e in pool.items():
+            if e.get("pos") != pos:
+                continue
             sub = [r for r in (e.get("series") or []) if int(r.get("week") or 0) <= w]
             if sub:
                 sub_pool[p] = {**e, "series": sub}
@@ -756,22 +781,27 @@ def build_pbp_tables_from_rows(rows: List[Dict[str, Any]],
     def _map(pid):
         return xwalk.get(pid, pid)
 
-    recv_rows, pass_rows = [], []
+    # Single pass, copying only the rows each accumulator will read
+    # (the accumulators filter on play_type anyway). The original code
+    # copied every row three times; on full-width PBP records that
+    # duplication was a large share of the build's peak memory.
+    recv_rows, pass_rows, rush_rows = [], [], []
     for r in rows:
-        r2 = dict(r)
-        if r2.get("receiver_player_id"):
-            r2["receiver_player_id"] = _map(str(r2["receiver_player_id"]))
-        recv_rows.append(r2)
-        r3 = dict(r)
-        if r3.get("passer_player_id"):
-            r3["passer_player_id"] = _map(str(r3["passer_player_id"]))
-        pass_rows.append(r3)
-    rush_rows = []
-    for r in rows:
-        r2 = dict(r)
-        if r2.get("rusher_player_id"):
-            r2["rusher_player_id"] = _map(str(r2["rusher_player_id"]))
-        rush_rows.append(r2)
+        play_type = str(r.get("play_type") or "")
+        if play_type == "pass":
+            r2 = dict(r)
+            if r2.get("receiver_player_id"):
+                r2["receiver_player_id"] = _map(str(r2["receiver_player_id"]))
+            recv_rows.append(r2)
+            r3 = dict(r)
+            if r3.get("passer_player_id"):
+                r3["passer_player_id"] = _map(str(r3["passer_player_id"]))
+            pass_rows.append(r3)
+        elif play_type == "run":
+            r2 = dict(r)
+            if r2.get("rusher_player_id"):
+                r2["rusher_player_id"] = _map(str(r2["rusher_player_id"]))
+            rush_rows.append(r2)
 
     receiving = _accumulate_pass(recv_rows, "receiver_player_id", last4_weeks, base_weeks, window_weeks)
     passing = _accumulate_pass(pass_rows, "passer_player_id", last4_weeks, base_weeks, window_weeks)
@@ -812,7 +842,11 @@ def build_pbp_tables(df, xwalk: Optional[Dict[str, str]] = None,
     """Pandas entry point: DataFrame -> build_pbp_tables_from_rows."""
     if df is None or len(df) == 0:
         return build_pbp_tables_from_rows([], xwalk, last4_weeks, base_weeks, window_weeks)
-    rows = df.to_dict("records")
+    # Prune to the columns the aggregation reads before materialising
+    # row dicts: to_dict("records") over the full ~372-column frame was
+    # the production OOM (see _PBP_COLUMNS).
+    cols = [c for c in _PBP_COLUMNS if c in df.columns]
+    rows = df[cols].to_dict("records") if cols else df.to_dict("records")
     return build_pbp_tables_from_rows(rows, xwalk, last4_weeks, base_weeks, window_weeks)
 
 
@@ -820,38 +854,53 @@ def build_pbp_tables(df, xwalk: Optional[Dict[str, str]] = None,
 # PBP loading (mirrors oline_ratings direct-parquet pattern) + bounded caches
 # ---------------------------------------------------------------------------
 
-_PBP_FRAME_CACHE: "OrderedDict[int, Any]" = OrderedDict()
 _PBP_TABLES_CACHE: "OrderedDict[tuple, Any]" = OrderedDict()
 _CACHE_LOCK = threading.Lock()
 _TABLES_MAX = 6
+# One tables build at a time per worker. A payload build aggregates a
+# full season of PBP; without this, concurrent first-hits for different
+# players each launched their own build and the combined peak memory
+# OOM-killed the web worker in production (PR #3193 follow-up). The
+# lock is only held for the (now column-pruned) build itself; cache
+# hits never touch it.
+_TABLES_BUILD_LOCK = threading.Lock()
 
 
 def load_pbp(season: int):
     """Load one season of nflverse PBP (tests monkeypatch this).
 
     Prefers the on-disk cache under cache/pbp/, else reads the nflverse
-    GitHub release parquet directly and best-effort caches it.
+    GitHub release parquet directly and best-effort caches it. The read
+    is pruned to _PBP_COLUMNS and the frame is NOT retained: callers
+    build the (small) aggregate tables and drop the frame.
     """
     season = int(season)
-    with _CACHE_LOCK:
-        hit = _PBP_FRAME_CACHE.get(season)
-        if hit is not None:
-            _PBP_FRAME_CACHE.move_to_end(season)
-            return hit
     try:
         import pandas as pd
     except Exception:
         return None
+
+    def _read_pruned(source):
+        try:
+            return pd.read_parquet(source, columns=list(_PBP_COLUMNS))
+        except Exception:
+            # A parquet missing one of the pruned columns (an upstream
+            # rename) must not fail the whole load: fall back to a full
+            # read and select what exists.
+            full = pd.read_parquet(source)
+            cols = [c for c in _PBP_COLUMNS if c in full.columns]
+            return full[cols] if cols else full
+
     df = None
     path = os.path.join(_PBP_CACHE_DIR, f"play_by_play_{season}.parquet")
     try:
         if os.path.exists(path):
-            df = pd.read_parquet(path)
+            df = _read_pruned(path)
     except Exception:
         df = None
     if df is None:
         try:
-            df = pd.read_parquet(_PBP_URL.format(year=season))
+            df = _read_pruned(_PBP_URL.format(year=season))
             try:
                 os.makedirs(_PBP_CACHE_DIR, exist_ok=True)
                 df.to_parquet(path)
@@ -864,10 +913,6 @@ def load_pbp(season: int):
             df = df[df["season_type"].astype(str).str.upper() == "REG"]
         except Exception:
             pass
-    with _CACHE_LOCK:
-        _PBP_FRAME_CACHE[season] = df
-        while len(_PBP_FRAME_CACHE) > 2:
-            _PBP_FRAME_CACHE.popitem(last=False)
     return df
 
 
@@ -965,38 +1010,56 @@ def load_pa_feats(win_pool: Dict[str, Dict[str, Any]], season: int
     return out
 
 
-def get_pbp_tables(season: int, window: str) -> Optional[Dict[str, Any]]:
-    key = (int(season), window)
+def _tables_cache_fresh(key):
+    """Cached tables for key when present and inside the TTL."""
     with _CACHE_LOCK:
         hit = _PBP_TABLES_CACHE.get(key)
-        if hit is not None:
+        if hit is not None and time.time() - hit[0] < 3600:
             _PBP_TABLES_CACHE.move_to_end(key)
-            return hit[1] if time.time() - hit[0] < 3600 else None
-    df = load_pbp(season)
-    if df is None or len(df) == 0:
-        return None
-    try:
-        weeks = sorted({int(w) for w in df["week"].dropna().unique()})
-    except Exception:
-        weeks = []
-    last4 = set(weeks[-4:])
-    if window == "last4":
-        base = set(weeks[-8:-4])
-        use_weeks = last4
-    else:
-        base = set(weeks)
-        use_weeks = set(weeks)
-    try:
-        sub = df[df["week"].isin(sorted(use_weeks | base))] if window == "last4" else df
-    except Exception:
-        sub = df
-    tables = build_pbp_tables(sub, get_gsis_crosswalk(), last4, base,
-                              window_weeks=set(weeks) if window != "last4" else last4)
-    with _CACHE_LOCK:
-        _PBP_TABLES_CACHE[key] = (time.time(), tables)
-        while len(_PBP_TABLES_CACHE) > _TABLES_MAX:
-            _PBP_TABLES_CACHE.popitem(last=False)
-    return tables
+            return hit[1]
+    return None
+
+
+def get_pbp_tables(season: int, window: str) -> Optional[Dict[str, Any]]:
+    key = (int(season), window)
+    fresh = _tables_cache_fresh(key)
+    if fresh is not None:
+        return fresh
+    # Build at most one tables set at a time per worker, then re-check:
+    # concurrent first-hits for other players queue here and pick up
+    # the finished tables instead of each building their own copy.
+    # (The previous code also returned None forever once an entry
+    # expired; an expired entry now rebuilds.)
+    with _TABLES_BUILD_LOCK:
+        fresh = _tables_cache_fresh(key)
+        if fresh is not None:
+            return fresh
+        df = load_pbp(season)
+        if df is None or len(df) == 0:
+            return None
+        try:
+            weeks = sorted({int(w) for w in df["week"].dropna().unique()})
+        except Exception:
+            weeks = []
+        last4 = set(weeks[-4:])
+        if window == "last4":
+            base = set(weeks[-8:-4])
+            use_weeks = last4
+        else:
+            base = set(weeks)
+            use_weeks = set(weeks)
+        try:
+            sub = df[df["week"].isin(sorted(use_weeks | base))] if window == "last4" else df
+        except Exception:
+            sub = df
+        tables = build_pbp_tables(sub, get_gsis_crosswalk(), last4, base,
+                                  window_weeks=set(weeks) if window != "last4" else last4)
+        del df, sub
+        with _CACHE_LOCK:
+            _PBP_TABLES_CACHE[key] = (time.time(), tables)
+            while len(_PBP_TABLES_CACHE) > _TABLES_MAX:
+                _PBP_TABLES_CACHE.popitem(last=False)
+        return tables
 
 
 # ---------------------------------------------------------------------------
