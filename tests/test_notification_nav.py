@@ -304,6 +304,38 @@ def test_panel_tabs_split_scorezone_types():
     assert "No notifications yet." not in APP_JS
 
 
+def test_panel_default_tab_is_scorezone_without_regular_notifications():
+    # The bell opens on ScoreZone when there are no regular (Updates-tab
+    # inbox) notifications. Changelog entries folded into Updates are
+    # synthetic (inbox: false) and must not count as regular, otherwise
+    # the panel would always land on Updates.
+    assert "inbox: true" in APP_JS
+    assert "inbox: false" in APP_JS
+    assert "updItems.some(i => i.inbox)" in APP_JS
+    assert "_niDefaultTab(hasRegular, szItems.length > 0)" in APP_JS
+    # An explicit tap still wins over the default.
+    assert "if (!niTabChosen) {" in APP_JS
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")
+def test_ni_default_tab_behavior():
+    fn = _function_source(APP_JS, "_niDefaultTab")
+    harness = """
+function ok(v, m) { if (!v) throw new Error(m); }
+%s
+ok(_niDefaultTab(false, true) === 'scorezone', 'no regular + scorezone alerts -> scorezone');
+ok(_niDefaultTab(true, true) === 'updates', 'regular present -> updates');
+ok(_niDefaultTab(true, false) === 'updates', 'regular only -> updates');
+ok(_niDefaultTab(false, false) === 'updates', 'nothing at all -> updates (changelog lives there)');
+console.log('ni default tab ok');
+""" % (fn,)
+    result = subprocess.run(
+        ["node", "-e", harness], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "ni default tab ok" in result.stdout
+
+
 def test_panel_tabs_css_is_the_quiet_treatment():
     tabs = CSS.split("\n.ni-tabs {")[1].split("}")[0]
     assert "background: var(--card)" in tabs
