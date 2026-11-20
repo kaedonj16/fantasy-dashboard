@@ -374,10 +374,11 @@
 
 /* Pricing page and focused upgrade-dialog presentation. */
 .pricing-page { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:28px 0 56px; color:var(--text); }
-.pricing-hero { max-width:720px; margin:0 auto 20px; text-align:center; }
+.pricing-hero { max-width:720px; margin:0 auto 12px; text-align:center; }
 .pricing-eyebrow { color:var(--brand-blue, #2563eb); font-size:12px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
-.pricing-hero h1 { margin:8px 0 10px; font-size:clamp(28px, 5vw, 44px); line-height:1.08; }
+.pricing-hero h1 { margin:8px 0 8px; font-size:clamp(24px, 3vw, 28px); line-height:1.15; }
 .pricing-hero p, .pricing-section-heading p, .pricing-free-note { color:var(--text-muted); line-height:1.55; }
+.pricing-hero p { font-size:13px; }
 .pricing-section { margin-top:36px; }
 .pricing-section-heading { margin-bottom:14px; }
 .pricing-section-heading h2 { margin:0 0 4px; font-size:var(--fs-h2); }

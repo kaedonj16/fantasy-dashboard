@@ -715,7 +715,6 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
     <p class="rf-updated"><span class="rf-updated-dot"></span>Updated {html.escape(date_str)} · refreshed daily</p>
     <p class="rf-subtitle">
       Biggest {_fmt_word_l} trade value movers {_win_word}, {range_note}.
-      Use the <a href="/trade">Trade Calculator</a> to act on these moves.
     </p>
     {toggle_html}
     {fmt_toggle_html}

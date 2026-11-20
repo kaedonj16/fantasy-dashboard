@@ -1599,7 +1599,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
       <header class="pricing-hero">
         <span class="pricing-eyebrow">BR Fantasy PRO</span>
         <h1>PRO: roster-aware fantasy tools for $10/year.</h1>
-        <p>Turn your roster, market activity, and league outlook into clearer trade, waiver, weekly, and draft decisions.</p>
+        <p>Roster-aware trade, waiver, weekly, and draft decisions.</p>
       </header>
 
       <section class="pricing-section pricing-plans" aria-labelledby="pricing-plans-title">
