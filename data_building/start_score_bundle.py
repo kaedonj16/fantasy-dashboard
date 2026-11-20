@@ -266,6 +266,66 @@ _DERIVE_CACHE: Dict = {}
 _DERIVE_CACHE_MAX = 16
 
 
+def _expected_column_for_scoring(scoring_settings: Optional[dict]) -> Optional[str]:
+    """Weekly expected-points column matching ``scoring_settings``.
+
+    The site's expected-points model stores three totals per
+    player-week (full PPR / half PPR / standard), so the column is
+    picked by the reception rate. Returns None for a non-4-point
+    passing-TD rate: the model prices passing TDs at 4, so under a
+    6-point rate its expectation is not like-for-like with the
+    projection and the projection cap must not fire on it (the cap
+    was validated on the 4-point configuration).
+    """
+    s = scoring_settings or {}
+    if _num(s.get("pass_td"), 4.0) != 4.0:
+        return None
+    rec = _num(s.get("rec"), 1.0)
+    if rec >= 0.75:
+        return "expected_ppr"
+    if rec >= 0.25:
+        return "expected_half_ppr"
+    return "expected_standard"
+
+
+def _load_weekly_expected_map(season: int, column: Optional[str]) -> Dict[str, dict]:
+    """Bulk-read one expected-points column of the weekly table.
+
+    Returns {player_id: {week: expected}} from
+    ``player_weekly_advanced_metrics`` -- the table the daily cron's
+    nflverse sync fills from the site's expected-points model
+    (``build_expected_points_both``) ahead of the bundle build, and
+    the same stored series the player pages read. ``column`` only
+    ever comes from :func:`_expected_column_for_scoring`'s fixed
+    literals. Never raises: {} on any failure (no cap evidence).
+    """
+    if not column:
+        return {}
+    try:
+        from data_building.advanced_metrics import (
+            init_weekly_advanced_metrics_db)
+        from dashboard_services.db import get_conn
+
+        init_weekly_advanced_metrics_db()
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT player_id, week, {column} "
+                "FROM player_weekly_advanced_metrics WHERE season = %s",
+                (int(season),),
+            ).fetchall()
+        out: Dict[str, dict] = {}
+        for r in rows or []:
+            if r[column] is None:
+                continue
+            out.setdefault(str(r["player_id"]), {})[int(r["week"])] = (
+                float(r[column]))
+        return out
+    except Exception:
+        logger.debug("start_score_bundle weekly expected read failed",
+                     exc_info=True)
+        return {}
+
+
 def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, dict]:
     """Per-player form/usage inputs for the start/sit rating, derived from
     the cached weekly stat files under ``scoring_settings``.
@@ -348,6 +408,8 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
         played_usage: Dict[str, list] = {}
         played_shares: Dict[str, list] = {}
         played_share_weeks: Dict[str, list] = {}
+        played_recs: Dict[str, list] = {}
+        played_pos: Dict[str, str] = {}
         for path in files:
             wnum = _week_num(path)
             try:
@@ -398,10 +460,56 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                 played_weeks.setdefault(pid, []).append(wnum)
                 played_usage.setdefault(pid, []).append(
                     usage_value_from_stats(st, pos))
+                try:
+                    _rec = float(st.get("rec") or 0)
+                except (TypeError, ValueError):
+                    _rec = 0.0
+                played_recs.setdefault(pid, []).append(_rec)
+                played_pos[pid] = pos
         out = {
             pid: form_usage_inputs(pts, played_usage.get(pid))
             for pid, pts in played_points.items()
         }
+        # Projection-cap evidence (Kaedon, 2026-11-20): each player's
+        # expected PPG over his last 4 played weeks from the site's
+        # expected-points model, read from the weekly advanced-metrics
+        # table the daily nflverse sync fills (see
+        # _load_weekly_expected_map). The window is the same played
+        # weeks the rating's other inputs use: a played week with no
+        # expected row counts 0.0 (he was on the field with no
+        # opportunity), and a player whose window carries no expected
+        # row at all gets no value -- no evidence, no cap. Under a
+        # TE-premium scoring the premium on his window receptions is
+        # added, so the expectation stays like-for-like with the
+        # projection the cap compares it against. The scoring paths
+        # apply the cap via utils.start_sit.cap_projection; the raw
+        # projection is never rewritten anywhere.
+        try:
+            _exp_col = _expected_column_for_scoring(scoring_settings)
+            _exp_map = (_load_weekly_expected_map(season, _exp_col)
+                        if _exp_col else {})
+            if _exp_map:
+                _tep_bonus = _num(
+                    (scoring_settings or {}).get("bonus_rec_te"), 0.0)
+                for _pid, _entry in out.items():
+                    _weeks = played_weeks.get(_pid) or []
+                    if not _weeks:
+                        continue
+                    _win = _weeks[-4:]
+                    _rows = _exp_map.get(_pid) or {}
+                    if not any(w in _rows for w in _win):
+                        continue
+                    _exp = (sum(_rows.get(w, 0.0) for w in _win)
+                            / len(_win))
+                    if (_tep_bonus
+                            and (played_pos.get(_pid) or "").upper() == "TE"):
+                        _recs = (played_recs.get(_pid) or [])[-len(_win):]
+                        if _recs:
+                            _exp += _tep_bonus * (sum(_recs) / len(_recs))
+                    _entry["exp_last4_ppg"] = _exp
+        except Exception:
+            logger.debug("start_score_bundle exp derivation failed",
+                         exc_info=True)
         # Room leads + lead-filtered form (Kaedon, 2026-11-19): a
         # handcuff's last-4 must not be built on the starter's absence.
         # For RB/WR/TE, group each team's room from the players index
@@ -786,6 +894,16 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                         round(float(_inp["snap_trend_lead"]), 4)
                         if _inp.get("snap_trend_lead") is not None
                         else None),
+                    # Projection-cap evidence (2026-11-20): expected
+                    # PPG over the last 4 played weeks from the site's
+                    # expected-points model. The ranked pools cap an
+                    # outlier projection against it before scoring
+                    # (utils.start_sit.cap_projection); scoring-
+                    # internal only -- proj_pts stays raw.
+                    "exp_last4_ppg": (
+                        round(float(_inp["exp_last4_ppg"]), 2)
+                        if _inp.get("exp_last4_ppg") is not None
+                        else None),
                     "season_ppg": season_ppg,
                     "bust_rate": bust_rate,
                     # Rating inputs from the played-week derivation (NOT the
@@ -1085,6 +1203,12 @@ def load_start_score_bundles_for_scoring(
             nb["last4_ppg_lead"] = (
                 round(float(_inp["last4_ppg_lead"]), 1)
                 if _inp.get("last4_ppg_lead") is not None else None)
+            # Projection-cap evidence rides the re-derivation too, so
+            # non-canonical variants score the same cap as the
+            # canonical bundles (utils.start_sit.cap_projection).
+            nb["exp_last4_ppg"] = (
+                round(float(_inp["exp_last4_ppg"]), 2)
+                if _inp.get("exp_last4_ppg") is not None else None)
             nb["lead_pid"] = _inp.get("lead_pid") or bundle.get("lead_pid")
             nb["season_ppg"] = round(float(_inp.get("season_ppg") or 0.0), 1)
             nb["usage_delta"] = (
