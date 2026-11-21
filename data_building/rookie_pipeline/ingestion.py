@@ -1516,8 +1516,13 @@ def _get_current_year():
 # Name mapping: {cfbd_name: desired_display_name}
 CFBD_NAME_MAPPINGS = {
     "kevin concepcion": "K.C. Concepcion",
-    # Alabama WR is seeded under his full name; listings and CFBD often
-    # carry the shortened form.  Stats under either spelling are his.
+    # Alabama WR, ONE player under two names: he changed his last
+    # name to Coleman-Williams; CFBD still files his stats as
+    # "Ryan Williams" while seeds/listings use the new name. Stats
+    # under either spelling are his. Do NOT split these into two
+    # players (a 2026-11-20 change did exactly that on the false
+    # inference that no CFBD "Coleman-Williams" rows meant a second
+    # person; it was reverted the same day).
     "ryan williams": "Ryan Coleman-Williams",
     # Add more mappings as needed
     # "cfbd_name": "Display Name"

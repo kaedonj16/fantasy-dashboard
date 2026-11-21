@@ -54,8 +54,14 @@ def fetch_cfbd_stats_for_player(
         return {}
 
     years = [draft_year - 1, draft_year - 2, draft_year - 3]
-    # Get all possible CFBD names to search for
+    # Get all possible CFBD names to search for. Matching below is done
+    # on NORMALIZED forms of both sides: CFBD carries punctuation the
+    # normalizer strips ("C.J. Carr"), so exact-matching the raw feed
+    # name against a normalized search name can never hit (the CJ Carr
+    # miss, found 2026-11-20: his 2,741-yard 2025 season sat in the
+    # feed for months while every fetch reported "no stats found").
     search_names = get_cfbd_search_names(player_name)
+    search_norms = {normalize_name(n) for n in search_names}
 
     try:
         # Team season totals for market share / dominator calculation
@@ -112,13 +118,9 @@ def fetch_cfbd_stats_for_player(
                     test_data = _cfbd_get("/stats/player/season", params) or []
                     if test_data:
                         # Check if our player is in this conference data
-                        for search_name in search_names:
-                            for row in test_data:
-                                n = (row.get("player") or "").lower()
-                                if n == search_name.lower():
-                                    data = test_data
-                                    break
-                            if data:
+                        for row in test_data:
+                            if normalize_name(row.get("player") or "") in search_norms:
+                                data = test_data
                                 break
                     if data:
                         break
@@ -131,8 +133,7 @@ def fetch_cfbd_stats_for_player(
                 player_rows = []
                 matched_name = None
                 for row in data:
-                    n = (row.get("player") or "").lower()
-                    if n in [search_name.lower() for search_name in search_names]:
+                    if normalize_name(row.get("player") or "") in search_norms:
                         position = (row.get("position") or "").upper()
                         if position in {"QB", "WR", "RB", "TE"}:
                             player_rows.append(row)
