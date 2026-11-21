@@ -28,7 +28,8 @@ from data_building.rookie_pipeline.mock_draft_consensus import _slug
 # Prospect model selection (v4 go-live wiring)
 # ─────────────────────────────────────────────────────────────────────────────
 # One explicit switch decides which model grades a run:
-#   1. the PROSPECT_MODEL environment variable ("v3" or "v4"), else
+#   1. the PROSPECT_MODEL environment variable ("v3", "v4" or "v5"),
+#      else
 #   2. DEFAULT_PROSPECT_MODEL below.
 # v4 is not a silent upgrade path: when v4 is selected, a run refuses
 # to start unless the recorded reference artifact
@@ -36,6 +37,10 @@ from data_building.rookie_pipeline.mock_draft_consensus import _slug
 # scripts/derive_v4_reference.py on Render) is present and recorded
 # (never the fixture sample). There is no mid-run fallback to v3:
 # a v4 run that cannot load its anchors fails loudly at startup.
+# v5 (prospect_model_v5, a learned model) follows the same rule: it
+# grades only with the trained artifact stored in Postgres
+# (prospect_v5_model_artifact, migration 057), and fails closed
+# without one. Selecting v5 never changes the default.
 
 PROSPECT_MODEL_ENV = "PROSPECT_MODEL"
 DEFAULT_PROSPECT_MODEL = "v4"
@@ -47,17 +52,21 @@ _V4_ALLOW_FIXTURE_ENV = "PROSPECT_V4_ALLOW_FIXTURE"
 
 def selected_prospect_model() -> str:
     """The model selected for scoring runs: "v3" (incumbent,
-    prospect_model) or "v4" (prospect_model_v4). Raises ValueError
-    on an unrecognized selection so a typo fails loudly instead of
-    silently grading with the wrong model."""
+    prospect_model), "v4" (prospect_model_v4) or "v5"
+    (prospect_model_v5). Raises ValueError on an unrecognized
+    selection so a typo fails loudly instead of silently grading
+    with the wrong model."""
     raw = (os.environ.get(PROSPECT_MODEL_ENV)
            or DEFAULT_PROSPECT_MODEL).strip().lower()
     if raw in ("v3", "3", "3.4"):
         return "v3"
     if raw in ("v4", "4", "4.0", "4.1"):
         return "v4"
+    if raw in ("v5", "5", "5.0"):
+        return "v5"
     raise ValueError(
-        f"Unrecognized {PROSPECT_MODEL_ENV}={raw!r}: expected 'v3' or 'v4'.")
+        f"Unrecognized {PROSPECT_MODEL_ENV}={raw!r}: "
+        "expected 'v3', 'v4' or 'v5'.")
 
 
 def _v4_reference_or_raise():
@@ -72,14 +81,36 @@ def _v4_reference_or_raise():
         allow_fixture=os.environ.get(_V4_ALLOW_FIXTURE_ENV) == "1")
 
 
+# The loaded v5 artifact, cached per process: the trained models
+# are loaded from Postgres once, not per scoring call.
+_V5_ARTIFACT_CACHE = None
+
+
+def _v5_artifact_or_raise():
+    """The stored v5 model artifact, or a loud failure.
+
+    Raises prospect_model_v5.V5ArtifactError when no trained
+    artifact is stored (or DATABASE_URL is unset). Called at run
+    startup (assert_scorer_ready) and again at scoring time, so a
+    v5-selected run can never reach grading untrained, and never
+    falls back to another model."""
+    global _V5_ARTIFACT_CACHE
+    if _V5_ARTIFACT_CACHE is None:
+        from .prospect_model_v5 import load_artifact_from_db
+        _V5_ARTIFACT_CACHE = load_artifact_from_db()
+    return _V5_ARTIFACT_CACHE
+
+
 def assert_scorer_ready() -> str:
     """Validate the selected model can grade, before a run does any
-    ingestion work. Returns the selection ("v3" / "v4"). Under v4
-    this is the hard startup gate: artifact present and recorded,
-    or the run does not start."""
+    ingestion work. Returns the selection ("v3" / "v4" / "v5").
+    Under v4 and v5 this is the hard startup gate: artifact present
+    and recorded, or the run does not start."""
     model = selected_prospect_model()
     if model == "v4":
         _v4_reference_or_raise()
+    if model == "v5":
+        _v5_artifact_or_raise()
     return model
 
 
@@ -156,6 +187,16 @@ def _score_prospects(
     is an incumbent-model calibration input; v4's weights live in
     prospect_model_v4's calibration tables, so an override passed
     under v4 is ignored with a printed notice."""
+    if selected_prospect_model() == "v5":
+        from .prospect_model_v5 import score_all_v5
+        if position_weights_override:
+            print("[pipeline] NOTE: position_weights_override ignored "
+                  "under v5 (learned model; no weight tables)")
+        artifact = _v5_artifact_or_raise()
+        scores = score_all_v5(
+            prospects, consensus_map or {}, model_artifact=artifact,
+            active_season_year=active_season_year)
+        return _adapt_v4_scores(prospects, scores, consensus_map, draft_year)
     if selected_prospect_model() == "v4":
         from .prospect_model_v4 import score_all_v4
         if position_weights_override:
