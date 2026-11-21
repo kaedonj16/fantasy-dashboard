@@ -1676,12 +1676,13 @@ function prRender() {
            + `<span class="pr-age-inline">Age ${Number(p.age).toFixed(1)}</span>`)
         : '';
       if (prScoringType === 'ros') {
-        // ROS subline: pos rank · team · games left, plus the remaining
-        // schedule rank on phones (on desktop it sits after the name).
+        // ROS subline: pos rank · team · games left. The remaining
+        // schedule rank sits after the name on desktop; on phones it
+        // stays off the subline so the line always fits its column
+        // (it remains in the player modal).
         const _g = prRosVal(p, 'games');
         const _rosParts = [posRank, (p.team && p.team !== '–') ? p.team : '',
-          (_g != null ? _g + (_g === 1 ? ' game' : ' games') : ''),
-          (isMobile && p.ros_sched_rank != null ? 'Sched #' + p.ros_sched_rank : '')].filter(Boolean).join(' · ');
+          (_g != null ? _g + (_g === 1 ? ' game' : ' games') : '')].filter(Boolean).join(' · ');
         if (_rosParts) sublineHTML = `<span class="pr-sub"><span>${_rosParts}</span></span>`;
       } else if (_subParts || _subSpark || _ageSeg) {
         sublineHTML = `<span class="pr-sub">${_subSpark}<span>${_subParts}</span>${_ageSeg}</span>`;
