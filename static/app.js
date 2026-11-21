@@ -13526,6 +13526,25 @@ window.initTradePage = function initTradePage(root = document) {
       }).join('');
     }
 
+    // Excluded bar collapse: the header flips .is-collapsed on the bar
+    // (mobile CSS hides the chips while collapsed; desktop ignores the
+    // class). _renderUntouchableBar only rewrites the chips, so the
+    // class and this binding survive re-renders.
+    const _excludedToggle = root.querySelector('#otcExcludedToggle');
+    if (_excludedToggle && !_excludedToggle._bound) {
+      _excludedToggle._bound = true;
+      const _flipExcluded = () => {
+        const bar = root.querySelector('#otcExcludedBar');
+        if (!bar) return;
+        const collapsed = bar.classList.toggle('is-collapsed');
+        _excludedToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      };
+      _excludedToggle.addEventListener('click', _flipExcluded);
+      _excludedToggle.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _flipExcluded(); }
+      });
+    }
+
     function applySuggGating() {
       // Non-PRO: show only the upgrade CTA. Hide Build Around / Strategy entirely
       // so free users don't see a second locked "Pro Feature" panel under the paywall.
@@ -13866,7 +13885,47 @@ window.initTradePage = function initTradePage(root = document) {
       playerInput.dispatchEvent(new Event("input"));
       playerInput.focus();
       _updateClearBtn();
+      _syncSelectedPlayerBar(null);
     });
+
+    // ── Selected-player bar (Targets) ─────────────────────────────
+    // Pins who the packages below are for, with the mode-aware label.
+    // Synced from runSearchForCurrent, the one funnel every selection
+    // path goes through (dropdown, top chips, empty-state chips,
+    // restore); clearing reuses the existing #suggPlayerClear path.
+    const selectedBar   = root.querySelector("#otcSelectedPlayerBar");
+    const selectedLabel = root.querySelector("#otcSelectedPlayerLabel");
+    const selectedMeta  = root.querySelector("#otcSelectedPlayerMeta");
+    const storyHead     = root.querySelector("#otcTargetsStoryHead");
+    function _syncSelectedPlayerBar(pid, name) {
+      if (!selectedBar) return;
+      if (!pid) {
+        selectedBar.style.display = "none";
+        if (storyHead) storyHead.style.display = "";
+        return;
+      }
+      const p  = (allPlayers || []).find(x => String(x.id) === String(pid)) || {};
+      const nm = name || p.name || playerInput.value || "";
+      if (selectedLabel) {
+        selectedLabel.textContent =
+          (_searchMode === "send" ? "Returns for " : "Building around ") + nm;
+      }
+      const bits = [p.position, p.team].filter(Boolean);
+      try {
+        const v = Math.round(getPlayerValue(p));
+        if (v) bits.push(String(v));
+      } catch (_) {}
+      if (selectedMeta) selectedMeta.textContent = bits.join(" · ");
+      selectedBar.style.display = "flex";
+      if (storyHead) storyHead.style.display = "none";
+    }
+    const selectedClear = root.querySelector("#otcSelectedPlayerClear");
+    if (selectedClear && !selectedClear._bound) {
+      selectedClear._bound = true;
+      selectedClear.addEventListener("click", () => {
+        if (playerClear) playerClear.click();
+      });
+    }
 
     // ── Search mode: "get" = build around (acquire) | "send" = find returns ──
     let _searchMode = localStorage.getItem("sugg-search-mode") || "get";
@@ -13877,6 +13936,7 @@ window.initTradePage = function initTradePage(root = document) {
     function runSearchForCurrent(pid, name) {
       if (!pid) return;
       _hideEmptyState();
+      _syncSelectedPlayerBar(pid, name);
       if (_searchMode === "send") fetchSendPackages(pid, name);
       else                        fetchPackages(pid, name);
     }
@@ -13934,6 +13994,7 @@ window.initTradePage = function initTradePage(root = document) {
         _setTopChipsCollapsed(false);  // cleared: bring the chips back
         suggCurrentPlayerId = null;
         _pkgPlayerId = null;
+        _syncSelectedPlayerBar(null);
         if (_lastTargetsData) _renderEmptyState(_lastTargetsData);
       }
       if (q.length < 2) { playerDropdown.style.display = "none"; return; }

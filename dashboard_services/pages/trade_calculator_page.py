@@ -1223,6 +1223,114 @@ def build_trade_calculator_body(
               #otcMarketIntelPanel {{ padding:8px !important; }}
               #otcSavedPanel {{ padding:10px !important; }}
             }}
+            /* ── Selected-player bar + excluded toggle (all widths;
+               the bar is a plain row inside the build head, the
+               chevron only renders on phones below). ── */
+            .otc-selected-player-bar {{
+              flex-basis:100%;display:flex;align-items:center;gap:8px;
+              padding:7px 10px;border:1px solid var(--border);
+              border-radius:10px;background:var(--row);
+            }}
+            .otc-selected-player-main {{
+              flex:1;min-width:0;display:flex;align-items:baseline;
+              gap:8px;flex-wrap:wrap;
+            }}
+            .otc-selected-player-label {{ font-size:13px;font-weight:800;color:var(--text); }}
+            .otc-selected-player-meta {{ font-size:12px;font-weight:600;color:var(--text-muted); }}
+            .otc-selected-player-clear {{
+              border:none;background:none;cursor:pointer;flex-shrink:0;
+              font-size:18px;line-height:1;color:var(--text-muted);
+              padding:2px 6px;border-radius:6px;
+            }}
+            .otc-targets-story-head {{ display:none; }}
+            .otc-excluded-head {{
+              display:flex;align-items:center;justify-content:space-between;gap:8px;
+            }}
+            .otc-excluded-chevron {{ display:none; }}
+            /* Embedded intel legend summary row: phones only (the
+               mobile rule below turns it on); desktop keeps the
+               full key as today. These rules live here, not in the
+               shared intel styles, so the standalone page's render
+               carries no hub styling at all. */
+            .ti-key-toggle-row {{ display:none; }}
+            /* ── Trade Hub Targets + Market Intel mobile flow: one
+               Targets story under a single heading, compact empty
+               state, the excluded bar collapsed to one tappable row,
+               and the embedded intel trades modal as a bottom sheet
+               with stacked sides. Mobile only, hub panel only: the
+               standalone Trade Intel page never loads these rules. ── */
+            @media (max-width:600px) {{
+              .otc-targets-story-head {{
+                display:block;font-size:13px;font-weight:800;
+                color:var(--text);padding:2px 2px 0;
+              }}
+              #otcBuildAroundPanel .otc-sugg-targets-section {{
+                border:none;border-radius:0;background:transparent;overflow:visible;
+              }}
+              #otcBuildAroundPanel .otc-sugg-section-head {{
+                background:transparent;border-bottom:none;padding:10px 2px 4px;
+              }}
+              #otcBuildAroundPanel .otc-sugg-section-title {{
+                font-size:12px;letter-spacing:.05em;
+                text-transform:uppercase;color:var(--text-muted);
+              }}
+              #otcBuildAroundPanel .otc-empty-need-card {{ padding:6px 8px; }}
+              #otcBuildAroundPanel .otc-empty-needs-grid {{ gap:6px; }}
+              #otcBuildAroundPanel .otc-empty-trending {{ margin-top:8px; }}
+              .otc-excluded-head {{ cursor:pointer;min-height:32px; }}
+              .otc-excluded-chevron {{
+                display:inline-block;width:8px;height:8px;margin-right:6px;flex-shrink:0;
+                border-right:2px solid var(--text-muted);
+                border-bottom:2px solid var(--text-muted);
+                transform:rotate(-45deg);
+              }}
+              #otcExcludedBar:not(.is-collapsed) .otc-excluded-chevron {{ transform:rotate(45deg); }}
+              #otcExcludedBar.is-collapsed #otcExcludedChips {{ display:none; }}
+              #otcMarketIntelPanel #tiTradesOverlay {{ align-items:flex-end !important; }}
+              #otcMarketIntelPanel .ti-trades-modal {{
+                width:100%;max-height:92vh;border-radius:12px 12px 0 0;
+              }}
+              #otcMarketIntelPanel .ti-trade-sides {{ grid-template-columns:1fr;gap:6px; }}
+              #otcMarketIntelPanel .ti-trade-arrow {{ display:none; }}
+              #otcMarketIntelPanel .ti-trades-pager button {{ min-height:44px;padding:10px 18px; }}
+              #otcMarketIntelPanel .ti-profile-btn {{ min-height:36px; }}
+              /* Embedded intel: sticky filter row, collapsed legend,
+                 slim cards, touch pagination (.ti-embed only exists
+                 in this hub render). */
+              .ti-embed .ti-controls {{
+                position:sticky;top:64px;z-index:20;
+                background:var(--card);padding:8px 0 10px;margin-bottom:12px;
+              }}
+              .ti-embed .ti-tabs {{ overflow-x:auto;flex-wrap:nowrap;max-width:100%; }}
+              .ti-embed .ti-tab {{
+                white-space:nowrap;min-height:40px;padding:8px 12px;flex-shrink:0;
+              }}
+              .ti-embed .ti-key-toggle-row {{
+                display:flex;align-items:center;justify-content:space-between;gap:10px;
+                font-size:13px;color:var(--text-muted);line-height:1.4;
+                background:var(--bg-alt, #f8fafc);border:1px solid var(--border);
+                border-radius:10px;padding:10px 14px;margin-bottom:20px;
+              }}
+              .ti-embed .ti-key-toggle {{
+                border:1px solid var(--border);background:var(--card);color:var(--text);
+                border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;
+                cursor:pointer;min-height:36px;flex-shrink:0;
+              }}
+              .ti-embed .ti-key-collapsible {{ display:none; }}
+              .ti-embed .ti-key-collapsible.is-open {{ display:grid;margin-top:-12px; }}
+              .ti-embed .ti-grid {{ grid-template-columns:1fr;gap:8px; }}
+              .ti-embed .ti-card {{ padding:10px 12px; }}
+              .ti-embed .ti-card-top {{ margin-bottom:6px; }}
+              .ti-embed .ti-divider {{ margin:6px 0; }}
+              .ti-embed .ti-row {{ margin-top:3px; }}
+              .ti-embed .ti-heat {{ padding:6px 8px;margin-top:6px; }}
+              .ti-embed .ti-card .ti-split {{ display:none; }}
+              .ti-embed .ti-page-numbers {{ display:none; }}
+              .ti-embed .ti-pagination-controls {{ width:100%; }}
+              .ti-embed .ti-pagination-btn {{
+                min-height:44px;padding:10px 18px;flex:1;justify-content:center;
+              }}
+            }}
             /* Hit-area floor (44px rule, 2026-11-14): coarse pointers only.
                The info glyph was a 15x15px target; negative margins keep the
                header layout while the box grows to 44px. */
@@ -1280,7 +1388,22 @@ def build_trade_calculator_body(
                         aria-label="Clear search" style="display:none;">&#215;</button>
                       <div id="suggPlayerDropdown" class="otc-sugg-player-dropdown" style="display:none;"></div>
                     </div>
+                    <!-- Selected-player bar: app.js syncs it from
+                         runSearchForCurrent so the packages below always
+                         carry who they are for (mobile-sticky via the
+                         build head; a plain row on desktop). -->
+                    <div id="otcSelectedPlayerBar" class="otc-selected-player-bar" style="display:none;">
+                      <div class="otc-selected-player-main">
+                        <span id="otcSelectedPlayerLabel" class="otc-selected-player-label"></span>
+                        <span id="otcSelectedPlayerMeta" class="otc-selected-player-meta"></span>
+                      </div>
+                      <button id="otcSelectedPlayerClear" class="otc-selected-player-clear" type="button" aria-label="Clear selected player">&#215;</button>
+                    </div>
                   </div>
+                  <!-- Mobile one-story heading for the Targets panel
+                       (CSS shows it on phones only; app.js hides it
+                       while a player is selected). -->
+                  <div id="otcTargetsStoryHead" class="otc-targets-story-head" aria-hidden="true">Targets for you</div>
                   <div id="otcTopChipsWrap" style="display:none;">
                     <div class="otc-top-chips-head">
                       <div class="otc-top-chips-label">Your top trade chips</div>
@@ -1305,9 +1428,14 @@ def build_trade_calculator_body(
                       <p class="empty-state-msg">Choose a roster above to see trade targets.</p>
                     </div>
                   </div>
-                  <!-- Excluded players bar -->
-                  <div id="otcExcludedBar" style="display:none;border-top:1px solid var(--border);">
-                    <div style="padding:8px 14px 4px;font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">Excluded from suggestions</div>
+                  <!-- Excluded players bar (header toggles collapse on
+                       mobile; app.js flips .is-collapsed, renderers and
+                       restore handlers untouched) -->
+                  <div id="otcExcludedBar" class="is-collapsed" style="display:none;border-top:1px solid var(--border);">
+                    <div class="otc-excluded-head" id="otcExcludedToggle" role="button" tabindex="0" aria-expanded="false" style="padding:8px 14px 4px;">
+                      <span style="font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">Excluded from suggestions</span>
+                      <span class="otc-excluded-chevron" aria-hidden="true"></span>
+                    </div>
                     <div id="otcExcludedChips"></div>
                   </div>
                 </div>

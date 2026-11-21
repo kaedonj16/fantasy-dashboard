@@ -33,6 +33,23 @@ def build_trade_intel_body(
     """
     _has_premium_str = "true" if has_premium else "false"
     league_id = league_id or ""
+    # Embedded (Trade Hub) only: the Key toggle behind the collapsed
+    # one-line legend summary on mobile. Never rendered standalone.
+    _ti_embedded_script = (
+        """
+    <script>
+    window.toggleTIKey = function() {
+      var key = document.querySelector('.ti-embed .ti-key-collapsible');
+      var btn = document.getElementById('tiKeyToggle');
+      if (!key) return;
+      var open = key.classList.toggle('is-open');
+      if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    </script>
+    """
+        if embedded
+        else ""
+    )
     if embedded:
         open_html = (
             '<div class="ti-embed">'
@@ -80,7 +97,8 @@ def build_trade_intel_body(
           </div>
         </div>
 
-        <div class="ti-key">
+        {'<div class="ti-key-toggle-row"><span><span class="ti-key-label">Market</span> Real Trade-weighted Median Value</span><button type="button" class="ti-key-toggle" id="tiKeyToggle" onclick="toggleTIKey()" aria-expanded="false">Key</button></div>' if embedded else ''}
+        <div class="ti-key{' ti-key-collapsible' if embedded else ''}">
           <div class="ti-key-item">
             <span class="ti-key-swatch" style="background:#3b82f6;opacity:.7;border-radius:3px;"></span>
             <span><span class="ti-key-label">Market</span> Real Trade-weighted Median Value</span>
@@ -145,6 +163,7 @@ def build_trade_intel_body(
             <button class="ti-trades-close" onclick="closeTITradesModal()">&#x2715;</button>
           </div>
         </div>
+        {'<div id="tiTradesSplit" style="display:none;padding:12px 20px 0;"></div>' if embedded else ''}
         <div class="otc-day-filters ti-trades-lf-bar">
           <button class="otc-day-filter ti-lf-btn active" data-lf="all" onclick="switchTILF('all')">All</button>
           <button class="otc-day-filter ti-lf-btn" data-lf="sf"  onclick="switchTILF('sf')">Superflex</button>
@@ -684,6 +703,15 @@ def build_trade_intel_body(
         const cnt  = playerData.trade_count_all;
         const cntTxt = cnt ? ` · ${{cnt}} trades tracked` : '';
         document.getElementById('tiTradesMeta').textContent = [pos, team].filter(Boolean).join(' · ') + cntTxt;
+        // Embedded hub only: the modal carries the Who pays what split
+        // (the container is not rendered on the standalone page), so
+        // mobile hub cards can stay slim without dropping the data.
+        const splitBox = document.getElementById('tiTradesSplit');
+        if (splitBox) {{
+          const splitHtml = tiSplitHtml(playerData);
+          splitBox.innerHTML = splitHtml;
+          splitBox.style.display = splitHtml ? '' : 'none';
+        }}
         document.querySelectorAll('.ti-lf-btn').forEach(b => b.classList.toggle('active', b.dataset.lf === 'all'));
         const overlay = document.getElementById('tiTradesOverlay');
         overlay.style.display = 'flex';
@@ -888,4 +916,5 @@ def build_trade_intel_body(
       window.loadTIPage = loadTIPage;
     }})();
     </script>
+{_ti_embedded_script}
     """
