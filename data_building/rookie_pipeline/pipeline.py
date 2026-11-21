@@ -194,7 +194,8 @@ def _score_prospects(
                   "under v5 (learned model; no weight tables)")
         artifact = _v5_artifact_or_raise()
         scores = score_all_v5(
-            prospects, consensus_map or {}, model_artifact=artifact)
+            prospects, consensus_map or {}, model_artifact=artifact,
+            active_season_year=active_season_year)
         return _adapt_v4_scores(prospects, scores, consensus_map, draft_year)
     if selected_prospect_model() == "v4":
         from .prospect_model_v4 import score_all_v4

@@ -732,9 +732,15 @@ def _top_features(artifact: Dict[str, Any], pos: str,
 
 
 def _score_one(prospect, consensus_entry, artifact, cast_quality,
-               cycle_complete, receipts=True):
+               cycle_complete, receipts=True, active_season_year=None):
     pos = normalize_position(prospect.get("position"))
-    state = detect_lifecycle_state(prospect, None, cycle_complete)
+    state = detect_lifecycle_state(prospect, active_season_year,
+                                   cycle_complete)
+    # The in-progress season may price LATEST (current form) but
+    # never PEAK, exactly v4's rule; select_priced_seasons falls
+    # back to it only when no complete season exists (a true
+    # freshman's partial is all the evidence there is).
+    partial_year = active_season_year if state == "in_season" else None
     base: Dict[str, Any] = {
         "player_id": prospect.get("player_id"),
         "name": prospect.get("name"),
@@ -774,7 +780,8 @@ def _score_one(prospect, consensus_entry, artifact, cast_quality,
         base["reasons"] = [
             "Unscored under v5: no trained model for this position"]
         return base
-    sel = select_priced_seasons(prospect.get("seasons") or [], pos)
+    sel = select_priced_seasons(prospect.get("seasons") or [], pos,
+                                partial_year=partial_year)
     if sel.get("peak") is None:
         base["reasons"] = [
             "Unscored under v5: no college season data (abstention)"]
@@ -784,7 +791,8 @@ def _score_one(prospect, consensus_entry, artifact, cast_quality,
         "latest": (sel["latest"] or {}).get("season"),
     }
     feats = extract_features(prospect, consensus_entry,
-                             cast_quality=cast_quality)
+                             cast_quality=cast_quality,
+                             partial_year=partial_year)
     grade, talent, delta, pred, pct, _x = _grade_bundle(artifact, pos, feats)
     band_key, band_label = band_for(grade)
     base.update({
@@ -836,6 +844,7 @@ def score_all_v5(
     model_artifact: Optional[Any] = None,
     cycle_complete: bool = False,
     receipts: bool = True,
+    active_season_year: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Grade a run of prospects with the trained v5 artifact.
 
@@ -853,7 +862,7 @@ def score_all_v5(
         results.append(_score_one(
             p, consensus_map.get(p.get("player_id")), artifact,
             cast.get(p.get("player_id")), cycle_complete,
-            receipts=receipts))
+            receipts=receipts, active_season_year=active_season_year))
     results.sort(key=lambda x: (x["prospect_score"] is None,
                                 -(x["prospect_score"] or 0.0)))
     pos_counters: Dict[str, int] = {}
