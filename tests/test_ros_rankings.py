@@ -18,6 +18,7 @@ pytest.importorskip("pandas")
 
 from utils.ros_rankings import (
     ROS_MODEL_WEIGHTS,
+    SCHED_Z_CAP,
     assign_ros_ranks,
     availability_rate,
     ceiling_ppg,
@@ -30,6 +31,7 @@ from utils.ros_rankings import (
     has_season_ending_note,
     is_in_window_returner,
     is_season_out,
+    opportunity_form,
     order_overall,
     passes_role_gate,
     player_model_factors,
@@ -588,11 +590,39 @@ def test_assign_ros_ranks_per_window():
 # ── Factor model (full-window positional order) ─────────────────────────────
 
 def test_model_weights_are_the_locked_set():
+    # v3 (2026-11-20): position-specific weights, ported exactly from
+    # the backtest (V3_BACKTEST_2026-11-20.md). QB keeps the fuller
+    # model, RB is simplified, WR/TE run near PPG-only.
     assert ROS_MODEL_WEIGHTS == {
-        "ppg": 0.58, "ceiling": 0.08, "games": 0.09, "sched": 0.05,
-        "form": 0.08, "role": 0.07, "consistency": 0.03, "offense": 0.02,
+        "QB": {"ppg": 0.60, "ceiling": 0.08, "games": 0.09, "sched": 0.03,
+               "form": 0.08, "role": 0.07, "consistency": 0.03,
+               "offense": 0.02},
+        "RB": {"ppg": 0.70, "ceiling": 0.05, "games": 0.08, "sched": 0.02,
+               "form": 0.06, "role": 0.06, "consistency": 0.02,
+               "offense": 0.01},
+        "WR": {"ppg": 0.88, "ceiling": 0.02, "games": 0.04, "sched": 0.01,
+               "form": 0.02, "role": 0.02, "consistency": 0.005,
+               "offense": 0.005},
+        "TE": {"ppg": 0.88, "ceiling": 0.02, "games": 0.04, "sched": 0.01,
+               "form": 0.02, "role": 0.02, "consistency": 0.005,
+               "offense": 0.005},
     }
-    assert sum(ROS_MODEL_WEIGHTS.values()) == pytest.approx(1.0)
+    for pos, weights in ROS_MODEL_WEIGHTS.items():
+        assert sum(weights.values()) == pytest.approx(1.0), pos
+    # WR/TE PPG dominance is the v3 point: PPG outweighs every other
+    # factor combined at those positions.
+    for pos in ("WR", "TE"):
+        w = ROS_MODEL_WEIGHTS[pos]
+        assert w["ppg"] > sum(v for k, v in w.items() if k != "ppg")
+
+
+def test_opportunity_form_last_four_played():
+    # Mean share over the last 4 played games; None under 2 games.
+    assert opportunity_form([10.0, 20.0, 30.0, 40.0, 50.0]) == pytest.approx(35.0)
+    assert opportunity_form([25.0, 15.0]) == pytest.approx(20.0)
+    assert opportunity_form([25.0]) is None
+    assert opportunity_form([]) is None
+    assert opportunity_form(None) is None
 
 
 def test_form_ppg_last_four_played():
@@ -655,11 +685,35 @@ def test_player_model_factors_assembly():
         offense=27.5)
     assert fac["ppg"] == 18.0 and fac["games"] == 5.5
     assert fac["sched"] == -4.0  # inverted: softer slate, larger number
-    assert fac["form"] == pytest.approx(22.5)       # last 4: 30, 12, 22, 26
+    # v3: WR form is opportunity share, not points: mean target share
+    # over the last 4 played games (20, 26, 26, 26).
+    assert fac["form"] == pytest.approx(24.5)
     assert fac["ceiling"] == pytest.approx(26.0)    # best 3: 30, 26, 22
     assert fac["consistency"] == pytest.approx(1.0)
     assert fac["role"] == pytest.approx(6.0)
     assert fac["offense"] == 27.5
+
+
+def test_player_model_factors_qb_keeps_points_form():
+    # v3: QB form stays points-based (last-4 played PPG); the QB role
+    # series is raw pass attempts and must NOT be read as form.
+    fac = player_model_factors(
+        "QB", ppg=21.0, games=6.0, sched_rank=10,
+        game_points={1: 12.0, 2: 18.0, 3: 24.0, 4: 20.0, 5: 28.0, 6: 22.0},
+        role_series=[30.0, 32.0, 34.0, 36.0, 38.0, 40.0],
+        offense=26.0)
+    assert fac["form"] == pytest.approx(23.5)  # last 4 pts: 24, 20, 28, 22
+
+
+def test_player_model_factors_rb_form_is_opportunity_share():
+    # RB form = mean rush+target share over the last 4 played games,
+    # even when his points went the other way.
+    fac = player_model_factors(
+        "RB", ppg=14.0, games=6.0, sched_rank=10,
+        game_points={1: 30.0, 2: 28.0, 3: 6.0, 4: 5.0, 5: 4.0, 6: 3.0},
+        role_series=[40.0, 42.0, 44.0, 46.0, 48.0, 50.0],
+        offense=24.0)
+    assert fac["form"] == pytest.approx(47.0)  # shares 44, 46, 48, 50
 
 
 def test_model_order_beats_total_order():
@@ -677,7 +731,7 @@ def test_model_order_beats_total_order():
                   "sched": -20.0, "form": 11.0, "role": -2.0,
                   "consistency": 0.5, "offense": 20.0},
     }
-    scores = ros_model_scores(factors)
+    scores = ros_model_scores(factors, "RB")
     assert scores["rate"] > scores["volume"] > scores["third"]
 
 
@@ -689,8 +743,92 @@ def test_model_missing_factor_is_neutral():
         "no_role": {**base, "role": None},
         "cold_role": {**base, "role": -6.0},
     }
-    scores = ros_model_scores(factors)
+    scores = ros_model_scores(factors, "RB")
     assert scores["hot_role"] > scores["no_role"] > scores["cold_role"]
+
+
+def test_model_sched_z_is_capped():
+    # v3: the schedule z contribution is clipped at +/- SCHED_Z_CAP
+    # before weighting. Nine identical WRs face the hardest far slate
+    # (rank 32) and one faces the softest (rank 1): the soft player's
+    # raw sched z is +3.0, so uncapped his edge over a hard-slate peer
+    # would be 0.01 x (3.0 - (-1/3)); capped it is 0.01 x (1.0 - (-1/3)).
+    base = {"ppg": 15.0, "ceiling": 22.0, "games": 6.0,
+            "form": 25.0, "role": 0.0, "consistency": 0.6,
+            "offense": 22.0}
+    factors = {f"hard{i}": {**base, "sched": -32.0} for i in range(9)}
+    factors["soft"] = {**base, "sched": -1.0}
+    scores = ros_model_scores(factors, "WR")
+    w = ROS_MODEL_WEIGHTS["WR"]["sched"]
+    expected = w * (SCHED_Z_CAP - (-1.0 / 3.0))
+    assert scores["soft"] - scores["hard0"] == pytest.approx(
+        round(expected, 3), abs=0.002)
+    assert scores["soft"] - scores["hard0"] < w * (3.0 - (-1.0 / 3.0))
+
+
+def test_build_sched_factor_uses_playoff_weeks_only(tmp_path, monkeypatch):
+    """v3 end-to-end: two identical WRs on different teams. AAA owns the
+    softer FULL-window slate (soft near weeks, hard playoff weeks);
+    BBB's slate is the reverse. The display ros_sched_rank follows the
+    full window (AAA softer), but the factor model reads Weeks 15-17
+    only, so BBB must outscore and outrank AAA."""
+    import json as _json
+
+    from data_building import start_score_bundle as ssb
+    from utils import ros_rankings as rr
+
+    season = 2026
+    cache = tmp_path / "sleeper_stats"
+    cache.mkdir(exist_ok=True)
+    line = {"gp": 1, "gms_active": 1, "off_snp": 50, "pts_ppr": 15.0,
+            "rec": 5, "rec_tgt": 8, "rec_yd": 100, "position": "WR"}
+    files = []
+    for w in range(1, 9):
+        p = cache / f"sleeper_stats_s{season}_w{w}.json"
+        p.write_text(_json.dumps({"wa": dict(line), "wb": dict(line)}))
+        files.append(str(p))
+    index = {"wa": {"pos": "WR", "team": "AAA"},
+             "wb": {"pos": "WR", "team": "BBB"}}
+    monkeypatch.setattr("utils.utils.load_players_index", lambda: index)
+
+    def _schedule(s, w):
+        if 11 <= w <= 14:
+            return [{"home_team": "AAA", "away_team": "NS"},
+                    {"home_team": "BBB", "away_team": "NH"}]
+        if 15 <= w <= 17:
+            return [{"home_team": "AAA", "away_team": "FH"},
+                    {"home_team": "BBB", "away_team": "FS"}]
+        return []
+
+    monkeypatch.setattr("utils.utils.load_week_schedule", _schedule)
+    monkeypatch.setattr(ssb, "_stat_files", lambda s: files)
+    ssb._DERIVE_CACHE.clear()
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        "utils.data_cache._read_week_projection_file",
+        lambda s, w: {pid: {} for pid in index})
+    monkeypatch.setattr(
+        "utils.projections.weekly_projection_points",
+        lambda week_map, p, scoring, pos: 15.0 if str(p) in week_map else None)
+    monkeypatch.setattr(rr, "live_injury_status_map", lambda: {})
+    # Schedule Rankings values (higher = softer matchup): NS/FS soft,
+    # NH/FH hard, the two home teams mid.
+    info = {t: {"rank_value": v} for t, v in
+            {"NS": 30.0, "NH": 1.0, "FS": 30.0, "FH": 1.0,
+             "AAA": 15.0, "BBB": 15.0}.items()}
+    monkeypatch.setattr(
+        "app._matchup_rank_table",
+        lambda s, pos: ({}, 0, info, False))
+
+    payload = rr._build_ros_map(season, 11, "November 20, 2026")
+    ssb._DERIVE_CACHE.clear()
+    assert payload is not None
+    wa, wb = payload["players"]["wa"], payload["players"]["wb"]
+    # Display rank is the full-window slate: AAA's is softer.
+    assert wa["ros_sched_rank"] < wb["ros_sched_rank"]
+    # The model order follows the playoff-weeks slate instead.
+    assert wb["ros_score"] > wa["ros_score"]
+    assert wb["ros_pos_rank"] == 1 and wa["ros_pos_rank"] == 2
 
 
 def test_assign_ros_ranks_model_order_full_window_only():

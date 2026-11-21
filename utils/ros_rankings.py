@@ -31,11 +31,14 @@ and 2.584 for the originally pitched 65/35 blend):
     apply inside each window independently.
   * Positional order in the full window is a factor model (Kaedon,
     2026-11-18), NOT the ROS Pts total: within each position, eight
-    factors are z-scored across the eligible pool and combined at fixed
-    weights (ROS_MODEL_WEIGHTS): ROS PPG .58, ceiling (best-3 played
-    games) .08, expected games .09, schedule .05, recent form (last-4
-    played PPG) .08, role trend .07, consistency .03, team offense .02.
-    The total-points order systematically buried better per-game players
+    factors are z-scored across the eligible pool and combined at
+    position-specific weights (ROS_MODEL_WEIGHTS, v3 as of 2026-11-20:
+    QB keeps the fuller model with ROS PPG at .60, RB runs PPG .70,
+    WR/TE run near PPG-only at .88; the remaining weight spreads over
+    ceiling, expected games, schedule, form, role trend, consistency
+    and team offense). Form is last-4 played PPG for QB and mean
+    opportunity share over the last 4 played games for RB/WR/TE. The
+    total-points order systematically buried better per-game players
     whose bye or expected games came up short. The model stamps
     ``ros_score`` and ``ros_pos_rank`` follows it; the Stretch and
     Playoff windows keep the total-points order. There is NO
@@ -66,8 +69,12 @@ number the model does not stand behind.
 Schedule rank (the average Schedule Rankings matchup value of the
 player's remaining opponents, ranked across teams, 1 = softest
 remaining schedule) never enters the PPG: the weekly projections
-already price the opponent in. It enters the full-window positional
-order only, as the factor model's schedule input at a 0.05 weight.
+already price the opponent in. It is stamped as the display value
+``ros_sched_rank`` over the full window. The factor model's schedule
+input is a separate rank built from the playoff weeks (15-17) only,
+at each position's small schedule weight, with its z-score
+contribution capped at +/-1.0: near-week opponents are already priced
+into the projections, so only the far slate carries new information.
 
 Cross-position order (the All view) is by VOR total: (window PPG minus
 the replacement PPG at his position) x expected window games, with the
@@ -307,16 +314,36 @@ def availability_rate(appearances: Optional[int], team_games: Optional[int],
 # games is a partial discount, never the multiplier the total made it.
 # A factor a player lacks (thin game log, no schedule rank) fills with the
 # pool mean, i.e. z = 0: missing evidence is neutral, never a penalty.
+#
+# v3 (Kaedon, 2026-11-20, "ship v3 as the new model"): the weights are
+# position-specific, ported exactly from the offline backtest
+# (~/workspace/ros-rankings/V3_BACKTEST_2026-11-20.md: v3 cell-mean
+# Spearman +0.666 vs v2 +0.647 and PPG-only +0.665 on the 2025 sample).
+# The v2 single weight set helped QB, tied at RB and lost at WR/TE, so
+# QB keeps the fuller model, RB is simplified toward PPG, and WR/TE run
+# near PPG-only. Two factor definitions changed with it: form for
+# RB/WR/TE is opportunity share, not points (see player_model_factors),
+# and the schedule factor reads the playoff weeks only, capped (see
+# SCHED_Z_CAP).
 ROS_MODEL_WEIGHTS = {
-    "ppg": 0.58,
-    "ceiling": 0.08,
-    "games": 0.09,
-    "sched": 0.05,
-    "form": 0.08,
-    "role": 0.07,
-    "consistency": 0.03,
-    "offense": 0.02,
+    "QB": {"ppg": 0.60, "ceiling": 0.08, "games": 0.09, "sched": 0.03,
+           "form": 0.08, "role": 0.07, "consistency": 0.03,
+           "offense": 0.02},
+    "RB": {"ppg": 0.70, "ceiling": 0.05, "games": 0.08, "sched": 0.02,
+           "form": 0.06, "role": 0.06, "consistency": 0.02,
+           "offense": 0.01},
+    "WR": {"ppg": 0.88, "ceiling": 0.02, "games": 0.04, "sched": 0.01,
+           "form": 0.02, "role": 0.02, "consistency": 0.005,
+           "offense": 0.005},
+    "TE": {"ppg": 0.88, "ceiling": 0.02, "games": 0.04, "sched": 0.01,
+           "form": 0.02, "role": 0.02, "consistency": 0.005,
+           "offense": 0.005},
 }
+# The schedule factor's z-score contribution is clipped to +/- this
+# before weighting (v3): the factor reads Weeks 15-17 opponents only
+# (the caller passes a playoff-weeks schedule rank), because near-week
+# opponents are already baked into the weekly projections.
+SCHED_Z_CAP = 1.0
 CONSISTENCY_FLOORS = {"QB": 16.0, "RB": 10.0, "WR": 10.0, "TE": 7.0}
 ROLE_TREND_WINDOW = 3
 FORM_MIN_GAMES = 2
@@ -392,24 +419,52 @@ def _zscores(values: Dict[str, Optional[float]]) -> Dict[str, float]:
             for pid, v in values.items()}
 
 
+def opportunity_form(series) -> Optional[float]:
+    """Mean opportunity share over the last 4 played games; None under 2.
+
+    ``series`` is the per-played-game opportunity series in week order
+    (see role_share_series): target share for WR/TE, rush+target share
+    for RB. This is the v3 form factor for RB/WR/TE: the same series
+    the role trend reads, taken as a level instead of a trend, so form
+    tracks workload rather than points luck. QB keeps points form.
+    """
+    vals = [float(v) for v in (series or [])]
+    if len(vals) < FORM_MIN_GAMES:
+        return None
+    window = vals[-FORM_WINDOW:]
+    return sum(window) / len(window)
+
+
 def ros_model_scores(
-        factors_by_pid: Dict[str, Dict[str, Optional[float]]]
+        factors_by_pid: Dict[str, Dict[str, Optional[float]]],
+        position: str,
 ) -> Dict[str, float]:
-    """Weighted z-score sum for one position's pool.
+    """Weighted z-score sum for one position's pool, at v3 weights.
 
     ``factors_by_pid`` maps pid -> raw factor values keyed like
-    ROS_MODEL_WEIGHTS (``sched`` already inverted, so a softer slate is
-    a larger number). Every factor is z-scored across the pool exactly
-    as given, so the caller passes one position's eligible pool.
+    ROS_MODEL_WEIGHTS[position] (``sched`` already inverted, so a softer
+    slate is a larger number). Every factor is z-scored across the pool
+    exactly as given, so the caller passes one position's eligible
+    pool. The schedule z-score is clipped to +/- SCHED_Z_CAP before
+    weighting (v3: playoff-weeks schedule only, capped).
     """
+    weights = ROS_MODEL_WEIGHTS[str(position or "").upper()]
     per_factor = {
         f: _zscores({pid: (fac or {}).get(f)
                      for pid, fac in factors_by_pid.items()})
-        for f in ROS_MODEL_WEIGHTS
+        for f in weights
     }
-    return {pid: round(sum(w * per_factor[f][pid]
-                            for f, w in ROS_MODEL_WEIGHTS.items()), 3)
-            for pid in factors_by_pid}
+
+    def _score(pid):
+        total = 0.0
+        for f, w in weights.items():
+            z = per_factor[f][pid]
+            if f == "sched":
+                z = max(-SCHED_Z_CAP, min(SCHED_Z_CAP, z))
+            total += w * z
+        return round(total, 3)
+
+    return {pid: _score(pid) for pid in factors_by_pid}
 
 
 def role_share_series(position: str, weeks, usage_by_week,
@@ -449,17 +504,26 @@ def player_model_factors(position: str, *, ppg, games, sched_rank,
 
     ``game_points`` maps week -> played-game PPR points; ``role_series``
     is the per-played-game opportunity series in week order (see
-    role_share_series). ``sched`` is inverted here: the softer slate
-    (rank 1) becomes the larger number.
+    role_share_series). ``sched_rank`` is the player's PLAYOFF-weeks
+    (Weeks 15-17) schedule rank, not the full-window display rank: the
+    v3 schedule factor reads far weeks only. ``sched`` is inverted
+    here: the softer slate (rank 1) becomes the larger number.
     """
     weeks = sorted((game_points or {}).keys())
     pts_series = [float((game_points or {})[w]) for w in weeks]
+    # v3 form: QB keeps points form (last-4 played PPG); RB/WR/TE read
+    # form as opportunity share (mean of the role series over the last
+    # 4 played games), the backtested swap from points to workload.
+    if str(position or "").upper() == "QB":
+        form = form_ppg(pts_series)
+    else:
+        form = opportunity_form(role_series)
     return {
         "ppg": float(ppg) if ppg is not None else None,
         "ceiling": ceiling_ppg(pts_series),
         "games": float(games) if games is not None else None,
         "sched": (-float(sched_rank) if sched_rank is not None else None),
-        "form": form_ppg(pts_series),
+        "form": form,
         "role": role_trend(role_series),
         "consistency": consistency_rate(pts_series, position),
         "offense": float(offense) if offense is not None else None,
@@ -1184,29 +1248,44 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
 
         # ROS schedule rank per (position, team): average Schedule Rankings
         # matchup value of the remaining opponents, ranked across teams
-        # (1 = softest). Display only.
+        # (1 = softest). The full-window rank is the display value
+        # (ros_sched_rank); the factor model reads a second rank built
+        # from the playoff weeks (15-17) only (v3: near-week opponents
+        # are already baked into the weekly projections).
         sched_rank: Dict[Tuple[str, str], int] = {}
+        far_sched_rank: Dict[Tuple[str, str], int] = {}
         try:
             from app import _matchup_rank_table
             from utils.nfl import rank_values
-            for pos in ROS_POSITIONS:
-                _ranks, _total, info, _is_z = _matchup_rank_table(season, pos)
-                team_values: Dict[str, float] = {}
-                for team, opps in team_opps.items():
-                    vals = []
-                    for w in range(start_week, ROS_END_WEEK + 1):
-                        opp = opps.get(w)
-                        row = (info or {}).get(opp) if opp else None
-                        if row and isinstance(row.get("rank_value"), (int, float)):
-                            vals.append(float(row["rank_value"]))
-                    if vals:
-                        team_values[team] = sum(vals) / len(vals)
-                ranks, _n = rank_values(team_values)
-                for team, rank in ranks.items():
-                    sched_rank[(pos, team)] = int(rank)
+
+            def _ranks_for_weeks(weeks) -> Dict[Tuple[str, str], int]:
+                out: Dict[Tuple[str, str], int] = {}
+                for pos in ROS_POSITIONS:
+                    _r, _t, info, _z = _matchup_rank_table(season, pos)
+                    team_values: Dict[str, float] = {}
+                    for team, opps in team_opps.items():
+                        vals = []
+                        for w in weeks:
+                            opp = opps.get(w)
+                            row = (info or {}).get(opp) if opp else None
+                            if row and isinstance(
+                                    row.get("rank_value"), (int, float)):
+                                vals.append(float(row["rank_value"]))
+                        if vals:
+                            team_values[team] = sum(vals) / len(vals)
+                    ranks, _n = rank_values(team_values)
+                    for team, rank in ranks.items():
+                        out[(pos, team)] = int(rank)
+                return out
+
+            sched_rank = _ranks_for_weeks(
+                range(start_week, ROS_END_WEEK + 1))
+            far_sched_rank = _ranks_for_weeks(
+                range(PLAYOFF_START_WEEK, ROS_END_WEEK + 1))
         except Exception:
             logger.debug("[ros] schedule rank unavailable", exc_info=True)
             sched_rank = {}
+            far_sched_rank = {}
 
         # Weekly projection series per player, split into the three windows.
         week_maps: Dict[int, dict] = {}
@@ -1291,7 +1370,8 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                     pos,
                     ppg=fields.get("ros_ppg"),
                     games=fields.get("ros_games"),
-                    sched_rank=fields.get("ros_sched_rank"),
+                    sched_rank=far_sched_rank.get(
+                        (pos, norm_sched_team(team))),
                     game_points=_log,
                     role_series=role_share_series(
                         pos, sorted(_log.keys()), game_usage.get(pid) or {},
@@ -1303,8 +1383,8 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
         _factors_by_pos: Dict[str, Dict[str, dict]] = {}
         for _pid, _fac in factors_by_pid.items():
             _factors_by_pos.setdefault(positions_by_pid[_pid], {})[_pid] = _fac
-        for _fac_pool in _factors_by_pos.values():
-            model_scores.update(ros_model_scores(_fac_pool))
+        for _pos, _fac_pool in _factors_by_pos.items():
+            model_scores.update(ros_model_scores(_fac_pool, _pos))
         assign_ros_ranks(ros_by_pid, positions_by_pid,
                          model_scores=model_scores)
         return {
