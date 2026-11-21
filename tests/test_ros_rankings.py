@@ -590,27 +590,29 @@ def test_assign_ros_ranks_per_window():
 # ── Factor model (full-window positional order) ─────────────────────────────
 
 def test_model_weights_are_the_locked_set():
-    # v3 (2026-11-20): position-specific weights, ported exactly from
-    # the backtest (V3_BACKTEST_2026-11-20.md). QB keeps the fuller
-    # model, RB is simplified, WR/TE run near PPG-only.
+    # Stripped base (2026-11-21): form, ceiling and role trend are out
+    # of the score at every position; the remaining v3 weights are
+    # renormalized (ROS_V3_AUDIT_2026-11-21.md Proposal 1, confirmed by
+    # the 1,728-config search in ROS_BEST_MODEL_SEARCH_2026-11-21.md:
+    # cell-mean +0.677 vs v3 +0.666, better at every position). The
+    # removed factors stay computed as display/context signals.
     assert ROS_MODEL_WEIGHTS == {
-        "QB": {"ppg": 0.60, "ceiling": 0.08, "games": 0.09, "sched": 0.03,
-               "form": 0.08, "role": 0.07, "consistency": 0.03,
-               "offense": 0.02},
-        "RB": {"ppg": 0.70, "ceiling": 0.05, "games": 0.08, "sched": 0.02,
-               "form": 0.06, "role": 0.06, "consistency": 0.02,
-               "offense": 0.01},
-        "WR": {"ppg": 0.88, "ceiling": 0.02, "games": 0.04, "sched": 0.01,
-               "form": 0.02, "role": 0.02, "consistency": 0.005,
-               "offense": 0.005},
-        "TE": {"ppg": 0.88, "ceiling": 0.02, "games": 0.04, "sched": 0.01,
-               "form": 0.02, "role": 0.02, "consistency": 0.005,
-               "offense": 0.005},
+        "QB": {"ppg": 0.7792, "games": 0.1169, "sched": 0.0390,
+               "consistency": 0.0390, "offense": 0.0259},
+        "RB": {"ppg": 0.8434, "games": 0.0964, "sched": 0.0241,
+               "consistency": 0.0241, "offense": 0.0120},
+        "WR": {"ppg": 0.9362, "games": 0.0426, "sched": 0.0106,
+               "consistency": 0.0053, "offense": 0.0053},
+        "TE": {"ppg": 0.9362, "games": 0.0426, "sched": 0.0106,
+               "consistency": 0.0053, "offense": 0.0053},
     }
     for pos, weights in ROS_MODEL_WEIGHTS.items():
         assert sum(weights.values()) == pytest.approx(1.0), pos
-    # WR/TE PPG dominance is the v3 point: PPG outweighs every other
-    # factor combined at those positions.
+        # The stripped factors carry no score weight anywhere.
+        for dropped in ("form", "ceiling", "role"):
+            assert dropped not in weights, (pos, dropped)
+    # WR/TE PPG dominance: PPG outweighs every other factor combined
+    # at those positions.
     for pos in ("WR", "TE"):
         w = ROS_MODEL_WEIGHTS[pos]
         assert w["ppg"] > sum(v for k, v in w.items() if k != "ppg")
@@ -736,23 +738,40 @@ def test_model_order_beats_total_order():
 
 
 def test_model_missing_factor_is_neutral():
+    # Probed on consistency, a factor the stripped-base score reads:
+    # a missing value fills with the pool mean (z = 0), so the player
+    # with no value sits exactly between the high and low carriers.
     base = {"ppg": 15.0, "ceiling": 22.0, "games": 6.0, "sched": -15.0,
-            "form": 15.0, "consistency": 0.6, "offense": 22.0}
+            "form": 15.0, "role": 0.0, "offense": 22.0}
     factors = {
-        "hot_role": {**base, "role": 6.0},
-        "no_role": {**base, "role": None},
-        "cold_role": {**base, "role": -6.0},
+        "hot": {**base, "consistency": 0.9},
+        "none": {**base, "consistency": None},
+        "cold": {**base, "consistency": 0.3},
     }
     scores = ros_model_scores(factors, "RB")
-    assert scores["hot_role"] > scores["no_role"] > scores["cold_role"]
+    assert scores["hot"] > scores["none"] > scores["cold"]
+
+
+def test_model_ignores_stripped_factors():
+    # Stripped base: form, ceiling and role are computed and passed in
+    # but carry no score weight, so swinging them changes nothing.
+    base = {"ppg": 15.0, "games": 6.0, "sched": -15.0,
+            "consistency": 0.6, "offense": 22.0}
+    factors = {
+        "hot": {**base, "ceiling": 30.0, "form": 25.0, "role": 6.0},
+        "cold": {**base, "ceiling": 5.0, "form": 5.0, "role": -6.0},
+    }
+    scores = ros_model_scores(factors, "RB")
+    assert scores["hot"] == scores["cold"]
 
 
 def test_model_sched_z_is_capped():
-    # v3: the schedule z contribution is clipped at +/- SCHED_Z_CAP
+    # The schedule z contribution is clipped at +/- SCHED_Z_CAP
     # before weighting. Nine identical WRs face the hardest far slate
     # (rank 32) and one faces the softest (rank 1): the soft player's
     # raw sched z is +3.0, so uncapped his edge over a hard-slate peer
-    # would be 0.01 x (3.0 - (-1/3)); capped it is 0.01 x (1.0 - (-1/3)).
+    # would be w x (3.0 - (-1/3)); capped it is w x (1.0 - (-1/3)),
+    # where w is the WR schedule weight.
     base = {"ppg": 15.0, "ceiling": 22.0, "games": 6.0,
             "form": 25.0, "role": 0.0, "consistency": 0.6,
             "offense": 22.0}

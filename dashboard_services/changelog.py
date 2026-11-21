@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-21",
         "tag": "update",
+        "text": "Rest of Season rankings now grade on a leaner model: recent form, ceiling games and role trend no longer move a player's rank. A full backtest of every factor in the model found those three cost accuracy at every position, so the ranking now runs on projected points per game, expected games, remaining schedule, consistency and team offense, weighted by position. Form, ceiling and role trend are still part of a player's picture; they just no longer vote on the order.",
+        "link": "/rankings/rest-of-season"
+    },
+    {
+        "date": "2026-11-21",
+        "tag": "update",
         "text": "Rest of Season overall rankings now price 1QB quarterbacks against the streaming replacement level: a quarterback's value is his edge over the best quarterbacks sitting on waivers, and his overall rank is exactly what that edge earns. The rankings by position are unchanged.",
         "link": "/rankings/rest-of-season"
     },
