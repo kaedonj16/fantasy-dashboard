@@ -30,14 +30,16 @@ and 2.584 for the originally pitched 65/35 blend):
     PPG / total / games and positional rank. Weeks-out and bye handling
     apply inside each window independently.
   * Positional order in the full window is a factor model (Kaedon,
-    2026-11-18), NOT the ROS Pts total: within each position, eight
+    2026-11-18), NOT the ROS Pts total: within each position, five
     factors are z-scored across the eligible pool and combined at
-    position-specific weights (ROS_MODEL_WEIGHTS, v3 as of 2026-11-20:
-    QB keeps the fuller model with ROS PPG at .60, RB runs PPG .70,
-    WR/TE run near PPG-only at .88; the remaining weight spreads over
-    ceiling, expected games, schedule, form, role trend, consistency
-    and team offense). Form is last-4 played PPG for QB and mean
-    opportunity share over the last 4 played games for RB/WR/TE. The
+    position-specific weights (ROS_MODEL_WEIGHTS, the stripped base
+    as of 2026-11-21: ROS PPG leads at .78 QB / .84 RB / .94 WR-TE;
+    the remaining weight spreads over expected games, schedule,
+    consistency and team offense). Form, ceiling and role trend are
+    still computed for every player but carry no score weight: the
+    v3 audit found all three cost accuracy at every position. Form is
+    last-4 played PPG for QB and mean opportunity share over the
+    last 4 played games for RB/WR/TE. The
     total-points order systematically buried better per-game players
     whose bye or expected games came up short. The model stamps
     ``ros_score`` and ``ros_pos_rank`` follows it; the Stretch and
@@ -325,19 +327,30 @@ def availability_rate(appearances: Optional[int], team_games: Optional[int],
 # RB/WR/TE is opportunity share, not points (see player_model_factors),
 # and the schedule factor reads the playoff weeks only, capped (see
 # SCHED_Z_CAP).
+#
+# Stripped base (Kaedon, 2026-11-21, "I need the best ROS ranking
+# model"): form, ceiling and role trend are REMOVED from the score at
+# every position; the remaining v3 weights are renormalized (the values
+# below are that renormalization, to 4 decimals). The v3 audit's
+# component ablation (~/workspace/ros-rankings/ROS_V3_AUDIT_2026-11-21.md,
+# Proposal 1) found all three factors cost accuracy at every position:
+# dropping them grades cell-mean +0.677 vs v3 +0.666 on the 2025 sample
+# and improves all four positions (QB +0.501 -> +0.531, RB +0.730 ->
+# +0.740, WR +0.704 -> +0.712, TE +0.656 -> +0.669). A 1,728-config
+# search over the surviving design space (ROS_BEST_MODEL_SEARCH_
+# 2026-11-21.md) found nothing that beats this set out-of-sample. The
+# three removed factors are still computed for every player (see
+# player_model_factors) and remain available as display/context
+# signals; they simply carry no score weight.
 ROS_MODEL_WEIGHTS = {
-    "QB": {"ppg": 0.60, "ceiling": 0.08, "games": 0.09, "sched": 0.03,
-           "form": 0.08, "role": 0.07, "consistency": 0.03,
-           "offense": 0.02},
-    "RB": {"ppg": 0.70, "ceiling": 0.05, "games": 0.08, "sched": 0.02,
-           "form": 0.06, "role": 0.06, "consistency": 0.02,
-           "offense": 0.01},
-    "WR": {"ppg": 0.88, "ceiling": 0.02, "games": 0.04, "sched": 0.01,
-           "form": 0.02, "role": 0.02, "consistency": 0.005,
-           "offense": 0.005},
-    "TE": {"ppg": 0.88, "ceiling": 0.02, "games": 0.04, "sched": 0.01,
-           "form": 0.02, "role": 0.02, "consistency": 0.005,
-           "offense": 0.005},
+    "QB": {"ppg": 0.7792, "games": 0.1169, "sched": 0.0390,
+           "consistency": 0.0390, "offense": 0.0259},
+    "RB": {"ppg": 0.8434, "games": 0.0964, "sched": 0.0241,
+           "consistency": 0.0241, "offense": 0.0120},
+    "WR": {"ppg": 0.9362, "games": 0.0426, "sched": 0.0106,
+           "consistency": 0.0053, "offense": 0.0053},
+    "TE": {"ppg": 0.9362, "games": 0.0426, "sched": 0.0106,
+           "consistency": 0.0053, "offense": 0.0053},
 }
 # The schedule factor's z-score contribution is clipped to +/- this
 # before weighting (v3): the factor reads Weeks 15-17 opponents only
@@ -439,14 +452,18 @@ def ros_model_scores(
         factors_by_pid: Dict[str, Dict[str, Optional[float]]],
         position: str,
 ) -> Dict[str, float]:
-    """Weighted z-score sum for one position's pool, at v3 weights.
+    """Weighted z-score sum for one position's pool, at
+    ROS_MODEL_WEIGHTS (the stripped base: ppg, games, sched,
+    consistency, offense).
 
-    ``factors_by_pid`` maps pid -> raw factor values keyed like
-    ROS_MODEL_WEIGHTS[position] (``sched`` already inverted, so a softer
-    slate is a larger number). Every factor is z-scored across the pool
-    exactly as given, so the caller passes one position's eligible
-    pool. The schedule z-score is clipped to +/- SCHED_Z_CAP before
-    weighting (v3: playoff-weeks schedule only, capped).
+    ``factors_by_pid`` maps pid -> raw factor values (``sched``
+    already inverted, so a softer slate is a larger number); only the
+    factors named in ROS_MODEL_WEIGHTS are read, so the computed
+    form / ceiling / role values ride along unscored. Every factor is
+    z-scored across the pool exactly as given, so the caller passes
+    one position's eligible pool. The schedule z-score is clipped to
+    +/- SCHED_Z_CAP before weighting (playoff-weeks schedule only,
+    capped).
     """
     weights = ROS_MODEL_WEIGHTS[str(position or "").upper()]
     per_factor = {
@@ -500,13 +517,18 @@ def role_share_series(position: str, weeks, usage_by_week,
 
 def player_model_factors(position: str, *, ppg, games, sched_rank,
                          game_points, role_series, offense) -> dict:
-    """Raw factor values for one player, keyed like ROS_MODEL_WEIGHTS.
+    """Raw factor values for one player: the full computed factor set.
+
+    The score (ros_model_scores) reads only the ROS_MODEL_WEIGHTS
+    subset; ``ceiling``, ``form`` and ``role`` are computed here and
+    kept available as display/context signals but carry no score
+    weight (stripped base, 2026-11-21).
 
     ``game_points`` maps week -> played-game PPR points; ``role_series``
     is the per-played-game opportunity series in week order (see
     role_share_series). ``sched_rank`` is the player's PLAYOFF-weeks
     (Weeks 15-17) schedule rank, not the full-window display rank: the
-    v3 schedule factor reads far weeks only. ``sched`` is inverted
+    schedule factor reads far weeks only. ``sched`` is inverted
     here: the softer slate (rank 1) becomes the larger number.
     """
     weeks = sorted((game_points or {}).keys())
