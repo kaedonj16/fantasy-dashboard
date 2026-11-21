@@ -742,20 +742,27 @@ def compute_ros_tier_thresholds(ros_by_pid: Dict[str, dict],
 # math in JS (prRosReplacementMap in static/rankings.js). Every line is
 # derived from the ROS pool itself; no constant is a hardcoded PPG.
 #
-# QB in 1QB is priced at the STREAMING level. The realistic alternative to
-# holding an elite QB in a 1QB league is not one fixed fringe starter: it
-# is streaming, rotating through the deep unrostered starter pool and
-# playing favorable matchups week to week, which performs well above the
-# worst starter's static line. The line is therefore the top half of the
-# starter pool's mean ROS PPG, discounted by QB_STREAM_FACTOR: the pool
-# mean is a static average of full remaining lines, while a streamer
-# holds none of those QBs and his weekly best-matchup pick misses often
-# enough that the realized line sits under the band's mean. The earlier
-# conventions both mispriced this: the dynasty model's 1.5x index put the
-# line deep in the QB2 band (it is calibrated for a normalized strength
-# scale, not raw points), and the last starter's line still treated the
-# fallback as one fixed QB. SF keeps the 1.5x index on two starters per
-# team: with two starters, QB scarcity is real and priced.
+# QB in 1QB is priced against the STREAMING TIER. The realistic
+# alternative to holding an elite QB in a 1QB league is not one fixed
+# fringe starter: it is streaming, rotating through the quarterbacks
+# nobody rosters and playing favorable matchups week to week. The
+# replacement line is therefore DERIVED from the pool at build time:
+# the mean ROS PPG of the ROS_QB_STREAM_TIER quarterbacks ranked
+# immediately below the starter line (QB{size+1}..QB{size+6} in a
+# 12-team league, QB13..QB18) — literally what a waiver quarterback
+# gives you. A QB's value is his edge over that free fallback, and no
+# part of the line is fitted to where quarterbacks land on the board:
+# an earlier construction priced the fallback off the starters' own
+# production (a discounted mean of the starter pool's top half) with
+# the discount factor calibrated to an output band, which manufactured
+# the placements it claimed to measure; it was removed 2026-11-21.
+# The dynasty model's 1.5x index also misprices this: it puts the line
+# deep in the QB2 band because it is calibrated for a normalized
+# strength scale, not raw points. SF keeps the 1.5x index on two
+# starters per team: with two starters, QB scarcity is real and priced.
+#
+# Nothing reorders the quarterbacks after the VOR sort: the Overall
+# list prints exactly the gaps the replacement math produces.
 #
 # RB / WR / TE share ONE replacement pool, the way lineups actually work:
 # dedicated starters first (the value model's STARTERS in
@@ -771,7 +778,7 @@ def compute_ros_tier_thresholds(ros_by_pid: Dict[str, dict],
 ROS_STARTERS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
 ROS_QB_SF_MULT = 1.50
 ROS_FLEX_SLOTS_PER_TEAM = 1
-QB_STREAM_FACTOR = 0.92
+ROS_QB_STREAM_TIER = 6
 ROS_LEAGUE_TYPES = ("1qb", "sf")
 ROS_LEAGUE_SIZES = (8, 10, 12, 14)
 _WINDOW_PREFIXES = (("all", "ros"), ("stretch", "ros_stretch"),
@@ -782,10 +789,15 @@ def ros_qb_replacement_ppg(ppgs_desc: List[float], league_size: int,
                            league_type: str) -> Optional[float]:
     """Replacement QB PPG from the QB pool's ROS PPGs sorted desc.
 
-    1QB: the streaming level, QB_STREAM_FACTOR x the mean ROS PPG of the
-    top half of the starter pool (QB1..QB{ceil(size/2)}). SF: the player
-    at the scarcity index (2 starters x size x 1.5), clamped to the pool.
-    None when the pool is empty.
+    1QB: the streaming tier, the mean ROS PPG of the
+    ROS_QB_STREAM_TIER quarterbacks ranked immediately below the
+    starter line (QB{size+1}..QB{size+ROS_QB_STREAM_TIER}) — the
+    waiver pool a manager actually rotates through. When the pool
+    runs out below the line the tier is whatever remains; when nobody
+    sits below the line, the fallback is the worst starter himself
+    (the pool's last PPG). SF: the player at the scarcity index
+    (2 starters x size x 1.5), clamped to the pool. None when the
+    pool is empty.
     """
     if not ppgs_desc:
         return None
@@ -794,10 +806,10 @@ def ros_qb_replacement_ppg(ppgs_desc: List[float], league_size: int,
         idx = int(2 * size * ROS_QB_SF_MULT)
         idx = max(0, min(idx, len(ppgs_desc) - 1))
         return float(ppgs_desc[idx])
-    n_starters = min(size, len(ppgs_desc))
-    n_half = max(1, math.ceil(n_starters / 2))
-    top_half = [float(v) for v in ppgs_desc[:n_half]]
-    return QB_STREAM_FACTOR * (sum(top_half) / len(top_half))
+    tier = [float(v) for v in ppgs_desc[size:size + ROS_QB_STREAM_TIER]]
+    if not tier:
+        return float(ppgs_desc[-1])
+    return sum(tier) / len(tier)
 
 
 def ros_flex_replacement_ppgs(by_pos_ppgs: Dict[str, List[float]],
@@ -880,6 +892,41 @@ def ros_vor_totals(ros_by_pid: Dict[str, dict],
     return out
 
 
+def _apply_position_monotonicity(rows: List[dict]) -> List[dict]:
+    """Refill each position's Overall slots in positional-rank order.
+
+    The slot-fill fills a position's slots in factor order, which is
+    the order ros_pos_rank follows — except where the two orderings'
+    tiebreaks part ways: an exact factor-score tie is broken by PPG
+    then player id for the rank, but by PPG then NAME in the fill, so
+    two tied players whose names and ids order differently swap on
+    the Overall board (and the /players board's fill breaks the same
+    tie by ROS total instead, which put WR19 ahead of WR18 on the
+    Week 11 pool). This final pass makes the invariant structural
+    instead of coincidental: for each position, the slots it occupies
+    (ascending) are refilled by its players sorted by ros_pos_rank.
+    Slot sets never change, so the VOR allocation is preserved
+    exactly, and wherever the fill already
+    agrees with the ranks the pass is a no-op. A position whose rows
+    do not all carry ros_pos_rank keeps its fill order (a partial
+    pool has no rank order to enforce). The /players board mirrors
+    this in JS (prRosApplyPositionMonotonicity in
+    static/rankings.js), keyed to the active window's rank there.
+    """
+    out = list(rows)
+    slots: Dict[str, List[int]] = {}
+    for i, r in enumerate(out):
+        slots.setdefault(str(r.get("position") or "").upper(), []).append(i)
+    for idxs in slots.values():
+        members = [out[i] for i in idxs]
+        if any(m.get("ros_pos_rank") is None for m in members):
+            continue
+        ranked = sorted(members, key=lambda m: float(m["ros_pos_rank"]))
+        for i, m in zip(idxs, ranked):
+            out[i] = m
+    return out
+
+
 def order_overall(rows: List[dict]) -> List[dict]:
     """Overall (All-view) order for ROS rows: VOR slot-fill.
 
@@ -893,6 +940,13 @@ def order_overall(rows: List[dict]) -> List[dict]:
     positions (Chuba Hubbard, RB8 by score, sat below Javonte Williams,
     RB10, on the All page over a 0.1 VOR gap), which read as a
     contradiction between two pages carrying the same ranking.
+
+    A final pass (_apply_position_monotonicity) refills each
+    position's slots in ros_pos_rank order, so a tie the fill and the
+    rank assignment break differently can never put a lower-ranked
+    player above his position mate on the combined board. Nothing else
+    touches the order: the combined list prints exactly the slots the
+    VOR allocation produces.
 
     Rows are dicts carrying "position", "_vor" (the VOR total at the
     surface's replacement defaults), "ros_score", "ros_total",
@@ -932,7 +986,7 @@ def order_overall(rows: List[dict]) -> List[dict]:
         i = cursor.get(pos, 0)
         out.append(queues[pos][i])
         cursor[pos] = i + 1
-    return out
+    return _apply_position_monotonicity(out)
 
 
 def compute_ros_vor_tier_thresholds(ros_by_pid: Dict[str, dict],

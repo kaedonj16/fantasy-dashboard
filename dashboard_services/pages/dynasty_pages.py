@@ -1354,7 +1354,10 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         # (utils.ros_rankings.order_overall): VOR decides which slots
         # each position occupies, and each position's players fill
         # their slots in factor order, so within-position order here
-        # always matches the position pages.
+        # always matches the position pages. A final monotonicity pass
+        # refills each position's slots in ros_pos_rank order, so a
+        # tie the fill and the rank assignment break differently can
+        # never put a lower-ranked player above his position mate.
         rows = order_overall(rows)
     else:
         # Position order is the factor model (ros_score, stamped by
