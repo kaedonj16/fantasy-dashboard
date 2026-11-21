@@ -60,6 +60,12 @@ TOP_N_PER_CLASS = 10
 # for the go-live gate comparison). Set by run_backtest / the CLI.
 _MODEL_CHOICE = "v3"
 _V4_REFERENCE: Optional[Dict[str, Any]] = None
+# No-capital slice rows, accumulated per class by
+# _run_draft_class_backtest and printed by _print_summary: the same
+# classes re-graded with draft capital masked, measuring the
+# talent-only regime the live board actually lives in (most of the
+# current class has no projected capital at all).
+_NO_CAPITAL_ROWS: List[Dict[str, Any]] = []
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1 – Load nflverse roster data to get draft picks
@@ -447,13 +453,19 @@ def _run_draft_class_backtest(
           f"({'full model' if n_with_stats > 0 else 'draft capital + athleticism only'})")
 
     print(f"[backtest]   Scoring {len(prospects)} prospects…")
+
+    def _score(prospects_in, consensus_in):
+        if _MODEL_CHOICE == "v4":
+            from data_building.rookie_pipeline.prospect_model_v4 import score_all_v4
+            # Finished classes: an untested player's cycle is over, so a
+            # settled absence keeps the floor treatment (v4 design
+            # requirement 7c) rather than reading as not-yet-available.
+            return score_all_v4(prospects_in, consensus_in,
+                                reference=_V4_REFERENCE, cycle_complete=True)
+        return score_all_prospects(prospects_in, consensus_in, skip_sagarin=True)
+
+    scores = _score(prospects, consensus_map)
     if _MODEL_CHOICE == "v4":
-        from data_building.rookie_pipeline.prospect_model_v4 import score_all_v4
-        # Finished classes: an untested player's cycle is over, so a
-        # settled absence keeps the floor treatment (v4 design
-        # requirement 7c) rather than reading as not-yet-available.
-        scores = score_all_v4(prospects, consensus_map,
-                              reference=_V4_REFERENCE, cycle_complete=True)
         n_unscored = sum(1 for sc in scores
                          if sc.get("prospect_score") is None)
         if n_unscored:
@@ -461,8 +473,6 @@ def _run_draft_class_backtest(
                   "(no priceable legs); excluded from the metrics")
             scores = [sc for sc in scores
                       if sc.get("prospect_score") is not None]
-    else:
-        scores = score_all_prospects(prospects, consensus_map, skip_sagarin=True)
 
     # Build lookup maps
     p_by_id  = {p["player_id"]: p for p in prospects}
@@ -547,6 +557,27 @@ def _run_draft_class_backtest(
         }
         rows.append(row)
 
+    # ── No-capital slice: re-grade the class talent-only ────────────
+    # Capital masked (empty consensus, any prospect-level capital
+    # stripped) so the slice measures how the model orders players
+    # with NO draft-capital information: the regime most of the live
+    # board is graded in, which the headline gate numbers never
+    # isolate (historical capital is the ACTUAL pick).
+    nc_scores = _score(_mask_capital(prospects), {})
+    nc_by_id = {sc["player_id"]: sc for sc in nc_scores
+                if sc.get("prospect_score") is not None}
+    for r in rows:
+        sc = nc_by_id.get(r["_prospect"]["player_id"])
+        if sc is None:
+            continue
+        _NO_CAPITAL_ROWS.append({
+            "name": r["name"], "position": r["position"],
+            "draft_year": r["draft_year"],
+            "model_score": sc["prospect_score"],
+            "model_rank": sc["overall_rank"],
+            "ppr_cum": r["ppr_cum"],
+        })
+
     return rows
 
 
@@ -626,6 +657,43 @@ def _pearson_r(xs: List[float], ys: List[float]) -> float:
     if sx == 0 or sy == 0:
         return float("nan")
     return cov / (sx * sy * n)
+
+
+def _spearman_r(xs: List[float], ys: List[float]) -> float:
+    """Spearman rank correlation of two value series (average ranks
+    for ties), via Pearson on the ranks."""
+    n = len(xs)
+    if n < 3 or n != len(ys):
+        return float("nan")
+
+    def _ranks(vals: List[float]) -> List[float]:
+        order = sorted(range(n), key=lambda i: vals[i])
+        ranks = [0.0] * n
+        i = 0
+        while i < n:
+            j = i
+            while j + 1 < n and vals[order[j + 1]] == vals[order[i]]:
+                j += 1
+            avg = (i + j) / 2.0 + 1.0
+            for k in range(i, j + 1):
+                ranks[order[k]] = avg
+            i = j + 1
+        return ranks
+
+    return _pearson_r(_ranks(xs), _ranks(ys))
+
+
+def _mask_capital(prospects: List[Dict]) -> List[Dict]:
+    """Deep-copied prospects with every draft-capital carrier removed:
+    the consensus map is emptied by the caller, and any prospect-level
+    capital fields are stripped here. Originals are never mutated."""
+    import copy
+    masked = copy.deepcopy(prospects)
+    for p in masked:
+        p.pop("draft_capital", None)
+        p.pop("projected_pick", None)
+        p.pop("projected_draft_capital_score", None)
+    return masked
 
 
 def _rank_corr(rows: List[Dict], metric: str = "ppr_cum") -> float:
@@ -951,7 +1019,8 @@ def _print_benchmark_hit_rates(all_rows: List[Dict]) -> None:
         print(f"  {'(All - baseline)':<26}  {len(with_data):>6}  {base_hits:>5}  {base_rate:>4.0f}%  {'baseline':>8}  {base_bar}")
 
 
-def _print_summary(all_rows: List[Dict]) -> None:
+def _print_summary(all_rows: List[Dict],
+                   no_capital_rows: Optional[List[Dict]] = None) -> None:
     print(f"\n{'=' * 110}")
     print("  OVERALL BACKTEST SUMMARY  (2021–2025 draft classes)")
     print("  Note: ranks below are cross-year (all classes pooled); per-class ranks are in tables above")
@@ -1081,9 +1150,9 @@ def _print_summary(all_rows: List[Dict]) -> None:
     # Cross-position mixing distorts r: QBs score high PPR but model discounts
     # them via POSITION_FANTASY_MULT=0.90 and dc_multiplier=0.65. Separating
     # by position shows the true within-group predictive accuracy.
-    print(f"\n  Per-position Pearson r (model score vs cum PPR):")
-    print(f"  {'Pos':>4}  {'n':>4}  {'Pearson-r':>9}  signal")
-    print(f"  {'-'*4}  {'-'*4}  {'-'*9}  {'-'*30}")
+    print(f"\n  Per-position Pearson r + Spearman rho (model score vs cum PPR):")
+    print(f"  {'Pos':>4}  {'n':>4}  {'Pearson-r':>9}  {'Spearman':>8}  signal")
+    print(f"  {'-'*4}  {'-'*4}  {'-'*9}  {'-'*8}  {'-'*30}")
     for pos in ("WR", "RB", "TE", "QB"):
         pos_rows = [r for r in all_rows if r["position"] == pos and r["ppr_cum"] > 0]
         if len(pos_rows) < 5:
@@ -1091,13 +1160,17 @@ def _print_summary(all_rows: List[Dict]) -> None:
         px = [r["model_score"] for r in pos_rows]
         py = [r["ppr_cum"] for r in pos_rows]
         r_pos = _pearson_r(px, py)
+        rho_pos = _spearman_r(px, py)
         signal = (
             "strong" if r_pos > 0.45 else
             "moderate" if r_pos > 0.28 else
             "weak" if r_pos > 0.10 else
             "noise"
         )
-        print(f"  {pos:>4}  {len(pos_rows):>4}  {r_pos:>+9.3f}  {signal}")
+        print(f"  {pos:>4}  {len(pos_rows):>4}  {r_pos:>+9.3f}  {rho_pos:>+8.3f}  {signal}")
+
+    if no_capital_rows:
+        _print_no_capital_slice(no_capital_rows)
 
     print()
 
@@ -1170,6 +1243,27 @@ def _print_summary(all_rows: List[Dict]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # All-time top-10 tables
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _print_no_capital_slice(rows: List[Dict]) -> None:
+    """Talent-only gate slice: the same classes re-graded with draft
+    capital masked. Historical headline numbers price capital at the
+    ACTUAL pick; the live board grades most players with no capital
+    at all, so a model that only orders well WITH capital is not
+    necessarily ordering the board well. Read this section before
+    trusting the headline per-position numbers."""
+    print(f"\n  {'─' * 66}")
+    print("  NO-CAPITAL SLICE  (talent only: consensus emptied, capital stripped)")
+    print(f"  {'Pos':>4}  {'n':>4}  {'Pearson-r':>9}  {'Spearman':>8}")
+    print(f"  {'-'*4}  {'-'*4}  {'-'*9}  {'-'*8}")
+    for pos in ("WR", "RB", "TE", "QB"):
+        pos_rows = [r for r in rows if r["position"] == pos and r["ppr_cum"] > 0]
+        if len(pos_rows) < 5:
+            continue
+        px = [r["model_score"] for r in pos_rows]
+        py = [r["ppr_cum"] for r in pos_rows]
+        print(f"  {pos:>4}  {len(pos_rows):>4}  {_pearson_r(px, py):>+9.3f}  "
+              f"{_spearman_r(px, py):>+8.3f}")
+
 
 def _print_all_time_top10(all_rows: List[Dict], top_n: int = 10) -> None:
     """
@@ -1508,6 +1602,7 @@ def run_backtest(draft_years: Optional[List[int]] = None, save_grades: bool = Tr
     current_year = date.today().year
 
     all_rows: List[Dict[str, Any]] = []
+    _NO_CAPITAL_ROWS.clear()
 
     for dy in draft_years:
         # How many complete NFL seasons are available?
@@ -1526,7 +1621,7 @@ def run_backtest(draft_years: Optional[List[int]] = None, save_grades: bool = Tr
     if all_rows:
         _print_positional_summary(all_rows)
         _print_benchmark_hit_rates(all_rows)
-        _print_summary(all_rows)
+        _print_summary(all_rows, no_capital_rows=list(_NO_CAPITAL_ROWS))
         _print_all_time_top10(all_rows, top_n=TOP_N_PER_CLASS)
         if model == "v4":
             _print_calibration_panel(all_rows)
