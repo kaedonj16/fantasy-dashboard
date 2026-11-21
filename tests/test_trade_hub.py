@@ -235,3 +235,85 @@ def test_trade_search_inputs_debounced():
     assert "debouncedSuggSearch = debounce(" in app_js
     # No raw per-keystroke render calls remain on these inputs.
     assert 'input.addEventListener("input", () => { renderSide(input.value); })' not in app_js
+
+
+# ---------------------------------------------------------------------------
+# Trade Hub Targets + Market Intel mobile flow (follow-up to #3197)
+# ---------------------------------------------------------------------------
+
+
+def test_targets_selected_player_bar_markup_and_sync():
+    from pathlib import Path
+
+    from dashboard_services.pages.trade_calculator_page import (
+        build_trade_calculator_body,
+    )
+
+    html = build_trade_calculator_body("L1", 2026, has_premium=True)
+    for el_id in ("otcSelectedPlayerBar", "otcSelectedPlayerLabel",
+                  "otcSelectedPlayerMeta", "otcSelectedPlayerClear",
+                  "otcTargetsStoryHead", "otcExcludedToggle"):
+        assert html.count(f'id="{el_id}"') == 1, el_id
+    # The bar sits inside the (sticky) build head, after the search wrap;
+    # the one-story heading follows the head.
+    assert html.index('id="suggPlayerInput"') < html.index('id="otcSelectedPlayerBar"')
+    assert html.index('id="otcSelectedPlayerBar"') < html.index('id="otcTargetsStoryHead"')
+    assert "Targets for you" in html
+
+    app_js = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text(encoding="utf-8")
+    # Sync is called from the selection funnel and both clear paths.
+    assert "_syncSelectedPlayerBar(pid, name)" in app_js
+    assert app_js.count("_syncSelectedPlayerBar(null)") >= 2
+    # Mode-aware labels, same wording as the mock Kaedon approved.
+    assert '"Returns for "' in app_js and '"Building around "' in app_js
+    # Bar clear reuses the existing #suggPlayerClear path.
+    assert "if (playerClear) playerClear.click();" in app_js
+    # Excluded collapse flips the class the mobile CSS keys on.
+    assert "classList.toggle('is-collapsed')" in app_js
+
+
+def test_targets_mobile_css_one_story_and_excluded_collapse():
+    from dashboard_services.pages.trade_calculator_page import (
+        build_trade_calculator_body,
+    )
+
+    html = build_trade_calculator_body("L1", 2026, has_premium=True)
+    assert "#otcExcludedBar.is-collapsed #otcExcludedChips" in html
+    assert "#otcBuildAroundPanel .otc-sugg-targets-section" in html
+    assert 'id="otcExcludedBar" class="is-collapsed"' in html
+    # Embedded intel bottom sheet + stacked sides, hub panel only.
+    assert "#otcMarketIntelPanel .ti-trade-sides" in html
+    assert "#otcMarketIntelPanel .ti-trades-modal" in html
+
+
+def test_trade_intel_embedded_key_collapse_and_modal_split():
+    from dashboard_services.pages.trade_intel_page import build_trade_intel_body
+
+    embedded = build_trade_intel_body(platform="sleeper", season=2026, league_id="x",
+                                      has_premium=True, embedded=True)
+    assert 'id="tiKeyToggle"' in embedded
+    assert "ti-key-collapsible" in embedded
+    assert "window.toggleTIKey" in embedded
+    assert 'id="tiTradesSplit"' in embedded
+    # The modal populates the split from the same card data.
+    assert "tiSplitHtml(playerData)" in embedded
+
+    # The embedded mobile rules live in the calculator page's styles
+    # (scoped to .ti-embed, which only the hub render carries), so the
+    # standalone intel render stays free of hub styling.
+    from dashboard_services.pages.trade_calculator_page import (
+        build_trade_calculator_body,
+    )
+
+    hub = build_trade_calculator_body("L1", 2026, has_premium=True)
+    assert ".ti-embed .ti-card .ti-split" in hub
+    assert ".ti-embed .ti-page-numbers" in hub
+    assert ".ti-embed .ti-controls" in hub
+
+    full = build_trade_intel_body(platform="sleeper", season=2026, league_id="x",
+                                  has_premium=True, embedded=False)
+    # Standalone gets none of the embedded markup or script.
+    assert 'id="tiKeyToggle"' not in full
+    assert 'id="tiTradesSplit"' not in full
+    assert "window.toggleTIKey" not in full
+    assert "ti-key-collapsible" not in full.split("<style>")[0]
