@@ -723,16 +723,18 @@ function prRosVal(p, kind) {
 // itself; mirrors utils/ros_rankings.py's ros_replacement_map exactly.
 // League size and format therefore move the cross-position order, which
 // is why League Size stays visible in ROS mode.
-// QB in 1QB is the streaming level: the realistic fallback is rotating
-// through the deep unrostered starter pool on weekly matchups, so the
-// line is PR_ROS_QB_STREAM_FACTOR x the mean ROS PPG of the top half of
-// the starter pool. SF keeps the scarcity index (2 starters x size x
+// QB in 1QB is the streaming tier: the realistic fallback is rotating
+// through the quarterbacks nobody rosters on weekly matchups, so the
+// line is the mean ROS PPG of the PR_ROS_QB_STREAM_TIER quarterbacks
+// ranked immediately below the starter line — what a waiver
+// quarterback gives you, derived from the pool, never fitted to where
+// quarterbacks land. SF keeps the scarcity index (2 starters x size x
 // 1.5): with two starters per team, QB scarcity is real and priced.
 // RB / WR / TE share one pool: dedicated starters first (RB 2, WR 2,
 // TE 1 per team), then one FLEX spot per team filled from the best
 // remaining across the three positions combined, and each position's
 // replacement is its best remaining player.
-var PR_ROS_QB_STREAM_FACTOR = 0.92;
+var PR_ROS_QB_STREAM_TIER = 6;
 var _prRosReplCache = { key: null, map: {} };
 function prRosReplacementMap() {
   var key = prRosWindow + '|' + prLeagueSize + '|' + prLeagueType;
@@ -753,11 +755,11 @@ function prRosReplacementMap() {
       var qIdx = Math.max(0, Math.min(Math.floor(2 * prLeagueSize * 1.5), qb.length - 1));
       map.QB = qb[qIdx];
     } else {
-      var nStart = Math.min(prLeagueSize, qb.length);
-      var nHalf = Math.max(1, Math.ceil(nStart / 2));
+      var tier = qb.slice(prLeagueSize, prLeagueSize + PR_ROS_QB_STREAM_TIER);
+      if (!tier.length) tier = [qb[qb.length - 1]];
       var qSum = 0;
-      for (var qi = 0; qi < nHalf; qi++) qSum += qb[qi];
-      map.QB = PR_ROS_QB_STREAM_FACTOR * (qSum / nHalf);
+      tier.forEach(function(v) { qSum += v; });
+      map.QB = qSum / tier.length;
     }
   }
   var flexStarters = { RB: 2, WR: 2, TE: 1 };
@@ -813,11 +815,48 @@ function prRosSlotFillOrder(players) {
   });
   Object.keys(queues).forEach(function(pos) { queues[pos].sort(prRosPosViewCmp); });
   var cursor = {};
-  return slotted.map(function(p) {
+  var ordered = slotted.map(function(p) {
     var i = cursor[p.position] || 0;
     cursor[p.position] = i + 1;
     return queues[p.position][i];
   });
+  // Both formats: the positional-rank monotonicity guard, mirroring
+  // _apply_position_monotonicity in utils/ros_rankings.py. Nothing
+  // else touches the order: the board prints exactly the slots the
+  // VOR allocation produces.
+  return prRosApplyPositionMonotonicity(ordered);
+}
+function prRosApplyPositionMonotonicity(ordered) {
+  // Each position's slots are refilled in the active window's
+  // positional-rank order (prRosVal 'rank'), mirroring
+  // _apply_position_monotonicity in utils/ros_rankings.py. The
+  // slot-fill's position-view comparator and the server's rank
+  // assignment break exact ties differently (a factor-score tie is
+  // broken by PPG for the rank but by window total in the fill; a
+  // sub-window total tie is broken by PPG for the rank but not at
+  // all in the fill), which put WR19 ahead of WR18 on this board on
+  // the Week 11 pool. Slot sets never change, so the VOR allocation
+  // is preserved exactly. A position
+  // whose players do not all carry the window's rank keeps its fill
+  // order. Both league formats get the guard: it enforces the
+  // printed rank order, never a valuation.
+  var slots = {};
+  ordered.forEach(function(p, i) {
+    (slots[p.position] = slots[p.position] || []).push(i);
+  });
+  var out = ordered.slice();
+  Object.keys(slots).forEach(function(pos) {
+    var idxs = slots[pos];
+    var members = idxs.map(function(i) { return ordered[i]; });
+    for (var k = 0; k < members.length; k++) {
+      if (prRosVal(members[k], 'rank') == null) return;
+    }
+    members.sort(function(a, b) {
+      return prRosVal(a, 'rank') - prRosVal(b, 'rank');
+    });
+    idxs.forEach(function(slot, k) { out[slot] = members[k]; });
+  });
+  return out;
 }
 function prRosSlotFillActive(sortBy) {
   // Only the default descending All-view ROS Total order slot-fills;

@@ -894,20 +894,42 @@ def test_tier_thresholds_come_from_ros_totals():
 
 def test_ros_replacement_definitions():
     # Replaced the old index-convention test: the replacement lines are
-    # no longer per-position indices. QB 1QB is the streaming level, QB
+    # no longer per-position indices. QB 1QB is the streaming tier, QB
     # SF keeps the scarcity index, and RB/WR/TE come out of one shared
     # flex-aware allocation (below).
     ladder = [26.0 - 0.5 * i for i in range(20)]
-    # 1QB streaming: 0.92 x mean of the top half of the starter pool
-    # (QB1..QB5 of the 10 starters): mean(26, 25.5, 25, 24.5, 24) = 25.0.
-    assert ros_qb_replacement_ppg(ladder, 10, "1qb") == pytest.approx(23.0)
+    # 1QB streaming tier: the mean of the six quarterbacks ranked
+    # immediately below the starter line (QB11..QB16 at size 10):
+    # mean(21, 20.5, 20, 19.5, 19, 18.5) = 19.75.
+    assert ros_qb_replacement_ppg(ladder, 10, "1qb") == pytest.approx(19.75)
     # SF: the player at index 2 x 10 x 1.5 = 30 on a deeper ladder.
     deep = [26.0 - 0.5 * i for i in range(40)]
     assert ros_qb_replacement_ppg(deep, 10, "sf") == pytest.approx(11.0)
     assert ros_qb_replacement_ppg([], 10, "1qb") is None
-    # The streaming line sits ABOVE the worst starter (ladder[9] = 21.5):
-    # that is the point of pricing the streaming fallback, not a fixed QB.
-    assert ros_qb_replacement_ppg(ladder, 10, "1qb") > ladder[9]
+    # The streaming line sits BELOW the worst starter (ladder[9] = 21.5)
+    # by construction: it is the waiver tier under the starter line,
+    # not a discounted slice of the starters themselves.
+    assert ros_qb_replacement_ppg(ladder, 10, "1qb") < ladder[9]
+
+
+def test_ros_qb_replacement_line_is_the_streaming_tier():
+    # The 1QB line is DERIVED from the waiver tier, never fitted: it is
+    # the mean of the six quarterbacks just below the starter line
+    # (QB13..QB18 at size 12), and it does not read the starters at all.
+    ladder = [26.0 - 0.5 * i for i in range(24)]
+    line = ros_qb_replacement_ppg(ladder, 12, "1qb")
+    assert line == pytest.approx(sum(ladder[12:18]) / 6)
+    # Inflate every starter by 4 PPG: the tier below the line is
+    # untouched, so the line is identical. A fitted factor on the
+    # starter pool would move with them; a derived line cannot.
+    boosted = [v + 4.0 for v in ladder[:12]] + ladder[12:]
+    assert ros_qb_replacement_ppg(boosted, 12, "1qb") == pytest.approx(line)
+    # Pool exhaustion: with nobody below the line the fallback is the
+    # worst starter himself; with two below it, the tier is those two.
+    assert ros_qb_replacement_ppg(ladder[:12], 12, "1qb") == \
+        pytest.approx(ladder[11])
+    assert ros_qb_replacement_ppg(ladder[:14], 12, "1qb") == \
+        pytest.approx(sum(ladder[12:14]) / 2)
 
 
 def test_ros_flex_replacement_shares_one_pool():
@@ -928,7 +950,7 @@ def test_ros_flex_replacement_shares_one_pool():
     # The map combines the QB line with the flex lines.
     full = ros_replacement_map({**by_pos, "QB": [26.0 - 0.5 * i for i in range(20)]},
                                10, "1qb")
-    assert full["QB"] == pytest.approx(23.0)
+    assert full["QB"] == pytest.approx(19.75)
     assert full["RB"] == pytest.approx(out["RB"])
 
 
@@ -973,10 +995,11 @@ def test_ros_vor_totals_qb_discount_1qb_only():
     pool, pos = _vor_pool()
     vor_1qb = ros_vor_totals(pool, pos, 10, "1qb")["all"]
     vor_sf = ros_vor_totals(pool, pos, 10, "sf")["all"]
-    # 1QB replacement QB is the streaming level: 0.92 x mean of the top
-    # half of the starter pool (26, 25.4, 24.8, 24.2, 23.6 -> 24.8), so
-    # QB1's VOR is (26 - 22.816) x 8 = 25.472, stamped rounded to 25.5.
-    assert vor_1qb["qb0"] == pytest.approx(25.5)
+    # 1QB replacement QB is the streaming tier: this pool has only two
+    # quarterbacks below the size-10 starter line (20.0 and 19.4), so
+    # the line is their mean, 19.7, and QB1's VOR is (26 - 19.7) x 8 =
+    # 50.4.
+    assert vor_1qb["qb0"] == pytest.approx(50.4)
     # SF: idx 30 clamps to this pool's QB12 (19.4): a strictly bigger edge.
     assert vor_sf["qb0"] == pytest.approx((26.0 - 19.4) * 8)
     assert vor_sf["qb0"] > vor_1qb["qb0"]
@@ -984,8 +1007,9 @@ def test_ros_vor_totals_qb_discount_1qb_only():
     # Flex-aware line: 20 dedicated RBs + 6 of the 10 flex spots (the
     # combined leftovers order RB-heavy on this pool) -> RB idx 26.
     assert vor_1qb["rb0"] == vor_sf["rb0"] == pytest.approx((24.0 - 12.3) * 8)
-    # The point of the discount: in 1QB the clustered QB1 no longer
-    # out-VORs the top RB; in SF he closes most of the gap back.
+    # The point of the streaming line: in 1QB QB1's edge is priced
+    # against the waiver tier, so he no longer out-VORs the top RB on
+    # raw totals; in SF he closes most of the gap back.
     assert vor_1qb["qb0"] < vor_1qb["rb0"]
 
 
@@ -1015,10 +1039,10 @@ def test_all_view_tiers_come_from_vor_not_positional_totals():
     # positional-total thresholds the position views use...
     totals_t = compute_ros_tier_thresholds(pool, pos)["all"]
     assert _tier_of(totals_t, pool["qb0"]["ros_total"]) == 1
-    # ...but his VOR is mid-pack (25.5) because 1QB QBs cluster and the
-    # streaming line prices the fallback honestly, so the All view's VOR
-    # thresholds must NOT stamp him T1, while RB1 (the actual VOR leader
-    # at 93.6) is T1. One metric, one sequence.
+    # ...but his VOR (50.4) is priced against the streaming tier, well
+    # behind the actual VOR leader, so the All view's VOR thresholds
+    # must NOT stamp him T1, while RB1 (the actual VOR leader at 93.6)
+    # is T1. One metric, one sequence.
     vor_t = compute_ros_vor_tier_thresholds(pool, pos)["all"]["1qb"]["10"]
     qb1_vor = ros_vor_totals(pool, pos, 10, "1qb")["all"]["qb0"]
     rb1_vor = ros_vor_totals(pool, pos, 10, "1qb")["all"]["rb0"]
@@ -1107,11 +1131,11 @@ def test_public_position_page_orders_by_model_score():
 
 
 def test_public_overall_page_discounts_qb1_in_1qb():
-    # 20 clustered QBs: under the old 1.5x index the replacement QB was
-    # QB19 (19.7 PPG) and QB1's VOR (44.1) beat the 20-PPG back's (42.0).
-    # At the 1QB streaming level the replacement is 0.92 x the top-half
-    # starter mean (25.125) = 23.115 PPG, QB1's VOR drops to ~20.2, and
-    # the back orders ahead of him by a wide margin.
+    # 20 QBs: under the old 1.5x index the replacement QB was QB19
+    # (19.7 PPG) and QB1's VOR (44.1) beat the 20-PPG back's (42.0).
+    # At the derived streaming line the replacement is the mean of
+    # QB13..QB18 (20.925 PPG), QB1's VOR is ~35.5, and the back orders
+    # ahead of him.
     from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
 
     players, table = {}, []
@@ -1131,8 +1155,9 @@ def test_public_overall_page_discounts_qb1_in_1qb():
     payload = {"players": players, "window": {"start_week": 11, "end_week": 17},
                "updated": "November 09, 2026"}
     body = build_ros_rankings_body(payload, table, position=None)
-    # "Back 3" is the 20.0-PPG back: ahead of "Quarterback 1" only under
-    # the starter-line replacement.
+    # "Back 3" is the 20.0-PPG back: ahead of "Quarterback 1" under
+    # the streaming-tier replacement (under the old index line QB1's
+    # VOR beat his).
     assert body.index("Back 3") < body.index("Quarterback 1")
     assert body.index("Back 1") < body.index("Back 3")
 
@@ -1249,6 +1274,55 @@ def test_order_overall_matches_position_rank_within_every_position():
         by_rank = sorted((r for r in rows if r["position"] == pos),
                          key=lambda r: r["ros_pos_rank"])
         assert [r["name"] for r in sub] == [r["name"] for r in by_rank]
+
+
+def test_order_overall_monotonicity_guard_fixes_tiebreak_inversion():
+    # The McBride shape: TE2 owns the higher VOR total (and the
+    # higher ROS total) on more expected games, TE1 owns the better
+    # per-game line. Their factor scores and PPGs are exactly tied,
+    # so the rank assignment breaks the tie by player id (TE1 first)
+    # while the slot-fill breaks it by name (TE2's name sorts first)
+    # — without the guard the combined board prints TE2 above TE1.
+    def row(name, pos, vor, score, rank, total, ppg):
+        return {"name": name, "position": pos, "_vor": vor,
+                "ros_score": score, "ros_pos_rank": rank,
+                "ros_total": total, "ros_ppg": ppg}
+    rows = [
+        row("Qb One", "QB", 60.0, 0.90, 1, 180.0, 25.0),
+        row("Aaron Spike", "TE", 35.0, 1.0, 2, 92.5, 17.0),
+        row("Back One", "RB", 32.0, 0.80, 1, 150.0, 20.0),
+        row("Zed Anchor", "TE", 30.0, 1.0, 1, 88.2, 17.0),
+        row("Wideout One", "WR", 20.0, 0.85, 1, 140.0, 19.0),
+    ]
+    out = order_overall(rows)
+    names = [r["name"] for r in out]
+    # TE1 sits above TE2 even though TE2 has the higher VOR total.
+    assert names.index("Zed Anchor") < names.index("Aaron Spike")
+    assert names == ["Qb One", "Zed Anchor", "Back One",
+                     "Aaron Spike", "Wideout One"]
+    # The guard only permutes inside a position's own slots: the
+    # position sequence is still exactly the pure-VOR sequence.
+    pure = sorted(rows, key=lambda r: -r["_vor"])
+    assert [r["position"] for r in out] == [r["position"] for r in pure]
+
+
+def test_order_overall_monotonicity_skips_positions_without_ranks():
+    # A position whose rows carry no ros_pos_rank has no rank order
+    # to enforce: the guard leaves its slot-fill order untouched.
+    def row(name, pos, vor, total, ppg):
+        return {"name": name, "position": pos, "_vor": vor,
+                "ros_total": total, "ros_ppg": ppg}
+    rows = [
+        row("Back Low", "RB", 40.0, 50.0, 10.0),
+        row("Back High", "RB", 30.0, 90.0, 15.0),
+        row("Wideout One", "WR", 20.0, 70.0, 12.0),
+    ]
+    out = order_overall(rows)
+    # No factor scores, so the fill is ROS-total order: Back High
+    # takes the first RB slot despite Back Low's higher VOR, and the
+    # guard does not second-guess it without ranks.
+    assert [r["name"] for r in out] == ["Back High", "Back Low",
+                                        "Wideout One"]
 
 
 def test_public_overall_page_slot_fills_like_position_pages(monkeypatch):
@@ -1404,6 +1478,16 @@ def test_rankings_js_ros_all_view_slot_fills():
     assert "function prRosSlotFillOrder" in js
     assert "function prRosPosViewCmp" in js
     assert "mirroring order_overall in" in js and "utils/ros_rankings.py" in js
+    # No QB cluster exists on either side anymore: the board prints
+    # the raw VOR slots (the cluster's pull-ups manufactured QB
+    # placements and were removed with the fitted stream factor).
+    assert "prRosApplyQbCluster" not in js
+    assert "PR_ROS_QB_CLUSTER_GAP" not in js
+    # The positional-rank monotonicity guard mirrors too, in both
+    # formats: it enforces the printed rank order, as the slot-fill's
+    # final step.
+    assert "function prRosApplyPositionMonotonicity" in js
+    assert "return prRosApplyPositionMonotonicity(ordered);" in js
     assert js.count("prRosSlotFillActive(sortBy)") >= 3  # gate + both sort sites
     pages = open(os.path.join(
         _ROOT, "dashboard_services", "pages", "dynasty_pages.py"),
@@ -1420,9 +1504,12 @@ def test_rankings_js_ros_all_view_uses_vor():
     assert "ros_value" in js and "ROS Value" in js
     assert "valueLabel" in js
     # The JS mirrors the server's replacement map: the 1QB QB streaming
-    # factor and the shared flex allocation (the old starter-line index
-    # mirror, "prLeagueSize - 1", went away with the definition).
-    assert "PR_ROS_QB_STREAM_FACTOR = 0.92" in js
+    # tier (the six quarterbacks below the starter line, sliced out of
+    # the sorted pool) and the shared flex allocation (the old
+    # starter-line index mirror, "prLeagueSize - 1", went away with
+    # the definition).
+    assert "PR_ROS_QB_STREAM_TIER = 6" in js
+    assert "qb.slice(prLeagueSize, prLeagueSize + PR_ROS_QB_STREAM_TIER)" in js
     assert "leftovers" in js and "flexSpots" in js
     # The pinned PPG-grid line stays byte-for-byte (a pin test guards it).
     assert ("const valueMeta = (sortBy === 'ppg' || sortBy === 'total_pts') "

@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-21",
+        "tag": "update",
+        "text": "Rest of Season overall rankings now price 1QB quarterbacks against the streaming replacement level: a quarterback's value is his edge over the best quarterbacks sitting on waivers, and his overall rank is exactly what that edge earns. The rankings by position are unchanged.",
+        "link": "/rankings/rest-of-season"
+    },
+    {
         "date": "2026-11-20",
         "tag": "update",
         "text": "Quarterback role jobs now count his legs: QB volume is plays per game, pass attempts plus rush attempts, so a dual-threat's rushing workload counts toward Franchise QB1 the way a pocket passer's dropbacks do. Franchise QB1 also takes at least 5 games in the window now, so a one-game fill-in no longer holds the top title.",
