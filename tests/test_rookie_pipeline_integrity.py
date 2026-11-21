@@ -201,6 +201,39 @@ class TestDedupeCanonicalMerge:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# 1d. Single-player fetch matches on normalized names (CJ Carr)
+# ─────────────────────────────────────────────────────────────────────────
+
+class TestSinglePlayerFetchMatching:
+    def test_dotted_cfbd_name_matches_undotted_search(self, monkeypatch):
+        # CFBD files him as "C.J. Carr"; the seeded/search name is
+        # "CJ Carr". Exact raw matching missed him for months while
+        # his 2025 season (2,741 yards) sat in the feed.
+        import data_building.rookie_pipeline.single_player_fetch as spf
+
+        carr_rows = [
+            {"player": "C.J. Carr", "playerId": 1, "position": "QB",
+             "team": "Notre Dame", "category": "passing",
+             "statType": t, "stat": v}
+            for t, v in [("ATT", 293), ("YDS", 2741), ("TD", 24), ("INT", 6)]
+        ]
+
+        def fake_get(path, params=None, retries=2):
+            if path == "/stats/player/season":
+                return carr_rows if (params or {}).get("year") == 2025 else []
+            return []
+
+        monkeypatch.setattr(spf, "CFBD_KEY", "test-key")
+        monkeypatch.setattr(spf, "_cfbd_get", fake_get)
+        result = spf.fetch_cfbd_stats_for_player("CJ Carr", 2027)
+        assert len(result) == 1
+        seasons = next(iter(result.values()))
+        assert [s["season"] for s in seasons] == [2025]
+        assert seasons[0]["pass_yards"] == 2741
+        assert seasons[0]["pass_tds"] == 24
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # 2. Per-player backfill gate
 # ─────────────────────────────────────────────────────────────────────────
 
