@@ -309,6 +309,61 @@ class TestArtifact:
 # ─────────────────────────────────────────────────────────────────────
 # Pipeline selector
 # ─────────────────────────────────────────────────────────────────────
+# In-season handling: the in-progress season prices LATEST, never
+# PEAK (v4's rule), unless it is the only season the player has.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _wr_season(year, gp, yards, rec=60, tds=7):
+    return {"season": year, "team": "State", "games_played": gp,
+            "receptions": rec, "receiving_yards": yards,
+            "receiving_tds": tds, "dominator_rating": 0.3}
+
+
+_INSEASON_WR = {
+    "player_id": "T_inseason", "name": "In-Season WR", "position": "WR",
+    "draft_class_year": 2027, "age": 20.8, "athleticism": {},
+    "seasons": [_wr_season(2025, 13, 1000),
+                _wr_season(2026, 5, 800, rec=40, tds=6)],
+}
+
+
+class TestInSeason:
+    def test_partial_season_never_peaks(self, artifact):
+        import copy
+        (row,) = v5.score_all_v5(
+            [copy.deepcopy(_INSEASON_WR)], {"T_inseason": _dc("WR", 10)},
+            model_artifact=artifact, active_season_year=2026)
+        assert row["lifecycle_state"] == "in_season"
+        assert row["in_season"] is True
+        assert row["seasons_priced"] == {"peak": 2025, "latest": 2026}
+        assert row["prospect_score"] is not None
+        feats = v5.extract_features(
+            copy.deepcopy(_INSEASON_WR), _dc("WR", 10), partial_year=2026)
+        assert feats["primary_pg_peak"] == pytest.approx(1000 / 13)
+        assert feats["primary_pg_latest"] == pytest.approx(800 / 5)
+
+    def test_freshman_partial_only_still_graded(self, artifact):
+        import copy
+        frosh = copy.deepcopy(_INSEASON_WR)
+        frosh["player_id"] = "T_frosh"
+        frosh["seasons"] = [_wr_season(2026, 5, 800, rec=40, tds=6)]
+        (row,) = v5.score_all_v5(
+            [frosh], {"T_frosh": _dc("WR", 10)},
+            model_artifact=artifact, active_season_year=2026)
+        assert row["lifecycle_state"] == "in_season"
+        assert row["seasons_priced"]["peak"] == 2026
+        assert row["prospect_score"] is not None
+
+    def test_without_active_year_no_inseason_state(self, artifact):
+        import copy
+        (row,) = v5.score_all_v5(
+            [copy.deepcopy(_INSEASON_WR)], {"T_inseason": _dc("WR", 10)},
+            model_artifact=artifact)
+        assert row["lifecycle_state"] != "in_season"
+
+
+# ─────────────────────────────────────────────────────────────────────
 
 
 class TestPipelineSelector:
