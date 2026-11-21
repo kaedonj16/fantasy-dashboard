@@ -296,6 +296,9 @@ def build_players_shell() -> str:
         gap: 2px;
         min-width: 0;
         align-self: center;
+        /* Hard guard: name-block content never paints over the numeric
+           columns, however long a name, label or subline gets. */
+        overflow: hidden;
       }
       .pr-age-sep {
         color: var(--text-muted);
@@ -306,10 +309,12 @@ def build_players_shell() -> str:
       .pr-age-inline { font-weight: 600; color: var(--text-muted); white-space: nowrap; }
       /* ROS mode: remaining-schedule rank muted after the player name
          (desktop). On phones it rides the subline instead. */
-      .pr-sched { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; margin-left: 6px; }
+      .pr-sched { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
       /* Role job label after the player name: same quiet treatment as
-         the schedule rank, never a badge. */
-      .pr-role-label { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; margin-left: 6px; }
+         the schedule rank, never a badge. No margin-left on either: the
+         .pr-name-main gap already spaces them on the name line, and a
+         margin would indent the label when it wraps under the name. */
+      .pr-role-label { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
       .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
       #prTableScroll.pr-adp-scroll {
         overflow-x: auto;
@@ -398,7 +403,19 @@ def build_players_shell() -> str:
         font-weight: 600;
         color: var(--text-muted);
         white-space: nowrap;
+        min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
       }
+      /* The subline's plain text segment shrinks and ellipsizes instead
+         of running underneath the PPG / Value numbers on narrow rows. */
+      .pr-sub > span:not([class]) {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .pr-sub > .pr-spark-sub-canvas { flex: none; }
       .pr-value {
         text-align: center;
         font-size: 19px;
