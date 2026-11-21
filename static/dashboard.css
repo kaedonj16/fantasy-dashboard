@@ -26277,6 +26277,33 @@ a.pm-avail-row:hover { background: var(--card); }
   .pm-stats-strip .pm-strip-cell { flex: 1 1 30%; }
 }
 
+/* ── Stats tab: merged concise season summary card ───────────────────────
+   One tight card per season inside its accordion section, replacing the
+   old standalone top strip plus the season header's 8-stat grid (G and
+   Pts were duplicated between them). Row 1 is the headline line (Total /
+   PPG / Rank / Gms / Median / Best); row 2, below a hairline, is the
+   per-game averages from the old season strip. The summary-only compare
+   strip in the season header is unchanged. */
+.gl-sum-card { background: var(--card); border-bottom: 1px solid var(--border); padding: 8px 12px 9px; }
+.gl-sum-main { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px 6px; }
+.gl-sum-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; text-align: center; }
+.gl-sum-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); white-space: nowrap; }
+.gl-sum-val { font-size: 15.5px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.25; white-space: nowrap; }
+.gl-sum-sub { font-size: 10.5px; font-weight: 600; color: var(--text-muted); }
+.gl-sum-rank { display: inline-block; font-size: 12.5px; font-weight: 800; color: var(--text); background: transparent; border: 1.5px solid var(--text-muted); border-radius: 99px; padding: 0 8px; line-height: 1.55; font-variant-numeric: tabular-nums; }
+.mini-stats.gl-sum-avgs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px 6px; width: 100%; border-top: 1px solid var(--border); margin-top: 7px; padding-top: 7px; }
+.gl-sum-avgs .ms { min-width: 0; }
+.gl-sum-avgs .ms i { font-size: 10px; }
+.gl-sum-avgs .ms b { font-size: 15px; }
+@media (max-width: 640px) {
+  .gl-sum-card { padding: 7px 8px 8px; }
+  .gl-sum-val { font-size: 14.5px; }
+  .gl-sum-avgs .ms b { font-size: 14px; }
+  .mini-stats.gl-sum-avgs { grid-template-columns: repeat(6, 1fr); }
+}
+/* Modestly tighter game-log rows on the advanced table. */
+.gl-adv tbody td { padding-top: 2px; padding-bottom: 2px; }
+
 /* ── Team tab: room Show all toggle + Also competing for targets ───────── */
 .pm-room-more[hidden] { display: none; }
 .pm-room-more .pm-troom-row:first-child { border-top: 1px solid var(--grid); }
