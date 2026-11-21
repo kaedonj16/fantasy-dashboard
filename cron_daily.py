@@ -1349,8 +1349,17 @@ print("[cron] Breakout roster notifications dispatched")
     )
     _rookie_window = date.today().month in (1, 2, 3, 4, 9, 10, 11, 12)
     if not ROOKIE_PIPELINE_PAUSED and (ROOKIE_PIPELINE_FORCE or (today_weekday == 6 and _rookie_window)):
+        # Timeout is 3h, not the 1h default: on 2026-11-08 and
+        # 2026-11-15 this step was killed at 3600s while still in the
+        # college-stats fetch, so no grades were written for two
+        # Sundays running (and the failure was silent). The step also
+        # enables the persistent CFBD response store: without it the
+        # fetch stage re-pulls everything live from CFBD every week,
+        # which is what made the stage slow enough to hit the cap.
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
+import os
+os.environ.setdefault("CFBD_PERSIST_STORE", "1")
 from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class
 from data_building.rookie_pipeline.rookie_evaluation_pipeline import run_rookie_evaluation_pipeline
 year = get_active_rookie_class()
@@ -1359,7 +1368,7 @@ eval_result = run_rookie_evaluation_pipeline(year)
 print(f"[cron] Eval: {{eval_result.get('profile_count', 0)}} profiles")
 result = run_rookie_pipeline(year)
 print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
-""", "build_weekly_rookie_data")
+""", "build_weekly_rookie_data", timeout=10800)
     else:
         reason = "paused" if ROOKIE_PIPELINE_PAUSED else f"weekday={today_weekday}, season_type={season_type!r}"
         print(f"[cron] Rookie weekly run skipped - {reason}")

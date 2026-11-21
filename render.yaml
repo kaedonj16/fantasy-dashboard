@@ -193,6 +193,11 @@ services:
         sync: false
       - key: CFBD_API_KEY
         sync: false
+      # Reuse stored CFBD responses (cfbd_response_cache) instead of
+      # re-fetching everything live every Sunday; the live refetch is
+      # what timed the rookie step out on 2026-11-08 and 2026-11-15.
+      - key: CFBD_PERSIST_STORE
+        value: "1"
 
   - type: cron
     name: live-advanced-metrics
