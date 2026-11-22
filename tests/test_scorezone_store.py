@@ -193,6 +193,16 @@ class _FakeStoreConn:
                     for x in key_rows
                 )
             return _FakeCursor(ordered)
+        if "FROM REDZONE_PLAYS" in up and "NOT IS_TD" in up and "OBSERVED_AT > TO_TIMESTAMP" in up:
+            season, since = int(params[0]), float(params[1])
+            rows = [
+                {"game_id": r["game_id"], "payload": json.loads(r["payload"]),
+                 "ts": r["observed_at"]}
+                for r in self.plays.values()
+                if r["season"] == season and not r["is_td"] and r["observed_at"] > since
+            ]
+            rows.sort(key=lambda r: r["ts"])
+            return _FakeCursor(rows)
         if "FROM REDZONE_PLAYS" in up and "IS_TD" in up and "OBSERVED_AT > TO_TIMESTAMP" in up:
             season, since = int(params[0]), float(params[1])
             rows = [
@@ -754,3 +764,25 @@ def test_upsert_reversal_replaces_payload_not_appends(store_db):
     assert len(rows) == 1
     assert rows[0]["play_text"] == "FUMBLES, RECOVERED by LAC-C.Murphy at LAC 41"
     assert rows[0]["stat_line"] == {"fum_rec": 1}
+
+
+def test_big_play_candidates_exclude_tds_and_respect_watermark(store_db):
+    _conn, now = store_db
+    rs.upsert_plays(2026, "g", [_play("run1", 1, is_td=False)])
+    now[0] += 100
+    rs.upsert_plays(2026, "g", [_play("td1", 2, is_td=True)])
+    now[0] += 100
+    rs.upsert_plays(2026, "g", [_play("run2", 3, is_td=False)])
+
+    got = rs.get_big_play_candidates_since(2026, 1_700_000_000.0 + 50)
+    assert [(g, p["play_id"]) for g, p, _ts in got] == [("g", "run2")]
+    assert got[0][2] == pytest.approx(1_700_000_200.0)
+
+
+def test_big_play_watermark_is_independent(store_db):
+    assert rs.get_big_play_watermark() == 0.0
+    rs.set_watermark(111.0)
+    assert rs.get_big_play_watermark() == 0.0
+    rs.set_big_play_watermark(222.0)
+    assert rs.get_big_play_watermark() == pytest.approx(222.0)
+    assert rs.get_watermark() == pytest.approx(111.0)

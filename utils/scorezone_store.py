@@ -138,6 +138,7 @@ _INDEX_DDL = [
 _LEADER_LOCK_KEY = 934172001
 
 _WATERMARK_KEY = "redzone_td_poll_watermark"
+_BIG_PLAY_WATERMARK_KEY = "redzone_big_play_poll_watermark"
 
 
 # Process-level guard: the migration creates the table at deploy; the in-code
@@ -300,6 +301,52 @@ def get_td_plays_since(season: int, since_ts: float) -> list[tuple[str, dict, fl
     return out
 
 
+def get_big_play_candidates_since(season: int, since_ts: float) -> list[tuple[str, dict, float]]:
+    """Non-TD plays first observed after ``since_ts`` (epoch seconds).
+
+    Candidate rows for the big-play alert check: every non-TD play in the
+    watermark window, unfiltered by yardage -- the notifier applies the
+    30+ yard rule per row (and owns the threshold if it ever changes).
+    TD plays are excluded here because the TD alert already covers them.
+    Returns [(game_id, play_dict, observed_at_epoch)], same watermark
+    contract as ``get_td_plays_since``.
+    """
+    from dashboard_services.db import get_conn
+
+    try:
+        with get_conn() as conn:
+            _ensure_table(conn)
+            rows = conn.execute(
+                """SELECT game_id, payload,
+                          EXTRACT(EPOCH FROM observed_at) AS ts
+                   FROM redzone_plays
+                   WHERE season = %s AND NOT is_td
+                     AND observed_at > to_timestamp(%s)
+                   ORDER BY observed_at""",
+                (int(season), float(since_ts)),
+            ).fetchall()
+    except Exception as exc:
+        logger.warning("[scorezone-store] big-play-since failed: %s", exc)
+        return []
+    out = []
+    for r in rows:
+        gid = r["game_id"] if isinstance(r, dict) else r[0]
+        payload = r["payload"] if isinstance(r, dict) else r[1]
+        ts = r["ts"] if isinstance(r, dict) else r[2]
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                continue
+        if isinstance(payload, dict):
+            try:
+                ts = float(ts or 0)
+            except Exception:
+                ts = 0.0
+            out.append((str(gid), payload, ts))
+    return out
+
+
 def get_plays_for_pids(season: int, pids: list[str], days: int = 5, week: int | None = None) -> list[dict]:
     """Plays involving any of ``pids``.
 
@@ -394,6 +441,39 @@ def set_watermark(ts: float) -> None:
             conn.commit()
     except Exception as exc:
         logger.warning("[scorezone-store] watermark write failed: %s", exc)
+
+
+def get_big_play_watermark() -> float:
+    """The big-play check's own watermark: it must advance independently of
+    the TD watermark, or whichever check ran first would starve the other."""
+    from dashboard_services.db import get_conn
+
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT value FROM app_state WHERE key = %s", (_BIG_PLAY_WATERMARK_KEY,)
+            ).fetchone()
+    except Exception:
+        return 0.0
+    try:
+        return float((row["value"] if isinstance(row, dict) else row[0]) or 0)
+    except Exception:
+        return 0.0
+
+
+def set_big_play_watermark(ts: float) -> None:
+    from dashboard_services.db import get_conn
+
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """INSERT INTO app_state (key, value) VALUES (%s, %s)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
+                (_BIG_PLAY_WATERMARK_KEY, str(float(ts))),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[scorezone-store] big-play watermark write failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1010,6 +1090,14 @@ def _leader_loop(poll_interval: float = 15.0, idle_interval: float = 60.0) -> No
                             _scorezone_td_check()
                         except Exception as exc:
                             logger.warning("[scorezone-store] td check failed: %s", exc)
+                        try:
+                            from utils.push_notifications import (
+                                _scorezone_big_play_check,
+                            )
+
+                            _scorezone_big_play_check()
+                        except Exception as exc:
+                            logger.warning("[scorezone-store] big-play check failed: %s", exc)
                     now = time.time()
                     if now >= prune_at:
                         try:

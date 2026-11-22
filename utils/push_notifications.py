@@ -1457,6 +1457,165 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
     return sent
 
 
+# A "big play" for alert purposes: one play, 30+ yards gained (Kaedon's
+# threshold, 2026-11-22 -- the in-app Moments surface uses 40+, the push
+# bar is lower). TD plays never count here: the TD alert covers them.
+BIG_PLAY_MIN_YARDS = 30
+_BIG_PLAY_TD_KEYS = ("rush_td", "rec_td", "pass_td", "def_td")
+
+
+def _big_play_gain(stat_line):
+    """(yards, kind) of a row's biggest single-play gain.
+
+    kind is "rec", "rush" or "pass". Receiving and rushing are checked
+    before passing so a tie keeps the ball carrier's kind: on a 38-yard
+    completion the receiver's row and the QB's row gain the same yards,
+    and the catch is the headline.
+    """
+    sl = stat_line or {}
+    best = (0.0, "")
+    for key, kind in (("rec_yds", "rec"), ("rush_yds", "rush"), ("pass_yds", "pass")):
+        try:
+            v = float(sl.get(key) or 0)
+        except (TypeError, ValueError):
+            v = 0.0
+        if v > best[0]:
+            best = (v, kind)
+    return best
+
+
+def notify_scorezone_big_plays(league_id, platform, pbp_by_game, player_info,
+                               rosters, scoring, *, season=None, week=None,
+                               min_yards=BIG_PLAY_MIN_YARDS):
+    """Send at most one device push per big play to each affected owner.
+
+    Mirrors ``notify_scorezone_scores`` targeting and dedupe: canonical
+    play -> league roster -> owner -> that owner's subscriptions, starters
+    only, atomic claim on ``redzone_big:{league}:{game}:{play}:{owner}``.
+    A play qualifies per ROW: a starter's own stat line must show a
+    ``min_yards``+ gain (rush, reception, or pass). A passing play is two
+    contributions (QB pass + WR catch) grouped under one canonical play,
+    so an owner starting both still gets one push, headlined by their
+    biggest gain (the catch wins ties over the pass). Plays where anyone
+    scored a touchdown are skipped entirely -- the TD alert owns them.
+    """
+    if not league_id or not pbp_by_game:
+        return 0
+    try:
+        from dashboard_services.db import get_conn
+        from utils.fantasy_scoring import week_stats_line_points
+    except Exception:
+        return 0
+
+    sent = 0
+    is_yahoo = _is_yahoo(platform)
+    league_name = _league_display_name(platform, league_id, season)
+    for gid, plays in (pbp_by_game or {}).items():
+        by_play: dict = {}
+        for play in plays or []:
+            if not isinstance(play, dict) or play.get("play_state", "VALID") != "VALID":
+                continue
+            pid = str(play.get("pid") or "")
+            if not pid:
+                continue
+            play_key = str(play.get("play_id") or play.get("seq") or "")
+            by_play.setdefault(play_key, []).append(play)
+
+        for play_key, rows in by_play.items():
+            if any(
+                (r.get("stat_line") or {}).get(k)
+                for r in rows
+                for k in _BIG_PLAY_TD_KEYS
+            ):
+                continue  # a touchdown play: the TD alert already fired
+            owner_rows: dict = {}
+            for play in rows:
+                gain, kind = _big_play_gain(play.get("stat_line") or {})
+                if gain < min_yards:
+                    continue
+                pid = str(play.get("pid"))
+                owner_id, roster_id, is_starter = _scorezone_roster_owner(pid, rosters)
+                if is_yahoo:
+                    if not roster_id:
+                        continue
+                    target = f"yahoo:{roster_id}"
+                else:
+                    if not owner_id:
+                        continue
+                    target = owner_id
+                if not is_starter:
+                    logger.debug("[scorezone-alert] play=%s type=big owner=%s dedupe=benched",
+                                 f"{gid}:{play_key}", target)
+                    continue
+                cur = owner_rows.get(target)
+                # One push per owner per play: keep their biggest gain,
+                # preferring the ball carrier over the passer on a tie.
+                if (
+                    cur is None
+                    or gain > cur[1]
+                    or (gain == cur[1] and kind != "pass" and cur[2] == "pass")
+                ):
+                    owner_rows[target] = (play, gain, kind, roster_id)
+
+            if not owner_rows:
+                continue
+
+            for target, (play, gain, kind, target_roster_id) in owner_rows.items():
+                owner_id = target
+                event_key = f"redzone_big:{league_id}:{gid}:{play_key}:{target}"
+                try:
+                    with get_conn() as conn:
+                        claimed = _app_state_claim(conn, event_key)
+                        conn.commit()
+                except Exception as exc:
+                    logger.debug("[scorezone-push] claim failed key=%s: %s", event_key, exc)
+                    continue
+                if not claimed:
+                    logger.debug("[scorezone-alert] play=%s type=big owner=%s dedupe=duplicate",
+                                 f"{gid}:{play_key}", owner_id)
+                    continue
+                pid = str(play.get("pid"))
+                info = (player_info or {}).get(pid) or {}
+                name = info.get("name") or play.get("name") or "Your player"
+                pos = info.get("pos") or ""
+                try:
+                    pts = float(week_stats_line_points(play.get("stat_line") or {}, scoring or {}, pos) or 0)
+                except Exception:
+                    pts = 0.0
+                pts_str = f" (+{round(pts, 1)})" if pts else ""
+                title = f"Big play: {name}{pts_str}"
+                gain_word = {"rec": "catch", "rush": "run", "pass": "pass"}[kind]
+                desc = f"{int(gain)}-yd {gain_word}"
+                if league_name:
+                    body = f"{desc} · {league_name}"
+                else:
+                    body = desc
+                url = (f"/{platform}/{season}/{league_id}/scorezone" if season
+                       else f"/{platform}/{league_id}/scorezone")
+                if is_yahoo:
+                    n = _broadcast_yahoo_roster(
+                        league_id, season, target_roster_id,
+                        title=title,
+                        body=body,
+                        url=url,
+                        tag=f"rz-big-{gid}-{play_key}",
+                        notif_type="redzone_scores",
+                    )
+                else:
+                    n = _broadcast_owner(
+                        league_id, owner_id,
+                        title=title,
+                        body=body,
+                        url=url,
+                        tag=f"rz-big-{gid}-{play_key}",
+                        notif_type="redzone_scores",
+                    )
+                sent += (n or 0)
+                logger.info("[scorezone-alert] play=%s type=big owner=%s dedupe=sent recipients=%d",
+                            f"{gid}:{play_key}", owner_id, n or 0)
+    return sent
+
+
 def _scorezone_td_check():
     """Check the play store for newly-observed TDs and push to subscribed leagues.
 
@@ -1554,6 +1713,105 @@ def _scorezone_td_check():
         result["sent"] = sent
     except Exception as exc:
         logger.warning("[scorezone-poll] failed: %s", exc)
+    return result
+
+
+def _scorezone_big_play_check():
+    """Check the play store for newly-observed big plays and push alerts.
+
+    The big-play twin of ``_scorezone_td_check``: reads non-TD candidate
+    plays stored since the big-play watermark (its OWN watermark, so the
+    two checks never starve each other) and fans out via
+    ``notify_scorezone_big_plays``, whose per-play-per-owner claims make
+    replays safe. Called from the same places as the TD check (store
+    thread inline, 1-min cron backstop through ``run_scorezone_td_poll``).
+
+    Returns {"games": candidate_games, "leagues": leagues_checked, "sent": pushes}.
+    """
+    result = {"games": 0, "leagues": 0, "sent": 0}
+    try:
+        import time as _time
+        from datetime import date as _date
+
+        from dashboard_services.api import get_nfl_state
+        from utils.scorezone_store import (
+            get_big_play_candidates_since as _big_since,
+            get_big_play_watermark as _get_wm,
+            set_big_play_watermark as _set_wm,
+        )
+
+        state = get_nfl_state() or {}
+        season = int(state.get("season") or _date.today().year)
+        week = int(state.get("week") or 1)
+
+        since = _get_wm()
+        if not since:
+            # Cold start: don't replay the whole stored week as "new".
+            _set_wm(_time.time())
+            return result
+
+        candidates = _big_since(season, since)
+        if not candidates:
+            return result
+        max_ts = max(ts for _, _, ts in candidates)
+
+        pbp_by_game: dict = {}
+        for gid, play, _ts in candidates:
+            pbp_by_game.setdefault(gid, []).append(play)
+        result["games"] = len(pbp_by_game)
+
+        leagues = _get_subscribed_leagues()
+        if not leagues:
+            _set_wm(max_ts)
+            return result
+
+        from dashboard_services.api import (
+            get_nfl_players,
+            get_normalized_scoring_settings as _get_scoring_settings,
+        )
+        from dashboard_services.platform_api import (
+            get_rosters as _get_rosters,
+            sync_league_globals as _sync_league_globals,
+        )
+        from utils.league_scoring import normalize_league_scoring as _norm_scoring
+
+        nfl_players = get_nfl_players() or {}
+        player_info = {
+            str(pid): {
+                "name": (p.get("full_name") if isinstance(p, dict) else "") or "",
+                "pos": (p.get("position") if isinstance(p, dict) else "") or "",
+            }
+            for pid, p in nfl_players.items()
+        }
+
+        sent = 0
+        for league_id, platform in leagues:
+            try:
+                try:
+                    _sync_league_globals(platform, league_id, season)
+                except Exception:
+                    pass
+                scoring = _norm_scoring(
+                    platform,
+                    _get_scoring_settings(platform) or {},
+                    league_id=league_id,
+                    season=season,
+                )
+                rosters = _get_rosters(platform, league_id, season) or []
+                sent += notify_scorezone_big_plays(
+                    league_id, platform, pbp_by_game, player_info, rosters,
+                    scoring, season=season, week=week,
+                ) or 0
+                result["leagues"] += 1
+            except Exception as le:
+                if _is_provider_not_found(le):
+                    _unlink_dead_league(league_id, platform)
+                else:
+                    logger.warning("[scorezone-poll] big-play league %s failed: %s", league_id, le)
+        _set_wm(max_ts)
+        result["sent"] = sent
+    except Exception as exc:
+        logger.warning("[scorezone-poll] big-play check failed: %s", exc)
     return result
 
 
@@ -1672,6 +1930,11 @@ def run_scorezone_td_poll():
         )
         return {"games": 0, "leagues": 0, "sent": 0, "skipped": "no_games_today"}
     result = _scorezone_td_check()
+    try:
+        big = _scorezone_big_play_check()
+        result["sent"] += (big or {}).get("sent", 0) or 0
+    except Exception as exc:
+        logger.warning("[scorezone-poll] big-play check failed: %s", exc)
     try:
         result["sent"] += _flush_digest() or 0
     except Exception as exc:
