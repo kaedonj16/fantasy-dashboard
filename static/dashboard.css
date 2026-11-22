@@ -59525,7 +59525,13 @@ html:has(.home-page) { scroll-behavior: smooth; }
     border-top-color: var(--text);
     opacity: .45;
 }
+.br-ptr.br-ptr-armed {
+    background: var(--text);
+    border-color: var(--text);
+}
 .br-ptr.br-ptr-armed .br-ptr-spinner {
+    border-color: var(--bg);
+    border-top-color: var(--bg);
     opacity: 1;
 }
 .br-ptr.br-ptr-refreshing {
@@ -60174,7 +60180,15 @@ button.mb-fld-link {
     border-top-color: var(--text);
     opacity: .45;
 }
-.gs-ptr-chip.is-armed .gs-ptr-spinner { opacity: 1; }
+.gs-ptr-chip.is-armed {
+    background: var(--text);
+    border-color: var(--text);
+}
+.gs-ptr-chip.is-armed .gs-ptr-spinner {
+    border-color: var(--bg);
+    border-top-color: var(--bg);
+    opacity: 1;
+}
 .gs-ptr-chip.is-refreshing .gs-ptr-spinner {
     opacity: 1;
     animation: br-ptr-spin .7s linear infinite;

@@ -104,6 +104,60 @@ def test_card_serves_stale_summary_and_kicks_background_refresh(offline_client, 
     assert kicks == ["L1"]
 
 
+def _fresh_summary():
+    from datetime import datetime, timezone
+    return {"state": "ready", "record": "8-2", "league_id": "L1",
+            "generated_at": datetime.now(timezone.utc).isoformat()}
+
+
+def _stub_card_ready(offline_client, monkeypatch, bust_ts):
+    """Card scaffolding where only the bust comparison decides freshness:
+    a TTL-fresh ready summary, a warm ctx, a non-pending matchup."""
+    import app as app_module
+    import routes.user_pages_bp as pages
+    monkeypatch.setattr(
+        "dashboard_services.accounts.resolve_account_leagues",
+        lambda *a, **k: [_membership()])
+    monkeypatch.setattr(
+        "dashboard_services.portfolio_summary.get_cached_summary",
+        lambda *a: _fresh_summary())
+    monkeypatch.setattr(pages, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"rosters": [], "users": []})
+    monkeypatch.setattr(pages, "api_portfolio_matchup",
+                        lambda: {"live": False})
+    monkeypatch.setattr(pages, "_kick_summary_refresh", lambda *a, **k: None)
+    monkeypatch.setattr(app_module, "_league_bust_mtime", lambda *a: bust_ts)
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 7
+    return offline_client.get(
+        "/api/portfolio/card?platform=sleeper&league_id=L1&season=2026")
+
+
+def test_card_ttl_fresh_summary_settles_ready_without_bust(
+        offline_client, monkeypatch):
+    response = _stub_card_ready(offline_client, monkeypatch, bust_ts=0.0)
+    assert response.status_code == 200
+    assert response.json["pending"] is False
+    assert response.json["state"] == "ready"
+
+
+def test_card_summary_predating_a_bust_stays_pending(
+        offline_client, monkeypatch):
+    # Regression: an explicit refresh busts the league and kicks a
+    # summary rebuild, but inside the SWR TTL the card endpoint still
+    # called the pre-bust summary fresh, so a pull-to-refresh settled on
+    # the old numbers while its rebuild was still queued. A bust newer
+    # than the summary's generation must keep the card pending.
+    import time
+    response = _stub_card_ready(
+        offline_client, monkeypatch, bust_ts=time.time() + 60)
+    assert response.status_code == 200
+    assert response.json["pending"] is True
+    assert response.json["state"] == "pending"
+    # The pre-bust summary still rides along as last-good.
+    assert response.json["summary"]["record"] == "8-2"
+
+
 def test_card_rejects_unlinked_league(offline_client, monkeypatch):
     monkeypatch.setattr("dashboard_services.accounts.resolve_account_leagues", lambda *a, **k: [])
     with offline_client.session_transaction() as sess:

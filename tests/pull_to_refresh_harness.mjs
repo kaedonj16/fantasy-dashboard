@@ -111,7 +111,7 @@ async function run() {
     w.win.brPageRefresh = () => { calls++; return Promise.resolve(); };
     const t = plainTarget();
     w.fire('touchstart', w.touch(t, 100, 10));
-    w.fire('touchmove', w.touch(t, 100, 60)); // dy = 50 < 76
+    w.fire('touchmove', w.touch(t, 100, 60)); // dy = 50 < 60
     const ind = w.indicator();
     assert.ok(ind, 'below threshold: indicator created mid-pull');
     assert.ok(ind.classList.contains('br-ptr-visible'), 'below threshold: indicator visible mid-pull');
@@ -132,7 +132,7 @@ async function run() {
     w.win.brPageRefresh = () => { calls++; return new Promise((r) => { release = r; }); };
     const t = plainTarget();
     w.fire('touchstart', w.touch(t, 100, 10));
-    w.fire('touchmove', w.touch(t, 100, 150)); // dy = 140 >= 76
+    w.fire('touchmove', w.touch(t, 100, 150)); // dy = 140 >= 60
     const ind = w.indicator();
     assert.ok(ind.classList.contains('br-ptr-armed'), 'above threshold: armed mid-pull');
     w.fire('touchend', w.touch(t, 100, 150));
@@ -270,6 +270,74 @@ async function run() {
     assert.equal(calls, 0, 'h-scroller horizontal drag: hook not called');
     assert.equal(w.indicator(), null, 'h-scroller horizontal drag: no indicator');
     console.log('ok - horizontal-scroller target + horizontal drag = scroller keeps gesture');
+  }
+
+  // 9. Diagonal jitter at the start of a real pull: the first moves lean
+  //    horizontal, then the pull goes strongly vertical. Direction is
+  //    judged only once the gesture has travelled far enough to prove
+  //    itself, so the pull still refreshes. (Regression: the plain path
+  //    judged from the first pixel, an early |dx| > |dy| jitter move
+  //    cancelled the candidate, and the pull did nothing at all.)
+  {
+    const w = makeWorld();
+    let calls = 0;
+    w.win.brPageRefresh = () => { calls++; return Promise.resolve(); };
+    const t = plainTarget();
+    w.fire('touchstart', w.touch(t, 100, 10));
+    w.fire('touchmove', w.touch(t, 104, 12));  // dx 4, dy 2: jitter
+    w.fire('touchmove', w.touch(t, 107, 17));  // dx 7, dy 7: still unproven
+    w.fire('touchmove', w.touch(t, 108, 35));  // dy 25: vertical, claimed
+    w.fire('touchmove', w.touch(t, 106, 130)); // dy 120: past threshold
+    w.fire('touchend', w.touch(t, 106, 130));
+    await flush();
+    assert.equal(calls, 1, 'jittery pull: hook called once');
+    console.log('ok - diagonal jitter start = pull still refreshes');
+  }
+
+  // 10. A natural phone pull: 68px of travel. The old 76px threshold
+  //     released pulls like this unarmed (the circle showed, nothing
+  //     happened); 60px arms it.
+  {
+    const w = makeWorld();
+    let calls = 0;
+    w.win.brPageRefresh = () => { calls++; return Promise.resolve(); };
+    w.pull(plainTarget(), 68);
+    await flush();
+    assert.equal(calls, 1, 'natural pull: hook called once');
+    console.log('ok - natural 68px pull = refresh');
+  }
+
+  // 11. Release drift: the pull arms at 100px, the finger eases up to
+  //     50px (still at least half the threshold) before release. The arm
+  //     latches, so the refresh still fires.
+  {
+    const w = makeWorld();
+    let calls = 0;
+    w.win.brPageRefresh = () => { calls++; return Promise.resolve(); };
+    const t = plainTarget();
+    w.fire('touchstart', w.touch(t, 100, 10));
+    w.fire('touchmove', w.touch(t, 100, 110)); // dy 100: armed
+    w.fire('touchmove', w.touch(t, 100, 60));  // dy 50: drift up
+    w.fire('touchend', w.touch(t, 100, 60));
+    await flush();
+    assert.equal(calls, 1, 'armed drift: hook called once');
+    console.log('ok - armed pull + release drift = refresh');
+  }
+
+  // 12. Deliberate push-back: armed at 100px, then the finger retreats
+  //     to 20px (below half the threshold) before release. Disarmed.
+  {
+    const w = makeWorld();
+    let calls = 0;
+    w.win.brPageRefresh = () => { calls++; return Promise.resolve(); };
+    const t = plainTarget();
+    w.fire('touchstart', w.touch(t, 100, 10));
+    w.fire('touchmove', w.touch(t, 100, 110)); // dy 100: armed
+    w.fire('touchmove', w.touch(t, 100, 30));  // dy 20: pushed back
+    w.fire('touchend', w.touch(t, 100, 30));
+    await flush();
+    assert.equal(calls, 0, 'armed retreat: hook not called');
+    console.log('ok - armed pull + push-back below half = no refresh');
   }
 
   console.log('\nALL PULL-TO-REFRESH HARNESS CHECKS PASSED');

@@ -315,7 +315,7 @@ function makePtrWorld(mode) {
 {
   const w = makePtrWorld('new');
   w.panel.fire('touchstart', ptrTouch(100, 10));
-  w.panel.fire('touchmove', ptrTouch(100, 60)); // dy 50 < 76
+  w.panel.fire('touchmove', ptrTouch(100, 60)); // dy 50 < 60
   assert.equal(w.wrap.style.height, '20px', 'short pull still reveals the chip');
   assert.ok(!w.chip.classList.contains('is-armed'), 'short pull not armed');
   w.panel.fire('touchend', ptrTouch(100, 60));
@@ -419,6 +419,26 @@ function makePtrWorld(mode) {
   w.panel.fire('touchend', ptrTouch(100, 130));
   assert.equal(w.calls.get, 0, 'reversed then short: no fetch');
   console.log('ok - upward reversal = hands off, no fetch');
+}
+
+// J. Release drift: armed at 100px, the finger eases to 45px (at least
+//    half the 60px threshold) before release: the arm latches and the
+//    refresh fires. A push-back to 20px disarms instead.
+{
+  const w = makePtrWorld('new');
+  w.panel.fire('touchstart', ptrTouch(100, 10));
+  w.panel.fire('touchmove', ptrTouch(100, 110)); // dy 100: armed
+  w.panel.fire('touchmove', ptrTouch(100, 55));  // dy 45: drift up
+  w.panel.fire('touchend', ptrTouch(100, 55));
+  assert.equal(w.calls.get, 1, 'armed drift: fetch fired');
+  w.release();
+  const w2 = makePtrWorld('new');
+  w2.panel.fire('touchstart', ptrTouch(100, 10));
+  w2.panel.fire('touchmove', ptrTouch(100, 110)); // dy 100: armed
+  w2.panel.fire('touchmove', ptrTouch(100, 30));  // dy 20: pushed back
+  w2.panel.fire('touchend', ptrTouch(100, 30));
+  assert.equal(w2.calls.get, 0, 'armed retreat: no fetch');
+  console.log('ok - armed drift fires, push-back below half disarms');
 }
 
 // ── Swipe-down-to-dismiss ────────────────────────────────────────────

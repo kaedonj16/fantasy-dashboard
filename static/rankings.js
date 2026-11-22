@@ -2163,6 +2163,11 @@ function prGetTier(p) {
   return tbl.length + 1; // catch-all - matches Python _ps_tier_of
 }
 
+// Set by the pull-to-refresh hook: the next prLoadData() must bypass the
+// browser HTTP cache (see the fetch inside), because a pull is the user
+// explicitly asking for fresh data.
+var prForceFresh = false;
+
 // Load data
 function prLoadData() {
   var gen = ++_prLoadGen;
@@ -2217,11 +2222,16 @@ return Promise.all([
     if (window.__leagueId) _q.push('league_id=' + encodeURIComponent(window.__leagueId));
     if (window.__platform) _q.push('platform=' + encodeURIComponent(window.__platform));
     if (_q.length) _u += '?' + _q.join('&');
-    // Default cache mode: the server sends ETag + max-age=60, so repeat
-    // visits get 304s instead of full re-downloads. no-store is not used.
+    // Default cache mode for ordinary loads: the server sends ETag +
+    // max-age=1800, so repeat visits inside that window render the
+    // cached body with no network round trip at all. A pull-to-refresh
+    // sets prForceFresh: the gesture means "fresh data now", so it goes
+    // no-store and always reaches the server.
+    var _fresh = prForceFresh; prForceFresh = false;
+    var _opts = _fresh ? { cache: 'no-store' } : {};
     return (typeof window.brFetchWithTimeout === 'function'
-      ? window.brFetchWithTimeout(_u, {}, 30000)
-      : fetch(_u)
+      ? window.brFetchWithTimeout(_u, _opts, 30000)
+      : fetch(_u, _opts)
     ).then(r => {
       if (!r.ok) throw new Error('league-players HTTP ' + r.status);
       return r.json();
@@ -3047,5 +3057,6 @@ window.brPageRefresh = function () {
     delete window.brPageRefresh;
     return Promise.resolve();
   }
+  prForceFresh = true;
   return prLoadData();
 };
