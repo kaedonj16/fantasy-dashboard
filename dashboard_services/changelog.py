@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-21",
         "tag": "update",
+        "text": "The Rookie Prospects board and prospect modal have a new look. The board is now a dense table under a navy header: percentile cells read as numbers, light blue at the 90th percentile and up, muted below 70, with each tier washed in its band color. The prospect modal opens as a scouting report: percentiles and production trajectory on the left, tag, class rank and season lines on the right, comparables in two columns below. Everything runs on the site's navy and light blue now, and the grades behind the order are unchanged.",
+        "link": "/prospects"
+    },
+    {
+        "date": "2026-11-21",
+        "tag": "update",
         "text": "Rest of Season rankings now grade on a leaner model: recent form, ceiling games and role trend no longer move a player's rank. A full backtest of every factor in the model found those three cost accuracy at every position, so the ranking now runs on projected points per game, expected games, remaining schedule, consistency and team offense, weighted by position. Form, ceiling and role trend are still part of a player's picture; they just no longer vote on the order.",
         "link": "/rankings/rest-of-season"
     },
