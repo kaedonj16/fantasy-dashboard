@@ -4514,6 +4514,27 @@ def api_portfolio_card():
         except Exception:
             logger.debug("portfolio card freshness check failed", exc_info=True)
             _summary_fresh = False
+    if _summary_fresh:
+        # A league bust (an explicit Refresh, a roster change) newer than
+        # this summary's generation means a rebuild was already asked for
+        # and has not landed: the summary predates the bust, so it is not
+        # fresh for settle purposes even inside its TTL. Without this, a
+        # pull-to-refresh whose league context was already warm could
+        # settle on the pre-bust summary while its own rebuild was still
+        # queued, and the card kept the old numbers. Mirrors the bust
+        # checks in _league_ctx_cache_valid / _league_ctx_redis_load.
+        try:
+            from app import _league_bust_mtime
+            _bust = _league_bust_mtime(platform, season, league_id)
+            if _bust:
+                _gen = datetime.fromisoformat(
+                    str(stale_summary.get("generated_at") or ""))
+                if _gen.tzinfo is None:
+                    _gen = _gen.replace(tzinfo=timezone.utc)
+                if _gen.timestamp() < _bust:
+                    _summary_fresh = False
+        except Exception:
+            logger.debug("portfolio card bust check failed", exc_info=True)
 
     def _kick_card_refresh():
         try:

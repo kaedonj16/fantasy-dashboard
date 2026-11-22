@@ -118,7 +118,7 @@ def test_sheet_plays_pull_to_refresh():
     assert "window.__brGsAttachPtr = function (cfg)" in seg
     # Same arm point as the page-level br-ptr controller.
     block = seg[seg.index("/* gs-ptr:start */"):seg.index("/* gs-ptr:end */")]
-    assert "var THRESHOLD = 76;" in block
+    assert "var THRESHOLD = 60;" in block
     # Plays panel chrome: indicator chip, failure note, and a render host
     # the re-render cannot wipe (the chrome lives outside the host).
     assert 'class="gs-ptr"' in seg

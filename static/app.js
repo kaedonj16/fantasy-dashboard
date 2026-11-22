@@ -22801,8 +22801,9 @@ if (typeof window !== 'undefined') {
   if (window.__brPtrInstalled) return;
   window.__brPtrInstalled = true;
 
-  var THRESHOLD = 76;      // raw pull px that arms a refresh on release
-  var RESISTANCE = 2.5;    // indicator moves at pull / RESISTANCE
+  var THRESHOLD = 60;      // raw pull px that arms a refresh on release
+  var SLOP = 10;           // px of travel before a gesture's direction is judged
+  var RESISTANCE = 1.8;    // indicator moves at pull / RESISTANCE
   var MAX_VISUAL = 76;     // indicator travel cap, px (lands on the pin spot)
   var HIDDEN_Y = -64;      // translateY that parks the chip off-screen
   var PIN_Y = 12;          // translateY while a refresh is running
@@ -22810,6 +22811,7 @@ if (typeof window !== 'undefined') {
 
   var candidate = false;
   var deferredH = false; // candidate started on a horizontal scroller; direction not yet proven
+  var decided = false;   // plain-path direction proven (see touchmove)
   var refreshing = false;
   var startX = 0;
   var startY = 0;
@@ -22918,6 +22920,7 @@ if (typeof window !== 'undefined') {
   document.addEventListener('touchstart', function (e) {
     candidate = false;
     deferredH = false;
+    decided = false;
     pull = 0;
     if (refreshing) return;
     if (typeof window.brPageRefresh !== 'function') return; // no hook, no gesture
@@ -22955,11 +22958,24 @@ if (typeof window !== 'undefined') {
     if (!t) return;
     var dx = t.clientX - startX;
     var dy = t.clientY - startY;
+    if (!decided) {
+      // The plain path proves direction the same way the deferredH path
+      // does: hands off until the gesture has travelled SLOP px. Real
+      // pulls start diagonal, so judging from the first pixel kills
+      // most of them: an early jitter move with |dx| > |dy| used to
+      // cancel the candidate for good and the pull did nothing at all.
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < SLOP) return;
+      if (Math.abs(dx) > Math.abs(dy)) { candidate = false; retract(); return; }
+      decided = true;
+    }
     if (Math.abs(dx) > Math.abs(dy)) { candidate = false; retract(); return; } // horizontal gesture
     if (dy <= 0) { pull = 0; retract(); return; }
-    pull = dy;
+    // Release drift: fingers ease upward in the last frames before a
+    // release, so an armed pull keeps its arm unless the finger
+    // retreats below half the threshold (a deliberate push-back).
+    if (!(pull >= THRESHOLD && dy >= THRESHOLD / 2)) pull = dy;
     if (e.cancelable && e.preventDefault) e.preventDefault();
-    showPull(Math.min(MAX_VISUAL, dy / RESISTANCE));
+    showPull(Math.min(MAX_VISUAL, pull / RESISTANCE));
   }, { passive: false });
 
   function finishRefresh() {
@@ -22985,6 +23001,7 @@ if (typeof window !== 'undefined') {
     if (!candidate) return;
     candidate = false;
     deferredH = false;
+    decided = false;
     if (refreshing) return;
     if (pull >= THRESHOLD && typeof window.brPageRefresh === 'function') triggerRefresh();
     else retract();
@@ -22994,6 +23011,7 @@ if (typeof window !== 'undefined') {
   document.addEventListener('touchcancel', function () {
     candidate = false;
     deferredH = false;
+    decided = false;
     pull = 0;
     if (!refreshing) retract();
   }, { passive: true });
@@ -35108,8 +35126,8 @@ window.__brSzLiveCache = (function () {
   // Pull-to-refresh for the game sheet's Plays tab: the page-level br-ptr
   // gesture cannot reach inside the sheet (it is suppressed while a sheet
   // is open, and its hook refreshes the page behind it), so the Plays
-  // panel carries its own. Same constants and indicator language as
-  // br-ptr: a 76px raw pull arms the refresh, the chip reveals at
+  // panel carries its own. Same indicator language as br-ptr: a 60px raw
+  // pull arms the refresh, the chip reveals at
   // pull / 2.5 capped at 76px, pins while the refresh runs, and a hung
   // refresh can never strand it. The gesture belongs to the plays panel
   // only: it engages solely when the sheet's scroll body is at the very
@@ -35118,7 +35136,7 @@ window.__brSzLiveCache = (function () {
   // behavior untouched. Self-contained: every collaborator arrives via
   // cfg, which is what tests/game_sheet_events_harness.mjs drives.
   window.__brGsAttachPtr = function (cfg) {
-    var THRESHOLD = 76;      // raw pull px that arms a refresh on release
+    var THRESHOLD = 60;      // raw pull px that arms a refresh on release
     var RESISTANCE = 2.5;    // indicator reveal divisor
     var MAX_VISUAL = 76;     // indicator reveal cap, px
     var PIN_H = 52;          // revealed height held while refreshing
@@ -35212,9 +35230,11 @@ window.__brSzLiveCache = (function () {
       // Upward reversal: zero the pull and stop claiming the touch, so
       // native scroll proceeds (this branch never preventDefaults).
       if (dy <= 0) { pull = 0; collapse(); return; }
-      pull = dy;
+      // Release drift: an armed pull keeps its arm unless the finger
+      // retreats below half the threshold (a deliberate push-back).
+      if (!(pull >= THRESHOLD && dy >= THRESHOLD / 2)) pull = dy;
       if (e.cancelable && e.preventDefault) e.preventDefault();
-      showPull(Math.min(MAX_VISUAL, dy / RESISTANCE));
+      showPull(Math.min(MAX_VISUAL, pull / RESISTANCE));
     }
     function onEnd() {
       if (!candidate) return;
