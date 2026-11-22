@@ -232,3 +232,121 @@ def test_poll_once_passes_def_map_to_pbp(monkeypatch):
     stats = rs.poll_once()
     assert stats["games"] == 1
     assert seen.get("team_to_def_pid") == {"GB": "GB"}
+
+
+# ── TEN@DAL 2026-11-22: the eligible-reporter TD play ─────────────────────
+# Real booth text captured live from the game. "J.Williams" is ambiguous in
+# the two-team index (James Williams Sr. and Joshua Williams, both TEN) but
+# unique on DAL, and the play opens with an eligibility report for a DAL
+# lineman. Before the fix the rushing TD went uncredited, Javonte Williams
+# got no row, and the rows for the lineman and the penalized defender both
+# carried the TD flag, so the client headlined the lineman's 0-point card.
+
+_TEN_DAL_NFL = {
+    "7588": {"full_name": "Javonte Williams", "team": "DAL", "position": "RB"},
+    "11847": {"full_name": "James Williams Sr.", "team": "TEN", "position": "DB"},
+    "8470": {"full_name": "Joshua Williams", "team": "TEN", "position": "CB"},
+    "10884": {"full_name": "Broderick Jones", "team": "DAL", "position": "OL"},
+    "5466": {"full_name": "John Franklin-Myers", "team": "TEN", "position": "DT"},
+    "3294": {"full_name": "Dak Prescott", "team": "DAL", "position": "QB"},
+    "8170": {"full_name": "James Mitchell", "team": "DAL", "position": "TE"},
+    "9999": {"full_name": "George Pickens", "team": "DAL", "position": "WR"},
+}
+
+_TD_TEXT = (
+    "B.Jones reported in as eligible.  J.Williams up the middle for 1 yard, "
+    "TOUCHDOWN.PENALTY on TEN-J.Franklin-Myers, Unnecessary Roughness, 1 "
+    "yard, enforced between downs. TWO-POINT CONVERSION ATTEMPT. D.Prescott "
+    "pass to G.Pickens is incomplete. ATTEMPT FAILS."
+)
+
+
+def _ten_dal_maps():
+    return rs._build_name_maps(_TEN_DAL_NFL, {"TEN", "DAL"})
+
+
+def _raw_play(pid, text, ptype, scoring=False, seq="1", clock="8:23"):
+    return {
+        "id": seq,
+        "text": text,
+        "clock": {"displayValue": clock},
+        "period": {"number": 1},
+        "start": {"down": 2, "distance": 1, "possessionText": "TEN 1"},
+        "type": {"text": ptype},
+        "scoringPlay": scoring,
+    }
+
+
+def test_eligible_reporter_td_credits_the_rusher_not_the_lineman():
+    name_to_pid, meta = _ten_dal_maps()
+    payload = _espn_payload(
+        [_raw_play("401873073442", _TD_TEXT, "Rushing Touchdown", scoring=True)],
+        drive_team="DAL",
+    )
+    plays = extract_espn_pbp_plays(
+        payload, "20261122_TEN@DAL", name_to_pid=name_to_pid,
+        player_meta_by_pid=meta, team_to_def_pid={"TEN": "TEN", "DAL": "DAL"},
+    )
+    by_pid = {p["pid"]: p for p in plays}
+    # The rusher is credited and is the ONLY touchdown row.
+    assert by_pid["7588"]["stat_line"].get("rush_td") == 1
+    assert by_pid["7588"]["stat_line"].get("rush_yds") == 1
+    assert [p["pid"] for p in plays if p["is_td"]] == ["7588"]
+    # The eligibility reporter gets no row at all.
+    assert "10884" not in by_pid
+    # The penalized defender keeps his mention row but not the TD flag.
+    assert by_pid["5466"]["is_td"] is False
+
+
+def test_eligible_reporter_completion_play_has_no_lineman_row():
+    name_to_pid, meta = _ten_dal_maps()
+    text = (
+        "B.Jones reported in as eligible.  D.Prescott pass short left to "
+        "J.Mitchell to TEN 47 for 13 yards (K.Winston)."
+    )
+    payload = _espn_payload(
+        [_raw_play("401873073113", text, "Pass", clock="13:49")],
+        drive_team="DAL",
+    )
+    plays = extract_espn_pbp_plays(
+        payload, "20261122_TEN@DAL", name_to_pid=name_to_pid,
+        player_meta_by_pid=meta, team_to_def_pid={"TEN": "TEN", "DAL": "DAL"},
+    )
+    by_pid = {p["pid"]: p for p in plays}
+    assert "10884" not in by_pid
+    assert by_pid["3294"]["stat_line"].get("pass_yds") == 13
+    assert by_pid["8170"]["stat_line"].get("rec_yds") == 13
+    assert not any(p["is_td"] for p in plays)
+
+
+def test_injury_update_note_names_no_actor():
+    # Real booth text from IND@HOU 2026-11-20: ESPN appended an injury note
+    # about a DB who had just returned, and he surfaced as a touchdown row
+    # on the TD pass he was nowhere near.
+    nfl = {
+        "9764": {"full_name": "C.J. Stroud", "team": "HOU", "position": "QB"},
+        "12500": {"full_name": "Marlin Klein", "team": "HOU", "position": "TE"},
+        "11371": {"full_name": "Ka'imi Fairbairn", "team": "HOU", "position": "K"},
+        "12468": {"full_name": "Kapena Gushiken", "team": "IND", "position": "DB"},
+    }
+    name_to_pid, meta = rs._build_name_maps(nfl, {"IND", "HOU"})
+    text = (
+        "(Shotgun) C.Stroud pass short right to M.Klein for 13 yards, "
+        "TOUCHDOWN. ** Injury Update: IND-K.Gushiken has returned to the "
+        "game. K.Fairbairn extra point is GOOD, Center-A.Brinkman, "
+        "Holder-K.Kroeger."
+    )
+    payload = _espn_payload(
+        [_raw_play("4018730662675", text, "Passing Touchdown", scoring=True)],
+        drive_team="HOU",
+    )
+    plays = extract_espn_pbp_plays(
+        payload, "20261120_IND@HOU", name_to_pid=name_to_pid,
+        player_meta_by_pid=meta, team_to_def_pid={"IND": "IND", "HOU": "HOU"},
+    )
+    by_pid = {p["pid"]: p for p in plays}
+    assert "12468" not in by_pid
+    assert by_pid["12500"]["stat_line"].get("rec_td") == 1
+    assert by_pid["12500"]["is_td"] is True
+    assert by_pid["9764"]["is_td"] is True
+    assert by_pid["11371"]["is_td"] is False
