@@ -709,9 +709,9 @@ function prFuzzyScore(name, query) {
 // Field names per sub-window. The payload stamps all three windows from the
 // same weekly projections (utils/ros_rankings.py); the board only reads.
 var PR_ROS_WINDOWS = {
-  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         score: 'ros_score', ptsLabel: 'ROS Pts',     ppgLabel: 'ROS PPG',     valueLabel: 'ROS Value',     totalLabel: 'ROS Total' },
-  stretch:  { ppg: 'ros_stretch_ppg', total: 'ros_stretch_total', games: 'ros_stretch_games', rank: 'ros_stretch_pos_rank', ptsLabel: 'Stretch Pts', ppgLabel: 'Stretch PPG', valueLabel: 'Stretch Value', totalLabel: 'Stretch Total' },
-  playoffs: { ppg: 'ros_playoff_ppg', total: 'ros_playoff_total', games: 'ros_playoff_games', rank: 'ros_playoff_pos_rank', ptsLabel: 'Playoff Pts', ppgLabel: 'Playoff PPG', valueLabel: 'Playoff Value', totalLabel: 'Playoff Total' },
+  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         score: 'ros_score', weekly: 'ros_weekly',         ptsLabel: 'ROS Pts',     ppgLabel: 'ROS PPG',     valueLabel: 'ROS Value',     totalLabel: 'ROS Total' },
+  stretch:  { ppg: 'ros_stretch_ppg', total: 'ros_stretch_total', games: 'ros_stretch_games', rank: 'ros_stretch_pos_rank', weekly: 'ros_stretch_weekly', ptsLabel: 'Stretch Pts', ppgLabel: 'Stretch PPG', valueLabel: 'Stretch Value', totalLabel: 'Stretch Total' },
+  playoffs: { ppg: 'ros_playoff_ppg', total: 'ros_playoff_total', games: 'ros_playoff_games', rank: 'ros_playoff_pos_rank', weekly: 'ros_playoff_weekly', ptsLabel: 'Playoff Pts', ppgLabel: 'Playoff PPG', valueLabel: 'Playoff Value', totalLabel: 'Playoff Total' },
 };
 function prRosCfg() { return PR_ROS_WINDOWS[prRosWindow] || PR_ROS_WINDOWS.all; }
 function prRosVal(p, kind) {
@@ -723,18 +723,24 @@ function prRosVal(p, kind) {
 // itself; mirrors utils/ros_rankings.py's ros_replacement_map exactly.
 // League size and format therefore move the cross-position order, which
 // is why League Size stays visible in ROS mode.
-// QB in 1QB is the streaming tier: the realistic fallback is rotating
-// through the quarterbacks nobody rosters on weekly matchups, so the
-// line is the mean ROS PPG of the PR_ROS_QB_STREAM_TIER quarterbacks
-// ranked immediately below the starter line — what a waiver
-// quarterback gives you, derived from the pool, never fitted to where
-// quarterbacks land. SF keeps the scarcity index (2 starters x size x
-// 1.5): with two starters per team, QB scarcity is real and priced.
+// QB in 1QB is the streaming replacement: the realistic fallback is
+// rotating through the quarterbacks nobody rosters and playing the
+// best available matchup each week, so the line is, per remaining
+// week, the best weekly projection among the quarterbacks below the
+// starter line, averaged across the window — what streaming actually
+// gives you, derived from the pool, never fitted to where
+// quarterbacks land. A payload without usable weekly series falls
+// back to the best-of approximation: the mean of the top
+// PR_ROS_QB_STREAM_FALLBACK_TOP_N of the PR_ROS_QB_STREAM_TIER
+// quarterbacks below the starter line. SF keeps the scarcity index
+// (2 starters x size x 1.5): with two starters per team, QB scarcity
+// is real and priced.
 // RB / WR / TE share one pool: dedicated starters first (RB 2, WR 2,
 // TE 1 per team), then one FLEX spot per team filled from the best
 // remaining across the three positions combined, and each position's
 // replacement is its best remaining player.
 var PR_ROS_QB_STREAM_TIER = 6;
+var PR_ROS_QB_STREAM_FALLBACK_TOP_N = 2;
 var _prRosReplCache = { key: null, map: {} };
 function prRosReplacementMap() {
   var key = prRosWindow + '|' + prLeagueSize + '|' + prLeagueType;
@@ -755,11 +761,41 @@ function prRosReplacementMap() {
       var qIdx = Math.max(0, Math.min(Math.floor(2 * prLeagueSize * 1.5), qb.length - 1));
       map.QB = qb[qIdx];
     } else {
-      var tier = qb.slice(prLeagueSize, prLeagueSize + PR_ROS_QB_STREAM_TIER);
-      if (!tier.length) tier = [qb[qb.length - 1]];
-      var qSum = 0;
-      tier.forEach(function(v) { qSum += v; });
-      map.QB = qSum / tier.length;
+      // Streaming replacement: the QB pool's weekly series (stamped
+      // per window by the server), sorted by window PPG descending
+      // to parallel the sorted PPGs. Each week's line is the best
+      // projection below the starter line; the line is their mean.
+      var qbRows = prAllPlayers.filter(function(p) {
+        return p.position === 'QB' && p[cfg.ppg] != null;
+      }).slice().sort(function(a, b) { return b[cfg.ppg] - a[cfg.ppg]; });
+      var below = qbRows.slice(prLeagueSize);
+      var bests = [];
+      if (below.length && below.every(function(p) { return Array.isArray(p[cfg.weekly]); })) {
+        var maxLen = 0;
+        below.forEach(function(p) { maxLen = Math.max(maxLen, p[cfg.weekly].length); });
+        for (var w = 0; w < maxLen; w++) {
+          var best = null;
+          below.forEach(function(p) {
+            var v = p[cfg.weekly][w];
+            if (v != null && (best === null || v > best)) best = v;
+          });
+          if (best !== null) bests.push(best);
+        }
+      }
+      if (bests.length) {
+        var bSum = 0;
+        bests.forEach(function(v) { bSum += v; });
+        map.QB = bSum / bests.length;
+      } else {
+        // No usable weekly series: the best-of fallback, the mean of
+        // the top of the tier below the starter line.
+        var tier = qb.slice(prLeagueSize, prLeagueSize + PR_ROS_QB_STREAM_TIER);
+        if (!tier.length) tier = [qb[qb.length - 1]];
+        var top = tier.slice(0, PR_ROS_QB_STREAM_FALLBACK_TOP_N);
+        var qSum = 0;
+        top.forEach(function(v) { qSum += v; });
+        map.QB = qSum / top.length;
+      }
     }
   }
   var flexStarters = { RB: 2, WR: 2, TE: 1 };

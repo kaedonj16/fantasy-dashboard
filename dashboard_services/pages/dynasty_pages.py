@@ -1337,7 +1337,18 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         for r in rows:
             if r.get("ros_ppg") is not None:
                 by_pos.setdefault(r["position"], []).append(float(r["ros_ppg"]))
-        repl = ros_replacement_map(by_pos, 12, "1qb")
+        # The 1QB QB line is the streaming replacement: it reads the
+        # QB pool's weekly series (stamped by the builder as
+        # ros_weekly), sorted by ROS PPG descending to parallel the
+        # sorted PPGs. Rows from a payload without series simply omit
+        # them and the shared function uses its best-of fallback.
+        qb_rows = sorted(
+            (r for r in rows
+             if r["position"] == "QB" and r.get("ros_ppg") is not None),
+            key=lambda r: -float(r["ros_ppg"]))
+        repl = ros_replacement_map(
+            by_pos, 12, "1qb",
+            qb_weekly_series_desc=[r.get("ros_weekly") for r in qb_rows])
         for r in rows:
             base = repl.get(r["position"])
             r["_vor"] = ((float(r["ros_ppg"]) - base) * float(r["ros_games"])
