@@ -13,7 +13,7 @@ CHANGELOG = [
     {
         "date": "2026-11-21",
         "tag": "update",
-        "text": "Rest of Season overall rankings now price 1QB quarterbacks against the streaming replacement level: a quarterback's value is his edge over the best quarterbacks sitting on waivers, and his overall rank is exactly what that edge earns. The rankings by position are unchanged.",
+        "text": "Rest of Season overall rankings now price 1QB quarterbacks against the streaming replacement level: each remaining week, a quarterback's value is his edge over the best quarterback available on waivers that week, and his overall rank is exactly what that edge earns. The rankings by position are unchanged.",
         "link": "/rankings/rest-of-season"
     },
     {

@@ -764,20 +764,26 @@ def compute_ros_tier_thresholds(ros_by_pid: Dict[str, dict],
 # math in JS (prRosReplacementMap in static/rankings.js). Every line is
 # derived from the ROS pool itself; no constant is a hardcoded PPG.
 #
-# QB in 1QB is priced against the STREAMING TIER. The realistic
+# QB in 1QB is priced against STREAMING REPLACEMENT. The realistic
 # alternative to holding an elite QB in a 1QB league is not one fixed
-# fringe starter: it is streaming, rotating through the quarterbacks
-# nobody rosters and playing favorable matchups week to week. The
+# fringe starter, and it is not the average streamer either: a manager
+# who streams plays the BEST available quarterback each week. The
 # replacement line is therefore DERIVED from the pool at build time:
-# the mean ROS PPG of the ROS_QB_STREAM_TIER quarterbacks ranked
-# immediately below the starter line (QB{size+1}..QB{size+6} in a
-# 12-team league, QB13..QB18) — literally what a waiver quarterback
-# gives you. A QB's value is his edge over that free fallback, and no
-# part of the line is fitted to where quarterbacks land on the board:
-# an earlier construction priced the fallback off the starters' own
-# production (a discounted mean of the starter pool's top half) with
-# the discount factor calibrated to an output band, which manufactured
-# the placements it claimed to measure; it was removed 2026-11-21.
+# for each remaining week, the highest weekly projection among the
+# quarterbacks below the starter line (QB{size+1} and down), averaged
+# across the window — literally what streaming gives you. A QB's value
+# is his edge over that free fallback, and no part of the line is
+# fitted to where quarterbacks land on the board: an earlier
+# construction priced the fallback off the starters' own production
+# (a discounted mean of the starter pool's top half) with the discount
+# factor calibrated to an output band, which manufactured the
+# placements it claimed to measure; it was removed 2026-11-21. The
+# static tier mean that replaced it still understated streaming,
+# because nobody plays the average waiver quarterback when a better
+# matchup is available that week; it was replaced by the weekly-best
+# line 2026-11-21. Where a code path carries no weekly series, the
+# fallback is the mean of the top two of the six quarterbacks below
+# the starter line — a best-of approximation of the same tier.
 # The dynasty model's 1.5x index also misprices this: it puts the line
 # deep in the QB2 band because it is calibrated for a normalized
 # strength scale, not raw points. SF keeps the 1.5x index on two
@@ -801,25 +807,48 @@ ROS_STARTERS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
 ROS_QB_SF_MULT = 1.50
 ROS_FLEX_SLOTS_PER_TEAM = 1
 ROS_QB_STREAM_TIER = 6
+ROS_QB_STREAM_FALLBACK_TOP_N = 2
 ROS_LEAGUE_TYPES = ("1qb", "sf")
 ROS_LEAGUE_SIZES = (8, 10, 12, 14)
 _WINDOW_PREFIXES = (("all", "ros"), ("stretch", "ros_stretch"),
                     ("playoffs", "ros_playoff"))
 
 
+def _ros_qb_stream_fallback_ppg(ppgs_desc: List[float],
+                                size: int) -> float:
+    """Best-of fallback for the 1QB streaming line, used when a code
+    path carries no weekly projection series: the mean of the top
+    ROS_QB_STREAM_FALLBACK_TOP_N of the ROS_QB_STREAM_TIER
+    quarterbacks below the starter line. When the pool runs out below
+    the line the tier is whatever remains; when nobody sits below the
+    line, the fallback is the worst starter himself (the pool's last
+    PPG)."""
+    tier = [float(v) for v in ppgs_desc[size:size + ROS_QB_STREAM_TIER]]
+    if not tier:
+        return float(ppgs_desc[-1])
+    top = tier[:ROS_QB_STREAM_FALLBACK_TOP_N]
+    return sum(top) / len(top)
+
+
 def ros_qb_replacement_ppg(ppgs_desc: List[float], league_size: int,
-                           league_type: str) -> Optional[float]:
+                           league_type: str,
+                           weekly_series_desc=None) -> Optional[float]:
     """Replacement QB PPG from the QB pool's ROS PPGs sorted desc.
 
-    1QB: the streaming tier, the mean ROS PPG of the
-    ROS_QB_STREAM_TIER quarterbacks ranked immediately below the
-    starter line (QB{size+1}..QB{size+ROS_QB_STREAM_TIER}) — the
-    waiver pool a manager actually rotates through. When the pool
-    runs out below the line the tier is whatever remains; when nobody
-    sits below the line, the fallback is the worst starter himself
-    (the pool's last PPG). SF: the player at the scarcity index
-    (2 starters x size x 1.5), clamped to the pool. None when the
-    pool is empty.
+    1QB: the STREAMING replacement. ``weekly_series_desc``, when
+    given, is the pool's weekly projection series in the same
+    PPG-descending order as ``ppgs_desc`` (one aligned series per
+    quarterback: one entry per window week, None for a bye or a week
+    absent from the feed). For each week the line takes the best
+    projection among the quarterbacks below the starter line
+    (QB{size+1} and down) and averages those weekly bests across the
+    window: a streaming manager plays the best available matchup,
+    never the tier's average member. When no usable weekly series is
+    available — the series argument is absent, a below-line
+    quarterback carries none, or no week carries a value — the line
+    falls back to _ros_qb_stream_fallback_ppg. SF: the player at the
+    scarcity index (2 starters x size x 1.5), clamped to the pool;
+    the weekly series never enters it. None when the pool is empty.
     """
     if not ppgs_desc:
         return None
@@ -828,10 +857,27 @@ def ros_qb_replacement_ppg(ppgs_desc: List[float], league_size: int,
         idx = int(2 * size * ROS_QB_SF_MULT)
         idx = max(0, min(idx, len(ppgs_desc) - 1))
         return float(ppgs_desc[idx])
-    tier = [float(v) for v in ppgs_desc[size:size + ROS_QB_STREAM_TIER]]
-    if not tier:
-        return float(ppgs_desc[-1])
-    return sum(tier) / len(tier)
+    if weekly_series_desc is not None:
+        below = list(weekly_series_desc)[size:]
+        if below and all(isinstance(s, (list, tuple)) for s in below):
+            bests: List[float] = []
+            for week_idx in range(max((len(s) for s in below), default=0)):
+                vals: List[float] = []
+                for series in below:
+                    if week_idx >= len(series):
+                        continue
+                    value = series[week_idx]
+                    if value is None:
+                        continue
+                    try:
+                        vals.append(float(value))
+                    except (TypeError, ValueError):
+                        continue
+                if vals:
+                    bests.append(max(vals))
+            if bests:
+                return sum(bests) / len(bests)
+    return _ros_qb_stream_fallback_ppg(ppgs_desc, size)
 
 
 def ros_flex_replacement_ppgs(by_pos_ppgs: Dict[str, List[float]],
@@ -870,14 +916,23 @@ def ros_flex_replacement_ppgs(by_pos_ppgs: Dict[str, List[float]],
 
 
 def ros_replacement_map(by_pos_ppgs: Dict[str, List[float]], league_size: int,
-                        league_type: str) -> Dict[str, float]:
+                        league_type: str,
+                        qb_weekly_series_desc=None) -> Dict[str, float]:
     """Replacement PPG per position for one league shape: the streaming /
     scarcity QB line plus the flex-aware RB/WR/TE lines. Only positions
-    present in the pool appear in the result."""
+    present in the pool appear in the result.
+
+    ``qb_weekly_series_desc`` is the QB pool's weekly projection
+    series sorted by window PPG descending, parallel to the sorted
+    QB PPGs (see ros_qb_replacement_ppg); omit it where the caller
+    carries no weekly series and the QB line uses the best-of
+    fallback."""
     out: Dict[str, float] = {}
     qb_ppgs = sorted((float(v) for v in (by_pos_ppgs.get("QB") or [])),
                      reverse=True)
-    qb_line = ros_qb_replacement_ppg(qb_ppgs, league_size, league_type)
+    qb_line = ros_qb_replacement_ppg(
+        qb_ppgs, league_size, league_type,
+        weekly_series_desc=qb_weekly_series_desc)
     if qb_line is not None:
         out["QB"] = qb_line
     out.update(ros_flex_replacement_ppgs(by_pos_ppgs, league_size))
@@ -896,11 +951,18 @@ def ros_vor_totals(ros_by_pid: Dict[str, dict],
     for window_key, prefix in _WINDOW_PREFIXES:
         ppg_key, games_key = f"{prefix}_ppg", f"{prefix}_games"
         by_pos: Dict[str, List[float]] = {}
+        qb_rows: List[Tuple[float, object]] = []
         for pid, fields in ros_by_pid.items():
             if ppg_key in fields:
                 pos = str(positions_by_pid.get(pid) or "").upper()
                 by_pos.setdefault(pos, []).append(float(fields[ppg_key]))
-        repl = ros_replacement_map(by_pos, league_size, league_type)
+                if pos == "QB":
+                    qb_rows.append((float(fields[ppg_key]),
+                                    fields.get(f"{prefix}_weekly")))
+        qb_rows.sort(key=lambda kv: -kv[0])
+        repl = ros_replacement_map(
+            by_pos, league_size, league_type,
+            qb_weekly_series_desc=[s for _ppg, s in qb_rows])
         window_vor: Dict[str, float] = {}
         for pid, fields in ros_by_pid.items():
             if ppg_key not in fields or games_key not in fields:
@@ -1380,6 +1442,25 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                 out.append(weekly_projection_points(week_map, pid, dict(PPR_SCORING), pos))
             return out
 
+        def _aligned_series(pid: str, pos: str, team: str,
+                            weeks) -> List[Optional[float]]:
+            # Calendar-aligned twin of _series for the QB streaming
+            # replacement: exactly one entry per window week, None for
+            # a bye or an unpublished feed, so the pool's series line
+            # up week by week when the weekly best is taken across
+            # quarterbacks. (_series itself keeps its compact shape:
+            # the aggregate stats read skips bye weeks entirely.)
+            out: List[Optional[float]] = []
+            for w in weeks:
+                week_map = week_maps.get(w) or {}
+                opps = team_opps.get(team)
+                if not week_map or (opps is not None and w not in opps):
+                    out.append(None)
+                    continue
+                out.append(weekly_projection_points(
+                    week_map, pid, dict(PPR_SCORING), pos))
+            return out
+
         all_weeks = list(range(start_week, ROS_END_WEEK + 1))
         stretch_weeks = [w for w in all_weeks if w <= STRETCH_END_WEEK]
         playoff_weeks = [w for w in all_weeks if w >= PLAYOFF_START_WEEK]
@@ -1439,6 +1520,18 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                     pos_mean_rate.get(pos)),
             )
             if fields:
+                if pos == "QB":
+                    # The streaming replacement reads the QB pool's
+                    # weekly series (see ros_qb_replacement_ppg): stamp
+                    # the calendar-aligned series next to each window's
+                    # aggregates. Only QBs carry them — no other
+                    # position's replacement reads weekly values.
+                    fields["ros_weekly"] = _aligned_series(
+                        pid, pos, team, all_weeks)
+                    fields["ros_stretch_weekly"] = _aligned_series(
+                        pid, pos, team, stretch_weeks)
+                    fields["ros_playoff_weekly"] = _aligned_series(
+                        pid, pos, team, playoff_weeks)
                 ros_by_pid[pid] = fields
                 positions_by_pid[pid] = pos
                 _log = game_points.get(pid) or {}

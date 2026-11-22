@@ -913,42 +913,94 @@ def test_tier_thresholds_come_from_ros_totals():
 
 def test_ros_replacement_definitions():
     # Replaced the old index-convention test: the replacement lines are
-    # no longer per-position indices. QB 1QB is the streaming tier, QB
-    # SF keeps the scarcity index, and RB/WR/TE come out of one shared
-    # flex-aware allocation (below).
+    # no longer per-position indices. QB 1QB is the streaming
+    # replacement, QB SF keeps the scarcity index, and RB/WR/TE come
+    # out of one shared flex-aware allocation (below).
     ladder = [26.0 - 0.5 * i for i in range(20)]
-    # 1QB streaming tier: the mean of the six quarterbacks ranked
+    # No weekly series on this call, so the 1QB line is the best-of
+    # fallback: the mean of the top two of the six quarterbacks ranked
     # immediately below the starter line (QB11..QB16 at size 10):
-    # mean(21, 20.5, 20, 19.5, 19, 18.5) = 19.75.
-    assert ros_qb_replacement_ppg(ladder, 10, "1qb") == pytest.approx(19.75)
+    # mean(21, 20.5) = 20.75.
+    assert ros_qb_replacement_ppg(ladder, 10, "1qb") == pytest.approx(20.75)
     # SF: the player at index 2 x 10 x 1.5 = 30 on a deeper ladder.
     deep = [26.0 - 0.5 * i for i in range(40)]
     assert ros_qb_replacement_ppg(deep, 10, "sf") == pytest.approx(11.0)
     assert ros_qb_replacement_ppg([], 10, "1qb") is None
-    # The streaming line sits BELOW the worst starter (ladder[9] = 21.5)
+    # The fallback line sits BELOW the worst starter (ladder[9] = 21.5)
     # by construction: it is the waiver tier under the starter line,
     # not a discounted slice of the starters themselves.
     assert ros_qb_replacement_ppg(ladder, 10, "1qb") < ladder[9]
 
 
-def test_ros_qb_replacement_line_is_the_streaming_tier():
-    # The 1QB line is DERIVED from the waiver tier, never fitted: it is
-    # the mean of the six quarterbacks just below the starter line
-    # (QB13..QB18 at size 12), and it does not read the starters at all.
+def test_ros_qb_replacement_line_is_streaming_best_available():
+    # The 1QB line is DERIVED from the waiver pool, never fitted: for
+    # each week it takes the best projection among the quarterbacks
+    # below the starter line (QB13+ at size 12) and averages the
+    # weekly bests. Hand-computable pool: the below-line series peak
+    # at 25 / 30 / 28 across the three weeks (a different streamer
+    # each week), so the line is (25 + 30 + 28) / 3 — NOT the tier's
+    # mean member, and not any single streamer's average.
     ladder = [26.0 - 0.5 * i for i in range(24)]
-    line = ros_qb_replacement_ppg(ladder, 12, "1qb")
-    assert line == pytest.approx(sum(ladder[12:18]) / 6)
-    # Inflate every starter by 4 PPG: the tier below the line is
+    series = [[0.0, 0.0, 0.0] for _ in range(12)]  # starters: unread
+    series += [
+        [10.0, 30.0, 20.0],   # QB13
+        [25.0, 12.0, 18.0],   # QB14
+        [15.0, 22.0, 28.0],   # QB15
+    ] + [[5.0, 5.0, 5.0] for _ in range(9)]
+    line = ros_qb_replacement_ppg(ladder, 12, "1qb",
+                                  weekly_series_desc=series)
+    assert line == pytest.approx((25.0 + 30.0 + 28.0) / 3)
+    # Inflate every starter by 4 PPG: the pool below the line is
     # untouched, so the line is identical. A fitted factor on the
     # starter pool would move with them; a derived line cannot.
     boosted = [v + 4.0 for v in ladder[:12]] + ladder[12:]
-    assert ros_qb_replacement_ppg(boosted, 12, "1qb") == pytest.approx(line)
+    assert ros_qb_replacement_ppg(boosted, 12, "1qb",
+                                  weekly_series_desc=series) == \
+        pytest.approx(line)
+    # The line responds to the tier's weekly PEAKS: raising QB14's
+    # first week to 29 lifts that week's best from 25 to 29.
+    peaked = [list(s) for s in series]
+    peaked[13][0] = 29.0
+    assert ros_qb_replacement_ppg(ladder, 12, "1qb",
+                                  weekly_series_desc=peaked) == \
+        pytest.approx((29.0 + 30.0 + 28.0) / 3)
+    # No weekly series at all: the best-of fallback, the mean of the
+    # top two below the line (QB13 20.0, QB14 19.5).
+    assert ros_qb_replacement_ppg(ladder, 12, "1qb") == \
+        pytest.approx(sum(ladder[12:14]) / 2)
+    # A below-line quarterback carrying no series makes the weekly
+    # read unusable, so the same fallback prices the line.
+    broken = [list(s) for s in series]
+    broken[15] = None
+    assert ros_qb_replacement_ppg(ladder, 12, "1qb",
+                                  weekly_series_desc=broken) == \
+        pytest.approx(sum(ladder[12:14]) / 2)
     # Pool exhaustion: with nobody below the line the fallback is the
     # worst starter himself; with two below it, the tier is those two.
     assert ros_qb_replacement_ppg(ladder[:12], 12, "1qb") == \
         pytest.approx(ladder[11])
     assert ros_qb_replacement_ppg(ladder[:14], 12, "1qb") == \
         pytest.approx(sum(ladder[12:14]) / 2)
+
+
+def test_build_ros_map_stamps_aligned_qb_weekly_series(tmp_path, monkeypatch):
+    # The builder stamps each QB's calendar-aligned weekly projection
+    # series next to his window aggregates: one entry per window week
+    # (Weeks 11-17 here), the values the streaming replacement takes
+    # its weekly bests from.
+    weeks = {w: {"qb1": _qb_line(30, 250, 2), "qb2": _qb_line(28, 225, 2)}
+             for w in range(1, 6)}
+    index = {"qb1": {"pos": "QB", "team": "BUF"},
+             "qb2": {"pos": "QB", "team": "KC"}}
+    proj_by_week = {w: {"qb1": 20.0, "qb2": 18.0} for w in range(11, 18)}
+    payload = _fixture_build_weeks(
+        tmp_path, monkeypatch, index=index, rows_by_year={2026: weeks},
+        proj_by_week=proj_by_week)
+    qb1 = payload["players"]["qb1"]
+    assert qb1["ros_weekly"] == [20.0] * 7
+    assert qb1["ros_stretch_weekly"] == [20.0] * 4
+    assert qb1["ros_playoff_weekly"] == [20.0] * 3
+    assert payload["players"]["qb2"]["ros_weekly"] == [18.0] * 7
 
 
 def test_ros_flex_replacement_shares_one_pool():
@@ -969,7 +1021,9 @@ def test_ros_flex_replacement_shares_one_pool():
     # The map combines the QB line with the flex lines.
     full = ros_replacement_map({**by_pos, "QB": [26.0 - 0.5 * i for i in range(20)]},
                                10, "1qb")
-    assert full["QB"] == pytest.approx(19.75)
+    # No weekly series on this call: the best-of fallback (top two
+    # below the size-10 line, 21.0 and 20.5).
+    assert full["QB"] == pytest.approx(20.75)
     assert full["RB"] == pytest.approx(out["RB"])
 
 
@@ -1014,10 +1068,10 @@ def test_ros_vor_totals_qb_discount_1qb_only():
     pool, pos = _vor_pool()
     vor_1qb = ros_vor_totals(pool, pos, 10, "1qb")["all"]
     vor_sf = ros_vor_totals(pool, pos, 10, "sf")["all"]
-    # 1QB replacement QB is the streaming tier: this pool has only two
-    # quarterbacks below the size-10 starter line (20.0 and 19.4), so
-    # the line is their mean, 19.7, and QB1's VOR is (26 - 19.7) x 8 =
-    # 50.4.
+    # 1QB replacement QB is the streaming line: this pool carries no
+    # weekly series and has only two quarterbacks below the size-10
+    # starter line (20.0 and 19.4), so the best-of fallback line is
+    # their mean, 19.7, and QB1's VOR is (26 - 19.7) x 8 = 50.4.
     assert vor_1qb["qb0"] == pytest.approx(50.4)
     # SF: idx 30 clamps to this pool's QB12 (19.4): a strictly bigger edge.
     assert vor_sf["qb0"] == pytest.approx((26.0 - 19.4) * 8)
@@ -1058,7 +1112,7 @@ def test_all_view_tiers_come_from_vor_not_positional_totals():
     # positional-total thresholds the position views use...
     totals_t = compute_ros_tier_thresholds(pool, pos)["all"]
     assert _tier_of(totals_t, pool["qb0"]["ros_total"]) == 1
-    # ...but his VOR (50.4) is priced against the streaming tier, well
+    # ...but his VOR (50.4) is priced against the streaming line, well
     # behind the actual VOR leader, so the All view's VOR thresholds
     # must NOT stamp him T1, while RB1 (the actual VOR leader at 93.6)
     # is T1. One metric, one sequence.
@@ -1079,7 +1133,12 @@ def test_slim_payload_keeps_ros_fields_and_blocks():
                      "ros_ppg": 20.0, "ros_total": 120.0, "ros_games": 6,
                      "ros_sched_rank": 3, "ros_pos_rank": 2, "ros_score": 1.25,
                      "ros_stretch_total": 80.0, "ros_playoff_total": 40.0,
-                     "internal_only": 1}],
+                     "internal_only": 1},
+                    {"id": "2", "name": "Q", "position": "QB",
+                     "ros_ppg": 24.0, "ros_total": 144.0, "ros_games": 6,
+                     "ros_weekly": [22.0, None, 25.0],
+                     "ros_stretch_weekly": [22.0, None],
+                     "ros_playoff_weekly": [25.0]}],
         "ros_window": {"start_week": 11, "end_week": 17},
         "tier_thresholds_ros": {"all": [100.0], "stretch": [60.0], "playoffs": [30.0]},
     }
@@ -1089,6 +1148,12 @@ def test_slim_payload_keeps_ros_fields_and_blocks():
     assert row["ros_score"] == 1.25
     assert row["ros_stretch_total"] == 80.0 and row["ros_playoff_total"] == 40.0
     assert "internal_only" not in row
+    # The QB weekly series ride the slim payload too: the board's
+    # streaming replacement reads them per window.
+    qb_row = out["players"][1]
+    assert qb_row["ros_weekly"] == [22.0, None, 25.0]
+    assert qb_row["ros_stretch_weekly"] == [22.0, None]
+    assert qb_row["ros_playoff_weekly"] == [25.0]
     assert out["ros_window"] == {"start_week": 11, "end_week": 17}
     assert out["tier_thresholds_ros"]["playoffs"] == [30.0]
 
@@ -1152,9 +1217,9 @@ def test_public_position_page_orders_by_model_score():
 def test_public_overall_page_discounts_qb1_in_1qb():
     # 20 QBs: under the old 1.5x index the replacement QB was QB19
     # (19.7 PPG) and QB1's VOR (44.1) beat the 20-PPG back's (42.0).
-    # At the derived streaming line the replacement is the mean of
-    # QB13..QB18 (20.925 PPG), QB1's VOR is ~35.5, and the back orders
-    # ahead of him.
+    # This payload carries no weekly series, so the derived streaming
+    # line uses its best-of fallback, the mean of QB13 and QB14
+    # (21.625 PPG); QB1's VOR is ~30.6, and the back orders ahead.
     from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
 
     players, table = {}, []
@@ -1175,7 +1240,7 @@ def test_public_overall_page_discounts_qb1_in_1qb():
                "updated": "November 09, 2026"}
     body = build_ros_rankings_body(payload, table, position=None)
     # "Back 3" is the 20.0-PPG back: ahead of "Quarterback 1" under
-    # the streaming-tier replacement (under the old index line QB1's
+    # the streaming replacement (under the old index line QB1's
     # VOR beat his).
     assert body.index("Back 3") < body.index("Quarterback 1")
     assert body.index("Back 1") < body.index("Back 3")
@@ -1220,7 +1285,7 @@ def _floor_payload():
 def _pin_replacement(monkeypatch):
     monkeypatch.setattr(
         "utils.ros_rankings.ros_replacement_map",
-        lambda by_pos, league_size, league_type: {"RB": 10.0, "WR": 12.0},
+        lambda by_pos, league_size, league_type, **kw: {"RB": 10.0, "WR": 12.0},
     )
 
 
@@ -1522,13 +1587,19 @@ def test_rankings_js_ros_all_view_uses_vor():
     assert "tier_thresholds_ros_vor" in js
     assert "ros_value" in js and "ROS Value" in js
     assert "valueLabel" in js
-    # The JS mirrors the server's replacement map: the 1QB QB streaming
-    # tier (the six quarterbacks below the starter line, sliced out of
-    # the sorted pool) and the shared flex allocation (the old
-    # starter-line index mirror, "prLeagueSize - 1", went away with
-    # the definition).
+    # The JS mirrors the server's replacement map: the 1QB QB
+    # streaming replacement (weekly best below the starter line from
+    # the stamped weekly series, with the best-of fallback over the
+    # six quarterbacks below the line) and the shared flex allocation
+    # (the old starter-line index mirror, "prLeagueSize - 1", went
+    # away with the definition).
     assert "PR_ROS_QB_STREAM_TIER = 6" in js
+    assert "PR_ROS_QB_STREAM_FALLBACK_TOP_N = 2" in js
     assert "qb.slice(prLeagueSize, prLeagueSize + PR_ROS_QB_STREAM_TIER)" in js
+    assert "weekly: 'ros_weekly'" in js
+    assert "weekly: 'ros_stretch_weekly'" in js
+    assert "weekly: 'ros_playoff_weekly'" in js
+    assert "p[cfg.weekly]" in js
     assert "leftovers" in js and "flexSpots" in js
     # The pinned PPG-grid line stays byte-for-byte (a pin test guards it).
     assert ("const valueMeta = (sortBy === 'ppg' || sortBy === 'total_pts') "
