@@ -86,6 +86,7 @@ IN_WINDOW = 3 * 60 * 60
 def normalize_game_status_from_scoreboard(game: dict, now: datetime | None = None) -> str:
     """
     Returns: "pre", "in", or "post" using:
+      * the scoreboard's explicit live/final verdict, when it carries one
       * kickoff time
       * a 5-minute early window
       * a 3-hour game window
@@ -94,6 +95,22 @@ def normalize_game_status_from_scoreboard(game: dict, now: datetime | None = Non
 
     if now is None:
         now = datetime.now(timezone.utc)
+
+    # An explicit live/final verdict beats the kickoff window. The epoch is
+    # only a scheduled kickoff: a flexed or mis-parsed one can sit hours in
+    # the future while the game is already being played, and the window
+    # alone then reads "pre" for a game in its second quarter (PIT @ PHI,
+    # 2026-11-22: every starter rendered PROJ mid-game). Code "0"
+    # (scheduled) deliberately does NOT win here: the on-disk week schedule
+    # is written pregame with code "0" on every row and never rewritten, so
+    # a scheduled code must fall through to the epoch window, which is what
+    # flips those rows to "in" at kickoff.
+    _status_txt = (game.get("gameStatus") or "").lower().strip()
+    _code = str(game.get("gameStatusCode") or "").strip()
+    if _code == "2" or "final" in _status_txt or "completed" in _status_txt:
+        return "post"
+    if _code == "1" or "in progress" in _status_txt or "live" in _status_txt:
+        return "in"
 
     # Parse kickoff time
     kickoff = None
