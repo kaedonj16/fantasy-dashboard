@@ -30,6 +30,7 @@ from utils.utils import (
     normalize_name,
     from_players_map,
     game_has_started,
+    normalize_game_status_from_scoreboard,
     lookup_team_map,
     team_abbr_keys,
     canon_team,
@@ -2843,6 +2844,42 @@ def render_matchup_slide(
     _frac_lookup = make_frac_lookup(_slide_game_lookup, team_schedule_lookup)
     _margin_lookup = make_margin_lookup(_slide_game_lookup, team_schedule_lookup)
 
+    # Live-status promotion: status_by_pid is built from the on-disk week
+    # schedule, whose row for a game can stay "pre" while the game is being
+    # played (a flexed or mis-parsed kickoff epoch in that frozen file;
+    # PIT @ PHI 2026-11-22 left every starter on both teams rendering PROJ
+    # in Q2). The slide's live scoreboard lookup already paints that game's
+    # Q2 clock and drive bar, so its verdict promotes a not-started status
+    # here -- rows, header totals and the win bar all read this map.
+    # Promotion only: a pregame live verdict never demotes a started/final
+    # status, and bye verdicts are untouched.
+    _status_by_pid = status_by_pid
+    if _slide_game_lookup:
+        _promoted = None
+        for _side in ("left", "right"):
+            for _p in ((m.get(_side) or {}).get("starters") or []):
+                if not _p:
+                    continue
+                _pid = _p.get("pid")
+                if _pid is None or status_by_pid.get(_pid) != STATUS_NOT_STARTED:
+                    continue
+                _game = lookup_team_map(
+                    _slide_game_lookup, str(_p.get("nfl") or "").upper())
+                if _game is None:
+                    continue
+                _live = normalize_game_status_from_scoreboard(_game)
+                if _live == "in":
+                    _new = STATUS_IN_PROGRESS
+                elif _live == "post":
+                    _new = STATUS_FINAL
+                else:
+                    continue
+                if _promoted is None:
+                    _promoted = dict(status_by_pid)
+                _promoted[_pid] = _new
+        if _promoted is not None:
+            _status_by_pid = _promoted
+
     def _get_fpts_rank(team: str, pos: str):
         if not _fpts_data:
             return None, 0.0
@@ -2909,7 +2946,7 @@ def render_matchup_slide(
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
             return f"<span class='num'>{points}</span>", False
         lineup_actual, live_proj_total = team_live_totals(
-            t, status_by_pid, week_proj_map,
+            t, _status_by_pid, week_proj_map,
             proj_lookup=_pid_proj, frac_lookup=_frac_lookup,
         )
 
@@ -2929,7 +2966,7 @@ def render_matchup_slide(
             return "<span class='mb-trend mb-trend-flat' aria-hidden='true'>&#9644;</span>"
 
         any_started = any(
-            status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
+            _status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
             for p in (t.get("starters") or [])
             if p  # skip None placeholders for empty slots
         )
@@ -3278,11 +3315,11 @@ def render_matchup_slide(
             ):
                 is_bye = True
 
-        status = status_by_pid.get(pid)
+        status = _status_by_pid.get(pid)
         if status is None:
             for alt in team_abbr_keys(str(pid or "")):
-                if alt in status_by_pid:
-                    status = status_by_pid[alt]
+                if alt in _status_by_pid:
+                    status = _status_by_pid[alt]
                     break
         if status is None:
             # Historical status maps are commonly absent.  The selected week,
@@ -3692,7 +3729,7 @@ def render_matchup_slide(
     _wp_by_side: dict = {}
     if proj:
         l_prob = compute_win_prob(
-            m["left"], m["right"], status_by_pid, week_proj_map,
+            m["left"], m["right"], _status_by_pid, week_proj_map,
             frac_lookup=_frac_lookup, margin_lookup=_margin_lookup,
         )
         if l_prob is not None:
@@ -3721,16 +3758,16 @@ def render_matchup_slide(
             # errors: drama must never break the slide.
             if (
                 league_id and not compact and allow_live
-                and _matchup_games_in_progress(m, status_by_pid)
+                and _matchup_games_in_progress(m, _status_by_pid)
             ):
                 try:
                     from dashboard_services import sunday_drama as _drama
                     _l_live = team_live_totals(
-                        m["left"], status_by_pid, week_proj_map,
+                        m["left"], _status_by_pid, week_proj_map,
                         proj_lookup=_pid_proj, frac_lookup=_frac_lookup,
                     )[1]
                     _r_live = team_live_totals(
-                        m["right"], status_by_pid, week_proj_map,
+                        m["right"], _status_by_pid, week_proj_map,
                         proj_lookup=_pid_proj, frac_lookup=_frac_lookup,
                     )[1]
                     _drama_res = _drama.record_snapshot(

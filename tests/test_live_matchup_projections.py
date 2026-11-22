@@ -269,3 +269,41 @@ def test_slide_keeps_pregame_projection_before_kickoff(monkeypatch):
     )
     # Not started -> the pregame projection is shown as-is.
     assert "16.0" in html
+
+
+
+def test_slide_promotes_not_started_when_live_lookup_says_in_progress(monkeypatch):
+    """Regression (2026-11-22, Warren): status_by_pid is built from the
+    on-disk week schedule, whose kickoff epoch for PIT @ PHI stayed in the
+    future while the game was in Q2, so the row rendered the 15.8-style
+    PROJ long after kickoff. The slide's live scoreboard lookup -- the same
+    feed that paints the Q2 clock and drive bar -- says the game is in
+    progress, and that verdict must promote the row to live scoring."""
+    m = _matchups()
+    # Live code with a kickoff epoch still hours away: the exact shape that
+    # used to read "pre" everywhere the epoch was consulted.
+    live_wrong_epoch = {
+        "gameStatusCode": "1", "lineScore": {"period": "2"}, "gameClock": "0:00",
+        "gameTime_epoch": 4102444800,  # 2100-01-01: unmistakably future
+    }
+    html = _render_live_slide(
+        monkeypatch, status=m.STATUS_NOT_STARTED, actual=4.0, proj=16.0,
+        game=live_wrong_epoch,
+    )
+    # Promoted: banked 4.0 with the pace-blended live finish (11.0 at
+    # halftime on a 16.0 pregame), not the proj-only pregame rendering.
+    assert "11.0" in html
+    assert ">16.0<" not in html
+    assert "mb-preproj-label" not in html
+
+
+def test_slide_does_not_promote_when_live_lookup_is_pregame(monkeypatch):
+    m = _matchups()
+    scheduled = {"gameStatusCode": "0", "gameTime_epoch": 4102444800}
+    html = _render_live_slide(
+        monkeypatch, status=m.STATUS_NOT_STARTED, actual=0.0, proj=16.0,
+        game=scheduled,
+    )
+    # A pregame live verdict never promotes: pregame projection as-is.
+    assert "16.0" in html
+    assert "mb-preproj-label" in html
