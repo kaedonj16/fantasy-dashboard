@@ -7,73 +7,73 @@ CHANGELOG = [
     {
         "date": "2026-11-21",
         "tag": "update",
-        "text": "Rest of Season rankings now grade on a leaner model: recent form, ceiling games and role trend no longer move a player's rank. A full backtest of every factor in the model found those three cost accuracy at every position, so the ranking now runs on projected points per game, expected games, remaining schedule, consistency and team offense, weighted by position. Form, ceiling and role trend are still part of a player's picture; they just no longer vote on the order.",
+        "text": "Rest of Season rankings are rebuilt on a leaner model, so the order tracks projected production more closely.",
         "link": "/rankings/rest-of-season"
     },
     {
         "date": "2026-11-21",
         "tag": "update",
-        "text": "Rest of Season overall rankings now price 1QB quarterbacks against the streaming replacement level: each remaining week, a quarterback's value is his edge over the best quarterback available on waivers that week, and his overall rank is exactly what that edge earns. The rankings by position are unchanged.",
+        "text": "Rest of Season overall rankings now value 1QB quarterbacks against the best option on waivers, so QBs slot where their edge actually puts them.",
         "link": "/rankings/rest-of-season"
     },
     {
         "date": "2026-11-20",
         "tag": "update",
-        "text": "Quarterback role jobs now count his legs: QB volume is plays per game, pass attempts plus rush attempts, so a dual-threat's rushing workload counts toward Franchise QB1 the way a pocket passer's dropbacks do. Franchise QB1 also takes at least 5 games in the window now, so a one-game fill-in no longer holds the top title.",
+        "text": "QB role jobs now count rushing: a dual-threat's legs count toward Franchise QB1, and the top title needs at least 5 games in the window.",
         "link": "/compare"
     },
     {
         "date": "2026-11-20",
         "tag": "fix",
-        "text": "Prospect percentiles no longer pile up at 100. Production, efficiency and breakout percentiles on the board and in the prospect modal are now ranked on the raw numbers behind them: his best season's yards per game, his best yards per catch, carry or pass attempt, and his best dominator rating, still against the same drafted 2016 to 2024 pool. Two players whose model scores both top out can now separate, and a 100 has to be earned on the stat itself. Competition and athleticism percentiles are unchanged.",
+        "text": "Prospect percentiles no longer pile up at 100: they're ranked on the raw stats now, so top prospects separate properly.",
         "link": "/prospects"
     },
     {
         "date": "2026-11-19",
         "tag": "update",
-        "text": "Role jobs now respect his own depth chart: a back, receiver or tight end who owns his room (at least half of his team's opportunities at his position, and at least 1.8x the next man up) earns the top job title even when his raw share trails the league's true bell cows. Committees stay committees: a close split at the top of a room changes nothing.",
+        "text": "Role jobs now respect the depth chart: a player who owns his room earns the top job title even when his raw share trails the league's bell cows.",
         "link": "/compare"
     },
     {
         "date": "2026-11-19",
         "tag": "new",
-        "text": "Start/Sit, Player Rankings and Rest of Season rows now carry his role job next to his name: Workhorse, Alpha WR1, Committee 1B and the rest, with a Contingent note when his production depends on an injured roommate. It is the same role engine as Compare, readable at a glance.",
+        "text": "Start/Sit, Player Rankings and Rest of Season rows now show each player's role job next to his name, with a Contingent note when his production depends on an injured roommate.",
         "link": "/rankings/rest-of-season"
     },
     {
         "date": "2026-11-19",
         "tag": "new",
-        "text": "Compare now reads roles, not just stats: every player gets a job title and role axes for his position, a target map showing where his targets (or throws) actually go by depth and side, a gap map for his carries by lane, a role timeline for how the job changed across the season, and the closest role matches across the league.",
+        "text": "Compare now reads roles, not just stats: every player gets a job title, role axes, a target map, a carry gap map, a role timeline, and his closest role matches across the league.",
         "link": "/compare"
     },
     {
         "date": "2026-11-18",
         "tag": "new",
-        "text": "The home page is rebuilt around your Sunday: the live values ticker now sits on top, the matchup, start/sit, ScoreZone, trade and Wrapped previews live in one tappable gallery, and connecting a league starts with one field. Paste a league link or type your Sleeper username and we find your platform and league for you, then you pick your team.",
+        "text": "The home page is rebuilt around your Sunday: the live values ticker sits on top, your matchup, start/sit, ScoreZone, trade and Wrapped previews live in one tappable gallery, and connecting a league starts with one field.",
         "link": "/"
     },
     {
         "date": "2026-11-16",
         "tag": "update",
-        "text": "Playoff Path root-for games and your matchup now show live scores as games kick off: projections give way to live scores and live projected totals while games are in progress, final scores when they end, and the tab refreshes on its own while any game you are tracking is live.",
+        "text": "Playoff Path root-for games and your matchup now show live scores during games and final scores when they end, refreshing on their own while a game you track is live.",
         "link": "/standings"
     },
     {
         "date": "2026-11-15",
         "tag": "update",
-        "text": "ScoreZone now feels live: scores count up and flash in the scoring team's colors, plays land with a pop instead of swapping in, the field board deepens as a drive pushes toward the end zone, close fourth-quarter games stand out while blowouts recede, a condensed score bar sticks while you scroll the feed, the biggest plays line up in a Moments rail, and ScoreZone eases into a dark broadcast view while games are live. Light and dark now cross-fade across the whole site instead of snapping.",
+        "text": "ScoreZone now feels live: scores count up and flash in team colors, plays land with a pop, the field board deepens as a drive pushes on, and a condensed score bar sticks while you scroll.",
         "link": "/scorezone"
     },
     {
         "date": "2026-11-11",
         "tag": "new",
-        "text": "Season Wrapped is rebuilt as an 11-slide story: the champion and the final score, their Road to the Title through every playoff round, the league MVP crowned on his headshot, season records including the year's best rivalry, the Hardware for Best Coach, Luckiest and Unluckiest, the Best Move of the season, final standings with the playoff cut line, and a Your Season slide built for your team: your finish, best week, roster MVP and your head-to-head with the champion.",
+        "text": "Season Wrapped is rebuilt as an 11-slide story: the champion, their Road to the Title, league MVP, season records, the Hardware awards, final standings, and a Your Season slide built for your team.",
         "link": "/history"
     },
     {
         "date": "2026-11-11",
         "tag": "update",
-        "text": "Power Rankings now read as a Power Index from 1 to 99: the best team in your league sits in the 90s, a league-average team is a 50, and the bars fill on that same scale. The rankings themselves do not change: same order and same math underneath, just a score that is easier to follow from week to week.",
+        "text": "Power Rankings now read as a Power Index from 1 to 99: the best team in your league sits in the 90s and a league-average team is a 50. Same order, just a score that's easier to follow week to week.",
         "link": "/standings"
     },
     {
@@ -85,25 +85,25 @@ CHANGELOG = [
     {
         "date": "2026-11-10",
         "tag": "update",
-        "text": "Playoff Path now shows up where you make decisions: the Front Office Report adds a Playoff Path section with the wins you need to clinch, this week's win and lose stakes and the games to root for, and the GM Brief adds a path line under the race line in Next Steps. Both appear only in the final weeks of the regular season and use the same numbers as the Playoff Path tab on Standings.",
+        "text": "Playoff Path now shows up where you make decisions: the Front Office Report and the GM Brief both carry your clinch math and this week's stakes in the final weeks of the season.",
         "link": "/"
     },
     {
         "date": "2026-11-10",
         "tag": "update",
-        "text": "The BR Assistant now answers Playoff Path questions down the stretch: who to root for in this week's other games, what your playoff, bye and 1 seed odds become if you win or lose, and where you stand on points-for tiebreakers.",
+        "text": "The BR Assistant now answers Playoff Path questions: who to root for, how your playoff, bye and 1 seed odds move if you win or lose, and where you stand on tiebreakers.",
         "link": "/standings"
     },
     {
         "date": "2026-11-10",
         "tag": "update",
-        "text": "Standings on mobile is now tabbed with a compact league summary, Playoff Path Overview shows your matchup with bye and 1 seed bars, and Playoff Impact can switch between playoff, bye and 1 seed odds.",
+        "text": "Standings on mobile is now tabbed with a compact league summary, and Playoff Impact can switch between playoff, bye and 1 seed odds.",
         "link": "/standings"
     },
     {
         "date": "2026-11-10",
         "tag": "new",
-        "text": "Weekly Wrapped now adds a Playoff Picture slide down the stretch: once a team has mathematically clinched a playoff spot (or a first-round bye) or been eliminated, the deck calls it out after the standings slide. The whole weekly deck also gets a fresh look: darker navy, compact rows, real player headshots with a crown for the week's top scorer, and icon-only share, link and pause buttons. The deck now plays full screen on phones and is rebuilt slide for slide: a cover with the week's headline numbers, the week's story in one headline, the full scoreboard, Top Performers from the games that mattered, the Coaching Report, full standings with movement, the Game of the Week with its stakes, and an Oh My slide for the heartbreak, the blowout and the bench regret.",
+        "text": "Weekly Wrapped adds a Playoff Picture slide down the stretch, calling out clinched and eliminated teams. The whole deck also gets a fresh look and plays full screen on phones.",
         "link": "/weekly"
     },
     {
@@ -115,61 +115,61 @@ CHANGELOG = [
     {
         "date": "2026-11-09",
         "tag": "update",
-        "text": "The Rooting Guide on My Leagues loads much faster, and it now leads with the math for every league: how many points you need from your remaining players to flip a game, how many your opponent needs to flip one back, when a lead is locked up, and the final result once a game is over. Finished windows collapse so the games still to play are what you land on.",
+        "text": "The Rooting Guide on My Leagues loads much faster, and it now leads with the math: how many points you need to flip a game, how many your opponent needs, and when a lead is locked up.",
         "link": "/portfolio"
     },
     {
         "date": "2026-11-09",
         "tag": "new",
-        "text": "Player Rankings now has a Rest of Season mode: every player ranked by projected production for the weeks left, with ROS points per game, total ROS points, games remaining and his remaining schedule rank. A Window toggle in Settings splits the board into the full rest of season, the stretch run through Week 14, and the fantasy playoffs in Weeks 15 to 17. The same rankings are public at /rankings/rest-of-season, with a page for each position.",
+        "text": "Player Rankings now has a Rest of Season mode: every player ranked by projected production for the weeks left, with a Window toggle that splits the board into the full rest of season, the stretch run through Week 14, and the fantasy playoffs in Weeks 15 to 17.",
         "link": "/players"
     },
     {
         "date": "2026-11-08",
         "tag": "new",
-        "text": "Search on mobile no longer opens to a blank page: before you type, it suggests your recent player searches, the top players by projection, and Jump to shortcuts for ScoreZone, Matchups, Start/Sit, the Trade Calculator, Waivers and Player Rankings. And the page no longer zooms in when you tap a text field on your phone: every input, dropdown and text box across the site now stays put.",
+        "text": "Search on mobile no longer opens to a blank page: it suggests your recent searches, top players, and shortcuts before you type. The page also no longer zooms in when you tap a text field on your phone.",
         "link": "/"
     },
     {
         "date": "2026-11-08",
         "tag": "new",
-        "text": "Matchups: tapping a live drive bar now opens the game right there instead of leaving for ScoreZone. The sheet shows the full game board, a Stats tab with the box score for both teams, and a Plays tab with that game's play-by-play, with a link through to the full ScoreZone page at the bottom.",
+        "text": "Matchups: tapping a live drive bar now opens the game right there, with the full board, a box score Stats tab, and a Plays tab, instead of leaving for ScoreZone.",
         "link": "/weekly"
     },
     {
         "date": "2026-11-07",
         "tag": "update",
-        "text": "The mobile More menu is rebuilt: it glides open on a smoother curve and stays one height as you drill in, sections show what is inside them, your current page is named right on its section, and Standings, Start/Sit, Player Rankings and ScoreZone are one tap away in a new Quick group. Player search now expands right inside the menu, and Account is pinned at the bottom where it is always reachable.",
+        "text": "The mobile More menu is rebuilt: it glides open, sections show what's inside them, your current page is named on its section, and Standings, Start/Sit, Player Rankings and ScoreZone sit in a new Quick group.",
         "link": "/"
     },
     {
         "date": "2026-11-06",
         "tag": "update",
-        "text": "Advanced Metrics: Last 2 and Last 4 now mean each player's last games, not the last calendar weeks. A player whose team had a bye, or who missed a game, still gets a full sample: the board reaches back to his most recent 2 or 4 games played, so recent-form rates compare on equal footing. Picking exact weeks still works the same as before.",
+        "text": "Advanced Metrics: Last 2 and Last 4 now mean each player's last games played, not the last calendar weeks, so byes and missed games no longer shrink the sample.",
         "link": "/advanced-metrics"
     },
     {
         "date": "2026-11-06",
         "tag": "new",
-        "text": "Draft Database is here: browse completed Sleeper drafts from across the site, with the full board for every draft, the best draft in each league, biggest steals and busts, and ADP by segment. Filter by season, startup or rookie, dynasty or redraft, 1QB or Superflex, and league size.",
+        "text": "Draft Database is here: browse completed Sleeper drafts from across the site, with full boards, biggest steals and busts, and ADP by segment.",
         "link": "/draft-database"
     },
     {
         "date": "2026-11-06",
         "tag": "update",
-        "text": "Draft Room: the draft board is rebuilt with compact rows and real player headshots. Each pick now shows the player's photo beside their name, position and team on a clean flush grid, with the pick number and value in the corners and the Last pick, keeper and traded-pick flags kept in place, so the board reads faster while your draft is live.",
+        "text": "Draft Room: the draft board is rebuilt with compact rows and real player headshots, so the board reads faster while your draft is live.",
         "link": "/draft"
     },
     {
         "date": "2026-11-05",
         "tag": "update",
-        "text": "Advanced Metrics: the filters you reach for most are up front now. Season, week range, and the minimum-volume filter sit on the main bar instead of inside the Filters sheet, and every filter you set shows as a chip underneath: tap a chip to change its value in place, or tap its x to clear just that one. When a combination of filters leaves the board empty, the page now says which filters did it and offers one-tap ways to loosen them, instead of a generic no-data message.",
+        "text": "Advanced Metrics: the filters you reach for most now sit up front on the main bar, every set filter shows as a chip you can change or clear, and an empty board now says which filters caused it.",
         "link": "/advanced-metrics"
     },
     {
         "date": "2026-11-03",
         "tag": "new",
-        "text": "Championship odds are here for the stretch run. A new Title column on the Playoff Odds page shows each team's chance to win it all, from a separate sim that only plays out the playoff bracket: bubble teams rotate into the open spots by their playoff odds, and the bye and top seed spots rotate the same way, so the odds flex as the race does. The same title number joins the Season Hub tile and the team modal in the final two weeks, and once the playoffs start it becomes the headline number for the teams still alive.",
+        "text": "Championship odds are here: a new Title column on Playoff Odds shows each team's chance to win it all, and the same number joins the Season Hub and team modal down the stretch.",
         "link": "/standings"
     },
     {
@@ -181,13 +181,13 @@ CHANGELOG = [
     {
         "date": "2026-11-03",
         "tag": "fix",
-        "text": "Two playoff fixes for Fleaflicker and MFL leagues. The Playoff Picture on the standings page now shows the full playoff field: in a six-team playoff it counts all six teams (it showed four, because the bye teams were missing) and the opening round is no longer labelled as the Finals. And Playoff Odds can no longer slip into a preseason projection in the middle of the season, which showed every team at 0-0 with a full season left to play; the odds now always build from your real records, or show nothing rather than a made-up projection.",
+        "text": "Two playoff fixes for Fleaflicker and MFL leagues: the Playoff Picture now shows the full playoff field, and Playoff Odds can no longer slip into a made-up preseason projection mid-season.",
         "link": "/standings"
     },
     {
         "date": "2026-11-03",
         "tag": "fix",
-        "text": "Prospect grading comparisons got cleaner. The historical marks our prospect model measures college stats against now come only from seasons where the player actually held a real role, instead of any season with four or more games, so a backup's handful of big games can no longer set the bar for everyone else. The top and bottom of each comparison scale are also set by the recorded population as a whole instead of its single best and worst seasons, so one freak season no longer stretches the scale.",
+        "text": "Prospect grading comparisons got cleaner: historical marks now come only from seasons where the player held a real role, and one freak season no longer stretches the comparison scale.",
         "link": "/prospects"
     },
     {
@@ -199,139 +199,139 @@ CHANGELOG = [
     {
         "date": "2026-11-03",
         "tag": "update",
-        "text": "Weekly Hub on phones, third pass: the site header is back at the top of the page, the swipe dots sit under your matchup preview again, and Turning Points is now a slim full-width card instead of a tall nested one (its score line also shows a proper arrow instead of a stray code). The header fits ScoreZone, Weekly Wrapped and the week selector on one line without wrapping, the space above the tabs is tighter, and the matchup board now sits on a white card like the rest of the page.",
+        "text": "Weekly Hub on phones: the site header is back at the top, Turning Points is a slim full-width card, and the header fits ScoreZone, Weekly Wrapped and the week selector on one line.",
         "link": "/weekly"
     },
     {
         "date": "2026-11-03",
         "tag": "new",
-        "text": "Tuesday mornings now bring two pushes, staggered, and each one is combined across your leagues. At 9am a new weekly results roundup lands: one notification covering every league you play in, leading with your record for the week (for example, Week 9: you went 7-4) and the new season records in your best leagues, with the full list one tap away in your portfolio. At 11am the recap-ready notification arrives as one combined push per account too, naming your leagues instead of sending one push per league. Both have their own toggles in notification settings. Morning notifications also move later: quiet hours now end at 9am by default instead of 7am, so anything held overnight arrives with the 9am digest.",
+        "text": "Tuesday mornings now bring two combined pushes across your leagues: a 9am weekly results roundup and an 11am recap-ready notification. Quiet hours now end at 9am by default.",
         "link": "/portfolio"
     },
     {
         "date": "2026-11-03",
         "tag": "fix",
-        "text": "Matchup win odds now respect the endgame. When only a few players are left to play, the odds are priced from the players who are actually still out there, including how boom or bust each one is, so a team that needs one more big play from its last receiver is no longer shown as nearly finished. A quarterback and his pass catchers on the same NFL team now move the odds together instead of counting as independent, live odds take the real NFL score into account in one sided games, and the win percentage in the weekly digest email now comes from the same model as the matchup page, so the numbers agree.",
+        "text": "Matchup win odds now respect the endgame: late in a game they're priced from the players actually still out there, and a QB and his pass catchers now move the odds together.",
         "link": "/weekly"
     },
     {
         "date": "2026-11-03",
         "tag": "fix",
-        "text": "Reopening the app now refreshes your league data on its own too. Opening the installed app usually resumes the page from your last visit instead of loading it fresh, so the data and its Updated label could sit hours old until you tapped Refresh Data. Coming back after a minute or more away now rebuilds and swaps in the current data silently, the same way a fresh page load already did.",
+        "text": "Reopening the app now refreshes your league data on its own: coming back after a minute or more away silently swaps in current data instead of sitting on a stale page.",
         "link": "/"
     },
     {
         "date": "2026-11-02",
         "tag": "fix",
-        "text": "Weekly Hub on phones, second design pass: swiping between matchups now shows one full matchup at a time, with nothing of the next matchup visible at the edge. The all-time head-to-head record moves to its own small line under the two team records instead of the top of the preview card, the ScoreZone button in the header is a calm white outline pill, the header strip is thinner, and the matchup board rows shrink again: smaller names, scores, position chips and stat lines, with every game line and drive bar kept.",
+        "text": "Weekly Hub on phones: swiping between matchups now shows one full matchup at a time, the head-to-head record sits on its own line under the team records, and board rows are tighter.",
         "link": "/weekly"
     },
     {
         "date": "2026-11-02",
         "tag": "update",
-        "text": "Navigation tidied up: the Weekly menu is now grouped into Play (Matchups, ScoreZone, Waivers & Start/Sit, Lineup Lab, Opponent Scout, Schedule Rankings) and Review (Weekly Recap, Lineup Efficiency), with ScoreZone up second where game day needs it, and NFL Team Rankings has moved from the Players menu to the Stats menu, since it ranks teams, not players. The mobile More menu mirrors the same groups and order.",
+        "text": "Navigation tidied up: the Weekly menu is grouped into Play and Review, ScoreZone sits second where game day needs it, and NFL Team Rankings moved to the Stats menu.",
         "link": "/"
     },
     {
         "date": "2026-11-02",
         "tag": "new",
-        "text": "Weekly Hub on phones is rebuilt compact: the page opens straight into your matchup under a slimmer header, with one row of five tabs (Matchups, League, Scorers, Scout, Lineup) and League Scores on its own tab instead of a second row. The preview is swipe-only now, with the next matchup peeking in from the edge and dots underneath showing where you are. Preview headers run denser: smaller avatars and scores, the win percentage rides on the projection line, over a slim 4px track. Board rows sit tighter, the ScoreZone Moments card is smaller, and the week leaders move into one compact card under the board instead of a grid up top. The bottom dock is slimmer across the whole site on phones too: a shorter bar with smaller icons and labels.",
+        "text": "Weekly Hub on phones is rebuilt compact: your matchup opens under a slimmer header with one row of five tabs, swipe-only previews, tighter board rows, and a slimmer bottom dock site-wide.",
         "link": "/weekly"
     },
     {
         "date": "2026-11-02",
         "tag": "fix",
-        "text": "The app now updates itself when you open it. If a new version or a fresher copy of the page lands while the app is loading in, it swaps in on its own, so opening the installed app no longer needs a manual refresh or a tap on the update banner. Coming back to the app after a while away counts as opening it again. An update that arrives later, while you are in the middle of using a page, still waits for your tap so it never reloads a page out from under you.",
+        "text": "The app now updates itself when you open it: a new version swaps in on its own instead of needing a manual refresh. An update that lands mid-page still waits for your tap.",
         "link": "/"
     },
     {
         "date": "2026-11-02",
         "tag": "fix",
-        "text": "Lineup lock reminders no longer tell you to bench a starter whose game already kicked off. A player who got hurt mid-game on Sunday and was later listed Out was still named in the Monday night lock push, with a sit-and-start swap you could not make, because the reminder only looked at that day's games when working out who was locked. Locked players are now worked out from the full week's games, and a locked starter's injury is no longer raised as something to fix before a later kickoff.",
+        "text": "Lineup lock reminders no longer tell you to bench a starter whose game already kicked off, and a locked starter's injury is no longer raised as something to fix.",
         "link": "/"
     },
     {
         "date": "2026-11-02",
         "tag": "new",
-        "text": "Weekly Hub Scorers rebuilt as one clean panel instead of four separate cards: every position lines up on the same grid, each player carries his real headshot, the top scorer at each position steps up a size on a soft tint, and a thin bar under each score shows how close it sits to that position's best. Defenses show their two-tone team badge in place of a headshot, and a kicker without a photo gets his team's badge too.",
+        "text": "Weekly Hub Scorers is rebuilt as one clean panel: every position on the same grid, real headshots, and the top scorer at each position stepping up a size.",
         "link": "/"
     },
     {
         "date": "2026-11-02",
         "tag": "fix",
-        "text": "Matchup board fixes: a starter who played and got hurt mid-game no longer shows as BYE when the injury zeroes out his projection, so his real points and final score line stay on the board, and the label inside the position chip in the middle of each matchup row is now properly centered in the chip (FLEX used to sit off to the left and crowd the chip's right edge).",
+        "text": "Matchup board fixes: a starter who played and got hurt mid-game no longer shows as BYE, so his real points stay on the board, and the position chip label is properly centered.",
         "link": "/"
     },
     {
         "date": "2026-11-02",
         "tag": "fix",
-        "text": "Prospect percentiles are now graded only against drafted players from the 2016 to 2024 classes, never against the current class, and the historical pool behind them is rebuilt with full games played data, so the season and per-game stat percentiles that used to show a dash now fill in with real numbers.",
+        "text": "Prospect percentiles are now graded only against drafted players from the 2016 to 2024 classes, and the stat percentiles that used to show a dash now fill in with real numbers.",
         "link": "/prospects"
     },
     {
         "date": "2026-11-02",
         "tag": "fix",
-        "text": "Two polish fixes: the Player Rankings hover trend graph now draws with the same soft curve, gradient fill and clean end dot as the new value history charts, and it is drawn at its zone's real size so it fills the space instead of floating in a small band with empty room around it. And the player card's Recent Form game tooltips no longer list stat lines a player never touched (no more Pass 0 att, 0 yd on a running back's game) and read tighter, with receiving shown as catches over targets.",
+        "text": "Two polish fixes: the Player Rankings hover trend graph now matches the new value history charts, and player card game tooltips no longer list stat lines a player never touched.",
         "link": "/players"
     },
     {
         "date": "2026-11-02",
         "tag": "new",
-        "text": "Every other league graph rebuilt in the same site style: team Weekly Scoring and the League Stats and League History charts are now drawn by the site's own chart system instead of the old chart library. The team radar is now a set of bars against the league average line, so each stat reads at a glance with its value beside it, and the two-team comparison uses paired bars the same way. Every team now keeps one fixed color on every chart and across seasons, so you can follow a single team's story from the standings bump chart to the scoring trends, the bump chart labels each team's final rank at the right edge, the scoring heatmap prints its values with a scale and marks byes clearly, and every point on every chart can be hovered or tapped for its exact numbers.",
+        "text": "Every league graph is rebuilt in the site's own chart style: the team radar is now bars against the league average, every team keeps one fixed color on every chart, and every point can be hovered or tapped for its exact numbers.",
         "link": "/graphs"
     },
     {
         "date": "2026-11-02",
         "tag": "new",
-        "text": "Value History charts rebuilt: the player card, compare and player page value history graphs are now drawn in the site's own style instead of the old chart library. The main line runs in deep navy with a soft gradient under it, Superflex shows as a dashed sky line with the space between the two lines shaded, each line ends with its name and current value stacked beside it, and Peak and Low are marked in green and red with their dates. Lines pass through every real value exactly, with smooth corners and no invented highs or lows, and hovering shows the true values for that date.",
+        "text": "Value History charts are rebuilt in the site's own style: navy main line with a gradient under it, Superflex as a dashed sky line, Peak and Low marked with dates, and lines that pass through every real value exactly.",
         "link": "/players"
     },
     {
         "date": "2026-11-02",
         "tag": "fix",
-        "text": "Player Rankings hover quick look: the 30-day value trend graph no longer stretches to fill its box, which had turned the end dot into an oval and made gentle moves look like cliffs. The graph now keeps its proportions with a round end dot, leaves headroom above and below the line so peaks stop slamming the edges, centers a flat trend instead of pinning it to the bottom, and shades the area under the line so the shape is easier to read.",
+        "text": "Player Rankings hover quick look: the 30-day trend graph now keeps its proportions instead of stretching to fill its box, so gentle moves no longer look like cliffs.",
         "link": "/players"
     },
     {
         "date": "2026-11-02",
         "tag": "fix",
-        "text": "Player Rankings freshness and hover fixes: Total Points and PPG now count each player's own finished games as soon as they end, matching the player card instead of waiting for the next full update. The hover quick look opens even while the board is still loading if you are already resting on a row, its trend, game log, and matchup sections time out and retry cleanly instead of spinning forever, and repeat visits skip work the server has already done so the board settles faster.",
+        "text": "Player Rankings: Total Points and PPG now count each player's own finished games as soon as they end, matching the player card, and the hover quick look's sections time out and retry cleanly instead of spinning forever.",
         "link": "/players"
     },
     {
         "date": "2026-11-01",
         "tag": "fix",
-        "text": "Trade Calculator: each side's header is now just the team name, without the piece count and running total that repeated the Trade Summary below. Player headshots on trade chips sit clean with no colored backing and no initials when a player has no photo, and the player search boxes have a cleaner look with a soft fill and a search icon.",
+        "text": "Trade Calculator: each side's header is now just the team name, player headshots on chips sit clean with no colored backing, and the search boxes have a cleaner look with a search icon.",
         "link": "/trade"
     },
     {
         "date": "2026-11-01",
         "tag": "fix",
-        "text": "Trade Calculator: the Trade Fit grade now grades the trade from your side. Value balance follows which way the value breaks (an even swap is a 7, gaining value climbs from there, losing it slides toward the veto line), a partner rated Long shot to accept caps the headline grade at 4.0 no matter how good the rest looks, the playoff score counts your odds change once instead of paying the same signal twice, and the acceptance read now weighs the other team's window, so picks and young players count for more to a rebuilding partner and proven players count for more to a contender.",
+        "text": "Trade Calculator: the Trade Fit grade now grades the trade from your side, and the acceptance read weighs the other team's window, so picks count for more to a rebuilder and proven players to a contender.",
         "link": "/trade"
     },
     {
         "date": "2026-11-01",
         "tag": "fix",
-        "text": "Trade Calculator: player chips had the name and value flipped on phones, with the value sitting beside the headshot and the name pushed to the right edge. Chips now read headshot, name, then value, chip values repaint from the same trade evaluation that prices the summary so a chip can never show a different value than the Trade Summary totals, and on phones a divider line separates the Team 1 and Team 2 sides so the two sides no longer run together.",
+        "text": "Trade Calculator: player chips had the name and value flipped on phones. Chips now read headshot, name, then value, chip values always match the Trade Summary totals, and a divider separates the two sides.",
         "link": "/trade"
     },
     {
         "date": "2026-11-01",
         "tag": "fix",
-        "text": "Closed the last two gaps in the app's memory limit on My Leagues: refreshing your league cards and rebuilding live matchup scores now share the same strict per-worker limit as every other heavy background job. Before this, opening My Leagues with 11 leagues could run 11 live matchup rebuilds at once on top of everything else. Anything over the limit now waits for the next refresh instead of piling up and restarting the app.",
+        "text": "Closed the last gaps in the app's memory limit on My Leagues: refreshing many leagues at once can no longer stack heavy rebuilds until the app restarts. Anything over the limit waits for the next refresh.",
         "link": "/portfolio"
     },
     {
         "date": "2026-11-01",
         "tag": "fix",
-        "text": "Fixed the app restarting under load: background work like playoff simulations, league refreshes and page builds now shares one strict per-worker limit, so opening My Leagues with many leagues can no longer stack a dozen heavy builds at once and exhaust memory. Anything over the limit simply finishes on a later load instead of taking the app down.",
+        "text": "Fixed the app restarting under load: heavy background work now shares one strict per-worker limit, so opening My Leagues with many leagues can't pile up builds and exhaust memory.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-31",
         "tag": "new",
-        "text": "Trade Calculator on phones: a slimmer header with your league settings behind the gear, flat full-width sides with each side's running total in its header, and Analyze plus the balance bar right under the sides. Player chips now show headshots on phone and desktop, with initials when a player has no photo.",
+        "text": "Trade Calculator on phones: a slimmer header, flat full-width sides with running totals, and player chips that show headshots on phone and desktop.",
         "link": "/trade"
     },
     {
@@ -343,169 +343,169 @@ CHANGELOG = [
     {
         "date": "2026-10-31",
         "tag": "fix",
-        "text": "Trade Calculator: the pinned bar is now a slim balance strip with just the two side values and the fair range, so nothing in it gets cut off. Tap the bar to jump straight to the full Trade Summary, and the bar steps aside on its own while the summary is on screen.",
+        "text": "Trade Calculator: the pinned bar is now a slim balance strip with just the two side values and the fair range. Tap it to jump to the full Trade Summary.",
         "link": "/trade"
     },
     {
         "date": "2026-10-31",
         "tag": "fix",
-        "text": "Trade Calculator on phones: the pinned balance bar now ends before the BR Assistant button instead of sliding underneath it, so the totals, the Trade Fit grade, and the verdict stay fully visible while you build a trade.",
+        "text": "Trade Calculator on phones: the pinned balance bar now ends before the BR Assistant button, so the totals, Trade Fit grade and verdict stay fully visible.",
         "link": "/trade"
     },
     {
         "date": "2026-10-31",
         "tag": "new",
-        "text": "Pull to refresh now works on more pages in the app: My Leagues, Waivers, Standings, and Player Rankings join ScoreZone and the Weekly Hub. Pull down from the top of any of them to refresh in place. Your filters, toggles, selected week, and scroll position stay exactly where they were.",
+        "text": "Pull to refresh now works on more pages in the app: My Leagues, Waivers, Standings and Player Rankings join ScoreZone and the Weekly Hub. Your filters, week and scroll position stay put.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-31",
         "tag": "fix",
-        "text": "Fixed the app sending you back to the dashboard right after you opened it and tapped into a page: the background data refresh that runs on the first page you land on could finish after you had already moved on, and it would swap the first page back in over the one you were reading. A refresh now belongs to the page it started on: navigating away cancels it, and a refresh that finishes after you have moved on warms the data without touching your screen.",
+        "text": "Fixed the app sending you back to the dashboard after you tapped into a page: a background refresh now belongs to the page it started on, and navigating away cancels it.",
         "link": "/dashboard"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "Trade Calculator on phones: the pinned balance bar now floats above the bottom tab bar instead of sliding behind it, and the Trade Fit grade shows a grading state while a new package is being scored instead of holding up the previous trade's number. The acceptance read and the bar's verdict wait for the current trade's grade too, and if scoring fails they clear instead of spinning forever.",
+        "text": "Trade Calculator on phones: the pinned balance bar now floats above the bottom tab bar, and the Trade Fit grade shows a grading state while a new package is scored instead of the previous trade's number.",
         "link": "/trade"
     },
     {
         "date": "2026-10-30",
         "tag": "new",
-        "text": "Trade Calculator: the summary now grades the deal with a Trade Fit score from 0 to 10, built from value balance, roster fit, playoff impact, and how likely the other team is to accept, and the acceptance read sits beside the verdict. Playoff Impact adds a Your Lineup After block: your starting lineup's projected points before and after the deal, who enters and leaves the lineup, and how the room you upgraded ranks in your league. When your side is light beyond the fair range, a Counter card names the pick or player that evens the deal out and applies it in one tap. An asset with no calibrated value now shows a dash on its chip and a warning strip above the summary instead of silently counting as zero, and a balance bar stays pinned to the bottom of the screen while you build.",
+        "text": "Trade Calculator: the summary now grades the deal with a Trade Fit score from 0 to 10, adds a Your Lineup After block under Playoff Impact, and offers a one-tap Counter card when your side is light.",
         "link": "/trade"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "Teams: with a team's detail drawer open, the floating Discord and data-freshness pills and the BR Assistant button now sit behind the drawer instead of floating on top of it and covering player values. They come back as soon as the drawer closes.",
+        "text": "Teams: with a team's detail drawer open, the floating pills and BR Assistant button now sit behind the drawer instead of covering player values.",
         "link": "/teams"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "Trade calculator consistency: three fixes so every surface tells the same story. The Playoff Impact verdict no longer calls a trade a Future Lean when the player coming back is older and gives up prime years: banking value alone is not a future gain. The Trade Analyst now speaks in tiers for role language (a WR2-type producer) and saves exact ranks for rank claims, instead of gluing a value rank onto the word type. And when the player pool refreshes in the background, the calculator rebuilds its rows from the new data instead of keeping the older cached values on screen while the summary and modals already showed the current ones.",
+        "text": "Trade calculator consistency: the Playoff Impact verdict, the Trade Analyst's tier language, and the calculator's rows now all tell the same story as the summary and cards.",
         "link": "/trade"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "Player Rankings loads in one pass now: the board's data request is less than half its old size, and the 7-day trend lines and player chips load alongside the board instead of arriving in a second wave seconds later. Tiers, trends, and hover quick look are all there when the board settles.",
+        "text": "Player Rankings loads in one pass now: the data request is less than half its old size, and tiers, trends and hover quick look are all there when the board settles.",
         "link": "/players"
     },
     {
         "date": "2026-10-30",
         "tag": "new",
-        "text": "Guides: a Latest strip now leads the guides index with the three newest articles, and category chips stick at the top of the index and jump straight to each category section. The first Trade Case Study is also live: two receivers for an elite running back, pricing Drake London and Tetairoa McMillan for Bijan Robinson with live values in both 1QB and Superflex.",
+        "text": "Guides: a Latest strip now leads the index with the three newest articles, and category chips stick at the top. The first Trade Case Study is live too.",
         "link": "/guides"
     },
     {
         "date": "2026-10-30",
         "tag": "update",
-        "text": "Dynasty values: the market blend behind the dynasty board now uses KeepTradeCut as its second source alongside FantasyCalc, replacing DynastyProcess. KeepTradeCut values are crowdsourced and trade based and refresh through the day, so the board tracks the live dynasty market more closely. DynastyProcess still fills in for any player KeepTradeCut does not cover.",
+        "text": "Dynasty values: the market blend now uses KeepTradeCut as its second source alongside FantasyCalc, so the board tracks the live dynasty market more closely.",
         "link": "/players"
     },
     {
         "date": "2026-10-30",
         "tag": "update",
-        "text": "Power Rankings now grade the team you have today: the ranking blends all-play results with your current lineup's projected points for the rest of the season, so a mid-season trade for a big scorer moves your ranking right away, before the new roster plays a game. Trade value and draft picks no longer move the in-season ranking.",
+        "text": "Power Rankings now grade the team you have today: a mid-season trade for a big scorer moves your ranking right away. Trade value and draft picks no longer move the in-season ranking.",
         "link": "/standings"
     },
     {
         "date": "2026-10-30",
         "tag": "new",
-        "text": "Player Rankings quick look: on desktop, hold your cursor on a player for a moment and a quick-look strip opens right at the row. It shows the player's 1QB and Superflex values side by side, their 30-day value trend, their last 3 game logs, and their next matchup with the defense's Schedule Rankings ease rank and tier. Clicking the row still opens the full player card, and phones are unchanged.",
+        "text": "Player Rankings quick look: on desktop, hold your cursor on a player to see his 1QB and Superflex values, 30-day trend, last 3 game logs, and next matchup with the defense's Schedule Rankings ease rank, right at the row.",
         "link": "/players"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "Player Rankings sorting: clicking the Value column header now actually sorts by value. It used to flip whatever sort was already active, so clicking Value during a PPG sort just flipped PPG to ascending and surfaced the lowest-PPG players. The header controls also stay put when switching between Dynasty and Redraft: the longer Redraft subtitle no longer pushes the format toggles and search sideways.",
+        "text": "Player Rankings sorting: clicking the Value column header now actually sorts by value, and the header controls stay put when switching between Dynasty and Redraft.",
         "link": "/players"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "Top Movers: changing the timeframe or the Dynasty and Redraft toggle now updates the board in place instead of reloading the whole page. Your scroll position stays put, the address bar still updates so a filtered view can be shared or bookmarked, and the back button steps through the filters you viewed.",
+        "text": "Top Movers: changing the timeframe or the Dynasty and Redraft toggle now updates the board in place instead of reloading the page. Your scroll position stays put.",
         "link": "/top-movers"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "Trade calculator Player Insights: the Movers filters now sit on one line. The 7d, 14d and 30d time range and the Dynasty and Redraft format toggle share a single row, with the format pinned to the right, instead of stacking as two rows of chips.",
+        "text": "Trade calculator Player Insights: the Movers time range and format toggle now share one line instead of stacking as two rows of chips.",
         "link": "/trade"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "BR Assistant: asking whether you will win this week no longer answers that there is no scheduled matchup while your matchup is still loading. The assistant now waits briefly for the live matchup to load, and if it is still warming up it says so and asks you to ask again, instead of inventing a verdict about the week.",
+        "text": "BR Assistant: asking whether you'll win this week no longer claims there's no scheduled matchup while yours is still loading. It waits for the live matchup or says it's still warming up.",
         "link": "/"
     },
     {
         "date": "2026-10-30",
         "tag": "fix",
-        "text": "Trade calculator Player Insights: the Movers scope line under the tabs now fits on one line. It reads as the biggest BR value movers for the selected window, format and league size, in a slightly tighter label style, instead of wrapping its last word onto a second line.",
+        "text": "Trade calculator Player Insights: the Movers scope line under the tabs now fits on one line.",
         "link": "/trade"
     },
     {
         "date": "2026-10-30",
         "tag": "update",
-        "text": "Player Rankings, reworked: player headshots now lead every row, rank movement sits right beside the rank number, and each player's age joins their position and team under their name. PPG, Total Points and Value each get their own centered column, Dynasty / Redraft and 1QB / SF toggles sit beside the title, and sorting is a sliding pill next to the position filters. On phones the controls stack cleanly with a full-width sort pill and one row of position filters.",
+        "text": "Player Rankings, reworked: headshots lead every row, rank movement sits beside the rank, age joins position and team under the name, and the Dynasty / Redraft and 1QB / SF toggles sit beside the title.",
         "link": "/players"
     },
     {
         "date": "2026-10-30",
         "tag": "update",
-        "text": "PRO pricing page refresh: the plan picker now leads with the free trial strip and the billing toggle beside the heading, the All-Pro card stands out with a lifted, tinted treatment, and a new PRO metrics section groups the gated metrics under Efficiency, Opportunity, Consistency, and Value. What remains free now sits in its own styled panel, and the plan coverage FAQ reads as one card with the first answer open. Plans, prices, and coverage are unchanged.",
+        "text": "PRO pricing page refresh: the plan picker leads with the free trial strip, the All-Pro card stands out, and a new PRO metrics section groups the gated metrics by category. Plans and prices are unchanged.",
         "link": "/pricing"
     },
     {
         "date": "2026-10-30",
         "tag": "update",
-        "text": "ScoreZone game picker: each game now reads as one compact versus line, with the team badges either side of the @, scores inline once the game is underway, and the day and kickoff time on a small line underneath. An upcoming game's board header centers the matchup, and its Box score button is now a compact pill instead of a full-width bar.",
+        "text": "ScoreZone game picker: each game now reads as one compact versus line with scores inline once it's underway, and an upcoming game's Box score button is a compact pill.",
         "link": "/scorezone"
     },
     {
         "date": "2026-10-30",
         "tag": "new",
-        "text": "Pull to refresh in the app: on ScoreZone and the Weekly Hub, pull down from the top of the page to refresh the scores in place. Your week, league and scroll position stay exactly where they were, and the refresh uses the same path as the ScoreZone timer tap.",
+        "text": "Pull to refresh in the app: on ScoreZone and the Weekly Hub, pull down from the top to refresh the scores in place. Your week, league and scroll position stay put.",
         "link": "/scorezone"
     },
     {
         "date": "2026-10-30",
         "tag": "update",
-        "text": "Matchups and ScoreZone's classic drive view: the live drive bar is now a slim one-line bar that sits comfortably inside a matchup row. A thin striped track with both teams' end-zone labels, a gradient possession fill ending at a small ball marker, a yellow first-down tick, the spot written in the possessing team's colour, and the down and distance above it. Dark mode lifts dark team colours (Green Bay, Chicago, Las Vegas) so the bar stays readable. The field board itself and the player-profile game board are unchanged.",
+        "text": "Matchups and ScoreZone's classic drive view: the live drive bar is now a slim one-line bar inside the matchup row, with the spot in the possessing team's color and dark mode lifting dark team colors so it stays readable.",
         "link": "/"
     },
     {
         "date": "2026-10-30",
         "tag": "feature",
-        "text": "ScoreZone game boards get a field view: the selected NFL game now shows a perspective field with both end zones in team colours, the current drive drawn as a trail of play dots ending at the ball, a flag with the exact spot, the first-down line, and a live drive summary with play count, net yards and where the drive started. Negative plays track backwards honestly, and the board falls back to the familiar drive bar whenever the field position is not reliable. Play dots carry a quiet pass and run cue: runs are solid dots, passes are hollow rings in the same team colour, and sacks count as passes. The field view also appears in the ScoreZone tab of player profiles. On live updates each new play animates onto the field as it arrives, and a touchdown flashes the end zone it was scored in; bulk updates simply show the finished board.",
+        "text": "ScoreZone game boards get a field view: a perspective field in team colors with the current drive drawn as a trail of play dots, the first-down line, and a live drive summary. New plays animate in as they arrive, and a touchdown flashes the end zone.",
         "link": "/scorezone"
     },
     {
         "date": "2026-10-29",
         "tag": "fix",
-        "text": "ScoreZone game board: the possession dot no longer sits past the score where it collided with the clock in the middle on phones. When the drive bar is showing, its team-color fill already shows who has the ball, so the dot steps aside. When there is no drive bar, the dot now sits on the team badge corner instead. Team names also appear once now: the badge chip carries the abbreviation, so the duplicate text next to it is gone from the board and the game pills. The yard line appears once too: when the drive bar is showing, it lives only on the bar's flag and the center line reads just the down and distance.",
+        "text": "ScoreZone game board: the possession dot no longer collides with the clock on phones, and team names and the yard line each appear once instead of twice.",
         "link": "/scorezone"
     },
     {
         "date": "2026-10-29",
         "tag": "fix",
-        "text": "Trade Analyst: the positional ranks in the analysis now match the ranks on the trade cards above it. The analyst was handed a rank stored before the latest value calibration (and the 1QB rank even in Superflex and redraft leagues); it now receives the same format rank the cards show, and any rank it writes for a traded player is checked against that rank before you see it.",
+        "text": "Trade Analyst: the positional ranks in the analysis now match the ranks on the trade cards above it, in every format.",
         "link": "/trade"
     },
     {
         "date": "2026-10-29",
         "tag": "fix",
-        "text": "Usage risers on the home dashboard: player names now get the full row width, with the usage readout below the name and the season and last-3 bars labelled, so long names no longer truncate and the bars read at a glance.",
+        "text": "Usage risers on the home dashboard: player names now get the full row width, with the usage readout and bars below, so long names no longer truncate.",
         "link": "/"
     },
     {
         "date": "2026-10-29",
         "tag": "fix",
-        "text": "Player profiles and compare load faster and stop hanging: cached game logs no longer repeat the eligibility check on every open, your league's trade history is scanned once instead of twice per profile, the Rookie tab reads a lightweight current-season feed, and the remaining modal sections now time out and retry instead of spinning forever.",
+        "text": "Player profiles and compare load faster and stop hanging: league trade history is scanned once per profile, and modal sections time out and retry instead of spinning forever.",
         "link": "/"
     },
     {
@@ -517,37 +517,37 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "Guides: the guides index is grouped by category (Trade Case Studies, Inside the Model, Market Movement, Roster Construction, Weekly Decisions), with a category chip, date, and read time on every card. Each article now opens with its category, its own published and updated dates, and jump pills for its sections, and read times are computed from the article text itself.",
+        "text": "Guides: the index is grouped by category, with a category chip, date and read time on every card, and each article opens with its own dates and section jump pills.",
         "link": "/guides"
     },
     {
         "date": "2026-10-29",
         "tag": "fix",
-        "text": "Dark mode: the top 3 dynasty rank badges and the team snapshot medals no longer glow. Their bright gold, silver and bronze gradients are replaced with deepened metallic tones and lighter text in dark mode, so the medal places read clearly on the dark background. Light mode looks exactly as before.",
+        "text": "Dark mode: the top 3 dynasty rank badges and team snapshot medals no longer glow. They use deepened metallic tones that read clearly on the dark background.",
         "link": "/"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "Player search everywhere is smarter. One shared matcher now powers the nav search, trade calculator, rankings, compare, Advanced Metrics, Trade Intel, draft room, cheat sheet and the rest, so punctuation, initials, partial names and small typos all find the right player: try jamarr, amonra, jsn, cmc or chase jamarr. Results rank the best match first, with player value breaking ties, so robinson leads with Bijan and st brown leads with Amon-Ra.",
+        "text": "Player search everywhere is smarter: one shared matcher powers every search box, so punctuation, initials, partial names and small typos all find the right player. Try jamarr, jsn or cmc.",
         "link": "/players"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "My Leagues: the Portfolio insights sections now sit as four collapsed rows inside one card (Positional Strength, Rooting Guide, Bye Watch and Player Holdings). Tap a row to open it, and each section loads only when you first open it, so the page arrives faster. The Rooting Guide row shows only on game days. The summary card at the top keeps every tile and gets a cleaner look: bigger stat values, quiet uppercase labels, hairline dividers, and the This week (proj) tile now shows it opens the projected finals.",
+        "text": "My Leagues: the Portfolio insights sections now sit as four collapsed rows inside one card, each loading only when you first open it, so the page arrives faster.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-29",
         "tag": "fix",
-        "text": "Player cards: the Breakout tab no longer goes missing on a first, cold open. The tab used to wait on the heaviest part of the player card, so a slow first load hid it for that whole visit even for players on the breakout board. It now checks its own light flag as soon as the card opens, retries quietly if that first check is slow, and opening a player straight from the Breakout Engine lands on the Breakout tab like it should.",
+        "text": "Player cards: the Breakout tab no longer goes missing on a first, cold open, and opening a player from the Breakout Engine lands on the Breakout tab like it should.",
         "link": "/breakouts"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "League Health is redesigned around one health card: your score, its verdict and the four things driving it (inactive teams, trades, lopsided trades, total moves) now sit together at the top. Multi-season history reads as two compact trend lines with chronic inactivity flagged underneath, the Team Overview table drops the parity dot strip, the Trade Fairness Log is one line per trade, and the PRO invite is a slim row at the bottom of the page.",
+        "text": "League Health is redesigned around one health card: your score, its verdict and the four things driving it sit together at the top, with history as two compact trend lines.",
         "link": "/league_health"
     },
     {
@@ -559,349 +559,349 @@ CHANGELOG = [
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "The real trade total is on the page now: the Trade Database header shows how many real Sleeper trades are indexed, a quiet line above the results follows your filters, the Trade Calculator notes the trade total its values are calibrated from, Trade Intelligence leads with the live dynasty trade count, and the home page notes the 530,000+ real trades behind the values.",
+        "text": "The real trade total is on the page now: the Trade Database, Trade Calculator, Trade Intelligence and home page all show how many real Sleeper trades sit behind the values.",
         "link": "/trade-database"
     },
     {
         "date": "2026-10-29",
         "tag": "fix",
-        "text": "My Leagues cards: the record band now matches the approved layout. Your streak sits under your record on the left, and your standing sits bigger on the right side of the band, green for a top 3 place and red for a bottom third finish. The Best room reads in plain dark text instead of green. The score strip leads with a week line that names your opponent and carries your win percentage, your score reads inline next to the word You with the projection tagged after it, your opponent gets a smaller unnamed number, and the win bar runs green over a pale pink track with no labels under it.",
+        "text": "My Leagues cards: the record band now puts your streak under your record and your standing bigger on the right, and the score strip leads with a week line naming your opponent.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "My Leagues: the Front Office full report is now The Brief. Generate full report writes a short prose brief instead of a list of steps: how your leagues split between contending, on the bubble and rebuilding, your flagship league and your deep end by record, the biggest projected gain on the board, the claims running against the waiver clock, and what locks when. Trade deadlines show up as league facts inside the brief, never as moves to make, and the brief closes by confirming the leagues that need nothing this week.",
+        "text": "My Leagues: the Front Office full report is now The Brief, a short prose summary of where your leagues stand, the biggest projected gain on the board, and what locks when.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "Teams: the signal badges in the team drawer (Core, Hold, Sell High and the rest) now match the Suggested Moves badges, solid signal color with white text, and the league rank numbers inside the Value by position bar on each team card are white so they read cleanly on the colored segments.",
+        "text": "Teams: the signal badges in the team drawer now match the Suggested Moves badges, and the league rank numbers inside the Value by position bar are white so they read cleanly.",
         "link": "/teams"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "My Leagues cards are redesigned. Your team name headlines each card, with the league, platform and season posture (a colored dot and word) on one quiet line under it. Your record sits in a tinted band with your standing and streak beside it, your weakest room (Fix) and strongest room (Best) sit in two columns under the band, and the score strip at the bottom shows projections before the game, the live score during it, and the result after. The Front Office and Open buttons and the per-card updated stamps are gone: the whole card opens the league, the star and the menu at the top right keep favorite and remove, and one Updated line sits above the grid.",
+        "text": "My Leagues cards are redesigned: your team name headlines each card, your record sits in a tinted band with standing and streak, your weakest and strongest rooms sit under it, and the whole card opens the league.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-29",
         "tag": "fix",
-        "text": "Teams and My Leagues: positional room rankings no longer punish you for rostering depth. A room used to score as an average over only the players present, so a team with one quarterback got that quarterback at full value while a deeper room was averaged down, and adding a player could actually drop your rank. Rooms are now scored against the full set of slots, empty slots counting as zero, and one player past the usual depth cutoff counts a little instead of zero, so QB3s and sixth running backs are worth something in dynasty.",
+        "text": "Teams and My Leagues: positional room rankings no longer punish you for rostering depth. Rooms are scored against the full set of slots, so adding a player can no longer drop your rank.",
         "link": "/teams"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "Teams: the Value by position bar on each team card now carries that team's league rank at the position as a small number inside each segment, QB, RB, WR, TE and draft capital included, so the strongest and weakest rooms read straight off the bar.",
+        "text": "Teams: the Value by position bar on each team card now carries that team's league rank at the position inside each segment, so the strongest and weakest rooms read straight off the bar.",
         "link": "/teams"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "My Leagues: the Front Office full report is a real plan now. Generate full report walks every open move in the board's priority order under labeled sections, each step with its league, record, posture, the reason behind it and its timing, plus a timeline of what runs before waivers and what locks at kickoff. The trade deadline shows as a reminder, never as a numbered move. The report names moves already marked Done by their titles instead of walking them as to-dos, closes by confirming the leagues that need nothing, and if your leagues are still being checked it says so and asks you to retry instead of narrating a half-finished scan as the full picture.",
+        "text": "My Leagues: the Front Office full report is a real plan now, walking every open move in priority order with its reason and timing, plus a timeline of what runs before waivers and what locks at kickoff.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "Redraft value history now reaches the rest of the site: Beat the Market on the Teams page follows your league format (or the This Season toggle), the Compare value history chart follows the Dynasty/Redraft toggle for two and three player compares, trade calculator value deltas match the format you are viewing, and the weekly email digest picks risers and fallers in each league's own format. Redraft history is still young, so redraft views cover the shorter span honestly instead of borrowing dynasty numbers.",
+        "text": "Redraft value history now reaches the rest of the site: Beat the Market, Compare charts, trade calculator deltas and the weekly email digest all follow the format you're viewing.",
         "link": "/compare"
     },
     {
         "date": "2026-10-29",
         "tag": "update",
-        "text": "Player cards and Top Movers now speak redraft too. In a player card, the value history chart follows the Dynasty/Redraft toggle: switch to Redraft and the chart shows redraft value history under its own label. Redraft values have only been tracked since late October, so that line starts short and grows a point a day; until it has points, the card says so instead of showing dynasty numbers in its place. Top Movers gains the same choice: the page and the trade calculator movers panel both have a Dynasty/Redraft toggle, and the redraft board is built from redraft values only.",
+        "text": "Player cards and Top Movers now speak redraft too: in a player card, the value history chart follows the Dynasty/Redraft toggle, and Top Movers gains the same choice, built from redraft values only.",
         "link": "/top-movers"
     },
     {
         "date": "2026-10-28",
         "tag": "fix",
-        "text": "Pages no longer reload on their own when a new version of the app lands in the background. The update still arrives and the New version banner still offers it, but the page you are reading stays put until you tap to update.",
+        "text": "Pages no longer reload on their own when a new version lands in the background. The New version banner still offers it, and the page you're reading stays put until you tap.",
         "link": "/"
     },
     {
         "date": "2026-10-28",
         "tag": "update",
-        "text": "Schedule Rankings: Adj Avg is back as a column, sitting after Ease on desktop. On phones, where Ease tucks away to give the weeks room, Adj Avg pins beside the player column instead, colored by how easy the schedule is, so each row keeps a summary number in view while you swipe.",
+        "text": "Schedule Rankings: Adj Avg is back as a column after Ease on desktop, and pins beside the player column on phones so every row keeps a summary number in view.",
         "link": "/schedule"
     },
     {
         "date": "2026-10-28",
         "tag": "update",
-        "text": "Schedule Rankings: the table is week by week again. Rank, player and Ease sit beside a column for every week in the range, so a whole remaining schedule reads left to right, and the Adj Avg, Next 3 and Playoffs summary columns are gone. On phones the separate summary cards are gone too: the same table swipes sideways with rank and player pinned in place, Ease tucked away to give the weeks room, and the playoff weeks still banded at the top.",
+        "text": "Schedule Rankings: the table is week by week again, so a whole remaining schedule reads left to right. On phones the same table swipes sideways with rank and player pinned.",
         "link": "/schedule"
     },
     {
         "date": "2026-10-28",
         "tag": "fix",
-        "text": "My Leagues: on phones, Rooting Guide game cards now stack the two teams, away on top and home below, instead of squeezing them into side-by-side columns too narrow for a name, its league badges, and its value to share one line. Every player row gets the full width of the card, badges stay beside the name, and nothing wraps or strands. The wider desktop cards are unchanged.",
+        "text": "My Leagues: on phones, Rooting Guide game cards now stack the two teams instead of squeezing them side by side, so every player row gets the full width of the card.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-28",
         "tag": "update",
-        "text": "My Leagues: the Front Office board is rebuilt around clearing it. Marking a move Done fades it off its league card into a Show completed section (Undo lives there), league groups re-sort so the league with your most important open move is always on top, and the board caps its height with a Show all actions expander instead of pushing the rest of the page down. Waiver adds now name the player to drop, and a drop candidate names the add its freed spot enables. Hiding a league or dismissing a move now actually sticks across refreshes (before, the board saved dismissals but never loaded them back), and a move you just marked Done can no longer reappear as not done when the page reloads from a cached scan. Moves are numbered within their league, the top three open moves overall carry a Top priority tag, waiver details show as fact chips, and due timing is a pill that turns amber only when a real deadline lands today.",
+        "text": "My Leagues: the Front Office board is rebuilt around clearing it. Marking a move Done fades it into a Show completed section with Undo, waiver adds name the player to drop, and dismissals now stick across refreshes.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-28",
         "tag": "fix",
-        "text": "My Leagues: the Front Office board no longer gets stuck on 'Could not check N of N leagues yet'. Checking a league's playoff odds was quietly fetching that league's remaining schedule from the platform inside the scan itself, one fetch per week of the season for every league, so with several leagues the check stalled before it could count even one league as checked. The scan now reads odds from the cache only, the way it was designed to, and the schedule check happens inside the background simulation where it belongs.",
+        "text": "My Leagues: the Front Office board no longer gets stuck on 'Could not check N of N leagues yet'. The scan reads playoff odds from the cache, the way it was designed to.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-28",
         "tag": "fix",
-        "text": "My Leagues: the Rooting Guide no longer repeats the same projection as a range (like 9.5-9.5) when your leagues agree on a player; it shows the single number, and only genuinely different league values show the low-high range. In the two-per-row game cards, each player's value now sits in a fixed right-hand rail on the name line instead of wrapping or drifting when a player carries several league badges, and the badges stay together as a group.",
+        "text": "My Leagues: the Rooting Guide no longer repeats the same projection as a range when your leagues agree on a player, and each player's value now sits in a fixed rail on the name line.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-28",
         "tag": "fix",
-        "text": "Weekly Hub: the matchup carousel is narrower so the Scorers, Scout and Lineup panels get more room, and the two columns now share one clean bottom edge. Scorers shows the top 5 at every position instead of the top 3. The Lineup tab's This Week view is fixed and cleaner: it no longer suggests taxi-squad players, its swap suggestions match the points it shows (no more phantom swaps from players just moving between slots), its week label always matches the matchup on screen, and when your starters are already the projected-optimal lineup it shows them as one clean list instead of a doubled comparison table.",
+        "text": "Weekly Hub: the matchup carousel is narrower so the other panels get more room, Scorers shows the top 5 at every position, and the Lineup tab's This Week view is fixed and cleaner.",
         "link": "/"
     },
     {
         "date": "2026-10-28",
         "tag": "fix",
-        "text": "Breakout Engine grading is production-first now: a hit needs a real jump in points per game that lands at a startable level for the position, so a small rise off a near-zero baseline no longer counts as a breakout hit. A scorer whose role shrank still earns the hit when the points are real, a flat points line is a partial rather than a miss when the role fades, and a scoring collapse is a miss no matter how the role held up. Stored calls regrade under the new rules on the next grading run.",
+        "text": "Breakout Engine grading is production-first now: a hit needs a real jump in points per game at a startable level, so a small rise off a near-zero baseline no longer counts.",
         "link": "/breakouts"
     },
     {
         "date": "2026-10-28",
         "tag": "fix",
-        "text": "PRO plans: fixed yearly subscriptions being cut off after about a month. Stripe reports the paid-through date on the plan's line items, and the site was reading it from the wrong place, so annual plans silently expired after 32 days. Yearly PRO now runs for the full term you paid for.",
+        "text": "PRO plans: fixed yearly subscriptions being cut off after about a month. Yearly PRO now runs for the full term you paid for.",
         "link": "/pricing"
     },
     {
         "date": "2026-10-28",
         "tag": "update",
-        "text": "League Awards: the page is rebuilt around the season in front of you. The defending champion banner carries the championship final score and the full title history, a Title Race strip tracks the current season with a Defence Watch row when the champion sits outside the top four, Fun Awards move up, league records are tiles with runner-up context and the single-week record now shows its real week, and the all-time standings add losses, points for, scoring average and seasons.",
+        "text": "League Awards is rebuilt around the season in front of you: a Title Race strip tracks the current season, league records are tiles with runner-up context, and the all-time standings add losses, points for and scoring average.",
         "link": "/awards"
     },
     {
         "date": "2026-10-28",
         "tag": "fix",
-        "text": "My Leagues: the Rooting Guide and Bye Watch now load from a lightweight data pass built only from your league rosters, this week's matchups and the shared player list, instead of the full season-long league build they used to wait on. That build was heavy enough that it often never finished before the app recycled itself, which is why both cards loaded only sometimes. The numbers, groupings and projections are unchanged; the cards now finish loading every time.",
+        "text": "My Leagues: the Rooting Guide and Bye Watch now load from a lightweight data pass, so both cards finish loading every time. The numbers and projections are unchanged.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-28",
         "tag": "update",
-        "text": "League Stats: charts now fill their cards. When a card stretches to match its row, the chart itself grows instead of leaving an empty gap above the summary. Three duplicate charts were removed: the viewer-only Weekly Scoring Trend (now part of Weekly Scoring: All Teams, with your line in bold), League Scoring by Week (its biggest scoring week now appears in the Scoring Heatmap summary), and the score distribution box plot inside Consistency Ranking. Team names on the scatter charts are shown in full instead of being cut off, chart labels no longer clip at the edges when points are graphed, and long team names get a wider column plus a full-name tooltip on the bar charts.",
+        "text": "League Stats: charts now fill their cards, three duplicate charts are removed, team names show in full on scatter charts, and long team names get a wider column on bar charts.",
         "link": "/graphs"
     },
     {
         "date": "2026-10-28",
         "tag": "update",
-        "text": "My Leagues Rooting Guide: game cards now sit two per row on wide screens instead of one long stack, and the team badge in each game header sizes to fit its abbreviation, so three-letter teams are no longer clipped under the badge stripe.",
+        "text": "My Leagues Rooting Guide: game cards now sit two per row on wide screens, and the team badge in each game header sizes to fit its abbreviation.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Trade Calculator: evaluating a trade is faster and steadier. Each edit now sends one evaluation instead of two or three, the market intel for every player in the deal loads in a single request, and Playoff Impact waits for the simulation snapshot to warm up instead of running the numbers on the spot, so the card shows its loading state briefly and then the same before and after odds as before.",
+        "text": "Trade Calculator: evaluating a trade is faster and steadier. Each edit sends one evaluation, and Playoff Impact waits for the simulation to warm up instead of running the numbers on the spot.",
         "link": "/trade"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "Weekly Recap and Standings load faster: both pages were computing the same standings, power rankings and lineup efficiency more than once per visit, and lineup efficiency was recomputed from scratch on most visits. The duplicate passes are gone and the efficiency result is now remembered between visits, so both pages show the exact same numbers and rankings, just sooner.",
+        "text": "Weekly Recap and Standings load faster: the duplicate standings, power rankings and lineup efficiency passes are gone, and both pages show the exact same numbers, just sooner.",
         "link": "/standings"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "Speed pass across the site: pages and tools do less repeated work behind the scenes. The Assistant keeps your league context between messages in the same conversation and no longer spends a full report build when you open it, the Front Office report opens from its saved copy when nothing changed, the Dashboard renders only your matchup slide, League Stats season views load from the shared page cache, and the Draft Room, Teams tools and guest home demos reuse finished work instead of redoing it on every open. Numbers and layouts are unchanged.",
+        "text": "Speed pass across the site: pages and tools do less repeated work behind the scenes, so the Assistant, Front Office report, Dashboard, League Stats and Draft Room all open faster. Numbers and layouts are unchanged.",
         "link": "/"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "Weekly Hub: the live matchup views now refresh with far less repeated work behind them. The drive bars read a small game-state feed instead of the full live payload, the matchup board and the player popup share one live-data cache instead of fetching the same feed twice, a refresh whose numbers have not moved is skipped entirely, and the schedule and rankings lookups behind every matchup slide are built once per week instead of once per slide. Nothing on the page changes: same numbers, same panels, just less downloading and recomputing.",
+        "text": "Weekly Hub: the live matchup views now refresh with far less repeated work behind them. Nothing on the page changes: same numbers, same panels, just less downloading.",
         "link": "/"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Waivers and Start/Sit: repeat visits load far faster. Waiver candidate lists are cached briefly and the Kicker, Defense and Trending views share one player value index, the Start/Sit strip in the player popup now distills from a single lineup build for your whole roster instead of rebuilding for every player you open, and the Lineup Lab warms up when you reach for its tab instead of on every page load. Its results are also kept in the shared cache, so reopening the Lab after a reload does not rebuild from scratch.",
+        "text": "Waivers and Start/Sit: repeat visits load far faster, the Start/Sit strip in the player popup now builds from a single lineup pass for your whole roster, and the Lineup Lab warms up when you reach for its tab instead of on every page load.",
         "link": "/waivers"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "Advanced Metrics and Players load faster. The Key Metrics preset now pulls its extra columns in two requests instead of eighteen, leaderboard answers are cached on the server for a few minutes, and the Players list plus its value sparklines are cached so they survive server restarts. Every number is unchanged.",
+        "text": "Advanced Metrics and Players load faster: the Key Metrics preset pulls its extra columns in two requests instead of eighteen, and the Players list is cached so it survives restarts. Every number is unchanged.",
         "link": "/advanced-metrics"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "ScoreZone: the My Leagues view refreshes far more efficiently. Its polls now reuse the same shared data build as the single-league view instead of rebuilding every league from scratch every 15 seconds, and a refresh where nothing changed skips the full feed download entirely. Box scores for finished games also reopen instantly instead of loading again.",
+        "text": "ScoreZone: the My Leagues view refreshes far more efficiently, reusing the same data build as the single-league view, and box scores for finished games reopen instantly.",
         "link": "/scorezone"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "My Leagues: Rooting Guide and Bye Watch are built into the page itself now, from the same data that builds Player Holdings, so they paint with the page instead of loading in afterward. Bye Watch rows line up in clean columns, the league lookup behind the cards runs once and is shared instead of repeated per card, finished results are kept on the server's shared disk so they survive the app's regular restarts, and the cards keep checking politely in the background instead of giving up and painting an empty card.",
+        "text": "My Leagues: Rooting Guide and Bye Watch are built into the page itself now, so they paint with the page instead of loading in afterward, and they keep checking in the background instead of painting an empty card.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Weekly menu: removed a duplicate red dot. On Tuesdays the recap-ready banner added its own dot to the Weekly menu on top of the Weekly Recap unread dot, so two dots showed at once. The banner still appears on Tuesdays, and the single recap dot remains and clears when you open the recap.",
+        "text": "Weekly menu: removed a duplicate red dot. The Tuesday recap-ready banner no longer adds its own dot on top of the Weekly Recap unread dot.",
         "link": "/recap"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "My Leagues: the phone section buttons (Strength, Rooting Guide, Byes, Holdings) now land each section right below the top bars instead of scrolling its header underneath them. The Playoff odds stat is off the league cards: it never loaded, so the stats row is Record, Standing and Streak, and the sort control now offers Standings, which orders your leagues by their place in the table.",
+        "text": "My Leagues: the phone section buttons now land each section right below the top bars instead of scrolling it underneath them, and the sort control now offers Standings.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Notifications on your phone: the panel now fits the screen. It stops above the bottom nav instead of sliding underneath it, the list scrolls inside the panel while the header stays in place, and the page behind it dims while it is open. The red alert dot on the More tab also sits on the More icon again instead of hanging under the label.",
+        "text": "Notifications on your phone: the panel now fits the screen, stopping above the bottom nav while the list scrolls inside it, and the red alert dot on the More tab sits on the More icon again.",
         "link": "/"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Weekly Recap: Week at a Glance now shows the manager username under the High Scorer and Low Scorer team names. It was repeating the team name there instead, so the High Scorer card read Fire Riley with @Fire Riley underneath it.",
+        "text": "Weekly Recap: Week at a Glance now shows the manager username under the High Scorer and Low Scorer team names, instead of repeating the team name.",
         "link": "/recap"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "Weekly Hub: the matchup page is rebuilt around your game. Week Leaders now run across the top, your matchup carousel sits on the left and stays in view while the other column scrolls, and Scorers, Scout and Lineup live in one panel on the right. Scout is now a gameplan: the verdict with your win probability, the calls that decide the matchup, the positional edge, their top threats and their soft spots. Lineup opens on This Week, your current starters against the projected-optimal lineup, the swaps that gain you points and what they do to your win probability, with the completed-weeks Lineup Lab under History.",
+        "text": "Weekly Hub: the matchup page is rebuilt around your game. Week Leaders run across the top, your matchup stays in view, and Scout is now a gameplan: the verdict, the calls that decide it, and their soft spots.",
         "link": "/"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "League Stats: the chart grid now fits two columns only when each chart has room and drops to one column on narrower windows, cards in a row stretch to the same height, and the Consistency Ranking bars share one scale so they read in order. Chart hover labels now have a solid background, and the Standings Bump Chart renders again and seeds division winners first in division leagues. New charts: Floor / Ceiling, Luck Delta, Scoring Heatmap, Form: Last 3 Weeks, League Scoring by Week, and Career Wins by Team.",
+        "text": "League Stats: the chart grid fits two columns only when each chart has room, and new charts join the page: Floor / Ceiling, Luck Delta, Scoring Heatmap, Form: Last 3 Weeks and Career Wins by Team.",
         "link": "/graphs"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "My Leagues loads faster: the Rooting Guide and Bye Watch now answer from a cached result right away and refresh in the background instead of rescanning your leagues on every load, and Player Holdings is sortable: click any column header (position, player, rank, shares, bye, status, 7d trend, value) to sort the whole table.",
+        "text": "My Leagues loads faster: the Rooting Guide and Bye Watch answer from a cached result and refresh in the background, and Player Holdings is now sortable by any column.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "My Leagues: the Rooting Guide and Bye Watch are cleaned up. Rooting Guide type and player rows are smaller and tighter, each game splits into two columns with your starters under the team they play for, a player you start in several leagues shows once with all of his league badges together, and upcoming games show the projection in muted type instead of a 0.0 for every player. Bye Watch now says Full strength once per league on a single line, with the leagues that have a hole to fill listed first.",
+        "text": "My Leagues: the Rooting Guide and Bye Watch are cleaned up. Rows are tighter, a player you start in several leagues shows once with all his league badges, and Bye Watch lists the leagues with a hole to fill first.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Front Office: the moves board no longer sits at Scanned 0 for accounts with many leagues. Every league the scan finishes now counts right away and its moves are kept, the scanned count climbs as the remaining leagues land, and the finished board is remembered. The board fills in over a few seconds instead of waiting for all of your leagues to be ready at the same moment.",
+        "text": "Front Office: the moves board no longer sits at Scanned 0 for accounts with many leagues. Every finished league counts right away and the board fills in over a few seconds.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Trade Analyzer: the navy fair-range bar in the middle of the trade summary track is back. A site-wide tooltip update had quietly knocked it out of place, so the track showed only the marker even for trades the verdict called very fair.",
+        "text": "Trade Analyzer: the navy fair-range bar in the middle of the trade summary track is back. A site-wide tooltip update had quietly knocked it out of place.",
         "link": "/trade"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "BR Assistant now follows the league you are actually in. It used to keep answering for an earlier league on pages like My Leagues, even while the league name at the top showed a different one: it now matches the league at the top of the page, and switching leagues in the app switches the assistant too.",
+        "text": "BR Assistant now follows the league you are actually in: switching leagues in the app switches the assistant too, instead of it answering for an earlier league.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Weekly Recap alert dot: opening the recap from the navigation now clears its dot right away (it previously only cleared after a full page reload), and the Tuesday recap-ready notification now opens the recap itself instead of the matchups page.",
+        "text": "Weekly Recap alert dot: opening the recap now clears its dot right away, and the Tuesday recap-ready notification opens the recap itself instead of the matchups page.",
         "link": "/recap"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "Weekly Recap: the Injury Report is cleaned up so player names are never cut off, with the status pill beside the name and the fantasy team listed under it. The Standings and Power Rankings cards now stretch to the same height, whichever is taller. Every team and player name on the page opens its team or player card, including League Activity, Lineup Review and the Game of the Week look-ahead.",
+        "text": "Weekly Recap: the Injury Report is cleaned up so player names are never cut off, and every team and player name on the page now opens its team or player card.",
         "link": "/recap"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "My Leagues: the Rooting Guide and Bye Watch populate again. Bye Watch now reads each starter's bye from his team's schedule and covers the next week that has not kicked off yet, so it warns you about the byes you are actually facing. The Rooting Guide no longer gives up on a slow first load: it keeps retrying while the scan lands, the way the moves board already did.",
+        "text": "My Leagues: the Rooting Guide and Bye Watch populate again. Bye Watch reads each starter's actual bye week, and the Rooting Guide keeps retrying while a slow first load lands.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "new",
-        "text": "Weekly Recap and Breakout Engine now carry a small red dot in the navigation when there is a new one you have not opened yet. The dot clears when you open it and comes back when the next week's recap or the next breakout set lands.",
+        "text": "Weekly Recap and Breakout Engine now carry a small red dot in the navigation when there's a new one you haven't opened yet. It clears when you open it.",
         "link": "/recap"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Team cards and My Leagues cards: playoff odds now read at one decimal and only show 100% or 0% when a team has mathematically clinched a playoff spot or been eliminated. The Teams page team drawer now shows playoff odds for every team too, with the same rule.",
+        "text": "Team cards and My Leagues cards: playoff odds now read at one decimal and only show 100% or 0% when a team has mathematically clinched a playoff spot or been eliminated. The Teams page drawer shows playoff odds for every team too.",
         "link": "/teams"
     },
     {
         "date": "2026-10-27",
         "tag": "new",
-        "text": "Notification center: the bell at the top of the page is a real button now, and it opens your alerts. Notifications you were sent, like injury updates, recaps and scores, are kept newest first with links straight to the league, next to the latest site updates. Notification settings are grouped by how they arrive, quiet hours can hold non-live alerts overnight and send them with the morning digest, and your choices save to your account so they apply on every device. The settings menu also shows your account and plan at the top.",
+        "text": "Notification center: the bell now opens your alerts, kept newest first with links straight to the league, next to the latest site updates. Settings save to your account, so they apply on every device.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "My Leagues: a league card no longer jumps ahead to next week's preview while its final result is still due. When the week rolls over, the finished matchup stays on the card even if that league's data was loaded before the last game ended.",
+        "text": "My Leagues: a league card no longer jumps ahead to next week's preview while its final result is still due. The finished matchup stays on the card.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "fix",
-        "text": "Site reliability: pages and My Leagues load more consistently, and Refresh Data now kicks off the rebuild and updates each league as it lands instead of blocking on a full rebuild, so a slow league no longer stalls the whole site or leaves the refresh spinning.",
+        "text": "Site reliability: pages and My Leagues load more consistently, and Refresh Data now updates each league as it lands instead of blocking on a full rebuild.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-27",
         "tag": "update",
-        "text": "Player card Advanced tab: the Trending section is now one verdict instead of a stack of separate alarms. Your main production number leads, the metrics behind it are grouped as the cause and the effect, and a Role check line shows your target, share and snap numbers even when they have not moved, so an efficiency dip reads differently from a role loss. Catch rate is labelled as a completion rate, and yards per target no longer carries a per-game unit.",
+        "text": "Player card Advanced tab: the Trending section is now one verdict instead of a stack of separate alarms, with a Role check line showing your target, share and snap numbers even when they haven't moved.",
         "link": "/metrics"
     },
     {
         "date": "2026-10-26",
         "tag": "fix",
-        "text": "Advanced Metrics graphs: zooming now zooms the axes instead of the whole picture. The ranges narrow and the tick marks step finer while titles, labels and dots stay the same size, so you can spread out a crowded cluster and read exactly where everyone sits. Drag to pan, Reset to return to the full graph, and downloads still export the full graph.",
+        "text": "Advanced Metrics graphs: zooming now zooms the axes instead of the whole picture, so you can spread out a crowded cluster and read exactly where everyone sits. Drag to pan, Reset to return.",
         "link": "/metrics"
     },
     {
         "date": "2026-10-26",
         "tag": "update",
-        "text": "Player game log: the ScoreZone tab in a player's card is now a timeline. Stat tiles up top, a chart of how the points built up play by play, and every play in game order with a running total. An intercepted pass now reads as an interception instead of an extra incomplete target, so the plays in the log match the targets in the stat line.",
+        "text": "Player game log: the ScoreZone tab in a player's card is now a timeline, with stat tiles up top, a chart of how the points built up play by play, and every play in game order with a running total.",
         "link": "/scorezone"
     },
     {
         "date": "2026-10-26",
         "tag": "update",
-        "text": "Schedule Rankings: the Schedule Assistant page is now a straight rankings table. Compare every team's remaining schedule in the League view, or switch to My Team to see your players in the same ranking order, with an All view for your full roster at once. Ease, Next 3 and Playoff ranks are side by side for every player.",
+        "text": "Schedule Rankings: the page is now a straight rankings table. Compare every team's remaining schedule in the League view, or switch to My Team to see your players in the same order.",
         "link": "/schedule"
     },
     {
         "date": "2026-10-26",
         "tag": "update",
-        "text": "My Leagues: the tag on each league card now matches your Teams page. Dynasty leagues show their competitive window (Powerhouse, Contender, Win-Now, Crossroads and the rest, with a roster shape tag when one applies), and redraft leagues show Contend, Bubble or Long Shot, so a one-year league is never called a rebuild.",
+        "text": "My Leagues: the tag on each league card now matches your Teams page. Dynasty leagues show their competitive window, and redraft leagues show Contend, Bubble or Long Shot.",
         "link": "/portfolio"
     },
     {
         "date": "2026-10-25",
         "tag": "fix",
-        "text": "ScoreZone: defensive touchdowns and interceptions now credit your DST, matchup names no longer cut off on phone hero cards, and live plays keep flowing if the play collector stalls: the page now detects a stale feed and restarts collection on its own. The TD alerts bar can be dismissed for the day (with undo) instead of forever, and dark mode greens match the rest of the site.",
+        "text": "ScoreZone: defensive touchdowns and interceptions now credit your DST, live plays keep flowing if the play collector stalls, and the TD alerts bar can be dismissed for the day, with undo.",
         "link": "/scorezone"
     },
     {
         "date": "2026-10-24",
         "tag": "new",
-        "text": "Teams: competitive windows rebuilt. A new Powerhouse tier sits above Contender for the league's clear top team, Holding Pattern splits into Crossroads and Treadmill, and team cards can carry a roster shape tag: Deep, Top-Heavy, Cliff Risk or Pick-Loaded. Roster grades are steadier too: age scores on a smooth curve instead of steps, and scoring percentiles use each format's own top players.",
+        "text": "Teams: competitive windows rebuilt. A new Powerhouse tier sits above Contender, Holding Pattern splits into Crossroads and Treadmill, and team cards can carry a roster shape tag like Deep, Top-Heavy or Pick-Loaded.",
         "link": "/teams"
     },
     {
