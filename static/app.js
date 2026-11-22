@@ -447,10 +447,35 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
 // scroll position) for no benefit, and league pages already update their
 // data silently through the auto-revalidate pass. The viewer and load
 // swaps are rate-limited per URL so a flapping session can never loop.
+//
+// Home ("/", the PWA start_url) is the one exception to the interaction
+// stand-down. It carries no view state worth protecting -- its dynamic
+// sections (ticker, saved leagues) re-hydrate on every load -- and it is
+// the page the app opens on, so a first scroll or tap in the first
+// seconds must not strand the cached paint for the whole visit (the
+// reported "stale page on open, refresh takes forever" path). On home
+// the load swap therefore runs for HOME_LOAD_SWAP_WINDOW_MS regardless
+// of scrolling/tapping, and stands down only once the user has typed
+// into a text field (the league form), which a reload would erase.
 if (navigator.serviceWorker) {
   var LOAD_SWAP_WINDOW_MS = 90 * 1000;
+  var HOME_LOAD_SWAP_WINDOW_MS = 5 * 60 * 1000;
   var brLoadAt = Date.now();
   var brInteracted = false;
+  var brIsHomeNav = false;
+  try { brIsHomeNav = new URL(location.href).pathname === '/'; } catch (e) {}
+  function brHomeFormTouched() {
+    try {
+      if (typeof document.querySelectorAll !== 'function') return false;
+      var els = document.querySelectorAll('input, textarea');
+      for (var i = 0; i < els.length; i++) {
+        var t = (els[i].type || '').toLowerCase();
+        if (t === 'hidden' || t === 'checkbox' || t === 'radio' || t === 'submit' || t === 'button') continue;
+        if (els[i].value && String(els[i].value).trim()) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
   if (typeof addEventListener === 'function') {
     var brMarkInteracted = function () { brInteracted = true; };
     addEventListener('pointerdown', brMarkInteracted, { passive: true });
@@ -475,7 +500,9 @@ if (navigator.serviceWorker) {
       location.reload();
       return;
     }
-    if (!userRefresh && !brInteracted && Date.now() - brLoadAt < LOAD_SWAP_WINDOW_MS) {
+    var brSwapWindowMs = brIsHomeNav ? HOME_LOAD_SWAP_WINDOW_MS : LOAD_SWAP_WINDOW_MS;
+    var brSwapBlocked = brInteracted && !(brIsHomeNav && !brHomeFormTouched());
+    if (!userRefresh && !brSwapBlocked && Date.now() - brLoadAt < brSwapWindowMs) {
       var loadSwapKey = 'brLoadSwapAt';
       var lastLoadSwap = {};
       try { lastLoadSwap = JSON.parse(sessionStorage.getItem(loadSwapKey) || '{}'); } catch (e) {}
@@ -5358,20 +5385,47 @@ function showLoginGate(target, opts) {
   // app-version resume window in initUpdatePrompt.
   var RESUME_REVALIDATE_MS = 60 * 1000;
   var resumeHiddenAt = 0;
+
+  // Home ("/") has no league to expire, so autoRevalidate above can never
+  // run for it -- yet home is exactly what a reopened PWA resumes, and its
+  // dynamic sections (live-values ticker, saved-league list) were rendered
+  // on the original load and otherwise stay frozen at that visit. Refresh
+  // just those sections in place on resume: two small API reads, no
+  // document fetch, no league rebuild, no reload, so reopening the app
+  // updates in about a second instead of waiting on a full refresh.
+  function homeResumeRefresh() {
+    try {
+      if (location.pathname !== '/') return;
+      if (document.visibilityState !== 'visible') return;
+      if (typeof window.refreshHomeLeagues === 'function') {
+        window.refreshHomeLeagues({ force: true });
+      }
+      if (typeof window.populateHomeTicker === 'function') {
+        // populateHomeTicker is fill-once per page life (it caches the
+        // built marquee); clear the cache + track so it refetches.
+        window.__homeTickerHtml = '';
+        var track = document.getElementById('homeTickerTrack');
+        if (track) track.innerHTML = '';
+        window.populateHomeTicker();
+      }
+    } catch (e) {}
+  }
+  window.brHomeResumeRefresh = homeResumeRefresh;
+
   if (typeof document.addEventListener === 'function') {
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'hidden') { resumeHiddenAt = Date.now(); return; }
       if (document.visibilityState !== 'visible') return;
       var awayMs = resumeHiddenAt ? Date.now() - resumeHiddenAt : 0;
       resumeHiddenAt = 0;
-      if (awayMs >= RESUME_REVALIDATE_MS) autoRevalidate();
+      if (awayMs >= RESUME_REVALIDATE_MS) { autoRevalidate(); homeResumeRefresh(); }
     });
   }
   if (typeof window.addEventListener === 'function') {
     window.addEventListener('pageshow', function (e) {
       // A bfcache restore repaints the exact page the user left, however
       // long ago; the load-time pass never ran for it.
-      if (e && e.persisted) autoRevalidate();
+      if (e && e.persisted) { autoRevalidate(); homeResumeRefresh(); }
     });
   }
 
