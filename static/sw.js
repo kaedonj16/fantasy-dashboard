@@ -21,6 +21,13 @@ const NAV_TIMEOUT_MS = 3500;
 // Explicit Refresh (bypass-cache / reload) skips the stale shell preference
 // but still must not hang forever on a stuck fetch.
 const NAV_REFRESH_TIMEOUT_MS = 45000;
+// The home page ("/", the PWA start_url) is a plain server render with no
+// league context to rebuild, so an explicit refresh of it must not sit on a
+// blank / loading screen for the full league-scale wait above: paint the
+// cached home after this much slower-than-usual network time and let the
+// fresh copy swap in via nav-fresh when it lands (app.js always allows
+// that swap on home unless the user has typed into the league form).
+const NAV_HOME_REFRESH_TIMEOUT_MS = 8000;
 // ScoreZone embeds live plays in the HTML (window.__rz__). Painting its cached
 // shell after NAV_TIMEOUT_MS shows last session's plays, so ScoreZone
 // navigations give the network a longer head start and don't prefer the
@@ -269,6 +276,12 @@ async function handleNavigate(request) {
   try {
     rzNav = new URL(request.url).pathname.includes('/scorezone');
   } catch (_) {}
+  // The PWA start_url: a signed-in launch redirects on to the league
+  // dashboard, but the navigation this worker races is for "/" itself.
+  let homeNav = false;
+  try {
+    homeNav = new URL(request.url).pathname === '/';
+  } catch (_) {}
   // League pages (/<platform>/<season>/<league_id>/...) can cold-rebuild for
   // up to ~60s during live games; give the network a longer head start before
   // painting the stale cached page. API routes are excluded earlier in the
@@ -313,7 +326,7 @@ async function handleNavigate(request) {
   // fetch updates the cache + nudges the client (nav-fresh) when the live
   // copy lands.
   const waitMs = (leagueNav && !cached) ? NAV_LEAGUE_TIMEOUT_MS
-    : skipStaleShell ? NAV_REFRESH_TIMEOUT_MS
+    : skipStaleShell ? (homeNav ? NAV_HOME_REFRESH_TIMEOUT_MS : NAV_REFRESH_TIMEOUT_MS)
     : rzNav ? NAV_RZ_TIMEOUT_MS : NAV_TIMEOUT_MS;
   const timeout = new Promise(resolve => setTimeout(() => resolve(null), waitMs));
   const winner = await Promise.race([networkFetch, timeout]);

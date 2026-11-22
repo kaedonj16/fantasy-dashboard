@@ -45,8 +45,14 @@ def test_sw_skips_stale_shell_on_explicit_refresh():
     # so a hung fetch cannot blank the PWA forever. ScoreZone gets its own
     # longer head start (its cached shell holds stale plays).
     assert "NAV_REFRESH_TIMEOUT_MS" in SW
-    assert "skipStaleShell ? NAV_REFRESH_TIMEOUT_MS" in SW
+    assert "skipStaleShell ? (homeNav ? NAV_HOME_REFRESH_TIMEOUT_MS : NAV_REFRESH_TIMEOUT_MS)" in SW
     assert "rzNav ? NAV_RZ_TIMEOUT_MS : NAV_TIMEOUT_MS" in SW
+    # Home ("/", the PWA start_url) has no league context to rebuild, so its
+    # explicit refresh paints the cached home after a short wait instead of
+    # sitting on the 45s league-scale timeout; the fresh copy swaps in via
+    # nav-fresh when it lands.
+    assert "NAV_HOME_REFRESH_TIMEOUT_MS = 8000" in SW
+    assert "homeNav = new URL(request.url).pathname === '/'" in SW
     # Message handler acks so the page can reload after the SW is armed.
     assert "event.ports[0].postMessage" in SW
 
@@ -101,6 +107,13 @@ def test_nav_fresh_reload_rules():
     assert "LOAD_SWAP_WINDOW_MS" in block
     assert "brLoadSwapAt" in block
     assert "brInteracted" in block
+    # Home exception: on "/" the load swap survives a first scroll/tap (it
+    # is the page the app opens on and carries no view state), runs for the
+    # longer home window, and stands down only when the league form has
+    # typed input a reload would erase.
+    assert "HOME_LOAD_SWAP_WINDOW_MS" in block
+    assert "brIsHomeNav" in block
+    assert "brHomeFormTouched" in block
     # None of the removed auto-reload machinery may come back.
     for dead in ("STALE_MS", "reloadOnce", "maybeResumeReload", "hiddenSince",
                  "brAutoRefreshTs", "liveSurface", "visibilitychange",
@@ -287,6 +300,94 @@ process.exit(0);
             fh.write(harness)
         res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
         assert res.returncode == 0, (res.stderr or res.stdout)
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_nav_fresh_home_swap_survives_interaction_node():
+    """Behavioral: on the home page ("/"), nav-fresh still swaps the stale
+    cached paint after the user has started scrolling/tapping -- home is
+    the page the app opens on and has no view state to protect -- for the
+    longer home window. It stands down once a text field holds typed
+    input (the league form), which a reload would erase."""
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _nav_fresh_block()
+    harness = r"""
+var window = globalThis;
+var reloads = 0;
+var store = {};
+var sessionStorage = {
+  getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+  setItem: function(k, v) { store[k] = String(v); },
+  removeItem: function(k) { delete store[k]; }
+};
+var typedEls = [];
+var document = {
+  visibilityState: 'visible',
+  querySelectorAll: function() { return typedEls; }
+};
+var swListeners = {};
+var winListeners = {};
+var addEventListener = function(t, fn) { winListeners[t] = fn; };
+var navigator = { serviceWorker: { addEventListener: function(n, fn) { swListeners[n] = fn; } } };
+var location = { href: 'http://x/', reload: function() { reloads++; } };
+var fakeNow = 5000000;
+Date.now = function() { return fakeNow; };
+""" + src + r"""
+function navFresh(url, extra) {
+  var data = { type: 'nav-fresh', url: url };
+  if (extra) { for (var k in extra) data[k] = extra[k]; }
+  swListeners['message']({ data: data });
+}
+if (typeof swListeners['message'] !== 'function') process.exit(2);
+// The user is already scrolling/tapping the painted home shell.
+if (winListeners['pointerdown']) winListeners['pointerdown']();
+else process.exit(11);
+// Fresh copy lands two minutes in (past the league-page 90s window,
+// inside the home window): home still swaps, interaction or not.
+fakeNow += 120000;
+navFresh('http://x/');
+if (reloads !== 1) process.exit(3);
+// An immediate duplicate is rate-limited: no reload loop.
+navFresh('http://x/');
+if (reloads !== 1) process.exit(4);
+// Once the rate limit lapses, typed form input stands the swap down.
+fakeNow += 31000;
+typedEls = [{ type: 'text', value: 'someuser' }];
+navFresh('http://x/');
+if (reloads !== 1) process.exit(5);
+// Clearing the field re-arms it.
+typedEls = [{ type: 'text', value: '' }];
+fakeNow += 31000;
+navFresh('http://x/');
+if (reloads !== 2) process.exit(6);
+process.exit(0);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "nav_fresh_home_swap_check.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+        assert res.returncode == 0, (res.stderr or res.stdout)
+
+
+def test_home_resume_refresh_wired():
+    """Opening the PWA usually resumes the kept-alive home page instead of
+    loading it, and home has no league for the league auto-revalidate to
+    expire. The resume triggers must therefore also run the home-only
+    in-place refresh (saved leagues + ticker, forced past their caches),
+    which is gated to "/" and never reloads the document."""
+    src = _freshness_iife()
+    assert "function homeResumeRefresh()" in src
+    assert "location.pathname !== '/'" in src
+    assert "window.refreshHomeLeagues({ force: true })" in src
+    assert "window.__homeTickerHtml = ''" in src
+    assert "window.brHomeResumeRefresh = homeResumeRefresh" in src
+    assert "if (awayMs >= RESUME_REVALIDATE_MS) { autoRevalidate(); homeResumeRefresh(); }" in src
+    assert "if (e && e.persisted) { autoRevalidate(); homeResumeRefresh(); }" in src
 
 
 def test_sw_late_network_notifies_after_explicit_refresh_fallback():
@@ -1086,9 +1187,9 @@ def test_resume_revalidate_hooks_present():
     src = _freshness_iife()
     assert "RESUME_REVALIDATE_MS = 60 * 1000" in src
     assert "document.addEventListener('visibilitychange'" in src
-    assert "if (awayMs >= RESUME_REVALIDATE_MS) autoRevalidate();" in src
+    assert "if (awayMs >= RESUME_REVALIDATE_MS) { autoRevalidate(); homeResumeRefresh(); }" in src
     assert "window.addEventListener('pageshow'" in src
-    assert "if (e && e.persisted) autoRevalidate();" in src
+    assert "if (e && e.persisted) { autoRevalidate(); homeResumeRefresh(); }" in src
 
 
 @pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
