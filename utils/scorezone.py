@@ -1621,6 +1621,37 @@ def _resolve_abbrev_pid(
     return _team_prefix_pid(token, team, player_meta_by_pid)
 
 
+def _team_exact_abbrev_pid(
+    token,
+    team: str,
+    player_meta_by_pid: dict[str, dict] | None,
+) -> tuple[str, int]:
+    """Resolve a booth abbreviation that is ambiguous across the two teams
+    in the shared index (so ``build_name_indexes`` dropped it) but unique
+    on ONE team: "J.Williams" in TEN@DAL matches James Williams Sr. and
+    Joshua Williams for TEN but only Javonte Williams for DAL, so on a DAL
+    drive the credit is his. A same-team collision stays unresolved --
+    silently skipped beats credited to the wrong player."""
+    if not team or not player_meta_by_pid:
+        return "", 0
+    from utils.nfl import canon_team
+
+    wanted = _canon_abbrev(token)
+    if not wanted:
+        return "", 0
+    canonical_team = canon_team(team) or _s(team).upper()
+    hits: set[str] = set()
+    for pid, meta in player_meta_by_pid.items():
+        if not isinstance(meta, dict):
+            continue
+        candidate_team = canon_team(meta.get("team")) or _s(meta.get("team")).upper()
+        if candidate_team != canonical_team:
+            continue
+        if wanted in _abbrev_forms(_s(meta.get("name"))):
+            hits.add(str(pid))
+    return (next(iter(hits)), 1) if len(hits) == 1 else ("", len(hits))
+
+
 def _stat_lines_by_pid(
     text: str,
     abbrev_index: dict[str, str],
@@ -1641,6 +1672,18 @@ def _stat_lines_by_pid(
             abbrev, abbrev_index=abbrev_index, team=team,
             player_meta_by_pid=player_meta_by_pid,
         )
+        if not pid:
+            # Stat credits describe the drive team's actors, so an
+            # abbreviation the shared index dropped as cross-team ambiguous
+            # still resolves when it is unique on the drive team (the
+            # J.Williams case: the TEN@DAL rushing TD went uncredited and
+            # its scorer got no row at all). The mention pass deliberately
+            # does NOT get this fallback -- a penalty or tackle mention of
+            # the other team's same-abbrev player must stay unresolved
+            # rather than land on the drive team's player.
+            pid, candidate_count = _team_exact_abbrev_pid(
+                abbrev, team, player_meta_by_pid,
+            )
         if logger.isEnabledFor(logging.DEBUG):
             role = "receiver" if sl.get("rec") or sl.get("targets") else "passer" if sl.get("pass_att") else "participant"
             logger.debug("[pbp-identity] play=%s offense=%s token=%s role=%s pid=%s candidates=%s",
@@ -1838,6 +1881,66 @@ def _row_inherits_td(play_is_td: bool, stat_line: dict) -> bool:
     return True
 
 
+# Booth lines carry administrative notes naming players who are not actors
+# in the play: a lineman reporting as an eligible receiver ("B.Jones
+# reported in as eligible.  J.Williams up the middle for 1 yard,
+# TOUCHDOWN.") and ESPN's appended injury notes ("** Injury Update:
+# IND-K.Gushiken has returned to the game."). The mention pass resolves
+# those names anyway -- and because their rows carry no stats they kept the
+# TD flag under _row_inherits_td's missed-scorer rule, so the client
+# headlined a 0-point lineman over the actual scorer (and a returned-from-
+# injury DB surfaced as a touchdown row on a TD he was nowhere near). Strip
+# both notes from the text that gets parsed (stats, mentions); the stored
+# play_text keeps the source text verbatim.
+_ELIGIBLE_REPORT_RE = re.compile(
+    r"\b[A-Z]\.[A-Za-z.'-]+ reported in as eligible\.\s*"
+)
+# The note is one sentence; its names carry periods of their own
+# ("IND-K.Gushiken"), so end it at the first period followed by whitespace
+# or the end of the text, not the first period.
+_INJURY_UPDATE_RE = re.compile(r"\*\*\s*Injury Update:.*?\.(?:\s+|$)")
+
+
+def _strip_admin_notes(text: str) -> str:
+    out = _ELIGIBLE_REPORT_RE.sub("", _s(text))
+    return _INJURY_UPDATE_RE.sub("", out).strip()
+
+
+def _apply_td_flag_guard(rows: list[dict], drive_team: str) -> None:
+    """Play-level touchdown-flag guard, applied once a play's rows are built.
+
+    ``_row_inherits_td`` judges each row alone, so on a TD play whose scorer
+    the stat parser missed, EVERY stat-less mention row kept the flag -- in
+    TEN@DAL (2026-11-22) the eligible-reporter and the penalized defender
+    both surfaced as touchdown rows and the client headlined the lineman.
+    With the play's full row set in hand: when a real scorer exists (a row
+    carrying a TD stat), only those rows keep the flag; when none exists,
+    the missed-scorer exemption narrows to the first drive-team row and
+    every other row is demoted. Rows without a pid (the play-level scoring
+    fallback) are left untouched.
+    """
+    if not any(r.get("is_td") for r in rows):
+        return
+
+    def _has_td_stat(r: dict) -> bool:
+        sl = r.get("stat_line") or {}
+        return any(sl.get(k) for k in _TD_STAT_KEYS)
+
+    if any(_has_td_stat(r) for r in rows):
+        for r in rows:
+            if r.get("pid") and not _has_td_stat(r):
+                r["is_td"] = False
+        return
+    kept = False
+    for r in rows:
+        if not r.get("is_td") or not r.get("pid"):
+            continue
+        if not kept and r.get("team") == drive_team:
+            kept = True
+        else:
+            r["is_td"] = False
+
+
 # ── Sleeper ──────────────────────────────────────────────────────────────────
 
 
@@ -1980,13 +2083,14 @@ def extract_sleeper_pbp_plays(
             "is_td": "touchdown" in text.lower() or " TD" in text,
             "source": "sleeper",
         }
-        stat_by_pid = _stat_lines_by_pid(text, abbrev_idx)
+        parse_text = _strip_admin_notes(text)
+        stat_by_pid = _stat_lines_by_pid(parse_text, abbrev_idx)
         # Strip parenthetical tackle credits before resolving mentions so a
         # defender who only made the stop never headlines the play (see
         # _text_without_credits). Also strip the two-point conversion / PAT
         # portion: a player mentioned only there (e.g. the 2PT target on an
         # incomplete attempt) must not inherit the TD flag.
-        _td_text, _ = _two_point_segments(text)
+        _td_text, _ = _two_point_segments(parse_text)
         pids = pids_mentioned_in_text(
             _text_without_credits(_td_text), full_index=full_idx, abbrev_index=abbrev_idx
         )
@@ -2003,6 +2107,7 @@ def extract_sleeper_pbp_plays(
         for pid in stat_by_pid:
             if pid not in pids:
                 pids.append(pid)
+        play_rows: list[dict] = []
         if pids:
             for pid in pids:
                 sl = stat_by_pid.get(pid, {})
@@ -2010,13 +2115,15 @@ def extract_sleeper_pbp_plays(
                 # conversion actor or the PAT kicker sharing the booth line does
                 # not (see _row_inherits_td).
                 row_is_td = _row_inherits_td(base["is_td"], sl)
-                out.append({
+                play_rows.append({
                     **base, "pid": pid, "name": long_name,
                     "team": _s(play.get("team")),
                     "stat_line": sl, "is_td": row_is_td,
                 })
         else:
-            out.append({**base, "pid": "", "name": long_name, "team": _s(play.get("team"))})
+            play_rows.append({**base, "pid": "", "name": long_name, "team": _s(play.get("team"))})
+        _apply_td_flag_guard(play_rows, _s(play.get("team")))
+        out.extend(play_rows)
     return attach_cumulative(out)
 
 
@@ -2387,7 +2494,7 @@ def extract_espn_pbp_plays(
             # no-play detection, stat lines, mentions) must read only the
             # corrected segment. The stored play_text stays verbatim.
             # See _post_reversal_text.
-            parse_text = _post_reversal_text(text)
+            parse_text = _strip_admin_notes(_post_reversal_text(text))
             start = play.get("start") or {}
             end = play.get("end") or {}
             clock = ""
@@ -2482,6 +2589,7 @@ def extract_espn_pbp_plays(
             # Suppress per-player rows for stat-less, non-scoring kick
             # plays. Scoring plays stay exempt: a return TD whose scorer
             # the parser missed must still surface (see _row_inherits_td).
+            play_rows: list[dict] = []
             if pids and (stat_by_pid or is_td or play.get("scoringPlay")
                          or not _KICK_PLAY_RE.search(parse_text)):
                 for pid in pids:
@@ -2491,7 +2599,7 @@ def extract_espn_pbp_plays(
                     # booth line would otherwise fire a phantom TD alert (see
                     # _row_inherits_td).
                     row_is_td = _row_inherits_td(base["is_td"], sl)
-                    out.append({
+                    play_rows.append({
                         **base, "pid": pid, "name": "", "team": drive_team,
                         "stat_line": sl, "is_td": row_is_td,
                     })
@@ -2499,7 +2607,7 @@ def extract_espn_pbp_plays(
                 # Keep scoring lines even without a name match — client may
                 # still resolve via heuristics; otherwise filtered server-side.
                 if is_td or play.get("scoringPlay"):
-                    out.append({**base, "pid": "", "name": "", "team": drive_team})
+                    play_rows.append({**base, "pid": "", "name": "", "team": drive_team})
             # DST association: a defensive score / takeaway belongs to the
             # DEFENDING team's fantasy DST, but the rows above only carry
             # individual pids, so a DST starter never matched them (a
@@ -2523,12 +2631,14 @@ def extract_espn_pbp_plays(
                     elif "intercepted by" in parse_text.lower():
                         _dst_stat = {"def_int": 1}
                     if _dst_stat:
-                        out.append({
+                        play_rows.append({
                             **base, "pid": _def_pid,
                             "name": (_def_team + " DEF") if _def_team else "Defense",
                             "team": _def_team, "stat_line": _dst_stat,
                             "is_td": _dst_td,
                         })
+            _apply_td_flag_guard(play_rows, drive_team)
+            out.extend(play_rows)
     return attach_cumulative(out)
 
 
