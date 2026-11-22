@@ -10,15 +10,16 @@ They show rank (ordered by the internal grade), a band tag, and component
 percentiles computed within position against the graded reference
 population.
 
-Layout (2026-11-21, Direction B, approved by Kaedon): the board is a
-dense table (tight pr-grid rows under a navy header band, numbers-only
-percentile cells colored by the 90+/70 rule, band washes with a left
-accent on each band's first row, tier dividers kept from the native
-grammar); the modal Overview is a two-column scouting report
-(percentiles + trajectory + testing left, hero cards + season lines
-right, notes and comparables full width below). The whole surface uses
-the BR Fantasy palette only: navy #122d4b and light blue (#38bdf8 /
-#60a5fa) with slate for muted text; no amber, green, purple or red.
+Layout: the board uses the same grammar as the site's other ranking
+pages (card shell, two-row filter bar, pr-grid rows, tier dividers,
+quiet header row, tinted tag chips). The modal Overview is a two-column
+scouting report (percentiles + trajectory + testing left, hero cards +
+season lines right, notes and comparables full width below). Band and
+percentile colors use the BR Fantasy palette only: navy #122d4b and
+light blue (#38bdf8 / #60a5fa) with slate for muted text; no amber,
+green or purple band/bar colors. (The heavier Direction B board
+treatment shipped 2026-11-22 was walked back the same day at Kaedon's
+direction: it did not match the rest of the site.)
 """
 from __future__ import annotations
 
@@ -188,48 +189,33 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .pr-player-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .pr-rank { display: flex; align-items: baseline; gap: 6px; justify-content: flex-start; white-space: nowrap; padding-left: 2px; }
   .pr-rank-num { font-size: 15px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
-  .pr-rank-num.top { color: #60a5fa; }
+  .pr-rank-num.top { color: var(--gold); }
   .pr-rank-delta { font-size: 11px; font-weight: 800; line-height: 1; white-space: nowrap; }
-  .pr-rank-delta.up { color: #38bdf8; }
-  .pr-rank-delta.down { color: var(--text-subtle); }
+  .pr-rank-delta.up { color: var(--win); }
+  .pr-rank-delta.down { color: var(--loss); }
   .pr-name { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
   .pr-nm { min-width: 0; line-height: 1.3; }
   /* Player-name hover contract (site-wide): names dim, never underline. */
   .pr-nm:hover { opacity: 0.72; }
-  .pr-wl-star { color: #60a5fa; font-size: 12px; line-height: 1; margin-left: 5px; }
+  .pr-wl-star { color: var(--gold); font-size: 12px; line-height: 1; margin-left: 5px; }
   .pr-meta { display: none; }
   .pr-meta-txt b { color: var(--text); font-weight: 600; }
   .pr-school { text-align: right; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pr-school b { color: var(--text); font-weight: 600; }
   .pr-sep { margin: 0 7px; color: var(--text-subtle); font-weight: 400; }
   .pr-stat { text-align: right; }
-  .pr-stat-val { display: block; font-size: 13px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text); }
+  .pr-stat-val { display: block; font-size: 14px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text); }
   .pr-stat-val.sv-lo { color: var(--text-muted); font-weight: 600; }
-  .pr-stat-val.sv-hot { color: #60a5fa; font-weight: 800; }
+  .rk-scbar { display: block; height: 3px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); border-radius: 999px; margin-top: 4px; overflow: hidden; }
+  .rk-scbar i { display: block; height: 100%; border-radius: 999px; opacity: .92; }
   .pr-tagcell { text-align: right; }
   .pr-tier-divider { display: flex; align-items: center; gap: 8px; padding: 7px 12px 5px; pointer-events: none; }
   .pr-tier-divider-line { flex: 1; height: 1px; opacity: .35; }
   .pr-tier-divider-label { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: var(--radius-sm); line-height: 1.3; white-space: nowrap; }
-  .td-elite { background: rgba(18,45,75,.35); color: #60a5fa; }
-  .td-great { background: rgba(56,189,248,.14); color: #38bdf8; }
+  .td-elite { background: color-mix(in srgb, #122d4b 12%, transparent); color: var(--accent); }
+  .td-great { background: rgba(56,189,248,.13); color: color-mix(in srgb, #38bdf8 65%, var(--text)); }
   .td-avg { background: rgba(148,163,184,.12); color: #94a3b8; }
   .td-day3 { background: rgba(100,116,139,.15); color: #94a3b8; }
-
-  /* Direction B board: dense rows, navy header band, band washes with a
-     left accent on each band's first row. */
-  #rkTableHeader { background: #122d4b; border-radius: 8px; }
-  #rkTableHeader span { color: #60a5fa; }
-  @media (min-width: 769px) {
-    #prospectsCard .pr-player-row { padding-top: 6px; padding-bottom: 6px; min-height: 34px; align-items: center; }
-  }
-  .rk-bandrow-elite { background: color-mix(in srgb, #122d4b 22%, transparent); }
-  .rk-bandrow-great { background: color-mix(in srgb, #38bdf8 6%, transparent); }
-  .rk-bandrow-average { background: color-mix(in srgb, #94a3b8 5%, transparent); }
-  .rk-bandrow-day3 { background: color-mix(in srgb, #64748b 4%, transparent); }
-  .rk-bandfirst-elite { box-shadow: inset 4px 0 0 var(--accent); }
-  .rk-bandfirst-great { box-shadow: inset 4px 0 0 #38bdf8; }
-  .rk-bandfirst-average { box-shadow: inset 4px 0 0 #94a3b8; }
-  .rk-bandfirst-day3 { box-shadow: inset 4px 0 0 #64748b; }
 
   /* Position chip: tint in the position color */
   .rk-pos { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: color-mix(in srgb, var(--pc, var(--accent)) 16%, transparent); color: var(--pc, var(--accent)); vertical-align: middle; }
@@ -237,10 +223,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .m-tier { display: inline-block; padding: 4px 9px; border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 1.25; white-space: nowrap; text-align: center; min-width: 118px; }
   .tag-chip { display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 4px 9px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--text); }
   .tag-chip.tag-mini { font-size: 10px; padding: 2px 7px; }
-  .tag-elite { background: #122d4b; color: #60a5fa; border: 1px solid #122d4b; }
-  .tag-great { background: #38bdf8; color: #122d4b; border: 1px solid #38bdf8; }
-  .tag-average { background: rgba(148,163,184,.14); color: var(--text-muted); border: 1px solid rgba(148,163,184,.30); }
-  .tag-day3 { background: rgba(100,116,139,.14); color: var(--text-muted); border: 1px solid rgba(100,116,139,.30); }
+  .tag-elite { background: color-mix(in srgb, #122d4b 12%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, #122d4b 30%, transparent); }
+  .tag-great { background: rgba(56,189,248,.13); color: color-mix(in srgb, #38bdf8 65%, var(--text)); border: 1px solid rgba(56,189,248,.30); }
+  .tag-average { background: rgba(148,163,184,.14); color: #94a3b8; border: 1px solid rgba(148,163,184,.30); }
+  .tag-day3 { background: rgba(100,116,139,.14); color: #94a3b8; border: 1px solid rgba(100,116,139,.30); }
   .m-tier.tag-elite, .m-tier.tag-great, .m-tier.tag-average, .m-tier.tag-day3 { border-width: 1px; }
   /* In-season chip: quieter wash than the position chip */
   .m-early { display: inline-block; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 600; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); white-space: nowrap; }
@@ -319,15 +305,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
   #rkModalContent.rk-band-great { --band: #38bdf8; --band-ink: #38bdf8; }
   #rkModalContent.rk-band-average { --band: #94a3b8; --band-ink: #94a3b8; }
   #rkModalContent.rk-band-day3 { --band: #64748b; --band-ink: #94a3b8; }
-  /* Report modal header: navy band (scoped to the prospect modal; the
-     NFL player modal sharing these classes is untouched). */
-  #rkModalContent .player-modal-header { background: #122d4b; border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
-  #rkModalContent .player-modal-name { color: #fff; }
-  /* The shared position badge keeps its per-position colors in the NFL
-     player modal; on this surface it follows the navy/sky palette. */
-  #rkModalContent .pos-badge { background: #38bdf8; color: #122d4b; }
-  #rkModalContent .rk-meta-line { color: #cbd5e1; }
-  #rkModalContent .player-modal-close { color: #e5e7eb; }
   /* Overview as a two-column scouting report on wide screens. */
   .rk-report { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; align-items: start; }
   .rk-report .pm-hero-row { grid-template-columns: 1fr 1fr !important; }
@@ -520,7 +497,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     try { localStorage.setItem('rkWatchlistV1', JSON.stringify(Object.keys(rkWatch))); } catch (e) {}
   }
 
-  var RK_POS_COLORS = { QB: '#38bdf8', RB: '#38bdf8', WR: '#38bdf8', TE: '#38bdf8' };
+  var RK_POS_COLORS = { QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6' };
   var RK_DISC_COLORS = ['#38bdf8','#60a5fa','#7dd3fc','#0ea5e9','#64748b','#94a3b8'];
   function rkEsc(s) {
     return String(s == null ? '' : s)
@@ -593,22 +570,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
 
   // ── Board ──────────────────────────────────────────────────────────────
-  // One percentile stat cell (Direction B: numbers only, no bar). The
-  // value prints light blue at 90+, plain at 70-89, muted below 70. A
-  // missing percentile renders a muted dash, never a blank hole.
+  // One percentile stat cell: value over a railed bar, matching the
+  // site's other ranking pages. The bar is sky at every value; the value
+  // prints plain, muted below 70. A missing percentile renders a muted
+  // dash, never a blank hole.
   function rkStatCell(r, def, extraCls) {
     var p = rkPctOf(r, def.key);
     if (p === null) return '<span class="pr-stat ' + extraCls + '"><span class="pr-stat-val sv-lo">-</span></span>';
-    var cls = p >= 90 ? ' sv-hot' : (p < 70 ? ' sv-lo' : '');
-    return '<span class="pr-stat ' + extraCls + '"><span class="pr-stat-val' + cls + '">' + p + '</span></span>';
+    var cls = p < 70 ? ' sv-lo' : '';
+    return '<span class="pr-stat ' + extraCls + '"><span class="pr-stat-val' + cls + '">' + p + '</span>' +
+      '<span class="rk-scbar"><i style="width:' + p + '%;background:#38bdf8"></i></span></span>';
   }
 
   // One board row (native pr-grid grammar): rank + movement triangles,
   // name with baseline position chip, school column, percentile stats,
-  // band tag chip. No numeric grade is rendered. Direction B: the row
-  // carries its band wash; the first row of each band also carries the
-  // band's left accent stripe.
-  function rkBoardRow(r, bandFirst) {
+  // band tag chip. No numeric grade is rendered.
+  function rkBoardRow(r) {
     var pid = r.player_id || '';
     var pos = (r.position || '').toUpperCase();
     var posColor = RK_POS_COLORS[pos] || '#94a3b8';
@@ -630,11 +607,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var metaTxt = schoolBit;
     var tag = r.tag && r.tag.label
       ? '<span class="m-tier ' + (RK_TAG_CLASS[r.tag.band] || '') + '">' + rkEsc(r.tag.label) + '</span>' : '';
-    var band = r.tag ? r.tag.band : null;
-    var rowCls = 'pr-player-row pr-grid-row' +
-      (band ? ' rk-bandrow-' + band : '') +
-      (band && bandFirst ? ' rk-bandfirst-' + band : '');
-    return '<div class="' + rowCls + '" data-pid="' + rkEsc(pid) + '" role="button" tabindex="0" aria-label="' + rkEsc(r.name || '') + '">' +
+    return '<div class="pr-player-row pr-grid-row" data-pid="' + rkEsc(pid) + '" role="button" tabindex="0" aria-label="' + rkEsc(r.name || '') + '">' +
       '<span class="pr-rank"><span class="pr-rank-num' + (rank === 1 ? ' top' : '') + '">' +
         (rank !== null && !isNaN(rank) ? rank : '-') + '</span>' + delta + '</span>' +
       '<span class="pr-name"><span class="pr-nm">' + rkEsc(r.name || 'Unknown') + star + '</span>' +
@@ -765,13 +738,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var html = '', lastBand = null, firstGroup = true;
     list.forEach(function(r) {
       var band = r.tag ? r.tag.band : null;
-      var bandFirst = !!(band && band !== lastBand);
-      if (bandFirst) {
-        if (showDividers && !firstGroup) html += rkBandDivider(band);
+      if (showDividers && band && band !== lastBand) {
+        if (!firstGroup) html += rkBandDivider(band);
         firstGroup = false;
         lastBand = band;
       }
-      html += rkBoardRow(r, bandFirst);
+      html += rkBoardRow(r);
     });
     listEl.innerHTML = html;
     listEl.querySelectorAll('.pr-player-row').forEach(function(rowEl) {
@@ -1284,10 +1256,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
     // the evidence-weight receipt is appended by rkFillMetaEvidence).
     var metaParts = [];
     if (r.position_rank != null && r.position_rank !== '') {
-      metaParts.push('<span style="font-weight:600;color:#fff;">' +
+      metaParts.push('<span style="font-weight:600;color:var(--text);">' +
         rkEsc(pos + r.position_rank) + '</span>');
     } else if (r.overall_rank != null) {
-      metaParts.push('<span style="font-weight:600;color:#fff;">#' +
+      metaParts.push('<span style="font-weight:600;color:var(--text);">#' +
         r.overall_rank + '</span>');
     }
     if (r.school) metaParts.push('<span>' + rkEsc(r.school) + '</span>');
