@@ -15519,6 +15519,14 @@ window.initTradePage = function initTradePage(root = document) {
     // misses and refetches. Cleared on context change below.
     let _strategyCache   = {};
     let _strategyInflight = {};
+    // Cache key of the result currently painted in the panel (slate or
+    // final), plus the league/season/roster/archetype fingerprint of the
+    // last load. Re-entries for the identical view (page-restore load, tab
+    // click and the context-settle change event can all fire within
+    // seconds) must keep that first paint up instead of restarting the
+    // loader over it.
+    let _strategyShownKey  = "";
+    let _lastStrategyCtx   = "";
     // Progressive loading state: after the analytical slate paints, each
     // player group resolves its Monte Carlo numbers via its own request.
     // _strategySimGroups maps group_key -> {state: pending|retrying|done|error,
@@ -15621,9 +15629,21 @@ window.initTradePage = function initTradePage(root = document) {
 
     // Re-wire context change on league/season switch
     function _onContextChangePatch() {
+      // A change event whose league/season/roster/archetype all match the
+      // load already on screen is a programmatic settle, not a real switch:
+      // clearing the cache and reloading here is what threw a painted
+      // suggestions list back to skeletons seconds after it loaded.
+      const _ctxNow = [
+        root.querySelector("#leagueIdInput")?.value || "",
+        root.querySelector("#seasonInput")?.value || "",
+        getCurrentRosterId() || "",
+        _activeArchetype || "",
+      ].join("|");
+      if (_activeSubtab === "suggestions" && _strategyShownKey && _ctxNow === _lastStrategyCtx) return;
       suggTargetsLoaded = false;
       _strategyCache = {};
       _strategyInflight = {};
+      _strategyShownKey = "";
       if (suggTab.style.display !== "none") {
         if (_activeSubtab === "suggestions" && _activeArchetype) {
           loadStrategyView(_activeArchetype);
@@ -15672,17 +15692,6 @@ window.initTradePage = function initTradePage(root = document) {
       const strategySpinner = root.querySelector("#otcStrategySpinner");
       const impactHint      = root.querySelector("#otcStrategyImpactHint");
 
-      // Newest-request-wins: bump the token and cancel any in-flight load so a
-      // stale response can never render under a different (or the re-selected) chip.
-      const _mySeq = ++_strategyReqSeq;
-      if (_strategyAbortCtrl) { try { _strategyAbortCtrl.abort(); } catch (_) {} }
-      const _ctrl = new AbortController();
-      _strategyAbortCtrl = _ctrl;
-      const _isStale = () => _mySeq !== _strategyReqSeq || _activeArchetype !== archetype;
-      // Any progressive sim state belongs to the load just superseded.
-      _strategySimGroups = {};
-      _strategySimJob    = null;
-
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
         window.brEmptyState(strategyImpact, {
@@ -15720,23 +15729,57 @@ window.initTradePage = function initTradePage(root = document) {
       // Serve repeat views from memory: same archetype + same context renders
       // instantly with no fetch and no shimmer flash.
       const _sCacheKey = [archetype, platform, leagueId, season, viewerRosterId, leagueType, leagueSize, _untouchableStr].join("|");
+      _lastStrategyCtx = [leagueId, season, viewerRosterId, archetype].join("|");
+
       const _sCached = _strategyCache[_sCacheKey];
       if (_sCached) {
         ++_strategyReqSeq;
         if (_strategyAbortCtrl) { try { _strategyAbortCtrl.abort(); } catch (_) {} }
         _strategyAbortCtrl = null;
         if (strategySpinner) strategySpinner.style.display = "none";
+        _strategyShownKey = _sCacheKey;
         _renderStrategyResult(_sCached.data, _sCached.playoffPct, archetype);
         return;
       }
+
+      // Re-entry for the view already on screen: keep the first paint up.
+      // The slate for this exact view may still be fetching, or its sim
+      // fill-in may still be running per player; either way the running
+      // load owns the panel and a restart would abort it and throw the
+      // painted cards back to skeletons.
+      if (_strategyShownKey === _sCacheKey && _strategyData.length &&
+          _strategySimJob && !_strategySimJob.isStale() && _strategySimJob.cacheKey === _sCacheKey) {
+        if (strategySpinner) strategySpinner.style.display = "none";
+        _renderImpactTable(_strategyData);
+        _renderStrategyCards(_strategyData, _strategyFilter);
+        return;
+      }
+      if (_strategyInflight[_sCacheKey] && _strategyInflight[_sCacheKey] === _strategyReqSeq) {
+        return;
+      }
+      // Newest-request-wins: bump the token and cancel any in-flight load so a
+      // stale response can never render under a different (or the re-selected) chip.
+      const _mySeq = ++_strategyReqSeq;
+      if (_strategyAbortCtrl) { try { _strategyAbortCtrl.abort(); } catch (_) {} }
+      const _ctrl = new AbortController();
+      _strategyAbortCtrl = _ctrl;
+      const _isStale = () => _mySeq !== _strategyReqSeq || _activeArchetype !== archetype;
+      // Any progressive sim state belongs to the load just superseded.
+      _strategySimGroups = {};
+      _strategySimJob    = null;
+
       // A flag still set at this point can only belong to the request this
       // call just superseded (and aborted) above: its owner will never
       // render, so deferring to it would strand the skeletons on screen
       // forever. Clear the stale flag and fetch fresh.
       if (_strategyInflight[_sCacheKey]) delete _strategyInflight[_sCacheKey];
 
-      // Loading skeleton + spinner
+      // Loading skeleton + spinner. If this exact view is already painted
+      // (a refetch after its sim job went stale), keep the paint up and
+      // swap when the new slate lands instead of blanking it to skeletons.
+      const _keepPaint = _strategyShownKey === _sCacheKey && _strategyData.length > 0;
       if (strategySpinner) strategySpinner.style.display = "";
+      if (!_keepPaint) {
       // Shimmering placeholder rows (shared .sk-shimmer system). The old markup
       // referenced a non-existent `skeleton-pulse` keyframe, so nothing animated.
       strategyImpact.innerHTML = [0,1,2,3,4].map(i => `
@@ -15753,6 +15796,7 @@ window.initTradePage = function initTradePage(root = document) {
           <div class="sk-shimmer sk-line" style="width:65%;animation-delay:${i*0.12+0.1}s;"></div>
         </div>`).join("");
       if (strategyCardsHead) strategyCardsHead.style.display = "none";
+      }
 
       // The in-flight flag records WHICH request owns this key, and every exit
       // below clears it only if it is still ours. The old bare `true` flag
@@ -15811,6 +15855,7 @@ window.initTradePage = function initTradePage(root = document) {
         // group settles (see _strategySimFinalize).
         const _groups = Array.isArray(raw.groups) ? raw.groups.map(String) : [];
         _groups.forEach(gk => { _strategySimGroups[gk] = { state: "pending", rows: null }; });
+        _strategyShownKey = _sCacheKey;
         _renderStrategyResult(data, null, archetype);
         _strategySimJob = {
           archetype: archetype, qs: qs, cacheKey: _sCacheKey,
@@ -15938,7 +15983,9 @@ window.initTradePage = function initTradePage(root = document) {
       const unranked = _strategyData.filter(r => r.rank == null);
       ranked.sort((a, b) => b.rank - a.rank);
       _strategyData = ranked.concat(unranked);
-      _strategyPage = 0;
+      // Keep the reader's page: _renderStrategyCards clamps it to the new
+      // order. Resetting to page 1 here made the finished list jump away
+      // from whoever was reading page 2+ when the last sim landed.
       _renderImpactTable(_strategyData);
       _renderStrategyCards(_strategyData, _strategyFilter);
       _strategyCache[job.cacheKey] = { data: _strategyData, playoffPct: _currentPlayoffPct };
