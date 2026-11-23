@@ -167,6 +167,8 @@ var _strategyReqSeq = 0;
 var _strategyAbortCtrl = null;
 var _strategyCache = {};
 var _strategyInflight = {};
+var _strategyShownKey = '';
+var _lastStrategyCtx = '';
 var _strategySimGroups = {};
 var _strategySimJob = null;
 var _STRATEGY_SIM_CONCURRENCY = 3;
@@ -259,11 +261,12 @@ const slateCalls = (fetchFake) =>
     return gate.then(() => okRes(slatePayload(['a'])));
   });
   const pA = api.loadStrategyView('consolidate'); // paints skeletons, slate pending
-  const pB = api.loadStrategyView('consolidate'); // duplicate: aborts A, must own the view
+  const pB = api.loadStrategyView('consolidate'); // duplicate: defers to A, which keeps owning the view
   release();
   await Promise.allSettled([pA, pB]);
   await settleUntil(() => Object.keys(api.state().cache).length === 1, 'duplicate call finalizes');
-  check('duplicate same-key call fetches a live replacement slate', slateCalls(fetchFake).length === 2);
+  check('duplicate same-key call defers to the in-flight slate (no abort, no replacement fetch)',
+    slateCalls(fetchFake).length === 1);
   check('duplicate same-key call renders the slate exactly once', renders.length === 1);
   check('duplicate same-key call sims only for the owning request', simCallsFor(fetchFake, 'a').length === 1);
   check('duplicate same-key call does not leave skeletons on screen',
@@ -400,6 +403,34 @@ const slateCalls = (fetchFake) =>
   check('resolved-empty group drops its slate rows',
     api.state().data.map((r) => r.player_id).join(',') === 'a');
   check('result still caches when a group resolves empty', Object.keys(api.state().cache).length === 1);
+}
+
+// ── 9. Re-entry while sims fill in keeps the first paint up ───────────────
+// Kaedon 2026-11-23: suggestions "loaded in, then went away and started to
+// load again." A same-view re-entry (tab click / restore / context settle)
+// while the per-player sims are still running must not abort the running
+// job or throw the painted slate back to skeletons.
+{
+  const { api, renders, strategyImpact, fetchFake } = buildLoader();
+  api.setArch('contending');
+  const simResolvers = [];
+  fetchFake.setHandler((url) => {
+    if (url.includes('archetype-suggestion-sim')) {
+      const gk = url.includes('group_key=b') ? 'b' : 'a';
+      return new Promise((res) => simResolvers.push(
+        () => res(okRes(simPayload(gk, gk === 'a' ? 0.9 : 0.4, 0.05)))));
+    }
+    return okRes(slatePayload(['a', 'b']));
+  });
+  await api.loadStrategyView('contending');
+  check('slate painted before re-entry', renders.length === 1 && strategyImpact.innerHTML === 'RENDERED:contending');
+  await api.loadStrategyView('contending');
+  check('re-entry does not refetch the slate', slateCalls(fetchFake).length === 1);
+  check('re-entry keeps the first paint (no skeleton swap)',
+    strategyImpact.innerHTML === 'RENDERED:contending' && renders.length === 1);
+  simResolvers.forEach((r) => r());
+  await settleUntil(() => Object.keys(api.state().cache).length === 1, 'running sim job still finalizes after re-entry');
+  check('running sim job was not aborted by the re-entry', Object.keys(api.state().cache).length === 1);
 }
 
 await tick();
