@@ -29277,6 +29277,7 @@ def api_trade_eval():
                                 roster_positions=ctx.get("roster_positions") or [],
                                 num_teams=len(rosters) or 12,
                                 is_sf=_ctx_is_sf(ctx),
+                                for_partner=True,
                             )
                         except Exception:
                             logger.warning("[trade-eval] partner depth warning failed", exc_info=True)

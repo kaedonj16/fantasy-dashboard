@@ -1550,9 +1550,15 @@ def calculate_roster_depth_warning(
         roster_positions: list[str] | None = None,
         num_teams: int = 12,
         is_sf: bool = False,
+        for_partner: bool = False,
 ) -> dict[str, dict]:
     """
     Warn when a trade leaves the viewer dangerously thin at a position.
+
+    With for_partner=True the same simulation runs on the trade partner's
+    roster and the warning is worded in the third person ("They'll have
+    no...", "Leaves them only...") so the partner panel never reads as if
+    it were about the viewer.
 
     Simulates the post-trade roster: removes sent players, adds received players,
     then counts starter-caliber players at each affected position.
@@ -1689,10 +1695,12 @@ def calculate_roster_depth_warning(
 
         _slots = "slot" if need == 1 else "slots"
         if after_n <= 0:
-            warning = f"You'll have no starter-caliber {pos} for {need} starting {_slots}"
+            _who = "They'll" if for_partner else "You'll"
+            warning = f"{_who} have no starter-caliber {pos} for {need} starting {_slots}"
             severity = "danger"
         else:
-            warning = f"Leaves you only {after_n} starter-caliber {pos} for {need} starting {_slots}"
+            _whom = "them" if for_partner else "you"
+            warning = f"Leaves {_whom} only {after_n} starter-caliber {pos} for {need} starting {_slots}"
             severity = "caution"
 
         result[pos] = {
