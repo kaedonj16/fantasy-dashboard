@@ -45,6 +45,46 @@ def test_productive_vet_counts_as_starter():
     assert res["TE"]["before"] == 1 and res["TE"]["after"] == 0
 
 
+def test_partner_warning_is_third_person_danger():
+    # Same simulation on the partner's roster: the panel header says
+    # "Their Team", so the wording must not read as the viewer's problem.
+    res = calculate_roster_depth_warning(
+        {"players": ["rb1", "rb2", "te1"]},
+        _lookup(te_dynasty=150, te_redraft=700),
+        sending_assets=[{"id": "te1", "position": "TE"}],
+        receiving_assets=[{"id": "wrIn", "position": "WR"}],
+        roster_positions=_SF_LINEUP,
+        num_teams=12,
+        is_sf=True,
+        for_partner=True,
+    )
+    assert res["TE"]["warning"] == "They'll have no starter-caliber TE for 1 starting slot"
+
+
+def test_partner_warning_is_third_person_caution():
+    lookup = {
+        "wr1": {"position": "WR", "value": 800, "redraft_value_1qb": 800},
+        "wr2": {"position": "WR", "value": 700, "redraft_value_1qb": 700},
+        "rbIn": {"position": "RB", "value": 600, "redraft_value_1qb": 650, "name": "RB-in"},
+    }
+    res = calculate_roster_depth_warning(
+        {"players": ["wr1", "wr2"]},
+        lookup,
+        sending_assets=[{"id": "wr1", "position": "WR"}],
+        receiving_assets=[{"id": "rbIn", "position": "RB"}],
+        roster_positions=_STD_LINEUP,
+        num_teams=12,
+        is_sf=False,
+        for_partner=True,
+    )
+    assert res["WR"]["warning"] == "Leaves them only 1 starter-caliber WR for 2 starting slots"
+
+
+def test_viewer_warning_stays_second_person():
+    res = _trade_away_te(_lookup(te_dynasty=150, te_redraft=700))
+    assert res["TE"]["warning"] == "You'll have no starter-caliber TE for 1 starting slot"
+
+
 def test_hype_rookie_is_not_a_starter():
     # High dynasty (outlook) but low redraft (no role yet) -> trading him is a
     # non-event. Dynasty value (800 >= 200) would have wrongly flagged it.
