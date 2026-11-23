@@ -505,10 +505,25 @@ def group_position_strength(players: list[dict]) -> dict[str, dict]:
     return out
 
 
+def _record_wins_losses(record) -> tuple[int, int]:
+    """(wins, losses) parsed from a "W-L" / "W-L-T" record string."""
+    parts = str(record or "").strip().split("-")
+    if len(parts) < 2:
+        return 0, 0
+    return _safe_int(parts[0]), _safe_int(parts[1])
+
+
 def detect_team_direction(
     players: list[dict],
     future_picks: list[dict],
     scoring_type: str = "dynasty",
+    *,
+    playoff_pct=None,
+    playoff_status: str = "",
+    wins=None,
+    losses=None,
+    pf_rank=None,
+    num_teams=None,
 ) -> str:
     ages = [
         _safe_float(p.get("age"))
@@ -532,6 +547,54 @@ def detect_team_direction(
         return "bubble"
 
     firsts = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
+
+    # Contention window first (dynasty): when in-season evidence exists --
+    # playoff odds/status, record, PF rank -- it decides contender vs
+    # rebuild before age/assets are consulted. The old age-only read called
+    # an 8-2, league-high-PF team a youth-preservation project because its
+    # core was young, and the Trade Analyst then declined a +226 value win
+    # on "young dynasty insulation" grounds (Week 11 2026, Blackedraw).
+    # Age/assets below only break ties or speak when there is no season
+    # evidence (preseason / no standings).
+    _pct = None
+    try:
+        _pct = float(playoff_pct) if playoff_pct is not None else None
+    except (TypeError, ValueError):
+        _pct = None
+    _status = str(playoff_status or "").strip().lower()
+    _w = _safe_int(wins) if wins is not None else 0
+    _l = _safe_int(losses) if losses is not None else 0
+    _games = _w + _l
+    _win_pct = (_w / _games) if _games else None
+    _pf_top_third = bool(
+        pf_rank is not None and num_teams
+        and _safe_int(pf_rank) >= 1
+        and _safe_int(pf_rank) <= max(1, -(-int(num_teams) // 3))
+    )
+    _has_window_evidence = bool(
+        _status or _pct is not None or _games or pf_rank is not None)
+    if _has_window_evidence:
+        if (
+            _status == "contend"
+            or (_pct is not None and _pct >= 70)
+            or (_win_pct is not None and _win_pct >= 0.65 and _pf_top_third)
+        ):
+            return "contender"
+        _window_out = (
+            _status == "out"
+            or (_pct is not None and _pct < 35
+                and (_win_pct is None or _win_pct < 0.5))
+            or (_win_pct is not None and _win_pct <= 0.35 and not _pf_top_third)
+        )
+        if _window_out:
+            # Losing teams split on what they hold: pick capital or a
+            # barren roster is a rebuild; real assets on a losing team is
+            # a retool, not a contender.
+            if firsts >= 2 or strong_assets <= 3:
+                return "rebuild"
+            return "retool"
+        # Bubble / middle window: fall through to the asset read.
+
     if avg_age and avg_age <= 28.5:
         if elite_assets >= 3:
             return "contender"
@@ -625,10 +688,6 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> dict | None:
             and _safe_float(p.get("value")) >= 300
         ][:5]
 
-    direction = detect_team_direction(
-        roster_players, future_picks, scoring_type=scoring_type,
-    )
-
     # standings_map is {roster_id: seed:int} in production -- resolve record/PF/PA
     # from team_stats / roster.settings (dict fixtures still work via helper).
     record, pf, pa = _record_pf_pa_for_roster(ctx, str(viewer_roster_id), roster)
@@ -637,6 +696,30 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> dict | None:
     weakest_positions = _weakest_core_positions(position_strength)
 
     playoff = _playoff_snapshot(ctx, str(viewer_roster_id))
+
+    # Contention window feeds direction (dynasty too, not just redraft):
+    # playoff odds/status, record, and PF rank across the league.
+    _wins, _losses = _record_wins_losses(record)
+    _pf_rank = None
+    if pf:
+        _league_pfs = []
+        for _r in rosters:
+            _rpf = _record_pf_pa_for_roster(
+                ctx, str(_r.get("roster_id")), _r)[1]
+            if _rpf:
+                _league_pfs.append(_rpf)
+        if len(_league_pfs) > 1:
+            _pf_rank = 1 + sum(1 for _x in _league_pfs if _x > pf)
+
+    direction = detect_team_direction(
+        roster_players, future_picks, scoring_type=scoring_type,
+        playoff_pct=playoff.get("playoff_pct"),
+        playoff_status=playoff.get("playoff_status") or "",
+        wins=_wins or None,
+        losses=_losses or None,
+        pf_rank=_pf_rank,
+        num_teams=len(rosters) or None,
+    )
     if is_redraft and playoff.get("playoff_status"):
         direction = playoff["playoff_status"]
 
@@ -2160,7 +2243,12 @@ def build_trade_suggestions_context(
                 model_value_lookup=model_value_lookup,
             )
             _ppicks = (picks_by_roster or {}).get(prid, [])
-            return detect_team_direction(_pp, _ppicks, scoring_type=scoring_type)
+            _pset = pr.get("settings") or {}
+            return detect_team_direction(
+                _pp, _ppicks, scoring_type=scoring_type,
+                wins=_safe_int(_pset.get("wins")) or None,
+                losses=_safe_int(_pset.get("losses")) or None,
+            )
         except Exception:
             return "balanced"
 
@@ -3101,8 +3189,26 @@ def _power_static_bundle(ctx: dict, rosters: list, *, scoring_type: str,
             model_value_lookup=model_value_lookup,
         )
         future_picks = [] if is_redraft else (ctx.get("picks_by_roster") or {}).get(rid, [])
+        _rec, _pf_r, _pa_r = _record_pf_pa_for_roster(ctx, rid, roster)
+        _w_r, _l_r = _record_wins_losses(_rec)
+        _snap_r = _playoff_snapshot(ctx, rid)
+        _pf_rank_r = None
+        if _pf_r:
+            _all_pf = [
+                _record_pf_pa_for_roster(ctx, str(_or.get("roster_id")), _or)[1]
+                for _or in rosters
+            ]
+            _all_pf = [x for x in _all_pf if x]
+            if len(_all_pf) > 1:
+                _pf_rank_r = 1 + sum(1 for x in _all_pf if x > _pf_r)
         direction = detect_team_direction(
             players_summary, future_picks, scoring_type=scoring_type,
+            playoff_pct=_snap_r.get("playoff_pct"),
+            playoff_status=_snap_r.get("playoff_status") or "",
+            wins=_w_r or None,
+            losses=_l_r or None,
+            pf_rank=_pf_rank_r,
+            num_teams=len(rosters) or None,
         )
         pos_strength = group_position_strength(players_summary)
 

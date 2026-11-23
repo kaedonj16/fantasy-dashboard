@@ -311,6 +311,398 @@ def get_front_office_briefing(ctx: dict, viewer_roster_id: str) -> str:
     return _emit_ai_html(html_out)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Trade Analyst verdict guard
+#
+# Bug (Kaedon, Week 11 2026, Blackedraw): the calculator showed a +226.3
+# depth-adjusted value win (Burrow + Cook in; Caleb Williams + Egbuka +
+# Judkins out) and the AI still returned DECLINE / High confidence, purely
+# on age-curve grounds ("young dynasty insulation" for "two older, proven
+# pieces"). The system prompt already forbids this (market delta is factor
+# 1; factors 2-5, incl. direction / age curve, must never override a
+# decisive delta), but a prompt is not an enforcement mechanism. This guard
+# is: it runs server-side on every AI verdict, dynasty and redraft alike,
+# and mirrors the prompt's Section 3 / Section 8 thresholds exactly.
+#
+# v2 (same PR): the bands are percentage hybrids, not flat numbers. The
+# fair band IS the site's shared fair_value_band (max of 7% of the larger
+# side, 25) so the Analyst can never disagree with the calculator about
+# what "fair" means; "decisive" needs BOTH a +50 absolute floor AND the
+# fair band cleared. A decisive override must also survive the raw delta:
+# the depth-adjusted delta alone can manufacture a win out of the roster
+# slot penalty (a 2-for-3 consolidation is docked far less than the side
+# receiving 3 bodies), so a trade whose raw delta is a real loss gets at
+# most fair-band treatment, never decisive treatment. The catastrophe
+# exception now counts starter-CALIBER bodies (league starter thresholds,
+# IR/Out excluded) and applies across the whole accept band, not just at
+# decisive wins. And the verdict is assigned deterministically BEFORE the
+# model writes (payload trade.assigned_verdict), so the narrative is
+# written for the verdict instead of being overwritten after the fact;
+# this guard remains as the backstop when the model disobeys anyway.
+# ──────────────────────────────────────────────────────────────────────────────
+
+_TRADE_GUARD_SKILL_POSITIONS = ("QB", "RB", "WR", "TE")
+_TRADE_GUARD_UNAVAILABLE = ("IR", "OUT", "O", "PUP")
+
+
+def trade_delta_bands(larger_side) -> dict:
+    """Percentage-hybrid verdict bands for a trade's larger side.
+
+    fair: the site's shared fair_value_band (max of 7% of the larger
+    side, 25). decisive: at least +50 AND at least the fair band, so a
+    +60 delta on a ~3000-value blockbuster (2%) is a slight win, not a
+    decisive one.
+    """
+    from utils.trade import fair_value_band
+
+    try:
+        larger = float(larger_side or 0.0)
+    except (TypeError, ValueError):
+        larger = 0.0
+    fair = fair_value_band(larger)
+    return {"fair": fair, "decisive": max(50.0, fair)}
+
+
+def _asset_is_unavailable(asset: dict) -> bool:
+    status = str((asset or {}).get("injury_status") or "").strip().upper()
+    return status in _TRADE_GUARD_UNAVAILABLE
+
+
+def starter_caliber_counts(
+        roster_players: list[dict],
+        thresholds: dict,
+        injury_status_by_id: dict | None = None,
+) -> dict[str, int]:
+    """Per-position count of starter-caliber, available bodies.
+
+    A body counts only if its value clears the league's starter threshold
+    for its position (utils.trade.derive_league_thresholds) and it is not
+    flagged IR/Out. A low-value backup QB is a roster body, not a starter.
+    """
+    counts = {pos: 0 for pos in _TRADE_GUARD_SKILL_POSITIONS}
+    injuries = injury_status_by_id or {}
+    for p in roster_players or []:
+        pos = str((p or {}).get("position") or "").upper()
+        if pos not in counts:
+            continue
+        status = str(injuries.get(str((p or {}).get("id") or "")) or "").strip().upper()
+        if status in _TRADE_GUARD_UNAVAILABLE:
+            continue
+        try:
+            value = float((p or {}).get("value") or 0.0)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value >= float((thresholds or {}).get(pos) or 0.0):
+            counts[pos] += 1
+    return counts
+
+
+def post_trade_caliber_counts(
+        pre_trade_caliber: dict,
+        gets_assets: list[dict],
+        gives_assets: list[dict],
+        thresholds: dict,
+) -> dict[str, int]:
+    """Starter-caliber counts after the trade, from pre-trade caliber
+    counts. Only assets that are themselves starter-caliber and available
+    move the counts; picks never do."""
+    counts = {
+        pos: int((pre_trade_caliber or {}).get(pos) or 0)
+        for pos in _TRADE_GUARD_SKILL_POSITIONS
+    }
+
+    def _caliber(asset: dict) -> str:
+        pos = str((asset or {}).get("position") or "").upper()
+        if pos not in counts or _asset_is_unavailable(asset):
+            return ""
+        try:
+            value = float((asset or {}).get("value") or 0.0)
+        except (TypeError, ValueError):
+            value = 0.0
+        return pos if value >= float((thresholds or {}).get(pos) or 0.0) else ""
+
+    for asset in gives_assets or []:
+        pos = _caliber(asset)
+        if pos:
+            counts[pos] -= 1
+    for asset in gets_assets or []:
+        pos = _caliber(asset)
+        if pos:
+            counts[pos] += 1
+    return counts
+
+
+def trade_verdict_assessment(
+        *,
+        adjusted_delta: float,
+        raw_delta: float | None = None,
+        larger_side: float | None = None,
+        caliber_counts: dict | None = None,
+        pos_counts: dict | None = None,
+        slot_counts: dict | None = None,
+) -> dict:
+    """Deterministic read of a trade before any model narrative exists.
+
+    decisive: adjusted delta clears the decisive bar AND the raw delta is
+    not a loss (a slot-penalty-only "win" is never decisive).
+    catastrophe: the post-trade roster cannot field a starter-caliber
+    player at a required position (caliber counts when available, body
+    counts as the fallback).
+    assigned_verdict: "ACCEPT" when the framework leaves no honest room
+    for another verdict (inside the accept band, no catastrophe, raw
+    delta not a real loss); otherwise None and the model decides, with
+    the guard as backstop.
+    """
+    try:
+        adj = float(adjusted_delta or 0.0)
+    except (TypeError, ValueError):
+        adj = 0.0
+    raw = adj if raw_delta is None else float(raw_delta or 0.0)
+    bands = trade_delta_bands(larger_side)
+    fair, decisive_bar = bands["fair"], bands["decisive"]
+    counts = caliber_counts if caliber_counts is not None else (pos_counts or {})
+    catastrophe = trade_structural_catastrophe(counts, slot_counts or {})
+    decisive = adj >= decisive_bar and raw >= 0
+    in_accept_band = adj >= -fair
+    raw_real_loss = raw < -fair
+    assigned = None
+    if in_accept_band and not catastrophe and not raw_real_loss:
+        assigned = "ACCEPT"
+    return {
+        "adjusted_delta": round(adj, 1),
+        "raw_delta": round(raw, 1),
+        "larger_side": round(float(larger_side or 0.0), 1),
+        "fair_band": round(fair, 1),
+        "decisive_bar": round(decisive_bar, 1),
+        "decisive": decisive,
+        "catastrophe": catastrophe,
+        "assigned_verdict": assigned,
+    }
+
+
+def trade_deterministic_confidence(
+        verdict: str,
+        adjusted_delta: float,
+        fair_band: float,
+        decisive_bar: float,
+        decisive_ok: bool = True,
+) -> str:
+    """Confidence from the final verdict and the delta's magnitude only.
+
+    Never inherited from the model: an overridden ACCEPT must not carry
+    the DECLINE's "high confidence" (the reported card did exactly that).
+    "high" additionally requires decisive_ok -- a win that exists only in
+    the adjusted delta (raw delta negative) never earns it.
+    """
+    try:
+        mag = abs(float(adjusted_delta or 0.0))
+    except (TypeError, ValueError):
+        mag = 0.0
+    if mag >= decisive_bar and decisive_ok:
+        return "high"
+    if mag > fair_band:
+        return "medium"
+    return "low"
+
+
+def partner_acceptance_label(adjusted_delta: float, larger_side=None) -> str:
+    """How likely the partner is to accept this deal as constructed,
+    read deterministically off the partner's side of the delta.
+
+    Separate from the verdict on purpose: the verdict answers "should
+    you take this if it is offered to you", this answers "will they say
+    yes if you send it". A partner asked to lose a decisive amount is a
+    Long shot no matter how good the deal is for the viewer.
+    """
+    try:
+        adj = float(adjusted_delta or 0.0)
+    except (TypeError, ValueError):
+        adj = 0.0
+    bands = trade_delta_bands(larger_side)
+    if adj <= bands["fair"]:
+        return "Likely"
+    if adj < bands["decisive"]:
+        return "Possible"
+    return "Long shot"
+
+
+def partner_acceptance_note(label: str, adjusted_delta: float) -> str:
+    try:
+        adj = float(adjusted_delta or 0.0)
+    except (TypeError, ValueError):
+        adj = 0.0
+    if label == "Long shot":
+        return (
+            f"Partner acceptance: Long shot. They would give up {adj:.1f} more in "
+            "depth-adjusted value than they get back, so expect a counter or a no "
+            "if you send it as-is."
+        )
+    if label == "Possible":
+        return (
+            f"Partner acceptance: Possible. They would give up {adj:.1f} more in "
+            "depth-adjusted value than they get back, inside the range partners "
+            "sometimes eat for fit."
+        )
+    return (
+        "Partner acceptance: Likely. The value does not ask them to take a "
+        "real loss, so fit and need decide it."
+    )
+
+
+def post_trade_position_counts(
+        pre_trade_counts: dict,
+        gets_assets: list[dict],
+        gives_assets: list[dict],
+) -> dict[str, int]:
+    """Skill-position body counts after the trade, from pre-trade counts.
+
+    Picks are not roster bodies and never move these counts.
+    """
+    counts = {
+        pos: int((pre_trade_counts or {}).get(pos) or 0)
+        for pos in _TRADE_GUARD_SKILL_POSITIONS
+    }
+    for asset in gives_assets or []:
+        pos = str(asset.get("position") or "").upper()
+        if pos in counts:
+            counts[pos] -= 1
+    for asset in gets_assets or []:
+        pos = str(asset.get("position") or "").upper()
+        if pos in counts:
+            counts[pos] += 1
+    return counts
+
+
+def trade_structural_catastrophe(
+        pos_counts: dict,
+        slot_counts: dict,
+) -> bool:
+    """True only for the prompt's one deterministic decline excuse: the
+    post-trade roster cannot field a starting lineup at all.
+
+    The counts are whatever the caller counted -- starter-caliber bodies
+    when thresholds are available (the live path), plain bodies as the
+    fallback. Either way the test is the same: fewer counted players than
+    the direct QB/RB/WR/TE starter slots, or not enough flex-eligible
+    players left over for the FLEX / SUPER_FLEX slots. Anything softer
+    (thinner depth, older starters, a weaker bench) is a narrative
+    concern, not a catastrophe, and cannot veto a value win. Unknown
+    counts or slots prove nothing, so they return False.
+    """
+    if not pos_counts or not slot_counts:
+        return False
+    counts = {pos: int(pos_counts.get(pos) or 0) for pos in _TRADE_GUARD_SKILL_POSITIONS}
+    direct = {pos: int(slot_counts.get(pos) or 0) for pos in _TRADE_GUARD_SKILL_POSITIONS}
+    if any(counts[pos] < direct[pos] for pos in _TRADE_GUARD_SKILL_POSITIONS):
+        return True
+    flex_pool = sum(counts[pos] - direct[pos] for pos in ("RB", "WR", "TE"))
+    flex_needed = int(slot_counts.get("FLEX") or 0)
+    if flex_pool < flex_needed:
+        return True
+    superflex_needed = int(slot_counts.get("SUPER_FLEX") or 0)
+    superflex_pool = flex_pool - flex_needed + (counts["QB"] - direct["QB"])
+    return superflex_pool < superflex_needed
+
+
+def apply_trade_verdict_guard(
+        result: dict,
+        *,
+        market_delta: float,
+        gets_assets: list[dict],
+        gives_assets: list[dict],
+        pos_counts: dict,
+        slot_counts: dict,
+        raw_delta: float | None = None,
+        larger_side: float | None = None,
+        caliber_counts: dict | None = None,
+) -> dict:
+    """Backstop: force the AI verdict back inside the deterministic
+    framework (trade_verdict_assessment) when the model disobeys the
+    assigned verdict it was given.
+
+    - Inside the accept band (adjusted delta >= -fair band), with no
+      structural catastrophe and no real raw-delta loss, the verdict is
+      ACCEPT. The catastrophe exception applies across the whole band:
+      a fair or small-win trade that leaves a required position with no
+      starter-caliber player is NOT forced to ACCEPT.
+    - Below the accept band the model is in COUNTER / DECLINE territory
+      already; its verdict stands untouched.
+
+    When the guard fires it replaces summary / helps / risks / counter
+    wholesale: keeping the model's decline narrative under an ACCEPT badge
+    would contradict the verdict on the card the user actually reads.
+    The replacement follows the existing deterministic fallback style and
+    still names the real cost (the outgoing package) as the con.
+    Confidence on an override is deterministic, never the model's.
+    Every override (and every catastrophe-blocked override) is logged
+    with both deltas so the bands can be calibrated against real trades.
+    """
+    if not isinstance(result, dict):
+        return result
+    verdict = str(result.get("verdict") or "").upper()
+    if verdict == "ACCEPT":
+        return result
+    try:
+        delta = float(market_delta or 0.0)
+    except (TypeError, ValueError):
+        return result
+    assessment = trade_verdict_assessment(
+        adjusted_delta=delta,
+        raw_delta=raw_delta,
+        larger_side=larger_side,
+        caliber_counts=caliber_counts,
+        pos_counts=pos_counts,
+        slot_counts=slot_counts,
+    )
+    if assessment["assigned_verdict"] != "ACCEPT":
+        if assessment["catastrophe"] and delta >= -assessment["fair_band"]:
+            logger.info(
+                "[trade-guard] override blocked by catastrophe pre=%s "
+                "raw_delta=%.1f adjusted_delta=%.1f larger_side=%.1f "
+                "pct=%.3f catastrophe=%s",
+                verdict, assessment["raw_delta"], assessment["adjusted_delta"],
+                assessment["larger_side"],
+                (assessment["adjusted_delta"] / assessment["larger_side"])
+                if assessment["larger_side"] else 0.0,
+                assessment["catastrophe"],
+            )
+        return result
+
+    gets_names = ", ".join(
+        str(a.get("name")) for a in (gets_assets or []) if a.get("name")) or "the incoming package"
+    gives_names = ", ".join(
+        str(a.get("name")) for a in (gives_assets or []) if a.get("name")) or "the outgoing package"
+    logger.info(
+        "[trade-guard] override pre=%s post=ACCEPT raw_delta=%.1f "
+        "adjusted_delta=%.1f larger_side=%.1f pct=%.3f catastrophe=%s",
+        verdict, assessment["raw_delta"], assessment["adjusted_delta"],
+        assessment["larger_side"],
+        (assessment["adjusted_delta"] / assessment["larger_side"])
+        if assessment["larger_side"] else 0.0,
+        assessment["catastrophe"],
+    )
+    guarded = dict(result)
+    guarded["verdict"] = "ACCEPT"
+    guarded["summary"] = (
+        f"You win this deal on value, receiving {gets_names} for {gives_names}. "
+        f"The depth-adjusted market delta is +{delta:.1f} in your favor, and your "
+        "post-trade roster still fields a starter at every position, so the "
+        "age and depth cost does not outweigh the value and production gained."
+    )
+    guarded["helps"] = [
+        f"Receiving {gets_names} wins the depth-adjusted value by {delta:.1f}.",
+        "Your post-trade roster still has a starter at every position.",
+    ]
+    guarded["risks"] = [
+        f"You give up {gives_names}, so your bench gets thinner and younger upside leaves the roster.",
+    ]
+    guarded["counter"] = ""
+    guarded["confidence"] = trade_deterministic_confidence(
+        "ACCEPT", delta, assessment["fair_band"], assessment["decisive_bar"],
+        decisive_ok=assessment["decisive"])
+    return guarded
+
+
 def get_trade_ai_analysis(
         ctx: dict,
         viewer_roster_id: str,
@@ -412,6 +804,21 @@ def get_trade_ai_analysis(
     market_delta = round(
         safe_float(viewer_gets.get("effective_total")) - safe_float(viewer_gives.get("effective_total")),
         1,
+    )
+    # Raw (unadjusted) delta: the guard's second check. Sides built by the
+    # calculator carry raw_total; when a caller only carries effective
+    # totals the two are the same number by construction there.
+    _gets_raw = viewer_gets.get("raw_total")
+    _gives_raw = viewer_gives.get("raw_total")
+    raw_delta = round(
+        safe_float(_gets_raw if _gets_raw is not None else viewer_gets.get("effective_total"))
+        - safe_float(_gives_raw if _gives_raw is not None else viewer_gives.get("effective_total")),
+        1,
+    )
+    larger_side = max(
+        safe_float(viewer_gets.get("effective_total")),
+        safe_float(viewer_gives.get("effective_total")),
+        1.0,
     )
 
     # Post-trade roster: remove traded-away players, add incoming players
@@ -553,6 +960,65 @@ def get_trade_ai_analysis(
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
+    # Deterministic verdict inputs (guard v2): starter thresholds for this
+    # league, the viewer's pre-trade starter-caliber counts, and the
+    # post-trade caliber counts. Any failure leaves caliber_counts None
+    # and the assessment falls back to plain body counts.
+    _caliber_post = None
+    _thresholds = {}
+    try:
+        from utils.trade import derive_league_thresholds
+
+        _thresholds, _depth_floor = derive_league_thresholds(
+            _roster_positions, num_teams, is_sf=is_sf)
+        _viewer_roster = next(
+            (r for r in (ctx.get("rosters") or [])
+             if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if _viewer_roster is not None:
+            _injury_by_id = {}
+            for _pid, _full in (players_full or {}).items():
+                _st = str((_full or {}).get("injury_status")
+                          or (_full or {}).get("status") or "").strip()
+                if _st:
+                    _injury_by_id[str(_pid)] = _st
+            _pre_caliber = starter_caliber_counts(
+                summarize_roster_players(
+                    _viewer_roster,
+                    ctx.get("players_index") or {},
+                    ctx.get("players_map") or {},
+                    build_model_value_lookup(
+                        ctx.get("model_value_table") or [],
+                        is_sf=_ctx_is_sf(ctx),
+                        scoring_type=ctx_scoring_type(ctx),
+                    ),
+                ),
+                _thresholds,
+                _injury_by_id,
+            )
+            _caliber_post = post_trade_caliber_counts(
+                _pre_caliber, gets_assets, gives_assets, _thresholds)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+        _caliber_post = None
+
+    _strength = team_ctx.get("position_strength") or {}
+    _pre_counts = {
+        pos: (_strength.get(pos) or {}).get("count") or 0
+        for pos in _TRADE_GUARD_SKILL_POSITIONS
+    }
+    _post_counts = post_trade_position_counts(_pre_counts, gets_assets, gives_assets)
+    assessment = trade_verdict_assessment(
+        adjusted_delta=market_delta,
+        raw_delta=raw_delta,
+        larger_side=larger_side,
+        caliber_counts=_caliber_post,
+        pos_counts=_post_counts,
+        slot_counts=_slots,
+    )
+    _partner_label = partner_acceptance_label(market_delta, larger_side)
+
     team_slice = _trade_room_slice(team_ctx, is_redraft=is_redraft)
     if not is_redraft:
         team_slice["pick_summary"] = team_ctx.get("pick_summary") or {}
@@ -580,13 +1046,20 @@ def get_trade_ai_analysis(
             "post_trade_roster": post_trade_roster,
             "pick_prospects": pick_prospects,
             "market_delta": market_delta,
+            "market_delta_raw": raw_delta,
+            "fair_band": assessment["fair_band"],
+            "decisive_bar": assessment["decisive_bar"],
+            "structural_catastrophe": assessment["catastrophe"],
+            "assigned_verdict": assessment["assigned_verdict"],
+            "partner_acceptance": _partner_label,
         },
         "league_format": league_format,
         "scoring_type": scoring_type,
         "opponent_team": opponent_ctx or None,
     }
 
-    # Build cache key for trade analysis. v13: the rank/tier label prompt
+    # Build cache key for trade analysis. v14: see the verdict-guard note
+    # at the key below. v13: the rank/tier label prompt
     # was rewritten (two-construction whitelist, per-trade worked examples,
     # self-check line), so v12 analyses generated under the old note must
     # not hit. v12: the tier-label scrubber now
@@ -597,7 +1070,14 @@ def get_trade_ai_analysis(
     # the exact rank; cached v10 analyses can still say "WR23-type", so
     # they must not hit. v10: asset rank labels became the recomputed
     # format labels and prose ranks were pinned to them.)
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v13")
+    # v14: the deterministic verdict guard (apply_trade_verdict_guard) now
+    # overrides DECLINE/COUNTER verdicts that contradict a decisive value
+    # win, so v13 analyses carrying those verdicts must not hit.
+    # v15: guard v2 -- percentage-hybrid bands, raw+adjusted double check,
+    # starter-caliber catastrophe, verdict-first assigned_verdict in the
+    # payload, deterministic confidence, and the partner-acceptance split,
+    # so v14 analyses carrying flat-band verdicts must not hit.
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v15")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
@@ -620,6 +1100,34 @@ def get_trade_ai_analysis(
 
     try:
         result = generate_trade_ai_result(payload)
+        result = apply_trade_verdict_guard(
+            result,
+            market_delta=market_delta,
+            gets_assets=gets_assets,
+            gives_assets=gives_assets,
+            pos_counts=_post_counts,
+            slot_counts=_slots,
+            raw_delta=raw_delta,
+            larger_side=larger_side,
+            caliber_counts=_caliber_post,
+        )
+        # Deterministic finalize: confidence comes from the final verdict
+        # and the delta's magnitude, never from the model (an overridden
+        # ACCEPT must not inherit a DECLINE's confidence), and partner
+        # acceptance rides as its own labeled read, separate from the
+        # verdict.
+        if isinstance(result, dict):
+            result = dict(result)
+            result["confidence"] = trade_deterministic_confidence(
+                str(result.get("verdict") or ""),
+                market_delta,
+                assessment["fair_band"],
+                assessment["decisive_bar"],
+                decisive_ok=assessment["decisive"],
+            )
+            result["partner_acceptance"] = _partner_label
+            result["partner_acceptance_note"] = partner_acceptance_note(
+                _partner_label, market_delta)
         html_out = render_trade_ai_html(result)
         save_cached_ai_text(cache_key, html_out)
         return _emit_ai_html(html_out)
@@ -700,6 +1208,19 @@ def render_trade_ai_html(result: dict) -> str:
         </div>
         """
 
+    # Partner acceptance: a separate deterministic read (will they say
+    # yes if you send it), never merged into the verdict above, which
+    # answers whether YOU should take the deal.
+    partner_note = html.escape(str(result.get("partner_acceptance_note") or ""))
+    partner_html = ""
+    if partner_note:
+        partner_html = f"""
+        <div class="trade-ai-block">
+          <div class="trade-ai-label">Partner acceptance</div>
+          <div class="trade-ai-copy-line">{partner_note}</div>
+        </div>
+        """
+
     # Verdict fragment: the client moves this into the panel header slot.
     conf_label = f"{confidence_raw[:1].upper()}{confidence_raw[1:]} confidence" if confidence_raw else ""
     conf_html = ""
@@ -738,6 +1259,7 @@ def render_trade_ai_html(result: dict) -> str:
       </div>
 
       {counter_html}
+      {partner_html}
     </div>
     """
 

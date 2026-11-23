@@ -654,17 +654,21 @@ _TRADE_AI_SYSTEM_DYNASTY = """
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 3: MARKET DELTA DECISION THRESHOLDS
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    - delta >= +250: Overwhelming value win. Accept unless a catastrophic structural flaw exists (rare).
-    - delta +150 to +249: Strong value win. Accept in nearly all cases.
-    - delta +50 to +149: Clear value win. Accept unless a significant structural concern exists.
-    - delta +11 to +49: Slight value win. Accept - don't ask for more when you're already winning.
-    - delta -10 to +10: ESSENTIALLY FAIR - treat as market-neutral. ALWAYS verdict ACCEPT.
+    The trade context carries fair_band and decisive_bar for THIS trade,
+    computed from its larger side (fair_band is the site's shared fair
+    band: max of 7% of the larger side, 25; decisive_bar is max of +50
+    and the fair band). Judge market_delta against those bands, never
+    against flat numbers: +60 on a 3000-value trade is noise, +60 on a
+    300-value trade is decisive. market_delta_raw is the unadjusted delta.
+    - delta >= 2x decisive_bar: Overwhelming value win. Accept unless a catastrophic structural flaw exists (rare).
+    - delta >= decisive_bar AND market_delta_raw >= 0: Decisive value win. Accept in nearly all cases. A win that exists only in the adjusted delta while the raw delta is a loss is NOT decisive.
+    - fair_band < delta < decisive_bar: Clear value win. Accept unless a significant structural concern exists.
+    - -fair_band <= delta <= fair_band: ESSENTIALLY FAIR - treat as market-neutral. ALWAYS verdict ACCEPT, unless structural_catastrophe is true in the trade context.
       The summary must explicitly say this is a near-mirror trade, highlight how close the
       values are, and focus the analysis on fit/preference rather than value extraction.
       Do NOT suggest asking for sweeteners. Do NOT say "should be pushed to include more."
-    - delta -50 to -11: Slight value loss. Issue a COUNTER with a specific, modest add-on.
-    - delta -150 to -51: Clear value loss. Decline or counter aggressively.
-    - delta <= -150: Severe loss. Decline immediately.
+    - -decisive_bar <= delta < -fair_band: Value loss. Issue a COUNTER with a specific, modest add-on.
+    - delta < -decisive_bar: Severe loss. Decline immediately.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 4: PICK SLOT VALUATION - CURRENT YEAR ROOKIE DRAFT
@@ -726,11 +730,24 @@ _TRADE_AI_SYSTEM_DYNASTY = """
     SECTION 8: DECISION FRAMEWORK
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Verdicts:
-      - ACCEPT  → delta >= -10: value win OR essentially fair (market-neutral). Do not ask for sweeteners on fair trades.
-      - DECLINE → delta <= -150: severe value loss, or giving away a cornerstone for scraps
-      - COUNTER → delta -11 to -149: viewer is behind but not catastrophically; propose a specific, realistic add-on
+      - ACCEPT  → delta >= -fair_band: value win OR essentially fair (market-neutral), unless structural_catastrophe is true. Do not ask for sweeteners on fair trades.
+      - DECLINE → delta < -decisive_bar: severe value loss, or giving away a cornerstone for scraps
+      - COUNTER → -decisive_bar <= delta < -fair_band: viewer is behind but not catastrophically; propose a specific, realistic add-on
 
-    CRITICAL: If delta is between -10 and +10, the verdict MUST be ACCEPT.
+    CRITICAL: If delta is between -fair_band and +fair_band, the verdict MUST be ACCEPT (unless structural_catastrophe is true).
+    CRITICAL: Age, youth, or team direction can NEVER turn a decisive delta
+    (decisive_bar or more, with a non-negative raw delta) into DECLINE or
+    COUNTER. Giving up younger players for older, proven
+    producers is the normal shape of a consolidation win, not a reason to
+    decline one. The only exception is a post-trade roster that cannot field
+    a starter-caliber player at a required position (structural_catastrophe
+    in the trade context), judged from the lineup, never from age alone. A
+    server-side guard enforces this framework on your verdict, so a verdict
+    outside it will be overridden.
+    CRITICAL: When the trade context carries assigned_verdict, that verdict
+    is FINAL. Return it verbatim and write the summary, helps, and risks as
+    the case FOR that verdict, using the player-specific context (production,
+    role, injuries). Never argue for a different verdict.
     The summary should acknowledge the trade is essentially even and let the viewer
     decide based on preference - not suggest extracting more value from the other team.
 
@@ -850,17 +867,21 @@ _TRADE_AI_SYSTEM_REDRAFT = """
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 3: MARKET DELTA DECISION THRESHOLDS
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    - delta >= +250: Overwhelming value win. Accept unless a catastrophic structural flaw exists (rare).
-    - delta +150 to +249: Strong value win. Accept in nearly all cases.
-    - delta +50 to +149: Clear value win. Accept unless a significant structural concern exists.
-    - delta +11 to +49: Slight value win. Accept - don't ask for more when you're already winning.
-    - delta -10 to +10: ESSENTIALLY FAIR - treat as market-neutral. ALWAYS verdict ACCEPT.
+    The trade context carries fair_band and decisive_bar for THIS trade,
+    computed from its larger side (fair_band is the site's shared fair
+    band: max of 7% of the larger side, 25; decisive_bar is max of +50
+    and the fair band). Judge market_delta against those bands, never
+    against flat numbers: +60 on a 3000-value trade is noise, +60 on a
+    300-value trade is decisive. market_delta_raw is the unadjusted delta.
+    - delta >= 2x decisive_bar: Overwhelming value win. Accept unless a catastrophic structural flaw exists (rare).
+    - delta >= decisive_bar AND market_delta_raw >= 0: Decisive value win. Accept in nearly all cases. A win that exists only in the adjusted delta while the raw delta is a loss is NOT decisive.
+    - fair_band < delta < decisive_bar: Clear value win. Accept unless a significant structural concern exists.
+    - -fair_band <= delta <= fair_band: ESSENTIALLY FAIR - treat as market-neutral. ALWAYS verdict ACCEPT, unless structural_catastrophe is true in the trade context.
       The summary must explicitly say this is a near-mirror trade, highlight how close the
       values are, and focus the analysis on fit/preference rather than value extraction.
       Do NOT suggest asking for sweeteners. Do NOT say "should be pushed to include more."
-    - delta -50 to -11: Slight value loss. Issue a COUNTER with a specific, modest add-on.
-    - delta -150 to -51: Clear value loss. Decline or counter aggressively.
-    - delta <= -150: Severe loss. Decline immediately.
+    - -decisive_bar <= delta < -fair_band: Value loss. Issue a COUNTER with a specific, modest add-on.
+    - delta < -decisive_bar: Severe loss. Decline immediately.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 6: PACKAGE DISCOUNTING
@@ -883,11 +904,24 @@ _TRADE_AI_SYSTEM_REDRAFT = """
     SECTION 8: DECISION FRAMEWORK
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Verdicts:
-      - ACCEPT  → delta >= -10: value win OR essentially fair (market-neutral). Do not ask for sweeteners on fair trades.
-      - DECLINE → delta <= -150: severe value loss, or giving away a cornerstone for scraps
-      - COUNTER → delta -11 to -149: viewer is behind but not catastrophically; propose a specific, realistic add-on
+      - ACCEPT  → delta >= -fair_band: value win OR essentially fair (market-neutral), unless structural_catastrophe is true. Do not ask for sweeteners on fair trades.
+      - DECLINE → delta < -decisive_bar: severe value loss, or giving away a cornerstone for scraps
+      - COUNTER → -decisive_bar <= delta < -fair_band: viewer is behind but not catastrophically; propose a specific, realistic add-on
 
-    CRITICAL: If delta is between -10 and +10, the verdict MUST be ACCEPT.
+    CRITICAL: If delta is between -fair_band and +fair_band, the verdict MUST be ACCEPT (unless structural_catastrophe is true).
+    CRITICAL: Age, youth, or team direction can NEVER turn a decisive delta
+    (decisive_bar or more, with a non-negative raw delta) into DECLINE or
+    COUNTER. Giving up younger players for older, proven
+    producers is the normal shape of a consolidation win, not a reason to
+    decline one. The only exception is a post-trade roster that cannot field
+    a starter-caliber player at a required position (structural_catastrophe
+    in the trade context), judged from the lineup, never from age alone. A
+    server-side guard enforces this framework on your verdict, so a verdict
+    outside it will be overridden.
+    CRITICAL: When the trade context carries assigned_verdict, that verdict
+    is FINAL. Return it verbatim and write the summary, helps, and risks as
+    the case FOR that verdict, using the player-specific context (production,
+    role, injuries). Never argue for a different verdict.
     The summary should acknowledge the trade is essentially even and let the viewer
     decide based on preference - not suggest extracting more value from the other team.
 
@@ -1009,6 +1043,22 @@ def build_trade_ai_user_prompt(payload: dict, scoring_type: str = "dynasty") -> 
         lead = "Analyze this dynasty trade from the viewer team's perspective."
     examples = _label_examples_block(payload)
     examples_section = f"{examples}\n\n" if examples else ""
+    assigned = str(
+        ((payload or {}).get("trade") or {}).get("assigned_verdict") or ""
+    ).strip().upper()
+    assigned_section = ""
+    if assigned:
+        assigned_section = (
+            f"ASSIGNED VERDICT: {assigned}. This verdict was set "
+            "deterministically from the market delta (adjusted and raw), "
+            "the fair/decisive bands in the trade context, and the "
+            "post-trade roster. Your verdict field MUST be exactly "
+            f"{assigned}. Write the summary, helps, and risks as the case "
+            "for this verdict using the player-specific context "
+            "(production, role, injury_status, team situation). Do not "
+            "argue for a different verdict, and do not mention that the "
+            "verdict was assigned.\n\n"
+        )
     return f"""
 {lead}
 
@@ -1017,7 +1067,7 @@ Focus on market value first, then roster fit as secondary.
 
 Return JSON matching the schema exactly.
 
-{examples_section}Trade context:
+{assigned_section}{examples_section}Trade context:
 {json_dumps_safe(payload)}
 
 {_LABEL_SELF_CHECK}
