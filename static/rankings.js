@@ -1612,8 +1612,16 @@ function prRender() {
   prPosRankMap = {};
   {
     const _byPos = {};
-    // In ROS mode the positional rank keys off the active window's total
-    // (the same number the server stamps as ros_*_pos_rank), not value.
+    // In ROS mode the positional rank IS the server-stamped rank for
+    // the active window (ros_*_pos_rank, via prRosVal 'rank'): the
+    // server ranks by the guarded factor score (assign_ros_ranks in
+    // utils/ros_rankings.py), the same order the slot-fill and the
+    // monotonicity pass put on this board. Recomputing the rank here
+    // from the window total printed a different list than the board
+    // showed (2026-11-23: Jefferson labeled WR4 by total while the
+    // guarded score order, and his board slot, had him WR6; Cook
+    // labeled RB3 sat below Walker RB4 and Bijan RB5, because a
+    // total rewards expected games the WR/RB score barely weights).
     const _posVal = p => prScoringType === 'ros' ? prRosVal(p, 'total') : prGetValue(p);
     prAllPlayers.forEach(p => {
       if (p.position === 'PICK') return;
@@ -1622,7 +1630,24 @@ function prRender() {
       (_byPos[p.position] = _byPos[p.position] || []).push(p);
     });
     Object.keys(_byPos).forEach(pos => {
-      _byPos[pos].sort((a, b) => _posVal(b) - _posVal(a));
+      if (prScoringType === 'ros'
+          && _byPos[pos].every(p => prRosVal(p, 'rank') != null)) {
+        // Stamps are used verbatim, per position, all-or-nothing
+        // (the same rule prRosApplyPositionMonotonicity applies): a
+        // position whose rows only partly carry the stamp falls back
+        // below rather than mixing two rank bases in one label set.
+        _byPos[pos].forEach(p => { prPosRankMap[String(p.id)] = prRosVal(p, 'rank'); });
+        return;
+      }
+      if (prScoringType === 'ros') {
+        // A payload without usable stamps: follow the position-view
+        // order itself (factor score in the full window, window
+        // total in the sub-windows) so the label still agrees with
+        // the order on screen.
+        _byPos[pos].sort(prRosPosViewCmp);
+      } else {
+        _byPos[pos].sort((a, b) => _posVal(b) - _posVal(a));
+      }
       _byPos[pos].forEach((p, i) => { prPosRankMap[String(p.id)] = i + 1; });
     });
   }
