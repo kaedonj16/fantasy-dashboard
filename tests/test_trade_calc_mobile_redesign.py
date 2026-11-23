@@ -247,6 +247,11 @@ def test_sticky_observer_targets_balance_block_on_phones():
     js = _read(_JS)
     sync = _body(js, "function syncStickyObserver()", "Phone chrome:")
     assert 'window.matchMedia("(max-width: 640px)").matches' in sync
+    # 2026-11-23: the primary phone target is the balance wrap, not the
+    # whole mobile balance block (whose verdict shell outlasts the
+    # totals/band on screen and delayed the sticky bar too long).
+    assert '".otc-balance-wrap"' in sync
+    assert sync.index('".otc-balance-wrap"') < sync.index('"#otcMobileBalance"')
     assert '"#otcMobileBalance"' in sync
     assert '".otc-summary-card"' in sync
     assert "io.observe(target);" in sync

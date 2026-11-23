@@ -214,14 +214,28 @@ def test_sticky_bar_hides_while_summary_visible():
     # Updated for the phone redesign: the observed section follows the
     # layout (syncStickyObserver). On desktop it is still the summary
     # card; on phones the card no longer holds the balance (it moved to
-    # the builder-end #otcMobileBalance block), so the block is the
-    # target there. The observer contract (owner flag, rootMargin,
+    # the builder-end #otcMobileBalance block), so a balance element is
+    # the target there. The observer contract (owner flag, rootMargin,
     # renderer gate) is unchanged.
+    # 2026-11-23: on phones the target is the balance wrap itself, not
+    # the whole mobile balance block. The block also carries the
+    # verdict shell (balancer suggestions, roster-depth warnings),
+    # which stays on screen long after the totals/band the sticky bar
+    # mirrors have scrolled off, so the whole-block target surfaced
+    # the bar far too late (Kaedon's screenshot: totals/band gone at
+    # the "Even it out" section, no sticky bar yet). The block and
+    # the summary card remain only as fallbacks.
     bind_body = APP_JS.split("function bindStickyBar()", 1)[1].split(
         "function bindClearTradeButton", 1)[0]
     assert "new IntersectionObserver" in bind_body
     assert '".otc-summary-card"' in bind_body, "observer watches the summary card"
-    assert '"#otcMobileBalance"' in bind_body, "on phones it watches the balance block"
+    assert '".otc-balance-wrap"' in bind_body, "on phones it watches the balance wrap"
+    assert '"#otcMobileBalance"' in bind_body, "the balance block remains the phone fallback"
+    sync_body = APP_JS.split("function syncStickyObserver()", 1)[1].split(
+        "Phone chrome:", 1)[0]
+    assert sync_body.index('".otc-balance-wrap"') < sync_body.index('"#otcMobileBalance"'), (
+        "the balance wrap must be the primary phone target, ahead of "
+        "the whole-block fallback")
     assert "io.observe(target);" in bind_body
     assert "state._summaryInView = !!en.isIntersecting;" in bind_body
     assert 'rootMargin: "24px 0px 24px 0px"' in bind_body, (
