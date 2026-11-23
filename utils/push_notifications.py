@@ -4164,8 +4164,176 @@ def notify_standings_update():
 
 # ── Notification 11: Close game alert (Monday evening) ───────────────────────
 
+# A raw gap under the threshold is not "close" when the trailing team has
+# almost no path left: nobody still playing, or only a long-shot player
+# against a big gap. The matchup pages put the trailing team's win chance
+# under this floor in those spots, so the alert uses the same model and
+# stays quiet. Anything the model cannot judge (missing starters, statuses
+# or projections) fails open: the alert fires as it did before the gate.
+_CLOSE_GAME_MIN_TRAILING_WIN_PROB = 0.05
+
+
+def _close_game_context(season, week):
+    """Live context for the close-game win-probability gate, or None.
+
+    Returns {status_by_pid, proj_map, frac_lookup, players_index} built from
+    the same sources the matchup pages use (scoreboard game statuses, the
+    week schedule for game clocks, and the week's projections). None means
+    the gate cannot judge and callers must fail open.
+    """
+    try:
+        from utils.data_cache import (
+            load_players_index, load_teams_index, load_week_schedule,
+        )
+        from utils.game_status import (
+            build_games_by_team, build_status_by_pid, get_nfl_games_for_week,
+        )
+        from dashboard_services.matchups import (
+            build_team_schedule_lookup, make_frac_lookup,
+        )
+
+        players_index = load_players_index() or {}
+        if not players_index:
+            return None
+        games = get_nfl_games_for_week(int(week), int(season)) or []
+        if not games:
+            return None
+        games_by_team = build_games_by_team(games)
+        status_by_pid = build_status_by_pid(
+            players_index, games_by_team, load_teams_index() or {}, int(week),
+        )
+        if not status_by_pid:
+            return None
+
+        proj_map = {}
+        try:
+            from app import build_projections_by_week
+            _bpw = build_projections_by_week(int(season), int(week), None) or {}
+            proj_map = {
+                str(k): float(v or 0.0)
+                for k, v in ((_bpw.get(int(week)) or {}).get("projections") or {}).items()
+            }
+        except Exception as pe:
+            logger.debug("[notify] close_game projection build failed: %s", pe)
+        if not proj_map:
+            return None
+
+        team_game_lookup = {
+            team: entry.get("game")
+            for team, entry in games_by_team.items()
+            if isinstance(entry, dict) and entry.get("game")
+        }
+        schedule_lookup = build_team_schedule_lookup(
+            load_week_schedule(int(season), int(week)) or [],
+        )
+        return {
+            "status_by_pid": status_by_pid,
+            "proj_map": proj_map,
+            "frac_lookup": make_frac_lookup(team_game_lookup, schedule_lookup),
+            "players_index": players_index,
+        }
+    except Exception as exc:
+        logger.debug("[notify] close_game gate context failed: %s", exc)
+        return None
+
+
+def _close_game_team(row, players_index):
+    """Starter dicts for compute_win_prob from a raw matchup row, or None.
+
+    None when the row carries no usable starter points: without them the
+    locked totals cannot be rebuilt, so the gate must not judge.
+    """
+    raw_starters = row.get("starters") or []
+    if not raw_starters:
+        return None
+    starters_points = row.get("starters_points") or []
+    players_points = row.get("players_points") or {}
+    if not starters_points and not players_points:
+        return None
+    starters = []
+    for i, pid in enumerate(raw_starters):
+        if pid is None or str(pid) in ("", "0", "None"):
+            continue
+        pts = starters_points[i] if i < len(starters_points) else None
+        if pts is None and players_points:
+            pts = players_points.get(str(pid), players_points.get(pid))
+        if pts is None:
+            return None
+        info = players_index.get(str(pid)) or {}
+        starters.append({
+            "pid": str(pid),
+            "pts": float(pts),
+            "pos": info.get("pos") or info.get("position") or "",
+            "nfl": info.get("team") or "",
+        })
+    if not starters:
+        return None
+    return {"starters": starters}
+
+
+def _close_game_is_over(a, b, ctx):
+    """True when the matchup is statistically over, False when it is live,
+    None when the gate cannot judge (caller fails open and alerts).
+
+    Over means: no starter on either side has a game left to play, the
+    trailing team has no starter left who can score, or the trailing team's
+    win probability (the matchup pages' own model) is under the floor.
+    """
+    if ctx is None:
+        return None
+    try:
+        from dashboard_services.matchups import compute_win_prob
+        from utils.data_cache import STATUS_FINAL
+
+        team_a = _close_game_team(a, ctx["players_index"])
+        team_b = _close_game_team(b, ctx["players_index"])
+        if team_a is None or team_b is None:
+            return None
+        status_by_pid = ctx["status_by_pid"]
+
+        def _live(team):
+            live = []
+            for p in team["starters"]:
+                status = status_by_pid.get(
+                    p["pid"], status_by_pid.get(str(p["pid"]), None))
+                # Unknown status counts as live: only a known-final (or bye)
+                # starter is certainly done scoring.
+                if status != STATUS_FINAL and status != "BYE":
+                    live.append(p)
+            return live
+
+        live_a, live_b = _live(team_a), _live(team_b)
+        if not live_a and not live_b:
+            return True
+        pts_a = float(a.get("points") or 0)
+        pts_b = float(b.get("points") or 0)
+        if pts_a == pts_b:
+            return False
+        if pts_a > pts_b:
+            trailing, leading, trailing_live = team_b, team_a, live_b
+        else:
+            trailing, leading, trailing_live = team_a, team_b, live_a
+        if not trailing_live:
+            return True
+        prob = compute_win_prob(
+            trailing, leading, status_by_pid, ctx["proj_map"],
+            frac_lookup=ctx["frac_lookup"],
+        )
+        if prob is None:
+            return None
+        return prob < _CLOSE_GAME_MIN_TRAILING_WIN_PROB
+    except Exception as exc:
+        logger.debug("[notify] close_game gate failed: %s", exc)
+        return None
+
+
 def notify_close_game():
-    """Alert owners in close matchups on Monday evening with MNF in progress."""
+    """Alert owners in close matchups on Monday evening with MNF in progress.
+
+    A matchup inside the raw-gap threshold is still skipped when it is
+    statistically over (see _close_game_is_over): no players left to play,
+    or the trailing team's win probability under 5%.
+    """
     try:
         from dashboard_services.api import get_nfl_state
         from dashboard_services.platform_api import get_matchups, get_rosters, get_users
@@ -4195,6 +4363,11 @@ def notify_close_game():
             return
 
         THRESHOLD = 20.0
+
+        # Win-probability gate context, built lazily on the first matchup
+        # that passes the raw-gap threshold. "built" with ctx=None means the
+        # gate cannot judge this run and every matchup fails open.
+        gate = {"built": False, "ctx": None}
 
         for league_id, platform in leagues:
             league_name = _league_display_name(platform, league_id, season)
@@ -4234,6 +4407,14 @@ def notify_close_game():
                         continue
                     key = f"{league_id}:{mid}"
                     if key in notified_ids:
+                        continue
+                    if not gate["built"]:
+                        gate["ctx"] = _close_game_context(season, week)
+                        gate["built"] = True
+                    if _close_game_is_over(a, b, gate["ctx"]):
+                        # Statistically over: stay quiet, and do NOT mark
+                        # the matchup notified, so a later check can still
+                        # alert if the game genuinely comes back to life.
                         continue
                     for team, opp in [(a, b), (b, a)]:
                         owner_id     = roster_owner.get(team.get("roster_id"))
