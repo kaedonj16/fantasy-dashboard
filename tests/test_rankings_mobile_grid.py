@@ -48,16 +48,22 @@ def test_rank_delta_is_inline_right_of_the_rank_number():
     assert "'<span class=\"pr-rank\">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>'" in JS
 
 
-def test_phone_control_stack_has_no_settings_or_tags_row():
+def test_phone_control_stack_keeps_the_settings_button():
     # Full-width sliding sort pill with equal segments; the Total Points
     # button reads "Total" on phones via the short label span.
     assert ".pr-sort-toggle { flex: 1 1 100%; }" in PAGE
     assert ".pr-sort-toggle button { flex: 1; padding: 7px 0; font-size: 12px; }" in PAGE
     assert ".pr-sort-full { display: none; }" in PAGE
     assert '<span class="pr-sort-short">Total</span>' in PAGE
-    # Settings / Legend / sort label / divider are gone from the phone stack.
-    assert ".pr-grouplab, .pr-vdiv, .pr-pinright { display: none; }" in PAGE
-    assert "#prFormatSeg { display: none; }" in PAGE
+    # Sort label / divider are gone from the phone stack, but the
+    # Settings / Legend row stays visible (Kaedon, 2026-11-22: he could
+    # not find the league settings on the phone page at all).
+    assert ".pr-grouplab, .pr-vdiv { display: none; }" in PAGE
+    assert ".pr-pinright { display: flex; flex: 1 1 100%;" in PAGE
+    # No inline league-format segment anywhere on the page: 1QB / SF
+    # lives inside the Settings panel (id="prFormatSection").
+    assert 'id="prFormatSeg"' not in PAGE
+    assert 'id="prFormatSection"' in PAGE
     # One nowrap row of six equal-flex position pills.
     assert ".filter-positions { flex: 1 1 100%; flex-wrap: nowrap; overflow: visible; }" in PAGE
     assert ".filter-positions .pos-pill { flex: 1; min-height: 40px; }" in PAGE

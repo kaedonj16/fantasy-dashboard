@@ -374,8 +374,16 @@ function prSyncHeaderSegs() {
   document.querySelectorAll('#prScoringSeg .pr-segbtn').forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-value') === prScoringType);
   });
-  document.querySelectorAll('#prFormatSeg .pr-segbtn').forEach(function(b) {
+  // League format / size have no inline controls (Kaedon, 2026-11-22:
+  // settings live behind the one Settings button, the way the page used
+  // to work). Sync the Settings panel toggles instead, so the panel
+  // reflects the active league's defaults on load and any override
+  // after it.
+  document.querySelectorAll('#prFormatSection .settings-toggle').forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-value') === prLeagueType);
+  });
+  document.querySelectorAll('#prSizeSection .settings-toggle').forEach(function(b) {
+    b.classList.toggle('active', Number(b.getAttribute('data-value')) === prLeagueSize);
   });
 }
 // Legend panel toggle (Row 2, pinned right next to Settings).
@@ -1082,6 +1090,17 @@ function prToggleSettings() {
 
 // Update active settings indicator tags
 function updateSettingsIndicator() {
+  // Current-settings summary next to the Settings button (approved ROS
+  // mock, Kaedon 2026-11-22): "1QB · 12 team · PPR" — format, league
+  // size and the scoring basis the numbers are computed on, reflecting
+  // the active league's settings and any panel override after it.
+  const summary = document.getElementById('prSettingsSummary');
+  if (summary) {
+    const fmt = prLeagueType === 'sf' ? 'SF' : '1QB';
+    const basis = window._prPpgBasis || 'PPR';
+    summary.innerHTML = '<b>' + fmt + '</b> &middot; <b>' + prLeagueSize +
+      ' team</b> &middot; <b>' + basis + '</b>';
+  }
   const indicator = document.getElementById('prActiveSettings');
   if (!indicator) return;
 
@@ -1145,18 +1164,27 @@ function prSetScoringType(type) {
   const rosWinSection = document.getElementById('prRosWindowSection');
   if (rosWinSection) rosWinSection.style.display = type === 'ros' ? '' : 'none';
   if (type === 'ros') prSyncRosWindowUI();
-  // Sort pill: ROS sorts swap in for the value sorts in ROS mode (Pos Rank
-  // stays: it reads the window's positional rank there).
+  // Sort pill: ROS is a plain ranked list, the ranking IS the order, so
+  // the whole sort bar (pill, label and divider) is hidden in ROS mode
+  // — no Value / PPG / Total / Age and no Pos Rank either (Kaedon,
+  // 2026-11-22: the lone Pos Rank pill left a big empty bar). Dynasty /
+  // Redraft keep their sort bar exactly as it was.
+  var _sortToggleEl = document.getElementById('prSortToggle');
+  if (_sortToggleEl) _sortToggleEl.style.display = type === 'ros' ? 'none' : '';
+  var _sortLabelEl = document.getElementById('prSortLabel');
+  if (_sortLabelEl) _sortLabelEl.style.display = type === 'ros' ? 'none' : '';
+  var _vdivEl = document.querySelector('.pr-head-row2 .pr-vdiv');
+  if (_vdivEl) _vdivEl.style.display = type === 'ros' ? 'none' : '';
   document.querySelectorAll('#prSortToggle button').forEach(function(b) {
     const k = b.getAttribute('data-sortkey');
     if (k === 'ros_total' || k === 'ros_ppg') b.style.display = type === 'ros' ? '' : 'none';
-    else if (type === 'ros' && k !== 'pos_rank') b.style.display = 'none';
+    else if (type === 'ros') b.style.display = 'none';
     else b.style.display = '';
   });
   // Default sort per mode: ROS opens on ROS Total; leaving ROS with a ROS
   // sort active falls back to Value.
   if (type === 'ros' && prSortKey !== 'ros_total' && prSortKey !== 'ros_ppg'
-      && prSortKey !== 'pos_rank' && prSortKey !== 'name') {
+      && prSortKey !== 'name') {
     prSortKey = 'ros_total'; prSortDir = 'desc';
     var sel0 = document.getElementById('prSort');
     if (sel0) sel0.value = prSortKey;
@@ -2353,6 +2381,9 @@ return Promise.all([
     const _ppgSeason = (rawPlayers.find(p => p && p.ppg_season) || {}).ppg_season;
     const _ppgBasis = (!Array.isArray(resp) && resp.ppg_scoring === 'league') ? 'league scoring' : 'full PPR';
     _ppgHead.title = _ppgSeason ? (_ppgSeason + ' season PPG (' + _ppgBasis + ')') : ('Season PPG (' + _ppgBasis + ')');
+    // The Settings-button summary names the same basis in short form.
+    window._prPpgBasis = (!Array.isArray(resp) && resp.ppg_scoring === 'league') ? 'League scoring' : 'PPR';
+    if (typeof updateSettingsIndicator === 'function') updateSettingsIndicator();
   }
 
   prAllPlayers = rawPlayers

@@ -63,8 +63,10 @@ def test_total_sort_arrow_lands_on_visible_header():
 
 
 def test_header_row1_fixed_tracks_so_controls_do_not_move():
-    # Fixed tracks for the two format segments + search; title column 1fr.
-    assert "grid-template-columns: minmax(0, 1fr) auto auto minmax(190px, 240px);" in PAGE
+    # Fixed tracks for the scoring segment + search; title column 1fr.
+    # The 1QB/SF segment moved into the Settings panel (2026-11-22), so
+    # Row 1 carries one auto track, not two.
+    assert "grid-template-columns: minmax(0, 1fr) auto minmax(190px, 240px);" in PAGE
     m = re.search(r"\.pr-head-row1 \{(.*?)\}", PAGE, re.S)
     assert m and "display: grid;" in m.group(1)
     # The search no longer sizes off the title block via margin-left:auto.

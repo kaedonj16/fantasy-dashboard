@@ -24,6 +24,7 @@ from utils.ros_rankings import (
     availability_rate,
     ceiling_ppg,
     compute_player_ros,
+    _ros_gap_tier_thresholds,
     compute_ros_tier_thresholds,
     compute_ros_vor_tier_thresholds,
     consistency_rate,
@@ -869,18 +870,26 @@ def test_assign_ros_ranks_model_order_full_window_only():
     assert "ros_playoff_score" not in pool["b"]
 
 
-def test_tier_thresholds_all_window_uses_scores():
+def _clustered_pool():
+    """60 players in six clusters of ten: small steps inside a cluster,
+    a real drop-off between clusters (the shape tier breaks read)."""
     pool, pos = {}, {}
     for i in range(60):
         pid = str(i)
-        total = 200.0 - i * 3.0
+        cluster, within = divmod(i, 10)
+        total = 200.0 - cluster * 30.0 - within * 1.0
         pool[pid] = {"ros_total": total, "ros_ppg": total / 7,
-                     "ros_score": 2.0 - i * 0.03,
+                     "ros_score": 2.0 - cluster * 0.3 - within * 0.01,
                      "ros_stretch_total": total * 0.6,
                      "ros_stretch_ppg": total / 7,
                      "ros_playoff_total": total * 0.4,
                      "ros_playoff_ppg": total / 7}
         pos[pid] = "RB" if i % 2 == 0 else "WR"
+    return pool, pos
+
+
+def test_tier_thresholds_all_window_uses_scores():
+    pool, pos = _clustered_pool()
     out = compute_ros_tier_thresholds(pool, pos)
     # Full-window thresholds live on the score scale (max score 2.0),
     # not the 200-point total scale the sub-windows still use.
@@ -890,14 +899,9 @@ def test_tier_thresholds_all_window_uses_scores():
 
 
 def test_tier_thresholds_come_from_ros_totals():
-    pool, pos = {}, {}
-    for i in range(60):
-        pid = str(i)
-        total = 200.0 - i * 3.0
-        pool[pid] = {"ros_total": total, "ros_ppg": total / 7,
-                     "ros_stretch_total": total * 0.6, "ros_stretch_ppg": total / 7,
-                     "ros_playoff_total": total * 0.4, "ros_playoff_ppg": total / 7}
-        pos[pid] = "RB" if i % 2 == 0 else "WR"
+    pool, pos = _clustered_pool()
+    for fields in pool.values():
+        fields.pop("ros_score", None)
     out = compute_ros_tier_thresholds(pool, pos)
     assert set(out) == {"all", "stretch", "playoffs"}
     all_t = out["all"]
@@ -1122,6 +1126,69 @@ def test_all_view_tiers_come_from_vor_not_positional_totals():
     rb1_vor = ros_vor_totals(pool, pos, 10, "1qb")["all"]["rb0"]
     assert _tier_of(vor_t, rb1_vor) == 1
     assert _tier_of(vor_t, qb1_vor) != 1
+
+
+def test_ros_tier_breaks_are_the_ros_lists_own_gaps():
+    # Kaedon (2026-11-22): tiers are based on the ROS rankings. Three
+    # tight clusters over a smooth tail: the breaks land exactly on the
+    # cluster boundaries (midpoints 78.5 and 43.5) and nowhere else.
+    vals = [100, 99, 98, 97, 60, 59, 58, 57, 30, 29, 28, 27] + list(range(26, 0, -1))
+    assert _ros_gap_tier_thresholds(vals) == [78.5, 43.5]
+    # The dynasty value algorithm (span cap / local significance on the
+    # dynasty scale, rescaled the way the old ROS code fed it) puts the
+    # second break at 29.5 instead: the ROS break set must NOT match a
+    # dynasty-value-derived break set on the same players.
+    from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
+    factor = 1000.0 / max(vals)
+    remapped = [{"position": "RB", "value": v * factor, "sf_value": v * factor}
+                for v in vals]
+    dyn = compute_tier_thresholds(remapped, "1qb", 10)
+    dyn_back = [] if list(dyn) == list(FALLBACK_THRESHOLDS) else [round(v / factor, 1) for v in dyn]
+    assert dyn_back != _ros_gap_tier_thresholds(vals)
+    # A perfectly smooth ladder has no drop-offs: no manufactured tiers.
+    assert _ros_gap_tier_thresholds([100.0 - 2.0 * i for i in range(40)]) == []
+
+
+def _clustered_vor_pool():
+    """Clustered PPG ladders per position, so every format/size VOR
+    list carries real drop-offs to tier from."""
+    pool, pos = {}, {}
+
+    def add(prefix, position, ppgs):
+        for i, ppg in enumerate(ppgs):
+            pool[f"{prefix}{i}"] = {
+                "ros_ppg": ppg, "ros_total": ppg * 8, "ros_games": 8,
+                "ros_stretch_ppg": ppg, "ros_stretch_total": ppg * 5,
+                "ros_stretch_games": 5,
+                "ros_playoff_ppg": ppg, "ros_playoff_total": ppg * 3,
+                "ros_playoff_games": 3}
+            pos[f"{prefix}{i}"] = position
+
+    add("qb", "QB", [30, 29.5, 29, 28.5, 24, 23.5, 23, 22.5,
+                     19, 18.5, 18, 17.5, 14, 13.5, 13, 12.5,
+                     10, 9.5, 9, 8.5])
+    add("rb", "RB", [27, 26.5, 26, 25.5, 21, 20.5, 20, 19.5,
+                     16, 15.5, 15, 14.5, 11, 10.5, 10, 9.5,
+                     7, 6.5, 6, 5.5, 4, 3.5, 3, 2.5])
+    add("wr", "WR", [25, 24.5, 24, 23.5, 20, 19.5, 19, 18.5,
+                     15, 14.5, 14, 13.5, 10, 9.5, 9, 8.5,
+                     6, 5.5, 5, 4.5, 3, 2.5, 2, 1.5])
+    add("te", "TE", [18, 17.5, 17, 16.5, 13, 12.5, 12, 11.5,
+                     9, 8.5, 8, 7.5, 5, 4.5, 4, 3.5])
+    return pool, pos
+
+
+def test_ros_tier_breaks_change_with_format_and_size():
+    # The All-view thresholds are computed per format x size from that
+    # setting's own VOR order: switching 1QB -> SF (QBs reprice against
+    # a far worse replacement line) or 10 -> 12 teams re-derives the
+    # breaks, so no two settings share a break set on this pool.
+    pool, pos = _clustered_vor_pool()
+    out = compute_ros_vor_tier_thresholds(pool, pos)["all"]
+    sets = {f"{lt}/{sz}": out[lt][sz] for lt in ("1qb", "sf") for sz in ("10", "12")}
+    for key, thresholds in sets.items():
+        assert thresholds, key
+    assert len({tuple(v) for v in sets.values()}) == len(sets)
 
 
 # ── Payload path ────────────────────────────────────────────────────────────
@@ -1540,6 +1607,55 @@ def test_players_shell_ros_wiring():
     assert '<option value="ros_ppg">' not in shell
     assert ".pr-ros-plain" in shell
     assert ".pr-sched" in shell
+
+
+def test_players_shell_ros_no_sort_bar_and_settings_button():
+    # Kaedon's screenshot fixes (2026-11-22): in ROS mode there is NO
+    # sort bar at all (the lone "Pos Rank" pill left a big empty grey
+    # bar), the phone ROS rows collapse to rank | player with the
+    # player group LEFT-anchored (the approved mock; a centered group
+    # was built first and Kaedon rejected it — he only ever meant the
+    # row alignment left by the removed Value column), and league
+    # settings live behind the one visible Settings button — never
+    # inline segments.
+    shell = open(os.path.join(
+        _ROOT, "dashboard_services", "pages", "players_page.py"),
+        encoding="utf-8").read()
+    js = open(os.path.join(_ROOT, "static", "rankings.js"), encoding="utf-8").read()
+    # No inline league-format segment; format + size are panel sections.
+    assert 'id="prFormatSeg"' not in shell
+    assert 'id="prFormatSection"' in shell
+    assert 'id="prSizeSection"' in shell
+    assert 'id="prSettingsBtn"' in shell
+    assert 'id="prSettingsPanel"' in shell
+    # The Settings row stays visible on phones (it used to be hidden
+    # with the whole pinned-right group, which is why league settings
+    # could not be found).
+    assert ".pr-pinright { display: flex; flex: 1 1 100%;" in shell
+    # Phone ROS rows: two tracks, Exp. Games header gone, player group
+    # anchored at the start of the player track — never centered.
+    assert ("#prTableScroll.pr-ros-plain .pr-name { justify-content: flex-start; }"
+            in shell)
+    assert ("#prTableScroll.pr-ros-plain .pr-name { justify-content: center; }"
+            not in shell)
+    assert "#prTableScroll.pr-ros-plain #prTotalHeader { display: none !important; }" in shell
+    # The Settings button carries the current-settings summary from the
+    # approved mock ("1QB · 12 team · PPR"), filled by
+    # updateSettingsIndicator() from the same state the panel edits.
+    assert 'id="prSettingsSummary"' in shell
+    assert "prSettingsSummary" in js
+    assert "' team</b> &middot; <b>'" in js
+    # JS hides the whole sort bar in ROS mode and no longer exempts
+    # Pos Rank from the ROS sort reset.
+    assert "_sortToggleEl.style.display = type === 'ros' ? 'none' : '';" in js
+    assert "_sortLabelEl.style.display = type === 'ros' ? 'none' : '';" in js
+    assert "prSortKey !== 'pos_rank'" not in js
+    # The panel toggles sync from the active league's defaults on load
+    # (prSyncHeaderSegs runs at init and on every settings change).
+    assert "#prFormatSection .settings-toggle" in js
+    assert "#prSizeSection .settings-toggle" in js
+    assert "prLeagueType   = (typeof brLeagueType" in js
+    assert "prLeagueSize   = (typeof brLeagueSize" in js
 
 
 def test_rankings_js_ros_mode():
