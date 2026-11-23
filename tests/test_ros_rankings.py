@@ -1573,6 +1573,135 @@ def test_order_overall_monotonicity_skips_positions_without_ranks():
                                         "Wideout One"]
 
 
+def _label_crossing_pool():
+    """A WR pool whose TOTAL order and SCORE order disagree, with a
+    divergence-guarded player in the middle of the crossing.
+
+    The guarded player's PPG is built through compute_player_ros
+    itself (the Jefferson shape: feed 19.36, season 13.95, last-4
+    11.97 -> the guard stamps 17.44). He is given 7 expected games,
+    so his total (122.1) beats two receivers whose per-game lines —
+    and therefore factor scores — are better on fewer games. The
+    board orders by score; a label ranked by total (the old
+    rankings.js prPosRankMap) disagrees with the board on exactly
+    these players.
+    """
+    jj = _ros("WR", played_games=8, season_ppg=13.95, last4_ppg=11.97,
+              played_last4_team_games=4,
+              windows={"all": [19.36] * 7, "stretch": [19.36] * 4,
+                       "playoffs": [19.36] * 3})
+    assert jj["ros_ppg"] == pytest.approx(17.44)
+    pool = {
+        "w1": {"ros_ppg": 24.0, "ros_games": 6.0, "ros_total": 144.0},
+        "w2": {"ros_ppg": 20.0, "ros_games": 5.0, "ros_total": 100.0},
+        "w3": {"ros_ppg": 19.0, "ros_games": 5.0, "ros_total": 95.0},
+        "jj": {"ros_ppg": jj["ros_ppg"], "ros_games": 7.0,
+               "ros_total": 122.1},
+        "w5": {"ros_ppg": 15.0, "ros_games": 7.0, "ros_total": 105.0},
+    }
+    pos = {pid: "WR" for pid in pool}
+    factors = {pid: player_model_factors(
+        "WR", ppg=f["ros_ppg"], games=f["ros_games"], sched_rank=None,
+        game_points={}, role_series=[], offense=None)
+        for pid, f in pool.items()}
+    scores = ros_model_scores(factors, "WR")
+    assign_ros_ranks(pool, pos, model_scores=scores)
+    return pool, pos, scores
+
+
+def test_pos_rank_follows_guarded_score_not_total():
+    pool, _pos, scores = _label_crossing_pool()
+    # The pool really does cross: by total the guarded player is WR2,
+    # by the guarded factor score he is WR4. If the two bases ever
+    # agree on this fixture the test below stops meaning anything.
+    by_total = sorted(pool, key=lambda pid: -pool[pid]["ros_total"])
+    assert by_total.index("jj") == 1
+    by_score = sorted(pool, key=lambda pid: -scores[pid])
+    assert by_score.index("jj") == 3
+    # The stamp follows the score for every player, guarded included.
+    for i, pid in enumerate(by_score, 1):
+        assert pool[pid]["ros_pos_rank"] == i
+    assert pool["jj"]["ros_pos_rank"] == 4
+    assert pool["w2"]["ros_pos_rank"] == 2
+
+
+def test_pos_rank_consistent_after_format_reslot():
+    # The label the board prints is the build-time stamp; a format
+    # switch re-slots the OVERALL list (the replacement line moves,
+    # so the VOR inputs are recomputed per format) but must never
+    # change a positional rank or break its monotonicity inside a
+    # position. The two replacement lines below stand in for
+    # ros_replacement_map's 1QB streaming vs Superflex scarcity
+    # outputs on a full pool (the map itself is pinned by
+    # test_ros_replacement_definitions).
+    pool, pos, scores = _label_crossing_pool()
+    extra = {
+        "r1": ("RB", 22.0, 6.0, 132.0), "r2": ("RB", 18.0, 6.5, 117.0),
+        "r3": ("RB", 16.0, 6.0, 96.0),
+        "q1": ("QB", 27.0, 6.0, 162.0), "q2": ("QB", 24.0, 6.0, 144.0),
+        "q3": ("QB", 21.0, 6.0, 126.0),
+    }
+    for pid, (p, ppg, games, total) in extra.items():
+        pool[pid] = {"ros_ppg": ppg, "ros_games": games,
+                     "ros_total": total}
+        pos[pid] = p
+    for p in ("RB", "QB"):
+        fac = {pid: player_model_factors(
+            p, ppg=f["ros_ppg"], games=f["ros_games"], sched_rank=None,
+            game_points={}, role_series=[], offense=None)
+            for pid, f in pool.items() if pos[pid] == p}
+        scores.update(ros_model_scores(fac, p))
+    assign_ros_ranks(pool, pos, model_scores=scores)
+    stamps = {pid: f["ros_pos_rank"] for pid, f in pool.items()}
+
+    def _rows(repl):
+        return [{"id": pid, "name": pid, "position": pos[pid],
+                 "ros_ppg": f["ros_ppg"], "ros_games": f["ros_games"],
+                 "ros_total": f["ros_total"], "ros_score": scores[pid],
+                 "ros_pos_rank": f["ros_pos_rank"],
+                 "_vor": (f["ros_ppg"] - repl[pos[pid]]) * f["ros_games"]}
+                for pid, f in pool.items()]
+
+    repl_1qb = {"QB": 19.5, "RB": 10.0, "WR": 10.0, "TE": 10.0}
+    repl_sf = {"QB": 12.0, "RB": 10.0, "WR": 10.0, "TE": 10.0}
+    out_1qb = order_overall(_rows(repl_1qb), league_type="1qb")
+    out_sf = order_overall(_rows(repl_sf), league_type="sf")
+    # The formats really do re-slot: QB1 rises from mid-board in 1QB
+    # to the top in Superflex.
+    idx_1qb = [r["id"] for r in out_1qb].index("q1")
+    idx_sf = [r["id"] for r in out_sf].index("q1")
+    assert idx_sf < idx_1qb
+    for out in (out_1qb, out_sf):
+        # Stamps are untouched by the re-slot...
+        assert {r["id"]: r["ros_pos_rank"] for r in out} == stamps
+        # ...and strictly monotonic inside every position, so the
+        # printed label can never cross the board order.
+        for p in ("QB", "RB", "WR"):
+            seq = [r["ros_pos_rank"] for r in out if r["position"] == p]
+            assert seq == sorted(seq)
+    assert stamps["jj"] == 4
+
+
+def test_rankings_js_ros_label_uses_server_stamp():
+    # The /players board's ROS meta line prints prPosRankMap through
+    # prPosRankLabel. In ROS mode that map must take the active
+    # window's server-stamped rank verbatim (the guarded score order
+    # the slot-fill and monotonicity pass already enforce), not
+    # recompute a rank from the window total — the total basis is
+    # what put WR4 on a player the board slotted as WR6
+    # (2026-11-23 screenshot).
+    js = open(os.path.join(_ROOT, "static", "rankings.js"), encoding="utf-8").read()
+    assert "prPosRankMap[String(p.id)] = prRosVal(p, 'rank')" in js
+    # All-or-nothing per position, mirroring the monotonicity pass:
+    # a partly-stamped position falls back instead of mixing bases.
+    assert "_byPos[pos].every(p => prRosVal(p, 'rank') != null)" in js
+    # The no-stamp fallback follows the position-view order itself.
+    assert "_byPos[pos].sort(prRosPosViewCmp)" in js
+    # The old false equivalence (total order == the server stamp)
+    # must not come back.
+    assert "keys off the active window's total" not in js
+
+
 def test_public_overall_page_slot_fills_like_position_pages(monkeypatch):
     # Same Chuba/Javonte shape through the guest builder: pinned
     # replacement lines (RB 10.0, WR 12.0) make "Back Vor" the VOR
