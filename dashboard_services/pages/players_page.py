@@ -61,8 +61,7 @@ def build_players_shell() -> str:
               <button type="button" data-sortkey="total_pts" aria-pressed="false" onclick="prSetSortKey('total_pts')"><span class="pr-sort-full">Total Points</span><span class="pr-sort-short">Total</span></button>
               <button type="button" data-sortkey="age" aria-pressed="false" onclick="prSetSortKey('age')">Age</button>
               <button type="button" data-sortkey="pos_rank" aria-pressed="false" onclick="prSetSortKey('pos_rank')">Pos Rank</button>
-              <button type="button" class="pr-sort-ros" data-sortkey="ros_total" aria-pressed="false" onclick="prSetSortKey('ros_total')" style="display:none;">ROS Pts</button>
-              <button type="button" class="pr-sort-ros" data-sortkey="ros_ppg" aria-pressed="false" onclick="prSetSortKey('ros_ppg')" style="display:none;">ROS PPG</button>
+
             </div>
             <span class="pr-vdiv" aria-hidden="true"></span>
             <!-- Position filters -->
@@ -91,8 +90,6 @@ def build_players_shell() -> str:
                 <option value="pos_rank">Pos Rank</option>
                 <option value="ppg">PPG</option>
                 <option value="total_pts">Total Points</option>
-                <option value="ros_total">ROS Total</option>
-                <option value="ros_ppg">ROS PPG</option>
                 <option value="name">Name (A-Z)</option>
               </select>
             </div>
@@ -241,6 +238,19 @@ def build_players_shell() -> str:
         grid-template-columns: 50px minmax(0, 1fr) 64px 96px 108px;
         align-items: center;
         column-gap: 8px;
+      }
+      /* ROS plain list (Kaedon, 2026-11-22): in Rest of Season mode the
+         board shows rank, player and Exp. Games only. The PPG and Value
+         columns are hidden and the grid collapses to the three tracks
+         that remain, on the header and every row. */
+      #prTableScroll.pr-ros-plain .pr-grid-row:not(.pr-adp-mode) {
+        grid-template-columns: 50px minmax(0, 1fr) 96px !important;
+      }
+      #prTableScroll.pr-ros-plain .pr-ppg,
+      #prTableScroll.pr-ros-plain .pr-value,
+      #prTableScroll.pr-ros-plain #prPpgHeader,
+      #prTableScroll.pr-ros-plain #prSortHeader {
+        display: none !important;
       }
       .pr-grid-row.pr-adp-mode { column-gap: 0; }
       .pr-player-row {

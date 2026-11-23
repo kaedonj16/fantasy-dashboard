@@ -708,10 +708,15 @@ function prFuzzyScore(name, query) {
 // ── Rest of Season mode ────────────────────────────────────────────────────
 // Field names per sub-window. The payload stamps all three windows from the
 // same weekly projections (utils/ros_rankings.py); the board only reads.
+// ROS mode is a plain ranked list (Kaedon, 2026-11-22): no ROS value
+// and no ROS PPG is displayed anywhere on the board. The window fields
+// below are internal ordering inputs only (eligibility, games left,
+// positional order, the cross-position slot allocation); none of them
+// renders as a number in ROS mode.
 var PR_ROS_WINDOWS = {
-  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         score: 'ros_score', weekly: 'ros_weekly',         ptsLabel: 'ROS Pts',     ppgLabel: 'ROS PPG',     valueLabel: 'ROS Value',     totalLabel: 'ROS Total' },
-  stretch:  { ppg: 'ros_stretch_ppg', total: 'ros_stretch_total', games: 'ros_stretch_games', rank: 'ros_stretch_pos_rank', weekly: 'ros_stretch_weekly', ptsLabel: 'Stretch Pts', ppgLabel: 'Stretch PPG', valueLabel: 'Stretch Value', totalLabel: 'Stretch Total' },
-  playoffs: { ppg: 'ros_playoff_ppg', total: 'ros_playoff_total', games: 'ros_playoff_games', rank: 'ros_playoff_pos_rank', weekly: 'ros_playoff_weekly', ptsLabel: 'Playoff Pts', ppgLabel: 'Playoff PPG', valueLabel: 'Playoff Value', totalLabel: 'Playoff Total' },
+  all:      { ppg: 'ros_ppg',         total: 'ros_total',         games: 'ros_games',         rank: 'ros_pos_rank',         score: 'ros_score', weekly: 'ros_weekly' },
+  stretch:  { ppg: 'ros_stretch_ppg', total: 'ros_stretch_total', games: 'ros_stretch_games', rank: 'ros_stretch_pos_rank', weekly: 'ros_stretch_weekly' },
+  playoffs: { ppg: 'ros_playoff_ppg', total: 'ros_playoff_total', games: 'ros_playoff_games', rank: 'ros_playoff_pos_rank', weekly: 'ros_playoff_weekly' },
 };
 function prRosCfg() { return PR_ROS_WINDOWS[prRosWindow] || PR_ROS_WINDOWS.all; }
 function prRosVal(p, kind) {
@@ -857,10 +862,65 @@ function prRosSlotFillOrder(players) {
     return queues[p.position][i];
   });
   // Both formats: the positional-rank monotonicity guard, mirroring
-  // _apply_position_monotonicity in utils/ros_rankings.py. Nothing
-  // else touches the order: the board prints exactly the slots the
-  // VOR allocation produces.
-  return prRosApplyPositionMonotonicity(ordered);
+  // _apply_position_monotonicity in utils/ros_rankings.py.
+  var filled = prRosApplyPositionMonotonicity(ordered);
+  // 1QB only: the QB calibration, mirroring apply_qb_calibration in
+  // utils/ros_rankings.py. In 1QB only ~12 quarterbacks start and the
+  // streaming replacement sits close to the mid-tier starters, so a
+  // quarterback's edge over replacement is small next to RB/WR/TE
+  // scarcity: QB1 slots in the 20-30 band, the QBs cluster within
+  // ~6 spots of each other, and at most 5 sit in the top 50.
+  // Superflex starts ~24 quarterbacks, replacement is far worse, and
+  // quarterbacks legitimately rise: no calibration there.
+  if (prLeagueType !== 'sf') filled = prRosApplyQbCalibration(filled);
+  return filled;
+}
+var PR_ROS_QB1_TARGET_RANK = 24;
+var PR_ROS_QB_BAND_TOP = 20;
+var PR_ROS_QB_CLUSTER_GAP = 6;
+var PR_ROS_QB_TOP50_CAP = 5;
+var PR_ROS_CALIBRATION_MIN_POOL = 50;
+function prRosApplyQbCalibration(ordered) {
+  // Slot assignment, mirroring apply_qb_calibration in
+  // utils/ros_rankings.py: each QB gets a slot in positional order
+  // (QB1 at the target rank when the VOR order elevated him above
+  // the band, the rest clamped into the cluster behind him, the 6th
+  // and later QBs below rank 50), and the non-QBs fill the remaining
+  // slots in their existing order.
+  if (ordered.length < PR_ROS_CALIBRATION_MIN_POOL) return ordered;
+  var qbRows = [], nonQb = [], natural = [];
+  ordered.forEach(function(p, i) {
+    if (p.position === 'QB') { qbRows.push(p); natural.push(i); }
+    else nonQb.push(p);
+  });
+  if (!qbRows.length) return ordered;
+  var slots = [];
+  for (var k = 0; k < natural.length; k++) {
+    if (k === 0) {
+      slots.push(natural[0] < PR_ROS_QB_BAND_TOP - 1
+        ? PR_ROS_QB1_TARGET_RANK - 1 : natural[0]);
+    } else {
+      var prev = slots[k - 1];
+      slots.push(Math.min(Math.max(natural[k], prev + 1),
+                          prev + PR_ROS_QB_CLUSTER_GAP));
+    }
+  }
+  for (var c = PR_ROS_QB_TOP50_CAP; c < slots.length; c++) {
+    slots[c] = Math.max(slots[c], slots[c - 1] + 1,
+                        50 + (c - PR_ROS_QB_TOP50_CAP));
+  }
+  var n = ordered.length;
+  for (var j = slots.length - 1; j >= 0; j--) {
+    slots[j] = Math.min(slots[j], n - (slots.length - j));
+    if (j + 1 < slots.length) slots[j] = Math.min(slots[j], slots[j + 1] - 1);
+  }
+  var out = new Array(n).fill(null);
+  slots.forEach(function(s, k2) { out[s] = qbRows[k2]; });
+  var fi = 0;
+  for (var m = 0; m < n; m++) {
+    if (out[m] === null) { out[m] = nonQb[fi]; fi++; }
+  }
+  return out;
 }
 function prRosApplyPositionMonotonicity(ordered) {
   // Each position's slots are refilled in the active window's
@@ -1038,6 +1098,24 @@ function updateSettingsIndicator() {
 
 function prSetScoringType(type) {
   prScoringType = type;
+  // Plain-list ROS: the table scroll container carries the class that
+  // hides the PPG / Value columns and re-grids the rows (CSS in
+  // players_page.py).
+  var _tsEl = document.getElementById('prTableScroll');
+  if (_tsEl) _tsEl.classList.toggle('pr-ros-plain', type === 'ros');
+  // Settings default = the active league's own settings (Kaedon,
+  // 2026-11-22): prLeagueType / prLeagueSize initialize from the
+  // league context (brLeagueType / brLeagueSize, seeded from the
+  // selected league), manual picks are view overrides, and a league
+  // switch re-initializes from the new league. Only when NO league
+  // is in context does the fallback standard apply (1QB, 12-team,
+  // PPR): the format already falls back to 1QB, so here the size
+  // falls back to 12 when the user has not picked one this session.
+  if (type === 'ros' && !window._prSizeChosen) {
+    var _ctxSize = (typeof _leagueSize !== 'undefined' && _leagueSize)
+      || (window.__brctx && window.__brctx.leagueSize);
+    if (!_ctxSize && prLeagueSize !== 12) prSetSize(12);
+  }
   var sub = document.getElementById('prSubtitle');
   if (sub) {
     sub.textContent = type === 'redraft'
@@ -1126,6 +1204,7 @@ function prSetTePremium(pts) {
 }
 
 function prSetSize(size) {
+  window._prSizeChosen = true;
   prLeagueSize = size;
 
   // Update settings panel toggles
@@ -1369,9 +1448,6 @@ var PR_SORT_META = {
   pos_rank:  { label: 'Pos Rank', cell: p => prPosRankLabel(p) },
   ppg:       { label: 'PPG',       cell: p => p.ppg != null ? p.ppg.toFixed(1) : '–' },
   total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '–' },
-  ros_ppg:   { label: 'ROS PPG',   cell: p => { const v = prRosVal(p, 'ppg'); return v != null ? v.toFixed(1) : '–'; } },
-  ros_total: { label: 'ROS Pts',   cell: p => { const v = prRosVal(p, 'total'); return v != null ? v.toFixed(1) : '–'; } },
-  ros_value: { label: 'ROS Value', cell: p => { const v = prRosVor(p); return v != null ? v.toFixed(1) : '–'; } },
   adp:       { label: 'ADP',       cell: p => prFormatAdp(p) },
 };
 
@@ -1448,6 +1524,7 @@ function prRender() {
     : '';
   const tableScroll = document.getElementById('prTableScroll');
   if (tableScroll) tableScroll.classList.toggle('pr-adp-scroll', adpView);
+  if (tableScroll) tableScroll.classList.toggle('pr-ros-plain', prScoringType === 'ros');
   prSetupAdpHeader(adpView, adpCols, adpActive, ADP_GRID, adpExtra);
   if (!adpView) {
     // On mobile (≤768px) the Age column is hidden, so switch the sort column
@@ -1471,26 +1548,14 @@ function prRender() {
     else ageColEls.forEach(el => el.style.visibility = '');
     // Arrow on the active sortable column header.
     prUpdateSortHeaders();
-    // ROS mode renames the numeric columns: window PPG | Exp. Games | window Pts.
+    // ROS mode is a plain ranked list: the PPG and trailing Value
+    // columns are hidden by the pr-ros-plain class on the table scroll
+    // container (players_page.py CSS), and the one numeric column left
+    // is Exp. Games for the active window.
     const _ppgHeadEl = document.getElementById('prPpgHeader');
     const _totHeadEl = document.getElementById('prTotalHeader');
     if (prScoringType === 'ros') {
-      const _cfgH = prRosCfg();
-      if (_ppgHeadEl) { _ppgHeadEl.textContent = _cfgH.ppgLabel; _ppgHeadEl.title = 'Projected rest-of-season points per game'; }
       if (_totHeadEl) _totHeadEl.textContent = 'Exp. Games';
-      // The trailing column carries the window total for the ROS sorts in
-      // a position view; in the All view it carries the VOR total the
-      // board is actually ordered by, so it is headed as a Value column
-      // (the Dynasty pattern: the sorted quantity is the one displayed).
-      // Other sorts keep the label the standard path set for them.
-      if (sortHeaderEl && (sortBy === 'ros_total' || sortBy === 'ros_ppg')) {
-        sortHeaderEl.textContent = prPosFilters.size === 0 ? _cfgH.valueLabel : _cfgH.ptsLabel;
-      }
-      // The sort controls name the same quantity the column shows.
-      const _rosPill = document.querySelector('.pr-sort-ros[data-sortkey="ros_total"]');
-      if (_rosPill) _rosPill.textContent = prPosFilters.size === 0 ? _cfgH.valueLabel : _cfgH.ptsLabel;
-      const _rosOpt = document.querySelector('#prSort option[value="ros_total"]');
-      if (_rosOpt) _rosOpt.textContent = prPosFilters.size === 0 ? _cfgH.valueLabel : _cfgH.totalLabel;
     } else {
       if (_ppgHeadEl && _ppgHeadEl.textContent !== 'PPG') { _ppgHeadEl.textContent = 'PPG'; _ppgHeadEl.title = 'Sort by fantasy points per game'; }
       if (_totHeadEl && _totHeadEl.textContent !== 'Total Points') _totHeadEl.textContent = 'Total Points';
@@ -1503,14 +1568,12 @@ function prRender() {
   // along as a sublabel under Value, so the trailing column falls back to
   // Value for both sorts.
   const valueMeta = (sortBy === 'ppg' || sortBy === 'total_pts') ? PR_SORT_META.rank : sortMeta;
-  // ROS exception: sorting by the window PPG still leaves the window TOTAL
-  // in the trailing column (the PPG lives in its own column, like sortBy
-  // 'ppg' above). In the All view the trailing column is the VOR total for
-  // both ROS sorts: the board orders by it, so it is the number displayed
-  // (position views keep the window total).
-  const valueMetaEff = (prScoringType === 'ros' && prPosFilters.size === 0 && (sortBy === 'ros_total' || sortBy === 'ros_ppg'))
-    ? PR_SORT_META.ros_value
-    : ((prScoringType === 'ros' && sortBy === 'ros_ppg') ? PR_SORT_META.ros_total : valueMeta);
+  // (ROS sorts order the list internally by the window fields; the
+  // list itself is plain, so no exception is needed here.)
+  // In ROS mode the trailing column is hidden (plain list), so the
+  // trailing cell simply follows the standard valueMeta path and is
+  // never painted; no ROS value/PPG cell exists anymore.
+  const valueMetaEff = valueMeta;
 
   let players = prAllPlayers.slice();
 
@@ -1811,19 +1874,9 @@ function prRender() {
     // rank as a sublabel (the detail that used to replace the Value column).
     let ppgCellHTML = '–';
     if (prScoringType === 'ros') {
-      const _rp = prRosVal(p, 'ppg');
-      if (_rp != null) {
-        if (sortBy === 'ros_ppg') {
-          const _cfgC = prRosCfg();
-          const _wRank = p[_cfgC.rank] ? (p.position + p[_cfgC.rank]) : '-';
-          ppgCellHTML = `<span style="display:flex;flex-direction:column;align-items:center;line-height:1.2;">`
-            + `<span>${Number(_rp).toFixed(1)}</span>`
-            + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${_wRank}</span>`
-            + `</span>`;
-        } else {
-          ppgCellHTML = Number(_rp).toFixed(1);
-        }
-      }
+      // Plain list: the PPG column is hidden in ROS mode, so no PPG
+      // number is rendered for a row at all.
+      ppgCellHTML = '';
     } else if (p.position !== 'PICK' && p.ppg != null) {
       if (sortBy === 'ppg') {
         const pRank = p.ppg_rank ? (p.position + p.ppg_rank) : '-';
@@ -1990,6 +2043,24 @@ function prExportCSV() {
     ? window.prFilteredPlayers : prAllPlayers;
   if (!players || !players.length) return;
   const q = (s) => '"' + String(s || '').replace(/"/g, '""') + '"';
+  if (prScoringType === 'ros') {
+    // ROS exports the plain list only: rank, player, position, team
+    // and expected games. No value and no PPG leaves the site here
+    // either (Kaedon, 2026-11-22).
+    const rosHeader = ['Rank', 'Name', 'Position', 'Team', 'Exp. Games'];
+    const rosRows = players.map((p, i) => [
+      i + 1, q(p.name), p.position || '', p.team || '',
+      prRosVal(p, 'games') != null ? prRosVal(p, 'games') : '',
+    ]);
+    const rosCsv = [rosHeader, ...rosRows].map(r => r.join(',')).join('\n');
+    const rosBlob = new Blob([rosCsv], { type: 'text/csv;charset=utf-8;' });
+    const rosUrl = URL.createObjectURL(rosBlob);
+    const rosA = document.createElement('a');
+    rosA.href = rosUrl; rosA.download = 'ros_rankings.csv'; rosA.click();
+    URL.revokeObjectURL(rosUrl);
+    if (window.showToast) showToast('ROS rankings downloaded!');
+    return;
+  }
   const header = ['Rank','Name','Position','Team','Age','Value','1QB Value','SF Value','7d Rank Change','PPG','Total Pts','PPG Season'];
   const rows = players.map((p, i) => {
     const val1qb = Number(p[prValueKey(false)] ?? p.value ?? 0);

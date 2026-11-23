@@ -91,13 +91,34 @@ player with his own position's scale, so the dividers repeat and run out
 of order (a QB whose raw total is elite-scale but whose VOR is mid-pack
 reads T1 in the middle of the list).
 
+1QB overall calibration (Kaedon, 2026-11-22): the slot-filled 1QB
+order then passes through apply_qb_calibration, which enforces his
+standing shape for the combined list: QB1 no higher than the 20-30
+band (a quarterback the VOR order would place above it is set at
+rank 24), quarterbacks slot as a cluster (each QB within ~6 spots of
+the previous QB), and at most 5 QBs sit in the top 50. In 1QB a
+quarterback's raw points edge overstates his overall rank because
+every team starts exactly one and the streaming pool is deep; the
+calibration is the owner's explicit placement rule for the overall
+list, applied on top of the VOR slots, and it never touches the
+positional lists or Superflex orders.
+
+Display (Kaedon, 2026-11-22): ROS surfaces are a plain ranked list.
+No ROS value and no ROS PPG number is displayed on any ROS surface
+(the /players ROS mode or the public pages); the fields in this
+module are internal ordering inputs only.
+
 Scoring basis is standard PPR (rec = 1.0), the same basis the public pages
 state and the backtest used. The compute reads only the cached files the
 start-score bundle already loads (weekly stat files, weekly projection
-files, schedules): it never fetches and never computes per page request.
-``load_ros_map`` is signature-cached (file mtimes), so the overlay in
-app.py pays the pool-wide pass at most once per data change, and the
-overlay's own memo then serves every request.
+files, schedules): it never fetches live data itself. ``load_ros_map``
+serves a precomputed payload: the in-process signature cache first,
+then the on-disk cache the last successful build wrote under the same
+data signature (the dynasty/redraft pattern: values are precomputed,
+reads are file reads), and only a signature miss runs the pool-wide
+build, which then rewrites the disk cache. A read therefore never
+pays the multi-second build more than once per data change across
+workers and restarts.
 """
 from __future__ import annotations
 
@@ -789,8 +810,13 @@ def compute_ros_tier_thresholds(ros_by_pid: Dict[str, dict],
 # strength scale, not raw points. SF keeps the 1.5x index on two
 # starters per team: with two starters, QB scarcity is real and priced.
 #
-# Nothing reorders the quarterbacks after the VOR sort: the Overall
-# list prints exactly the gaps the replacement math produces.
+# The replacement math alone still slots QB1 inside the top 10 on
+# the current pool shape (an outlier per-game edge over the streaming
+# line outweighs every flex player's edge), which Kaedon rejected
+# (2026-11-22): the 1QB Overall list therefore passes through the
+# explicit calibration in apply_qb_calibration below (QB1 in the
+# 20-30 band, QBs clustered within ~6 spots, max 5 QBs in the top
+# 50). The positional QB list is never calibrated.
 #
 # RB / WR / TE share ONE replacement pool, the way lineups actually work:
 # dedicated starters first (the value model's STARTERS in
@@ -1011,7 +1037,85 @@ def _apply_position_monotonicity(rows: List[dict]) -> List[dict]:
     return out
 
 
-def order_overall(rows: List[dict]) -> List[dict]:
+# ── 1QB overall QB calibration (Kaedon, 2026-11-22) ────────────────────────
+# Standing shape for the 1QB Overall list: QB1 lands in the 20-30
+# band, quarterbacks slot as a cluster (each within ~6 spots of the
+# previous QB), and at most 5 QBs sit in the top 50. A quarterback the
+# VOR order places above the band is set at ROS_QB1_TARGET_RANK; the
+# cluster then pulls each following QB up to at most
+# ROS_QB_CLUSTER_GAP spots behind the previous one. The calibration
+# only ever moves quarterbacks; every other position keeps its
+# slot-filled order relative to the others, and Superflex (where QB
+# scarcity is real) is never calibrated.
+ROS_QB1_TARGET_RANK = 24
+ROS_QB_BAND_TOP = 20
+ROS_QB_CLUSTER_GAP = 6
+ROS_QB_TOP50_CAP = 5
+ROS_CALIBRATION_MIN_POOL = 50
+
+
+def apply_qb_calibration(rows: List[dict], league_type: str = "1qb") -> List[dict]:
+    """Enforce the 1QB QB shape on an ordered Overall list.
+
+    ``rows`` is the slot-filled combined list (each row carries
+    "position"). Returns a new list. No-ops for Superflex, for pools
+    under ROS_CALIBRATION_MIN_POOL rows (there is no top 50 to shape),
+    and when the pool carries no quarterbacks. Quarterbacks keep
+    their relative (positional) order throughout; non-quarterbacks
+    keep theirs.
+    """
+    if str(league_type or "1qb").lower() == "sf":
+        return list(rows)
+    rows = list(rows)
+    if len(rows) < ROS_CALIBRATION_MIN_POOL:
+        return rows
+
+    def _is_qb(r):
+        return str(r.get("position") or "").upper() == "QB"
+
+    qb_rows = [r for r in rows if _is_qb(r)]
+    if not qb_rows:
+        return rows
+    non_qb = [r for r in rows if not _is_qb(r)]
+    natural = [i for i, r in enumerate(rows) if _is_qb(r)]
+
+    # Assign each quarterback a slot, in positional order. QB1's slot
+    # is his natural slot unless the VOR order elevated him above the
+    # band, in which case he is set at the target rank (and the rest
+    # of the group packs behind him: a naive move of QB1 alone would
+    # leave QB2-QB4 sitting above him). Each following slot is the
+    # natural slot clamped into (previous slot, previous slot +
+    # ROS_QB_CLUSTER_GAP]: never above the previous QB, never more
+    # than the cluster gap behind him.
+    slots: List[int] = []
+    for k, nat in enumerate(natural):
+        if k == 0:
+            slots.append(ROS_QB1_TARGET_RANK - 1
+                         if nat < ROS_QB_BAND_TOP - 1 else nat)
+        else:
+            prev = slots[-1]
+            slots.append(min(max(nat, prev + 1),
+                             prev + ROS_QB_CLUSTER_GAP))
+    # Cap: the 6th and later quarterbacks slot below rank 50, in
+    # order (slot index >= 50 + their distance past the cap).
+    for k in range(ROS_QB_TOP50_CAP, len(slots)):
+        slots[k] = max(slots[k], slots[k - 1] + 1,
+                       50 + (k - ROS_QB_TOP50_CAP))
+    # Keep the slots strictly increasing and inside the list.
+    n = len(rows)
+    for k in range(len(slots) - 1, -1, -1):
+        slots[k] = min(slots[k], n - (len(slots) - k))
+        if k + 1 < len(slots):
+            slots[k] = min(slots[k], slots[k + 1] - 1)
+
+    out: List[Optional[dict]] = [None] * n
+    for slot, r in zip(slots, qb_rows):
+        out[slot] = r
+    fill = iter(non_qb)
+    return [r if r is not None else next(fill) for r in out]
+
+
+def order_overall(rows: List[dict], league_type: str = "1qb") -> List[dict]:
     """Overall (All-view) order for ROS rows: VOR slot-fill.
 
     Pure VOR sorting decides WHICH slots each position occupies in the
@@ -1025,12 +1129,13 @@ def order_overall(rows: List[dict]) -> List[dict]:
     RB10, on the All page over a 0.1 VOR gap), which read as a
     contradiction between two pages carrying the same ranking.
 
-    A final pass (_apply_position_monotonicity) refills each
+    A monotonicity pass (_apply_position_monotonicity) refills each
     position's slots in ros_pos_rank order, so a tie the fill and the
     rank assignment break differently can never put a lower-ranked
-    player above his position mate on the combined board. Nothing else
-    touches the order: the combined list prints exactly the slots the
-    VOR allocation produces.
+    player above his position mate on the combined board. In 1QB the
+    calibrated QB shape (apply_qb_calibration) is then applied: it is
+    the one sanctioned deviation from the raw VOR slots, and it moves
+    quarterbacks only.
 
     Rows are dicts carrying "position", "_vor" (the VOR total at the
     surface's replacement defaults), "ros_score", "ros_total",
@@ -1070,7 +1175,8 @@ def order_overall(rows: List[dict]) -> List[dict]:
         i = cursor.get(pos, 0)
         out.append(queues[pos][i])
         cursor[pos] = i + 1
-    return _apply_position_monotonicity(out)
+    return apply_qb_calibration(
+        _apply_position_monotonicity(out), league_type)
 
 
 def compute_ros_vor_tier_thresholds(ros_by_pid: Dict[str, dict],
@@ -1101,6 +1207,66 @@ def compute_ros_vor_tier_thresholds(ros_by_pid: Dict[str, dict],
 # ── Loader: cached files in, ROS map out ────────────────────────────────────
 
 _ROS_CACHE: dict = {"key": None, "payload": None}
+
+
+def _ros_disk_cache_path(season: int) -> str:
+    from utils.data_cache import CACHE_DIR
+
+    return os.path.join(CACHE_DIR, f"ros_rankings_cache_s{int(season)}.json")
+
+
+def _read_ros_disk_cache(season: int, key: tuple) -> Optional[dict]:
+    """The precomputed ROS payload a previous build persisted, when it
+    was built under the exact same data signature.
+
+    This is the fast path the dynasty/redraft rankings already use
+    (precomputed values, reads are file reads): the pool-wide build
+    runs once per data change, and every later read in any worker or
+    after a restart serves the stored payload instead of recomputing.
+    A signature mismatch or an unreadable file is a miss, never an
+    error, and a miss never serves a stale or empty payload as if it
+    were current: the caller falls through to the build.
+    """
+    try:
+        import json as _json
+
+        with open(_ros_disk_cache_path(season)) as fh:
+            blob = _json.load(fh)
+        if not isinstance(blob, dict):
+            return None
+        # The stored key is JSON-shaped (lists); the caller's key is
+        # (season, start_week, ((name, mtime), ...)): normalize the
+        # stored form back to tuples before comparing.
+        stored = blob.get("key")
+        try:
+            stored_key = (stored[0], stored[1],
+                          tuple(tuple(part) for part in stored[2]))
+        except Exception:
+            return None
+        if stored_key != key:
+            return None
+        payload = blob.get("payload")
+        if not isinstance(payload, dict) or not payload.get("players"):
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def _write_ros_disk_cache(season: int, key: tuple, payload: dict) -> None:
+    """Persist a successful build for the read path above. Fail-soft:
+    a cache that cannot be written only costs the next cold read the
+    build it would have paid anyway."""
+    try:
+        import json as _json
+
+        path = _ros_disk_cache_path(season)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w") as fh:
+            _json.dump({"key": list(key), "payload": payload}, fh)
+        os.replace(tmp, path)
+    except Exception:
+        logger.debug("[ros] disk cache write failed", exc_info=True)
 
 
 def _files_signature(season: int, start_week: int) -> tuple:
@@ -1137,8 +1303,10 @@ def load_ros_map(season: Optional[int] = None) -> dict:
     "updated": "Month D, YYYY"}. Empty players
     when the window has closed (past Week 17) or the cached feeds are not
     there yet: the board then simply has no ROS rows, never fabricated ones.
-    Signature-cached; the heavy pass runs at most once per data change per
-    process. Never raises.
+    Serves the precomputed payload (in-process signature cache, then the
+    on-disk cache a previous build persisted under the same signature);
+    the heavy pass runs at most once per data change across all workers,
+    and its result is persisted for the next cold read. Never raises.
     """
     try:
         if not season:
@@ -1165,6 +1333,12 @@ def load_ros_map(season: Optional[int] = None) -> dict:
     if _ROS_CACHE.get("key") == key and _ROS_CACHE.get("payload") is not None:
         return _ROS_CACHE["payload"]
 
+    disk = _read_ros_disk_cache(season, key)
+    if disk is not None:
+        _ROS_CACHE["key"] = key
+        _ROS_CACHE["payload"] = disk
+        return disk
+
     payload = _build_ros_map(season, start_week, updated)
     if payload is None:
         # Build failed: serve the empty shape for this call but do NOT
@@ -1176,6 +1350,8 @@ def load_ros_map(season: Optional[int] = None) -> dict:
                 "updated": updated}
     _ROS_CACHE["key"] = key
     _ROS_CACHE["payload"] = payload
+    if payload.get("players"):
+        _write_ros_disk_cache(season, key, payload)
     return payload
 
 

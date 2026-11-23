@@ -19,6 +19,7 @@ pytest.importorskip("pandas")
 from utils.ros_rankings import (
     ROS_MODEL_WEIGHTS,
     SCHED_Z_CAP,
+    apply_qb_calibration,
     assign_ros_ranks,
     availability_rate,
     ceiling_ppg,
@@ -1529,8 +1530,15 @@ def test_players_shell_ros_wiring():
     assert "prSetScoringType('ros')" in shell
     assert 'id="prRosWindowSection"' in shell
     assert "prSetRosWindow('playoffs')" in shell
-    assert '<option value="ros_total">ROS Total</option>' in shell
-    assert '<option value="ros_ppg">ROS PPG</option>' in shell
+    # Plain list (Kaedon, 2026-11-22): the ROS sort pills and hidden
+    # sort options that named ROS Pts / ROS PPG are gone, and the
+    # shell carries the pr-ros-plain CSS that hides the PPG / Value
+    # columns and re-grids the rows in ROS mode.
+    assert 'data-sortkey="ros_total"' not in shell
+    assert 'data-sortkey="ros_ppg"' not in shell
+    assert '<option value="ros_total">' not in shell
+    assert '<option value="ros_ppg">' not in shell
+    assert ".pr-ros-plain" in shell
     assert ".pr-sched" in shell
 
 
@@ -1562,31 +1570,35 @@ def test_rankings_js_ros_all_view_slot_fills():
     assert "function prRosSlotFillOrder" in js
     assert "function prRosPosViewCmp" in js
     assert "mirroring order_overall in" in js and "utils/ros_rankings.py" in js
-    # No QB cluster exists on either side anymore: the board prints
-    # the raw VOR slots (the cluster's pull-ups manufactured QB
-    # placements and were removed with the fitted stream factor).
-    assert "prRosApplyQbCluster" not in js
-    assert "PR_ROS_QB_CLUSTER_GAP" not in js
+    # The 1QB QB calibration mirrors too (Kaedon, 2026-11-22: QB1 in
+    # the 20-30 band, QBs clustered within ~6 spots, max 5 in the top
+    # 50; Superflex is never calibrated).
+    assert "function prRosApplyQbCalibration" in js
+    assert "PR_ROS_QB_CLUSTER_GAP = 6" in js
+    assert "prLeagueType !== 'sf'" in js
     # The positional-rank monotonicity guard mirrors too, in both
-    # formats: it enforces the printed rank order, as the slot-fill's
-    # final step.
+    # formats: it enforces the printed rank order inside the fill.
     assert "function prRosApplyPositionMonotonicity" in js
-    assert "return prRosApplyPositionMonotonicity(ordered);" in js
+    assert "prRosApplyPositionMonotonicity(ordered)" in js
     assert js.count("prRosSlotFillActive(sortBy)") >= 3  # gate + both sort sites
     pages = open(os.path.join(
         _ROOT, "dashboard_services", "pages", "dynasty_pages.py"),
         encoding="utf-8").read()
-    assert "rows = order_overall(rows)" in pages
+    assert "rows = order_overall(rows, league_type=league_type)" in pages
 
 
 def test_rankings_js_ros_all_view_uses_vor():
     js = open(os.path.join(_ROOT, "static", "rankings.js"), encoding="utf-8").read()
-    # All-view tiers come from the payload's VOR thresholds, and the
-    # trailing column is the VOR "Value" column the board orders by.
+    # All-view tiers come from the payload's VOR thresholds (internal
+    # ordering only). The board is a plain ranked list in ROS mode:
+    # no ROS Value / ROS PPG sort meta, labels or cells remain, and
+    # the pr-ros-plain class drives the hidden columns.
     assert "prTierThresholdsRosVor" in js
     assert "tier_thresholds_ros_vor" in js
-    assert "ros_value" in js and "ROS Value" in js
-    assert "valueLabel" in js
+    assert "ros_value" not in js and "ROS Value" not in js
+    assert "valueLabel" not in js and "ppgLabel" not in js
+    assert "label: 'ROS PPG'" not in js and "label: 'ROS Pts'" not in js
+    assert "pr-ros-plain" in js
     # The JS mirrors the server's replacement map: the 1QB QB
     # streaming replacement (weekly best below the starter line from
     # the stamped weekly series, with the best-of fallback over the
@@ -1608,3 +1620,226 @@ def test_rankings_js_ros_all_view_uses_vor():
     # positional one.
     app_src = open(os.path.join(_ROOT, "app.py"), encoding="utf-8").read()
     assert 'payload["tier_thresholds_ros_vor"]' in app_src
+
+
+# ── 1QB QB calibration + plain list + settings + precomputed cache ─────────
+# Kaedon, 2026-11-22: in 1QB quarterbacks just aren't that valuable
+# (one starter per team, the streaming replacement sits close to the
+# mid-tier starters), so the Overall list holds QB1 in the 20-30 band,
+# clusters the QBs within ~6 spots of each other, and caps them at 5
+# in the top 50. Superflex starts ~24 QBs, replacement is far worse,
+# and QBs legitimately rise: no calibration there. ROS surfaces are a
+# plain ranked list (no ROS value, no ROS PPG displayed), the guest
+# pages carry Format x Teams settings that re-derive the order from
+# the replacement-level logic, and load_ros_map serves the
+# precomputed disk cache instead of computing on read.
+
+def _calibration_rows():
+    """60-row ordered pool: QB1 on top by VOR, the rest of the QBs
+    scattered deep, exactly the shape the live board showed."""
+    rows = []
+
+    def row(name, pos):
+        rows.append({"name": name, "position": pos})
+
+    row("Qb One", "QB")
+    for i in range(39):
+        row(f"Flex {i + 1}", ("RB", "WR", "TE")[i % 3])
+    row("Qb Two", "QB")
+    for i in range(4):
+        row(f"Flex B{i + 1}", "RB")
+    row("Qb Three", "QB")
+    for i in range(4):
+        row(f"Flex C{i + 1}", "WR")
+    row("Qb Four", "QB")
+    row("Flex D1", "TE")
+    row("Qb Five", "QB")
+    row("Flex D2", "RB")
+    row("Qb Six", "QB")
+    row("Flex D3", "WR")
+    row("Qb Seven", "QB")
+    row("Flex D4", "TE")
+    row("Flex D5", "RB")
+    row("Flex D6", "WR")
+    return rows
+
+
+def test_qb_calibration_band_cluster_and_cap():
+    rows = _calibration_rows()
+    assert len(rows) == 60
+    out = apply_qb_calibration(rows, "1qb")
+    qb_ranks = [i + 1 for i, r in enumerate(out) if r["position"] == "QB"]
+    # QB1 in the band, each QB within 6 spots of the previous one,
+    # and exactly the capped 5 inside the top 50.
+    assert qb_ranks[0] == 24
+    assert all(b - a <= 6 for a, b in zip(qb_ranks, qb_ranks[1:]))
+    assert sum(1 for r in qb_ranks if r <= 50) == 5
+    # Quarterbacks keep their positional order, and so do the rest.
+    assert [r["name"] for r in out if r["position"] == "QB"] == [
+        "Qb One", "Qb Two", "Qb Three", "Qb Four", "Qb Five",
+        "Qb Six", "Qb Seven"]
+    assert [r["name"] for r in out if r["position"] != "QB"] == [
+        r["name"] for r in rows if r["position"] != "QB"]
+
+
+def test_qb_calibration_cap_handles_boundary_dense_qbs():
+    # Regression: QBs packed across the rank-50 boundary used to
+    # loop forever (popping the 6th QB pulled the 7th into the top
+    # 50, and the loop swapped them back). The cap is one pass now.
+    rows = [{"name": f"Flex {i}", "position": "RB"} for i in range(44)]
+    rows += [{"name": f"Qb {i + 1}", "position": "QB"} for i in range(10)]
+    rows += [{"name": f"Flex T{i}", "position": "WR"} for i in range(6)]
+    assert len(rows) == 60
+    out = apply_qb_calibration(rows, "1qb")
+    qb_ranks = [i + 1 for i, r in enumerate(out) if r["position"] == "QB"]
+    assert sum(1 for r in qb_ranks if r <= 50) == 5
+    assert qb_ranks[5] == 51  # the excess QB lands just below the cap
+    assert [r["name"] for r in out if r["position"] == "QB"] == [
+        f"Qb {i + 1}" for i in range(10)]
+
+
+def test_qb_calibration_never_touches_sf_or_small_pools():
+    rows = _calibration_rows()
+    out = apply_qb_calibration(rows, "sf")
+    assert [r["name"] for r in out] == [r["name"] for r in rows]
+    small = rows[:20]
+    out = apply_qb_calibration(small, "1qb")
+    assert [r["name"] for r in out] == [r["name"] for r in small]
+
+
+def _settings_pool():
+    """Synthetic 76-player pool for the guest settings shape check:
+    20 QBs with a clear #1 (a realistic QB pool depth, so the
+    Superflex replacement line has a deep QB2 band to fall to),
+    deep RB/WR pools, 6 TEs."""
+    players, table = {}, []
+
+    def add(pid, name, pos, ppg, rank):
+        players[pid] = {"ros_ppg": ppg, "ros_total": ppg * 6,
+                        "ros_games": 6, "ros_sched_rank": 5,
+                        "ros_pos_rank": rank,
+                        "ros_score": 3.0 - 0.05 * rank}
+        table.append({"id": pid, "name": name, "team": "BUF",
+                      "position": pos})
+
+    for i in range(20):
+        add(f"qb{i}", f"Quarterback {i + 1}", "QB", 28.0 - 0.6 * i, i + 1)
+    for i in range(26):
+        add(f"rb{i}", f"Back {i + 1}", "RB", 21.0 - 0.35 * i, i + 1)
+    for i in range(24):
+        add(f"wr{i}", f"Wideout {i + 1}", "WR", 20.0 - 0.35 * i, i + 1)
+    for i in range(6):
+        add(f"te{i}", f"Tight End {i + 1}", "TE", 16.0 - 0.5 * i, i + 1)
+    return ({"players": players,
+             "window": {"start_week": 11, "end_week": 17},
+             "updated": "November 22, 2026"}, table)
+
+
+def _overall_names(body):
+    import re
+    return re.findall(r'rnk-player-link"[^>]*>([^<]+)</a>', body)
+
+
+def test_guest_settings_1qb_holds_qbs_sf_lets_them_rise():
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+
+    payload, table = _settings_pool()
+    body_1qb = build_ros_rankings_body(payload, table, position=None)
+    names_1qb = _overall_names(body_1qb)
+    qb_ranks_1qb = [i + 1 for i, n in enumerate(names_1qb)
+                    if n.startswith("Quarterback")]
+    assert 20 <= qb_ranks_1qb[0] <= 30
+    assert sum(1 for r in qb_ranks_1qb if r <= 50) <= 5
+    # The cluster binds the group inside the top 50; the cap exiles
+    # the rest below it by design, so their gap to QB5 is the cap
+    # working, not a cluster break.
+    in50 = [r for r in qb_ranks_1qb if r <= 50]
+    assert all(b - a <= 6 for a, b in zip(in50, in50[1:]))
+
+    body_sf = build_ros_rankings_body(
+        payload, table, position=None, league_type="sf", league_size=12)
+    names_sf = _overall_names(body_sf)
+    qb_ranks_sf = [i + 1 for i, n in enumerate(names_sf)
+                   if n.startswith("Quarterback")]
+    # Superflex: ~24 QBs start, the replacement line drops to the
+    # deep QB2 band, and the top quarterbacks rise legitimately.
+    assert qb_ranks_sf[0] <= 5
+    assert qb_ranks_sf[0] < qb_ranks_1qb[0]
+
+
+def test_guest_pages_are_plain_lists_with_settings_control():
+    from dashboard_services.pages.dynasty_pages import build_ros_rankings_body
+
+    payload, table = _settings_pool()
+    body = build_ros_rankings_body(payload, table, position=None)
+    # No ROS value and no ROS PPG is displayed: no such headers, and
+    # none of the pool's PPG / total figures render as cells.
+    assert "ROS PPG" not in body and "ROS Pts" not in body
+    assert "168.0" not in body  # QB1's ROS total
+    assert '<th class="rnk-val rnk-col-games">Exp. Games</th>' in body
+    # Settings control: format + teams, default shape on bare URLs,
+    # non-default shapes on validated query params.
+    assert 'aria-label="League settings"' in body
+    assert 'href="/rankings/rest-of-season?fmt=sf"' in body
+    assert 'href="/rankings/rest-of-season?size=8"' in body
+    assert 'href="/rankings/rest-of-season?fmt=sf&size=8"' not in body
+    body_sf8 = build_ros_rankings_body(
+        payload, table, position=None, league_type="sf", league_size=8)
+    assert 'href="/rankings/rest-of-season?fmt=sf&size=8"' in body_sf8
+    # Position pages carry no settings control: format/size cannot
+    # move a within-position list, so there is nothing to set there.
+    body_rb = build_ros_rankings_body(payload, table, position="RB")
+    assert 'aria-label="League settings"' not in body_rb
+    assert "ROS PPG" not in body_rb and "ROS Pts" not in body_rb
+
+
+def test_ros_disk_cache_roundtrip_and_signature_gate(tmp_path, monkeypatch):
+    import utils.ros_rankings as rr
+
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
+    key = (2026, 11, (("sleeper_stats_s2026_w10.json", 1.5),
+                      ("projections_s2026_w11.json", 2.5)))
+    payload = {"players": {"1": {"ros_ppg": 20.0}},
+               "window": {"start_week": 11, "end_week": 17},
+               "tier_thresholds_ros": {}, "tier_thresholds_ros_vor": {},
+               "updated": "November 22, 2026"}
+    assert rr._read_ros_disk_cache(2026, key) is None
+    rr._write_ros_disk_cache(2026, key, payload)
+    assert rr._read_ros_disk_cache(2026, key) == payload
+    # A different data signature is a miss, never a stale serve.
+    other = (2026, 11, (("sleeper_stats_s2026_w10.json", 9.9),))
+    assert rr._read_ros_disk_cache(2026, other) is None
+
+
+def test_load_ros_map_serves_precomputed_disk_cache(tmp_path, monkeypatch):
+    import utils.ros_rankings as rr
+
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
+    payload = {"players": {"1": {"ros_ppg": 20.0, "ros_total": 120.0}},
+               "window": {"start_week": 11, "end_week": 17},
+               "tier_thresholds_ros": {}, "tier_thresholds_ros_vor": {},
+               "updated": "November 22, 2026"}
+    builds = {"n": 0}
+
+    def fake_build(season, start_week, updated):
+        builds["n"] += 1
+        return payload
+
+    monkeypatch.setattr(rr, "_build_ros_map", fake_build)
+    monkeypatch.setattr(rr, "_files_signature", lambda s, w: (("f.json", 1.0),))
+    rr._ROS_CACHE["key"] = None
+    rr._ROS_CACHE["payload"] = None
+    try:
+        first = rr.load_ros_map(2026)
+        assert builds["n"] == 1 and first["players"]
+        # A cold process (in-memory cache cleared) serves the
+        # precomputed disk payload with NO rebuild: the read path is
+        # a file read, like the dynasty/redraft value tables.
+        rr._ROS_CACHE["key"] = None
+        rr._ROS_CACHE["payload"] = None
+        second = rr.load_ros_map(2026)
+        assert builds["n"] == 1
+        assert second == payload
+    finally:
+        rr._ROS_CACHE["key"] = None
+        rr._ROS_CACHE["payload"] = None

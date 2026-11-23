@@ -1174,13 +1174,14 @@ _ROS_ANALYSIS = {
         "recent form, role trend, the remaining schedule, consistency, "
         "and his offense. A better per-game player no longer sits below a "
         "lesser one just because his bye is still ahead of him. The board "
-        "still carries two numbers side by side: ROS PPG for "
-        "the per-game rate, and ROS Pts for the total your lineup actually "
-        "banks. The Games column (Exp. Games) is expected games over the "
+        "is a plain ranked list: the order is the ranking. The Games "
+        "column (Exp. Games) is expected games over the "
         "rest of the season: each player's remaining scheduled games "
         "weighted by his availability rate, so it can be fractional.</p>"
         "<p>The overall order is by value over replacement in a 12-team 1QB "
-        "league, which is what makes a quarterback comparable to a tight end: "
+        "league by default (the Format and Teams settings above re-derive "
+        "it for Superflex and other league sizes), which is what makes a "
+        "quarterback comparable to a tight end: "
         "both are measured against the best player you could stream at their "
         "position for free. Within each position, the overall list follows "
         "the positional ranking, so a player never sits below a "
@@ -1208,8 +1209,7 @@ _ROS_ANALYSIS = {
         "<p>Games left still matter, but they no longer decide the order "
         "on their own: expected games is one input in the model, weighed "
         "against the per-game blend, recent form, and the remaining "
-        "schedule. Read ROS PPG for the rate and ROS Pts for the banked "
-        "total when you make start/sit and trade calls from here in.</p>"
+        "schedule when you make start/sit and trade calls from here in.</p>"
     ),
     "RB": (
         "ROS RB rankings",
@@ -1236,7 +1236,7 @@ _ROS_ANALYSIS = {
         "or about five and a half targets a game. That keeps the board "
         "honest about the difference between a receiver producing on "
         "sustained volume and one living on two long touchdowns. When two "
-        "receivers sit close in ROS Pts, the Sched column shows who has the "
+        "receivers sit close, the Sched column shows who has the "
         "softer run of secondaries left.</p>"
     ),
     "TE": (
@@ -1287,16 +1287,32 @@ def _fmt_ros_games(games) -> str:
 
 def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
                             position: str | None = None,
-                            role_labels: dict | None = None) -> str:
+                            role_labels: dict | None = None,
+                            league_type: str = "1qb",
+                            league_size: int = 12) -> str:
     """Public rest-of-season rankings page body (overall or one position).
 
     ``ros_payload`` is utils.ros_rankings.load_ros_map's output; player
     names / teams come from the model value table, the same rows the
-    dynasty hub reads. Overall order: ROS value over replacement at
-    12-team 1QB defaults, slot-filled so each position's players appear
-    in factor-model order (utils.ros_rankings.order_overall). Position
-    order: the ROS factor model within the position.
+    dynasty hub reads. Overall order: ROS value over replacement at the
+    requested league shape (``league_type`` 1QB/Superflex x
+    ``league_size`` teams; 1QB 12-team by default), slot-filled so each
+    position's players appear in factor-model order
+    (utils.ros_rankings.order_overall). The ordering recomputes from
+    the replacement-level logic per shape: in Superflex the QB
+    replacement line drops to the deep QB2 band and quarterbacks rise
+    legitimately; in 1QB the streaming line plus the QB calibration
+    hold them in the 20s. Position order: the ROS factor model within
+    the position. The page is a plain ranked list: no ROS value and no
+    ROS PPG is displayed (Kaedon, 2026-11-22).
     """
+    league_type = "sf" if str(league_type or "").lower() == "sf" else "1qb"
+    try:
+        league_size = int(league_size)
+    except (TypeError, ValueError):
+        league_size = 12
+    if league_size not in (8, 10, 12, 14):
+        league_size = 12
     from dashboard_services.pages.player_page import slugify
 
     pos_filter = (position or "").upper() if position else None
@@ -1323,12 +1339,14 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             **fields,
         })
 
-    # Replacement PPG per position from the ROS pool (12-team 1QB defaults),
-    # via the shared ROS convention in utils/ros_rankings.py: the same
-    # replacement map the /players All view uses, including the 1QB QB
-    # streaming level and the flex-aware RB/WR/TE lines. The stamped
-    # ros_games are expected games (availability-weighted), so the VOR
-    # below rides the same games the position pages total from.
+    # Replacement PPG per position from the ROS pool at the requested
+    # league shape, via the shared ROS convention in
+    # utils/ros_rankings.py: the same replacement map the /players All
+    # view uses, including the 1QB QB streaming level, the Superflex
+    # scarcity line, and the flex-aware RB/WR/TE lines (all of which
+    # move with team size). The stamped ros_games are expected games
+    # (availability-weighted), so the VOR below rides the same games
+    # the position pages total from.
     repl: dict = {}
     if not pos_filter:
         from utils.ros_rankings import order_overall, ros_replacement_map
@@ -1347,7 +1365,7 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
              if r["position"] == "QB" and r.get("ros_ppg") is not None),
             key=lambda r: -float(r["ros_ppg"]))
         repl = ros_replacement_map(
-            by_pos, 12, "1qb",
+            by_pos, league_size, league_type,
             qb_weekly_series_desc=[r.get("ros_weekly") for r in qb_rows])
         for r in rows:
             base = repl.get(r["position"])
@@ -1369,7 +1387,7 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         # refills each position's slots in ros_pos_rank order, so a
         # tie the fill and the rank assignment break differently can
         # never put a lower-ranked player above his position mate.
-        rows = order_overall(rows)
+        rows = order_overall(rows, league_type=league_type)
     else:
         # Position order is the factor model (ros_score, stamped by
         # utils/ros_rankings.py) when the payload carries it; a payload
@@ -1403,6 +1421,37 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
         f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if path == active_path else ""}" href="{path}">{label}</a>'
         for label, path in pos_nav_items
     )
+
+    # League settings (Kaedon, 2026-11-22): QB format and team size
+    # for the overall order, as plain links on the same nav pattern.
+    # The default shape (1QB, 12-team) keeps the bare canonical URL;
+    # any other shape rides query params the route validates.
+    def _settings_href(fmt: str, size: int) -> str:
+        params = []
+        if fmt != "1qb":
+            params.append(f"fmt={fmt}")
+        if size != 12:
+            params.append(f"size={size}")
+        return active_path + (("?" + "&".join(params)) if params else "")
+
+    fmt_html = "".join(
+        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if league_type == fmt else ""}" href="{_settings_href(fmt, league_size)}">{label}</a>'
+        for label, fmt in (("1QB", "1qb"), ("Superflex", "sf"))
+    )
+    size_html = "".join(
+        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if league_size == size else ""}" href="{_settings_href(league_type, size)}">{size}</a>'
+        for size in (8, 10, 12, 14)
+    )
+    # The settings shape the OVERALL order only (positional lists are
+    # within-position and do not move with format or size), so the
+    # control renders on the overall page alone: no settings theatre
+    # on a page it cannot change.
+    settings_html = (
+        '<div class="rnk-pos-nav rnk-settings-nav" aria-label="League settings">'
+        '<span class="rnk-settings-label">Format</span>' + fmt_html
+        + '<span class="rnk-settings-label">Teams</span>' + size_html
+        + '</div>'
+    ) if not pos_filter else ""
 
     # Role job labels: quiet text next to the team when the caller
     # supplies the bulk labels map; players without role data simply
@@ -1440,13 +1489,11 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
             f'{role_span}'
             f'</td>'
             f'<td class="rnk-val rnk-col-games">{_fmt_ros_games(row.get("ros_games"))}</td>'
-            f'<td class="rnk-val">{float(row.get("ros_ppg") or 0):.1f}</td>'
-            f'<td class="rnk-val rnk-val-primary">{float(row.get("ros_total") or 0):.1f}</td>'
             f'<td class="rnk-age rnk-col-sched">{sched_html}</td>'
             f'</tr>'
         )
     if not table_rows:
-        table_rows = ('<tr><td colspan="6" style="text-align:center;padding:24px;">'
+        table_rows = ('<tr><td colspan="4" style="text-align:center;padding:24px;">'
                       'Rest-of-season rankings are not available right now. '
                       'They publish once the remaining schedule and projections '
                       'are set for the week.</td></tr>')
@@ -1476,6 +1523,8 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
 
   <div class="rnk-pos-nav">{nav_html}</div>
 
+  {settings_html}
+
   {_ros_analysis_html(pos_filter)}
 
   <div class="rnk-table-wrap">
@@ -1485,8 +1534,6 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
           <th class="rnk-rank">#</th>
           <th class="rnk-player">Player</th>
           <th class="rnk-val rnk-col-games">Exp. Games</th>
-          <th class="rnk-val">ROS PPG</th>
-          <th class="rnk-val rnk-val-primary">ROS Pts</th>
           <th class="rnk-age rnk-col-sched">Sched</th>
         </tr>
       </thead>
@@ -1496,7 +1543,7 @@ def build_ros_rankings_body(ros_payload: dict, value_table: list[dict],
     </table>
   </div>
   <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
-    <p style="font-size:14px;color:var(--text-muted);">These are the same numbers as the Rest of Season mode on the live board, with Stretch and Playoff windows:</p>
+    <p style="font-size:14px;color:var(--text-muted);">These are the same rankings as the Rest of Season mode on the live board, with Stretch and Playoff windows:</p>
     <a href="/players" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Open the live Player Rankings</a>
   </div>
   <script type="application/ld+json">
