@@ -17055,13 +17055,22 @@ window.initTradePage = function initTradePage(root = document) {
 
   // The observed section follows the layout: the summary card on
   // desktop; on phones the card no longer holds the balance (it moved
-  // to the builder-end balance block), so the block is observed there.
+  // to the builder-end balance block), so the balance is observed there.
+  // On phones the observed element is the balance wrap itself, not the
+  // whole mobile balance block: the block also carries the verdict
+  // shell (balancer suggestions, roster-depth warnings), which stays
+  // on screen long after the totals and balance bar the sticky bar
+  // mirrors have scrolled off, so observing the whole block surfaced
+  // the sticky bar far too late (Kaedon's 2026-11-23 screenshot: the
+  // totals/band were already gone at the "Even it out" section, with
+  // no sticky bar yet). The totals sit directly above the wrap, so
+  // the wrap leaving view means both have left.
   function syncStickyObserver() {
     const bar = root.querySelector("#tradeStickyBar");
     if (!bar || !window.IntersectionObserver) return;
     const mobile = window.matchMedia("(max-width: 640px)").matches;
     const target = mobile
-      ? (root.querySelector("#otcMobileBalance") || root.querySelector(".otc-summary-card"))
+      ? (root.querySelector(".otc-balance-wrap") || root.querySelector("#otcMobileBalance") || root.querySelector(".otc-summary-card"))
       : root.querySelector(".otc-summary-card");
     if (!target) return;
     if (bar.__brSummaryObserver && bar.__brSummaryTarget === target) return;
