@@ -836,6 +836,77 @@ function prRosVor(p) {
   if (repl == null) return null;
   return (ppg - repl) * g;
 }
+// ROS tier breaks, computed from the DISPLAYED list itself, for
+// every ROS view (Kaedon's rule, 2026-11-23: tiers derive from the
+// ranking mode and window on screen, never from another view's
+// numbers). Two shipped paths violated it:
+//  - All view: the list is slot-filled and QB-calibrated, so a
+//    player's raw VOR is not monotonic down the board: 1QB
+//    calibration walks QB1 ~20 slots down from his VOR slot with his
+//    VOR untouched, so looking his tier up by VOR value against the
+//    server's tier_thresholds_ros_vor stamped Burrow T2 in the middle
+//    of a T5 neighbourhood -- a one-man tier, skipped labels.
+//  - Position views: the server thresholds (tier_thresholds_ros) are
+//    computed on the POOLED list -- every position's scores/totals
+//    mixed -- so a single-position list got another view's breaks:
+//    on the Week-10 pool the TE views in the stretch/playoffs windows
+//    used only labels T7-T9, and the WR views skipped T1/T2 and ran
+//    one-man tiers.
+// Breaks here can only sit between displayed neighbours, labels are
+// handed out sequentially down the list, and the 3-per-tier spacing
+// is enforced on the list itself, so the dividers always describe the
+// board on screen -- every view, window, format and size, guarded
+// scores included, recomputed on every render. The gap rule mirrors
+// _ros_gap_tier_thresholds (largest drop-offs >= 2.5x the list's own
+// median gap, at most 8 breaks); a list with no real drop-off gets
+// no dividers. Returns {playerId: tier}.
+// The value each view tiers by is the scalar that view orders by,
+// mirroring prSortBase's ros_total branches: the All view slot-fills
+// a VOR order, a filtered full-window view orders by the factor
+// score, a filtered sub-window view by the window total.
+function prRosTierVal(p) {
+  if (prPosFilters.size === 0) return prRosVor(p);
+  return prRosWindow === 'all' ? prRosVal(p, 'score') : prRosVal(p, 'total');
+}
+var prRosTierMapCache = null;
+function prRosViewTierMap(ordered) {
+  var map = {};
+  var rows = [];
+  ordered.forEach(function(p) {
+    var v = prRosTierVal(p);
+    if (v != null) rows.push([String(p.id), v]);
+  });
+  var n = rows.length;
+  if (n < 6) return map;
+  var gaps = [];
+  for (var i = 0; i < n - 1; i++) gaps.push(rows[i][1] - rows[i + 1][1]);
+  var posGaps = gaps.filter(function(g) { return g > 0; })
+                    .sort(function(a, b) { return a - b; });
+  if (!posGaps.length) return map;
+  var medianGap = posGaps[Math.floor(posGaps.length / 2)];
+  if (!(medianGap > 0)) return map;
+  var cands = [];
+  gaps.forEach(function(g, i) { if (g >= 2.5 * medianGap) cands.push(i); });
+  cands.sort(function(a, b) { return gaps[b] - gaps[a]; });
+  var bounds = [];
+  for (var c = 0; c < cands.length; c++) {
+    if (bounds.length >= 8) break;
+    var ci = cands[c], lo = -1, hi = n - 1;
+    bounds.forEach(function(b) {
+      if (b < ci && b > lo) lo = b;
+      if (b > ci && b < hi) hi = b;
+    });
+    if (ci - lo >= 3 && hi - ci >= 3) bounds.push(ci);
+  }
+  if (!bounds.length) return map;
+  bounds.sort(function(a, b) { return a - b; });
+  rows.forEach(function(row, j) {
+    var t = 1;
+    bounds.forEach(function(b) { if (b < j) t++; });
+    map[row[0]] = t;
+  });
+  return map;
+}
 // Overall (All-view) order: slot-fill, mirroring order_overall in
 // utils/ros_rankings.py. Pure VOR sorting decides WHICH slots each
 // position occupies in the combined list, but each position's slots
@@ -1756,6 +1827,13 @@ function prRender() {
   const start = (prPage - 1) * prPageSize;
   const end   = Math.min(start + prPageSize, total);
   const pageSlice = players.slice(start, end);
+
+  // ROS views: tier breaks from this exact ordered list (see
+  // prRosViewTierMap), refreshed on every render so a view / window /
+  // format / size change re-derives them. Any other mode clears the
+  // cache so prGetTier falls back to its threshold tables.
+  prRosTierMapCache = (prScoringType === 'ros' && sortBy === 'ros_total')
+    ? prRosViewTierMap(players) : null;
   
   // Store filtered players count for pagination navigation
   window.prFilteredPlayers = players;
@@ -2238,13 +2316,18 @@ function prGetTier(p) {
   const lt  = prLeagueType || '1qb';
   let tbl;
   if (prScoringType === 'ros') {
+    // Every ROS view: prRender computes the tier breaks from the
+    // displayed list itself and caches them in prRosTierMapCache --
+    // see prRosViewTierMap for why neither server threshold table can
+    // label these lists (the All list is QB-calibrated out of VOR
+    // order; the position thresholds are computed on the pooled list,
+    // not the position's own). The threshold lookups below only
+    // remain for a caller outside prRender.
+    if (prRosTierMapCache) {
+      const ct = prRosTierMapCache[String(p.id)];
+      return ct != null ? ct : null;
+    }
     if (prPosFilters.size === 0) {
-      // All view: the list is ordered by VOR total, so its tiers are the
-      // server-computed VOR thresholds for this window / format / size
-      // (tier_thresholds_ros_vor): ONE monotonic sequence for the mixed
-      // list. The positional-total thresholds below would stamp each
-      // player with his own position's scale, so the dividers repeated
-      // and ran out of order (T1, T2, T1, T3, T1...).
       const vtbl = (((prTierThresholdsRosVor[prRosWindow] || {})[lt] || {})[String(prLeagueSize || 10)]) || [];
       if (!vtbl.length) return null;
       const vv = prRosVor(p);
@@ -2254,12 +2337,6 @@ function prGetTier(p) {
       }
       return vtbl.length + 1;
     }
-    // Position views: tiers are computed from the same numbers the view
-    // orders by (per window), never the dynasty thresholds: the full
-    // window's thresholds are on the factor-model score, the
-    // sub-windows' on their totals. Each window reads only its own
-    // table now: the scales differ, so the old borrow of the 'all'
-    // table by a sub-window no longer holds.
     tbl = prTierThresholdsRos[prRosWindow] || [];
     if (!tbl.length) return null;
     const rv = prRosWindow === 'all' ? prRosVal(p, 'score') : prRosVal(p, 'total');
