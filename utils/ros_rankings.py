@@ -641,6 +641,55 @@ def passes_role_gate(position: str, *, is_team_top: bool,
     return False
 
 
+# ── Divergence guard (v2, factor 1.25) ──────────────────────────────────────
+# Kaedon (2026-11-23, "the board needs fixed"): a player the projection
+# feed prices far above BOTH his season production and his last-4-games
+# production, with no recent evidence his situation has changed, is
+# capped at 1.25x the better of those two actual marks. The recency
+# prong is what separates a stale feed price (Jefferson 2026: season
+# 13.95, last-4 11.97, feed 19.36) from a just-turned breakout (Jeudy /
+# Chase Brown 2024, whose last-4 had already turned by the next
+# cutoff). Graded on 2022-2025 in ~/workspace/ros-rankings/
+# DIVERGENCE_GUARD_V2_2026-11-23.md: v2 at 1.25 costs -0.003 pooled
+# Spearman vs the unguarded tournament winner, fires on ~1.7% of
+# observations, and moves Jefferson from #7 overall / WR4 to #13 /
+# WR6 on the 2026 Week-10 pool — a deliberate accuracy spend Kaedon
+# approved with the price named. The season-only v1 guard is NOT this
+# rule: it fired on changed situations and cost more for less movement.
+DIVERGENCE_GUARD_FACTOR = 1.25
+DIVERGENCE_GUARD_MIN_GAMES = 7
+DIVERGENCE_GUARD_MIN_LAST4_TEAM_GAMES = 3
+
+
+def divergence_guard_cap(ppg: float, *, played_games: int,
+                         season_ppg: Optional[float],
+                         last4_ppg: Optional[float],
+                         played_last4_team_games: Optional[int]) -> float:
+    """Cap one window's ROS PPG input under the divergence guard.
+
+    Fires only when every condition holds: at least
+    DIVERGENCE_GUARD_MIN_GAMES played games this season, an appearance
+    in at least DIVERGENCE_GUARD_MIN_LAST4_TEAM_GAMES of his team's
+    last 4 games, and a PPG input above BOTH season PPG and last-4
+    PPG by more than DIVERGENCE_GUARD_FACTOR. The cap is
+    max(season, last-4) * factor. Any missing input (no season/last-4
+    line, or a caller that does not track team-game appearances)
+    leaves the input untouched: the guard never guesses.
+    """
+    ppg = float(ppg or 0.0)
+    if season_ppg is None or last4_ppg is None:
+        return ppg
+    if int(played_games or 0) < DIVERGENCE_GUARD_MIN_GAMES:
+        return ppg
+    if played_last4_team_games is None \
+            or int(played_last4_team_games) < DIVERGENCE_GUARD_MIN_LAST4_TEAM_GAMES:
+        return ppg
+    k = DIVERGENCE_GUARD_FACTOR
+    if ppg > float(season_ppg) * k and ppg > float(last4_ppg) * k:
+        return min(ppg, max(float(season_ppg), float(last4_ppg)) * k)
+    return ppg
+
+
 def compute_player_ros(position: str, *, played_games: int,
                        season_ppg: Optional[float], last4_ppg: Optional[float],
                        last4_games: int, touches_per_game: Optional[float],
@@ -649,7 +698,8 @@ def compute_player_ros(position: str, *, played_games: int,
                        pass_attempts_per_game: Optional[float] = None,
                        windows: Dict[str, List[Optional[float]]],
                        sched_rank: Optional[int],
-                       availability_rate: Optional[float] = None) -> Optional[dict]:
+                       availability_rate: Optional[float] = None,
+                       played_last4_team_games: Optional[int] = None) -> Optional[dict]:
     """ROS fields for one player, or None when he is not ROS-eligible.
 
     ``windows`` maps "all" / "stretch" / "playoffs" to that window's weekly
@@ -661,6 +711,11 @@ def compute_player_ros(position: str, *, played_games: int,
     converts each window's scheduled games into expected games; the
     stamped *_games fields ARE the expected games the totals are built
     on, so the number the board displays is the number the total uses.
+
+    ``played_last4_team_games`` is the divergence guard's recency
+    input (see divergence_guard_cap): how many of his team's last 4
+    game weeks the player appeared in. Callers that do not track it
+    pass None and the guard never fires for their players.
     """
     pos = str(position or "").upper()
     if pos not in ROS_POSITIONS or season_out:
@@ -687,6 +742,14 @@ def compute_player_ros(position: str, *, played_games: int,
             ppg = qb_ros_ppg(stats["fwd_ppg"], last4_ppg, last4_games, season_ppg)
         else:
             ppg = stats["fwd_ppg"]
+        # The divergence guard caps the final PPG input (for QB, the
+        # blended line above — the backtest's feed_ppg is exactly this
+        # production input at every position) before anything
+        # downstream (totals, model scores, ranks, tiers) reads it.
+        ppg = divergence_guard_cap(
+            ppg, played_games=played_games, season_ppg=season_ppg,
+            last4_ppg=last4_ppg,
+            played_last4_team_games=played_last4_team_games)
         if ppg <= 0:
             continue
         exp_games = stats["games"] * (
@@ -1249,6 +1312,14 @@ def compute_ros_vor_tier_thresholds(ros_by_pid: Dict[str, dict],
 
 _ROS_CACHE: dict = {"key": None, "payload": None}
 
+# Build-logic version, carried in the load_ros_map cache key. The data
+# signature alone cannot see a code change: a disk payload persisted by
+# an older build under the same file signature would otherwise be
+# served as current. Bump this whenever the build's math changes so
+# the first read after a deploy rebuilds instead of serving the old
+# logic's numbers. v1: the divergence guard (2026-11-23).
+ROS_BUILD_VERSION = 1
+
 
 def _ros_disk_cache_path(season: int) -> str:
     from utils.data_cache import CACHE_DIR
@@ -1276,12 +1347,21 @@ def _read_ros_disk_cache(season: int, key: tuple) -> Optional[dict]:
         if not isinstance(blob, dict):
             return None
         # The stored key is JSON-shaped (lists); the caller's key is
-        # (season, start_week, ((name, mtime), ...)): normalize the
-        # stored form back to tuples before comparing.
+        # (season, start_week, build_version, ((name, mtime), ...)):
+        # normalize the stored form back to tuples before comparing.
+        # A pre-version 3-element key normalizes to its old shape and
+        # simply never equals a current key: a miss, never a stale
+        # serve of numbers built by older logic.
         stored = blob.get("key")
         try:
-            stored_key = (stored[0], stored[1],
-                          tuple(tuple(part) for part in stored[2]))
+            if len(stored) == 4:
+                stored_key = (stored[0], stored[1], stored[2],
+                              tuple(tuple(part) for part in stored[3]))
+            elif len(stored) == 3:
+                stored_key = (stored[0], stored[1],
+                              tuple(tuple(part) for part in stored[2]))
+            else:
+                return None
         except Exception:
             return None
         if stored_key != key:
@@ -1370,7 +1450,8 @@ def load_ros_map(season: Optional[int] = None) -> dict:
                 "tier_thresholds_ros": {}, "tier_thresholds_ros_vor": {},
                 "updated": updated}
 
-    key = (season, start_week, _files_signature(season, start_week))
+    key = (season, start_week, ROS_BUILD_VERSION,
+           _files_signature(season, start_week))
     if _ROS_CACHE.get("key") == key and _ROS_CACHE.get("payload") is not None:
         return _ROS_CACHE["payload"]
 
@@ -1691,6 +1772,20 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
         live_status = live_injury_status_map()
         live_notes = live_injury_notes_map()
 
+        # Team game weeks this season (completed weeks only — the stat
+        # pass above never records a week >= start_week): a week is a
+        # team game when any indexed player on the team has a played-
+        # game entry that week, so bye weeks never appear. The
+        # divergence guard reads how many of his team's last 4 game
+        # weeks each player actually appeared in.
+        _team_game_week_sets: Dict[str, set] = {}
+        for _gpid, _glog in game_points.items():
+            _gteam = str((index.get(_gpid) or {}).get("team") or "").upper()
+            if _gteam and _glog:
+                _team_game_week_sets.setdefault(_gteam, set()).update(_glog)
+        team_game_weeks: Dict[str, List[int]] = {
+            t: sorted(ws) for t, ws in _team_game_week_sets.items()}
+
         ros_by_pid: Dict[str, dict] = {}
         positions_by_pid: Dict[str, str] = {}
         factors_by_pid: Dict[str, dict] = {}
@@ -1735,6 +1830,9 @@ def _build_ros_map(season: int, start_week: int, updated: str) -> Optional[dict]
                 availability_rate=availability_rate(
                     appearances.get(pid), _player_team_games(pid, team),
                     pos_mean_rate.get(pos)),
+                played_last4_team_games=sum(
+                    1 for w in (team_game_weeks.get(team) or [])[-4:]
+                    if w in (game_points.get(pid) or {})),
             )
             if fields:
                 if pos == "QB":
