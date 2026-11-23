@@ -21,6 +21,7 @@ the daily run only re-checks leagues whose stamp is older than RECRAWL_DAYS.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -40,12 +41,20 @@ SLEEPER_BASE = "https://api.sleeper.app/v1"
 
 # HTTP session is built lazily (and `requests`/urllib3 imported only then) so
 # importing this module for the pure unit tests doesn't require those packages.
-_SESSION = None
+#
+# One session PER THREAD: requests.Session is not documented thread-safe,
+# and _get is already called concurrently - run_draft_adp_crawl fans leagues
+# out over a 10-worker pool, and the Draft DB backfill does the same. The
+# old single global also raced its own lazy build (two threads could build
+# and overwrite it simultaneously). Thread-local storage keeps each
+# thread's session private while _get's behavior (retry adapter, 429
+# sleep-and-retry-once, None on failure) is unchanged.
+_THREAD_SESSION = threading.local()
 
 
 def _session():
-    global _SESSION
-    if _SESSION is None:
+    s = getattr(_THREAD_SESSION, "session", None)
+    if s is None:
         import requests
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
@@ -56,8 +65,8 @@ def _session():
         s.mount("http://", adapter)
         s.mount("https://", adapter)
         s.headers.update({"User-Agent": "fantasy-draft-adp/1.0"})
-        _SESSION = s
-    return _SESSION
+        _THREAD_SESSION.session = s
+    return s
 
 
 _RATE_LIMIT_BACKOFF = 60  # seconds to wait on 429
