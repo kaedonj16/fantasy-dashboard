@@ -18,7 +18,6 @@ pytest.importorskip("pandas")
 
 from utils.ros_rankings import (
     ROS_MODEL_WEIGHTS,
-    SCHED_Z_CAP,
     apply_qb_calibration,
     assign_ros_ranks,
     availability_rate,
@@ -592,32 +591,29 @@ def test_assign_ros_ranks_per_window():
 # ── Factor model (full-window positional order) ─────────────────────────────
 
 def test_model_weights_are_the_locked_set():
-    # Stripped base (2026-11-21): form, ceiling and role trend are out
-    # of the score at every position; the remaining v3 weights are
-    # renormalized (ROS_V3_AUDIT_2026-11-21.md Proposal 1, confirmed by
-    # the 1,728-config search in ROS_BEST_MODEL_SEARCH_2026-11-21.md:
-    # cell-mean +0.677 vs v3 +0.666, better at every position). The
-    # removed factors stay computed as display/context signals.
+    # Tournament winner (2026-11-22, NEW_RANKING_METHOD_2026-11-22.md):
+    # score = z(PPG) + w * z(expected games), w = 0.20 QB/RB, 0 WR,
+    # 0.05 TE relative to PPG 1.0, normalized below to sum 1.0. Every
+    # other factor — sched, consistency, offense, and the earlier
+    # stripped form/ceiling/role — is out of the score at every
+    # position; they stay computed as display/context signals.
+    # Pooled +0.711 across 2022-2025 vs the stripped base +0.703.
     assert ROS_MODEL_WEIGHTS == {
-        "QB": {"ppg": 0.7792, "games": 0.1169, "sched": 0.0390,
-               "consistency": 0.0390, "offense": 0.0259},
-        "RB": {"ppg": 0.8434, "games": 0.0964, "sched": 0.0241,
-               "consistency": 0.0241, "offense": 0.0120},
-        "WR": {"ppg": 0.9362, "games": 0.0426, "sched": 0.0106,
-               "consistency": 0.0053, "offense": 0.0053},
-        "TE": {"ppg": 0.9362, "games": 0.0426, "sched": 0.0106,
-               "consistency": 0.0053, "offense": 0.0053},
+        "QB": {"ppg": 0.833, "games": 0.167},
+        "RB": {"ppg": 0.833, "games": 0.167},
+        "WR": {"ppg": 1.000},
+        "TE": {"ppg": 0.952, "games": 0.048},
     }
     for pos, weights in ROS_MODEL_WEIGHTS.items():
         assert sum(weights.values()) == pytest.approx(1.0), pos
-        # The stripped factors carry no score weight anywhere.
-        for dropped in ("form", "ceiling", "role"):
+        # The zero-weight factors carry no score weight anywhere.
+        for dropped in ("form", "ceiling", "role",
+                        "sched", "consistency", "offense"):
             assert dropped not in weights, (pos, dropped)
-    # WR/TE PPG dominance: PPG outweighs every other factor combined
-    # at those positions.
-    for pos in ("WR", "TE"):
-        w = ROS_MODEL_WEIGHTS[pos]
-        assert w["ppg"] > sum(v for k, v in w.items() if k != "ppg")
+    # WR is PPG-only; TE PPG outweighs every other factor combined.
+    assert set(ROS_MODEL_WEIGHTS["WR"]) == {"ppg"}
+    w = ROS_MODEL_WEIGHTS["TE"]
+    assert w["ppg"] > sum(v for k, v in w.items() if k != "ppg")
 
 
 def test_opportunity_form_last_four_played():
@@ -740,15 +736,16 @@ def test_model_order_beats_total_order():
 
 
 def test_model_missing_factor_is_neutral():
-    # Probed on consistency, a factor the stripped-base score reads:
+    # Probed on games, a factor the tournament-winner score reads:
     # a missing value fills with the pool mean (z = 0), so the player
     # with no value sits exactly between the high and low carriers.
-    base = {"ppg": 15.0, "ceiling": 22.0, "games": 6.0, "sched": -15.0,
-            "form": 15.0, "role": 0.0, "offense": 22.0}
+    base = {"ppg": 15.0, "ceiling": 22.0, "sched": -15.0,
+            "form": 15.0, "role": 0.0, "consistency": 0.6,
+            "offense": 22.0}
     factors = {
-        "hot": {**base, "consistency": 0.9},
-        "none": {**base, "consistency": None},
-        "cold": {**base, "consistency": 0.3},
+        "hot": {**base, "games": 7.0},
+        "none": {**base, "games": None},
+        "cold": {**base, "games": 5.0},
     }
     scores = ros_model_scores(factors, "RB")
     assert scores["hot"] > scores["none"] > scores["cold"]
@@ -767,32 +764,33 @@ def test_model_ignores_stripped_factors():
     assert scores["hot"] == scores["cold"]
 
 
-def test_model_sched_z_is_capped():
-    # The schedule z contribution is clipped at +/- SCHED_Z_CAP
-    # before weighting. Nine identical WRs face the hardest far slate
-    # (rank 32) and one faces the softest (rank 1): the soft player's
-    # raw sched z is +3.0, so uncapped his edge over a hard-slate peer
-    # would be w x (3.0 - (-1/3)); capped it is w x (1.0 - (-1/3)),
-    # where w is the WR schedule weight.
-    base = {"ppg": 15.0, "ceiling": 22.0, "games": 6.0,
-            "form": 25.0, "role": 0.0, "consistency": 0.6,
-            "offense": 22.0}
-    factors = {f"hard{i}": {**base, "sched": -32.0} for i in range(9)}
-    factors["soft"] = {**base, "sched": -1.0}
-    scores = ros_model_scores(factors, "WR")
-    w = ROS_MODEL_WEIGHTS["WR"]["sched"]
-    expected = w * (SCHED_Z_CAP - (-1.0 / 3.0))
-    assert scores["soft"] - scores["hard0"] == pytest.approx(
-        round(expected, 3), abs=0.002)
-    assert scores["soft"] - scores["hard0"] < w * (3.0 - (-1.0 / 3.0))
+def test_model_zero_weight_factors_contribute_nothing():
+    # Tournament winner (2026-11-22): sched, consistency and offense
+    # carry zero score weight at every position (the earlier stripped
+    # factors form/ceiling/role are covered by
+    # test_model_ignores_stripped_factors). Two players identical in
+    # the scored factors (ppg, games) but at opposite extremes of
+    # every zero-weight factor must score exactly the same.
+    base = {"ppg": 15.0, "games": 6.0}
+    factors = {
+        "soft": {**base, "sched": -1.0, "consistency": 1.0,
+                 "offense": 32.0},
+        "hard": {**base, "sched": -32.0, "consistency": 0.0,
+                 "offense": 14.0},
+    }
+    for pos in ("QB", "RB", "WR", "TE"):
+        scores = ros_model_scores(factors, pos)
+        assert scores["soft"] == scores["hard"], pos
 
 
 def test_build_sched_factor_uses_playoff_weeks_only(tmp_path, monkeypatch):
-    """v3 end-to-end: two identical WRs on different teams. AAA owns the
+    """End-to-end: two identical WRs on different teams. AAA owns the
     softer FULL-window slate (soft near weeks, hard playoff weeks);
-    BBB's slate is the reverse. The display ros_sched_rank follows the
-    full window (AAA softer), but the factor model reads Weeks 15-17
-    only, so BBB must outscore and outrank AAA."""
+    BBB's slate is the reverse. The display ros_sched_rank follows
+    the full window (AAA softer). Since the 2026-11-22 tournament
+    weights, the schedule factor (built from the Weeks 15-17 slate)
+    carries zero score weight, so the two identical players score
+    exactly the same and the rank falls to the pid tie-break."""
     import json as _json
 
     from data_building import start_score_bundle as ssb
@@ -847,9 +845,10 @@ def test_build_sched_factor_uses_playoff_weeks_only(tmp_path, monkeypatch):
     wa, wb = payload["players"]["wa"], payload["players"]["wb"]
     # Display rank is the full-window slate: AAA's is softer.
     assert wa["ros_sched_rank"] < wb["ros_sched_rank"]
-    # The model order follows the playoff-weeks slate instead.
-    assert wb["ros_score"] > wa["ros_score"]
-    assert wb["ros_pos_rank"] == 1 and wa["ros_pos_rank"] == 2
+    # Schedule is display-only under the tournament weights: the
+    # playoff-slate edge moves nothing, scores tie, pid breaks it.
+    assert wb["ros_score"] == wa["ros_score"]
+    assert wa["ros_pos_rank"] == 1 and wb["ros_pos_rank"] == 2
 
 
 def test_assign_ros_ranks_model_order_full_window_only():

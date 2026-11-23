@@ -32,10 +32,11 @@ and 2.584 for the originally pitched 65/35 blend):
   * Positional order in the full window is a factor model (Kaedon,
     2026-11-18), NOT the ROS Pts total: within each position, five
     factors are z-scored across the eligible pool and combined at
-    position-specific weights (ROS_MODEL_WEIGHTS, the stripped base
-    as of 2026-11-21: ROS PPG leads at .78 QB / .84 RB / .94 WR-TE;
-    the remaining weight spreads over expected games, schedule,
-    consistency and team offense). Form, ceiling and role trend are
+    position-specific weights (ROS_MODEL_WEIGHTS, the tournament
+    winner as of 2026-11-22: ROS PPG plus expected games only —
+    QB/RB .833/.167, WR PPG alone, TE .952/.048; schedule,
+    consistency and team offense carry no score weight). Form,
+    ceiling and role trend are
     still computed for every player but carry no score weight: the
     v3 audit found all three cost accuracy at every position. Form is
     last-4 played PPG for QB and mean opportunity share over the
@@ -363,15 +364,27 @@ def availability_rate(appearances: Optional[int], team_games: Optional[int],
 # three removed factors are still computed for every player (see
 # player_model_factors) and remain available as display/context
 # signals; they simply carry no score weight.
+#
+# Tournament winner (Kaedon, 2026-11-22, "Ship the full package"):
+# the stripped base's token factors (sched / consistency / offense)
+# are now removed too. A seven-candidate tournament plus a
+# per-position weight search on the 2025 harness, confirmed on a
+# held-out cutoff and re-run frozen on 2022-2024 (1,574 observations;
+# ~/workspace/ros-rankings/NEW_RANKING_METHOD_2026-11-22.md and
+# MULTI_SEASON_TOURNAMENT_2026-11-22.md), crowned the simplest
+# config: score = z(PPG) + w * z(expected games), w = 0.20 QB/RB,
+# 0 WR, 0.05 TE relative to PPG weight 1.0 (the values below are
+# that set normalized to sum 1.0). Pooled Spearman +0.711 across
+# the four seasons vs the stripped base +0.703 and v3 +0.694; it
+# won every season and beat v3 at every position. The PPG inputs
+# and the overall machinery (VOR slot-fill + QB calibration) are
+# unchanged: graded as prod_win in OVERALL_TOURNAMENT_2026-11-22.md
+# (1QB +0.655 / SF +0.773).
 ROS_MODEL_WEIGHTS = {
-    "QB": {"ppg": 0.7792, "games": 0.1169, "sched": 0.0390,
-           "consistency": 0.0390, "offense": 0.0259},
-    "RB": {"ppg": 0.8434, "games": 0.0964, "sched": 0.0241,
-           "consistency": 0.0241, "offense": 0.0120},
-    "WR": {"ppg": 0.9362, "games": 0.0426, "sched": 0.0106,
-           "consistency": 0.0053, "offense": 0.0053},
-    "TE": {"ppg": 0.9362, "games": 0.0426, "sched": 0.0106,
-           "consistency": 0.0053, "offense": 0.0053},
+    "QB": {"ppg": 0.833, "games": 0.167},
+    "RB": {"ppg": 0.833, "games": 0.167},
+    "WR": {"ppg": 1.000},
+    "TE": {"ppg": 0.952, "games": 0.048},
 }
 # The schedule factor's z-score contribution is clipped to +/- this
 # before weighting (v3): the factor reads Weeks 15-17 opponents only
@@ -474,17 +487,18 @@ def ros_model_scores(
         position: str,
 ) -> Dict[str, float]:
     """Weighted z-score sum for one position's pool, at
-    ROS_MODEL_WEIGHTS (the stripped base: ppg, games, sched,
-    consistency, offense).
+    ROS_MODEL_WEIGHTS (the tournament winner: ppg, plus games at
+    QB/RB/TE; every other factor is unscored).
 
     ``factors_by_pid`` maps pid -> raw factor values (``sched``
     already inverted, so a softer slate is a larger number); only the
     factors named in ROS_MODEL_WEIGHTS are read, so the computed
-    form / ceiling / role values ride along unscored. Every factor is
-    z-scored across the pool exactly as given, so the caller passes
-    one position's eligible pool. The schedule z-score is clipped to
-    +/- SCHED_Z_CAP before weighting (playoff-weeks schedule only,
-    capped).
+    form / ceiling / role / sched / consistency / offense values ride
+    along unscored. Every factor is z-scored across the pool exactly
+    as given, so the caller passes one position's eligible pool. The
+    schedule z-score clip at +/- SCHED_Z_CAP still applies to any
+    factor named ``sched`` before weighting; no position weights it
+    since the 2026-11-22 tournament set.
     """
     weights = ROS_MODEL_WEIGHTS[str(position or "").upper()]
     per_factor = {
