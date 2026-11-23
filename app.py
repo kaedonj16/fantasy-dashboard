@@ -32726,20 +32726,41 @@ def api_league_players():
                         overlay_key=overlay_key, is_sf=_mi_is_sf,
                         view="rankings"),
                 )
-    payload = _overlay_league_players_payload(
-        payload,
-        kdef=kdef,
-        projection_settings=_projection_settings,
-        projection_season=_projection_season,
-        scoring_type=_mi_scoring,
-    )
-
     _lp_version_key = _lp_response_version_key(
         overlay_key=overlay_key, is_sf=_mi_is_sf,
         view=(f"trade-{_trade_league_type}-{_trade_league_size}" if _view_trade
               else ("board" if _view_board
                     else ("rankings" if _view_rankings else "full"))),
     )
+    # Trade warm path (mirrors the rankings shortcut above): the trade slim
+    # body is serialized once per (overlay_key, is_sf, league_type,
+    # league_size) into _LP_BOARD_JSON_CACHE, and NONE of the work below can
+    # change a single byte of it -- the overlay stamps projection / Market
+    # vs ADP / historical / ROS fields, the league PPG overlay re-scores
+    # PPG fields, and the season / ADP-source / Yahoo branches attach ADP
+    # columns, while slim_trade_payload keeps only value fields, rank
+    # labels, tier thresholds, and the folded-in deltas/indicators (all
+    # priced from the base payload). Serving the cached body here skips the
+    # overlay pass over ~2,000 players AND keeps the ETag/304 story intact
+    # for signed-in league users, whose PPG overlay used to force the trade
+    # response to no-store on every hit.
+    if _view_trade:
+        _trade_body = _LP_BOARD_JSON_CACHE.get(
+            ("trade", overlay_key, bool(_mi_is_sf),
+             _trade_league_type, _trade_league_size))
+        if _trade_body is not None:
+            return _lp_cacheable_response(_trade_body, _lp_version_key)
+    # Trade view: skip the overlay entirely (see the warm-path note: its
+    # stamps never survive slim_trade_payload; the body built from the base
+    # payload is byte-identical). Other views keep the overlay as before.
+    if not _view_trade:
+        payload = _overlay_league_players_payload(
+            payload,
+            kdef=kdef,
+            projection_settings=_projection_settings,
+            projection_season=_projection_season,
+            scoring_type=_mi_scoring,
+        )
 
     def _finish(result, *, board_cacheable=True):
         if _view_trade:
@@ -32870,6 +32891,13 @@ def api_league_players():
     # response is no-store (not ETag-cacheable) because the shared version
     # key does not identify a league.
     _ppg_lg = (request.args.get("league_id") or session.get("last_league_id") or "").strip()
+    if _view_trade:
+        # The trade slim keeps no PPG / total-points fields, so the league
+        # PPG overlay cannot change the trade body -- but when it applied it
+        # forced board_cacheable=False, stripping the trade pool of its
+        # ETag and making every signed-in revalidation a full ~500KB
+        # re-download plus a per-request copy of ~2,000 player rows.
+        _ppg_lg = ""
     _ppg_plat = (request.args.get("platform") or session.get("last_platform") or "sleeper").strip().lower()
     _ppg_overlaid = False
     if _ppg_lg:

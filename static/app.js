@@ -11518,8 +11518,11 @@ window.initTradePage = function initTradePage(root = document) {
 
   async function onLeagueTypeChange() {
     // Deltas/indicators ride on the ?view=trade payload keyed by league
-    // type/size, so bust the shared fetch and reload players.
-    allPlayers = [];
+    // type/size, so bust the shared fetch and reload players. Keep the
+    // current pool on screen while the new feed loads: blanking it here
+    // left the search list and chips empty for the whole fetch (and
+    // forever when the fetch failed), even though the pool being replaced
+    // prices the same players. It is swapped atomically when data lands.
     var lt = getLeagueType();
     var ls = getLeagueSize();
     _lpFeedKey = "league_type=" + lt + "&league_size=" + ls;

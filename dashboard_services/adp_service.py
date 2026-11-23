@@ -163,6 +163,32 @@ def write_adp_snapshot(
             logger.info("adp_service: keeping last-good %s/%s snapshot (empty fetch)",
                         source, axis)
             return False
+        if not force and existing:
+            # Empty fetch, and a snapshot file already records an empty
+            # state for this source: rewriting it changes nothing but the
+            # collected_at/mtime, which busts every league-players cache
+            # keyed on the snapshot signature (see the identical-rewrite
+            # note below). The first empty record still writes (existing
+            # is {} when no file exists yet).
+            logger.debug("adp_service: %s/%s snapshot still empty, skipping rewrite",
+                         source, axis)
+            return False
+    if not force and (existing.get("adp") or {}):
+        # Identical rewrite: a refresh that fetched the same ADP/extra the
+        # disk snapshot already holds must NOT rewrite the file. The write
+        # stamps a new collected_at and bumps the file mtime, and that mtime
+        # is global_adp_snapshot_signature() -- the freshness input for the
+        # /api/league-players payload memo, overlay cache, serialized-body
+        # caches, and ETag. Rewriting identical data therefore busted every
+        # one of those caches on every refresh (and, when a source's map
+        # stays empty so ensure_* re-fetches on each payload build, turned
+        # the league-players endpoint into a full rebuild per request).
+        if ((existing.get("adp") or {}) == adp
+                and (existing.get("extra") or {}) == ((payload or {}).get("extra") or {})
+                and existing.get("ppr_rank") == (payload or {}).get("ppr_rank")):
+            logger.debug("adp_service: %s/%s snapshot unchanged, skipping rewrite",
+                         source, axis)
+            return False
     record = {
         "source": source,
         "axis": axis,
