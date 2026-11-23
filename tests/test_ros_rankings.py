@@ -1287,6 +1287,203 @@ def test_ros_tier_breaks_change_with_format_and_size():
     assert len({tuple(v) for v in sets.values()}) == len(sets)
 
 
+# ── All-view dividers label the DISPLAYED list (2026-11-23) ────────────────
+# Kaedon's screenshot: Joe Burrow at #24 sat between a T2 divider above
+# him and a T5 divider below him -- a one-man tier with skipped labels.
+# The All list is slot-filled and QB-calibrated: calibration walks QB1
+# ~20 slots down from his VOR slot with his VOR untouched, so a tier
+# looked up by VOR value against thresholds stamps the QB with his
+# high-VOR band in the middle of a low-VOR neighbourhood. The fix
+# computes the breaks in rankings.js from the displayed list itself
+# (prRosViewTierMap): breaks only between displayed neighbours, labels
+# sequential, the 3-per-tier spacing enforced on the list itself. The
+# same derivation covers the position views, whose shipped thresholds
+# were computed on the pooled list (every TE landed in T7-T9 in the
+# stretch/playoffs windows under them).
+
+def _rankings_js():
+    return open(os.path.join(_ROOT, "static", "rankings.js"),
+                encoding="utf-8").read()
+
+
+def test_rankings_js_all_view_tiers_come_from_the_displayed_list():
+    js = _rankings_js()
+    assert "function prRosViewTierMap(ordered)" in js
+    # The tier value is the scalar the active view orders by: VOR for
+    # the All view, the factor score for a filtered full-window view,
+    # the window total for a filtered sub-window view.
+    assert "if (prPosFilters.size === 0) return prRosVor(p);" in js
+    assert ("return prRosWindow === 'all' ? prRosVal(p, 'score') "
+            ": prRosVal(p, 'total');") in js
+    # prRender derives the map from the final ordered list for every
+    # ROS view, and clears it for every other mode.
+    assert ("prRosTierMapCache = (prScoringType === 'ros' && sortBy === 'ros_total')\n"
+            "    ? prRosViewTierMap(players) : null;") in js
+    # prGetTier consults the displayed-list map BEFORE either server
+    # threshold lookup, which now only serves out-of-render callers.
+    get_tier = js[js.index("function prGetTier(p)"):]
+    assert get_tier.index("prRosTierMapCache") < get_tier.index(
+        "prTierThresholdsRosVor[prRosWindow]")
+    assert get_tier.index("prRosTierMapCache") < get_tier.index(
+        "prTierThresholdsRos[prRosWindow]")
+
+
+def _ros_js_block(js):
+    """The ROS helper block of rankings.js, from the window table
+    through prRosAllTierMap, for node harnesses."""
+    start = js.index("var PR_ROS_WINDOWS")
+    end = js.index("function prRosSlotFillOrder")
+    return js[start:end]
+
+
+def _run_ros_tier_harness(js, driver):
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available")
+    script = (
+        "var prAllPlayers = [];\n"
+        "var prPosFilters = new Set();\n"
+        "var prRosWindow = 'all', prLeagueSize = 12, prLeagueType = '1qb';\n"
+        + _ros_js_block(js)
+        + "\n" + driver)
+    res = subprocess.run([node, "-e", script], capture_output=True,
+                         text=True, timeout=30)
+    assert res.returncode == 0, res.stderr
+    return json.loads(res.stdout.strip().splitlines()[-1])
+
+
+_TIER_DRIVER = r"""
+function mk(id, name, pos, ppg, games) {
+  return { id: id, name: name, position: pos,
+           ros_ppg: ppg, ros_games: games, ros_total: ppg * games,
+           ros_score: ppg,
+           ros_stretch_ppg: ppg, ros_stretch_games: games / 2,
+           ros_stretch_total: ppg * games / 2 };
+}
+var pool = [];
+var i, p;
+for (i = 0; i < 30; i++) pool.push(mk('rb' + i, 'RB' + i, 'RB', 26 - 0.55 * i, 6));
+for (i = 0; i < 30; i++) pool.push(mk('wr' + i, 'WR' + i, 'WR', 25 - 4 * Math.floor(i / 5) - 0.3 * (i % 5), 6));
+for (i = 0; i < 15; i++) pool.push(mk('te' + i, 'TE' + i, 'TE', 18 - 3.4 * Math.floor(i / 5) - 0.3 * (i % 5), 6));
+pool.push(mk('qb0', 'QB One', 'QB', 31, 6.2));
+for (i = 1; i < 20; i++) pool.push(mk('qb' + i, 'QB' + i, 'QB', 24 - 0.3 * (i - 1), 6));
+prAllPlayers = pool;
+// Displayed order: non-QBs by PPG desc (the slot-fill shape), QB One
+// walked down to #24 by the 1QB calibration, the other QBs behind him
+// in PPG order -- the Burrow geometry from the screenshot.
+var nonQb = pool.filter(function(x) { return x.position !== 'QB'; })
+  .sort(function(a, b) { return b.ros_ppg - a.ros_ppg; });
+var qbs = pool.filter(function(x) { return x.position === 'QB'; })
+  .sort(function(a, b) { return b.ros_ppg - a.ros_ppg; });
+var ordered = nonQb.slice(0, 40).concat(nonQb.slice(40));
+ordered.splice(23, 0, qbs[0]);
+qbs.slice(1).forEach(function(q, j) { ordered.splice(30 + j, 0, q); });
+function invariants(ord, map) {
+  var seq = ord.map(function(x) { return map[String(x.id)] || null; });
+  var sizes = {}, sequential = true, prev = 0;
+  seq.forEach(function(t) {
+    if (t == null) return;
+    sizes[t] = (sizes[t] || 0) + 1;
+    if (t !== prev && t !== prev + 1) sequential = false;
+    prev = t;
+  });
+  var keys = Object.keys(sizes).map(Number).sort(function(a, b) { return a - b; });
+  var small = keys.filter(function(k, idx) {
+    return sizes[k] < 3 && idx < keys.length - 1;
+  });
+  return { seq: seq, sizes: sizes, sequential: sequential, small: small };
+}
+var out = {};
+var map1 = prRosViewTierMap(ordered);
+var inv1 = invariants(ordered, map1);
+out.seq1 = inv1.seq; out.sizes1 = inv1.sizes;
+out.sequential1 = inv1.sequential; out.small1 = inv1.small;
+out.qb1Tier = map1['qb0'];
+out.qb1TierSize = inv1.sizes[map1['qb0']];
+out.qb1Vor1 = prRosVor(pool[pool.length - 20]);
+// Format switch: SF repricing lifts the QB's VOR, the SF-shaped
+// list puts him at the top, and the recomputed map labels him T1
+// with the invariants intact.
+prLeagueType = 'sf';
+out.qb1VorSf = prRosVor(pool[pool.length - 20]);
+var orderedSf = [qbs[0]].concat(ordered.filter(function(x) { return x.id !== 'qb0'; }));
+var mapSf = prRosViewTierMap(orderedSf);
+var invSf = invariants(orderedSf, mapSf);
+out.sequentialSf = invSf.sequential; out.smallSf = invSf.small;
+out.qb1TierSf = mapSf['qb0'];
+prLeagueType = '1qb';
+// Position view, sub-window: the TE stretch view. Under the shipped
+// pooled thresholds every TE landed in T7-T9 (the pooled list's
+// breaks sit above the whole TE scale); the view's own list must
+// start at T1 with the invariants intact.
+prPosFilters = new Set(['TE']);
+prRosWindow = 'stretch';
+var tes = pool.filter(function(x) { return x.position === 'TE'; })
+  .sort(function(a, b) { return b.ros_stretch_total - a.ros_stretch_total; });
+var mapTe = prRosViewTierMap(tes);
+var invTe = invariants(tes, mapTe);
+out.teFirstTier = mapTe[String(tes[0].id)];
+out.teSequential = invTe.sequential; out.teSmall = invTe.small;
+// Position view, full window: the WR view tiers by the factor score.
+prPosFilters = new Set(['WR']);
+prRosWindow = 'all';
+var wrs = pool.filter(function(x) { return x.position === 'WR'; })
+  .sort(function(a, b) { return b.ros_score - a.ros_score; });
+var mapWr = prRosViewTierMap(wrs);
+var invWr = invariants(wrs, mapWr);
+out.wrFirstTier = mapWr[String(wrs[0].id)];
+out.wrSequential = invWr.sequential; out.wrSmall = invWr.small;
+prPosFilters = new Set();
+// Guarded player crossing a break: slash WR0's PPG input (the
+// divergence guard's effect) and rebuild the ordered list; his tier
+// must move later and the invariants must still hold.
+var wr0 = pool.filter(function(x) { return x.id === 'wr0'; })[0];
+var wrTierBefore = map1['wr0'];
+wr0.ros_ppg = 12; wr0.ros_total = 12 * wr0.ros_games;
+_prRosReplCache = { key: null, map: {} };
+var ordered2 = ordered.slice().sort(function(a, b) {
+  return (prRosVor(b) || 0) - (prRosVor(a) || 0);
+});
+var map2 = prRosViewTierMap(ordered2);
+var inv2 = invariants(ordered2, map2);
+out.wrTierBefore = wrTierBefore; out.wrTierAfter = map2['wr0'];
+out.sequential2 = inv2.sequential; out.small2 = inv2.small;
+console.log(JSON.stringify(out));
+"""
+
+
+def test_ros_all_tier_map_labels_are_sequential_on_the_displayed_list():
+    out = _run_ros_tier_harness(_rankings_js(), _TIER_DRIVER)
+    # Labels strictly sequential down the board, no tier under the
+    # shipped 3-player minimum except a possible tail tier.
+    assert out["sequential1"] and out["small1"] == []
+    # The calibrated QB1 at #24 is NOT a one-man tier: he shares his
+    # tier with at least two neighbours.
+    assert out["qb1TierSize"] >= 3
+    # A format switch reprices the QBs (SF VOR strictly higher) and
+    # the recomputed map follows the SF-shaped list: QB1 is T1 at the
+    # top, and the invariants survive the switch.
+    assert out["qb1VorSf"] > out["qb1Vor1"]
+    assert out["qb1TierSf"] == 1
+    assert out["sequentialSf"] and out["smallSf"] == []
+    # Position views derive from the position's own list in that
+    # window: the TE stretch view and the WR full-window view both
+    # start at T1 (the pooled thresholds put every TE in T7-T9),
+    # sequential, no sub-3 tier but a possible tail.
+    assert out["teFirstTier"] == 1
+    assert out["teSequential"] and out["teSmall"] == []
+    assert out["wrFirstTier"] == 1
+    assert out["wrSequential"] and out["wrSmall"] == []
+    # A guarded player whose input is slashed crosses to a later tier,
+    # and the relabelled list still satisfies the invariants.
+    assert out["wrTierAfter"] > out["wrTierBefore"]
+    assert out["sequential2"] and out["small2"] == []
+
+
 # ── Payload path ────────────────────────────────────────────────────────────
 
 def test_slim_payload_keeps_ros_fields_and_blocks():
