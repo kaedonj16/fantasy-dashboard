@@ -712,15 +712,15 @@ def build_trade_calculator_body(
             .pi-stat-label {{
               font-size:11px;font-weight:700;text-transform:uppercase;
               letter-spacing:.05em;color:var(--text-muted);margin-bottom:5px;
-              white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+              white-space:normal;line-height:1.15;
               display:block;
             }}
             .pi-stat-values {{
               display:flex;align-items:baseline;gap:5px;min-width:0;
             }}
             .pi-stat-before {{
-              font-size:11px;color:var(--text-muted);min-width:0;
-              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+              font-size:11px;color:var(--text-muted);min-width:0;flex-shrink:0;
+              white-space:nowrap;
             }}
             .pi-stat-arrow  {{ font-size:13px;opacity:.55;flex-shrink:0;align-self:center; }}
             .pi-stat-after  {{ font-size:18px;font-weight:800;line-height:1;flex-shrink:0;white-space:nowrap; }}
@@ -730,18 +730,18 @@ def build_trade_calculator_body(
                because it depends on the sidebar and the lower-grid split. */
             @container pi (max-width:360px) {{
               .pi-grid {{ gap:5px; }}
-              .pi-stat {{ padding:7px 6px; }}
-              .pi-stat-label {{ letter-spacing:.02em; }}
-              .pi-stat-before {{ font-size:11px; }}
-              .pi-stat-after {{ font-size:15px; }}
-              .pi-stat-arrow {{ font-size:11px; }}
-              .pi-stat-values {{ gap:3px; }}
+              .pi-stat {{ padding:7px 5px; }}
+              .pi-stat-label {{ font-size:10px;letter-spacing:.01em; }}
+              .pi-stat-before {{ font-size:10px; }}
+              .pi-stat-after {{ font-size:14px; }}
+              .pi-stat-arrow {{ font-size:10px; }}
+              .pi-stat-values {{ gap:2px; }}
             }}
             /* Extremely narrow cards: drop the secondary "before" value and
                arrow so the headline number is never clipped. */
-            @container pi (max-width:270px) {{
+            @container pi (max-width:285px) {{
               .pi-stat-before, .pi-stat-arrow {{ display:none; }}
-              .pi-stat-after {{ font-size:15px; }}
+              .pi-stat-after {{ font-size:14px; }}
             }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
