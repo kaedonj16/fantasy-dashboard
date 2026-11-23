@@ -628,7 +628,25 @@ def _ros_rankings_page(position: str | None = None):
         role_labels = get_role_labels(season)
     except Exception:
         role_labels = None
-    body = build_ros_rankings_body(ros_payload, value_table, position=position, role_labels=role_labels)
+    # League settings (Kaedon, 2026-11-22): QB format + team size via
+    # query params, validated against the shapes the replacement-level
+    # ordering supports. Default is 1QB, 12-team; a non-default shape
+    # renders noindex so the canonical page stays the bare URL. The
+    # ordering itself is arithmetic on the cached ROS map, so a
+    # settings switch never triggers the pool-wide compute.
+    _fmt = (request.args.get("fmt") or "1qb").strip().lower()
+    league_type = "sf" if _fmt == "sf" else "1qb"
+    try:
+        league_size = int(request.args.get("size") or 12)
+    except (TypeError, ValueError):
+        league_size = 12
+    if league_size not in (8, 10, 12, 14):
+        league_size = 12
+    is_default_shape = league_type == "1qb" and league_size == 12
+    body = build_ros_rankings_body(
+        ros_payload, value_table, position=position,
+        role_labels=role_labels,
+        league_type=league_type, league_size=league_size)
     pos_lbl = f" {position}" if position else ""
     return render_page(
         f"ROS{pos_lbl} Rankings {year} | BR Fantasy",
@@ -638,6 +656,7 @@ def _ros_rankings_page(position: str | None = None):
             f"Projected points for every remaining week, full PPR scoring."
         ),
         lite_js=True,
+        noindex=not is_default_shape,
     )
 
 

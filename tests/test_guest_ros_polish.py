@@ -67,10 +67,11 @@ def test_ros_table_primary_and_sched_markup():
 
     payload, table = _fake_ros_payload()
     body = build_ros_rankings_body(payload, table, position="RB")
-    # ROS Pts is the primary column in header and cells; Sched is a pill;
-    # Exp. Games / Sched carry the phone-drop column classes.
-    assert '<th class="rnk-val rnk-val-primary">ROS Pts</th>' in body
-    assert '<td class="rnk-val rnk-val-primary">140.0</td>' in body
+    # Plain ranked list (Kaedon, 2026-11-22): no ROS Pts and no ROS
+    # PPG column or cell anywhere; Sched is a pill; Exp. Games / Sched
+    # carry the phone-drop column classes.
+    assert "ROS Pts" not in body and "ROS PPG" not in body
+    assert "140.0" not in body and "20.0" not in body
     assert '<span class="rnk-sched-pill">#4</span>' in body
     assert '<th class="rnk-val rnk-col-games">Exp. Games</th>' in body
     assert '<th class="rnk-age rnk-col-sched">Sched</th>' in body
