@@ -2048,9 +2048,12 @@ def _appeal_context(ctx, rosters, owner_roster, values, index, target_entry):
                    if _row_value(values.get(str(pid)))]
         picks = (ctx.get("picks_by_roster") or {}).get(
             str(owner_roster.get("roster_id"))) or []
+        _oset = owner_roster.get("settings") or {}
         profile["direction"] = detect_team_direction(
             players, picks,
-            scoring_type="redraft" if _league_is_redraft(ctx) else "dynasty")
+            scoring_type="redraft" if _league_is_redraft(ctx) else "dynasty",
+            wins=int(_oset.get("wins") or 0) or None,
+            losses=int(_oset.get("losses") or 0) or None)
     except Exception:
         logger.debug("[assistant] partner direction failed", exc_info=True)
     thin = []
