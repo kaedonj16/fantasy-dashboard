@@ -27,6 +27,7 @@ from utils.ros_rankings import (
     compute_ros_tier_thresholds,
     compute_ros_vor_tier_thresholds,
     consistency_rate,
+    divergence_guard_cap,
     first_projected_week,
     form_ppg,
     has_season_ending_note,
@@ -84,6 +85,102 @@ def test_qb_ros_uses_blend_rb_ignores_form():
     assert qb["ros_total"] == pytest.approx(43.6)
     rb = _ros("RB", season_ppg=30.0, last4_ppg=30.0)
     assert rb["ros_ppg"] == pytest.approx(20.0)  # projection only
+
+
+# ── Divergence guard (v2, factor 1.25) ──────────────────────────────────────
+# DIVERGENCE_GUARD_V2_2026-11-23.md: cap the PPG input at 1.25x the
+# better of season / last-4 PPG when the feed sits above BOTH by more
+# than 1.25x, the player has 7+ games played, and he appeared in 3+
+# of his team's last 4 games. Priced at -0.003 pooled on 2022-2025;
+# Kaedon approved the spend 2026-11-23 ("the board needs fixed").
+
+def test_divergence_guard_fires_on_jefferson_shape():
+    # Jefferson 2026 through Week 10: feed 19.36, season 13.95,
+    # last-4 11.97, 8 played games, 4 of his team's last 4 games.
+    # Cap = max(13.95, 11.97) * 1.25 = 17.4375 -> stamped 17.44.
+    out = _ros("WR", played_games=8, season_ppg=13.95, last4_ppg=11.97,
+               played_last4_team_games=4,
+               windows={"all": [19.36] * 7, "stretch": [19.36] * 4,
+                        "playoffs": [19.36] * 3})
+    assert out["ros_ppg"] == pytest.approx(17.44)
+    assert out["ros_total"] == pytest.approx(17.4375 * 7, abs=0.1)
+
+
+def test_divergence_guard_cap_value_exact():
+    assert divergence_guard_cap(
+        19.36, played_games=8, season_ppg=13.95, last4_ppg=11.97,
+        played_last4_team_games=4) == pytest.approx(17.4375)
+    # The better actual mark is the base: a hot-ER last-4 under the
+    # factor still caps off the last-4 line when both prongs clear.
+    assert divergence_guard_cap(
+        30.0, played_games=9, season_ppg=10.0, last4_ppg=20.0,
+        played_last4_team_games=3) == pytest.approx(25.0)
+
+
+def test_divergence_guard_spares_hot_last4_jeudy_shape():
+    # Jeudy-shaped breakout: cold season line, last-4 already turned.
+    # The recency prong must NOT fire even though the feed clears the
+    # season line by more than 1.25x.
+    out = _ros("WR", played_games=8, season_ppg=8.56, last4_ppg=17.0,
+               played_last4_team_games=4,
+               windows={"all": [11.41] * 7, "stretch": [11.41] * 4,
+                        "playoffs": [11.41] * 3})
+    assert out["ros_ppg"] == pytest.approx(11.41)
+
+
+def test_divergence_guard_needs_both_prongs():
+    # Feed above season x1.25 but NOT above last-4 x1.25: no fire.
+    assert divergence_guard_cap(
+        20.0, played_games=8, season_ppg=15.0, last4_ppg=16.5,
+        played_last4_team_games=4) == pytest.approx(20.0)
+    # Feed above last-4 x1.25 but not season x1.25: no fire.
+    assert divergence_guard_cap(
+        20.0, played_games=8, season_ppg=16.5, last4_ppg=15.0,
+        played_last4_team_games=4) == pytest.approx(20.0)
+
+
+def test_divergence_guard_games_minimums():
+    # Under 7 played games: no fire, however extreme the divergence.
+    assert divergence_guard_cap(
+        19.36, played_games=6, season_ppg=13.95, last4_ppg=11.97,
+        played_last4_team_games=4) == pytest.approx(19.36)
+    # Fewer than 3 of his team's last 4 games: no fire (a returner's
+    # thin recent log is not evidence about the feed).
+    assert divergence_guard_cap(
+        19.36, played_games=9, season_ppg=13.95, last4_ppg=11.97,
+        played_last4_team_games=2) == pytest.approx(19.36)
+    # A caller that does not track team-game appearances: no fire.
+    assert divergence_guard_cap(
+        19.36, played_games=9, season_ppg=13.95, last4_ppg=11.97,
+        played_last4_team_games=None) == pytest.approx(19.36)
+    # Missing season or last-4 line: no fire, never a guess.
+    assert divergence_guard_cap(
+        19.36, played_games=9, season_ppg=None, last4_ppg=11.97,
+        played_last4_team_games=4) == pytest.approx(19.36)
+    assert divergence_guard_cap(
+        19.36, played_games=9, season_ppg=13.95, last4_ppg=None,
+        played_last4_team_games=4) == pytest.approx(19.36)
+
+
+def test_divergence_guard_default_off_without_team_games_input():
+    # compute_player_ros callers that pass no played_last4_team_games
+    # (every pre-guard caller) keep the unguarded numbers byte-exact.
+    out = _ros("WR", played_games=8, season_ppg=13.95, last4_ppg=11.97,
+               windows={"all": [19.36] * 7, "stretch": [19.36] * 4,
+                        "playoffs": [19.36] * 3})
+    assert out["ros_ppg"] == pytest.approx(19.36)
+
+
+def test_divergence_guard_caps_qb_blended_input():
+    # QB: the cap reads the FINAL blended PPG (the backtest's feed_ppg
+    # is the production input, blend included), not the raw forward
+    # projection. Blend of fwd 34 / form 18 / season 19 at full
+    # weights is 24.7; cap = max(19, 18) * 1.25 = 23.75.
+    out = _ros("QB", is_team_top=True, played_games=9, season_ppg=19.0,
+               last4_ppg=18.0, last4_games=4, played_last4_team_games=4,
+               windows={"all": [34.0, 34.0], "stretch": [34.0],
+                        "playoffs": [34.0]})
+    assert out["ros_ppg"] == pytest.approx(23.75)
 
 
 # ── Window series math ──────────────────────────────────────────────────────
@@ -1924,6 +2021,28 @@ def test_ros_disk_cache_roundtrip_and_signature_gate(tmp_path, monkeypatch):
     # A different data signature is a miss, never a stale serve.
     other = (2026, 11, (("sleeper_stats_s2026_w10.json", 9.9),))
     assert rr._read_ros_disk_cache(2026, other) is None
+
+
+def test_ros_disk_cache_build_version_invalidates_pre_guard_payload(
+        tmp_path, monkeypatch):
+    # The cache key carries ROS_BUILD_VERSION: a payload persisted by
+    # a pre-guard build under the SAME data signature (the old
+    # 3-element key shape) must never be served to the guarded build.
+    import utils.ros_rankings as rr
+
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
+    sig = (("sleeper_stats_s2026_w10.json", 1.5),)
+    payload = {"players": {"1": {"ros_ppg": 20.0}},
+               "window": {"start_week": 11, "end_week": 17},
+               "tier_thresholds_ros": {}, "tier_thresholds_ros_vor": {},
+               "updated": "November 22, 2026"}
+    old_key = (2026, 11, sig)
+    rr._write_ros_disk_cache(2026, old_key, payload)
+    new_key = (2026, 11, rr.ROS_BUILD_VERSION, sig)
+    assert rr._read_ros_disk_cache(2026, new_key) is None
+    # The versioned key itself round-trips.
+    rr._write_ros_disk_cache(2026, new_key, payload)
+    assert rr._read_ros_disk_cache(2026, new_key) == payload
 
 
 def test_load_ros_map_serves_precomputed_disk_cache(tmp_path, monkeypatch):
