@@ -13,10 +13,12 @@ def build_players_shell() -> str:
       <div class="card-body" style="padding-top:0;">
 
         <!-- Controls: merged header rows (approved rework). Row 1 pairs the
-             title with the Dynasty / Redraft + 1QB / SF toggles and search;
+             title with the Dynasty / Redraft / ROS toggle and search;
              Row 2 pairs the sliding-pill sort with the position pills and
-             Legend / Settings pinned right. On phones the stack collapses to
-             title row, search, full-width sort pill, position pills, count. -->
+             Legend / Settings pinned right (the Settings button opens the
+             panel holding league format, league size and TE premium). On
+             phones the stack collapses to title row, search, full-width
+             sort pill, position pills, Settings row, count. -->
         <div class="filter-controls-container">
           <!-- Row 1: title, format toggles, search -->
           <div class="filter-row filter-row-primary pr-head-row1">
@@ -29,10 +31,9 @@ def build_players_shell() -> str:
               <button type="button" class="pr-segbtn" data-value="redraft" onclick="prSetScoringType('redraft')">Redraft</button>
               <button type="button" class="pr-segbtn" data-value="ros" onclick="prSetScoringType('ros')">Rest of Season</button>
             </div>
-            <div class="pr-seg pr-seg-sm" role="group" aria-label="League format" id="prFormatSeg">
-              <button type="button" class="pr-segbtn active" data-value="1qb" onclick="prSetLeagueType('1qb')">1QB</button>
-              <button type="button" class="pr-segbtn" data-value="sf" onclick="prSetLeagueType('sf')">SF</button>
-            </div>
+            <!-- League format (1QB / SF) and league size live in the
+                 Settings panel, not inline: one Settings button opens
+                 all settings together (Kaedon, 2026-11-22). -->
             <!-- Search -->
             <div class="filter-search">
               <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
@@ -117,6 +118,11 @@ def build_players_shell() -> str:
                   </div>
                 </div>
               </span>
+              <!-- Current-settings summary: the active league's format,
+                   size and scoring basis at a glance, next to the
+                   Settings button (approved ROS mock, Kaedon 2026-11-22).
+                   Filled by updateSettingsIndicator() in rankings.js. -->
+              <span id="prSettingsSummary" class="pr-settings-summary"></span>
               <!-- Settings button -->
               <span style="position:relative;">
               <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
@@ -141,7 +147,7 @@ def build_players_shell() -> str:
                     <button class="settings-toggle" data-value="playoffs" id="prRosPlayoffsBtn" onclick="prSetRosWindow('playoffs')">Playoffs</button>
                   </div>
                 </div>
-                <div class="settings-section">
+                <div class="settings-section" id="prFormatSection">
                   <span class="settings-section-label">League Format</span>
                   <div class="settings-toggle-group">
                     <button class="settings-toggle active" data-value="1qb" onclick="prSetLeagueType('1qb')">1QB</button>
@@ -623,6 +629,18 @@ def build_players_shell() -> str:
         font-size: 11px;
         font-weight: 600;
       }
+      /* Current-settings summary next to the Settings button (approved
+         ROS mock, Kaedon 2026-11-22): one muted line, bold navy
+         segments — "1QB · 12 team · PPR" — filled by
+         updateSettingsIndicator() in rankings.js. */
+      .pr-settings-summary {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--text-muted);
+        white-space: nowrap;
+        align-self: center;
+      }
+      .pr-settings-summary b { color: var(--accent); font-weight: 800; }
       .filter-sort-group {
         display: flex;
         align-items: center;
@@ -678,7 +696,7 @@ def build_players_shell() -> str:
          pinned to one line so it can never wrap and push Row 2 down. */
       .pr-head-row1 {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto minmax(190px, 240px);
+        grid-template-columns: minmax(0, 1fr) auto minmax(190px, 240px);
         align-items: center;
         justify-content: stretch;
         gap: 14px;
@@ -1077,7 +1095,9 @@ def build_players_shell() -> str:
         /* Phone control stack (approved rework): title row, search,
            full-width sliding sort pill with equal segments, one nowrap
            row of six equal-flex position pills, then the count line.
-           No settings/tags row on phones. */
+           The Settings / Legend buttons stay visible on phones
+           (Kaedon, 2026-11-22: he could not find league settings at
+           all when the whole pinned-right group was hidden). */
         .pr-head-row1 .page-title { font-size: 20px; }
         /* Phone stack stays the flex layout it was approved as; the
            fixed-track grid above is for the wider header only. The
@@ -1086,7 +1106,6 @@ def build_players_shell() -> str:
         .pr-head-row1 { display: flex; flex-wrap: wrap; gap: 8px; }
         .pr-titleblock .page-head-sub { white-space: normal; overflow: visible; text-overflow: clip; }
         .pr-titleblock { flex: 1 1 auto; }
-        #prFormatSeg { display: none; }
         .pr-head-row1 .filter-search {
           order: 3;
           flex: 1 1 100%;
@@ -1094,7 +1113,21 @@ def build_players_shell() -> str:
           margin-left: 0;
         }
         .filter-row-secondary { flex-wrap: wrap; gap: 8px; }
-        .pr-grouplab, .pr-vdiv, .pr-pinright { display: none; }
+        .pr-grouplab, .pr-vdiv { display: none; }
+        .pr-pinright { display: flex; flex: 1 1 100%; justify-content: flex-end; margin-left: 0; }
+        /* ROS plain list on phones: the Exp. Games cell is hidden at
+           this width (its number already rides the row's meta line),
+           so the ROS grid collapses to rank | player. The photo + name
+           group anchors LEFT at the start of the player track (mock
+           approved by Kaedon, 2026-11-22): a centered group floated
+           mid-row and read as a mistake once the Value column was
+           gone, so the row is a fixed left-anchored grid instead —
+           rank, photo, name + role, meta line under. */
+        #prTableScroll.pr-ros-plain .pr-grid-row:not(.pr-adp-mode) {
+          grid-template-columns: 40px minmax(0, 1fr) !important;
+        }
+        #prTableScroll.pr-ros-plain #prTotalHeader { display: none !important; }
+        #prTableScroll.pr-ros-plain .pr-name { justify-content: flex-start; }
         .pr-sort-toggle { flex: 1 1 100%; }
         .pr-sort-toggle button { flex: 1; padding: 7px 0; font-size: 12px; }
         .pr-sort-full { display: none; }

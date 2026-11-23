@@ -726,29 +726,56 @@ def assign_ros_ranks(ros_by_pid: Dict[str, dict],
                 fields[rank_key] = i
 
 
-def _ros_tier_thresholds_for_values(rows: List[Tuple[Optional[str], float]]) -> list:
-    """Scale-normalized drop thresholds for one list of (position, value).
+def _ros_gap_tier_thresholds(values: List[float]) -> list:
+    """Tier breaks from the drop-offs in THIS ordered ROS list itself.
 
-    The shared drop-based algorithm is calibrated for dynasty values (its
-    span cap and fallback live around 1000), while ROS numbers top out
-    near 200, so the values are scaled onto that range for the computation
-    and the thresholds scaled back. A pool too thin or too smooth to tier
-    returns [] (no dividers) rather than dynasty-scale numbers.
+    Kaedon (2026-11-22): ROS tiers must be based on the ROS rankings.
+    The breaks are the largest gaps between consecutive players in the
+    list being tiered (the All view's VOR order for the current format /
+    size, a position view's ROS score/total order), where a gap counts
+    as a drop-off when it is at least 2.5x the list's own median gap.
+    Nothing is borrowed from the dynasty value tiering: no dynasty span
+    cap, no dynasty fallback thresholds, no rescaling onto the dynasty
+    range. Breaks are chosen largest-first with at least 3 players per
+    tier, at most 8 breaks (T1..T9). A list with no real drop-off (a
+    perfectly smooth ladder) returns [] — no dividers — rather than
+    manufactured breaks.
     """
-    from utils.tier_thresholds import FALLBACK_THRESHOLDS, compute_tier_thresholds
+    vals = sorted((float(v) for v in values if v is not None), reverse=True)
+    n = len(vals)
+    if n < 6 or vals[0] <= 0:
+        return []
+    gaps = [vals[i] - vals[i + 1] for i in range(n - 1)]
+    pos_gaps = sorted(g for g in gaps if g > 0)
+    if not pos_gaps:
+        return []
+    median_gap = pos_gaps[len(pos_gaps) // 2]
+    if median_gap <= 0:
+        return []
+    cands = [i for i, g in enumerate(gaps) if g >= 2.5 * median_gap]
+    cands.sort(key=lambda i: -gaps[i])
+    bounds: List[int] = []
+    for i in cands:
+        if len(bounds) >= 8:
+            break
+        lo = max([b for b in bounds if b < i], default=-1)
+        hi = min([b for b in bounds if b > i], default=n - 1)
+        if i - lo >= 3 and hi - i >= 3:
+            bounds.append(i)
+    if not bounds:
+        return []
+    return [round((vals[b] + vals[b + 1]) / 2.0, 1) for b in sorted(bounds)]
 
-    top = max((v for _pos, v in rows), default=0.0)
-    if len(rows) < 6 or top <= 0:
-        return []
-    factor = 1000.0 / top
-    remapped = [
-        {"position": pos, "value": v * factor, "sf_value": v * factor}
-        for pos, v in rows
-    ]
-    thresholds = compute_tier_thresholds(remapped, "1qb", 10)
-    if len(thresholds) < 2 or list(thresholds) == list(FALLBACK_THRESHOLDS):
-        return []
-    return [round(v / factor, 1) for v in thresholds]
+
+def _ros_tier_thresholds_for_values(rows: List[Tuple[Optional[str], float]]) -> list:
+    """Tier thresholds for one ROS list of (position, value) rows.
+
+    The values are the ROS numbers the list itself orders by (VOR totals
+    for the All view, ROS scores/totals for position views, per window /
+    format / size), and the breaks come straight from that list's own
+    gaps via _ros_gap_tier_thresholds.
+    """
+    return _ros_gap_tier_thresholds([v for _pos, v in rows])
 
 
 def compute_ros_tier_thresholds(ros_by_pid: Dict[str, dict],
