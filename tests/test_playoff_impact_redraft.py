@@ -70,6 +70,20 @@ def test_playoff_impact_js_skips_future_outlook_in_redraft():
     assert 'pi-section-label">Future Outlook' in body
 
 
+def test_pi_stat_labels_and_before_values_never_ellipsize():
+    # Regression (Kaedon's phone screenshot, 2026-11-22): "PLAYOFF OD...",
+    # "PRIME YRS L..." and before values like "99..." / "14..." were
+    # clipped by nowrap + text-overflow:ellipsis on the 3-col phone grid.
+    html = build_trade_calculator_body("L1", 2026, scoring_type="dynasty")
+    for selector in (".pi-stat-label", ".pi-stat-before"):
+        start = html.find(selector + " {")
+        block = html[start:html.find("}", start)]
+        assert "text-overflow:ellipsis" not in block, selector
+        assert "overflow:hidden" not in block, selector
+    label_block = html[html.find(".pi-stat-label {"):html.find("}", html.find(".pi-stat-label {"))]
+    assert "white-space:normal" in label_block
+
+
 def test_api_skips_future_outlook_for_redraft():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     start = src.find("def api_trade_eval_playoff_impact")
