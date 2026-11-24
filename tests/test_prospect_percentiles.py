@@ -415,10 +415,10 @@ class TestReceipt:
 class TestGradeRendered:
     """Grades are back (Kaedon, 2026-11-23): the shipped page renders the
     numeric prospect grade on the board (Grade column) and in the modal
-    (Prospect Grade hero card). The pre-rework dense grade renderers stay
-    gone. The board carries no prospect tag chips (Kaedon, 2026-11-23):
-    the labeled tier divider lines name each band group instead; the
-    modal keeps its Prospect Tag card."""
+    (the report-card header band). The pre-rework dense grade renderers
+    stay gone. The board carries no prospect tag chips (Kaedon,
+    2026-11-23): the labeled tier divider lines name each band group
+    instead; the modal's band surfaces in the grade context line."""
 
     FIXTURE_SCORE = 91.58
 
@@ -429,18 +429,27 @@ class TestGradeRendered:
         assert "rk-dense" not in html
         assert "rkDense" not in html
         assert 'pm-hero-label">Prospect Score' not in html
-        assert "Grade Breakdown" not in html
+        # The Grade Breakdown section (component percentile rows) is
+        # part of the report-card modal; it is not the old renderer.
+        assert "Grade Breakdown" in html
+        assert "rkRcRenderGrade" in html
+        assert "rkRcGradeSection" in html
         # The grade display pieces are present.
         assert "rkGradeCell" in html
         assert "pr-grade" in html
         assert '<span class="th-r">Grade</span>' in html
-        assert 'pm-hero-label">Prospect Grade' in html
-        assert "rkHeroGradeVal" in html
+        assert 'rc-grade-label">Prospect Grade' in html
+        assert "rkRcGrade" in html
         # The other display pieces are present.
         assert "rkBoardRow" in html
         assert "rkPoolLine" in html
         assert "tag-chip" in html
-        assert "rkHeroReceipt" in html
+        assert "rkRcHeroNote" in html
+        # Archetype evidence is one plain-text line (middot-separated),
+        # not pills: the chip class is gone.
+        assert "rc-arch-ev" in html
+        assert "rc-ev-sep" in html
+        assert "rc-ev-chip" not in html
         # The board shows no prospect tag chip and no Tag column: the
         # tier lines carry the band. (The modal's tag-chip surfaces
         # above stay.)
@@ -494,51 +503,50 @@ class TestGradeRendered:
         assert "91.6" not in blob
 
 
-class TestModalBandClasses:
-    """The modal's band tint is one CSS variable driven by a band class;
-    every band the API can emit has a matching class definition."""
+class TestReportCardBand:
+    """The report-card header carries the band as the tag label in the
+    grade context line (e.g. "WR1 · Great Prospect"); the API's band
+    keys are unchanged."""
 
-    @pytest.mark.parametrize("band", ["elite", "great", "average", "day3"])
-    def test_band_class_defined(self, band):
+    def test_band_label_rendered_in_grade_context(self):
         html = build_prospects_body(False)
-        assert f"#rkModalContent.rk-band-{band}" in html
-        assert "--band:" in html
+        assert "rc-band-name" in html
+        assert "tag.label" in html
+        assert "rkRcContext" in html
 
-    def test_band_applied_from_player_tag(self):
-        html = build_prospects_body(False)
-        assert "rkApplyBand" in html
-        assert "'rk-band-' + tag.band" in html
-        # The API's band keys are exactly the four classes above.
+    def test_band_keys_unchanged(self):
         for score in (95.0, 85.0, 75.0, 60.0):
             assert ra.prospect_tag(score)["band"] in (
                 "elite", "great", "average", "day3")
 
 
-class TestContextStripGuards:
-    """The context strip omits a side that does not exist: the positional
-    #1 has nobody to chase, the last player has nobody chasing him."""
+class TestClassStandingGuards:
+    """The Class Standing panel omits the chased-by note for the last
+    player at the position (nobody is behind him)."""
 
-    def test_chasing_side_guarded_by_index(self):
+    def test_chased_by_guarded_by_index(self):
         html = build_prospects_body(False)
-        assert "if (idx > 0) html += side('Chasing'" in html
-        assert "if (idx < peers.length - 1) html += side('Chased by'" in html
+        assert "ctx.idx < ctx.peers.length - 1" in html
+        assert "Chased by" in html
 
 
-class TestRookieDraftCard:
-    """The Rookie Draft hero card renders only from a real ADP row
-    (avg_pick on the board payload); no row, no card."""
+class TestClassStandingPanel:
+    """The Class Standing panel replaces the old hero cards; its
+    mock-pick row renders only from a real consensus row."""
 
-    def test_card_gated_on_avg_pick(self):
+    def test_standing_panel_and_pick_gate(self):
         html = build_prospects_body(False)
-        assert "rkRookiePickLabel" in html
-        assert "if (rookiePick)" in html
-        assert "Dynasty rookie draft" in html
+        assert "rkRcRenderStanding" in html
+        assert "Class Standing" in html
+        assert "if (mockPick != null)" in html
+        assert "r.projected_pick" in html
+        assert "r.projected_round" in html
 
 
 class TestAdvancedPercentileOnly:
     """Advanced rows carry a numeric value for percentile computation;
     the Efficiency/Production rows are component scores, flagged so the
-    percentile-only Advanced tab excludes them."""
+    report-card Metric Breakdown excludes them."""
 
     SEASONS = [
         {"season": 2025, "games_played": 13, "receiving_yards": 1540,

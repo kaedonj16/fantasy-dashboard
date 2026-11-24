@@ -553,16 +553,13 @@ class TestStorageAndDisplay:
         assert 'detail["in_season"]' in src
 
     def test_breakdown_hides_missing_athleticism(self):
-        # The modal breakdown renders the Athleticism row only when
-        # the stored score is non-null; in-season redistribution keeps
-        # it NULL, so the row (and the projected floor presentation)
-        # never appears for an in-season grade.
+        # Report-card modal: the Metric Breakdown renders stored-stat
+        # rows only (raw value present, component rows excluded);
+        # athleticism is never an advanced row, so a missing or
+        # redistributed athleticism score can never surface there. A
+        # row whose pool cannot support a percentile shows the empty
+        # bar, never a fabricated number.
         from dashboard_services.pages.rookies_page import build_prospects_body
         body = build_prospects_body()
-        # Native modal (PR #2693): percentile rows render only for a
-        # non-null percentile; the API returns a null athleticism
-        # percentile for untested players, so the row is omitted. The
-        # pre-rework modal's "if (r.athleticism_score != null)" guard is
-        # superseded by this null-percentile skip in rkRenderPercentiles.
-        assert "if (p == null) return;" in body
-        assert "returns a null percentile otherwise, and the row is omitted" in body
+        assert "a.raw != null && !a.component" in body
+        assert "rc-mbar empty" in body

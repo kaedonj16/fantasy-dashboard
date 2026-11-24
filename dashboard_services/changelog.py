@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-24",
+        "tag": "update",
+        "text": "Prospect profiles are now a single report card: grade, projected NFL role, production chart, season lines, metric percentiles, comparables, and scouting notes on one scroll, no tabs.",
+        "link": "/prospects"
+    },
+    {
         "date": "2026-11-23",
         "tag": "update",
         "text": "Prospect grades are back on the rookie board: every prospect now shows his numeric grade, on the board and beside his tag when you open his profile. The board's tag chips are gone; the tier lines name each group instead.",
