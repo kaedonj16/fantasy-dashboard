@@ -293,7 +293,14 @@ def _injury_context_map(full_players: Dict[str, Any]) -> Dict[str, Dict[str, Any
 
 def derive_lifecycle(result: Dict[str, Any], previous: Optional[Dict[str, Any]],
                      cutoff_week: int, watchlist_min: float) -> Dict[str, Any]:
-    """Deterministic lifecycle transition, separated for replay/tests."""
+    """Deterministic lifecycle transition, separated for replay/tests.
+
+    weekly-v7 adds the staleness read: when the player's recent window is
+    identical to the previous snapshot's (evidence frozen) and he has not
+    played for 2+ weeks, a previously flagged player is "stale" - his
+    score moved only because the decay clock ran, not because anything
+    about his role changed. Checked before cooling/confirmed/rising so a
+    mechanical decay drop is never misread as a role cooling off."""
     previous_score = float(previous.get("breakout_score") or 0) if previous else None
     previous_evidence = (previous or {}).get("evidence") or {}
     if isinstance(previous_evidence, str):
@@ -302,6 +309,39 @@ def derive_lifecycle(result: Dict[str, Any], previous: Optional[Dict[str, Any]],
         except ValueError:
             previous_evidence = {}
     previous_lifecycle = previous_evidence.get("lifecycle") or {}
+    # weekly-v7: freeze detection. The previous row's recent weeks come
+    # from its stored row (or its evidence); the current result carries
+    # its own. Missing on either side means "cannot tell" - never frozen.
+    def _recent_weeks_of(res_or_row, evidence):
+        weeks = (res_or_row or {}).get("recent_weeks")
+        if weeks is None:
+            weeks = (evidence or {}).get("recent_weeks")
+        if isinstance(weeks, str):
+            try:
+                weeks = json.loads(weeks)
+            except ValueError:
+                weeks = None
+        if not isinstance(weeks, (list, tuple)):
+            return None
+        out = set()
+        for w in weeks:
+            try:
+                out.add(int(w))
+            except (TypeError, ValueError):
+                return None
+        return out
+
+    current_recent = _recent_weeks_of(result, result.get("evidence"))
+    previous_recent = _recent_weeks_of(previous, previous_evidence)
+    weeks_since_active = result.get("weeks_since_active")
+    try:
+        weeks_since_active = int(weeks_since_active) if weeks_since_active is not None else None
+    except (TypeError, ValueError):
+        weeks_since_active = None
+    evidence_frozen = bool(
+        previous is not None and current_recent is not None
+        and previous_recent is not None and current_recent == previous_recent
+        and weeks_since_active is not None and weeks_since_active > 0)
     flagged = float(result.get("breakout_score") or 0) >= watchlist_min
     prior_streak = int(previous_lifecycle.get("consecutive_flagged_weeks") or 0)
     score_change = (round(float(result["breakout_score"]) - previous_score, 1)
@@ -311,6 +351,9 @@ def derive_lifecycle(result: Dict[str, Any], previous: Optional[Dict[str, Any]],
     elif not flagged and previous_score >= watchlist_min:
         state = ("graduated" if prior_streak >= 4 and
                  float(result.get("current_role_score") or 0) >= 50 else "invalidated")
+    elif (evidence_frozen and weeks_since_active is not None
+          and weeks_since_active >= 2 and previous_score >= watchlist_min):
+        state = "stale"
     elif score_change is not None and score_change <= -8:
         state = "cooling"
     elif prior_streak >= 2 and result.get("classification") == "emerging_breakout":
@@ -325,7 +368,9 @@ def derive_lifecycle(result: Dict[str, Any], previous: Optional[Dict[str, Any]],
     return {"previous_score": previous_score, "score_change": score_change,
             "first_detected_week": first_week,
             "consecutive_flagged_weeks": prior_streak + 1 if flagged else 0,
-            "lifecycle_state": state}
+            "lifecycle_state": state,
+            "evidence_frozen": evidence_frozen,
+            "weeks_since_active": weeks_since_active}
 
 def run_weekly_breakout(
     context: ScoringContext,
@@ -358,6 +403,9 @@ def run_weekly_breakout(
     weekly_metrics = importlib.import_module("data_building.weekly_metrics")
     from data_building.breakout_engine.weekly_breakout import (
         score_player, SCORING_VERSION, WATCHLIST_MIN_SCORE,
+        assign_tier, classify_week_status, positional_finishes,
+        split_windows, starter_tier_weeks,
+        STATUS_ACTIVE, STATUS_ACTIVE_NO_USAGE,
     )
     from data_building.breakout_engine import weekly_store
     if players_index_override is None:
@@ -447,6 +495,32 @@ def run_weekly_breakout(
                 value = by_week.get(int(row.get("week") or 0))
                 if value is not None:
                     row["ppr_over_expected"] = value
+    # weekly-v7 two-tier inputs: positional finishes over the same series
+    # the scorer consumes, so starter-tier weeks (and therefore tiers)
+    # are computed from exactly the data the calls are scored on. The
+    # scorer needs the before-recent-window flag per player (its Recap
+    # Risk Index input); the tier itself is assigned after scoring from
+    # the before-call flag + the index, decoupled from call path.
+    tier_week_map = starter_tier_weeks(raw_series, positional_finishes(raw_series))
+
+    def _starter_flags(pid: str, series: List[Dict[str, Any]]):
+        """(starter_tier_before_recent_window, starter_tier_before_call)
+        for one player at this run's cutoff, using the scorer's own
+        active-row classification and window split for the recent window."""
+        rows = [dict(row) for row in series
+                if isinstance(row.get("week"), (int, float))]
+        rows.sort(key=lambda row: int(row["week"]))
+        active = [row for row in rows
+                  if classify_week_status(row, int(row["week"]), None)
+                  in (STATUS_ACTIVE, STATUS_ACTIVE_NO_USAGE)]
+        recent_rows, _baseline = split_windows(active)
+        recent_weeks = [int(row["week"]) for row in recent_rows]
+        tier_weeks = tier_week_map.get(str(pid), [])
+        before_window = bool(recent_weeks and
+                             any(w < min(recent_weeks) for w in tier_weeks))
+        before_call = bool(tier_weeks)
+        return before_window, before_call
+
     telemetry: Dict[str, Any] = {
         "raw_rows": sum(len(rows) for rows in raw_series.values()),
         "raw_players": len(raw_series),
@@ -515,6 +589,8 @@ def run_weekly_breakout(
                              meta.get("draft_round")),
             "depth_chart_order": feed_meta.get("depth_chart_order"),
         }
+        _st_before_window, _st_before_call = _starter_flags(str(pid), series)
+        player["_starter_tier_before_recent_window"] = _st_before_window
         res = score_player(
             player, series,
             prior_baseline=prior.get(str(pid)),
@@ -525,6 +601,8 @@ def run_weekly_breakout(
         baseline_counts[source] = baseline_counts.get(source, 0) + 1
         if source != "none":
             telemetry["baseline_attached"] += 1
+        res["starter_tier_before_call"] = _st_before_call
+        res["tier"] = assign_tier(_st_before_call, res.get("recap_risk_score"))
         previous = previous_scores.get(str(pid))
         res["previous_breakout_status"] = ((previous or {}).get("classification")
                                            if previous else None)
@@ -564,6 +642,8 @@ def run_weekly_breakout(
                 "final_score": res.get("breakout_score"),
                 "provisional": bool(res.get("provisional")),
                 "classification": res.get("classification"),
+                "tier": res.get("tier"),
+                "call_path": res.get("call_path"),
                 "established_player": bool(res.get("established_player")),
                 "main_board_eligible": bool(res.get("main_board_eligible")),
                 "rejection_reasons": rejection,

@@ -23209,9 +23209,32 @@ def page_breakouts(platform: str, season: int, league_id: str):
         const start = (currentPage - 1) * PAGE_SIZE;
         const visible = filtered.slice(start, start + PAGE_SIZE);
 
-        let html = _boBoardTopHtml(filtered) + '<div class="breakout-grid">';
-        visible.forEach((candidate, i) => {{ html += renderBreakoutCard(candidate, start + i); }});
-        html += '</div>';
+        let html = _boBoardTopHtml(filtered);
+        // Weekly boards render in two tier sections (weekly-v7, Option A):
+        // Breaking Out (predictive calls) first, then Confirming (calls on
+        // players who already posted a starter-tier week, or recap-risk
+        // flagged). Both tiers are surfaced and graded; the split is a
+        // label, never a filter. Offseason boards keep the single grid.
+        const _isWeeklyBoard = visible.length > 0 && (visible[0].weekly === true || visible[0].mode === 'weekly');
+        if (_isWeeklyBoard) {{
+          const _pairs = visible.map((c, i) => [c, start + i]);
+          const _boPairs = _pairs.filter(p => p[0].tier !== 'confirming');
+          const _confPairs = _pairs.filter(p => p[0].tier === 'confirming');
+          if (_boPairs.length) {{
+            html += '<div class="bo-tier-head">Breaking Out</div><div class="breakout-grid">';
+            _boPairs.forEach(p => {{ html += renderBreakoutCard(p[0], p[1]); }});
+            html += '</div>';
+          }}
+          if (_confPairs.length) {{
+            html += '<div class="bo-tier-head">Confirming<div class="bo-tier-sub">Already producing at a starter level. These calls say the role holds, not that it is coming.</div></div><div class="breakout-grid">';
+            _confPairs.forEach(p => {{ html += renderBreakoutCard(p[0], p[1]); }});
+            html += '</div>';
+          }}
+        }} else {{
+          html += '<div class="breakout-grid">';
+          visible.forEach((candidate, i) => {{ html += renderBreakoutCard(candidate, start + i); }});
+          html += '</div>';
+        }}
 
         // Pagination controls
         if (totalPages > 1) {{
@@ -23388,6 +23411,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
             ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
                  <span style="font-size:13px;font-weight:800;color:var(--text);">${{candidate.classification_label || 'Weekly Watchlist'}}</span>
                  <span style="font-size:11px;padding:2px 7px;border-radius:8px;background:var(--surface-alt);color:var(--text-muted);">${{Math.round(parseFloat(candidate.confidence || 0))}}% confidence</span>
+                 ${{candidate.tier_label ? '<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:8px;background:var(--accent-soft, var(--surface-alt));color:var(--text);">' + candidate.tier_label + '</span>' : ''}}
                  ${{candidate.provisional ? '<span style="font-size:11px;font-weight:800;color:#f59e0b;" title="Provisional: based on limited early data, signal may strengthen as more games are played.">PROVISIONAL</span>' : ''}}
                </div>
                <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">${{candidate.score_basis === 'initial_role' ? 'Initial Role Score · No prior NFL baseline' : 'Role Change Score'}} · ${{candidate.sample && candidate.sample.recent_games ? candidate.sample.recent_games + ' recent game' + (candidate.sample.recent_games === 1 ? '' : 's') : 'Through Week ' + (candidate.as_of_week || '?')}}${{candidate.lifecycle_state ? ' · ' + candidate.lifecycle_state.replace('_', ' ') : ''}}</div>`

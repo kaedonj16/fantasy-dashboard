@@ -32,6 +32,16 @@ per-week ``ppr_over_expected`` values the runner merges onto each row from
 ``player_weekly_advanced_metrics``; it never touches breakout_score, and
 missing production data is exactly neutral.
 
+Since v7 (see the SCORING_VERSION note below), the scorer also runs a
+fast track: a dual jump window (last 2 games vs everything before) that
+can promote a clean first usage jump to the main board without waiting
+for the held 3-game trend, a divergence component that rewards usage
+rising ahead of points, a Recap Risk Index, staleness decay/expiry for
+evidence that stopped moving, and a two-tier label (Breaking Out /
+Confirming) assigned by the caller from the stored starter-tier and
+recap-risk fields. The injury-event trigger from the design is NOT
+shipped in v7; injury context is handled exactly as in v6.
+
 Everything in this module is pure and DB-free: ``score_player`` takes plain lists
 of weekly-row dicts so it can be unit-tested without Postgres. The thin DB layer
 (loading rows, refreshing data, persisting results) lives in
@@ -50,7 +60,25 @@ from utils.core import clamp as _clamp
 
 # Bump when the scoring math changes so persisted rows are self-identifying and a
 # stale row can be told apart from a current-version one.
-SCORING_VERSION = "weekly-v6"
+SCORING_VERSION = "weekly-v7"
+# weekly-v7 (shipped 2026-11-24, fix-design.md in the breakout audit):
+# v7.2 composition = the v7 fast track (dual jump window, FAST_TRACK_CAP,
+# divergence component, production-quality confidence bonus zeroed for
+# fast-track calls), the two-tier board (Breaking Out / Confirming, tier
+# decoupled from call path), the v7 Recap Risk Index, staleness decay +
+# expiry, and the v7.1 fixes (fast-track weight renormalization over
+# available signals; rush-first RB role floor). The strengthened v7.1
+# Recap Risk Index (Fix 3) is NOT included: it discriminated no better
+# than chance across the backtest cohort.
+# Accepted exceptions Kaedon signed off on: Makai Lemon-type calls can
+# land 0.3 below the emerging line (divergence is 0 when production has
+# already arrived, which pulls the fast-track blend under 42), and the
+# lead-time target is unmet because jump-week scores of 0-18 sit below
+# the 30 surfacing floor (sub-floor detection is a separate design).
+# NOT SHIPPED: the section 1a injury-event trigger from the design. It
+# was never validated (no injury context exists in any backtest cache),
+# so injury_context handling below is exactly the v6 behavior; it ships
+# only after a live-feed validation.
 
 _POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -100,6 +128,31 @@ CURRENT_ROLE_WEIGHTS = {
 # A single game's fantasy output this many times the baseline, with no matching
 # usage growth, is flagged as efficiency/TD-driven rather than a role change.
 FANTASY_SPIKE_RATIO = 1.8
+
+# weekly-v7: fast-track cap, staleness decay/expiry (fix-design.md S1/S3).
+FAST_TRACK_CAP = 55.0
+STALE_DECAY_PER_WEEK = 0.85
+STALE_EXPIRY_WEEKS = 3
+
+# weekly-v7.1 (Fix 2): rush-first RB floor. The RB emerging floor anchor for
+# carry opportunity is 10.0 opp/g (ROLE_QUALITY_FLOORS); _absolute_role_score
+# treats 2x a floor as a full role. A back at >= 1.5x the carry anchor with
+# at least half his team's snaps has a starter-level rushing role even when
+# his receiving work is below the 3.0 targets/g second-hit requirement.
+RUSH_FIRST_CARRY_OPP_PG = 15.0    # 1.5 x ROLE_QUALITY_FLOORS["RB"]["carry_opportunity_pg"]
+RUSH_FIRST_MIN_SNAP_PCT = 50.0
+
+# Two-tier board (Option A): a surfaced call is Confirming when the player
+# had already posted a starter-tier week at/before the call or the Recap
+# Risk Index reaches the flag line; otherwise it is Breaking Out. Tier is
+# computed from these call-time fields for every call, whatever path
+# surfaced it (tier is decoupled from call path).
+STARTER_TIER_CUTOFFS = {"QB": 12, "RB": 24, "WR": 24, "TE": 12}
+RECAP_RISK_CONFIRMING_MIN = 40.0
+TIER_BREAKING_OUT = "breaking_out"
+TIER_CONFIRMING = "confirming"
+TIER_LABELS = {TIER_BREAKING_OUT: "Breaking Out", TIER_CONFIRMING: "Confirming"}
+
 
 # Production-quality confidence modifier (v6). The breakout score stays purely
 # role-based; confidence additionally asks whether the player is PRODUCING
@@ -437,6 +490,7 @@ def _position_signals(
     baseline: List[Dict],
     *,
     initial_role: bool = False,
+    renormalize: bool = False,
 ) -> Tuple[Dict[str, Dict[str, Any]], float]:
     """Compute per-signal growth detail and the combined role-change score for a
     position. Returns (signals, role_score) where role_score is 0-100.
@@ -479,6 +533,7 @@ def _position_signals(
     rz_b = _rz_opportunities_pg(baseline)
 
     signals: Dict[str, Dict[str, Any]] = {}
+    _role_weights: Optional[Dict[str, float]] = None
     snap = _share_growth(snap_b, snap_r, allow_initial=initial_role)
     signals["snap_share"] = snap
 
@@ -494,10 +549,11 @@ def _position_signals(
             route_part_b, route_part_r, allow_initial=initial_role)
         high_value = _count_growth(rz_b, rz_r, 3.0, allow_initial=initial_role)
         signals["high_value_opportunities_pg"] = high_value
-        role_score = _weighted_score(signals, {
+        _role_weights = {
             "route_participation": .35, "target_share": .35, "targets_pg": .22,
             "high_value_opportunities_pg": .08,
-        })
+        }
+        role_score = _weighted_score(signals, _role_weights)
 
     elif position == "RB":
         # Opportunity = carries + targets per game (NOT touches: receptions depend
@@ -514,10 +570,11 @@ def _position_signals(
         signals["routes_pg"] = routes
         high_value = _count_growth(rz_b, rz_r, 3.0, allow_initial=initial_role)
         signals["high_value_opportunities_pg"] = high_value
-        role_score = _weighted_score(signals, {
+        _role_weights = {
             "carry_opportunity_pg": .60, "targets_pg": .22,
             "routes_pg": .08, "high_value_opportunities_pg": .10,
-        })
+        }
+        role_score = _weighted_score(signals, _role_weights)
 
     elif position == "QB":
         signals["dropback_share"] = _share_growth(
@@ -526,12 +583,23 @@ def _position_signals(
         rush_g = _count_growth(car_b, car_r, _FULL_RUSH_PG["QB"], allow_initial=initial_role)
         signals["pass_att_pg"] = pass_g
         signals["rush_pg"] = rush_g
-        role_score = _weighted_score(signals, {
+        _role_weights = {
             "dropback_share": .35, "pass_att_pg": .45, "rush_pg": .20,
-        })
+        }
+        role_score = _weighted_score(signals, _role_weights)
 
     else:
         role_score = _clamp(snap["points"], 0.0, 100.0)
+
+    if renormalize and _role_weights:
+        # weekly-v7.1 (Fix 1): a signal missing for DATA reasons (e.g. no
+        # routes feed) is unknown, not a zero. Renormalize the fixed weights
+        # over the signals that are actually available - the same convention
+        # _blend and _absolute_role_score already use for missing components.
+        avail_w = sum(w for k, w in _role_weights.items()
+                      if (signals.get(k) or {}).get("available"))
+        if 0.0 < avail_w < 1.0:
+            role_score = role_score / avail_w
 
     return signals, round(role_score, 1)
 
@@ -717,6 +785,131 @@ def _build_reasons(
     return reasons
 
 
+def _meaningful_role_for(position: str, signals: Dict[str, Dict[str, Any]]) -> bool:
+    """Position role-floor check (same logic score_player applies to the
+    standard window) evaluated on an arbitrary signal set - used for the
+    v7 jump window."""
+    floors = ROLE_QUALITY_FLOORS.get(position, {})
+    hits = [k for k, f in floors.items()
+            if (signals.get(k) or {}).get("recent") is not None
+            and float(signals[k]["recent"]) >= f]
+    route_avail = bool((signals.get("route_participation") or {}).get("available"))
+    if position in ("WR", "TE"):
+        targets = float((signals.get("targets_pg") or {}).get("recent") or 0)
+        tshare = float((signals.get("target_share") or {}).get("recent") or 0)
+        return (("route_participation" in hits and
+                 ("target_share" in hits or "targets_pg" in hits))
+                if route_avail else (targets >= 5 and tshare >= 15))
+    if position == "QB":
+        return ("dropback_share" in hits and
+                ("pass_att_pg" in hits or "rush_pg" in hits))
+    if "carry_opportunity_pg" in hits and len(hits) >= 2:
+        return True
+    # weekly-v7.1 rush-first path (see RUSH_FIRST_* constants)
+    carry_recent = (signals.get("carry_opportunity_pg") or {}).get("recent")
+    snap_recent = (signals.get("snap_share") or {}).get("recent")
+    return (carry_recent is not None and float(carry_recent) >= RUSH_FIRST_CARRY_OPP_PG
+            and snap_recent is not None and float(snap_recent) >= RUSH_FIRST_MIN_SNAP_PCT)
+
+
+def _adequate_coverage_for(position: str, signals: Dict[str, Dict[str, Any]],
+                           coverage: float) -> bool:
+    route_avail = bool((signals.get("route_participation") or {}).get("available"))
+    if position in ("WR", "TE"):
+        return bool((signals.get("target_share") or {}).get("available") and
+                    (route_avail or (signals.get("targets_pg") or {}).get("available")))
+    return coverage >= .5
+
+
+def _recap_risk(*, trend_state, persistence, recent_ppg, baseline_ppg,
+                   key_recent, key_baseline, recent_pts,
+                   starter_before_window, injury_vacated, multi_week):
+    """Recap Risk Index (fix-design.md S2). All inputs are at-call-time
+    fields. Injury-vacated openings are exempt per Kaedon's ruling."""
+    score = 0.0
+    flags = []
+    if trend_state in ("reversal", "volatile"):
+        score += 25; flags.append("trend_reversal_or_volatile")
+    if persistence is not None and persistence < 0.5:
+        score += 20; flags.append("usage_persistence_below_0.5")
+    if recent_ppg is not None and baseline_ppg not in (None, 0):
+        ratio = recent_ppg / baseline_ppg
+        usage_ratio = (key_recent / key_baseline
+                       if key_recent is not None and key_baseline not in (None, 0) else None)
+        if ratio >= 2.5 and usage_ratio is not None and ratio > 1.5 * usage_ratio:
+            score += 25; flags.append("production_outrunning_opportunity")
+    pts = [float(x) for x in recent_pts if x is not None]
+    if pts and sum(pts) > 0 and max(pts) >= 0.65 * sum(pts):
+        score += 15; flags.append("single_game_point_concentration")
+    if starter_before_window:
+        score += 15; flags.append("starter_tier_week_before_recent_window")
+    if injury_vacated:
+        score -= 30; flags.append("injury_vacated_exemption")
+        if multi_week:
+            score -= 10; flags.append("multi_week_absence_exemption")
+    return max(0.0, score), flags
+
+
+def positional_finishes(
+    series_by_player: Dict[str, Sequence[Dict[str, Any]]],
+) -> Dict[Tuple[str, int], int]:
+    """{(player_id, week): positional finish} ranking each week's PPR
+    points within the position across every player with a row that week.
+    Pure helper for the runner/API tier computation; the rows are the
+    same weekly-metrics rows the scorer consumes (each carries its own
+    position and ppr_pts)."""
+    by_week_pos: Dict[Tuple[int, str], List[Tuple[str, float]]] = {}
+    for pid, rows in series_by_player.items():
+        for r in rows:
+            pos = str(r.get("position") or "").upper()
+            pts = _num(r.get("ppr_pts"))
+            wk = _num(r.get("week"))
+            if pos not in STARTER_TIER_CUTOFFS or pts is None or wk is None:
+                continue
+            by_week_pos.setdefault((int(wk), pos), []).append((str(pid), pts))
+    finishes: Dict[Tuple[str, int], int] = {}
+    for (wk, pos), entries in by_week_pos.items():
+        entries.sort(key=lambda e: -e[1])
+        for i, (pid, _pts) in enumerate(entries, start=1):
+            finishes[(pid, wk)] = i
+    return finishes
+
+
+def starter_tier_weeks(
+    series_by_player: Dict[str, Sequence[Dict[str, Any]]],
+    finishes: Optional[Dict[Tuple[str, int], int]] = None,
+) -> Dict[str, List[int]]:
+    """{player_id: [weeks]} the player posted a starter-tier weekly
+    finish (QB top 12, RB/WR top 24, TE top 12 by PPR points)."""
+    if finishes is None:
+        finishes = positional_finishes(series_by_player)
+    out: Dict[str, List[int]] = {}
+    for pid, rows in series_by_player.items():
+        weeks = []
+        for r in rows:
+            pos = str(r.get("position") or "").upper()
+            wk = _num(r.get("week"))
+            if pos not in STARTER_TIER_CUTOFFS or wk is None:
+                continue
+            if finishes.get((str(pid), int(wk)), 999) <= STARTER_TIER_CUTOFFS[pos]:
+                weeks.append(int(wk))
+        out[str(pid)] = sorted(weeks)
+    return out
+
+
+def assign_tier(starter_tier_before_call: bool,
+                recap_risk_score: Optional[float]) -> str:
+    """Two-tier label (Option A), decoupled from call path: Confirming
+    iff the player had already posted a starter-tier week at/before the
+    call OR the Recap Risk Index reaches the flag line; Breaking Out
+    otherwise. Applied identically to standard and fast-track calls."""
+    if starter_tier_before_call:
+        return TIER_CONFIRMING
+    if recap_risk_score is not None and float(recap_risk_score) >= RECAP_RISK_CONFIRMING_MIN:
+        return TIER_CONFIRMING
+    return TIER_BREAKING_OUT
+
+
 # =============================================================================
 # top-level pure scorer
 # =============================================================================
@@ -881,6 +1074,62 @@ def score_player(
         (70.0 if established_evidence else 0.0) + min(30.0, float(prior_baseline.get("games") or 0) * 2.0)
         if prior_baseline else 0.0, 0.0, 100.0)
 
+    # ── weekly-v7: dual (jump) window + fast-track gate ─────────────
+    # Jump window: recent = last 2 active games, baseline = everything before
+    # them (falling back to the standard baseline rows - e.g. the prior-season
+    # pseudo-row - when the player has only the 2 jump games).
+    if len(active) >= 2:
+        jump_recent = list(active[-2:])
+        jump_baseline_active = list(active[:-2])
+    else:
+        jump_recent, jump_baseline_active = list(active), []
+    jump_baseline_rows = jump_baseline_active if jump_baseline_active else list(baseline_rows)
+    jump_signals, jump_role_raw = _position_signals(
+        position, jump_recent, jump_baseline_rows,
+        initial_role=(score_basis == "initial_role"), renormalize=True)
+    jump_change_score = None if score_basis == "initial_role" else jump_role_raw
+    jump_diag = _signal_diagnostics(position, jump_signals)
+    jump_current_role = _absolute_role_score(position, jump_signals)
+    _pkey = "snap_pct" if position == "QB" else (
+        "target_share" if position in ("WR", "TE") else "snap_pct")
+    jump_persistence = _persistence_factor(jump_recent, jump_baseline_rows, _pkey)
+    meaningful_jump = _meaningful_role_for(position, jump_signals)
+    adequate_jump = _adequate_coverage_for(
+        position, jump_signals,
+        (sum(1 for v in jump_signals.values() if v.get("available")) /
+         max(1, len(jump_signals))))
+    garbage_jump = bool(jump_recent and any(bool(r.get("garbage_time")) for r in jump_recent))
+    novelty_jump = (None if jump_change_score is None or established_role_penalty <= 0
+                    else _clamp(jump_change_score - established_role_penalty, 0.0, 100.0))
+    expectation_jump = (None if expected_role is None else
+                        _clamp(50.0 + jump_current_role - expected_role, 0.0, 100.0))
+    # Novelty/expectation gate element: passes on novelty >= 15 or expectation
+    # >= 50. When BOTH inputs are unknown (no depth-chart / draft-capital data
+    # reaches the scorer - true of the offline reconstruction caches), the
+    # element is not evaluable and, per the engine's missing-evidence
+    # philosophy (unknown components drop out rather than fail), does not
+    # block. Recorded as novelty_expectation_evaluable in the evidence.
+    novelty_expectation_evaluable = not (novelty_jump is None and expectation_jump is None)
+    novelty_elem_ok = bool(
+        (novelty_jump is not None and novelty_jump >= 15) or
+        (expectation_jump is not None and expectation_jump >= 50) or
+        not novelty_expectation_evaluable)
+    fast_track_gate = bool(
+        score_basis == "role_change" and len(jump_recent) >= 2 and jump_baseline_rows
+        and meaningful_jump and jump_diag["supporting_signal_count"] >= 2
+        and not jump_diag["conflicting_signals"]
+        and jump_persistence is not None and jump_persistence >= 0.5
+        and not established_evidence and not garbage_jump and adequate_jump
+        and novelty_elem_ok)
+    jump_recent_ppg, _ = _mean_present(jump_recent, "ppr_pts")
+    jump_baseline_ppg, _ = _mean_present(jump_baseline_rows, "ppr_pts")
+    if (jump_recent_ppg is not None and jump_baseline_ppg not in (None, 0)
+            and jump_change_score is not None):
+        _prod_idx = _clamp((jump_recent_ppg / jump_baseline_ppg - 1.0) * 50.0, 0.0, 100.0)
+        divergence_score = _clamp(jump_change_score - _prod_idx, 0.0, 100.0)
+    else:
+        divergence_score = None
+
     # ── fantasy context: opportunity BEFORE production ────────────────────────
     # ppr is never part of the score. We only use it to (a) report and (b) flag a
     # points spike unmatched by role growth as a risk, so a TD/long-play game
@@ -905,6 +1154,14 @@ def score_player(
     # moves confidence only - the breakout score above stays role-based.
     production_quality = _production_quality(recent, baseline_rows)
     conf_detail["production_quality"] = production_quality
+    if fast_track_gate:
+        # weekly-v7: producing already is not evidence a *prediction* is
+        # right; the v6 production-quality bonus is zeroed for fast-track
+        # (predictive) calls. Held-trend calls keep it unchanged, because
+        # for a confirmation production genuinely is the evidence.
+        production_quality = dict(production_quality, adjustment=0.0,
+                                  zeroed_for_predictive_tier=True)
+        conf_detail["production_quality"] = production_quality
     confidence = round(_clamp(
         confidence - 7.5 * len(diagnostics["conflicting_signals"])
         + production_quality["adjustment"], 0.0, 100.0), 1)
@@ -937,6 +1194,7 @@ def score_player(
         sustainability -= 35.0
     sustainability = round(_clamp(sustainability, 0.0, 100.0), 1)
 
+    call_path = "standard"
     if score_basis == "initial_role":
         # Initial-role formula: current relevance dominates; novelty can reward
         # an unexpected late-round/depth-chart rise, but cannot fabricate change.
@@ -974,6 +1232,28 @@ def score_player(
         final_score = max(0.0, final_score - 5.0 * len(diagnostics["conflicting_signals"]))
         # Supporting context can rank a real change; it cannot manufacture one.
         final_score *= min(1.0, change_score / WATCHLIST_MIN_SCORE)
+        # weekly-v7 fast track: re-blend on the jump window with the
+        # divergence component, no 0.80-style discount, capped at
+        # FAST_TRACK_CAP. Only replaces the standard score when it is
+        # higher (a call that also confirms via the held trend keeps its
+        # score), and only takes over the score / call_path when the
+        # standard score is below the emerging line - a call the standard
+        # path already confirms at >= EMERGING stays a standard call even
+        # if the fast blend is a rounding-level amount higher.
+        if fast_track_gate and jump_change_score is not None:
+            _ft = _blend([
+                (0.45, float(jump_change_score)),
+                (0.10, jump_current_role),
+                (0.15, divergence_score),
+                (0.10, sustainability),
+                (0.10, novelty_jump),
+                (0.10, expectation_jump),
+            ])
+            _ft *= min(1.0, float(jump_change_score) / WATCHLIST_MIN_SCORE)
+            _ft = min(_ft, FAST_TRACK_CAP)
+            if _ft > final_score and final_score < EMERGING_MIN_SCORE:
+                final_score = _ft
+                call_path = "fast_track"
     final_score = round(final_score, 1)
     pre_provisional_adjustment_score = final_score
     if len(active) == 1:
@@ -983,6 +1263,10 @@ def score_player(
         final_score = min(final_score, 39.5 if not established_evidence else 17.9)
     if garbage_time:
         final_score = round(final_score * .25, 1)
+    # weekly-v7 staleness: evidence that stopped moving decays, then expires.
+    stale_expired = weeks_stale >= STALE_EXPIRY_WEEKS
+    if weeks_stale > 0:
+        final_score = round(final_score * (STALE_DECAY_PER_WEEK ** weeks_stale), 1)
     # Provisionals are already penalized for thin samples twice over (capped or
     # shrunk score, discounted confidence); soften the confidence multiplier so
     # the ranking does not double-count the same uncertainty.
@@ -1007,7 +1291,13 @@ def score_player(
         meaningful_role = ("dropback_share" in quality_hits and
                            ("pass_att_pg" in quality_hits or "rush_pg" in quality_hits))
     else:
-        meaningful_role = "carry_opportunity_pg" in quality_hits and len(quality_hits) >= 2
+        # weekly-v7.1: standard two-hit floor OR the rush-first path
+        _carry_recent = (signals.get("carry_opportunity_pg") or {}).get("recent")
+        _snap_recent = (signals.get("snap_share") or {}).get("recent")
+        meaningful_role = (
+            ("carry_opportunity_pg" in quality_hits and len(quality_hits) >= 2)
+            or (_carry_recent is not None and float(_carry_recent) >= RUSH_FIRST_CARRY_OPP_PG
+                and _snap_recent is not None and float(_snap_recent) >= RUSH_FIRST_MIN_SNAP_PCT))
 
     non_snap_support = diagnostics["supporting_signal_count"]
     adequate_coverage = ((signals.get("target_share") or {}).get("available") and
@@ -1031,8 +1321,11 @@ def score_player(
         rejection_reasons.append("insufficient_opportunity_data_coverage")
     if len(active) == 1 and not exceptional_one_game:
         rejection_reasons.append("one_game_evidence_not_exceptional")
+    if stale_expired:
+        rejection_reasons.append("stale_evidence_expired")
     main_board_eligible = not rejection_reasons and (
-        len(active) >= 2 and trend["persistent"] and final_score >= EMERGING_MIN_SCORE)
+        (len(active) >= 2 and trend["persistent"] and final_score >= EMERGING_MIN_SCORE)
+        or (fast_track_gate and final_score >= EMERGING_MIN_SCORE))
     classification = _classify_final_evidence(
         final_score=final_score,
         recent_games=len(active),
@@ -1044,6 +1337,35 @@ def score_player(
         garbage_time=garbage_time,
         provisional=provisional,
     )
+
+    if (call_path == "fast_track" and final_score >= EMERGING_MIN_SCORE
+            and meaningful_role and diagnostics["supporting_signal_count"] >= MIN_SUPPORTING_SIGNALS
+            and not stale_expired):
+        classification = "emerging_breakout"
+    if stale_expired and classification in (
+            "emerging_breakout", "early_watch", "temporary_opportunity"):
+        classification = "watchlist"
+
+    # weekly-v7 Recap Risk Index. The starter-tier-before-window flag is
+    # supplied by the caller via player["_starter_tier_before_recent_window"]
+    # (positional finishes need the full position field, which the pure
+    # scorer does not hold; the runner computes it from the same weekly
+    # rows it already loads). Baseline PPG falls back to the player's
+    # prior-season PPG (player["prior_fantasy_ppg"], the same fallback
+    # the audit used) when the in-season baseline window carries no points.
+    _rri_key = "target_share" if position in ("WR", "TE") else "snap_share"
+    _rri_base_ppg = baseline_ppg if baseline_ppg is not None else _num(player.get("prior_fantasy_ppg"))
+    recap_risk_score, recap_risk_flags = _recap_risk(
+        trend_state=trend["state"],
+        persistence=conf_detail["persistence"],
+        recent_ppg=recent_ppg,
+        baseline_ppg=_rri_base_ppg,
+        key_recent=(signals.get(_rri_key) or {}).get("recent"),
+        key_baseline=(signals.get(_rri_key) or {}).get("baseline"),
+        recent_pts=[_num(r.get("ppr_pts")) for r in recent],
+        starter_before_window=bool(player.get("_starter_tier_before_recent_window")),
+        injury_vacated=injury_vacated,
+        multi_week=bool((injury_context or {}).get("multi_week")))
 
     if garbage_time:
         opportunity_source = "garbage_time"
@@ -1124,6 +1446,17 @@ def score_player(
         "early_watch": classification == "early_watch",
         "main_board_eligible": main_board_eligible,
         "main_board_rejection_reasons": rejection_reasons,
+        "call_path": call_path,
+        "fast_track_eligible": bool(fast_track_gate),
+        "change_score_jump": _round(jump_change_score),
+        "divergence_score": _round(divergence_score),
+        "novelty_expectation_evaluable": bool(novelty_expectation_evaluable),
+        "recap_risk_score": recap_risk_score,
+        "recap_risk_flags": recap_risk_flags,
+        "starter_tier_before_recent_window": bool(
+            player.get("_starter_tier_before_recent_window")),
+        "weeks_since_active": weeks_stale,
+        "stale_expired": bool(stale_expired),
         "baseline_method": ("healthy_prior_role" if baseline_source == "prior_season" else
                             "current_season_non_overlapping_windows" if baseline_source == "current_season"
                             else "initial_role_no_baseline"),

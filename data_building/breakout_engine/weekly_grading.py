@@ -1056,7 +1056,47 @@ def is_surfaced_row(row: Dict[str, Any]) -> bool:
 # (BREAKOUT_SURFACED_MIN_SCORE). Kept as a literal here so this module
 # never imports the API layer.
 SURFACED_MIN_SCORE = 30.0
-SURFACED_REPEAT_WINDOW_WEEKS = 3
+# weekly-v7: the re-surfacing cooldown is 6 weeks (was 3), and a player
+# inside the window can re-surface early only with materially new
+# evidence (see _has_new_evidence): a score jump of at least
+# RESURFACING_SCORE_JUMP or a starter-tier week posted since the last
+# call. Identical repeats (the Ferguson/Wayne pattern) fail both legs.
+SURFACED_REPEAT_WINDOW_WEEKS = 6
+RESURFACING_SCORE_JUMP = 5.0
+
+
+def starter_tier_weeks_by_player(season: int, through_week: int):
+    """{player_id: [weeks]} the player posted a starter-tier weekly
+    finish, from the same weekly-metrics series the engine reads.
+    Fails soft to {} (the new-evidence test then rests on score jumps
+    alone)."""
+    try:
+        from data_building.breakout_engine.weekly_breakout import (
+            starter_tier_weeks)
+        series = load_season_series(int(season), int(through_week))
+        return starter_tier_weeks(series)
+    except Exception:
+        logger.warning("weekly grading: starter-tier load failed",
+                       exc_info=True)
+        return {}
+
+
+def _has_new_evidence(player_id: str, week: int, score,
+                      last_week: int, last_score,
+                      tier_map) -> bool:
+    """Materially new evidence since a player's last surfaced call: the
+    score jumped by at least RESURFACING_SCORE_JUMP, or the player
+    posted a starter-tier week in (last_week, week]."""
+    if score is not None and last_score is not None:
+        try:
+            if float(score) - float(last_score) >= RESURFACING_SCORE_JUMP:
+                return True
+        except (TypeError, ValueError):
+            pass
+    for w in (tier_map or {}).get(str(player_id), []):
+        if int(last_week) < int(w) <= int(week):
+            return True
+    return False
 
 
 def _row_evidence(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -1102,51 +1142,88 @@ def _is_pool_eligible_row(row: Dict[str, Any]) -> bool:
     return True
 
 
-def surfaced_player_ids_by_week(season: int) -> Dict[int, Set[str]]:
-    """{week: {player_id, ...}}: the players actually surfaced on the
-    board each week, the one canonical surfaced definition.
+def _surfaced_walk(season: int):
+    """(by_week, history) for the canonical surfaced definition.
 
-    Weeks are walked ascending over completed weeks; only each week's
+    by_week: {week: {player_id, ...}}; history: {player_id:
+    [(week, score), ...]} of actual surfaced calls, ascending. Weeks
+    are walked ascending over completed weeks; only each week's
     SERVING run counts (a high score in some other completed run for
     the same week was never shown to anyone). A pool-eligible player
     (see :func:`_is_pool_eligible_row`) is surfaced in a week only if
-    they were not surfaced in any of the previous
-    ``SURFACED_REPEAT_WINDOW_WEEKS`` weeks, matching the board's
-    no-repeat rule: a player surfaced in week W is not a new call again
-    in weeks W+1 through W+3. Fails soft to ``{}`` on any error; an
-    absent week means "could not determine", a present week with an
-    empty set means nobody surfaced that week.
+    he was not surfaced within the previous
+    ``SURFACED_REPEAT_WINDOW_WEEKS`` weeks - or, inside that window,
+    only with materially new evidence since the last call (see
+    :func:`_has_new_evidence`). An absent week in by_week means
+    "could not determine", a present week with an empty set means
+    nobody surfaced that week. Raises on store errors; callers fail
+    soft.
     """
-    try:
-        from data_building.breakout_engine import weekly_store
+    from data_building.breakout_engine import weekly_store
 
-        completed = weekly_store.list_completed_weeks(int(season)) or []
-        weeks = sorted({
-            int(r["as_of_week"]) for r in completed
-            if isinstance(r, dict) and r.get("as_of_week") is not None
-        })
-        out: Dict[int, Set[str]] = {}
-        for week in weeks:
-            run = weekly_store.get_serving_run(int(season), week)
-            if not run or run.get("id") is None:
-                out[week] = set()
+    completed = weekly_store.list_completed_weeks(int(season)) or []
+    weeks = sorted({
+        int(r["as_of_week"]) for r in completed
+        if isinstance(r, dict) and r.get("as_of_week") is not None
+    })
+    tier_map = (starter_tier_weeks_by_player(int(season), max(weeks))
+                if weeks else {})
+    out: Dict[int, Set[str]] = {}
+    history: Dict[str, List[Tuple[int, Optional[float]]]] = {}
+    last: Dict[str, Tuple[int, Optional[float]]] = {}
+    for week in weeks:
+        run = weekly_store.get_serving_run(int(season), week)
+        if not run or run.get("id") is None:
+            out[week] = set()
+            continue
+        surfaced: Set[str] = set()
+        week_scores: Dict[str, Optional[float]] = {}
+        for row in weekly_store.load_run_score_rows(run["id"]) or []:
+            if not isinstance(row, dict) or not _is_pool_eligible_row(row):
                 continue
-            surfaced: Set[str] = set()
-            for row in weekly_store.load_run_score_rows(run["id"]) or []:
-                if not isinstance(row, dict) or not _is_pool_eligible_row(row):
+            pid = str(row.get("player_id") or "")
+            if not pid:
+                continue
+            score = _score(row.get("breakout_score"))
+            prev = last.get(pid)
+            if prev is not None and week - prev[0] <= SURFACED_REPEAT_WINDOW_WEEKS:
+                if not _has_new_evidence(pid, week, score,
+                                         prev[0], prev[1], tier_map):
                     continue
-                pid = str(row.get("player_id") or "")
-                if not pid:
-                    continue
-                if any(pid in out.get(w, ())
-                       for w in range(week - SURFACED_REPEAT_WINDOW_WEEKS,
-                                      week)):
-                    continue
-                surfaced.add(pid)
-            out[week] = surfaced
-        return out
+            surfaced.add(pid)
+            week_scores[pid] = score
+        for pid in surfaced:
+            entry = (week, week_scores.get(pid))
+            last[pid] = entry
+            history.setdefault(pid, []).append(entry)
+        out[week] = surfaced
+    return out, history
+
+
+def surfaced_player_ids_by_week(season: int) -> Dict[int, Set[str]]:
+    """{week: {player_id, ...}}: the players actually surfaced on the
+    board each week, the one canonical surfaced definition (see
+    :func:`_surfaced_walk` for the cooldown + new-evidence rules).
+    Fails soft to ``{}`` on any error."""
+    try:
+        by_week, _history = _surfaced_walk(int(season))
+        return by_week
     except Exception:
         logger.warning("weekly_grading: surfaced-by-week lookup failed",
+                       exc_info=True)
+        return {}
+
+
+def surfaced_call_history(season: int) -> Dict[str, List[Tuple[int, Optional[float]]]]:
+    """{player_id: [(week, score), ...]} of actual surfaced calls,
+    ascending - the same canonical walk as
+    :func:`surfaced_player_ids_by_week`, with scores, for the board's
+    re-surfacing new-evidence test. Fails soft to ``{}``."""
+    try:
+        _by_week, history = _surfaced_walk(int(season))
+        return history
+    except Exception:
+        logger.warning("weekly_grading: surfaced history lookup failed",
                        exc_info=True)
         return {}
 

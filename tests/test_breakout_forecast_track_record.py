@@ -1798,17 +1798,21 @@ def test_surfaced_player_ids_by_week_canonical(monkeypatch):
     # not pool-eligible; the eligible temporary opportunity and the
     # gated initial-role row (evidence as a JSON string) are.
     assert by_week[1] == {"alpha", "tempo", "inithi"}
-    # Week 2: alpha is a repeat of Week 1 and is not a new call; watchy
-    # surfaces now because its Week 1 watchlist row never counted.
-    assert by_week[2] == {"bravo", "watchy"}
+    # Week 2: alpha re-surfaces inside the cooldown because its score
+    # jumped 40.0 -> 45.0, the weekly-v7 new-evidence release (a jump of
+    # 5+ since the last call); watchy surfaces now because its Week 1
+    # watchlist row never counted.
+    assert by_week[2] == {"alpha", "bravo", "watchy"}
     # Week 3: xray surfaces; its 60.0 in the non-serving Week 2 run was
-    # never loaded and never counted.
+    # never loaded and never counted. Alpha's 44.0 is no jump over its
+    # Week 2 call (45.0), so it stays blocked.
     assert by_week[3] == {"xray"}
     assert 999 not in loaded
-    # Alpha stays blocked in Weeks 3 and 4 (the 3 weeks after Week 1)
-    # and is a fresh call again in Week 5.
+    # Alpha stays blocked in Weeks 4 and 5: still inside the 6-week
+    # cooldown from its Week 2 call, with no new evidence (44.0 vs 45.0,
+    # no starter-tier week in between).
     assert by_week[4] == set()
-    assert by_week[5] == {"alpha"}
+    assert by_week[5] == set()
 
 
 def test_recently_surfaced_ids_use_canonical_surfaced_sets(monkeypatch):
@@ -1817,10 +1821,13 @@ def test_recently_surfaced_ids_use_canonical_surfaced_sets(monkeypatch):
 
     assert api._recently_surfaced_player_ids(2026, 2) == {
         "alpha", "tempo", "inithi"}
-    # For the Week 5 board, only Weeks 2-4 block: alpha's Week 1 call
-    # has finished its window and does not block.
+    # For the Week 5 board the cooldown window is 6 weeks (weekly-v7),
+    # so every call surfaced in Weeks 1-4 is in the set, including
+    # alpha's Week 1 and Week 2 calls. (Whether each one actually
+    # blocks is decided per candidate by the new-evidence release in
+    # get_weekly_breakout_candidates.)
     assert api._recently_surfaced_player_ids(2026, 5) == {
-        "bravo", "watchy", "xray"}
+        "alpha", "tempo", "inithi", "bravo", "watchy", "xray"}
 
 
 def test_track_record_still_tracking_includes_open_historical_weeks(monkeypatch):

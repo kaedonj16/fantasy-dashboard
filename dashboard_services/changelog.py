@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-24",
         "tag": "update",
+        "text": "The Breakout Engine board now splits its calls into Breaking Out and Confirming: Breaking Out flags players whose role is jumping before the points arrive, and Confirming tracks players already producing whose new role the engine expects to hold.",
+        "link": "/breakouts"
+    },
+    {
+        "date": "2026-11-24",
+        "tag": "update",
         "text": "Prospect profiles are now a single report card: grade, projected NFL role, production chart, season lines, metric percentiles, comparables, and scouting notes on one scroll, no tabs.",
         "link": "/prospects"
     },

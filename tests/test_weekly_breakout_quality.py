@@ -6,6 +6,14 @@ per-game PPR points over expected (``ppr_over_expected`` on the weekly
 rows). Positive production raises confidence, negative lowers it, and
 missing production data leaves confidence EXACTLY as the pre-v6 engine
 computed it (unknown is neutral, never a penalty).
+
+weekly-v7: for fast-track (predictive) calls the modifier is zeroed -
+producing already is not evidence a prediction is right. The v6
+semantics below are therefore exercised on an established-role player
+(the _series jump trips the fast-track gate for a non-established
+player; an established prior-season role blocks the gate and keeps the
+call on the held-trend path, where the modifier still applies). The
+zeroing itself is pinned by test_fast_track_zeroes_production_quality.
 """
 from data_building.breakout_engine import weekly_breakout as wb
 
@@ -45,11 +53,20 @@ def _quality(result):
     return result["confidence_detail"]["production_quality"]
 
 
+# An established prior-season role: blocks the fast-track gate (the gate
+# requires no established evidence) so the production-quality modifier
+# applies exactly as it did in v6.
+ESTABLISHED_PRIOR = {"snap_pct": 70.0, "target_share": 20.0,
+                     "targets_pg": 6.0, "carries_pg": 0.0,
+                     "pass_att_pg": 0.0, "games": 16}
+
+
 def test_positive_production_raises_confidence_not_score():
-    base = wb.score_player(player(), _series(), cutoff_week=5)
+    base = wb.score_player(player(), _series(), cutoff_week=5,
+                           prior_baseline=ESTABLISHED_PRIOR)
     boosted = wb.score_player(
         player(), _series({1: 0.5, 2: 1.5, 3: 3.0, 4: 3.0, 5: 3.0}),
-        cutoff_week=5)
+        cutoff_week=5, prior_baseline=ESTABLISHED_PRIOR)
     assert boosted["confidence"] > base["confidence"]
     assert boosted["confidence"] == round(base["confidence"] + 6.0, 1)
     assert boosted["breakout_score"] == base["breakout_score"]
@@ -61,10 +78,11 @@ def test_positive_production_raises_confidence_not_score():
 
 
 def test_negative_production_lowers_confidence_not_score():
-    base = wb.score_player(player(), _series(), cutoff_week=5)
+    base = wb.score_player(player(), _series(), cutoff_week=5,
+                           prior_baseline=ESTABLISHED_PRIOR)
     dragged = wb.score_player(
         player(), _series({1: 0.0, 2: -1.0, 3: -3.0, 4: -3.0, 5: -3.0}),
-        cutoff_week=5)
+        cutoff_week=5, prior_baseline=ESTABLISHED_PRIOR)
     assert dragged["confidence"] < base["confidence"]
     assert dragged["confidence"] == round(base["confidence"] - 6.0, 1)
     assert dragged["breakout_score"] == base["breakout_score"]
@@ -75,13 +93,14 @@ def test_negative_production_lowers_confidence_not_score():
 
 
 def test_missing_production_data_leaves_confidence_identical():
-    absent = wb.score_player(player(), _series(), cutoff_week=5)
+    absent = wb.score_player(player(), _series(), cutoff_week=5,
+                             prior_baseline=ESTABLISHED_PRIOR)
     explicit_none = wb.score_player(
         player(), _series({1: None, 2: None, 3: None, 4: None, 5: None}),
-        cutoff_week=5)
+        cutoff_week=5, prior_baseline=ESTABLISHED_PRIOR)
     zero_quality = wb.score_player(
         player(), _series({1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0}),
-        cutoff_week=5)
+        cutoff_week=5, prior_baseline=ESTABLISHED_PRIOR)
     assert absent["confidence"] == explicit_none["confidence"]
     assert _quality(absent) == {"baseline": None, "recent": None,
                                 "adjustment": 0.0, "available": False}
@@ -94,9 +113,11 @@ def test_missing_production_data_leaves_confidence_identical():
 
 def test_adjustment_is_bounded_at_ten_points():
     hot = wb.score_player(
-        player(), _series({4: 20.0, 5: 20.0}), cutoff_week=5)
+        player(), _series({4: 20.0, 5: 20.0}), cutoff_week=5,
+        prior_baseline=ESTABLISHED_PRIOR)
     cold = wb.score_player(
-        player(), _series({4: -20.0, 5: -20.0}), cutoff_week=5)
+        player(), _series({4: -20.0, 5: -20.0}), cutoff_week=5,
+        prior_baseline=ESTABLISHED_PRIOR)
     assert _quality(hot)["adjustment"] == wb.QUALITY_MAX_ADJUSTMENT == 10.0
     assert _quality(cold)["adjustment"] == -wb.QUALITY_MAX_ADJUSTMENT
 
@@ -106,7 +127,7 @@ def test_quality_uses_the_split_windows_not_the_whole_series():
     # the baseline mean is context only.
     result = wb.score_player(
         player(), _series({1: -30.0, 2: -30.0, 3: -30.0, 4: 2.0, 5: 2.0}),
-        cutoff_week=5)
+        cutoff_week=5, prior_baseline=ESTABLISHED_PRIOR)
     q = _quality(result)
     assert result["recent_weeks"] == [3, 4, 5]
     # split_windows(5 games): recent = weeks 3-5, baseline = weeks 1-2.
@@ -145,3 +166,23 @@ def test_store_loader_maps_rows_and_fails_soft(monkeypatch):
 
     monkeypatch.setattr(weekly_store, "get_conn", lambda: BrokenConn())
     assert weekly_store.load_weekly_over_expected(2026, 4) == {}
+
+
+def test_fast_track_zeroes_production_quality():
+    # weekly-v7: the plain _series jump (no established prior role) trips
+    # the fast-track gate, and for those predictive calls the v6
+    # production-quality confidence bonus is zeroed - producing already
+    # is not evidence a prediction is right. Confidence is then identical
+    # with and without production data, and the stored quality block
+    # records the zeroing.
+    base = wb.score_player(player(), _series(), cutoff_week=5)
+    boosted = wb.score_player(
+        player(), _series({1: 0.5, 2: 1.5, 3: 3.0, 4: 3.0, 5: 3.0}),
+        cutoff_week=5)
+    assert base["fast_track_eligible"] is True
+    assert boosted["confidence"] == base["confidence"]
+    q = _quality(boosted)
+    assert q["available"] is True
+    assert q["recent"] == 3.0
+    assert q["adjustment"] == 0.0
+    assert q["zeroed_for_predictive_tier"] is True
