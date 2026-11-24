@@ -2634,6 +2634,14 @@ def fetch_cfbd_targets(
 
 _PLAY_TARGET_MIN_COVERAGE = 0.85
 
+# Finished-season coverage fallback floor (see _validate_game): a feed
+# that records incompletions without naming a target ("QB pass
+# incomplete") can push a sound parse's named coverage well under the
+# gate; for a FINISHED season the exact box-score REC equality is the
+# stronger proof and may override the gate - but never below this
+# floor, so a degenerate payload cannot ride a coincidental match.
+_PLAY_TARGET_COVERAGE_FLOOR = 0.5
+
 # Scoring-summary lines ride along in /plays payloads in a different format
 # ("Legend Bey 25 Yd pass from Luke Fahey (Connor Hawkins Kick)").  They are
 # never counted as plays outright: live verification (Ohio State 2026) showed
@@ -2730,7 +2738,8 @@ def _build_roster_maps(roster_rows) -> Tuple[Dict, Dict, Set[str]]:
     return by_jersey, by_name, all_names
 
 
-def _resolve_receiver(jersey, initial, last_span, by_jersey, by_name) -> Optional[str]:
+def _resolve_receiver(jersey, initial, last_span, by_jersey, by_name,
+                      first_full=None, roster_names=None) -> Optional[str]:
     """
     Resolve a parsed receiver mention to a roster name_lower, or None.
 
@@ -2738,11 +2747,24 @@ def _resolve_receiver(jersey, initial, last_span, by_jersey, by_name) -> Optiona
     that may include trailing play words ("West caught at ...").  Progressively
     shorter surname candidates are tried against the roster maps, longest
     first, so multi-token surnames ("St. Clair") win over their first token.
+
+    When the play text carried the receiver's FULL first name (the
+    no-jersey text form, "pass complete to Kaleb Jackson"), an exact
+    full-name roster hit wins first: two teammates can share a surname
+    AND a first initial (LSU 2023: Kaleb and Kylin Jackson), which makes
+    the (surname, initial) map unusable for both, while the text itself
+    was never ambiguous.
     """
     if not initial:
         return None
     initial = str(initial).lower()
     tokens = re.findall(r"[A-Za-z][A-Za-z'.\-]*", last_span or "")
+    if first_full and roster_names:
+        first = str(first_full).strip().lower()
+        for k in range(len(tokens), 0, -1):
+            cand = f"{first} {' '.join(tokens[:k])}".lower()
+            if cand in roster_names:
+                return cand
     jersey_int = _safe_int(jersey) if jersey is not None else None
     for k in range(len(tokens), 0, -1):
         last_norm = _norm_last_name(" ".join(tokens[:k]))
@@ -2796,8 +2818,10 @@ def _pass_attempt_info(play: Dict[str, Any]):
     Classify one /plays row.
 
     Returns (is_pass_attempt, is_completion, receiver_mention) where
-    receiver_mention is (jersey|None, first_initial, last_name_span) or None
-    when the play names no receiver (thrown away, intercepted, ...).
+    receiver_mention is (jersey|None, first_initial, last_name_span,
+    full_first_name|None) or None when the play names no receiver
+    (thrown away, intercepted, ...).  The full first name is carried
+    only by the no-jersey text form, which spells it out.
     Scoring-summary lines and non-pass plays return (False, False, None).
     """
     text = _play_text(play)
@@ -2818,11 +2842,11 @@ def _pass_attempt_info(play: Dict[str, Any]):
     if verb in ("complete", "incomplete"):
         m = _PLAY_TARGET_JERSEY_RE.search(text)
         if m:
-            mention = (_safe_int(m.group(1)), m.group(2), m.group(3))
+            mention = (_safe_int(m.group(1)), m.group(2), m.group(3), None)
         else:
             m2 = _PLAY_TARGET_NAME_RE.search(text)
             if m2:
-                mention = (None, m2.group(1)[0], m2.group(2))
+                mention = (None, m2.group(1)[0], m2.group(2), m2.group(1))
     return (True, verb == "complete", mention)
 
 
@@ -2869,7 +2893,9 @@ def _derive_game_targets(plays, team, by_jersey, by_name, roster_names=None):
         if mention is None:
             continue
         name = _resolve_receiver(mention[0], mention[1], mention[2],
-                                 by_jersey, by_name)
+                                 by_jersey, by_name,
+                                 first_full=mention[3] if len(mention) > 3 else None,
+                                 roster_names=roster_names)
         if not name:
             continue
         named += 1
@@ -2946,12 +2972,88 @@ def _group_plays_by_game(rows):
     return out
 
 
+def _normalize_team_key(team: Any) -> str:
+    """Comparison key for team names across sources: casefolded,
+    punctuation dropped, whitespace collapsed. Used ONLY to match a
+    requested scope pair against the crawl list - the crawl itself
+    always fetches under the crawl list's own spelling."""
+    text = str(team or "").lower()
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _scope_teams_by_year(
+    teams_by_year: Dict[int, List[str]],
+    team_seasons: Set[Tuple[str, int]],
+) -> Dict[int, List[str]]:
+    """
+    Filter a targets crawl list to the requested (team, season) pairs.
+
+    Matching is by normalized team key (see _normalize_team_key), but
+    the crawl keeps the crawl list's own team spellings. FALLBACK
+    INCLUSION: if any requested team for a season matches no crawl
+    team that season (a naming variant the normalizer cannot bridge),
+    the WHOLE season stays unscoped - a needed pair is never silently
+    dropped over a name. Seasons with no requested pairs are dropped
+    (their stored totals are not seeded either: out of scope means
+    out of scope). Logs requested / matched / crawling counts.
+    """
+    requested: Dict[int, Set[str]] = {}
+    for team, yr in team_seasons:
+        try:
+            requested.setdefault(int(yr), set()).add(team)
+        except (TypeError, ValueError):
+            continue
+    unscoped_total = sum(len(v or []) for v in teams_by_year.values())
+    crawl_seasons = {int(s) for s in teams_by_year}
+    scoped: Dict[int, List[str]] = {}
+    matched = 0
+    for season, teams in teams_by_year.items():
+        season = int(season)
+        want = requested.get(season)
+        if not want:
+            continue
+        crawl_by_key: Dict[str, str] = {}
+        for t in teams or []:
+            crawl_by_key.setdefault(_normalize_team_key(t), t)
+        keep: List[str] = []
+        missing: List[str] = []
+        for t in want:
+            hit = crawl_by_key.get(_normalize_team_key(t))
+            if hit is not None:
+                keep.append(hit)
+            else:
+                missing.append(t)
+        if missing:
+            print(f"[targets-plays] SCOPE FALLBACK {season}: "
+                  f"{len(missing)} requested team(s) match no crawl "
+                  f"team ({', '.join(sorted(missing)[:3])}) - crawling "
+                  f"all {len(teams or [])} teams for the season rather "
+                  f"than dropping a needed pair over a naming variant")
+            scoped[season] = list(teams or [])
+            matched += len(want) - len(missing)
+        else:
+            scoped[season] = sorted(set(keep))
+            matched += len(want)
+    absent = sum(1 for yr in requested if yr not in crawl_seasons)
+    if absent:
+        print(f"[targets-plays] SCOPE NOTE: requested pairs name "
+              f"{absent} season(s) absent from the crawl list "
+              f"(nothing to fetch for them)")
+    print(f"[targets-plays] team_seasons scope: requested "
+          f"{len(team_seasons)} pairs, matched {matched}, crawling "
+          f"{sum(len(v) for v in scoped.values())} team-seasons "
+          f"(unscoped {unscoped_total})")
+    return scoped
+
+
 def fetch_cfbd_targets_from_plays(
     draft_year: int,
     teams_by_year: Dict[int, List[str]],
     adopt_stored: bool = True,
     on_team_season=None,
     time_budget_s: Optional[float] = None,
+    team_seasons: Optional[Set[Tuple[str, int]]] = None,
 ) -> Dict[str, Dict[int, Dict[str, Any]]]:
     """
     Target counts + target share parsed from CFBD play-by-play TEXT.
@@ -2971,7 +3073,13 @@ def fetch_cfbd_targets_from_plays(
     VALIDATION (per game, mandatory): derived receptions per player must
     EQUAL the /games/players box-score REC for that player-game, and named
     receiver coverage (pass plays naming a resolvable receiver / all pass
-    plays: complete + incomplete + intercepted) must be >= 0.85.
+    plays: complete + incomplete + intercepted) must be >= 0.85.  One
+    scoped exception: for a FINISHED season, a game under the coverage
+    gate still validates when its REC equality holds exactly and coverage
+    stays at or above a 0.5 floor - some feeds record incompletions
+    without naming a target ("QB pass incomplete"), which fails coverage
+    even though every completion is named and box-proven.  Current
+    seasons get no exception.
     Completions that exist only as scoring-summary lines first fill the
     derived-vs-box gap per player (capped at the box total), and the REC
     comparison runs on canonical (initial, surname) keys so roster/box
@@ -3001,12 +3109,28 @@ def fetch_cfbd_targets_from_plays(
     weekly pipeline passes a budget so a CFBD outage (429s, timeouts)
     cannot let this sweep consume the step's whole timeout.
 
+    team_seasons (optional): a set of (team, season) pairs restricting
+    the crawl to just those team-seasons (see _scope_teams_by_year for
+    the matching and fallback-inclusion rules).  Unset (the default)
+    means the crawl list is used exactly as passed: every existing
+    caller, including the weekly pipeline's Stage 2 sweep, is
+    unaffected.  The reference-population backfill passes it so a
+    class rebuild crawls only its own draftees' team-seasons instead
+    of every team in the stats feed.
+
     Returns {} on any failure - the pipeline continues without targets.
     """
     if not CFBD_KEY or not teams_by_year:
         if not CFBD_KEY:
             print("[targets-plays] No CFBD_API_KEY - skipping")
         return {}
+
+    if team_seasons is not None:
+        teams_by_year = _scope_teams_by_year(teams_by_year, team_seasons)
+        if not teams_by_year:
+            print("[targets-plays] team_seasons scope matched no "
+                  "team-seasons - nothing to fetch")
+            return {}
 
     today = _today()
     seasons = sorted(teams_by_year)
@@ -3098,7 +3222,20 @@ def fetch_cfbd_targets_from_plays(
         if derived["attempts"] > 0:
             coverage = derived["named"] / derived["attempts"]
             if coverage < _PLAY_TARGET_MIN_COVERAGE:
-                return (False, week_hint)
+                # Finished seasons only: some feeds record incompletions
+                # without naming a target at all ("Jayden Daniels pass
+                # incomplete"), so a sound parse - every completion
+                # named - still fails this gate.  For a finished season
+                # the box score is final truth, and the exact REC
+                # equality below is the stronger proof: let it decide
+                # instead of discarding the game whole, subject to a
+                # coverage floor so a degenerate payload cannot ride a
+                # coincidental match.  Current seasons keep the strict
+                # gate (their box scores are not yet final), so their
+                # behavior is unchanged.
+                if not (season_year < today.year
+                        and coverage >= _PLAY_TARGET_COVERAGE_FLOOR):
+                    return (False, week_hint)
         if week_hint:
             weeks_to_try = [week_hint]
         else:
