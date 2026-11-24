@@ -12014,17 +12014,24 @@ select:focus {
 
 /* ---- Clinch / elimination outlook column ---- */
 .po-outlook {
-    text-align: left;
+    text-align: center;
     white-space: nowrap;
 }
 
 .po-out-pill {
-    display: inline-block;
-    padding: 2px 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 172px;
+    max-width: 100%;
+    height: 30px;
+    padding: 0 10px;
     border-radius: var(--radius-pill);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
-    line-height: 1.7;
+    line-height: 1;
+    text-align: center;
 }
 
 .po-out-clinched {
@@ -12038,13 +12045,13 @@ select:focus {
 }
 
 .po-out-control {
-    background: rgba(59, 130, 246, .15);
-    color: #1d4ed8;
+    background: rgba(56, 189, 248, .18);
+    color: #122d4b;
 }
 
 .po-out-alive {
-    background: rgba(234, 179, 8, .16);
-    color: #a16207;
+    background: rgba(100, 116, 139, .14);
+    color: #475569;
 }
 
 .po-out-dash {
@@ -12080,13 +12087,13 @@ select:focus {
 }
 
 [data-theme="dark"] .po-out-control {
-    background: rgba(59, 130, 246, .20);
-    color: #60a5fa;
+    background: rgba(56, 189, 248, .20);
+    color: #7dd3fc;
 }
 
 [data-theme="dark"] .po-out-alive {
-    background: rgba(234, 179, 8, .18);
-    color: #fbbf24;
+    background: rgba(148, 163, 184, .18);
+    color: #cbd5e1;
 }
 
 /* ---- Power rankings grid ---- */
