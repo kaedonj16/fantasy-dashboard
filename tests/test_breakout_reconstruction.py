@@ -229,8 +229,9 @@ def _patch_store(monkeypatch, serving):
 
 
 def test_reconstruct_week_skips_already_current(monkeypatch):
+    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
     _patch_store(monkeypatch, {
-        "id": 21, "scoring_version": "weekly-v6", "detail": {},
+        "id": 21, "scoring_version": SCORING_VERSION, "detail": {},
         "as_of_date": date(2026, 10, 4),
     })
     monkeypatch.setattr(wr, "run_weekly_breakout",

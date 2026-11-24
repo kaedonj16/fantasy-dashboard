@@ -2126,6 +2126,22 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     animation: spin 1s linear infinite;
 }
 
+/* Weekly breakout two-tier board sections (Breaking Out / Confirming). */
+.bo-tier-head {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 18px 0 10px;
+}
+.bo-tier-head:first-child {
+  margin-top: 0;
+}
+.bo-tier-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
 .breakout-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));

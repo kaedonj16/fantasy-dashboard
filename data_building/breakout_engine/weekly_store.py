@@ -176,6 +176,20 @@ def _result_row(result: Dict[str, Any], season: int, as_of_week: int, as_of_date
             "opportunity_source", "opportunity_source_confidence",
             "opportunity_source_reason")},
         "lifecycle": result.get("lifecycle"),
+        "call_path": result.get("call_path"),
+        "fast_track_eligible": result.get("fast_track_eligible"),
+        "change_score_jump": result.get("change_score_jump"),
+        "divergence_score": result.get("divergence_score"),
+        "recap_risk_score": result.get("recap_risk_score"),
+        "recap_risk_flags": result.get("recap_risk_flags"),
+        "starter_tier_before_call": result.get("starter_tier_before_call"),
+        "starter_tier_before_recent_window": result.get(
+            "starter_tier_before_recent_window"),
+        "tier": result.get("tier"),
+        "weeks_since_active": result.get("weeks_since_active"),
+        "stale_expired": result.get("stale_expired"),
+        "novelty_expectation_evaluable": result.get(
+            "novelty_expectation_evaluable"),
         "reasons": result.get("reasons"),
         "risks": result.get("risks"),
     }
@@ -509,7 +523,7 @@ def load_previous_week_scores(season: int, before_week: int) -> Dict[str, Dict[s
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT DISTINCT ON (s.player_id) s.player_id, s.as_of_week, s.breakout_score, "
-            f"s.classification, s.evidence FROM {WEEKLY_SCORES_TABLE} s "
+            f"s.classification, s.recent_weeks, s.evidence FROM {WEEKLY_SCORES_TABLE} s "
             f"WHERE s.season=%s AND s.as_of_week < %s AND s.scoring_version=%s "
             f"AND EXISTS (SELECT 1 FROM {WEEKLY_RUNS_TABLE} r WHERE r.id=s.run_id "
             f"AND r.status='completed' AND r.completed_at IS NOT NULL "

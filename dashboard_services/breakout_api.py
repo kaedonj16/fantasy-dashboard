@@ -52,10 +52,14 @@ BREAKOUT_BOARD_LIMIT = 15
 
 # Surfaced board floor: every player at or above this score is surfaced as a
 # breakout candidate. No cap; the board shows all qualifiers. Once surfaced,
-# a player is excluded until their 3-week grading window completes (see
-# _recently_surfaced_player_ids).
+# a player sits out a 6-week re-surfacing cooldown (weekly-v7; was 3) and
+# can return inside it only with materially new evidence - a score jump of
+# 5+ or a starter-tier week posted since the last call (see
+# _recently_surfaced_player_ids and _resurfacing_unblocked_ids). The
+# canonical surfaced definition in weekly_grading applies the same rules,
+# so the board and the track record can never disagree.
 BREAKOUT_SURFACED_MIN_SCORE = 30.0
-BREAKOUT_GRADING_WINDOW_WEEKS = 3
+BREAKOUT_GRADING_WINDOW_WEEKS = 6
 
 
 # =============================================================================
@@ -661,6 +665,10 @@ _WEEKLY_SIGNAL_LABELS = {
 _WEEKLY_SIGNAL_UNITS = {
     key: unit for key, (_label, unit) in _ENGINE_SIGNAL_LABELS.items()
 }
+from data_building.breakout_engine.weekly_breakout import (
+    TIER_LABELS as _WEEKLY_TIER_LABELS,
+)
+
 _WEEKLY_CLASS_LABELS = {
     "emerging_breakout": "Emerging Breakout",
     "provisional_emerging": "Provisional Emerging",
@@ -792,6 +800,15 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
         "role_novelty_score": evidence.get("role_novelty_score"),
         "role_novelty_reason": evidence.get("role_novelty_reason"),
         "early_watch": bool(evidence.get("early_watch")),
+        "call_path": evidence.get("call_path"),
+        "recap_risk_score": evidence.get("recap_risk_score"),
+        "recap_risk_flags": evidence.get("recap_risk_flags") or [],
+        "starter_tier_before_call": bool(evidence.get("starter_tier_before_call")),
+        # Two-tier board (weekly-v7, Option A): stored at run time from
+        # the decoupled rule; None on pre-v7 rows, which the board
+        # renders in the Breaking Out section.
+        "tier": evidence.get("tier"),
+        "tier_label": _WEEKLY_TIER_LABELS.get(evidence.get("tier") or ""),
         "main_board_eligible": bool(evidence.get("main_board_eligible")),
         "main_board_rejection_reasons": evidence.get("main_board_rejection_reasons") or [],
         "baseline_method": evidence.get("baseline_method"),
@@ -832,16 +849,18 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
 
 def _recently_surfaced_player_ids(season: int, current_week: int,
                                   window_weeks: int = BREAKOUT_GRADING_WINDOW_WEEKS) -> set:
-    """Player IDs surfaced on the board in the recent grading window.
+    """Player IDs surfaced on the board inside the re-surfacing cooldown.
 
-    A player surfaced in week W is excluded from the board until their
-    3-week grading window completes (weeks W+1 through W+3). This prevents
-    the same player appearing back-to-back while their earlier call is
-    still being graded. "Surfaced" is the canonical definition in
+    A player surfaced in week W is in cooldown for weeks W+1 through
+    W+6 (weekly-v7; the window was 3 before). This prevents the same
+    player appearing back-to-back while their earlier call is still
+    being graded. "Surfaced" is the canonical definition in
     weekly_grading.surfaced_player_ids_by_week: only players who were
     actually on a served board count, so a high raw score in a run or
-    classification the board never showed cannot block anyone. Fails
-    soft to an empty set.
+    classification the board never showed cannot block anyone. Being in
+    this set is necessary but not sufficient to be blocked from the
+    board: _resurfacing_unblocked_ids releases players whose current
+    call carries materially new evidence. Fails soft to an empty set.
     """
     try:
         from data_building.breakout_engine.weekly_grading import (
@@ -854,6 +873,48 @@ def _recently_surfaced_player_ids(season: int, current_week: int,
         return blocked
     except Exception:
         logger.warning("breakout: recently-surfaced lookup failed", exc_info=True)
+        return set()
+
+
+def _resurfacing_unblocked_ids(season: int, current_week: int,
+                               candidates: List[Dict]) -> set:
+    """Subset of the cooldown set that may re-surface at ``current_week``
+    because the new call carries materially new evidence since the
+    player's last surfaced call: a breakout-score jump of at least 5, or
+    a starter-tier week posted in (last_call_week, current_week]. The
+    same test the canonical surfaced walk in weekly_grading applies, so
+    board and track record agree. Fails soft to an empty set (nobody is
+    unblocked on an error - the safe direction)."""
+    try:
+        from data_building.breakout_engine.weekly_grading import (
+            RESURFACING_SCORE_JUMP, starter_tier_weeks_by_player,
+            surfaced_call_history)
+        history = surfaced_call_history(int(season))
+        if not history:
+            return set()
+        tier_map = starter_tier_weeks_by_player(int(season), int(current_week))
+        unblocked: set = set()
+        for c in candidates or []:
+            pid = str(c.get("player_id") or "")
+            prior = [h for h in history.get(pid, [])
+                     if int(h[0]) < int(current_week)]
+            if not prior:
+                continue
+            last_week, last_score = prior[-1]
+            if int(current_week) - int(last_week) > BREAKOUT_GRADING_WINDOW_WEEKS:
+                unblocked.add(pid)
+                continue
+            score = c.get("breakout_score")
+            if (score is not None and last_score is not None
+                    and float(score) - float(last_score) >= RESURFACING_SCORE_JUMP):
+                unblocked.add(pid)
+                continue
+            if any(int(last_week) < int(w) <= int(current_week)
+                   for w in tier_map.get(pid, [])):
+                unblocked.add(pid)
+        return unblocked
+    except Exception:
+        logger.warning("breakout: resurfacing unblock lookup failed", exc_info=True)
         return set()
 
 
@@ -985,8 +1046,12 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     if served_week is not None:
         _excluded = _recently_surfaced_player_ids(season, int(served_week))
         if _excluded:
-            candidates = [c for c in candidates
-                          if str(c.get("player_id") or "") not in _excluded]
+            _unblocked = _resurfacing_unblocked_ids(
+                season, int(served_week), candidates)
+            _blocked = _excluded - _unblocked
+            if _blocked:
+                candidates = [c for c in candidates
+                              if str(c.get("player_id") or "") not in _blocked]
     candidates.sort(key=lambda c: (c.get("ranking_score") if c.get("ranking_score") is not None
                                    else c.get("breakout_score") or 0,
                                    c.get("breakout_score") or 0), reverse=True)
@@ -1050,10 +1115,23 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
                 _c["grade"] = _entry["grade"]
                 _c["grade_detail"] = _entry["grade_detail"]
 
+    # Two-tier split (weekly-v7, Option A) of the final surfaced board:
+    # Breaking Out (predictive calls) and Confirming (calls on players
+    # who had already posted a starter-tier week, or whose Recap Risk
+    # Index flagged). Both tiers are surfaced and graded; the split is a
+    # label, never a filter. Pre-v7 rows carry no tier and render under
+    # Breaking Out.
+    tier_groups = {
+        "breaking_out": [c for c in candidates
+                         if c.get("tier") != "confirming"],
+        "confirming": [c for c in candidates
+                       if c.get("tier") == "confirming"],
+    }
     return {
         "season": season,
         "candidates": candidates,
         **groups,
+        **tier_groups,
         "count": len(candidates),
         "as_of_date": payload.get("as_of_date"),
         "as_of_week": payload.get("as_of_week"),

@@ -26,6 +26,8 @@ import pytest
 
 from data_building.breakout_engine import calibration as cal
 from data_building.breakout_engine import weekly_report as wr
+from data_building.breakout_engine.weekly_breakout import (
+    SCORING_VERSION as CURRENT_VERSION)
 
 AS_OF = datetime(2026, 10, 7, 13, 0)  # a Wednesday, the cron's slot
 RECENT = AS_OF - timedelta(days=2)
@@ -35,7 +37,7 @@ EM_DASH = "—"
 
 def _row(grade="hit", score=50.0, conf=50.0,
          classification="emerging_breakout",
-         version="weekly-v6", graded_at=RECENT, **extra):
+         version=CURRENT_VERSION, graded_at=RECENT, **extra):
     row = {
         "player_id": "p1", "player_name": "Player One", "season": 2026,
         "as_of_week": 2, "grade": grade, "breakout_score": score,
@@ -204,8 +206,8 @@ def test_suggested_conversion_names_constants_and_sample():
     assert plan["investigations"] == []
     line = plan["conversions"][0]
     assert line.startswith("Convert: EMERGING_MIN_SCORE 42 -> 55")
-    assert "SCORING_VERSION weekly-v6 -> weekly-v7" in line
-    assert "based on 250 graded weekly-v6 calls" in line
+    assert f"SCORING_VERSION {CURRENT_VERSION} -> weekly-v8" in line
+    assert f"based on 250 graded {CURRENT_VERSION} calls" in line
     assert line in body
 
 
@@ -234,7 +236,7 @@ def test_below_guard_produces_no_changes_with_counts():
     plan = report["suggested_changes"]
     assert plan["conversions"] == [] and plan["investigations"] == []
     assert "No changes suggested this week." in body
-    assert "Insufficient data: 29 graded calls under weekly-v6" in body
+    assert f"Insufficient data: 29 graded calls under {CURRENT_VERSION}" in body
     assert "(need 30)" in body
 
 
@@ -282,7 +284,7 @@ def test_zero_rows_render_a_short_honest_email():
     assert subject == "Breakout report: no calls graded yet"
     assert "Nothing has been graded yet this season" in body
     assert "Stored weekly data currently reaches week 3." in body
-    assert "No graded calls yet under weekly-v6." in body
+    assert f"No graded calls yet under {CURRENT_VERSION}." in body
     assert "No changes suggested this week." in body
     assert "Hand this email to Muse" in body
     assert len(body.splitlines()) <= 20
