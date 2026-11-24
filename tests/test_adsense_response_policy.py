@@ -171,13 +171,16 @@ def test_sitemap_lists_only_substantive_content_pages(offline_client):
     # body is only a loading state.
     assert not any(p.startswith("/player/") for p in paths)
     for excluded in ("/players", "/trade-intel", "/nfl-teams", "/breakouts",
-                     "/trade-database", "/prospects"):
+                     "/trade-database"):
         assert excluded not in paths, f"{excluded} must not be in the sitemap"
     # Kept: the substantive public content surface, guides included.
+    # /prospects is kept: its top 50 rows server-render, so the served
+    # HTML carries real names and grades like the other rankings boards.
     for kept in ("/", "/trade", "/dynasty-trade-value-chart", "/top-movers",
                  "/rankings/dynasty", "/rankings/dynasty-qb",
                  "/rankings/dynasty-rb", "/rankings/dynasty-wr",
-                 "/rankings/dynasty-te", "/compare", "/pricing", "/privacy",
+                 "/rankings/dynasty-te", "/prospects", "/compare", "/pricing",
+                 "/privacy",
                  "/faq", "/support", "/contact", "/about", "/terms",
                  "/guides", "/glossary", "/guides/dynasty-trade-value"):
         assert kept in paths, f"{kept} must stay in the sitemap"

@@ -3,7 +3,10 @@ Rookies page HTML builder.
 
 Returns the full body HTML for the /<platform>/<season>/<league_id>/rookies route.
 Data is loaded client-side from /api/prospects/rankings so the page is fast and
-the filters/sorts are instant without round-trips.
+the filters/sorts are instant without round-trips. The top 50 rows are also
+server-rendered into the initial HTML (see the SSR section below) so search
+engines and link previews see real names and grades; the client replaces
+them with the full board on load.
 
 Display model (2026-10-17): the board and modal show NO numeric grade.
 They show rank (ordered by the internal grade), a band tag, and component
@@ -23,10 +26,207 @@ direction: it did not match the rest of the site.)
 """
 from __future__ import annotations
 
+import time as _time
+
+# ── Server-rendered board rows (SEO shell) ──────────────────────────────────
+# The board below is client-rendered from /api/prospects/rankings, which
+# left the served HTML an empty shell: no prospect names for search
+# engines or link previews. The top rows are now also rendered on the
+# server, in the exact markup the client's rkBoardRow/rkBandDivider
+# produce, from the same enriched rows the API serves (rookie_api's
+# get_board_rows). On load the client fetches the full board and
+# replaces #rkList wholesale, so the static rows are the initial paint
+# only: no duplicate table, and sorting/filters/modal are untouched.
+# Fail-soft: any data error renders the shell exactly as before (the
+# loading skeleton), and a short TTL cache keeps page renders cheap.
+
+_SSR_LIMIT = 50
+_SSR_TTL_SECONDS = 600
+_ssr_cache: dict = {}
+
+_RK_BAND_COLORS = {"elite": "var(--accent)", "great": "#0ea5e9",
+                   "average": "#64748b", "day3": "#64748b"}
+_RK_BAND_SHORT = {"elite": "Elite", "great": "Great",
+                  "average": "Average", "day3": "Day 3"}
+_RK_PCT_CELLS = (("production", ""), ("efficiency", "pr-eff"),
+                 ("breakout", "pr-brk"))
+
+
+def _rk_esc(s) -> str:
+    """rkEsc parity: escape & < > and double quotes."""
+    return (str("" if s is None else s)
+            .replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _rk_pct(row: dict, key: str):
+    p = (row.get("percentiles") or {}).get(key)
+    if p is None or p == "":
+        return None
+    try:
+        return float(p)
+    except (TypeError, ValueError):
+        return None
+
+
+def _rk_stat_cell(row: dict, key: str, extra_cls: str) -> str:
+    p = _rk_pct(row, key)
+    if p is None:
+        return f'<span class="rk-pct rk-pct-dash {extra_cls}">&ndash;</span>'
+    txt = str(int(p)) if p.is_integer() else str(p)
+    return f'<span class="rk-pct {extra_cls}">{txt}</span>'
+
+
+def _rk_grade_cell(row: dict) -> str:
+    s = row.get("prospect_score")
+    try:
+        f = float(s) if s not in (None, "") else float("nan")
+    except (TypeError, ValueError):
+        f = float("nan")
+    if f != f:  # NaN: muted dash, never a placeholder number
+        return '<span class="pr-grade none">-</span>'
+    return f'<span class="pr-grade">{f:.1f}</span>'
+
+
+def _rk_board_row_html(r: dict) -> str:
+    """One board row, mirroring the client's rkBoardRow markup.
+
+    The watchlist star is the only client-only piece (it reads
+    localStorage); the client render adds it back on load.
+    """
+    pid = r.get("player_id") or ""
+    pos = str(r.get("position") or "").upper()
+    rank_txt = "-"
+    rank = r.get("overall_rank")
+    if rank not in (None, ""):
+        try:
+            rank_txt = str(int(float(rank)))
+        except (TypeError, ValueError):
+            pass
+    delta = ""
+    d = r.get("rank_delta")
+    if d not in (None, ""):
+        try:
+            di = int(float(d))
+        except (TypeError, ValueError):
+            di = 0
+        if di != 0:
+            delta = (
+                f'<span class="pr-rank-delta {"up" if di > 0 else "down"}" '
+                f'title="{abs(di)} spot{"s" if abs(di) != 1 else ""} overall">'
+                f'{"&#9650;" if di > 0 else "&#9660;"}{abs(di)}</span>'
+            )
+    pos_rank = f"{pos}{r.get('position_rank')}" if pos and r.get("position_rank") else ""
+    school = r.get("school") or ""
+    if pos_rank and school:
+        meta = f"{_rk_esc(pos_rank)} &middot; {_rk_esc(school)}"
+    elif pos_rank:
+        meta = _rk_esc(pos_rank)
+    elif school:
+        meta = _rk_esc(school)
+    else:
+        meta = ""
+    badge = (f'<span class="pos-badge {_rk_esc(pos)}">{_rk_esc(pos)}</span>'
+             if pos else "")
+    meta_html = f'<span class="rk-meta">{meta}</span>' if meta else ""
+    cells = "".join(_rk_stat_cell(r, key, cls) for key, cls in _RK_PCT_CELLS)
+    return (
+        f'<div class="pr-player-row pr-grid-row" data-pid="{_rk_esc(pid)}" '
+        f'role="button" tabindex="0" aria-label="{_rk_esc(r.get("name") or "")}">'
+        f'<span class="pr-rank">#{rank_txt}{delta}</span>'
+        f'<span class="rk-player"><span class="pr-name">'
+        f'<span class="pr-nm">{_rk_esc(r.get("name") or "Unknown")}</span>'
+        f'{badge}</span>{meta_html}</span>'
+        f'{cells}{_rk_grade_cell(r)}</div>'
+    )
+
+
+def _rk_band_divider_html(band: str) -> str:
+    color = _RK_BAND_COLORS.get(band, "#94a3b8")
+    label = _RK_BAND_SHORT.get(band, "")
+    return (
+        f'<div class="pr-tier-divider">'
+        f'<div class="pr-tier-divider-line" style="background:{color}"></div>'
+        f'<span class="pr-tier-divider-label" style="color:{color}">'
+        f'{_rk_esc(label)}</span>'
+        f'<div class="pr-tier-divider-line" style="background:{color}"></div>'
+        f'</div>'
+    )
+
+
+def _prospects_ssr():
+    """(rows_html, shown, total) for the initial server render.
+
+    Default board order, mirroring rkVisiblePlayers: overall rank
+    ascending, unranked last, band dividers where the band changes.
+    ("", 0, 0) when no board can be built (no data yet, DB down).
+    """
+    now = _time.time()
+    cached = _ssr_cache.get("v")
+    if cached and now - cached[3] < _SSR_TTL_SECONDS:
+        return cached[0], cached[1], cached[2]
+    rows_html, shown, total = "", 0, 0
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from dashboard_services.rookie_api import get_board_rows
+
+        rows = get_board_rows(get_active_rookie_class())
+        total = len(rows)
+
+        def _rank_key(r):
+            v = r.get("overall_rank")
+            if v in (None, ""):
+                return (1, 0.0)
+            try:
+                return (0, float(v))
+            except (TypeError, ValueError):
+                return (1, 0.0)
+
+        parts, last_band = [], None
+        for r in sorted(rows, key=_rank_key)[:_SSR_LIMIT]:
+            band = (r.get("tag") or {}).get("band")
+            if band and band != last_band:
+                parts.append(_rk_band_divider_html(band))
+                last_band = band
+            parts.append(_rk_board_row_html(r))
+        rows_html = "".join(parts)
+        shown = min(total, _SSR_LIMIT)
+    except Exception:
+        rows_html, shown, total = "", 0, 0
+    if rows_html:
+        _ssr_cache["v"] = (rows_html, shown, total, now)
+    return rows_html, shown, total
+
+
+def _inject_ssr_rows(body: str) -> str:
+    """Swap the shell's empty board for the server-rendered top rows.
+
+    With rows present, the column header and count line render visible
+    (the states the client sets after load) and the loading skeleton is
+    hidden; the client still replaces #rkList with the full board when
+    its fetch lands. Without rows the body is returned untouched.
+    """
+    rows_html, shown, total = _prospects_ssr()
+    if not rows_html:
+        return body
+    body = body.replace(
+        '<div id="rkTableHeader" class="pr-grid-row" style="display:none">',
+        '<div id="rkTableHeader" class="pr-grid-row">', 1)
+    body = body.replace(
+        '<div id="rkCount" style="display:none;"></div>',
+        f'<div id="rkCount">Showing {shown} of {total} prospects</div>', 1)
+    body = body.replace(
+        '<div id="rkLoading" class="sk-list" style="margin-top:4px;">',
+        '<div id="rkLoading" class="sk-list" style="display:none;margin-top:4px;">', 1)
+    body = body.replace(
+        '<div id="rkList"></div>',
+        f'<div id="rkList">{rows_html}</div>', 1)
+    return body
+
 
 def build_prospects_body(is_admin: bool = False) -> str:
     admin_flag = "true" if is_admin else "false"
-    return f"""<script>window.RK_IS_ADMIN = {admin_flag};</script>""" + """
+    body = f"""<script>window.RK_IS_ADMIN = {admin_flag};</script>""" + """
 <div class="card central" id="prospectsCard">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
     <div>
@@ -1613,3 +1813,4 @@ def build_prospects_body(is_admin: bool = False) -> str:
     });
 </script>
 """
+    return _inject_ssr_rows(body)

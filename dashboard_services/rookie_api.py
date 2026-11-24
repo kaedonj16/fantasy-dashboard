@@ -1854,6 +1854,82 @@ def active_class():
     return jsonify({"draft_class_year": year})
 
 
+def _attach_rank_deltas(result: list[dict], year: int) -> None:
+    """Rank movement vs the oldest board snapshot in the trailing window.
+
+    Positive delta = moved up. Absent history degrades to null. Shared by
+    the /rankings endpoint and the server-rendered board shell so both
+    surfaces print the same movement triangles.
+    """
+    try:
+        _deltas = _get_rank_deltas(year)
+        for d in result:
+            pid = d.get("player_id")
+            cur = d.get("overall_rank")
+            old = _deltas.get(pid) if pid else None
+            if old is not None and cur:
+                try:
+                    d["rank_delta"] = int(old) - int(cur)
+                except (TypeError, ValueError):
+                    d["rank_delta"] = None
+            else:
+                d["rank_delta"] = None
+    except Exception:
+        for d in result:
+            d.setdefault("rank_delta", None)
+
+
+def _attach_board_enrichment(result: list[dict]) -> None:
+    """Percentile display model (board rework): band tag, component
+    percentiles within position, and the In-Season chip. The chip reads
+    the row's stored v3.4 grading-mode flag when the row carries one
+    (chip_in_season); the data-state check is the fallback for flagless
+    rows. Shared by the /rankings endpoint and the server-rendered board
+    shell so the static rows carry identical percentiles and bands."""
+    try:
+        _pops: dict = {}
+        _season_map = _get_latest_season_map(
+            [d.get("player_id") for d in result])
+        _seasons_map = _get_seasons_map(
+            [d.get("player_id") for d in result])
+        for d in result:
+            _pos = (d.get("position") or "").upper()
+            if _pos not in _pops:
+                _pops[_pos] = reference_population(_pos)
+            d["percentiles"] = component_percentiles(
+                d, _pops[_pos],
+                seasons=_seasons_map.get(d.get("player_id")))
+            d["tag"] = prospect_tag(d.get("prospect_score"))
+            _ls = _season_map.get(d.get("player_id"))
+            d["in_season"] = chip_in_season(
+                d.get("in_season"),
+                _ls[0] if _ls else None, _ls[1] if _ls else None)
+    except Exception:
+        log.debug("[rookie_api] percentile enrichment skipped",
+                  exc_info=True)
+
+
+def get_board_rows(draft_year: int) -> list[dict[str, Any]]:
+    """Board rows for the server-rendered /prospects shell.
+
+    The same _get_rankings source rows the /rankings endpoint serves,
+    with the same board enrichment attached (rank deltas, component
+    percentiles, band tag, in-season flag), so a server-rendered row
+    prints the identical grade and percentiles the API returns for that
+    player. The endpoint's value/ADP/trajectory overlays are not board
+    row content and are not attached here. Enrichment runs on per-row
+    copies, never on the cached rankings rows. Fail-soft: [] on error.
+    """
+    try:
+        rows = [_row_to_dict(r) for r in _get_rankings(draft_year)]
+    except Exception:
+        log.debug("[rookie_api] board rows failed", exc_info=True)
+        return []
+    _attach_rank_deltas(rows, draft_year)
+    _attach_board_enrichment(rows)
+    return rows
+
+
 @rookie_bp.route("/rankings")
 def rankings():
     try:
@@ -1943,51 +2019,13 @@ def rankings():
 
         # Rank movement vs the oldest board snapshot in the trailing window.
         # Positive delta = moved up. Absent history degrades to null.
-        try:
-            _deltas = _get_rank_deltas(year)
-            for d in result:
-                pid = d.get("player_id")
-                cur = d.get("overall_rank")
-                old = _deltas.get(pid) if pid else None
-                if old is not None and cur:
-                    try:
-                        d["rank_delta"] = int(old) - int(cur)
-                    except (TypeError, ValueError):
-                        d["rank_delta"] = None
-                else:
-                    d["rank_delta"] = None
-        except Exception:
-            for d in result:
-                d.setdefault("rank_delta", None)
+        _attach_rank_deltas(result, year)
 
         # Percentile display model (board rework): band tag, component
-        # percentiles within position, and the In-Season chip. The chip
-        # reads the row's stored v3.4 grading-mode flag when the row
-        # carries one (chip_in_season); the data-state check is the
-        # fallback for flagless rows. The internal prospect_score stays
-        # in the payload (it ranks the board and feeds rookie values);
-        # it is simply never rendered.
-        try:
-            _pops: dict = {}
-            _season_map = _get_latest_season_map(
-                [d.get("player_id") for d in result])
-            _seasons_map = _get_seasons_map(
-                [d.get("player_id") for d in result])
-            for d in result:
-                _pos = (d.get("position") or "").upper()
-                if _pos not in _pops:
-                    _pops[_pos] = reference_population(_pos)
-                d["percentiles"] = component_percentiles(
-                    d, _pops[_pos],
-                    seasons=_seasons_map.get(d.get("player_id")))
-                d["tag"] = prospect_tag(d.get("prospect_score"))
-                _ls = _season_map.get(d.get("player_id"))
-                d["in_season"] = chip_in_season(
-                    d.get("in_season"),
-                    _ls[0] if _ls else None, _ls[1] if _ls else None)
-        except Exception:
-            log.debug("[rookie_api] percentile enrichment skipped",
-                      exc_info=True)
+        # percentiles within position, and the In-Season chip. The
+        # internal prospect_score stays in the payload (it ranks the
+        # board and feeds rookie values); it is simply never rendered.
+        _attach_board_enrichment(result)
 
         # Overlay dynasty rookie ADP - read directly from dated cache files,
         # no DB connection required. Falls back to adp_service chain if files absent.

@@ -225,9 +225,12 @@ def sitemap_xml():
     # near-identical templated pages), the /players duplicate of the value
     # chart, the /trade-intel redirect, and the JS-shell pages whose
     # server-rendered body is a loading state (/nfl-teams, /breakouts,
-    # /trade-database, /prospects) are deliberately NOT listed -- they are
+    # /trade-database) are deliberately NOT listed -- they are
     # the bulk of what AdSense's "Low value content" finding pointed at.
     # Those pages stay live and reachable; they are just not submitted.
+    # /prospects left this exclusion when its top 50 rows began
+    # server-rendering: the served HTML now carries real names and
+    # grades, so it is submitted like the other rankings boards.
     static_urls = [
         ("", "1.0", "daily"),
         ("/trade", "0.9", "daily"),
@@ -243,6 +246,7 @@ def sitemap_xml():
         ("/rankings/rest-of-season-rb", "0.8", "weekly"),
         ("/rankings/rest-of-season-wr", "0.8", "weekly"),
         ("/rankings/rest-of-season-te", "0.8", "weekly"),
+        ("/prospects", "0.8", "weekly"),
         ("/compare", "0.7", "weekly"),
         ("/pricing", "0.6", "monthly"),
         ("/privacy", "0.3", "monthly"),

@@ -22483,8 +22483,24 @@ def page_prospects(platform: str, season: int, league_id: str):
     from dashboard_services.pages.rookies_page import build_prospects_body
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
+    # Search-facing title/description in the sibling rankings grammar
+    # (dynasty/ROS hubs): the class year the board actually covers and
+    # what the page holds, instead of the bare "Prospect Rankings" title
+    # and the site-wide boilerplate description.
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        _class_year = get_active_rookie_class()
+    except Exception:
+        _class_year = datetime.now().year
+    _as_of = datetime.now().strftime("%B %d, %Y")
     return render_page(
-        "Prospect Rankings", league_id, "prospects", body_html, platform, season,
+        f"{_class_year} NFL Draft Prospect Rankings | BR Fantasy",
+        league_id, "prospects", body_html, platform, season,
+        description=(
+            f"{_class_year} NFL Draft prospect rankings with grades for dynasty "
+            f"fantasy football, updated {_as_of}. Production, efficiency and "
+            f"breakout percentiles for every QB, RB, WR and TE in the class."
+        ),
         lite_js=True,
     )
 
