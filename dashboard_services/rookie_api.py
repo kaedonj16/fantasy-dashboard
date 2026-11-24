@@ -1730,7 +1730,10 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
             _arch_profile = {
                 "weight_lbs": row.get("weight_lbs"),
                 "forty_yard": (athleticism or {}).get("forty_yard"),
-                "projected_pick": row.get("projected_pick"),
+                # v3.7: no projected_pick - the live fallback labeler
+                # reads no draft capital either (the module ignores
+                # the key regardless; the row's pick stays display
+                # metadata only, e.g. the modal's Mock Pick line).
                 "age": row.get("age"),
             }
             _arch = classify_archetype(

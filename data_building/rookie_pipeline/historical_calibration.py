@@ -720,56 +720,69 @@ def _correlate_predictors(
 # Step 4: Weight recommendation
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Current model weights for reference
+# The shipped model's weights, mirrored for reference: this table is
+# the baseline _recommend_weights blends FROM, so it must BE the
+# shipped set - prospect_model.POSITION_WEIGHTS, the model 3.7 F12
+# fitted weights (effective form, capital-free; provenance above
+# POSITION_WEIGHTS and in ~/workspace/prospect-runs/
+# gate_v37_weights.log). tests/test_prospect_v37.py pins this mirror
+# to the model's effective weights so the two cannot drift apart
+# silently. (Pre-fold this table was a stale pre-3.7 snapshot that
+# priced draft_capital at 0.22-0.29: a get_calibrated_weights()
+# result passed as position_weights_override would have silently
+# replaced the fitted blend. The draft_capital FEATURE mapping
+# below stays - it is correlation reporting only; a draft_capital
+# entry in a recommendation is inert under 3.7, whose
+# score_prospect pops the key unconditionally.)
 REFINED_POSITION_WEIGHTS = {
     "QB": {
-        "draft_capital": 0.22,
-        "production": 0.17,
-        "utilization": 0.05,
-        "efficiency": 0.18,
-        "age": 0.08,
-        "breakout": 0.04,
-        "athleticism": 0.10,
-        "competition": 0.07,
-        "environment": 0.02,
-        "durability": 0.00,
-        "experience": 0.07,
+        "production": 0.1869,
+        "utilization": 0.0537,
+        "efficiency": 0.1891,
+        "age": 0.2012,
+        "breakout": 0.0705,
+        "athleticism": 0.1473,
+        "competition": 0.0613,
+        "environment": 0.0126,
+        "durability": 0.0,
+        "experience": 0.0442,
+        "recruiting": 0.0332,
     },
     "RB": {
-        "draft_capital": 0.24,
-        "production": 0.22,
-        "utilization": 0.09,
-        "efficiency": 0.07,
-        "age": 0.09,
-        "breakout": 0.12,
-        "athleticism": 0.10,
-        "competition": 0.05,
-        "environment": 0.01,
-        "durability": 0.01,
+        "production": 0.2305,
+        "utilization": 0.1367,
+        "efficiency": 0.1433,
+        "age": 0.1587,
+        "breakout": 0.146,
+        "athleticism": 0.0936,
+        "competition": 0.0472,
+        "environment": 0.0044,
+        "durability": 0.0063,
+        "recruiting": 0.0332,
     },
     "WR": {
-        "draft_capital": 0.29,
-        "production": 0.22,
-        "utilization": 0.04,
-        "efficiency": 0.10,
-        "age": 0.08,
-        "breakout": 0.12,
-        "athleticism": 0.07,
-        "competition": 0.07,
-        "environment": 0.01,
-        "durability": 0.00,
+        "production": 0.2382,
+        "utilization": 0.1094,
+        "efficiency": 0.1162,
+        "age": 0.1415,
+        "breakout": 0.1369,
+        "athleticism": 0.0802,
+        "competition": 0.1037,
+        "environment": 0.0393,
+        "durability": 0.0,
+        "recruiting": 0.0345,
     },
     "TE": {
-        "draft_capital": 0.26,
-        "production": 0.18,
-        "utilization": 0.05,
-        "efficiency": 0.12,
-        "age": 0.13,
-        "breakout": 0.05,
-        "athleticism": 0.12,
-        "competition": 0.07,
-        "environment": 0.01,
-        "durability": 0.01,
+        "production": 0.2189,
+        "utilization": 0.1332,
+        "efficiency": 0.1187,
+        "age": 0.1637,
+        "breakout": 0.1363,
+        "athleticism": 0.1311,
+        "competition": 0.0432,
+        "environment": 0.0164,
+        "durability": 0.0062,
+        "recruiting": 0.0324,
     },
 }
 
@@ -963,7 +976,10 @@ def get_calibrated_weights(
     """
     Run calibration and return just the blended weight recommendations per position.
 
-    Returns: {"WR": {"draft_capital": 0.30, "production": 0.15, ...}, "RB": {...}, ...}
+    Returns: {"WR": {"production": 0.24, "efficiency": 0.12, ...}, "RB": {...}, ...}
+    Recommendations blend from REFINED_POSITION_WEIGHTS (the shipped
+    3.7 fitted set); any draft_capital entry in a recommendation is
+    inert if passed to the 3.7 model, which pops the key.
     """
     result = run_calibration(draft_years=draft_years, positions=positions)
     out: Dict[str, Dict[str, float]] = {}

@@ -120,7 +120,7 @@ def _score(prospect, dc):
 
 class TestVersion:
     def test_model_version_bumped(self):
-        assert pm.MODEL_VERSION == "3.5"
+        assert pm.MODEL_VERSION == "3.7"
 
 
 class TestMissingCapital:
@@ -130,14 +130,20 @@ class TestMissingCapital:
         with_pick = _score(GREEN, _dc("TE", 35))
         at_150 = _score(GREEN, _dc("TE", 150))
         no_pick = _score(GREEN, None)
-        # Missing capital is the talent grade itself: strictly above the
-        # pick-150 outcome the old default produced for uncovered players.
-        assert no_pick["prospect_score"] > at_150["prospect_score"]
-        # And it equals the talent_score of the covered run: the covered
-        # grade is talent plus exactly capital_delta.
-        assert no_pick["prospect_score"] == pytest.approx(
-            with_pick["talent_score"], abs=0.011)
+        # Pre-v3.7 this asserted the no-pick grade beat the pick-150
+        # grade (the old default taxed uncovered players). v3.7 is
+        # capital-free: there is no capital leg to tax or reward, so
+        # all three runs are the SAME grade, exactly - the property
+        # test_prospect_v37.py pins across positions and pick values.
+        # Decomposition vs 3.6: the pick-150 run rises 59.59 -> 75.76
+        # (the whole -16.17 capital_delta disappears); the pick-35 run
+        # falls 76.09 -> 75.76 at this call's run-date clock (its 3.6
+        # talent grade; see test_prospect_v34 for the pinned-clock
+        # decomposition).
+        assert with_pick["prospect_score"] == at_150["prospect_score"]
+        assert at_150["prospect_score"] == no_pick["prospect_score"]
         assert no_pick["projected_draft_capital_score"] is None
+        assert with_pick["projected_draft_capital_score"] is None
 
     def test_missing_capital_contract(self):
         no_pick = _score(GREEN, None)
@@ -153,18 +159,30 @@ class TestMissingCapital:
 
 class TestTransparentCapital:
     def test_green_consensus_pick_delta_positive_and_modest(self):
+        # Renamed in substance by v3.7 (kept under its old name so the
+        # history reads): there is no delta to be positive or modest.
+        # The capital component is always None, capital_delta is
+        # always None, and talent_score is the grade itself - with a
+        # consensus pick attached exactly as without one.
         r = _score(GREEN, _dc("TE", 35))
-        assert r["capital_delta"] is not None
-        assert 0 < r["capital_delta"] < 10
-        assert r["talent_score"] == pytest.approx(
-            r["prospect_score"] - r["capital_delta"], abs=0.011)
+        assert r["capital_delta"] is None
+        assert r["projected_draft_capital_score"] is None
+        assert r["talent_score"] == r["prospect_score"]
 
     def test_talent_score_is_pick_invariant(self):
-        # Talent is a property of the profile, not of the pick assigned.
+        # v3.2 contract, restored by construction in v3.6 (round-2
+        # audit F3): the original invariance held only because the
+        # talent run starved translation of the pick (NaN), which let
+        # pick-gated translation leak into capital_delta. v3.6 deletes
+        # every pick-gated translation branch instead, so translation
+        # is pick-independent outright and talent is invariant across
+        # picks AND equal to the no-pick grade.
         t35 = _score(GREEN, _dc("TE", 35))["talent_score"]
         t8 = _score(GREEN, _dc("TE", 8))["talent_score"]
         t150 = _score(GREEN, _dc("TE", 150))["talent_score"]
-        assert t35 == pytest.approx(t8, abs=0.011)
+        no_pick = _score(GREEN, None)["prospect_score"]
+        assert t150 == pytest.approx(no_pick, abs=0.011)
+        assert t8 == pytest.approx(t150, abs=0.011)
         assert t35 == pytest.approx(t150, abs=0.011)
 
 
@@ -222,7 +240,11 @@ class TestMissingAge:
 class TestRegressionVsV31:
     def test_green_materially_above_v31(self):
         # v3.1 on identical inputs: 64.44 (iteration log round 3 table).
-        assert _score(GREEN, _dc("TE", 35))["prospect_score"] >= 75.0
+        # Floor lowered 75.0 -> 74.0 in v3.6: the F3 translation
+        # cleanup removed the +2.0 TE pick tier Green used to receive
+        # at pick 35 (his grade is 74.13 now); the regression intent
+        # (materially above the v3.1 print) is unchanged.
+        assert _score(GREEN, _dc("TE", 35))["prospect_score"] >= 74.0
 
     def test_mestemaker_materially_above_v31(self):
         # v3.1 on identical inputs: 60.89.
@@ -238,15 +260,28 @@ class TestArchetypeReferenceCases:
     """Archetype v2 (prospect-archetypes-v2.md): scored NFL-outlook fits.
 
     Fixtures are the validation panel's profiles; classify is called with
-    the full profile (age, projected pick, size/speed when measured), the
-    way score_prospect calls it in production.
+    the full profile (age, size/speed when measured). Several profiles
+    below still carry their historical projected_pick key - since the
+    v3.7 archetype revision the module ignores it entirely (and
+    score_prospect no longer passes one); the pins are the pick-free
+    reads, with decompositions recorded per case.
     """
 
     def test_smith_alpha_x_high(self):
+        # v3.7 archetype revision (capital-free labeler): the pick-2
+        # input used to add ~4 points to the Alpha X fit (82.3 vs
+        # 78.4), pushing the margin over Playmaker past the pair
+        # window so the label printed "Alpha X" alone. On his own
+        # evidence the Playmaker fit (74.9) sits inside the window and
+        # pairs - and the pair now corroborates instead of capping:
+        # presence .80, three starter-volume seasons, both fits
+        # strong, so confidence is High on evidence alone. The pick
+        # in the profile below is ignored (pinned in
+        # test_prospect_archetype_capital_free.py).
         r = classify_archetype(
             "WR", SMITH["seasons"],
             profile={"age": 21.4, "projected_pick": 2})
-        assert r["archetype"] == "Alpha X"
+        assert r["archetype"] == "Alpha X · Playmaker"
         assert r["archetype_confidence"] == "High"
         assert "dominator" in r["archetype_receipt"]
 
@@ -262,11 +297,18 @@ class TestArchetypeReferenceCases:
     def test_mestemaker_pocket_passer_distributor(self):
         # v1 read 9.46 YPA and stopped at Gunslinger; v2 reads the whole
         # shape: dropback volume, no rushing role, 68.9% completions.
+        # v3.7 archetype revision: confidence Medium -> High. The label
+        # is unchanged; the old Medium was the blanket pair rule (any
+        # pair capped at Medium), not an evidence judgment - his
+        # presence is 11/13, both fits are strong (86.1 / 81.8), and
+        # two starter-volume seasons back them, so the pair now reads
+        # as corroboration. The pick-8 input never drove this one
+        # (Pocket Passer fit 86.7 with it, 86.1 without).
         r = classify_archetype(
             "QB", MESTEMAKER["seasons"],
             profile={"age": 21.0, "projected_pick": 8})
         assert r["archetype"] == "Pocket Passer · Distributor"
-        assert r["archetype_confidence"] == "Medium"
+        assert r["archetype_confidence"] == "High"
         assert r["fits"]["Gunslinger"] < r["fits"]["Distributor"]
 
     def test_hardy_power_back_high(self):
@@ -283,7 +325,14 @@ class TestArchetypeReferenceCases:
         r = classify_archetype(
             "RB", seasons, profile={"age": 21.9, "projected_pick": 17})
         assert r["archetype"] == "Power Back"
-        assert r["archetype_confidence"] == "High"
+        # v3.7 archetype revision: High -> Medium, and the decomposition
+        # is the point of the revision. The fit never moved (87.7 with
+        # or without the pick; Power Back has no pick input) - the pick
+        # was his eighth presence point, padding presence from 7/10 to
+        # the 0.80 High bar on consensus alone. On talent features he
+        # populates 7/9 (size and speed unmeasured - and Power Back is
+        # the RB read that prices size), so Medium is the honest grade.
+        assert r["archetype_confidence"] == "Medium"
 
     def test_moore_distributor_high(self):
         # v2 label change: 71.8% completions with a short-area efficiency
@@ -305,8 +354,16 @@ class TestArchetypeReferenceCases:
 
     def test_coleman_alpha_x_developmental(self):
         # The canonical v2 case: v1 printed Auburn's slot usage as the
-        # label (Big Slot, deleted in v2). The projection is outside;
-        # the unproven proof rides as the Developmental secondary trait.
+        # label (Big Slot, deleted in v2). v2/v3.6 printed "Alpha X"
+        # (the F14 fix suppressed the Developmental secondary behind
+        # it). v3.7 archetype revision: that Alpha X label was the
+        # pick's manufacture - with pick 6 fed, Alpha X fit 61.1 and
+        # the receipt confessed "projection led by draft capital";
+        # on his own evidence Alpha X is 53.2, third behind
+        # Developmental (59.4) and Possession (55.3). The capital-free
+        # label is the evidence read: "Developmental · Possession".
+        # (At pick 250 the old module printed "Possession" - the
+        # primary label was a function of consensus all along.)
         seasons = [
             {"season": 2024, "games_played": 11, "receptions": 37,
              "receiving_yards": 598, "receiving_tds": 8,
@@ -319,7 +376,7 @@ class TestArchetypeReferenceCases:
         ]
         r = classify_archetype(
             "WR", seasons, profile={"age": 20.8, "projected_pick": 6})
-        assert r["archetype"] == "Alpha X · Developmental"
+        assert r["archetype"] == "Developmental · Possession"
         assert r["archetype_confidence"] == "Medium"
 
     def test_no_seasons_no_label(self):
@@ -329,7 +386,16 @@ class TestArchetypeReferenceCases:
 
     def test_score_prospect_carries_archetype(self):
         r = _score(SMITH, _dc("WR", 2))
-        assert r["archetype"] == "Alpha X"
+        # v3.7: score_prospect passes no pick and the archetype module
+        # reads none, so Smith's label is the evidence read: "Alpha X
+        # · Playmaker". Through v3.6 the fed pick 2 suppressed the
+        # Playmaker secondary (fit margin) and printed "Alpha X" /
+        # High; the first capital-free module printed the pair at
+        # Medium under the blanket pair rule; the v3.7 archetype
+        # revision's evidence basis restores High - the pair's fits
+        # (78.4 / 74.9) corroborate, presence is .80, and three
+        # starter-volume seasons back the read.
+        assert r["archetype"] == "Alpha X · Playmaker"
         assert r["archetype_confidence"] == "High"
         assert r["archetype_receipt"]
 
@@ -594,10 +660,12 @@ class TestReasonsWithNoDurabilityData:
 
     def test_build_reasons_with_none_durability(self):
         p = self._no_gp_prospect()
+        # v3.7: _build_reasons no longer takes the capital score/dict
+        # arguments (the Draft capital bullet is gone with the leg).
         reasons = pm._build_reasons(
             p, "WR", p["seasons"],
             80.0, 75.0, 80.0, 50.0, 50.0, None, 80.0,
-            None, None, 90.0, None,
+            None, None,
         )
         assert isinstance(reasons, str)
         assert "Durability concern" not in reasons
@@ -608,6 +676,6 @@ class TestReasonsWithNoDurabilityData:
         reasons = pm._build_reasons(
             p, "WR", p["seasons"],
             80.0, 75.0, 80.0, 50.0, 50.0, None, 80.0,
-            None, 30.0, 90.0, None,
+            None, 30.0,
         )
         assert "Durability concern" in reasons
