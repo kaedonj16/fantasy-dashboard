@@ -212,9 +212,10 @@ class TestModalPayload:
         assert payload["talent_score"] == payload["prospect_score"]
 
     def test_page_modal_reads_pick_from_row(self):
-        # The modal header meta and Mock Pick hero card read the row's
-        # projected_pick / projected_round (the stored consensus fields).
+        # The report-card Class Standing panel's mock-pick row reads
+        # the row's projected_pick / projected_round (the stored
+        # consensus fields).
         html = build_prospects_body(False)
-        assert "Mock Pick" in html
+        assert "Mock pick" in html
         assert "r.projected_pick" in html
         assert "r.projected_round" in html

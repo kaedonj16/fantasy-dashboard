@@ -220,17 +220,17 @@ class TestAdvancedMetrics:
 class TestPageBuilder:
     def test_redesign_markers_present(self):
         # Markers for the current approved design set (native board +
-        # modal v2 + tabs mocks). The earlier redesign's markers
-        # (otc-tier-divider, rk-mock-h, rkRadarSVG, rkLetterGrade,
-        # m-adv-grid) were superseded by that design and are gone.
+        # the single-scroll report-card modal, 2026-11-24). The tabbed
+        # modal's markers (rkHeadshot, rk-adv-tbl, m-season-table) were
+        # superseded by that design and are gone.
         html = build_prospects_body(False)
         for marker in (
             "pr-tier-divider-line",   # tier breaks, native board grammar
             "data-pr-sort-col",       # sortable native board header
-            "rkHeadshot",             # modal headshot / initials tile
+            "rc-initials",            # report-card initials tile
             "brUndoToast",            # shared undo toast for the watchlist
-            "rk-adv-tbl",             # advanced metrics table
-            "m-season-table",         # season-by-season table
+            "rc-metric-row",          # metric breakdown rows
+            "rc-table",               # season-by-season table
             "/api/prospects/player/",       # detail bundle endpoint
             "/api/prospects/comparables/",  # historical comparables endpoint
         ):
