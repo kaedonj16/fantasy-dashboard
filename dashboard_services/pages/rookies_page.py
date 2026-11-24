@@ -96,11 +96,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
     <div id="rkTableHeader" class="pr-grid-row" style="display:none">
       <span>#</span>
       <span data-pr-sort-col="player">Player</span>
-      <span class="th-r" id="rkSchoolHeader">School</span>
       <span class="th-r" data-pr-sort-col="prod">Prod</span>
       <span class="th-r" id="rkEffHeader" data-pr-sort-col="eff">Eff</span>
       <span class="th-r" id="rkBrkHeader" data-pr-sort-col="brk">Brk</span>
-      <span class="th-r">Tag</span>
+      <span class="th-r">Grade</span>
     </div>
 
     <!-- Loading -->
@@ -178,67 +177,58 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
   /* ===== Board: pr-grid rows ===== */
   #rkCount { font-size: 13px; color: var(--text-muted); margin: 0 0 10px; }
-  .pr-grid-row { display: grid; grid-template-columns: 88px minmax(0,1fr) 168px 60px 60px 60px 140px; align-items: center; column-gap: 14px; }
-  #rkTableHeader { display: grid; padding: 7px 12px; border-radius: 6px; background: var(--accent-soft); font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; position: sticky; top: 60px; z-index: 20; box-shadow: 0 -8px 0 0 var(--card), 0 10px 14px -12px rgba(0,0,0,.4); margin-bottom: 4px; }
+  .pr-grid-row { display: grid; grid-template-columns: 76px minmax(0,1fr) 64px 64px 64px 72px; align-items: center; column-gap: 0; }
+  .pr-grade { text-align: right; font-size: 14px; font-weight: 700; line-height: 1.2; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pr-grade.none { color: var(--text-subtle); font-weight: 600; }
+  #rkTableHeader { display: grid; padding: 6px 12px; border-radius: 6px; background: var(--accent-soft); font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; position: sticky; top: 60px; z-index: 20; box-shadow: 0 -8px 0 0 var(--card), 0 10px 14px -12px rgba(0,0,0,.4); margin-bottom: 2px; }
   #rkTableHeader [data-pr-sort-col] { cursor: pointer; user-select: none; }
   #rkTableHeader [data-pr-sort-col]:hover { color: var(--text); }
   #rkTableHeader .th-r { text-align: right; }
-  .pr-player-row { padding: 10px 12px; cursor: pointer; transition: background .12s ease; }
-  .pr-player-row:hover { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
-  .pr-player-row + .pr-player-row { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+  .pr-player-row { padding: 8px 12px; cursor: pointer; transition: background .12s ease; }
+  .pr-player-row:hover { background: var(--accent-soft); }
+  .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
   .pr-player-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .pr-rank { display: flex; align-items: baseline; gap: 6px; justify-content: flex-start; white-space: nowrap; padding-left: 2px; }
-  .pr-rank-num { font-size: 15px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
-  .pr-rank-num.top { color: var(--gold); }
+  .pr-rank { font-size: 13px; font-weight: 700; color: var(--text-muted); display: flex; align-items: center; gap: 6px; justify-content: flex-start; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .pr-rank-delta { font-size: 11px; font-weight: 800; line-height: 1; white-space: nowrap; }
   .pr-rank-delta.up { color: var(--win); }
   .pr-rank-delta.down { color: var(--loss); }
-  .pr-name { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
-  .pr-nm { min-width: 0; line-height: 1.3; }
+  .pr-name { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; min-width: 0; }
+  .pr-nm { min-width: 0; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* Player-name hover contract (site-wide): names dim, never underline. */
   .pr-nm:hover { opacity: 0.72; }
   .pr-wl-star { color: var(--gold); font-size: 12px; line-height: 1; margin-left: 5px; }
-  .pr-meta { display: none; }
-  .pr-meta-txt b { color: var(--text); font-weight: 600; }
-  .pr-school { text-align: right; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pr-school b { color: var(--text); font-weight: 600; }
-  .pr-sep { margin: 0 7px; color: var(--text-subtle); font-weight: 400; }
-  .pr-stat { text-align: right; }
-  .pr-stat-val { display: block; font-size: 14px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text); }
-  .pr-stat-val.sv-lo { color: var(--text-muted); font-weight: 600; }
-  .rk-scbar { display: block; height: 3px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); border-radius: 999px; margin-top: 4px; overflow: hidden; }
-  .rk-scbar i { display: block; height: 100%; border-radius: 999px; opacity: .92; }
-  .pr-tagcell { text-align: right; }
-  .pr-tier-divider { display: flex; align-items: center; gap: 8px; padding: 7px 12px 5px; pointer-events: none; }
-  .pr-tier-divider-line { flex: 1; height: 1px; opacity: .35; }
-  .pr-tier-divider-label { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: var(--radius-sm); line-height: 1.3; white-space: nowrap; }
-  .td-elite { background: color-mix(in srgb, #122d4b 12%, transparent); color: var(--accent); }
-  .td-great { background: rgba(56,189,248,.13); color: color-mix(in srgb, #38bdf8 65%, var(--text)); }
-  .td-avg { background: rgba(148,163,184,.12); color: #94a3b8; }
-  .td-day3 { background: rgba(100,116,139,.15); color: #94a3b8; }
+  .rk-player { display: block; min-width: 0; }
+  .rk-meta { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Percentile cells: plain numbers only (clean-numbers board), right
+     aligned and vertically centered in the row. */
+  .rk-pct { display: flex; align-items: center; justify-content: flex-end; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+  .rk-pct-dash { color: var(--text-muted); font-weight: 400; }
+  .pr-tier-divider { display: flex; align-items: center; gap: 8px; padding: 5px 0 3px; pointer-events: none; }
+  .pr-tier-divider-line { flex: 1; height: 1px; opacity: .5; }
+  .pr-tier-divider-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; opacity: .75; white-space: nowrap; text-transform: uppercase; }
 
-  /* Position chip: tint in the position color */
-  .rk-pos { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: color-mix(in srgb, var(--pc, var(--accent)) 16%, transparent); color: var(--pc, var(--accent)); vertical-align: middle; }
+  /* Position chip: the site-wide .pos-badge from dashboard.css (the
+     matchups page chip), at the matchup board's compact render size. */
+  .pr-player-row .pos-badge { width: 34px; height: 20px; font-size: 11px; padding: 1px 4px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
   /* Tag chips: one geometry, equal tint/border alpha across the bands */
-  .m-tier { display: inline-block; padding: 4px 9px; border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 1.25; white-space: nowrap; text-align: center; min-width: 118px; }
   .tag-chip { display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 4px 9px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--text); }
   .tag-chip.tag-mini { font-size: 10px; padding: 2px 7px; }
   .tag-elite { background: color-mix(in srgb, #122d4b 12%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, #122d4b 30%, transparent); }
   .tag-great { background: rgba(56,189,248,.13); color: color-mix(in srgb, #38bdf8 65%, var(--text)); border: 1px solid rgba(56,189,248,.30); }
   .tag-average { background: rgba(148,163,184,.14); color: #94a3b8; border: 1px solid rgba(148,163,184,.30); }
   .tag-day3 { background: rgba(100,116,139,.14); color: #94a3b8; border: 1px solid rgba(100,116,139,.30); }
-  .m-tier.tag-elite, .m-tier.tag-great, .m-tier.tag-average, .m-tier.tag-day3 { border-width: 1px; }
   /* In-season chip: quieter wash than the position chip */
   .m-early { display: inline-block; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 600; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); white-space: nowrap; }
   .state-chip { display: inline-block; padding: 3px 7px; border-radius: 5px; font-size: 10px; font-weight: 600; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); white-space: nowrap; }
 
   @media (max-width: 1100px) {
-    #prospectsCard .pr-grid-row { grid-template-columns: 84px minmax(0,1fr) 156px 56px 56px 56px 132px; column-gap: 12px; }
+    #prospectsCard .pr-grid-row { grid-template-columns: 72px minmax(0,1fr) 60px 60px 60px 68px; column-gap: 0; }
   }
   @media (max-width: 768px) {
-    /* GUI audit Fix 3: 11px floor for board tag/chip labels on mobile
-       (position chip and In-Season chip were 10px at this width). */
-    .rk-pos, .m-early { font-size: 11px; }
+    /* GUI audit Fix 3: 11px floor for board chip labels on mobile
+       (the In-Season chip was 10px at this width; the position badge
+       is 11px at every width via the board row rule). */
+    .m-early { font-size: 11px; }
     .filter-row-primary { flex-direction: column; align-items: stretch; }
     .filter-search { max-width: 100%; }
     .filter-positions { justify-content: flex-start; gap: 6px; }
@@ -247,55 +237,25 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .filter-sort-group { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); gap: 10px; width: 100%; }
     .filter-sort { min-width: 0; flex-direction: column; align-items: stretch; gap: 5px; }
     .filter-sort select { width: 100%; min-width: 0; }
-    /* board: school and breakout columns yield first, like Age on the players board
+    /* board: the breakout column yields first, like Age on the players board
        (scoped to #prospectsCard: dashboard.css carries global players-board
        .pr-grid-row phone rules that must not leak into this board) */
-    #prospectsCard .pr-grid-row { grid-template-columns: 72px minmax(0,1fr) 54px 54px 130px !important; column-gap: 10px; }
-    .pr-school, .pr-brk, #rkSchoolHeader, #rkBrkHeader { display: none !important; }
+    #prospectsCard .pr-grid-row { grid-template-columns: 72px minmax(0,1fr) 54px 54px 46px !important; column-gap: 0; }
+    .pr-brk, #rkBrkHeader { display: none !important; }
   }
   @media (max-width: 600px) {
     .filter-row-primary { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 8px; }
     .filter-search { grid-column: 1 / -1; min-width: 0; }
     .filter-positions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; align-items: center; }
     .filter-positions::-webkit-scrollbar { display: none; }
-    #prospectsCard .pr-grid-row { grid-template-columns: 56px minmax(0,1fr) 46px 46px 120px !important; column-gap: 9px; }
-    .pr-player-row { grid-template-areas: "rank name prod eff tag" "rank meta meta meta tag"; grid-template-rows: auto auto; row-gap: 3px; }
-    .pr-name { display: contents; }
-    .pr-rank { grid-area: rank; }
-    .pr-nm { grid-area: name; align-self: center; }
-    .pr-meta { grid-area: meta; }
-    .pr-player-row > .pr-stat:not(.pr-eff):not(.pr-brk) { grid-area: prod; }
-    .pr-eff { grid-area: eff; }
-    .pr-tagcell { grid-area: tag; }
-    .pr-player-row { padding: 11px 10px; }
-    .pr-tier-divider { padding: 7px 10px 5px; }
-    #rkTableHeader { padding: 7px 10px; }
-    .pr-name { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 4px; }
-    .pr-nm { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .pr-name > .rk-pos { display: none; }
+    #prospectsCard .pr-grid-row { grid-template-columns: 64px minmax(0,1fr) 50px 50px 56px !important; column-gap: 0; }
     .m-early { display: none; }
-    .pr-meta { display: inline-flex; align-items: center; gap: 6px; line-height: 1; max-width: 100%; font-size: 10.5px; font-weight: 500; color: var(--text-muted); }
-    .pr-meta .rk-pos { font-size: 11px; padding: 1px 5px; }
-    .pr-meta-txt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .m-tier { width: 116px; min-width: 116px; }
   }
   @media (max-width: 480px) {
-    /* phone: rank | player | production | tag, like rank | name | ppg | value on players */
-    #prospectsCard .pr-grid-row { grid-template-columns: 39px minmax(0,1fr) 33px 92px !important; column-gap: 8px; }
-    .pr-player-row { grid-template-areas: "rank name prod tag" "rank meta meta tag"; }
+    /* phone: rank | player | production | grade, like rank | name | ppg | value on players */
+    #prospectsCard .pr-grid-row { grid-template-columns: 66px minmax(0,1fr) 54px 60px !important; column-gap: 0; }
     .pr-eff, #rkEffHeader { display: none !important; }
-    .pr-rank-num { font-size: 14px; }
-    .pr-rank { gap: 4px; padding-left: 0; }
-    .pr-name { font-size: 12px; }
     .pr-wl-star { font-size: 11px; margin-left: 4px; }
-    /* 11px floor (was 9.5px); width goes auto so the longest label
-       ("Average Prospect") grows the pill instead of clipping. */
-    .m-tier { width: auto; min-width: 92px; font-size: 11px; padding: 3px 3px; }
-    .pr-meta { font-size: 10px; }
-    .pr-meta .pr-sep { margin: 0 5px; }
-    .pr-player-row { padding: 11px 8px; }
-    #rkTableHeader { padding: 7px 8px; }
-    .pr-tier-divider { padding: 7px 8px 5px; }
   }
 
   /* ===== Modal ===== */
@@ -497,7 +457,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     try { localStorage.setItem('rkWatchlistV1', JSON.stringify(Object.keys(rkWatch))); } catch (e) {}
   }
 
-  var RK_POS_COLORS = { QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6' };
   var RK_DISC_COLORS = ['#38bdf8','#60a5fa','#7dd3fc','#0ea5e9','#64748b','#94a3b8'];
   function rkEsc(s) {
     return String(s == null ? '' : s)
@@ -531,9 +490,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
 
   // ── Percentile display ─────────────────────────────────────────────────
-  // No numeric prospect grade is rendered anywhere. Percentile values come
-  // from the API (computed within position against the graded reference
-  // population); a null percentile renders nothing, never a placeholder.
+  // Percentile values come from the API (computed within position against
+  // the graded reference population); a null percentile renders nothing,
+  // never a placeholder. The numeric prospect grade renders beside them
+  // (board Grade column, modal Prospect Grade card).
   var RK_PCT_BOARD = [
     { key: 'production', label: 'Production', color: '#38bdf8' },
     { key: 'efficiency', label: 'Efficiency', color: '#38bdf8' },
@@ -544,9 +504,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
     { key: 'athleticism', label: 'Athleticism', color: '#38bdf8' }
   ]);
   var RK_TAG_CLASS = { elite: 'tag-elite', great: 'tag-great', average: 'tag-average', day3: 'tag-day3' };
-  var RK_BAND_COLORS = { elite: '#60a5fa', great: '#38bdf8', average: '#94a3b8', day3: '#64748b' };
+  var RK_BAND_COLORS = { elite: 'var(--accent)', great: '#0ea5e9', average: '#64748b', day3: '#64748b' };
   var RK_BAND_SHORT = { elite: 'Elite', great: 'Great', average: 'Average', day3: 'Day 3' };
-  var RK_BAND_TD = { elite: 'td-elite', great: 'td-great', average: 'td-avg', day3: 'td-day3' };
   function rkTagChip(tag, mini) {
     if (!tag || !tag.label) return '';
     return '<span class="tag-chip' + (mini ? ' tag-mini' : '') + ' ' +
@@ -570,25 +529,34 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
 
   // ── Board ──────────────────────────────────────────────────────────────
-  // One percentile stat cell: value over a railed bar, matching the
-  // site's other ranking pages. The bar is sky at every value; the value
-  // prints plain, muted below 70. A missing percentile renders a muted
-  // dash, never a blank hole.
+  // One percentile stat cell: the plain number only, right-aligned and
+  // vertically centered in the row (clean-numbers board, per the
+  // approved mock). A missing percentile renders a muted dash, never a
+  // blank hole.
   function rkStatCell(r, def, extraCls) {
     var p = rkPctOf(r, def.key);
-    if (p === null) return '<span class="pr-stat ' + extraCls + '"><span class="pr-stat-val sv-lo">-</span></span>';
-    var cls = p < 70 ? ' sv-lo' : '';
-    return '<span class="pr-stat ' + extraCls + '"><span class="pr-stat-val' + cls + '">' + p + '</span>' +
-      '<span class="rk-scbar"><i style="width:' + p + '%;background:#38bdf8"></i></span></span>';
+    if (p === null) return '<span class="rk-pct rk-pct-dash ' + extraCls + '">&ndash;</span>';
+    return '<span class="rk-pct ' + extraCls + '">' + p + '</span>';
+  }
+
+  // The numeric prospect grade cell (one decimal, right edge of the row).
+  // A missing score renders the muted dash, never a placeholder number.
+  function rkGradeCell(r) {
+    var s = r.prospect_score == null || r.prospect_score === ''
+      ? NaN : parseFloat(r.prospect_score);
+    if (isNaN(s)) return '<span class="pr-grade none">-</span>';
+    return '<span class="pr-grade">' + s.toFixed(1) + '</span>';
   }
 
   // One board row (native pr-grid grammar): rank + movement triangles,
-  // name with baseline position chip, school column, percentile stats,
-  // band tag chip. No numeric grade is rendered.
+  // name with the site-wide position badge (the matchups page chip)
+  // over a "WR1 · Ohio State" meta line, percentile stats as plain
+  // numbers, numeric grade. No band chip and no In-Season chip on the
+  // row: the tier divider lines carry the band, and the season state
+  // shows once in the filter tags.
   function rkBoardRow(r) {
     var pid = r.player_id || '';
     var pos = (r.position || '').toUpperCase();
-    var posColor = RK_POS_COLORS[pos] || '#94a3b8';
     var rank = r.overall_rank != null && r.overall_rank !== '' ? +r.overall_rank : null;
     var delta = '';
     var d = r.rank_delta == null || r.rank_delta === '' ? null : parseInt(r.rank_delta, 10);
@@ -600,39 +568,33 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var star = rkWatch[pid]
       ? '<span class="pr-wl-star" title="On your watchlist">&#9733;</span>' : '';
     var posRank = rkPosRankLabel(r);
-    var schoolBit = '';
-    if (posRank && r.school) schoolBit = '<b>' + rkEsc(posRank) + '</b><span class="pr-sep">&middot;</span>' + rkEsc(r.school);
-    else if (posRank) schoolBit = '<b>' + rkEsc(posRank) + '</b>';
-    else if (r.school) schoolBit = rkEsc(r.school);
-    var metaTxt = schoolBit;
-    var tag = r.tag && r.tag.label
-      ? '<span class="m-tier ' + (RK_TAG_CLASS[r.tag.band] || '') + '">' + rkEsc(r.tag.label) + '</span>' : '';
+    var metaTxt = '';
+    if (posRank && r.school) metaTxt = rkEsc(posRank) + ' &middot; ' + rkEsc(r.school);
+    else if (posRank) metaTxt = rkEsc(posRank);
+    else if (r.school) metaTxt = rkEsc(r.school);
     return '<div class="pr-player-row pr-grid-row" data-pid="' + rkEsc(pid) + '" role="button" tabindex="0" aria-label="' + rkEsc(r.name || '') + '">' +
-      '<span class="pr-rank"><span class="pr-rank-num' + (rank === 1 ? ' top' : '') + '">' +
-        (rank !== null && !isNaN(rank) ? rank : '-') + '</span>' + delta + '</span>' +
-      '<span class="pr-name"><span class="pr-nm">' + rkEsc(r.name || 'Unknown') + star + '</span>' +
-        (pos ? '<span class="rk-pos" style="--pc:' + posColor + '">' + rkEsc(pos) + '</span>' : '') +
-        (r.in_season ? '<span class="m-early">In-Season</span>' : '') +
-        '<span class="pr-meta">' +
-          (pos ? '<span class="rk-pos" style="--pc:' + posColor + '">' + rkEsc(pos) + '</span>' : '') +
-          (metaTxt ? '<span class="pr-meta-txt">' + metaTxt + '</span>' : '') +
+      '<span class="pr-rank">#' + (rank !== null && !isNaN(rank) ? rank : '-') + delta + '</span>' +
+      '<span class="rk-player"><span class="pr-name"><span class="pr-nm">' + rkEsc(r.name || 'Unknown') + star + '</span>' +
+        (pos ? '<span class="pos-badge ' + rkEsc(pos) + '">' + rkEsc(pos) + '</span>' : '') +
         '</span>' +
+        (metaTxt ? '<span class="rk-meta">' + metaTxt + '</span>' : '') +
       '</span>' +
-      '<span class="pr-school">' + schoolBit + '</span>' +
       rkStatCell(r, RK_PCT_BOARD[0], '') +
       rkStatCell(r, RK_PCT_BOARD[1], 'pr-eff') +
       rkStatCell(r, RK_PCT_BOARD[2], 'pr-brk') +
-      '<span class="pr-tagcell">' + tag + '</span>' +
+      rkGradeCell(r) +
     '</div>';
   }
 
-  // Divider between tag bands on the default board order (short band name
-  // in the band hue). Never printed above the first group.
+  // Tier line at the head of each band group on the default board order
+  // (short band name in the band hue). Printed above the first group
+  // too: with no tag chips on the rows, the tier lines are what name
+  // every band.
   function rkBandDivider(band) {
     var color = RK_BAND_COLORS[band] || '#94a3b8';
     var label = RK_BAND_SHORT[band] || '';
     return '<div class="pr-tier-divider"><div class="pr-tier-divider-line" style="background:' +
-      color + '"></div><span class="pr-tier-divider-label ' + (RK_BAND_TD[band] || '') + '">' +
+      color + '"></div><span class="pr-tier-divider-label" style="color:' + color + '">' +
       rkEsc(label) + '</span><div class="pr-tier-divider-line" style="background:' +
       color + '"></div></div>';
   }
@@ -735,12 +697,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
                        rkSortKey === 'rank' && rkSortDir === 'asc';
     var byPid = {};
     list.forEach(function(r) { byPid[r.player_id || ''] = r; });
-    var html = '', lastBand = null, firstGroup = true;
+    var html = '', lastBand = null;
     list.forEach(function(r) {
       var band = r.tag ? r.tag.band : null;
       if (showDividers && band && band !== lastBand) {
-        if (!firstGroup) html += rkBandDivider(band);
-        firstGroup = false;
+        html += rkBandDivider(band);
         lastBand = band;
       }
       html += rkBoardRow(r);
@@ -762,8 +723,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
   // Export the current (filtered, sorted) board as CSV.
   function rkExportCSV() {
     var rows = [['Rank', 'Player', 'Position', 'School', 'Pos Rank',
-                 'Production Pct', 'Efficiency Pct', 'Breakout Pct', 'Tag']];
+                 'Production Pct', 'Efficiency Pct', 'Breakout Pct',
+                 'Grade']];
     rkVisiblePlayers().forEach(function(r) {
+      var gs = r.prospect_score == null || r.prospect_score === ''
+        ? NaN : parseFloat(r.prospect_score);
       rows.push([
         r.overall_rank != null ? r.overall_rank : '',
         r.name || '', (r.position || '').toUpperCase(), r.school || '',
@@ -771,7 +735,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         rkPctOf(r, 'production') !== null ? rkPctOf(r, 'production') : '',
         rkPctOf(r, 'efficiency') !== null ? rkPctOf(r, 'efficiency') : '',
         rkPctOf(r, 'breakout') !== null ? rkPctOf(r, 'breakout') : '',
-        r.tag && r.tag.label ? r.tag.label : ''
+        isNaN(gs) ? '' : gs.toFixed(1)
       ]);
     });
     var csv = rows.map(function(row) {
@@ -1278,10 +1242,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
       metaParts.join('<span class="rk-meta-sep" style="opacity:.35;margin:0 3px;">·</span>') +
       '<span id="rkMetaEvidence"></span></div>';
 
-    // Hero cards (Overview). No numeric grade: the primary card is the
-    // band Tag, its sub-line the strongest-evidence receipt (filled in by
-    // rkFillDetail from the detail bundle). Cards with no data are omitted
-    // outright.
+    // Hero cards (Overview). The primary card is the band Tag, its
+    // sub-line the strongest-evidence receipt (filled in by rkFillDetail
+    // from the detail bundle); the numeric Prospect Grade card sits
+    // beside it. Cards with no data are omitted outright.
     var tagLabel = (r.tag && r.tag.label) || '';
     var heroCards = [{ fr: '1.25fr', html:
       '<div class="pm-hero-stat pm-hero-primary">' +
@@ -1289,6 +1253,14 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '<div class="rk-hero-tagval">' + rkEsc(tagLabel) + '</div>' +
         '<div class="pm-hero-sub rk-hero-receipt" id="rkHeroReceipt" style="display:none;"></div>' +
       '</div>' }];
+    var gradeNum = r.prospect_score == null || r.prospect_score === ''
+      ? NaN : parseFloat(r.prospect_score);
+    if (!isNaN(gradeNum)) {
+      heroCards.push({ fr: '1fr', html: '<div class="pm-hero-stat">' +
+        '<div class="pm-hero-label">Prospect Grade</div>' +
+        '<div class="pm-hero-val" id="rkHeroGradeVal">' + gradeNum.toFixed(1) + '</div>' +
+        '<div class="pm-hero-sub">Out of 100</div></div>' });
+    }
     if (r.position_rank != null || r.overall_rank != null) {
       var crVal = (r.position_rank != null && r.position_rank !== '')
         ? pos + r.position_rank : '#' + r.overall_rank;
@@ -1509,6 +1481,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
 
   function rkFillDetail(r, d) {
+    // The detail bundle's grade wins over the board row's when present.
+    var gradeEl = document.getElementById('rkHeroGradeVal');
+    if (gradeEl && d && d.prospect_score != null && d.prospect_score !== '') {
+      var dg = parseFloat(d.prospect_score);
+      if (!isNaN(dg)) gradeEl.textContent = dg.toFixed(1);
+    }
     // The detail bundle's tag wins over the board row's when present.
     if (d && d.tag) {
       rkApplyBand(d.tag);

@@ -1,12 +1,13 @@
 """Tests for the percentile display model (prospect page rework).
 
-The board and modal show no numeric prospect grade: rank, a band tag from
-the internal score, and component percentiles computed within position
-against a reference population of graded prospects. These tests cover the
-percentile function (population, position scoping, the <30 hide rule,
-rounding), the tag band edges, the in-season data-state check, receipt
-generation from stored seasons, and that the shipped page carries no
-grade-rendering code for a fixture player.
+The board and modal show rank, the numeric prospect grade, a band tag
+from the internal score, and component percentiles computed within
+position against a reference population of graded prospects. These tests
+cover the percentile function (population, position scoping, the <30
+hide rule, rounding), the tag band edges, the in-season data-state
+check, receipt generation from stored seasons, and that the shipped
+page carries the grade-rendering code (board Grade column, modal
+Prospect Grade card).
 
 Synthetic data only; no DB needed.
 """
@@ -411,25 +412,45 @@ class TestReceipt:
             "WR", self.SEASONS, {}, {"production": None}) is None
 
 
-class TestNoGradeRendered:
-    """The shipped page must carry no code path that renders a prospect
-    grade numeral on the board or in the modal."""
+class TestGradeRendered:
+    """Grades are back (Kaedon, 2026-11-23): the shipped page renders the
+    numeric prospect grade on the board (Grade column) and in the modal
+    (Prospect Grade hero card). The pre-rework dense grade renderers stay
+    gone. The board carries no prospect tag chips (Kaedon, 2026-11-23):
+    the labeled tier divider lines name each band group instead; the
+    modal keeps its Prospect Tag card."""
 
     FIXTURE_SCORE = 91.58
 
-    def test_page_has_no_grade_rendering(self):
+    def test_page_renders_grade(self):
         html = build_prospects_body(False)
-        # The old grade renderers are gone entirely.
+        # The old dense grade renderers are gone entirely.
         assert "rkScore1" not in html
         assert "rk-dense" not in html
         assert "rkDense" not in html
         assert 'pm-hero-label">Prospect Score' not in html
         assert "Grade Breakdown" not in html
-        # The new display pieces are present.
+        # The grade display pieces are present.
+        assert "rkGradeCell" in html
+        assert "pr-grade" in html
+        assert '<span class="th-r">Grade</span>' in html
+        assert 'pm-hero-label">Prospect Grade' in html
+        assert "rkHeroGradeVal" in html
+        # The other display pieces are present.
         assert "rkBoardRow" in html
         assert "rkPoolLine" in html
         assert "tag-chip" in html
         assert "rkHeroReceipt" in html
+        # The board shows no prospect tag chip and no Tag column: the
+        # tier lines carry the band. (The modal's tag-chip surfaces
+        # above stay.)
+        assert "pr-tagcell" not in html
+        assert '<span class="th-r">Tag</span>' not in html
+        # The CSV export matches the board: no Tag column either.
+        assert "'Breakout Pct', 'Tag'" not in html
+        assert "r.tag && r.tag.label ? r.tag.label : ''," not in html
+        assert "rkBandDivider" in html
+        assert "RK_BAND_SHORT" in html
 
     def test_board_uses_native_row_classes(self):
         html = build_prospects_body(False)
@@ -453,8 +474,9 @@ class TestNoGradeRendered:
         assert "rkExportCSV" in html
 
     def test_fixture_display_fields_carry_no_grade(self):
-        # Everything the board/modal renders for a player is derived from
-        # these fields; none of them may contain his grade.
+        # The grade numeral renders from the raw prospect_score field;
+        # the derived display surfaces (tag, percentiles, receipt) still
+        # never embed it.
         import json
         pop = ra.reference_population("WR", ref_rows=_pop_rows(40, tested=40))
         row = {"production_score": 89.0, "efficiency_score": 59.5,
