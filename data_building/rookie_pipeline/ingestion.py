@@ -1942,6 +1942,7 @@ def fetch_cfbd_college_stats(
     skip_sagarin: bool = False,
     player_ids: Optional[List[str]] = None,
     gp_stateless: bool = False,
+    targets_time_budget_s: Optional[float] = None,
 ) -> Dict[str, List[Dict]]:
     """
     Fetch college stats from CFBD for the 3 seasons before `draft_year`.
@@ -1960,6 +1961,10 @@ def fetch_cfbd_college_stats(
             derive / backtest mode, whose GP totals are never
             persisted. Default False = the live pipeline's tracked,
             week-incremental behavior.
+        targets_time_budget_s: Forwarded to
+            fetch_cfbd_targets_from_plays as its time budget for the
+            play-by-play targets sweep at the end of this fetch.
+            Default None = unbounded (historical behavior).
     """
 
     if not CFBD_KEY:
@@ -2127,7 +2132,9 @@ def fetch_cfbd_college_stats(
                     if yr and team:
                         teams_by_year.setdefault(yr, set()).add(team)
             teams_by_year = {yr: sorted(teams) for yr, teams in teams_by_year.items()}
-            targets_map = fetch_cfbd_targets_from_plays(draft_year, teams_by_year)
+            targets_map = fetch_cfbd_targets_from_plays(
+                draft_year, teams_by_year,
+                time_budget_s=targets_time_budget_s)
             if targets_map:
                 targets_by_key = _rekey_by_canonical(targets_map)
                 merged = 0
@@ -2944,6 +2951,7 @@ def fetch_cfbd_targets_from_plays(
     teams_by_year: Dict[int, List[str]],
     adopt_stored: bool = True,
     on_team_season=None,
+    time_budget_s: Optional[float] = None,
 ) -> Dict[str, Dict[int, Dict[str, Any]]]:
     """
     Target counts + target share parsed from CFBD play-by-play TEXT.
@@ -2984,6 +2992,15 @@ def fetch_cfbd_targets_from_plays(
     then loses at most the in-flight team-season.  Callback exceptions are
     logged, never fatal to the fetch.
 
+    time_budget_s (optional): wall-clock budget for the whole sweep.
+    When it expires the fetch stops starting new team-seasons and weeks,
+    and returns the stored totals plus every addition validated so far -
+    the same additive composition as a complete run, just partial.
+    Unset (the default) means no budget: the backfill and daily-fill
+    callers keep their historical run-to-completion behavior.  The
+    weekly pipeline passes a budget so a CFBD outage (429s, timeouts)
+    cannot let this sweep consume the step's whole timeout.
+
     Returns {} on any failure - the pipeline continues without targets.
     """
     if not CFBD_KEY or not teams_by_year:
@@ -2993,6 +3010,23 @@ def fetch_cfbd_targets_from_plays(
 
     today = _today()
     seasons = sorted(teams_by_year)
+    _budget_start = time.monotonic()
+    _budget_logged = False
+
+    def _over_budget() -> bool:
+        nonlocal _budget_logged
+        if time_budget_s is None:
+            return False
+        if (time.monotonic() - _budget_start) <= time_budget_s:
+            return False
+        if not _budget_logged:
+            _budget_logged = True
+            print(f"[targets-plays] TIME BUDGET EXCEEDED "
+                  f"({time_budget_s:.0f}s) - stopping new work and "
+                  f"returning stored totals plus validated additions "
+                  f"so far")
+        return True
+
     stored = _get_existing_targets(draft_year, seasons)
     tracked = _get_fetched_weeks("targets", seasons)
     baselines = _get_team_targets_baselines(seasons)
@@ -3127,6 +3161,13 @@ def fetch_cfbd_targets_from_plays(
             return None
 
     for season_year in seasons:
+        if _over_budget():
+            # Budget gone: no new fetches for this or any later season.
+            # Seed the stored totals so the return still carries them,
+            # exactly like a zero-new-weeks run for these seasons.
+            if adopt_stored:
+                _seed_stored(season_year)
+            continue
         teams = sorted(set(teams_by_year[season_year]))
         if not teams:
             continue
@@ -3174,6 +3215,8 @@ def fetch_cfbd_targets_from_plays(
         if season_year < today.year:
             # ── Finished season: ONE season-level /plays call per team ──
             for team in teams:
+                if _over_budget():
+                    break
                 done = set(season_tracked.get(team, set())) if adopt_stored else set()
                 if adopt_stored and candidates and set(candidates) <= done:
                     continue  # every week already folded into stored totals
@@ -3189,6 +3232,8 @@ def fetch_cfbd_targets_from_plays(
                     for wk in candidates:
                         if wk in done:
                             continue
+                        if _over_budget():
+                            break
                         wk_rows = _fetch_plays(season_year, team, week=wk)
                         if wk_rows is None:
                             continue
@@ -3222,6 +3267,8 @@ def fetch_cfbd_targets_from_plays(
             # ── Current season: per-week incremental per team ──
             est = _estimated_current_week(today)
             for team in teams:
+                if _over_budget():
+                    break
                 done = set(season_tracked.get(team, set())) if adopt_stored else set()
                 weeks_to_fetch = [w for w in candidates if w not in done]
                 if not weeks_to_fetch:
@@ -3233,6 +3280,8 @@ def fetch_cfbd_targets_from_plays(
                 team_total_new = 0
                 fetched_ok: List[int] = []
                 for week in weeks_to_fetch:
+                    if _over_budget():
+                        break
                     rows = _fetch_plays(season_year, team, week=week)
                     if rows is None:
                         continue  # failure: leave unmarked, retried next run
