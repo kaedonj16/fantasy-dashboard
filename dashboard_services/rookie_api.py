@@ -137,6 +137,70 @@ def _row_to_dict(row: dict) -> dict:
     return out
 
 
+# ── Draft capital as DISPLAY context (model 3.7+) ────────────────────────────
+# Grades are capital-free talent grades: score_prospect never reads the
+# mock-draft consensus, and rows graded under 3.7 store no capital bullet
+# in key_reasons and a NULL capital_delta. The projected pick still
+# surfaces for the reader, assembled here at the display layer from the
+# stored consensus metadata the rankings row already carries
+# (rookie_mock_draft_consensus, joined in get_rookie_rankings_from_db).
+# Nothing in this section feeds any grade field.
+
+def _capital_display_note(row: dict) -> str | None:
+    """The projected-pick line for the modal's scouting notes, built from
+    stored mock-draft consensus metadata on the rankings row. Mirrors the
+    wording the grading model embedded in key_reasons at grade time
+    before 3.7 removed capital from the model entirely."""
+    pick = row.get("projected_pick")
+    if pick is None:
+        return None
+    try:
+        pick = int(round(float(pick)))
+    except (TypeError, ValueError):
+        return None
+    rnd = row.get("projected_round")
+    try:
+        rnd = int(rnd) if rnd is not None else None
+    except (TypeError, ValueError):
+        rnd = None
+    if rnd is None:
+        rnd = (pick - 1) // 32 + 1
+    note = f"Projected pick #{pick} (Round {rnd})"
+    n_mocks = row.get("num_mocks_used")
+    try:
+        n_mocks = int(n_mocks) if n_mocks is not None else 0
+    except (TypeError, ValueError):
+        n_mocks = 0
+    if n_mocks >= 1:
+        note += f" across {n_mocks} mock draft" + ("s" if n_mocks != 1 else "")
+        conf = _safe_float(row.get("consensus_confidence"))
+        if n_mocks >= 3 and conf is not None:
+            note += f", {conf:.0f}% consensus"
+    return note
+
+
+def _with_capital_note(d: dict) -> dict:
+    """Append the capital display note to a payload row's key_reasons.
+
+    Rows graded before 3.7 already carry the line inside the stored
+    key_reasons; never duplicate it. Mutates and returns the given dict —
+    callers pass their response copy, never the cached rankings row.
+    Only key_reasons changes; every grade field is left untouched.
+    """
+    note = _capital_display_note(d)
+    if not note:
+        return d
+    existing = d.get("key_reasons") or ""
+    for line in str(existing).split("\n"):
+        text = line.strip().lstrip("•·-* ").strip()
+        if text.startswith("Projected pick #") or text.startswith("Drafted: Pick #"):
+            return d
+    d["key_reasons"] = (
+        (str(existing).rstrip("\n") + "\n") if existing else ""
+    ) + "• " + note
+    return d
+
+
 # ── Prospect redesign: detail helpers ─────────────────────────────────────────
 # The Advanced metrics section shows ONLY metrics the pipeline actually stores.
 # Raw values come straight from the DB tables; grades are simple documented
@@ -1832,6 +1896,9 @@ def rankings():
         result = []
         for r in rows:
             d = _row_to_dict(r)
+            # Display-only: projected-pick line in the notes, from stored
+            # consensus metadata (3.7 grades carry no capital bullet).
+            _with_capital_note(d)
 
             # Use same model values as player rankings page; fall back to rookie_value.
             # Write calibrated values back into value/sf_value so JS (rkGetValue +
@@ -2090,6 +2157,8 @@ def player_detail(player_id: str):
             return jsonify({"error": "Player not found"}), 404
         
         player_data = _row_to_dict(row)
+        # Display-only: same capital note assembly as /rankings.
+        _with_capital_note(player_data)
 
         # Add headshot URL as espnHeadshot for modal compatibility
         if player_data.get("headshot_url"):
@@ -2291,7 +2360,7 @@ def add_prospects():
 
             # Retrieve the newly ranked row for the response
             updated = next((r for r in current if r["player_id"] == prospect["player_id"]), row)
-            scored_rows.append(_row_to_dict(updated))
+            scored_rows.append(_with_capital_note(_row_to_dict(updated)))
 
             # Persist to DB (best-effort - non-fatal if DB is unavailable)
             try:
@@ -2392,6 +2461,7 @@ def by_sleeper(sleeper_id: str):
             row = next((r for r in rows if str(r.get("sleeper_id") or "") == str(sleeper_id)), None)
             if row:
                 d = _row_to_dict(row)
+                _with_capital_note(d)
                 d["draft_capital_label"] = format_draft_capital(
                     d.get("projected_round"), d.get("projected_pick"),
                     d.get("projected_pick_low"), d.get("projected_pick_high"),
@@ -2431,6 +2501,7 @@ def by_sleeper(sleeper_id: str):
 
                 if row:
                     d = dict(row)
+                    _with_capital_note(d)
                     d["draft_capital_label"] = format_draft_capital(
                         d.get("projected_round"), d.get("projected_pick"),
                         d.get("projected_pick_low"), d.get("projected_pick_high"),
