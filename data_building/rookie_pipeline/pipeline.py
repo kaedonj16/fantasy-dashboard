@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from data_building.rookie_pipeline.mock_draft_consensus import _slug
 
 
@@ -2147,6 +2147,61 @@ def _score_from_db(
     }
 
 
+# Stage 2's play-by-play targets sweep gets a hard wall-clock budget
+# inside the weekly run: on 2026-11-22 the sweep (behind the
+# season-stat fetches) burned the step's whole 3h timeout while CFBD
+# was rate-limiting, and no grades were written for the third Sunday
+# running. 30 minutes leaves the rest of Stage 2 and Stages 2b-6
+# ample room inside the step budget; targets already stored stay in
+# force (the targets merge is additive).
+_STAGE2_TARGETS_TIME_BUDGET_S = 1800
+
+
+def _stage2_live_stats(
+    draft_year: int,
+    prospects: List[Dict],
+    season_complete: bool,
+) -> Tuple[Dict[str, List[Dict]], bool]:
+    """
+    Stage 2's live CFBD fetch, bounded and fail-soft.
+
+    Returns (cfbd_stats, usable). usable is False when the fetch
+    raised, returned nothing, or returned no rows for the in-progress
+    season (draft_year - 1) while that season is still being played -
+    the 2026-11-22 signature, where /stats/player/season loaded 0
+    players for both live seasons. In every one of those cases the
+    caller skips the stats write entirely and grades from the season
+    stats already stored in the DB instead: stored rows are never
+    overwritten by an empty or partial fetch, and the refresh still
+    completes. On a healthy fetch nothing changes - the same call,
+    the same upsert.
+    """
+    from .ingestion import fetch_cfbd_college_stats
+
+    try:
+        stats = fetch_cfbd_college_stats(
+            draft_year,
+            fetch_games_played=True,
+            player_ids=[p["player_id"] for p in prospects],
+            targets_time_budget_s=_STAGE2_TARGETS_TIME_BUDGET_S,
+        ) or {}
+    except Exception as exc:
+        print(f"[pipeline] STAGE 2: live CFBD fetch raised "
+              f"{type(exc).__name__}: {exc}")
+        return {}, False
+    if not stats:
+        return stats, False
+    if season_complete:
+        return stats, True
+    current_season = draft_year - 1
+    usable = any(
+        s.get("season") == current_season
+        for seasons in stats.values()
+        for s in seasons
+    )
+    return stats, usable
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API - full DB path
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2167,7 +2222,6 @@ def run_rookie_pipeline_staged(
     from dashboard_services.db import get_conn
     from .ingestion import (
         fetch_sportradar_prospects,
-        fetch_cfbd_college_stats,
         fetch_local_combine_csv,
     )
     from .sagarin import get_team_rating as _sagarin_get_team_rating
@@ -2385,6 +2439,7 @@ def run_rookie_pipeline_staged(
             )
             existing_stats = cur.fetchone()["count"]
 
+    stats_fallback = False
     if existing_stats > 0 and _season_complete:
         print(f"[pipeline] STAGE 2 SKIPPED: {existing_stats} non-zero stat records already in DB for {draft_year}")
         n_stats = 0
@@ -2393,18 +2448,25 @@ def run_rookie_pipeline_staged(
             print(f"[pipeline] STAGE 2: refreshing in-progress season stats ({existing_stats} records exist)")
         # fetch_games_played=True: exact games-played counts via /games/players
         # (~51 API calls) so per-game rates are accurate mid-season instead of
-        # defaulting to 12 games.
-        cfbd_stats = fetch_cfbd_college_stats(
-            draft_year,
-            fetch_games_played=True,
-            player_ids=[p["player_id"] for p in sr_prospects],
-        )
-        print(f"[pipeline] Fetched stats for {len(cfbd_stats)} players")
+        # defaulting to 12 games. The fetch is bounded and fail-soft (see
+        # _stage2_live_stats): an unusable live result never reaches the
+        # upsert, and the run grades from stored stats instead of dying
+        # with the fetch (2026-11-22: three Sundays stale).
+        cfbd_stats, stats_usable = _stage2_live_stats(
+            draft_year, sr_prospects, _season_complete)
+        if stats_usable:
+            print(f"[pipeline] Fetched stats for {len(cfbd_stats)} players")
 
-        with get_conn() as conn:
-            n_stats = upsert_prospect_source_data(sr_prospects, cfbd_stats, draft_year, conn)
+            with get_conn() as conn:
+                n_stats = upsert_prospect_source_data(sr_prospects, cfbd_stats, draft_year, conn)
 
-        print(f"[pipeline] STAGE 2 COMPLETE: Saved {n_stats} stat records to rookie_prospect_source_data")
+            print(f"[pipeline] STAGE 2 COMPLETE: Saved {n_stats} stat records to rookie_prospect_source_data")
+        else:
+            stats_fallback = True
+            n_stats = 0
+            print(f"[pipeline] STAGE 2 FALLBACK: live CFBD fetch produced no usable "
+                  f"stats for {draft_year} - grading from the season stats already "
+                  f"stored in the DB ({existing_stats} non-zero records on file)")
 
     # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 2b: Recruiting Pedigree + WEPA + Team Context ======")
@@ -2629,6 +2691,7 @@ def run_rookie_pipeline_staged(
         "consensus": consensus_map,
         "scores": scores,
         "values": values,
+        "stats_fallback": stats_fallback,
     }
 
 
