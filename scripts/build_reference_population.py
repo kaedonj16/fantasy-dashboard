@@ -14,6 +14,17 @@ the advanced marks, season rates, and testing marks the percentile
 surfaces pool over. Rows are REFERENCE ONLY: percentile anchors,
 never prospects; no board/values/rankings query reads them.
 
+The same run also persists the past-class archive
+(prospect_class_archive, migration 058): the full grade
+(prospect_score) plus school and the component scores, one row per
+drafted skill player. The archive is what the Prospects page's
+past-class boards and the combined all-classes board read; it is a
+separate surface and the reference table's guard is untouched.
+Archive years run 2016-2026 so the stored classes the archive board
+combines with (2025, 2026) are graded by the same run and model as
+the historical classes; pass them explicitly, e.g.
+--years 2016 2017 ... 2026, one season at a time on a small database.
+
 Machinery is reused, not reimplemented: draft classes, combine
 athleticism, and CFBD college stats come from the backtest loaders
 (scripts/backtest_prospect_model.py, which fetches through the
@@ -41,8 +52,8 @@ Tgt/Gm and Catch% marks carry only whatever the structured season
 fetch provides, and those two distributions stay thin (the
 percentile surfaces hide thin metrics rather than fake them).
 
-Usage (Render web shell, after migration 050 has run):
-    python scripts/run_migrations.py            # applies 050
+Usage (Render web shell, after migrations 050 and 058 have run):
+    python scripts/run_migrations.py            # applies 050 + 058
     nohup python scripts/build_reference_population.py \
         > /tmp/refpop.log 2>&1 &
     tail -f /tmp/refpop.log                     # per-year progress
@@ -69,6 +80,13 @@ sys.path.insert(0, _REPO_ROOT)
 sys.path.insert(0, os.path.join(_REPO_ROOT, "tests"))
 
 DEFAULT_YEARS = list(range(2016, 2025))
+# Years the past-class archive (migration 058) can hold: the
+# reference classes plus the drafted classes the live pipeline also
+# stores, so every class on the combined board is graded by the same
+# run and model. --years accepts any of these (or any other year the
+# loaders can resolve); the reference writes above keep their own
+# behavior regardless of the year.
+ARCHIVE_YEARS = list(range(2016, 2027))
 SKILL_POS = {"QB", "RB", "WR", "TE"}
 # Testing fields the modal's Testing table pools over (rookie_api
 # _TEST_SPECS keys), as carried in the combine loader's dicts.
@@ -99,6 +117,30 @@ ON CONFLICT (position, draft_class_year, player_name) DO UPDATE SET
     advanced_marks         = EXCLUDED.advanced_marks,
     season_rates           = EXCLUDED.season_rates,
     testing_marks          = EXCLUDED.testing_marks,
+    model_version          = EXCLUDED.model_version,
+    updated_at             = NOW()
+"""
+
+
+_ARCHIVE_UPSERT_SQL = """
+INSERT INTO prospect_class_archive (
+    player_name, position, draft_class_year, school, actual_pick,
+    prospect_score, production_score, efficiency_score,
+    breakout_profile_score, competition_score, model_version,
+    updated_at)
+VALUES (
+    %(player_name)s, %(position)s, %(draft_class_year)s, %(school)s,
+    %(actual_pick)s, %(prospect_score)s, %(production_score)s,
+    %(efficiency_score)s, %(breakout_profile_score)s,
+    %(competition_score)s, %(model_version)s, NOW())
+ON CONFLICT (position, draft_class_year, player_name) DO UPDATE SET
+    school                 = EXCLUDED.school,
+    actual_pick            = EXCLUDED.actual_pick,
+    prospect_score         = EXCLUDED.prospect_score,
+    production_score       = EXCLUDED.production_score,
+    efficiency_score       = EXCLUDED.efficiency_score,
+    breakout_profile_score = EXCLUDED.breakout_profile_score,
+    competition_score      = EXCLUDED.competition_score,
     model_version          = EXCLUDED.model_version,
     updated_at             = NOW()
 """
@@ -210,6 +252,59 @@ def build_reference_rows(
     return rows
 
 
+def build_archive_rows(
+    draft_year: int,
+    draft_class: List[Dict[str, Any]],
+    prospects: List[Dict[str, Any]],
+    scores: List[Dict[str, Any]],
+    model_version: str,
+) -> List[Dict[str, Any]]:
+    """Assemble prospect_class_archive rows for one class.
+
+    Same inputs and one-row-per-scored-skill-player rule as
+    build_reference_rows, but the archive keeps the overall grade:
+    prospect_score is the board's rank key, so a player the model did
+    not score (no prospect_score) has no archive row. School comes
+    from the prospect dict the backtest builder assembled (its
+    "school"), falling back to the draft-class loader's "college".
+    """
+    dc_by_id = {
+        (p["gsis_id"] or p["name"].lower().replace(" ", "-")): p
+        for p in draft_class
+    }
+    p_by_id = {p["player_id"]: p for p in prospects}
+    rows: List[Dict[str, Any]] = []
+    for sc in scores:
+        pid = sc.get("player_id")
+        p = p_by_id.get(pid, {})
+        dc = dc_by_id.get(pid, {})
+        pos = (sc.get("position") or p.get("position") or "").upper()
+        if pos not in SKILL_POS:
+            continue
+        name = (p.get("name") or dc.get("name") or "").strip()
+        if not name:
+            continue
+        grade = sc.get("prospect_score")
+        if grade is None:
+            continue
+        pick = dc.get("draft_pick") or None
+        rows.append({
+            "player_name": name,
+            "position": pos,
+            "draft_class_year": int(draft_year),
+            "school": (p.get("school") or dc.get("college")
+                       or p.get("college") or ""),
+            "actual_pick": int(pick) if pick else None,
+            "prospect_score": grade,
+            "production_score": sc.get("production_score"),
+            "efficiency_score": sc.get("efficiency_score"),
+            "breakout_profile_score": sc.get("breakout_profile_score"),
+            "competition_score": sc.get("competition_score"),
+            "model_version": model_version,
+        })
+    return rows
+
+
 def year_is_complete(stored_count: int, expected_count: int) -> bool:
     """Resumability rule: a year is done when its stored rows already
     cover every drafted skill player in it."""
@@ -241,6 +336,29 @@ def _upsert_rows(rows: List[Dict[str, Any]]) -> int:
                     "season_rates": json.dumps(r["season_rates"]),
                     "testing_marks": json.dumps(r["testing_marks"]),
                 })
+                written += 1
+        conn.commit()
+    return written
+
+
+def _stored_archive_count(draft_year: int) -> int:
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM prospect_class_archive "
+            "WHERE draft_class_year = %s",
+            (draft_year,),
+        ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+def _upsert_archive_rows(rows: List[Dict[str, Any]]) -> int:
+    from dashboard_services.db import get_conn
+    written = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for r in rows:
+                cur.execute(_ARCHIVE_UPSERT_SQL, r)
                 written += 1
         conn.commit()
     return written
@@ -427,7 +545,12 @@ def _run_year(draft_year: int, force: bool = False,
     expected = len(draft_class)
     if not force:
         stored = _stored_count(draft_year)
-        if year_is_complete(stored, expected):
+        try:
+            arch_stored = _stored_archive_count(draft_year)
+        except Exception:
+            arch_stored = -1  # archive table unreachable: never skip
+        if (year_is_complete(stored, expected)
+                and year_is_complete(arch_stored, expected)):
             print(f"[refpop] {draft_year}: {stored} rows stored, covering "
                   f"all {expected} drafted skill players; skipping "
                   f"(pass --force to re-grade).")
@@ -471,6 +594,21 @@ def _run_year(draft_year: int, force: bool = False,
         by_pos[r["position"]] = by_pos.get(r["position"], 0) + 1
     print(f"[refpop] {draft_year}: wrote {written} reference rows "
           f"({', '.join(f'{k} {v}' for k, v in sorted(by_pos.items()))}).")
+    # The past-class archive rides the same scores: the full grade the
+    # reference rows discard, plus school. A failure here never loses
+    # the reference write above, but it is loud: without archive rows
+    # the year's board simply does not exist.
+    arch_rows = build_archive_rows(draft_year, draft_class, prospects,
+                                   scores, MODEL_VERSION)
+    try:
+        arch_written = _upsert_archive_rows(arch_rows)
+        print(f"[refpop] {draft_year}: wrote {arch_written} archive "
+              f"rows (prospect_class_archive).")
+    except Exception as exc:
+        print(f"[refpop] {draft_year}: WARNING archive upsert failed "
+              f"({type(exc).__name__}: {exc}); the year's past-class "
+              f"board was NOT written. Run migration 058 and re-run "
+              f"this year.")
     return written
 
 
@@ -520,18 +658,31 @@ def run_dry_run() -> List[Dict[str, Any]]:
               f"pick={r['actual_pick']}  prod={r['production_score']}  "
               f"eff={r['efficiency_score']}  marks={len(r['advanced_marks'])}"
               f"  rates={len(r['season_rates'])}  tested={r['tested']}")
-    print(f"[refpop] dry run: {len(rows)} fixture rows assembled; "
-          f"nothing written (no DB, no key needed).")
+    arch_rows = build_archive_rows(2027, draft_class, fixtures, scores,
+                                   MODEL_VERSION)
+    for r in arch_rows:
+        print(f"  [DRY-ARCHIVE] {r['player_name']:<22} "
+              f"{r['position']:>2}  pick={r['actual_pick']}  "
+              f"grade={r['prospect_score']}  "
+              f"school={r['school'] or '-'}")
+    print(f"[refpop] dry run: {len(rows)} fixture rows assembled "
+          f"({len(arch_rows)} archive rows); nothing written "
+          f"(no DB, no key needed).")
     return rows
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Build the graded reference population (drafted "
-                    "classes 2016-2024) for prospect percentiles.")
+                    "classes 2016-2024) for prospect percentiles, "
+                    "plus the past-class archive boards "
+                    "(prospect_class_archive, classes 2016-2026).")
     parser.add_argument("--years", nargs="+", type=int,
                         default=DEFAULT_YEARS,
-                        help="Draft years to process (default: 2016-2024)")
+                        help="Draft years to process (default: "
+                             "2016-2024; the archive spans 2016-2026, "
+                             "pass 2025/2026 explicitly to grade them "
+                             "with this same run and model)")
     parser.add_argument("--force", action="store_true",
                         help="Re-grade years already fully stored")
     parser.add_argument("--targets", action="store_true",

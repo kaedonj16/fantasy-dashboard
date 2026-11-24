@@ -3,7 +3,12 @@ Rookie prospect API blueprint.
 
 Endpoints:
     GET  /api/prospects/rankings?year=2026&pos=WR&league_type=1qb
+         (?year=<past class> serves that class's archive board when the
+         pipeline never stored it; ?year=all serves every class on one
+         board, ranked together by grade)
     GET  /api/prospects/player/<player_id>
+         (archive players carry ARCHIVE_<year>_<pos>_<name-slug> ids
+         and resolve to the archive detail branch)
     GET  /api/prospects/active-class
     POST /api/prospects/prospects        (add/update one or more prospects)
     POST /api/prospects/refresh          (triggers pipeline re-run)
@@ -1930,16 +1935,320 @@ def get_board_rows(draft_year: int) -> list[dict[str, Any]]:
     return rows
 
 
+# ── Past-class archive boards (migration 058) ─────────────────────────────
+# prospect_class_archive holds one graded row per drafted QB/RB/WR/TE
+# for the classes the live pipeline never stored, written by
+# scripts/build_reference_population.py from the same scores that run
+# grades for the percentile pools, under the model current at run
+# time. Past-class boards read ONLY this table; the migration-050
+# reference rows stay percentile anchors and never surface as board
+# rows (their one reader remains _reference_rows, used below purely
+# to price percentiles, exactly as the live board uses it).
+#
+# Archive player ids are ARCHIVE_<year>_<POS>_<name slug>, unique on
+# the archive table's own key (position, draft_class_year,
+# player_name); the /player branch below resolves them.
+
+ARCHIVE_ID_PREFIX = "ARCHIVE_"
+_archive_cache: dict = {}
+
+
+def _archive_slug(name) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
+    return slug or "player"
+
+
+def archive_player_id(year, position, name) -> str:
+    return (f"{ARCHIVE_ID_PREFIX}{int(year)}_"
+            f"{(position or '').upper()}_{_archive_slug(name)}")
+
+
+def _parse_archive_player_id(player_id):
+    """(year, position, slug) for an archive id, else None."""
+    if not player_id or not str(player_id).startswith(ARCHIVE_ID_PREFIX):
+        return None
+    parts = str(player_id)[len(ARCHIVE_ID_PREFIX):].split("_", 2)
+    if len(parts) != 3:
+        return None
+    try:
+        year = int(parts[0])
+    except (TypeError, ValueError):
+        return None
+    return year, parts[1].upper(), parts[2]
+
+
+def _archive_store_rows(year=None):
+    """Raw archive rows for one class (or every class when year is
+    None). Fail-soft: [] on any DB error, including the table not
+    existing yet, so a pre-migration deploy serves empty past-class
+    boards instead of erroring."""
+    key = year if year is not None else "all"
+    if key in _archive_cache:
+        return _archive_cache[key]
+    rows = []
+    try:
+        from dashboard_services.db import get_conn
+        sql = ("SELECT player_name, position, draft_class_year, school,"
+               " actual_pick, prospect_score, production_score,"
+               " efficiency_score, breakout_profile_score,"
+               " competition_score, model_version"
+               " FROM prospect_class_archive")
+        with get_conn() as conn:
+            if year is None:
+                rows = conn.execute(sql).fetchall() or []
+            else:
+                rows = conn.execute(
+                    sql + " WHERE draft_class_year = %s",
+                    (year,)).fetchall() or []
+        rows = [dict(r) for r in rows]
+    except Exception:
+        log.debug("[rookie_api] archive rows failed", exc_info=True)
+        rows = []
+    if rows:
+        _archive_cache[key] = rows
+    return rows
+
+
+def _archive_percentiles(row, population, ref_row):
+    """Percentile panel for one archive row, on the live board's own
+    definitions. Production / efficiency / breakout rank the player's
+    raw drivers against the position's driver distributions: the
+    driver values are the marks the backfill stored for him in the
+    reference pool (best completed-season primary rate, best per-play
+    rate, best dominator), read through the pool's one sanctioned
+    reader. Competition ranks his stored component score against the
+    pool's score distribution. The three driver components' SCORES
+    are never ranked directly: they clip at 100 and plateau, which is
+    why the live board abandoned score shares for them (see the PCT
+    note at PCT_COMPONENTS). A missing driver or a pool under
+    PCT_MIN_POPULATION hides the percentile (None), never fakes it.
+    """
+    pos = (row.get("position") or "").upper()
+    drivers = {c: None for c in _PCT_RAW_COMPONENTS}
+    if ref_row:
+        rates = _json_obj(ref_row.get("season_rates"), [])
+        if isinstance(rates, list):
+            rvals = [x for x in (_safe_float(v) for v in rates)
+                     if x is not None]
+            if rvals:
+                drivers["production"] = max(rvals)
+        marks = _json_obj(ref_row.get("advanced_marks"), {})
+        if isinstance(marks, dict):
+            eff_mark = _PCT_EFFICIENCY_DRIVER.get(
+                pos, _PCT_EFFICIENCY_DRIVER["WR"])[1]
+            drivers["efficiency"] = _safe_float(marks.get(eff_mark))
+            drivers["breakout"] = _safe_float(
+                marks.get(_PCT_BREAKOUT_MARK))
+    dists = population.get("drivers") or {}
+    out = {}
+    for comp in _PCT_RAW_COMPONENTS:
+        out[comp] = component_percentile(
+            drivers.get(comp), dists.get(comp))
+    out["competition"] = component_percentile(
+        row.get("competition_score"),
+        (population.get("values") or {}).get("competition"))
+    return out
+
+
+def _archive_ref_lookup(position):
+    """{(name key, class year): reference row} at one position, for
+    percentile driver lookup only. The reference rows themselves are
+    never copied into a board row."""
+    pos = (position or "").upper()
+    out = {}
+    for r in _reference_rows(pos):
+        name = (r.get("player_name") or "").strip().lower()
+        yr = r.get("draft_class_year")
+        if name and yr is not None:
+            try:
+                out[(name, int(yr))] = r
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _shape_archive_rows(store_rows):
+    """Archive store rows -> board rows: ranks from grade order
+    (overall across the given set, position rank within position),
+    band tag, driver percentiles. The caller decides the set: one
+    class for a year board, every class for the combined board, so
+    ranks always describe the board actually being shown."""
+    rows = []
+    pops: dict = {}
+    ref_lookups: dict = {}
+    for r in store_rows:
+        pos = (r.get("position") or "").upper()
+        if pos not in ("QB", "RB", "WR", "TE"):
+            continue
+        score = _safe_float(r.get("prospect_score"))
+        if score is None:
+            continue
+        if pos not in pops:
+            pops[pos] = reference_population(pos)
+            ref_lookups[pos] = _archive_ref_lookup(pos)
+        yr = r.get("draft_class_year")
+        ref_row = ref_lookups[pos].get(
+            ((r.get("player_name") or "").strip().lower(),
+             int(yr) if yr is not None else None))
+        d = {
+            "player_id": archive_player_id(
+                yr, pos, r.get("player_name")),
+            "name": r.get("player_name"),
+            "position": pos,
+            "school": r.get("school") or "",
+            "draft_class_year": yr,
+            "actual_pick": r.get("actual_pick"),
+            "prospect_score": score,
+            "model_version": r.get("model_version"),
+            "archive": True,
+            "rank_delta": None,
+            "in_season": False,
+        }
+        d["percentiles"] = _archive_percentiles(d | r, pops[pos], ref_row)
+        d["tag"] = prospect_tag(score)
+        rows.append(d)
+    rows.sort(key=lambda x: -(x["prospect_score"]))
+    pos_counts: dict = {}
+    for i, d in enumerate(rows, start=1):
+        d["overall_rank"] = i
+        pos_counts[d["position"]] = pos_counts.get(d["position"], 0) + 1
+        d["position_rank"] = pos_counts[d["position"]]
+    return rows
+
+
+def _archive_board_rows(year):
+    """Board rows for one archive class year ([] when the class has
+    no archive rows)."""
+    return _shape_archive_rows(_archive_store_rows(year))
+
+
+def _archive_detail(player_id):
+    """Minimal detail payload for one archive player, or None.
+
+    Only what the archive actually stores: grade, component
+    percentiles, band, pick, school, and his standing in his own
+    class. No seasons, advanced metrics, archetype, or values are
+    attached: the modal omits the sections that have no data rather
+    than rendering placeholders for them.
+    """
+    parsed = _parse_archive_player_id(player_id)
+    if not parsed:
+        return None
+    year, pos, slug = parsed
+    store = _archive_store_rows(year)
+    match = next(
+        (r for r in store
+         if (r.get("position") or "").upper() == pos
+         and _archive_slug(r.get("player_name")) == slug),
+        None)
+    if match is None:
+        return None
+    board = _shape_archive_rows(store)
+    row = next((d for d in board
+                if d["player_id"] == player_id), None)
+    if row is None:
+        return None
+    detail = dict(row)
+    detail["percentiles"] = row.get("percentiles") or {}
+    detail["class_size"] = len(board)
+    detail["position_class_size"] = sum(
+        1 for d in board if d["position"] == pos)
+    return detail
+
+
+def _combined_board_rows():
+    """Every class on one board, ranked together by grade.
+
+    Stored classes (the ones the pipeline graded into its rankings
+    store) come through get_board_rows with their full board
+    enrichment; classes that exist only in the archive contribute
+    their archive rows. A stored class wins over its archive rows for
+    the same year (fuller data), and the merge dedupes on
+    (name, draft_class_year). Ranks are then reassigned across the
+    combined set by grade, and per-class rank deltas are cleared:
+    movement inside one class says nothing about the combined board.
+    """
+    from data_building.rookie_pipeline.pipeline import (
+        get_active_rookie_class)
+    active = get_active_rookie_class()
+    archive_by_year: dict = {}
+    for r in _archive_store_rows(None):
+        yr = r.get("draft_class_year")
+        if yr is not None:
+            try:
+                archive_by_year.setdefault(int(yr), []).append(r)
+            except (TypeError, ValueError):
+                continue
+    combined: list = []
+    for yr in range(2016, int(active) + 1):
+        stored = []
+        try:
+            stored = get_board_rows(yr)
+        except Exception:
+            stored = []
+        if stored:
+            combined.extend(stored)
+        elif yr in archive_by_year:
+            combined.extend(_shape_archive_rows(archive_by_year[yr]))
+    seen: set = set()
+    out: list = []
+    for d in combined:
+        key = ((d.get("name") or "").strip().lower(),
+               d.get("draft_class_year"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(d)
+    out.sort(key=lambda x: -(_safe_float(x.get("prospect_score"))
+                             or 0.0))
+    pos_counts: dict = {}
+    for i, d in enumerate(out, start=1):
+        d["overall_rank"] = i
+        pos = (d.get("position") or "").upper()
+        pos_counts[pos] = pos_counts.get(pos, 0) + 1
+        d["position_rank"] = pos_counts[pos]
+        d["rank_delta"] = None
+    return out
+
+
+def _archive_payload(year_key, result):
+    """Rankings payload for an archive or combined board, in the
+    shape the board client already consumes. No dynasty values are
+    attached to archive rows: nothing is fabricated for players the
+    value model never priced."""
+    payload = {
+        "draft_class_year": year_key,
+        "total_players": len(result),
+        "rankings": result,
+        "paused": False,
+        "archive": True,
+    }
+    try:
+        payload["percentile_pool"] = percentile_pool_line()
+    except Exception:
+        payload["percentile_pool"] = None
+    return payload
+
+
 @rookie_bp.route("/rankings")
 def rankings():
     try:
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class
         from data_building.rookie_pipeline.value_translation import format_draft_capital
 
-        year = request.args.get("year", type=int) or get_active_rookie_class()
         pos  = (request.args.get("pos") or "").upper() or None
         league_type = (request.args.get("league_type") or "1qb").lower()
         league_size = request.args.get("league_size", type=int) or 10
+
+        # Combined board: every class ranked together by grade.
+        if (request.args.get("year") or "").strip().lower() == "all":
+            result = _combined_board_rows()
+            if pos:
+                result = [d for d in result
+                          if (d.get("position") or "").upper() == pos]
+            return jsonify(_archive_payload("all", result))
+
+        year = request.args.get("year", type=int) or get_active_rookie_class()
 
         # Build mv_map: JSON model → DB player_values (source of truth).
         # player_values contains calibrated values for all players including
@@ -1961,6 +2270,16 @@ def rankings():
                 mv_map[str(p["id"])] = p
 
         rows = _get_rankings(year)
+
+        # Past class the pipeline never stored: serve its archive
+        # board (migration 058) instead of an empty board.
+        if not rows:
+            arch = _archive_board_rows(year)
+            if arch:
+                if pos:
+                    arch = [d for d in arch
+                            if (d.get("position") or "").upper() == pos]
+                return jsonify(_archive_payload(year, arch))
 
         # Optional server-side position filter (client can also filter)
         if pos:
@@ -2187,6 +2506,14 @@ def rankings():
 @rookie_bp.route("/player/<player_id>")
 def player_detail(player_id: str):
     try:
+        # Archive players (past-class boards) resolve from the
+        # archive table alone: a minimal detail with no fabricated
+        # sections (see _archive_detail).
+        if _parse_archive_player_id(player_id):
+            detail = _archive_detail(player_id)
+            if detail is None:
+                return jsonify({"error": "Player not found"}), 404
+            return jsonify(detail)
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class
         year = request.args.get("year", type=int) or get_active_rookie_class()
         rows = _get_rankings(year)

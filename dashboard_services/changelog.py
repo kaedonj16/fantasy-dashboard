@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-24",
+        "tag": "new",
+        "text": "Prospect boards now go back through history: pick any draft class from 2016 on, or All, to see every class's grades and rankings, with past classes graded by the current model.",
+        "link": "/prospects"
+    },
+    {
+        "date": "2026-11-24",
         "tag": "update",
         "text": "The Breakout Engine board now splits its calls into Breaking Out and Confirming: Breaking Out flags players whose role is jumping before the points arrive, and Confirming tracks players already producing whose new role the engine expects to hold.",
         "link": "/breakouts"
