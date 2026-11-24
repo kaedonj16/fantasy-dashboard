@@ -141,13 +141,28 @@ class TestModeSwitch:
 
 class TestFloorRedistribution:
     def test_complete_mode_keeps_the_projected_floor(self):
+        # v3.6 (round-2 audit F15): the floor is DELETED. Complete mode
+        # no longer imputes 67.0 to untested elite producers; the
+        # athleticism weight redistributes, as in-season already did.
         out = _score(SMITH, _dc("WR", 2))
-        assert out["athleticism_score"] == 67.0
-        assert out["athleticism_projected"] is True
+        assert out["athleticism_score"] is None
+        assert out["athleticism_projected"] is False
         # Round 14 sim printed 95.16 here; +0.51 is the red-zone
         # recalibration firing on his 2026 season (11 TD / 916 yards =
         # 1.20 per 100, over the new 1.15 low tier).
-        assert out["prospect_score"] == 95.67
+        # v3.6 de-saturation: 95.67 -> 93.26. His pinned legs un-pin:
+        # competition 100 -> 89.66 (career Big Ten on the 1.03 anchor),
+        # efficiency 100 -> 94.58, production 96.56 -> 91.43 (widened
+        # WR anchors). Breakout still saturates at the 1.7x multiple.
+        # v3.6 round-2 F5: -> 93.57. WR efficiency drops market share
+        # and prices his elite YAC: efficiency 94.58 -> 97.48.
+        # v3.6 round-2 F9: -> 92.90. Growth is priced once in breakout
+        # (totals switch + ascending bonus deleted): breakout
+        # 96.06 -> 88.97.
+        # v3.6 round-2 F15: -> 94.95. The deleted floor was DRAGGING
+        # him: the imputed 67.0 sat far below his real legs, so
+        # redistributing the athleticism weight raises the grade.
+        assert out["prospect_score"] == 94.95
 
     def test_inseason_suppresses_floor_and_redistributes(self):
         out = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
@@ -155,7 +170,14 @@ class TestFloorRedistribution:
         assert out["athleticism_projected"] is False
         # Round 14 sim printed 98.09; the same +0.56 red-zone delta as
         # complete mode (plus its peak-selection interaction) applies.
-        assert out["prospect_score"] == 98.65
+        # v3.6 de-saturation: 98.65 -> 95.99 (same un-pinned legs as
+        # complete mode: competition, efficiency, production).
+        # v3.6 round-2 F5: -> 96.32 (same efficiency move as complete).
+        # v3.6 round-2 F2: -> 92.93. His 2026 partial season (7 games)
+        # now shrinks toward his completed-season baseline in
+        # production, efficiency and utilization.
+        # v3.6 round-2 F9: -> 91.80 (same breakout consolidation).
+        assert out["prospect_score"] == 91.80
         # GP 7 confidence discount: round(20 * (1 - 7/12)) = 8.
         assert out["confidence_score"] == 62.0
 
@@ -164,7 +186,24 @@ class TestFloorRedistribution:
         # gate): the mode changes his confidence only, not his grade.
         complete = _score(MESTEMAKER, _dc("QB", 8))
         inseason = _score(MESTEMAKER, _dc("QB", 8), _active_season_year=2026)
-        assert complete["prospect_score"] == inseason["prospect_score"] == 79.80
+        # v3.6: 79.80 -> 79.53 in both modes; the only mover is his
+        # competition score (69.09 -> 65.52) under the 1.03 top anchor.
+        # v3.6 round-2 F3/F6: -> 78.03. His fixture carries 20+ rush
+        # yds/game, which translation used to price as a flat +1.5;
+        # rushing is now priced once, inside production.
+        # v3.6 round-2 F6 (cont.): the modes now differ (78.51 complete
+        # / 79.37 in-season). The volume-only production composite
+        # re-picks his peak season under the in-season paced key; the
+        # old equality was fixture luck under the rate-trio composite.
+        # The floor claim this test guards is unaffected: his
+        # athleticism is unbound in both modes (see F15 tests).
+        # v3.6 round-2 F10/F16: -> 81.60 / 81.15. His fixture has no
+        # recruiting data: the 5% weight now redistributes instead of
+        # scoring an imputed 50, and the QB experience add-on is
+        # priced from the redistributed weights (F16) rather than the
+        # raw table.
+        assert complete["prospect_score"] == 81.60
+        assert inseason["prospect_score"] == 81.15
         assert complete["confidence_score"] == 60.0
         assert inseason["confidence_score"] == 48.0  # GP 5: discount 12
 
@@ -185,15 +224,43 @@ class TestPanelReproduction:
         # recalibration: his 2025 season (7 TD / 433 yards = 1.62 per
         # 100) clears the new TE top tier, worth +0.41 complete and
         # +0.18 in-season after the peak blend.
-        assert complete["prospect_score"] == 78.38
-        assert inseason["prospect_score"] == 78.44
+        # v3.6 de-saturation: 78.38 / 78.44 -> 77.88 / 77.94.
+        # Competition 100 -> 94.83 (career SEC on the 1.03 anchor),
+        # breakout 84.80 -> 83.95 (TE saturation 1.8 -> 2.4),
+        # production 38.99 -> 38.42 (TE TDs/g anchor 0.5 -> 0.65).
+        # v3.6 round-2 F4: 77.88 / 77.94 -> 76.21 / 76.27. His pick 35
+        # is round 2: the capital component loses the x1.08 round
+        # multiplier (82.80 -> 76.67, the raw curve value) and the
+        # grade moves by exactly that x his redistributed capital
+        # weight.
+        # v3.6 round-2 F3: -> 74.21 / 74.27. The deleted TE pick tiers
+        # paid him +2.0 at pick 35; translation is now 0 for TEs.
+        # v3.6 round-2 F5: -> 76.51 / 76.57. TE efficiency drops market
+        # share; with targets absent his leg is yards per reception
+        # alone and his 14.0+ yds/rec sits at the anchor: efficiency
+        # 81.52 -> 100.0. (The share term was masking the pin; the TE
+        # yds/rec anchor itself is a gate decision, not changed here.)
+        # v3.6 round-2 F9: complete -> 75.16. His breakout falls
+        # exactly 15.00 (83.95 -> 68.95): the deleted ascending bonus
+        # was paying him its full cap.
+        # v3.6 round-2 F10: -> 76.09 / 75.31. Green's fixture has no
+        # recruiting data; the imputed flat 50 becomes a redistribution
+        # over his (stronger) present legs.
+        assert complete["prospect_score"] == 76.09
+        assert inseason["prospect_score"] == 75.31
         # All of Green's seasons are role seasons (13+ receptions):
         # the durability role rule does not touch him.
         assert complete["durability_score"] == 69.44
 
     def test_mestemaker_durability_repair_grade_unchanged(self):
         out = _score(MESTEMAKER, _dc("QB", 8), _today=self._AS_OF)
-        assert out["prospect_score"] == 79.80
+        # The pin is the current model's grade (v3.6: 81.60; the
+        # durability repair itself still contributes nothing. Path:
+        # 79.80 competition anchor -> 78.03 F3/F6 translation cleanup
+        # -> 78.51 F6 volume-only production composite (production
+        # 83.98 -> 91.32) -> 81.60 F10 recruiting redistribution +
+        # F16 experience repricing, see the toggle test above).
+        assert out["prospect_score"] == 81.60
         # v3.3 priced his 2-game, 41-attempt backup season as missed
         # time: durability 6.01. Excluded as a non-role season, his
         # durability is sane; QB durability weight is 0.00, so the

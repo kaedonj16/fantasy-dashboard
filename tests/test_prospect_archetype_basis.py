@@ -110,3 +110,50 @@ class TestBasisIncludesLatestSeason:
             "TE", seasons, profile={"weight_lbs": 248, "age": 21.8})
         assert r["basis_season"] == 2025
         assert "43.3 rec yds/g" in r["archetype_receipt"]
+
+
+# ── Model 3.6 (round-2 audit F14): Developmental pair suppression ───────────
+# "Developmental" as a SECONDARY label behind a defined role is
+# suppressed: it describes the absence of a demonstrated role, so the
+# pair reads as a quality verdict the fits do not support (the audit
+# found "Alpha X · Developmental" on a top-10 prospect). Developmental
+# as the PRIMARY label is untouched.
+
+import data_building.rookie_pipeline.prospect_archetypes as pa
+
+
+_WR_SEASON = [{
+    "season": 2025, "games_played": 13, "team": "Ohio State",
+    "receptions": 80, "receiving_yards": 1200, "receiving_tds": 10,
+    "targets": 110, "team_pass_yards": 3800, "team_pass_tds": 30,
+    "yds_per_reception": 15.0, "market_share_yards": 0.32,
+    "dominator_rating": 0.40, "conference": "Big Ten",
+}]
+
+
+def _classify_with_fits(monkeypatch, fits):
+    def fake_fit(spec, feats):
+        return fits.get(spec["label"]), []
+    monkeypatch.setattr(pa, "_fit", fake_fit)
+    monkeypatch.setattr(pa, "_apply_gates", lambda f, feats: None)
+    return pa.classify_archetype(
+        "WR", [dict(_WR_SEASON[0])],
+        profile={"weight_lbs": 205, "forty_yard": 4.45,
+                 "projected_pick": 6, "age": 21.0})
+
+
+class TestDevelopmentalPairSuppression:
+    def test_developmental_secondary_suppressed(self, monkeypatch):
+        out = _classify_with_fits(monkeypatch, {
+            "Alpha X": 80.0, "Developmental": 76.0})
+        assert out["archetype"] == "Alpha X"
+
+    def test_role_secondary_still_pairs(self, monkeypatch):
+        out = _classify_with_fits(monkeypatch, {
+            "Alpha X": 80.0, "Playmaker": 76.0})
+        assert out["archetype"] == "Alpha X · Playmaker"
+
+    def test_developmental_primary_untouched(self, monkeypatch):
+        out = _classify_with_fits(monkeypatch, {
+            "Developmental": 80.0, "Possession": 76.0})
+        assert out["archetype"] == "Developmental · Possession"

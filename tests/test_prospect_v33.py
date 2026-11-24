@@ -86,7 +86,7 @@ def _qb_prospect(athleticism):
 
 class TestVersion:
     def test_model_version_is_33(self):
-        assert pm.MODEL_VERSION == "3.5"
+        assert pm.MODEL_VERSION == "3.6"
 
 
 class TestKnotPricing:
@@ -215,22 +215,26 @@ class TestVATrajectoryTotals:
         ]
 
     def test_maintained_rate_reads_totals_growth(self):
-        # 100 yds/g over 7 games, then 95 yds/g over 13 games: per-game
-        # rate dips 5% but totals grow 76%. V-A scores trajectory on the
-        # totals growth (traj 100); the per-game-only reading scores 0
-        # when the rate falls 20% (profile B, same dominator/age path).
+        # History: v3.3 V-A scored trajectory on TOTALS growth when the
+        # per-game rate was maintained (profile A below read traj 100
+        # on +76% totals growth, beating profile B by 30+). v3.6
+        # (round-2 audit F9) dropped the switch: totals growth is a
+        # games-played artifact. Trajectory now reads per-game growth
+        # only: A (100 -> 95 yds/g, -5%) vs B (100 -> 80, -20%) differ
+        # by exactly the traj span, 0.35 x (18.75 - 0) = 6.56.
         a = pm.calc_breakout_score(self._seasons(7, 700, 13, 1235), 22.0, "RB")
         b = pm.calc_breakout_score(self._seasons(7, 700, 13, 1040), 22.0, "RB")
-        assert a - b > 30.0  # 0.35 traj weight x (100 - 0)
+        assert a - b == pytest.approx(6.56, abs=1.5)
 
     def test_maintained_rate_with_shrinking_totals_scores_low(self):
-        # Rate maintained (95 vs 100 yds/g) but the workload shrank:
-        # totals growth is negative, so V-A must not credit growth.
-        # (Draft age 22 keeps both seasons above the underclassman floor's
-        # age gate, so only the trajectory term separates the profiles.)
+        # Same per-game path (100 -> 95 yds/g) with the workload
+        # reversed: under V-A the shrinking-totals profile scored far
+        # lower; under per-game-only trajectory the two are identical,
+        # because games played is not growth. (Draft age 22 keeps both
+        # seasons above the underclassman floor's age gate.)
         a = pm.calc_breakout_score(self._seasons(7, 700, 13, 1235), 22.0, "RB")
         c = pm.calc_breakout_score(self._seasons(13, 1300, 7, 665), 22.0, "RB")
-        assert a - c > 20.0
+        assert a == pytest.approx(c, abs=0.01)
 
 
 class TestF2EfficiencyAnchor:
@@ -240,12 +244,15 @@ class TestF2EfficiencyAnchor:
         return pm.calc_efficiency_score(seasons, "WR")
 
     def test_ms_030_saturates_the_leg(self):
-        # ypr leg is 100 (17.0); with the 0.30 anchor the MS leg is also
-        # 100 at a 0.30 share, so efficiency is 100. The old 0.40 anchor
-        # priced the same season's MS leg at 68.75 (eff 84.4).
-        assert self._eff(0.30) == pytest.approx(100.0)
-        # Half-way share prices half-way on the new anchor.
-        assert self._eff(0.30) - self._eff(0.19) == pytest.approx(25.0)
+        # History: v3.3 F2 priced ypr + market share (a 0.30 share at
+        # 17.0 yds/rec saturated the leg at 100); the 3.6 de-saturation
+        # widened both anchors (same season priced 80.94); the v3.6
+        # round-2 F5 consolidation then removed share from efficiency
+        # entirely (it is priced in production/utilization/breakout).
+        # The leg is now yards per reception alone and share-invariant:
+        # scale(17.0, 8.5, 19.5) = 77.27 at any share.
+        assert self._eff(0.30) == pytest.approx(77.27, abs=0.1)
+        assert self._eff(0.30) == self._eff(0.19)
 
 
 class TestF3BreakoutSaturation:
@@ -259,9 +266,13 @@ class TestF3BreakoutSaturation:
         return pm.calc_breakout_score(seasons, 21.0, "WR")
 
     def test_wr_saturates_at_035_dominator(self):
-        # dom_score(0.35) = 100 under F3 (ratio 1.4 = saturation), and
-        # dom_score(0.30) = 80; the blend difference also carries the
-        # dominance-factor difference on the age term: ~11.3 points total.
-        # The old shared curve would give ~6.8.
+        # v3.3 F3 behavior (superseded by v3.6): dom_score(0.35) = 100
+        # (ratio 1.4 = saturation) and dom_score(0.30) = 80, for a
+        # ~11.3 point total difference including the age term's
+        # dominance factor. v3.6 raised the WR saturation multiple to
+        # 1.7, so 0.35 no longer saturates: dom_score(0.35) = 82.86,
+        # dom_score(0.30) = 71.43, and the same pair now separates by
+        # ~7.5 points (see test_prospect_v36.py for the new pin at
+        # a 0.425 dominator).
         diff = self._wr_breakout(0.35) - self._wr_breakout(0.30)
-        assert diff == pytest.approx(11.3, abs=0.6)
+        assert diff == pytest.approx(7.48, abs=0.6)

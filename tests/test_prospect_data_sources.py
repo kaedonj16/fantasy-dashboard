@@ -29,7 +29,7 @@ from data_building.rookie_pipeline.ingestion import (
 
 class TestModelVersion:
     def test_version_bumped_for_grading_change(self):
-        assert MODEL_VERSION == "3.5"
+        assert MODEL_VERSION == "3.6"
 
     def test_recruiting_weight_present_and_sums_to_one(self):
         for pos, weights in POSITION_WEIGHTS.items():
@@ -55,13 +55,17 @@ class TestRecruitingScore:
         assert calc_recruiting_score({"stars": 5}) == 94.0
         assert calc_recruiting_score({"stars": 3}) == 50.0
 
-    def test_missing_data_is_neutral_never_punitive(self):
-        assert calc_recruiting_score(None) == 50.0
-        assert calc_recruiting_score({}) == 50.0
-        assert calc_recruiting_score({"stars": None, "composite_rating": None}) == 50.0
+    def test_missing_data_is_none_and_redistributes(self):
+        # v3.6 (round-2 audit F10): missing recruiting is None, not an
+        # imputed 50.0 - score_prospect redistributes the weight like
+        # every other missing leg. (A KNOWN 0.87 composite still maps
+        # to 50 above: that is a measurement, not a missing value.)
+        assert calc_recruiting_score(None) is None
+        assert calc_recruiting_score({}) is None
+        assert calc_recruiting_score({"stars": None, "composite_rating": None}) is None
 
-    def test_invalid_data_is_neutral(self):
-        assert calc_recruiting_score({"composite_rating": "n/a"}) == 50.0
+    def test_invalid_data_is_missing(self):
+        assert calc_recruiting_score({"composite_rating": "n/a"}) is None
 
 
 class TestWepaHelpers:
@@ -167,7 +171,7 @@ class TestScoreProspectV3:
 
     def test_v2_fields_in_output(self):
         out = score_prospect(self._prospect())
-        assert out["model_version"] == "3.5"
+        assert out["model_version"] == "3.6"
         assert out["recruiting_score"] > 90
 
     def test_recruiting_moves_final_score(self):
@@ -178,11 +182,14 @@ class TestScoreProspectV3:
         assert five_star > two_star
 
     def test_missing_recruiting_is_neutral(self):
+        # v3.6 (round-2 audit F10): "neutral" now means the weight
+        # redistributes and the component reports None - not an
+        # imputed 50.0 carried at full weight.
         p = self._prospect()
         del p["recruiting"]
         out = score_prospect(p)
-        assert out["recruiting_score"] == 50.0
-        assert out["model_version"] == "3.5"
+        assert out["recruiting_score"] is None
+        assert out["model_version"] == "3.6"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

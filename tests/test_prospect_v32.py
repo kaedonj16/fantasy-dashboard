@@ -120,7 +120,7 @@ def _score(prospect, dc):
 
 class TestVersion:
     def test_model_version_bumped(self):
-        assert pm.MODEL_VERSION == "3.5"
+        assert pm.MODEL_VERSION == "3.6"
 
 
 class TestMissingCapital:
@@ -133,10 +133,14 @@ class TestMissingCapital:
         # Missing capital is the talent grade itself: strictly above the
         # pick-150 outcome the old default produced for uncovered players.
         assert no_pick["prospect_score"] > at_150["prospect_score"]
-        # And it equals the talent_score of the covered run: the covered
-        # grade is talent plus exactly capital_delta.
+        # v3.6 (round-2 audit F3): translation no longer reads the pick
+        # at all (every pick-gated branch deleted as a capital-leg
+        # duplicate), so the talent run is the no-pick grade exactly,
+        # at every pick.
         assert no_pick["prospect_score"] == pytest.approx(
-            with_pick["talent_score"], abs=0.011)
+            at_150["talent_score"], abs=0.011)
+        assert with_pick["talent_score"] == pytest.approx(
+            no_pick["prospect_score"], abs=0.011)
         assert no_pick["projected_draft_capital_score"] is None
 
     def test_missing_capital_contract(self):
@@ -160,11 +164,19 @@ class TestTransparentCapital:
             r["prospect_score"] - r["capital_delta"], abs=0.011)
 
     def test_talent_score_is_pick_invariant(self):
-        # Talent is a property of the profile, not of the pick assigned.
+        # v3.2 contract, restored by construction in v3.6 (round-2
+        # audit F3): the original invariance held only because the
+        # talent run starved translation of the pick (NaN), which let
+        # pick-gated translation leak into capital_delta. v3.6 deletes
+        # every pick-gated translation branch instead, so translation
+        # is pick-independent outright and talent is invariant across
+        # picks AND equal to the no-pick grade.
         t35 = _score(GREEN, _dc("TE", 35))["talent_score"]
         t8 = _score(GREEN, _dc("TE", 8))["talent_score"]
         t150 = _score(GREEN, _dc("TE", 150))["talent_score"]
-        assert t35 == pytest.approx(t8, abs=0.011)
+        no_pick = _score(GREEN, None)["prospect_score"]
+        assert t150 == pytest.approx(no_pick, abs=0.011)
+        assert t8 == pytest.approx(t150, abs=0.011)
         assert t35 == pytest.approx(t150, abs=0.011)
 
 
@@ -222,7 +234,11 @@ class TestMissingAge:
 class TestRegressionVsV31:
     def test_green_materially_above_v31(self):
         # v3.1 on identical inputs: 64.44 (iteration log round 3 table).
-        assert _score(GREEN, _dc("TE", 35))["prospect_score"] >= 75.0
+        # Floor lowered 75.0 -> 74.0 in v3.6: the F3 translation
+        # cleanup removed the +2.0 TE pick tier Green used to receive
+        # at pick 35 (his grade is 74.13 now); the regression intent
+        # (materially above the v3.1 print) is unchanged.
+        assert _score(GREEN, _dc("TE", 35))["prospect_score"] >= 74.0
 
     def test_mestemaker_materially_above_v31(self):
         # v3.1 on identical inputs: 60.89.
@@ -307,6 +323,11 @@ class TestArchetypeReferenceCases:
         # The canonical v2 case: v1 printed Auburn's slot usage as the
         # label (Big Slot, deleted in v2). The projection is outside;
         # the unproven proof rides as the Developmental secondary trait.
+        # v3.6 (round-2 audit F14): the Developmental secondary is
+        # suppressed behind a defined role - this exact label is the
+        # audit's cited case - so the stored label is now "Alpha X"
+        # alone. The Developmental fit still computes (see the fits
+        # dict); it just no longer pairs.
         seasons = [
             {"season": 2024, "games_played": 11, "receptions": 37,
              "receiving_yards": 598, "receiving_tds": 8,
@@ -319,7 +340,7 @@ class TestArchetypeReferenceCases:
         ]
         r = classify_archetype(
             "WR", seasons, profile={"age": 20.8, "projected_pick": 6})
-        assert r["archetype"] == "Alpha X · Developmental"
+        assert r["archetype"] == "Alpha X"
         assert r["archetype_confidence"] == "Medium"
 
     def test_no_seasons_no_label(self):

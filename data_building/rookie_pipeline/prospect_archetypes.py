@@ -35,6 +35,13 @@ Design rules:
   size and speed unmeasured; a small-sample TD rate driving the win).
 - A second fit within 6 points and at least 55 becomes one secondary
   trait, encoded in the stored label as "Primary · Secondary".
+  Exception (model 3.6, round-2 audit F14): a "Developmental"
+  secondary is suppressed when the primary is a defined role.
+  Developmental describes the absence of a demonstrated role, so
+  pairing it with one ("Alpha X · Developmental" on a top-10
+  prospect) reads as a quality verdict the fits do not support.
+  Developmental can still BE the primary label, and can still pair
+  behind another non-role primary per the module's own semantics.
 - Omission (no label at all) when presence < 0.50, when no basis season
   has 5+ games, or when the winning fit is under 40.
 - Label only: the archetype is derived FROM the grading inputs and must
@@ -679,7 +686,11 @@ def classify_archetype(
 
     margin = (top_fit - second_fit) if second_fit is not None else top_fit
     has_pair = (second_fit is not None and second_fit >= 55.0
-                and (top_fit - second_fit) <= 6.0)
+                and (top_fit - second_fit) <= 6.0
+                # v3.6 (round-2 audit F14): never pair "Developmental"
+                # behind a defined role (see module docstring).
+                and not (second_label == "Developmental"
+                         and top_label != "Developmental"))
 
     # Projection caps at Medium (spec 2.4).
     win_contribs = contribs.get(top_label, [])
