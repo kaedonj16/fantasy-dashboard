@@ -226,6 +226,25 @@ def _inject_ssr_rows(body: str) -> str:
     return body
 
 
+def _rk_class_options() -> str:
+    """Class selector options: All, then every class from the active
+    class down to 2016 (the archive's first class). The active class
+    is the default selection; the board's first paint is always the
+    active class."""
+    try:
+        from data_building.rookie_pipeline.pipeline import (
+            get_active_rookie_class)
+        active = int(get_active_rookie_class())
+    except Exception:
+        import datetime as _dt
+        active = _dt.datetime.now().year
+    opts = ['<option value="all">All</option>']
+    for y in range(active, 2015, -1):
+        sel = ' selected' if y == active else ''
+        opts.append(f'<option value="{y}"{sel}>{y}</option>')
+    return "".join(opts)
+
+
 def build_prospects_body(is_admin: bool = False) -> str:
     admin_flag = "true" if is_admin else "false"
     body = f"""<script>window.RK_IS_ADMIN = {admin_flag};</script>""" + """
@@ -278,6 +297,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
         </div>
         <div class="filter-sort-group">
           <div class="filter-sort">
+            <label class="filter-label" for="rkClass">Class</label>
+            <select id="rkClass" onchange="rkSetClass(this.value)"><!--RK_CLASS_OPTIONS--></select>
+          </div>
+          <div class="filter-sort">
             <label class="filter-label" for="rkSort">Sort</label>
             <select id="rkSort" onchange="rkSetSortKey(this.value)">
               <option value="rank">Rank</option>
@@ -289,6 +312,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Past-class note: archive views only (shown by rkApplyBoard) -->
+    <div id="rkArchiveNote" style="display:none;font-size:12px;color:var(--text-muted);margin:0 0 10px;">
+      Past classes graded with the current model. Not the board as it stood on draft day.
     </div>
 
     <!-- Count -->
@@ -872,6 +900,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
   var rkPipelinePaused = false;
   var rkDraftYear = null;
   var rkDraftComplete = false;
+  var rkViewSel = '';      // class on show: 'all' or a year string (set on load)
+  var rkIsArchiveView = false;  // payload came from the past-class archive
+  var rkShowYearMeta = false;   // append the class year to row meta lines
   var rkSortKey = 'rank';  // active sort key (mirrors the #rkSort dropdown)
   var rkSortDir = 'asc';   // 'asc' | 'desc' -- flipped by clicking a column header
   // Default direction when a sort key is first chosen.
@@ -980,6 +1011,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     if (posRank && r.school) metaTxt = rkEsc(posRank) + ' &middot; ' + rkEsc(r.school);
     else if (posRank) metaTxt = rkEsc(posRank);
     else if (r.school) metaTxt = rkEsc(r.school);
+    // Archive and combined views tag each row with its class year:
+    // the same player name can appear in more than one class era.
+    if (rkShowYearMeta && r.draft_class_year) {
+      metaTxt = metaTxt ? metaTxt + ' &middot; ' + rkEsc(r.draft_class_year)
+                        : rkEsc(r.draft_class_year);
+    }
     return '<div class="pr-player-row pr-grid-row" data-pid="' + rkEsc(pid) + '" role="button" tabindex="0" aria-label="' + rkEsc(r.name || '') + '">' +
       '<span class="pr-rank">#' + (rank !== null && !isNaN(rank) ? rank : '-') + delta + '</span>' +
       '<span class="rk-player"><span class="pr-name"><span class="pr-nm">' + rkEsc(r.name || 'Unknown') + star + '</span>' +
@@ -1155,7 +1192,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var blob = new Blob([csv], { type: 'text/csv' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'rookie-prospects-' + (rkDraftYear || 'class') + '.csv';
+    a.download = 'rookie-prospects-' + (rkViewSel || rkDraftYear || 'class') + '.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1962,17 +1999,31 @@ def build_prospects_body(is_admin: bool = False) -> str:
     rkRcFillContext(r, {});
     rkRcFillHeroNote(r, {});
     rkRcRenderArch(r, {});
-    rkRcRenderStanding(r);
+    // In the combined (All) view the board row's ranks are combined
+    // ranks, so the class-standing panel waits for the detail payload
+    // (which carries class ranks) instead of mislabeling them.
+    if (rkViewSel !== 'all') rkRcRenderStanding(r);
     rkRcRenderGrade(r, {});
     rkRcRenderNotes(r, {});
+    // Archive rows carry no seasons, advanced metrics, or comps: the
+    // sections that would render them are removed outright, never
+    // shown as empty placeholders.
+    if (r.archive) {
+      ['.rc-sec-prod', '.rc-sec-season', '.rc-comps-section',
+       '#rkRcMetricsSection'].forEach(function(sel) {
+        var sec = content.querySelector(sel);
+        if (sec) sec.style.display = 'none';
+      });
+    }
     content.scrollTop = 0;
     rkRcSetupMini();
 
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 
-    // Auto-link to Sleeper ID silently in background
-    if (pid) {
+    // Auto-link to Sleeper ID silently in background (stored
+    // prospects only; archive ids have no Sleeper link to make).
+    if (pid && !r.archive) {
       fetch('/api/prospects/auto-link/' + encodeURIComponent(pid)).catch(function(){});
     }
 
@@ -1989,8 +2040,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
         });
       });
 
-    // Historical comparables from real past draft classes
-    fetch('/api/prospects/comparables/' + encodeURIComponent(pid))
+    // Historical comparables from real past draft classes (stored
+    // prospects only; the archive has no comps surface).
+    if (!r.archive) fetch('/api/prospects/comparables/' + encodeURIComponent(pid))
       .then(function(res){ return res.json(); })
       .then(function(cd) { rkRcRenderComps((cd && cd.comparables) || []); })
       .catch(function() {
@@ -2008,6 +2060,46 @@ def build_prospects_body(is_admin: bool = False) -> str:
     rkRcRenderChart(r, d);
     rkRcRenderSeasonTable(r, d);
     rkRcRenderMetrics(r, d);
+    if (rkViewSel === 'all') rkRcRenderClassStanding(r, d);
+  }
+
+  // Class Standing for the combined (All) view, rendered from the
+  // detail payload because the board row's ranks there are combined
+  // ranks. Only lines the payload can actually support are rendered:
+  // archive details carry class sizes, stored details carry class
+  // ranks; a line with no data behind it is omitted, never faked.
+  function rkRcRenderClassStanding(r, d) {
+    var host = document.getElementById('rkRcStanding');
+    if (!host || !d) return;
+    var pos = (r.position || '').toUpperCase();
+    var cls = d.draft_class_year || r.draft_class_year || '';
+    var rows = '';
+    if (d.position_rank && d.position_class_size) {
+      rows += '<div class="rc-kv"><span class="rc-k">Position</span><span class="rc-v">' +
+        rkEsc(pos + d.position_rank) + ' of ' + d.position_class_size +
+        (cls ? ' in the ' + cls + ' class' : '') + '</span></div>';
+    }
+    if (d.overall_rank != null && d.overall_rank !== '') {
+      rows += '<div class="rc-kv"><span class="rc-k">Overall</span>' +
+        '<span class="rc-v sky">#' + d.overall_rank + ' overall' +
+        (d.class_size ? ' of ' + d.class_size : '') +
+        (cls ? ' · ' + cls + ' class' : '') + '</span></div>';
+    }
+    var pick = d.actual_pick != null && d.actual_pick !== ''
+      ? Math.round(parseFloat(d.actual_pick)) : null;
+    if (pick != null && !isNaN(pick)) {
+      rows += '<div class="rc-kv"><span class="rc-k">Draft pick</span><span class="rc-v">' +
+        'Pick ' + pick + ' &middot; Round ' + Math.ceil(pick / 32) + '</span></div>';
+    }
+    var note = '';
+    if (d.archive) {
+      note = '<p class="rc-panel-note">Graded with the current model' +
+        (d.model_version ? ' (' + rkEsc(d.model_version) + ')' : '') +
+        '. Not the board as it stood on draft day.</p>';
+    }
+    if (!rows && !note) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    host.innerHTML = '<h3 class="rc-panel-h">Class Standing</h3>' + rows + note;
+    host.style.display = '';
   }
 
   // Sticky mini-header: observe the hero inside the modal's own
@@ -2043,6 +2135,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
   });
 
   // ── Load data ──────────────────────────────────────────────────────────────
+  // The Class select (like Sort) joins the site's custom dropdown
+  // (CSD). The app shell enhances selects on full loads and on
+  // soft-nav roots; this explicit call covers the prospects root
+  // itself, following the house pattern for page-owned selects.
+  if (window.initCustomSelects) window.initCustomSelects(document.getElementById('prospectsCard'));
+
   (function() {
     var inp = document.getElementById('rookieSearch');
     var clr = document.getElementById('rookieSearchClear');
@@ -2095,48 +2193,81 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .then(function(r){ return r.json(); })
     .then(function(status) {
       rkDraftComplete = status.draft_complete || false;
+      rkViewSel = String(rkDraftYear);
       return fetch('/api/prospects/rankings?year=' + rkDraftYear);
     })
     .then(function(r){ return r.json(); })
-    .then(function(data) {
-      document.getElementById('rkLoading').style.display = 'none';
-      rkAllPlayers = data.rankings || [];
-      rkPercentilePool = data.percentile_pool || '';
-      rkLoaded = true;
-      rkPipelinePaused = !!data.paused;
-      // Subtitle slot: draft class + the pool line generated server-side
-      // from the reference population actually used for the percentiles.
-      var poolEl = document.getElementById('rkPoolLine');
-      if (poolEl && data.percentile_pool) {
-        poolEl.textContent = (rkDraftYear ? rkDraftYear + ' draft class. ' : '') +
-          data.percentile_pool + '.';
-      }
-      // Active-setting tags: the class on show, plus the In-Season tag
-      // while any player on the board is mid-season.
-      var settingsEl = document.getElementById('rkActiveSettings');
-      if (settingsEl && rkDraftYear) {
-        document.getElementById('rkClassTag').textContent = rkDraftYear + ' Class';
-        var anyInSeason = rkAllPlayers.some(function(p) { return p.in_season; });
-        document.getElementById('rkSeasonTag').style.display = anyInSeason ? '' : 'none';
-        settingsEl.style.display = '';
-      }
-      var pausedBanner = document.getElementById('rkPausedBanner');
-      if (pausedBanner) {
-        if (rkPipelinePaused && rkAllPlayers.length) {
-          pausedBanner.style.display = '';
-          var asOf = document.getElementById('rkPausedAsOf');
-          if (asOf && data.last_updated) asOf.textContent = '(as of ' + data.last_updated + ')';
-        } else {
-          pausedBanner.style.display = 'none';
-        }
-      }
-      rkRender();
-    })
+    .then(function(data) { rkApplyBoard(data); })
     .catch(function(err) {
       console.error('[rookies] Load error:', err);
       document.getElementById('rkLoading').innerHTML =
         '<div style="color:var(--text-muted);">Failed to load rookie data. Please refresh.</div>';
     });
+
+  // Apply one rankings payload to the board: the initial active-class
+  // load and every Class-selector switch share this path, so filters,
+  // sort, count, and tags behave identically per class.
+  function rkApplyBoard(data) {
+    document.getElementById('rkLoading').style.display = 'none';
+    rkAllPlayers = data.rankings || [];
+    rkPercentilePool = data.percentile_pool || '';
+    rkLoaded = true;
+    rkPipelinePaused = !!data.paused;
+    rkIsArchiveView = !!data.archive;
+    rkShowYearMeta = rkIsArchiveView;
+    // Subtitle slot: the class on show + the pool line generated
+    // server-side from the reference population actually used for
+    // the percentiles.
+    var poolEl = document.getElementById('rkPoolLine');
+    if (poolEl && data.percentile_pool) {
+      var clsLabel = rkViewSel === 'all' ? 'All draft classes' :
+        (rkViewSel || rkDraftYear) + ' draft class';
+      poolEl.textContent = clsLabel + '. ' + data.percentile_pool + '.';
+    }
+    // Active-setting tags: the class on show, plus the In-Season tag
+    // while any player on the board is mid-season.
+    var settingsEl = document.getElementById('rkActiveSettings');
+    if (settingsEl && rkViewSel) {
+      document.getElementById('rkClassTag').textContent =
+        rkViewSel === 'all' ? 'All Classes' : rkViewSel + ' Class';
+      var anyInSeason = rkAllPlayers.some(function(p) { return p.in_season; });
+      document.getElementById('rkSeasonTag').style.display = anyInSeason ? '' : 'none';
+      settingsEl.style.display = '';
+    }
+    // Past-class honesty line: archive boards are graded with the
+    // current model, not the board as it stood on draft day.
+    var noteEl = document.getElementById('rkArchiveNote');
+    if (noteEl) noteEl.style.display = rkIsArchiveView ? '' : 'none';
+    var pausedBanner = document.getElementById('rkPausedBanner');
+    if (pausedBanner) {
+      if (rkPipelinePaused && rkAllPlayers.length) {
+        pausedBanner.style.display = '';
+        var asOf = document.getElementById('rkPausedAsOf');
+        if (asOf && data.last_updated) asOf.textContent = '(as of ' + data.last_updated + ')';
+      } else {
+        pausedBanner.style.display = 'none';
+      }
+    }
+    rkRender();
+  }
+
+  // Class selector: fetch the chosen class (or the combined board)
+  // and re-render through the same path as the initial load.
+  function rkSetClass(sel) {
+    rkViewSel = String(sel);
+    rkLoaded = false;
+    var loadEl = document.getElementById('rkLoading');
+    if (loadEl) loadEl.style.display = '';
+    fetch('/api/prospects/rankings?year=' + encodeURIComponent(rkViewSel))
+      .then(function(r){ return r.json(); })
+      .then(function(data) { rkApplyBoard(data); })
+      .catch(function(err) {
+        console.error('[rookies] Class load error:', err);
+        document.getElementById('rkLoading').innerHTML =
+          '<div style="color:var(--text-muted);">Failed to load rookie data. Please refresh.</div>';
+      });
+  }
 </script>
 """
+    body = body.replace("<!--RK_CLASS_OPTIONS-->", _rk_class_options())
     return _inject_ssr_rows(body)

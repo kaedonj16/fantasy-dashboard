@@ -64,3 +64,18 @@ def test_team_share_bar_uses_themed_tooltip_not_native_title():
     assert 'data-def="Rest of offense: ${rest}%"' in block
     assert "advEnterMetricDef(event)" in block
     assert "advShowMetricDef(event)" in block
+
+
+def test_prospects_class_select_is_enhanced():
+    page = _read("dashboard_services", "pages", "rookies_page.py")
+    # The Class selector is a real select beside Sort, enhanced by the
+    # site's CSD custom dropdown via an explicit init on the page root
+    # (the same house pattern the other page-owned selects use).
+    assert 'id="rkClass"' in page
+    assert 'for="rkClass"' in page
+    assert ("window.initCustomSelects("
+            "document.getElementById('prospectsCard'))") in page
+    # Soft-nav arrivals are covered too: initPageRoot enhances every
+    # swapped root in the app shell.
+    app = _read("static", "app.js")
+    assert "window.initCustomSelects(root)" in app
