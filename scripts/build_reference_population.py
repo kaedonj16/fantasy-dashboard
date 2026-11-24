@@ -99,13 +99,13 @@ INSERT INTO prospect_reference_population (
     production_score, efficiency_score, breakout_profile_score,
     competition_score, athleticism_score, tested,
     advanced_marks, season_rates, testing_marks, model_version,
-    updated_at)
+    data_quality, updated_at)
 VALUES (
     %(player_name)s, %(position)s, %(draft_class_year)s, %(actual_pick)s,
     %(production_score)s, %(efficiency_score)s, %(breakout_profile_score)s,
     %(competition_score)s, %(athleticism_score)s, %(tested)s,
     %(advanced_marks)s::jsonb, %(season_rates)s::jsonb,
-    %(testing_marks)s::jsonb, %(model_version)s, NOW())
+    %(testing_marks)s::jsonb, %(model_version)s, %(data_quality)s, NOW())
 ON CONFLICT (position, draft_class_year, player_name) DO UPDATE SET
     actual_pick            = EXCLUDED.actual_pick,
     production_score       = EXCLUDED.production_score,
@@ -116,6 +116,7 @@ ON CONFLICT (position, draft_class_year, player_name) DO UPDATE SET
     tested                 = EXCLUDED.tested,
     advanced_marks         = EXCLUDED.advanced_marks,
     season_rates           = EXCLUDED.season_rates,
+    data_quality           = EXCLUDED.data_quality,
     testing_marks          = EXCLUDED.testing_marks,
     model_version          = EXCLUDED.model_version,
     updated_at             = NOW()
@@ -148,14 +149,45 @@ ON CONFLICT (position, draft_class_year, player_name) DO UPDATE SET
 
 # ── Pure row assembly (shared by the real run, the dry run, tests) ──
 
+def _season_passes_floor(s: Dict, include_inseason: bool = False) -> bool:
+    """The GP/volume floor _season_rates has always applied: games
+    played present and at least _SEASON_MIN_GP; _season_rates also
+    excludes the in-progress season (a partial season's rate is not
+    final). _advanced_marks uses the GP floor only: the modal's own
+    marks path takes bests across ALL seasons including the current
+    one, and the floor's job there is fragment exclusion, not
+    finality."""
+    from dashboard_services.rookie_api import _SEASON_MIN_GP, is_in_season
+    gp = s.get("games_played")
+    try:
+        gp = float(gp) if gp is not None else None
+    except (TypeError, ValueError):
+        gp = None
+    if not gp or gp < _SEASON_MIN_GP:
+        return False
+    if include_inseason:
+        return True
+    return not is_in_season(s.get("season"), gp)
+
+
 def _advanced_marks(position: str, seasons: List[Dict],
                     athleticism: Dict, row: Dict) -> Dict[str, float]:
     """{label: value} from the live modal's own advanced-metrics code
     path; component-score rows and valueless rows are excluded, exactly
-    as the stored-prospects distribution builder excludes them."""
+    as the stored-prospects distribution builder excludes them.
+
+    v3.8 (M1): the seasons pass through the GP/volume floor
+    _season_rates applies (its in-season exclusion is a rates-
+    finality rule and does not apply to best-of marks). Fragment
+    seasons (a game or two of a career, stored as if complete) used
+    to set the pools' per-game ceilings - a 195.0 Scrim Yds/Gm pool
+    maximum derived from one fragment season of a 3,400-yard
+    career."""
     from dashboard_services.rookie_api import _build_advanced_metrics
+    floored = [s for s in (seasons or [])
+               if _season_passes_floor(s, include_inseason=True)]
     out: Dict[str, float] = {}
-    for a in _build_advanced_metrics(position, seasons, athleticism,
+    for a in _build_advanced_metrics(position, floored, athleticism,
                                      row, wepa_score=None):
         if a.get("component") or a.get("value") is None:
             continue
@@ -169,23 +201,64 @@ def _advanced_marks(position: str, seasons: List[Dict],
 def _season_rates(position: str, seasons: List[Dict]) -> List[float]:
     """Completed-season primary per-game rates, by the modal's own
     definitions (_season_primary_rate, GP floor, in-season excluded)."""
-    from dashboard_services.rookie_api import (
-        _SEASON_MIN_GP, _season_primary_rate, is_in_season)
+    from dashboard_services.rookie_api import _season_primary_rate
     rates: List[float] = []
     for s in seasons or []:
-        gp = s.get("games_played")
-        try:
-            gp = float(gp) if gp is not None else None
-        except (TypeError, ValueError):
-            gp = None
-        if not gp or gp < _SEASON_MIN_GP:
-            continue
-        if is_in_season(s.get("season"), gp):
+        if not _season_passes_floor(s):
             continue
         rate = _season_primary_rate(position, s)
         if rate is not None:
             rates.append(rate)
     return sorted(rates)
+
+
+def _data_quality(position: str, seasons: List[Dict]) -> str:
+    """v3.8 validity screen (under-rating audit M1, pool classes
+    P1-P4). 'truncated' rows stay stored and displayable but are
+    quarantined out of every percentile pool at read time: their
+    component scores and marks describe fragments, not players.
+
+    Rules (re-runnable, all read off the stored profile itself):
+      (a) no season carries counting stats - the no-seasons class
+          whose neutral-default legs were stored as if measured;
+      (b) stray-season signature: exactly one real season and it
+          holds < 15 touches (rush attempts + receptions; pass
+          attempts for QBs) - an identity truncation, not a career;
+      (c) Rule F-severe: dominator_rating missing in >= 99% of
+          stored seasons (exactly coextensive with team totals
+          missing - the FCS hole) while career volume is
+          fragment-sized (< 1,000 scrimmage yards; < 1,000 pass
+          yards for QBs).
+    A single None leg does NOT flag a row: a leg-None row can still
+    anchor the other components' pools honestly.
+    """
+    from data_building.rookie_pipeline.prospect_model import (
+        _safe, season_has_counting_stats)
+    seasons = seasons or []
+    real = [s for s in seasons if season_has_counting_stats(s)]
+    if not real:
+        return "truncated"
+    if len(real) == 1:
+        s = real[0]
+        if position == "QB":
+            touches = _safe(s.get("pass_attempts"))
+        else:
+            touches = (_safe(s.get("rush_attempts"))
+                       + _safe(s.get("receptions")))
+        if touches < 15:
+            return "truncated"
+    n_dom_missing = sum(
+        1 for s in seasons if s.get("dominator_rating") is None)
+    if seasons and n_dom_missing / len(seasons) >= 0.99:
+        if position == "QB":
+            volume = sum(_safe(s.get("pass_yards")) for s in seasons)
+        else:
+            volume = sum(_safe(s.get("rush_yards"))
+                         + _safe(s.get("receiving_yards"))
+                         for s in seasons)
+        if volume < 1000:
+            return "truncated"
+    return "ok"
 
 
 def build_reference_rows(
@@ -248,6 +321,7 @@ def build_reference_rows(
             "season_rates": _season_rates(pos, seasons),
             "testing_marks": testing,
             "model_version": model_version,
+            "data_quality": _data_quality(pos, seasons),
         })
     return rows
 

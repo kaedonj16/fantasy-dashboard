@@ -173,7 +173,11 @@ class TestFloorRedistribution:
         # share (production .2622 -> .2382, efficiency .1311 ->
         # .1162) while breakout, competition and utilization rise;
         # net -0.55 on his leg mix.
-        assert out["prospect_score"] == 91.93
+        # v3.8 (M2): -> 92.28. Production blend only: the best-season
+        # weight rises 85 -> 90, his production leg 91.43 -> 92.55;
+        # every other leg is byte-identical to 3.7 on this fixture
+        # (the role gate excuses no season here).
+        assert out["prospect_score"] == 92.28
 
     def test_inseason_suppresses_floor_and_redistributes(self):
         out = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
@@ -193,7 +197,9 @@ class TestFloorRedistribution:
         # in-season leg mix sits closer to the fitted shares' centre
         # than complete mode's, so the same re-weighting costs only
         # -0.08 here).
-        assert out["prospect_score"] == 87.71
+        # v3.8 (M2): -> 87.85 (production 87.07 -> 87.52 on the
+        # 90/10 blend; no other leg moves).
+        assert out["prospect_score"] == 87.85
         # GP 7 confidence discount: round(20 * (1 - 7/12)) = 8.
         # v3.7: 62.0 -> 47.0. The 15-point drop is the removed
         # capital-presence confidence (+10 for a mock-backed pick,
@@ -231,8 +237,13 @@ class TestFloorRedistribution:
         # only; the driver is QB age's fitted share (effective
         # .1009 -> .2012 - age was the fit's strongest QB leg,
         # r=.463) priced on a young, high-production profile.
-        assert complete["prospect_score"] == 84.69
-        assert inseason["prospect_score"] == 83.96
+        # v3.8 (M2): -> 84.78 / 84.00. The production blend is shared
+        # across positions, so the 90/10 best-season lean moves his
+        # production leg too (91.32 -> 91.65 / 88.05 -> 88.19); no
+        # other leg moves. (Role gate: his 2-game backup season is
+        # excused from the gated reads; it moved no leg.)
+        assert complete["prospect_score"] == 84.78
+        assert inseason["prospect_score"] == 84.00
         assert complete["confidence_score"] == 45.0
         assert inseason["confidence_score"] == 33.0  # GP 5: discount 12
 
@@ -288,8 +299,10 @@ class TestPanelReproduction:
         # only: TE efficiency's effective share eases (.1354 ->
         # .1187) against his pinned 100.0 leg, partly offset by
         # utilization's rise (.0861 -> .1332); net -1.07 / -1.06.
-        assert complete["prospect_score"] == 74.81
-        assert inseason["prospect_score"] == 73.74
+        # v3.8 (M2): -> 74.92 / 73.77 (production 42.55 -> 42.90 /
+        # 43.33 -> 43.41 on the 90/10 blend; no other leg moves).
+        assert complete["prospect_score"] == 74.92
+        assert inseason["prospect_score"] == 73.77
         # All of Green's seasons are role seasons (13+ receptions):
         # the durability role rule does not touch him.
         assert complete["durability_score"] == 69.44
@@ -305,8 +318,9 @@ class TestPanelReproduction:
         # see the toggle test above) -> 80.18 in v3.7 (the +1.42
         # capital_delta removed exactly) -> 84.69 under the fitted
         # weights (QB age's doubled effective share, same step as
-        # the toggle test).
-        assert out["prospect_score"] == 84.69
+        # the toggle test) -> 84.78 in v3.8 (M2 production blend,
+        # same step as the toggle test).
+        assert out["prospect_score"] == 84.78
         # v3.3 priced his 2-game, 41-attempt backup season as missed
         # time: durability 6.01. Excluded as a non-role season, his
         # durability is sane; QB durability weight is 0.00, so the

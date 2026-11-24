@@ -316,7 +316,8 @@ class TestArchetypeNeverFeedsGrade:
         # to a different label still grade purely on the legs: the
         # score at pick-varied capital is the v37-pinned grade -
         # 92.48 under the design weights, 91.93 after the F12
-        # weights fold (weights change only; legs unchanged).
+        # weights fold (weights change only; legs unchanged),
+        # 92.28 in 3.8 (M2 production blend; production leg only).
         r = _score(SMITH, None)
-        assert r["prospect_score"] == 91.93
-        assert pm.MODEL_VERSION == "3.7"
+        assert r["prospect_score"] == 92.28
+        assert pm.MODEL_VERSION == "3.8"
