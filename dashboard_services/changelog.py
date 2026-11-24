@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-23",
+        "tag": "update",
+        "text": "Prospect grades are back on the rookie board: every prospect now shows his numeric grade, on the board and beside his tag when you open his profile. The board's tag chips are gone; the tier lines name each group instead.",
+        "link": "/prospects"
+    },
+    {
         "date": "2026-11-21",
         "tag": "update",
         "text": "Rest of Season rankings are rebuilt on a leaner model, so the order tracks projected production more closely.",

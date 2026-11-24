@@ -3,8 +3,10 @@
 Covers the 2026-10-18 fresh GUI audit findings 1, 3, 4, 5 and the
 prospects h1 minor:
   1. /pricing must not render the "(feat(churn): ...)" annotation.
-  3. 11px mobile floor for prospects tier tags / position chips /
-     In-Season chip and the Top Movers percent sub-labels.
+  3. 11px mobile floor for prospects position chips / In-Season chip
+     and the Top Movers percent sub-labels. (The board tier tags this
+     finding originally covered were later removed outright; the tier
+     divider lines name each band now.)
   4. 40px mobile tap height for filter chips, rankings nav chips and
      trade tabs; a 32px hit area for the Discord card close control;
      a 40px pricing trial CTA.
@@ -71,27 +73,31 @@ def test_prospects_title_keeps_h2_specified_styles():
 
 # ── Finding 3: 11px floors on mobile ───────────────────────────────────
 
-def test_prospects_tier_tag_not_below_11px_on_phone():
-    # The max-width:480px .m-tier override was the 9.5px source.
+def test_prospects_board_has_no_tier_tag_chip():
+    # The board's tier tag chips (.m-tier) were removed by Kaedon's
+    # steer: the tier divider lines name each band instead. The dead
+    # chip CSS (whose 480px override was the old 9.5px source) is gone
+    # with it; the modal/comparables tag chips use .tag-chip, untouched.
+    assert ".m-tier" not in ROOKIES_SRC
     m = re.search(
         r"@media \(max-width: 480px\) \{(.*?)\n  \}\n", ROOKIES_SRC, re.DOTALL
     )
     assert m, "missing 480px block"
-    tier = re.search(r"\.m-tier \{([^}]*)\}", m.group(1))
-    assert tier and "font-size: 11px" in tier.group(1)
     code_only = re.sub(r"/\*.*?\*/", "", m.group(1), flags=re.DOTALL)
     assert "9.5px" not in code_only
 
 
 def test_prospects_meta_pos_chip_floored_at_11px():
-    m = re.search(r"\.pr-meta \.rk-pos \{([^}]*)\}", ROOKIES_SRC)
+    # Board position is the site-wide .pos-badge (matchups page chip);
+    # the board-row sizing rule floors it at 11px.
+    m = re.search(r"\.pr-player-row \.pos-badge \{([^}]*)\}", ROOKIES_SRC)
     assert m and "font-size: 11px" in m.group(1)
 
 
 def test_prospects_pos_and_inseason_chips_floored_on_mobile():
     block = _mobile_block(ROOKIES_SRC)
     assert block, "missing GUI audit media block in rookies page CSS"
-    assert ".rk-pos, .m-early { font-size: 11px; }" in block
+    assert ".m-early { font-size: 11px; }" in block
 
 
 def test_top_movers_percent_sublabels_floored_on_mobile():
