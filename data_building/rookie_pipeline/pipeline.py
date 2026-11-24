@@ -141,7 +141,6 @@ def _adapt_v4_scores(
             s["draft_class_year"] = int(
                 p.get("draft_class_year") or draft_year or 0) or None
         ath = p.get("athleticism") or {}
-        dc = consensus_map.get(s.get("player_id")) or {}
         if classify_archetype is not None:
             try:
                 arch = classify_archetype(
@@ -151,7 +150,9 @@ def _adapt_v4_scores(
                         "weight_lbs": ath.get("weight_lbs")
                         or p.get("weight_lbs"),
                         "forty_yard": ath.get("forty_yard"),
-                        "projected_pick": dc.get("projected_pick"),
+                        # v3.7: no projected_pick - the labeler reads
+                        # no draft capital on any path (it ignores the
+                        # key regardless; consensus stays out entirely).
                         "age": p.get("age"),
                     })
             except Exception:

@@ -22,7 +22,8 @@ Pins here:
 - the backfill script's pure planner (stored totals / CFBD totals /
   unrepairable-with-named-input / genuine zero);
 - MODEL_VERSION is pinned to the current version (was "3.4.1" when
-  this repair shipped; v3.5's dominator basis change moved it).
+  this repair shipped; v3.5's dominator basis change and v3.6's
+  de-saturation anchor changes moved it since).
 """
 
 import pytest
@@ -279,4 +280,4 @@ class TestBackfillPlanner:
 
 class TestModelVersion:
     def test_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.5"
+        assert pm.MODEL_VERSION == "3.7"

@@ -26,15 +26,37 @@ Design rules:
   latest season is ALWAYS a candidate, even under 8 games: the scorer
   grades from the latest season (in-progress included), so a basis pool
   that excludes it makes the label silently lag the grade by a season.
-- Draft capital is a supporting input only (the NFL's own role
-  projection): capped weights, never the sole driver, and Developmental
-  uses it as a veto, never as a positive case for a role.
-- Confidence High/Medium/Low comes from presence (share of the position's
-  full input set that is populated) plus the fit margin, with projection
-  caps at Medium (single starter-volume season; a capital-led case with
-  size and speed unmeasured; a small-sample TD rate driving the win).
+- Draft capital plays NO role (model 3.7 archetype revision). The pick
+  is not a fit input, not a gate, not a presence feature, and never
+  appears in the receipt; a projected_pick key in the profile is
+  ignored. Pre-3.7 the pick was a weighted input in eight archetype
+  specs, a Developmental veto, and one presence point per position -
+  enough to flip primary labels across the pick range on 5 of 7 panel
+  profiles and to carry a back with unmeasured size and speed over the
+  High presence bar on consensus alone (decomposition in
+  tests/test_prospect_archetype_capital_free.py). The label is a read
+  of the player's own evidence only.
+- Confidence High/Medium/Low is an evidence grade with three
+  components, all from the player's own record: completeness (presence
+  over the position's talent feature set), sample (starter-volume
+  seasons - a role demonstrated over full seasons, not glimpsed in
+  one partial year), and coherence (the winning fit's strength and
+  its separation from the runner-up; a pair whose second fit is also
+  strong is corroboration - two demonstrated reads of the same
+  profile - while a pair of weaker fits is a genuine split). Caps at
+  Medium: fewer than two starter-volume seasons, or a win driven by
+  a small-sample TD rate. Low: thin presence, a weak winning fit, or
+  a glimpse sample (no starter-volume season behind a partial-season
+  basis).
 - A second fit within 6 points and at least 55 becomes one secondary
   trait, encoded in the stored label as "Primary · Secondary".
+  Exception (model 3.6, round-2 audit F14): a "Developmental"
+  secondary is suppressed when the primary is a defined role.
+  Developmental describes the absence of a demonstrated role, so
+  pairing it with one ("Alpha X · Developmental" on a top-10
+  prospect) reads as a quality verdict the fits do not support.
+  Developmental can still BE the primary label, and can still pair
+  behind another non-role primary per the module's own semantics.
 - Omission (no label at all) when presence < 0.50, when no basis season
   has 5+ games, or when the winning fit is under 40.
 - Label only: the archetype is derived FROM the grading inputs and must
@@ -86,9 +108,7 @@ def _mean_subs(subs: List[Optional[float]]) -> Optional[float]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 BANDS: Dict[str, Band] = {
-    # Shared
-    "capital": [(1, 100), (5, 97), (10, 90), (16, 82), (24, 72), (40, 58),
-                (64, 44), (100, 30), (160, 16), (260, 6)],
+    # Shared (no "capital" band: the pick is not an input, model 3.7)
     "forty": [(4.30, 100), (4.40, 96), (4.45, 88), (4.55, 74), (4.65, 58),
               (4.75, 42), (4.85, 24), (4.97, 6)],
     "age": [(20.2, 95), (21.0, 78), (21.5, 66), (22.5, 45), (23.5, 22),
@@ -143,8 +163,6 @@ BANDS: Dict[str, Band] = {
                    (36, 25)],
     "rb_dom_mid": [(0.14, 30), (0.20, 62), (0.24, 88), (0.28, 95),
                    (0.32, 62), (0.38, 30)],
-    "rb_cap_mid": [(1, 12), (20, 32), (40, 58), (70, 85), (110, 100),
-                   (180, 78), (260, 50)],
     "rb_ypc_mid": [(4.2, 25), (4.7, 60), (5.1, 88), (5.5, 100), (5.9, 78),
                    (6.4, 50), (7.0, 28)],
     # WR
@@ -190,8 +208,6 @@ BANDS: Dict[str, Band] = {
     "te_ypr_mid": [(9.5, 30), (10.5, 55), (11.5, 78), (12.5, 95), (13.5, 88),
                    (14.5, 65), (16, 40), (18, 20)],
     "te_sustained": [(0, 15), (1, 55), (2, 85), (3, 100)],
-    "te_cap_low": [(1, 4), (20, 14), (40, 30), (70, 52), (110, 74),
-                   (180, 92), (260, 100)],
 }
 
 
@@ -219,8 +235,7 @@ ARCHETYPE_RULES: Dict[str, List[Dict[str, Any]]] = {
         {"label": "Pocket Passer", "gate": None, "inputs": [
             ("pass_pg", 0.22, "qb_pass_pg"), ("cmp", 0.18, "qb_cmp"),
             ("ypa", 0.18, "qb_ypa"), ("td_int", 0.14, "qb_td_int"),
-            ("rush_pg", 0.12, "qb_rush_low"), ("wt", 0.08, "qb_wt"),
-            ("pick", 0.08, "capital")]},
+            ("rush_pg", 0.12, "qb_rush_low"), ("wt", 0.08, "qb_wt")]},
         {"label": "Developmental", "gate": "qb_dev_dual_threat", "inputs": [
             ("polish_inv", 0.30, None), ("pass_pg", 0.20, "qb_pass_low"),
             ("forty", 0.20, "forty"), ("wt", 0.15, "qb_wt"),
@@ -230,7 +245,7 @@ ARCHETYPE_RULES: Dict[str, List[Dict[str, Any]]] = {
         {"label": "Workhorse", "gate": None, "inputs": [
             ("dom", 0.22, "rb_dom"), ("rush_pg", 0.22, "rb_rush_pg"),
             ("total_pg", 0.20, "rb_total_pg"), ("rec_pg", 0.16, "rb_rec_pg"),
-            ("ypc", 0.12, "rb_ypc"), ("pick", 0.08, "capital")]},
+            ("ypc", 0.12, "rb_ypc")]},
         {"label": "Pass-Catching Back", "gate": "pcb_runner_first", "inputs": [
             ("rec_share", 0.30, "rb_rec_share"), ("rec_pg", 0.28, "rb_rec_pg"),
             ("ypc", 0.14, "rb_ypc"), ("forty", 0.14, "forty"),
@@ -245,13 +260,12 @@ ARCHETYPE_RULES: Dict[str, List[Dict[str, Any]]] = {
             ("rec_pg", 0.12, "rb_rec_pg")]},
         {"label": "Committee Back", "gate": None, "inputs": [
             ("total_pg", 0.30, "rb_total_mid"), ("rec_share", 0.20, "rb_rec_mid"),
-            ("dom", 0.20, "rb_dom_mid"), ("pick", 0.15, "rb_cap_mid"),
-            ("ypc", 0.15, "rb_ypc_mid")]},
+            ("dom", 0.20, "rb_dom_mid"), ("ypc", 0.15, "rb_ypc_mid")]},
     ],
     "WR": [
         {"label": "Alpha X", "gate": "alpha_size", "inputs": [
             ("dom", 0.24, "wr_dom"), ("ms", 0.20, "wr_ms"),
-            ("yds_pg", 0.16, "wr_yds_pg"), ("pick", 0.16, "capital"),
+            ("yds_pg", 0.16, "wr_yds_pg"),
             ("wt", 0.14, "wr_wt"), ("ypr", 0.10, "wr_ypr_alpha")]},
         {"label": "Playmaker", "gate": "alpha_usage_85", "inputs": [
             ("yds_pg", 0.26, "wr_yds_pg"), ("td_rate", 0.22, "wr_td_rate"),
@@ -271,7 +285,7 @@ ARCHETYPE_RULES: Dict[str, List[Dict[str, Any]]] = {
             ("wt", 0.14, "wr_wt_inv")]},
         {"label": "Developmental", "gate": "dev_wr", "inputs": [
             ("raw_prod_inv", 0.30, None), ("tools", 0.22, None),
-            ("pick", 0.18, "capital"), ("age", 0.18, "age"),
+            ("age", 0.18, "age"),
             ("growth", 0.12, "trajectory")]},
     ],
     "TE": [
@@ -286,17 +300,17 @@ ARCHETYPE_RULES: Dict[str, List[Dict[str, Any]]] = {
         {"label": "Two-Way TE", "gate": None, "inputs": [
             ("wt", 0.20, "te_wt"), ("rec_pg", 0.22, "te_rec_mid"),
             ("ypr", 0.18, "te_ypr_mid"), ("ms", 0.16, "te_ms"),
-            ("pick", 0.12, "capital"), ("forty", 0.12, "forty")]},
+            ("forty", 0.12, "forty")]},
         {"label": "Red-Zone Target", "gate": None, "inputs": [
             ("td_rate", 0.30, "te_td_rate"), ("td_pg", 0.20, "te_td_pg"),
             ("rec_pg_inv", 0.18, None), ("wt", 0.16, "te_wt"),
             ("ms", 0.16, "te_ms")]},
         {"label": "Blocking TE", "gate": None, "inputs": [
             ("rec_pg_inv", 0.34, None), ("ms_inv", 0.22, None),
-            ("wt", 0.22, "te_wt"), ("pick", 0.22, "te_cap_low")]},
+            ("wt", 0.22, "te_wt")]},
         {"label": "Developmental", "gate": "dev_te", "inputs": [
             ("raw_prod_inv", 0.30, None), ("tools", 0.22, None),
-            ("pick", 0.18, "capital"), ("age", 0.18, "age"),
+            ("age", 0.18, "age"),
             ("growth", 0.12, "trajectory")]},
     ],
 }
@@ -305,14 +319,13 @@ ARCHETYPE_RULES: Dict[str, List[Dict[str, Any]]] = {
 # actually populated for the player.
 PRESENCE_FEATURES: Dict[str, List[str]] = {
     "QB": ["pass_pg", "rush_pg", "rush_share", "rush_td_pg", "ypa", "cmp",
-           "td_int", "td_rate", "yds_cmp", "att_pg", "wt", "forty", "age",
-           "pick"],
+           "td_int", "td_rate", "yds_cmp", "att_pg", "wt", "forty", "age"],
     "RB": ["dom", "rush_pg", "total_pg", "rec_pg", "rec_share", "ypc",
-           "td_rate", "wt", "forty", "pick"],
+           "td_rate", "wt", "forty"],
     "WR": ["dom", "ms", "ypr", "yds_pg", "rec_pg", "td_rate", "wt", "forty",
-           "pick", "age", "growth"],
+           "age", "growth"],
     "TE": ["rec_pg", "ms", "ypr", "td_rate", "td_pg", "sustained", "wt",
-           "forty", "pick", "age", "growth"],
+           "forty", "age", "growth"],
 }
 
 
@@ -348,7 +361,6 @@ RECEIPT_LABELS: Dict[str, Dict[str, Any]] = {
         "wt": lambda f: f"{_f1(f['wt'])} lb",
         "forty": lambda f: f"{_f2(f['forty'])} forty",
         "age": lambda f: f"{_f1(f['age'])} draft age",
-        "pick": lambda f: f"pick {_f1(f['pick'])} capital",
         "polish_inv": lambda f: "unpolished passing profile",
     },
     "RB": {
@@ -361,7 +373,6 @@ RECEIPT_LABELS: Dict[str, Dict[str, Any]] = {
         "td_rate": lambda f: f"{_f1(f['td_rate'])}% rush TD rate",
         "wt": lambda f: f"{_f1(f['wt'])} lb",
         "forty": lambda f: f"{_f2(f['forty'])} forty",
-        "pick": lambda f: f"pick {_f1(f['pick'])} capital",
         "rec_share_inv": lambda f: f"{_pctv(f['rec_share'])} receiving share",
     },
     "WR": {
@@ -373,7 +384,6 @@ RECEIPT_LABELS: Dict[str, Dict[str, Any]] = {
         "td_rate": lambda f: f"{_f1(f['td_rate'])}% TD rate",
         "wt": lambda f: f"{_f1(f['wt'])} lb",
         "forty": lambda f: f"{_f2(f['forty'])} forty",
-        "pick": lambda f: f"pick {_f1(f['pick'])} capital",
         "age": lambda f: f"{_f1(f['age'])} draft age",
         "growth": lambda f: f"production {_f2(f['growth'])}x year over year",
         "raw_prod_inv": lambda f: "thin college production",
@@ -389,7 +399,6 @@ RECEIPT_LABELS: Dict[str, Dict[str, Any]] = {
         "sustained": lambda f: f"{_f1(f['sustained'])} seasons at 45+ rec yds/g",
         "wt": lambda f: f"{_f1(f['wt'])} lb",
         "forty": lambda f: f"{_f2(f['forty'])} forty",
-        "pick": lambda f: f"pick {_f1(f['pick'])} capital",
         "age": lambda f: f"{_f1(f['age'])} draft age",
         "growth": lambda f: f"production {_f2(f['growth'])}x year over year",
         "raw_prod_inv": lambda f: "thin college production",
@@ -478,7 +487,8 @@ def _features(pos: str, basis: Dict, seasons: List[Dict],
     f: Dict[str, Optional[float]] = {
         "wt": _num(profile.get("weight_lbs", profile.get("weight"))),
         "forty": _num(profile.get("forty_yard", profile.get("forty"))),
-        "pick": _num(profile.get("projected_pick", profile.get("pick"))),
+        # No "pick" feature (model 3.7): a projected_pick key in the
+        # profile is ignored - the module reads talent evidence only.
         "age": _num(profile.get("age")),
         "growth": growth,
     }
@@ -601,12 +611,13 @@ def _apply_gates(fits: Dict[str, Optional[float]], feats: Dict) -> None:
     if dom is not None and dom >= 0.34:
         cap("Playmaker", 85.0)  # at that share he IS the offense's primary
         cap("Deep Threat", 84.0)
-    pick = feats.get("pick")
     ms = feats.get("ms")
     yds_pg = feats.get("yds_pg")
     rec_pg = feats.get("rec_pg")
-    if pick is not None and pick <= 10:
-        cap("Developmental", 60.0)  # the NFL has already issued a role verdict
+    # (Pre-3.7 a top-10 projected pick also capped Developmental at 60 -
+    # "the NFL has already issued a role verdict". Removed with the
+    # pick itself: the demonstrated-production caps below are the
+    # evidence-based form of the same idea.)
     if dom is not None and dom >= 0.24 and yds_pg is not None and yds_pg >= 55.0:
         cap("Developmental", 60.0)  # demonstrated WR producer, not a project
     if rec_pg is not None and rec_pg >= 35.0 and ms is not None and ms >= 0.10:
@@ -636,8 +647,10 @@ def classify_archetype(
     """Score every archetype fit for a prospect and assign the label.
 
     profile carries the non-season inputs: weight_lbs, forty_yard,
-    projected_pick, age. production_score is accepted for call-site
-    compatibility and unused: v2 fits read stats and traits only.
+    age. A projected_pick key is ignored when present (model 3.7:
+    the labeler reads no draft capital). production_score is accepted
+    for call-site compatibility and unused: v2 fits read stats and
+    traits only.
     Returns label None (omitted) when the data cannot support one.
     """
     empty = {"archetype": None, "archetype_receipt": None,
@@ -679,40 +692,54 @@ def classify_archetype(
 
     margin = (top_fit - second_fit) if second_fit is not None else top_fit
     has_pair = (second_fit is not None and second_fit >= 55.0
-                and (top_fit - second_fit) <= 6.0)
+                and (top_fit - second_fit) <= 6.0
+                # v3.6 (round-2 audit F14): never pair "Developmental"
+                # behind a defined role (see module docstring).
+                and not (second_label == "Developmental"
+                         and top_label != "Developmental"))
 
-    # Projection caps at Medium (spec 2.4).
+    # Confidence (model 3.7 archetype revision): an evidence grade
+    # from the player's own record only - completeness (presence over
+    # the position's talent feature set), sample (starter-volume
+    # seasons), and coherence (the winning fit's strength and its
+    # separation from the runner-up). A pair whose second fit is also
+    # strong (>= 72) corroborates the read: two demonstrated readings
+    # of the same profile, not a coin flip. A pair of weaker fits is
+    # a genuine split and stays Medium. Caps at Medium: fewer than
+    # two starter-volume seasons, or a win driven by a TD rate on a
+    # small catch sample. Low: thin presence, a weak winning fit, or
+    # a glimpse sample (no starter-volume season AND a partial-season
+    # basis - the role has never been demonstrated over a real
+    # sample; a full-season basis with modest volume is a demonstrated
+    # read and floors at Medium via the caps). Pre-3.7 this block
+    # also held a capital-led cap and forced every pair to Medium;
+    # the pick is gone, and the pair rule is now evidence-based.
     win_contribs = contribs.get(top_label, [])
     max_contrib = max((w * s for _, w, s in win_contribs), default=0.0)
-    capital_led = any(
-        feat == "pick" and (w * s) >= max_contrib and max_contrib > 0
-        for feat, w, s in win_contribs
-    ) and feats.get("wt") is None and feats.get("forty") is None
     basis_rec = _num(basis.get("receptions"))
     td_led = (
         pos in ("WR", "TE") and basis_rec is not None and basis_rec < 40
         and any(feat == "td_rate" and (w * s) >= max_contrib and max_contrib > 0
                 for feat, w, s in win_contribs)
     )
-    capped = (
-        _starter_volume_seasons(pos, seasons) < 2
-        or capital_led
-        or td_led
-    )
+    volume_seasons = _starter_volume_seasons(pos, seasons)
+    capped = volume_seasons < 2 or td_led
+    glimpse = (volume_seasons == 0 and basis_gp is not None
+               and basis_gp < 8)
 
-    if has_pair:
-        confidence = "Medium"  # a pair is the honest answer, never High or Low
-    elif presence >= 0.80 and margin >= 6.5 and not capped:
-        confidence = "High"
-    elif presence < 0.65 or top_fit < 55.0:
+    corroborated = second_fit is not None and second_fit >= 72.0
+    if presence < 0.65 or top_fit < 55.0 or glimpse:
         confidence = "Low"
+    elif (presence >= 0.80 and not capped and top_fit >= 70.0
+          and (margin >= 6.5 or corroborated)):
+        confidence = "High"
     else:
         confidence = "Medium"
 
     label = f"{top_label} · {second_label}" if has_pair else top_label
 
     # Receipt: the winning fit's top contributing inputs, plus the
-    # projection clause the winning conditions require (spec 2.6 and 12).
+    # honesty clause the winning conditions require (spec 2.6 and 12).
     labels = RECEIPT_LABELS.get(pos, {})
     parts = []
     for feature, _w, _s in sorted(win_contribs, key=lambda c: -(c[1] * c[2]))[:3]:
@@ -720,9 +747,7 @@ def classify_archetype(
         if fn is not None:
             parts.append(fn(feats))
     receipt = " · ".join(parts)
-    if capital_led:
-        receipt += "; projection led by draft capital; size and speed unmeasured"
-    elif td_led:
+    if td_led:
         receipt += f"; TD rate rests on {int(basis_rec)} catches"
     elif (feats.get("wt") is None and feats.get("forty") is None
           and presence < 0.85):

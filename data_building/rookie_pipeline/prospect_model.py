@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.5 (see MODEL_VERSION)
+Model version: 3.7 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -40,23 +40,120 @@ Model version: 3.5 (see MODEL_VERSION)
         scripts/recompute_dominators.py (migration 051 adds the
         team_pass_tds denominator); no weights or thresholds change
         in this version.
+  v3.6: de-saturation. Top anchors that sat AT recorded-best marks
+        (so real seasons pinned whole legs at exactly 100 and the
+        grade stopped separating players on them) are widened to
+        recorded-best-plus-margin, all absolute anchors: competition
+        splits SEC (1.00) from Big Ten (0.97) and its scale anchor
+        moves 1.00 -> 1.03; breakout dominator saturation multiples
+        WR 1.4 -> 1.7, RB 1.8 -> 2.0, TE 1.8 -> 2.4; WR production
+        anchors rec yds/g 100 -> 120 and pass share 0.35 -> 0.40;
+        WR efficiency anchors yds/rec 17.0 -> 19.5 and market share
+        0.30 -> 0.34; TE production TDs/g anchor 0.5 -> 0.65. The TE
+        elite bonuses (x1.18 / x1.08) now require a completed season
+        or 8+ games played, so a short in-progress season cannot
+        clear them unpaced. No weights change.
+        Round-2 audit mechanics (same release): a pick is priced once
+        by the pick curve - the round multiplier (whose round-2 x1.08
+        bonus made pick 33 worth more than pick 32) and the separate
+        Day-3 penalty (a third charge on picks 97+) are removed, so
+        capital value is non-increasing in pick by construction; and
+        talent_score now holds the translation layer identical across
+        the main and talent runs (same pick context, only the capital
+        LEG excluded), so capital_delta prices the leg alone instead
+        of silently including pick-gated translation (up to +9 for a
+        top-10 TE).
+        Round-2 audit, full pass (same release; the audit note is
+        ~/workspace/prospect-runs/grading-audit-round2-2026-11-23.md):
+        F1 seed-only capital (num_mocks_used == 0, not an actual pick)
+        counts as missing and redistributes; F13 the confidence
+        capital points require the same verified capital. F2
+        in-progress seasons shrink toward the completed-season
+        baseline by min(1, GP/12) in production, efficiency and
+        utilization. F3 the translation layer keeps only the WR
+        contested-catch trait (no leg reads it from season data);
+        every pick-gated, share, dominator, rec-yds and age branch is
+        deleted, translation no longer reads the pick at all, and QB
+        rushing is priced once in production (blend share 15% -> 25%)
+        instead of a flat translation add. F5 market share leaves
+        efficiency at WR/RB/TE (WR gains a YAC component). F6 QB
+        production prices volume only; the YPA/comp%/TD:INT trio
+        lives in efficiency alone. F7 the transfer multiplier and
+        scheme-inflation discount are deleted; competition and
+        environment carry team context. F8 the crowded-room
+        multiplier applies to production only. F9 growth is priced
+        once in breakout (totals-growth switch and ascending bonus
+        deleted). F10 missing recruiting returns None and
+        redistributes. F11 the age floor becomes a declining tail
+        (5 points/year below the raw-20 point, floor 10). F15 the
+        complete-mode athleticism floor (imputed 67.0) is deleted;
+        redistribution carries untested players in both modes. F16
+        the QB experience add-on prices from the redistributed
+        weights, and the sub-4-GP production divisor cliff becomes
+        max(GP, 4) plus a shrink toward neutral. F12 stale comments
+        corrected. No blend weights change in any of it.
+  v3.7: capital-free grades. Per Kaedon's directive ("I want
+        something that doesn't handle the draft capital, because
+        this is meant to be my own rankings"), draft capital -
+        actual, projected, consensus or seed - plays NO role in the
+        grade. The grade is a pure talent grade: the site's own
+        rankings, validated on correlation to NFL production, not
+        on draft position. The capital leg is excluded for every
+        prospect through the model's existing missing-leg
+        redistribution (the path that already handled a prospect
+        with no pick), so each 3.7 grade is exactly the 3.6 talent
+        grade of the same profile and the capital weight spreads
+        proportionally over the remaining legs. Every other leg is
+        unchanged from 3.6 at full strength - production,
+        efficiency, breakout, competition, age, athleticism,
+        recruiting (a talent signal, not capital), utilization,
+        durability, environment. Consensus/mock-draft data goes
+        with capital: the confidence score no longer awards
+        capital-presence points, the payload's capital component
+        is always None and capital_delta is always None (there is
+        no capital effect to report), and talent_score is simply
+        the grade itself. score_prospect still ACCEPTS the
+        draft_capital argument for call compatibility with the
+        pipeline and the backtest; it never reads it.
+        F12 weights fold (2026-11-24, same version - 3.7 had not
+        shipped): the blend weights are the F12 fitted set, not
+        the design weights the paragraph above describes. Per-leg
+        correlations to cumulative NFL production over the dumped
+        2016-2025 gate population, blended 50/50 with the design
+        weights, LOCO-CV checked, then validated by a full gate
+        run with the set injected as an override
+        (gate_v37_weights.log: QB .393, RB .411, WR .369, TE .407
+        against talent-only bars .361/.397/.332/.365 - all four
+        cleared). The set is baked into POSITION_WEIGHTS in
+        effective form, so the shipped model reproduces the gated
+        grades with no override, and a 3.7 grade is the 3.6 talent
+        legs under the fitted weights: legs unchanged, blend
+        re-weighted. Full provenance sits above POSITION_WEIGHTS.
 
-Component weights (v2.0 - recruiting takes 5%, others rescaled proportionally):
-    projected_draft_capital_score 27-28%  NFL draft position (position-weighted)
-    production_score             ~14-19%  college production volume
-    athleticism_score            ~7-10%   combine / speed score / RAS
-    breakout_profile_score        ~4-11%  early-career dominance trajectory
-    utilization_score             ~3-8%   opportunity share
-    efficiency_score              ~8-17%  per-attempt / per-target efficiency
-    competition_score             ~4-7%   conference + opponent quality (+SP+ SOS)
-    age_score                     ~8-13%  age-adjusted production; youth premium
-    environment_adjustment        ~0-6%   team scheme / usage context
-    durability_score              ~0-1%   games missed, injury history
-    recruiting_score               5 %   247 Composite pedigree (stars/rating)
+Component weights (F12 fitted set; exact per-position values and
+provenance above POSITION_WEIGHTS):
+    production_score             ~19-24%  college production volume
+    efficiency_score             ~12-19%  per-attempt / per-target efficiency
+    age_score                    ~14-20%  age-adjusted production; youth premium
+    breakout_profile_score       ~7-15%   early-career dominance trajectory
+    athleticism_score            ~8-15%   combine / speed score / RAS
+    utilization_score            ~5-14%   opportunity share
+    competition_score            ~4-10%   conference + opponent quality (+SP+ SOS)
+    recruiting_score             ~3.2-3.5% 247 Composite pedigree (stars/rating)
+    environment_adjustment       ~0-4%    team scheme / usage context
+    experience_score (QB only)   ~4.4%    college starting experience
+    durability_score             ~0-0.6%  games missed, injury history
+    draft capital                0%       NOT PRICED since v3.7 and no longer
+                                          carried in the tables; the capital
+                                          pop in score_prospect remains as a
+                                          guard for foreign overrides
     ──────────────────────────────────
     Total                        100 %
 
-Position-weighted draft capital, day-tier multipliers (Day 1 R1 > Day 2 R2-3 > Day 3 R4-7)
+Draft capital was priced by the position pick curve through v3.6
+(v3.6 F4 removed the day-tier round multipliers and the separate
+Day-3 penalty that stacked on top of it). Since v3.7 the curve is
+not consulted at all: no pick, from any source, enters the grade.
 
 Position-specific adjustments are baked into each scorer to handle the
 different stat profiles of QB / RB / WR / TE.
@@ -68,7 +165,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.5"
+MODEL_VERSION = "3.7"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:
@@ -98,6 +195,20 @@ def active_season_year_for_run(today=None) -> Optional[int]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _shrink_partial(raw: float, baseline: float, gp) -> float:
+    """v3.6 (round-2 audit F2): shrink an in-progress season's leg score
+    toward a baseline by the sample-size factor min(1, GP/12) - the
+    idiom the model already uses for its in-season pacing and its
+    confidence discount. A 6-game partial season's rate stats are
+    halfway between evidence and prior; before this, sample size was
+    priced nowhere in the grade itself (only inside production's
+    counting-stat gates), so a hot 6-game partial season graded at
+    full weight. At 12+ games the shrink is 1.0 and the raw score
+    stands."""
+    f = min(1.0, max(_safe(gp, 12), 0.0) / 12.0)
+    return baseline + f * (raw - baseline)
+
 
 def _safe(v, default: float = 0.0) -> float:
     try:
@@ -142,8 +253,11 @@ CONF_QUALITY: Dict[str, float] = {
     # Power 2 - abbreviations and full names (CFBD returns full names)
     "SEC":                       1.00,
     "Southeastern":              1.00,   # "Southeastern Conference"
-    "Big Ten":                   1.00,
-    "Big 10":                    1.00,
+    # v3.6: Big Ten split below the SEC (was 1.00, identical to the SEC):
+    # with the competition scale's top anchor also at 1.00, every career
+    # SEC/Big Ten player pinned the leg at exactly 100.
+    "Big Ten":                   0.97,
+    "Big 10":                    0.97,
 
     # Upper Power Tier
     "Big 12":                    0.90,
@@ -211,15 +325,10 @@ _SAGARIN_SCALE   = 0.0647 / 24.0  # ≈ 0.00270 per rating point above avg
 #   weak NFL translation for receivers outside the #1 option.
 # Ole Miss (Kiffin spread): similar volume inflation at lower severity.
 # ─────────────────────────────────────────────────────────────────────────────
-SCHEME_INFLATION_SYSTEMS: Dict[str, float] = {
-    "tennessee": 0.60,
-    "ole miss":  0.80,
-}
-
-
-def _scheme_inflation_discount(team: Optional[str]) -> float:
-    """Return the production/efficiency discount multiplier for known stat-inflating WR systems."""
-    return SCHEME_INFLATION_SYSTEMS.get((team or "").strip().lower(), 1.0)
+# v3.6 (round-2 audit F7): SCHEME_INFLATION_SYSTEMS and its discount
+# helper are deleted with their call sites. The two-team hard-coded
+# discount was one of four team-context pricings; competition and
+# environment are the surviving channels.
 
 
 def _conf_quality(conference: Optional[str]) -> float:
@@ -271,11 +380,26 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False,
     gates, QB dual-threat TD gates) are paced by min(1, GP/12) so a partial
     season is not held to full-season counting thresholds. All rate legs
     are untouched.
+
+    v3.6 (round-2 audit F16): sub-4-game seasons no longer divide by
+    12 (the old cliff: 200 yards in 3 recorded games rated 16.7/g,
+    in 4 games 50/g). The divisor is max(GP, 4) and the resulting
+    score shrinks toward the leg neutral (52.0) by GP/4, so a tiny
+    recorded sample reads as weak evidence, not as a rate.
     """
+    _prod = _score_production_season_raw(season, pos, skip_sagarin, _partial)
+    _gp_raw = _safe(season.get("games_played"), 12)
+    if _gp_raw < 4:
+        _prod = 52.0 + (_prod - 52.0) * (_gp_raw / 4.0)
+    return _prod
+
+
+def _score_production_season_raw(season: Dict, pos: str, skip_sagarin: bool = False,
+                                 _partial: bool = False) -> float:
     # Guard against bad games-played values (0/1) that can explode per-game rates
     # and incorrectly saturate production to 100.
     gp_raw = _safe(season.get("games_played"), 12)
-    gp = gp_raw if gp_raw >= 4 else 12
+    gp = max(gp_raw, 4)  # v3.6 (F16): was "gp_raw if gp_raw >= 4 else 12"
     _pace = min(1.0, gp / 12.0) if _partial else 1.0
 
     if pos == "WR":
@@ -293,12 +417,12 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False,
         # Falls back to legacy total-offense dominator if team_pass_yards absent.
         if team_pass_yds > 0:
             pass_share = (total_rec_yds / team_pass_yds) * (1 + sag_adj)
-            dom_score  = _scale(pass_share, 0.08, 0.35)
+            dom_score  = _scale(pass_share, 0.08, 0.40)  # v3.6: 0.35 -> 0.40 (recorded-best-plus-margin)
         else:
             dom_score  = _scale(dom * (1 + sag_adj), 0.08, 0.40)
 
         prod = (
-            _scale(rec_yds_pg, 32,  100) * 0.40 +
+            _scale(rec_yds_pg, 32,  120) * 0.40 +  # v3.6: top anchor 100 -> 120 (recorded-best-plus-margin)
             _scale(rec_tds_pg, 0.25, 0.9) * 0.30 +
             dom_score                      * 0.30
         )
@@ -392,24 +516,26 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False,
         # Rushing QBs: elite college rushers (Lamar, Kyler, Jalen Hurts) are
         # systematically penalised by pure passing metrics. Rushing is a direct
         # fantasy component in the NFL, not just a tie-breaker.
-        # Architecture: 85% passing composite + 15% rushing component so that
-        # a pocket passer can still max out (rushing = 0 → no penalty) while
-        # a dual-threat who rushes 80+ yd/game adds a full 15 pts on top.
-        # Completion% weight reduced (0.25→0.18) because spread/RPO systems
-        # inflate college comp% (Mac Jones 77%) while dual-threat systems
-        # suppress it without signalling worse NFL potential.
+        # v3.6 (round-2 audit F6): production prices VOLUME only (pass
+        # yards/game and pass TDs/game, equal halves). The rate trio
+        # (YPA, completion%, TD:INT) used to be priced here AND in
+        # efficiency - about 28% of a QB's grade paid the same three
+        # numbers twice. Efficiency is the QB's rate leg (the model is
+        # efficiency-first at QB); it keeps the trio alone now.
         pass_comp = (
-            _scale(pass_yds_pg, 150, 285) * 0.22 +  # v3.2 V5
-            _scale(tds_pg,        1.5,  2.8) * 0.22 +  # v3.2 V5
-            _scale(comp_pct,     58.0, 72.0) * 0.18 +
-            _scale(ypa,           6.5,   9.5) * 0.28 +
-            _scale(td_int,        1.5,   6.0) * 0.10
+            _scale(pass_yds_pg, 150, 285) * 0.50 +  # v3.2 V5 anchors
+            _scale(tds_pg,        1.5,  2.8) * 0.50
         )
         rush_comp = _scale(rush_yds_pg, 10.0, 85.0)  # 0–100; Lamar ~90+ yd/g → near 100
 
         # v3.2 R7-A1: max(pass, blend). A perfect passing season is a
         # 100 production season whether or not the QB also ran.
-        prod = _clip(max(pass_comp, pass_comp * 0.85 + rush_comp * 0.15))
+        # v3.6 (F6): the blend share rises 15% -> 25%: rushing is priced
+        # HERE, once, on its anchored scale. (Translation's old flat
+        # +3.5/+1.5 rushing add is deleted; a flat add cannot be
+        # reproduced through an anchored leg at production's weight,
+        # and one anchored price is the audit's requirement.)
+        prod = _clip(max(pass_comp, pass_comp * 0.75 + rush_comp * 0.25))
 
         # Extra multiplier for elite rushing + TDs (dual-threat upside)
         # v3.4: in-season, the season TD total is paced to a 12-game
@@ -442,17 +568,22 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False,
 
         prod = (
             _scale(rec_yds_pg, 20,  100) * 0.27 +  # v3.2 R7-B: beyond Pitts' 96.3/g record pace
-            _scale(rec_tds_pg, 0.12, 0.5) * 0.25 +  # saturation anchor, weight trimmed
+            _scale(rec_tds_pg, 0.12, 0.65) * 0.25 +  # v3.6: top anchor 0.5 -> 0.65 (was pinning ordinary hot seasons)
             dom_score                      * 0.35 +  # pass share: the stable TE signal
             _scale(rec_pg,     1.0,  8.0) * 0.13    # v3.2 R7-B: beyond McBride's 7.5/g
         )
+        # v3.6: the elite bonuses are RATE gates, and unlike the counting
+        # gates above they were never paced - a short in-progress season
+        # (e.g. 6 games) could clear both at a hot per-game rate. They now
+        # require a completed season, or 8+ games played in-progress.
+        _elite_ok = (not _partial) or (gp_raw >= 8)
         # Elite TE bonus: players like Brock Bowers who produce at WR levels get extra credit
-        if rec_yds_pg >= 55 and dom_score >= 47:  # v3.2 R7-B: same physical share, rescaled
+        if _elite_ok and rec_yds_pg >= 55 and dom_score >= 47:  # v3.2 R7-B: same physical share, rescaled
             prod = _clip(prod * 1.18)  # 18% bonus for WR-level production (lowered thresholds)
-        
+
         # Special bonus for historically elite TEs (multiple major award winners)
         # This captures players like Brock Bowers who won best college TE twice
-        if rec_yds_pg >= 50 and dom_score >= 42:  # v3.2 R7-B: same physical share, rescaled
+        if _elite_ok and rec_yds_pg >= 50 and dom_score >= 42:  # v3.2 R7-B: same physical share, rescaled
             prod = _clip(prod * 1.08)  # Additional 8% bonus for elite production
         # YAC bonus: move TEs who create after the catch are more NFL-translatable
         te_yac = _safe(season.get("yards_after_catch_per_reception"))
@@ -537,47 +668,27 @@ def calc_production_score(
     ls  = _latest_season(seasons) or {}
     gp  = max(_safe(ls.get("games_played"), 12), 1)
 
-    # Check for conference downgrade (transfer to weaker competition)
-    transfer_penalty = 1.0
-    if len(seasons) >= 2:
-        sorted_seasons = sorted(seasons, key=lambda s: s.get("season", 0))
-        conf_qualities = []
-        for season in sorted_seasons:
-            conf = season.get("conference", "")
-            team = season.get("team", "") or ""
-            if "notre dame" in team.lower():
-                conf_qualities.append(0.94)
-            else:
-                conf_qualities.append(_conf_quality(conf))
-
-        # Check for conference quality change across transfers
-        for i in range(1, len(conf_qualities)):
-            prev_quality = conf_qualities[i-1]
-            curr_quality = conf_qualities[i]
-            delta = curr_quality - prev_quality  # positive = upgrade, negative = downgrade
-
-            if delta <= -0.20:
-                # Downward transfer: discount stats that may be inflated by weaker competition
-                drop_magnitude = -delta / prev_quality
-                penalty = min(0.35, drop_magnitude * 0.75)   # 15–35% penalty
-                transfer_penalty *= (1.0 - penalty)
-                break
-            elif delta >= 0.15:
-                # Upward transfer: producing in a stronger conference is harder -
-                # reward the player (e.g. FCS → SEC and still put up numbers)
-                upgrade_bonus = min(0.12, (delta / prev_quality) * 0.60)  # up to +12%
-                transfer_penalty *= (1.0 + upgrade_bonus)
-                break
+    # v3.6 (round-2 audit F7): the transfer penalty/bonus is deleted.
+    # Team context was priced four ways (competition leg, environment
+    # leg, scheme discount, this conference-delta multiplier on
+    # production, up to -35%/+12%). Two channels remain: the
+    # competition leg and the environment leg.
 
     if pos not in ("WR", "RB", "QB", "TE"):
         return 40.0
 
     # With only one season there is nothing to blend - just score it directly.
     if len(seasons) == 1:
-        return _clip(_score_production_season(
+        _single = _score_production_season(
             ls, pos, skip_sagarin,
             _partial=(_inseason_year is not None
-                      and ls.get("season") == _inseason_year)) * transfer_penalty)
+                      and ls.get("season") == _inseason_year))
+        if _inseason_year is not None and ls.get("season") == _inseason_year:
+            # v3.6 (F2): a lone in-progress season shrinks toward the
+            # leg's neutral point - there is no completed baseline.
+            _single = _shrink_partial(_single, 52.0,
+                                      _safe(ls.get("games_played"), 12))
+        return _clip(_single)
 
     # Score latest season and best individual season; blend to reward peak while
     # still weighting recent output (NFL analysts evaluate both)
@@ -606,11 +717,28 @@ def calc_production_score(
         _partial=(_inseason_year is not None
                   and peak_season.get("season") == _inseason_year))
 
+    if _inseason_year is not None:
+        # v3.6 (round-2 audit F2): whichever blend input is the
+        # in-progress season shrinks toward the player's best COMPLETED
+        # season score (the leg's neutral 52.0 when none exists) by
+        # min(1, GP/12). The 3.6 TE-bonus gate priced sample size for
+        # one bonus; this generalizes the same idea to the blend.
+        _completed = [s for s in seasons
+                      if s.get("season") != _inseason_year]
+        _baseline = max(
+            (_score_production_season(s, pos, skip_sagarin)
+             for s in _completed),
+            default=52.0)
+        if ls.get("season") == _inseason_year:
+            latest_score = _shrink_partial(
+                latest_score, _baseline, _safe(ls.get("games_played"), 12))
+        if peak_season.get("season") == _inseason_year:
+            best_score = _shrink_partial(
+                best_score, _baseline,
+                _safe(peak_season.get("games_played"), 12))
+
     # 85% weight on whichever is higher (recent or peak), 15% on the other
     prod = max(latest_score, best_score) * 0.85 + min(latest_score, best_score) * 0.15
-
-    # Apply transfer penalty to discourage stat inflation from weak competition
-    prod = _clip(prod * transfer_penalty)
 
     # ── Eval-metric blending ─────────────────────────────────────────────────
     # When evaluation pipeline metrics are available, apply a confidence-weighted
@@ -675,13 +803,9 @@ def calc_production_score(
 
         # big_time_throw_rate dropped: was PFF-only, no free replacement.
 
-    # Scheme-inflation discount: high-volume spread systems inflate skill-position
-    # production stats.  Applied to both WR and TE - air-raid volume pumps TE
-    # target counts and yardage totals as much as WR numbers.
-    if pos in ("WR", "TE"):
-        scheme_discount = _scheme_inflation_discount(ls.get("team"))
-        if scheme_discount < 1.0:
-            prod = _clip(prod * scheme_discount)
+    # v3.6 (round-2 audit F7): the scheme-inflation discount is deleted
+    # here and in efficiency (team context consolidation: competition
+    # leg + environment leg are the two surviving channels).
 
     return prod
 
@@ -717,8 +841,20 @@ def calc_efficiency_score(
 
     if pos == "WR":
         ypr = _safe(ls.get("yds_per_reception"), 10.0)
-        ms  = _safe(ls.get("market_share_yards"))
-        eff = _scale(ypr, 8.5, 17.0) * 0.50 + _scale(ms, 0.08, 0.30) * 0.50  # v3.3 F2: MS anchor 0.30 (0.40 sat ~52% beyond the best recorded WR season, DeVonta Smith 2020 at 0.264)
+        # v3.6 (round-2 audit F5): market share leaves WR efficiency.
+        # Share was priced in four legs (production dominator,
+        # efficiency, utilization, breakout) - about 18% of the WR
+        # grade. Efficiency now prices per-play quality only: yards
+        # per reception (anchors widened in the 3.6 de-saturation:
+        # 17.0 -> 19.5 top), plus yards after catch per reception when
+        # the season carries it, at 70/30. Without YAC data the leg is
+        # yards per reception alone.
+        _yac_wr = _safe(ls.get("yards_after_catch_per_reception"))
+        if _yac_wr:
+            eff = (_scale(ypr, 8.5, 19.5) * 0.70
+                   + _scale(_yac_wr, 2.5, 7.5) * 0.30)
+        else:
+            eff = _scale(ypr, 8.5, 19.5)
 
         # Real PFF YPRR - centered adjustment: 2.0 = neutral, 2.8 = +8, 1.2 = -8
         yprr = _eval_metric_value(eval_metrics, "yprr", min_confidence=0.75)
@@ -774,12 +910,13 @@ def calc_efficiency_score(
 
     elif pos == "RB":
         ypc   = _safe(ls.get("yds_per_carry"), 4.25)
-        ms    = _safe(ls.get("market_share_yards"))
         ypr   = _safe(ls.get("yds_per_reception"), 7.0)
         eff   = (
-            _scale(ypc,  3.5,  7.0)  * 0.60 +
-            _scale(ms,   0.10, 0.45) * 0.15 +
-            _scale(ypr,  5.0, 12.0)  * 0.25   # increased: receiving efficiency matters for dynasty RBs
+            # v3.6 (round-2 audit F5): market share removed (share is
+            # priced in production/utilization/breakout); the remaining
+            # per-play pair renormalizes to 70/30.
+            _scale(ypc,  3.5,  7.0)  * 0.70 +
+            _scale(ypr,  5.0, 12.0)  * 0.30   # receiving efficiency matters for dynasty RBs
         )
         # grades_pass_route dropped: was PFF-only, no free replacement.
 
@@ -800,7 +937,9 @@ def calc_efficiency_score(
         )
 
         # v3.2 Q4: one bad partial season should not overwrite a full elite
-        # season. Blend 70% latest with 30% best (by pass yards).
+        # season. Peak blend: 85% best (by pass yards) with 15% latest.
+        # (Comment corrected in v3.6, round-2 audit F12: it long claimed
+        # a 70/30 latest/best blend the code never performed.)
         if len(seasons) >= 2:
             if _inseason_year is not None:
                 # v3.4: same 12-game-equivalent rate key as production,
@@ -818,11 +957,22 @@ def calc_efficiency_score(
                     _scale(_safe(_best_qb.get("completion_pct"), 62.0), 58.0, 72.0) * 0.30 +
                     _scale(_safe(_best_qb.get("td_int_ratio"), 2.0), 1.5, 6.0) * 0.25
                 )
+                # v3.6 (round-2 audit F2): whichever side of the blend
+                # is the in-progress season shrinks toward the other
+                # (completed) side by min(1, GP/12) before blending.
+                # At most one side can be the in-progress season.
+                if _inseason_year is not None:
+                    if ls.get("season") == _inseason_year:
+                        eff = _shrink_partial(
+                            eff, _b_eff, _safe(ls.get("games_played"), 12))
+                    elif _best_qb.get("season") == _inseason_year:
+                        _b_eff = _shrink_partial(
+                            _b_eff, eff,
+                            _safe(_best_qb.get("games_played"), 12))
                 eff = eff * 0.15 + _b_eff * 0.85  # v3.2 R7-A2: peak blend matches production (85% peak / 15% latest)
 
     elif pos == "TE":
         ypr = _safe(ls.get("yds_per_reception"), 9.0)
-        ms  = _safe(ls.get("market_share_yards"))
         # Catch rate: receptions / targets measures hands + separation reliability.
         # Only computed when targets is populated (not always available from CFBD).
         targets = _safe(ls.get("targets"))
@@ -837,17 +987,16 @@ def calc_efficiency_score(
             catch_rate = recs / targets
             catch_rate_score = _scale(catch_rate, 0.60, 0.85)  # 55% → 0, 82%+ → 100
         if targets > 0:
+            # v3.6 (round-2 audit F5): market share removed; the
+            # per-play pair renormalizes (0.50/0.20 -> 0.625/0.375).
             eff = (
-                _scale(ypr, 7.5, 14.0) * 0.50 +
-                _scale(ms,  0.04, 0.25) * 0.30 +
-                catch_rate_score         * 0.20
+                _scale(ypr, 7.5, 14.0) * 0.625 +
+                catch_rate_score         * 0.375
             )
         else:
             # v3.2: targets missing -> catch rate is missing data, not neutral.
-            eff = (
-                _scale(ypr, 7.5, 14.0) * 0.625 +
-                _scale(ms,  0.04, 0.25) * 0.375
-            )
+            # v3.6 (F5): with share gone too, the leg is ypr alone.
+            eff = _scale(ypr, 7.5, 14.0)
         # Supplement with tprr proxy when available
         tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
         if tprr is not None:
@@ -898,12 +1047,24 @@ def calc_efficiency_score(
 
         # pressure_to_sack_rate dropped: was PFF-only, no free replacement.
 
-    # Scheme-inflation discount: high-volume spread systems inflate efficiency
-    # metrics (yds/rec, yds/target) for WRs and TEs alike.
-    if pos in ("WR", "TE"):
-        scheme_discount = _scheme_inflation_discount(ls.get("team"))
-        if scheme_discount < 1.0:
-            eff = _clip(eff * scheme_discount)
+    # v3.6 (round-2 audit F7): scheme-inflation discount deleted (see
+    # calc_production_score); competition + environment carry context.
+
+    if pos != "QB" and _inseason_year is not None \
+            and ls.get("season") == _inseason_year:
+        # v3.6 (round-2 audit F2): WR/RB/TE efficiency reads the latest
+        # season only, so an in-progress latest season shrinks toward
+        # the efficiency of the completed seasons alone (the leg's
+        # neutral 52.0 when there are none) by min(1, GP/12). QB is
+        # handled inside its peak blend above. The recursion runs
+        # without eval metrics or WEPA so the baseline is the plain
+        # completed-season read.
+        _completed = [s for s in seasons
+                      if s.get("season") != _inseason_year]
+        _base_eff = (calc_efficiency_score(_completed, pos)
+                     if _completed else 52.0)
+        eff = _shrink_partial(eff, _base_eff,
+                              _safe(ls.get("games_played"), 12))
 
     # Model v2.0: opponent-adjusted WEPA blend.  wepa_score is a 0-100
     # percentile within the season/position cohort - a conservative 25% blend
@@ -944,9 +1105,21 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
     worst = _AGE_WORST.get(pos, 26.0)
     # Invert: lower age → higher score.  _scale maps [elite, worst] → [100, 0].
     score = _scale(worst - age, 0.0, worst - elite)
-    # Floor at 20 so age never completely destroys a player's score.
     # v3.2 R7-A6: cap 100 (was 95): the elite anchor IS the 100 anchor.
-    return _clip(score, 20, 100)
+    # v3.6 (round-2 audit F11): the old flat floor at 20 collapsed the
+    # entire old tail - every WR aged 25.5+ scored identically. Below
+    # the raw-20 point the score now declines in AGE space at 5
+    # points per year down to a floor of 10 (a 24.8-year-old WR reads
+    # 19, a 25.5 reads 15.5, a 26.5 reads 10.5), so the tail separates
+    # without moving the calibrated mid-scale at all. Note the
+    # documented overlap: the breakout leg's adjusted-breakout-age
+    # term (20% of that leg) is a second, dominance-gated age curve
+    # by design - it prices WHEN a player broke out, this leg prices
+    # his age at the draft.
+    if score < 20.0:
+        _a20 = worst - 0.2 * (worst - elite)
+        score = max(10.0, 20.0 - (age - _a20) * 5.0)
+    return _clip(score, 10, 100)
 
 
 def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str,
@@ -1002,7 +1175,11 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             # threshold (a 0.35 dominator, just beyond recorded WR seasons);
             # RB/TE keep 1.8x, which is algebraically identical to the old
             # linear curve (40 / 0.8 = 50 points per unit of ratio).
-            _sat = 1.4 if pos == "WR" else 1.8
+            # v3.6: multiples raised to recorded-best-plus-margin - WR
+            # 1.4 -> 1.7 (a 0.425 dominator), RB 1.8 -> 2.0, TE 1.8 -> 2.4
+            # (a 0.29 pass share) - so the leg's largest component stops
+            # pinning at marks real breakout seasons actually reach.
+            _sat = {"WR": 1.7, "RB": 2.0, "TE": 2.4}.get(pos, 1.8)
             dom_score = min(100, 60 + 40 * min((_ratio - 1) / (_sat - 1), 1))
         else:
             dom_score = min(100, max(0, (_ratio - 1) * 50 + 60))
@@ -1022,24 +1199,15 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
         else:
             _a, _b = sorted_s[0], _peak_s
         if _pg(_a) > 0:
-            # v3.3 V-A: when the peak season's per-game rate is at least 90%
-            # of the first season's rate, the rate was maintained, so score
-            # trajectory on TOTAL production growth into the peak season
-            # instead of per-game growth (a short first season otherwise
-            # reads as decline when only the workload grew).
-            def _tot(_s):
-                return _safe(_s.get("receiving_yards", 0)) + _safe(_s.get("rush_yards", 0)) + _safe(_s.get("pass_yards", 0)) * 0.5
-            # v3.4: the totals-growth switch must not fire when the peak
-            # season is the in-progress one; a partial season's totals are
-            # calendar-bound, so trajectory stays on per-game rates.
-            _peak_partial = (
-                _inseason_year is not None
-                and _b.get("season") == _inseason_year
-            )
-            if _pg(_b) >= 0.9 * _pg(_a) and _tot(_a) > 0 and not _peak_partial:
-                _growth = (_tot(_b) - _tot(_a)) / _tot(_a)
-            else:
-                _growth = (_pg(_b) - _pg(_a)) / _pg(_a)
+            # v3.6 (round-2 audit F9): trajectory is scored on PER-GAME
+            # growth only. The v3.3 totals-growth switch is dropped: it
+            # manufactured growth from games played (a 4-game first
+            # season into a 13-game peak at the same rate read as
+            # ~+200% growth and pinned traj at 100) - a games-played
+            # artifact, not development. Per-game growth is the single
+            # growth price in this leg (see also the deleted ascending
+            # bonus below).
+            _growth = (_pg(_b) - _pg(_a)) / _pg(_a)
             traj_score = _clip(_scale(_growth, -0.20, 0.60))
 
     # Adjusted breakout age - continuous scale calibrated by position.
@@ -1139,27 +1307,13 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
                 score = max(score, _floor)
                 break
 
-    # v3.1: Ascending trajectory bonus. A player whose most recent season's
-    # per-game production exceeds the prior season's is developing, not
-    # stagnating. The base traj_score rewards growth, but players who never
-    # hit the dominator threshold get crushed by dom_score=30 and
-    # adj_breakout_score=0. This bonus recognizes real improvement.
-    # Up to +15, scaled by growth rate.
-    if len(sorted_s) >= 2:
-        _ls = sorted_s[-1]
-        _pv = sorted_s[-2]
-        _ls_yds = _safe(_ls.get("receiving_yards", 0)) + _safe(_ls.get("rush_yards", 0)) + _safe(_ls.get("pass_yards", 0)) * 0.5
-        _pv_yds = _safe(_pv.get("receiving_yards", 0)) + _safe(_pv.get("rush_yards", 0)) + _safe(_pv.get("pass_yards", 0)) * 0.5
-        # Use per-game rates to avoid penalizing in-progress seasons
-        _ls_gp = max(_safe(_ls.get("games_played"), 1), 1)
-        _pv_gp = max(_safe(_pv.get("games_played"), 1), 1)
-        _ls_pg = _ls_yds / _ls_gp
-        _pv_pg = _pv_yds / _pv_gp
-        if _pv_pg > 0 and _ls_pg > _pv_pg:
-            _growth = (_ls_pg - _pv_pg) / _pv_pg
-            # +15 at 50%+ growth, scaled linearly, 0 at no growth
-            _traj_bonus = min(15.0, max(0.0, _growth / 0.50 * 15.0))
-            score = _clip(score + _traj_bonus)
+    # v3.6 (round-2 audit F9): the v3.1 ascending-trajectory bonus
+    # (+15 at >=50% latest-vs-prior per-game growth) is DELETED. When
+    # the peak season is the latest season, traj_score already prices
+    # exactly that growth; the bonus priced it a second time inside
+    # the same leg. Growth is priced once now, by traj_score. The
+    # elite-underclassman floor above is a level floor, not a growth
+    # price, and stays.
 
     return _clip(score)
 
@@ -1255,8 +1409,10 @@ def _knot_score(value, pos, leg):
 
 def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
     """
-    Combine / pro-day metrics.  Falls back gracefully to positional median (55)
-    when data is missing.
+    Combine / pro-day metrics. Returns None when data is missing and
+    score_prospect redistributes the weight. (Docstring corrected in
+    v3.6, round-2 audit F12: it long promised a "positional median
+    (55)" fallback the code never had.)
 
     RAS (Relative Athletic Score) is the most reliable single signal (0-10).
     Uses position-specific metric weights (e.g., 40-time matters more for WR,
@@ -1347,7 +1503,8 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
     return _clip(raw, 0.0, float(cap))
 
 
-def calc_utilization_score(seasons: List[Dict], position: str) -> float:
+def calc_utilization_score(seasons: List[Dict], position: str,
+                           _inseason_year: Optional[int] = None) -> float:
     """
     Volume of opportunity - how much of the team's offence ran through this player.
 
@@ -1358,7 +1515,26 @@ def calc_utilization_score(seasons: List[Dict], position: str) -> float:
     WR / TE: targets per game  (if targets unavailable, receptions per game as proxy)
     RB:      rush attempts per game + targets per game
     QB:      pass attempts per game (workload / usage signal)
+
+    v3.6 (round-2 audit F2): the leg reads the latest season only, so
+    when that season is in progress its score shrinks toward the
+    completed-seasons read (the leg's neutral 50.0 when there are
+    none) by min(1, GP/12), like production and efficiency.
     """
+    raw = _utilization_raw(seasons, position)
+    if _inseason_year is None or not seasons:
+        return raw
+    ls = _latest_season(seasons) or {}
+    if ls.get("season") != _inseason_year:
+        return raw
+    _completed = [s for s in seasons if s.get("season") != _inseason_year]
+    _base = (_utilization_raw(_completed, position)
+             if _completed else 50.0)
+    return _clip(_shrink_partial(raw, _base,
+                                 _safe(ls.get("games_played"), 12)))
+
+
+def _utilization_raw(seasons: List[Dict], position: str) -> float:
     if not seasons:
         return 50.0
 
@@ -1409,7 +1585,7 @@ def calc_utilization_score(seasons: List[Dict], position: str) -> float:
     return 50.0
 
 
-def calc_recruiting_score(recruiting: Optional[Dict[str, Any]]) -> float:
+def calc_recruiting_score(recruiting: Optional[Dict[str, Any]]) -> Optional[float]:
     """
     Recruiting-pedigree signal (model v2.0).
 
@@ -1417,11 +1593,17 @@ def calc_recruiting_score(recruiting: Optional[Dict[str, Any]]) -> float:
     known predictors of NFL success, largely orthogonal to college production
     (it measures talent before the college scheme touches it).
 
-    Missing data is neutral (50.0), never punitive: older classes, JUCO and
-    international prospects often have no composite entry.
+    v3.6 (round-2 audit F10): missing data returns None, not a flat
+    50.0. Recruiting was the lone leg that imputed a value and kept
+    its full weight: a complete unknown scored exactly what a known
+    0.87-composite 3-star scores, and half the live board has no
+    composite at all. score_prospect now redistributes the weight
+    when this returns None, like every other missing leg. A KNOWN
+    0.87 composite still maps to 50 - that is a measurement, not a
+    missing value.
     """
     if not recruiting:
-        return 50.0
+        return None
     rating = recruiting.get("composite_rating")
     if rating is not None:
         try:
@@ -1439,7 +1621,7 @@ def calc_recruiting_score(recruiting: Optional[Dict[str, Any]]) -> float:
             return {5: 94.0, 4: 73.0, 3: 50.0, 2: 23.0}.get(int(stars), 50.0)
         except (TypeError, ValueError):
             pass
-    return 50.0
+    return None
 
 
 def calc_competition_score(
@@ -1496,7 +1678,10 @@ def calc_competition_score(
             except (TypeError, ValueError):
                 pass
 
-    return _clip(_scale(avg_quality, 0.45, 1.00))
+    # v3.6: top anchor 1.03 (was 1.00, the SEC table value itself), so a
+    # career SEC player lands ~95 and a career Big Ten player ~90 instead
+    # of both collapsing to exactly 100.
+    return _clip(_scale(avg_quality, 0.45, 1.03))
 
 
 def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
@@ -1742,80 +1927,90 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # Main scoring function
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Position-specific weights for more realistic evaluation
+# Position-specific blend weights, stored in EFFECTIVE form: these
+# are the weights score_prospect prices after its capital pop - what
+# a prospect's grade is blended from when every leg is present.
+#
+# Provenance (F12 fitted weights, folded in 2026-11-24; model 3.7
+# had not shipped, so the version does not bump). Per position, each
+# leg's Pearson against cumulative NFL PPR production was measured
+# over the dumped 2016-2025 gate population (gate_rows_v3.json,
+# 1,945 scored profiles), |r|-normalized, and blended 50/50 with the
+# prior design weights (~/workspace/prospect-runs/
+# fit_weights_offline.py -> fitted_weights.json). The blend was
+# validated out of sample twice: leave-one-class-out CV, then a
+# full backtest gate run with the set injected as
+# position_weights_override (~/workspace/prospect-runs/
+# gate_v37_weights.log), which cleared 3.5's talent-only bar at
+# every position - QB .393 vs bar .361, RB .411 vs .397, WR .369
+# vs .332, TE .407 vs .365. The set is baked in here so the shipped
+# model reproduces the gated grades with NO override;
+# tests/test_prospect_v37.py pins the effective weights and the
+# override/table equivalence over the gate population.
+#
+# Two structural notes. (1) There is no draft_capital entry: the fit
+# is capital-free by construction, and score_prospect's unconditional
+# capital pop (which spreads a foreign override's capital entry over
+# the talent legs) is a no-op on these tables. (2) Recruiting is a
+# fitted per-position leg like any other (~0.032-0.035). The v2.0
+# import-time carve (scale every leg by 0.95, then set recruiting
+# to a flat 0.05) is retired: it operated on pre-fit design tables,
+# and applying it to the fitted set would move every weight off the
+# gated values.
 POSITION_WEIGHTS = {
     "QB": {
-        "draft_capital": 0.26,
-        "production": 0.15,
-        "utilization": 0.03,
-        "efficiency": 0.18,
-        "age": 0.08,
-        "breakout": 0.04,
-        "athleticism": 0.10,
-        "competition": 0.07,
-        "environment": 0.02,
-        "durability": 0.00,
-        "experience": 0.07,
+        "production": 0.1869,
+        "utilization": 0.0537,
+        "efficiency": 0.1891,
+        "age": 0.2012,
+        "breakout": 0.0705,
+        "athleticism": 0.1473,
+        "competition": 0.0613,
+        "environment": 0.0126,
+        "durability": 0.0,
+        "experience": 0.0442,
+        "recruiting": 0.0332,
     },
     "RB": {
-        # Draft capital is the single strongest RB predictor (1st-round RBs hit at 83%,
-        # the highest hit rate of any position/tier - higher than 1st-round WRs at 64%).
-        # Raised to 0.29 to match the data. Breakout and competition reduced to compensate.
-        "draft_capital": 0.26,
-        "production": 0.19,
-        "utilization": 0.08,
-        "efficiency": 0.10,
-        "age": 0.09,
-        "breakout": 0.12,
-        "athleticism": 0.11,
-        "competition": 0.04,
-        "environment": 0.00,
-        "durability": 0.01,
+        "production": 0.2305,
+        "utilization": 0.1367,
+        "efficiency": 0.1433,
+        "age": 0.1587,
+        "breakout": 0.146,
+        "athleticism": 0.0936,
+        "competition": 0.0472,
+        "environment": 0.0044,
+        "durability": 0.0063,
+        "recruiting": 0.0332,
     },
     "WR": {
-        # WR calibration - reduce overgrading by lowering weights on most influential components
-        # Keep draft capital emphasis but reduce production/age to prevent inflation
-        "draft_capital": 0.29,
-        "production": 0.20,
-        "utilization": 0.04,
-        "efficiency": 0.10,
-        "age": 0.08,
-        "breakout": 0.09,
-        "athleticism": 0.07,
-        "competition": 0.07,
-        "environment": 0.06,
-        "durability": 0.00,
+        "production": 0.2382,
+        "utilization": 0.1094,
+        "efficiency": 0.1162,
+        "age": 0.1415,
+        "breakout": 0.1369,
+        "athleticism": 0.0802,
+        "competition": 0.1037,
+        "environment": 0.0393,
+        "durability": 0.0,
+        "recruiting": 0.0345,
     },
     "TE": {
-        # Draft capital raised: pick position is the strongest single signal for TEs
-        # once scheme inflation and profile penalties are properly applied.
-        # Age stays meaningful: early declarers (≤22) have far better dynasty hit rates.
-        # Production given extra credit now that scheme inflation is applied to TEs.
-        "draft_capital": 0.24,
-        "production": 0.20,
-        "utilization": 0.07,
-        "efficiency": 0.11,
-        "age": 0.14,
-        "breakout": 0.08,
-        "athleticism": 0.10,
-        "competition": 0.05,
-        "environment": 0.00,
-        "durability": 0.01,
+        "production": 0.2189,
+        "utilization": 0.1332,
+        "efficiency": 0.1187,
+        "age": 0.1637,
+        "breakout": 0.1363,
+        "athleticism": 0.1311,
+        "competition": 0.0432,
+        "environment": 0.0164,
+        "durability": 0.0062,
+        "recruiting": 0.0324,
     },
 }
 
-# ── Model v2.0: recruiting-pedigree component ─────────────────────────────────
-# 5% weight carved proportionally out of every other component so the blend
-# stays at 1.0.  Calibrated overrides (historical_calibration) predate v2.0
-# and lack this key - score_prospect reads it via .get("recruiting", 0.0).
-_RECRUITING_WEIGHT = 0.05
-for _pos in POSITION_WEIGHTS:
-    _w = POSITION_WEIGHTS[_pos]
-    for _k in list(_w.keys()):
-        _w[_k] *= (1.0 - _RECRUITING_WEIGHT)
-    _w["recruiting"] = _RECRUITING_WEIGHT
-
-# Validate that all position weights sum to 1.0
+# Validate that all position weights sum to 1.0 (the fitted values
+# are rounded to 4 decimal places, so allow their rounding slack).
 for pos, weights in POSITION_WEIGHTS.items():
     assert abs(sum(weights.values()) - 1.0) < 0.001, f"{pos} weights must sum to 1.0, got {sum(weights.values())}"
 
@@ -2054,28 +2249,6 @@ def calc_depth_chart_adjustment(seasons: List[Dict], position: str) -> float:
     return min(1.0 + realized_bonus, 1.20)
 
 
-def draft_capital_multiplier(round_selected: int) -> float:
-    """
-    Draft capital multiplier aligned with the NFL's 3-day structure.
-
-    Day 1  - Round 1 (picks 1-32):    no bonus; dc_score already encodes pick value
-    Day 2  - Rounds 2-3 (picks 33-96): solid investment, starter likelihood meaningful
-    Day 3  - Rounds 4-7 (picks 97+):  developmental, far less predictive for dynasty
-    """
-    if round_selected == 1:        # Day 1 - no multiplier; pick value captured in dc_score
-        return 1.00
-    elif round_selected == 2:      # Day 2 early
-        return 1.08
-    elif round_selected == 3:      # Day 2 late
-        return 1.00
-    elif round_selected == 4:      # Day 3 early
-        return 0.88
-    elif round_selected == 5:      # Day 3 mid
-        return 0.78
-    else:                          # Day 3 late (rounds 6-7)
-        return 0.65
-
-
 def calc_experience_score(seasons: List[Dict], position: str) -> float:
     """
     Experience metric for quarterbacks to mitigate misses like Trey Lance.
@@ -2104,56 +2277,21 @@ def calc_experience_score(seasons: List[Dict], position: str) -> float:
 
 def calc_late_round_upside(draft_capital: Optional[Dict], seasons: List[Dict], position: str) -> float:
     """
-    Late-round breakout indicator for undervalued players with elite underlying metrics.
-    
-    Args:
-        draft_capital: Draft capital data
-        seasons: List of season data
-        position: Player position
-    
-    Returns:
-        Late-round upside score (0-100)
+    Retired in v3.7 (round-3 audit): always 0.0.
+
+    Through v3.6 this was a payload-only diagnostic keyed to the
+    projected round (75-100 for a round-4+ projection with an elite
+    dominator or YPRR). It never fed the grade - the add-on was
+    removed in v3.2 R7, and score_prospect has passed None since
+    v3.7 - but the function itself still READ projected_round from
+    any dict it was handed, leaving a live capital read inside the
+    grading module one call-site change away from re-entering the
+    payload. A capital-free model does not handle draft capital, so
+    the read is gone: the capital argument is accepted for signature
+    compatibility and ignored, whatever it carries.
     """
-    if not draft_capital:
-        return 0.0
-    
-    projected_round = draft_capital.get("projected_round")
-    if projected_round is None or projected_round < 4:
-        return 0.0
-    
-    # Check for elite underlying metrics
-    if not seasons:
-        return 0.0
-    
-    best_dominator = max([_safe(s.get("dominator_rating", 0)) for s in seasons])
-    dominator_rating = best_dominator
-    
-    yprr = 0.0
-    if position in ("WR", "TE"):
-        best_yprr = max([_safe(s.get("yards_per_route_run", 0)) for s in seasons])
-        yprr = best_yprr
-    
-    # Late-round upside criteria
-    has_elite_dominator = dominator_rating >= 0.35
-    has_elite_yprr = yprr >= 2.5
-    
-    if has_elite_dominator or has_elite_yprr:
-        # Base upside score for late-round prospects with elite metrics
-        base_score = 75.0
-        
-        # Bonus for having both metrics
-        if has_elite_dominator and has_elite_yprr:
-            base_score = 90.0
-        
-        # Position-specific adjustments
-        if position == "WR":
-            base_score += 5.0  # WRs benefit more from elite efficiency
-        elif position == "RB":
-            base_score += 3.0  # RBs benefit from dominator rating
-        
-        return min(base_score, 100.0)
-    
     return 0.0
+
 
 
 def calc_interaction_features(production_score: float, efficiency_score: float, 
@@ -2199,139 +2337,45 @@ def calc_translation_adjustment(
     age_score: float,
 ) -> float:
     """
-    Position-specific post-model adjustment (in points) to reduce common misses:
-      - WR false positives on low-translation profiles (hands/YAC + weak efficiency)
-      - Day-2/Day-3 WR/RB underrates with strong underlying profiles
-      - TE volatility when receiving-usage profile is weak
+    Post-model adjustment for signals no leg reads.
+
+    v3.6 (round-2 audit F3): the layer used to re-price facts already
+    inside the legs: every pick-gated branch (WR guardrails and boosts,
+    RB boosts, the TE +9/+8/+5/+3/+2 pick tiers, the TE pick<=64
+    penalty) duplicated the capital leg; the WR YPRR/market-share/
+    rec-yds branches duplicated production and efficiency; the TE
+    low-volume, rec-yds and target-share penalties duplicated
+    production and utilization; the TE age penalty duplicated the age
+    leg; the QB flat rushing bonus duplicated production's rushing
+    component (now priced there once, audit F6); the WR YAC penalty
+    duplicated production's season YAC multiplier. All removed.
+
+    What remains is the one signal no leg reads from season data: the
+    WR contested-catch trait (the legs price contested catches only
+    through eval_metrics, a separate pipeline input). Signature and
+    call contract are unchanged; the function no longer reads the
+    projected pick at all, so the talent-only run and the main run see
+    byte-identical translation by construction and capital_delta
+    prices the capital leg alone.
     """
     if not prospect.get("seasons"):
         return 0.0
 
     latest = _latest_season(prospect["seasons"]) or {}
     adj = 0.0
-    # v3.2: no pick from any source means NO pick, not a pick-300 default.
-    # NaN makes every pick-gated comparison below False, so stat-only
-    # branches still run and pick-gated bonuses AND penalties stay off.
-    projected_pick = _safe((draft_capital or {}).get("projected_pick"), float("nan"))
 
     if position == "WR":
         contested = _safe(latest.get("contested_catch_rate"), 0.0)
-        yac = _safe(latest.get("yards_after_catch_per_reception"), 0.0)
-        yprr = _safe(latest.get("yards_per_route_run"), 0.0)
-        market_share = _safe(latest.get("market_share_yards"), 0.0)
-        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
-        rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
-        rec_tds_pg = _safe(latest.get("rec_tds_pg"), _safe(latest.get("receiving_tds"), 0.0) / gp)
-
-        # Penalize classic WR false-positive profiles (high volume, poor translation traits)
-        # drop_rate check removed: was PFF-only, no free replacement.
+        # Classic WR false-positive trait: wins volume without winning
+        # contested balls. drop_rate check removed earlier: was
+        # PFF-only, no free replacement.
         if contested > 0 and contested < 45.0:
             adj -= 1.5
-        if yac > 0 and yac < 2.8:
-            adj -= 1.0
-        # Early-pick WR guardrail: weak production+efficiency profile should not sit
-        # near elite tier solely via draft capital.
-        if projected_pick <= 64 and production_score < 62 and efficiency_score < 58:
-            adj -= 3.0
-        if projected_pick <= 50 and rec_yds_pg > 0 and rec_yds_pg < 55 and rec_tds_pg < 0.50:
-            adj -= 1.5
 
-        # Boost strong skill indicators for non-elite draft capital WRs (Kupp/Puka archetype)
-        if projected_pick > 40 and (yprr >= 2.6 or market_share >= 0.30):
-            adj += 2.5
-        if projected_pick > 75 and production_score >= 72 and efficiency_score >= 68:
-            adj += 1.5
-        if projected_pick > 90 and yprr >= 2.8 and market_share >= 0.28 and age_score >= 60:
-            adj += 2.0
-        if projected_pick > 80 and (rec_yds_pg >= 80 or rec_tds_pg >= 0.90):
-            adj += 1.5
-
-    elif position == "QB":
-        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
-        rush_yds_pg = _safe(latest.get("rush_yards"), 0.0) / gp
-        # Dual-threat QBs are systematically undervalued: poor college completion%
-        # penalises the production score, but rushing is a direct fantasy component
-        # that the model underweights.  Josh Allen (98 yd/g), Lamar Jackson (63 yd/g),
-        # and Jalen Hurts (76 yd/g) were all underrated by the model without this bonus.
-        if rush_yds_pg >= 35:
-            adj += 3.5  # v3.2 Q3: thresholds lowered from 40/25 to 35/20
-        elif rush_yds_pg >= 20:
-            adj += 1.5
-
-    elif position == "RB":
-        gp = max(_safe(latest.get("games_played"), 12.0), 1.0)
-        rec_yds_pg = _safe(latest.get("rec_yds_pg"), _safe(latest.get("receiving_yards"), 0.0) / gp)
-        dominator = _safe(latest.get("dominator_rating"), 0.0)
-        ypc = _safe(latest.get("yds_per_carry"), 0.0)
-
-        # Raise dual-threat and high-dominator RBs drafted outside top tiers
-        if projected_pick > 50 and rec_yds_pg >= 20:
-            adj += 2.0
-        if projected_pick > 75 and dominator >= 0.30 and ypc >= 5.2:
-            adj += 2.0
-        if projected_pick > 100 and rec_yds_pg >= 25 and dominator >= 0.28:
-            adj += 1.5
-
-    elif position == "TE":
-        seasons_te = prospect.get("seasons") or []
-        target_share = _safe(latest.get("target_share"), 0.0)
-        draft_age = _safe(prospect.get("age"), 0.0)
-
-        # Use latest season for penalty checks (reflects current role)
-        rec_yds_pg = _safe(latest.get("rec_yds_pg"), 0.0)
-        if rec_yds_pg == 0.0:
-            gp_l = max(_safe(latest.get("games_played"), 12.0), 1.0)
-            rec_yds_pg = _safe(latest.get("receiving_yards"), 0.0) / gp_l
-
-        # Use peak season for upside bonus - an injury-shortened year should not
-        # mask a player whose best season was historically dominant (e.g. Bowers 2022).
-        def _rec_ydpg(s: dict) -> float:
-            v = _safe(s.get("rec_yds_pg"), 0.0)
-            if v:
-                return v
-            gp = max(_safe(s.get("games_played"), 12.0), 1.0)
-            return _safe(s.get("receiving_yards"), 0.0) / gp
-        best_rec_yds_pg = max((_rec_ydpg(s) for s in seasons_te), default=rec_yds_pg)
-
-        # v3.0: Baseline TE development delay is now CONDITIONAL, not universal.
-        # Previously every TE started at -5.0. Now only applies to TEs with
-        # genuinely weak receiving usage (blocking archetypes).
-        # v3.2 R5-TE: low RAW volume is already charged in production and
-        # utilization. When the TE owns a real share of his own passing
-        # offense, the low raw volume was the offense's, not the player's:
-        # do not charge the same volume again in translation.
-        _best_share = max(
-            ((_safe(s.get("receiving_yards")) / _safe(s.get("team_pass_yards")))
-             if _safe(s.get("team_pass_yards")) > 0 else 0.0 for s in seasons_te),
-            default=0.0)
-        if best_rec_yds_pg < 50.0 and _best_share < 0.17:
-            adj -= 5.0
-
-        # Elite receiving TE upside: uses peak season so injury years don't suppress it.
-        # Tiers calibrated so generational prospects (Pitts #4 → ~91, Bowers #13 → ~88).
-        if projected_pick <= 10 and best_rec_yds_pg >= 60:
-            adj += 9.0
-        elif projected_pick <= 15 and best_rec_yds_pg >= 75:
-            adj += 8.0
-        elif projected_pick <= 20 and best_rec_yds_pg >= 65:
-            adj += 5.0
-        elif projected_pick <= 25 and best_rec_yds_pg >= 60:
-            adj += 3.0
-        elif projected_pick <= 40 and best_rec_yds_pg >= 60:
-            adj += 2.0  # v3.2 T3: TE1s usually land 25-45, not top 25
-
-        # Profile-based shrinkage for weak receiving-usage TEs (blocking archetypes).
-        if rec_yds_pg > 0 and rec_yds_pg < 35:
-            adj -= 3.0
-        if target_share > 0 and target_share < 0.10:
-            adj -= 2.0
-        if draft_age and draft_age > 23.0 and age_score < 50:
-            adj -= 1.0
-        if projected_pick <= 64 and rec_yds_pg > 0 and rec_yds_pg < 42 and _best_share < 0.17:
-            adj -= 2.0
-
-    # Keep the adjustment bounded; this is a corrective signal, not the main model.
-    return max(-14.0, min(9.0, adj))  # v3.2 V9: bound matches the +9 TE tier
+    # Keep the adjustment bounded; this is a corrective signal, not the
+    # main model. (The old -14/+9 bound was sized to the deleted TE
+    # tiers; retained as a defensive clamp.)
+    return max(-14.0, min(9.0, adj))
 
 
 def score_prospect(
@@ -2339,7 +2383,6 @@ def score_prospect(
     draft_capital: Optional[Dict[str, Any]] = None,
     skip_sagarin: bool = False,
     position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
-    _exclude_capital: bool = False,
     _active_season_year: Optional[int] = None,
     _today=None,
 ) -> Dict[str, Any]:
@@ -2348,7 +2391,12 @@ def score_prospect(
 
     Args:
         prospect:      Normalised prospect dict from ingestion.py
-        draft_capital: Consensus dict from mock_draft_consensus.py
+        draft_capital: Consensus dict from mock_draft_consensus.py.
+            Accepted for call compatibility (the pipeline and the
+            backtest pass it positionally) and IGNORED since v3.7:
+            grades are capital-free, so the grade is byte-identical
+            whatever this dict carries - or whether it is passed
+            at all.
 
     Returns:
         Dict with all component scores + final prospect_score + reasons.
@@ -2407,33 +2455,23 @@ def score_prospect(
         )
     production_score = _clip(production_score * loaded_roster_adjustment)
 
-    utilization_score   = calc_utilization_score(seasons, pos)
-    # Utilization is pure opportunity share (targets/carries/game) - fully suppressed
-    # when splitting reps with multiple NFL-caliber teammates. Apply the full multiplier.
-    utilization_score = _clip(utilization_score * loaded_roster_adjustment)
+    utilization_score   = calc_utilization_score(
+        seasons, pos, _inseason_year=_inseason_year)
+    # v3.6 (round-2 audit F8): the crowded-room multiplier applies to
+    # PRODUCTION ONLY (above). It used to multiply utilization in full
+    # and echo into efficiency (40% of excess) and breakout (35%), so
+    # one room signal moved four legs at once. Utilization,
+    # efficiency and breakout now stand on their own reads.
 
     efficiency_score    = calc_efficiency_score(
         seasons, pos, eval_metrics=eval_metrics,
         wepa=prospect.get("wepa"),
         _inseason_year=_inseason_year,
     )
-    # Efficiency blends per-touch quality (ypr, ypc - unaffected by depth) with
-    # market_share_yards (~35% of WR/TE base, ~15% of RB base - suppressed by depth).
-    # Apply ~40% of the bonus to credit the market-share fraction without distorting
-    # the per-touch quality signal.
-    if loaded_roster_adjustment > 1.0:
-        eff_adj = 1.0 + (loaded_roster_adjustment - 1.0) * 0.40
-        efficiency_score = _clip(efficiency_score * eff_adj)
 
     age_score           = calc_age_score(age, dy, pos)
     breakout_score      = calc_breakout_score(seasons, age, pos,
                                               _inseason_year=_inseason_year)
-    # Dominator rating (primary breakout signal) is directly suppressed in loaded rooms.
-    # Apply ~35% of the bonus so backed-up players who still show early-breakout patterns
-    # get appropriate credit.
-    if loaded_roster_adjustment > 1.0:
-        bk_adj = 1.0 + (loaded_roster_adjustment - 1.0) * 0.35
-        breakout_score = _clip(breakout_score * bk_adj)
 
     athleticism_score   = calc_athleticism_score(ath, pos)
     # v3.3 three-zone athleticism transform (class-wide; supersedes the
@@ -2451,20 +2489,17 @@ def score_prospect(
             athleticism_score = 60.0 + (_r - 60.0) * 0.70
         else:
             athleticism_score = 77.5 + (_r - 85.0) * 0.90
-    # v3.0 R6: Production-implied athleticism floor. Elite producers are
-    # almost certainly functional athletes; don't leave the athleticism
-    # weight on the table pre-combine. The v3.2 constant (70.0) is passed
-    # through the v3.3 transform, which re-denominates it to 67.0.
+    # v3.6 (round-2 audit F15): the complete-mode athleticism floor is
+    # DELETED. It imputed a constant 67.0 to untested players with
+    # production >= 90 and breakout >= 75 - the one place the model
+    # invented a component value instead of redistributing, against
+    # its own missing-data doctrine, and it created a combine-day
+    # discontinuity (the imputed 67 replaced by a real score, better
+    # or worse, the day testing posts). v3.4 already suppressed the
+    # floor in-season; now redistribution carries untested players in
+    # both modes. _athleticism_projected stays in the payload, always
+    # False: nothing is projected anymore.
     _athleticism_projected = False
-    # v3.4: in-season, untested athleticism is MISSING data, not a
-    # projected 67.0. The floor is suppressed and the existing missing-
-    # athleticism redistribution below carries the weight. Tested players
-    # are unaffected (the floor only ever applies when score is None).
-    if (not _inseason
-            and athleticism_score is None and production_score >= 90.0
-            and breakout_score >= 75.0):
-        athleticism_score = 67.0
-        _athleticism_projected = True
     competition_score   = calc_competition_score(
         seasons, team_context=prospect.get("team_context"),
     )
@@ -2474,94 +2509,42 @@ def score_prospect(
                                                 _inseason_year=_inseason_year,
                                                 _today=_today)
 
-    # v3.2: draft capital is present only when a projected pick exists from
-    # some source (mock consensus, actual pick, or the seed fallback). No
-    # pick anywhere means the capital component is MISSING data: it is
-    # excluded below and its weight redistributes over present components.
-    # The old pick-150 default was a tax on uncovered prospects (audit
-    # section 2, round 6 of the v3.2 iteration log), not a neutral prior.
-    _capital_missing = (
-        _exclude_capital
-        or not draft_capital
-        or draft_capital.get("projected_pick") is None
-    )
-    if draft_capital and not _capital_missing:
-        dc_score = _safe(draft_capital.get("projected_draft_capital_score"), 40.0)
-        projected_round = draft_capital.get("projected_round")
-    else:
-        dc_score = 0.0
-        projected_round = None
-
-    #  Enhanced draft capital modeling with nonlinear tiered bonuses
-    # Apply round-specific multipliers to capture nonlinear value
-    if projected_round and draft_capital:
-        round_multiplier = draft_capital_multiplier(projected_round)
-        dc_score = _clip(dc_score * round_multiplier)
-
-    # ── Position dc multiplier ──────────────────────────────────────────────
-    # TE draft capital is less predictive than RB/WR (harder college-to-NFL
-    # translation: contested catches, blocking duties, late development curves).
-    # QBs are NOT discounted here - pick #1 QB correctly scores 100/100.
-    # The lower dynasty value of QB capital vs WR/RB capital is captured
-    # entirely through the QB draft_capital WEIGHT (0.22 vs WR 0.29).
-    # TE draft capital is significantly less predictive for dynasty: even a Round 1
-    # TE typically contributes minimally for 2-3 years (development curve + TE scarcity
-    # doesn't translate to immediate fantasy points).  0.92 means a Round 1 TE
-    # gets 0.92× vs 1.0× for a Round 1 WR - narrow gap; elite TEs deserve near-WR
-    # draft capital credit once profile penalties handle the development discount.
-    dc_multiplier = {}.get(pos, 1.00)  # v3.2 T1: TE 0.92 multiplier removed
-
-    # ── Day-3 penalty ───────────────────────────────────────────────────────
-    # Applied only to true Day 3 picks (Round 4+, pick ≥ 97).
-    # Day 2 picks (rounds 2-3, picks 33-96) are not penalised here - their
-    # reduced value is already captured by draft_capital_multiplier.
-    # Tiered within Day 3: late Day 3 (round 6-7, pick > 141) hit harder.
-    if draft_capital and not _capital_missing:
-        projected_pick = draft_capital.get("projected_pick")
-        if projected_pick and projected_pick > 96:   # Day 3 starts at Round 4
-            if projected_pick > 140:                 # Late Day 3 (rounds 6-7)
-                day3_penalty = {
-                    "QB": 0.55,
-                    "WR": 0.65,
-                    "RB": 0.68,
-                    "TE": 0.75,
-                }.get(pos, 0.65)
-            else:                                    # Early Day 3 (rounds 4-5, pick 97-140)
-                day3_penalty = {
-                    "QB": 0.70,
-                    "WR": 0.82,
-                    "RB": 0.84,
-                    "TE": 0.90,
-                }.get(pos, 0.82)
-            dc_multiplier *= day3_penalty
-
-    dc_score_adjusted = _clip(dc_score * dc_multiplier)
+    # v3.7: there is no capital leg. The draft_capital argument is
+    # accepted for call compatibility and never read: no pick (actual,
+    # projected, consensus or seed) and no mock-draft field enters the
+    # grade. Through v3.6 the leg was priced by the position pick curve
+    # behind projected_draft_capital_score, with provenance gating
+    # (v3.6 F1: seed-only picks counted as missing) and the curve
+    # standing alone (v3.6 F4). All of that is moot now: below, where
+    # the weights are built, the capital entry is excluded for EVERY
+    # prospect through the same missing-leg redistribution the model
+    # already used for a prospect with no pick, so the capital weight
+    # spreads proportionally over the talent legs. (At 3.7's first
+    # build that made every grade exactly the 3.6 talent grade; the
+    # F12 weights fold then re-weighted the blend - the shipped
+    # tables carry no capital entry, so the pop below is a no-op on
+    # the default path and the grades are the gated fitted set's.)
 
     #  Calculate new enhancement features
     experience_score = calc_experience_score(seasons, pos)
-    late_round_upside = calc_late_round_upside(
-        None if _exclude_capital else draft_capital, seasons, pos)
+    # calc_late_round_upside's only input was the projected round; with
+    # no capital concept it is always 0.0. It never fed the grade (the
+    # add-on was removed in v3.2 R7); the payload field is kept.
+    late_round_upside = calc_late_round_upside(None, seasons, pos)
+    # The athleticism x draft-capital interaction feature is likewise
+    # payload-only (it never fed the grade); its capital input is 0.0
+    # because no capital score exists anymore.
     interaction_features = calc_interaction_features(
-        production_score, efficiency_score, athleticism_score or 0.0, dc_score_adjusted
+        production_score, efficiency_score, athleticism_score or 0.0, 0.0
     )
 
     # Get position-specific weights (optionally overridden by calibrated weights)
     weights_source = position_weights_override or POSITION_WEIGHTS
     pos_weights = dict(weights_source.get(pos, POSITION_WEIGHTS["WR"]))
 
-    # Post-draft: actual pick is certain - increase draft capital weight, spread
-    # the reduction proportionally across all other components so sum stays 1.0.
-    is_actual_pick = (draft_capital or {}).get("is_actual_pick", False)
-    if is_actual_pick and not _exclude_capital:
-        boost = 0.06
-        pos_weights["draft_capital"] = min(0.50, pos_weights["draft_capital"] + boost)
-        other_keys = [k for k in pos_weights if k != "draft_capital"]
-        other_sum  = sum(pos_weights[k] for k in other_keys)
-        target_sum = 1.0 - pos_weights["draft_capital"]
-        if other_sum > 0:
-            ratio = target_sum / other_sum
-            for k in other_keys:
-                pos_weights[k] *= ratio
+    # v3.7: the pre-v3.7 actual-pick weight boost (+0.06 to the capital
+    # weight post-draft) is gone with the leg itself; there is no
+    # capital weight left to boost.
 
     # Neutralize missing athleticism: redistribute its weight to other
     # components so a lack of combine data doesn't drag the score down.
@@ -2627,15 +2610,30 @@ def score_prospect(
             for k in _weights:
                 _weights[k] *= (1.0 + env_w / remaining)
 
+    # v3.6 (round-2 audit F10): missing recruiting redistributes too.
+    # It was the lone exception, imputing a flat 50.0 at full weight.
+    if recruiting_score is None:
+        rec_w = _weights.pop("recruiting", 0.0)
+        remaining = sum(_weights.values())
+        if remaining > 0 and rec_w > 0:
+            for k in _weights:
+                _weights[k] *= (1.0 + rec_w / remaining)
+
     # v3.2: missing draft capital redistributes the same way. The remaining
     # weights renormalize to the total they carried with capital included,
     # so the grade stays on the same scale with capital simply absent.
-    if _capital_missing:
-        dc_w = _weights.pop("draft_capital", 0.0)
-        remaining = sum(_weights.values())
-        if remaining > 0 and dc_w > 0:
-            for k in _weights:
-                _weights[k] *= (1.0 + dc_w / remaining)
+    # v3.7: this exclusion is now UNCONDITIONAL - capital is "missing"
+    # for every prospect by design, which is exactly the redistribution
+    # above. It also covers foreign overrides that still carry a
+    # draft_capital entry (a legacy calibrated set, say): the key is
+    # popped and spread the same way. The shipped POSITION_WEIGHTS
+    # carry no capital entry at all (F12 fitted set), so on the
+    # default path the pop is a no-op.
+    dc_w = _weights.pop("draft_capital", 0.0)
+    remaining = sum(_weights.values())
+    if remaining > 0 and dc_w > 0:
+        for k in _weights:
+            _weights[k] *= (1.0 + dc_w / remaining)
 
     # Base prospect score with position-specific weights.
     # v3.0 R6: Use _weights (athleticism redistribution applied) so the
@@ -2652,15 +2650,20 @@ def score_prospect(
         competition_score     * _weights["competition"]   +
         (environment_score or 0.0) * _weights.get("environment", 0.0) +
         (durability_score or 0.0) * _weights.get("durability", 0.0) +
-        dc_score_adjusted     * _weights.get("draft_capital", 0.0) +
+        # v3.7: no draft-capital term - the leg does not exist.
         # v2.0: recruiting pedigree. .get() because calibrated overrides
         # (historical_calibration) predate the recruiting component.
-        recruiting_score      * _weights.get("recruiting", 0.0)
+        # v3.6 (F10): None (missing) contributes 0 at a popped weight.
+        (recruiting_score or 0.0) * _weights.get("recruiting", 0.0)
     )
 
-    # Add experience score for QBs (uses the experience weight in QB weights)
-    if pos == "QB" and "experience" in pos_weights:
-        prospect_score += experience_score * pos_weights["experience"]
+    # Add experience score for QBs. v3.6 (round-2 audit F16): priced
+    # from the REDISTRIBUTED weights like every other component - it
+    # used to read pos_weights directly, so a QB with any missing leg
+    # silently lost up to ~0.7 points against the model's own
+    # renormalization doctrine.
+    if pos == "QB" and "experience" in _weights:
+        prospect_score += experience_score * _weights["experience"]
 
     # v3.2 R7: no late-round upside add-on. The final grade is the
     # weighted component sum plus the bounded translation adjustment only.
@@ -2677,12 +2680,10 @@ def score_prospect(
     translation_adjustment = calc_translation_adjustment(
         prospect=prospect,
         position=pos,
-        # v3.2: with no pick (or in the talent-only variant), translation
-        # receives NO pick: NaN disables every pick-gated bonus and penalty
-        # while stat-only branches still run.
-        draft_capital=(
-            {"projected_pick": float("nan")} if _capital_missing else draft_capital
-        ),
+        # v3.6 (F3) deleted every pick-gated branch from translation;
+        # v3.7 passes nothing at all - score_prospect forwards no
+        # capital data anywhere.
+        draft_capital=None,
         production_score=production_score,
         efficiency_score=efficiency_score,
         age_score=age_score,
@@ -2692,42 +2693,33 @@ def score_prospect(
     # v3.2 R7: no thin-sample final multiplier. Sample reliability is
     # reported by confidence_score; it does not rescale the grade.
 
-    # Final clamp to the documented 0-100 grade scale. The quadratic boost and
-    # benchmark boost each cap at 100, but the additive translation_adjustment
-    # (up to +8, e.g. the +3.5 dual-threat-QB bonus) and late-round upside are
-    # applied afterwards, so an elite profile could otherwise finish above 100
-    # (e.g. a top dual-threat QB reaching 103.5) — breaking the grade scale and
-    # the fantasy-scaled overall_score derived from it.
+    # Final clamp to the documented 0-100 grade scale. The weighted sum
+    # is bounded by construction, but the additive translation_adjustment
+    # is applied afterwards, so a profile at the top of the scale could
+    # otherwise finish above 100, breaking the grade scale and the
+    # fantasy-scaled overall_score derived from it.
     prospect_score = _clip(prospect_score, 0.0, 99.9)  # v3.2 V9: no 100s
 
     prospect_score = round(prospect_score, 2)
 
-    # v3.2 transparent capital: talent_score is this same profile graded
-    # with draft capital excluded entirely (capital component removed,
-    # remaining weights renormalized to their pre-removal total, actual
-    # pick weight boost off, translation pick-neutral), through the same
-    # final stage. capital_delta = prospect_score - talent_score.
-    # Contract: when no projected pick exists from any source, the grade
-    # already excludes capital, so talent_score == prospect_score and
-    # capital_delta is None (no capital information, not a zero effect).
-    if _capital_missing:
-        talent_score = prospect_score
-        capital_delta = None
-    else:
-        _talent = score_prospect(
-            prospect,
-            draft_capital,
-            skip_sagarin=skip_sagarin,
-            position_weights_override=position_weights_override,
-            _exclude_capital=True,
-            _active_season_year=_active_season_year,
-        )
-        talent_score = _talent["prospect_score"]
-        capital_delta = round(prospect_score - talent_score, 2)
+    # v3.2-v3.6 carried a transparent-capital pair here: talent_score
+    # (this profile re-graded with capital excluded) and capital_delta
+    # (the leg's price). v3.7 makes the exclusion the only path, so
+    # the grade IS the talent grade: talent_score is the grade itself
+    # and capital_delta is None - permanently, for every prospect,
+    # because there is no capital effect to report. The old
+    # missing-capital contract (talent == grade, delta None) is now
+    # simply the contract.
+    talent_score = prospect_score
+    capital_delta = None
 
     # Quality-weighted confidence score.
     # Each data source is weighted by how much it improves scoring accuracy.
-    # Draft capital + multiple mocks = highest confidence signal.
+    # v3.7: the pre-v3.7 capital-presence points (+10 for at least one
+    # mock behind the pick, +5 more at 5+ mocks; gated to verified
+    # capital by v3.6 F13) are removed - consensus/mock data goes with
+    # capital, so confidence now certifies only the talent evidence:
+    # seasons, dominator, games, targets, age and athleticism.
     ls_check = _latest_season(seasons) or {}
     conf_points = 0.0
     if seasons:
@@ -2746,11 +2738,6 @@ def score_prospect(
         conf_points += 15.0  # any athleticism data
         if len(ath) >= 4:
             conf_points += 10.0  # full combine profile
-    if draft_capital:
-        conf_points += 10.0  # at least one mock
-        n_mocks = draft_capital.get("num_mocks_used", 1)
-        if n_mocks >= 5:
-            conf_points += 5.0   # consensus from multiple analysts
     confidence_score = round(_clip(conf_points), 1)
     # v3.4: in-season confidence reflects the thinner evidence. The
     # partial season's sample discount is 20 points at the limit, scaled
@@ -2773,7 +2760,11 @@ def score_prospect(
         _arch_profile = {
             "weight_lbs": ath.get("weight_lbs") or prospect.get("weight_lbs"),
             "forty_yard": ath.get("forty_yard"),
-            "projected_pick": (draft_capital or {}).get("projected_pick"),
+            # v3.7: no projected_pick - the labeler receives no pick
+            # either, so labels are capital-free like the grade. (The
+            # archetype module reads no pick at all: it is not a fit
+            # input, gate, or presence feature, and no production
+            # caller passes one.)
             "age": age,
         }
         _archetype = classify_archetype(
@@ -2783,12 +2774,12 @@ def score_prospect(
         _archetype = {"archetype": None, "archetype_receipt": None,
                       "archetype_confidence": None}
 
-    # Human-readable reasons
+    # Human-readable reasons (v3.7: no capital bullet exists to build)
     reasons = _build_reasons(
         prospect, pos, seasons,
         production_score, utilization_score, efficiency_score, age_score,
         breakout_score, athleticism_score, competition_score,
-        environment_score, durability_score, dc_score_adjusted, draft_capital,
+        environment_score, durability_score,
     )
 
     return {
@@ -2804,11 +2795,13 @@ def score_prospect(
         "competition_score":            round(competition_score, 2),
         "environment_adjustment":       None if environment_score is None else round(environment_score, 2),
         "durability_score":             None if durability_score is None else round(durability_score, 2),
-        "recruiting_score":             round(recruiting_score, 2),
+        "recruiting_score":             None if recruiting_score is None else round(recruiting_score, 2),
         "model_version":                MODEL_VERSION,
         "in_season":                    _inseason,
         "grading_mode":                 "in_season" if _inseason else "complete",
-        "projected_draft_capital_score":None if _capital_missing else round(dc_score_adjusted, 2),
+        # v3.7: always None - there is no capital component. The key
+        # is kept so the payload shape (and its consumers) is stable.
+        "projected_draft_capital_score":None,
         "talent_score":                 talent_score,
         "capital_delta":                capital_delta,
         "archetype":                    _archetype.get("archetype"),
@@ -2837,7 +2830,7 @@ def score_prospect(
 def _build_reasons(
     prospect, pos, seasons,
     prod, util, eff, age_sc, break_sc, ath_sc, comp_sc,
-    env_sc, dur_sc, dc_sc, dc_dict
+    env_sc, dur_sc
 ) -> str:
     """Build a bullet-point string summarising the prospect's strengths/flags."""
     bullets: List[str] = []
@@ -3037,25 +3030,8 @@ def _build_reasons(
         elif isinstance(th, str):
             bullets.append(f"Transfer history: {th}")
 
-    # ── Draft capital ─────────────────────────────────────────────────────────
-    if dc_dict:
-        pick  = dc_dict.get("projected_pick")
-        rnd   = dc_dict.get("projected_round")
-        n_mocks = dc_dict.get("num_mocks_used", 0)
-        conf_pct = dc_dict.get("consensus_confidence", 0)
-        is_actual = dc_dict.get("is_actual_pick", False)
-        
-        if pick and rnd:
-            if is_actual:
-                # Draft is complete - show actual pick
-                bullets.append(f"Drafted: Pick #{pick} (Round {rnd})")
-            else:
-                # Draft not complete - show mock draft projection
-                conf_str = f", {conf_pct:.0f}% consensus" if n_mocks >= 3 else ""
-                bullets.append(
-                    f"Projected pick #{pick} (Round {rnd}) across {n_mocks} mock drafts"
-                    f"{conf_str}"
-                )
+    # v3.7: no Draft capital bullet - reasons describe talent evidence
+    # only, like the grade itself.
 
     # ── Durability ────────────────────────────────────────────────────────────
     if dur_sc is not None and dur_sc <= 40:

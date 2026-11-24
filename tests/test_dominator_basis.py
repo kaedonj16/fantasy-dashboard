@@ -24,7 +24,9 @@ Pins here:
   unchanged/unrepairable honestly, and never emits an RB change;
 - _compute_breakout on the receiving-basis Smith profile resolves
   the breakout to 2024 (age 19.3);
-- migration 051 adds team_pass_tds; MODEL_VERSION is "3.5".
+- migration 051 adds team_pass_tds; MODEL_VERSION is pinned to the
+  current version (was "3.5" when this basis shipped; v3.6's
+  de-saturation anchor changes moved it).
 """
 
 import pytest
@@ -353,5 +355,5 @@ class TestMigrationAndVersion:
         assert "rookie_prospect_source_data" in sql
         assert "ADD COLUMN IF NOT EXISTS team_pass_tds" in sql
 
-    def test_model_version_is_35(self):
-        assert pm.MODEL_VERSION == "3.5"
+    def test_model_version_is_37(self):
+        assert pm.MODEL_VERSION == "3.7"
