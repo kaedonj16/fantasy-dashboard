@@ -31,11 +31,15 @@ Targets note: CFBD targets come from parsing play-by-play text
 (fetch_cfbd_targets_from_plays), which 400s / crawls on old seasons
 (the established backtest wrapper disables it for the same reason).
 It is disabled here by default so the run takes backtest time, not
-targets-backfill time (hours); pass --targets to leave it enabled.
-Consequence when disabled: the Tgt/Gm and Catch% marks carry only
-whatever the structured season fetch provides, and those two
-distributions stay thin (the percentile surfaces hide thin metrics
-rather than fake them).
+targets-backfill time (hours); pass --targets to enable it. With
+--targets the sweep runs SCOPED: the stats load first runs with the
+sweep stubbed, then the sweep runs only over the drafted class's
+own (team, season) pairs (the stats fetch's internal sweep would
+crawl every team in the CFBD stats feed, ~216 teams per season,
+for players the pool never uses). Consequence when disabled: the
+Tgt/Gm and Catch% marks carry only whatever the structured season
+fetch provides, and those two distributions stay thin (the
+percentile surfaces hide thin metrics rather than fake them).
 
 Usage (Render web shell, after migration 050 has run):
     python scripts/run_migrations.py            # applies 050
@@ -244,17 +248,169 @@ def _upsert_rows(rows: List[Dict[str, Any]]) -> int:
 
 # ── Per-year run ────────────────────────────────────────────────────
 
-def _disable_plays_targets() -> None:
+def _disable_plays_targets():
     """Skip the play-by-play targets parse (400s / crawls on old
-    seasons; the backtest wrapper disables it identically)."""
+    seasons; the backtest wrapper disables it identically).
+
+    Returns the original function so the scoped --targets path can
+    restore it for its own fetch after the stats load."""
     try:
         from data_building.rookie_pipeline import ingestion
+        orig = ingestion.fetch_cfbd_targets_from_plays
         ingestion.fetch_cfbd_targets_from_plays = lambda *a, **k: {}
+        return orig
+    except Exception:
+        return None
+
+
+def _restore_plays_targets(orig) -> None:
+    if orig is None:
+        return
+    try:
+        from data_building.rookie_pipeline import ingestion
+        ingestion.fetch_cfbd_targets_from_plays = orig
     except Exception:
         pass
 
 
-def _run_year(draft_year: int, force: bool = False) -> int:
+def _scoped_targets_pairs(college_stats) -> set:
+    """The (team, season) pairs the drafted class actually played,
+    from the matched prospect season dicts themselves (CFBD team
+    spellings, so scope matching downstream is exact)."""
+    pairs = set()
+    for seasons in (college_stats or {}).values():
+        for s in seasons or []:
+            team = s.get("team")
+            yr = s.get("season")
+            if team and yr:
+                try:
+                    pairs.add((team, int(yr)))
+                except (TypeError, ValueError):
+                    continue
+    return pairs
+
+
+def _clear_stranded_targets(draft_year: int, pairs) -> int:
+    """Clear killed-run targets tracking for this class's pairs.
+
+    The plays fetch composes player targets in memory only; this
+    script writes its rows at the very end of a class. A run killed
+    mid-class therefore leaves week marks + team totals behind with
+    NO stored player targets, and a re-run trusting those marks
+    would skip the marked weeks and undercount permanently (the
+    stranded state the daily fill heals for itself). Clear exactly
+    those pairs - but never a pair ANY class has stored player
+    targets for: those marks are load-bearing for that class's
+    composed totals.
+    """
+    from dashboard_services.db import get_conn
+    from data_building.rookie_pipeline.ingestion import (
+        clear_target_team_season_tracking,
+        detect_stranded_target_team_seasons,
+    )
+    by_season: Dict[int, List[str]] = {}
+    for team, yr in pairs:
+        by_season.setdefault(int(yr), []).append(team)
+    if not by_season:
+        return 0
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT season, team "
+                    "FROM rookie_prospect_source_data "
+                    "WHERE targets IS NOT NULL AND season = ANY(%s)",
+                    (sorted(by_season),),
+                )
+                protected = {(int(r["season"]), r["team"])
+                             for r in cur.fetchall()}
+    except Exception as exc:
+        print(f"[refpop] stranded-clear: could not check stored "
+              f"targets ({type(exc).__name__}: {exc}); clearing "
+              f"nothing.")
+        return 0
+    cleared = 0
+    for season, teams in sorted(by_season.items()):
+        stranded = detect_stranded_target_team_seasons(
+            draft_year, season, sorted(set(teams)))
+        for team in stranded:
+            if (season, team) in protected:
+                continue
+            clear_target_team_season_tracking(season, team)
+            cleared += 1
+    if cleared:
+        print(f"[refpop] cleared stranded targets tracking for "
+              f"{cleared} team-season(s) (killed-run leftovers with "
+              f"no stored player targets anywhere)")
+    return cleared
+
+
+def _merge_scoped_targets(draft_year: int, draft_class, college_stats) -> int:
+    """Run the play-by-play targets fetch scoped to the drafted
+    class's own (team, season) pairs and merge the totals into the
+    matched season dicts, mirroring ingestion's own merge (canonical
+    name keys; only carried values overwrite)."""
+    from data_building.rookie_pipeline.ingestion import (
+        _rekey_by_canonical, canonical_prospect_key,
+        fetch_cfbd_targets_from_plays,
+    )
+    pairs = _scoped_targets_pairs(college_stats)
+    if not pairs:
+        print("[refpop] scoped targets: no (team, season) pairs in "
+              "the matched college stats; skipping the targets fetch.")
+        return 0
+    _clear_stranded_targets(draft_year, pairs)
+    teams_by_year: Dict[int, set] = {}
+    for team, yr in pairs:
+        teams_by_year.setdefault(yr, set()).add(team)
+    teams_by_year = {yr: sorted(ts)
+                     for yr, ts in sorted(teams_by_year.items())}
+    print(f"[refpop] scoped targets: {len(pairs)} (team, season) "
+          f"pairs across {len(teams_by_year)} seasons for the "
+          f"{draft_year} class")
+    targets_map = fetch_cfbd_targets_from_plays(
+        draft_year, teams_by_year, team_seasons=pairs)
+    if not targets_map:
+        print("[refpop] scoped targets: fetch returned no targets.")
+        return 0
+    targets_by_key = _rekey_by_canonical(targets_map)
+    # Fallback lookup under the backtest's name normalizer, for
+    # players whose nflverse spelling canonicalizes differently
+    # than the CFBD roster spelling the targets map is keyed by.
+    from scripts.backtest_prospect_model import _normalize_name
+    targets_by_norm: Dict[str, Dict] = {}
+    for key, by_year in targets_by_key.items():
+        targets_by_norm.setdefault(_normalize_name(key), by_year)
+    name_by_pid = {
+        (p["gsis_id"] or p["name"].lower().replace(" ", "-")): p["name"]
+        for p in draft_class
+    }
+    merged = 0
+    for pid, seasons in college_stats.items():
+        name = name_by_pid.get(pid)
+        if not name:
+            continue
+        t_by_year = targets_by_key.get(canonical_prospect_key(name))
+        if not t_by_year:
+            t_by_year = targets_by_norm.get(_normalize_name(name))
+        if not t_by_year:
+            continue
+        for s in seasons:
+            t = t_by_year.get(s.get("season"))
+            if not t:
+                continue
+            if t.get("targets") is not None:
+                s["targets"] = t["targets"]
+            if t.get("target_share") is not None:
+                s["target_share"] = t["target_share"]
+            merged += 1
+    print(f"[refpop] scoped targets: merged targets/target_share "
+          f"for {merged} player-seasons")
+    return merged
+
+
+def _run_year(draft_year: int, force: bool = False,
+              scoped_targets: bool = False) -> int:
     from scripts.backtest_prospect_model import (
         _build_prospect_dicts, _load_cfbd_college_stats,
         _load_combine_athleticism, _load_draft_class,
@@ -281,8 +437,24 @@ def _run_year(draft_year: int, force: bool = False) -> int:
                   f"stored; completing the year.")
 
     athleticism = _load_combine_athleticism(draft_year)
-    college_stats = _load_cfbd_college_stats(
-        draft_year, draft_class, fetch_games_played=True, gp_stateless=True)
+    if scoped_targets:
+        # Two-pass: load the stats with the plays sweep stubbed (its
+        # internal sweep would crawl every team in the CFBD stats
+        # feed), then run the sweep scoped to this class's own
+        # (team, season) pairs and merge the totals in.
+        _orig_fetch = _disable_plays_targets()
+        try:
+            college_stats = _load_cfbd_college_stats(
+                draft_year, draft_class, fetch_games_played=True,
+                gp_stateless=True)
+        finally:
+            _restore_plays_targets(_orig_fetch)
+        if college_stats:
+            _merge_scoped_targets(draft_year, draft_class, college_stats)
+    else:
+        college_stats = _load_cfbd_college_stats(
+            draft_year, draft_class, fetch_games_played=True,
+            gp_stateless=True)
     prospects, consensus_map = _build_prospect_dicts(
         draft_class, athleticism, draft_year, college_stats)
     n_stats = sum(1 for p in prospects if p.get("seasons"))
@@ -363,8 +535,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--force", action="store_true",
                         help="Re-grade years already fully stored")
     parser.add_argument("--targets", action="store_true",
-                        help="Leave the play-by-play targets parse "
-                             "enabled (slow on old seasons)")
+                        help="Run the play-by-play targets parse, "
+                             "scoped to each class's own (team, "
+                             "season) pairs (slow on old seasons)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Validate the machinery on repo fixtures; "
                              "no DB writes, no CFBD key needed")
@@ -387,7 +560,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     total = 0
     for year in sorted(args.years):
-        total += _run_year(year, force=args.force)
+        total += _run_year(year, force=args.force,
+                           scoped_targets=args.targets)
     print(f"\n[refpop] Done: {total} reference rows across "
           f"{len(set(args.years))} class year(s). Restart / redeploy "
           f"the web service so its population caches pick up the "
