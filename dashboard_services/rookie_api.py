@@ -1166,7 +1166,18 @@ PCT_MIN_POPULATION = 30
 # The percentile pools are historical-only and no longer read stored
 # rows, so nothing binds this set at runtime today; it stays as the
 # registry the v4 population rebuild (and its go-live tests) key off.
-_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "4.1")
+# 3.8 added: pools re-graded under the current model stamp 3.8 and
+# must be accepted by the registry when the re-grade lands.
+_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "3.8", "4.1")
+
+
+def _row_quarantined(r) -> bool:
+    """Model 3.8 quarantine: a reference row the build-time validity
+    screen flagged 'truncated' (fragment / no-seasons profile) is
+    excluded from every percentile pool, and its own percentiles
+    hide. The row stays stored and displayable; only its anchor
+    duty ends. Rows predating the flag (no key / NULL) are 'ok'."""
+    return (r or {}).get("data_quality") == "truncated"
 
 _population_cache: dict = {}
 _reference_cache: dict = {}
@@ -1200,24 +1211,39 @@ def _reference_rows(position):
     if pos in _reference_cache:
         return _reference_cache[pos]
     rows = []
+    _cols = """player_name, draft_class_year, actual_pick,
+              production_score, efficiency_score,
+              breakout_profile_score, competition_score,
+              athleticism_score, tested, advanced_marks,
+              season_rates, testing_marks"""
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
-            rows = conn.execute(
-                """SELECT player_name, draft_class_year, actual_pick,
-                          production_score, efficiency_score,
-                          breakout_profile_score, competition_score,
-                          athleticism_score, tested, advanced_marks,
-                          season_rates, testing_marks
-                   FROM prospect_reference_population
-                   WHERE position = %s""",
-                (pos,),
-            ).fetchall() or []
+            try:
+                # Migration 059 adds data_quality; until it runs in an
+                # environment, fall back to the pre-3.8 column list so
+                # percentiles keep working on the unflagged pool
+                # instead of fail-softing to no pool at all.
+                rows = conn.execute(
+                    f"""SELECT {_cols}, data_quality
+                        FROM prospect_reference_population
+                        WHERE position = %s""",
+                    (pos,),
+                ).fetchall() or []
+            except Exception:
+                rows = conn.execute(
+                    f"""SELECT {_cols}
+                        FROM prospect_reference_population
+                        WHERE position = %s""",
+                    (pos,),
+                ).fetchall() or []
         rows = [dict(r) for r in rows]
     except Exception:
         log.debug("[rookie_api] reference rows failed for %s",
                   pos, exc_info=True)
         rows = []
+    # 3.8 quarantine: truncated rows never anchor a pool.
+    rows = [r for r in rows if not _row_quarantined(r)]
     if rows:
         _reference_cache[pos] = rows
     return rows
@@ -1247,7 +1273,8 @@ def reference_population(position, ref_rows=None):
         if pos in _population_cache:
             return _population_cache[pos]
         ref_rows = _reference_rows(pos)
-    refs = ref_rows or []
+    # 3.8 quarantine applies to injected rows too (tests, rebuilds).
+    refs = [r for r in (ref_rows or []) if not _row_quarantined(r)]
     values: dict = {c: [] for c in PCT_COMPONENTS}
     drivers: dict = {c: [] for c in _PCT_RAW_COMPONENTS}
     _eff_mark = _PCT_EFFICIENCY_DRIVER.get(
@@ -1384,7 +1411,14 @@ def component_percentiles(row, population, seasons=None) -> dict:
     score-based. The athleticism percentile is present only when the
     player has testing data; it is omitted entirely otherwise (never
     a placeholder).
+
+    A quarantined ('truncated') row's own percentiles hide: its
+    component values describe a fragment, so ranking them against
+    the pool would print a precise-looking lie.
     """
+    if _row_quarantined(row):
+        return {c: None for c in
+                _PCT_RAW_COMPONENTS + ("competition", "athleticism")}
     out: dict = {}
     drivers = _component_drivers(row.get("position"), seasons)
     dists = population.get("drivers") or {}
@@ -1744,10 +1778,19 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
     try:
         from data_building.rookie_pipeline.prospect_model import (
             calc_utilization_score, calc_experience_score,
+            _role_gated_seasons,
         )
         if seasons:
-            detail["utilization_score"] = round(
-                float(calc_utilization_score(seasons, row.get("position") or "")), 1)
+            # 3.8: utilization is Optional now (None when the latest
+            # season carries no opportunity stats) - store None, not
+            # a crashed float() swallowed by the except below. The
+            # read is role-gated exactly as in score_prospect, so the
+            # modal shows the same utilization the grade used.
+            _util = calc_utilization_score(
+                _role_gated_seasons(seasons, row.get("position") or ""),
+                row.get("position") or "")
+            detail["utilization_score"] = (
+                round(float(_util), 1) if _util is not None else None)
             detail["experience_score"] = round(
                 float(calc_experience_score(seasons, row.get("position") or "")), 1)
     except Exception:

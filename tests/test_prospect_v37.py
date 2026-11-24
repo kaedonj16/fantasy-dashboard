@@ -52,6 +52,33 @@ applied: SMITH 70 -> 55 complete / 62 -> 47 in-season, MESTEMAKER
 Gate note: like every model change, 3.7 ships only if the backtest
 gate clears its bar - which for a capital-free model is 3.5's
 TALENT-ONLY (no-capital slice) correlation, not full 3.5.
+
+3.8 (under-rating fixes; the capital invariance this file guards is
+untouched - the full payload still matches across all 11 capital
+variants): the panel moves on the M2 production blend alone
+(best-season weight 85 -> 90; leg decompositions against the
+pristine 3.7 module show production as the ONLY moving leg for all
+three panelists):
+
+    SMITH      complete   91.93 -> 92.28   (production 91.43 -> 92.55)
+    SMITH      in-season  87.71 -> 87.85   (production 87.07 -> 87.52)
+    MESTEMAKER complete   84.69 -> 84.78   (production 91.32 -> 91.65)
+    MESTEMAKER in-season  83.96 -> 84.00   (production 88.05 -> 88.19)
+    GREEN      complete   74.81 -> 74.92   (production 42.55 -> 42.90)
+    GREEN      in-season  73.74 -> 73.77   (production 43.33 -> 43.41)
+
+The M2 role gate (seasons before the first real role excused from
+the production / utilization / breakout reads) changes no panel
+grade: Smith and Green carry no pre-role seasons, and Mestemaker's
+2-game backup season is excused but was moving no leg.
+
+The panel's RB fixture (HARRIS, used by the invariance tests, not
+pinned here) moves more, and it is the M1 showcase: his fixture
+carries no stored rates, so 3.7 scored his efficiency off the
+friendly defaults (the 23.57 template value) and his production
+with a 0.0 yds/carry term; 3.8 derives both rates from his counting
+stats (efficiency 23.57 -> 61.70, production 53.53 -> 70.64 with
+the blend and the M3 share credit inside it; grade 57.47 -> 67.90).
 """
 
 import pytest
@@ -132,8 +159,8 @@ def _score(prospect, dc, **kw):
 
 
 class TestVersion:
-    def test_model_version_is_37(self):
-        assert pm.MODEL_VERSION == "3.7"
+    def test_model_version_is_current(self):
+        assert pm.MODEL_VERSION == "3.8"
 
 
 class TestCapitalInvariance:
@@ -181,7 +208,7 @@ class TestPayloadContract:
         assert r["projected_draft_capital_score"] is None
         assert r["capital_delta"] is None
         assert r["talent_score"] == r["prospect_score"]
-        assert r["model_version"] == "3.7"
+        assert r["model_version"] == "3.8"
 
     def test_capital_derived_payload_diagnostics_are_zero(self):
         # late_round_upside's only input was the projected round and
@@ -213,25 +240,25 @@ class TestConfidenceHasNoCapitalPoints:
 class TestPanelGrades:
     """Panel pins under the shipped weights (decompositions in the
     module docstring: 3.6 -> capital-free design weights -> F12
-    fitted weights). These pins duplicate the updated v34 pins on
-    purpose: they are this version's contract."""
+    fitted weights -> 3.8 M2 blend). These pins duplicate the
+    updated v34 pins on purpose: they are this version's contract."""
 
     def test_smith(self):
-        assert _score(SMITH, _dc("WR", 2))["prospect_score"] == 91.93
+        assert _score(SMITH, _dc("WR", 2))["prospect_score"] == 92.28
         inseason = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
-        assert inseason["prospect_score"] == 87.71
+        assert inseason["prospect_score"] == 87.85
 
     def test_mestemaker(self):
-        assert _score(MESTEMAKER, _dc("QB", 8))["prospect_score"] == 84.69
+        assert _score(MESTEMAKER, _dc("QB", 8))["prospect_score"] == 84.78
         inseason = _score(MESTEMAKER, _dc("QB", 8), _active_season_year=2026)
-        assert inseason["prospect_score"] == 83.96
+        assert inseason["prospect_score"] == 84.00
 
     def test_green_pinned_clock(self):
         complete = _score(GREEN, _dc("TE", 35), _today=_AS_OF)
         inseason = _score(GREEN, _dc("TE", 35), _active_season_year=2026,
                           _today=_AS_OF)
-        assert complete["prospect_score"] == 74.81
-        assert inseason["prospect_score"] == 73.74
+        assert complete["prospect_score"] == 74.92
+        assert inseason["prospect_score"] == 73.77
 
     def test_panel_ordering_unchanged_by_the_fold(self):
         # The round-3 audit panel order (Smith > Mestemaker > Green

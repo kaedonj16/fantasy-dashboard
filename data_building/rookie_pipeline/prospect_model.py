@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.7 (see MODEL_VERSION)
+Model version: 3.8 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -165,7 +165,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.7"
+MODEL_VERSION = "3.8"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:
@@ -228,18 +228,160 @@ def _scale(raw: float, lo: float, hi: float) -> float:
     return _clip((raw - lo) / (hi - lo) * 100.0)
 
 
+_COUNTING_KEYS = (
+    "receiving_yards", "rush_yards", "pass_yards",
+    "receptions", "rush_attempts", "pass_attempts",
+)
+
+
+def season_has_counting_stats(season: Dict) -> bool:
+    """True when a season row carries any real counting volume.
+
+    v3.8 (under-rating audit M1): the eval pipeline writes placeholder
+    rows for the draft year (e.g. season=2027) with EVERY stat field
+    NULL. Those rows are not seasons: legs that read them score
+    0-filled dicts (production 0.0, template efficiency from friendly
+    rate defaults) instead of reporting the leg missing. Callers drop
+    them at profile assembly; score_prospect drops them again so every
+    entry point is safe.
+    """
+    return any(_safe(season.get(k)) > 0 for k in _COUNTING_KEYS)
+
+
+# Position-relevant counting volume per leg family (v3.8 M1). A leg
+# whose read seasons carry none of this volume has no measurement to
+# make and returns None (missing-leg redistribution) instead of
+# scoring an empty dict.
+_PROD_VOLUME_KEYS: Dict[str, tuple] = {
+    "QB": ("pass_yards", "pass_attempts", "rush_yards", "rush_attempts"),
+    "RB": ("rush_yards", "rush_attempts", "receiving_yards",
+           "receptions", "targets"),
+    "WR": ("receiving_yards", "receptions", "targets"),
+    "TE": ("receiving_yards", "receptions", "targets"),
+}
+
+
+def _has_volume(seasons: List[Dict], keys: tuple) -> bool:
+    return any(_safe(s.get(k)) > 0 for s in seasons for k in keys)
+
+
+def _has_recorded_volume(seasons: List[Dict], keys: tuple) -> bool:
+    """v3.8 (TE fix, post-gate): True when any of the leg's counting
+    fields is RECORDED (present, not None) in any season - including
+    recorded zeros. A recorded zero is a measurement (a college QB
+    converted to TE really did catch zero passes; his receiving legs
+    price at zero, they are not missing). The M1 None-exits fire only
+    when the fields were never recorded at all - absent data, the
+    FCS / never-loaded hole the exits were built for. The first
+    build's exits keyed on volume > 0 and so converted measured
+    zeros into missing legs wholesale (the Swoopes class: all four
+    performance legs None, grade floated to the 50s-60s on context).
+    """
+    return any(s.get(k) is not None for s in seasons for k in keys)
+
+
+def _is_role_season(season: Dict, pos: str) -> bool:
+    """True when the player held a real role that season (v3.8 M2,
+    strengthened per Kaedon 2026-11-24: the grade is a future
+    outlook, not a career rank - "not performing young in college
+    shouldn't hurt them" when they had no role yet).
+
+    Mechanical, from the opportunity data profiles already carry. A
+    season is a ROLE season when any of the position's opportunity
+    signals clears a small floor (a fraction of a starter's season):
+      QB: pass_attempts >= 100, or rush_attempts >= 80 (a featured
+          wildcat/dual-threat role is a role)
+      RB: rush_attempts + receptions >= 50
+      WR: targets >= 30, or receptions >= 15, or receiving_yards >= 250
+      TE: targets >= 20, or receptions >= 10, or receiving_yards >= 150
+    (targets are absent from many historical profiles, so the
+    reception/yardage signals carry the rule there.) One override:
+    for RB/WR/TE, a season whose dominator_rating is under 0.04
+    while team totals are on file is NOT a role season even when a
+    raw count clears the floor - that is garbage-time accumulation
+    on a real offense, not a role.
+    """
+    pos = pos.upper()
+    if pos == "QB":
+        return (_safe(season.get("pass_attempts")) >= 100
+                or _safe(season.get("rush_attempts")) >= 80)
+    if pos == "RB":
+        featured = (_safe(season.get("rush_attempts"))
+                    + _safe(season.get("receptions"))) >= 50
+    elif pos == "WR":
+        featured = (_safe(season.get("targets")) >= 30
+                    or _safe(season.get("receptions")) >= 15
+                    or _safe(season.get("receiving_yards")) >= 250)
+    elif pos == "TE":
+        featured = (_safe(season.get("targets")) >= 20
+                    or _safe(season.get("receptions")) >= 10
+                    or _safe(season.get("receiving_yards")) >= 150)
+    else:
+        return True
+    if not featured:
+        return False
+    dom = season.get("dominator_rating")
+    if dom is not None and _safe(dom) < 0.04 and (
+            _safe(season.get("team_pass_yards")) > 0
+            or _safe(season.get("team_total_yards")) > 0):
+        return False
+    return True
+
+
+def _role_gated_seasons(seasons: List[Dict], pos: str) -> List[Dict]:
+    """The seasons the performance legs may read (v3.8 M2 role gate).
+
+    Seasons BEFORE the player's first role season are excused: he
+    had not earned/been given the role yet, so those seasons are not
+    performance evidence and must not drag the blends. The excuse is
+    directional - once featured, every later season counts in full,
+    including a role loss or a decline. A player who was never
+    featured keeps every season (he grades on what exists; the gate
+    excuses nothing and boosts nothing). Applied by score_prospect
+    to the production and utilization reads, and thereby to the
+    career aggregates inside them (the M3 receiving-share credit
+    reads the production leg's seasons). Breakout is NOT gated: it
+    is a change measure whose origin is the pre-role baseline (see
+    the call site in score_prospect).
+    """
+    featured_years = [_safe(s.get("season")) for s in seasons
+                      if _is_role_season(s, pos)]
+    if not featured_years:
+        return list(seasons)
+    first = min(featured_years)
+    if first <= 0:
+        return list(seasons)
+    return [s for s in seasons if _safe(s.get("season")) >= first]
+
+
+def _rate(season: Dict, stored_key: str, num_key: str,
+          den_key: str) -> Optional[float]:
+    """A per-play rate: the stored rate when present, else derived
+    from the season's counting stats, else None (no measurement).
+
+    v3.8 (M1): the friendly defaults this replaces (YPA 7.0, comp
+    62%, TD:INT 2.0, YPC 4.25, YPR 7.0/9.0/10.0) were scored as if
+    measured whenever a stored rate was absent; a placeholder or
+    fragment season read as a league-average efficiency season.
+    """
+    stored = season.get(stored_key)
+    if stored is not None:
+        return _safe(stored)
+    if season.get(num_key) is None:
+        return None  # numerator missing: no derivation, not a 0.0 rate
+    den = _safe(season.get(den_key))
+    if den > 0:
+        return _safe(season.get(num_key)) / den
+    return None
+
+
 def _latest_season(seasons: List[Dict]) -> Optional[Dict]:
     if not seasons:
         return None
     # Prefer the latest season with actual stat data; the eval pipeline writes
     # placeholder rows for the draft year (e.g. 2027) that must not shadow the
     # real latest college season (e.g. 2026).
-    def _has_data(s: Dict) -> bool:
-        return any(_safe(s.get(k)) > 0 for k in (
-            "receiving_yards", "rush_yards", "pass_yards",
-            "receptions", "rush_attempts", "pass_attempts",
-        ))
-    with_data = [s for s in seasons if _has_data(s)]
+    with_data = [s for s in seasons if season_has_counting_stats(s)]
     pool = with_data or seasons
     return max(pool, key=lambda s: _safe(s.get("season"), 0))
 
@@ -460,7 +602,10 @@ def _score_production_season_raw(season: Dict, pos: str, skip_sagarin: bool = Fa
             _safe(season.get("rush_tds")) + _safe(season.get("receiving_tds"))
         ) / gp
         dom         = _safe(season.get("dominator_rating"))
-        ypc         = _safe(season.get("yds_per_carry"))
+        # v3.8 (M1): yards per carry from the counting stats when the
+        # stored rate is absent, never a scored 0.0 for a missing rate.
+        _ypc = _rate(season, "yds_per_carry", "rush_yards", "rush_attempts")
+        ypc         = _ypc if _ypc is not None else 0.0
 
         prod = (
             _scale(rush_yds_pg, 20,  120) * 0.18 +
@@ -640,13 +785,106 @@ def _eval_metric_percent(
     return f * 100.0 if 0.0 <= f <= 1.0 else f
 
 
+def _rb_receiving_share_credit(seasons: List[Dict]) -> float:
+    """v3.8 (under-rating audit M3): bounded receiving-share credit
+    inside the RB production leg.
+
+    The audit found the model's only RB receiving channel was a YAC
+    proxy capped at +/-10% of production, while realized residuals ran
+    monotone in career receiving share (low tercile -5.4, high tercile
+    +8.3 percentile points). The gated probe priced the share directly:
+    credit = 10 * clip((share - 0.20) / 0.20, -1, +1) production
+    points on the CAREER share (receiving yards / scrimmage yards),
+    monotone gains at every cap under both share definitions, top of
+    the board unhurt. Returns 0.0 when there is no scrimmage volume
+    to take a share of.
+
+    The share is computed over the seasons the production leg
+    receives; score_prospect role-gates that list (v3.8 M2), so
+    pre-role seasons - where a not-yet-featured back's share is
+    mechanically near zero - do not dilute the career share.
+    """
+    rec = sum(_safe(s.get("receiving_yards")) for s in seasons)
+    scrim = sum(_safe(s.get("rush_yards")) + _safe(s.get("receiving_yards"))
+                for s in seasons)
+    if scrim <= 0:
+        return 0.0
+    share = rec / scrim
+    return 10.0 * max(-1.0, min(1.0, (share - 0.20) / 0.20))
+
+
+def _production_zero_verdict(score: float, read_seasons: List[Dict],
+                             pos: str,
+                             skip_sagarin: bool = False,
+                             all_seasons: Optional[List[Dict]] = None,
+                             draft_year: Optional[int] = None) -> Optional[float]:
+    """v3.8 (under-rating audit M1, class L2; TE fix, post-gate):
+    verdict on an exact 0.0 production score.
+
+    A 0.0 with games_played known is a measurement and stands. A 0.0
+    with GP missing on every season the leg read is ambiguous: it is
+    either the L2 artifact (the defaulted 12-game divisor meeting
+    the leg's hard rate floors - real 1,500-yard passers stored
+    exact 0.0) or a genuinely negligible resume priced through the
+    same defaulted divisor (a tight end with 8 career catches reads
+    0.0 at ANY divisor). The first build converted every such zero
+    to None; at TE, where volumes are small and historical profiles
+    systematically lack GP, that deleted measured zeros wholesale
+    and redistribution floated no-resume profiles to mid-board
+    (Kevin Rader 44.5 -> 65.6 on a 126-yard career), costing TE
+    Spearman .065. The verdict separates the two: re-score the read
+    seasons at GP=4, the most generous divisor the model ever uses
+    (the F16 minimum sample), and rebuild the leg's blend. The zero
+    is a divisor artifact only when the same evidence prices at or
+    above the model's neutral (52.0) at that divisor - the recorded
+    evidence describes a real season, so the zero is arithmetically
+    impossible for it and the leg is missing (None). Anything less
+    and the zero is divisor-robust - a thin resume is a thin resume
+    at every plausible divisor - and it stands as a measurement.
+    (An earlier 5.0 bar failed exactly here: a 95-yard season with
+    one touchdown prices ~9 at GP=4, so sub-neutral evidence was
+    still being erased as "missing".)
+
+    Truncation: a zero from a file that ENDS two or more seasons
+    before the player's draft class is missing data by construction
+    - the store holds nothing from the seasons that decide a grade
+    (Dallas Goedert's file stops in 2016 for the 2018 class: his
+    senior season, the one that made him a second-round pick, was
+    never loaded; Carson Wentz's file is a single 2014 cameo for
+    the 2016 class). No divisor question arises: whatever those
+    seasons held, this leg did not measure them, so the leg is None
+    regardless of the recheck. A complete file that merely ends the
+    season before the draft (the normal shape) is untouched.
+    """
+    if score != 0.0 or not read_seasons:
+        return score
+    if draft_year and all_seasons:
+        _years = [s.get("season") for s in all_seasons
+                  if s.get("season") is not None]
+        if _years and draft_year - max(_years) >= 2:
+            return None
+    if any(s.get("games_played") is not None for s in read_seasons):
+        return score
+    rescored = []
+    for s in read_seasons:
+        s4 = dict(s)
+        s4["games_played"] = 4
+        rescored.append(_score_production_season(s4, pos, skip_sagarin))
+    if len(rescored) == 1:
+        recheck = rescored[0]
+    else:
+        recheck = max(rescored) * 0.90 + min(rescored) * 0.10
+    return score if recheck < 52.0 else None
+
+
 def calc_production_score(
     seasons: List[Dict],
     position: str,
     eval_metrics: Optional[Dict] = None,
     skip_sagarin: bool = False,
     _inseason_year: Optional[int] = None,
-) -> float:
+    _draft_year: Optional[int] = None,
+) -> Optional[float]:
     """
     Per-game production vs position-specific elite thresholds.
     Uses a blend of the best season and latest season to capture both
@@ -665,6 +903,17 @@ def calc_production_score(
         return 52.0  # pre-draft neutral: unknown ≠ bad
 
     pos = position.upper()
+
+    # v3.8 (M1): seasons exist but none of the position-relevant
+    # counting fields was ever recorded (placeholder / fragment
+    # rows) - the leg has nothing to measure. Return None so
+    # score_prospect redistributes the weight instead of scoring
+    # absent data as a real season of zeros. Recorded zeros are
+    # measurements and score (see _has_recorded_volume).
+    if pos in _PROD_VOLUME_KEYS and not _has_recorded_volume(
+            seasons, _PROD_VOLUME_KEYS[pos]):
+        return None
+
     ls  = _latest_season(seasons) or {}
     gp  = max(_safe(ls.get("games_played"), 12), 1)
 
@@ -688,7 +937,11 @@ def calc_production_score(
             # leg's neutral point - there is no completed baseline.
             _single = _shrink_partial(_single, 52.0,
                                       _safe(ls.get("games_played"), 12))
-        return _clip(_single)
+        if pos == "RB":
+            _single = _clip(_single + _rb_receiving_share_credit(seasons))
+        return _production_zero_verdict(_clip(_single), [ls], pos,
+                                        skip_sagarin, all_seasons=seasons,
+                                        draft_year=_draft_year)
 
     # Score latest season and best individual season; blend to reward peak while
     # still weighting recent output (NFL analysts evaluate both)
@@ -737,8 +990,16 @@ def calc_production_score(
                 best_score, _baseline,
                 _safe(peak_season.get("games_played"), 12))
 
-    # 85% weight on whichever is higher (recent or peak), 15% on the other
-    prod = max(latest_score, best_score) * 0.85 + min(latest_score, best_score) * 0.15
+    # v3.8 (under-rating audit M2): the blend leans harder on the best
+    # completed season - 90% on whichever is higher (recent or peak),
+    # 10% on the other (was 85/15). The audit's under-rated cohort was
+    # priced down by opportunity-split recent seasons (committees,
+    # JUCO detours, injury years) even when a full-workload peak was
+    # on file; best-season evidence is the leg's own antidote. The
+    # role gate in score_prospect (seasons before the first real role
+    # are excused from this leg entirely) is the strengthened form of
+    # the same principle, added on Kaedon's 2026-11-24 directive.
+    prod = max(latest_score, best_score) * 0.90 + min(latest_score, best_score) * 0.10
 
     # ── Eval-metric blending ─────────────────────────────────────────────────
     # When evaluation pipeline metrics are available, apply a confidence-weighted
@@ -807,7 +1068,55 @@ def calc_production_score(
     # here and in efficiency (team context consolidation: competition
     # leg + environment leg are the two surviving channels).
 
-    return prod
+    # v3.8 (M3): the bounded RB receiving-share credit lands on the
+    # finished leg, exactly as gated (career share, cap 10).
+    if pos == "RB":
+        prod = _clip(prod + _rb_receiving_share_credit(seasons))
+
+    return _production_zero_verdict(prod, [ls, peak_season], pos,
+                                    skip_sagarin, all_seasons=seasons,
+                                    draft_year=_draft_year)
+
+
+def _qb_efficiency_of(season: Dict) -> Optional[float]:
+    """One season's QB efficiency from its rate evidence (v3.8 M1).
+
+    Each component is the stored rate when present, else derived from
+    the season's counting stats: YPA = pass yards / attempts,
+    completion % = completions / attempts, TD:INT = pass TDs /
+    interceptions (a season with TDs and zero interceptions reads at
+    the scale's top anchor - the ratio is unbounded, not missing).
+    Present components combine on the leg's 45/30/25 weights,
+    renormalized over what is present; a season with no rate evidence
+    at all returns None. The friendly defaults this replaces (YPA
+    7.0 / comp 62% / TD:INT 2.0) scored an unmeasured season as a
+    league-average one.
+    """
+    parts = []
+    ypa = _rate(season, "yds_per_attempt", "pass_yards", "pass_attempts")
+    if ypa is not None:
+        parts.append((_scale(ypa, 6.5, 9.5), 0.45))
+    cpct = season.get("completion_pct")
+    if cpct is None and season.get("completions") is not None:
+        att = _safe(season.get("pass_attempts"))
+        cpct = (_safe(season.get("completions")) / att * 100.0) if att > 0 else None
+    if cpct is not None:
+        parts.append((_scale(_safe(cpct), 58.0, 72.0), 0.30))
+    td_int = season.get("td_int_ratio")
+    if (td_int is None and season.get("pass_tds") is not None
+            and season.get("interceptions") is not None):
+        ints = _safe(season.get("interceptions"))
+        tds = _safe(season.get("pass_tds"))
+        if ints > 0:
+            td_int = tds / ints
+        elif tds > 0:
+            td_int = 6.0
+    if td_int is not None:
+        parts.append((_scale(_safe(td_int), 1.5, 6.0), 0.25))
+    if not parts:
+        return None
+    wsum = sum(w for _, w in parts)
+    return sum(s * w for s, w in parts) / wsum
 
 
 def calc_efficiency_score(
@@ -816,7 +1125,7 @@ def calc_efficiency_score(
     eval_metrics: Optional[Dict] = None,
     wepa: Optional[Dict] = None,
     _inseason_year: Optional[int] = None,
-) -> float:
+) -> Optional[float]:
     """
     Per-attempt / per-target efficiency.  Rewards quality over quantity.
 
@@ -837,10 +1146,20 @@ def calc_efficiency_score(
         return 52.0  # pre-draft neutral: unknown ≠ bad
 
     pos = position.upper()
+
+    # v3.8 (M1): each branch below returns None when the season it
+    # reads carries no rate evidence - neither a stored rate nor
+    # counting stats to derive one from. (A stored rate alone IS
+    # evidence: leg fixtures and some sources carry rates without
+    # counting stats, and they measure fine.)
     ls  = _latest_season(seasons) or {}
 
     if pos == "WR":
-        ypr = _safe(ls.get("yds_per_reception"), 10.0)
+        _ypr_wr = _rate(ls, "yds_per_reception", "receiving_yards",
+                        "receptions")
+        if _ypr_wr is None:
+            return None
+        ypr = _ypr_wr
         # v3.6 (round-2 audit F5): market share leaves WR efficiency.
         # Share was priced in four legs (production dominator,
         # efficiency, utilization, breakout) - about 18% of the WR
@@ -909,32 +1228,32 @@ def calc_efficiency_score(
                 eff = eff * (1.0 - 0.08 * tprr_conf) + tprr_score * (0.08 * tprr_conf)
 
     elif pos == "RB":
-        ypc   = _safe(ls.get("yds_per_carry"), 4.25)
-        ypr   = _safe(ls.get("yds_per_reception"), 7.0)
-        eff   = (
+        # v3.8 (M1): rates from counting stats when the stored rate is
+        # absent; the pair renormalizes over whichever rate is
+        # measurable, and neither measurable means the leg is missing.
+        _ypc_rb = _rate(ls, "yds_per_carry", "rush_yards", "rush_attempts")
+        _ypr_rb = _rate(ls, "yds_per_reception", "receiving_yards",
+                        "receptions")
+        if _ypc_rb is None and _ypr_rb is None:
+            return None
+        _rb_parts = []
+        if _ypc_rb is not None:
             # v3.6 (round-2 audit F5): market share removed (share is
             # priced in production/utilization/breakout); the remaining
             # per-play pair renormalizes to 70/30.
-            _scale(ypc,  3.5,  7.0)  * 0.70 +
-            _scale(ypr,  5.0, 12.0)  * 0.30   # receiving efficiency matters for dynasty RBs
-        )
+            _rb_parts.append((_scale(_ypc_rb, 3.5, 7.0), 0.70))
+        if _ypr_rb is not None:
+            _rb_parts.append((_scale(_ypr_rb, 5.0, 12.0), 0.30))
+        _rb_w = sum(w for _, w in _rb_parts)
+        eff = sum(s * w for s, w in _rb_parts) / _rb_w
         # grades_pass_route dropped: was PFF-only, no free replacement.
 
     elif pos == "QB":
-        ypa   = _safe(ls.get("yds_per_attempt"), 7.0)
-        td_int= _safe(ls.get("td_int_ratio"),     2.0)
-
-        # adjusted_comp_pct dropped (was PFF-only). Use raw completion_pct.
-        cpct = _safe(ls.get("completion_pct"), 62.0)
-
-        # twp_rate dropped: was PFF-only, no free replacement.
-        td_int_mod = td_int
-
-        eff   = (
-            _scale(ypa,      6.5,  9.5) * 0.45 +
-            _scale(cpct,    58.0, 72.0) * 0.30 +
-            _scale(td_int_mod, 1.5, 6.0) * 0.25  # v3.2 V5
-        )
+        # v3.8 (M1): the rate trio comes from _qb_efficiency_of - stored
+        # rates when present, counting-stat derivations otherwise, and
+        # None when a season carries no rate evidence at all (the
+        # friendly defaults YPA 7.0 / comp 62% / TD:INT 2.0 are gone).
+        eff = _qb_efficiency_of(ls)
 
         # v3.2 Q4: one bad partial season should not overwrite a full elite
         # season. Peak blend: 85% best (by pass yards) with 15% latest.
@@ -952,27 +1271,39 @@ def calc_efficiency_score(
             else:
                 _best_qb = max(seasons, key=lambda s: _safe(s.get("pass_yards")))
             if _best_qb is not ls:
-                _b_eff = (
-                    _scale(_safe(_best_qb.get("yds_per_attempt"), 7.0), 6.5, 9.5) * 0.45 +
-                    _scale(_safe(_best_qb.get("completion_pct"), 62.0), 58.0, 72.0) * 0.30 +
-                    _scale(_safe(_best_qb.get("td_int_ratio"), 2.0), 1.5, 6.0) * 0.25
-                )
-                # v3.6 (round-2 audit F2): whichever side of the blend
-                # is the in-progress season shrinks toward the other
-                # (completed) side by min(1, GP/12) before blending.
-                # At most one side can be the in-progress season.
-                if _inseason_year is not None:
-                    if ls.get("season") == _inseason_year:
-                        eff = _shrink_partial(
-                            eff, _b_eff, _safe(ls.get("games_played"), 12))
-                    elif _best_qb.get("season") == _inseason_year:
-                        _b_eff = _shrink_partial(
-                            _b_eff, eff,
-                            _safe(_best_qb.get("games_played"), 12))
-                eff = eff * 0.15 + _b_eff * 0.85  # v3.2 R7-A2: peak blend matches production (85% peak / 15% latest)
+                _b_eff = _qb_efficiency_of(_best_qb)
+                if eff is None:
+                    eff = _b_eff
+                elif _b_eff is not None:
+                    # v3.6 (round-2 audit F2): whichever side of the blend
+                    # is the in-progress season shrinks toward the other
+                    # (completed) side by min(1, GP/12) before blending.
+                    # At most one side can be the in-progress season.
+                    if _inseason_year is not None:
+                        if ls.get("season") == _inseason_year:
+                            eff = _shrink_partial(
+                                eff, _b_eff, _safe(ls.get("games_played"), 12))
+                        elif _best_qb.get("season") == _inseason_year:
+                            _b_eff = _shrink_partial(
+                                _b_eff, eff,
+                                _safe(_best_qb.get("games_played"), 12))
+                    eff = eff * 0.15 + _b_eff * 0.85  # v3.2 R7-A2: peak blend matches production (85% peak / 15% latest)
+                elif (_inseason_year is not None
+                        and ls.get("season") == _inseason_year):
+                    # Only the in-progress season carries rate evidence:
+                    # shrink it toward the leg neutral, the lone-season
+                    # doctrine production already uses.
+                    eff = _shrink_partial(
+                        eff, 52.0, _safe(ls.get("games_played"), 12))
+        if eff is None:
+            return None
 
     elif pos == "TE":
-        ypr = _safe(ls.get("yds_per_reception"), 9.0)
+        _ypr_te = _rate(ls, "yds_per_reception", "receiving_yards",
+                        "receptions")
+        if _ypr_te is None:
+            return None
+        ypr = _ypr_te
         # Catch rate: receptions / targets measures hands + separation reliability.
         # Only computed when targets is populated (not always available from CFBD).
         targets = _safe(ls.get("targets"))
@@ -1063,6 +1394,10 @@ def calc_efficiency_score(
                       if s.get("season") != _inseason_year]
         _base_eff = (calc_efficiency_score(_completed, pos)
                      if _completed else 52.0)
+        if _base_eff is None:
+            # v3.8: the completed seasons carry no rate evidence
+            # either - shrink toward the leg neutral.
+            _base_eff = 52.0
         eff = _shrink_partial(eff, _base_eff,
                               _safe(ls.get("games_played"), 12))
 
@@ -1104,8 +1439,8 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
     elite = _AGE_ELITE.get(pos, 21.5)
     worst = _AGE_WORST.get(pos, 26.0)
     # Invert: lower age → higher score.  _scale maps [elite, worst] → [100, 0].
-    score = _scale(worst - age, 0.0, worst - elite)
     # v3.2 R7-A6: cap 100 (was 95): the elite anchor IS the 100 anchor.
+    score = _scale(worst - age, 0.0, worst - elite)
     # v3.6 (round-2 audit F11): the old flat floor at 20 collapsed the
     # entire old tail - every WR aged 25.5+ scored identically. Below
     # the raw-20 point the score now declines in AGE space at 5
@@ -1116,6 +1451,18 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
     # term (20% of that leg) is a second, dominance-gated age curve
     # by design - it prices WHEN a player broke out, this leg prices
     # his age at the draft.
+    # v3.8 (M4, GATE-REJECTED in the post-build re-gate and reverted
+    # before ship): the under-rating audit's residual frame showed
+    # players aged 23+ under-rated on average (+9.5 mean residual),
+    # and the first 3.8 build halved the per-year slope beyond 23.0
+    # on that evidence. The re-gate arbitrated against it: with every
+    # other fix held constant, the flattened slope COST correlation
+    # at three positions (QB Pearson -.011, TE Spearman -.016, WR
+    # Spearman -.013) - a level-bias read on a subset does not
+    # survive as a blanket re-ranking of every older prospect, most
+    # of whom are older because they needed the years. The 3.7 slope
+    # stands; M4 is recorded here as tried and rejected so the next
+    # audit does not re-propose it without new evidence.
     if score < 20.0:
         _a20 = worst - 0.2 * (worst - elite)
         score = max(10.0, 20.0 - (age - _a20) * 5.0)
@@ -1123,7 +1470,7 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
 
 
 def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str,
-                        _inseason_year: Optional[int] = None) -> float:
+                        _inseason_year: Optional[int] = None) -> Optional[float]:
     """
     Rewards early-career dominance and upward trajectory.
 
@@ -1136,6 +1483,15 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
         return 52.0
 
     pos = position.upper()
+
+    # v3.8 (M1): none of the position-relevant counting fields was
+    # ever recorded - no dominance or trajectory to measure. None,
+    # not a priced zero. Recorded zeros measure (see
+    # _has_recorded_volume).
+    if pos in _PROD_VOLUME_KEYS and not _has_recorded_volume(
+            seasons, _PROD_VOLUME_KEYS[pos]):
+        return None
+
     sorted_s = sorted(seasons, key=lambda s: _safe(s.get("season"), 0))
     ls = sorted_s[-1]  # most recent season
 
@@ -1162,10 +1518,13 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             qb_share = pass_yds / team_yds
             dom_score = _scale(qb_share, 0.40, 0.70)
         else:
-            # Fallback: raw pass yards as proxy for workload dominance
-            gp = max(_safe(ls.get("games_played"), 12), 1)
-            pass_yds_pg = pass_yds / gp
-            dom_score = _scale(pass_yds_pg, 200, 380)
+            # v3.8 (M1, pool class P6): team totals missing means the
+            # share cannot be computed. The old fallback priced raw
+            # pass yards per game on a 200-380 scale, which floored
+            # every run-first QB at a literal 0.0 (seven pool QBs sat
+            # at breakout 0.0, all dual-threat). The leg is missing,
+            # not zero: return None and let the weight redistribute.
+            return None
     elif thresh is None:
         dom_score = 50.0  # unknown position
     elif dom > 0:
@@ -1504,7 +1863,7 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
 
 
 def calc_utilization_score(seasons: List[Dict], position: str,
-                           _inseason_year: Optional[int] = None) -> float:
+                           _inseason_year: Optional[int] = None) -> Optional[float]:
     """
     Volume of opportunity - how much of the team's offence ran through this player.
 
@@ -1522,6 +1881,8 @@ def calc_utilization_score(seasons: List[Dict], position: str,
     none) by min(1, GP/12), like production and efficiency.
     """
     raw = _utilization_raw(seasons, position)
+    if raw is None:
+        return None
     if _inseason_year is None or not seasons:
         return raw
     ls = _latest_season(seasons) or {}
@@ -1530,36 +1891,65 @@ def calc_utilization_score(seasons: List[Dict], position: str,
     _completed = [s for s in seasons if s.get("season") != _inseason_year]
     _base = (_utilization_raw(_completed, position)
              if _completed else 50.0)
+    if _base is None:
+        # v3.8: completed seasons carry no opportunity evidence
+        # either - shrink toward the leg neutral.
+        _base = 50.0
     return _clip(_shrink_partial(raw, _base,
                                  _safe(ls.get("games_played"), 12)))
 
 
-def _utilization_raw(seasons: List[Dict], position: str) -> float:
+def _utilization_raw(seasons: List[Dict], position: str) -> Optional[float]:
     if not seasons:
         return 50.0
 
     pos = position.upper()
     ls  = _latest_season(seasons) or {}
+
+    # v3.8 (M1): the latest season records no opportunity stats at
+    # all (placeholder / fragment row - the fields are absent, not
+    # zero) - utilization is missing, not a zero-opportunity
+    # measurement. Recorded zeros measure (see _has_recorded_volume).
+    if pos in ("WR", "TE"):
+        if ls.get("targets") is None and ls.get("receptions") is None:
+            return None
+    elif pos == "RB":
+        if (ls.get("rush_attempts") is None
+                and ls.get("targets") is None
+                and ls.get("receptions") is None):
+            return None
+    elif pos == "QB":
+        if ls.get("pass_attempts") is None:
+            return None
+
     gp  = max(_safe(ls.get("games_played"), 12), 1)
 
     if pos == "WR":
         targets = _safe(ls.get("targets"))
         if targets > 0:
-            tpg = targets / gp
-        else:
-            # Fallback: receptions as proxy (underestimates slightly)
-            tpg = _safe(ls.get("receptions")) / gp
-        # Elite WR: 9+ targets/game; strong: 6+; average: 4
-        return _clip(_scale(tpg, 2.5, 10.0))
+            # Elite WR: 9+ targets/game; strong: 6+; average: 4
+            return _clip(_scale(targets / gp, 2.5, 10.0))
+        # v3.8 (Becker fix, post-gate): targets missing - receptions
+        # are the proxy, read on a RECEPTIONS scale, not the targets
+        # scale. The RB branch below has done this since v3.3 (rec
+        # 0.5-3.5 vs targets 1.0-5.0); WR/TE never got the treatment,
+        # so a proxy read fell under the targets floor and stored a
+        # manufactured 0.0 (a 2.4 rec/g season read 0.0 against the
+        # 2.5 targets floor). The rec scale is the targets scale
+        # compressed by the typical catch rate (~0.65): a reception
+        # count is a deflated target count, and the scale, not the
+        # player, should absorb the deflation.
+        rpg = _safe(ls.get("receptions")) / gp
+        return _clip(_scale(rpg, 1.6, 6.5))
 
     elif pos == "TE":
         targets = _safe(ls.get("targets"))
         if targets > 0:
-            tpg = targets / gp
-        else:
-            tpg = _safe(ls.get("receptions")) / gp
-        # Elite TE: 7+ targets/game; strong: 4+; average: 2.5
-        return _clip(_scale(tpg, 1.5, 8.0))
+            # Elite TE: 7+ targets/game; strong: 4+; average: 2.5
+            return _clip(_scale(targets / gp, 1.5, 8.0))
+        # Receptions proxy on a receptions scale (see WR above).
+        rpg = _safe(ls.get("receptions")) / gp
+        return _clip(_scale(rpg, 1.0, 5.2))
 
     elif pos == "RB":
         carries  = _safe(ls.get("rush_attempts")) / gp
@@ -1627,7 +2017,7 @@ def calc_recruiting_score(recruiting: Optional[Dict[str, Any]]) -> Optional[floa
 def calc_competition_score(
     seasons: List[Dict],
     team_context: Optional[Dict] = None,
-) -> float:
+) -> Optional[float]:
     """
     Conference quality + implied opponent strength.
     Recent seasons are weighted more heavily to reflect current competition level.
@@ -1637,9 +2027,30 @@ def calc_competition_score(
     When SP+ strength-of-schedule is available for the latest season's team it
     is blended 50/50 with the conference-quality estimate - a direct measure
     of who they actually played rather than who shares their conference.
+
+    v3.8 (under-rating audit M1, pool class P5): when NO schedule data
+    exists at all - no season carries a conference, the team is not
+    Notre Dame, and no SP+ SOS is on file - the leg returns None
+    (missing; weight redistributes). The old path scored the
+    unknown-conference default quality, which is how 163 pool rows
+    came to sit on one identical competition value: a default wearing
+    a measurement's clothes.
     """
     if not seasons:
-        return 55.0
+        return None
+
+    _has_schedule = any(
+        (s.get("conference") or "").strip()
+        or "notre dame" in (s.get("team", "") or "").lower()
+        for s in seasons
+    )
+    if not _has_schedule and team_context:
+        _lat = max(seasons, key=lambda s: s.get("season", 0))
+        _key = ((_lat.get("team") or "").lower().strip(),
+                _lat.get("season", 0))
+        _has_schedule = (team_context.get(_key) or {}).get("sp_sos") is not None
+    if not _has_schedule:
+        return None
 
     # Sort seasons by year (most recent first)
     sorted_seasons = sorted(seasons, key=lambda s: s.get("season", 0), reverse=True)
@@ -2402,7 +2813,24 @@ def score_prospect(
         Dict with all component scores + final prospect_score + reasons.
     """
     pos      = (prospect.get("position") or "WR").upper()
-    seasons  = prospect.get("seasons") or []
+    # v3.8 (M1): placeholder rows (a season row with every counting
+    # stat NULL - the eval pipeline's draft-year rows) are not
+    # seasons. They are dropped at profile assembly in the DB loader
+    # (pipeline.load_prospects_from_db) and again here, so every
+    # entry point is safe; a prospect left with no real season takes
+    # the empty-list neutral paths and is flagged
+    # data_quality="truncated" on the scored output (its own
+    # percentile panel hides and pool builders exclude flagged rows).
+    seasons  = [s for s in (prospect.get("seasons") or [])
+                if season_has_counting_stats(s)]
+    _data_quality = "ok" if seasons else "truncated"
+    # v3.8 (M2 role gate): the LEVEL legs (production, utilization -
+    # and the career aggregates inside them) read only the seasons
+    # from the player's first real role onward. See
+    # _role_gated_seasons. Breakout is the exception, below: it is a
+    # CHANGE measure, and its origin is the pre-role baseline by
+    # definition.
+    role_seasons = _role_gated_seasons(seasons, pos)
     raw_age  = prospect.get("age")
     age      = float(raw_age) if raw_age is not None else None
     ath      = prospect.get("athleticism") or {}
@@ -2431,9 +2859,10 @@ def score_prospect(
     )
     _inseason_year = int(_active_season_year) if _inseason else None
 
-    production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics,
+    production_score    = calc_production_score(role_seasons, pos, eval_metrics=eval_metrics,
                                                 skip_sagarin=skip_sagarin,
-                                                _inseason_year=_inseason_year)
+                                                _inseason_year=_inseason_year,
+                                                _draft_year=dy)
     
     # Apply crowded-room bonus: prefer data-driven depth rank when available,
     # fall back to manually curated loaded_roster list when depth data is absent.
@@ -2453,10 +2882,11 @@ def score_prospect(
             team, pos, season, production_score, market_share,
             ypc=_safe(ls.get("yds_per_carry")),
         )
-    production_score = _clip(production_score * loaded_roster_adjustment)
+    if production_score is not None:
+        production_score = _clip(production_score * loaded_roster_adjustment)
 
     utilization_score   = calc_utilization_score(
-        seasons, pos, _inseason_year=_inseason_year)
+        role_seasons, pos, _inseason_year=_inseason_year)
     # v3.6 (round-2 audit F8): the crowded-room multiplier applies to
     # PRODUCTION ONLY (above). It used to multiply utilization in full
     # and echo into efficiency (40% of excess) and breakout (35%), so
@@ -2470,6 +2900,20 @@ def score_prospect(
     )
 
     age_score           = calc_age_score(age, dy, pos)
+    # v3.8 (TE fix, post-gate): breakout reads the UNGATED season
+    # list. The role gate excuses pre-role seasons as level evidence,
+    # but breakout's trajectory component is growth FROM the first
+    # season on file and its age component keys on the first
+    # threshold crossing - both are defined against the pre-role
+    # baseline. Gating the leg deleted the rise it exists to price:
+    # elite breakouts whose first season was a cameo (Trey McBride,
+    # 8 catches as a freshman) lost exactly 35.0 points (trajectory
+    # 100 -> 0 at its 0.35 weight) and TE Spearman fell .384 -> .319.
+    # A pre-role season cannot drag this leg's level components (the
+    # dominator term is a max over seasons; the age term keys on the
+    # first CROSSING), so the future-outlook principle is kept: the
+    # early season serves only as the growth origin, never as a
+    # dragged average. The leg's M1 volume None-exit still applies.
     breakout_score      = calc_breakout_score(seasons, age, pos,
                                               _inseason_year=_inseason_year)
 
@@ -2535,7 +2979,8 @@ def score_prospect(
     # payload-only (it never fed the grade); its capital input is 0.0
     # because no capital score exists anymore.
     interaction_features = calc_interaction_features(
-        production_score, efficiency_score, athleticism_score or 0.0, 0.0
+        production_score or 0.0, efficiency_score or 0.0,
+        athleticism_score or 0.0, 0.0
     )
 
     # Get position-specific weights (optionally overridden by calibrated weights)
@@ -2635,19 +3080,69 @@ def score_prospect(
         for k in _weights:
             _weights[k] *= (1.0 + dc_w / remaining)
 
+    # v3.8 (M1): the season legs are Optional now. A leg that found
+    # no measurable evidence in the profile's seasons (placeholder /
+    # fragment rows, missing team totals, absent schedule data)
+    # returns None and its weight redistributes exactly like
+    # athleticism / durability / recruiting above. The leg stays None
+    # in the payload -> DB NULL -> UI hides it.
+    def _pop_missing(_name, _missing):
+        if not _missing:
+            return
+        _w = _weights.pop(_name, 0.0)
+        _rem = sum(_weights.values())
+        if _rem > 0 and _w > 0:
+            for _k in _weights:
+                _weights[_k] *= (1.0 + _w / _rem)
+
+    # v3.8 (TE fix, post-gate): the multi-None anchor. When three or
+    # more of the four PERFORMANCE legs (production, utilization,
+    # efficiency, breakout) are missing, the profile carries no
+    # measured performance at all, and full redistribution prices the
+    # player entirely on context (age, competition, recruiting) -
+    # a QB-convert tight end with zero career catches floated to
+    # 69.4 on offense/recruiting context alone. The model's own
+    # doctrine for an empty profile is neutral (an empty season list
+    # prices production at 52.0), so the missing performance core is
+    # anchored at neutral in the grade sum instead of popped: the
+    # legs stay None in the payload (UI hides them), but their
+    # weight prices at 52.0. One or two missing legs still
+    # redistribute - partial evidence is real evidence.
+    _perf_missing = sum(1 for _v in (production_score, utilization_score,
+                                     efficiency_score, breakout_score)
+                        if _v is None)
+    _anchor_perf = _perf_missing >= 3
+
+    if not (_anchor_perf and production_score is None):
+        _pop_missing("production", production_score is None)
+    if not (_anchor_perf and utilization_score is None):
+        _pop_missing("utilization", utilization_score is None)
+    if not (_anchor_perf and efficiency_score is None):
+        _pop_missing("efficiency", efficiency_score is None)
+    if not (_anchor_perf and breakout_score is None):
+        _pop_missing("breakout", breakout_score is None)
+    _pop_missing("competition", competition_score is None)
+
     # Base prospect score with position-specific weights.
     # v3.0 R6: Use _weights (athleticism redistribution applied) so the
     # redistributed weight actually takes effect. Previously the sum used
     # pos_weights, silently dropping the redistribution and capping the
     # max score when athleticism was NULL.
+    # Anchored legs (multi-None rule above) price at neutral in the
+    # sum; every other None prices at 0.0 under a popped weight.
+    _sum_production  = 52.0 if (_anchor_perf and production_score is None)  else production_score
+    _sum_utilization = 52.0 if (_anchor_perf and utilization_score is None) else utilization_score
+    _sum_efficiency  = 52.0 if (_anchor_perf and efficiency_score is None)  else efficiency_score
+    _sum_breakout    = 52.0 if (_anchor_perf and breakout_score is None)    else breakout_score
+
     prospect_score = (
-        production_score      * _weights["production"]    +
-        utilization_score     * _weights.get("utilization", 0.0)   +
-        efficiency_score      * _weights["efficiency"]    +
+        (_sum_production or 0.0)  * _weights.get("production", 0.0)    +
+        (_sum_utilization or 0.0) * _weights.get("utilization", 0.0)   +
+        (_sum_efficiency or 0.0)  * _weights.get("efficiency", 0.0)    +
         age_score             * _weights.get("age", 0.0)           +
-        breakout_score        * _weights.get("breakout", 0.0)      +
+        (_sum_breakout or 0.0)    * _weights.get("breakout", 0.0)      +
         (athleticism_score or 0.0) * _weights.get("athleticism", 0.0)   +
-        competition_score     * _weights["competition"]   +
+        (competition_score or 0.0) * _weights.get("competition", 0.0)   +
         (environment_score or 0.0) * _weights.get("environment", 0.0) +
         (durability_score or 0.0) * _weights.get("durability", 0.0) +
         # v3.7: no draft-capital term - the leg does not exist.
@@ -2785,14 +3280,21 @@ def score_prospect(
     return {
         "player_id":                    prospect["player_id"],
         "draft_class_year":             dy,
-        "production_score":             round(production_score, 2),
-        "utilization_score":            round(utilization_score, 2),
-        "efficiency_score":             round(efficiency_score, 2),
+        # v3.8 (M1): missing legs stay None (DB NULL, UI hides them),
+        # the convention athleticism / durability / recruiting set.
+        "production_score":             None if production_score is None else round(production_score, 2),
+        "utilization_score":            None if utilization_score is None else round(utilization_score, 2),
+        "efficiency_score":             None if efficiency_score is None else round(efficiency_score, 2),
         "age_score":                    round(age_score, 2),
-        "breakout_profile_score":       round(breakout_score, 2),
+        "breakout_profile_score":       None if breakout_score is None else round(breakout_score, 2),
         "athleticism_score":            None if athleticism_score is None else round(athleticism_score, 2),
         "athleticism_projected":        _athleticism_projected,
-        "competition_score":            round(competition_score, 2),
+        "competition_score":            None if competition_score is None else round(competition_score, 2),
+        # v3.8 (M1): "truncated" when no season with counting stats
+        # survived the placeholder filter - the profile's grades rest
+        # on neutral paths, and the reference-pool quarantine keys
+        # off the same word.
+        "data_quality":                 _data_quality,
         "environment_adjustment":       None if environment_score is None else round(environment_score, 2),
         "durability_score":             None if durability_score is None else round(durability_score, 2),
         "recruiting_score":             None if recruiting_score is None else round(recruiting_score, 2),
@@ -2839,36 +3341,40 @@ def _build_reasons(
     gp    = max(_safe(ls.get("games_played"), 12), 1)
 
     # ── Production ────────────────────────────────────────────────────────────
-    if prod >= 75:
-        bullets.append("Elite production profile - dominant volume for their position")
-    elif prod >= 55:
-        bullets.append("Solid production numbers with room to grow at the NFL level")
-    else:
-        bullets.append("Limited production volume - may need time to develop")
+    # v3.8: a missing leg (None) earns no bullet - never describe
+    # unmeasured production as limited production.
+    if prod is not None:
+        if prod >= 75:
+            bullets.append("Elite production profile - dominant volume for their position")
+        elif prod >= 55:
+            bullets.append("Solid production numbers with room to grow at the NFL level")
+        else:
+            bullets.append("Limited production volume - may need time to develop")
 
     # ── Utilization ───────────────────────────────────────────────────────────
     if pos in ("WR", "TE"):
         tpg = (_safe(ls.get("targets")) or _safe(ls.get("receptions"))) / gp
-        if util >= 70:
+        if util is not None and util >= 70:
             bullets.append(f"High target share ({tpg:.1f} tgts/game) - clear featured receiver")
-        elif util <= 35 and seasons:
+        elif util is not None and util <= 35 and seasons:
             bullets.append(f"Limited target volume ({tpg:.1f} tgts/game) - role player or committee")
     elif pos == "RB":
         carries = _safe(ls.get("rush_attempts")) / gp
-        if util >= 70:
+        if util is not None and util >= 70:
             bullets.append(f"Workhorse RB usage ({carries:.1f} carries/game)")
-        elif util <= 35:
+        elif util is not None and util <= 35:
             bullets.append(f"Limited rush volume ({carries:.1f} carries/game) - situational role")
     elif pos == "QB":
         att_pg = _safe(ls.get("pass_attempts")) / gp
-        if util >= 70:
+        if util is not None and util >= 70:
             bullets.append(f"High-volume passing attack ({att_pg:.0f} att/game)")
 
     # ── Efficiency ────────────────────────────────────────────────────────────
-    if eff >= 75:
-        bullets.append("High efficiency metrics stand out")
-    elif eff <= 35:
-        bullets.append("Below-average efficiency - volume stats may overstate true impact")
+    if eff is not None:
+        if eff >= 75:
+            bullets.append("High efficiency metrics stand out")
+        elif eff <= 35:
+            bullets.append("Below-average efficiency - volume stats may overstate true impact")
 
     # ── Advanced metrics ──────────────────────────────────────────────────────
     if pos in ("WR", "TE"):
@@ -2992,9 +3498,9 @@ def _build_reasons(
     elif age_sc < 40 and age is not None:
         bullets.append(f"Age concern: {age:.1f} yrs is older than typical for this position")
 
-    if break_sc >= 75:
+    if break_sc is not None and break_sc >= 75:
         bullets.append("Clear breakout trajectory - early-career dominance at a young age")
-    elif break_sc >= 60:
+    elif break_sc is not None and break_sc >= 60:
         bullets.append("Solid breakout profile - consistent improvement season-over-season")
 
     # ── Athleticism ───────────────────────────────────────────────────────────
@@ -3017,9 +3523,9 @@ def _build_reasons(
 
     # ── Competition ───────────────────────────────────────────────────────────
     conf = ls.get("conference", "")
-    if comp_sc >= 70:
+    if comp_sc is not None and comp_sc >= 70:
         bullets.append(f"Production came against quality competition")
-    elif comp_sc <= 40:
+    elif comp_sc is not None and comp_sc <= 40:
         bullets.append(f"Played at lower competition level ({conf}) - discount applied")
 
     # ── Transfer history ──────────────────────────────────────────────────────

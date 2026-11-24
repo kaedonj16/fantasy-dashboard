@@ -1829,6 +1829,18 @@ def _filter_active_nfl_players(prospects: List[Dict], draft_year: int) -> List[D
     return prospects
 
 
+def _drop_placeholder_seasons(seasons):
+    """v3.8 (M1): remove placeholder season rows - a stored season with
+    every counting stat NULL (the eval pipeline writes one for the
+    draft year, e.g. season=2027). They are storage artifacts, not
+    seasons: dropped here, at the assembly layer that reads the store,
+    so no downstream consumer can read one as a real season. A prospect
+    left with zero real seasons scores through the model's empty-list
+    neutral paths and is flagged data_quality="truncated"."""
+    from .prospect_model import season_has_counting_stats
+    return [s for s in (seasons or []) if season_has_counting_stats(s)]
+
+
 def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
     """
     Load complete prospect data from database including seasons and athleticism.
@@ -1974,14 +1986,23 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
               f"({len(players_with_snapshot)} from snapshots, "
               f"{n_eval - len(players_with_snapshot)} from fallback rows)")
 
-        # Attach stats, athleticism, and eval metrics to prospects
+        # Attach stats, athleticism, and eval metrics to prospects.
+        # v3.8 (M1): drop placeholder season rows at assembly (see
+        # _drop_placeholder_seasons) so the stored profile itself is
+        # clean for every consumer, not just the scorer.
+        _n_phantom = 0
         for prospect in prospects:
             player_id = prospect["player_id"]
-            prospect["seasons"] = stats_by_player.get(player_id, [])
+            _raw_seasons = stats_by_player.get(player_id, [])
+            prospect["seasons"] = _drop_placeholder_seasons(_raw_seasons)
+            _n_phantom += len(_raw_seasons) - len(prospect["seasons"])
             prospect["athleticism"] = ath_by_player.get(player_id, {})
             eval_metrics = eval_by_player.get(player_id)
             if eval_metrics:
                 prospect["_eval_metrics"] = eval_metrics
+        if _n_phantom:
+            print(f"[pipeline] Dropped {_n_phantom} placeholder season "
+                  f"row(s) (no counting stats) at profile assembly")
 
         # ── Model v2.0 sources: recruiting pedigree, WEPA, team context ──
         cur.execute(
