@@ -27,10 +27,13 @@ CDN_SUMMARY_URL = "https://cdn.espn.com/core/nfl/playbyplay"
 UA = "BRFantasy/1.0 (+https://brfantasyfootball.com)"
 TEAM_ALIASES = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR"}
 # Fallback final-score source when ESPN blocks the scoreboard (403). nflverse
-# publishes one games.csv.gz for all seasons; it carries home/away final scores
+# publishes one games.csv for all seasons; it carries home/away final scores
 # for completed games, so a finished week still renders "Final 24-31 @ LV"
 # even with ESPN down. Live games have blank scores and are skipped.
-_NFLVERSE_GAMES_URL = "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv.gz"
+# (The schedules release used to also ship games.csv.gz; that asset was
+# dropped upstream and the .gz URL now 404s, which silently emptied every
+# consumer of these rows. The plain .csv is the only asset left.)
+_NFLVERSE_GAMES_URL = "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv"
 _NFLVERSE_GAMES_TTL = 6 * 3600.0
 _nflverse_games_lock = threading.Lock()
 
@@ -366,7 +369,12 @@ def _nflverse_games_rows() -> list[dict]:
                     resp = _session.get(_NFLVERSE_GAMES_URL, timeout=(3.05, 20.0))
                     resp.raise_for_status()
                     tmp = path.with_name(path.name + ".tmp")
-                    tmp.write_bytes(gzip.decompress(resp.content))
+                    # The release asset is a plain CSV now; tolerate a
+                    # gzipped body anyway in case upstream flips back.
+                    content = resp.content
+                    if content[:2] == b"\x1f\x8b":
+                        content = gzip.decompress(content)
+                    tmp.write_bytes(content)
                     tmp.replace(path)
                 except Exception:
                     log.warning("nflverse games.csv download failed", exc_info=True)
