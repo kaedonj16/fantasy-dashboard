@@ -501,6 +501,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rc-initials { width: 86px; height: 96px; flex: 0 0 86px; background: linear-gradient(180deg, #224a73, #162f4d); border: 1px solid rgba(255,255,255,.18); border-bottom: 4px solid #38bdf8; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 4px; }
   .rc-initials b { font-size: 32px; font-weight: 900; letter-spacing: .02em; line-height: 1; color: #fff; }
   .rc-initials span { font-size: 9px; letter-spacing: .18em; font-weight: 700; color: #a9c6e2; margin-top: 6px; text-transform: uppercase; line-height: 1.25; }
+  .rc-headshot { width: 86px; height: 96px; flex: 0 0 86px; display: block; object-fit: cover; object-position: 50% 0; background: linear-gradient(180deg, #224a73, #162f4d); border: 1px solid rgba(255,255,255,.18); border-bottom: 4px solid #38bdf8; }
+  .rc-mini-headshot { width: 26px; height: 26px; flex: 0 0 26px; display: block; object-fit: cover; object-position: 50% 0; background: #1b3f66; border: 1px solid rgba(255,255,255,.25); border-bottom: 2px solid #38bdf8; }
   .rc-nameblock { min-width: 0; }
   .rc-first { font-size: 15px; font-weight: 700; letter-spacing: .38em; text-transform: uppercase; color: #cfe6f7; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rc-last { font-size: 56px; font-weight: 900; letter-spacing: -.02em; line-height: .95; text-transform: uppercase; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -696,6 +698,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .rc-first { letter-spacing: .3em; font-size: 11px; }
     .rc-initials { width: 56px; height: 64px; flex-basis: 56px; }
     .rc-initials b { font-size: 22px; }
+    .rc-headshot { width: 56px; height: 64px; flex-basis: 56px; }
     .rc-hero-right { flex: none; text-align: left; align-items: stretch; justify-content: flex-start; border-left: none; border-top: 1px solid rgba(255,255,255,.16); padding: 14px 20px 20px; flex-direction: column; gap: 0; }
     .rc-grade-block { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; text-align: left; }
     .rc-grade-num { font-size: 56px; }
@@ -1330,6 +1333,20 @@ def build_prospects_body(is_admin: bool = False) -> str:
     return (a + b).toUpperCase();
   }
 
+  // Headshot error fallback: a dead CDN URL swaps back to the initials
+  // tile the photo replaced, so the hero/mini never shows a broken hole.
+  function rkRcImgFallback(img) {
+    var mini = img.hasAttribute('data-fb-mini');
+    var tile = document.createElement(mini ? 'span' : 'div');
+    tile.className = mini ? 'rc-mini-initials' : 'rc-initials';
+    tile.innerHTML = mini
+      ? rkEsc(rkRcInitials(img.getAttribute('data-fb-name') || ''))
+      : '<b>' + rkEsc(rkRcInitials(img.getAttribute('data-fb-name') || '')) + '</b>' +
+        (img.getAttribute('data-fb-school')
+          ? '<span>' + rkEsc(img.getAttribute('data-fb-school')) + '</span>' : '');
+    img.replaceWith(tile);
+  }
+
   function rkRcGradeOf(r, d) {
     var v = (d && d.prospect_score != null && d.prospect_score !== '')
       ? d.prospect_score : r.prospect_score;
@@ -1907,6 +1924,18 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
     var grade = rkRcGradeOf(r, null);
 
+    // Hero/mini photo: the rankings payload already carries the ESPN
+    // college headshot (espnHeadshot/headshot_url); initials are only
+    // the fallback for prospects with no photo or a dead URL.
+    var hsUrl = r.espnHeadshot || r.headshot_url || '';
+    var heroTile = hsUrl
+      ? '<img class="rc-headshot" src="' + rkEsc(hsUrl) + '" alt="" loading="lazy" data-fb-name="' + rkEsc(name) + '" data-fb-school="' + rkEsc(r.school || '') + '" onerror="rkRcImgFallback(this)">'
+      : '<div class="rc-initials"><b>' + rkEsc(rkRcInitials(name)) + '</b>' +
+          (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') + '</div>';
+    var miniTile = hsUrl
+      ? '<img class="rc-mini-headshot" src="' + rkEsc(hsUrl) + '" alt="" loading="lazy" data-fb-mini="1" data-fb-name="' + rkEsc(name) + '" onerror="rkRcImgFallback(this)">'
+      : '<span class="rc-mini-initials">' + rkEsc(rkRcInitials(name)) + '</span>';
+
     content.innerHTML =
       '<div class="rc-actions">' +
         '<button class="player-modal-watchlist-btn rk-star rc-icon-btn' +
@@ -1918,8 +1947,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
       '</div>' +
       '<div class="rc-hero">' +
         '<div class="rc-hero-left">' +
-          '<div class="rc-initials"><b>' + rkEsc(rkRcInitials(name)) + '</b>' +
-            (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') + '</div>' +
+          heroTile +
           '<div class="rc-nameblock">' +
             (np.first ? '<div class="rc-first">' + rkEsc(np.first) + '</div>' : '') +
             '<div class="rc-last">' + rkEsc(np.last || name) + '</div>' +
@@ -1943,7 +1971,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '</div>' +
       '</div>' +
       '<div class="rc-mini" id="rkRcMini" aria-hidden="true">' +
-        '<span class="rc-mini-initials">' + rkEsc(rkRcInitials(name)) + '</span>' +
+        miniTile +
         '<span class="rc-mini-name">' + rkEsc(name) + '</span>' +
         '<span class="rc-mini-grade"><span class="rc-mini-num" id="rkRcMiniGrade">-</span>' +
         '<span class="rc-mini-band" id="rkRcMiniBand"></span></span>' +
