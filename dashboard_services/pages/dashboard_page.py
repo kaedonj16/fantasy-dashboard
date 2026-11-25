@@ -368,6 +368,31 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
     except Exception:
         _bb_badge = ""
 
+    # Autopilot status chip (mock): owner preview on the pilot ESPN league
+    # only; names the sample mode and links to the Autopilot page. The gate
+    # fails closed, so every other viewer and league renders as before.
+    _ap_chip = ""
+    try:
+        from dashboard_services.autopilot_preview import autopilot_indicator_mode as _ap_mode_d
+        _apm_d = _ap_mode_d(platform, league_id)
+        if _apm_d:
+            _ap_href_d = url_for(
+                "league_pages.page_autopilot", platform=platform,
+                season=season, league_id=str(league_id))
+            # On the navy hero banner, follow the banner's own pill
+            # treatment (.os-archetype-tag: white on translucent white)
+            # on .pf-status-pill geometry, so the chip sits on navy.
+            _ap_chip = (
+                '<a class="pf-status-pill" href="'
+                + html.escape(_ap_href_d, quote=True) + '" '
+                'style="margin-left:8px;vertical-align:middle;text-decoration:none;'
+                'background:rgba(255,255,255,.15);color:#fff;" '
+                'title="Autopilot preview: status only, controls live on the Autopilot page">'
+                f"Autopilot &middot; {html.escape(_apm_d)}</a>"
+            )
+    except Exception:
+        _ap_chip = ""
+
     # ---- Compact hero strip (dashboard redesign): team identity + 4 stats ----
     _hero_grade_badge = ""
     _hero_archetype_tag = ""
@@ -410,7 +435,7 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
     _hero_strip_html = f"""
     <section class="os-hero-strip">
       <div class="os-hero-strip-team">
-        <div class="os-hero-strip-name">{html.escape(str(_vname or "Season Hub"))}{_bb_badge}</div>
+        <div class="os-hero-strip-name">{html.escape(str(_vname or "Season Hub"))}{_bb_badge}{_ap_chip}</div>
         <div class="os-hero-strip-badges">{_hero_grade_badge}{_hero_archetype_tag}</div>
       </div>
       <div class="os-hero-strip-div"></div>

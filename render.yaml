@@ -61,6 +61,14 @@ services:
         sync: false
       - key: ADMIN_SECRET
         sync: false
+      # Owner-preview allowlist for the Autopilot page mock (unbuilt,
+      # PRO-gated feature): accounts whose sign-in email is listed here can
+      # see the gated Autopilot tab/page/indicators on the pilot ESPN
+      # league. AUTOPILOT_PREVIEW_ACCOUNT_IDS is the id-based alternative.
+      - key: AUTOPILOT_PREVIEW_EMAILS
+        value: kaedonj@brfantasyfootball.com
+      - key: AUTOPILOT_PREVIEW_ACCOUNT_IDS
+        sync: false
       # Shared with cron jobs (cache flush, hourly/weekly notification triggers).
       - key: CRON_SECRET
         sync: false
