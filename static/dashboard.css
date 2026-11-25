@@ -34918,6 +34918,431 @@ table.mid-table {
     }
 }
 
+/* ============================================================
+   Prospect report card modal (shared): the prospects page's
+   rkRc* modal and the app.js fallback modal (rcfRc*) render
+   the same report card, so its styles live here, not in a
+   page. Includes the .tag-chip family the comparables use.
+   Placement/convention notes: this block lives with the other
+   prospect shared components, not in the file tail (the tail is
+   pinned by other components' CSS contracts). Pill ends use
+   99px (999px is banned site-wide), and the phone layout uses
+   the existing 1024px breakpoint with small refinements at
+   560px, per the dashboard.css breakpoint ratchet.
+   ============================================================ */
+/* Tag chips: one geometry, equal tint/border alpha across the bands */
+.tag-chip { display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 4px 9px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--text); }
+.tag-chip.tag-mini { font-size: 10px; padding: 2px 7px; }
+.tag-elite { background: color-mix(in srgb, #122d4b 12%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, #122d4b 30%, transparent); }
+.tag-great { background: rgba(56,189,248,.13); color: color-mix(in srgb, #38bdf8 65%, var(--text)); border: 1px solid rgba(56,189,248,.30); }
+.tag-average { background: rgba(148,163,184,.14); color: #94a3b8; border: 1px solid rgba(148,163,184,.30); }
+.tag-day3 { background: rgba(100,116,139,.14); color: #94a3b8; border: 1px solid rgba(100,116,139,.30); }
+
+/* ===== Modal: prospect report card (single scroll, no tabs) ===== */
+/* Navy header band is constant in both themes; every other surface
+   rides the site variables so dark mode stays native. */
+#rkModalContent .tag-chip, #rkModalContent .state-chip { font-size: 11px; }
+.rc-actions { position: absolute; top: 10px; right: 12px; z-index: 5; display: flex; gap: 8px; }
+.rc-icon-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.10); color: #fff; font-size: 17px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+.rc-icon-btn:hover { background: rgba(255,255,255,.20); }
+.rc-icon-btn .wl-star-glyph { font-size: 17px; }
+.rc-hero { background: #122d4b; color: #fff; display: flex; gap: 22px; align-items: stretch; border-radius: 16px 16px 0 0; }
+.rc-hero-left { display: flex; gap: 18px; align-items: center; padding: 22px 0 22px 22px; flex: 1; min-width: 0; }
+.rc-initials { width: 86px; height: 96px; flex: 0 0 86px; background: linear-gradient(180deg, #224a73, #162f4d); border: 1px solid rgba(255,255,255,.18); border-bottom: 4px solid #38bdf8; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 4px; }
+.rc-initials b { font-size: 32px; font-weight: 900; letter-spacing: .02em; line-height: 1; color: #fff; }
+.rc-initials span { font-size: 9px; letter-spacing: .18em; font-weight: 700; color: #a9c6e2; margin-top: 6px; text-transform: uppercase; line-height: 1.25; }
+.rc-headshot { width: 86px; height: 96px; flex: 0 0 86px; display: block; object-fit: cover; object-position: 50% 0; background: linear-gradient(180deg, #224a73, #162f4d); border: 1px solid rgba(255,255,255,.18); border-bottom: 4px solid #38bdf8; }
+.rc-mini-headshot { width: 26px; height: 26px; flex: 0 0 26px; display: block; object-fit: cover; object-position: 50% 0; background: #1b3f66; border: 1px solid rgba(255,255,255,.25); border-bottom: 2px solid #38bdf8; }
+.rc-nameblock { min-width: 0; }
+.rc-first { font-size: 15px; font-weight: 700; letter-spacing: .38em; text-transform: uppercase; color: #cfe6f7; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-last { font-size: 56px; font-weight: 900; letter-spacing: -.02em; line-height: .95; text-transform: uppercase; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-meta1 { margin-top: 12px; font-size: 13.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #fff; }
+.rc-meta1 .rc-sep { color: #6f8fb3; font-weight: 400; }
+.rc-meta1 .rc-pos { color: #38bdf8; }
+.rc-vitals { margin-top: 6px; font-size: 12.5px; color: #b9cfe4; font-weight: 500; letter-spacing: .02em; }
+.rc-vitals b { color: #fff; font-weight: 700; }
+.rc-hero-right { text-align: right; padding: 40px 24px 22px 18px; border-left: 1px solid rgba(255,255,255,.16); display: flex; flex-direction: column; justify-content: center; align-items: flex-end; flex: 0 0 300px; }
+.rc-grade-num { font-size: 80px; font-weight: 900; line-height: .9; letter-spacing: -.03em; color: #fff; font-variant-numeric: tabular-nums; }
+.rc-grade-label { margin-top: 8px; font-size: 11px; font-weight: 800; letter-spacing: .24em; text-transform: uppercase; color: #7dd3fc; }
+.rc-grade-context { margin-top: 10px; font-size: 13.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; }
+.rc-grade-context .rc-dot { color: #6f8fb3; font-weight: 400; margin: 0 5px; }
+.rc-grade-context .rc-band-name { color: #38bdf8; }
+.rc-hero-note { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: #c2d6ea; max-width: 250px; font-weight: 500; }
+.rc-hero-note strong { color: #fff; }
+.rc-grade-stack { min-width: 0; }
+.rc-inseason-pill { display: inline-block; margin-top: 9px; background: transparent; border: 1px solid #38bdf8; color: #7dd3fc; font-size: 9.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; padding: 5px 8px; border-radius: 99px; line-height: 1; white-space: nowrap; }
+
+/* Sticky mini-header: sticks to the top of the modal scroll box
+   once the hero header has scrolled out of it, sliding in over
+   ~240ms; hidden and inert while the hero is visible. Its flow
+   height is cancelled by the negative bottom margin, so toggling
+   it never shifts the content under it. */
+.rc-mini { position: sticky; top: 0; z-index: 45; height: 44px; margin-bottom: -44px; background: #122d4b; color: #fff; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid #38bdf8; border-radius: 16px 16px 0 0; transform: translateY(-100%); opacity: 0; visibility: hidden; pointer-events: none; transition: transform 240ms ease-out, opacity 240ms ease-out, visibility 0s linear 240ms; }
+.rc-mini.is-visible { transform: translateY(0); opacity: 1; visibility: visible; pointer-events: auto; transition: transform 240ms ease-out, opacity 240ms ease-out, visibility 0s; }
+@media (prefers-reduced-motion: reduce) {
+  .rc-mini, .rc-mini.is-visible { transition: none; }
+}
+.rc-mini-initials { width: 26px; height: 26px; flex: 0 0 26px; background: #1b3f66; border: 1px solid rgba(255,255,255,.25); border-bottom: 2px solid #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 800; letter-spacing: .02em; color: #fff; line-height: 1; }
+.rc-mini-name { font-size: 14px; font-weight: 800; letter-spacing: .01em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-mini-grade { margin-left: auto; display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.rc-mini-num { font-size: 17px; font-weight: 800; letter-spacing: -.02em; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
+.rc-mini-band { font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #38bdf8; }
+
+/* Archetype band */
+.rc-arch { background: var(--card); border-bottom: 1px solid var(--border); border-left: 4px solid var(--accent); padding: 20px 22px; display: flex; gap: 24px; justify-content: space-between; align-items: flex-start; }
+.rc-arch-main { flex: 1; min-width: 0; }
+.rc-arch-label { font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--text); }
+.rc-arch-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.rc-arch-title { margin: 0; font-size: 38px; font-weight: 900; letter-spacing: -.02em; line-height: 1; color: var(--text); }
+.rc-arch-tag { background: rgba(56,189,248,.14); border: 1px solid rgba(56,189,248,.35); color: color-mix(in srgb, #38bdf8 55%, var(--text)); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 6px 10px; border-radius: 99px; line-height: 1; white-space: nowrap; }
+.rc-arch-ev { margin: 11px 0 0; font-size: 12px; line-height: 1.55; font-weight: 400; color: var(--text-muted); }
+.rc-arch-ev b { color: var(--text); font-weight: 600; }
+.rc-ev-sep { color: var(--text-subtle); margin: 0 4px; }
+.rc-arch-conf { flex: 0 0 172px; width: 172px; border: 1px solid var(--border); background: var(--bg-alt); padding: 13px; }
+.rc-arch-conf-label { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text); line-height: 1.35; }
+.rc-meter { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 10px; }
+.rc-meter .rc-seg { height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--text-muted) 22%, transparent); display: block; }
+.rc-meter .rc-seg.on { background: #38bdf8; }
+
+/* Body grid: rail + main */
+.rc-body { display: grid; grid-template-columns: 300px 1fr; }
+.rc-rail { border-right: 1px solid var(--border); padding: 20px 18px 22px 20px; min-width: 0; }
+/* The Class Standing panel is a sibling of the comps section (it
+   reorders separately on phones); its own top margin carries the
+   gap the section margin used to add. */
+.rc-rail .rc-section { margin-bottom: 0; }
+.rc-main { padding: 20px 22px 22px; min-width: 0; }
+.rc-section { margin-bottom: 26px; }
+.rc-section:last-child { margin-bottom: 4px; }
+.rc-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 2px solid var(--accent); padding-bottom: 7px; margin-bottom: 12px; }
+.rc-sec-head h3 { margin: 0; font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text); white-space: nowrap; }
+.rc-sec-head .rc-side { font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-subtle); }
+.rc-subline { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; line-height: 1.45; font-weight: 500; }
+.rc-empty { font-size: 13px; color: var(--text-muted); padding: 6px 0; }
+
+/* Comparables + class standing (rail) */
+.rc-comp { display: flex; gap: 11px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.rc-comp:last-of-type { border-bottom: none; }
+.rc-disc { width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; letter-spacing: .02em; background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent); color: var(--pc, var(--accent)); border: 1px solid color-mix(in srgb, var(--pc, var(--accent)) 35%, transparent); }
+.rc-comp-info { flex: 1; min-width: 0; }
+.rc-comp-name { font-size: 13.5px; font-weight: 800; line-height: 1.2; color: var(--text); }
+.rc-comp-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; font-weight: 500; line-height: 1.35; }
+.rc-panel { border: 1px solid var(--border); background: var(--bg-alt); padding: 14px 14px 12px; margin-top: 18px; }
+.rc-panel-h { margin: 0 0 10px; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--text); }
+.rc-kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
+.rc-kv:first-of-type { border-top: none; padding-top: 2px; }
+.rc-kv .rc-k { color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+.rc-kv .rc-v { font-weight: 800; color: var(--text); text-align: right; }
+.rc-kv .rc-v.sky { color: #0284c7; }
+[data-theme="dark"] .rc-kv .rc-v.sky { color: #38bdf8; }
+.rc-panel-note { font-size: 12.5px; line-height: 1.5; color: var(--text-muted); margin: 10px 0 0; }
+.rc-panel-note strong { color: var(--text); }
+
+/* Production chart */
+.rc-trend { display: inline-flex; align-items: center; gap: 6px; background: rgba(56,189,248,.14); border: 1px solid rgba(56,189,248,.35); color: color-mix(in srgb, #38bdf8 55%, var(--text)); font-size: 11px; font-weight: 800; letter-spacing: .04em; padding: 6px 9px; border-radius: 99px; white-space: nowrap; }
+.rc-trend b { color: #0284c7; }
+[data-theme="dark"] .rc-trend b { color: #38bdf8; }
+.rc-trend.down { background: var(--accent-soft); border-color: var(--border); color: var(--text-muted); }
+.rc-trend.down b { color: var(--text-muted); }
+.rc-chart { display: grid; gap: 18px; align-items: end; padding: 18px 6px 0; border-bottom: 2px solid var(--accent); }
+.rc-barcol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+.rc-barval { font-size: 22px; font-weight: 900; color: var(--text); line-height: 1; margin-bottom: 8px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.rc-barval.live { color: #0284c7; }
+[data-theme="dark"] .rc-barval.live { color: #38bdf8; }
+.rc-bar { width: 100%; max-width: 118px; border-radius: 3px 3px 0 0; background: color-mix(in srgb, #122d4b 45%, #38bdf8); }
+.rc-bar.live { background: #38bdf8; }
+.rc-barlabels { display: grid; gap: 18px; padding: 10px 6px 0; text-align: center; }
+.rc-barlab { min-width: 0; }
+.rc-yr { font-size: 15px; font-weight: 800; color: var(--text); }
+.rc-yr.liveyr { color: #0284c7; }
+[data-theme="dark"] .rc-yr.liveyr { color: #38bdf8; }
+.rc-detail { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; font-weight: 500; }
+.rc-inprog { font-size: 10px; font-weight: 800; letter-spacing: .14em; color: #0284c7; text-transform: uppercase; margin-top: 3px; }
+[data-theme="dark"] .rc-inprog { color: #38bdf8; }
+
+/* Season lines table (report-card dialect) */
+.rc-tablewrap { border: 1px solid var(--border); }
+.rc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rc-table th { text-align: right; font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); padding: 9px 12px; background: var(--bg-alt); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.rc-table th:first-child { text-align: left; }
+.rc-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: right; font-weight: 600; color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rc-table td:first-child { text-align: left; font-weight: 800; }
+.rc-table tr:last-child td { border-bottom: none; }
+.rc-table tr.live td { background: color-mix(in srgb, #38bdf8 7%, transparent); }
+.rc-livepill { display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; background: #38bdf8; color: #082f49; padding: 3px 6px; border-radius: 99px; margin-left: 7px; vertical-align: 2px; }
+
+/* Grade Breakdown: the four component percentiles as two-line
+   rows (name + number, then the bar alone). */
+.rc-gb-row { padding: 10px 0 11px; border-bottom: 1px solid var(--border); }
+.rc-gb-row:last-of-type { border-bottom: none; }
+.rc-gb-line1 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+.rc-gb-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.rc-gb-val { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.rc-read-line { margin: 12px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); font-weight: 500; }
+
+/* Season Lines phone grid: strict fixed columns so every value
+   right-aligns to a shared column edge; open hairline rows, no
+   box, no filled header band. The table above serves wider
+   layouts; the grid replaces it at the phone breakpoint. */
+.rc-season-grid { display: none; }
+.rc-sg-row { display: grid; column-gap: 10px; align-items: start; }
+.rc-sg-head { padding: 0 0 10px; border-bottom: 1px solid var(--border); }
+.rc-sg-h { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.rc-sg-h.rc-sg-season { text-align: left; }
+.rc-sg-row:not(.rc-sg-head) { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.rc-sg-row.rc-sg-last { border-bottom: none; }
+.rc-sg-row.live { background: color-mix(in srgb, #38bdf8 7%, transparent); }
+.rc-sg-c { font-size: 14px; line-height: 1.25; font-weight: 600; color: var(--text); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rc-sg-c.rc-sg-season { text-align: left; font-weight: 700; }
+.rc-sg-row.live .rc-sg-c.rc-sg-season { color: #0284c7; }
+[data-theme="dark"] .rc-sg-row.live .rc-sg-c.rc-sg-season { color: #38bdf8; }
+.rc-sg-dash { color: var(--text-subtle); }
+/* Year-over-year delta: a quiet second line under the Yds/G value,
+   in the phone grid and in the desktop table's rate column. */
+.rc-sg-c .rc-yds-val, .rc-table .rc-yds-val { display: block; }
+.rc-sg-c .rc-yds-delta, .rc-table .rc-yds-delta { display: block; margin-top: 2px; font-size: 10.5px; font-weight: 600; line-height: 1.3; color: #0284c7; white-space: nowrap; }
+[data-theme="dark"] .rc-sg-c .rc-yds-delta, [data-theme="dark"] .rc-table .rc-yds-delta { color: #38bdf8; }
+.rc-sg-c .rc-yds-delta.neg, .rc-table .rc-yds-delta.neg { color: var(--text-muted); }
+
+/* Metric breakdown */
+.rc-metric-head, .rc-metric-row { display: grid; grid-template-columns: 1fr 64px 130px 118px; gap: 12px; align-items: center; }
+.rc-metric-head { font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-subtle); padding: 0 0 7px; }
+.rc-metric-head .r { text-align: right; }
+.rc-group { border: 1px solid var(--border); margin-bottom: 10px; display: grid; grid-template-columns: 108px 1fr; background: var(--card); }
+.rc-group-label { background: var(--accent-soft); color: var(--text); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px 8px; line-height: 1.3; border-right: 1px solid var(--border); }
+.rc-group-rows { padding: 2px 12px; min-width: 0; }
+.rc-metric-row { padding: 9px 0; border-bottom: 1px solid var(--border); }
+.rc-metric-row:last-child { border-bottom: none; }
+.rc-m-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.rc-m-val { font-size: 13.5px; font-weight: 800; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.rc-mbar { height: 8px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); border-radius: 99px; display: block; position: relative; }
+.rc-mbar i { display: block; height: 100%; background: #38bdf8; border-radius: 99px; }
+/* Midpoint tick at the 50% mark on every percentile bar. */
+.rc-mbar::after { content: ""; position: absolute; left: 50%; top: -2px; margin-left: -1px; width: 2px; height: 12px; border-radius: 1px; background: var(--text-muted); opacity: .55; pointer-events: none; }
+.rc-mbar.empty { background: transparent; }
+.rc-mpct { font-size: 12.5px; font-weight: 700; color: var(--text); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rc-mpct.high { color: #60a5fa; font-weight: 800; }
+.rc-mpct.none { color: var(--text-subtle); font-weight: 500; }
+
+/* Scouting notes */
+.rc-notes { list-style: none; margin: 0; padding: 0; }
+.rc-notes li { display: flex; gap: 11px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; line-height: 1.5; color: var(--text); font-weight: 500; }
+.rc-notes li:last-child { border-bottom: none; }
+.rc-notes .rc-n { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--card); font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+
+/* Footer strip */
+.rc-foot { border-top: 1px solid var(--border); padding: 12px 22px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: var(--bg-alt); border-radius: 0 0 16px 16px; align-items: center; }
+.rc-foot p { margin: 0; font-size: 11px; line-height: 1.5; color: var(--text-muted); font-weight: 500; }
+.rc-foot .rc-brand { font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text); font-size: 11px; white-space: nowrap; }
+
+@media (max-width: 1024px) {
+  /* Phone report card (approved mobile mock): one column, roomy
+     20px sides, ~34px section gaps, only the navy header and the
+     archetype band full-bleed. The rail/main wrappers dissolve
+     (display: contents) so the sections order as: archetype,
+     class standing, grade breakdown, production, season lines,
+     metric breakdown, comparables, scouting notes. */
+  .rc-hero { flex-direction: column; }
+  .rc-hero-left { padding: 20px 76px 4px 20px; }
+  .rc-last { font-size: 34px; }
+  .rc-first { letter-spacing: .3em; font-size: 11px; }
+  .rc-initials { width: 56px; height: 64px; flex-basis: 56px; }
+  .rc-initials b { font-size: 22px; }
+  .rc-headshot { width: 56px; height: 64px; flex-basis: 56px; }
+  .rc-hero-right { flex: none; text-align: left; align-items: stretch; justify-content: flex-start; border-left: none; border-top: 1px solid rgba(255,255,255,.16); padding: 14px 20px 20px; flex-direction: column; gap: 0; }
+  .rc-grade-block { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; text-align: left; }
+  .rc-grade-num { font-size: 56px; }
+  .rc-hero-note { flex: none; max-width: 100%; margin-top: 12px; }
+  .rc-arch { flex-direction: column; gap: 16px; padding: 20px; }
+  .rc-arch-title { font-size: 32px; }
+  /* Confidence: a slim borderless row, label left, meter right. */
+  .rc-arch-conf { flex: none; width: 100%; border: none; border-top: 1px solid var(--border); background: transparent; padding: 11px 0 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .rc-meter { display: flex; gap: 4px; margin-top: 0; }
+  .rc-meter .rc-seg { width: 30px; height: 8px; flex: 0 0 30px; }
+  .rc-body { display: flex; flex-direction: column; padding: 2px 20px 10px; }
+  .rc-rail, .rc-main, .rc-comps-section { display: contents; }
+  .rc-section { margin-top: 34px; margin-bottom: 0; }
+  #rkRcStanding { order: 1; margin-top: 26px; }
+  .rc-sec-grade { order: 2; }
+  .rc-sec-prod { order: 3; }
+  .rc-sec-season { order: 4; }
+  .rc-sec-metrics { order: 5; }
+  .rc-comps-head { order: 6; margin-top: 34px; }
+  .rc-comps-sub { order: 6; }
+  #rkRcComps { order: 6; }
+  .rc-sec-notes { order: 7; }
+  .rc-chart, .rc-barlabels { gap: 10px; }
+  .rc-barval { font-size: 18px; }
+  /* The live season reads from the sky year + games text alone. */
+  .rc-inprog { display: none; }
+  .rc-sec-head { flex-wrap: wrap; }
+  .rc-sec-head h3 { white-space: normal; }
+  .rc-trend { white-space: normal; line-height: 1.35; }
+  /* Season Lines: the strict phone grid replaces the table. */
+  .rc-season-desktop { display: none; }
+  .rc-season-grid { display: block; }
+  /* Metric Breakdown: plain group headers over two-line rows
+     (name + value, then the bar with a compact percentile label). */
+  .rc-metric-head { display: none; }
+  .rc-group { grid-template-columns: 1fr; border: none; background: transparent; margin-bottom: 14px; }
+  .rc-group-label { background: transparent; justify-content: flex-start; text-align: left; padding: 8px 0 6px; border-right: none; border-bottom: 1px solid var(--border); }
+  .rc-group-rows { padding: 0; }
+  .rc-metric-row { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "name val" "bar pct"; column-gap: 10px; row-gap: 7px; align-items: center; padding: 11px 0 12px; }
+  .rc-m-name { grid-area: name; font-size: 13.5px; }
+  .rc-m-val { grid-area: val; }
+  .rc-mbar { grid-area: bar; }
+  .rc-mbar.empty { background: color-mix(in srgb, var(--text-muted) 14%, transparent); }
+  .rc-mpct { grid-area: pct; font-size: 11px; min-width: 30px; }
+  .rc-mpct .rc-mpct-word { display: none; }
+  .rc-table th, .rc-table td { padding: 8px 6px; }
+  .rc-table th { font-size: 9.5px; letter-spacing: .06em; }
+  .rc-table { font-size: 12.5px; }
+  .rc-foot { padding: 12px 20px; }
+}
+
+/* Player-modal-style prospect modal: initials tile for the headshot slot
+   when a prospect has no photo (mirrors the player modal fallback). */
+.rk-hs-initials { width: 160px; height: 135px; background: var(--accent-soft); color: var(--accent);
+  display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 800; letter-spacing: .02em; }
+
+.m-sec-hint { font-size: 11px; color: var(--text-subtle); margin-left: auto; }
+
+/* Class context strip */
+.ctx-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+.ctx-strip .stand { font-weight: 700; color: var(--text); }
+.ctx-strip .who { font-weight: 700; color: var(--text); }
+.ctx-sep { opacity: .35; }
+
+/* Percentile panel: number-first read, railed bar, raw-stat sub-line */
+.pct-item { display: grid; grid-template-columns: 112px 1fr 38px; column-gap: 12px; align-items: center; margin-top: 13px; }
+.pct-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.pct-track { display: block; height: 7px; background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 99px; overflow: hidden; }
+.pct-fill { display: block; height: 100%; border-radius: 99px; opacity: .92; }
+.pct-val { font-size: 14px; font-weight: 700; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
+.pct-sub { grid-column: 2; font-size: 11px; color: var(--text-subtle); margin-top: 4px; line-height: 1.35; }
+
+/* Season table (modal dialect). The scroll wrapper is the site's
+   table treatment: the full per-season stat set scrolls inside its
+   own container; the modal/page never overflows horizontally. */
+.rk-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.rk-table-scroll .m-season-table { min-width: 100%; }
+.m-season-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; color: var(--text); }
+.m-season-table th { text-align: right; font-weight: 700; color: var(--text-muted); padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.m-season-table th:first-child, .m-season-table td:first-child { text-align: left; }
+.m-season-table td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.m-season-table tr:last-child td { border-bottom: none; }
+.m-season-table td.yr { font-weight: 700; color: var(--text-muted); }
+.m-season-table td.pg { font-weight: 700; }
+.m-season-table td.team { text-align: left; font-family: var(--font-sans); font-size: 12px; }
+.m-season-table th.team { text-align: left; }
+.m-season-table td.tst { text-align: left; font-family: var(--font-sans); font-size: 12px; font-weight: 600; }
+.m-season-table th.tst { text-align: left; }
+.inprog { display: inline-block; margin-left: 8px; padding: 2px 6px; border-radius: 5px; font-size: 9.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; font-family: var(--font-sans); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); vertical-align: 1px; white-space: nowrap; }
+/* Testing table percentile cell: mini railed bar + value */
+.tpct { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.tpct .pct-track { width: 64px; flex: none; }
+.tpct .n { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.tpct .none { color: var(--text-subtle); }
+/* Season-line percentile cell */
+.pct-mini { display: inline-flex; align-items: center; gap: 7px; justify-content: flex-end; }
+.pct-mini .pct-track { width: 52px; height: 5px; flex: none; }
+.pct-mini b { font-weight: 700; color: var(--text); }
+.pct-mini-none { color: var(--text-subtle); }
+
+/* Production trajectory bars (live treatment) */
+.rk-traj { display: flex; gap: 14px; align-items: flex-end; margin: 8px 0; width: 100%; }
+.rk-tbar { position: relative; display: flex; flex-direction: column; align-items: center; flex: 1 1 0; min-width: 0; }
+.rk-ttrack { display: flex; align-items: flex-end; justify-content: center; height: 110px; width: 100%; }
+.rk-tfill { width: 100%; border-radius: 6px 6px 0 0; background: color-mix(in srgb, #122d4b 45%, #38bdf8); opacity: 1; }
+.rk-tbar.live .rk-tfill { background: #38bdf8; }
+.rk-tpg { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 6px; }
+.rk-tyr { font-size: 10.5px; color: var(--text-muted); font-weight: 700; margin-top: 1px; text-align: center; }
+.rk-live-tag { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); font-size: 8.5px; font-weight: 800; letter-spacing: .08em; color: #122d4b; background: #38bdf8; border-radius: 4px; padding: 2px 6px; white-space: nowrap; z-index: 2; }
+.rk-trend-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-top: 10px; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
+.rk-trend-note b { color: var(--text); }
+
+/* Advanced metrics: percentile-only table */
+.rk-adv-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rk-adv-tbl th { text-align: left; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; color: var(--text-subtle); text-transform: uppercase; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.rk-adv-tbl th.r, .rk-adv-tbl td.r { text-align: right; }
+.rk-adv-tbl td { padding: 7px 8px; border-bottom: 1px solid var(--border); font-family: ui-monospace, Menlo, monospace; }
+.rk-adv-tbl tr:last-child td { border-bottom: none; }
+.rk-adv-tbl td.rk-adv-name { font-family: var(--font-sans); font-weight: 600; color: var(--text); }
+.rk-adv-raw { font-weight: 800; font-size: 13px; }
+.rk-pbar { display: inline-block; width: 72px; height: 5px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); border-radius: 3px; vertical-align: middle; margin-right: 8px; overflow: hidden; }
+.rk-pbar i { display: block; height: 100%; border-radius: 3px; }
+.rk-pctl { font-weight: 700; color: var(--text-muted); font-size: 11.5px; }
+.rk-pctl b { color: var(--text); }
+
+/* Historical comparables */
+.m-sim-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.m-sim-row:last-child { border-bottom: none; }
+.m-sim-disc {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800;
+  background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent);
+  color: var(--pc, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--pc, var(--accent)) 35%, transparent);
+  position: relative; overflow: hidden;
+}
+.m-sim-disc img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.m-sim-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.m-sim-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.m-sim-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Detail loading shimmer */
+.rk-detail-loading { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); padding: 12px 0; }
+
+@media (max-width: 768px) {
+  .rk-hs-initials { width: 64px; height: 64px; min-height: 0; font-size: 22px; align-self: flex-start; flex: none; }
+
+  /* Modal: same centered-card treatment as the standard player modal on mobile */
+  #rkModal { padding: 16px 4px !important; align-items: center !important; }
+  #rkModalContent {
+    /* Fixed height (not max-height) so the card stays the same size whether the
+       detail content is loading or loaded -- mirrors .player-modal. */
+    height: 88dvh;
+    height: 88vh;
+    max-height: 88dvh;
+    max-height: 88vh;
+    max-width: calc(100% - 8px) !important;
+    border-radius: var(--radius, 16px) !important;
+    margin: auto;
+    /* The sheet itself never scrolls sideways; wide inner tables keep
+       their own scroll wrappers. */
+    overflow-x: hidden;
+  }
+
+  /* Header meta on phones: the dot separators are separate flex items and
+     strand at line ends when the line wraps. Drop them and let the flex
+     gap separate the parts instead. */
+  #rkModalContent .rk-meta-line { gap: 2px 10px !important; }
+  #rkModalContent .rk-meta-sep { display: none; }
+
+  /* Season table: compact padding */
+  .m-season-table th, .m-season-table td { padding: 6px 5px; }
+  .pct-item { grid-template-columns: 96px 1fr 34px; column-gap: 10px; }
+  .pct-mini .pct-track { width: 38px; }
+  .rk-pbar { width: 52px; margin-right: 6px; }
+  .rk-adv-tbl td { padding: 7px 5px; }
+  .rk-adv-tbl th { padding: 5px 5px; }
+  .rk-traj { gap: 8px; }
+  .rk-tfill { max-width: 64px; }
+
+  /* Comparables: tighter */
+  .m-sim-row { gap: 8px; padding: 7px 0; }
+  .m-sim-disc { width: 28px; height: 28px; font-size: 10px; }
+}
+
+/* Small-phone fit for the report-card header: the split name and
+   grade numeral step down so neither crowds the initials tile. */
+@media (max-width: 560px) {
+  .rc-last { font-size: 34px; }
+  .rc-grade-num { font-size: 46px; }
+  .rc-hero-left { gap: 12px; }
+}
+
 /* ============================================
    AWARDS PAGE ENHANCEMENTS
    ============================================ */

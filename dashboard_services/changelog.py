@@ -12,6 +12,12 @@ CHANGELOG = [
     },
     {
         "date": "2026-11-24",
+        "tag": "update",
+        "text": "The prospect report card now opens everywhere, not just on the prospects page: open a rookie from the trade calculator or search and you get the same full report card, with his grade breakdown, production chart, season lines, and comparables.",
+        "link": "/prospects"
+    },
+    {
+        "date": "2026-11-24",
         "tag": "new",
         "text": "Prospect boards now go back through history: pick any draft class from 2016 on, or All, to see every class's grades and rankings, with past classes graded by the current model.",
         "link": "/prospects"
