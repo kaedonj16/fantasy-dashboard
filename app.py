@@ -5042,6 +5042,7 @@ _NAV_PAGE_META = {
     "recap": ("news", "league_pages.page_recap", ""),
     "scout": ("swords", "page_weekly", "?tab=scout"),
     "optimal": ("bars2", "page_weekly", "?tab=optimal"),
+    "autopilot": ("sparkles", "league_pages.page_autopilot", ""),
     "scorezone": ("pulse", "page_scorezone", ""),
     "waivers": ("list", "league_pages.page_waivers", ""),
     "lineup-lab": ("flask", "league_pages.page_waivers", "?tab=lab"),
@@ -5068,6 +5069,7 @@ _DOCK_LABELS = {
     "dashboard": "Home", "players": "Rankings", "weekly": "Matchups", "teams": "Teams",
     "draft": "Draft", "keeper": "Keeper", "standings": "Standings", "activity": "Activity",
     "league_health": "Health", "recap": "Recap", "scout": "Scout", "optimal": "Lineup",
+    "autopilot": "Autopilot",
     "scorezone": "ScoreZone", "waivers": "Waivers", "lineup-lab": "Lab", "schedule": "Schedule", "trade": "Trades",
     "trade-suggestions": "Trades", "trade-database": "Trades", "draft-database": "Drafts",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
@@ -5377,6 +5379,13 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("recap", "Weekly Recap", badge_html=_recap_dot_in),
             _sl("optimal", "Lineup Efficiency"),
         ]
+        # Autopilot page mock: owner preview on the pilot ESPN league only.
+        try:
+            from dashboard_services.autopilot_preview import autopilot_page_visible as _ap_visible_m
+            if _ap_visible_m(platform, league_id):
+                rows.append(_sl("autopilot", "Autopilot", pro=True))
+        except Exception:
+            pass
         weekly_html = _sec("Weekly", rows)
 
     # Quick: the fast pages one tap from the root, no category drill-down.
@@ -5454,7 +5463,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
 
     category_keys = {
         "Trades": {"trade", "trade-suggestions", "trade-database", "draft-database"},
-        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "lineup-lab", "schedule", "scorezone"},
+        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "lineup-lab", "schedule", "scorezone", "autopilot"},
         "League": {"standings", "teams", "activity", "league_health"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history", "draft-recap"},
@@ -5477,7 +5486,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         "waivers": "Waivers" if _bb_sheet else "Start/Sit",
         "lineup-lab": "Lineup Lab", "scout": "Opponent Scout",
         "schedule": "Schedule Rankings", "recap": "Weekly Recap",
-        "optimal": "Lineup Efficiency", "standings": "Standings",
+        "optimal": "Lineup Efficiency", "autopilot": "Autopilot", "standings": "Standings",
         "teams": "Teams", "activity": "Activity", "league_health": "League Health",
         "trade": "Trade Calculator", "trade-suggestions": "Trade Hub",
         "trade-database": "Trade Database", "draft-database": "Draft Database",
@@ -7094,16 +7103,30 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             # The Lab is a Start/Sit mode, directly under Waivers & Start/Sit.
             _weekly_items.append(
                 ("Lineup Lab", "league_pages.page_waivers", "lineup-lab", False, "?tab=lab"))
+        # Autopilot page mock: in Play, directly after Lineup Lab, whose
+        # lineup it would execute. Owner preview on the pilot ESPN league only; the
+        # gate fails closed, so no other viewer or league sees the item.
+        # (Kaedon, 2026-11-24: no top-level Autopilot pill of its own.)
+        try:
+            from dashboard_services.autopilot_preview import autopilot_page_visible as _ap_visible_w
+            if _ap_visible_w(platform, league_id):
+                _weekly_items.append(
+                    ("Autopilot <span class='nav-pro-badge'>PRO</span>",
+                     "league_pages.page_autopilot", "autopilot", False))
+        except Exception:
+            pass
         _weekly_items += [
             ("Opponent Scout", "page_weekly", "scout", False, "?tab=scout"),
             ("Schedule Rankings", "page_schedule", "schedule", False),
+        ]
+        _weekly_items += [
             ("Review", None, None),
             (f"Weekly Recap{_recap_dot_in}", "league_pages.page_recap", "recap", False),
             ("Lineup Efficiency", "page_weekly", "optimal", False, "?tab=optimal"),
         ]
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
-            ["weekly", "recap", "scorezone", "scout", "optimal", "waivers", "lineup-lab", "schedule"],
+            ["weekly", "recap", "scorezone", "scout", "optimal", "waivers", "lineup-lab", "schedule", "autopilot"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse, btn_badge_html=_recap_dot,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
@@ -48035,6 +48058,22 @@ def build_portfolio_body(
             f"{live_skel}</div>"
         )
 
+        # Autopilot status badge (mock): owner preview on the pilot ESPN
+        # league only; the gate fails closed for everyone else.
+        _ap_badge = ""
+        try:
+            from dashboard_services.autopilot_preview import autopilot_indicator_mode as _ap_mode
+            _apm = _ap_mode(plat, lid)
+            if _apm:
+                _ap_href = html.escape(
+                    f"/{plat}/{card_season}/{lid}/autopilot", quote=True)
+                _ap_badge = (
+                    f"<div><a class='pf-status-pill pf-status-pill--link' href='{_ap_href}'>"
+                    f"Autopilot &middot; {html.escape(_apm)}</a></div>"
+                )
+        except Exception:
+            _ap_badge = ""
+
         # Headline is the team name (Direction A H4); the league name
         # moves to the meta line. Without a resolved team the league name
         # headlines and the meta line carries platform + posture only.
@@ -48051,6 +48090,7 @@ def build_portfolio_body(
         league_rows += (
             f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-href='{html.escape(str(href), quote=True)}' data-rank='{_rank_i if _rank_i else 999}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
             f"{_lg_header(_headline, _lg_tools(bool(lg.get('is_favorite')), _unlink_btn(plat, lid, card_season)), plat, league_name=_meta_league, posture_html=posture_html, extra=off_note)}"
+            f"{_ap_badge}"
             f"<div class='pf-lg-stats' data-summary-stats>"
             f"<span class='pf-lg-band-main'>"
             f"<span class='pf-lg-rec {rec_cls2}'>{rec}</span>"

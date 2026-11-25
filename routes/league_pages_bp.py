@@ -21,8 +21,9 @@ import logging
 import time
 from datetime import datetime
 
-from flask import Blueprint, jsonify, redirect, request, session, url_for
+from flask import Blueprint, abort, jsonify, redirect, request, session, url_for
 
+from dashboard_services.pages.autopilot_page import build_autopilot_body
 from dashboard_services.pages.waivers_page import build_waivers_body
 
 logger = logging.getLogger(__name__)
@@ -234,6 +235,21 @@ def page_waivers(platform: str, season: int, league_id: str):
         # league's shell is never cached with the Start/Sit tab visible.
         store_page_html(platform, season, league_id, "waivers", body)
     return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
+
+
+@league_pages_bp.route("/<platform>/<int:season>/<league_id>/autopilot")
+def page_autopilot(platform: str, season: int, league_id: str):
+    # Autopilot is an unbuilt feature; this page is a UI mock with sample
+    # data only (no execute endpoint, no writes). It is visible solely to
+    # the owner preview on the pilot ESPN league; everyone and everywhere
+    # else gets a plain 404 so the surface does not exist publicly.
+    from dashboard_services.autopilot_preview import autopilot_page_visible
+
+    if not autopilot_page_visible(platform, league_id):
+        abort(404)
+    ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False) or {}
+    body = build_autopilot_body(platform, season, league_id, ctx)
+    return render_page("BR Fantasy Autopilot", league_id, "autopilot", body, platform, season)
 
 
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/scout")

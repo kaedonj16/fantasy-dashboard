@@ -136,6 +136,15 @@ def api_my_leagues():
                 "needs_reconnect": m.get("connection_status") == "reauth_required",
                 "is_favorite": bool(m.get("is_favorite")),
             }
+            # Autopilot mock indicator: sample mode for the pilot ESPN
+            # league, owner preview only (gate fails closed otherwise).
+            try:
+                from dashboard_services.autopilot_preview import autopilot_indicator_mode
+                _apm = autopilot_indicator_mode(plat, m.get("league_id"))
+                if _apm:
+                    row["autopilot_mode"] = _apm
+            except Exception:
+                pass
             if live.get("has_format"):
                 row["sf"] = bool(live.get("is_sf"))
                 if live.get("size") and int(live["size"]) >= 2:
