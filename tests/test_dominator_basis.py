@@ -356,4 +356,4 @@ class TestMigrationAndVersion:
         assert "ADD COLUMN IF NOT EXISTS team_pass_tds" in sql
 
     def test_model_version_is_37(self):
-        assert pm.MODEL_VERSION == "3.9"
+        assert pm.MODEL_VERSION == "3.10"

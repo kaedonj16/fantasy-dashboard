@@ -86,7 +86,7 @@ def _qb_prospect(athleticism):
 
 class TestVersion:
     def test_model_version_is_33(self):
-        assert pm.MODEL_VERSION == "3.9"
+        assert pm.MODEL_VERSION == "3.10"
 
 
 class TestKnotPricing:
@@ -288,5 +288,10 @@ class TestF3BreakoutSaturation:
         # the same curve and the pair separates by another
         # 0.35 x (82.86 - 71.43) = 4.00 of trajectory span.
         # Total: 7.48 + 4.00 = 11.48.
+        # v3.10 (dom curve bent at 0.65): the 1.2x-1.4x span
+        # compresses from 11.43 to 10.08 (the segment flattens
+        # toward saturation), so the dom + arrival spans shrink to
+        # (0.45 + 0.35) x 10.08 = 8.06 and the unchanged age-gate
+        # span adds 2.33. Total: 10.40.
         diff = self._wr_breakout(0.35) - self._wr_breakout(0.30)
-        assert diff == pytest.approx(11.48, abs=0.6)
+        assert diff == pytest.approx(10.40, abs=0.6)

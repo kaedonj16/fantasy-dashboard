@@ -280,4 +280,4 @@ class TestBackfillPlanner:
 
 class TestModelVersion:
     def test_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.9"
+        assert pm.MODEL_VERSION == "3.10"

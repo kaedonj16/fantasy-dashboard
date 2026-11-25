@@ -319,7 +319,9 @@ class TestArchetypeNeverFeedsGrade:
         # weights fold (weights change only; legs unchanged),
         # 92.28 in 3.8 (M2 production blend; production leg only),
         # 93.92 in 3.9 (ceiling redesign; blend + competition
-        # anchor only, legs unchanged).
+        # anchor only, legs unchanged),
+        # 94.24 in 3.10 (bent dom curve + draft-anchored breakout
+        # age; breakout leg 88.97 -> 93.41 only).
         r = _score(SMITH, None)
-        assert r["prospect_score"] == 93.92
-        assert pm.MODEL_VERSION == "3.9"
+        assert r["prospect_score"] == 94.24
+        assert pm.MODEL_VERSION == "3.10"
