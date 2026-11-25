@@ -292,6 +292,55 @@ services:
         sync: false
 
   - type: cron
+    name: autopilot-thu
+    runtime: python
+    # Autopilot scheduler, Thursday pass: plans build (and Auto leagues
+    # execute) ahead of the Thursday night game. Render cron schedules
+    # are UTC; with TZ America/New_York this is Thu 19:00 EST / 20:00
+    # EDT. Hits the web service so ESPN credentials stay on the app;
+    # trigger_autopilot.py is stdlib urllib only.
+    # NOTE: cron auto-deploy is OFF under the 2026-11 cost cut, so this
+    # service must be deployed manually in Render before it runs.
+    schedule: 0 0 * * 5
+    plan: starter
+    buildCommand: python -c "print('autopilot - no Python deps')"
+    startCommand: python scripts/trigger_autopilot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
+    name: autopilot-sun
+    runtime: python
+    # Autopilot scheduler, Sunday pass: final plan + Auto execution
+    # before the early slate locks. Render cron schedules are UTC;
+    # this is Sun 12:30 EDT / 11:30 EST. Same manual-deploy note as
+    # autopilot-thu (cron auto-deploy OFF under the cost cut).
+    schedule: 30 16 * * 0
+    plan: starter
+    buildCommand: python -c "print('autopilot - no Python deps')"
+    startCommand: python scripts/trigger_autopilot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
     name: injury-flip-check
     runtime: python
     # Every 15 min so a starter/bench player flipping to Out/Doubtful/IR close

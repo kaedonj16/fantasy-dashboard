@@ -136,11 +136,11 @@ def api_my_leagues():
                 "needs_reconnect": m.get("connection_status") == "reauth_required",
                 "is_favorite": bool(m.get("is_favorite")),
             }
-            # Autopilot mock indicator: sample mode for the pilot ESPN
-            # league, owner preview only (gate fails closed otherwise).
+            # Autopilot mode for usable ESPN leagues under
+            # autopilot_access (both pilot leagues); absent elsewhere.
             try:
-                from dashboard_services.autopilot_preview import autopilot_indicator_mode
-                _apm = autopilot_indicator_mode(plat, m.get("league_id"))
+                from dashboard_services.autopilot_preview import autopilot_surface_mode
+                _apm = autopilot_surface_mode(plat, m.get("league_id"), m.get("season"))
                 if _apm:
                     row["autopilot_mode"] = _apm
             except Exception:

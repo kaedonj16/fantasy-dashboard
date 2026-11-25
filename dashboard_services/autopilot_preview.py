@@ -1,10 +1,11 @@
-"""Owner-preview gate for the Autopilot page mock.
+"""Autopilot access gates: the pilot preview check and the Phase 1 seam.
 
-Autopilot (spec: ~/workspace/autopilot-spec.md) is an unbuilt, PRO-gated
-feature. This module gates the in-site UI mock so only the site owner can see
-it while it is evaluated: the Autopilot tab, the page itself, and the
-portfolio / dashboard status indicators all consult the same check and fail
-closed.
+Autopilot (spec: ~/workspace/autopilot-spec.md) is a PRO-gated feature.
+The session-based preview check below was the gate for the original
+in-site UI mock; the real Phase 1 gate is autopilot_access() further
+down (pilot rollout + PRO + data-driven league usability), and every
+surface now consults it through autopilot_surface_mode(). All checks
+fail closed.
 
 Visibility is granted when ANY of these holds for the current request:
 
@@ -199,3 +200,48 @@ def autopilot_access(account_id, platform, league_id, season) -> bool:
         )
     except Exception:
         return False
+
+
+def autopilot_surface_mode(platform, league_id, season):
+    """Stored Autopilot mode for indicator/control surfaces, or None.
+
+    The one helper every surface consults (Weekly dropdown + More sheet
+    visibility is the boolean form; the My Leagues card control, the
+    dashboard hero chip, and the /api/my-leagues payload all read the
+    mode from here): returns the league's stored mode ("off" /
+    "approve" / "auto") when the current session's account passes
+    autopilot_access for the league, else None, which every surface
+    renders as: no Autopilot element at all (Kaedon, 2026-11-24:
+    leagues that can't use it show nothing).
+
+    The session-only preview check runs first as a fast path so ordinary
+    viewers and leagues never pay for the full gate's database work.
+    Fails closed on any error.
+    """
+    if not autopilot_preview_allowed():
+        return None
+    try:
+        from flask import session
+
+        account_id = session.get("account_id")
+    except Exception:
+        return None
+    if not account_id:
+        return None
+    try:
+        if not autopilot_access(account_id, platform, league_id, season):
+            return None
+        from dashboard_services import autopilot_store
+
+        settings = autopilot_store.get_settings(
+            account_id, platform, league_id, season
+        )
+        mode = str(settings.get("mode") or "off")
+        return mode if mode in ("off", "approve", "auto") else "off"
+    except Exception:
+        return None
+
+
+def autopilot_surface_visible(platform, league_id, season) -> bool:
+    """Boolean form of autopilot_surface_mode for nav surfaces."""
+    return autopilot_surface_mode(platform, league_id, season) is not None

@@ -239,16 +239,69 @@ def page_waivers(platform: str, season: int, league_id: str):
 
 @league_pages_bp.route("/<platform>/<int:season>/<league_id>/autopilot")
 def page_autopilot(platform: str, season: int, league_id: str):
-    # Autopilot is an unbuilt feature; this page is a UI mock with sample
-    # data only (no execute endpoint, no writes). It is visible solely to
-    # the owner preview on the pilot ESPN league; everyone and everywhere
-    # else gets a plain 404 so the surface does not exist publicly.
-    from dashboard_services.autopilot_preview import autopilot_page_visible
+    # Real Phase 1 page: stored settings, the live plan, the real
+    # roster, and the audit log for the acting account's league. Gated
+    # by autopilot_access (pilot + PRO + usable ESPN league); everyone
+    # and everywhere else gets a plain 404 so the surface does not
+    # exist publicly.
+    from dashboard_services import autopilot_store as store
+    from dashboard_services.autopilot_preview import autopilot_access
 
-    if not autopilot_page_visible(platform, league_id):
+    account_id = session.get("account_id")
+    if not account_id or not autopilot_access(account_id, platform, league_id, season):
         abort(404)
     ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False) or {}
-    body = build_autopilot_body(platform, season, league_id, ctx)
+    data: dict = {
+        "settings": store.get_settings(account_id, platform, league_id, season),
+        "kill_switch": store.get_kill_switch(account_id),
+        "audit": store.list_audit(account_id, platform, league_id, season, limit=25),
+        "roster": [],
+        "plan": None,
+        "plan_status": "",
+        "plan_error": None,
+    }
+    settings = data["settings"]
+    # Fresh roster read (best effort): feeds the protected-players
+    # editor and the team identity even when no plan is built.
+    state = None
+    try:
+        from dashboard_services.providers import espn_writes
+
+        state = espn_writes.read_lineup_state(account_id, league_id, season)
+        data["roster"] = state["entries"]
+        data["team_name"] = state["team_name"]
+        data["scoring_period"] = state["scoring_period_id"]
+    except Exception as exc:
+        data["plan_error"] = str(exc)
+    # Plan: reuse the open plan, or build one on load when the league
+    # is on and runnable (plan Step 3 trigger). The builder persists
+    # and audits; a failed build surfaces honestly on the page.
+    if (
+        settings["mode"] != "off"
+        and not settings["paused"]
+        and not data["kill_switch"]
+        and data["plan_error"] is None
+    ):
+        open_plan = store.get_open_plan(account_id, platform, league_id, season)
+        if open_plan is not None:
+            data["plan"] = open_plan
+            data["plan_status"] = "planned" if open_plan.get("swaps") else "no_moves"
+            data["scoring_period"] = open_plan["scoring_period"]
+        else:
+            try:
+                from dashboard_services import autopilot_plan
+
+                built = autopilot_plan.build_plan(
+                    account_id, platform, league_id, season
+                )
+                data["plan_status"] = built.get("status") or ""
+                if built.get("plan"):
+                    data["plan"] = built["plan"]
+                    data["scoring_period"] = built["plan"]["scoring_period"]
+            except Exception as exc:
+                logger.warning("autopilot page plan build failed", exc_info=True)
+                data["plan_error"] = str(exc)
+    body = build_autopilot_body(platform, season, league_id, ctx, data)
     return render_page("BR Fantasy Autopilot", league_id, "autopilot", body, platform, season)
 
 
