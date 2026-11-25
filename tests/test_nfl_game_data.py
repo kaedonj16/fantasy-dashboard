@@ -20,6 +20,47 @@ def _event(state="in", completed=False):
     }
 
 
+def test_nflverse_games_url_is_the_plain_csv_asset():
+    # Upstream dropped games.csv.gz from the schedules release (the .gz
+    # URL 404s); games.csv is the only schedules asset left. Downloading
+    # the dead URL silently emptied _nflverse_games_rows, which flipped
+    # team-offense data_mode to "projection" everywhere.
+    assert nfl._NFLVERSE_GAMES_URL.endswith("/schedules/games.csv")
+
+
+def test_nflverse_games_rows_downloads_plain_csv(monkeypatch, tmp_path):
+    import gzip
+
+    csv_text = (
+        "game_id,season,week,home_team,away_team,home_score,away_score\n"
+        "2025_01_KC_LAC,2025,1,KC,LAC,27,21\n"
+    )
+
+    class Resp:
+        content = csv_text.encode()
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr("utils.utils.CACHE_DIR", tmp_path)
+    monkeypatch.setattr(nfl._session, "get", lambda *a, **k: Resp())
+    rows = nfl._nflverse_games_rows()
+    assert rows and rows[0]["home_team"] == "KC"
+    assert rows[0]["home_score"] == "27"
+
+    # A gzipped body (the old asset shape) still parses.
+    class GzResp:
+        content = gzip.compress(csv_text.encode())
+
+        def raise_for_status(self):
+            pass
+
+    (tmp_path / "nflverse_games.csv").unlink()
+    monkeypatch.setattr(nfl._session, "get", lambda *a, **k: GzResp())
+    rows = nfl._nflverse_games_rows()
+    assert rows and rows[0]["away_team"] == "LAC"
+
+
 def test_scoreboard_contract_alias_status_and_identity():
     game = nfl.normalize_scoreboard({"events": [_event("post", True)]})[0]
     assert game["gameID"] == "20260911_DAL@WAS"

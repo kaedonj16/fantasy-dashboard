@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-25",
+        "tag": "update",
+        "text": "On phones, the league dashboard now has a Jump to bar and a Tools grid, so your matchup, waivers, trades and more are one tap away instead of a long scroll. Standings, activity and awards start tucked away and expand when you want them.",
+        "link": "/dashboard"
+    },
+    {
         "date": "2026-11-24",
         "tag": "new",
         "text": "Prospect boards now go back through history: pick any draft class from 2016 on, or All, to see every class's grades and rankings, with past classes graded by the current model.",

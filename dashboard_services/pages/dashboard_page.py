@@ -20,6 +20,7 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
         _render_usage_movers,
         _render_usage_fallers,
         _losing_streak_trade_html,
+        _nav_icon,
         _section_title_link,
         _standings_movement,
         _league_is_redraft,
@@ -455,7 +456,7 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
         except Exception:
             _mp_href = ""
         _matchup_preview_html = f"""
-    <section class="os-card os-matchup-preview">
+    <section class="os-card os-matchup-preview" id="dash-sec-matchup">
       <div class="os-section-head">
         <div class="os-section-head-content">
           <h2 class="os-section-title">This Week&apos;s Matchup</h2>
@@ -1025,7 +1026,7 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
     else:
         _waivers_href = f"/{html.escape(str(platform), quote=True)}/{int(season)}/{html.escape(str(league_id), quote=True)}/waivers"
         _action_inner = f"""
-          <section class="os-card os-actions-empty">
+          <section class="os-card os-actions-empty dash-allset-card">
             <div class="os-section-head">
               <div class="os-section-head-content">
                 <h2 class="os-section-title">You're all set for Week {html.escape(str(current_week))}</h2>
@@ -1220,7 +1221,7 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
                 )
         if _act_rows:
             _activity_html = (
-                '<section class="os-side-plain cc-act-card">'
+                '<section class="os-side-plain cc-act-card" id="dash-sec-activity">'
                 '<div class="cc-act-head">'
                 '<div class="cc-act-head-icon"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i></div>'
                 '<div><h2 class="cc-act-title">League Activity</h2>'
@@ -1250,11 +1251,128 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
     _st_team_count = len(rosters or [])
     _st_sub = (f"{_st_league_name} &middot; {_st_team_count} team"
                f"{'' if _st_team_count == 1 else 's'}")
+
+    # Anchor ids for the mobile Jump to bar on sections rendered by
+    # helpers that do not take an id (awards, usage risers).
+    if awards_html:
+        awards_html = awards_html.replace(
+            "<section", '<section id="dash-sec-awards"', 1)
+    if usage_movers_html:
+        usage_movers_html = usage_movers_html.replace(
+            "<section", '<section id="dash-sec-risers"', 1)
+
+    # ---- Mobile hybrid: Tools grid + Jump to bar (phones only) ----
+    # Both are display:none outside the phone breakpoint (dashboard.css),
+    # so the desktop three-column layout is unchanged. Tiles are the real
+    # Weekly Play tools plus the Trade Calculator, with the nav's own
+    # icons and league-scoped links. Best Ball follows the nav gate:
+    # the Waivers tile loses its Start/Sit half and Lineup Lab is omitted.
+    _tools_html = ""
+    _is_bb_tools = False
+    try:
+        from utils.league_format import is_best_ball as _is_bb_tools_fn
+        _is_bb_tools = bool(_is_bb_tools_fn(
+            ctx.get("league") or {},
+            settings=(ctx.get("league_settings")
+                      or (ctx.get("league") or {}).get("settings")
+                      or ctx.get("settings") or {}),
+        ))
+    except Exception:
+        _is_bb_tools = False
+    try:
+        def _tool_href(_ep, _suffix=""):
+            try:
+                return url_for(
+                    _ep, platform=platform, season=season,
+                    league_id=str(league_id)) + _suffix
+            except Exception:
+                return ""
+
+        _tool_defs = [
+            ("ScoreZone", "pulse", "page_scorezone", ""),
+            ("Waivers" if _is_bb_tools else "Waivers & Start/Sit",
+             "list", "league_pages.page_waivers", ""),
+        ]
+        if not _is_bb_tools:
+            _tool_defs.append(
+                ("Lineup Lab", "flask", "league_pages.page_waivers", "?tab=lab"))
+        _tool_defs += [
+            ("Opponent Scout", "swords", "page_weekly", "?tab=scout"),
+            ("Schedule Rankings", "list", "page_schedule", ""),
+            ("Trade Calculator", "swap", "trade.page_trade", ""),
+        ]
+        _tiles = []
+        for _label, _icon, _ep, _suffix in _tool_defs:
+            _href = _tool_href(_ep, _suffix)
+            if not _href:
+                continue
+            _tiles.append(
+                f'<a class="dash-tool-tile" href="{html.escape(_href, quote=True)}">'
+                f'{_nav_icon(_icon, size=20)}'
+                f'<span>{html.escape(_label)}</span></a>'
+            )
+        if _tiles:
+            _tools_html = (
+                '<section class="os-card dash-tools-card" id="dash-sec-tools">'
+                '<div class="os-section-head"><div class="os-section-head-content">'
+                '<h2 class="os-section-title">Tools</h2>'
+                '</div></div>'
+                f'<div class="dash-tools-grid">{"".join(_tiles)}</div>'
+                '</section>'
+            )
+    except Exception:
+        logger.debug("dashboard tools grid failed", exc_info=True)
+        _tools_html = ""
+
+    # Jump to chips: only for sections that actually rendered. The one
+    # count is the Injury Watch row count, read from the rendered card
+    # itself; the deferred (shell-first) card gets its count client-side
+    # once the section fills. Front Office has no real count to show
+    # (its card is a generate prompt), so its chip carries none.
+    _jump_chips = []
+    if _dash_preview_slide:
+        _jump_chips.append(("Matchup", "dash-sec-matchup", None))
+    _jump_chips.append(("Next Steps", "os-jump-actions", None))
+    if _tools_html:
+        _jump_chips.append(("Tools", "dash-sec-tools", None))
+    if _injury_watch_html:
+        _inj_n = None
+        if not defer_injury:
+            _inj_n = _injury_watch_html.count("cc-inj-row") or None
+        _jump_chips.append(("Injury Watch", "dashInjuryWatch", _inj_n))
+    if usage_movers_html:
+        _jump_chips.append(("Risers", "dash-sec-risers", None))
+    if gm_card_html:
+        _jump_chips.append(("Front Office", "os-jump-report-card", None))
+    _jump_chips.append(("Standings", "dash-sec-standings", None))
+    if _activity_html:
+        _jump_chips.append(("Activity", "dash-sec-activity", None))
+    if awards_html:
+        _jump_chips.append(("Awards", "dash-sec-awards", None))
+    _jump_html = ""
+    if len(_jump_chips) > 2:
+        _chip_html = []
+        for _label, _target, _count in _jump_chips:
+            _badge = (
+                f'<span class="dash-jump-count">{int(_count)}</span>'
+                if _count else ""
+            )
+            _chip_html.append(
+                f'<a class="dash-jump-chip" href="#{_target}">'
+                f'{html.escape(_label)}{_badge}</a>'
+            )
+        _jump_html = (
+            '<nav class="dash-jump-nav" aria-label="Jump to section">'
+            '<span class="dash-jump-label">Jump to</span>'
+            f'<div class="dash-jump-track">{"".join(_chip_html)}</div>'
+            '</nav>'
+        )
+
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col os-side-rail">
         {gm_card_html}
-        <section class="os-side-plain cc-st-card" data-section="standings">
+        <section class="os-side-plain cc-st-card" data-section="standings" id="dash-sec-standings" data-viewer-team="{html.escape(str(_vname or ""), quote=True)}">
           <div class="cc-st-head">
             <div class="cc-st-head-icon"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></div>
             <div class="cc-st-head-title">{_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}</div>
@@ -1271,11 +1389,15 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
       <main class="os-main-col">
         {_hero_strip_html}
 
+        {_jump_html}
+
         {_rz_cta_html}
 
         {_matchup_preview_html}
 
         {_action_queue_html}
+
+        {_tools_html}
 
         {usage_movers_html}
 
@@ -1296,6 +1418,162 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
     (function(){{
       // Dashboard redesign: sections stack, no jump-nav tab switching.
       // Collapse toggles still work via the shared card-collapse delegate.
+    }})();
+    </script>
+    <script>
+    (function() {{
+      // Mobile hybrid behaviours (phones only; the jump bar and tools
+      // grid are display:none above the phone breakpoint, and every
+      // behaviour below is gated on the same media query).
+      var mobile = window.matchMedia("(max-width: 768px)");
+      var nav = document.querySelector(".dash-jump-nav");
+
+      // Prune chips whose target never rendered (or was removed, e.g.
+      // the deferred Injury Watch mount when the roster is healthy).
+      function pruneChips() {{
+        if (!nav) return;
+        var chips = nav.querySelectorAll(".dash-jump-chip");
+        for (var i = 0; i < chips.length; i++) {{
+          var id = chips[i].getAttribute("href").slice(1);
+          if (!document.getElementById(id)) chips[i].remove();
+        }}
+        if (!nav.querySelector(".dash-jump-chip")) nav.remove();
+      }}
+
+      // Injury count badge: read from the rendered card's own rows.
+      // In shell-first mode the card fills in after load, so this runs
+      // on a short poll until the pending mount resolves.
+      function syncInjuryBadge() {{
+        if (!nav) return true;
+        var chip = nav.querySelector('.dash-jump-chip[href="#dashInjuryWatch"]');
+        if (!chip) return true;
+        var sec = document.getElementById("dashInjuryWatch");
+        if (!sec) {{ chip.remove(); return true; }}
+        if (sec.hasAttribute("data-dash-section")) return false; // still pending
+        var n = sec.querySelectorAll(".cc-inj-row").length;
+        var badge = chip.querySelector(".dash-jump-count");
+        if (n > 0) {{
+          if (!badge) {{
+            badge = document.createElement("span");
+            badge.className = "dash-jump-count";
+            chip.appendChild(badge);
+          }}
+          badge.textContent = String(n);
+        }} else if (badge) {{
+          badge.remove();
+        }}
+        return true;
+      }}
+      pruneChips();
+      if (!syncInjuryBadge()) {{
+        var tries = 0;
+        var timer = setInterval(function() {{
+          if (syncInjuryBadge() || ++tries > 30) clearInterval(timer);
+          pruneChips();
+        }}, 1000);
+      }}
+
+      // Scrollspy: the chip for the section nearest the top of the
+      // viewport (under the sticky chrome) is the active one.
+      if (nav) {{
+        var spyChips = Array.prototype.slice.call(
+          nav.querySelectorAll(".dash-jump-chip"));
+        var spyTargets = spyChips.map(function(chip) {{
+          return document.getElementById(chip.getAttribute("href").slice(1));
+        }});
+        var spyTick = false;
+        function spy() {{
+          spyTick = false;
+          var y = window.scrollY + 150;
+          var current = -1;
+          for (var i = 0; i < spyTargets.length; i++) {{
+            var el = spyTargets[i];
+            if (!el) continue;
+            var top = el.getBoundingClientRect().top + window.scrollY;
+            if (top <= y) current = i;
+          }}
+          for (var j = 0; j < spyChips.length; j++) {{
+            spyChips[j].classList.toggle("active", j === current);
+          }}
+          if (current >= 0) {{
+            var chip = spyChips[current];
+            var track = chip.parentNode;
+            if (track) {{
+              var target = chip.offsetLeft - track.clientWidth / 2
+                + chip.clientWidth / 2;
+              track.scrollTo({{ left: Math.max(0, target), behavior: "smooth" }});
+            }}
+          }}
+        }}
+        window.addEventListener("scroll", function() {{
+          if (!spyTick) {{ spyTick = true; requestAnimationFrame(spy); }}
+        }}, {{ passive: true }});
+        spy();
+      }}
+
+      if (!mobile.matches) return;
+
+      // Reference cards start collapsed on phones: League Activity and
+      // League Awards show their header only; the shared collapse
+      // toggle expands them.
+      ["dash-act-body", "dash-awards-body"].forEach(function(id) {{
+        var bodyEl = document.getElementById(id);
+        if (!bodyEl || bodyEl.classList.contains("collapsed")) return;
+        bodyEl.classList.add("collapsed");
+        var toggle = document.querySelector(
+          '.card-collapse-toggle[data-target="' + id + '"]');
+        if (toggle) {{
+          toggle.classList.add("collapsed");
+          toggle.setAttribute("aria-expanded", "false");
+        }}
+      }});
+
+      // Standings mini on phones: top 4 rows plus the viewer's own row;
+      // every other row waits behind the Show full standings toggle.
+      var stCard = document.querySelector(".cc-st-card");
+      var stRows = stCard
+        ? stCard.querySelectorAll(".cc-st-rows .cc-st-row") : [];
+      if (stCard && stRows.length > 5) {{
+        var viewerTeam = stCard.getAttribute("data-viewer-team") || "";
+        var hidden = 0;
+        for (var r = 0; r < stRows.length; r++) {{
+          if (r < 4) continue;
+          var nameEl = stRows[r].querySelector("[data-team-name]");
+          var rowTeam = nameEl
+            ? (nameEl.getAttribute("data-team-name") || "") : "";
+          if (viewerTeam && rowTeam === viewerTeam) continue;
+          stRows[r].classList.add("dash-st-extra");
+          hidden++;
+        }}
+        // A division header whose rows are all hidden hides too.
+        var divs = stCard.querySelectorAll(".cc-st-rows .cc-div");
+        for (var d = 0; d < divs.length; d++) {{
+          var sib = divs[d].nextElementSibling;
+          var anyVisible = false;
+          while (sib && !sib.classList.contains("cc-div")) {{
+            if (sib.classList.contains("cc-st-row")
+                && !sib.classList.contains("dash-st-extra")) anyVisible = true;
+            sib = sib.nextElementSibling;
+          }}
+          if (!anyVisible) divs[d].classList.add("dash-st-extra");
+        }}
+        if (hidden > 0) {{
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "dash-st-toggle";
+          btn.textContent = "Show full standings";
+          btn.setAttribute("aria-expanded", "false");
+          btn.addEventListener("click", function() {{
+            var open = stCard.classList.toggle("dash-st-expanded");
+            btn.textContent = open ? "Show less" : "Show full standings";
+            btn.setAttribute("aria-expanded", open ? "true" : "false");
+          }});
+          var rowsWrap = stCard.querySelector(".cc-st-rows");
+          if (rowsWrap && rowsWrap.parentNode) {{
+            rowsWrap.parentNode.insertBefore(btn, rowsWrap.nextSibling);
+          }}
+        }}
+      }}
     }})();
     </script>
     <script>
@@ -1487,7 +1765,7 @@ def _dashboard_injury_watch_html(ctx: dict, viewer_roster_id) -> str:
                     break
         if _inj_rows:
             _injury_watch_html = (
-                '<section class="os-side-plain cc-inj-card">'
+                '<section class="os-side-plain cc-inj-card" id="dashInjuryWatch">'
                 '<div class="cc-inj-head">'
                 '<div class="cc-inj-head-icon"><i class="fa-solid fa-heart-crack" aria-hidden="true"></i></div>'
                 '<div><h2 class="cc-inj-title">Injury Watch</h2>'
