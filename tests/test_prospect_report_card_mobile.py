@@ -108,5 +108,14 @@ class TestStickyMiniHeader:
         assert "rkModalContent" in html
 
     def test_reduced_motion_disables_the_slide(self):
-        html = _html()
-        assert "prefers-reduced-motion" in html
+        # The report-card styles moved to the shared dashboard.css
+        # (the app.js fallback modal renders the same card), so the
+        # reduced-motion rule is pinned there now.
+        import os
+        css_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "static", "dashboard.css")
+        with open(css_path) as f:
+            css = f.read()
+        assert "prefers-reduced-motion" in css
+        assert ".rc-mini" in css

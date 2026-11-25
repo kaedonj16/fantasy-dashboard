@@ -95,5 +95,7 @@ def test_intentional_inner_scrollers_keep_horizontal_scroll():
 
 
 def test_rookie_season_table_keeps_its_own_scroller():
-    rookies = (ROOT / "dashboard_services" / "pages" / "rookies_page.py").read_text()
-    assert "overflow-x: auto" in _block(rookies, ".rk-table-scroll {")
+    # The report-card styles moved to the shared dashboard.css (the
+    # app.js fallback modal renders the same card); the season table's
+    # own scroller rule is pinned there now.
+    assert "overflow-x: auto" in _block(CSS, ".rk-table-scroll {")

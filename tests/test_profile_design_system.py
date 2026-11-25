@@ -46,9 +46,12 @@ def test_prospect_hero_matches_shared_tile_geometry():
     # dashboard.css copy (prospect surfaces + player-modal rookie tab).
     assert ".rk-hero-stat {\n    background: var(--bg-alt);" in CSS
     assert ".pm-rk-hero-v { font-size: 28px; font-weight: 700;" in CSS
-    # app.js embedded copy (legacy fallback prospect modal) must not fork.
-    assert "background: var(--bg-alt);" in APP_JS
-    assert ".rk-hero-val {\n        font-size: 28px;" in APP_JS
+    # app.js fallback prospect modal renders the SAME shared report card
+    # (rcf* port; styles live in dashboard.css) — its old embedded fork of
+    # the hero CSS (.rk-hero-val) must stay gone.
+    assert "function openProspectModal" in APP_JS
+    assert "rc-hero" in APP_JS
+    assert ".rk-hero-val" not in APP_JS
 
 
 def test_team_modal_tiles_match_shared_tile_spec():

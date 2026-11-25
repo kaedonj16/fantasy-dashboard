@@ -24380,186 +24380,38 @@ _deferInit(function () {
   }
 })();
 
-// Create rkModal structure and CSS if they don't exist (for pages other than rookies page)
+// ── Prospect report card modal (shared) ──────────────────────────────────
+// The prospects page renders its report card with the rkRc* functions in
+// rookies_page.py; every other page reaches the same modal through
+// openProspectModal below, which renders the SAME report card from the
+// player endpoint's merged payload (rankings row + detail bundle in one
+// response). The rcfRc* functions are a faithful port of the page's
+// renderers under an rcf namespace (app.js loads on the prospects page
+// too, so the names must not collide); keep the two in step when the
+// report card changes. The styles live in static/dashboard.css, shared
+// by both surfaces.
+
+// Create the rkModal shell if it doesn't exist (pages other than the
+// rookies page have no shell in their HTML). Same shell geometry as
+// the prospects page's own markup.
 function createRkModalIfMissing() {
-  // Check if modal already exists
   if (document.getElementById('rkModal')) return;
-  
-  // Add CSS styles if not already present
-  if (!document.getElementById('rkModalStyles')) {
-    var css = `
-      /* Modal */
-      .rk-modal-header {
-        padding: 24px 24px 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 12px;
-      }
-      .rk-modal-close {
-        background: var(--accent-soft);
-        border: none;
-        width: 32px; height: 32px;
-        border-radius: 8px;
-        cursor: pointer;
-        color: var(--accent);
-        font-size: 18px;
-        flex-shrink: 0;
-        display: flex; align-items: center; justify-content: center;
-      }
-      .rk-modal-body { padding: 16px 24px 24px; }
 
-      /* Hero row */
-      .rk-hero-row {
-        display: grid;
-        grid-template-columns: 1.2fr 1fr 1fr;
-        gap: 8px;
-        margin-bottom: 10px;
-      }
-      .rk-hero-stat {
-        background: var(--bg-alt);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 12px 14px;
-        text-align: left;
-      }
-      .rk-hero-primary {
-        background: color-mix(in srgb, var(--accent) 10%, transparent);
-        border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-      }
-      .rk-hero-label {
-        font-size: 11px;
-        font-weight: 700;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        margin-bottom: 4px;
-      }
-      .rk-hero-val {
-        font-size: 28px;
-        font-weight: 700;
-        color: var(--text);
-        line-height: 1;
-      }
-      .rk-hero-sub {
-        font-size: 11px;
-        color: var(--text-muted);
-        margin-top: 4px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
+  var modalHtml =
+    '<div id="rkModal" style="display:none;position:fixed;inset:0;z-index:10500;' +
+         'align-items:center;justify-content:center;padding:20px;' +
+         'background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);">' +
+      '<div id="rkModalContent"' +
+        ' style="background:var(--card);border-radius:16px;max-width:1080px;width:100%;' +
+               'max-height:90vh;overflow-y:auto;overflow-x:hidden;position:relative;' +
+               'box-shadow:0 24px 48px rgba(15,23,42,0.25);">' +
+      '</div>' +
+    '</div>';
 
-      /* Draft + measurables */
-      .rk-info-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        background: var(--card-bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 9px 14px;
-        margin-bottom: 10px;
-      }
-      .rk-meas-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        margin-bottom: 4px;
-      }
-      .rk-meas-cell {
-        background: var(--card-bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 10px 8px;
-        text-align: center;
-      }
-      .rk-meas-label {
-        font-size: 10px;
-        font-weight: 700;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-        margin-bottom: 4px;
-      }
-      .rk-meas-val {
-        font-size: 14px;
-        font-weight: 700;
-        color: var(--text);
-      }
-
-      /* Section divider */
-      .rk-section-divider {
-        border: none;
-        border-top: 1px solid var(--border);
-        margin: 14px 0;
-      }
-
-      /* Component breakdown with bars */
-      .rk-comp-list {
-        display: flex;
-        flex-direction: column;
-        gap: 9px;
-      }
-      .rk-comp-row {
-        display: grid;
-        grid-template-columns: 90px 1fr 32px;
-        align-items: center;
-        gap: 10px;
-      }
-      .rk-comp-label {
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--text-muted);
-      }
-      .rk-comp-bar-wrap {
-        height: 6px;
-        background: var(--border);
-        border-radius: 3px;
-        overflow: hidden;
-      }
-      .rk-comp-bar {
-        height: 100%;
-        border-radius: 3px;
-      }
-      .rk-comp-val {
-        font-size: 12px;
-        font-weight: 700;
-        text-align: right;
-      }
-
-      /* Modal mobile */
-      @media (max-width: 480px) {
-        .rk-hero-row { grid-template-columns: 1fr 1fr; }
-        .rk-hero-primary { grid-column: 1 / -1; }
-        .rk-meas-grid { grid-template-columns: repeat(2, 1fr); }
-        .rk-comp-row { grid-template-columns: 76px 1fr 28px; gap: 8px; }
-      }
-    `;
-    
-    var style = document.createElement('style');
-    style.id = 'rkModalStyles';
-    style.textContent = css;
-    document.head.appendChild(style);
-  }
-  
-  // Create modal HTML structure
-  var modalHtml = `
-    <div id="rkModal" style="display:none;position:fixed;inset:0;z-index:10500;
-         align-items:center;justify-content:center;padding:20px;
-         background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);">
-      <div id="rkModalContent"
-        style="background:var(--card);border-radius:16px;max-width:680px;width:100%;
-               max-height:90vh;overflow-y:auto;overflow-x:hidden;
-               box-shadow:0 24px 48px rgba(15,23,42,0.25);">
-      </div>
-    </div>
-  `;
-  
   var tempDiv = document.createElement('div');
   tempDiv.innerHTML = modalHtml;
   document.body.appendChild(tempDiv.firstElementChild);
-  
+
   // Add close on backdrop click
   document.getElementById('rkModal').addEventListener('click', function(e) {
     if (e.target === this) rkCloseModal();
@@ -24569,6 +24421,7 @@ function createRkModalIfMissing() {
 // Global rkCloseModal function if it doesn't exist
 if (typeof rkCloseModal === 'undefined') {
   function rkCloseModal() {
+    if (typeof rcfTeardownMini === 'function') rcfTeardownMini();
     var modal = document.getElementById('rkModal');
     if (modal) {
       modal.style.display = 'none';
@@ -24577,207 +24430,971 @@ if (typeof rkCloseModal === 'undefined') {
   }
 }
 
-// Global prospect modal - used when rkOpenModal (rookies page only) is not defined
+// Report-card state for the fallback surface. There is no board off
+// the prospects page, so positional peers never resolve (the Class
+// Standing panel renders the lines the payload itself carries), and
+// the detail payload carries no percentile-pool line.
+var rcfAllPlayers = [];
+var rcfPercentilePool = '';
+var rcfDraftYear = null;
+
+var RCF_DISC_COLORS = ['#38bdf8','#60a5fa','#7dd3fc','#0ea5e9','#64748b','#94a3b8'];
+
+  function rcfEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function rcfInitials(name) {
+    var parts = String(name || '').split(' ');
+    return (((parts[0] || '').charAt(0) + (parts[1] ? parts[1].charAt(0) : '')) || '?').toUpperCase();
+  }
+
+  function rcfDiscColor(pid) {
+    var s = String(pid || ''), hsh = 0;
+    for (var i = 0; i < s.length; i++) hsh = (hsh * 31 + s.charCodeAt(i)) >>> 0;
+    return RCF_DISC_COLORS[hsh % RCF_DISC_COLORS.length];
+  }
+
+  var RCF_TAG_CLASS = { elite: 'tag-elite', great: 'tag-great', average: 'tag-average', day3: 'tag-day3' };
+  function rcfTagChip(tag, mini) {
+    if (!tag || !tag.label) return '';
+    return '<span class="tag-chip' + (mini ? ' tag-mini' : '') + ' ' +
+      (RCF_TAG_CLASS[tag.band] || '') + '">' + rcfEsc(tag.label) + '</span>';
+  }
+
+  function rcfPosRankLabel(r) {
+    return (r.position && r.position_rank) ? String(r.position).toUpperCase() + r.position_rank : '';
+  }
+
+  function rcfHeightStr(r) {
+    var ht = parseInt(r.height_inches, 10);
+    if (isNaN(ht)) return '';
+    return Math.floor(ht / 12) + "'" + (ht % 12) + '"';
+  }
+
+  function rcfWeightStr(r) {
+    return r.weight_lbs ? r.weight_lbs + ' lbs' : '';
+  }
+
+
+  function rcfLoadingHtml() {
+    return '<div class="rk-detail-loading"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading\u2026</div>';
+  }
+
+
+  function rcfOrdinal(n) {
+    var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+
+  function rcfDisplayPercentiles(r, d) {
+    if (d && d.percentiles) return d.percentiles;
+    return (r && r.percentiles) || {};
+  }
+
+  function rcfRcNameParts(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return { first: '', last: '' };
+    if (parts.length === 1) return { first: '', last: parts[0] };
+    var suffixes = { jr: 1, sr: 1, ii: 1, iii: 1, iv: 1, v: 1 };
+    var lastIdx = parts.length - 1;
+    if (lastIdx > 1 && suffixes[parts[lastIdx].toLowerCase().replace(/\./g, '')]) lastIdx--;
+    return { first: parts.slice(0, lastIdx).join(' '), last: parts.slice(lastIdx).join(' ') };
+  }
+
+
+  function rcfRcInitials(name) {
+    var p = rcfRcNameParts(name);
+    var a = (p.first || p.last || '?').charAt(0);
+    var b = p.first && p.last ? p.last.charAt(0) : '';
+    return (a + b).toUpperCase();
+  }
+
+  function rcfRcImgFallback(img) {
+    var mini = img.hasAttribute('data-fb-mini');
+    var tile = document.createElement(mini ? 'span' : 'div');
+    tile.className = mini ? 'rc-mini-initials' : 'rc-initials';
+    tile.innerHTML = mini
+      ? rcfEsc(rcfRcInitials(img.getAttribute('data-fb-name') || ''))
+      : '<b>' + rcfEsc(rcfRcInitials(img.getAttribute('data-fb-name') || '')) + '</b>' +
+        (img.getAttribute('data-fb-school')
+          ? '<span>' + rcfEsc(img.getAttribute('data-fb-school')) + '</span>' : '');
+    img.replaceWith(tile);
+  }
+
+
+  function rcfRcGradeOf(r, d) {
+    var v = (d && d.prospect_score != null && d.prospect_score !== '')
+      ? d.prospect_score : r.prospect_score;
+    var n = v == null || v === '' ? NaN : parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+
+  function rcfRcFillContext(r, d) {
+    var g = document.getElementById('rcfRcGrade');
+    if (g) {
+      var gv = rcfRcGradeOf(r, d);
+      g.textContent = gv == null ? '-' : gv.toFixed(1);
+    }
+    var el = document.getElementById('rcfRcContext');
+    if (!el) return;
+    var tag = (d && d.tag) || r.tag || {};
+    var lead = rcfPosRankLabel(r) ||
+      (r.overall_rank != null && r.overall_rank !== '' ? '#' + r.overall_rank : '');
+    var parts = [];
+    if (lead) parts.push(rcfEsc(lead));
+    if (tag.label) parts.push('<span class="rc-band-name">' + rcfEsc(tag.label) + '</span>');
+    el.innerHTML = parts.join('<span class="rc-dot">&middot;</span>');
+    // In-Season pill beside the grade context: shown when the board
+    // row flags the player in-season or the detail bundle carries
+    // an in-progress season line.
+    var pill = document.getElementById('rcfRcInSeason');
+    if (pill) {
+      var inSeason = !!(r && r.in_season);
+      if (!inSeason && d && d.season_lines) {
+        inSeason = d.season_lines.some(function(l) { return l.in_progress; });
+      }
+      pill.style.display = inSeason ? '' : 'none';
+    }
+    // Sticky mini-header mirrors the grade + band.
+    var mg = document.getElementById('rcfRcMiniGrade');
+    if (mg) {
+      var gv2 = rcfRcGradeOf(r, d);
+      mg.textContent = gv2 == null ? '-' : gv2.toFixed(1);
+    }
+    var mb = document.getElementById('rcfRcMiniBand');
+    if (mb) mb.textContent = tag.label || '';
+  }
+
+  function rcfRcFillHeroNote(r, d) {
+    var el = document.getElementById('rcfRcHeroNote');
+    if (!el) return;
+    var b = rcfDisplayPercentiles(r, d).breakout;
+    if (b == null || b === '' || isNaN(+b)) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    var pos = (r.position || '').toUpperCase();
+    var years = '';
+    var m = /(\d{4})\s*-\s*(\d{4})/.exec(rcfPercentilePool || '');
+    if (m) years = ', ' + m[1] + '-' + m[2];
+    el.innerHTML = '<strong>' + rcfOrdinal(Math.round(+b)) +
+      ' percentile breakout</strong> vs drafted ' + rcfEsc(pos) + 's' + years;
+    el.style.display = '';
+  }
+
+  function rcfRcRenderArch(r, d) {
+    var host = document.getElementById('rcfRcArch');
+    if (!host) return;
+    var arch = (d && d.archetype) || r.archetype || '';
+    if (!arch) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    var parts = String(arch).split(' · ');
+    var title = parts[0];
+    var chip = parts.slice(1).join(' · ');
+    var receipt = (d && d.archetype_receipt) || r.archetype_receipt || '';
+    var chips = receipt
+      ? receipt.split(/[·;]/).map(function(s) { return s.trim(); }).filter(Boolean)
+      : [];
+    var conf = (d && d.archetype_confidence) || r.archetype_confidence || '';
+    var lit = conf === 'High' ? 3 : conf === 'Medium' ? 2 : conf === 'Low' ? 1 : 0;
+    var html = '<div class="rc-arch-main">' +
+      '<div class="rc-arch-label">Projected NFL Role / Archetype</div>' +
+      '<div class="rc-arch-row"><h3 class="rc-arch-title">' + rcfEsc(title) + '</h3>' +
+      (chip ? '<span class="rc-arch-tag">' + rcfEsc(chip) + '</span>' : '') + '</div>' +
+      (chips.length
+        ? '<p class="rc-arch-ev" aria-label="Archetype evidence">' + chips.map(function(c) {
+            return rcfEsc(c).replace(/(\d[\d.,]*%?)/, '<b>$1</b>');
+          }).join('<span class="rc-ev-sep" aria-hidden="true">·</span>') + '</p>'
+        : '') +
+      '</div>';
+    if (conf) {
+      var segs = '';
+      for (var i = 0; i < 3; i++) {
+        segs += '<span class="rc-seg' + (i < lit ? ' on' : '') + '"></span>';
+      }
+      html += '<div class="rc-arch-conf"><div class="rc-arch-conf-label">Confidence: ' +
+        rcfEsc(conf) + '</div><div class="rc-meter">' + segs + '</div></div>';
+    }
+    host.innerHTML = html;
+    host.style.display = '';
+  }
+
+  function rcfRcPeers(r) {
+    if (!r || !r.position || !rcfAllPlayers.length) return null;
+    var pos = (r.position || '').toUpperCase();
+    var peers = rcfAllPlayers.filter(function(x) {
+      return (x.position || '').toUpperCase() === pos;
+    });
+    if (peers.length < 2) return null;
+    peers.sort(function(a, b) {
+      var ar = a.position_rank > 0 ? +a.position_rank : (a.overall_rank > 0 ? +a.overall_rank : 9999);
+      var br = b.position_rank > 0 ? +b.position_rank : (b.overall_rank > 0 ? +b.overall_rank : 9999);
+      return ar - br;
+    });
+    var idx = -1;
+    for (var i = 0; i < peers.length; i++) {
+      if (peers[i].player_id === r.player_id) { idx = i; break; }
+    }
+    if (idx < 0) return null;
+    return { peers: peers, idx: idx, pos: pos };
+  }
+
+  function rcfRcRenderStanding(r) {
+    var host = document.getElementById('rcfRcStanding');
+    if (!host) return;
+    var ctx = rcfRcPeers(r);
+    var rows = '';
+    if (ctx) {
+      var myRank = r.position_rank > 0 ? +r.position_rank : ctx.idx + 1;
+      var cls = r.draft_class_year || rcfDraftYear || '';
+      rows += '<div class="rc-kv"><span class="rc-k">Position</span><span class="rc-v">' +
+        rcfEsc(ctx.pos + myRank) + ' of ' + ctx.peers.length +
+        (cls ? ' in the ' + cls + ' class' : '') + '</span></div>';
+    }
+    if (r.overall_rank != null && r.overall_rank !== '') {
+      rows += '<div class="rc-kv"><span class="rc-k">Overall</span>' +
+        '<span class="rc-v sky">#' + r.overall_rank + ' overall</span></div>';
+    }
+    var mockPick = r.projected_pick != null && r.projected_pick !== ''
+      ? Math.round(parseFloat(r.projected_pick)) : null;
+    if (mockPick != null) {
+      var round = r.projected_round != null && r.projected_round !== ''
+        ? parseInt(r.projected_round, 10) : Math.ceil(mockPick / 32);
+      rows += '<div class="rc-kv"><span class="rc-k">Mock draft</span><span class="rc-v">' +
+        'Mock pick ' + mockPick + ' &middot; Round ' + round + '</span></div>';
+    }
+    var note = '';
+    if (ctx && ctx.idx < ctx.peers.length - 1) {
+      var nxt = ctx.peers[ctx.idx + 1];
+      var nRank = nxt.position_rank > 0 ? +nxt.position_rank : ctx.idx + 2;
+      note = '<p class="rc-panel-note">Chased by <strong>' + rcfEsc(nxt.name || '') +
+        '</strong> (' + rcfEsc(ctx.pos + nRank) +
+        (nxt.school ? ', ' + rcfEsc(nxt.school) : '') + ')</p>';
+    }
+    if (!rows && !note) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    host.innerHTML = '<h3 class="rc-panel-h">Class Standing</h3>' + rows + note;
+    host.style.display = '';
+  }
+
+  function rcfRcRenderComps(comps) {
+    var host = document.getElementById('rcfRcComps');
+    if (!host) return;
+    if (!comps.length) {
+      host.innerHTML = '<div class="rc-empty">No close historical comps found.</div>';
+      return;
+    }
+    host.innerHTML = comps.map(function(c) {
+      var meta = [c.draft_class_year,
+                  c.actual_pick ? 'Pick ' + c.actual_pick : null,
+                  c.school].filter(Boolean).join(' · ');
+      return '<div class="rc-comp"><div class="rc-disc" style="--pc:' +
+        rcfDiscColor(c.player_id) + '">' + rcfEsc(rcfInitials(c.name)) + '</div>' +
+        '<div class="rc-comp-info"><div class="rc-comp-name">' + rcfEsc(c.name) + '</div>' +
+        '<div class="rc-comp-meta">' + rcfEsc(meta) + '</div></div>' +
+        rcfTagChip(c.tag) + '</div>';
+    }).join('');
+  }
+
+
+  function rcfRcRenderGrade(r, d) {
+    var host = document.getElementById('rcfRcGradeBreakdown');
+    var section = document.getElementById('rcfRcGradeSection');
+    if (!host) return;
+    var pcts = rcfDisplayPercentiles(r, d);
+    var rows = [];
+    RCF_RC_COMPONENTS.forEach(function(c) {
+      var v = pcts ? pcts[c.key] : null;
+      if (v == null || v === '' || isNaN(+v)) return;
+      rows.push({ label: c.label, pct: Math.round(+v) });
+    });
+    if (!rows.length) {
+      host.innerHTML = '';
+      if (section) section.style.display = 'none';
+      return;
+    }
+    var html = rows.map(function(x) {
+      return '<div class="rc-gb-row"><div class="rc-gb-line1"><span class="rc-gb-name">' +
+        rcfEsc(x.label) + '</span><span class="rc-gb-val">' + x.pct + '</span></div>' +
+        '<span class="rc-mbar"><i style="width:' + x.pct + '%"></i></span></div>';
+    }).join('');
+    if (rows.length >= 2) {
+      var low = rows[0];
+      rows.forEach(function(x) { if (x.pct < low.pct) low = x; });
+      var othersMin = null;
+      rows.forEach(function(x) {
+        if (x !== low && (othersMin === null || x.pct < othersMin)) othersMin = x.pct;
+      });
+      html += '<p class="rc-read-line">' + rcfEsc(low.label) +
+        ' is the soft spot: ' + rcfOrdinal(low.pct) +
+        ' percentile, every other component ' + rcfOrdinal(othersMin) +
+        ' or higher.</p>';
+    }
+    host.innerHTML = html;
+    var side = document.getElementById('rcfRcGradeSide');
+    if (side) {
+      var pos = (r.position || '').toUpperCase();
+      side.textContent = pos ? 'Percentile vs drafted ' + pos + 's' : '';
+    }
+    if (section) section.style.display = '';
+  }
+
+  function rcfRcRenderChart(r, d) {
+    var host = document.getElementById('rcfRcChart');
+    if (!host) return;
+    var lines = ((d && d.season_lines) || []).filter(function(l) { return l.rate != null; });
+    var trend = document.getElementById('rcfRcTrend');
+    if (!lines.length) {
+      host.innerHTML = '<div class="rc-empty">No season rates yet.</div>';
+      if (trend) { trend.style.display = 'none'; trend.innerHTML = ''; }
+      return;
+    }
+    var peak = 0;
+    lines.forEach(function(l) { if (+l.rate > peak) peak = +l.rate; });
+    var cols = 'repeat(' + lines.length + ', 1fr)';
+    // Bars scale to the peak rate: a 120px ceiling on phones (the
+    // value label rides above the bar inside the column, so the
+    // tallest season never crowds the section head), 168px on
+    // wider layouts.
+    var maxH = window.innerWidth <= 860 ? 120 : 168;
+    var bars = '', labels = '';
+    lines.forEach(function(l) {
+      var h = peak > 0 ? Math.max(14, Math.round((+l.rate) / peak * maxH)) : 14;
+      bars += '<div class="rc-barcol"><div class="rc-barval' +
+        (l.in_progress ? ' live' : '') + '">' + (+l.rate).toFixed(1) + '</div>' +
+        '<div class="rc-bar' + (l.in_progress ? ' live' : '') +
+        '" style="height:' + h + 'px"></div></div>';
+      var detail = [l.team, l.gp != null ? l.gp + ' games' : '']
+        .filter(Boolean).join(' · ');
+      labels += '<div class="rc-barlab"><div class="rc-yr' +
+        (l.in_progress ? ' liveyr' : '') + '">' + l.season + '</div>' +
+        (detail ? '<div class="rc-detail">' + rcfEsc(detail) + '</div>' : '') +
+        (l.in_progress ? '<div class="rc-inprog">In Progress</div>' : '') + '</div>';
+    });
+    host.innerHTML =
+      '<p class="rc-subline">' + rcfEsc(lines[0].rate_label || '') + ', by season</p>' +
+      '<div class="rc-chart" style="grid-template-columns:' + cols + '">' + bars + '</div>' +
+      '<div class="rc-barlabels" style="grid-template-columns:' + cols + '">' + labels + '</div>';
+    if (trend) {
+      var t = '';
+      if (lines.length >= 2) {
+        var f = lines[0], last = lines[lines.length - 1];
+        if (+f.rate > 0) {
+          var chg = Math.round(((+last.rate) - (+f.rate)) / (+f.rate) * 100);
+          if (Math.abs(chg) >= 1) {
+            t = 'Trend <b>' + (chg > 0 ? '+' : '') + chg + '% per-game vs ' + f.season + '</b>';
+            trend.className = 'rc-trend' + (chg > 0 ? '' : ' down');
+          }
+        }
+      }
+      trend.innerHTML = t;
+      trend.style.display = t ? '' : 'none';
+    }
+  }
+
+  function rcfRcDomBySeason(d) {
+    var by = {};
+    ((d && d.advanced_seasons) || []).forEach(function(a) {
+      if (a && a.season != null && a.dominator != null && a.dominator !== '') {
+        by[a.season] = +a.dominator;
+      }
+    });
+    return by;
+  }
+
+  function rcfRcRateDelta(lines, idx) {
+    if (idx <= 0) return null;
+    var prev = lines[idx - 1], cur = lines[idx];
+    if (!prev || prev.rate == null || cur.rate == null || +prev.rate <= 0) return null;
+    var dlt = Math.round(((+cur.rate) - (+prev.rate)) / (+prev.rate) * 100);
+    return dlt !== 0 ? dlt : null;
+  }
+
+
+  function rcfRcDeltaHtml(dlt) {
+    if (dlt === null) return '';
+    return '<span class="rc-yds-delta' + (dlt < 0 ? ' neg' : '') + '">' +
+      (dlt > 0 ? '+' : '') + dlt + '%</span>';
+  }
+
+  function rcfRcSeasonGrid(lines, d, domBy) {
+    var cols = (d && d.season_line_columns) || [];
+    function colByLabel(re) {
+      for (var i = 0; i < cols.length; i++) {
+        if (re.test(cols[i].label || '')) return cols[i];
+      }
+      return null;
+    }
+    function cellVal(l, c) {
+      var v = (l.cells || {})[c.key];
+      return v != null ? (+v).toFixed(c.dp || 1) : '-';
+    }
+    var plan = [
+      { h: 'Season', w: 'minmax(76px,1fr)', cls: 'rc-sg-season',
+        val: function(l) { return String(l.season); } },
+      { h: 'GP', w: '22px',
+        val: function(l) { return l.gp != null ? String(l.gp) : '-'; } }
+    ];
+    var tgtCol = colByLabel(new RegExp('^Tgt/G$'));
+    if (tgtCol) {
+      plan.push({ h: 'Tgt/G', w: '40px',
+        val: function(l) { return cellVal(l, tgtCol); } });
+    }
+    plan.push({ h: 'Yds/G', w: '42px', yds: true,
+      val: function(l) { return l.rate != null ? (+l.rate).toFixed(1) : '-'; } });
+    var yprCol = colByLabel(new RegExp('^Yds/(Rec|Carry)$'));
+    if (yprCol) {
+      plan.push({ h: yprCol.label, w: '56px',
+        val: function(l) { return cellVal(l, yprCol); } });
+    }
+    var showDom = lines.some(function(l) { return domBy[l.season] != null; });
+    if (showDom) {
+      plan.push({ h: 'Dom', w: '32px',
+        val: function(l) {
+          var v = domBy[l.season];
+          return v != null ? Math.round(v * 100) + '%' : '-';
+        } });
+    }
+    var tpl = plan.map(function(c) { return c.w; }).join(' ');
+    var html = '<div class="rc-sg-row rc-sg-head" style="grid-template-columns:' + tpl + '">' +
+      plan.map(function(c) {
+        return '<span class="rc-sg-h' + (c.cls ? ' ' + c.cls : '') +
+          '" data-col="' + rcfEsc(c.h) + '">' + rcfEsc(c.h) + '</span>';
+      }).join('') + '</div>';
+    lines.forEach(function(l, idx) {
+      html += '<div class="rc-sg-row' + (l.in_progress ? ' live' : '') +
+        (idx === lines.length - 1 ? ' rc-sg-last' : '') +
+        '" style="grid-template-columns:' + tpl + '">' +
+        plan.map(function(c) {
+          var inner = rcfEsc(c.val(l));
+          if (c.yds) {
+            var dlt = rcfRcRateDelta(lines, idx);
+            if (dlt !== null) {
+              inner = '<span class="rc-yds-val">' + inner + '</span>' +
+                rcfRcDeltaHtml(dlt);
+            }
+          }
+          return '<span class="rc-sg-c' + (c.cls ? ' ' + c.cls : '') +
+            '" data-col="' + rcfEsc(c.h) + '">' + inner + '</span>';
+        }).join('') + '</div>';
+    });
+    return html;
+  }
+
+  function rcfRcRenderSeasonTable(r, d) {
+    var host = document.getElementById('rcfRcSeasonTable');
+    if (!host) return;
+    var lines = (d && d.season_lines) || [];
+    if (!lines.length) {
+      host.innerHTML = '<div class="rc-empty">No season lines yet.</div>';
+      return;
+    }
+    var cols = (d && d.season_line_columns) || [];
+    var useCols = cols.filter(function(c) { return c.ov; });
+    if (!useCols.length) {
+      useCols = [{ key: '__rate', label: lines[0].rate_label || '', dp: 1 }];
+    }
+    var domBy = rcfRcDomBySeason(d);
+    var showDom = lines.some(function(l) { return domBy[l.season] != null; });
+    // The rate column is the overview column whose label matches
+    // the primary rate's label (WR/TE/QB); where no column carries
+    // it (RB scrimmage rate), the desktop table skips the delta.
+    var rateColIdx = -1;
+    useCols.forEach(function(c, ci) {
+      if (rateColIdx < 0 && c.label && c.label === lines[0].rate_label) rateColIdx = ci;
+    });
+    var html = '<div class="rk-table-scroll rc-season-desktop"><table class="rc-table"><thead><tr>' +
+      '<th>Season</th><th>GP</th>' +
+      useCols.map(function(c) { return '<th>' + rcfEsc(c.label) + '</th>'; }).join('') +
+      (showDom ? '<th>Dom</th>' : '') +
+      '</tr></thead><tbody>';
+    lines.forEach(function(l, li) {
+      html += '<tr' + (l.in_progress ? ' class="live"' : '') + '><td>' + l.season +
+        (l.in_progress ? '<span class="rc-livepill">In Progress</span>' : '') + '</td>' +
+        '<td>' + (l.gp != null ? l.gp : '-') + '</td>' +
+        useCols.map(function(c, ci) {
+          var v = c.key === '__rate' ? l.rate : (l.cells || {})[c.key];
+          var txt = v != null ? (+v).toFixed(c.dp || 1) : '-';
+          if (ci === rateColIdx) {
+            var dlt = rcfRcRateDelta(lines, li);
+            if (dlt !== null) {
+              return '<td><span class="rc-yds-val">' + txt + '</span>' +
+                rcfRcDeltaHtml(dlt) + '</td>';
+            }
+          }
+          return '<td>' + txt + '</td>';
+        }).join('') +
+        (showDom
+          ? '<td>' + (domBy[l.season] != null
+              ? Math.round(domBy[l.season] * 100) + '%' : '-') + '</td>'
+          : '') +
+        '</tr>';
+    });
+    html += '</tbody></table></div>' +
+      '<div class="rc-season-grid">' + rcfRcSeasonGrid(lines, d, domBy) + '</div>';
+    host.innerHTML = html;
+  }
+
+
+  function rcfRcMetricRow(a) {
+    var pct = a.percentile != null && a.percentile !== '' && !isNaN(+a.percentile)
+      ? +a.percentile : null;
+    return '<div class="rc-metric-row"><span class="rc-m-name">' + rcfEsc(a.label) + '</span>' +
+      '<span class="rc-m-val">' + rcfEsc(a.raw) + '</span>' +
+      (pct != null
+        ? '<span class="rc-mbar"><i style="width:' + pct + '%"></i></span>' +
+          '<span class="rc-mpct' + (pct >= 90 ? ' high' : '') + '">' +
+            rcfOrdinal(pct) + '<span class="rc-mpct-word"> percentile</span></span>'
+        : '<span class="rc-mbar empty"></span><span class="rc-mpct none">-</span>') +
+      '</div>';
+  }
+
+  function rcfRcConference(d) {
+    var lines = (d && d.season_lines) || [];
+    var line = null;
+    for (var i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].in_progress) { line = lines[i]; break; }
+    }
+    if (!line && lines.length) line = lines[lines.length - 1];
+    if (!line) return '';
+    var srow = null;
+    ((d && d.seasons) || []).forEach(function(s) {
+      if (s.season == line.season) srow = s;
+    });
+    return srow && srow.conference ? String(srow.conference) : '';
+  }
+
+
+  function rcfRcRenderMetrics(r, d) {
+    var host = document.getElementById('rcfRcMetrics');
+    var section = document.getElementById('rcfRcMetricsSection');
+    if (!host) return;
+    var rows = ((d && d.advanced) || []).filter(function(a) {
+      return a && a.raw != null && !a.component;
+    });
+    var byGroup = RCF_RC_GROUPS.map(function() { return []; });
+    rows.forEach(function(a) {
+      var gi = 2;  // unmapped rows fall to Context
+      RCF_RC_GROUPS.forEach(function(g, i) {
+        if (g.keys.indexOf(a.label) >= 0) gi = i;
+      });
+      byGroup[gi].push(a);
+    });
+    // Competition row: conference as the value, the component
+    // percentile as its bar. Both already ride the detail payload.
+    var conf = rcfRcConference(d);
+    if (conf) {
+      var cp = rcfDisplayPercentiles(r, d).competition;
+      byGroup[2].push({ label: 'Competition', raw: conf,
+                        percentile: cp != null ? cp : null });
+    }
+    var html = '';
+    RCF_RC_GROUPS.forEach(function(g, i) {
+      if (!byGroup[i].length) return;
+      html += '<div class="rc-group"><div class="rc-group-label">' + g.label +
+        '</div><div class="rc-group-rows">' +
+        byGroup[i].map(rcfRcMetricRow).join('') + '</div></div>';
+    });
+    host.innerHTML = html;
+    if (section) section.style.display = html ? '' : 'none';
+  }
+
+  function rcfRcRenderNotes(r, d) {
+    var host = document.getElementById('rcfRcNotes');
+    var section = document.getElementById('rcfRcNotesSection');
+    if (!host) return;
+    var src = (d && d.key_reasons) || r.key_reasons || '';
+    var lines = String(src).split('\n')
+      .map(function(l) { return l.trim().replace(/^[·\-•*]\s*/, ''); })
+      .filter(function(l) { return l && !/projected pick/i.test(l); })
+      .slice(0, 5);
+    if (!lines.length) {
+      host.innerHTML = '';
+      if (section) section.style.display = 'none';
+      return;
+    }
+    host.innerHTML = lines.map(function(l, i) {
+      return '<li><span class="rc-n">' + (i + 1) + '</span><span>' +
+        rcfEsc(l) + '</span></li>';
+    }).join('');
+    if (section) section.style.display = '';
+  }
+
+
+  function rcfFillDetail(r, d) {
+    rcfRcFillContext(r, d);
+    rcfRcFillHeroNote(r, d);
+    rcfRcRenderArch(r, d);
+    rcfRcRenderGrade(r, d);
+    rcfRcRenderNotes(r, d);
+    rcfRcRenderChart(r, d);
+    rcfRcRenderSeasonTable(r, d);
+    rcfRcRenderMetrics(r, d);
+    if (d && d.archive) rcfRcRenderClassStanding(r, d);
+    else if (d && d.position_rank && d.position_class_size) rcfRcAddPositionStanding(r, d);
+  }
+
+  function rcfRcRenderClassStanding(r, d) {
+    var host = document.getElementById('rcfRcStanding');
+    if (!host || !d) return;
+    var pos = (r.position || '').toUpperCase();
+    var cls = d.draft_class_year || r.draft_class_year || '';
+    var rows = '';
+    if (d.position_rank && d.position_class_size) {
+      rows += '<div class="rc-kv"><span class="rc-k">Position</span><span class="rc-v">' +
+        rcfEsc(pos + d.position_rank) + ' of ' + d.position_class_size +
+        (cls ? ' in the ' + cls + ' class' : '') + '</span></div>';
+    }
+    if (d.overall_rank != null && d.overall_rank !== '') {
+      rows += '<div class="rc-kv"><span class="rc-k">Overall</span>' +
+        '<span class="rc-v sky">#' + d.overall_rank + ' overall' +
+        (d.class_size ? ' of ' + d.class_size : '') +
+        (cls ? ' · ' + cls + ' class' : '') + '</span></div>';
+    }
+    var pick = d.actual_pick != null && d.actual_pick !== ''
+      ? Math.round(parseFloat(d.actual_pick)) : null;
+    if (pick != null && !isNaN(pick)) {
+      rows += '<div class="rc-kv"><span class="rc-k">Draft pick</span><span class="rc-v">' +
+        'Pick ' + pick + ' &middot; Round ' + Math.ceil(pick / 32) + '</span></div>';
+    }
+    var note = '';
+    if (d.archive) {
+      note = '<p class="rc-panel-note">Graded with the current model' +
+        (d.model_version ? ' (' + rcfEsc(d.model_version) + ')' : '') +
+        '. Not the board as it stood on draft day.</p>';
+    }
+    if (!rows && !note) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    host.innerHTML = '<h3 class="rc-panel-h">Class Standing</h3>' + rows + note;
+    host.style.display = '';
+  }
+
+
+  function rcfRcSetupMini() {
+    var content = document.getElementById('rkModalContent');
+    var mini = document.getElementById('rcfRcMini');
+    var hero = content ? content.querySelector('.rc-hero') : null;
+    if (rcfMiniObserver) { rcfMiniObserver.disconnect(); rcfMiniObserver = null; }
+    if (!content || !mini || !hero || !('IntersectionObserver' in window)) return;
+    mini.classList.remove('is-visible');
+    mini.setAttribute('aria-hidden', 'true');
+    rcfMiniObserver = new IntersectionObserver(function(entries) {
+      var vis = !(entries.length && entries[0].isIntersecting);
+      mini.classList.toggle('is-visible', vis);
+      mini.setAttribute('aria-hidden', vis ? 'false' : 'true');
+    }, { root: content, threshold: 0 });
+    rcfMiniObserver.observe(hero);
+  }
+
+  function rcfSaveWatch() {
+    try { localStorage.setItem('rkWatchlistV1', JSON.stringify(Object.keys(rcfWatch))); } catch (e) {}
+  }
+
+  function rcfSyncModalWatch(card, pid, name) {
+    var on = !!rcfWatch[pid];
+    card.querySelectorAll('.rk-star').forEach(function(s) {
+      s.classList.toggle('watching', on);
+      if (s.classList.contains('player-modal-watchlist-btn')) {
+        s.classList.toggle('player-modal-watchlist-btn--active', on);
+        s.setAttribute('aria-pressed', on ? 'true' : 'false');
+        s.title = on ? 'Remove from watchlist' : 'Add to watchlist';
+      }
+    });
+    var n = card.querySelector('.m-nudge');
+    if (n) {
+      n.classList.toggle('on', on);
+      var sp = n.querySelector('span');
+      if (sp) sp.textContent = on ? 'You will be nudged if ' + name + ' changes tiers.'
+                                  : 'Get nudged if ' + name + ' changes tiers.';
+    }
+  }
+
+  function rcfToggleWatchModal(ev, pid, name) {
+    ev.stopPropagation();
+    if (rcfWatch[pid]) {
+      delete rcfWatch[pid];
+      rcfSaveWatch();
+    } else {
+      rcfWatch[pid] = true;
+      rcfSaveWatch();
+      if (window.brUndoToast) {
+        window.brUndoToast('Watching ' + name + '.', function() {
+          delete rcfWatch[pid];
+          rcfSaveWatch();
+          var card = document.getElementById('rkModalContent');
+          if (card) rcfSyncModalWatch(card, pid, name);
+        });
+      }
+    }
+    var card = document.getElementById('rkModalContent');
+    if (card) rcfSyncModalWatch(card, pid, name);
+  }
+
+  function rcfOpenReportCard(r) {
+    var modal   = document.getElementById('rkModal');
+    var content = document.getElementById('rkModalContent');
+    var pid  = r.player_id || '';
+    var name = r.name || 'Unknown';
+    var pos  = (r.position || '').toUpperCase();
+    var on = !!rcfWatch[pid];
+    var np = rcfRcNameParts(name);
+
+    // Header meta line: position (sky) | school | class year.
+    var metaParts = [];
+    if (pos) metaParts.push('<span class="rc-pos">' + rcfEsc(pos) + '</span>');
+    if (r.school) metaParts.push('<span>' + rcfEsc(r.school) + '</span>');
+    if (r.draft_class_year) metaParts.push('<span>' + r.draft_class_year + ' Class</span>');
+    var metaHtml = metaParts.join('<span class="rc-sep">|</span>');
+
+    // Vitals line: age, height, weight (present values only).
+    var vitals = [];
+    var ageNum = parseFloat(r.age);
+    if (r.age != null && !isNaN(ageNum)) vitals.push('<b>' + ageNum.toFixed(1) + ' yrs</b>');
+    var ht = rcfHeightStr(r);
+    if (ht) vitals.push(rcfEsc(ht));
+    var wt = rcfWeightStr(r);
+    if (wt) vitals.push(rcfEsc(wt));
+
+    var grade = rcfRcGradeOf(r, null);
+
+    // Hero/mini photo: the rankings payload already carries the ESPN
+    // college headshot (espnHeadshot/headshot_url); initials are only
+    // the fallback for prospects with no photo or a dead URL.
+    var hsUrl = r.espnHeadshot || r.headshot_url || '';
+    var heroTile = hsUrl
+      ? '<img class="rc-headshot" src="' + rcfEsc(hsUrl) + '" alt="" loading="lazy" data-fb-name="' + rcfEsc(name) + '" data-fb-school="' + rcfEsc(r.school || '') + '" onerror="rcfRcImgFallback(this)">'
+      : '<div class="rc-initials"><b>' + rcfEsc(rcfRcInitials(name)) + '</b>' +
+          (r.school ? '<span>' + rcfEsc(r.school) + '</span>' : '') + '</div>';
+    var miniTile = hsUrl
+      ? '<img class="rc-mini-headshot" src="' + rcfEsc(hsUrl) + '" alt="" loading="lazy" data-fb-mini="1" data-fb-name="' + rcfEsc(name) + '" onerror="rcfRcImgFallback(this)">'
+      : '<span class="rc-mini-initials">' + rcfEsc(rcfRcInitials(name)) + '</span>';
+
+    content.innerHTML =
+      '<div class="rc-actions">' +
+        '<button class="player-modal-watchlist-btn rk-star rc-icon-btn' +
+          (on ? ' watching player-modal-watchlist-btn--active' : '') +
+          '" data-rk-star="1" title="' + (on ? 'Remove from watchlist' : 'Add to watchlist') +
+          '" aria-pressed="' + (on ? 'true' : 'false') + '" aria-label="Watch ' +
+          rcfEsc(name) + '"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>' +
+        '<button class="rc-icon-btn" onclick="rkCloseModal()" aria-label="Close">×</button>' +
+      '</div>' +
+      '<div class="rc-hero">' +
+        '<div class="rc-hero-left">' +
+          heroTile +
+          '<div class="rc-nameblock">' +
+            (np.first ? '<div class="rc-first">' + rcfEsc(np.first) + '</div>' : '') +
+            '<div class="rc-last">' + rcfEsc(np.last || name) + '</div>' +
+            '<div class="rc-meta1">' + metaHtml + '</div>' +
+            (vitals.length
+              ? '<div class="rc-vitals">' + vitals.join(' &nbsp;|&nbsp; ') + '</div>'
+              : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="rc-hero-right">' +
+          '<div class="rc-grade-block">' +
+            '<div class="rc-grade-num" id="rcfRcGrade">' +
+              (grade == null ? '-' : grade.toFixed(1)) + '</div>' +
+            '<div class="rc-grade-stack">' +
+              '<div class="rc-grade-label">Prospect Grade</div>' +
+              '<div class="rc-grade-context" id="rcfRcContext"></div>' +
+              '<span class="rc-inseason-pill" id="rcfRcInSeason" style="display:none">In-Season</span>' +
+            '</div>' +
+          '</div>' +
+          '<p class="rc-hero-note" id="rcfRcHeroNote" style="display:none"></p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rc-mini" id="rcfRcMini" aria-hidden="true">' +
+        miniTile +
+        '<span class="rc-mini-name">' + rcfEsc(name) + '</span>' +
+        '<span class="rc-mini-grade"><span class="rc-mini-num" id="rcfRcMiniGrade">-</span>' +
+        '<span class="rc-mini-band" id="rcfRcMiniBand"></span></span>' +
+      '</div>' +
+      '<section class="rc-arch" id="rcfRcArch" style="display:none"></section>' +
+      '<div class="rc-body">' +
+        '<aside class="rc-rail">' +
+          '<section class="rc-section rc-comps-section">' +
+            '<div class="rc-sec-head rc-comps-head"><h3>Comparable Players</h3></div>' +
+            '<p class="rc-subline rc-comps-sub">Historical comps from the BR Fantasy database</p>' +
+            '<div id="rcfRcComps">' + rcfLoadingHtml() + '</div>' +
+          '</section>' +
+          '<div class="rc-panel" id="rcfRcStanding" style="display:none"></div>' +
+        '</aside>' +
+        '<div class="rc-main">' +
+          '<section class="rc-section rc-sec-grade" id="rcfRcGradeSection" style="display:none">' +
+            '<div class="rc-sec-head"><h3>Grade Breakdown</h3>' +
+              '<span class="rc-side" id="rcfRcGradeSide"></span></div>' +
+            '<div id="rcfRcGradeBreakdown"></div>' +
+          '</section>' +
+          '<section class="rc-section rc-sec-prod">' +
+            '<div class="rc-sec-head"><h3>Production by Year</h3>' +
+              '<span class="rc-trend" id="rcfRcTrend" style="display:none"></span></div>' +
+            '<div id="rcfRcChart">' + rcfLoadingHtml() + '</div>' +
+          '</section>' +
+          '<section class="rc-section rc-sec-season">' +
+            '<div class="rc-sec-head"><h3>Season Lines</h3></div>' +
+            '<div id="rcfRcSeasonTable">' + rcfLoadingHtml() + '</div>' +
+          '</section>' +
+          '<section class="rc-section rc-sec-metrics" id="rcfRcMetricsSection">' +
+            '<div class="rc-sec-head"><h3>Metric Breakdown</h3>' +
+              '<span class="rc-side">Percentile</span></div>' +
+            '<div class="rc-metric-head"><span>Metric</span><span class="r">Value</span>' +
+              '<span></span><span class="r">Percentile</span></div>' +
+            '<div id="rcfRcMetrics">' + rcfLoadingHtml() + '</div>' +
+          '</section>' +
+          '<section class="rc-section rc-sec-notes" id="rcfRcNotesSection">' +
+            '<div class="rc-sec-head"><h3>Scouting Notes</h3></div>' +
+            '<ul class="rc-notes" id="rcfRcNotes"></ul>' +
+          '</section>' +
+        '</div>' +
+      '</div>' +
+      '<footer class="rc-foot"><span class="rc-brand">BR Fantasy</span>' +
+        '<p>BR Fantasy prospect report' +
+          (rcfPercentilePool ? ' &middot; ' + rcfEsc(rcfPercentilePool) : '') +
+          ' &middot; Data: BR Fantasy / CFBD</p></footer>';
+
+    // Watchlist star (direct binding, no inline handler).
+    var starBtn = content.querySelector('[data-rk-star]');
+    if (starBtn) starBtn.addEventListener('click', function(ev) {
+      rcfToggleWatchModal(ev, pid, name);
+    });
+    rcfRcFillContext(r, {});
+    rcfRcFillHeroNote(r, {});
+    rcfRcRenderArch(r, {});
+    // In the combined (All) view the board row's ranks are combined
+    // ranks, so the class-standing panel waits for the detail payload
+    // (which carries class ranks) instead of mislabeling them.
+    if (!r.archive) rcfRcRenderStanding(r);
+    rcfRcRenderGrade(r, {});
+    rcfRcRenderNotes(r, {});
+    // Archive rows carry no seasons, advanced metrics, or comps: the
+    // sections that would render them are removed outright, never
+    // shown as empty placeholders.
+    if (r.archive) {
+      ['.rc-sec-prod', '.rc-sec-season', '.rc-comps-section',
+       '#rcfRcMetricsSection'].forEach(function(sel) {
+        var sec = content.querySelector(sel);
+        if (sec) sec.style.display = 'none';
+      });
+    }
+    content.scrollTop = 0;
+    rcfRcSetupMini();
+
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    // Auto-link to Sleeper ID silently in background (stored
+    // prospects only; archive ids have no Sleeper link to make).
+    if (pid && !r.archive) {
+      fetch('/api/prospects/auto-link/' + encodeURIComponent(pid)).catch(function(){});
+    }
+
+    // Detail bundle: the player endpoint merges the rankings row
+    // and the detail bundle into one payload, so every section
+    // fills synchronously from the same object.
+    rcfFillDetail(r, r);
+
+    // Historical comparables from real past draft classes (stored
+    // prospects only; the archive has no comps surface).
+    if (!r.archive) _advFetch('/api/prospects/comparables/' + encodeURIComponent(pid), 15000)
+      .then(function(res){ return res.json(); })
+      .then(function(cd) { rcfRcRenderComps((cd && cd.comparables) || []); })
+      .catch(function() {
+        var cb = document.getElementById('rcfRcComps');
+        if (cb) cb.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">Could not load comparables.</span>';
+      });
+  }
+
+var RCF_RC_COMPONENTS = [
+    { key: 'production', label: 'Production' },
+    { key: 'efficiency', label: 'Efficiency' },
+    { key: 'breakout', label: 'Breakout' },
+    { key: 'competition', label: 'Competition' }
+  ];
+
+var RCF_RC_GROUPS = [
+    { label: 'Production', keys: ['Dominator', 'Best Dominator', 'Mkt Share', 'Market Share',
+        'TD Share', 'Rec Yds/Gm', 'Rec Yds/Game', 'Scrim Yds/Gm', 'Rush Yds/Gm', 'Rush TDs'] },
+    { label: 'Efficiency', keys: ['Yds/Rec', 'Career Yds/Rec', 'Catch%', 'Catch Rate',
+        'Yds/Carry', 'Cmp%', 'TD:INT', 'Yds/Att', 'AY/A', 'WEPA'] },
+    { label: 'Context', keys: ['Breakout Age', 'Tgt/Gm', 'Targets/Game', 'Speed Score'] }
+  ];
+
+var rcfMiniObserver = null;
+
+var rcfWatch = {};
+  try {
+    JSON.parse(localStorage.getItem('rkWatchlistV1') || '[]').forEach(function(id){ rcfWatch[id] = true; });
+  } catch (e) {}
+
+// Disconnect the sticky mini-header observer (called on close).
+function rcfTeardownMini() {
+  if (rcfMiniObserver) { rcfMiniObserver.disconnect(); rcfMiniObserver = null; }
+}
+
+// Class Standing supplement for the fallback: the peer-based
+// renderer cannot place the player at his position without the
+// board, but the detail payload carries the class ranks, so the
+// Position line is filled in from them (same row shape and classes
+// as the page's standing panel).
+function rcfRcAddPositionStanding(r, d) {
+  var host = document.getElementById('rcfRcStanding');
+  if (!host) return;
+  if (host.textContent.indexOf('Position') >= 0) return;
+  var pos = (r.position || '').toUpperCase();
+  var cls = d.draft_class_year || r.draft_class_year || '';
+  var row = '<div class="rc-kv"><span class="rc-k">Position</span><span class="rc-v">' +
+    rcfEsc(pos + d.position_rank) + ' of ' + d.position_class_size +
+    (cls ? ' in the ' + cls + ' class' : '') + '</span></div>';
+  if (host.style.display === 'none' || !host.innerHTML) {
+    host.innerHTML = '<h3 class="rc-panel-h">Class Standing</h3>' + row;
+  } else {
+    var head = host.querySelector('.rc-panel-h');
+    if (head) head.insertAdjacentHTML('afterend', row);
+    else host.innerHTML = '<h3 class="rc-panel-h">Class Standing</h3>' + row + host.innerHTML;
+  }
+  host.style.display = '';
+}
+
+// Global prospect modal - used when rkOpenModal (rookies page only) is
+// not defined. Fetches the player endpoint (rankings row + detail
+// bundle merged) and renders the same report card as the prospects
+// page via rcfOpenReportCard.
 function openProspectModal(playerId, playerName) {
-  // Use the existing rkModal from the rankings page, or create it if it doesn't exist
   var modal   = document.getElementById('rkModal');
   var content = document.getElementById('rkModalContent');
-  
+
   if (!modal || !content) {
     createRkModalIfMissing();
     modal   = document.getElementById('rkModal');
     content = document.getElementById('rkModalContent');
   }
+  if (!modal || !content) return;
 
   // Show loading state
   content.innerHTML = '<div style="text-align:center;padding:40px;"><div class="loading-spinner" style="margin:0 auto 12px;"></div>Loading prospect data…</div>';
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
-  // Fetch prospect data using the correct API endpoint
-  fetch(`/api/prospects/player/${encodeURIComponent(playerId)}`)
-    .then(r => {
-      if (!r.ok) {
-        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
-      }
+  fetch('/api/prospects/player/' + encodeURIComponent(playerId))
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + r.statusText);
       return r.json();
     })
-    .then(r => {
-      if (r.error) {
-        content.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">${r.error}</div>`;
+    .then(function(d) {
+      if (!d || d.error) {
+        content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">' +
+          rcfEsc((d && d.error) || 'Prospect not found.') + '</div>';
         return;
       }
-
-      // Use the same data processing as the rankings page
-      var val1qb = parseFloat(r.rookie_value||0);
-      var valsf  = parseFloat(r.rookie_sf_value||0);
-      var score  = parseFloat(r.prospect_score||0);
-      var conf   = parseFloat(r.confidence_score||0);
-      var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
-      var tier   = r.tier || '?';
-      var tierColors = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
-      var tierColor  = tierColors[tier] || '#9ca3af';
-
-      var reasons = (r.key_reasons||'').split('\\n').filter(function(l){ return l.trim(); });
-
-      // Measurables
-      var ht = r.height_inches;
-      var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '-';
-      var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '-';
-      var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '-';
-      var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '-';
-
-      // Draft info - single consolidated line
-      var draftCapLabel = r.draft_capital_label || (r.projected_pick ? 'Pick #' + r.projected_pick : null);
-      var draftStr = draftCapLabel
-        ? draftCapLabel + (r.num_mocks_used ? '  ·  ' + r.num_mocks_used + ' mocks' : '')
-        : 'Undrafted / Unknown';
-
-      // Component scores (Confidence lives in the section header, not here)
-      var components = [
-        {label:'Production',  val: r.production_score,              color:'#10b981'},
-        {label:'Efficiency',  val: r.efficiency_score,              color:'#3b82f6'},
-        {label:'Age',         val: r.age_score,                     color:'#8b5cf6'},
-        {label:'Breakout',    val: r.breakout_profile_score,        color:'#f59e0b'},
-        {label:'Athleticism', val: r.athleticism_score,             color:'#ef4444'},
-        {label:'Competition', val: r.competition_score,             color:'#06b6d4'},
-        {label:'Draft Cap.',  val: r.projected_draft_capital_score, color:'#f97316'},
-      ];
-
-      var compsHtml = components.map(function(c) {
-        var v = parseFloat(c.val||0);
-        return '<div class="rk-comp-row">' +
-          '<div class="rk-comp-label">' + c.label + '</div>' +
-          '<div class="rk-comp-bar-wrap"><div class="rk-comp-bar" style="width:' + Math.round(v) + '%;background:' + c.color + ';"></div></div>' +
-          '<div class="rk-comp-val" style="color:' + c.color + ';">' + v.toFixed(0) + '</div>' +
-        '</div>';
-      }).join('');
-
-      var reasonsHtml = reasons.length > 0
-        ? '<div class="rk-section-divider"></div>' +
-          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">Scouting Notes</div>' +
-          '<div style="font-size:13px;color:var(--text-muted);line-height:1.7;">' +
-            reasons.map(function(l){ return '<div style="padding:2px 0;">' + l + '</div>'; }).join('') +
-          '</div>'
-        : '';
-
-      // Build the modal content using the same structure as rankings page
-      content.innerHTML =
-        // ── Header: name + tier badge + close ───────────────────────────────
-        '<div class="rk-modal-header">' +
-          '<div>' +
-            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-              '<span style="font-size:22px;font-weight:700;color:var(--text);">' + (r.name||playerName||'') + '</span>' +
-              '<span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;' +
-                    'background:' + tierColor + '22;color:' + tierColor + ';border:1px solid ' + tierColor + '44;">' +
-                'Tier ' + tier +
-              '</span>' +
-            '</div>' +
-            '<div style="font-size:13px;color:var(--text-muted);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
-              '<span style="font-weight:600;color:var(--text);">' + (r.position||'') + (r.position_rank ? ' #'+r.position_rank : '') + '</span>' +
-              (r.school ? '<span style="opacity:.4;">·</span><span>' + r.school + '</span>' : '') +
-              '<span style="opacity:.4;">·</span><span>' + age + ' yrs</span>' +
-              (r.draft_class_year ? '<span style="opacity:.4;">·</span><span>' + r.draft_class_year + ' Draft</span>' : '') +
-            '</div>' +
-          '</div>' +
-          '<button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">✕</button>' +
-        '</div>' +
-
-        '<div class="rk-modal-body">' +
-
-          // ── Hero: Prospect Score + 1QB Value + SF Value ──────────────────
-          '<div class="rk-hero-row">' +
-            '<div class="rk-hero-stat rk-hero-primary">' +
-              '<div class="rk-hero-label">Prospect Score</div>' +
-              '<div class="rk-hero-val" style="color:var(--accent);">' + score.toFixed(1) + '</div>' +
-              '<div class="rk-hero-sub">' + (r.tier_label||'') + '</div>' +
-            '</div>' +
-            '<div class="rk-hero-stat">' +
-              '<div class="rk-hero-label">1QB Value</div>' +
-              '<div class="rk-hero-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '-') + '</div>' +
-              '<div class="rk-hero-sub">10-team</div>' +
-            '</div>' +
-            '<div class="rk-hero-stat">' +
-              '<div class="rk-hero-label">SF Value</div>' +
-              '<div class="rk-hero-val">' + (valsf > 0 ? valsf.toFixed(1) : '-') + '</div>' +
-              '<div class="rk-hero-sub">10-team</div>' +
-            '</div>' +
-          '</div>' +
-
-          // ── Draft (consolidated) ─────────────────────────────────────────
-          '<div class="rk-info-row">' +
-            '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;">Draft</span>' +
-            '<span style="font-size:13px;font-weight:600;color:var(--text);">' + draftStr + '</span>' +
-          '</div>' +
-
-          // ── Measurables ──────────────────────────────────────────────────
-          '<div class="rk-meas-grid">' +
-            '<div class="rk-meas-cell"><div class="rk-meas-label">Height</div><div class="rk-meas-val">' + heightStr + '</div></div>' +
-            '<div class="rk-meas-cell"><div class="rk-meas-label">Weight</div><div class="rk-meas-val">' + weightStr + '</div></div>' +
-            '<div class="rk-meas-cell"><div class="rk-meas-label">40 Dash</div><div class="rk-meas-val">' + fortyStr + '</div></div>' +
-            '<div class="rk-meas-cell"><div class="rk-meas-label">RAS</div><div class="rk-meas-val">' + rasStr + '</div></div>' +
-          '</div>' +
-
-          // ── Component scores with bars ───────────────────────────────────
-          '<div class="rk-section-divider"></div>' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
-            '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Component Scores</span>' +
-            '<span style="font-size:11px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">' + conf.toFixed(0) + '</strong></span>' +
-          '</div>' +
-          '<div class="rk-comp-list">' + compsHtml + '</div>' +
-
-          reasonsHtml +
-
-          // ── Historical Comparables ────────────────────────────────────────
-          '<div class="rk-section-divider"></div>' +
-          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>' +
-          '<div id="rkComparablesBody" style="font-size:13px;color:var(--text-muted);">' +
-            '<div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>' +
-          '</div>' +
-
-        '</div>';
-
-      // Auto-link to Sleeper ID silently in background
-      if (r.player_id) {
-        fetch('/api/prospects/auto-link/' + encodeURIComponent(r.player_id)).catch(function(){});
-      }
-
-      // Fetch comparables
-      _advFetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id), 15000)
-        .then(function(res){ if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-        .then(function(cd) {
-          var cb = document.getElementById('rkComparablesBody');
-          if (!cb) return;
-          var comps = cd.comparables || [];
-          if (!comps.length) {
-            cb.innerHTML = '<span>No close historical comps found.</span>';
-            return;
-          }
-          var tc_ = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
-          cb.innerHTML = comps.map(function(c) {
-            var tc = tc_[c.tier] || '#9ca3af';
-            var pickStr = c.actual_pick ? ' · Pick ' + c.actual_pick : '';
-            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">' +
-              '<div>' +
-                '<span style="font-weight:600;color:var(--text);font-size:13px;">' + c.name + '</span>' +
-                '<span style="color:var(--text-muted);font-size:12px;margin-left:6px;">' + c.draft_class_year + pickStr + '</span>' +
-                (c.school ? '<span style="color:var(--text-muted);font-size:12px;"> · ' + c.school + '</span>' : '') +
-              '</div>' +
-              '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-                '<span style="font-size:12px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(1) + '</span>' +
-                '<span style="padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + c.tier + '</span>' +
-              '</div>' +
-            '</div>';
-          }).join('');
-        })
-        .catch(function() {
-          var cb = document.getElementById('rkComparablesBody');
-          if (cb) cb.innerHTML = '<span>Could not load comparables.</span>';
-        });
+      if (!d.name) d.name = playerName || '';
+      if (!d.player_id) d.player_id = playerId;
+      rcfOpenReportCard(d);
     })
     .catch(function(err) {
       console.error('Error loading prospect data:', err);
-      window.brErrorState(content, 'Could not load prospect data.', function() { location.reload(); });
+      if (window.brErrorState) {
+        window.brErrorState(content, 'Could not load prospect data.', function() { openProspectModal(playerId, playerName); });
+      } else {
+        content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Could not load prospect data.</div>';
+      }
     });
 }
 
