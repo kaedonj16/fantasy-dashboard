@@ -11,6 +11,12 @@ CHANGELOG = [
         "link": "/dashboard"
     },
     {
+        "date": "2026-11-25",
+        "tag": "update",
+        "text": "Top role jobs got stricter: Alpha WR1, Workhorse, and Alpha TE1 now take a higher score, and only the winner of his own room can hold one. Rooms are judged on per-game workload, so a player who missed time with an injury keeps the title his role earned. Franchise QB1 counts efficiency as well as volume, so the title goes to quarterbacks who produce, not just the ones who throw the most.",
+        "link": "/compare"
+    },
+    {
         "date": "2026-11-24",
         "tag": "update",
         "text": "The prospect report card now opens everywhere, not just on the prospects page: open a rookie from the trade calculator or search and you get the same full report card, with his grade breakdown, production chart, season lines, and comparables.",
