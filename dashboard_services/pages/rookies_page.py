@@ -253,7 +253,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     <div>
       <h1 id="rookiesTitle">Rookie Prospects</h1>
       <div style="font-size: 15px; color: var(--text-muted); margin-top: 4px;">
-        <span id="rkPoolLine">Dynasty prospect rankings - production, athleticism, and draft capital combined</span>
+        <span id="rkPoolLine">Dynasty prospect rankings - production, athleticism, and efficiency combined</span>
       </div>
       <div id="rkPausedBanner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:8px;
            border:1px solid color-mix(in srgb,#b45309 35%,var(--border));background:color-mix(in srgb,#b45309 12%,transparent);
