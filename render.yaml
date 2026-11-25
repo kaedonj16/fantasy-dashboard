@@ -66,7 +66,7 @@ services:
       # see the gated Autopilot tab/page/indicators on the pilot ESPN
       # league. AUTOPILOT_PREVIEW_ACCOUNT_IDS is the id-based alternative.
       - key: AUTOPILOT_PREVIEW_EMAILS
-        value: kaedonj@brfantasyfootball.com
+        value: kjenkins3232@gmail.com
       - key: AUTOPILOT_PREVIEW_ACCOUNT_IDS
         sync: false
       # Shared with cron jobs (cache flush, hourly/weekly notification triggers).
