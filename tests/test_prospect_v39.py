@@ -142,7 +142,10 @@ class TestCeilingBlend:
 
     def test_blend_cfg_shape(self):
         assert pm.BLEND_CFG["peak_k"] == 4
-        assert pm.BLEND_CFG["peak_alpha"] == 0.60
+        # v3.11: peak share 0.60 -> 0.74 (ceiling attainability);
+        # the QB guard share is unchanged. The trimmed-mean gates
+        # are pinned in tests/test_prospect_v311.py.
+        assert pm.BLEND_CFG["peak_alpha"] == 0.74
         assert pm.BLEND_CFG["peak_alpha_by_pos"] == {"QB": 0.30}
 
     def test_peak_lifts_a_top_heavy_profile(self):
@@ -387,4 +390,4 @@ class TestCompetitionDiscount:
 
 class TestVersion:
     def test_model_version_is_39(self):
-        assert pm.MODEL_VERSION == "3.10"
+        assert pm.MODEL_VERSION == "3.11"

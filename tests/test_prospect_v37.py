@@ -173,7 +173,7 @@ def _score(prospect, dc, **kw):
 
 class TestVersion:
     def test_model_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.10"
+        assert pm.MODEL_VERSION == "3.11"
 
 
 class TestCapitalInvariance:
@@ -221,7 +221,7 @@ class TestPayloadContract:
         assert r["projected_draft_capital_score"] is None
         assert r["capital_delta"] is None
         assert r["talent_score"] == r["prospect_score"]
-        assert r["model_version"] == "3.10"
+        assert r["model_version"] == "3.11"
 
     def test_capital_derived_payload_diagnostics_are_zero(self):
         # late_round_upside's only input was the projected round and
@@ -262,16 +262,30 @@ class TestPanelGrades:
         # test_prospect_v34 for the decomposition).
         # v3.10: -> 94.24 complete / 90.48 in-season (breakout leg
         # 88.97 -> 93.41 on the bent dom curve + draft anchor).
-        assert _score(SMITH, _dc("WR", 2))["prospect_score"] == 94.24
+        # v3.11: -> 94.35 complete / 90.76 in-season (peak share
+        # 0.74; no leg weak enough to trim - see v34).
+        # v3.11 round 6: -> 94.66 complete (step C1's rate key
+        # reprices his production anchor; steps A/B do not touch
+        # him - S14).
+        assert _score(SMITH, _dc("WR", 2))["prospect_score"] == 94.66
         inseason = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
-        assert inseason["prospect_score"] == 90.48
+        assert inseason["prospect_score"] == 90.76
 
     def test_mestemaker(self):
         # v3.9 ceiling redesign: 84.78 -> 86.09 complete, 84.00 ->
         # 85.27 in-season (QB peak share 0.30).
-        assert _score(MESTEMAKER, _dc("QB", 8))["prospect_score"] == 86.09
+        # v3.11: -> 87.41 complete (the gated trim forgives his
+        # competition box; QB peak share unchanged), in-season
+        # unchanged at 85.27 (the trim gate stays shut).
+        # v3.11 round 6: -> 85.90 complete. The whole -1.51 is
+        # step A: his utilization (73.86) was peak-resident, so
+        # excluding it from the peak set reprices his peak term
+        # (steps B/C1 net -0.01/0.00 on his profile - S14).
+        assert _score(MESTEMAKER, _dc("QB", 8))["prospect_score"] == 85.90
         inseason = _score(MESTEMAKER, _dc("QB", 8), _active_season_year=2026)
-        assert inseason["prospect_score"] == 85.27
+        # Round 6 step A also prices his in-season peak set:
+        # 85.27 -> 85.13.
+        assert inseason["prospect_score"] == 85.13
 
     def test_green_pinned_clock(self):
         complete = _score(GREEN, _dc("TE", 35), _today=_AS_OF)
@@ -279,7 +293,12 @@ class TestPanelGrades:
                           _today=_AS_OF)
         # v3.9 ceiling redesign: 74.92 -> 75.59 complete.
         # v3.10: -> 75.87 complete (breakout 68.95 -> 72.58).
-        assert complete["prospect_score"] == 75.87
+        # v3.11: -> 75.86 complete (peak prices a hair under his
+        # mean at the 0.74 share; no trimmable leg).
+        # v3.11 round 5: complete -> 76.12 (production 42.90 ->
+        # 43.59: the 3-GP 2026 leaves the blend in complete
+        # mode; see test_prospect_v34 for the split).
+        assert complete["prospect_score"] == 76.12
         # v3.9: 73.77 -> 74.17. At this pinned clock (Oct 19) the
         # season is 6 team games old, above his 3 GP, so the shrink
         # factor doubles (3/12 -> 6/12); see test_prospect_v34 for
@@ -287,7 +306,11 @@ class TestPanelGrades:
         # v3.9 ceiling redesign: 74.17 -> 74.66 (SEC competition
         # re-anchor + peak term, production-anchored).
         # v3.10: -> 74.93 (the same breakout-leg move as complete).
-        assert inseason["prospect_score"] == 74.93
+        # v3.11: -> 74.88 (the same peak-share cents as complete).
+        # v3.11 round 3: -> 75.08. TE efficiency's best-season
+        # pricing moves only his in-season read (efficiency
+        # 94.51 -> 95.50; see test_prospect_v34 for the split).
+        assert inseason["prospect_score"] == 75.08
 
     def test_panel_ordering_unchanged_by_the_fold(self):
         # The round-3 audit panel order (Smith > Mestemaker > Green
