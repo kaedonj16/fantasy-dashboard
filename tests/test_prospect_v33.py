@@ -86,7 +86,7 @@ def _qb_prospect(athleticism):
 
 class TestVersion:
     def test_model_version_is_33(self):
-        assert pm.MODEL_VERSION == "3.8"
+        assert pm.MODEL_VERSION == "3.9"
 
 
 class TestKnotPricing:
@@ -222,9 +222,18 @@ class TestVATrajectoryTotals:
         # games-played artifact. Trajectory now reads per-game growth
         # only: A (100 -> 95 yds/g, -5%) vs B (100 -> 80, -20%) differ
         # by exactly the traj span, 0.35 x (18.75 - 0) = 6.56.
+        # v3.9 (arrival term): both profiles debuted at the same
+        # 0.30 dominator (curve price 63.64), so the arrival term
+        # carries both, discounted by the share of the debut rate
+        # held in the peak season's read (A holds 0.95 -> 60.45,
+        # B holds 0.80 -> 50.91). The pair now separates by the
+        # HOLD span only: 0.35 x (60.45 - 50.91) = 3.34. The totals
+        # doctrine is untouched - the surviving difference is still
+        # purely per-game (the reversed-workload identity below
+        # still holds exactly).
         a = pm.calc_breakout_score(self._seasons(7, 700, 13, 1235), 22.0, "RB")
         b = pm.calc_breakout_score(self._seasons(7, 700, 13, 1040), 22.0, "RB")
-        assert a - b == pytest.approx(6.56, abs=1.5)
+        assert a - b == pytest.approx(3.34, abs=1.5)
 
     def test_maintained_rate_with_shrinking_totals_scores_low(self):
         # Same per-game path (100 -> 95 yds/g) with the workload
@@ -274,5 +283,10 @@ class TestF3BreakoutSaturation:
         # dom_score(0.30) = 71.43, and the same pair now separates by
         # ~7.5 points (see test_prospect_v36.py for the new pin at
         # a 0.425 dominator).
+        # v3.9 (arrival term): both fixture seasons carry the same
+        # dominator, so the arrival term prices the debut level on
+        # the same curve and the pair separates by another
+        # 0.35 x (82.86 - 71.43) = 4.00 of trajectory span.
+        # Total: 7.48 + 4.00 = 11.48.
         diff = self._wr_breakout(0.35) - self._wr_breakout(0.30)
-        assert diff == pytest.approx(7.48, abs=0.6)
+        assert diff == pytest.approx(11.48, abs=0.6)

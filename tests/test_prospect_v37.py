@@ -67,6 +67,12 @@ three panelists):
     GREEN      complete   74.81 -> 74.92   (production 42.55 -> 42.90)
     GREEN      in-season  73.74 -> 73.77   (production 43.33 -> 43.41)
 
+3.9 (ceiling redesign; capital invariance untouched): the final
+blend prices a peak term over the weighted mean and the competition
+anchor re-bases 1.03 -> 1.00. Panel: SMITH 92.28 -> 93.92 complete
+(89.80 in-season), MESTEMAKER 84.78 -> 86.09 (85.27), GREEN
+74.92 -> 75.59 (74.66 at the pinned clock, after the shrink step).
+
 The M2 role gate (seasons before the first real role excused from
 the production / utilization / breakout reads) changes no panel
 grade: Smith and Green carry no pre-role seasons, and Mestemaker's
@@ -160,7 +166,7 @@ def _score(prospect, dc, **kw):
 
 class TestVersion:
     def test_model_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.8"
+        assert pm.MODEL_VERSION == "3.9"
 
 
 class TestCapitalInvariance:
@@ -208,7 +214,7 @@ class TestPayloadContract:
         assert r["projected_draft_capital_score"] is None
         assert r["capital_delta"] is None
         assert r["talent_score"] == r["prospect_score"]
-        assert r["model_version"] == "3.8"
+        assert r["model_version"] == "3.9"
 
     def test_capital_derived_payload_diagnostics_are_zero(self):
         # late_round_upside's only input was the projected round and
@@ -244,21 +250,33 @@ class TestPanelGrades:
     updated v34 pins on purpose: they are this version's contract."""
 
     def test_smith(self):
-        assert _score(SMITH, _dc("WR", 2))["prospect_score"] == 92.28
+        # v3.9 ceiling redesign: 92.28 -> 93.92 complete, 87.85 ->
+        # 89.80 in-season (peak blend + competition re-anchor; see
+        # test_prospect_v34 for the decomposition).
+        assert _score(SMITH, _dc("WR", 2))["prospect_score"] == 93.92
         inseason = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
-        assert inseason["prospect_score"] == 87.85
+        assert inseason["prospect_score"] == 89.80
 
     def test_mestemaker(self):
-        assert _score(MESTEMAKER, _dc("QB", 8))["prospect_score"] == 84.78
+        # v3.9 ceiling redesign: 84.78 -> 86.09 complete, 84.00 ->
+        # 85.27 in-season (QB peak share 0.30).
+        assert _score(MESTEMAKER, _dc("QB", 8))["prospect_score"] == 86.09
         inseason = _score(MESTEMAKER, _dc("QB", 8), _active_season_year=2026)
-        assert inseason["prospect_score"] == 84.00
+        assert inseason["prospect_score"] == 85.27
 
     def test_green_pinned_clock(self):
         complete = _score(GREEN, _dc("TE", 35), _today=_AS_OF)
         inseason = _score(GREEN, _dc("TE", 35), _active_season_year=2026,
                           _today=_AS_OF)
-        assert complete["prospect_score"] == 74.92
-        assert inseason["prospect_score"] == 73.77
+        # v3.9 ceiling redesign: 74.92 -> 75.59 complete.
+        assert complete["prospect_score"] == 75.59
+        # v3.9: 73.77 -> 74.17. At this pinned clock (Oct 19) the
+        # season is 6 team games old, above his 3 GP, so the shrink
+        # factor doubles (3/12 -> 6/12); see test_prospect_v34 for
+        # the leg decomposition.
+        # v3.9 ceiling redesign: 74.17 -> 74.66 (SEC competition
+        # re-anchor + peak term, production-anchored).
+        assert inseason["prospect_score"] == 74.66
 
     def test_panel_ordering_unchanged_by_the_fold(self):
         # The round-3 audit panel order (Smith > Mestemaker > Green

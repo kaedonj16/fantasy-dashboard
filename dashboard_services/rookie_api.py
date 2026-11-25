@@ -1168,7 +1168,7 @@ PCT_MIN_POPULATION = 30
 # registry the v4 population rebuild (and its go-live tests) key off.
 # 3.8 added: pools re-graded under the current model stamp 3.8 and
 # must be accepted by the registry when the re-grade lands.
-_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "3.8", "4.1")
+_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "3.8", "3.9", "4.1")
 
 
 def _row_quarantined(r) -> bool:
@@ -2689,9 +2689,13 @@ def add_prospects():
                     {prospect["player_id"]: dc} if dc else {},
                     draft_year=draft_year)[0]
             else:
+                from datetime import date as _run_date
                 scores = score_prospect(
                     prospect, dc,
                     _active_season_year=active_season_year_for_run(),
+                    # v3.9: pin the run date so the in-season shrink
+                    # prices season progress, same as the pipeline.
+                    _today=_run_date.today(),
                 )
             values = translate_score_to_value(scores, prospect, dc)
 
