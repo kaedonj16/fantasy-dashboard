@@ -332,15 +332,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
       <span class="th-r">Grade</span>
     </div>
 
-    <!-- Loading -->
+    <!-- Loading: flat skeleton rows in the board's own grid, so the
+         swap to real rows keeps the geometry. Shown only while a fetch
+         is in flight, and never together with rendered rows (the JS
+         clears the board in the same pass that shows it). -->
     <div id="rkLoading" class="sk-list" style="margin-top:4px;">
-      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:46%"></div><div class="skeleton skeleton-line" style="width:30%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
-      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:38%"></div><div class="skeleton skeleton-line" style="width:26%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
-      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:52%"></div><div class="skeleton skeleton-line" style="width:34%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
-      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:42%"></div><div class="skeleton skeleton-line" style="width:24%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
-      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:48%"></div><div class="skeleton skeleton-line" style="width:30%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
-      <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line" style="width:40%"></div><div class="skeleton skeleton-line" style="width:28%;height:9px"></div></div><div class="skeleton sk-chip"></div></div>
+      <div class="pr-grid-row rk-sk-row" aria-hidden="true"><span class="pr-rank"><span class="skeleton rk-sk-bar" style="width:24px"></span></span><span class="rk-player"><span class="skeleton rk-sk-bar rk-sk-name" style="width:44%"></span><span class="skeleton rk-sk-bar rk-sk-meta" style="width:29%"></span></span><span class="rk-pct"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-eff"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-brk"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="pr-grade"><span class="skeleton rk-sk-bar" style="width:28px"></span></span></div>
+      <div class="pr-grid-row rk-sk-row" aria-hidden="true"><span class="pr-rank"><span class="skeleton rk-sk-bar" style="width:24px"></span></span><span class="rk-player"><span class="skeleton rk-sk-bar rk-sk-name" style="width:37%"></span><span class="skeleton rk-sk-bar rk-sk-meta" style="width:25%"></span></span><span class="rk-pct"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-eff"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-brk"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="pr-grade"><span class="skeleton rk-sk-bar" style="width:28px"></span></span></div>
+      <div class="pr-grid-row rk-sk-row" aria-hidden="true"><span class="pr-rank"><span class="skeleton rk-sk-bar" style="width:24px"></span></span><span class="rk-player"><span class="skeleton rk-sk-bar rk-sk-name" style="width:51%"></span><span class="skeleton rk-sk-bar rk-sk-meta" style="width:33%"></span></span><span class="rk-pct"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-eff"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-brk"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="pr-grade"><span class="skeleton rk-sk-bar" style="width:28px"></span></span></div>
+      <div class="pr-grid-row rk-sk-row" aria-hidden="true"><span class="pr-rank"><span class="skeleton rk-sk-bar" style="width:24px"></span></span><span class="rk-player"><span class="skeleton rk-sk-bar rk-sk-name" style="width:41%"></span><span class="skeleton rk-sk-bar rk-sk-meta" style="width:24%"></span></span><span class="rk-pct"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-eff"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-brk"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="pr-grade"><span class="skeleton rk-sk-bar" style="width:28px"></span></span></div>
+      <div class="pr-grid-row rk-sk-row" aria-hidden="true"><span class="pr-rank"><span class="skeleton rk-sk-bar" style="width:24px"></span></span><span class="rk-player"><span class="skeleton rk-sk-bar rk-sk-name" style="width:47%"></span><span class="skeleton rk-sk-bar rk-sk-meta" style="width:30%"></span></span><span class="rk-pct"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-eff"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-brk"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="pr-grade"><span class="skeleton rk-sk-bar" style="width:28px"></span></span></div>
+      <div class="pr-grid-row rk-sk-row" aria-hidden="true"><span class="pr-rank"><span class="skeleton rk-sk-bar" style="width:24px"></span></span><span class="rk-player"><span class="skeleton rk-sk-bar rk-sk-name" style="width:39%"></span><span class="skeleton rk-sk-bar rk-sk-meta" style="width:27%"></span></span><span class="rk-pct"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-eff"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="rk-pct pr-brk"><span class="skeleton rk-sk-bar" style="width:20px"></span></span><span class="pr-grade"><span class="skeleton rk-sk-bar" style="width:28px"></span></span></div>
     </div>
+
+    <!-- Load error: shown only when a fetch failed and no board is
+         painted (with SSR rows on screen the failure stays silent). -->
+    <div id="rkError" style="display:none;color:var(--text-muted);margin-top:4px;">Failed to load rookie data. Please refresh.</div>
 
     <!-- Rows -->
     <div id="rkList"></div>
@@ -418,6 +425,16 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .pr-player-row:hover { background: var(--accent-soft); }
   .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
   .pr-player-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* Loading skeleton: flat rows in the board's own grid (the generic
+     .sk-list card spacing is neutralized), hairline-separated like
+     real rows, with the eff/brk cells carrying the real cells' classes
+     so the responsive column drops apply in lockstep. */
+  #rkLoading { gap: 0; }
+  .rk-sk-row { padding: 8px 12px; }
+  .rk-sk-row + .rk-sk-row { border-top: 1px solid var(--border); }
+  .rk-sk-bar { display: inline-block; height: 12px; border-radius: 4px; vertical-align: middle; }
+  .rk-sk-name { display: block; height: 15px; }
+  .rk-sk-meta { display: block; height: 10px; margin-top: 6px; }
   .pr-rank { font-size: 13px; font-weight: 700; color: var(--text-muted); display: flex; align-items: center; gap: 6px; justify-content: flex-start; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .pr-rank-delta { font-size: 11px; font-weight: 800; line-height: 1; white-space: nowrap; }
   .pr-rank-delta.up { color: var(--win); }
@@ -2183,6 +2200,37 @@ def build_prospects_body(is_admin: bool = False) -> str:
     })();
   }
 
+  // Show the loading skeleton as the board's ONLY content: the rows,
+  // header, count, and empty/error states of the previous board are
+  // cleared in the same pass, so the skeleton can never stack on top
+  // of rendered rows while a fetch is in flight.
+  function rkShowLoading() {
+    var listEl = document.getElementById('rkList');
+    if (listEl) listEl.innerHTML = '';
+    var headEl = document.getElementById('rkTableHeader');
+    if (headEl) headEl.style.display = 'none';
+    var countEl = document.getElementById('rkCount');
+    if (countEl) countEl.style.display = 'none';
+    var emptyEl = document.getElementById('rkEmpty');
+    if (emptyEl) emptyEl.style.display = 'none';
+    var errEl = document.getElementById('rkError');
+    if (errEl) errEl.style.display = 'none';
+    var loadEl = document.getElementById('rkLoading');
+    if (loadEl) loadEl.style.display = '';
+  }
+
+  // A failed fetch hides the skeleton without touching its markup;
+  // the error line shows only when no board is painted (with SSR rows
+  // on screen the board stays and the failure is silent, matching the
+  // fail-soft server render).
+  function rkLoadFailed() {
+    var loadEl = document.getElementById('rkLoading');
+    if (loadEl) loadEl.style.display = 'none';
+    var hasRows = !!document.querySelector('#rkList .pr-player-row');
+    var errEl = document.getElementById('rkError');
+    if (errEl) errEl.style.display = hasRows ? 'none' : '';
+  }
+
   fetch('/api/prospects/active-class')
     .then(function(r){ return r.json(); })
     .then(function(d) {
@@ -2200,8 +2248,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .then(function(data) { rkApplyBoard(data); })
     .catch(function(err) {
       console.error('[rookies] Load error:', err);
-      document.getElementById('rkLoading').innerHTML =
-        '<div style="color:var(--text-muted);">Failed to load rookie data. Please refresh.</div>';
+      rkLoadFailed();
     });
 
   // Apply one rankings payload to the board: the initial active-class
@@ -2209,6 +2256,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
   // sort, count, and tags behave identically per class.
   function rkApplyBoard(data) {
     document.getElementById('rkLoading').style.display = 'none';
+    var rkErrEl = document.getElementById('rkError');
+    if (rkErrEl) rkErrEl.style.display = 'none';
     rkAllPlayers = data.rankings || [];
     rkPercentilePool = data.percentile_pool || '';
     rkLoaded = true;
@@ -2256,15 +2305,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
   function rkSetClass(sel) {
     rkViewSel = String(sel);
     rkLoaded = false;
-    var loadEl = document.getElementById('rkLoading');
-    if (loadEl) loadEl.style.display = '';
+    rkShowLoading();
     fetch('/api/prospects/rankings?year=' + encodeURIComponent(rkViewSel))
       .then(function(r){ return r.json(); })
       .then(function(data) { rkApplyBoard(data); })
       .catch(function(err) {
         console.error('[rookies] Class load error:', err);
-        document.getElementById('rkLoading').innerHTML =
-          '<div style="color:var(--text-muted);">Failed to load rookie data. Please refresh.</div>';
+        rkLoadFailed();
       });
   }
 </script>
