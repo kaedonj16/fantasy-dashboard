@@ -221,6 +221,13 @@ def player_features(series: List[Dict[str, Any]], pos: str,
         # passer and erase a dual-threat's rushing workload (Josh
         # Allen: 28.6 att/g but 35.9 plays/g with his 66 rush att).
         "plays_per_game": ((pass_att + carries) / games) if games else 0.0,
+        # Opportunities per game: the room-comparison rate. Room rank,
+        # dominance and the top-tier gate all judge a player against
+        # his own room on this rate, never on season totals, so games
+        # missed to injury do not cost him his room (De'Von Achane's
+        # per-game workload leads Miami's RB room in a 3-game sample;
+        # his totals trail a teammate who simply played more).
+        "opp_per_game": (opp / games) if games else 0.0,
         "start_share": (
             100.0 * sum(1 for p in snap_pcts if p >= 50) / len(snap_pcts)
         ) if snap_pcts else 0.0,
@@ -320,12 +327,23 @@ def compute_pool(pool: Dict[str, Dict[str, Any]],
             pool_vals = [_f(feats_by_pid[p].get(key)) for p in peers]
             feat_pct[key] = _pctile(_f(feats.get(key)), pool_vals)
         if pos == "QB":
-            # Volume is plays per game (pass + rush attempts), not
-            # dropbacks alone, so a rushing QB's workload counts toward
-            # his job the way a pocket passer's dropbacks do.
-            score = 0.6 * _pctile(feats["plays_per_game"],
-                                  [feats_by_pid[p]["plays_per_game"] for p in peers]) \
-                + 0.4 * feats["start_share"]
+            # Three legs, no leg half the score: workload (plays per
+            # game percentile; plays = pass + rush attempts, so a
+            # rushing QB's workload counts the way a pocket passer's
+            # dropbacks do), durability (start share), and efficiency
+            # (the Efficiency axis percentile itself, so the job score
+            # and the axis can never disagree). Volume + durability
+            # alone crowned pure volume merchants: Tyler Shough scored
+            # a perfect 100 with a below-average rating percentile,
+            # while Josh Allen (97th-percentile efficiency) sat below
+            # him on mid-pack Buffalo play volume.
+            plays_pct = _pctile(feats["plays_per_game"],
+                                [feats_by_pid[p]["plays_per_game"] for p in peers])
+            eff_pct = _pctile(_axis_raw(feats, "pbp_rating"),
+                              [_axis_raw(feats_by_pid[p], "pbp_rating")
+                               for p in peers])
+            score = (0.45 * plays_pct + 0.25 * feats["start_share"]
+                     + 0.30 * eff_pct)
         else:
             score = (0.5 * feat_pct["opp_share"] + 0.3 * feat_pct["snap_pct"]
                      + 0.2 * team_rank_score.get(pid, 25.0))
@@ -349,10 +367,27 @@ def compute_pool(pool: Dict[str, Dict[str, Any]],
 # have no floor.
 FRANCHISE_QB_MIN_GAMES = 5
 
+# The Franchise score bar sits at 90, not the 92 the other top tiers
+# use: the efficiency leg compresses QB scores (no QB pairs elite
+# volume with elite efficiency often enough for a 92 line to hold
+# more than two names), so 92 would collapse the tier instead of
+# tightening it. At 90 the tier holds only QBs who are strong on all
+# three legs of the blend.
+FRANCHISE_QB_SCORE_MIN = 90.0
+
+
+# The top tier at WR/RB/TE is a 92+ job: the blend's 85 line (80 at
+# TE) crowned second receivers and committee leads whose percentiles
+# were elite but whose roles were not, so the bar rose to 92 at all
+# three positions. The tiers below simply widen (WR1 from 70, Lead 1A
+# from 65, TE1 from 60); no other boundary moves, and Franchise QB1
+# keeps its own line (FRANCHISE_QB_SCORE_MIN).
+TOP_TIER_SCORE_MIN = 92.0
+
 
 def job_for(pos: str, score: float, feats: Dict[str, Any]) -> str:
     if pos == "WR":
-        if score >= 85:
+        if score >= TOP_TIER_SCORE_MIN:
             return "Alpha WR1"
         if score >= 70:
             return "WR1"
@@ -365,7 +400,7 @@ def job_for(pos: str, score: float, feats: Dict[str, Any]) -> str:
         if feats.get("rec_share_of_opp", 0) >= 0.40 and score < 65 \
                 and feats.get("targets", 0) >= feats.get("carries", 0) * 0.8:
             return "Passing-Down Specialist"
-        if score >= 85:
+        if score >= TOP_TIER_SCORE_MIN:
             return "Workhorse"
         if score >= 65:
             return "Lead 1A"
@@ -375,7 +410,7 @@ def job_for(pos: str, score: float, feats: Dict[str, Any]) -> str:
     if pos == "TE":
         if feats.get("snap_pct", 0) >= 55 and feats.get("opp_share", 0) < 8 and score < 60:
             return "Blocking-First"
-        if score >= 80:
+        if score >= TOP_TIER_SCORE_MIN:
             return "Alpha TE1"
         if score >= 60:
             return "TE1"
@@ -383,7 +418,8 @@ def job_for(pos: str, score: float, feats: Dict[str, Any]) -> str:
             return "Committee TE"
         return "Blocking-First" if feats.get("snap_pct", 0) >= 55 else "Committee TE"
     if pos == "QB":
-        if score >= 80 and feats.get("games", 0) >= FRANCHISE_QB_MIN_GAMES:
+        if score >= FRANCHISE_QB_SCORE_MIN \
+                and feats.get("games", 0) >= FRANCHISE_QB_MIN_GAMES:
             return "Franchise QB1"
         if score >= 60:
             return "QB1"
@@ -394,50 +430,101 @@ def job_for(pos: str, score: float, feats: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Room dominance: a promotion path to the top Job tier
+# Room dominance (promotion) and the room gate (top-tier cap)
 # ---------------------------------------------------------------------------
-# The Job blend percentiles a player's opportunity share league-wide,
-# where true bell cows pull ~70%, so a back who owns his own room still
-# grades Lead 1A (Ollie Gordon II: 65% of Miami's RB opportunities, 3.1x
-# the next back, Lead 1A). Room dominance adds ONE promotion step: a
-# player the blend already places one tier below the top (Lead 1A /
-# WR1 / TE1) reaches the top tier when he is his room's clear winner:
-# at least half of his team's position-group opportunities AND at least
-# 1.8x the next teammate's opportunities. A genuine committee cannot
-# pass either test (the tightest real committee lead in the 2026 pool
-# sits at 1.77x / 43%), and nothing ever demotes. QB is exempt: there
-# is no room split to dominate.
+# Both room rules judge a player against his own position room on his
+# team, and both run on opportunities PER GAME (feats["opp_per_game"]),
+# never on season totals: a player who missed games to injury keeps
+# the room his per-game workload earned (De'Von Achane leads Miami's
+# RB room per game in a 3-game sample; Ollie Gordon II only leads it
+# on totals accumulated while Achane was out).
+#
+# PROMOTION: the Job blend percentiles a player's opportunity share
+# league-wide, where true bell cows pull ~70%, so a back who owns his
+# own room can still grade Lead 1A. A player the blend places one tier
+# below the top (Lead 1A / WR1 / TE1) promotes when his rate is at
+# least half of his room's combined rates AND at least 1.8x the next
+# teammate's rate. A genuine committee cannot pass either test.
+#
+# GATE: the top tier itself (Workhorse / Alpha WR1 / Alpha TE1) can
+# only be held by the room's rate winner. A second Alpha in the same
+# room is a contradiction the league-wide blend allowed because being
+# #2 in his room cost only ~6 points (Denzel Boston, Jordan Addison:
+# elite league-wide percentiles, second in their own rooms). Everyone
+# who is not the winner caps one tier below the top, however high the
+# score, and the gate runs AFTER promotion, so a promotion earned in
+# an injured lead's absence cannot override it. Winning the room
+# requires >= ROOM_GATE_MIN_GAMES games in the window: a 1-2 game
+# spike can neither block the room nor take the top tier. If no room
+# member reaches the minimum, the plain rate leader is the winner, so
+# early-season windows still crown one. QB is exempt from both rules:
+# there is no room split to dominate or win.
 _ROOM_PROMOTE = {"RB": ("Lead 1A", "Workhorse"),
                  "WR": ("WR1", "Alpha WR1"),
                  "TE": ("TE1", "Alpha TE1")}
+_ROOM_TOP_TIER = {"RB": ("Workhorse", "Lead 1A"),
+                  "WR": ("Alpha WR1", "WR1"),
+                  "TE": ("Alpha TE1", "TE1")}
 ROOM_DOM_SHARE_MIN = 50.0
 ROOM_DOM_RATIO_MIN = 1.8
+ROOM_GATE_MIN_GAMES = 3
+
+
+def _room_rates(pid: str, pool: Dict[str, Dict[str, Any]],
+                computed: Dict[str, Dict[str, Any]]):
+    """[(pid, opp_per_game, games, opp_share, opp)] for pid's
+    team+position room, from the same windowed feats the Job blend
+    uses. None when the room cannot be measured."""
+    entry = pool.get(pid) or {}
+    pos, team = entry.get("pos"), entry.get("team")
+    if pid not in computed or not team:
+        return None
+    out = []
+    for p, e in pool.items():
+        if p not in computed or e.get("pos") != pos or e.get("team") != team:
+            continue
+        f = computed[p]["feats"]
+        out.append((p, _f(f.get("opp_per_game")), int(f.get("games") or 0),
+                    _f(f.get("opp_share")), _f(f.get("opp"))))
+    return out or None
+
+
+def room_rate_winner(pid: str, pool: Dict[str, Dict[str, Any]],
+                     computed: Dict[str, Dict[str, Any]]):
+    """The pid of pid's room winner on opportunities per game.
+
+    Only room members with >= ROOM_GATE_MIN_GAMES games can win, so a
+    short-sample spike neither blocks the room nor takes the title;
+    when no member reaches the minimum, the plain rate leader wins.
+    Rate ties break on mean opportunity share, then total volume.
+    None when the room cannot be measured."""
+    members = _room_rates(pid, pool, computed)
+    if not members:
+        return None
+    eligible = [m for m in members if m[2] >= ROOM_GATE_MIN_GAMES]
+    cands = eligible or members
+    return max(cands, key=lambda m: (m[1], m[3], m[4]))[0]
 
 
 def room_dominance(pid: str, pool: Dict[str, Dict[str, Any]],
                    computed: Dict[str, Dict[str, Any]]):
-    """(his share %, next teammate's share %, ratio) of the team's
-    position-group opportunities for one player, from the same windowed
-    feats the Job blend uses. None when the room cannot be measured."""
+    """(his share %, next teammate's share %, ratio) of the room's
+    combined per-game opportunity rates for one player. None when the
+    room cannot be measured."""
     entry = pool.get(pid) or {}
-    pos, team = entry.get("pos"), entry.get("team")
-    if pid not in computed or pos not in _ROOM_PROMOTE or not team:
+    if pid not in computed or entry.get("pos") not in _ROOM_PROMOTE:
         return None
-    mine = _f(computed[pid]["feats"].get("opp"))
-    total = 0.0
-    next_opp = 0.0
-    for p, e in pool.items():
-        if p not in computed or e.get("pos") != pos or e.get("team") != team:
-            continue
-        o = _f(computed[p]["feats"].get("opp"))
-        total += o
-        if p != pid and o > next_opp:
-            next_opp = o
+    members = _room_rates(pid, pool, computed)
+    if not members:
+        return None
+    mine = next(m[1] for m in members if m[0] == pid)
+    total = sum(m[1] for m in members)
+    next_rate = max((m[1] for m in members if m[0] != pid), default=0.0)
     if total <= 0 or mine <= 0:
         return None
     share = mine / total * 100.0
-    ratio = mine / next_opp if next_opp > 0 else float("inf")
-    return share, next_opp / total * 100.0, ratio
+    ratio = mine / next_rate if next_rate > 0 else float("inf")
+    return share, next_rate / total * 100.0, ratio
 
 
 def _room_promoted_job(pid: str, pool: Dict[str, Dict[str, Any]],
@@ -451,15 +538,30 @@ def _room_promoted_job(pid: str, pool: Dict[str, Dict[str, Any]],
     return job
 
 
+def _room_gated_job(pid: str, pool: Dict[str, Dict[str, Any]],
+                    computed: Dict[str, Dict[str, Any]], job: str) -> str:
+    """Cap the top Job tier to the room's rate winner: a player whose
+    job is the top tier but who does not win his own room on per-game
+    opportunities drops to the tier below it."""
+    cap = _ROOM_TOP_TIER.get((pool.get(pid) or {}).get("pos") or "")
+    if not cap or job != cap[0]:
+        return job
+    winner = room_rate_winner(pid, pool, computed)
+    if winner is None or winner == pid:
+        return job
+    return cap[1]
+
+
 def job_for_player(pid: str, pool: Dict[str, Dict[str, Any]],
                    computed: Dict[str, Dict[str, Any]]) -> str:
-    """The full Job for one player: score tier plus room promotion.
-    Every surface that names a Job (role card, timeline, comparables
-    tier gate, board labels via build_role) goes through this or
-    build_role so they can never disagree."""
+    """The full Job for one player: score tier, room promotion, then
+    the room gate. Every surface that names a Job (role card,
+    timeline, comparables tier gate, board labels via build_role)
+    goes through this or build_role so they can never disagree."""
     mine = computed[pid]
     job = job_for(pool[pid].get("pos"), mine["score"], mine["feats"])
-    return _room_promoted_job(pid, pool, computed, job)
+    job = _room_promoted_job(pid, pool, computed, job)
+    return _room_gated_job(pid, pool, computed, job)
 
 
 # (axis, tag, confirming feature-percentile key)
@@ -633,7 +735,9 @@ def build_role(pid: str, pool: Dict[str, Dict[str, Any]],
     if prior_score is not None:
         score = round(0.7 * score + 0.3 * prior_score, 1)
         force_provisional = True
-    job = _room_promoted_job(pid, pool, computed, job_for(pos, score, feats))
+    job = _room_gated_job(pid, pool, computed,
+                          _room_promoted_job(pid, pool, computed,
+                                             job_for(pos, score, feats)))
     security, note, lead_pid = security_for(pid, pool, computed)
     confidence = "Provisional" if (force_provisional or feats["games"] < 5
                                    or feats["snaps"] < 100) else "High"
